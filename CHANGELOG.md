@@ -4,6 +4,8 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+## 3.0.2 - 2026-10-11
+
 - **`ulw-work` keeps reference-only detail in its references.** The
   per-turn body drops two quality-bar lines that restated
   `references/dependency-topology.md` (the node prompt contract and the
