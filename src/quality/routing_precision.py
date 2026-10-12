@@ -3602,6 +3602,17 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "ai-slop-cleaner",
     ),
+    # Accepted trade-off (owner, 2026-10-12): `frontend`'s appearance phrases
+    # ("feels like ai slop") also fit code, so this sentence clarifies with
+    # frontend leading the shortlist (9 vs the cleaner's 7). Both skills stay
+    # named, so no `forbidden_candidate`; the claim is that neither dispatches.
+    RoutingPrecisionCase(
+        "function-feels-like-ai-slop-stays-a-clarify",
+        "A code noun with an appearance phrase asks rather than dispatching either skill",
+        "this function feels like ai slop",
+        "answer_clarification",
+        "",
+    ),
 )
 
 
