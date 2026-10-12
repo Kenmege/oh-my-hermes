@@ -29,7 +29,7 @@ from ..install.hook_integrity import HOOK_HOST_TARGET, VALID_HOOK_EVENTS, build_
 from ..install.identity_conflicts import build_identity_conflict_report
 from ..install.installer import installed_skill_directories, installed_skill_names
 from ..install.plugin_bundle_import_scan import describe_findings, scan_bundle_core_imports
-from ..install.plugin_loader_observation import observe_real_loader_registration
+from ..install.plugin_loader_observation import hermes_code_root, observe_real_loader_registration
 from ..install.skill_registration import (
     AMBIGUOUS_REGISTRATION_NEXT_ACTION,
     ambiguous_registration_message,
@@ -305,7 +305,10 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
     plugin = inspect_plugin_bundle(paths)
     manifest_conformance = plugin["plugin_manifest_conformance"]
     loader_observation = (
-        observe_real_loader_registration(paths.hermes_plugin_dir)
+        observe_real_loader_registration(
+            paths.hermes_plugin_dir,
+            hermes_code_root=hermes_code_root(paths.hermes_home),
+        )
         if plugin["plugin_dir_installed"]
         else None
     )

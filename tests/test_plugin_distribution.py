@@ -20,14 +20,14 @@ from tempfile import TemporaryDirectory
 
 from _cli_harness import run_cli
 from _local_package import load_local_package
-from _platform_support import requires_hermes_host, requires_symlinks
+from _platform_support import requires_hermes_host, requires_posix, requires_symlinks
 
 load_local_package()
 
 from omh.commands import setup as _setup_module
 from omh.config_adapter import external_dirs
 from omh.paths import resolve_paths
-from omh.install.plugin_loader_observation import observe_real_loader_registration
+from omh.install.plugin_loader_observation import hermes_code_root, observe_real_loader_registration
 from omh.plugin_pack import inspect_plugin_bundle
 from omh.install.plugin_pack import (
     PLUGIN_MANAGED_MANIFEST,
@@ -53,6 +53,56 @@ class FakeHermesContext:
 
     def register_hook(self, name: str, handler: object) -> None:
         self.hooks[name] = handler
+
+
+def _write_fake_hermes_code_tree(code_root: Path, *, version: str | None) -> Path:
+    """A Hermes checkout stub whose loader admits omh only when its version resolves.
+
+    Like hermes_cli/version_info.py, the version comes from the install stamp
+    beside the imported package; a copy imported from elsewhere reports "unknown".
+    """
+    package = code_root / "hermes_cli"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "version_info.py").write_text(
+        "import json\n"
+        "from pathlib import Path\n"
+        "from types import SimpleNamespace\n\n"
+        "def get_version_info():\n"
+        "    stamp = Path(__file__).resolve().parent.parent / 'install-stamp.json'\n"
+        "    try:\n"
+        "        version = json.loads(stamp.read_text(encoding='utf-8'))['version']\n"
+        "    except OSError:\n"
+        "        version = 'unknown'\n"
+        "    return SimpleNamespace(base_version=version)\n",
+        encoding="utf-8",
+    )
+    (package / "plugins.py").write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "from types import SimpleNamespace\n\n"
+        "from hermes_cli.version_info import get_version_info\n\n"
+        f"TOOLS = {sorted(PROVIDED_TOOLS)!r}\n"
+        f"HOOKS = {sorted(PROVIDED_HOOKS)!r}\n\n"
+        "class PluginManager:\n"
+        "    def __init__(self):\n"
+        "        self._plugins = {}\n\n"
+        "    def discover_and_load(self, force=False):\n"
+        "        if not (Path(os.environ['HERMES_HOME']) / 'plugins' / 'omh').is_dir():\n"
+        "            return\n"
+        "        running = get_version_info().base_version\n"
+        "        if running == 'unknown':\n"
+        "            error = 'omh plugin requires Hermes \">=0.21.1\"; running Hermes <unknown>'\n"
+        "            self._plugins['omh'] = SimpleNamespace(\n"
+        "                enabled=False, error=error, tools_registered=[], hooks_registered=[])\n"
+        "        else:\n"
+        "            self._plugins['omh'] = SimpleNamespace(\n"
+        "                enabled=True, error=None, tools_registered=TOOLS, hooks_registered=HOOKS)\n",
+        encoding="utf-8",
+    )
+    if version is not None:
+        (code_root / "install-stamp.json").write_text(json.dumps({"version": version}), encoding="utf-8")
+    return code_root
 
 
 def load_installed_plugin(plugin_dir: Path):
@@ -492,6 +542,117 @@ class PluginDistributionTests(unittest.TestCase):
             self.assertEqual(observation["registered_hooks"], list(PROVIDED_HOOKS))
             self.assertEqual(seen["timeout_seconds"], 120)
 
+    def test_real_loader_observation_reports_absent_code_tree_as_not_observed(self) -> None:
+        with TemporaryDirectory() as tmp:
+            plugin_dir = Path(tmp) / "omh"
+            plugin_dir.mkdir()
+
+            def runner(command, timeout_seconds, env):
+                raise AssertionError("probe must not run without a Hermes code tree")
+
+            observation = observe_real_loader_registration(
+                plugin_dir,
+                python_executable=Path(sys.executable),
+                hermes_code_root=Path(tmp) / "hermes-agent",
+                runner=runner,
+            )
+
+            self.assertFalse(observation["observed"])
+            self.assertEqual(observation["reason"], "hermes_code_tree_absent")
+
+    def test_real_loader_observation_puts_code_tree_on_path_with_disposable_home(self) -> None:
+        with TemporaryDirectory() as tmp:
+            hermes_home = Path(tmp) / ".hermes"
+            plugin_dir = hermes_home / "plugins" / "omh"
+            plugin_dir.mkdir(parents=True)
+            code_root = _write_fake_hermes_code_tree(hermes_home / "hermes-agent", version="0.21.5")
+            seen: dict[str, str] = {}
+
+            def runner(command, timeout_seconds, env):
+                seen.update(env or {})
+                return CommandResult(command=command, returncode=0, stdout="")
+
+            observe_real_loader_registration(
+                plugin_dir,
+                python_executable=Path(sys.executable),
+                hermes_code_root=code_root,
+                runner=runner,
+            )
+
+            self.assertEqual(seen["PYTHONPATH"], str(code_root))
+            self.assertNotEqual(Path(seen["HERMES_HOME"]), hermes_home)
+            self.assertFalse(Path(seen["HERMES_HOME"]).exists())
+
+    def test_hermes_code_root_falls_back_to_root_tree_for_a_profile_home(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".hermes"
+            profile = root / "profiles" / "miku"
+            profile.mkdir(parents=True)
+            root_tree = _write_fake_hermes_code_tree(root / "hermes-agent", version="0.21.5")
+
+            self.assertEqual(hermes_code_root(profile), root_tree)
+            self.assertEqual(hermes_code_root(root), root_tree)
+            own_tree = _write_fake_hermes_code_tree(profile / "hermes-agent", version="0.21.5")
+            self.assertEqual(hermes_code_root(profile), own_tree)
+
+    # The probe's exact env carries no SYSTEMROOT, which Windows' interpreter needs.
+    @requires_posix
+    def test_real_loader_observation_reports_unresolved_version_as_not_observed(self) -> None:
+        with TemporaryDirectory() as tmp:
+            plugin_dir = Path(tmp) / "plugins" / "omh"
+            plugin_dir.mkdir(parents=True)
+            code_root = _write_fake_hermes_code_tree(Path(tmp) / "hermes-agent", version=None)
+
+            observation = observe_real_loader_registration(
+                plugin_dir,
+                python_executable=Path(sys.executable),
+                hermes_code_root=code_root,
+            )
+
+            self.assertFalse(observation["observed"], observation)
+            self.assertEqual(observation["reason"], "hermes_version_unresolved")
+
+    # POSIX-only for the same SYSTEMROOT reason, and for the venv's bin/ layout.
+    @requires_posix
+    def test_real_loader_observation_agrees_with_host_loader_verdict(self) -> None:
+        # The interpreter carries an installed hermes_cli with no checkout beside it,
+        # as a PM-managed venv does; only the code tree resolves the version (#2050).
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            hermes_home = root / ".hermes"
+            plugin_dir = hermes_home / "plugins" / "omh"
+            plugin_dir.mkdir(parents=True)
+            code_root = _write_fake_hermes_code_tree(hermes_home / "hermes-agent", version="0.21.5")
+            subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(root / "venv")], check=True, timeout=120)
+            venv_python = root / "venv" / "bin" / "python"
+            site_packages = subprocess.run(
+                [str(venv_python), "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
+                capture_output=True, text=True, check=True, timeout=30,
+            ).stdout.strip()
+            shutil.copytree(code_root / "hermes_cli", Path(site_packages) / "hermes_cli")
+            host = subprocess.run(
+                [
+                    str(venv_python),
+                    "-c",
+                    "from hermes_cli.plugins import PluginManager\n"
+                    "m = PluginManager(); m.discover_and_load(force=True)\n"
+                    "print(m._plugins['omh'].enabled)",
+                ],
+                capture_output=True, text=True, check=True, timeout=30,
+                env={"HERMES_HOME": str(hermes_home), "PYTHONPATH": str(code_root), "PATH": os.environ.get("PATH", "")},
+            )
+            host_loaded = host.stdout.strip() == "True"
+
+            observation = observe_real_loader_registration(
+                plugin_dir,
+                python_executable=venv_python,
+                hermes_code_root=code_root,
+            )
+
+            self.assertTrue(host_loaded, host.stdout)
+            self.assertTrue(observation["observed"], observation)
+            self.assertEqual(observation["ok"], host_loaded, observation)
+
     def test_real_loader_observation_detects_zero_registered_tools(self) -> None:
         with TemporaryDirectory() as tmp:
             plugin_dir = Path(tmp) / "omh"
@@ -549,7 +710,7 @@ class PluginDistributionTests(unittest.TestCase):
                     "registered_tools": [],
                     "registered_hooks": [],
                 },
-            ):
+            ) as observe:
                 status, stdout, stderr = run_cli(
                     [
                         "--omh-home",
@@ -562,6 +723,7 @@ class PluginDistributionTests(unittest.TestCase):
 
             self.assertEqual(stderr, "")
             self.assertEqual(status, 0)
+            self.assertEqual(observe.call_args.kwargs["hermes_code_root"], hermes_home.resolve() / "hermes-agent")
             checks = {item["name"]: item for item in json.loads(stdout)["checks"]}
             self.assertTrue(checks["plugin_register_smoke"]["ok"])
             loader = checks["plugin_loader_observed"]

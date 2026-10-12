@@ -8,7 +8,9 @@ import subprocess
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from ..plugin_bundle.omh.kanban_board_reader import hermes_root
 from ..plugin_bundle.omh.metadata import PROVIDED_HOOKS, PROVIDED_TOOLS
+from ..system.hermes_install import hermes_install_dir
 from ..release_smoke_core import CommandResult, Runner, subprocess_runner_exact_env
 
 _OBSERVATION_PREFIX = "OMH_PLUGIN_LOADER_OBSERVATION="
@@ -17,6 +19,12 @@ import json
 
 from hermes_cli.plugins import PluginManager
 
+try:
+    from hermes_cli.version_info import get_version_info
+except ImportError:
+    hermes_version = None
+else:
+    hermes_version = get_version_info().base_version
 manager = PluginManager()
 manager.discover_and_load(force=True)
 loaded = manager._plugins.get("omh")
@@ -25,6 +33,7 @@ payload = {
     "error": None if loaded is None else loaded.error,
     "tools": [] if loaded is None else sorted(loaded.tools_registered),
     "hooks": [] if loaded is None else sorted(loaded.hooks_registered),
+    "hermes_version": hermes_version,
 }
 print("OMH_PLUGIN_LOADER_OBSERVATION=" + json.dumps(payload, sort_keys=True))
 """
@@ -34,6 +43,7 @@ def observe_real_loader_registration(
     plugin_dir: Path,
     *,
     python_executable: Path | None = None,
+    hermes_code_root: Path | None = None,
     runner: Runner | None = None,
     timeout_seconds: int = 120,
 ) -> dict[str, Any]:
@@ -42,6 +52,12 @@ def observe_real_loader_registration(
         return _not_observed("hermes_not_installed")
     if not plugin_dir.is_dir():
         return _not_observed("plugin_bundle_not_installed")
+    # The code tree owns Hermes' version identity. Without it on the path the
+    # isolated host resolves its version as "unknown" and the plugin's
+    # requires_hermes gate fails closed -- a mismatch this probe would have
+    # manufactured, not a fact about the installed plugin (#2050).
+    if hermes_code_root is not None and not (hermes_code_root / "hermes_cli").is_dir():
+        return _not_observed("hermes_code_tree_absent")
 
     execute = runner or subprocess_runner_exact_env
     with TemporaryDirectory(prefix="omh-hermes-loader-") as tmp:
@@ -58,6 +74,8 @@ def observe_real_loader_registration(
             "HERMES_HOME": str(hermes_home),
             "PATH": os.environ.get("PATH", ""),
         }
+        if hermes_code_root is not None:
+            env["PYTHONPATH"] = str(hermes_code_root)
         command = [str(hermes_python), "-c", _PROBE_SCRIPT]
         try:
             result = execute(command, timeout_seconds, env)
@@ -72,6 +90,8 @@ def observe_real_loader_registration(
     payload = _parse_observation(result)
     if payload is None:
         return _not_observed("loader_probe_failed", detail="invalid_probe_output")
+    if payload.get("hermes_version") == "unknown":
+        return _not_observed("hermes_version_unresolved")
 
     tools = _string_list(payload.get("tools"))
     hooks = _string_list(payload.get("hooks"))
@@ -90,6 +110,20 @@ def observe_real_loader_registration(
         "expected_tools": sorted(PROVIDED_TOOLS),
         "expected_hooks": sorted(PROVIDED_HOOKS),
     }
+
+
+def hermes_code_root(hermes_home: Path) -> Path:
+    """The Hermes checkout a home runs from: its own, else the Hermes root's.
+
+    A profile home (``<root>/profiles/<name>``) carries no checkout of its own;
+    the code tree, and the venv ``_find_hermes_python`` prefers, stay at the
+    root. Falling back there keeps the probe's interpreter and code tree one
+    install, so a healthy profile is not reported as a missing code tree.
+    """
+    own = hermes_install_dir(hermes_home)
+    if (own / "hermes_cli").is_dir():
+        return own
+    return hermes_install_dir(hermes_root(hermes_home))
 
 
 def _find_hermes_python() -> Path | None:
@@ -149,4 +183,4 @@ def _not_observed(reason: str, *, detail: str = "") -> dict[str, Any]:
     }
 
 
-__all__ = ["observe_real_loader_registration"]
+__all__ = ["hermes_code_root", "observe_real_loader_registration"]
