@@ -46,7 +46,7 @@ def build_eviction_plan(
     chars = len(HERMES_MEMORY_DELIMITER.join(items)) if items else 0
     headroom = max(0, cap - chars)
     # The delimiter Hermes inserts before an appended entry is part of the cost.
-    needed = required_chars + 1 if required_chars > 0 else 0
+    needed = required_chars + len(HERMES_MEMORY_DELIMITER) if required_chars > 0 else 0
     shortfall = max(0, needed - headroom)
 
     clusters = _duplicate_clusters(items, threshold)
@@ -107,7 +107,7 @@ def _duplicate_clusters(entries: list[str], threshold: float) -> list[dict[str, 
                 "entry_chars": sizes,
                 "keep_chars": keep,
                 # Dropping every member but the longest, delimiters included.
-                "reclaimable_chars": sum(sizes) - keep + (len(cluster) - 1),
+                "reclaimable_chars": sum(sizes) - keep + (len(cluster) - 1) * len(HERMES_MEMORY_DELIMITER),
                 "min_similarity": round(_min_pairwise_similarity(entries, cluster), 2),
             }
         )

@@ -34,6 +34,7 @@ from typing import Any
 import unicodedata
 
 from .hermes_memory import classify_record_expiry as _classify_record_expiry
+from .hermes_memory import read_approved_records as _read_approved_records
 from .memory_governance import (
     ADMISSION_STATES,
     MEMORY_GOVERNANCE_POLICY_VERSION,
@@ -1658,6 +1659,55 @@ def _redact(value: str) -> str:
     if _looks_sensitive(value):
         return "[redacted]"
     return value[:240]
+
+
+# The longest Hermes entry a demotion copies whole; longer ones are refused
+# rather than truncated.
+DEMOTION_SUMMARY_MAX_CHARS = _MEMORY_ATTENTION_REASON_LIMIT
+
+
+def held_durable_user_global_record(omh_home: Path, summary: str) -> str:
+    """Record id of a record that makes removing a Hermes entry safe, or "".
+
+    A removal is authorized only by a copy that will come back wherever the
+    Hermes entry would have: an approved, replay-eligible record whose
+    summary is exactly the entry's text, in the user-global scope with no
+    subject principal (the confinement a demoted copy is captured under), and
+    of durable retention. Token similarity is never enough -- a negation of the
+    same fact shares nearly every token -- and a project-scoped or volatile
+    record does not come back outside its project or past its expiry.
+    """
+    key = normalized_summary_key(summary)
+    if not key:
+        return ""
+    user_global = _scope_for_project_memory("user-global", "default")
+    for record in _read_approved_records(omh_home):
+        # The normalized key only narrows the scan; the removal is authorized
+        # by the exact text, so a case- or whitespace-folded variant is not a copy.
+        if normalized_summary_key(str(record.get("summary", ""))) != key or str(record.get("summary", "")) != summary:
+            continue
+        retention = record.get("retention") if isinstance(record.get("retention"), dict) else {}
+        if record.get("scope") != user_global or _subject_principal(record) is not None:
+            continue
+        if str(retention.get("class", "")) != "durable":
+            continue
+        return str(record.get("record_id", ""))
+    return ""
+
+
+def demotion_refusal_reason(entry: str) -> str:
+    """Why a Hermes entry cannot move into OMH intact, or "" when it can.
+
+    The two guards `stage_memory_demotion` holds, in its order, so the model's
+    `demote` path and the brief that proposes rows refuse exactly what the
+    operator path refuses. The next step after a demotion is removing the L1
+    original, which must never happen to a copy that is redacted or truncated.
+    """
+    if _looks_sensitive(entry):
+        return "redacted_cannot_demote"
+    if len(entry) > _MEMORY_ATTENTION_REASON_LIMIT:
+        return "summary_bound_exceeded"
+    return ""
 
 
 def _looks_sensitive(value: str) -> bool:

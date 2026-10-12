@@ -182,6 +182,7 @@ _SCHEMA_ID_TERMS: tuple[str, ...] = (
     "omh_memory_bridge_unavailable/v1",
     "omh_memory_capture/v1",
     "omh_memory_consolidation_handoff/v1",
+    "omh_memory_demote/v1",
     "omh_memory_dreaming_state/v1",
     "omh_memory_eviction_plan/v1",
     "omh_memory_identity/v1",

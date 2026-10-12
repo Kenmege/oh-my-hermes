@@ -88,7 +88,7 @@ from omh.workflows.memory import (
     reject_project_memory_candidate,
 )
 
-HERMES_DELIMITER = "§"
+HERMES_DELIMITER = "\n§\n"  # Hermes ENTRY_DELIMITER (tools/memory_tool_store.py)
 
 
 def _write_hermes_memory(hermes_home: Path, *entries: str) -> Path:
@@ -348,10 +348,20 @@ class EvictionPlanTests(unittest.TestCase):
 
     def test_a_shortfall_counts_the_delimiter_the_write_will_cost(self) -> None:
         plan = build_eviction_plan(("x" * 90,), cap=100, required_chars=10)
-        # 90 used, 10 free, and the write needs 10 + 1 for the delimiter.
+        # 90 used, 10 free, and the write needs 10 + 3 for Hermes' "\n§\n".
         self.assertEqual(plan["headroom_chars"], 10)
-        self.assertEqual(plan["required_chars"], 11)
-        self.assertEqual(plan["shortfall_chars"], 1)
+        self.assertEqual(plan["required_chars"], 13)
+        self.assertEqual(plan["shortfall_chars"], 3)
+        # The fit boundary: a write of headroom minus the delimiter fits exactly.
+        self.assertEqual(build_eviction_plan(("x" * 90,), cap=100, required_chars=7)["shortfall_chars"], 0)
+        self.assertEqual(build_eviction_plan(("x" * 90,), cap=100, required_chars=8)["shortfall_chars"], 1)
+
+    def test_reclaimable_chars_count_each_dropped_delimiter_in_full(self) -> None:
+        entries = ("alpha bravo charlie delta echo", "alpha bravo charlie delta echo foxtrot")
+        plan = build_eviction_plan(entries, cap=2200)
+        self.assertEqual(plan["duplicate_clusters"][0]["entry_indices"], [0, 1])
+        # Dropping the shorter entry frees its text and one 3-char "\n§\n".
+        self.assertEqual(plan["duplicate_clusters"][0]["reclaimable_chars"], len(entries[0]) + 3)
 
     def test_a_plan_that_cannot_free_enough_says_so(self) -> None:
         plan = build_eviction_plan(("x" * 99,), cap=100, required_chars=500)

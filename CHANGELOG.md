@@ -89,6 +89,28 @@ All notable changes will be documented here.
   tests-first section keeps the trigger, the iron law, and the pointer while
   the rest stays in `references/tdd-red-green.md`, which already carried all
   of it. The delegated-child route-hint tests move to their own file (#2070).
+- **The model moves full Hermes memory into OMH itself.** A new
+  `omh_memory(action="demote", entry_sha256=...)` reads one entry from
+  Hermes' `MEMORY.md` or `USER.md`, captures it unchanged as a `user-global`
+  durable OMH fact under the guards `omh memory demote --stage` holds
+  (`redacted_cannot_demote`, `summary_bound_exceeded`, `content_not_intact`,
+  `previously_rejected`), and returns `remove_from_hermes` for Hermes' own
+  `memory` tool only when the copy is approved (`demoted`) or an approved,
+  replay-eligible record already holds the exact entry (`already_covered`:
+  its own demotion record, or a durable user-global record with exactly the
+  same text). Token similarity never authorizes a removal. When
+  MEMORY.md falls below the headroom floor the consolidation brief carries up
+  to three `<demote>` rows, stored as file, sha256 prefix and length only and
+  previewed from the live Hermes file at render time. Capture and demote
+  results carry a suggested `display_line`. The operator path and its
+  reference line are unchanged.
+- **Hermes memory entries are parsed the way Hermes parses them.** OMH split
+  `MEMORY.md`/`USER.md` on a bare `§`, so an entry containing one ("see § 4.2")
+  became fragments and every character count missed two characters per
+  entry. It now splits and counts on Hermes' full `\n§\n` delimiter (the
+  promotion fit check and the eviction plan's shortfall and reclaimable
+  figures included) and reads with `utf-8-sig`, so a byte-order mark no
+  longer sticks to the first entry.
 
 ## 3.0.2 - 2026-10-11
 

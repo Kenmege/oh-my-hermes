@@ -126,6 +126,15 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
     ),
     ClassifiedSite(
         "src/plugin_bundle/omh/memory_provider.py",
+        "_demotion_rows",
+        INTENTIONAL,
+        "Runs inside a live memory hook while a brief is being written. A fault is counted and "
+        "recorded as op `demotion_rows` with its error class in the write failures the next receipt "
+        "reports, and the brief goes out without rows, so the model is asked to demote nothing "
+        "rather than losing the whole consolidation request.",
+    ),
+    ClassifiedSite(
+        "src/plugin_bundle/omh/memory_provider.py",
         "_say",
         INTENTIONAL,
         "The host's status callback prints one line for the user; it is Hermes' code, not "
@@ -359,6 +368,14 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
     ),
     ClassifiedSite(
         "src/plugin_bundle/omh/tools/memory_tool.py",
+        "_demote",
+        INTENTIONAL,
+        "Reading Hermes memory and capturing the entry run in-process inside Hermes' tool dispatch; "
+        "a fault becomes status `error` with the sanitized exception class as `reason` and no "
+        "`remove_from_hermes`, so the model is never told to delete an entry whose copy is unconfirmed.",
+    ),
+    ClassifiedSite(
+        "src/plugin_bundle/omh/tools/memory_tool.py",
         "_consolidation",
         INTENTIONAL,
         "Returns the distinct `bundle_memory_error` source plus a sanitized error type. Reporting "
@@ -499,8 +516,12 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # 45 -> 46 / 50 -> 51: `recommend_tool._route_summary`, the additive route beside
 # the ranking (#2005 review: a route failure must not empty the ranking or
 # relabel the source).
-EXPECTED_HANDLER_COUNT = 52
-EXPECTED_ANCHOR_COUNT = 47
+# 47 -> 49 / 52 -> 54: `memory_tool._demote`, the model's L1 -> L2 move (a fault
+# is status `error` and never carries the native remove), and
+# `memory_provider._demotion_rows` (a fault costs the brief's demote rows, is
+# recorded as a write failure, and never costs the brief).
+EXPECTED_HANDLER_COUNT = 54
+EXPECTED_ANCHOR_COUNT = 49
 
 
 class DerivedSite(NamedTuple):
