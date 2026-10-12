@@ -11,13 +11,15 @@ All notable changes will be documented here.
   back from trigger-token scoring (`slop` still counts as a description word,
   and the lexical shortlist still reads the trigger text). A question about
   the word, a subagent's quoted report, and a plain "review this PR" stay
-  where they were, and `anti-slop` counts only beside cleanup or code words,
-  so a README that mentions an anti-slop policy is not a request. `frontend`
-  gains `slop ui` and the appearance phrases "looks like ai slop", "feels like
-  ai slop", and "screams ai slop", so a page, card, section, or component
-  called AI slop keeps frontend first: it dispatches frontend or asks with
-  frontend leading. Beside a slop word and one of those appearance words, and
-  with no UI surface named, the cleaner earns up to two code and prose nouns
+  where they were, and `anti-slop` counts only beside cleanup, code, or pull
+  request words, so a README that mentions an anti-slop policy is not a
+  request (and neither, for now, is "anti-slop the README"). `frontend` gains
+  `slop ui` and the appearance phrases "looks like ai slop", "feels like ai
+  slop", and "screams ai slop", so a page, card, section, or component called
+  AI slop keeps frontend first: it dispatches frontend or asks with frontend
+  leading, unless a code unit (module, function, class, method, code) is
+  named too, which puts the cleaner first. Beside a slop word and one of those
+  appearance words, the cleaner earns up to two code and prose nouns
   (module, function, file, README, docs) or cleanup verbs (clean, simplify,
   dedupe, prune) back, so "this README looks like ai slop" asks first with the
   cleaner leading; both skills still appear in that question, and the words

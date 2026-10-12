@@ -437,14 +437,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # three sentences that carry a code noun or cleanup verb with no
             # slop word (a module that fails to load, "clean it up later",
             # "simplify this function"), none of which may name the cleaner.
-            # Its review adds four: a README that mentions an anti-slop policy
+            # Its review adds six: a README that mentions an anti-slop policy
             # and a question whether a docs anti-slop policy is too strict
-            # (stances, not requests, which dispatched the cleaner), docs that
-            # explain AI slop, and a slop word beside a stack of code nouns,
-            # both of which must stay a clarify; and a list of code nouns
-            # beside an appearance phrase, which the two-word cap keeps a
-            # clarify (it dispatched uncapped); and a function that looks
-            # clean, which names the cleaner once its slop-word gate is gone.
+            # (stances, not requests, which dispatched the cleaner); docs that
+            # explain AI slop and a slop word beside a stack of code nouns,
+            # both of which must stay a clarify; a list of code nouns beside an
+            # appearance phrase, which the two-word cap keeps a clarify (it
+            # dispatched uncapped); and a function that looks clean, which
+            # names the cleaner once its slop-word gate is gone.
             expected=452,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
@@ -551,7 +551,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Its review adds one: a pricing card component file that looks like
             # AI slop keeps frontend's dispatch, because a UI surface withholds
             # the cleaner's code nouns.
-            expected=668,
+            # Its next review adds five: a layout module and layout code that
+            # look like AI slop clarify with the cleaner leading (a code unit
+            # beats a UI word), and anti-slop on "my pull request", "the
+            # changes in this PR", and "this PR" each dispatch the cleaner.
+            expected=673,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

@@ -2325,8 +2325,8 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
             {
                 "branch", "class", "classes", "clean", "cleanup", "code", "codebase", "commit",
                 "deslop", "diff", "directory", "file", "files", "folder", "function", "functions",
-                "method", "methods", "module", "modules", "pass", "refactor", "repo", "review",
-                "run", "src", "sweep",
+                "changes", "method", "methods", "module", "modules", "pass", "pull", "refactor",
+                "repo", "review", "run", "src", "sweep",
             }
         ),
     ),
