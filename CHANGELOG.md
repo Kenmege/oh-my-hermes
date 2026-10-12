@@ -36,6 +36,18 @@ All notable changes will be documented here.
   plan unaccepted, and is not read as a refusal either. The portable Agent
   Skills `omh-plan` carries the same rule (#2067).
 
+- **`app-debugging` records a moved fault's hypothesis as unresolved.**
+  Section 6 of `references/hypothesis-and-race-method.md` now eliminates a
+  fix's hypothesis only when the original symptom is still there; when the
+  fault moved, nothing contradicts the hypothesis, so it stays unresolved.
+  The pre-fix probe for a symptom hidden behind the first runs with the
+  section-1 loop when the symptom is intermittent, and a probe that cannot
+  run on its own or comes back inconclusive is recorded as not observed and
+  leaves the failed-fix count unchanged. A fix whose new symptom the pre-fix
+  tree already shows is not counted as failed and is verified under section 7
+  once the reproduction passes, instead of being said to hold; the new
+  symptom gets its own reproduction record and count (#2057).
+
 ## 3.0.2 - 2026-10-11
 
 - **`ulw-work` keeps reference-only detail in its references.** The
