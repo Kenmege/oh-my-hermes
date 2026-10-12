@@ -3641,6 +3641,16 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
     ),
+    # The cap itself: beside an appearance phrase, a list of five code nouns
+    # with no cleanup verb would otherwise buy a dispatch past frontend's
+    # phrase (23 uncapped); counting two keeps it a question.
+    RoutingPrecisionCase(
+        "code-noun-list-beside-appearance-phrase-stays-a-clarify",
+        "Stacked code nouns beside an appearance phrase do not buy a dispatch",
+        "this looks like ai slop: the files, the code, the docs, the module, the classes",
+        "answer_clarification",
+        "",
+    ),
     RoutingPrecisionCase(
         "module-load-failure-does-not-name-slop-cleaner",
         "A module that fails to load is not a cleanup request",
