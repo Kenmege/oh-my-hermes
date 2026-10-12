@@ -61,6 +61,7 @@ EVIDENCE_REUSE_TOKENS = (
     "observed_tree",
     "a commit to diff from",
     "`git stash create`",
+    "when it prints nothing, `HEAD`",
     "the diff runs against the recorded commit",
     "is assessed against the current tree",
     "the whole set runs once more against the final tree",

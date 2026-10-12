@@ -1433,6 +1433,13 @@ _INSTRUCTION_SENTENCE_END = frozenset(".!?。！？")
 _INSTRUCTION_KOREAN_GREETINGS = ("안녕하세요", "수고하세요", "고생하세요")
 # Invisible characters that would split a cue without changing how it reads.
 _INSTRUCTION_ZERO_WIDTH = dict.fromkeys(map(ord, "\u200b\u200c\u200d\ufeff"))
+# Emoji variation selectors and the keycap mark are combining marks, outside
+# the P and S categories, so a closing ❤️ or #️⃣ would otherwise end the closer
+# run. A keycap digit (1️⃣) is a number, so the whole keycap sequence is dropped.
+# They stay out of the zero-width set: stripping them would join you\ufe0fmust
+# into one word and admit a cue that is refused now.
+_INSTRUCTION_EMOJI_MARKS = frozenset("\ufe0e\ufe0f\u20e3")
+_INSTRUCTION_KEYCAP_PATTERN = re.compile("[0-9#*]\ufe0f?\u20e3")
 # A procedure is a how-to by definition; its steps may address the reader.
 _INSTRUCTION_EXEMPT_RECORD_TYPES = ("procedure",)
 
@@ -1451,9 +1458,13 @@ def _instruction_shaped_reason(summary: str, record_type: str) -> str:
     for match in _INSTRUCTION_KOREAN_REQUEST_PATTERN.finditer(text):
         if text[: match.end()].endswith(_INSTRUCTION_KOREAN_GREETINGS):
             continue
-        rest = text[match.end() :]
+        rest = _INSTRUCTION_KEYCAP_PATTERN.sub("", text[match.end() :])
         closers = 0
-        while closers < len(rest) and (rest[closers].isspace() or unicodedata.category(rest[closers])[0] in "PS"):
+        while closers < len(rest) and (
+            rest[closers].isspace()
+            or rest[closers] in _INSTRUCTION_EMOJI_MARKS
+            or unicodedata.category(rest[closers])[0] in "PS"
+        ):
             closers += 1
         if closers == len(rest) or _INSTRUCTION_SENTENCE_END.intersection(rest[:closers]):
             return match.group(1)

@@ -63,6 +63,19 @@ All notable changes will be documented here.
   or generated file with no matching tracked source fails. The skill body is
   unchanged (#2058).
 
+- **An emoji closer no longer lets a Korean request through memory admission.**
+  `omh_memory(action="capture")` already refused a summary ending in a Korean
+  request ending followed by closing punctuation or emoji; an emoji carrying a
+  variation selector (`실행하세요 ❤️`, `실행하세요 ☺️`) or a keycap
+  (`실행하세요 #️⃣`, `실행하세요 1️⃣`) was admitted because U+FE0E, U+FE0F and
+  U+20E3 are combining marks. They now count as closers, and a keycap
+  sequence is dropped whole; text after the emoji still admits the summary. A
+  quoted UI label at the end of a summary (`버튼 라벨은 "저장하세요"`) is still
+  refused, the same disclosed limit as other quoted requests. The `ulw-work`
+  execution-rulings reference now falls back to `HEAD` when `git stash create`
+  prints nothing, so the diff base is defined on a tree whose only changes are
+  untracked files (#2068).
+
 ## 3.0.2 - 2026-10-11
 
 - **`ulw-work` keeps reference-only detail in its references.** The
