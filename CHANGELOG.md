@@ -6,18 +6,21 @@ All notable changes will be documented here.
 
 - **`ai-slop-cleaner` reaches OMC parity without a second keyword hook.**
   `anti-slop`, `AI slop`, and `deslop review` now dispatch the cleaner through
-  the existing route hint, with `ai`, `anti`, `slop`, and `review` held back so
-  only the whole phrases score; a question about the word, a subagent's quoted
-  report, and a plain "review this PR" stay where they were, and UI slop stays
-  with `frontend` (which gains `slop ui`). A no-edit review mode inspects a
+  the existing route hint, with `anti`, `slop`, and `review` held back from
+  trigger-token scoring (`slop` still counts as a description word, and the
+  lexical shortlist still reads the trigger text); a question about the word,
+  a subagent's quoted report, and a plain "review this PR" stay where they
+  were, and UI slop stays with `frontend`, which gains `slop ui` and
+  appearance phrases such as "looks like ai slop". A no-edit review mode inspects a
   drafted cleanup against the six taxonomy categories and returns findings in
   the `code-review` shape, handing fixes to a separate writer pass. A new
   `references/ui-review-checklist.md` lists six UI review prompts as questions
   a stated rationale closes, and each run closes with an
   `omh runtime record --skill ai-slop-cleaner` row. `loop` may run an optional
   cleaner pass after the judge passes, scoped to the cycle's `changed_files`,
-  re-verified afterwards, and reported as skipped when skipped. Concepts adapt
-  `Yeachan-Heo/oh-my-claudecode` (MIT); no text is reproduced.
+  re-verified afterwards, and reported as skipped or reverted rather than
+  passed. Concepts adapt `Yeachan-Heo/oh-my-claudecode` (MIT), reconstructed
+  in OMH wording.
 
 - **Facts survive compaction, and a new session hears what memory did since
   your last session.** The compaction brief asked the model to extract durable

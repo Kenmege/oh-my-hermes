@@ -6,20 +6,24 @@ behind each one lives in `omh-frontend/references/taste-foundations.md`
 (Review prompts - not bans); this file does not repeat it. What it adds is how
 a cleanup pass treats each one.
 
-Every item is a question, not a ban. A stated reason - brand, accessibility,
-product density, or a design-system rule - closes it and the pattern stays.
-No reason means the default was never chosen, and that is the finding.
+Every item is a question, not a ban. A stated reason closes it and the
+pattern stays: the brand asks for it, legibility or contrast needs it, the view
+is a dense data screen, or the project's design system says so. No reason
+means the default was never chosen, and that is the finding.
 
 ## The six prompts
 
-| Prompt | Look for in the diff or the rendered page | Cleanup treatment |
+Ordered by treatment: the first three are deletions a cleanup pass can make,
+the last three are findings it hands on.
+
+| Prompt | What the diff or the page shows | Cleanup treatment |
 | --- | --- | --- |
-| Korean body text below 14px | body copy set at 11-13px on a page with a Korean audience | raise to the 14px floor; a validated dense-data table may keep its size if the reason is written down |
-| Shadows everywhere | the same shadow on every card, logo, icon, and background | delete shadows that mark no elevation or interaction; keep the ones that do |
-| Stacked section labels | eyebrow, title, description, and an extra paragraph above every section; generic emoji badges | delete the layers the title already carries |
-| Default palette | framework-default blue (`#3B82F6`) or a blue-to-purple scheme with no brand rationale | flag it; choosing the replacement palette is a design decision for `frontend` |
-| Uniform grid | every row a perfect 3- or 4-column grid of equal cards | flag it when the items are not peers; the new layout is `frontend` work |
-| Extreme gradients | saturated multi-stop gradients on surfaces, text, or buttons | tone down or delete unless the brand owns that look |
+| Shadows everywhere | one shadow repeated on cards, icons, logos, and page backgrounds alike | delete each shadow that marks neither a raised layer nor an interaction |
+| Extreme gradients | loud multi-stop gradients on surfaces, buttons, or headline text | delete or flatten them unless the brand owns that look |
+| Stacked section labels | a small label, a heading, a subheading, and one more paragraph over each section; decorative emoji badges | delete every layer that repeats what the heading says |
+| Korean body text below 14px | Korean body copy at 11-13px | raise it to 14px; a dense data table keeps its size only with the reason written down |
+| Default palette | a framework-default blue (`#3B82F6`) or a blue-to-purple scheme nobody chose | report it; a new palette is a design decision for `frontend` |
+| Uniform grid | rows of equal cards in a perfect 3 or 4 columns when the items are not equals | report it; a new layout is `frontend` work |
 
 Deletion-first still holds. Removing a shadow, a label, or a gradient is a
 cleanup. Picking a new palette or a new layout is a redesign, and a redesign
@@ -35,6 +39,5 @@ what renders. Say which of the two a finding rests on.
 ## Attribution
 
 The six prompts and the review-mode split adapt concepts from the
-`ai-slop-cleaner` skill of `Yeachan-Heo/oh-my-claudecode@8262f9f` (MIT). No
-upstream text is reproduced; the wording and the cleanup treatments are OMH's
-own.
+`ai-slop-cleaner` skill of `Yeachan-Heo/oh-my-claudecode@8262f9f` (MIT),
+reconstructed in OMH's own wording; the cleanup treatments are OMH's.

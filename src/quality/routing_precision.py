@@ -3594,6 +3594,14 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "ai-slop-cleaner",
     ),
+    RoutingPrecisionCase(
+        "anti-virus-slop-log-does-not-name-slop-cleaner",
+        "Anti-virus noise called slop in a log is not a cleanup request",
+        "the anti-virus flagged slop in the logs",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
 )
 
 
@@ -8744,6 +8752,25 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "frontend",
         "prepare_frontend_handoff",
         "frontend_handoff",
+    ),
+    RoutingInterventionCase(
+        "settings-page-feels-like-ai-slop-reaches-frontend",
+        "A page that feels like AI slop is a restyle for frontend",
+        "this settings page feels like AI slop",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+    ),
+    RoutingInterventionCase(
+        "hero-section-screams-ai-slop-keeps-frontend-leading",
+        "A hero section that screams AI slop leads with frontend, not the code cleaner",
+        "our hero section screams ai slop, give it a distinctive look",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "frontend",
     ),
     RoutingInterventionCase(
         "gemini-second-opinion-reaches-ask",

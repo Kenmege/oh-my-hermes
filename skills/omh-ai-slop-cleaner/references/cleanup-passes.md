@@ -63,8 +63,9 @@ Four parts, every run: **changed files** (with per-pass counts),
 ## Review mode
 
 Review mode judges a cleanup someone already drafted. It opens no file for
-writing. It reads three things: the cleanup plan, the diff, and the regression
-evidence the writer pass recorded. Then it asks, per taxonomy category:
+writing. Its inputs are what the writer pass left behind - the plan it worked
+from, the diff it produced, and the before/after checks it ran - and it asks,
+per taxonomy category:
 
 - **Dead code** - did the diff leave unused symbols, exports, or flags behind?
 - **Duplication** - is a decision the plan named still encoded twice?
@@ -82,9 +83,9 @@ Findings use the `code-review` shape: each carries `priority` (`P0`-`P3`),
 one `ship` or `no_ship` verdict. No new verdict vocabulary is invented here, so
 a reader who knows one review knows this one.
 
-A finding is a work order for a separate writer pass. The reviewer never fixes
-and approves in one step: the pass that wrote a change cannot also be the
-evidence that it is right.
+A finding is a work order for a separate writer pass. A reviewer who applies
+its own fix has turned back into a writer, and the pass that wrote a change
+cannot also be the evidence that it is right.
 
 ## Boundary
 

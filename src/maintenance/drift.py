@@ -429,7 +429,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The ai-slop-cleaner OMC parity triggers add three: a question
             # about what deslop means, a subagent's quoted deslop report, and a
             # plain "review this PR" that must not credit the review mode.
-            expected=442,
+            # Their review adds one: anti-virus noise called slop in a log,
+            # which names the cleaner as candidate once its hold-back is gone.
+            expected=443,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -524,7 +526,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # pass, AI slop in a code directory, and a no-edit deslop review
             # reaching the cleaner, plus two UI slop requests (`ai slop ui`,
             # generic AI slop on a landing page) that stay with `frontend`.
-            expected=661,
+            # Their review adds two UI restyles that must keep `frontend`: a
+            # settings page that feels like AI slop (dispatch) and a hero
+            # section that screams it (clarify led by frontend). Both went to
+            # the cleaner without its hold-back.
+            expected=663,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

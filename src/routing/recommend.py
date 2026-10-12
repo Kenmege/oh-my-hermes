@@ -3849,16 +3849,28 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "split",
             "text",
             "registry",
+            "look",
+            "looks",
+            "feels",
+            "like",
+            "screams",
         }
     ),
     # `anti-slop`, `ai slop`, and `deslop review` are the cleaner's own
-    # phrases; their words alone are not. `ai` is in every sentence about a
-    # model ("the AI said the build passed"), `anti` opens "anti-virus" and
-    # "anti-pattern", `slop` is kitchen and plumbing vocabulary, and
-    # `review` is `code-review`'s territory -- crediting it here would put
-    # the cleaner on every "review this PR". The complete phrases still
-    # score, and `deslop` stays creditable as a coined word.
-    "ai-slop-cleaner": frozenset({"ai", "anti", "slop", "review"}),
+    # phrases; held back here, their words earn no trigger-token credit on
+    # their own. This governs trigger-token scoring only: `slop` is still a
+    # description word (`metadata:slop`, +1), and the lexical shortlist ranks
+    # on trigger text with two-letter words such as `ai`, which never become
+    # routing tokens and so cannot be held back here at all.
+    # Measured: without `anti` and `slop`, "our hero section screams ai slop"
+    # and "this settings page feels like AI slop" dispatched the cleaner, and
+    # "the anti-virus flagged slop in the logs" named it as the candidate.
+    # `review` is defensive rather than measured: it is `code-review`'s word,
+    # and no sentence in the corpus moved when it was held back.
+    # The `frontend` entry above holds back `look`, `looks`, `feels`, `like`,
+    # and `screams` so its appearance phrases ("looks like ai slop") score
+    # only whole.
+    "ai-slop-cleaner": frozenset({"anti", "slop", "review"}),
 }
 
 
