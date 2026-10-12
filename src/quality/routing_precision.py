@@ -3750,8 +3750,9 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
     ),
     # A chat message called AI slop is prose, not a UI restyle: it must not
-    # dispatch frontend. The cleaner ties frontend here (13 each), so the case
-    # claims only that neither dispatches.
+    # dispatch frontend. Frontend still leads the question here (13 vs 10,
+    # since `polish` is its word), so the case claims only that neither
+    # dispatches; the prose noun is what keeps it from dispatching.
     RoutingPrecisionCase(
         "slack-message-feels-like-ai-slop-does-not-dispatch",
         "A Slack message that feels like AI slop asks rather than dispatching frontend",
@@ -9015,9 +9016,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "ai-slop-cleaner",
     ),
     # Prose called AI slop is the cleaner's (its prose lexicon), not a
-    # restyle: prose nouns and prose verbs (better, polish, rewrite) count
-    # as its context words, so frontend's appearance phrase no longer buys a
-    # dispatch on an essay or a PR description.
+    # restyle: prose nouns and the verb `better` count as its context words,
+    # so frontend's appearance phrase no longer buys a dispatch on an essay
+    # or a PR description.
     RoutingInterventionCase(
         "essay-looks-like-ai-slop-leads-with-slop-cleaner",
         "An essay that looks like AI slop asks first with the cleaner leading, not frontend",

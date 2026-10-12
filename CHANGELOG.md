@@ -25,19 +25,21 @@ All notable changes will be documented here.
   Beside a slop word and one of those appearance words, the cleaner earns up
   to two code and prose nouns (module, function, class, method, file, code,
   codebase, README, docs, essay, post, letter, message, email, description) or
-  cleanup and prose verbs (clean, simplify, dedupe, prune, polish, rewrite,
-  better) back, so "this README looks like ai slop" and "my essay looks like
-  ai slop, make it better" ask first instead of dispatching frontend; both
-  skills still appear in that question, and the words alone earn the cleaner
-  nothing. A no-edit review mode inspects a drafted cleanup against the six
-  taxonomy categories and returns findings in the `code-review` shape, handing
-  fixes to a separate writer pass. A new `references/ui-review-checklist.md`
-  lists six UI review prompts as questions a stated rationale closes, and each
-  run closes with an `omh runtime record --skill ai-slop-cleaner` row. `loop`
-  may run an optional cleaner pass after the judge passes, scoped to the
-  cycle's `changed_files`, re-verified afterwards, and reported as skipped or
-  reverted rather than passed. Concepts adapt `Yeachan-Heo/oh-my-claudecode`
-  (MIT), reconstructed in OMH wording.
+  cleanup verbs (clean, simplify, dedupe, prune, better) back, so "this README
+  looks like ai slop" and "my essay looks like ai slop, make it better" ask
+  first with the cleaner leading, and prose that frontend's own words still
+  favor ("this slack message feels like ai slop, polish it") asks with
+  frontend leading instead of dispatching it; both skills still appear in that
+  question, and the words alone earn the cleaner nothing. A no-edit review
+  mode inspects a drafted cleanup against the six taxonomy categories and
+  returns findings in the `code-review` shape, handing fixes to a separate
+  writer pass. A new `references/ui-review-checklist.md` lists six UI review
+  prompts as questions a stated rationale closes, and each run closes with an
+  `omh runtime record --skill ai-slop-cleaner` row. `loop` may run an optional
+  cleaner pass after the judge passes, scoped to the cycle's `changed_files`,
+  re-verified afterwards, and reported as skipped or reverted rather than
+  passed. Concepts adapt `Yeachan-Heo/oh-my-claudecode` (MIT), reconstructed
+  in OMH wording.
 
 - **Facts survive compaction, and a new session hears what memory did since
   your last session.** The compaction brief asked the model to extract durable
