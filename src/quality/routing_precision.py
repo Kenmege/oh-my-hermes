@@ -3651,6 +3651,16 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
     ),
+    # An appearance word beside a code noun is not a slop request either:
+    # without a slop word the cleaner's context words earn nothing.
+    RoutingPrecisionCase(
+        "function-looks-clean-does-not-name-slop-cleaner",
+        "A function that looks clean is praise, not a cleanup request",
+        "the new function looks clean",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
     RoutingPrecisionCase(
         "module-load-failure-does-not-name-slop-cleaner",
         "A module that fails to load is not a cleanup request",

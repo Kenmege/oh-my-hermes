@@ -443,8 +443,9 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # explain AI slop, and a slop word beside a stack of code nouns,
             # both of which must stay a clarify; and a list of code nouns
             # beside an appearance phrase, which the two-word cap keeps a
-            # clarify (it dispatched uncapped).
-            expected=451,
+            # clarify (it dispatched uncapped); and a function that looks
+            # clean, which names the cleaner once its slop-word gate is gone.
+            expected=452,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
