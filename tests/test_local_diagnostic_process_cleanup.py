@@ -80,9 +80,12 @@ class LocalDiagnosticProcessCleanupTests(unittest.TestCase):
                     f"Path({str(pid_file)!r}).write_text(str(child.pid), encoding='utf-8')",
                 )
             )
+            # The cwd stays outside the temp dir: a process tree still being
+            # torn down holds its cwd open, which on Windows failed the
+            # directory's removal after every assertion had passed (#2069).
             process, owner = start_owned_process(
                 [sys.executable, "-c", code],
-                cwd=root,
+                cwd=Path.cwd(),
                 env=dict(os.environ),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

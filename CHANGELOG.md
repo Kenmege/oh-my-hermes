@@ -4,6 +4,18 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Two Windows CI cleanup flakes are fixed in their fixtures, and a third
+  now reports its cause.** Each change follows the traceback in the failed
+  run's log, and none changes product behaviour. The observer fixture closes
+  every observer with a 120-second margin before removing its directory: the
+  room-capacity test closes with 64 live rooms, one locked receipt each, and
+  on a Windows runner the 10-second host default did not drain and left the
+  worker holding the lock file. The Job Object reaping test starts its leader
+  outside the temp dir, whose removal failed on the directory itself after
+  every assertion had passed. The release workflow fixture now reports bash's
+  exit code and output when the `gh` stub never ran, instead of a bare
+  missing `calls.jsonl`. The host unload budget is unchanged (#2069).
+
 ## 3.0.2 - 2026-10-11
 
 - **`ulw-work` keeps reference-only detail in its references.** The
