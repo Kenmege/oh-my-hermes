@@ -4456,11 +4456,16 @@ def _score_definition(
     )
 
 
+# Code, prose, and cleanup words. Prose is here because prose called AI slop is
+# the cleaner's (its prose lexicon), not frontend's: "my essay looks like ai
+# slop, make it better" dispatched frontend on its appearance phrase.
 _SLOP_CLEANER_CONTEXT_TOKENS = frozenset(
     {
         "module", "modules", "function", "functions", "class", "classes", "method", "methods",
         "file", "files", "code", "codebase", "readme", "docs", "docstring", "docstrings",
-        "clean", "simplify", "dedupe", "deduplicate", "prune", "tidy",
+        "article", "articles", "blog", "copy", "description", "email", "emails", "essay",
+        "essays", "letter", "letters", "message", "messages", "poem", "poems", "post", "posts",
+        "better", "clean", "dedupe", "deduplicate", "polish", "prune", "rewrite", "simplify", "tidy",
     }
 )
 # A UI surface named beside the slop word makes it frontend's restyle, so the

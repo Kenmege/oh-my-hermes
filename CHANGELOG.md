@@ -8,34 +8,36 @@ All notable changes will be documented here.
   slop`, `deslop review`, and the request-shaped `anti-slop pass`, `anti-slop
   review`, and `anti-slop sweep` reach the cleaner through the existing route
   hint: AI slop in a code directory and a no-edit deslop review dispatch it,
-  and an anti-slop pass asks first with the cleaner leading. The bare word
-  `anti-slop` is not a trigger, because as an adjective it names a stance or a
-  quality ("our anti-slop policy for pull requests", "the README is anti-slop
-  now") as often as a request; those stay quiet, and so do bare imperatives
-  such as "anti-slop the README", which ask as they did before. `anti`,
-  `anti-slop`, `slop`, `pass`, `review`, and `sweep` are held back from
-  trigger-token scoring (`slop` still counts as a description word, and the
-  lexical shortlist still reads the trigger text). A question about the word,
-  a subagent's quoted report, and a plain "review this PR" stay where they
-  were. `frontend` gains `slop ui` and the appearance phrases "looks like ai
-  slop", "feels like ai slop", and "screams ai slop", so a page, card,
+  and an anti-slop pass asks first, with the cleaner among the choices. The
+  bare word `anti-slop` is not a trigger, because as an adjective it names a
+  stance or a quality ("our anti-slop policy for pull requests", "the README
+  is anti-slop now") as often as a request; those stay quiet, and so do bare
+  imperatives such as "anti-slop the README", which ask as they did before.
+  `anti`, `anti-slop`, `slop`, `pass`, `review`, and `sweep` are held back
+  from trigger-token scoring (`slop` still counts as a description word, and
+  the lexical shortlist still reads the trigger text). A question about the
+  word, a subagent's quoted report, and a plain "review this PR" stay where
+  they were. `frontend` gains `slop ui` and the appearance phrases "looks like
+  ai slop", "feels like ai slop", and "screams ai slop", so a page, card,
   section, or component called AI slop keeps frontend first: it dispatches
   frontend or asks with frontend leading, unless a code unit (module,
   function, class, method, code) is named too, which puts the cleaner first.
   Beside a slop word and one of those appearance words, the cleaner earns up
   to two code and prose nouns (module, function, class, method, file, code,
-  codebase, README, docs) or cleanup verbs (clean, simplify, dedupe, prune)
-  back, so "this README looks like ai slop" asks first with the cleaner
-  leading; both skills still appear in that question, and the words alone earn
-  the cleaner nothing. A no-edit review mode inspects a drafted cleanup
-  against the six taxonomy categories and returns findings in the
-  `code-review` shape, handing fixes to a separate writer pass. A new
-  `references/ui-review-checklist.md` lists six UI review prompts as questions
-  a stated rationale closes, and each run closes with an `omh runtime record
-  --skill ai-slop-cleaner` row. `loop` may run an optional cleaner pass after
-  the judge passes, scoped to the cycle's `changed_files`, re-verified
-  afterwards, and reported as skipped or reverted rather than passed. Concepts
-  adapt `Yeachan-Heo/oh-my-claudecode` (MIT), reconstructed in OMH wording.
+  codebase, README, docs, essay, post, letter, message, email, description) or
+  cleanup and prose verbs (clean, simplify, dedupe, prune, polish, rewrite,
+  better) back, so "this README looks like ai slop" and "my essay looks like
+  ai slop, make it better" ask first instead of dispatching frontend; both
+  skills still appear in that question, and the words alone earn the cleaner
+  nothing. A no-edit review mode inspects a drafted cleanup against the six
+  taxonomy categories and returns findings in the `code-review` shape, handing
+  fixes to a separate writer pass. A new `references/ui-review-checklist.md`
+  lists six UI review prompts as questions a stated rationale closes, and each
+  run closes with an `omh runtime record --skill ai-slop-cleaner` row. `loop`
+  may run an optional cleaner pass after the judge passes, scoped to the
+  cycle's `changed_files`, re-verified afterwards, and reported as skipped or
+  reverted rather than passed. Concepts adapt `Yeachan-Heo/oh-my-claudecode`
+  (MIT), reconstructed in OMH wording.
 
 - **Facts survive compaction, and a new session hears what memory did since
   your last session.** The compaction brief asked the model to extract durable

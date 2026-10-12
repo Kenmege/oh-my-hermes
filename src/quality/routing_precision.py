@@ -3749,6 +3749,16 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
     ),
+    # A chat message called AI slop is prose, not a UI restyle: it must not
+    # dispatch frontend. The cleaner ties frontend here (13 each), so the case
+    # claims only that neither dispatches.
+    RoutingPrecisionCase(
+        "slack-message-feels-like-ai-slop-does-not-dispatch",
+        "A Slack message that feels like AI slop asks rather than dispatching frontend",
+        "this slack message feels like ai slop, polish it",
+        "answer_clarification",
+        "",
+    ),
     # An appearance word beside a code noun is not a slop request either:
     # without a slop word the cleaner's context words earn nothing.
     RoutingPrecisionCase(
@@ -8998,6 +9008,30 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "layout-module-looks-like-ai-slop-leads-with-slop-cleaner",
         "A layout module that looks like AI slop asks first with the cleaner leading",
         "the layout module looks like ai slop, clean it up",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "ai-slop-cleaner",
+    ),
+    # Prose called AI slop is the cleaner's (its prose lexicon), not a
+    # restyle: prose nouns and prose verbs (better, polish, rewrite) count
+    # as its context words, so frontend's appearance phrase no longer buys a
+    # dispatch on an essay or a PR description.
+    RoutingInterventionCase(
+        "essay-looks-like-ai-slop-leads-with-slop-cleaner",
+        "An essay that looks like AI slop asks first with the cleaner leading, not frontend",
+        "my essay looks like ai slop, make it better",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "ai-slop-cleaner",
+    ),
+    RoutingInterventionCase(
+        "pr-description-looks-like-ai-slop-leads-with-slop-cleaner",
+        "A PR description that looks like AI slop asks first with the cleaner leading",
+        "the PR description looks like ai slop, make it better",
         "clarify",
         "oh-my-hermes",
         "answer_clarification",
