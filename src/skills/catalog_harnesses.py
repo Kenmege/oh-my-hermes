@@ -217,7 +217,7 @@ _HARNESSES = [
             "Make goals, non-goals, decision drivers, options, risks, and test strategy explicit.",
             "Record at least one rejected option and why it lost before presenting the preferred path.",
             "Tie every acceptance criterion to a validation command, artifact, or explicit manual evidence gap.",
-            "Keep draft plans unapproved until a user or wrapper accepts them.",
+            "Keep draft plans unapproved until the user accepts; a wrapper must carry their answer.",
             "Prepare coding handoff guidance only after acceptance.",
         ),
         evidence_ladder=(

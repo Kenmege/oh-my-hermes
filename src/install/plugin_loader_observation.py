@@ -112,25 +112,38 @@ def observe_real_loader_registration(
     }
 
 
-def hermes_code_root(hermes_home: Path) -> Path:
+def resolve_hermes_code_root(hermes_home: Path) -> Path:
     """The Hermes checkout a home runs from: its own, else the Hermes root's.
 
     A profile home (``<root>/profiles/<name>``) carries no checkout of its own;
     the code tree, and the venv ``_find_hermes_python`` prefers, stay at the
     root. Falling back there keeps the probe's interpreter and code tree one
     install, so a healthy profile is not reported as a missing code tree.
+
+    A ``HERMES_PYTHON`` override names the interpreter, so its own tree
+    (``<tree>/venv/bin/python``) is the code root when it holds ``hermes_cli``;
+    otherwise the home decides, as without the override.
     """
+    override = _hermes_python_override()
+    if override is not None and len(override.parents) > 2:
+        tree = override.parents[2]
+        if (tree / "hermes_cli").is_dir():
+            return tree
     own = hermes_install_dir(hermes_home)
     if (own / "hermes_cli").is_dir():
         return own
     return hermes_install_dir(hermes_root(hermes_home))
 
 
-def _find_hermes_python() -> Path | None:
+def _hermes_python_override() -> Path | None:
     override = " ".join(os.environ.get("HERMES_PYTHON", "").split())
-    if override:
-        candidate = Path(override).expanduser()
-        return candidate if candidate.is_file() else None
+    return Path(override).expanduser() if override else None
+
+
+def _find_hermes_python() -> Path | None:
+    override = _hermes_python_override()
+    if override is not None:
+        return override if override.is_file() else None
     candidate = Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "python"
     if candidate.is_file():
         return candidate
@@ -183,4 +196,4 @@ def _not_observed(reason: str, *, detail: str = "") -> dict[str, Any]:
     }
 
 
-__all__ = ["hermes_code_root", "observe_real_loader_registration"]
+__all__ = ["observe_real_loader_registration", "resolve_hermes_code_root"]

@@ -73,7 +73,7 @@ Quality bar:
 
 - Make goals, non-goals, risks, acceptance criteria, and verification shape explicit.
 - Where the repository declares non-negotiable principles, load `references/project-constitution.md` and record the check: a plan conflicting with a MUST is resolved by changing the plan, never by reinterpreting the principle.
-- Keep draft plans unapproved until a user or wrapper accepts them.
+- Keep draft plans unapproved until the user accepts; a wrapper must carry their answer.
 - Only prepare coding handoff guidance after the plan is accepted.
 - When the plan describes code changes, add a `Review Focus` section listing at most 5 inputs or failure modes the requirements imply that no planned test covers, likeliest first, each with its expected behavior and the owning task that will add the test; an input the requirements do not mention must still leave the result intact, and when the check turns up nothing the section says it found none.
 - When the plan describes code changes, keep each step to a single action whose outcome can be checked - a named test and what it asserts, an exact signature and its file, or a command and the output that counts as passing; a step that leaves the choice open (`TBD`, `make it robust`) is a gap.

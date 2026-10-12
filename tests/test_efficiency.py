@@ -204,21 +204,19 @@ class EfficiencyContractTests(unittest.TestCase):
         # (src/maintenance/release.py) -- this is the coarser standing gate, not the
         # per-commit ratchet.
         # 68,000 -> 70,000: agent-ops-review is a core-profile skill and gained
-        # the three instrumentation-audit quality-bar rules (68,394 measured);
-        # the ladder itself is an on-demand reference outside this count.
+        # the three instrumentation-audit quality-bar rules; the ladder itself
+        # is an on-demand reference outside this count.
         # 70,000 -> 72,000: the turn-ending sentence on every skill's Runtime
-        # Evidence tail reaches the ten core bodies too (70,014 measured);
-        # the ceiling restores the ~2k headroom this gate carried.
+        # Evidence tail reaches the core bodies too; the ceiling restores the
+        # headroom this gate carried.
         # 72,000 -> 74,000: the tail sentence grew to carry the reply rule
-        # (user's words, host's voice, record terms stay in records); the
-        # ten core bodies measure 72,222.
+        # (user's words, host's voice, record terms stay in records).
         # 74,000 -> 76,000: the same sentence names what the persona owns
         # (reply language, tone, speech level, endings, progress updates) and
-        # the user's language as the fallback; the ten core bodies measure
-        # 74,815.
+        # the user's language as the fallback.
         # 76,000 -> 78,000: `plan` is a core body and now carries ralplan's
-        # acceptance-answer rule, one shared literal (#2067); the ten core
-        # bodies measure 76,401 and the ceiling restores ~1.6k headroom.
+        # acceptance-answer rule, one shared literal (#2067); the ceiling
+        # restores headroom.
         self.assertLess(core["skill_body"]["bytes"], 78_000)
         # 815,000 -> 825,000: one new installable body (`web-research`) plus the
         # sentence that split `best-practice-research`'s boundary in two. Set to

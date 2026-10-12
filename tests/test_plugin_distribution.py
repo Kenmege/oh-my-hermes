@@ -27,7 +27,7 @@ load_local_package()
 from omh.commands import setup as _setup_module
 from omh.config_adapter import external_dirs
 from omh.paths import resolve_paths
-from omh.install.plugin_loader_observation import hermes_code_root, observe_real_loader_registration
+from omh.install.plugin_loader_observation import observe_real_loader_registration, resolve_hermes_code_root
 from omh.plugin_pack import inspect_plugin_bundle
 from omh.install.plugin_pack import (
     PLUGIN_MANAGED_MANIFEST,
@@ -584,16 +584,30 @@ class PluginDistributionTests(unittest.TestCase):
             self.assertFalse(Path(seen["HERMES_HOME"]).exists())
 
     def test_hermes_code_root_falls_back_to_root_tree_for_a_profile_home(self) -> None:
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"HERMES_PYTHON": ""}):
             root = Path(tmp) / ".hermes"
             profile = root / "profiles" / "miku"
             profile.mkdir(parents=True)
             root_tree = _write_fake_hermes_code_tree(root / "hermes-agent", version="0.21.5")
 
-            self.assertEqual(hermes_code_root(profile), root_tree)
-            self.assertEqual(hermes_code_root(root), root_tree)
+            self.assertEqual(resolve_hermes_code_root(profile), root_tree)
+            self.assertEqual(resolve_hermes_code_root(root), root_tree)
             own_tree = _write_fake_hermes_code_tree(profile / "hermes-agent", version="0.21.5")
-            self.assertEqual(hermes_code_root(profile), own_tree)
+            self.assertEqual(resolve_hermes_code_root(profile), own_tree)
+
+    def test_hermes_code_root_follows_the_hermes_python_override_tree(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".hermes"
+            root.mkdir()
+            home_tree = _write_fake_hermes_code_tree(root / "hermes-agent", version="0.21.5")
+            other_tree = _write_fake_hermes_code_tree(Path(tmp) / "other-hermes", version="0.21.6")
+            bare_tree = Path(tmp) / "bare-python"
+
+            with mock.patch.dict(os.environ, {"HERMES_PYTHON": str(other_tree / "venv" / "bin" / "python")}):
+                self.assertEqual(resolve_hermes_code_root(root), other_tree)
+            # An override whose tree holds no Hermes checkout leaves the home to decide.
+            with mock.patch.dict(os.environ, {"HERMES_PYTHON": str(bare_tree / "venv" / "bin" / "python")}):
+                self.assertEqual(resolve_hermes_code_root(root), home_tree)
 
     # The probe's exact env carries no SYSTEMROOT, which Windows' interpreter needs.
     @requires_posix
@@ -701,7 +715,7 @@ class PluginDistributionTests(unittest.TestCase):
                 0,
             )
 
-            with mock.patch(
+            with mock.patch.dict(os.environ, {"HERMES_PYTHON": ""}), mock.patch(
                 "omh.maintenance.doctor.observe_real_loader_registration",
                 return_value={
                     "observed": False,

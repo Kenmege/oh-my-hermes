@@ -26,7 +26,7 @@ from __future__ import annotations
 import unittest
 
 from omh.skills.catalog import builtin_definitions
-from omh.skills.catalog_definitions import _PLAN_ACCEPTANCE_ANSWER_RULE
+from omh.skills.catalog_definitions import PLAN_ACCEPTANCE_ANSWER_RULE
 from omh.skills.packaging import builtin_skill_templates
 from omh.skills.render import agent_skill_templates, workflow_skill_from_definition
 
@@ -98,7 +98,7 @@ class ApprovalScopeContractTests(unittest.TestCase):
                 self.assertIn(token, body)
 
     def test_plan_hermes_and_portable_bodies_carry_the_ralplan_acceptance_literal(self) -> None:
-        rule = _flat(_PLAN_ACCEPTANCE_ANSWER_RULE)
+        rule = _flat(PLAN_ACCEPTANCE_ANSWER_RULE)
         bodies = {
             "plan hermes": _plan_hermes_body(),
             "plan portable": _plan_portable_body(),
@@ -113,7 +113,7 @@ class ApprovalScopeContractTests(unittest.TestCase):
                 self.assertIn(token, bodies["plan hermes"])
 
     def test_no_skill_besides_plan_and_ralplan_carries_the_acceptance_literal(self) -> None:
-        rule = _flat(_PLAN_ACCEPTANCE_ANSWER_RULE)
+        rule = _flat(PLAN_ACCEPTANCE_ANSWER_RULE)
         hermes = {item.name for item in builtin_skill_templates() if rule in _flat(item.content)}
         portable = {item.name for item in agent_skill_templates() if rule in _flat(item.content)}
         self.assertEqual(hermes, {"plan", "ralplan"})
