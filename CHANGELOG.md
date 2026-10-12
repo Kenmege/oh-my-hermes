@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Low-severity leftovers from the #2074–#2080 reviews are tidied.** The
+  doctor's loader probe now takes its Hermes code root from the
+  `HERMES_PYTHON` override's own tree when that tree holds `hermes_cli`, so
+  the interpreter and the code tree it imports come from one install; an
+  override tree without a checkout falls back to the home, as before. The
+  resolver is renamed `resolve_hermes_code_root` so it no longer shares a
+  name with the probe's parameter. `plan` and the `planning` harness now say a
+  wrapper's acceptance counts only when it carries the user's answer, and
+  `app-debugging` section 6 says the next fix may proceed while a pre-fix
+  probe stays not observed, with the probe left open in the record and the
+  fix under test counted as failed until the probe is observed, so the
+  three-fix stop still fires. The shared plan-acceptance rule is a public name,
+  the core-profile gate's history no longer quotes measured byte counts, and
+  one fixture continuation line is aligned (#2081).
+
 - **USER.md headroom now raises its own consolidation reason and demote
   rows.** The `headroom_below_floor` reason and the `<demote>` rows read
   MEMORY.md only, so a nearly full USER.md (1341 of 1375 characters on the

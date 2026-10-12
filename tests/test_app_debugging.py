@@ -142,7 +142,9 @@ class AppDebuggingCatalogTests(unittest.TestCase):
         for token in (
             "with the section-1 loop at the same run count",
             "cannot run on its own or its result is inconclusive",
-            "record it as not observed and leave the count unchanged until it is observed",
+            "record it as not observed. The next fix may proceed",
+            "the probe stays open in the record as not observed",
+            "until it is observed the fix under test counts toward the three as a failed fix",
             "is not counted as failed",
             "verified under section 7 once the reproduction passes",
         ):

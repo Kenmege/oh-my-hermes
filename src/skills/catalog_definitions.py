@@ -108,7 +108,7 @@ _RALPLAN_IDEAL_STATE_BAR = (
 # quality_bar, so both planning skills read one acceptance rule. Host-neutral on
 # purpose: the portable projection has no `omh hermes plan-accept` and no Hermes
 # `clarify` tool.
-_PLAN_ACCEPTANCE_ANSWER_RULE = (
+PLAN_ACCEPTANCE_ANSWER_RULE = (
     "Take plan acceptance only from the answer the user gave — the response status and value the question tool returns, or the user's own reply — never from the wording of the question you asked: when the acceptance question times out, is dismissed, or returns with no answer, the plan stays unaccepted, so record no acceptance, prepare no handoff, and start nothing; a missing answer is not a refusal either, so ask again later or report the plan as awaiting acceptance."
 )
 
@@ -6680,12 +6680,12 @@ _DEFINITIONS = [
         quality_bar=(
             "Make goals, non-goals, risks, acceptance criteria, and verification shape explicit.",
             "Where the repository declares non-negotiable principles, load `references/project-constitution.md` and record the check: a plan conflicting with a MUST is resolved by changing the plan, never by reinterpreting the principle.",
-            "Keep draft plans unapproved until a user or wrapper accepts them.",
+            "Keep draft plans unapproved until the user accepts; a wrapper must carry their answer.",
             "Only prepare coding handoff guidance after the plan is accepted.",
             "When the plan describes code changes, add a `Review Focus` section listing at most 5 inputs or failure modes the requirements imply that no planned test covers, likeliest first, each with its expected behavior and the owning task that will add the test; an input the requirements do not mention must still leave the result intact, and when the check turns up nothing the section says it found none.",
             "When the plan describes code changes, keep each step to a single action whose outcome can be checked - a named test and what it asserts, an exact signature and its file, or a command and the output that counts as passing; a step that leaves the choice open (`TBD`, `make it robust`) is a gap.",
             "When the plan describes code changes, run a proportion check before acceptance: if the plan text outgrows the code it leads to, or is mostly function bodies, implementation has leaked into it; reduce bodies to test names, assertions, and signatures.",
-            _PLAN_ACCEPTANCE_ANSWER_RULE,
+            PLAN_ACCEPTANCE_ANSWER_RULE,
             ENGINE_FIT_RECOMMENDATION_RULE,
         ),
         final_checklist=_CATEGORY_FINAL_CHECKLISTS["planning"]
@@ -6748,7 +6748,7 @@ _DEFINITIONS = [
             "Record unresolved tradeoffs and evidence gaps instead of flattening uncertainty.",
             "When plan-shaping evidence is missing — current external behavior, contested claims, or unstudied reference implementations — run the `research` workflow as a bounded in-plan stage (not an exhaustive deep-research run) before comparing options, record its dossier the way the `research` artifact contract requires, and consume it instead of planning on assumptions.",
             "Consume a recorded `research` dossier when one exists: plan options and rejected alternatives should cite its decision drivers and verified claims.",
-            _PLAN_ACCEPTANCE_ANSWER_RULE,
+            PLAN_ACCEPTANCE_ANSWER_RULE,
             "End with a selected executor/runtime handoff shape only after the plan is accepted.",
             ENGINE_FIT_RECOMMENDATION_RULE,
             "Do not implement directly from consensus planning.",
@@ -6822,7 +6822,7 @@ _DEFINITIONS = [
                 "Record unresolved tradeoffs and evidence gaps instead of flattening uncertainty.",
                 "When plan-shaping evidence is missing — current external behavior, contested claims, or unstudied reference implementations — run the `research` workflow as a bounded in-plan stage (not an exhaustive deep-research run) before comparing options, record its dossier the way the `research` artifact contract requires, and consume it instead of planning on assumptions.",
                 "Consume a recorded `research` dossier when one exists: plan options and rejected alternatives should cite its decision drivers and verified claims.",
-                _PLAN_ACCEPTANCE_ANSWER_RULE,
+                PLAN_ACCEPTANCE_ANSWER_RULE,
                 "End with a selected executor/runtime handoff shape only after the plan is accepted.",
                 "Plan acceptance approves the plan content, not execution: after acceptance, recommend the follow-on path that fits the work's shape — `ultrawork` durable checkpoints for progress that must survive sessions as a checkpointed ledger, `ultrawork` coordinated lanes for an accepted plan split into disjoint parallel lanes, `ultrawork` single-owner persistence for one already-scoped task with a single owner, `ultrawork` for one bounded delivery cycle, or a direct selected executor/runtime handoff for a single prepared coding change — state the fit reason in one line, and start it only after the user's explicit go-ahead.",
                 "Do not implement directly from consensus planning.",
