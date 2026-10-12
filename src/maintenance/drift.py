@@ -445,7 +445,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # appearance phrase, which the two-word cap keeps a clarify (it
             # dispatched uncapped); and a function that looks clean, which
             # names the cleaner once its slop-word gate is gone.
-            expected=452,
+            # The stance veto adds six: an anti-slop policy for pull requests,
+            # one that changes next week, one for code, a pull request check
+            # called too strict, a rule added to the pull request template,
+            # and guidelines called too strict. Each dispatched the cleaner
+            # once `pull`, `changes`, or `code` anchored it without the veto.
+            expected=458,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -555,7 +560,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # look like AI slop clarify with the cleaner leading (a code unit
             # beats a UI word), and anti-slop on "my pull request", "the
             # changes in this PR", and "this PR" each dispatch the cleaner.
-            expected=673,
+            # The stance veto adds two: "anti-slop the README" and "anti-slop
+            # the docs before release" dispatch the cleaner now that README and
+            # docs can anchor the phrase.
+            expected=675,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

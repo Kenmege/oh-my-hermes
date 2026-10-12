@@ -2314,19 +2314,22 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
         ),
     ),
     # `anti-slop` is also an adjective for a stance ("our README mentions an
-    # anti-slop policy", "is our docs anti-slop policy too strict?"), and both
-    # of those dispatched the cleaner. A cleanup request names the work (a
-    # pass, a review, a sweep) or what it runs on (code, a module, a diff, a
-    # path under src). README and docs are deliberately absent: they are what
-    # a policy is written in as often as what a cleanup runs on.
+    # anti-slop policy", "our anti-slop policy for pull requests"), and those
+    # dispatched the cleaner. A cleanup request names the work (a pass, a
+    # review, a sweep) or what it runs on (code, a module, a diff, a path
+    # under src, a pull request and its changes, the README or the docs). A
+    # stance noun beside the phrase vetoes every anchor
+    # (`EVERYDAY_SENSE_STANCE_VETOES`), which is what lets README, docs, and
+    # pull requests anchor at all: they are what a policy is written in or
+    # about as often as what a cleanup runs on.
     "ai-slop-cleaner": (
         ("anti-slop",),
         frozenset(
             {
-                "branch", "class", "classes", "clean", "cleanup", "code", "codebase", "commit",
-                "deslop", "diff", "directory", "file", "files", "folder", "function", "functions",
-                "changes", "method", "methods", "module", "modules", "pass", "pull", "refactor",
-                "repo", "review", "run", "src", "sweep",
+                "branch", "changes", "class", "classes", "clean", "cleanup", "code", "codebase",
+                "commit", "deslop", "diff", "directory", "docs", "file", "files", "folder",
+                "function", "functions", "method", "methods", "module", "modules", "pass", "pull",
+                "readme", "refactor", "repo", "review", "run", "src", "sweep",
             }
         ),
     ),
@@ -2339,11 +2342,25 @@ _EVERYDAY_SENSE_FILLER_TOKENS = frozenset(
 )
 
 
+# A stance noun says the phrase names a position, not work: "our anti-slop
+# policy for pull requests", "is the anti-slop pull request check too
+# strict?". Beside one, a skill's anchors do not count, so the phrase is
+# treated as unanchored. A wrong dispatch costs more than a missed one, so a
+# real request that also names a stance ("run an anti-slop check on the auth
+# module") loses the skill too; the person can still name it.
+EVERYDAY_SENSE_STANCE_VETOES: dict[str, frozenset[str]] = {
+    "ai-slop-cleaner": frozenset(
+        {"check", "checks", "guideline", "guidelines", "policies", "policy", "rule", "rules", "standard", "standards"}
+    ),
+}
+
+
 def everyday_sense_phrase_unanchored(skill: str, normalized_query: str) -> bool:
     """True when the skill's only claim on the message is an everyday-English phrase.
 
     See `EVERYDAY_SENSE_PHRASES`: the phrase is spoken, the message carries
-    other content, and none of that content is an anchor word of the skill.
+    other content, and none of that content is an anchor word of the skill,
+    or a stance word in `EVERYDAY_SENSE_STANCE_VETOES` vetoes the anchors.
     """
     entry = EVERYDAY_SENSE_PHRASES.get(skill)
     if entry is None:
@@ -2353,7 +2370,7 @@ def everyday_sense_phrase_unanchored(skill: str, normalized_query: str) -> bool:
     if not spoken:
         return False
     query_tokens = routing_tokens(normalized_query)
-    if query_tokens & anchors:
+    if query_tokens & anchors and not query_tokens & EVERYDAY_SENSE_STANCE_VETOES.get(skill, frozenset()):
         return False
     return bool(query_tokens - routing_tokens(" ".join(spoken)) - _EVERYDAY_SENSE_FILLER_TOKENS)
 

@@ -3606,7 +3606,9 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     # its own slop words (`_SLOP_CLEANER_CONTEXT_TOKENS`); without one these
     # stay where they were and never name the cleaner.
     # `anti-slop` as a stance, not a request: it counts only beside the
-    # cleaner's work or code words (`EVERYDAY_SENSE_PHRASES` in policy.py).
+    # cleaner's work or code words (`EVERYDAY_SENSE_PHRASES` in policy.py),
+    # and a stance noun such as `policy` vetoes even those, so README and docs
+    # anchor "anti-slop the README" while these stay quiet.
     RoutingPrecisionCase(
         "readme-anti-slop-policy-mention-does-not-name-slop-cleaner",
         "A README that mentions an anti-slop policy is not a cleanup request",
@@ -3619,6 +3621,58 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "docs-anti-slop-policy-question-does-not-name-slop-cleaner",
         "Asking whether an anti-slop policy is too strict is not a cleanup request",
         "is our docs anti-slop policy too strict?",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    # A stance noun (policy, rule, guideline, check, standard) vetoes the
+    # anti-slop anchors (`EVERYDAY_SENSE_STANCE_VETOES` in policy.py). Each
+    # anchor that can also carry a stance -- pull, changes, code, readme, docs
+    # -- has a sentence here that dispatched the cleaner without the veto.
+    RoutingPrecisionCase(
+        "anti-slop-policy-for-pull-requests-does-not-name-slop-cleaner",
+        "An anti-slop policy for pull requests is a stance, not a cleanup request",
+        "our anti-slop policy for pull requests",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "anti-slop-policy-changes-does-not-name-slop-cleaner",
+        "An anti-slop policy that changes next week is news, not a cleanup request",
+        "the anti-slop policy changes next week",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "anti-slop-policy-for-code-does-not-name-slop-cleaner",
+        "An anti-slop policy for code is a stance, not a cleanup request",
+        "our anti-slop policy for code",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "anti-slop-pull-request-check-question-does-not-name-slop-cleaner",
+        "Asking whether an anti-slop pull request check is too strict is not a cleanup request",
+        "is the anti-slop pull request check too strict?",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "anti-slop-rule-in-pr-template-does-not-name-slop-cleaner",
+        "An anti-slop rule added to a template is a report, not a cleanup request",
+        "we added an anti-slop rule to the pull request template",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "anti-slop-guidelines-question-does-not-name-slop-cleaner",
+        "Anti-slop guidelines called too strict are a stance, not a cleanup request",
+        "our anti-slop guidelines for pull requests are too strict",
         "answer_clarification",
         "",
         "ai-slop-cleaner",
@@ -8927,6 +8981,26 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "anti-slop-pr-changes-reaches-slop-cleaner",
         "Anti-slop on the changes in a PR reaches the cleaner",
         "anti-slop the changes in this PR",
+        "dispatch",
+        "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    # The imperative on prose: with stance nouns vetoing the anchors, README
+    # and docs can anchor `anti-slop` without the policy mentions dispatching.
+    RoutingInterventionCase(
+        "anti-slop-the-readme-reaches-slop-cleaner",
+        "Anti-slop on the README reaches the cleaner",
+        "anti-slop the README",
+        "dispatch",
+        "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    RoutingInterventionCase(
+        "anti-slop-the-docs-reaches-slop-cleaner",
+        "Anti-slop on the docs before a release reaches the cleaner",
+        "anti-slop the docs before release",
         "dispatch",
         "ai-slop-cleaner",
         "forward_plan_to_selected_workflow",
