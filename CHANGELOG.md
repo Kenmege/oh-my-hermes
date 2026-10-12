@@ -10,11 +10,12 @@ All notable changes will be documented here.
   the interpreter and the code tree it imports come from one install; an
   override tree without a checkout falls back to the home, as before. The
   resolver is renamed `resolve_hermes_code_root` so it no longer shares a
-  name with the probe's parameter. `plan` and `ralplan` now say a wrapper's
-  acceptance counts only when it carries the user's answer, and
+  name with the probe's parameter. `plan` and the `planning` harness now say a
+  wrapper's acceptance counts only when it carries the user's answer, and
   `app-debugging` section 6 says the next fix may proceed while a pre-fix
-  probe stays not observed, with the probe left open in the record and
-  counting neither way. The shared plan-acceptance rule is a public name,
+  probe stays not observed, with the probe left open in the record and the
+  fix under test counted as failed until the probe is observed, so the
+  three-fix stop still fires. The shared plan-acceptance rule is a public name,
   the core-profile gate's history no longer quotes measured byte counts, and
   one fixture continuation line is aligned (#2081).
 
