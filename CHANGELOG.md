@@ -5,22 +5,28 @@ All notable changes will be documented here.
 ## Unreleased
 
 - **`ai-slop-cleaner` reaches OMC parity without a second keyword hook.**
-  `anti-slop`, `AI slop`, and `deslop review` now dispatch the cleaner through
-  the existing route hint, with `anti`, `slop`, and `review` held back from
-  trigger-token scoring (`slop` still counts as a description word, and the
-  lexical shortlist still reads the trigger text); a question about the word,
-  a subagent's quoted report, and a plain "review this PR" stay where they
-  were, and UI slop stays with `frontend`, which gains `slop ui` and
-  appearance phrases such as "looks like ai slop". A no-edit review mode inspects a
-  drafted cleanup against the six taxonomy categories and returns findings in
-  the `code-review` shape, handing fixes to a separate writer pass. A new
-  `references/ui-review-checklist.md` lists six UI review prompts as questions
-  a stated rationale closes, and each run closes with an
-  `omh runtime record --skill ai-slop-cleaner` row. `loop` may run an optional
-  cleaner pass after the judge passes, scoped to the cycle's `changed_files`,
-  re-verified afterwards, and reported as skipped or reverted rather than
-  passed. Concepts adapt `Yeachan-Heo/oh-my-claudecode` (MIT), reconstructed
-  in OMH wording.
+  `anti-slop`, `AI slop`, and `deslop review` reach the cleaner through the
+  existing route hint: an anti-slop pass, AI slop in a code directory, and a
+  no-edit deslop review dispatch it. `anti`, `slop`, and `review` are held
+  back from trigger-token scoring (`slop` still counts as a description word,
+  and the lexical shortlist still reads the trigger text). A question about
+  the word, a subagent's quoted report, and a plain "review this PR" stay
+  where they were. `frontend` gains `slop ui` and the appearance phrases
+  "looks like ai slop", "feels like ai slop", and "screams ai slop", so a
+  page, card, or section called AI slop stays with it. Beside a slop word the
+  cleaner earns code and prose nouns (module, function, file, README, docs)
+  and cleanup verbs (clean, simplify, dedupe, prune) back, so "this README
+  looks like ai slop" asks first with the cleaner leading; both skills still
+  appear in that question, and the words alone earn the cleaner nothing. A
+  no-edit review mode inspects a drafted cleanup against the six taxonomy
+  categories and returns findings in the `code-review` shape, handing fixes to
+  a separate writer pass. A new `references/ui-review-checklist.md` lists six
+  UI review prompts as questions a stated rationale closes, and each run
+  closes with an `omh runtime record --skill ai-slop-cleaner` row. `loop` may
+  run an optional cleaner pass after the judge passes, scoped to the cycle's
+  `changed_files`, re-verified afterwards, and reported as skipped or reverted
+  rather than passed. Concepts adapt `Yeachan-Heo/oh-my-claudecode` (MIT),
+  reconstructed in OMH wording.
 
 - **Facts survive compaction, and a new session hears what memory did since
   your last session.** The compaction brief asked the model to extract durable

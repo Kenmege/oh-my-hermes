@@ -3602,16 +3602,32 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "ai-slop-cleaner",
     ),
-    # Accepted trade-off (owner, 2026-10-12): `frontend`'s appearance phrases
-    # ("feels like ai slop") also fit code, so this sentence clarifies with
-    # frontend leading the shortlist (9 vs the cleaner's 7). Both skills stay
-    # named, so no `forbidden_candidate`; the claim is that neither dispatches.
+    # The cleaner's code and prose nouns and cleanup verbs score only beside
+    # its own slop words (`_SLOP_CLEANER_CONTEXT_TOKENS`); without one these
+    # stay where they were and never name the cleaner.
     RoutingPrecisionCase(
-        "function-feels-like-ai-slop-stays-a-clarify",
-        "A code noun with an appearance phrase asks rather than dispatching either skill",
-        "this function feels like ai slop",
+        "module-load-failure-does-not-name-slop-cleaner",
+        "A module that fails to load is not a cleanup request",
+        "the module failed to load",
+        "answer_directly",
+        "direct_answer",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "clean-it-up-later-does-not-name-slop-cleaner",
+        "A deferred tidy-up with no slop word does not reach the cleaner",
+        "clean it up later",
         "answer_clarification",
         "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "simplify-function-alone-does-not-name-slop-cleaner",
+        "Simplifying a function without a slop word does not reach the cleaner",
+        "simplify this function",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
     ),
 )
 
@@ -8772,6 +8788,50 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "frontend",
         "prepare_frontend_handoff",
         "frontend_handoff",
+    ),
+    # Code and prose nouns beside a slop word put the cleaner back in the
+    # lead over frontend's appearance phrases. Both skills say a phrase of
+    # their own, so these stay a clarify with the cleaner first: the
+    # appearance phrase still names frontend, and a code noun alone does not
+    # settle that a restyle was not meant (owner decision, 2026-10-12).
+    RoutingInterventionCase(
+        "function-feels-like-ai-slop-leads-with-slop-cleaner",
+        "A function that feels like AI slop asks first, with the cleaner leading",
+        "this function feels like ai slop",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "ai-slop-cleaner",
+    ),
+    RoutingInterventionCase(
+        "module-looks-like-ai-slop-leads-with-slop-cleaner",
+        "A module that looks like AI slop, with a cleanup verb, leads with the cleaner",
+        "this module looks like ai slop, clean it up",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "ai-slop-cleaner",
+    ),
+    RoutingInterventionCase(
+        "readme-looks-like-ai-slop-leads-with-slop-cleaner",
+        "A README that looks like AI slop leads with the cleaner, not frontend",
+        "this README looks like ai slop",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "ai-slop-cleaner",
+    ),
+    RoutingInterventionCase(
+        "module-slop-simplify-preserving-behavior-reaches-slop-cleaner",
+        "A module called AI slop, to simplify without changing behavior, dispatches the cleaner",
+        "the auth module looks like ai slop, simplify it without changing behavior",
+        "dispatch",
+        "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
     ),
     RoutingInterventionCase(
         "hero-section-screams-ai-slop-keeps-frontend-leading",

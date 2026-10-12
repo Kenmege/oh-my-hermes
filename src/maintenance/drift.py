@@ -431,10 +431,13 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # plain "review this PR" that must not credit the review mode.
             # Their review adds one: anti-virus noise called slop in a log,
             # which names the cleaner as candidate once its hold-back is gone.
-            # The accepted appearance-phrase trade-off adds one: "this function
-            # feels like ai slop" must stay a clarify, dispatching neither
-            # `frontend` nor the cleaner.
-            expected=444,
+            # The accepted appearance-phrase trade-off added one ("this function
+            # feels like ai slop" stays a clarify); the code-cue change moves it
+            # to the intervention corpus with the cleaner leading, and adds
+            # three sentences that carry a code noun or cleanup verb with no
+            # slop word (a module that fails to load, "clean it up later",
+            # "simplify this function"), none of which may name the cleaner.
+            expected=446,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -533,7 +536,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # settings page that feels like AI slop (dispatch) and a hero
             # section that screams it (clarify led by frontend). Both went to
             # the cleaner without its hold-back.
-            expected=663,
+            # The code-cue change adds four: a function, a module with a
+            # cleanup verb, and a README that look like AI slop each clarify
+            # with the cleaner leading frontend's appearance phrase, and a
+            # module to simplify without changing behavior dispatches it.
+            expected=667,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

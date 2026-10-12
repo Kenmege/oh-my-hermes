@@ -3849,6 +3849,11 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "split",
             "text",
             "registry",
+            # The appearance phrases "looks like ai slop", "look like ai
+            # slop", "feels like ai slop", and "screams ai slop" put a
+            # restyle of a page or a section with frontend. Their words are
+            # everyday ("this looks good", "I feel like the build is slow"),
+            # so they score only as the whole phrase.
             "look",
             "looks",
             "feels",
@@ -3867,9 +3872,8 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # "the anti-virus flagged slop in the logs" named it as the candidate.
     # `review` is defensive rather than measured: it is `code-review`'s word,
     # and no sentence in the corpus moved when it was held back.
-    # The `frontend` entry above holds back `look`, `looks`, `feels`, `like`,
-    # and `screams` so its appearance phrases ("looks like ai slop") score
-    # only whole.
+    # Beside its own slop words the cleaner earns its code and prose nouns and
+    # cleanup verbs back; see `_SLOP_CLEANER_CONTEXT_TOKENS`.
     "ai-slop-cleaner": frozenset({"anti", "slop", "review"}),
 }
 
@@ -4240,6 +4244,13 @@ def _score_definition(
         trigger_token_matches -= {"index", "refresh", "stale", "갱신"}
     if definition.name == "external-connector-readiness" and not ecosystem_identity_connector_match:
         trigger_token_matches -= _ECOSYSTEM_IDENTITY_CONNECTOR_TRIGGER_NOISE
+    # The cleaner's own slop words earn its code and prose nouns and cleanup
+    # verbs (`_SLOP_CLEANER_CONTEXT_TOKENS`), so "this module looks like ai
+    # slop" leads with the cleaner while "this pricing card looks like ai
+    # slop" stays with frontend's appearance phrase. Without a slop word the
+    # nouns earn nothing: "the module failed to load" names no cleanup.
+    if definition.name == "ai-slop-cleaner" and query_tokens & {"slop", "deslop", "anti-slop"}:
+        trigger_token_matches |= query_tokens & _SLOP_CLEANER_CONTEXT_TOKENS
     # `production` is held back for production-audit (see
     # `_WHOLE_PHRASE_ONLY_TRIGGER_TOKENS`) and credited again only beside a
     # readiness or audit word ("production readiness audit").
@@ -4411,6 +4422,13 @@ def _score_definition(
     )
 
 
+_SLOP_CLEANER_CONTEXT_TOKENS = frozenset(
+    {
+        "module", "modules", "function", "functions", "class", "classes", "method", "methods",
+        "file", "files", "code", "codebase", "readme", "docs", "docstring", "docstrings",
+        "clean", "simplify", "dedupe", "deduplicate", "prune", "tidy",
+    }
+)
 _PRODUCTION_AUDIT_CONTEXT_TOKENS = frozenset(
     {"audit", "readiness", "ready", "launch", "preflight", "checklist", "go-live", "rollback"}
 )

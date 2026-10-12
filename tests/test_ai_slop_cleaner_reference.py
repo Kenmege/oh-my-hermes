@@ -10,14 +10,14 @@ from __future__ import annotations
 
 import unittest
 
-
-def _flat(text: str) -> str:
-    return " ".join(text.split())
-
 from omh.skills.catalog import builtin_definitions
 from omh.skills.packaging import builtin_skill_reference_templates
 from omh.skills.catalog_portable import PORTABLE_REFERENCE_PATHS
 from omh.skills.render import ai_slop_cleaner_reference_templates, ai_slop_ui_review_reference_templates
+
+
+def _flat(text: str) -> str:
+    return " ".join(text.split())
 
 
 class AiSlopCleanerReferenceTests(unittest.TestCase):
