@@ -74,10 +74,14 @@ from .memory_recall_support import (
     _string_list,
     normalized_summary_key,
 )
+from .awareness_delivery import _with_windows_retry
 from .memory_store_io import (
     _SAFE_REF,
     Clock,
     StoreLock,
+    assert_under_memory_root,
+    atomic_write_json,
+    read_project_memory_candidates,
     memory_capture_lock_path,
     memory_dir,
     memory_index_path,
@@ -239,6 +243,8 @@ def capture_project_memory_candidate(
     executor_perspective: str = "hermes",
     unresolved: bool = False,
     on_duplicate: str = "candidate",
+    correction_of: str = "",
+    correction_revision: int | None = None,
     clock: Clock = utc_now,
     lock: StoreLock = memory_store_lock,
 ) -> dict[str, object]:
@@ -385,6 +391,19 @@ def capture_project_memory_candidate(
         open_max_days=_cadence_value(policy, "open_max_days"),
         clock=clock,
     )
+    if correction_of:
+        # The model lane's correction marker: approving this candidate, now or
+        # after a review, supersedes the named record (see
+        # `_supersede_corrected_record_unlocked`). `derived_from` alone never
+        # does -- a rollup derives from records it must not replace.
+        if source != MODEL_CAPTURE_SOURCE or not _SAFE_REF.match(str(correction_of)) or str(correction_of) not in candidate["derived_from"]:
+            raise ValueError("correction_of is a model-capture marker naming a record in derived_from")
+        if not isinstance(correction_revision, int) or isinstance(correction_revision, bool) or correction_revision < 1:
+            raise ValueError("correction_of needs the corrected record's revision")
+        candidate["correction_of"] = str(correction_of)
+        # Pinned so a later approval supersedes only the revision the model
+        # read, never one rewritten in between.
+        candidate["correction_of_revision"] = correction_revision
     if parsed_principal is not None and (scope_kind == "user" or audience_principals):
         candidate["schema_version"] = "project_memory_candidate/v2"
         candidate["identity"] = build_memory_identity(
@@ -457,6 +476,7 @@ def capture_project_memory_candidate(
         write_memory_index(omh_home, lock=lock, clock=clock)
         auto_approved = False
         record: dict[str, object] = {}
+        supersession = None
         # force_review keeps derived aggregates (e.g. rollup episodes) on the
         # review path even under auto-safe: derived content is a curation act,
         # not a captured observation.
@@ -474,6 +494,7 @@ def capture_project_memory_candidate(
             )
             record = approved.get("record", {}) if isinstance(approved.get("record"), dict) else {}
             candidate = approved.get("candidate", candidate) if isinstance(approved.get("candidate"), dict) else candidate
+            supersession = approved.get("supersession")
             auto_approved = True
     review_reason = "" if auto_approved else _capture_review_reason(
         candidate, policy, duplicate_of=duplicate_of, relative_phrase=relative_phrase, force_review=force_review
@@ -487,6 +508,7 @@ def capture_project_memory_candidate(
         "policy": policy,
         "receipt_state": _capture_receipt_state(omh_home, record),
         **({"review_reason": review_reason} if review_reason else {}),
+        **({"supersession": supersession} if supersession else {}),
         "capture_receipt": {
             "schema_version": "memory_capture_receipt/v1",
             "subject_principal": candidate.get("identity", {}).get("subject_principal") if isinstance(candidate.get("identity"), dict) else None,
@@ -695,6 +717,10 @@ def approve_project_memory_candidate(
             raise FileNotFoundError(candidate_id)
         if expected_revision:
             _require_review_revision(candidate, expected_revision)
+        if str(candidate.get("status", "")) == "superseded":
+            # Its record was corrected away; approving it again would bring the
+            # corrected fact back beside its replacement.
+            raise ValueError(f"candidate {candidate_id} was superseded by a correction and cannot be approved again")
         # Fail closed on correction/restore candidates: their payload lives under
         # "replacement", so the plain path would mint a record with an empty
         # summary and revision 1 -- and that garbage record then blocks the real
@@ -740,6 +766,14 @@ def approve_project_memory_candidate(
         }
         write_project_memory_candidate_unlocked(omh_home, candidate)
         write_project_memory_review_decision(omh_home, review)
+        correction_of = str(candidate.get("correction_of", "") or "")
+        supersession = (
+            _supersede_corrected_record_unlocked(
+                omh_home, correction_of, record, stamp=approved_at, revision=candidate.get("correction_of_revision")
+            )
+            if correction_of and str(candidate.get("source", "")) == MODEL_CAPTURE_SOURCE
+            else None
+        )
         write_memory_index_unlocked(omh_home, updated_at=clock())
     return {
         "schema_version": PROJECT_MEMORY_REVIEW_RECORD_SCHEMA_VERSION,
@@ -747,8 +781,62 @@ def approve_project_memory_candidate(
         "candidate": candidate,
         "record": record,
         "review": review,
+        **({"supersession": supersession} if supersession else {}),
         "claim_boundary": "Approved project memory is prepared context only; it is not execution, review, CI, merge, or Hermes internal-memory evidence.",
     }
+
+
+def _supersede_corrected_record_unlocked(
+    omh_home: Path,
+    record_id: str,
+    successor: dict[str, object],
+    *,
+    stamp: str,
+    revision: object = None,
+) -> dict[str, str]:
+    """Retire the record a model correction replaces, inside the approval's store lock.
+
+    The old revision is written to ``history/<id>.r<revision>.json`` with
+    ``superseded_by`` naming the successor -- the operator correction's
+    history shape -- then leaves ``records/``, and the candidate that
+    produced it is flipped to ``superseded`` so it cannot be approved back.
+    A record already gone or already superseded is left alone and named.
+    """
+    if not _SAFE_REF.match(record_id):
+        return {"record_id": "", "state": "skipped", "reason": "record_id_invalid"}
+    source = memory_record_path(omh_home, record_id)
+    current, error = read_json_object_result(source)
+    if error or not isinstance(current, dict) or source.is_symlink():
+        return {"record_id": record_id, "state": "skipped", "reason": "record_absent"}
+    if current.get("superseded_by"):
+        return {"record_id": record_id, "state": "skipped", "reason": "already_superseded"}
+    if current.get("revision") != revision:
+        # The record was rewritten after the correction was written: the
+        # correction answers a revision that no longer stands.
+        return {"record_id": record_id, "state": "skipped", "reason": "revision_moved"}
+    revision = current.get("revision")
+    history = memory_dir(omh_home) / "history" / f"{record_id}.r{revision}.json"
+    assert_under_memory_root(omh_home, history)
+    if history.exists():
+        return {"record_id": record_id, "state": "skipped", "reason": "history_conflict"}
+    atomic_write_json(
+        history,
+        {
+            **current,
+            "superseded_by": {
+                "schema_version": str(successor.get("schema_version", "")),
+                "id": str(successor.get("record_id", "")),
+                "id_key": "record_id",
+                "revision": successor.get("revision"),
+                "scope": successor.get("scope"),
+            },
+        },
+    )
+    _with_windows_retry(source.unlink)
+    for candidate in read_project_memory_candidates(omh_home):
+        if str(candidate.get("record_id", "")) == record_id and str(candidate.get("status", "")) == "approved":
+            write_project_memory_candidate_unlocked(omh_home, {**candidate, "status": "superseded", "superseded_at": stamp})
+    return {"record_id": record_id, "state": "superseded", "history": history.name}
 
 
 def _find_duplicate_record(omh_home: Path, summary: str, *, now: datetime | None = None) -> str:

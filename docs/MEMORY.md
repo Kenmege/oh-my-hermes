@@ -415,6 +415,77 @@ absolute, non-duplicate capture goes straight to `approved_auto_safe` and then
 `replay_ready`. A tool result is what the capture operation observed on local
 disk; it is never evidence that a later session recalled or used the record.
 
+The rest of the loop is the model's too, with the operator verbs below kept
+for people. The tool does not decide what a session may reach; the memory
+provider does, when Hermes initializes it, and publishes that decision for
+the session at `.omh/memory/sessions/<session digest>.json`
+(`omh_memory_session_lens/v1`):
+
+- the record homes it reads (the repository's `.omh` first, then the OMH home);
+- the project identity behind the scope allowlist (user-global, the current
+  project, the current thread);
+- the principal context;
+- the shared-surface verdict: any `platform` other than `cli`, including the
+  TUI, gateways, cron, and subagents;
+- whether writes are enabled: off for the `cron` and `subagent` agent contexts.
+
+The tool reads the lens back by the `session_id` Hermes passes every tool
+call, and the provider removes it at `shutdown`.
+
+Hermes reassigns the session id mid-process. Compression, `/new`, `/reset`,
+`/resume` and `/branch` call `on_session_switch`, and the provider responds by
+withdrawing the old lens and publishing one under the new id. A compression
+(no `reset`) carries the session's seen and confirmed ids over; a genuinely
+new conversation starts empty; a `rewound` switch keeps the id and the lens.
+A turn-lease reload rotates the id without calling `on_session_switch`. For
+that case `prefetch`, which Hermes calls with the live `session_id` every
+turn, rebinds when the id it is given differs. It rebinds as a new
+conversation, with empty lists: from there a reload cannot be told apart from
+a `/new` racing the next turn, and carrying a finished conversation's lists
+into a new one is the worse mistake. Any switch drops the principal context
+bound to the old id until the next turn supplies one. The lens is withdrawn
+under its own lock, so a concurrent update cannot write the old one back.
+
+With no lens for the session (none published, unreadable, or no session id),
+the tool treats the session as a shared surface with no principal and no
+writes, which reaches no identity-unbound record. `recall` then says so,
+refusing with `session_lens_unavailable` and `lens_state: unbound` rather
+than reporting that nothing matched. A file rather than an in-process
+registry, because
+Hermes loads the provider and the tools as separate module copies and may run
+a user provider in its own host process.
+
+Within the lens a record must pass the selector's principal, scope, and
+Hermes-perspective gates, in that order. Lifecycle state (expired, stale,
+superseded) is not a lens gate: each action refuses what it cannot act on. A
+record that fails the lens is refused as `record_not_in_scope`, an unknown id
+as `record_not_found`, and any write in a session whose provider disabled
+writes as `writes_disabled` (`session_lens_unavailable` with no lens). None of
+them writes anything.
+
+| Action | Arguments | What it does | `status` values |
+| --- | --- | --- | --- |
+| `recall` | `query`, optional `limit` (1-6) | Runs the prefetch selector over the lens's homes, allowlist, and principal, so the order is the order a prefetch for that query serves. Returns record ids, summaries, types, tags, approval dates. Counts no use; the returned ids join the session's seen list. | `found`, `nothing_found`, `refused`, `error` |
+| `confirm` | `record_id` | `omh memory confirm`'s rewrite: the review deadline moves to the record's stored cadence (else the policy default, else 90 days), an open record is answered `resolved`, and `revalidation.confirmed_by` is `hermes_model`. Then one `used` count, at most once per record per session. A record with no review deadline (a durable capture) is not refused; only the use is counted. Expired, superseded, and source-changed records are refused like the operator verb. | `confirmed`, `refused`, `error` |
+| `correct` | `record_id`, `summary`, optional `tags` | Admits the corrected fact through the model capture gates (instruction-shaped refusal, safety, relative-time review). The new record keeps the old record's type, scope, retention, perspective, cited source, review cadence day count, TTL day count, and tags unless new tags are given. The candidate carries `derived_from: [<old id>]`, `correction_of: <old id>`, and `correction_of_revision`, the revision the model read. Whichever approval admits it supersedes the old record inside its store lock: auto-safe at once, or an operator's `omh memory approve` later. If the old record was rewritten to another revision in between, nothing is superseded and the approval reports `revision_moved`. The old revision moves to `history/<record-id>.r<revision>.json` with `superseded_by`, leaves `records/`, and its source candidate becomes `superseded`, which approval refuses. Until then the old record stays active. | `corrected`, `pending_review`, `already_remembered`, `refused`, `error` |
+| `retire` | `record_id`, `reason` (`no_longer_true`, `superseded`, `user_asked`) | `omh memory retire --apply`'s move for one record: `records/` to `archive/<record-id>.<stamp>.json`, a `retirements.jsonl` line carrying the reason, `retired_by: hermes_model`, and the `session_id`, and the source candidate flipped to `retired`. Never a delete; `omh memory restore` finds the archived revision and brings it back through review. Unlike the operator verb it may retire a record that has not expired, but only one this session was served or recalled; an unseen live record is refused as `record_not_seen_this_session`. That rule is not a defence against a model told to retire something, since a recall adds the id. What it guarantees is narrower: no blind retire of an id the conversation never saw, attribution to the session in the journal, and an archive that can always be restored. If a step after the archive move fails, the result says the record was archived. | `retired`, `refused`, `error` |
+
+`correct` and `retire` return a suggested `display_line` (`✏️ OMH corrected:
+…`, `🗄️ OMH retired: …`); the model tells the user in one short line in its
+own voice and language. Writes take the same store lock capture and approval
+take.
+
+Two deliberate differences from the operator `correct`:
+
+- The corrected fact is a new record id rather than revision N+1 of the old
+  one, because it goes through capture admission.
+- A correction held for review leaves the old record recallable rather than
+  removing it at once, so a pending correction never makes the fact vanish.
+
+`correction_of` is honoured only on a `hermes_model` candidate. `derived_from`
+alone never supersedes anything; a rollup derives from records it must not
+replace.
+
 The policy payload discloses `mode_source`. Setup records `explicit` only when
 the operator passed `--memory-mode`; anything else is `default` and follows
 the current default. A profile written before `mode_source` existed that
@@ -670,7 +741,10 @@ warning whose detail says the question died unanswered.
 
 ### Confirming, Correcting, or Retiring
 
-Answering the warning uses three verbs. `omh memory confirm <record-id>` is
+These are the operator verbs. In chat the model answers through
+`omh_memory(action="confirm" | "correct" | "retire")` with no operator step;
+see The model-driven loop for where its semantics differ. Answering the
+warning uses three verbs. `omh memory confirm <record-id>` is
 the lightweight one: it states the record is still true and resets its review
 deadline (default 90 days ahead, `--stale-after-days N`, or an absolute
 `--stale-after YYYY-MM-DD` for a date-pinned record), rewriting only
@@ -753,13 +827,30 @@ id stays, and the other is excluded as `duplicate_record` with `duplicate_of`
 naming the record kept. The collapse runs after eligibility and before
 ranking, so a duplicate never spends budget.
 
-Delivery usage counts only recall packs that were actually attached to a
-prepared handoff payload — building a pack is speculative, so a delegation
-that ends without a handoff, or rejects the pack, counts nothing. A CLI
-`omh memory recall` is an inspection and does not count. Counters live in
-`.omh/memory/usage.json` (`omh_memory_recall_usage/v1`); a missing or corrupt
-usage store reads as empty and never blocks recall, and usage is a ranking
-hint plus a retirement-report annotation, never an eligibility input.
+Two per-record counters exist, and only one of them is a ranking input:
+
+| Counter | File | Counts | Read by the ranking |
+| --- | --- | --- | --- |
+| `used` (`times_recalled`) | `.omh/memory/usage.json` (`omh_memory_recall_usage/v1`) | A recall pack actually attached to a prepared handoff payload, and an `omh_memory(action="confirm")` by the model, at most once per record per session, in the store that holds the record | Yes, through the saturating usage buckets |
+| `served` (`times_served`) | `.omh/memory/served.json` (`omh_memory_served/v1`), in the store that holds the record | A provider prefetch that returned a pack to Hermes: one count per record the pack rendered, once per render | Never |
+
+`used` stays narrow on purpose. Building a pack is speculative, so a
+delegation that ends without a handoff, or rejects the pack, counts nothing;
+a CLI `omh memory recall` and the tool's `recall` action are inspections and
+count nothing. In chat, `confirm` is how a record earns use: the model calls
+it when a record proved true or useful. `served` is kept apart because the
+ranking reading it would feed itself — a served record would rank higher and
+be served again. A queued re-render that no prefetch returns is not a serve,
+and one render returned to several API calls in a turn is one serve.
+
+A missing or corrupt counter file reads as empty and never blocks recall;
+both writers take the file's own lock for at most a second and drop the count
+rather than wait longer, and a rewrite keeps any key in an entry it does not
+own. Usage is a ranking hint plus a retirement-report annotation, never an
+eligibility input. `omh memory status` reports both under `recall_usage`
+(`used` and `served`, each with a record count, a total, and the ten highest
+counts) with `ranking_reads: "used"` and `store`, the one store whose counters
+it read: a project store and the user store each report their own.
 Retirement reports annotate each expired or expiring row with `recall_usage`
 so an operator can see whether a record was ever delivered before archiving
 it. Lifecycle receipts list `recall_usage_counters` under their exclusions: a
@@ -1155,8 +1246,9 @@ so the selector can classify exclusions at its own clock rather than losing
 those reasons to a wall-clock prefilter. Legacy v1 and records without a
 resolvable review don't enter that snapshot. Pending, rejected, superseded,
 expired, stale, foreign-scope, and foreign-perspective records never render.
-The provider's prefetch is not a handoff attachment and doesn't move recall
-usage counters.
+The provider's prefetch is not a handoff attachment and doesn't move the
+`used` counter the ranking reads; a prefetch that returns a pack counts
+`served` instead (see Recall Ranking and Delivery Usage).
 
 A `user-global/default` record is eligible across projects only within the
 stores the caller reads. Existing `project/default` records stay project

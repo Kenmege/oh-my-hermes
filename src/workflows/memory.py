@@ -34,6 +34,7 @@ from ..plugin_bundle.omh.memory_governance import (
     contains_credential_like_material,
 )
 from ..plugin_bundle.omh.memory_recall_support import normalized_summary_key
+from ..plugin_bundle.omh.memory_records import read_served_counts as _read_served_counts
 from ..plugin_bundle.omh.memory_recall_selector import (
     _evaluate_memory_artifact as _shared_evaluate_memory_artifact,
     effective_recall_configuration as effective_recall_configuration,
@@ -1015,10 +1016,43 @@ def build_project_memory_status(paths: OmhPaths) -> dict[str, object]:
         # Oldest first, bounded: the list a curation pass reads to ask the
         # three questions (resolved / still open / drop it) per record.
         "open_records": open_records[:_OPEN_RECORDS_STATUS_LIMIT],
+        "recall_usage": _recall_usage_status(paths),
         "last_prefetch": last_prefetch_status(paths, now=now),
         "hermes_memory": build_hermes_memory_bridge(paths),
         "redaction_policy": "metadata_only",
         "claim_boundary": "Project memory status is prepared local context only; it is not execution, review, CI, merge, or Hermes internal-memory evidence.",
+    }
+
+
+_RECALL_USAGE_STATUS_TOP = 10
+
+
+def _recall_usage_status(paths: OmhPaths) -> dict[str, object]:
+    """Both per-record counters side by side; only ``used`` is a ranking input.
+
+    ``used`` (``usage.json``) counts packs attached to a handoff and model
+    confirmations; ``served`` (``served.json``) counts packs a provider
+    prefetch returned to Hermes. Ranking reading ``served`` would loop: a
+    served record ranks higher and is served again.
+    """
+    def summary(entries: dict[str, dict[str, object]], key: str) -> dict[str, object]:
+        counts = {record_id: int(entry.get(key, 0) or 0) for record_id, entry in entries.items()}
+        counts = {record_id: count for record_id, count in counts.items() if count > 0}
+        top = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:_RECALL_USAGE_STATUS_TOP]
+        return {
+            "records": len(counts),
+            "total": sum(counts.values()),
+            "top": [{"record_id": record_id, "count": count} for record_id, count in top],
+        }
+
+    return {
+        # Each counter lives in the store that holds the record, so this is
+        # this store's count only; a project store and the user store each
+        # report their own.
+        "store": str(paths.memory_dir),
+        "used": summary(read_recall_usage(paths), "times_recalled"),
+        "served": summary(_read_served_counts(paths.omh_home), "times_served"),
+        "ranking_reads": "used",
     }
 
 

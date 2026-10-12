@@ -327,7 +327,7 @@ omh quality-evidence memory [--days 7 | --since 2026-10-01T00:00:00Z] [--json]
 | --- | --- |
 | `state_db.omh_memory` | `omh_memory` calls, per action (the result's `action`, else the call's `action` argument, mapped onto the tool's own actions) and per result `status`; `(no_result)` when no tool row was persisted |
 | `state_db.native_memory` | Hermes `memory` calls, per action (`action` or each `operations[].action`, mapped onto add/replace/remove/batch) and per outcome (the result's `success`) |
-| `state_db.sessions_with_omh_memory_write` | sessions with a `capture` that returned `remembered` or `pending_review`, or a `demote` that returned `demoted` or `pending_review`, per `sessions.source` |
+| `state_db.sessions_with_omh_memory_write` | sessions with a `capture` that returned `remembered` or `pending_review`, a `demote` that returned `demoted` or `pending_review`, a `correct` that returned `corrected` or `pending_review`, or a `retire` that returned `retired`, per `sessions.source`; a `confirm` is not counted, since its status cannot say whether it wrote anything |
 | `omh_store.records` | admitted records per `source` and admission state, and those whose `created_at` is in the window; a candidate awaiting review is not a record |
 | `omh_store.last_prefetch` | the `omh memory status` view of the last prefetch receipt |
 | `omh_store.consolidation_journal` | briefs raised in the window, per reason family (a reason up to its first `:`) |

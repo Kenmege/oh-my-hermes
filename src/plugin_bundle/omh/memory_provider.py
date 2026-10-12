@@ -104,10 +104,19 @@ from .memory_prefetch_receipt import (
     mark_prefetch_receipt_returned,
     prefetch_receipt_path,
 )
+from .memory_session_lens import (
+    note_session_records,
+    publish_session_lens,
+    read_session_lens,
+    session_lens_path,
+    withdraw_session_lens,
+)
 from .memory_records import (
+    PREFETCH_EXECUTOR_TARGET,
     prefetch_scope_allowlist,
     prepare_prefetch_records,
     read_record_store_snapshot,
+    record_served,
 )
 from .memory_open_reminders import (
     mark_open_reminder_asked,
@@ -206,6 +215,14 @@ class OmhMemoryProvider(_MemoryProviderBase):
         self._prepared_reminder: dict[str, object] | None = None
         self._served_reminder: dict[str, object] | None = None
         self._reminder_recorded = False
+        # The records the rendered pack carries, and whether their serve was
+        # counted. Same rule as the reminder: `prefetch` counts, a queued
+        # re-render does not, and one render served to several API calls in a
+        # turn is one serve. `served.json` is never a ranking input.
+        self._prepared_record_ids: tuple[str, ...] = ()
+        self._served_recorded = False
+        # The confinement last published for `omh_memory` (`_publish_lens`).
+        self._published_lens: dict[str, object] | None = None
         # Hermes hands a status callback to providers on the CLI surface only;
         # gateway platforms travel a different path and get the brief through
         # the pack instead. None means "say nothing here", never "fail".
@@ -246,6 +263,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
         self._served_pack, self._served_count, self._served_has_memory = "", 0, False
         self._prepared_receipt, self._served_receipt = None, None
         self._prepared_reminder, self._served_reminder, self._reminder_recorded = None, None, False
+        self._prepared_record_ids, self._served_recorded = (), False
         self._session_id = str(session_id or "")
         self._writes_enabled = str(kwargs.get("agent_context", "") or "") in _WRITING_CONTEXTS
         platform = str(kwargs.get("platform", "") or "")
@@ -262,6 +280,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
         self._project_home = _project_omh_home(cwd) if cwd is not None else None
         callback = kwargs.get("status_callback")
         self._status_callback = callback if callable(callback) else None
+        self._publish_lens(reset=True)
         self._pack = self.render_pack()
         # A session that died rather than ended -- a killed process, a closed
         # laptop, a lost gateway -- never reaches on_session_end, so nothing
@@ -281,6 +300,14 @@ class OmhMemoryProvider(_MemoryProviderBase):
         principal_context: dict[str, object] | None = None,
     ) -> str:
         with self._render_lock:
+            if session_id and str(session_id) != self._session_id and self._session_id:
+                # Hermes passes the live id every turn; a turn-lease reload
+                # rotates it without `on_session_switch`, and the tool finds
+                # its lens by that id. `reset`: from here a `/new` racing this
+                # prefetch is indistinguishable from a reload, and carrying the
+                # old conversation's seen/confirmed lists into a new one is
+                # the worse mistake.
+                self.on_session_switch(str(session_id), reset=True)
             if principal_context is not None:
                 supplied = parse_principal_context(
                     principal_context,
@@ -295,6 +322,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
                     # one either, which would make memory vanish for whoever
                     # arrived second.
                     self._principal_context = supplied
+                    self._publish_lens(reset=False)
                     self._pack = self.render_pack()
             if query and str(query) != self._query:
                 # A host that hands prefetch a query it never gave on_turn_start
@@ -337,7 +365,55 @@ class OmhMemoryProvider(_MemoryProviderBase):
                     open_reminders_path(self._omh_home),
                     lambda: mark_open_reminder_asked(self._omh_home, record_id, asked_at=_utc_now()),
                 )
+            if self._prepared_record_ids and not self._served_recorded:
+                self._served_recorded = True
+                self._record_served(self._prepared_record_ids)
             return self._pack
+
+    def _record_served(self, record_ids: tuple[str, ...]) -> None:
+        """One serve per record, in the home that holds it; and the ids this session has now seen."""
+        stamp = _utc_now()
+        homes = self._record_homes()
+        by_home: dict[Path, list[str]] = {}
+        for record_id in record_ids:
+            home = next((home for home in homes if (home / "memory" / "records" / f"{record_id}.json").is_file()), homes[-1])
+            by_home.setdefault(home, []).append(record_id)
+        for home, ids in by_home.items():
+            self._safely("served_usage", home / "memory" / "served.json", lambda home=home, ids=ids: record_served(home, ids, now=stamp))
+        if self._session_id:
+            session_id = self._session_id
+            self._safely(
+                "session_lens",
+                session_lens_path(self._omh_home, session_id),
+                lambda: note_session_records(self._omh_home, session_id, "seen", record_ids),
+            )
+
+    def _publish_lens(self, *, reset: bool) -> None:
+        """Publish this session's confinement for `omh_memory`, which cannot see the provider.
+
+        The tool reads it back by session id (`memory_session_lens`); without
+        it the tool treats the session as a shared surface with no writes.
+        Rewritten only when an input changed, or at a session start.
+        """
+        if not self._session_id:
+            return
+        lens = {
+            "shared_surface": self._shared_surface,
+            "writes_enabled": self._writes_enabled,
+            "principal_context": self._principal_context,
+            "homes": [str(home) for home in self._record_homes()],
+            "project_identity": resolve_project_identity(self._project_cwd).identity if self._project_cwd is not None else "",
+            "executor_target": PREFETCH_EXECUTOR_TARGET,
+        }
+        if not reset and lens == self._published_lens:
+            return
+        self._published_lens = lens
+        session_id = self._session_id
+        self._safely(
+            "session_lens",
+            session_lens_path(self._omh_home, session_id),
+            lambda: publish_session_lens(self._omh_home, session_id, {**lens, "published_at": _utc_now()}, reset=reset),
+        )
 
     def queue_prefetch(
         self,
@@ -406,10 +482,15 @@ class OmhMemoryProvider(_MemoryProviderBase):
     def shutdown(self) -> None:
         """Hermes is closing. Last chance to leave a brief behind."""
         self._evaluate_if_due("shutdown")
+        if self._session_id:
+            session_id = self._session_id
+            self._safely("session_lens", session_lens_path(self._omh_home, session_id), lambda: withdraw_session_lens(self._omh_home, session_id))
+        self._published_lens = None
         self._pack, self._pack_count, self._pack_has_memory = "", 0, False
         self._served_pack, self._served_count, self._served_has_memory = "", 0, False
         self._prepared_receipt, self._served_receipt = None, None
         self._prepared_reminder, self._served_reminder, self._reminder_recorded = None, None, False
+        self._prepared_record_ids, self._served_recorded = (), False
         self._principal_context = None
         self._profile_ref = ""
         self._turn_ref = ""
@@ -424,6 +505,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
             expected_session=self._session_id,
             expected_turn=self._turn_ref,
         )
+        self._publish_lens(reset=False)
         # Hermes calls this hook and then `prefetch` inside the SAME turn;
         # `queue_prefetch` only runs after the turn ends. The pack is therefore
         # re-rendered here, under this turn's principal and for this turn's
@@ -442,6 +524,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
             self._pack, self._pack_count, self._pack_has_memory = "", 0, False
             self._prepared_receipt = None
             self._prepared_reminder, self._reminder_recorded = None, False
+            self._prepared_record_ids, self._served_recorded = (), False
             if message:
                 self._query = str(message)
             if self._writes_enabled:
@@ -451,6 +534,48 @@ class OmhMemoryProvider(_MemoryProviderBase):
                 self._mutate_state(record_turn)
                 self._evaluate_if_due("turn")
             self._pack = self.render_pack()
+
+    def on_session_switch(
+        self,
+        new_session_id: str,
+        *,
+        parent_session_id: str = "",
+        reset: bool = False,
+        rewound: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        """Hermes rotated the session id without teardown; move the published lens with it.
+
+        Compression, `/new`, `/reset`, `/resume` and `/branch` reassign
+        ``session_id`` mid-process, and every later tool call carries the new
+        one, so a lens left under the old id makes the tool fail closed for the
+        rest of the conversation. The old lens is withdrawn and a new one
+        published. A compression (``reset`` false) is the same conversation, so
+        the records it saw and confirmed carry over; a genuinely new
+        conversation starts empty. ``rewound`` keeps the id: nothing to move.
+        """
+        new_id = str(new_session_id or "")
+        if rewound or not new_id or new_id == self._session_id:
+            return
+        with self._render_lock:
+            old_id = self._session_id
+            carried = None if reset or not old_id else read_session_lens(self._omh_home, old_id)
+            if old_id:
+                self._safely("session_lens", session_lens_path(self._omh_home, old_id), lambda: withdraw_session_lens(self._omh_home, old_id))
+            self._session_id = new_id
+            # The principal context was bound to the old session; the next
+            # turn supplies one for the new id.
+            self._principal_context = None
+            self._published_lens = None
+            self._publish_lens(reset=True)
+            if carried:
+                for key in ("seen", "confirmed"):
+                    ids = [str(item) for item in carried.get(key, [])]
+                    self._safely(
+                        "session_lens",
+                        session_lens_path(self._omh_home, new_id),
+                        lambda key=key, ids=ids: note_session_records(self._omh_home, new_id, key, ids),
+                    )
 
     def on_pre_compress(
         self,
@@ -584,6 +709,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # only prepares it; `prefetch` is what turns it into an ask.
         self._prepared_reminder = None
         self._reminder_recorded = False
+        self._prepared_record_ids, self._served_recorded = (), False
         if not self._shared_surface:
             self._prepared_reminder = select_open_reminder(
                 snapshot.records,
@@ -606,6 +732,8 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # The brief is a request, not a memory: it is served so the model can
         # consolidate in this turn, and it never moves the recall count.
         consolidation = render_consolidation_brief(read_latest_consolidation(self._omh_home), hermes_home=self._hermes_home)
+        # Last, so a render that raised leaves no ids beside the previous pack.
+        self._prepared_record_ids = tuple(str(item["record_id"]) for item in prepared.section.rendered)
         return "\n".join(part for part in (system, index, records, reminder, consolidation) if part)
 
     def _record_homes(self) -> tuple[Path, ...]:

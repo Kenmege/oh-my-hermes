@@ -53,6 +53,37 @@ All notable changes will be documented here.
   and how to address them, and `omh doctor` no longer describes a USER.md
   brief with MEMORY.md's numbers.
 
+- **The model maintains OMH memory itself: `omh_memory` gains `recall`,
+  `confirm`, `correct` and `retire`.** Capture was the model's only write;
+  correcting, confirming, retiring and searching records were operator CLI
+  verbs in a package the Hermes process cannot import. Each new action runs
+  in-process in the plugin bundle under the lens the memory provider
+  publishes for the session at `initialize` (homes, scope allowlist inputs,
+  principal context, shared-surface verdict, write permission), read back by
+  the tool call's `session_id` and moved when Hermes reassigns the id
+  (`on_session_switch` on compression, `/new`, `/reset`, `/resume`, `/branch`;
+  a rebind in `prefetch`, as a new conversation, for a turn-lease reload);
+  with no lens the tool
+  fails closed (shared surface, no writes, and `recall` says the lens is
+  unavailable), and cron and subagent sessions are refused as
+  `writes_disabled`. A record outside the lens is refused as
+  `record_not_in_scope` with nothing written. `recall` is the prefetch
+  selector, so it returns records in the order a prefetch serves them.
+  `confirm` renews the review deadline the way `omh memory confirm` does and
+  counts one use per record per session. `correct` links the corrected fact
+  to the old record (`derived_from`, `correction_of`), and the approval that
+  admits it -- auto-safe now or an operator's later -- moves the old revision
+  to `history/` with `superseded_by` and flips its candidate to `superseded`,
+  which approval refuses. `retire` archives with a journal line carrying a
+  closed reason (`no_longer_true`, `superseded`, `user_asked`) and the
+  session id, retires a live record only after the session was served or
+  recalled it, and never deletes. In chat the ranking's usage weight was
+  always zero, because only a handoff attachment counted; a prefetch that
+  returns a pack now counts `served` in the record's own store, which the
+  ranking never reads (it would feed itself), and a model `confirm` counts
+  `used` in `usage.json`, which it does. `omh memory status` shows both under
+  `recall_usage`. The plugin tool schema ratchet moves 63616 -> 64031.
+
 - **Two Windows CI cleanup flakes are fixed in their fixtures, and a third
   now reports its cause.** Each change follows the traceback in the failed
   run's log, and none changes product behaviour. The observer fixture closes
