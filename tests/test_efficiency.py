@@ -216,7 +216,10 @@ class EfficiencyContractTests(unittest.TestCase):
         # (reply language, tone, speech level, endings, progress updates) and
         # the user's language as the fallback; the ten core bodies measure
         # 74,815.
-        self.assertLess(core["skill_body"]["bytes"], 76_000)
+        # 76,000 -> 78,000: `plan` is a core body and now carries ralplan's
+        # acceptance-answer rule, one shared literal (#2067); the ten core
+        # bodies measure 76,401 and the ceiling restores ~1.6k headroom.
+        self.assertLess(core["skill_body"]["bytes"], 78_000)
         # 815,000 -> 825,000: one new installable body (`web-research`) plus the
         # sentence that split `best-practice-research`'s boundary in two. Set to
         # restore the ~10k headroom this gate is meant to carry rather than to

@@ -28,6 +28,14 @@ All notable changes will be documented here.
   resolve reports `hermes_version_unresolved`, both as not observed rather
   than as a mismatch (#2050).
 
+- **`plan` takes plan acceptance only from the user's answer, as `ralplan`
+  does.** Both planning skills now share one acceptance rule: acceptance
+  comes from the response status and value the question tool returns, or the
+  user's own reply, never from the wording of the question. An acceptance
+  question that times out, is dismissed, or returns with no answer leaves the
+  plan unaccepted, and is not read as a refusal either. The portable Agent
+  Skills `omh-plan` carries the same rule (#2067).
+
 ## 3.0.2 - 2026-10-11
 
 - **`ulw-work` keeps reference-only detail in its references.** The

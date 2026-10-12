@@ -8,6 +8,9 @@ recorded, no handoff is prepared, nothing starts. A missing answer is not a
 refusal either, the same split the typed runtime approval receipts keep
 between an unanswered confirmation and a `denied` one.
 
+`plan` reads the same rule as ralplan, one shared literal, so a timed-out
+acceptance question in either planning skill is not consent (issue #2067).
+
 `deep-interview` gains one sentence: a yes to an idea approves only the idea,
 and a later plan, handoff, or change is accepted at its own gate.
 
@@ -23,6 +26,7 @@ from __future__ import annotations
 import unittest
 
 from omh.skills.catalog import builtin_definitions
+from omh.skills.catalog_definitions import _PLAN_ACCEPTANCE_ANSWER_RULE
 from omh.skills.packaging import builtin_skill_templates
 from omh.skills.render import agent_skill_templates, workflow_skill_from_definition
 from omh.skills.validation import STRUCTURE_LINT_SKILL_BODY_BYTE_CEILING
@@ -63,6 +67,14 @@ def _ralplan_portable_body() -> str:
     return _flat(next(item.content for item in agent_skill_templates() if item.name == "ulw-plan"))
 
 
+def _plan_hermes_body() -> str:
+    return _flat(next(item.content for item in builtin_skill_templates() if item.name == "plan"))
+
+
+def _plan_portable_body() -> str:
+    return _flat(next(item.content for item in agent_skill_templates() if item.name == "omh-plan"))
+
+
 def _deep_interview_hermes_body() -> str:
     return _flat(next(item.content for item in builtin_skill_templates() if item.name == "deep-interview"))
 
@@ -86,17 +98,39 @@ class ApprovalScopeContractTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, body)
 
+    def test_plan_hermes_and_portable_bodies_carry_the_ralplan_acceptance_literal(self) -> None:
+        rule = _flat(_PLAN_ACCEPTANCE_ANSWER_RULE)
+        bodies = {
+            "plan hermes": _plan_hermes_body(),
+            "plan portable": _plan_portable_body(),
+            "ralplan hermes": _ralplan_hermes_body(),
+            "ralplan portable": _ralplan_portable_body(),
+        }
+        for label, body in bodies.items():
+            with self.subTest(body=label):
+                self.assertIn(rule, body)
+        for token in RALPLAN_NO_ANSWER_TOKENS + RALPLAN_ANSWER_RECORD_TOKENS:
+            with self.subTest(token=token):
+                self.assertIn(token, bodies["plan hermes"])
+
+    def test_no_skill_besides_plan_and_ralplan_carries_the_acceptance_literal(self) -> None:
+        rule = _flat(_PLAN_ACCEPTANCE_ANSWER_RULE)
+        hermes = {item.name for item in builtin_skill_templates() if rule in _flat(item.content)}
+        portable = {item.name for item in agent_skill_templates() if rule in _flat(item.content)}
+        self.assertEqual(hermes, {"plan", "ralplan"})
+        self.assertEqual(portable, {"omh-plan", "ulw-plan"})
+
     def test_deep_interview_hermes_body_carries_the_idea_approval_sentence_tokens(self) -> None:
         body = _deep_interview_hermes_body()
         for token in DEEP_INTERVIEW_TOKENS:
             with self.subTest(token=token):
                 self.assertIn(token, body)
 
-    def test_shipped_ralplan_and_deep_interview_bodies_stay_under_the_byte_ceiling(self) -> None:
+    def test_shipped_plan_ralplan_and_deep_interview_bodies_stay_under_the_byte_ceiling(self) -> None:
         # Measure the bodies that ship: `deep-interview` is the bespoke
         # `deep_interview_skill()` render, not the generic workflow render.
         shipped = {item.name: item.content for item in builtin_skill_templates()}
-        bodies = {name: shipped[name] for name in ("ralplan", "deep-interview")}
+        bodies = {name: shipped[name] for name in ("plan", "ralplan", "deep-interview")}
         for name, body in bodies.items():
             with self.subTest(skill=name):
                 self.assertLessEqual(len(body.encode("utf-8")), STRUCTURE_LINT_SKILL_BODY_BYTE_CEILING)
