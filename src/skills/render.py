@@ -5039,27 +5039,17 @@ The six-step ordering and per-step verify format adapt general, publicly documen
 
 
 # Tests-first delivery contract spliced into the ultrawork skill body before
-# `## Runtime Evidence`. Only the contract summary lives here; the evidence
-# ledger, forbidden moves, rationalization table, and attribution live in the
-# on-demand reference. The trailing blank line separates it from the marker.
+# `## Runtime Evidence`. Only the trigger, the iron law, and the pointer live
+# here; the observed red-before-green rule, forbidden moves, red-commit
+# checkpoint, and composition with the bundled superpowers skill live in the
+# on-demand reference, which keeps the shipped body under the per-skill
+# ceiling. The trailing blank line separates it from the marker.
 _TDD_DELIVERY_SECTION = (
     "## Tests-First Delivery\n"
     "\n"
     "When the user asks for TDD, tests first, or red-green delivery, every implementation lane runs "
-    "under the red/green contract. The iron law: no implementation line before a failing test - write "
-    "the test that describes the missing behavior, run it, and watch it fail for the right reason "
-    "before any implementation edit. A cycle is observed only when a failing (non-zero) run of the "
-    "lane's test command precedes a passing (zero) run, both with pasted output; a lane that shows "
-    "only green is `prepared_not_observed` on its red phase and does not count as tests-first "
-    "delivery. Never edit, delete, skip, xfail, or weaken a test to make it pass - a failing test "
-    "means fix the code - and a test that passes on its first run proves nothing: make it fail first. "
-    "Commit the failing test as a checkpoint before implementing, so any later test edit is "
-    "diff-visible.\n"
-    "\n"
-    "Hermes bundles the superpowers `test-driven-development` skill; when it is loaded, follow its "
-    "cycle - this contract reinforces it with OMH's evidence vocabulary and never overrides it. Load "
-    "`references/tdd-red-green.md` for the full discipline: the evidence ledger, forbidden moves, the "
-    "rationalization table, and the observed red-before-green rule.\n"
+    "under the red/green contract. The iron law: no implementation line before a failing test. Load "
+    "`references/tdd-red-green.md` before the first lane for the full discipline.\n"
     "\n"
 )
 

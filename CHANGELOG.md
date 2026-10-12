@@ -76,6 +76,20 @@ All notable changes will be documented here.
   prints nothing, so the diff base is defined on a tree whose only changes are
   untracked files (#2068).
 
+- **Tidy the #2049 chain's leftovers.** The model capture path passes
+  `MODEL_CAPTURE_SOURCE` instead of repeating its value, so the source the
+  admission screen keys on cannot drift from the one the tool sends.
+  `ReferenceRegions.masked_spans` is marked diagnostic (only tests read it),
+  the apostrophe set uses the `\u2019` escape the rest of the file uses, and
+  `skill_record.py` imports in order. The per-file body-ceiling checks for
+  `plan`, `ralplan`, `ultrawork`, and `deep-interview` are gone; one test now
+  holds the ceiling for every shipped SKILL.md body, including the bespoke
+  renders the structure-lint gate never measured:
+  `ulw-work` shipped 27,583 bytes, 483 over, and now ships 26,646 because its
+  tests-first section keeps the trigger, the iron law, and the pointer while
+  the rest stays in `references/tdd-red-green.md`, which already carried all
+  of it. The delegated-child route-hint tests move to their own file (#2070).
+
 ## 3.0.2 - 2026-10-11
 
 - **`ulw-work` keeps reference-only detail in its references.** The
