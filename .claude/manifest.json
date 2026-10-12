@@ -133,7 +133,7 @@
     "omh-paper-learning/SKILL.md": "f0db3970f7d6b79eb36f63e6fae2e7e3f1b293c3a041610f62b9bbf09ed84042",
     "omh-people-ops/SKILL.md": "f7eb49c19e0ed7ce96aaebfb423f1b9e5ed1a6ee2e592644a2d418d5f076e140",
     "omh-physical-device-readiness/SKILL.md": "e9e418d01d6975cff79ac46f8b09e94c346d7a77114a9f4620ba191ed555117d",
-    "omh-plan/SKILL.md": "af2118b8a42919a7f6998c4e1150a4d8ede386f30a838eeee2de73aa22f36946",
+    "omh-plan/SKILL.md": "011675316e8794ce869508e4f826723e2942b5335524f71c383504aced95bb4b",
     "omh-plan/references/project-constitution.md": "577991e718cf3e1d62ce93704d4a734f7e058a3d516b0722c636cc8cf7a519da",
     "omh-product-brief/SKILL.md": "85e18adc44db15f9ff177c4a69066eab223e586f85a1a2ded9896bf2a24a5f9b",
     "omh-product-discovery-validation/SKILL.md": "3f0d9fdc1d1179146d186885a51e74633606e751bd2a1c431966de3e2bf64097",
@@ -317,7 +317,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "d028cc667d89db4bcd6d8c2d5e24dad71777f96303db40a61b9ac1d5b10858b5",
+  "source_digest": "fa807c08d5305679d383bd08685cc68d6cd005ad5616ef48d49a8645f7d68a42",
   "targets": {
     "repo": ".claude/skills",
     "user": ".claude/skills"
