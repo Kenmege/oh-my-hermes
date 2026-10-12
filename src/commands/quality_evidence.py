@@ -46,6 +46,12 @@ from ..quality.session_file_activity import (
     build_session_file_activity,
     format_session_file_activity_summary,
 )
+from ..quality.memory_evidence import (
+    DEFAULT_WINDOW_DAYS as MEMORY_EVIDENCE_DEFAULT_DAYS,
+    MemoryEvidenceError,
+    build_memory_evidence,
+    format_memory_evidence_summary,
+)
 from ..quality.session_usage import SessionUsageError, build_session_usage, format_session_usage_summary
 from .common import _paths, _print_json, _wants_json
 
@@ -187,6 +193,52 @@ def cmd_quality_evidence_session_usage(args: argparse.Namespace) -> int:
         _print_json(payload)
     else:
         print(format_session_usage_summary(payload))
+    return 0
+
+
+def cmd_quality_evidence_memory(args: argparse.Namespace) -> int:
+    """Report what OMH memory did over a window, from structured local records only.
+
+    The only memory quality surface ran synthetic fixtures, so nothing said
+    whether memory was working on this machine. This counts ``omh_memory``
+    and native ``memory`` calls from Hermes' state.db (mode=ro), the OMH
+    store's records and journals, and native memory headroom. Exit 0 when
+    every source was read, even when every count is zero; exit 3 when a source
+    could not be read (see ``_memory_evidence_exit_code``). The payload is
+    printed either way, so the sources that were read still report.
+    """
+    try:
+        days = MEMORY_EVIDENCE_DEFAULT_DAYS if args.days is None else args.days
+        payload = build_memory_evidence(_paths(args), days=days, since=args.since)
+    except MemoryEvidenceError as exc:
+        raise OmhError(str(exc)) from exc
+    if _wants_json(args):
+        _print_json(payload)
+    else:
+        print(format_memory_evidence_summary(payload))
+    return _memory_evidence_exit_code(payload)
+
+
+def _memory_evidence_exit_code(payload: Any) -> int:
+    """0 only when every source was read; a zero count read from a source is still 0.
+
+    3 when a source could not be read -- a missing or unreadable state.db, an
+    unreadable store or journal, an unreadable memory file. Not 0, because a
+    count from a source nobody read is not a zero; not 2, which ``main``
+    returns for an OmhError (a malformed ``--days`` or ``--since``); not 1, because nothing
+    the command was asked to do failed -- it reported what it could see.
+
+    Generic failure signals -- a refused or interrupted run, or a unit
+    carrying a failure kind -- are never success either.
+    """
+    summary = payload if isinstance(payload, dict) else {}
+    if summary.get("refused") or summary.get("interrupted"):
+        return 1
+    units = summary.get("units")
+    if isinstance(units, list) and any(isinstance(unit, dict) and unit.get("failure_kind") for unit in units):
+        return 1
+    if summary.get("unread_sources"):
+        return 3
     return 0
 
 
@@ -475,6 +527,33 @@ def _add_quality_evidence_commands(sub: argparse._SubParsersAction[argparse.Argu
     )
     usage.add_argument("--json", action="store_true", help="Print the machine-readable session_usage/v1 payload.")
     usage.set_defaults(func=cmd_quality_evidence_session_usage)
+
+    memory = commands.add_parser(
+        "memory",
+        help="Report what OMH memory did on this machine over a window, from local records, read-only.",
+        description=(
+            "Count, over the last --days days (or since --since), omh_memory calls per action and result status and Hermes-native "
+            "memory calls per action from Hermes' state.db (mode=ro); OMH store records per source and admission "
+            "state, the last prefetch receipt, consolidation briefs per reason family and the native write journal; "
+            "and Hermes memory headroom per file. Counts come from structured fields only, never message text. "
+            "Pass the global --hermes-home to read a Hermes profile. Exit 3 names a source that could not be read. "
+            "Counts are local records, not evidence that recall improved an answer."
+        ),
+    )
+    memory_window = memory.add_mutually_exclusive_group()
+    memory_window.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        help=f"Window length in days, ending now (default {MEMORY_EVIDENCE_DEFAULT_DAYS}).",
+    )
+    memory_window.add_argument(
+        "--since",
+        default=None,
+        help="ISO-8601 timestamp or epoch seconds; records and calls older than this are excluded.",
+    )
+    memory.add_argument("--json", action="store_true", help="Print the machine-readable memory_evidence/v1 payload.")
+    memory.set_defaults(func=cmd_quality_evidence_memory)
 
     activity = commands.add_parser(
         "file-activity",

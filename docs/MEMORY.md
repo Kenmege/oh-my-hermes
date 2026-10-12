@@ -1432,6 +1432,33 @@ this surface is `prepared_not_observed` until that happens. The reverse move
 — promoting an approved OMH record up into L1 — remains the memory bridge's
 `promotable` surface (`omh memory status`).
 
+### Measuring memory on your machine
+
+`omh quality-evidence memory` counts what OMH memory did over a window, from
+local records only:
+
+```sh
+omh quality-evidence memory [--days 7 | --since 2026-10-01T00:00:00Z] [--json]
+omh --hermes-home ~/.hermes/profiles/<name> quality-evidence memory --json
+```
+
+It reads Hermes' `state.db` read-only (`omh_memory` calls per action and
+result status, native `memory` calls per action and outcome, sessions with an
+OMH memory write), the OMH store (admitted records per `source` and admission
+state -- a candidate awaiting review is not a record -- records created in the
+window, the last prefetch receipt, consolidation briefs per reason family, the
+write journal's `removed_entry_demoted` counts), and Hermes memory headroom per
+file. The headline lines are computed from those counts: facts remembered,
+Hermes entries OMH stored a verified copy of (a demote alone removes nothing
+from Hermes memory), and native entries freed after a demotion. Each names its
+window and the home its count came from. Every count comes from a structured
+field, never message text. A profile has its own `state.db` and OMH
+home; the payload's `homes` names the pair that was read. A source that could
+not be read exits 3 and its headline says "not observed" rather than zero. The
+counts are local records: they do not show that a recalled memory improved an
+answer. [Harness Quality](HARNESS_QUALITY.md#memory-evidence) has the counting
+rules.
+
 ## Retrieval Regression Suite
 
 Record validity and retrieval quality are different questions. `omh memory

@@ -908,7 +908,7 @@ def _open_record_rows(paths: OmhPaths, records: list[dict[str, Any]], *, now: da
     return [row for _since, _record_id, row in rows]
 
 
-def _last_prefetch_status(paths: OmhPaths, *, now: datetime) -> dict[str, object]:
+def last_prefetch_status(paths: OmhPaths, *, now: datetime) -> dict[str, object]:
     """Whether the provider has ever handed a pack to Hermes from this home.
 
     The store counts above say what COULD be recalled; this says what the
@@ -1015,7 +1015,7 @@ def build_project_memory_status(paths: OmhPaths) -> dict[str, object]:
         # Oldest first, bounded: the list a curation pass reads to ask the
         # three questions (resolved / still open / drop it) per record.
         "open_records": open_records[:_OPEN_RECORDS_STATUS_LIMIT],
-        "last_prefetch": _last_prefetch_status(paths, now=now),
+        "last_prefetch": last_prefetch_status(paths, now=now),
         "hermes_memory": build_hermes_memory_bridge(paths),
         "redaction_policy": "metadata_only",
         "claim_boundary": "Project memory status is prepared local context only; it is not execution, review, CI, merge, or Hermes internal-memory evidence.",
