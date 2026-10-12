@@ -58,6 +58,14 @@ DISGUISED_INSTRUCTIONS = (
     (unicodedata.normalize("NFD", KOREAN_REQUEST), "하세요"),
     ("You\u200b must rerun the docs gates.", "you must"),
     ("실행하\u200d세요.", "하세요"),
+    # Emoji ending in a variation selector or a keycap mark (#2068).
+    ("실행하세요 ❤️", "하세요"),
+    ("실행하세요 ☺️", "하세요"),
+    ("실행하세요 ☺\ufe0e", "하세요"),
+    ("실행하세요 #️⃣", "하세요"),
+    ("실행하세요 1️⃣", "하세요"),
+    # Already refused; pins that a selector never joins the zero-width strip set.
+    ("You\ufe0f must rerun the docs gates.", "you must"),
 )
 # Review repros that read as observations: an opening "your" token, a fixed
 # Korean greeting, and second-person words split across a clause boundary.
@@ -75,6 +83,10 @@ OBSERVATION_REPROS = (
     "Users wrote thank you; must ship by Friday per the decision.",
     "Ask what you need. To be safe the team pins versions.",
     "Thank you, have to wait?",
+    # A selector or keycap only extends the closer run; text after it still admits.
+    "실행하세요 ❤️ 버튼은 홈 화면에 있다.",
+    "1️⃣ 단계 안내문의 실행하세요1️⃣번 문구를 고쳤다.",
+    "릴리스 노트에는 ❤️ 이모지를 쓴다.",
 )
 OBSERVATIONS = (
     "The release gates run before every tag.",
