@@ -11,9 +11,9 @@ follow-up authority rule in force.
 
 `ultrawork` already has its one entry in `MECHANISM_POINTERS` (the
 file-ownership manifest), so the same contract is asserted here directly: the
-always-loaded body names this reference on exactly one line, the body stays
-under the per-skill byte ceiling that pointer was added against, and the
-reference records no date or volatile count.
+always-loaded body names this reference on exactly one line, and the
+reference records no date or volatile count. The per-skill byte ceiling is the
+structure-lint gate's to hold.
 
 Content is read from the producers, never from the generated `skills/` tree.
 """
@@ -23,7 +23,6 @@ from __future__ import annotations
 import unittest
 
 from omh.skills.packaging import builtin_skill_reference_templates
-from omh.skills.validation import STRUCTURE_LINT_SKILL_BODY_BYTE_CEILING
 from test_skill_reference_mechanisms import _DATE, _VOLATILE_COUNT, _bodies_by_name
 
 SKILL = "ultrawork"
@@ -153,14 +152,6 @@ class ExecutionRulingsReferenceTests(unittest.TestCase):
             len(naming),
             1,
             f"{SKILL} names {REFERENCE_PATH} on {len(naming)} lines; the pointer is one line",
-        )
-
-    def test_body_stays_under_the_per_skill_ceiling(self) -> None:
-        size = len(_bodies_by_name()[SKILL].encode("utf-8"))
-        self.assertLessEqual(
-            size,
-            STRUCTURE_LINT_SKILL_BODY_BYTE_CEILING,
-            f"{SKILL} body is {size} bytes; shorten the pointer before raising the ceiling",
         )
 
 

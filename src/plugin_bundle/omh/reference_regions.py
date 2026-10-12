@@ -79,7 +79,8 @@ class ReferenceRegions:
     references: tuple[str, ...]
     # Relay-header lines and URLs: removed from executable text only. Kept out
     # of `references` so a link or a relayed line never opens the fast path a
-    # quoted reference opens.
+    # quoted reference opens. Diagnostic: nothing in `src/` reads it; tests
+    # pin what the projection masked.
     masked_spans: tuple[str, ...] = ()
     # Block-quote lines: removed from executable text and read as diagnostic
     # context like `references`, but kept out of `references` so a pasted
@@ -146,7 +147,7 @@ def reference_regions(message: str) -> ReferenceRegions:
         if token.startswith("\\"):
             continue
         apostrophe = (
-            token in {"'", "’"}
+            token in {"'", "\u2019"}
             and index > 0
             and end < len(message)
             and message[index - 1].isalnum()

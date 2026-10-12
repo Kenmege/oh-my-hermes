@@ -40,7 +40,7 @@ from pathlib import Path
 
 from ..degradation import safe_error_type as _safe_error_type
 from ..hermes_memory import build_hermes_memory_bridge
-from ..memory_admission import capture_project_memory_candidate
+from ..memory_admission import MODEL_CAPTURE_SOURCE, capture_project_memory_candidate
 from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, observe_plugin_tool_call
 from ..memory_blocks import read_memory_block, read_memory_blocks, select_memory_blocks
 from ..memory_dreaming import read_dreaming_state, read_latest_consolidation
@@ -291,7 +291,7 @@ def _capture(args: dict, kwargs: dict) -> dict[str, object]:
             # The model's own loop has no reviewer who would act on a duplicate
             # candidate, so a duplicate names the existing record and writes nothing.
             on_duplicate="skip",
-            source="hermes_model",
+            source=MODEL_CAPTURE_SOURCE,
             # `user` maps to the user-global scope: it needs no acting-principal
             # context, and recall delivers it beside the project scope.
             scope_kind="project" if scope == "project" else "user-global",

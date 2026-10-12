@@ -7525,8 +7525,8 @@ _ULW_ENGINE_WORKFLOWS = frozenset(
 # retired ones fold into `ultrawork` and orchestrate the same way. The rest of
 # `_ULW_ENGINE_WORKFLOWS` (context, deep-interview, research, ultraperf,
 # ultraqa) does one bounded task a child is commonly delegated to run.
-# `tests/test_awareness_delivery.py` pins the split, so a new engine has to be
-# classified on one side.
+# `tests/test_delegated_child_route_hint.py` pins the split, so a new engine
+# has to be classified on one side.
 _ULW_ORCHESTRATING_ENGINES = frozenset(
     {
         "loop",

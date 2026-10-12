@@ -28,7 +28,6 @@ import unittest
 
 from omh.skills.catalog import builtin_definitions
 from omh.skills.render import agent_skill_templates, workflow_skill_from_definition
-from omh.skills.validation import STRUCTURE_LINT_SKILL_BODY_BYTE_CEILING
 
 PLAN_TOKENS = (
     "When the plan describes code changes",  # the scope: triage and hub requests are plans too
@@ -107,13 +106,6 @@ class PlanReviewFocusTests(unittest.TestCase):
             for token in tokens:
                 with self.subTest(skill=name, token=token):
                     self.assertIn(token, body)
-
-    def test_plan_and_ralplan_bodies_stay_under_the_byte_ceiling(self) -> None:
-        for name in ("plan", "ralplan"):
-            with self.subTest(skill=name):
-                self.assertLessEqual(
-                    len(_hermes_body(name).encode("utf-8")), STRUCTURE_LINT_SKILL_BODY_BYTE_CEILING
-                )
 
 
 if __name__ == "__main__":
