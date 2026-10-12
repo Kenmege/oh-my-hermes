@@ -16,6 +16,18 @@ All notable changes will be documented here.
   exit code and output when the `gh` stub never ran, instead of a bare
   missing `calls.jsonl`. The host unload budget is unchanged (#2069).
 
+- **`omh doctor`'s real-loader probe carries the Hermes code tree.** The
+  isolated probe behind `plugin_loader_observed` ran Hermes under a disposable
+  `HERMES_HOME` with nothing pointing at the checkout, so Hermes resolved its
+  own version as `unknown`, the plugin's `requires_hermes` gate failed closed,
+  and a healthy install reported a registration warning that no remediation
+  could clear. The doctor now passes the home's own `hermes-agent` checkout, or
+  the Hermes root's for a profile home that has none, and the probe puts it on
+  `PYTHONPATH`; `HERMES_HOME` stays disposable. A missing code tree
+  reports `hermes_code_tree_absent` and a version the host still cannot
+  resolve reports `hermes_version_unresolved`, both as not observed rather
+  than as a mismatch (#2050).
+
 ## 3.0.2 - 2026-10-11
 
 - **`ulw-work` keeps reference-only detail in its references.** The
