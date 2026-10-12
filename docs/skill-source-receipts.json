@@ -415,7 +415,7 @@
       "prior_checkpoint": null,
       "next_checkpoint": "8262f9f790eed35e6cbd66572b36c2acba18f679",
       "disposition": "adopted",
-      "decision_ref": "#2074",
+      "decision_ref": "#2090",
       "reviewed_on": "2026-10-12",
       "rationale": "Adopted anti-slop trigger phrases whose words earn no token credit alone, a no-edit review mode returning code-review findings, six UI review prompts, and a closing runtime record; a second keyword hook was rejected.",
       "supersedes": null
@@ -426,7 +426,7 @@
       "prior_checkpoint": null,
       "next_checkpoint": "8262f9f790eed35e6cbd66572b36c2acba18f679",
       "disposition": "adopted",
-      "decision_ref": "#2074",
+      "decision_ref": "#2090",
       "reviewed_on": "2026-10-12",
       "rationale": "Adopted a post-judge cleaner pass bounded to the cycle's changed files with re-verification after it, made optional rather than mandatory; a skipped or reverted pass is never reported as passed.",
       "supersedes": null
