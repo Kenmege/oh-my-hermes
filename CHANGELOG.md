@@ -4,6 +4,84 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Recall ranks by query-term coverage, capture hints at similar records,
+  and a declared subject keeps only the newest value.** Relevance used to count shared
+  tokens, so every shared word weighed alike. A message sharing "the plan
+  for" with an offsite note outranked the one record about the backup it
+  asked about, and "deployment" never reached a record that said "deploys".
+  - Relevance ranks first by query-term coverage: 2 per matched content
+    term plus 1 per matched tag, the old scorer's shape, so one stray word,
+    however rare, never outranks a topic word with its tag. Within equal
+    coverage it ranks by term frequency and length (BM25F saturation, no
+    idf): with idf, a stray word one record held outranked a topic word that
+    several records shared at the same coverage. Records still tied go to
+    recency and usage, as before. The fields are summary, tags (weight 2)
+    and record type; the type counts only beside a summary or tag hit.
+    Summary length is counted in whole multiples of the average.
+  - Closed lists split the query into content words and listed words, while
+    records keep every word:
+    - English function words and chat fillers (how, who, the, remind, quick,
+      question, ...);
+    - Korean bare verb endings and colloquial fillers (어케, 혹시), and runs
+      that start with an interrogative or with 알려/가르쳐 (언제쯤이야, 누가요,
+      알려주세요);
+    - Japanese and Chinese interrogatives and request fillers (どう, すれば,
+      ですか, 教えて, 怎么, 请问, 一下, ...), cut out before bigrams.
+
+    Listed words never make a record match or add coverage, but they order
+    records of equal coverage ("is there a quick start?" serves the quick
+    start guide above "Standups start at 9:30"). A listed word is content
+    when the raw query writes it in capitals or capitalized mid-sentence
+    ("WHO?", "ask Will"), and every listed word is content when no content
+    word longer than two Latin letters is left ("what is it?", "where do
+    thanks go?").
+  - Light English suffix stemming is applied alike to the query and the
+    records. A match made only by stemming counts as overlap only when some
+    record in the selection also matches unstemmed; otherwise the pack falls
+    back to the active tier with the stemmed match first.
+  - A temporal query ranks relevance in quarter bands below the best score
+    of its coverage, so recency orders comparable matches.
+  - Term contributions are integer millionths, so scores do not depend on
+    summation order or the host.
+  - CJK runs and bigrams, accent folding, numbers and compounds are
+    untouched. Pins, attention tiers, rank fusion and the tie-breaks are
+    unchanged.
+  - `omh_memory` capture and correct take an optional `subject` slug in the
+    closed shape `[a-z0-9][a-z0-9-]{0,47}`, refused as `invalid_subject`
+    otherwise. Recall treats the newest record per scope and subject as
+    current, among every non-retired record the lens admits, so an older
+    value never comes back when the newest expires or is archived. It names
+    the others `superseded_by_subject` with `superseded_by`. The prefetch
+    receipt lists those pairs under `selection.subject_superseded`, and recall
+    packs, delegation handoffs and runtime records carry and validate both
+    fields.
+  - A capture that goes through can report `subject_held_by` and
+    `similar_record_id` (with the held summary, at 60% token Jaccard). Both
+    are read inside its own scope, principal and audience, and only over
+    records the calling session's lens admits, so a shared surface never sees
+    a record its lens refuses. `recalls_now` and the `next_action` sentence
+    say which record recall actually serves, computed with the selector.
+    Neither hint holds or refuses the capture, and neither claims the facts
+    are the same.
+  - `correct` with a summary another record in the same confinement already
+    holds now supersedes the old record with that one (history,
+    `superseded_by`, `replacement: already_held`, the correction's subject
+    carried over). It does so only when that record recalls now and keeps
+    the fact at least as long; otherwise it reports `already_remembered` with
+    the reason.
+  - A record carrying `subject` is skipped (reported unreadable) by OMH
+    builds from before this change, until they update; nothing is rewritten.
+  - A recall pack no longer carries the memory policy's `store_dir`. The
+    attach scan read an absolute store path with two random directory names
+    (a CI temp root, a session-id directory) as one credential split across
+    path segments, so a legitimate pack could be refused at random when
+    attached to a coding handoff.
+  - The recall suite corpus (`omh-memory-retrieval-fixtures/v4`) adds
+    inflection, tag-only, long-versus-short, Korean, Chinese, Japanese and
+    mixed-language queries, common-word negative controls, subject
+    supersession, and both reviews of #2091's probe stores verbatim. Cases
+    whose answer is a known cost say so in their intent.
+
 - **`ai-slop-cleaner` reaches OMC parity without a second keyword hook.** `AI
   slop`, `deslop review`, and the request-shaped `anti-slop pass`, `anti-slop
   review`, and `anti-slop sweep` reach the cleaner through the existing route
