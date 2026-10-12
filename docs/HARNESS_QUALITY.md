@@ -313,6 +313,62 @@ not show that the model consumed them, that a call succeeded, that a skill's
 guidance was followed, or that a reply was correct, and it is not execution,
 review, CI, or merge evidence.
 
+## Memory Evidence
+
+`omh memory recall-suite` runs synthetic fixtures; it cannot say whether OMH
+memory did anything on a real machine. `omh quality-evidence memory` counts
+what four local records hold over a window ending now:
+
+```sh
+omh quality-evidence memory [--days 7 | --since 2026-10-01T00:00:00Z] [--json]
+```
+
+| Section | What it counts |
+| --- | --- |
+| `state_db.omh_memory` | `omh_memory` calls, per action (the result's `action`, else the call's `action` argument, mapped onto the tool's own actions) and per result `status`; `(no_result)` when no tool row was persisted |
+| `state_db.native_memory` | Hermes `memory` calls, per action (`action` or each `operations[].action`, mapped onto add/replace/remove/batch) and per outcome (the result's `success`) |
+| `state_db.sessions_with_omh_memory_write` | sessions with a `capture` that returned `remembered` or `pending_review`, or a `demote` that returned `demoted` or `pending_review`, per `sessions.source` |
+| `omh_store.records` | admitted records per `source` and admission state, and those whose `created_at` is in the window; a candidate awaiting review is not a record |
+| `omh_store.last_prefetch` | the `omh memory status` view of the last prefetch receipt |
+| `omh_store.consolidation_journal` | briefs raised in the window, per reason family (a reason up to its first `:`) |
+| `omh_store.write_journal` | native writes observed in the window per action, and removes per `removed_entry_demoted` |
+| `hermes_memory_files` | chars, cap, and headroom per Hermes memory file |
+
+Calls are distinct call ids per session, the first row by id deciding on both
+the assistant and the result side, and the window field is the message
+timestamp. Hermes' generic `tool_call` wrapper is unwrapped to its
+`{name, arguments}` or one-entry `calls` list; a longer `calls` list is one
+Hermes refuses for local tools, and a wrapped call whose tool row is named
+`tool_call` and carries an `error` never ran, so neither is counted. `--since` takes an ISO-8601 timestamp or epoch
+seconds, as in `session-usage`; `--days` (default 7) is the window ending now.
+
+An action the model wrote passes only when it is one of the tool's own
+actions, and a status, source or reason label only when it is a short
+identifier; anything else counts as `(other)`, so no message or record text
+reaches the payload.
+
+The `headline` is computed from the counts above: facts remembered, Hermes
+entries OMH stored a verified copy of (a `demoted` result leaves Hermes
+unchanged until Hermes' own tool removes the entry), and native entries freed
+after a demotion (the write journal's `removed_entry_demoted`). Each line names
+its window and the home its count came from. Pass the global `--hermes-home`
+to read a Hermes profile, whose OMH home resolves from its own config.
+
+Exit 0 when every source was read, including an empty one. Exit 3 when
+`state.db`, the store, a journal, the prefetch receipt, or a memory file could
+not be read, with the source named in `unread_sources`. Directories are
+probed by listing them, because `stat` succeeds on a directory nobody may
+list, so a refused one is not taken for an absent one. A journal line or a
+record file that does not parse also marks the store partial and is counted
+(`unparsed_lines`, `refused_files_by_reason`): the provider rewrites a journal
+whole and atomically, so a torn line is damage, which the next provider write
+clears. Exit 2 for a malformed `--days` or `--since`.
+
+The payload is `memory_evidence/v1`. Its claim boundary: the counts are local
+records of what was written, served, and freed, not evidence that a recalled
+memory was read or improved an answer, and not execution, review, CI, or merge
+evidence.
+
 ## Session File Activity
 
 Audience: operators, and agents preparing a review or a handoff. There is no

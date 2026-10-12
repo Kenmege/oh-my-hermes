@@ -4,6 +4,26 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh quality-evidence memory` reports what OMH memory did on this
+  machine.** The only memory quality surface was `omh memory recall-suite`,
+  which runs synthetic fixtures, so nobody could say from real traffic whether
+  memory was working. The new command counts, over a window (`--days`, default
+  7, or `--since` with an ISO-8601 timestamp or epoch seconds, as in
+  `session-usage`), `omh_memory` calls per action and result status and
+  Hermes-native `memory` calls per action and outcome from `state.db`
+  (read-only, Hermes' `tool_call` wrapper unwrapped), admitted OMH records per
+  source and admission state (candidates awaiting review are not records), the
+  last prefetch receipt, consolidation briefs per reason family, the native
+  write journal's `removed_entry_demoted` counts, and Hermes memory headroom
+  per file. A headline is computed from those counts: facts remembered, Hermes
+  entries OMH stored a verified copy of (no removal implied), and native
+  entries freed after a demotion. Each line names its window and the home its
+  count came from. Counts come from structured fields only, never message text.
+  A source it could not read exits 3 instead of reading as zero, including a
+  directory it may not list (probed by listing it: `Path.exists` reads a
+  refused directory as absent and `stat` succeeds on one) and a journal line or
+  record file that does not parse.
+
 - **Low-severity leftovers from the #2074–#2080 reviews are tidied.** The
   doctor's loader probe now takes its Hermes code root from the
   `HERMES_PYTHON` override's own tree when that tree holds `hermes_cli`, so
