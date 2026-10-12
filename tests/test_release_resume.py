@@ -9,6 +9,7 @@ import subprocess
 import sys
 import runpy
 from typing import Callable
+from unittest.mock import patch
 
 exercise_workflow: Callable[[Path, str], tuple[int, list[list[str]], str]] = runpy.run_path(
     str(Path(__file__).resolve().parents[1] / 'tools/qa/_release_workflow_fixture.py')
@@ -101,6 +102,14 @@ class ReleaseResumeTests(unittest.TestCase):
                 # Then
                 self.assertEqual(result.returncode, 2)
                 self.assertEqual(json.loads(result.stdout)['error'], 'invalid_body_json')
+
+    def test_reports_shell_output_when_block_never_reaches_gh(self):
+        # Given: a block that fails before its first gh call
+        block = {'workflow_block': lambda: 'echo block-start-failed >&2; exit 3'}
+        with TemporaryDirectory() as tmp, patch.dict(exercise_workflow.__globals__, block):
+            # When / Then
+            with self.assertRaisesRegex(FileNotFoundError, 'bash exited 3: block-start-failed'):
+                exercise_workflow(Path(tmp) / 'never', 'matching')
 
     def test_checks_body_before_upload_when_release_is_resumed(self):
         # Given

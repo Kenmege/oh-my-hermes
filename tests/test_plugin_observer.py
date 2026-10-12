@@ -42,8 +42,15 @@ class ObserverFixture(unittest.TestCase):
             try:
                 yield tmp
             finally:
-                for observer in self.observers:
-                    self.assertTrue(observer.close(), "owned worker did not drain")
+                # A fixture margin, not the host unload budget: the room-capacity
+                # test closes with 64 live rooms, one locked receipt each, and
+                # the 10s default is no more than one file_lock timeout. On a
+                # Windows runner it did not drain and the still-live worker
+                # pinned the lock file (#2069). 120s is headroom, not a
+                # measurement. Every observer is closed before the directory
+                # is removed.
+                drained = [observer.close(timeout=120) for observer in self.observers]
+                self.assertTrue(all(drained), "owned worker did not drain")
 
     def engine(self, root: Path, profile: str = "a"):
         spec = importlib.util.find_spec("omh.plugin_bundle.omh.activity_observer")
@@ -116,7 +123,7 @@ class ObserverTests(ObserverFixture):
                 module, observer, paths = self.engine(Path(tmp))  # Given
                 for index in indices:
                     observer.enqueue(self.event(module, index, "session_start" if index == 0 else "tool_call"))
-                observer.close()  # When: uncertain process boundary
+                self.assertTrue(observer.close(timeout=120))  # When: uncertain process boundary
                 receipt = read_session_activity_receipts(paths)[0]  # Then
                 self.assertFalse(receipt["boundary"]["final"])
                 self.assertEqual(receipt["boundary"]["kind"], "process_exit")

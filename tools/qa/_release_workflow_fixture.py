@@ -46,6 +46,12 @@ def exercise_workflow(root: Path, scenario: str) -> tuple[int, list[list[str]], 
         raise FileNotFoundError('workflow fixture requires bash')
     result = subprocess.run([shell, '-c', workflow_block()], cwd=ROOT, env=environment,
                             text=True, capture_output=True, timeout=60)
+    if not (root / 'calls.jsonl').exists():
+        # The block stopped before its first gh call. Report what the shell
+        # said rather than a bare missing file (#2069); an empty call list
+        # would let the refusal tests pass without the block having run.
+        raise FileNotFoundError(f'gh fixture never ran; bash exited {result.returncode}: '
+                           f'{result.stdout + result.stderr}')
     calls = [json.loads(line) for line in (root / 'calls.jsonl').read_text().splitlines()]
     return result.returncode, calls, result.stdout + result.stderr
 
