@@ -107,7 +107,7 @@ class AppDebuggingCatalogTests(unittest.TestCase):
             "hidden behind the first",
             "on the tree before the fix",
             "its hypothesis is not eliminated",
-            "a separate fault with its own count",
+            "a separate fault with its own reproduction record and count",
             "the fix moved the fault",
             "the root cause is open again",
             "observation that eliminated its hypothesis",
@@ -126,6 +126,35 @@ class AppDebuggingCatalogTests(unittest.TestCase):
                 self.assertNotIn(lead, body)
         self.assertNotIn("| One more fix", body)
         self.assertIsNone(re.search(r"\b(19|20)\d{2}-\d{2}-\d{2}\b", section))
+
+    def test_a_moved_fault_leaves_its_hypothesis_unresolved(self) -> None:
+        """#2057: only a contradicting observation eliminates, and a probe that did not run moves nothing."""
+
+        reference = next(
+            template.content
+            for template in builtin_skill_reference_templates()
+            if template.skill_name == SKILL and template.relative_path == REFERENCE_PATH
+        )
+        start = reference.index("## 6. After three failed fixes")
+        section = reference[start : reference.index("\n## ", start + 1)]
+        paragraphs = section.split("\n\n")
+        probe = next(paragraph for paragraph in paragraphs if "hidden behind the first" in paragraph)
+        for token in (
+            "with the section-1 loop at the same run count",
+            "cannot run on its own or its result is inconclusive",
+            "record it as not observed and leave the count unchanged until it is observed",
+            "is not counted as failed",
+            "verified under section 7 once the reproduction passes",
+        ):
+            with self.subTest(probe_token=token):
+                self.assertIn(token, probe)
+        self.assertNotIn("the fix holds", section)
+
+        recording = next(paragraph for paragraph in paragraphs if "the root cause is open again" in paragraph)
+        moved = recording.index("When the fault moved")
+        eliminated = recording.index("observation that eliminated its hypothesis")
+        self.assertIn("When the original symptom is still there", recording[:eliminated])
+        self.assertIn("record its hypothesis as unresolved, not eliminated", recording[moved:])
 
 
 class AppDebuggingRoutingTests(unittest.TestCase):
