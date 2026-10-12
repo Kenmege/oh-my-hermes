@@ -1284,9 +1284,12 @@ and duplicate-cluster counts, and what is requested), so the next
 non-trivial turn on any platform carries the request to the model. The
 section asks the model for three things: move durable facts, preferences, and
 decisions from the session into OMH with `omh_memory(action="capture")`, one
-bounded line each; when Hermes memory headroom is low, trim or merge its
-entries with Hermes' own memory tool; then tell the user in one short line
-what it remembered or trimmed, or that nothing needed changing. A brief is a
+bounded line each; when Hermes memory is nearly full (a
+`headroom_below_floor` reason), move the entries the brief names into OMH with
+`omh_memory(action="demote")` and remove them from Hermes (see
+[Demotion](#hermes-memory-tiering-demotion-l1--l2)), otherwise trim or merge
+with Hermes' own memory tool; then tell the user in one short line what it
+remembered or trimmed, or that nothing needed changing. A brief is a
 request, not recalled memory and not evidence of consolidation: it never moves
 the recall count or the recall line, and only the capture results and memory
 writes the model actually makes are observed.
@@ -1315,7 +1318,73 @@ Hermes-native memory files (`MEMORY.md`, `USER.md`) are L1: small,
 character-capped, and paid for on every turn. The OMH record store is L2:
 reviewed, governed, and not bound by that cap. When L1 fills, the usual move
 is deleting an entry — which loses the fact. Demotion is the other move: the
-content goes down into L2 and a short reference line stays in L1.
+content goes down into L2 and the L1 entry is removed (the model's path) or
+replaced by a short reference line (the operator's path).
+
+### The model-driven path
+
+Demotion runs without an operator step. When MEMORY.md falls below the
+headroom floor, the consolidation brief carries up to three `<demote>` rows:
+the largest entries, minus any the action would refuse (sensitive-looking,
+over the summary bound) or that already have a pending, rejected, or
+unrecognized candidate, or that USER.md also holds.
+
+```text
+<demote file="MEMORY.md" entry="<sha12>" chars="201">Fact 1: the bravo cluster rotates its bu…</demote>
+```
+
+On disk the brief names rows by file, sha256 prefix, and length only — the
+brief file and its journal never carry entry text. The preview is read from
+the live Hermes file when the section renders, and a row whose entry is gone
+is dropped. The brief offers no row the model may remove without calling the
+action: for each row the model calls
+`omh_memory(action="demote", entry_sha256=<sha12>)`, which decides live.
+
+The action reads the entry from the Hermes file itself (never the model's
+paraphrase), parsed the way Hermes parses it — split on the full `\n§\n`
+delimiter, BOM stripped — and refuses one that is not a whole Hermes entry.
+It checks any candidate already filed for exactly this entry first, then
+applies the same guards as `--stage` below, and captures the entry as a
+`user-global`, `durable` fact with `source="hermes_demotion"` and the same
+`source_ref` the operator path writes, so the two paths see each other's
+candidates. Hermes memory belongs to one Hermes home, not to a project, which
+is why the scope is user-global. Results:
+
+| `status` | Meaning |
+| --- | --- |
+| `demoted` | Auto-safe approved an intact copy; `remove_from_hermes` and `display_line` are present. |
+| `already_covered` | An approved, replay-eligible record already holds the entry exactly: the record captured under this entry's `source_ref` with the same text, or a durable user-global record with exactly the same text. `remove_from_hermes` and `display_line` are present. |
+| `pending_review` | A copy waits for review (new, or from an earlier call); keep the Hermes entry. |
+| `refused` | Nothing removable: `entry_not_found`, `entry_in_both_files`, `entry_ambiguous`, `entry_sha256_invalid`, `entry_not_whole`, `previously_rejected`, `candidate_status_unknown`, `redacted_cannot_demote`, `summary_bound_exceeded`, `content_not_intact`, `held_record_not_removable`, or an admission refusal. |
+| `error` | The store raised; nothing is confirmed moved. |
+
+Token similarity never authorizes a removal: a negation of the same fact
+shares nearly every token, and a project-scoped or volatile record does not
+come back wherever the Hermes entry would. An entry that is only similar to a
+record is captured as its own durable copy instead.
+
+Only `demoted` and `already_covered` carry
+`remove_from_hermes: {"target": "memory" | "user", "old_text": ...}`, and the
+model then removes the entry with Hermes' own `memory` tool (`action="remove"`)
+and confirms that the entry Hermes reports removed is the demoted one.
+`old_text` is the entry itself when it is at most 60 characters, else the
+first window of at most 60 characters that no other entry contains, and the
+whole entry only when no such window exists (an entry wholly inside another);
+it selects only that entry under Hermes' matching. It is the model's own
+memory, already in its system prompt, and is the one place the tool returns
+Hermes entry text. On this path the entry is removed, not replaced by a
+reference line: the line costs about 70 characters per entry, which is the
+space the move exists to free, and recall brings the fact back from OMH when a
+turn needs it. Hermes may stage or gate the removal itself; OMH never writes
+Hermes files. When Hermes reports the removed entry, the write journal records
+`removed_entry_demoted` — whether OMH holds that exact entry under its demotion
+`source_ref`. A Hermes `remove` retires the brief once no standing reason
+remains. Capture and demote results carry a `display_line`
+(`📌 OMH remembered: …`, `📦 OMH moved to long-term memory: …`, or
+`📦 OMH already holds: …` when nothing new was stored) as suggested wording;
+the model tells the user in one short line what was kept.
+
+### The operator path
 
 ```sh
 # Agent/operator only: plan which entries to move, biggest savings first.

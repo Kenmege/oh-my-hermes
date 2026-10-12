@@ -56,7 +56,15 @@ if RecallStatus is None:
         glyph: str = "🧠"
 
 
-from .hermes_memory import count_record_expiry, read_hermes_memory
+from .hermes_memory import (
+    entry_digest,
+    count_record_expiry,
+    demotion_origin_ref,
+    read_approved_records,
+    read_hermes_memory,
+)
+from .memory_admission import demotion_refusal_reason
+from .memory_store_io import read_project_memory_candidates
 from .memory_block_replay import MemoryBlockSelection
 from .memory_blocks import (
     DEFAULT_SYSTEM_RENDER_BUDGET_CHARS,
@@ -74,6 +82,9 @@ from .memory_dreaming import (
     clear_after_consolidation,
     consolidation_reasons,
     dreaming_state_path,
+    HEADROOM_DEMOTE_INSTRUCTION,
+    HEADROOM_TRIM_INSTRUCTION,
+    normalize_demotion_rows,
     read_dreaming_state,
     read_latest_consolidation,
     record_compaction,
@@ -113,6 +124,10 @@ PROVIDER_LABEL = "OMH"
 # plan cannot crowd out the memory it is asking the model to keep.
 CONSOLIDATION_RENDER_BUDGET_CHARS = 1600
 CONSOLIDATION_MAX_ITEMS = 6
+# Three moves of the largest entries free most of a
+# nearly-full file, and the rows have to share the render budget above.
+DEMOTION_BRIEF_MAX_ROWS = 3
+DEMOTION_PREVIEW_CHARS = 40
 WRITE_JOURNAL_SCHEMA_VERSION = "omh_memory_write_journal_entry/v1"
 JOURNAL_LIMIT = 32
 # Swallowed write failures kept on the provider for the receipt; the count
@@ -587,7 +602,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
         reminder = render_open_reminder(self._prepared_reminder) if self._prepared_reminder is not None else ""
         # The brief is a request, not a memory: it is served so the model can
         # consolidate in this turn, and it never moves the recall count.
-        consolidation = render_consolidation_brief(read_latest_consolidation(self._omh_home))
+        consolidation = render_consolidation_brief(read_latest_consolidation(self._omh_home), hermes_home=self._hermes_home)
         return "\n".join(part for part in (system, index, records, reminder, consolidation) if part)
 
     def _record_homes(self) -> tuple[Path, ...]:
@@ -636,6 +651,11 @@ class OmhMemoryProvider(_MemoryProviderBase):
             # Only a brief that actually fires was raised; stamping the not-due
             # inspection object gave it a raise time for a raise that never was.
             raised_at=_utc_now() if reasons else "",
+            demotion_rows=(
+                self._demotion_rows()
+                if any(reason.startswith("headroom_below_floor") for reason in reasons)
+                else []
+            ),
         )
         if reasons:
             self._write_handoff(handoff)
@@ -797,6 +817,48 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # as the rest of this consolidation decision.
         return [*reasons, *self._replay_reminder_reasons(selection)]
 
+    def _demotion_rows(self) -> list[dict[str, object]]:
+        """The MEMORY.md entries a nearly-full brief asks the model to demote, metadata only.
+
+        MEMORY.md alone, because it is the file whose headroom raised the
+        reason: a USER.md row would not clear it. Largest first, because the
+        first move should free the most. Rows the model's `demote` would
+        refuse -- redacted, over the summary bound, a pending, rejected or
+        unknown candidate for exactly that entry -- are left out, or the same
+        refused row would ride every brief. Whether an entry is already held
+        is not decided here: `demote` decides it live, under its own rule.
+
+        A failure costs the rows, never the brief: it is recorded like a
+        swallowed write and the brief goes out without them.
+        """
+        if self._hermes_home is None:
+            return []
+        try:
+            readings = {item.label: item for item in read_hermes_memory(self._hermes_home)}
+            reading = readings.get("MEMORY.md")
+            entries = sorted(dict.fromkeys(reading.entries if reading is not None else ()), key=lambda item: -len(item))
+            # `demote` refuses an entry that is also in USER.md (one digest,
+            # two files), so offering it would ride every brief unmoved.
+            in_user = set(readings["USER.md"].entries) if "USER.md" in readings else set()
+            parked = {
+                str(candidate.get("source_ref", ""))
+                for candidate in read_project_memory_candidates(self._omh_home)
+                if str(candidate.get("status", "")) != "approved"
+            }
+            rows: list[dict[str, object]] = []
+            for entry in entries:
+                if entry in in_user or demotion_refusal_reason(entry) or demotion_origin_ref("MEMORY.md", entry) in parked:
+                    continue
+                rows.append({"kind": "demote", "file": "MEMORY.md", "sha12": entry_digest(entry)[:12], "chars": len(entry)})
+                if len(rows) == DEMOTION_BRIEF_MAX_ROWS:
+                    break
+            return rows
+        except Exception as error:
+            self._write_failure_count += 1
+            self._write_failures.append({"op": "demotion_rows", "path": "MEMORY.md", "error": type(error).__name__})
+            del self._write_failures[:-WRITE_FAILURE_LIMIT]
+            return []
+
     def _memory_reading(self):
         if self._hermes_home is None:
             return None
@@ -846,8 +908,27 @@ class OmhMemoryProvider(_MemoryProviderBase):
         identity = _journal_record_identity((metadata or {}).get("record_identity"))
         if identity is not None:
             entry["record_identity"] = identity
+        removed = (metadata or {}).get("previous_content")
+        if action == "remove" and isinstance(removed, str) and removed:
+            # Hermes hands over the full entry its remove selected. Whether it
+            # is one OMH holds intact says if a demotion's remove hit its mark;
+            # absent when Hermes did not say what it removed.
+            entry["removed_entry_demoted"] = self._holds_demoted_copy(target, removed)
         path = self._omh_home / "memory" / "write_journal.jsonl"
         self._safely("write_journal", path, lambda: _append_bounded_json_line(path, entry))
+
+    def _holds_demoted_copy(self, target: str, removed: str) -> bool:
+        """True when an approved OMH record is the intact demoted copy of ``removed``."""
+        label = "USER.md" if str(target) == "user" else "MEMORY.md"
+        origin_ref = demotion_origin_ref(label, removed.strip())
+        try:
+            records = read_approved_records(self._omh_home)
+        except OSError:
+            return False
+        return any(
+            str(record.get("source_ref", "")) == origin_ref and str(record.get("summary", "")) == removed.strip()
+            for record in records
+        )
 
     def _native_write_scope_decision(
         self,
@@ -1079,7 +1160,7 @@ def _non_negative_int(value: object) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
 
-def render_consolidation_brief(brief: dict[str, Any] | None) -> str:
+def render_consolidation_brief(brief: dict[str, Any] | None, *, hermes_home: str | Path | None = None) -> str:
     """The due brief as one bounded prompt section; "" when nothing is due.
 
     Measured before this existed: 32 briefs in seven days on one machine,
@@ -1088,6 +1169,11 @@ def render_consolidation_brief(brief: dict[str, Any] | None) -> str:
     `memory_writes_observed` stayed 0 at every consolidation. The section asks
     for the consolidation and for one line to the user, which is the only
     channel that reaches every platform Hermes speaks through.
+
+    Demotion rows carry no entry text on disk. Each is resolved against the
+    live Hermes file here, at render time, for a short preview; a row whose
+    entry is gone (already removed) is dropped, and rows are the first thing
+    given up when the section would exceed its budget.
     """
     if not brief or not brief.get("due"):
         return ""
@@ -1104,15 +1190,47 @@ def render_consolidation_brief(brief: dict[str, Any] | None) -> str:
             f'  <hermes_memory entries="{_attr(plan.get("entry_count", ""))}" headroom_chars="{_attr(plan.get("headroom_chars", ""))}"'
             f' duplicate_clusters="{len(clusters)}" />'
         )
+    rows = _demotion_row_lines(brief.get("demotion_rows"), hermes_home)
     requested = [str(item) for item in brief.get("requested_of_executor", []) if isinstance(item, str)]
-    for item in requested[:CONSOLIDATION_MAX_ITEMS]:
-        lines.append(f"  <do>{_text(item)}</do>")
-    lines.append("  <do>Then tell the user in one short line what you remembered or trimmed, or that nothing needed changing.</do>")
-    lines.append("</memory_consolidation>")
-    text = "\n".join(lines)
+
+    def tail_lines(rendered: list[str]) -> list[str]:
+        # The demote instruction was chosen when the brief was raised; it is
+        # re-chosen here from the rows actually rendered, so a section whose
+        # rows were all dropped never says "for each demote row".
+        chosen = [HEADROOM_TRIM_INSTRUCTION if item == HEADROOM_DEMOTE_INSTRUCTION and not rendered else item for item in requested]
+        tail = [f"  <do>{_text(item)}</do>" for item in chosen[:CONSOLIDATION_MAX_ITEMS]]
+        tail.append("  <do>Then tell the user in one short line what you remembered or trimmed, or that nothing needed changing.</do>")
+        tail.append("</memory_consolidation>")
+        return tail
+
+    while rows and len("\n".join([*lines, *rows, *tail_lines(rows)])) > CONSOLIDATION_RENDER_BUDGET_CHARS:
+        rows.pop()
+    text = "\n".join([*lines, *rows, *tail_lines(rows)])
     if len(text) > CONSOLIDATION_RENDER_BUDGET_CHARS:
         text = text[: CONSOLIDATION_RENDER_BUDGET_CHARS - len("\n</memory_consolidation>")].rsplit("\n", 1)[0] + "\n</memory_consolidation>"
     return text
+
+
+def _demotion_row_lines(value: object, hermes_home: str | Path | None) -> list[str]:
+    """One `<demote>` line per row whose entry still exists."""
+    rows = normalize_demotion_rows(value)
+    if not rows or hermes_home is None:
+        return []
+    try:
+        entries = {reading.label: reading.entries for reading in read_hermes_memory(hermes_home)}
+    except OSError:
+        return []
+    lines = []
+    for row in rows:
+        entry = next((item for item in entries.get(str(row["file"]), ()) if entry_digest(item).startswith(str(row["sha12"]))), None)
+        if entry is None:
+            continue
+        flat = " ".join(entry.split())
+        preview = flat if len(flat) <= DEMOTION_PREVIEW_CHARS else flat[:DEMOTION_PREVIEW_CHARS] + "…"
+        lines.append(
+            f'  <{row["kind"]} file="{_attr(row["file"])}" entry="{row["sha12"]}" chars="{len(entry)}">{_text(preview)}</{row["kind"]}>'
+        )
+    return lines
 
 
 def consolidation_status_line(trigger: str, reasons: list[str]) -> str:

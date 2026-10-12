@@ -234,7 +234,17 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # where the tool appears, and is deferrable under the default tool search.
 # Owner decision 2026-10-06: approval is auto-safe, no operator step in the
 # loop. Re-derived from the producer.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 63261
+# 63261 -> 63616: `omh_memory` gains `demote` (355): the `entry_sha256`
+# parameter and one sentence saying the Hermes entry is removed with Hermes'
+# own memory tool only when the status is demoted or already_covered, plus one
+# saying to tell the user in one short line what was kept, with `display_line`
+# as suggested wording (no language instruction: the bot's persona owns its
+# reply language). Hermes memory sat nearly full on the owner machine while
+# demotion was operator-only and never ran; the consolidation brief now asks
+# the model to call this action, so the rule has to ride the schema the model
+# reads at the call. The primer and `pre_llm_call` are zero-slack. Owner
+# decision 2026-10-12. Re-derived from the producer.
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 63616
 # PRE_LLM_CALL_CONTEXT_CHAR_LIMIT, PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT: moved with
 # their history to src/plugin_bundle/omh/turn_budget.py; imported at the top of this file.
 # 340000 -> 349637: three capability-skill sections were added by the domain

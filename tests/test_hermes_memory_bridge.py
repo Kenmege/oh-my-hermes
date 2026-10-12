@@ -73,7 +73,16 @@ class EntryParsingTests(unittest.TestCase):
         entries = ("alpha", "beta", "gamma")
         # Hermes computes len(ENTRY_DELIMITER.join(entries)) before allowing a
         # write, so OMH's headroom is wrong unless it counts the delimiters too.
-        self.assertEqual(memory_char_count(entries), len("alpha§beta§gamma"))
+        self.assertEqual(memory_char_count(entries), len("alpha\n§\nbeta\n§\ngamma"))
+
+    def test_a_bare_section_sign_stays_inside_its_entry(self) -> None:
+        # Hermes' `_parse_entries` splits on the full "\n§\n"; a bare "§" in
+        # prose is part of the entry, never a boundary.
+        text = "Contract: see § 4.2 for renewal terms; renews June 1\n§\nOther fact here"
+        self.assertEqual(
+            parse_memory_entries(text),
+            ("Contract: see § 4.2 for renewal terms; renews June 1", "Other fact here"),
+        )
 
 
 class UnitTests(unittest.TestCase):
@@ -306,6 +315,17 @@ class BridgeTests(unittest.TestCase):
             promotable = build_hermes_memory_bridge(paths)["promotable"]
             self.assertEqual(len(promotable), 1)
             self.assertFalse(promotable[0]["fits_headroom"])
+
+    def test_the_fit_boundary_counts_hermes_full_delimiter(self) -> None:
+        # Headroom 30: a 27-char summary plus the 3-char "\n§\n" fits exactly,
+        # 28 does not. A 1-char delimiter would have admitted 28 and 29.
+        for length, fits in ((27, True), (28, False)):
+            with self.subTest(length=length), TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                paths = resolve_paths(root / ".omh", root / ".hermes")
+                self._approved(paths, "q" * length)
+                _write_memory(root / ".hermes", "x" * (DEFAULT_MEMORY_FILE_CAP_CHARS - 30))
+                self.assertIs(build_hermes_memory_bridge(paths)["promotable"][0]["fits_headroom"], fits)
 
     def test_hermes_entries_without_a_record_are_reported_as_metadata_only(self) -> None:
         with TemporaryDirectory() as tmp:

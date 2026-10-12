@@ -38,8 +38,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# Hermes' own entry separator; see ENTRY_DELIMITER in its memory tool.
-HERMES_MEMORY_DELIMITER = "§"
+# Hermes' own entry separator: ENTRY_DELIMITER in its memory store
+# (``tools/memory_tool_store.py``), which splits on the FULL "\n§\n" so a bare
+# "§" inside an entry survives, and joins with it when counting characters. A
+# bare-"§" split cut such an entry into fragments OMH treated as separate
+# entries -- and a demoted fragment let Hermes remove the whole entry.
+HERMES_MEMORY_DELIMITER = "\n§\n"
 
 # The caps Hermes falls back to, not the caps it necessarily enforces. Hermes
 # builds its memory tool with ``mem_config.get("memory_char_limit", 2200)`` and
@@ -145,7 +149,9 @@ def read_hermes_memory_file(
     if not path.exists():
         return HermesMemoryFile(label, path, False, 0, cap, (), 0.0, cap_source=cap_source)
     try:
-        text = path.read_text(encoding="utf-8")
+        # utf-8-sig like Hermes' reader: a BOM left by an editor must not stay
+        # glued to the first entry, or its digest matches nothing Hermes holds.
+        text = path.read_text(encoding="utf-8-sig")
         age_days = max(0.0, (moment - path.stat().st_mtime) / 86400.0)
     except (OSError, UnicodeDecodeError) as error:
         return HermesMemoryFile(label, path, True, 0, cap, (), 0.0, error=str(error), cap_source=cap_source)
@@ -527,8 +533,8 @@ def build_hermes_memory_bridge(omh_home: str | Path, hermes_home: str | Path) ->
             matched_entries.add(index)
             already_present.append(row)
             continue
-        # `+ 1` is the delimiter Hermes inserts before an appended entry.
-        row["fits_headroom"] = bool(memory_file) and len(summary) + 1 <= memory_file.headroom_chars
+        # The delimiter Hermes inserts before an appended entry is part of the cost.
+        row["fits_headroom"] = bool(memory_file) and len(summary) + len(HERMES_MEMORY_DELIMITER) <= memory_file.headroom_chars
         promotable.append(row)
     return {
         "schema_version": HERMES_MEMORY_BRIDGE_SCHEMA_VERSION,
@@ -700,7 +706,7 @@ def _already_covered_row(
         "file": label,
         "entry_index": index,
         "chars": len(entry),
-        "sha256": _entry_digest(entry),
+        "sha256": entry_digest(entry),
         "matched_record_id": record_id,
         "similarity": round(score, 2),
         "already_in_omh": True,
@@ -714,7 +720,7 @@ def _demotion_row(label: str, index: int, entry: str) -> dict[str, object]:
         "file": label,
         "entry_index": index,
         "chars": len(entry),
-        "sha256": _entry_digest(entry),
+        "sha256": entry_digest(entry),
         "entry_text": entry,
         "reference_line": reference_line,
         "reference_chars": len(reference_line),
@@ -727,16 +733,25 @@ def _demotion_row(label: str, index: int, entry: str) -> dict[str, object]:
 
 def demotion_reference_line(entry: str) -> str:
     """The line that stays in L1 once the entry's content lives in OMH."""
-    digest = _entry_digest(entry)
+    digest = entry_digest(entry)
     label_text = " ".join(entry.split())
     if len(label_text) > DEMOTION_REFERENCE_LABEL_CHARS:
         label_text = label_text[:DEMOTION_REFERENCE_LABEL_CHARS] + "…"
     return f"[omh#{digest[:12]}] {label_text}"
 
 
-def _entry_digest(entry: str) -> str:
+def entry_digest(entry: str) -> str:
     """The entry's identity in both stores: sha256 of its exact UTF-8 bytes."""
     return hashlib.sha256(entry.encode("utf-8")).hexdigest()
+
+
+def demotion_origin_ref(file_label: str, entry: str) -> str:
+    """The `source_ref` a demoted candidate carries back to its L1 entry.
+
+    The same string `omh memory demote --stage` writes, so the model's path and
+    the operator's path see each other's candidates and never stage one twice.
+    """
+    return f"hermes:{file_label}#{entry_digest(entry)[:16]}"
 
 
 def _demotion_file_summary(reading: HermesMemoryFile, rows: list[dict[str, object]]) -> dict[str, object]:

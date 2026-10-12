@@ -290,6 +290,44 @@ def normalize_record_expiry(value: Any) -> dict[str, int]:
     }
 
 
+# Replaces "trim or merge" when the file is nearly full. Trimming loses the
+# fact; demotion keeps it in OMH, where recall brings it back on demand.
+HEADROOM_DEMOTE_INSTRUCTION = (
+    'Hermes memory is nearly full. For each demote row call omh_memory(action="demote", '
+    "entry_sha256=<entry>), and remove the entry with Hermes' memory tool only when the status is "
+    "demoted or already_covered. Keep anything refused or pending_review."
+)
+HEADROOM_TRIM_INSTRUCTION = "When Hermes memory headroom is low, trim or merge its entries with Hermes' own memory tool."
+
+# Only `demote`: an entry is removed only on the action's own live verdict, so
+# the brief never offers a row the model could remove without calling it.
+DEMOTION_ROW_KINDS = ("demote",)
+
+
+def normalize_demotion_rows(value: Any) -> list[dict[str, object]]:
+    """Well-formed ``{kind, file, sha12, chars}`` rows; anything else is dropped.
+
+    Only those four keys survive, so no caller can put entry text on disk
+    through this field by passing a richer row.
+    """
+    rows: list[dict[str, object]] = []
+    for item in value if isinstance(value, list) else []:
+        if not isinstance(item, dict) or item.get("kind") not in DEMOTION_ROW_KINDS:
+            continue
+        sha12 = str(item.get("sha12", "") or "")
+        if len(sha12) != 12 or any(c not in "0123456789abcdef" for c in sha12):
+            continue
+        rows.append(
+            {
+                "kind": str(item["kind"]),
+                "file": str(item.get("file", "") or ""),
+                "sha12": sha12,
+                "chars": _non_negative_int(item.get("chars")),
+            }
+        )
+    return rows
+
+
 def build_consolidation_handoff(
     reasons: list[str],
     *,
@@ -301,13 +339,20 @@ def build_consolidation_handoff(
     messages_at_risk: int = 0,
     session_id: str = "",
     raised_at: str = "",
+    demotion_rows: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     """A prepared brief for whoever actually consolidates.
 
     OMH never executes this. It states what it observed and what it would like
     decided; only the model can act on it -- durable facts through
     `omh_memory(action="capture")`, Hermes memory through Hermes' own memory tool.
+
+    ``demotion_rows`` name Hermes entries to move into OMH when the file is
+    nearly full, by file, sha256 prefix and length only: this brief is written
+    to a world-readable file and journalled metadata-only, so entry text never
+    rides it. The renderer resolves a preview from the live Hermes file.
     """
+    rows = normalize_demotion_rows(demotion_rows)
     requested = [_TRIGGER_INSTRUCTIONS.get(trigger, "Review what is below and consolidate what is durable.")]
     if messages_at_risk:
         requested.append(f"{messages_at_risk} message(s) are in the buffer being compressed.")
@@ -317,7 +362,13 @@ def build_consolidation_handoff(
                 'Move durable facts, preferences, and decisions from this session into OMH with '
                 'omh_memory(action="capture"), one bounded line each.'
             ),
-            "When Hermes memory headroom is low, trim or merge its entries with Hermes' own memory tool.",
+            (
+                # Rows exist only under a headroom reason; with none to name,
+                # the instruction would point at nothing.
+                HEADROOM_DEMOTE_INSTRUCTION
+                if rows
+                else HEADROOM_TRIM_INSTRUCTION
+            ),
             "Leave anything you cannot source; an unsourced entry is not evidence it is wrong.",
         ]
     )
@@ -336,6 +387,7 @@ def build_consolidation_handoff(
         "record_expiry": normalize_record_expiry(record_expiry),
         "blocks": list(block_summaries or []),
         "eviction_plan": dict(eviction_plan or {}),
+        "demotion_rows": rows,
         "requested_of_executor": requested,
         "redaction_policy": "metadata_only",
         "claim_boundary": (
@@ -378,6 +430,7 @@ def read_latest_consolidation(omh_home: str | Path) -> dict[str, Any] | None:
     normalized["trigger"] = str(data.get("trigger", "") or "")
     normalized["raised_at"] = str(data.get("raised_at", "") or "")
     normalized["record_expiry"] = normalize_record_expiry(data.get("record_expiry"))
+    normalized["demotion_rows"] = normalize_demotion_rows(data.get("demotion_rows"))
     if normalized["due"] and not normalized["reasons"]:
         # A brief that claims to be due but cannot say why is not actionable.
         normalized["due"] = False
