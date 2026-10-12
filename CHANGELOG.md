@@ -4,6 +4,20 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **USER.md headroom now raises its own consolidation reason and demote
+  rows.** The `headroom_below_floor` reason and the `<demote>` rows read
+  MEMORY.md only, so a nearly full USER.md (1341 of 1375 characters on the
+  owner machine) never prompted anything. Each Hermes memory file below the
+  floor now raises a reason that names it (`headroom_below_floor:USER.md:34<=187`;
+  MEMORY.md's string is unchanged at the default cap), so suppression compares each file's own
+  string and the brief retires only once no file is below its floor. The brief
+  offers up to three rows, largest first, across every file below the floor.
+  The floor is proportional to each file's cap (300 at MEMORY.md's default
+  2200, 187 at USER.md's 1375), so a small cap cannot be permanently due. A
+  USER.md row adds a one-line instruction to keep entries about who the user is
+  and how to address them, and `omh doctor` no longer describes a USER.md
+  brief with MEMORY.md's numbers.
+
 - **Two Windows CI cleanup flakes are fixed in their fixtures, and a third
   now reports its cause.** Each change follows the traceback in the failed
   run's log, and none changes product behaviour. The observer fixture closes

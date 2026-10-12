@@ -1246,6 +1246,34 @@ class DoctorSurfacesTheBriefTests(unittest.TestCase):
             self.assertIn("reclaimable_chars=0", check["message"])
             self.assertIn("shorten or remove an entry", check["message"])
 
+    def test_a_user_md_only_brief_is_not_described_by_memory_md_numbers(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_hermes_memory(root / ".hermes", "short")
+            (root / ".hermes" / "memories" / "USER.md").write_text("y" * 1300, encoding="utf-8")
+            provider = OmhMemoryProvider(root / ".omh")
+            provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+            check = self._checks(root)["memory_consolidation"]
+            self.assertIn("headroom_below_floor:USER.md:", check["message"])
+            self.assertEqual(check["severity"], "warning")
+            self.assertNotIn("Hermes memory is full", check["message"])
+            self.assertNotIn("reclaimable_chars", check["message"])
+
+    def test_a_memory_md_brief_with_demote_rows_is_still_pending_work(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            from test_memory_demote_tool import _TOPICS, entry
+
+            _write_hermes_memory(root / ".hermes", *(entry(i) for i in range(len(_TOPICS))))
+            provider = OmhMemoryProvider(root / ".omh")
+            provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+            brief = json.loads((root / ".omh" / "memory" / "consolidation.json").read_text(encoding="utf-8"))
+            self.assertTrue(brief["demotion_rows"], brief["reasons"])
+            self.assertEqual(brief["eviction_plan"]["reclaimable_chars"], 0)
+            check = self._checks(root)["memory_consolidation"]
+            self.assertEqual(check["severity"], "warning")
+            self.assertNotIn("Hermes memory is full", check["message"])
+
     def test_a_full_pack_advisory_does_not_count_against_the_summary(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

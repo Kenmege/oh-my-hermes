@@ -423,7 +423,7 @@ class DemotionBriefTests(_Home):
         brief = read_latest_consolidation(self.store)
         self.assertTrue(brief["due"])
         self.assertEqual(brief["demotion_rows"], [])
-        self.assertIn({"op": "demotion_rows", "path": "MEMORY.md", "error": "KeyError"}, live._write_failures)
+        self.assertIn({"op": "demotion_rows", "path": "memories", "error": "KeyError"}, live._write_failures)
 
     def test_a_remove_after_demotion_retires_the_brief_once_headroom_recovers(self) -> None:
         live = provider(self.root, cwd=self.root)
@@ -451,6 +451,182 @@ class DemotionBriefTests(_Home):
         self.assertIs(json.loads(journal[-1])["removed_entry_demoted"], False)
         live.on_memory_write("remove", "memory", "", {})
         self.assertNotIn("removed_entry_demoted", json.loads((self.store / "memory" / "write_journal.jsonl").read_text(encoding="utf-8").splitlines()[-1]))
+
+
+def user_entry(index: int) -> str:
+    return entry(index).replace("Fact", "Item", 1)
+
+
+class UserFileHeadroomTests(_Home):
+    """USER.md is capped too: its own headroom raises its own reason and rows."""
+
+    FLOOR_REASON = "headroom_below_floor:USER.md:"
+
+    def fill_user(self, count: int = 6) -> tuple[str, ...]:
+        entries = tuple(user_entry(index) for index in range(count))
+        write_memory(self.hermes, "USER.md", *entries)
+        return entries
+
+    def test_user_md_below_floor_alone_raises_its_reason_and_rows(self) -> None:
+        write_memory(self.hermes, "MEMORY.md", entry(0))
+        entries = self.fill_user()
+        provider(self.root, cwd=self.root)
+        brief = read_latest_consolidation(self.store)
+        self.assertTrue(brief["due"])
+        self.assertEqual([r for r in brief["reasons"] if r.startswith("headroom_below_floor")], [brief["reasons"][0]])
+        self.assertRegex(brief["reasons"][0], r"^headroom_below_floor:USER\.md:\d+<=187$")
+        rows = brief["demotion_rows"]
+        self.assertEqual(len(rows), 3)
+        self.assertEqual({row["file"] for row in rows}, {"USER.md"})
+        self.assertTrue(all(any(sha(item).startswith(row["sha12"]) for item in entries) for row in rows))
+
+    def test_both_files_below_floor_offer_rows_from_both_capped_at_three(self) -> None:
+        memory = [entry(index) for index in range(len(_TOPICS))]
+        memory[0] += " Note."
+        write_memory(self.hermes, "MEMORY.md", *memory)
+        user = list(self.fill_user())
+        user[0] += " Extra note."
+        write_memory(self.hermes, "USER.md", *user)
+        provider(self.root, cwd=self.root)
+        brief = read_latest_consolidation(self.store)
+        headroom = [reason for reason in brief["reasons"] if reason.startswith("headroom_below_floor")]
+        self.assertEqual(len(headroom), 2, brief["reasons"])
+        rows = brief["demotion_rows"]
+        self.assertEqual(len(rows), 3)
+        self.assertEqual([row["chars"] for row in rows], sorted((row["chars"] for row in rows), reverse=True))
+        self.assertEqual([row["file"] for row in rows[:2]], ["USER.md", "MEMORY.md"])
+        self.assertEqual(rows[0]["sha12"], sha(user[0])[:12])
+        self.assertEqual(rows[1]["sha12"], sha(memory[0])[:12])
+
+    def test_an_entry_held_by_both_files_is_not_offered_from_either(self) -> None:
+        shared = user_entry(0) + " Extra note."
+        write_memory(self.hermes, "MEMORY.md", shared, *(entry(i) for i in range(1, len(_TOPICS))))
+        write_memory(self.hermes, "USER.md", shared, *(user_entry(i) for i in range(1, 6)))
+        provider(self.root, cwd=self.root)
+        brief = read_latest_consolidation(self.store)
+        self.assertEqual(len([r for r in brief["reasons"] if r.startswith("headroom_below_floor")]), 2, brief["reasons"])
+        rows = brief["demotion_rows"]
+        self.assertTrue(rows)
+        self.assertNotIn(sha(shared)[:12], [row["sha12"] for row in rows])
+        self.assertEqual({row["file"] for row in rows}, {"MEMORY.md", "USER.md"})
+
+    def test_the_floor_is_proportional_per_file_and_unchanged_for_default_memory_md(self) -> None:
+        write_memory(self.hermes, "MEMORY.md", *(entry(i) for i in range(len(_TOPICS))))
+        provider(self.root, cwd=self.root)
+        reasons = read_latest_consolidation(self.store)["reasons"]
+        self.assertRegex(reasons[0], r"^headroom_below_floor:\d+<=300$")
+
+    def test_user_md_at_1341_of_1375_still_fires_with_its_proportional_floor(self) -> None:
+        entries = [user_entry(i) for i in range(6)]
+        entries[-1] += "x" * (1341 - len(HERMES_MEMORY_DELIMITER.join(entries)))
+        write_memory(self.hermes, "USER.md", *entries)
+        self.assertEqual(len(HERMES_MEMORY_DELIMITER.join(entries)), 1341)
+        provider(self.root, cwd=self.root)
+        self.assertIn("headroom_below_floor:USER.md:34<=187", read_latest_consolidation(self.store)["reasons"])
+
+    def test_a_small_cap_with_a_nearly_empty_file_raises_no_permanent_reason(self) -> None:
+        (self.hermes / "config.yaml").write_text("memory:\n  user_char_limit: 250\n", encoding="utf-8")
+        write_memory(self.hermes, "USER.md", "short")
+        live = provider(self.root, cwd=self.root)
+        brief = read_latest_consolidation(self.store)
+        self.assertFalse(brief is not None and brief["due"], brief)
+        self.assertEqual(live._standing_reasons(), [])
+
+    def test_the_user_guard_rides_user_rows_only(self) -> None:
+        write_memory(self.hermes, "MEMORY.md", entry(0))
+        self.fill_user()
+        pack = hermes_turn(provider(self.root, cwd=self.root), 1, "hello")
+        self.assertIn("keep entries about who the user is", pack)
+        write_memory(self.hermes, "USER.md", user_entry(0))
+        write_memory(self.hermes, "MEMORY.md", *(entry(i) for i in range(len(_TOPICS))))
+        self.store.joinpath("memory", "consolidation.json").unlink()
+        pack = hermes_turn(provider(self.root, cwd=self.root), 1, "hello")
+        self.assertIn("<demote", pack)
+        self.assertNotIn("keep entries about who the user is", pack)
+
+    def test_rows_use_the_same_floor_as_reasons(self) -> None:
+        # USER.md headroom between its floor (187) and the flat 300: no reason, no rows, no guard.
+        write_memory(self.hermes, "MEMORY.md", *(entry(i) for i in range(len(_TOPICS))))
+        entries = [user_entry(i) for i in range(5)]
+        entries[-1] += "x" * (1125 - len(HERMES_MEMORY_DELIMITER.join(entries)))
+        write_memory(self.hermes, "USER.md", *entries)
+        headroom = 1375 - len(HERMES_MEMORY_DELIMITER.join(entries))
+        self.assertTrue(187 < headroom <= 300, headroom)
+        pack = hermes_turn(provider(self.root, cwd=self.root), 1, "hello")
+        brief = read_latest_consolidation(self.store)
+        self.assertTrue(brief["demotion_rows"])
+        self.assertEqual({row["file"] for row in brief["demotion_rows"]}, {"MEMORY.md"})
+        self.assertFalse(any("USER.md:" in reason for reason in brief["reasons"]))
+        self.assertNotIn("keep entries about who the user is", pack)
+
+    def test_the_guard_is_dropped_at_render_when_the_user_entry_is_gone(self) -> None:
+        write_memory(self.hermes, "MEMORY.md", entry(0))
+        user = self.fill_user()
+        live = provider(self.root, cwd=self.root)
+        offered = {row["sha12"] for row in read_latest_consolidation(self.store)["demotion_rows"] if row["file"] == "USER.md"}
+        self.assertTrue(offered)
+        write_memory(self.hermes, "USER.md", *(item for item in user if sha(item)[:12] not in offered))
+        pack = hermes_turn(live, 1, "hello")
+        self.assertIn("<memory_consolidation", pack)
+        self.assertNotIn("keep entries about who the user is", pack)
+
+    def test_a_row_preview_naming_a_user_file_does_not_summon_the_guard(self) -> None:
+        memory = [entry(i) for i in range(len(_TOPICS))]
+        memory[0] = memory[0].replace("Fact 0", 'file="USER.md" 0')
+        write_memory(self.hermes, "MEMORY.md", *memory)
+        pack = hermes_turn(provider(self.root, cwd=self.root), 1, "hello")
+        self.assertIn("<demote", pack)
+        self.assertNotIn("keep entries about who the user is", pack)
+
+    def test_the_worst_case_brief_fits_the_render_budget(self) -> None:
+        write_memory(self.hermes, "MEMORY.md", *(entry(i) for i in range(len(_TOPICS))))
+        write_memory(self.hermes, "USER.md", *(user_entry(i) for i in range(6)))
+        pack = hermes_turn(provider(self.root, cwd=self.root), 1, "hello")
+        section = pack[pack.index("<memory_consolidation") :]
+        self.assertLessEqual(len(section), CONSOLIDATION_RENDER_BUDGET_CHARS)
+        self.assertGreaterEqual(section.count("<demote "), 2, len(section))
+
+    def test_the_brief_records_headroom_and_floor_per_file(self) -> None:
+        write_memory(self.hermes, "MEMORY.md", entry(0))
+        self.fill_user()
+        provider(self.root, cwd=self.root)
+        files = {item["label"]: item for item in read_latest_consolidation(self.store)["hermes_files"]}
+        self.assertEqual(files["MEMORY.md"]["floor"], 300)
+        self.assertEqual(files["USER.md"]["floor"], 187)
+
+    def test_memory_md_recovering_while_user_md_stays_low_keeps_the_brief_standing(self) -> None:
+        memory = [entry(index) for index in range(len(_TOPICS))]
+        write_memory(self.hermes, "MEMORY.md", *memory)
+        user = self.fill_user()
+        live = provider(self.root, cwd=self.root)
+        write_memory(self.hermes, "MEMORY.md", memory[0])
+        live.on_memory_write("remove", "memory", "", {"previous_content": memory[1]})
+        brief = read_latest_consolidation(self.store)
+        self.assertTrue(brief["due"])
+        self.assertEqual(live._standing_reasons()[0][: len(self.FLOOR_REASON)], self.FLOOR_REASON)
+        write_memory(self.hermes, "USER.md", user[0])
+        live.on_memory_write("remove", "user", "", {"previous_content": user[1]})
+        self.assertFalse(read_latest_consolidation(self.store)["due"])
+
+    def test_an_unchanged_user_md_condition_is_not_re_raised_every_turn(self) -> None:
+        write_memory(self.hermes, "MEMORY.md", entry(0))
+        self.fill_user()
+        live = provider(self.root, cwd=self.root)
+        journal = self.store / "memory" / "consolidation.jsonl"
+        before = journal.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(before), 1)
+        hermes_turn(live, 1, "hello")
+        hermes_turn(live, 2, "again")
+        self.assertEqual(journal.read_text(encoding="utf-8").splitlines(), before)
+
+    def test_neither_file_below_floor_raises_no_reason_and_no_rows(self) -> None:
+        write_memory(self.hermes, "MEMORY.md", entry(0))
+        write_memory(self.hermes, "USER.md", user_entry(0))
+        live = provider(self.root, cwd=self.root)
+        live.on_pre_compress([{"role": "user", "content": "x"}])
+        brief = read_latest_consolidation(self.store)
+        self.assertFalse(any(reason.startswith("headroom_below_floor") for reason in brief["reasons"]))
+        self.assertEqual(brief["demotion_rows"], [])
 
 
 if __name__ == "__main__":

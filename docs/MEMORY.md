@@ -1323,15 +1323,23 @@ replaced by a short reference line (the operator's path).
 
 ### The model-driven path
 
-Demotion runs without an operator step. When MEMORY.md falls below the
-headroom floor, the consolidation brief carries up to three `<demote>` rows:
-the largest entries, minus any the action would refuse (sensitive-looking,
+Demotion runs without an operator step. When MEMORY.md or USER.md falls below
+the headroom floor (the floor is proportional to each file's cap, 300 characters at
+MEMORY.md's default 2200 and 187 at USER.md's 1375; each file's reason names
+it, `headroom_below_floor:USER.md:34<=187`, and MEMORY.md's keeps the bare
+`headroom_below_floor:289<=300`), the consolidation brief carries up
+to three `<demote>` rows drawn from every file below the floor: the largest
+entries, minus any the action would refuse (sensitive-looking,
 over the summary bound) or that already have a pending, rejected, or
-unrecognized candidate, or that USER.md also holds.
+unrecognized candidate, or that the other Hermes memory file also holds.
 
 ```text
 <demote file="MEMORY.md" entry="<sha12>" chars="201">Fact 1: the bravo cluster rotates its bu…</demote>
 ```
+
+When a row comes from USER.md the brief adds one instruction: keep entries about
+who the user is, how to address them, and reply language or voice, and demote
+only the others. That is the model's judgement; OMH does not read the entries.
 
 On disk the brief names rows by file, sha256 prefix, and length only — the
 brief file and its journal never carry entry text. The preview is read from
