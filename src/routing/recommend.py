@@ -3862,9 +3862,16 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "screams",
         }
     ),
-    # `anti-slop`, `ai slop`, and `deslop review` are the cleaner's own
-    # phrases; held back here, their words earn no trigger-token credit on
-    # their own. This governs trigger-token scoring only: `slop` is still a
+    # `anti-slop pass`, `anti-slop review`, `anti-slop sweep`, `ai slop`, and
+    # `deslop review` are the cleaner's own phrases; held back here, their
+    # words earn no trigger-token credit on their own. `anti-slop` itself is
+    # held back too: as a bare word it is an adjective for a stance or a
+    # quality ("an anti-slop policy", "the README is anti-slop now") at least
+    # as often as a request, so only the request-shaped phrases score, and
+    # `pass` and `sweep` are everyday words. `anti-slop cleanup` was measured
+    # and left out: `cleanup` is a trigger of its own, so the phrase reached
+    # dispatch strength on reports ("the anti-slop cleanup broke the build").
+    # This governs trigger-token scoring only: `slop` is still a
     # description word (`metadata:slop`, +1), and the lexical shortlist ranks
     # on trigger text with two-letter words such as `ai`, which never become
     # routing tokens and so cannot be held back here at all.
@@ -3875,7 +3882,7 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # and no sentence in the corpus moved when it was held back.
     # Beside its own slop words the cleaner earns its code and prose nouns and
     # cleanup verbs back; see `_SLOP_CLEANER_CONTEXT_TOKENS`.
-    "ai-slop-cleaner": frozenset({"anti", "slop", "review"}),
+    "ai-slop-cleaner": frozenset({"anti", "anti-slop", "slop", "pass", "review", "sweep"}),
 }
 
 

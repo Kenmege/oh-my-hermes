@@ -426,31 +426,21 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The quoted/relay/URL masks (#2049) add five: a block-quoted
             # invocation, a relayed report, an arrow-relayed and a
             # sender-relayed invocation, and a workflow name in a URL path.
-            # The ai-slop-cleaner OMC parity triggers add three: a question
-            # about what deslop means, a subagent's quoted deslop report, and a
-            # plain "review this PR" that must not credit the review mode.
-            # Their review adds one: anti-virus noise called slop in a log,
-            # which names the cleaner as candidate once its hold-back is gone.
-            # The accepted appearance-phrase trade-off added one ("this function
-            # feels like ai slop" stays a clarify); the code-cue change moves it
-            # to the intervention corpus with the cleaner leading, and adds
-            # three sentences that carry a code noun or cleanup verb with no
-            # slop word (a module that fails to load, "clean it up later",
-            # "simplify this function"), none of which may name the cleaner.
-            # Its review adds six: a README that mentions an anti-slop policy
-            # and a question whether a docs anti-slop policy is too strict
-            # (stances, not requests, which dispatched the cleaner); docs that
-            # explain AI slop and a slop word beside a stack of code nouns,
-            # both of which must stay a clarify; a list of code nouns beside an
-            # appearance phrase, which the two-word cap keeps a clarify (it
-            # dispatched uncapped); and a function that looks clean, which
-            # names the cleaner once its slop-word gate is gone.
-            # The stance veto adds six: an anti-slop policy for pull requests,
-            # one that changes next week, one for code, a pull request check
-            # called too strict, a rule added to the pull request template,
-            # and guidelines called too strict. Each dispatched the cleaner
-            # once `pull`, `changes`, or `code` anchored it without the veto.
-            expected=458,
+            # The ai-slop-cleaner OMC parity work adds twenty-three, none of
+            # which may dispatch the cleaner: a question about what deslop
+            # means, a subagent's quoted report, a plain "review this PR", and
+            # anti-virus noise called slop (4); a code noun or cleanup verb with
+            # no slop word -- a module that fails to load, "clean it up later",
+            # "simplify this function" -- and a function that looks clean (4);
+            # docs that explain AI slop, a slop word beside a stack of code
+            # nouns, and a list of code nouns beside an appearance phrase,
+            # which stay a clarify (3); and twelve uses of `anti-slop` as a
+            # stance or a quality -- policies, rules, guidelines, and checks
+            # for README, docs, pull requests, changes, and code, "the README
+            # is anti-slop now", "update the anti-slop docs", "is the code
+            # anti-slop?", "the module is anti-slop now" -- several of which
+            # dispatched while the bare word was a trigger (12).
+            expected=462,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -541,29 +531,18 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # line before a Korean request, a leading link as the target
             # (four), punctuation ending a link (two), and a `>` that is not a
             # block-quote marker (two).
-            # The ai-slop-cleaner OMC parity triggers add five: an anti-slop
-            # pass, AI slop in a code directory, and a no-edit deslop review
-            # reaching the cleaner, plus two UI slop requests (`ai slop ui`,
-            # generic AI slop on a landing page) that stay with `frontend`.
-            # Their review adds two UI restyles that must keep `frontend`: a
-            # settings page that feels like AI slop (dispatch) and a hero
-            # section that screams it (clarify led by frontend). Both went to
-            # the cleaner without its hold-back.
-            # The code-cue change adds four: a function, a module with a
-            # cleanup verb, and a README that look like AI slop each clarify
-            # with the cleaner leading frontend's appearance phrase, and a
-            # module to simplify without changing behavior dispatches it.
-            # Its review adds one: a pricing card component file that looks like
-            # AI slop keeps frontend's dispatch, because a UI surface withholds
-            # the cleaner's code nouns.
-            # Its next review adds five: a layout module and layout code that
-            # look like AI slop clarify with the cleaner leading (a code unit
-            # beats a UI word), and anti-slop on "my pull request", "the
-            # changes in this PR", and "this PR" each dispatch the cleaner.
-            # The stance veto adds two: "anti-slop the README" and "anti-slop
-            # the docs before release" dispatch the cleaner now that README and
-            # docs can anchor the phrase.
-            expected=675,
+            # The ai-slop-cleaner OMC parity work adds fourteen. To the
+            # cleaner: AI slop in a code directory and a no-edit deslop review
+            # dispatch, as does a module called AI slop to simplify without
+            # changing behavior; an anti-slop pass, and a function (moved here
+            # from the negative corpus), a module with a cleanup verb, a
+            # README, a layout module, and layout code that look like AI slop,
+            # clarify with the cleaner leading (9). To `frontend`: `ai slop
+            # ui`, generic AI slop on a landing page, a settings page that
+            # feels like AI slop, and a pricing card component file that looks
+            # like it dispatch, and a hero section that screams it clarifies
+            # with frontend leading (5).
+            expected=670,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

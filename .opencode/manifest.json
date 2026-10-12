@@ -12,7 +12,7 @@
     "omh-agent-instructions/references/instruction-file-method.md": "cc8f82b67198fa905f1336ea0fb8b50a2451b290ca4678efc41cc2c195828446",
     "omh-agent-ops-review/SKILL.md": "7ca75c0709b83a1b042a15fdbadf19ffc77397d8f58df7c369102fdcc543555b",
     "omh-agent-ops-review/references/instrumentation-ladder.md": "d9dab70027ab489a122df7e5814e9580e6bc1cc1899fa70da680ef54bfd65291",
-    "omh-ai-slop-cleaner/SKILL.md": "8bcc9069b8f2ae71399e8598cb1e8206b3b1dda70487283909e9a2e98dc7513c",
+    "omh-ai-slop-cleaner/SKILL.md": "b10f029c4f7751f90f92972fe7f0b6bfaab330ea6dc48fd20600a9a7c1d05eb1",
     "omh-ai-slop-cleaner/references/cleanup-passes.md": "2265e33fb7ea2acf1b2d23b20dbbba8ead04c155e0314f7a69e8b4825aa61ffd",
     "omh-ai-slop-cleaner/references/prose-lexicon.md": "efd209984c3e5823995484dd5b6e38e3161a059db9e841b4599dbbd330417ee5",
     "omh-ai-slop-cleaner/references/ui-review-checklist.md": "143cb3b83d903ede4919ce473773aa51364007969211a5bc57a70b5e48baa7bb",
@@ -318,7 +318,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "cf090b33cd01863053f6f524090890df6437c063f80482d2d9c53a37a61fcf79",
+  "source_digest": "cc3e5d9a3c864408637443d2f2460416d31e03cc6b921a9fb82396fbdf121bc6",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

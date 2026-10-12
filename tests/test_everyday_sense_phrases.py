@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from omh.routing.localization import normalized_phrase, routing_tokens
-from omh.routing.policy import EVERYDAY_SENSE_PHRASES, EVERYDAY_SENSE_STANCE_VETOES, everyday_sense_phrase_unanchored
+from omh.routing.policy import EVERYDAY_SENSE_PHRASES, everyday_sense_phrase_unanchored
 from omh.skills.catalog import routable_definitions
 
 
@@ -27,14 +27,6 @@ class EverydaySensePhraseTableTests(unittest.TestCase):
             dead = sorted(anchor for anchor in anchors if anchor not in routing_tokens(anchor))
             self.assertEqual([], dead, skill)
 
-    def test_every_stance_veto_names_a_table_skill_and_survives_tokenization(self) -> None:
-        # A veto word the tokenizer drops never vetoes, and a veto for a skill
-        # outside the table has no anchors to veto.
-        for skill, vetoes in EVERYDAY_SENSE_STANCE_VETOES.items():
-            self.assertIn(skill, EVERYDAY_SENSE_PHRASES, skill)
-            dead = sorted(word for word in vetoes if word not in routing_tokens(word))
-            self.assertEqual([], dead, skill)
-
     def test_everyday_sense_withdraws_and_lane_sense_keeps_the_skill(self) -> None:
         cases = (
             ("failure-signal-audit", "my phone had a silent failure of the alarm this morning", True),
@@ -55,8 +47,6 @@ class EverydaySensePhraseTableTests(unittest.TestCase):
             ("cancel", "cancel the running loop", False),
             ("doctor", "how long does it take to become a doctor", True),
             ("doctor", "run doctor", False),
-            ("ai-slop-cleaner", "anti-slop my pull request", False),
-            ("ai-slop-cleaner", "our anti-slop policy for pull requests", True),
         )
         for skill, message, withdrawn in cases:
             with self.subTest(message=message):
