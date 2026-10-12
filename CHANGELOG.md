@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`ai-slop-cleaner` reaches OMC parity without a second keyword hook.**
+  `anti-slop`, `AI slop`, and `deslop review` now dispatch the cleaner through
+  the existing route hint, with `ai`, `anti`, `slop`, and `review` held back so
+  only the whole phrases score; a question about the word, a subagent's quoted
+  report, and a plain "review this PR" stay where they were, and UI slop stays
+  with `frontend` (which gains `slop ui`). A no-edit review mode inspects a
+  drafted cleanup against the six taxonomy categories and returns findings in
+  the `code-review` shape, handing fixes to a separate writer pass. A new
+  `references/ui-review-checklist.md` lists six UI review prompts as questions
+  a stated rationale closes, and each run closes with an
+  `omh runtime record --skill ai-slop-cleaner` row. `loop` may run an optional
+  cleaner pass after the judge passes, scoped to the cycle's `changed_files`,
+  re-verified afterwards, and reported as skipped when skipped. Concepts adapt
+  `Yeachan-Heo/oh-my-claudecode` (MIT); no text is reproduced.
+
 - **Facts survive compaction, and a new session hears what memory did since
   your last session.** The compaction brief asked the model to extract durable
   material from messages that, by the time it was served, were gone. It now

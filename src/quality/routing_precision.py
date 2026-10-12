@@ -3566,6 +3566,34 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "ralplan",
     ),
+    # `ai-slop-cleaner` gained `anti-slop`, `ai slop`, and `deslop review`.
+    # These pin the senses of that vocabulary that ask for no cleanup: a
+    # question about the word, a subagent's quoted report, and a plain review
+    # request that belongs to `code-review`.
+    RoutingPrecisionCase(
+        "deslop-definition-question-stays-an-answer",
+        "Asking what deslop means is a question, not a cleanup request",
+        "what is deslop?",
+        "answer_directly",
+        "direct_answer",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "relayed-deslop-report-does-not-dispatch",
+        "A subagent's quoted report of a deslop pass is not a new request",
+        'subagent report: "ran the anti-slop pass on src/auth and cleaned up the AI slop" - is that right?',
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "plain-pr-review-does-not-reach-slop-cleaner",
+        "A plain review request does not credit the cleaner's review mode",
+        "review this PR",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
 )
 
 
@@ -8671,6 +8699,51 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "ai-slop-cleaner",
         "present_plan",
         "plan",
+    ),
+    RoutingInterventionCase(
+        "anti-slop-pass-reaches-slop-cleaner",
+        "An anti-slop pass on a named directory reaches the slop cleaner",
+        "anti-slop pass on src/auth",
+        "dispatch",
+        "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    RoutingInterventionCase(
+        "ai-slop-in-code-reaches-slop-cleaner",
+        "Cleaning up AI slop in a code directory reaches the slop cleaner",
+        "clean up the AI slop in src/auth",
+        "dispatch",
+        "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    RoutingInterventionCase(
+        "deslop-review-reaches-slop-cleaner",
+        "A no-edit deslop review reaches the slop cleaner's review mode",
+        "deslop review the diff, do not edit",
+        "dispatch",
+        "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    RoutingInterventionCase(
+        "ai-slop-ui-stays-with-frontend",
+        "AI slop named as a UI stays with frontend, not the code cleaner",
+        "this dashboard looks like ai slop ui, redesign it",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+    ),
+    RoutingInterventionCase(
+        "generic-ai-slop-landing-page-stays-with-frontend",
+        "Rejecting generic AI slop on a landing page stays with frontend",
+        "reject generic AI slop in this landing page UI",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
     ),
     RoutingInterventionCase(
         "gemini-second-opinion-reaches-ask",

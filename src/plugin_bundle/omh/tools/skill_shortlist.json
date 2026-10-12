@@ -1054,7 +1054,7 @@
 }
 },
 {
-"anchors":"ai behavior clean cleaner cleanup dead delet deslop duplicat helper legacy logic preserv refactor remov risky simplify slop unus wrot",
+"anchors":"ai behavior clean cleaner cleanup dead delet deslop duplicat helper legacy logic preserv refactor remov risky simplify unus wrot",
 "hangul":"리팩 범위 변경 분석 스트 위험 제한 터링 테스 토링 팩터 팩토 회귀",
 "hangul_anchors":"리팩 범위 변경 분석 위험 제한 터링 테스 토링 팩터 팩토 회귀",
 "label":"omh-ai-slop-cleaner",
@@ -1062,7 +1062,7 @@
 "situation":"Messy or AI-generated code to clean up",
 "terms":{
 "1":"after befor duplication edit exist goal identical lock low messy quality stay test",
-"2":"analysis cleanup deslop generat helper legacy logic observabl preserv refactor risk risky simplify unus without wrot",
+"2":"analysis anti cleanup deslop generat helper legacy logic observabl preserv refactor review risk risky simplify unus without wrot",
 "3":"chang clean dead delet duplicat remov",
 "4":"code",
 "5":"cleaner",

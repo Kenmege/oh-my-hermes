@@ -408,6 +408,28 @@
       "reviewed_on": "2026-10-10",
       "rationale": "Adopted one authoritative contract file per service boundary, contract text read as data, and an allowlist for $ref targets, in the backend service-contract reference; consumer enumeration stays in consumer-impact.",
       "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-12-ai-slop-cleaner-oh-my-claudecode",
+      "candidate_key": "ai-slop-cleaner@github.com/yeachan-heo/oh-my-claudecode",
+      "prior_checkpoint": null,
+      "next_checkpoint": "8262f9f790eed35e6cbd66572b36c2acba18f679",
+      "disposition": "adopted",
+      "decision_ref": "#2074",
+      "reviewed_on": "2026-10-12",
+      "rationale": "Adopted explicit anti-slop triggers held to whole phrases, a no-edit review mode returning code-review findings, six UI review prompts, and a closing runtime record; a second keyword hook was rejected.",
+      "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-12-loop-oh-my-claudecode",
+      "candidate_key": "loop@github.com/yeachan-heo/oh-my-claudecode",
+      "prior_checkpoint": null,
+      "next_checkpoint": "8262f9f790eed35e6cbd66572b36c2acba18f679",
+      "disposition": "adopted",
+      "decision_ref": "#2074",
+      "reviewed_on": "2026-10-12",
+      "rationale": "Adopted a post-judge cleaner pass bounded to the cycle's changed files with re-verification after it, made optional rather than mandatory; a skipped pass is reported as skipped, never passed.",
+      "supersedes": null
     }
   ]
 }

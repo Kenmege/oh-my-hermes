@@ -426,7 +426,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The quoted/relay/URL masks (#2049) add five: a block-quoted
             # invocation, a relayed report, an arrow-relayed and a
             # sender-relayed invocation, and a workflow name in a URL path.
-            expected=439,
+            # The ai-slop-cleaner OMC parity triggers add three: a question
+            # about what deslop means, a subagent's quoted deslop report, and a
+            # plain "review this PR" that must not credit the review mode.
+            expected=442,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -517,7 +520,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # line before a Korean request, a leading link as the target
             # (four), punctuation ending a link (two), and a `>` that is not a
             # block-quote marker (two).
-            expected=656,
+            # The ai-slop-cleaner OMC parity triggers add five: an anti-slop
+            # pass, AI slop in a code directory, and a no-edit deslop review
+            # reaching the cleaner, plus two UI slop requests (`ai slop ui`,
+            # generic AI slop on a landing page) that stay with `frontend`.
+            expected=661,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

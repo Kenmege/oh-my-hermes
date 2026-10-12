@@ -3851,6 +3851,14 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "registry",
         }
     ),
+    # `anti-slop`, `ai slop`, and `deslop review` are the cleaner's own
+    # phrases; their words alone are not. `ai` is in every sentence about a
+    # model ("the AI said the build passed"), `anti` opens "anti-virus" and
+    # "anti-pattern", `slop` is kitchen and plumbing vocabulary, and
+    # `review` is `code-review`'s territory -- crediting it here would put
+    # the cleaner on every "review this PR". The complete phrases still
+    # score, and `deslop` stays creditable as a coined word.
+    "ai-slop-cleaner": frozenset({"ai", "anti", "slop", "review"}),
 }
 
 

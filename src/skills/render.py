@@ -7926,11 +7926,98 @@ Four parts, every run: **changed files** (with per-pass counts),
 **behavior lock** (the commands run before and after, with observed results),
 **remaining risks** (what was found and deliberately not touched, and why).
 
+## Review mode
+
+Review mode judges a cleanup someone already drafted. It opens no file for
+writing. It reads three things: the cleanup plan, the diff, and the regression
+evidence the writer pass recorded. Then it asks, per taxonomy category:
+
+- **Dead code** - did the diff leave unused symbols, exports, or flags behind?
+- **Duplication** - is a decision the plan named still encoded twice?
+- **Needless abstraction** - does a wrapper that only forwards survive?
+- **Boundary violation** - did a move reach into another module's internals?
+- **Missing tests** - is every preserved behavior locked by a check that would
+  go red if it broke, and was that check run before and after?
+- **Templated defaults** - did boilerplate the plan listed survive?
+
+Then one more question that belongs to no category: does any hunk change
+behavior the plan did not say it would? That finding outranks every other.
+
+Findings use the `code-review` shape: each carries `priority` (`P0`-`P3`),
+`confidence`, `evidence`, `path`, and `line_range`, and the review closes with
+one `ship` or `no_ship` verdict. No new verdict vocabulary is invented here, so
+a reader who knows one review knows this one.
+
+A finding is a work order for a separate writer pass. The reviewer never fixes
+and approves in one step: the pass that wrote a change cannot also be the
+evidence that it is right.
+
 ## Boundary
 
 An inventory, pass plan, or prepared detector command is prepared context;
 behavior preservation is claimed only from the observed before/after
 verification, and a cleanup diff is never review, CI, or merge evidence.
+A review-mode verdict is a model's judgement of the evidence it was shown,
+not a run of the checks.
+"""
+
+
+def ai_slop_ui_review_reference_templates() -> list[SkillReferenceTemplate]:
+    return list(_ai_slop_ui_review_reference_templates_cached())
+
+
+@lru_cache(maxsize=1)
+def _ai_slop_ui_review_reference_templates_cached() -> tuple[SkillReferenceTemplate, ...]:
+    return (
+        SkillReferenceTemplate(
+            "ai-slop-cleaner",
+            "references/ui-review-checklist.md",
+            _ai_slop_ui_review_checklist_reference(),
+        ),
+    )
+
+
+def _ai_slop_ui_review_checklist_reference() -> str:
+    return """# UI Review Checklist
+
+Load this when the cleanup target is UI code. It lists the generic visual
+defaults that make a generated interface read as unreviewed. The reasoning
+behind each one lives in `omh-frontend/references/taste-foundations.md`
+(Review prompts - not bans); this file does not repeat it. What it adds is how
+a cleanup pass treats each one.
+
+Every item is a question, not a ban. A stated reason - brand, accessibility,
+product density, or a design-system rule - closes it and the pattern stays.
+No reason means the default was never chosen, and that is the finding.
+
+## The six prompts
+
+| Prompt | Look for in the diff or the rendered page | Cleanup treatment |
+| --- | --- | --- |
+| Korean body text below 14px | body copy set at 11-13px on a page with a Korean audience | raise to the 14px floor; a validated dense-data table may keep its size if the reason is written down |
+| Shadows everywhere | the same shadow on every card, logo, icon, and background | delete shadows that mark no elevation or interaction; keep the ones that do |
+| Stacked section labels | eyebrow, title, description, and an extra paragraph above every section; generic emoji badges | delete the layers the title already carries |
+| Default palette | framework-default blue (`#3B82F6`) or a blue-to-purple scheme with no brand rationale | flag it; choosing the replacement palette is a design decision for `frontend` |
+| Uniform grid | every row a perfect 3- or 4-column grid of equal cards | flag it when the items are not peers; the new layout is `frontend` work |
+| Extreme gradients | saturated multi-stop gradients on surfaces, text, or buttons | tone down or delete unless the brand owns that look |
+
+Deletion-first still holds. Removing a shadow, a label, or a gradient is a
+cleanup. Picking a new palette or a new layout is a redesign, and a redesign
+goes to `frontend`, or to `frontend-refactor` when component behavior must stay
+identical.
+
+## Evidence
+
+A finding about how a page looks needs the rendered page: a screenshot, or a
+visual-QA verdict. Reading the CSS proves which value is set, not that it is
+what renders. Say which of the two a finding rests on.
+
+## Attribution
+
+The six prompts and the review-mode split adapt concepts from the
+`ai-slop-cleaner` skill of `Yeachan-Heo/oh-my-claudecode@8262f9f` (MIT). No
+upstream text is reproduced; the wording and the cleanup treatments are OMH's
+own.
 """
 
 

@@ -69,6 +69,7 @@ from .render import (
     agent_ops_review_reference_templates,
     agent_skill_template,
     ai_slop_cleaner_reference_templates,
+    ai_slop_ui_review_reference_templates,
     app_debugging_reference_templates,
     apple_design_reference_templates,
     application_threat_model_reference_templates,
@@ -259,6 +260,7 @@ REFERENCE_PRODUCERS: tuple[Callable[[], list[SkillReferenceTemplate]], ...] = (
     refactor_plan_reference_templates,
     frontend_refactor_reference_templates,
     ai_slop_cleaner_reference_templates,
+    ai_slop_ui_review_reference_templates,
     domain_engineering_reference_templates,
     # Issue #1714: one reference per skill carrying a mechanism the body
     # only points at. Reference files are measured outside
