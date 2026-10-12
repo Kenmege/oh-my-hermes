@@ -48,6 +48,21 @@ All notable changes will be documented here.
   once the reproduction passes, instead of being said to hold; the new
   symptom gets its own reproduction record and count (#2057).
 
+- **`loop`'s fence check reads untracked files the ignore rules hide.** Step 3
+  of `references/loop-design-review.md` used only `git ls-files --others
+  --exclude-standard`, which skips a file excluded through `.gitignore`,
+  `.git/info/exclude`, or `core.excludesFile`, so a new test module under a
+  fenced directory that patches shared code at import was neither listed nor
+  read. The step now also runs `git ls-files --others -- <fenced dirs>`
+  without `--exclude-standard`, and reads the files inside a nested repository
+  that listing prints as a directory. A test's skip status now comes from the
+  acceptance run's own output, compared against the tests the launch run
+  skipped, rather than from a collection-only listing that runs nothing; the
+  reference names the PowerShell equivalents of `test -e`, `find`, and the
+  sha256 tools. Ignored build output under the fence is listed, and a compiled
+  or generated file with no matching tracked source fails. The skill body is
+  unchanged (#2058).
+
 ## 3.0.2 - 2026-10-11
 
 - **`ulw-work` keeps reference-only detail in its references.** The
@@ -170,11 +185,12 @@ All notable changes will be documented here.
   uncommitted edit to a fenced path still fails, and it checks what those
   listings cannot see directly - `test -e` for files fenced as absent
   (ignored ones included), launch-time sha256 for entries untracked at the
-  start or outside the repository, and recorded commits for submodules. A retry cap counts failures of one item's acceptance check and then
-  hands over to the existing exhaustion ladder, and with no second session to
-  judge, the loop stops at its verification gate instead of grading itself.
-  It starts after `loopability_assessment/v1` and leaves a scored loop's
-  contract to `references/measured-loop-discipline.md`. A new `docs/SKILL-SOURCES.md` row
+  start or outside the repository, and recorded commits for submodules. A
+  retry cap counts failures of one item's acceptance check and then hands over
+  to the existing exhaustion ladder, and with no second session to judge, the
+  loop stops at its verification gate instead of grading itself. It starts
+  after `loopability_assessment/v1` and leaves a scored loop's contract to
+  `references/measured-loop-discipline.md`. A new `docs/SKILL-SOURCES.md` row
   watches `affaan-m/everything-claude-code` (`loop-design-check`) for `loop`
   (#2049).
 - **`app-debugging` stops after three failed fixes and re-examines the

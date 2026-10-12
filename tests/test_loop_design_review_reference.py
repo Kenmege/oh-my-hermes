@@ -92,6 +92,31 @@ class LoopDesignReviewFenceCommandTests(unittest.TestCase):
         self.assertIn("the entry's sha256", content)
         self.assertIn("`git -C <sub> status --porcelain`", content)
 
+    def test_untracked_files_the_ignore_rules_hide_are_listed_under_the_fence(self) -> None:
+        """`--exclude-standard` skips files excluded through `.git/info/exclude`,
+        so a new test module that patches at import was neither listed nor
+        read (#2058). The fenced-directory listing drops that flag."""
+        content = _reference()
+        self.assertIn("`git -c core.quotePath=false ls-files --others -- <fenced dirs>`, without `--exclude-standard`", content)
+        self.assertIn("`.git/info/exclude`", content)
+        self.assertIn("A line ending in `/` there is a nested repository; read the files inside it as well.", content)
+        self.assertIn("from both listings in step 3", content)
+        self.assertIn("a compiled or generated file with no matching tracked source fails", content)
+
+    def test_skip_status_comes_from_the_acceptance_run(self) -> None:
+        """A collection-only listing runs no test, so it cannot show a skip
+        decided at run time."""
+        content = _reference()
+        self.assertIn("Skip status comes from the acceptance run's own output, never from a collection-only listing", content)
+        self.assertIn("fails unless the record lists it as skipped at launch", content)
+        self.assertIn("the tests reported as skipped by a launch run of the test command the acceptance checks run", content)
+        self.assertNotIn("or now reports skipped", content)
+
+    def test_the_shell_forms_are_named_as_posix(self) -> None:
+        content = _reference()
+        self.assertIn("are the POSIX shell forms", content)
+        self.assertIn("`Test-Path`, `Get-ChildItem -Recurse -Force`, and `Get-FileHash -Algorithm SHA256`", content)
+
     def test_a_rebase_keeps_the_approved_anchor(self) -> None:
         self.assertIn(
             "the rebased copy of the most recent approved re-anchor commit, or the new base when there is none",
