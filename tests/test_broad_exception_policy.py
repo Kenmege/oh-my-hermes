@@ -376,6 +376,15 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
     ),
     ClassifiedSite(
         "src/plugin_bundle/omh/tools/memory_tool.py",
+        "_lifecycle",
+        INTENTIONAL,
+        "recall, confirm, correct and retire read and write OMH's store in-process inside Hermes' "
+        "tool dispatch; a fault becomes status `error` with the sanitized exception class as "
+        "`reason` and no `display_line`, never a status that says a record was confirmed, "
+        "corrected or retired, and never a raise into the host.",
+    ),
+    ClassifiedSite(
+        "src/plugin_bundle/omh/tools/memory_tool.py",
         "_consolidation",
         INTENTIONAL,
         "Returns the distinct `bundle_memory_error` source plus a sanitized error type. Reporting "
@@ -520,8 +529,11 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # is status `error` and never carries the native remove), and
 # `memory_provider._demotion_rows` (a fault costs the brief's demote rows, is
 # recorded as a write failure, and never costs the brief).
-EXPECTED_HANDLER_COUNT = 54
-EXPECTED_ANCHOR_COUNT = 49
+# 49 -> 50 / 54 -> 55: `memory_tool._lifecycle`, the model's recall, confirm,
+# correct and retire (a fault is status `error`, never a status that says the
+# record changed, and never a display_line).
+EXPECTED_HANDLER_COUNT = 55
+EXPECTED_ANCHOR_COUNT = 50
 
 
 class DerivedSite(NamedTuple):

@@ -244,7 +244,17 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # the model to call this action, so the rule has to ride the schema the model
 # reads at the call. The primer and `pre_llm_call` are zero-slack. Owner
 # decision 2026-10-12. Re-derived from the producer.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 63616
+# 63616 -> 64031: `omh_memory` gains `recall`, `confirm`, `correct` and
+# `retire` (415): four enum values, three bare parameters (`query`,
+# `record_id`, `reason` with its closed three-value enum) and `limit` with a
+# four-word gloss, plus one sentence naming when to call each. The model kept
+# memory with no human step only in one direction (capture); correcting,
+# confirming or retiring a record was operator CLI only, in a package the
+# Hermes process cannot import. Trimmed before raising: the new parameters
+# carry no descriptions the sentence already gives, and `summary`/`tags` keep
+# their capture-only glosses. Owner rule 2026-10-06. Re-derived from the
+# producer.
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64031
 # PRE_LLM_CALL_CONTEXT_CHAR_LIMIT, PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT: moved with
 # their history to src/plugin_bundle/omh/turn_budget.py; imported at the top of this file.
 # 340000 -> 349637: three capability-skill sections were added by the domain

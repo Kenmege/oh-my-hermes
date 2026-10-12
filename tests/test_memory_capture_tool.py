@@ -48,7 +48,10 @@ class InProcessCaptureTests(unittest.TestCase):
         return json.loads(omh_memory_handler({"action": "capture", **args}, cwd=str(cwd or self.root)))
 
     def test_schema_advertises_capture_beside_the_four_reads(self) -> None:
-        self.assertEqual(MEMORY_ACTIONS, ("status", "blocks", "read", "consolidation", "capture", "demote"))
+        self.assertEqual(
+            MEMORY_ACTIONS,
+            ("status", "blocks", "read", "consolidation", "capture", "demote", "recall", "confirm", "correct", "retire"),
+        )
         properties = OMH_MEMORY_SCHEMA["parameters"]["properties"]
         self.assertEqual(tuple(properties["action"]["enum"]), MEMORY_ACTIONS)
         self.assertEqual(properties["record_type"]["enum"], ["fact", "decision", "lesson", "procedure", "episode"])

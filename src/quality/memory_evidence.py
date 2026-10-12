@@ -62,9 +62,22 @@ NATIVE_MEMORY_ACTIONS: frozenset[str] = frozenset({"add", "replace", "remove", "
 # `remembered` admitted a record, `pending_review` staged a candidate (from a
 # capture or a demote), and `demoted` stored a Hermes entry's copy
 # (`memory_tool._map_capture_payload`, `memory_tool._demote_entry`).
-# `already_remembered`/`already_covered` wrote nothing.
+# `corrected` admitted the corrected record and `pending_review` staged it
+# (`memory_tool._correct`); `retired` moved a record to the archive
+# (`memory_tool._retire`). `already_remembered`/`already_covered` wrote
+# nothing. `confirm/confirmed` is left out: it renews a review date and the
+# usage counter at most, and a repeat in one session writes nothing, so the
+# status cannot say whether anything was written.
 OMH_MEMORY_WRITE_RESULTS: frozenset[tuple[str, str]] = frozenset(
-    {("capture", "remembered"), ("capture", "pending_review"), ("demote", "demoted"), ("demote", "pending_review")}
+    {
+        ("capture", "remembered"),
+        ("capture", "pending_review"),
+        ("demote", "demoted"),
+        ("demote", "pending_review"),
+        ("correct", "corrected"),
+        ("correct", "pending_review"),
+        ("retire", "retired"),
+    }
 )
 # Journal files the memory provider appends (`MemoryProvider._write_handoff`,
 # `MemoryProvider._append_write_journal`).

@@ -46,15 +46,37 @@ the model supplies -- copies it into OMH under the guards the staging
 workflow holds, and only when an approved, intact, durable user-global copy
 exists tells the model to remove the original with Hermes' own `memory` tool.
 Token similarity never authorizes that removal.
+
+``recall``, ``confirm``, ``correct`` and ``retire`` are the rest of the loop,
+which used to exist only as operator verbs (`omh memory recall|confirm|correct|
+retire`) in a package this process cannot import. They act on OMH's own store
+only, through the lens the memory provider published for this session
+(``memory_session_lens``): its homes, scope allowlist inputs, principal
+context, shared-surface verdict and write permission. The tool never derives
+those itself; with no published lens it reads the session as a shared surface
+with no writes. Within that lens a record passes the selector's principal,
+scope and perspective gates; lifecycle state is each action's own refusal.
+``recall`` runs the prefetch selector itself, so its order is the order a
+prefetch for that query would serve. ``confirm`` renews a review deadline the
+way `omh memory confirm` does and counts one use per record per session in
+``usage.json``, the counter the ranking reads. ``correct`` admits the
+corrected fact through the model capture gates, linked to the old record, and
+the approval that admits it moves the old revision to ``history/`` with
+``superseded_by``. ``retire`` moves the record to the archive with a journal
+line, the operator retire's recoverable shape; nothing here deletes a record.
 """
 
 from __future__ import annotations
 
 from .. import runtime_paths
 
+from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 
+from ..awareness_delivery import _with_windows_retry
 from ..degradation import safe_error_type as _safe_error_type
 from ..hermes_memory import (
     HERMES_MEMORY_DELIMITER,
@@ -68,17 +90,59 @@ from ..hermes_memory import (
 from ..memory_admission import (
     DEMOTION_SUMMARY_MAX_CHARS,
     MODEL_CAPTURE_SOURCE,
+    _days_after,
+    _staleness_projection,
     capture_project_memory_candidate,
     demotion_refusal_reason,
     held_durable_user_global_record,
+    read_project_memory_policy,
 )
-from ..memory_store_io import read_project_memory_candidates
-from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, observe_plugin_tool_call
+from ..memory_principals import principal_recall_decision
+from ..memory_session_lens import note_session_records, read_session_lens
+from ..memory_recall_selector import resolve_scope_allowlist
+from ..memory_recall_support import (
+    PROJECT_MEMORY_RECORD_SCHEMA_VERSION,
+    _REVIEW_DEFAULT_DAYS,
+    _cadence_value,
+    _record_perspective_matches,
+    _record_resolution,
+    _record_staleness,
+    _retention_class,
+)
+from ..memory_records import (
+    DEFAULT_RECORD_LIMIT,
+    PREFETCH_EXECUTOR_TARGET,
+    prefetch_scope_allowlist,
+    read_record_store_snapshot,
+    record_used,
+    select_prefetch_records,
+)
+from ..memory_store_io import (
+    assert_under_memory_root,
+    ensure_private_dir,
+    memory_dir,
+    memory_index_path,
+    memory_record_path,
+    memory_store_lock,
+    read_json_object_result,
+    read_project_memory_candidates,
+    utc_now,
+    write_memory_index_unlocked,
+    write_project_memory_candidate_unlocked,
+    write_project_memory_record,
+)
+from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, host_session_id, observe_plugin_tool_call
 from ..memory_blocks import read_memory_block, read_memory_blocks, select_memory_blocks
 from ..memory_dreaming import read_dreaming_state, read_latest_consolidation
 from ..project_identity import resolve_project_identity
 
-MEMORY_ACTIONS = ("status", "blocks", "read", "consolidation", "capture", "demote")
+MEMORY_ACTIONS = ("status", "blocks", "read", "consolidation", "capture", "demote", "recall", "confirm", "correct", "retire")
+LIFECYCLE_ACTIONS = ("recall", "confirm", "correct", "retire")
+# The prefetch's own record limit: recall never returns more than a turn gets.
+RECALL_MAX_LIMIT = DEFAULT_RECORD_LIMIT
+RECALL_QUERY_MAX_CHARS = 500
+RETIRE_REASONS = ("no_longer_true", "superseded", "user_asked")
+_SAFE_RECORD_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
 CAPTURE_RECORD_TYPES = ("fact", "decision", "lesson", "procedure", "episode")
 CAPTURE_SCOPES = ("project", "user")
 CAPTURE_RETENTION_CLASSES = ("durable", "standard", "volatile")
@@ -106,8 +170,10 @@ OMH_MEMORY_SCHEMA = {
         "returns a replay-eligible block's value; 'consolidation' reads the latest reminder without "
         "evaluating it. 'demote' copies one Hermes entry (entry_sha256) into OMH; only if status is "
         "demoted or already_covered, remove it with Hermes' memory tool per remove_from_hermes. Hermes "
-        "entries are otherwise only counted and hashed. After capture or demote, tell the user in one "
-        "short line what was kept; display_line is suggested wording."
+        "entries are otherwise only counted and hashed. 'recall' searches OMH records. With a record_id: "
+        "'confirm' one that proved true or useful, 'correct' it (summary), 'retire' it (reason) when it no "
+        "longer holds. After capture, demote, correct or retire, tell the user in one short line; "
+        "display_line is suggested wording."
     ),
     "parameters": {
         "type": "object",
@@ -115,7 +181,7 @@ OMH_MEMORY_SCHEMA = {
             "action": {
                 "type": "string",
                 "enum": list(MEMORY_ACTIONS),
-                "description": "Defaults to 'status'. 'capture' and 'demote' write OMH memory; the others only read.",
+                "description": "Defaults to 'status'. capture, demote, confirm, correct and retire write OMH memory.",
             },
             "label": {
                 "type": "string",
@@ -149,6 +215,10 @@ OMH_MEMORY_SCHEMA = {
                 "type": "string",
                 "description": "demote: the entry's sha256 or a unique 12+ hex prefix.",
             },
+            "query": {"type": "string"},
+            "limit": {"type": "integer", "description": "recall: 1-6."},
+            "record_id": {"type": "string"},
+            "reason": {"type": "string", "enum": list(RETIRE_REASONS)},
             "observation": OBSERVATION_SCHEMA,
         },
     },
@@ -170,6 +240,8 @@ def omh_memory_handler(args: dict, **kwargs) -> str:
         payload, backend = _capture(args or {}, kwargs), "bundle_memory"
     elif action == "demote":
         payload, backend = _demote(args or {}), "bundle_memory"
+    elif action in LIFECYCLE_ACTIONS:
+        payload, backend = _lifecycle(action, args or {}, kwargs), "bundle_memory"
     else:
         payload, backend = _memory_bridge()
     payload["plugin_tool"] = "omh_memory"
@@ -298,20 +370,13 @@ def _capture(args: dict, kwargs: dict) -> dict[str, object]:
     record_type = str(args.get("record_type", "") or "fact").strip().lower()
     retention = str(args.get("retention_class", "") or "durable").strip().lower()
     tags = args.get("tags") or []
-    if not summary:
-        return _capture_result("refused", reason="summary_required", next_action="Retry with a one- or two-sentence summary.")
-    if "\x00" in summary or any(isinstance(tag, str) and "\x00" in tag for tag in (tags if isinstance(tags, list) else [])):
-        # Refused rather than stored: the CLI path can never carry one (a NUL
-        # cannot travel in an argv), so neither does this one.
-        return _capture_result("refused", reason="control_character", next_action="Remove the NUL character and retry.")
-    if len(summary) > CAPTURE_SUMMARY_MAX_CHARS:
-        return _capture_result("refused", reason="summary_too_long", next_action=f"Restate the fact in at most {CAPTURE_SUMMARY_MAX_CHARS} characters.")
+    refusal = _summary_refusal(summary, tags)
+    if refusal:
+        return _capture_result("refused", reason=refusal[0], next_action=refusal[1])
     if record_type not in CAPTURE_RECORD_TYPES:
         return _capture_result("refused", reason="unsupported_record_type", next_action=f"Use one of: {', '.join(CAPTURE_RECORD_TYPES)}.")
     if retention not in CAPTURE_RETENTION_CLASSES:
         return _capture_result("refused", reason="unsupported_retention_class", next_action=f"Use one of: {', '.join(CAPTURE_RETENTION_CLASSES)}.")
-    if not isinstance(tags, list) or len(tags) > CAPTURE_MAX_TAGS or not all(isinstance(tag, str) for tag in tags):
-        return _capture_result("refused", reason="invalid_tags", next_action=f"Pass at most {CAPTURE_MAX_TAGS} tags as a list of strings.")
     cwd = _session_cwd(kwargs)
     identity = resolve_project_identity(cwd) if cwd is not None else None
     in_project = identity is not None and identity.state == "resolved"
@@ -354,6 +419,21 @@ def _capture(args: dict, kwargs: dict) -> dict[str, object]:
             next_action="Nothing is confirmed saved. Tell the user the capture failed; call action='status' to see what is held.",
         )
     return _map_capture_payload(payload)
+
+
+def _summary_refusal(summary: str, tags: object) -> tuple[str, str] | None:
+    """Why a capture or correction summary/tags cannot be stored, as (reason, next_action)."""
+    if not summary:
+        return "summary_required", "Retry with a one- or two-sentence summary."
+    if "\x00" in summary or any(isinstance(tag, str) and "\x00" in tag for tag in (tags if isinstance(tags, list) else [])):
+        # Refused rather than stored: the CLI path can never carry one (a NUL
+        # cannot travel in an argv), so neither does this one.
+        return "control_character", "Remove the NUL character and retry."
+    if len(summary) > CAPTURE_SUMMARY_MAX_CHARS:
+        return "summary_too_long", f"Restate the fact in at most {CAPTURE_SUMMARY_MAX_CHARS} characters."
+    if not isinstance(tags, list) or len(tags) > CAPTURE_MAX_TAGS or not all(isinstance(tag, str) for tag in tags):
+        return "invalid_tags", f"Pass at most {CAPTURE_MAX_TAGS} tags as a list of strings."
+    return None
 
 
 def _map_capture_payload(payload: dict) -> dict[str, object]:
@@ -656,6 +736,563 @@ def _demote_result(status: str, **fields: object) -> dict[str, object]:
             "OMH wrote only its own store. Hermes memory is unchanged until Hermes' own memory tool "
             "removes the entry; this result is not evidence that it did."
         ),
+    }
+
+
+@dataclass(frozen=True)
+class _SessionLens:
+    """The provider's published confinement for this session, or the fail-closed one."""
+
+    bound: bool
+    homes: tuple[Path, ...]
+    scopes: list[dict[str, str]]
+    session_id: str
+    shared_surface: bool
+    writes_enabled: bool
+    principal_context: dict | None
+    executor_target: str
+    lens_home: Path
+
+
+def _lifecycle(action: str, args: dict, kwargs: dict) -> dict[str, object]:
+    """recall / confirm / correct / retire, under the confinement the provider published."""
+    try:
+        lens = _session_lens(kwargs)
+        if action == "recall":
+            return _recall(args, lens)
+        record_id = str(args.get("record_id", "") or "").strip()
+        if not record_id:
+            return _lifecycle_result(action, "refused", record_id=None, reason="record_id_required", next_action="Pass the record_id that recall or capture returned.")
+        if action == "correct":
+            summary = " ".join(str(args.get("summary", "") or "").split())
+            tags = args.get("tags")
+            refusal = _summary_refusal(summary, [] if tags is None else tags)
+            if refusal:
+                return _lifecycle_result(action, "refused", record_id=record_id, reason=refusal[0], next_action=refusal[1])
+        reason = str(args.get("reason", "") or "").strip().lower()
+        if action == "retire" and reason not in RETIRE_REASONS:
+            return _lifecycle_result(action, "refused", record_id=record_id, reason="unsupported_reason", next_action=f"Pass reason as one of: {', '.join(RETIRE_REASONS)}.")
+        if not lens.writes_enabled:
+            # Cron jobs and subagents run with provider writes disabled, and a
+            # session the provider never described is read as one of them.
+            return _lifecycle_result(
+                action,
+                "refused",
+                record_id=record_id,
+                reason="writes_disabled" if lens.bound else "session_lens_unavailable",
+                next_action="Nothing changed; this session may not write OMH memory.",
+            )
+        located = _locate_in_session(action, record_id, lens)
+        if isinstance(located, dict):
+            return located
+        home, record = located
+        if action == "confirm":
+            return _confirm(home, record, lens)
+        if action == "correct":
+            return _correct(home, record, summary, tags, lens)
+        return _retire(home, record, reason, lens)
+    except Exception as exc:
+        # In-process inside Hermes' tool dispatch: a store fault is an error
+        # result naming the exception class, never a status that says the
+        # record changed, and never a raise into the host. A retire whose
+        # archive move already happened reports that itself, before this.
+        return _lifecycle_result(
+            action,
+            "error",
+            reason=_safe_error_type(type(exc).__name__),
+            next_action="Nothing is confirmed changed. Tell the user the memory update failed.",
+        )
+
+
+def _session_lens(kwargs: dict) -> _SessionLens:
+    """Read the confinement the memory provider published for this session.
+
+    The provider owns the decision: a platform other than the CLI is a shared
+    surface, cron and subagent contexts may not write, and the principal
+    context narrows principal-bound records (`memory_session_lens`). The tool
+    finds it by the ``session_id`` Hermes passes every tool call. No session
+    id, no published lens, or an unreadable one: a shared surface with no
+    principal and no writes, which reaches no identity-unbound record.
+    """
+    session_id = host_session_id(kwargs)
+    omh_home = Path(_home("OMH_HOME", "~/.omh"))
+    published = read_session_lens(omh_home, session_id)
+    if published is None:
+        return _SessionLens(False, (omh_home,), [], session_id, True, False, None, PREFETCH_EXECUTOR_TARGET, omh_home)
+    shared = bool(published["shared_surface"])
+    principal = published.get("principal_context") if isinstance(published.get("principal_context"), dict) else None
+    scopes = prefetch_scope_allowlist(
+        project_identity=str(published.get("project_identity", "") or ""),
+        session_id=session_id,
+        principal_ref=str((principal or {}).get("principal", "") or ""),
+        include_legacy_personal=not shared,
+    )
+    return _SessionLens(
+        True,
+        tuple(Path(home) for home in published["homes"]),
+        scopes,
+        session_id,
+        shared,
+        bool(published["writes_enabled"]),
+        principal,
+        str(published.get("executor_target", "") or PREFETCH_EXECUTOR_TARGET),
+        omh_home,
+    )
+
+
+def _recall(args: dict, lens: _SessionLens) -> dict[str, object]:
+    """The prefetch selector over the prefetch's homes, allowlist and principal."""
+    query = " ".join(str(args.get("query", "") or "").split())
+    if not query or "\x00" in query or len(query) > RECALL_QUERY_MAX_CHARS:
+        return _lifecycle_result("recall", "refused", reason="query_invalid", next_action=f"Pass a query of 1 to {RECALL_QUERY_MAX_CHARS} characters.")
+    limit = args.get("limit", RECALL_MAX_LIMIT)
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= RECALL_MAX_LIMIT:
+        return _lifecycle_result("recall", "refused", reason="limit_invalid", next_action=f"Pass limit between 1 and {RECALL_MAX_LIMIT}.")
+    if not lens.bound:
+        # Not "nothing matches": the provider never described this session,
+        # so nothing was searched at all.
+        return _lifecycle_result(
+            "recall", "refused", reason="session_lens_unavailable", lens_state="unbound",
+            next_action="OMH memory is not available to this session right now; nothing was searched.",
+        )
+    selection = select_prefetch_records(
+        read_record_store_snapshot(lens.homes),
+        query,
+        allowed_scopes=lens.scopes,
+        session_id=lens.session_id,
+        executor_target=lens.executor_target,
+        limit=limit,
+        principal_context=lens.principal_context,
+        shared_surface=lens.shared_surface,
+    )
+    rows = []
+    for item in selection.pack.get("included_records", [])[:limit]:
+        row = {key: item.get(key) for key in ("record_id", "record_type", "summary", "tags", "approved_at")}
+        if item.get("resolution_marker"):
+            row["resolution_marker"] = item["resolution_marker"]
+        rows.append(row)
+    if rows:
+        # What this session has seen is what it may retire while it is live.
+        note_session_records(lens.lens_home, lens.session_id, "seen", [str(row["record_id"]) for row in rows])
+    return _lifecycle_result(
+        "recall",
+        "found" if rows else "nothing_found",
+        records=rows,
+        record_count=len(rows),
+        scope_status=selection.scope_status,
+        lens_state="provider",
+        next_action=(
+            "Use a record_id with confirm, correct, or retire when the conversation settles it."
+            if rows
+            else "No recallable OMH record matches; nothing was counted."
+        ),
+    )
+
+
+def _locate_in_session(action: str, record_id: str, lens: _SessionLens) -> tuple[Path, dict] | dict[str, object]:
+    """The record from the first home that holds it (prefetch's order), or a refusal."""
+    if not _SAFE_RECORD_ID.fullmatch(record_id):
+        return _lifecycle_result(action, "refused", record_id=None, reason="record_not_found", next_action="Nothing changed. Use a record_id from recall.")
+    for home in lens.homes:
+        path = memory_record_path(home, record_id)
+        if path.is_symlink() or not path.is_file():
+            continue
+        record, error = read_json_object_result(path)
+        if error or not isinstance(record, dict) or str(record.get("record_id", "")) != record_id:
+            return _lifecycle_result(action, "refused", record_id=record_id, reason="record_unreadable", next_action="Nothing changed; the record file could not be read.")
+        if not _in_session_scope(record, lens):
+            # Says nothing about the record beyond its id: it belongs to
+            # another project, thread, principal, or executor lens.
+            return _lifecycle_result(
+                action, "refused", record_id=record_id, reason="record_not_in_scope",
+                next_action="Nothing changed; this session's lens does not reach that record.",
+            )
+        return home, record
+    return _lifecycle_result(action, "refused", record_id=record_id, reason="record_not_found", next_action="Nothing changed. It may already be retired or superseded.")
+
+
+def _in_session_scope(record: dict, lens: _SessionLens) -> bool:
+    """The selector's lens gates, in its order: principal, scope, perspective.
+
+    Lifecycle state (expired, stale, superseded) is not a lens gate: each
+    action refuses what it cannot act on, as the operator verb does.
+    """
+    scopes, status = resolve_scope_allowlist(lens.scopes, required_scope_kinds=("project",))
+    if status != "resolved":
+        return False
+    if not principal_recall_decision(record, lens.principal_context, shared_surface=lens.shared_surface)["allowed"]:
+        return False
+    if record.get("scope") not in scopes:
+        return False
+    return _record_perspective_matches(record, observer=None, observed=lens.executor_target)
+
+
+def _confirm(home: Path, located: dict, lens: _SessionLens) -> dict[str, object]:
+    """`omh memory confirm`'s rewrite, plus at most one use per record per session.
+
+    The deadline arithmetic is the operator verb's: the cadence stored on the
+    record, else the policy default, else 90 days; an open record is answered
+    "resolved". Two differences. A record with no review deadline (a durable
+    capture, the model's default) is not refused, because the use is still
+    worth counting; nothing on the record is rewritten for it. And there is
+    no explicit date or day count: the model does not pin deadlines.
+    """
+    record_id = str(located.get("record_id", ""))
+    stamp = utc_now()
+    moment = datetime.now(timezone.utc).replace(microsecond=0)
+    with memory_store_lock(memory_index_path(home)):
+        record, error = read_json_object_result(memory_record_path(home, record_id))
+        if error or not isinstance(record, dict):
+            return _lifecycle_result("confirm", "refused", record_id=record_id, reason="record_not_found", next_action="Nothing changed.")
+        refusal = _live_record_refusal(record, moment)
+        if refusal:
+            return _lifecycle_result("confirm", "refused", record_id=record_id, reason=refusal, next_action=_CONFIRM_REFUSAL_NEXT_ACTION.get(refusal, "Nothing changed."))
+        staleness = _record_staleness(record, now=moment)
+        if str(staleness.get("source_state", "")) in {"changed", "unreadable"}:
+            return _lifecycle_result(
+                "confirm", "refused", record_id=record_id, reason="source_requires_correction",
+                next_action="Nothing changed; its cited source moved, so correct or retire it instead.",
+            )
+        previous_due = str(staleness.get("review_due_at", "") or "")
+        was_open = str(staleness.get("resolution", "")) == "open"
+        new_deadline, days, cadence_reset = previous_due, None, False
+        if previous_due or was_open:
+            if previous_due:
+                stored = record.get("staleness", {}).get("stale_after_days") if isinstance(record.get("staleness"), dict) else None
+                if isinstance(stored, int) and not isinstance(stored, bool) and stored > 0:
+                    days = stored
+                else:
+                    days = _cadence_value(read_project_memory_policy(home), "stale_after_days_default") or _REVIEW_DEFAULT_DAYS
+                    cadence_reset = True
+                new_deadline = _days_after(stamp, days)
+            else:
+                new_deadline = ""
+            revalidation = record.get("revalidation") if isinstance(record.get("revalidation"), dict) else {}
+            updated = {
+                **{key: value for key, value in revalidation.items() if key != "deadline"},
+                **({"deadline": new_deadline} if new_deadline else {}),
+                "confirmed_at": stamp,
+                "confirmed_by": MODEL_CAPTURE_SOURCE,
+            }
+            stored_staleness = record.get("staleness") if isinstance(record.get("staleness"), dict) else {}
+            write_project_memory_record(
+                home,
+                {
+                    **record,
+                    "revalidation": updated,
+                    "staleness": {
+                        **_staleness_projection(updated),
+                        "stale_after_days": days,
+                        **_resolved_staleness_fields(stored_staleness, resolved_at=stamp),
+                    },
+                    "updated_at": stamp,
+                },
+            )
+            write_memory_index_unlocked(home, updated_at=stamp)
+    first_this_session = bool(note_session_records(lens.lens_home, lens.session_id, "confirmed", [record_id]))
+    return _lifecycle_result(
+        "confirm",
+        "confirmed",
+        record_id=record_id,
+        review_due_at=new_deadline or None,
+        previous_review_due_at=previous_due or None,
+        deadline_renewed=bool(previous_due),
+        was_stale=str(staleness.get("state", "")) == "stale",
+        was_open=was_open,
+        cadence_reset=cadence_reset,
+        # One confirmation per session is one use: re-confirming the same
+        # record in a session must not inflate the ranking's usage signal.
+        used_recorded=_count_used(home, record_id, stamp) if first_this_session else False,
+        used_already_counted_this_session=not first_this_session,
+        next_action=(
+            f"Renewed; it recalls normally until {new_deadline}." if new_deadline
+            else "Counted as used; it carries no review deadline, so nothing else changed."
+        ),
+    )
+
+
+_CONFIRM_REFUSAL_NEXT_ACTION = {
+    "retention_expired": "Nothing changed; it expired. Capture the fact again if it still holds.",
+    "unresolved_expired": "Nothing changed; the open question expired unanswered. Retire it or capture the answer.",
+}
+
+
+def _live_record_refusal(record: dict, moment: datetime) -> str:
+    """The refusals every lifecycle write shares with the operator verbs."""
+    if record.get("schema_version") != PROJECT_MEMORY_RECORD_SCHEMA_VERSION:
+        return "unsupported_record_schema"
+    if str(record.get("superseded_by", "") or ""):
+        return "superseded"
+    staleness = _record_staleness(record, now=moment)
+    if str(staleness.get("state", "")) == "expired":
+        return "unresolved_expired" if str(staleness.get("reason", "")) == "unresolved_expired" else "retention_expired"
+    return ""
+
+
+def _resolved_staleness_fields(staleness: dict, *, resolved_at: str) -> dict[str, object]:
+    """Carry an open/resolved marker through a rewrite, answering an open one.
+
+    Vendored from the control plane's helper of the same name (confirm and
+    correct are the only writers of ``resolved``): the open ceiling goes with
+    the answer and ``open_since`` stays as the record of how long it was open.
+    """
+    resolution = _record_resolution(staleness)
+    if not resolution:
+        return {}
+    fields: dict[str, object] = {"resolution": "resolved", "open_since": str(staleness.get("open_since", "") or "")}
+    fields["resolved_at"] = str(resolved_at) if resolution == "open" else str(staleness.get("resolved_at", "") or resolved_at)
+    return fields
+
+
+def _count_used(home: Path, record_id: str, stamp: str) -> bool:
+    """One use in ``usage.json``; a lost count is reported, never raised."""
+    try:
+        return record_used(home, [record_id], now=stamp) == 1
+    except OSError:
+        return False
+
+
+def _correction_carryover(record: dict, retention: str) -> dict[str, object]:
+    """What a correction keeps from the record it replaces, in capture's own arguments.
+
+    Perspective, cited source, the review cadence day count, and a retention
+    TTL day count. Absolute dates are not carried: capture refuses
+    a past one, and a correction is a new statement with its own clock.
+    """
+    carried: dict[str, object] = {}
+    perspective = record.get("perspective") if isinstance(record.get("perspective"), dict) else {}
+    if str(perspective.get("observed", "") or ""):
+        carried["observer"] = str(perspective.get("observer", "") or "") or None
+        carried["observed"] = str(perspective["observed"])
+    if str(record.get("source_ref", "") or ""):
+        carried["source_ref"] = str(record["source_ref"])
+    staleness = record.get("staleness") if isinstance(record.get("staleness"), dict) else {}
+    days = staleness.get("stale_after_days")
+    # Approved records do not keep `cadence_source`, so the stored day count is
+    # carried as it stands; for a defaulted cadence that is the same number.
+    if retention != "volatile" and isinstance(days, int) and not isinstance(days, bool) and days > 0:
+        carried["stale_after_days"] = days
+    ttl = record.get("ttl") if isinstance(record.get("ttl"), dict) else {}
+    ttl_days = ttl.get("ttl_days")
+    if retention != "durable" and isinstance(ttl_days, int) and not isinstance(ttl_days, bool) and ttl_days > 0:
+        carried["ttl_days"] = ttl_days
+    return carried
+
+
+def _correct(home: Path, record: dict, summary: str, tags: object, lens: _SessionLens) -> dict[str, object]:
+    """Admit the corrected fact like a capture, linked to the record it replaces.
+
+    The candidate carries ``derived_from`` and ``correction_of`` naming the old
+    record, so whichever approval admits it -- auto-safe now, or an operator's
+    review later -- supersedes the old record inside that approval's store
+    lock (`_supersede_corrected_record_unlocked`). Until then the old record
+    stays active: a pending correction never makes the fact vanish.
+    """
+    record_id = str(record.get("record_id", ""))
+    refusal = _live_record_refusal(record, datetime.now(timezone.utc))
+    if refusal in ("unsupported_record_schema", "superseded"):
+        return _lifecycle_result("correct", "refused", record_id=record_id, reason=refusal, next_action="Nothing changed.")
+    scope = record.get("scope") if isinstance(record.get("scope"), dict) else {}
+    retention = _retention_class(record) or "durable"
+    try:
+        payload = capture_project_memory_candidate(
+            home,
+            summary,
+            record_type=str(record.get("record_type", "") or "fact"),
+            retention_class=retention,
+            on_duplicate="skip",
+            source=MODEL_CAPTURE_SOURCE,
+            scope_kind=str(scope.get("kind", "")),
+            scope_ref=str(scope.get("ref", "")),
+            tags=list(tags) if isinstance(tags, list) else [str(tag) for tag in record.get("tags", []) if isinstance(tag, str)],
+            derived_from=[record_id],
+            correction_of=record_id,
+            correction_revision=record.get("revision"),
+            principal_context=lens.principal_context if scope.get("kind") == "user" else None,
+            **_correction_carryover(record, retention),
+        )
+    except ValueError as exc:
+        if str(exc).startswith("derived-from record"):
+            # Admission re-reads the old record before writing anything; it
+            # was retired or corrected by a concurrent call in between.
+            return _lifecycle_result(
+                "correct", "refused", record_id=record_id, reason="record_not_found",
+                next_action="Nothing was saved; the record was retired or corrected meanwhile.",
+            )
+        raise
+    if not payload.get("captured"):
+        reason = str(payload.get("reason", "") or "not_captured")
+        if reason == "duplicate":
+            duplicate_of = str(payload.get("duplicate_of", "") or "")
+            if duplicate_of == record_id:
+                return _lifecycle_result("correct", "refused", record_id=record_id, reason="unchanged", next_action="Nothing changed; the record already says this.")
+            return _lifecycle_result(
+                "correct", "already_remembered", record_id=record_id, duplicate_of=duplicate_of,
+                next_action=f"The corrected fact is already held as {duplicate_of}; retire {record_id} with reason='superseded' if it no longer holds.",
+            )
+        return _lifecycle_result(
+            "correct",
+            "refused",
+            record_id=record_id,
+            reason=reason,
+            **({"instruction_cue": str(payload["instruction_cue"])} if payload.get("instruction_cue") else {}),
+            next_action=str(payload.get("next_action", "") or "") or "Nothing was saved and the record is unchanged.",
+        )
+    candidate = payload.get("candidate") if isinstance(payload.get("candidate"), dict) else {}
+    if not payload.get("auto_approved"):
+        return _lifecycle_result(
+            "correct",
+            "pending_review",
+            record_id=record_id,
+            candidate_id=str(candidate.get("candidate_id", "") or "") or None,
+            review_reason=str(payload.get("review_reason", "") or "unknown"),
+            next_action=(
+                "Saved for operator review; the old record stays active and is replaced when the correction is "
+                "approved. For relative_time_phrase, correct it again with an absolute date."
+            ),
+        )
+    successor = payload.get("record") if isinstance(payload.get("record"), dict) else {}
+    new_id = str(successor.get("record_id", "")) or None
+    supersession = payload.get("supersession") if isinstance(payload.get("supersession"), dict) else {}
+    if supersession.get("state") != "superseded":
+        # Saved, but the old record was already gone or already replaced when
+        # the approval reached it -- a concurrent retire or correct.
+        return _lifecycle_result(
+            "correct",
+            "corrected",
+            record_id=new_id,
+            superseded_record_id=None,
+            supersede_skipped=str(supersession.get("reason", "") or "unknown"),
+            receipt_state=str(payload.get("receipt_state", "") or "") or None,
+            display_line=_display_line("✏️ OMH corrected: ", str(successor.get("summary", "") or summary), 80),
+            next_action=f"Saved as {new_id}; the old record was already retired or replaced by another call, so nothing was superseded.",
+        )
+    return _lifecycle_result(
+        "correct",
+        "corrected",
+        record_id=new_id,
+        superseded_record_id=record_id,
+        receipt_state=str(payload.get("receipt_state", "") or "") or None,
+        display_line=_display_line("✏️ OMH corrected: ", str(successor.get("summary", "") or summary), 80),
+        next_action=f"The old revision is kept under history/ and no longer recalls; {new_id} replaces it.",
+    )
+
+
+def _retire(home: Path, located: dict, reason: str, lens: _SessionLens) -> dict[str, object]:
+    """`omh memory retire --apply`'s move for one record: archive, journal, candidate flip, index.
+
+    The operator retire archives only an expired or open record. The model
+    may also retire a live one, but only one this session was served or
+    recalled: the conversation that settled it is the one that saw it.
+    """
+    record_id = str(located.get("record_id", ""))
+    stamp = utc_now()
+    with memory_store_lock(memory_index_path(home)):
+        source = memory_record_path(home, record_id)
+        record, error = read_json_object_result(source)
+        if error or not isinstance(record, dict) or source.is_symlink():
+            return _lifecycle_result("retire", "refused", record_id=record_id, reason="record_not_found", next_action="Nothing changed.")
+        if record.get("schema_version") != PROJECT_MEMORY_RECORD_SCHEMA_VERSION:
+            return _lifecycle_result("retire", "refused", record_id=record_id, reason="unsupported_record_schema", next_action="Nothing changed.")
+        expired = str(_record_staleness(record, now=datetime.now(timezone.utc)).get("state", "")) == "expired"
+        published = read_session_lens(lens.lens_home, lens.session_id) or {}
+        if not expired and record_id not in [str(item) for item in published.get("seen", [])]:
+            return _lifecycle_result(
+                "retire", "refused", record_id=record_id, reason="record_not_seen_this_session",
+                next_action="Nothing changed; recall it first so the conversation sees what it retires.",
+            )
+        archive = memory_dir(home) / "archive"
+        ensure_private_dir(archive)
+        # The operator retire's archive name, so its reconciliation pass
+        # pairs this file with the journal line below.
+        destination = archive / f"{record_id}.{stamp.replace('-', '').replace(':', '')}.json"
+        assert_under_memory_root(home, destination)
+        if destination.exists():
+            return _lifecycle_result("retire", "refused", record_id=record_id, reason="archive_collision", next_action="Nothing changed; retry in a second.")
+        _with_windows_retry(lambda: source.replace(destination))
+        try:
+            _with_windows_retry(lambda: destination.chmod(0o600))
+            ttl = record.get("ttl") if isinstance(record.get("ttl"), dict) else {}
+            entry = {
+                "schema_version": "omh_memory_retirement_journal/v1",
+                "record_id": record_id,
+                "retired_at": stamp,
+                "expires_at": str(ttl.get("expires_at", "") or ""),
+                "reason": reason,
+                "retired_by": MODEL_CAPTURE_SOURCE,
+                "session_id": lens.session_id,
+                "redaction_policy": "metadata_only",
+                "claim_boundary": (
+                    "A retirement journal line records that OMH moved one of its own records to its local "
+                    "archive. It is not a deletion and not Hermes internal-memory evidence."
+                ),
+            }
+            journal = archive / "retirements.jsonl"
+            with memory_store_lock(journal):
+                with journal.open("a", encoding="utf-8", newline="") as handle:
+                    handle.write(json.dumps(entry, sort_keys=True) + "\n")
+            for candidate in read_project_memory_candidates(home):
+                # A still-approved source candidate would let a re-approval
+                # resurrect the record silently, as in the operator retire.
+                if str(candidate.get("record_id", "")) == record_id and str(candidate.get("status", "")) == "approved":
+                    write_project_memory_candidate_unlocked(home, {**candidate, "status": "retired", "retired_at": stamp})
+            write_memory_index_unlocked(home, updated_at=stamp)
+        except (OSError, ValueError) as exc:
+            # The move already happened: the record no longer recalls. Say so,
+            # and leave the bookkeeping to the operator retire's reconciliation.
+            return _lifecycle_result(
+                "retire",
+                "error",
+                record_id=record_id,
+                reason=_safe_error_type(type(exc).__name__),
+                archived_as=destination.name,
+                next_action=(
+                    "The record was archived and no longer recalls, but its journal, candidate, or index update "
+                    "failed; `omh memory retire --apply` reconciles it."
+                ),
+            )
+    return _lifecycle_result(
+        "retire",
+        "retired",
+        record_id=record_id,
+        reason=reason,
+        archived_as=destination.name,
+        display_line=_display_line("🗄️ OMH retired: ", str(record.get("summary", "") or ""), 60),
+        next_action="Archived, not deleted; it no longer recalls. An operator can restore it with `omh memory restore`.",
+    )
+
+
+_LIFECYCLE_CLAIM_BOUNDARIES = {
+    "recall": (
+        "Recall lists OMH's own records under the lens the memory provider published for this session, as "
+        "prefetch ranks them; it counts nothing as used and is not evidence that a record is true."
+    ),
+    "confirm": (
+        "Confirm rewrites only OMH-local review metadata and the usage counter; the record's content, "
+        "admission, and review are untouched, and Hermes memory is unchanged."
+    ),
+    "correct": (
+        "OMH wrote only its own store, and the old revision is kept, never deleted. This is not evidence "
+        "that a later session recalls the new record, and Hermes memory is unchanged."
+    ),
+    "retire": "Retire moves an OMH record into OMH's local archive; it never deletes, and Hermes memory is unchanged.",
+}
+
+
+_LIFECYCLE_SCHEMA_VERSIONS = {
+    "recall": "omh_memory_recall/v1",
+    "confirm": "omh_memory_confirm/v1",
+    "correct": "omh_memory_correct/v1",
+    "retire": "omh_memory_retire/v1",
+}
+
+
+def _lifecycle_result(action: str, status: str, **fields: object) -> dict[str, object]:
+    return {
+        "schema_version": _LIFECYCLE_SCHEMA_VERSIONS[action],
+        "status": status,
+        **fields,
+        "claim_boundary": _LIFECYCLE_CLAIM_BOUNDARIES[action],
     }
 
 

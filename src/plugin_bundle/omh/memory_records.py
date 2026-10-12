@@ -18,6 +18,11 @@ reads the snapshot, states the explicit scope allowlist, renders the selected
 records into one bounded section, and reports exactly which records that
 section carries. No model call, no network, no import of the `omh` control
 plane (the Hermes process cannot import it).
+
+It also writes the two per-record counters: `served.json`, one count per
+record a prefetch returned to Hermes, which nothing ranks on, and
+`usage.json`, the counter the ranking reads, which a model confirmation adds
+to beside the control plane's handoff attachments.
 """
 
 from __future__ import annotations
@@ -30,9 +35,11 @@ from pathlib import Path
 import re
 from typing import Any
 
+from .awareness_delivery import _awareness_delivery_lock
 from .hermes_memory import RECORDS_DIRECTORY_LABEL, REVIEWS_DIRECTORY_LABEL, _read_reviews, read_reviewed_records
 from .memory_recall_selector import MemoryRecallSelection, select_memory_recall
 from .memory_recall_support import PROJECT_MEMORY_RECALL_PACK_SCHEMA_VERSION
+from .memory_store_io import atomic_write_json
 
 DEFAULT_RECORD_RENDER_BUDGET_CHARS = 2400
 DEFAULT_RECORD_LIMIT = 6
@@ -46,6 +53,16 @@ PREFETCH_EXECUTOR_TARGET = "hermes"
 # control-plane constants.
 MEMORY_RECALL_USAGE_SCHEMA_VERSION = "omh_memory_recall_usage/v1"
 MEMORY_PINS_SCHEMA_VERSION = "omh_memory_pins/v1"
+# How often a prefetch actually handed a record to Hermes. A separate file from
+# `usage.json` on purpose: the ranking reads `usage.json` and nothing else, so
+# a served count can never raise the rank that earns the next serve.
+MEMORY_SERVED_SCHEMA_VERSION = "omh_memory_served/v1"
+# The control plane's cap on usage entries (`_RECALL_USAGE_MAX_ENTRIES`),
+# shared by both counters so neither file grows without bound.
+COUNTER_MAX_ENTRIES = 500
+# Both counters are hints, so a count dropped under contention is the right
+# outcome; the control plane waits the same 1s on `usage.json`.
+COUNTER_LOCK_TIMEOUT_SECONDS = 1.0
 # The same reference shape the control plane accepts for operation ids, so an
 # unsafe id is classified `invalid` here exactly as the handoff classifies it.
 _SAFE_REF = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
@@ -414,6 +431,79 @@ def _read_usage(path: Path) -> dict[str, dict[str, object]]:
     return usage
 
 
+def read_served_counts(omh_home: Path) -> dict[str, dict[str, object]]:
+    """Per-record serve counters; a missing or foreign file reads as empty."""
+    data = _read_json_object(Path(omh_home).expanduser() / "memory" / "served.json")
+    if data is None or data.get("schema_version") != MEMORY_SERVED_SCHEMA_VERSION:
+        return {}
+    entries = data.get("records")
+    if not isinstance(entries, dict):
+        return {}
+    served: dict[str, dict[str, object]] = {}
+    for record_id, entry in entries.items():
+        if not isinstance(entry, dict) or not _SAFE_REF.fullmatch(str(record_id)):
+            continue
+        times = entry.get("times_served")
+        served[str(record_id)] = {
+            "times_served": times if isinstance(times, int) and not isinstance(times, bool) and times > 0 else 0,
+            "last_served_at": str(entry.get("last_served_at", "")),
+        }
+    return served
+
+
+def record_served(omh_home: Path, record_ids: list[str] | tuple[str, ...], *, now: str) -> int:
+    """Count one serve per record a prefetch handed to Hermes. Ranking never reads it."""
+    path = Path(omh_home).expanduser() / "memory" / "served.json"
+    return _bump_counter(path, MEMORY_SERVED_SCHEMA_VERSION, ("times_served", "last_served_at"), record_ids, now)
+
+
+def record_used(omh_home: Path, record_ids: list[str] | tuple[str, ...], *, now: str) -> int:
+    """Count one use in ``usage.json``, the counter the ranking's usage weight reads.
+
+    The same file, schema and lock sidecar the control plane's
+    ``record_recall_usage`` writes, so a handoff attachment and a model
+    confirmation add to one count.
+    """
+    path = Path(omh_home).expanduser() / "memory" / "usage.json"
+    return _bump_counter(path, MEMORY_RECALL_USAGE_SCHEMA_VERSION, ("times_recalled", "last_recalled_at"), record_ids, now)
+
+
+def _bump_counter(
+    path: Path,
+    schema_version: str,
+    keys: tuple[str, str],
+    record_ids: list[str] | tuple[str, ...],
+    now: str,
+) -> int:
+    count_key, stamp_key = keys
+    bumped = list(dict.fromkeys(str(record_id) for record_id in record_ids if _SAFE_REF.fullmatch(str(record_id))))
+    if not bumped:
+        return 0
+    with _awareness_delivery_lock(path, timeout_seconds=COUNTER_LOCK_TIMEOUT_SECONDS):
+        # The raw entries, not a reader's projection: a key this build does not
+        # know (another writer's field) survives the rewrite.
+        data = _read_json_object(path)
+        entries = data.get("records") if data is not None and data.get("schema_version") == schema_version else None
+        counters: dict[str, dict[str, object]] = {
+            str(key): dict(value) for key, value in (entries.items() if isinstance(entries, dict) else ()) if isinstance(value, dict)
+        }
+        for record_id in bumped:
+            entry = counters.get(record_id, {})
+            count = entry.get(count_key)
+            previous = count if isinstance(count, int) and not isinstance(count, bool) and count > 0 else 0
+            counters[record_id] = {**entry, count_key: previous + 1, stamp_key: now}
+        if len(counters) > COUNTER_MAX_ENTRIES:
+            # Never evict a just-counted id; the oldest stamps go first.
+            kept = sorted(
+                ((key, value) for key, value in counters.items() if key not in bumped),
+                key=lambda item: (str(item[1].get(stamp_key, "")), item[0]),
+                reverse=True,
+            )[: max(COUNTER_MAX_ENTRIES - len(bumped), 0)]
+            counters = dict(kept + [(key, counters[key]) for key in bumped])
+        atomic_write_json(path, {"schema_version": schema_version, "updated_at": now, "records": dict(sorted(counters.items()))})
+    return len(bumped)
+
+
 def _read_pins(path: Path) -> set[str]:
     data = _read_json_object(path)
     if data is None or data.get("schema_version") != MEMORY_PINS_SCHEMA_VERSION:
@@ -474,6 +564,7 @@ __all__ = [
     "DEFAULT_RECORD_RENDER_BUDGET_CHARS",
     "MEMORY_PINS_SCHEMA_VERSION",
     "MEMORY_RECALL_USAGE_SCHEMA_VERSION",
+    "MEMORY_SERVED_SCHEMA_VERSION",
     "PREFETCH_EXECUTOR_TARGET",
     "PreparedPrefetch",
     "RECORD_SUMMARY_LIMIT_CHARS",
@@ -483,6 +574,9 @@ __all__ = [
     "prepare_prefetch_records",
     "read_project_memory_records",
     "read_record_store_snapshot",
+    "read_served_counts",
+    "record_served",
+    "record_used",
     "render_memory_records",
     "render_selected_memory_records",
     "select_prefetch_records",

@@ -212,6 +212,58 @@ class MemoryEvidenceCountTests(unittest.TestCase):
         )
         self.assertEqual(state_db["sessions_with_omh_memory_write"], {"total": 3, "by_source": {"(none)": 1, "cli": 1, "tui": 1}})
 
+    def test_lifecycle_actions_are_labelled_and_only_correct_and_retire_count_as_writes(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths = OmhPaths(omh_home=Path(tmp) / ".omh", hermes_home=Path(tmp) / ".hermes")
+            paths.hermes_home.mkdir(parents=True)
+            connection = sqlite3.connect(paths.hermes_home / "state.db")
+            with connection:
+                connection.execute(
+                    "CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL, last_activity_at REAL, "
+                    "ended_at REAL, archived INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0)"
+                )
+                connection.execute(
+                    "CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, "
+                    "tool_call_id TEXT, tool_calls TEXT, tool_name TEXT, timestamp REAL NOT NULL)"
+                )
+                # One lifecycle result per session, so each write decision shows as its own session.
+                results = (
+                    ("s_recall", "recall", "found"),
+                    ("s_confirm", "confirm", "confirmed"),
+                    ("s_corrected", "correct", "corrected"),
+                    ("s_held", "correct", "pending_review"),
+                    ("s_refused", "correct", "refused"),
+                    ("s_retired", "retire", "retired"),
+                    ("s_retire_refused", "retire", "refused"),
+                )
+                connection.executemany(
+                    "INSERT INTO sessions (id, source, started_at, last_activity_at) VALUES (?, ?, ?, ?)",
+                    [(session, "tui", IN_WINDOW, IN_WINDOW) for session, _action, _status in results],
+                )
+                connection.executemany(
+                    "INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp) "
+                    "VALUES (?, 'tool', ?, ?, NULL, 'omh_memory', ?)",
+                    [
+                        (session, json.dumps({"action": action, "status": status, "display_line": CANARY}), f"call_{session}", IN_WINDOW)
+                        for session, action, status in results
+                    ],
+                )
+            connection.close()
+            payload = build_memory_evidence(paths, now=NOW)
+
+        state_db = payload["state_db"]
+        self.assertEqual(
+            state_db["omh_memory"]["by_action_status"],
+            {
+                "confirm": {"confirmed": 1},
+                "correct": {"corrected": 1, "pending_review": 1, "refused": 1},
+                "recall": {"found": 1},
+                "retire": {"refused": 1, "retired": 1},
+            },
+        )
+        self.assertEqual(state_db["sessions_with_omh_memory_write"], {"total": 3, "by_source": {"tui": 3}})
+        self.assertNotIn(CANARY, json.dumps(payload))
+
     def test_store_counts_are_the_hand_counts(self) -> None:
         with TemporaryDirectory() as tmp:
             payload = build_memory_evidence(_home(tmp), now=NOW)
