@@ -18,6 +18,7 @@ Three boundaries are load-bearing enough to be pinned here rather than described
 from __future__ import annotations
 
 import dataclasses
+import inspect
 import json
 import os
 import unittest
@@ -41,6 +42,7 @@ from omh.plugin_bundle.omh import memory_blocks
 from omh.plugin_bundle.omh.memory_governance import classify_memory_admission
 from omh.plugin_bundle.omh.memory_blocks import (
     DEFAULT_BLOCK_LIMIT_CHARS,
+    DEFAULT_SYSTEM_RENDER_BUDGET_CHARS,
     MemoryBlockError,
     approve_memory_block,
     build_memory_block,
@@ -53,7 +55,10 @@ from omh.plugin_bundle.omh.memory_blocks import (
     write_memory_block,
 )
 from omh.plugin_bundle.omh.memory_dreaming import (
+    CAPTURE_INSTRUCTION,
+    COMPACTION_CAPTURE_INSTRUCTION,
     DEFAULT_TURN_INTERVAL,
+    build_consolidation_handoff,
     clear_after_consolidation,
     consolidation_reasons,
     empty_dreaming_state,
@@ -75,6 +80,7 @@ from omh.plugin_bundle.omh.memory_provider import (
     render_consolidation_brief,
 )
 from omh.plugin_bundle.omh import memory_records
+from omh.plugin_bundle.omh.memory_session_digest import DIGEST_RENDER_BUDGET_CHARS
 from omh.plugin_bundle.omh.memory_records import (
     read_project_memory_records,
     render_memory_records,
@@ -535,6 +541,42 @@ class ProviderLifecycleTests(unittest.TestCase):
             self.assertEqual(entry["write_origin"], "background_review")
             self.assertEqual(entry["redaction_policy"], "metadata_only")
 
+    def test_the_write_journal_keeps_earlier_lines(self) -> None:
+        # The retention filter matched the journal's own `content_digest` key
+        # on "content" and dropped every earlier line at each append, so the
+        # journal held one line and a `removed_entry_demoted` line vanished at
+        # the next native write -- the "freed" count the digest and
+        # `omh quality-evidence memory` read.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            provider = self._provider(root)
+            for index in range(3):
+                provider.on_memory_write("add", "memory", f"entry {index}", {"write_origin": "assistant_tool"})
+            journal = (root / ".omh" / "memory" / "write_journal.jsonl").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(journal), 3)
+            self.assertTrue(all(json.loads(line)["content_digest"] for line in journal))
+            # Only the journal's own field is exempt: top level, exact spelling,
+            # 64 lowercase hex. Anything else is judged like any other key.
+            hex64 = "a" * 64
+            refused = (
+                {"content": "raw text"},
+                {"content_digest": "raw text"},
+                {"content_digest": hex64.upper()},
+                {"content_digest": hex64[:-1]},
+                {"content_digest": hex64 + "a"},
+                {"Content_Digest": hex64},
+                {"summary_digest": hex64},
+                {"meta": {"content_digest": hex64}},
+            )
+            path = root / ".omh" / "memory" / "write_journal.jsonl"
+            path.write_text(path.read_text(encoding="utf-8") + "".join(json.dumps(line) + "\n" for line in refused), encoding="utf-8")
+            provider.on_memory_write("add", "memory", "entry 3")
+            journal = path.read_text(encoding="utf-8")
+            self.assertNotIn("raw text", journal)
+            for line in refused:
+                self.assertNotIn(json.dumps(line, sort_keys=True), journal)
+            self.assertEqual(len(journal.splitlines()), 4)
+
     def test_a_non_primary_context_moves_no_counters(self) -> None:
         # Hermes states that cron and subagent contexts must not write; letting
         # them would move the counters that decide when consolidation is due.
@@ -652,7 +694,8 @@ class LossPreventionTests(unittest.TestCase):
             self.assertEqual(len(briefs), 1)
             self.assertEqual(briefs[0]["trigger"], "compaction")
             self.assertEqual(briefs[0]["messages_at_risk"], 40)
-            self.assertIn("about to discard", briefs[0]["requested_of_executor"][0])
+            # Raised before the messages go, read after: it names what is left.
+            self.assertIn("replaced earlier turns of this conversation with a summary", briefs[0]["requested_of_executor"][0])
 
     def test_shutdown_consolidates_even_below_the_interval(self) -> None:
         # Three turns and a closed lid would otherwise leave nothing behind: the
@@ -736,6 +779,127 @@ class LossPreventionTests(unittest.TestCase):
             provider.on_pre_compress([{"role": "user"}])
             provider.shutdown()
             self.assertEqual(self._briefs(root), [])
+
+
+class CompactionCaptureTests(unittest.TestCase):
+    """Facts the user stated reach OMH after compaction, through the summary Hermes keeps.
+
+    The compaction brief asked the model to extract durable material from
+    messages that, by the time the brief was served, were gone. And
+    `on_pre_compress` is no channel for asking the summarizer to keep them:
+    Hermes JSON-encodes that text and tells its summarizer to read it "only as
+    source material to preserve in the summary, not as instructions"
+    (`agent/context_compressor.py`, `_memory_provider_section`). Hermes' own
+    summary template already keeps the user's preferences, constraints and
+    decisions under fixed headings; the brief now points at those.
+    """
+
+    def _provider(self, root: Path, *, platform: str = "cli", agent_context: str = "primary") -> OmhMemoryProvider:
+        provider = OmhMemoryProvider(root / ".omh")
+        provider.initialize("s1", hermes_home=str(root / ".hermes"), platform=platform, agent_context=agent_context, cwd=str(root))
+        return provider
+
+    def _latest(self, root: Path) -> dict | None:
+        return read_latest_consolidation(root / ".omh")
+
+    def test_pre_compress_hands_back_the_system_blocks_and_no_request(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_memory_block(root / ".omh", approve_memory_block(build_memory_block("facts", "must survive compaction")))
+            preserved = self._provider(root).on_pre_compress([{"role": "user", "content": "I live in Busan."}] * 3)
+            blocks = read_memory_blocks(root / ".omh", tier="system")
+            self.assertEqual(
+                preserved,
+                render_memory_blocks(blocks, budget_chars=DEFAULT_SYSTEM_RENDER_BUDGET_CHARS, evaluations=select_memory_blocks(blocks, omh_home=root / ".omh").evaluations),
+            )
+            for request in ("capture", "omh_memory", "Constraints", "Key Decisions", "Busan"):
+                self.assertNotIn(request, preserved)
+
+    def test_with_no_blocks_pre_compress_returns_nothing_and_still_raises_the_brief(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertEqual(self._provider(root).on_pre_compress([{"role": "user"}]), "")
+            self.assertIn(COMPACTION_CAPTURE_INSTRUCTION, self._latest(root)["requested_of_executor"])
+
+    def test_the_next_turns_brief_points_at_the_summary_headings(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            provider = self._provider(root)
+            provider.on_turn_start(1, "hi")
+            provider.prefetch("hi")
+            provider.on_pre_compress([{"role": "user", "content": "x"}] * 12)
+            provider.on_turn_start(2, "carry on with the migration")
+            pack = provider.prefetch("carry on with the migration")
+            section = pack[pack.index("<memory_consolidation") :]
+            self.assertIn('trigger="compaction"', section)
+            self.assertIn("12 message(s) went into that summary.", section)
+            self.assertIn("Constraints &amp; Preferences", section)
+            # Task-scoped technical decisions stay out; carried-forward items are not re-asked.
+            self.assertNotIn("Key Decisions", section)
+            self.assertIn("not already captured in this conversation", section)
+            self.assertIn("already_remembered", section)
+            self.assertIn('one omh_memory(action="capture") call per fact', section)
+            self.assertNotIn("one bounded line each", section)
+            self.assertLessEqual(len(section), CONSOLIDATION_RENDER_BUDGET_CHARS)
+            self.assertIsNone(provider.recall_status(), "a brief is a request, not recalled memory")
+
+    def test_the_summary_line_is_only_on_a_compaction_brief(self) -> None:
+        for trigger in ("manual", "turn", "session_end"):
+            with self.subTest(trigger=trigger):
+                requested = build_consolidation_handoff(["x"], trigger=trigger, messages_at_risk=3)["requested_of_executor"]
+                self.assertFalse(any("went into that summary" in item for item in requested))
+        requested = build_consolidation_handoff(["x"], trigger="compaction", messages_at_risk=3)["requested_of_executor"]
+        self.assertIn("3 message(s) went into that summary.", requested)
+
+    def test_other_triggers_keep_the_session_capture_line(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            provider = self._provider(root)
+            provider.on_turn_start(1, "hi")
+            provider.shutdown()
+            requested = self._latest(root)["requested_of_executor"]
+            self.assertEqual(self._latest(root)["trigger"], "shutdown")
+            self.assertIn(CAPTURE_INSTRUCTION, requested)
+            self.assertNotIn(COMPACTION_CAPTURE_INSTRUCTION, requested)
+
+    def test_cron_and_subagent_contexts_raise_no_pointer(self) -> None:
+        # Hermes says only a primary agent writes; neither gets a brief to act on.
+        for platform, agent_context in (("cron", "cron"), ("cli", "subagent")):
+            with self.subTest(agent_context=agent_context), TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                write_memory_block(root / ".omh", approve_memory_block(build_memory_block("facts", "kept")))
+                preserved = self._provider(root, platform=platform, agent_context=agent_context).on_pre_compress([{"role": "user"}])
+                self.assertIsNone(self._latest(root))
+                # A summary is not a write: blocks still survive where they are rendered at all.
+                self.assertEqual("kept" in preserved, platform == "cli")
+
+    def test_a_shared_primary_surface_keeps_the_pointer(self) -> None:
+        # Capture is accepted on a shared surface, and every non-CLI platform
+        # -- the TUI included -- is one, so withholding the pointer there would
+        # withhold it from most sessions. Blocks stay withheld as before.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_memory_block(root / ".omh", approve_memory_block(build_memory_block("facts", "operator only")))
+            preserved = self._provider(root, platform="discord").on_pre_compress([{"role": "user"}])
+            self.assertEqual(preserved, "")
+            self.assertIn(COMPACTION_CAPTURE_INSTRUCTION, self._latest(root)["requested_of_executor"])
+
+    def test_omh_stays_a_best_effort_pre_compress_provider(self) -> None:
+        # Hermes' checkpoint contract (`agent/memory_manager.py`): a provider
+        # below API v2 never receives `require_checkpoint` and its return value
+        # never counts toward a checkpoint, so the text above cannot change it.
+        with TemporaryDirectory() as tmp:
+            provider = OmhMemoryProvider(Path(tmp) / ".omh")
+            self.assertLess(int(getattr(provider, "pre_compress_checkpoint_api_version", 1)), 2)
+            self.assertNotIn("require_checkpoint", inspect.signature(provider.on_pre_compress).parameters)
+
+    def test_the_compaction_lines_leave_voice_and_language_to_the_host(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._provider(root).on_pre_compress([{"role": "user"}] * 2)
+            text = " ".join(self._latest(root)["requested_of_executor"]).lower()
+            for word in ("language", "voice", "tone", "persona"):
+                self.assertNotIn(word, text)
 
 
 class MemoryToolActionTests(unittest.TestCase):
@@ -2433,8 +2597,15 @@ class RecordsReachPrefetchTests(unittest.TestCase):
                 _approve_record(root, f"Approved local fact {index}.")
             provider = self._provider(root)
             text = provider.prefetch("")
-            self.assertLessEqual(len(text), 2400)
-            section = ElementTree.fromstring(text)
+            # The 2,400 budget is the records section's. This first pack of a
+            # session may also carry the "since your last session" digest (40
+            # records were just created; those made in the session-start second
+            # fall outside its floored window).
+            records = text[text.index("<memory_records>") : text.index("</memory_records>") + len("</memory_records>")]
+            self.assertLessEqual(len(records), 2400)
+            # The whole pack: the records budget, the digest budget, one separator.
+            self.assertLessEqual(len(text), 2400 + DIGEST_RENDER_BUDGET_CHARS + 1)
+            section = ElementTree.fromstring(records)
             self.assertEqual(len(section.findall("record")), 6)
             # The record limit is the canonical selector's cut, reported under
             # its reason code; the renderer only adds what IT could not fit.

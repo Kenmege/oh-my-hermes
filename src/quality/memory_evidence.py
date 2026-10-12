@@ -41,6 +41,8 @@ from typing import Any, Iterable, Mapping
 
 from ..paths import OmhPaths
 from ..plugin_bundle.omh.hermes_memory import read_hermes_memory
+from ..plugin_bundle.omh.memory_provider import JOURNAL_LIMIT
+from ..plugin_bundle.omh.memory_session_digest import is_freeing_remove
 from ..plugin_bundle.omh.memory_store_io import scan_project_memory_records
 from ..plugin_bundle.omh.tools.memory_tool import MEMORY_ACTIONS
 from ..workflows.memory import last_prefetch_status
@@ -126,6 +128,8 @@ _COUNTING_RULES: dict[str, str] = {
     "reason_family": "a consolidation reason up to its first ':', counted once per brief",
     "journal_lines": "a line that is not a JSON object is counted as unparsed and any unparsed line marks the "
     "store partial: the provider rewrites a journal whole and atomically, so a torn line is damage, not a race",
+    "journal_cap": f"the provider keeps the newest {JOURNAL_LIMIT} write-journal lines; journal_at_cap true means "
+    "older lines are gone and the window's write-journal counts may be short",
     "directories": "the memory, records and Hermes memories directories are listed, not stat-ed: a directory "
     "that cannot be listed is unreadable, and only one that does not exist is empty",
     "null_source": f"a session without a sessions.source tag groups as {NO_SOURCE_LABEL}",
@@ -226,7 +230,10 @@ def memory_evidence_headline(payload: Mapping[str, Any]) -> list[dict[str, Any]]
             "from the OMH home's write journal",
             "omh_store.write_journal.removed_entry_demoted.true",
             store,
-            omh_scope,
+            # At its cap the journal has dropped older lines: the count is a floor.
+            f"{omh_scope}; the write journal is at its cap, so earlier removes may be missing"
+            if (store.get("write_journal") or {}).get("journal_at_cap")
+            else omh_scope,
             int(((store.get("write_journal") or {}).get("removed_entry_demoted") or {}).get("true", 0)),
         ),
     )
@@ -294,6 +301,7 @@ def format_memory_evidence_summary(payload: Mapping[str, Any]) -> str:
         out.append(
             f"  native writes in window {journal.get('entries_in_window', 0)}: {_flat(journal.get('by_action') or {})}; "
             f"removed_entry_demoted {_flat(journal.get('removed_entry_demoted') or {})}"
+            + (f" (journal at its cap of {journal.get('journal_limit')} lines; older lines are gone)" if journal.get("journal_at_cap") else "")
         )
     if store.get("error"):
         out.append(f"  {store.get('error')}")
@@ -573,8 +581,9 @@ def _store_counts(paths: OmhPaths, since_epoch: float, moment: float) -> dict[st
         action = _label(entry.get("action"))
         by_action.add(action)
         if action == "remove":
+            # The digest's own rule, imported: one definition of a freeing remove.
             flag = entry.get("removed_entry_demoted")
-            demoted["true" if flag is True else "false" if flag is False else "absent"] += 1
+            demoted["true" if is_freeing_remove(entry) else "false" if flag is False else "absent"] += 1
     if refused_reasons.counts.get("unreadable_file", 0):
         errors.append(f"{refused_reasons.counts['unreadable_file']} record files did not parse")
     for name, damaged in ((CONSOLIDATION_JOURNAL, consolidation_damaged), (WRITE_JOURNAL, write_damaged)):
@@ -601,6 +610,10 @@ def _store_counts(paths: OmhPaths, since_epoch: float, moment: float) -> dict[st
             "by_action": by_action.sorted(),
             "removed_entry_demoted": demoted,
             "unparsed_lines": write_bad,
+            # The provider keeps only the newest JOURNAL_LIMIT lines: at the cap,
+            # older lines -- possibly inside the window -- are already gone.
+            "journal_at_cap": len(write_entries) + write_bad >= JOURNAL_LIMIT,
+            "journal_limit": JOURNAL_LIMIT,
         },
     }
     if errors:

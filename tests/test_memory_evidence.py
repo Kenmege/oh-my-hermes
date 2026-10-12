@@ -31,6 +31,7 @@ from omh.quality.memory_evidence import (
 )
 from omh.commands.quality_evidence import _memory_evidence_exit_code
 from omh.plugin_bundle.omh.memory_prefetch_receipt import prefetch_receipt_path
+from omh.plugin_bundle.omh.memory_provider import JOURNAL_LIMIT
 
 
 NOW = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc).timestamp()
@@ -296,6 +297,9 @@ class MemoryEvidenceCountTests(unittest.TestCase):
                 "by_action": {"add": 1, "remove": 4},
                 "removed_entry_demoted": {"true": 2, "false": 1, "absent": 1},
                 "unparsed_lines": 0,
+                # Below the provider's retention cap, so no line has been dropped.
+                "journal_at_cap": False,
+                "journal_limit": JOURNAL_LIMIT,
             },
         )
         self.assertEqual(store["last_prefetch"]["state"], "never_served")

@@ -4,6 +4,52 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Facts survive compaction, and a new session hears what memory did since
+  your last session.** The compaction brief asked the model to extract durable
+  material from messages that, by the time it was served, were gone. It now
+  says the turns were replaced by a summary and points at the heading where
+  Hermes' summary keeps the user's preferences, constraints and important
+  decisions ("Constraints & Preferences"). It asks for one
+  `omh_memory(action="capture")` call per fact that should hold in later
+  sessions and was not already captured in this conversation (a held fact
+  answers `already_remembered`). "Key Decisions" is left out because it holds
+  task-scoped technical decisions. `on_pre_compress` still returns only the
+  system blocks: Hermes hands that text to its summarizer as source material,
+  not instructions, so OMH asks the summarizer for nothing, and it stays a
+  best-effort (API v1) pre-compress provider. The first pack a prefetch serves
+  in a session Hermes started (`initialize`, or its own `reset` switch for
+  `/new` and `/reset`) may carry one bounded `<memory_digest>`: records
+  remembered, Hermes entries copied intact and freed, records corrected and
+  retired. Counts come from record fields and the write and retirement
+  journals. The window runs from the later of the last recorded session close
+  and the end of the last digest served (both kept in a new
+  `memory/session_close.json`, both only moving forward), else the last served
+  pack, at most seven days back. A close is written at `shutdown`,
+  `on_session_end` (which Hermes also calls at every compression and gateway
+  soft-evict) and Hermes' reset. The reported-through mark means rows a
+  non-shared digest already reported never come back after a killed or
+  overlapping session. That holds even for a session that serves after a
+  later-started one, because the mark is read again at render time. A mark more
+  than five minutes ahead of the clock is ignored. "Served" means returned to
+  Hermes, which may drop or spill the pack, so a mark can cover a digest the
+  model never saw. Only nonzero counts are named. A turn-lease reload, a compression, a gateway
+  rebuild of the same conversation, and cron or subagent contexts get none. A
+  close stamp or receipt that exists but cannot be read means no digest. A
+  corrupt stamp or a store fault costs only the digest. On a shared surface
+  (the TUI and gateways included) the digest counts only records the
+  session's recall lens admits, omits copies, frees and retirements, and names
+  no `since`. The digest carries no record text, never lights the recall line,
+  and says `journal_at_cap` when the write journal has dropped lines. The
+  native write journal also kept only its newest line: its retention filter
+  matched the journal's own `content_digest` key and dropped every earlier line
+  at each append, so a `removed_entry_demoted` line vanished at the next native
+  write. That one key is now exempt (top level, exact spelling, 64 lowercase
+  hex), so the journal keeps its newest lines up to its limit again.
+  `omh quality-evidence memory` reports `journal_at_cap`, and its freed headline
+  says earlier removes may be missing when the journal is at its cap.
+  `hermes_epoch` now uses the digest's stamp parser, which treats a 400-digit
+  number as no stamp instead of raising.
+
 - **`omh quality-evidence memory` reports what OMH memory did on this
   machine.** The only memory quality surface was `omh memory recall-suite`,
   which runs synthetic fixtures, so nobody could say from real traffic whether

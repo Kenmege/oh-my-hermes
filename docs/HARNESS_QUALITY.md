@@ -331,7 +331,7 @@ omh quality-evidence memory [--days 7 | --since 2026-10-01T00:00:00Z] [--json]
 | `omh_store.records` | admitted records per `source` and admission state, and those whose `created_at` is in the window; a candidate awaiting review is not a record |
 | `omh_store.last_prefetch` | the `omh memory status` view of the last prefetch receipt |
 | `omh_store.consolidation_journal` | briefs raised in the window, per reason family (a reason up to its first `:`) |
-| `omh_store.write_journal` | native writes observed in the window per action, and removes per `removed_entry_demoted` |
+| `omh_store.write_journal` | native writes observed in the window per action, and removes per `removed_entry_demoted`; `journal_at_cap` is true when the journal holds its retention cap (`journal_limit` lines), so older lines are gone and these counts may be short |
 | `hermes_memory_files` | chars, cap, and headroom per Hermes memory file |
 
 Calls are distinct call ids per session, the first row by id deciding on both
@@ -350,8 +350,9 @@ reaches the payload.
 The `headline` is computed from the counts above: facts remembered, Hermes
 entries OMH stored a verified copy of (a `demoted` result leaves Hermes
 unchanged until Hermes' own tool removes the entry), and native entries freed
-after a demotion (the write journal's `removed_entry_demoted`). Each line names
-its window and the home its count came from. Pass the global `--hermes-home`
+after a demotion (the write journal's `removed_entry_demoted`; at the journal's
+cap its scope says earlier removes may be missing). Each line names its window
+and the home its count came from. Pass the global `--hermes-home`
 to read a Hermes profile, whose OMH home resolves from its own config.
 
 Exit 0 when every source was read, including an empty one. Exit 3 when

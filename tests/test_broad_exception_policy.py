@@ -135,6 +135,15 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
     ),
     ClassifiedSite(
         "src/plugin_bundle/omh/memory_provider.py",
+        "_guard_digest",
+        INTENTIONAL,
+        "The session digest is read inside `initialize`, a session switch and every pack render. "
+        "Whatever its stores hold, a fault costs only the digest: it is counted and recorded as op "
+        "`session_digest` with its error class in the write failures the next receipt reports, and "
+        "the session gets no digest rather than a failed hook or a blank pack.",
+    ),
+    ClassifiedSite(
+        "src/plugin_bundle/omh/memory_provider.py",
         "_say",
         INTENTIONAL,
         "The host's status callback prints one line for the user; it is Hermes' code, not "
@@ -532,8 +541,11 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # 49 -> 50 / 54 -> 55: `memory_tool._lifecycle`, the model's recall, confirm,
 # correct and retire (a fault is status `error`, never a status that says the
 # record changed, and never a display_line).
-EXPECTED_HANDLER_COUNT = 55
-EXPECTED_ANCHOR_COUNT = 50
+# 50 -> 51 / 55 -> 56: `memory_provider._guard_digest`, the session digest (a
+# fault costs the digest, is recorded as a write failure, and never fails
+# initialize, a switch, or a render).
+EXPECTED_HANDLER_COUNT = 56
+EXPECTED_ANCHOR_COUNT = 51
 
 
 class DerivedSite(NamedTuple):

@@ -283,10 +283,14 @@ def _is_event_reason(reason: str) -> bool:
 # What the executor is asked to do differs by which moment woke it. A brief
 # written because the context is about to be discarded is asking for something
 # a routine interval brief is not.
+#
+# The compaction brief is raised in `on_pre_compress` but read in the next
+# turn's pack, after the messages are gone, so it says so and names what is
+# left: the summary.
 _TRIGGER_INSTRUCTIONS = {
     "compaction": (
-        "Context compression is about to discard messages. Extract anything durable from them "
-        "FIRST -- that material does not survive this turn."
+        "Context compression replaced earlier turns of this conversation with a summary; their raw "
+        "messages are gone."
     ),
     "shutdown": (
         "Hermes is closing. Save what is worth keeping now; there is no later turn in this session."
@@ -327,6 +331,23 @@ HEADROOM_USER_GUARD_INSTRUCTION = (
     "demote only the other entries."
 )
 HEADROOM_TRIM_INSTRUCTION = "When Hermes memory headroom is low, trim or merge its entries with Hermes' own memory tool."
+CAPTURE_INSTRUCTION = (
+    'Move durable facts, preferences, and decisions from this session into OMH with '
+    'omh_memory(action="capture"), one bounded line each.'
+)
+# The compaction brief's capture line. OMH cannot ask Hermes' summarizer for a
+# list -- Hermes hands provider text to it as source material, not instructions
+# -- but Hermes' own summary template keeps "User preferences, coding style,
+# constraints, important decisions" under one heading (`agent/context_compressor.py`).
+# "Key Decisions" is left out on purpose: it holds the work's technical
+# decisions, most of them scoped to the task at hand. Hermes' iterative summary
+# carries earlier items forward, so each compaction would offer them again;
+# only new ones are asked for, and a held one answers `already_remembered`.
+COMPACTION_CAPTURE_INSTRUCTION = (
+    'From that summary\'s "Constraints & Preferences", capture each fact, preference, or decision the user '
+    "stated that should hold in later sessions and that you have not already captured in this conversation: "
+    'one omh_memory(action="capture") call per fact. A fact OMH already holds answers already_remembered.'
+)
 
 # Only `demote`: an entry is removed only on the action's own live verdict, so
 # the brief never offers a row the model could remove without calling it.
@@ -397,14 +418,11 @@ def build_consolidation_handoff(
     """
     rows = normalize_demotion_rows(demotion_rows)
     requested = [_TRIGGER_INSTRUCTIONS.get(trigger, "Review what is below and consolidate what is durable.")]
-    if messages_at_risk:
-        requested.append(f"{messages_at_risk} message(s) are in the buffer being compressed.")
+    if messages_at_risk and trigger == "compaction":
+        requested.append(f"{messages_at_risk} message(s) went into that summary.")
     requested.extend(
         [
-            (
-                'Move durable facts, preferences, and decisions from this session into OMH with '
-                'omh_memory(action="capture"), one bounded line each.'
-            ),
+            COMPACTION_CAPTURE_INSTRUCTION if trigger == "compaction" else CAPTURE_INSTRUCTION,
             (
                 # Rows exist only under a headroom reason; with none to name,
                 # the instruction would point at nothing.
