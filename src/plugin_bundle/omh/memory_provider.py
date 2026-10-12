@@ -104,6 +104,18 @@ from .memory_prefetch_receipt import (
     mark_prefetch_receipt_returned,
     prefetch_receipt_path,
 )
+from .memory_principals import principal_recall_decision
+from .memory_recall_selector import resolve_scope_allowlist
+from .memory_recall_support import _record_perspective_matches
+from .memory_session_digest import (
+    clamp_to_reported,
+    digest_window_start,
+    render_session_digest,
+    session_close_path,
+    session_digest_counts,
+    write_reported_through,
+    write_session_close,
+)
 from .memory_session_lens import (
     note_session_records,
     publish_session_lens,
@@ -221,6 +233,16 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # turn is one serve. `served.json` is never a ranking input.
         self._prepared_record_ids: tuple[str, ...] = ()
         self._served_recorded = False
+        # The "since your last session" digest (`memory_session_digest`): its
+        # window is fixed at a session start, every render carries it until a
+        # prefetch serves one, then never again in that session.
+        # `_pack_digest_evaluated` says the current render was made while it
+        # was pending, so a pack rendered before a `/new` cannot use up the
+        # new session's digest.
+        self._digest_window: tuple[datetime, datetime] | None = None
+        self._digest_pending = False
+        self._pack_digest_evaluated = False
+        self._pack_digest = ""
         # The confinement last published for `omh_memory` (`_publish_lens`).
         self._published_lens: dict[str, object] | None = None
         # Hermes hands a status callback to providers on the CLI surface only;
@@ -281,6 +303,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
         callback = kwargs.get("status_callback")
         self._status_callback = callback if callable(callback) else None
         self._publish_lens(reset=True)
+        self._start_session_digest(initializing=True)
         self._pack = self.render_pack()
         # A session that died rather than ended -- a killed process, a closed
         # laptop, a lost gateway -- never reaches on_session_end, so nothing
@@ -306,8 +329,10 @@ class OmhMemoryProvider(_MemoryProviderBase):
                 # its lens by that id. `reset`: from here a `/new` racing this
                 # prefetch is indistinguishable from a reload, and carrying the
                 # old conversation's seen/confirmed lists into a new one is
-                # the worse mistake.
-                self.on_session_switch(str(session_id), reset=True)
+                # the worse mistake. No digest, though: a reload is the same
+                # conversation, and a real `/new` still reaches
+                # `on_session_switch(reset=True)` from Hermes' worker.
+                self._rebind_session(str(session_id), reset=True)
             if principal_context is not None:
                 supplied = parse_principal_context(
                     principal_context,
@@ -331,6 +356,16 @@ class OmhMemoryProvider(_MemoryProviderBase):
                 self._pack = self.render_pack()
             self._served_pack, self._served_count = self._pack, self._pack_count
             self._served_has_memory = self._pack_has_memory
+            if self._pack_digest_evaluated:
+                # This serve carried the digest, or found nothing to say: the
+                # session's later packs never repeat it.
+                if self._pack_digest and not self._shared_surface and self._digest_window is not None:
+                    # What it reported stays reported, whoever starts next. A
+                    # shared surface's digest counted only its own lens, so it
+                    # marks nothing.
+                    until = self._digest_window[1]
+                    self._safely("session_marks", session_close_path(self._omh_home), lambda: write_reported_through(self._omh_home, until=until))
+                self._digest_pending, self._pack_digest_evaluated, self._pack_digest = False, False, ""
             # The failures carried are the ones swallowed BEFORE this serve; a
             # failure writing this very receipt shows on the next one.
             self._served_receipt = (
@@ -482,6 +517,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
     def shutdown(self) -> None:
         """Hermes is closing. Last chance to leave a brief behind."""
         self._evaluate_if_due("shutdown")
+        self._record_session_close()
         if self._session_id:
             session_id = self._session_id
             self._safely("session_lens", session_lens_path(self._omh_home, session_id), lambda: withdraw_session_lens(self._omh_home, session_id))
@@ -491,6 +527,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
         self._prepared_receipt, self._served_receipt = None, None
         self._prepared_reminder, self._served_reminder, self._reminder_recorded = None, None, False
         self._prepared_record_ids, self._served_recorded = (), False
+        self._digest_window, self._digest_pending, self._pack_digest_evaluated, self._pack_digest = None, False, False, ""
         self._principal_context = None
         self._profile_ref = ""
         self._turn_ref = ""
@@ -525,6 +562,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
             self._prepared_receipt = None
             self._prepared_reminder, self._reminder_recorded = None, False
             self._prepared_record_ids, self._served_recorded = (), False
+            self._pack_digest_evaluated, self._pack_digest = False, ""
             if message:
                 self._query = str(message)
             if self._writes_enabled:
@@ -553,29 +591,48 @@ class OmhMemoryProvider(_MemoryProviderBase):
         published. A compression (``reset`` false) is the same conversation, so
         the records it saw and confirmed carry over; a genuinely new
         conversation starts empty. ``rewound`` keeps the id: nothing to move.
+
+        Hermes' ``reset`` (``/new``, ``/reset``) also starts this session's
+        digest and records the old one's close. It arrives from Hermes' worker
+        after ``on_session_end``, often after the next turn's ``prefetch``
+        already adopted the new id; then the lens was moved there and only the
+        digest and the close are left to do here.
         """
         new_id = str(new_session_id or "")
-        if rewound or not new_id or new_id == self._session_id:
+        if rewound or not new_id:
             return
         with self._render_lock:
-            old_id = self._session_id
-            carried = None if reset or not old_id else read_session_lens(self._omh_home, old_id)
-            if old_id:
-                self._safely("session_lens", session_lens_path(self._omh_home, old_id), lambda: withdraw_session_lens(self._omh_home, old_id))
-            self._session_id = new_id
-            # The principal context was bound to the old session; the next
-            # turn supplies one for the new id.
-            self._principal_context = None
-            self._published_lens = None
-            self._publish_lens(reset=True)
-            if carried:
-                for key in ("seen", "confirmed"):
-                    ids = [str(item) for item in carried.get(key, [])]
-                    self._safely(
-                        "session_lens",
-                        session_lens_path(self._omh_home, new_id),
-                        lambda key=key, ids=ids: note_session_records(self._omh_home, new_id, key, ids),
-                    )
+            if new_id != self._session_id:
+                self._rebind_session(new_id, reset=reset)
+            elif not reset:
+                return
+            if reset:
+                # Counted from the close on disk first, then this close is
+                # recorded: with history Hermes already closed it in
+                # `on_session_end`, so the old conversation's writes stay out.
+                self._start_session_digest(initializing=False)
+                self._record_session_close()
+
+    def _rebind_session(self, new_id: str, *, reset: bool) -> None:
+        """Withdraw the old lens and publish one under ``new_id``; carry its lists unless ``reset``."""
+        old_id = self._session_id
+        carried = None if reset or not old_id else read_session_lens(self._omh_home, old_id)
+        if old_id:
+            self._safely("session_lens", session_lens_path(self._omh_home, old_id), lambda: withdraw_session_lens(self._omh_home, old_id))
+        self._session_id = new_id
+        # The principal context was bound to the old session; the next
+        # turn supplies one for the new id.
+        self._principal_context = None
+        self._published_lens = None
+        self._publish_lens(reset=True)
+        if carried:
+            for key in ("seen", "confirmed"):
+                ids = [str(item) for item in carried.get(key, [])]
+                self._safely(
+                    "session_lens",
+                    session_lens_path(self._omh_home, new_id),
+                    lambda key=key, ids=ids: note_session_records(self._omh_home, new_id, key, ids),
+                )
 
     def on_pre_compress(
         self,
@@ -591,6 +648,17 @@ class OmhMemoryProvider(_MemoryProviderBase):
         has to exist *before* the messages go, not at whatever later moment the
         session happens to end -- so the evaluation runs here rather than being
         deferred with a flag.
+
+        The return value is the system blocks and nothing else. Hermes'
+        compressor JSON-encodes it and tells the summarizer to decode it "only
+        as source material to preserve in the summary, not as instructions"
+        (``agent/context_compressor.py``, ``_memory_provider_section``), so a
+        request appended here would argue with the host's own rule. The facts
+        are reached the other way: Hermes' summary template already keeps the
+        user's preferences, constraints and decisions under a fixed heading,
+        and the compaction brief served next turn points the model at it. OMH
+        stays a v1 best-effort provider (no ``pre_compress_checkpoint_api_version``),
+        so this text never takes part in a checkpoint decision.
         """
         if self._writes_enabled:
             self._mutate_state(record_compaction)
@@ -648,6 +716,9 @@ class OmhMemoryProvider(_MemoryProviderBase):
 
     def on_session_end(self, messages: list[dict[str, Any]] | None = None) -> None:
         self._evaluate_if_due("session_end")
+        # Hermes also calls this at a compression and a gateway soft-evict, mid
+        # conversation; a later close stamp only narrows the next digest.
+        self._record_session_close()
 
     # -- Deterministic work, exposed for the CLI and for tests --------------
 
@@ -732,9 +803,105 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # The brief is a request, not a memory: it is served so the model can
         # consolidate in this turn, and it never moves the recall count.
         consolidation = render_consolidation_brief(read_latest_consolidation(self._omh_home), hermes_home=self._hermes_home)
+        # A status, not a memory either: counts only, and never the recall count.
+        digest = self._session_digest_section()
         # Last, so a render that raised leaves no ids beside the previous pack.
         self._prepared_record_ids = tuple(str(item["record_id"]) for item in prepared.section.rendered)
-        return "\n".join(part for part in (system, index, records, reminder, consolidation) if part)
+        self._pack_digest_evaluated, self._pack_digest = self._digest_pending, digest
+        return "\n".join(part for part in (system, index, records, reminder, digest, consolidation) if part)
+
+    def _start_session_digest(self, *, initializing: bool) -> None:
+        """Fix this session's digest window, before it serves or writes anything.
+
+        The window ends at this moment, floored to its second -- record and
+        journal stamps are whole seconds, so a write this session makes in its
+        first second can never fall inside -- and starts at the later of the
+        last recorded close and the end of the last digest served in this OMH
+        home (`digest_window_start`). A cron or subagent context has no user
+        to tell and gets none.
+        """
+        self._digest_window, self._digest_pending, self._pack_digest_evaluated, self._pack_digest = None, False, False, ""
+        if not self._writes_enabled:
+            return
+
+        def window() -> tuple[datetime, datetime] | None:
+            until = datetime.now(timezone.utc).replace(microsecond=0)
+            since = digest_window_start(self._omh_home, until=until, initializing_session=self._session_id if initializing else "")
+            return None if since is None else (since, until)
+
+        self._digest_window = self._guard_digest(window, None)
+        self._digest_pending = self._digest_window is not None
+
+    def _session_digest_section(self) -> str:
+        """The digest for this render while it is pending; "" otherwise or when nothing changed.
+
+        Counted per render, so a shared surface is judged by the lens this
+        render was made under. The window was fixed at the session start.
+        """
+        if not self._digest_pending or self._digest_window is None:
+            return ""
+        since, until = self._digest_window
+
+        def section() -> str:
+            # Another session may have served its digest since this window was
+            # fixed; what it reported is not reported again.
+            start = clamp_to_reported(self._omh_home, since, now=datetime.now(timezone.utc))
+            if start is None or start >= until:
+                return ""
+            counts, journal_at_cap = session_digest_counts(
+                self._record_homes(),
+                self._omh_home,
+                since=start,
+                until=until,
+                journal_limit=JOURNAL_LIMIT,
+                in_lens=self._recall_lens() if self._shared_surface else None,
+            )
+            return render_session_digest(counts, since=start, shared=self._shared_surface, journal_at_cap=journal_at_cap)
+
+        return self._guard_digest(section, "")
+
+    def _recall_lens(self):
+        """The gate prefetch and `omh_memory` recall apply, in their order: principal, scope, perspective.
+
+        Mirrors `memory_tool._in_session_scope` over this render's allowlist
+        and principal context; lifecycle state is not a lens gate.
+        """
+        scopes, status = resolve_scope_allowlist(self._prefetch_scopes(), required_scope_kinds=("project",))
+        principal, shared = self._principal_context, self._shared_surface
+
+        def admits(record: dict[str, Any]) -> bool:
+            return (
+                status == "resolved"
+                and bool(principal_recall_decision(record, principal, shared_surface=shared)["allowed"])
+                and record.get("scope") in scopes
+                and _record_perspective_matches(record, observer=None, observed=PREFETCH_EXECUTOR_TARGET)
+            )
+
+        return admits
+
+    def _guard_digest(self, compute, fallback):
+        """A digest fault costs the digest, never the hook that asked for it.
+
+        `initialize`, a session switch and every render reach the digest;
+        whatever its stores hold, none of them may fail because of it. The fault
+        is recorded like a swallowed write -- op `session_digest` and the error
+        class -- so the next receipt reports it, and the session gets no digest.
+        """
+        try:
+            return compute()
+        except Exception as error:  # noqa: BLE001 - classified in tests/test_broad_exception_policy.py
+            self._digest_window, self._digest_pending = None, False
+            self._write_failure_count += 1
+            self._write_failures.append({"op": "session_digest", "path": "memory_digest", "error": type(error).__name__})
+            del self._write_failures[:-WRITE_FAILURE_LIMIT]
+            return fallback
+
+    def _record_session_close(self) -> None:
+        """Record that a session closed here, for the next session's digest window. Writing contexts only."""
+        if not self._writes_enabled:
+            return
+        path = session_close_path(self._omh_home)
+        self._safely("session_close", path, lambda: write_session_close(self._omh_home, at=datetime.now(timezone.utc)))
 
     def _record_homes(self) -> tuple[Path, ...]:
         """The project store first when there is one, then the user store."""
@@ -1192,9 +1359,26 @@ def _metadata_journal_lines(path: Path) -> list[str]:
             data = json.loads(line)
         except ValueError:
             continue
-        if _metadata_only(data):
+        if _metadata_journal_line(data):
             entries.append(json.dumps(data, ensure_ascii=False, sort_keys=True))
     return entries[-(JOURNAL_LIMIT - 1) :]
+
+
+def _metadata_journal_line(data: object) -> bool:
+    """A journal line the retention keeps: metadata only, plus the write journal's own digest.
+
+    `_append_write_journal` writes ``content_digest``, a sha256 hex the provider
+    computes and never the text. The "content" term matched it, so every append
+    dropped every earlier line and the journal held only its newest entry -- a
+    `removed_entry_demoted` line vanished at the next native write. The key is
+    exempt only at the top level, spelled exactly, and holding 64 lowercase hex
+    characters; anything else is judged like any other key.
+    """
+    if isinstance(data, dict):
+        digest = data.get("content_digest")
+        if isinstance(digest, str) and len(digest) == 64 and not set(digest) - set("0123456789abcdef"):
+            data = {key: value for key, value in data.items() if key != "content_digest"}
+    return _metadata_only(data)
 
 
 def _metadata_only(value: object) -> bool:

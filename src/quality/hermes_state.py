@@ -13,12 +13,12 @@ stamp shape.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-import math
 from pathlib import Path
 import sqlite3
 from typing import Any
 from urllib.parse import quote
+
+from ..plugin_bundle.omh.memory_session_digest import stamp_epoch
 
 
 NO_SOURCE_LABEL = "(none)"
@@ -63,30 +63,13 @@ def hermes_epoch(value: Any) -> float | None:
     """Epoch seconds from a Hermes stamp, or ``None`` when it is not one.
 
     Hermes stores REAL epoch seconds; older rows and fixtures carry ISO-8601
-    text. A non-finite number is not a stamp in either form: ``nan`` text
-    would otherwise disable a ``--since`` window and reach a JSON payload as
-    a token ``json`` cannot read back.
+    text. A non-finite or unrepresentable number is not a stamp in either
+    form: ``nan`` text would otherwise disable a ``--since`` window, and a
+    400-digit integer made ``math.isfinite`` raise. One parser for the
+    reports and the memory provider's digest, which runs in the Hermes process
+    and cannot import this package, so it lives in the bundle.
     """
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value) if math.isfinite(value) else None
-    if not isinstance(value, str) or not value.strip():
-        return None
-    text = value.strip()
-    try:
-        number = float(text)
-    except ValueError:
-        pass
-    else:
-        return number if math.isfinite(number) else None
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.timestamp()
+    return stamp_epoch(value)
 
 
 def resolve_session_id(

@@ -204,6 +204,7 @@ _SCHEMA_ID_TERMS: tuple[str, ...] = (
     "omh_memory_scope/v2",
     "omh_memory_scope/v3",
     "omh_memory_served/v1",
+    "omh_memory_session_close/v1",
     "omh_memory_session_lens/v1",
     "omh_memory_unknown_action/v1",
     "omh_memory_write_journal_entry/v1",
