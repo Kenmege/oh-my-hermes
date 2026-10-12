@@ -58,6 +58,7 @@ if RecallStatus is None:
 
 from .hermes_memory import (
     entry_digest,
+    HermesMemoryFile,
     count_record_expiry,
     demotion_origin_ref,
     read_approved_records,
@@ -81,6 +82,8 @@ from .memory_dreaming import (
     build_consolidation_handoff,
     clear_after_consolidation,
     consolidation_reasons,
+    headroom_floor_for_cap,
+    HEADROOM_USER_GUARD_INSTRUCTION,
     dreaming_state_path,
     HEADROOM_DEMOTE_INSTRUCTION,
     HEADROOM_TRIM_INSTRUCTION,
@@ -636,7 +639,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
         """
         state = read_dreaming_state(self._omh_home)
         moment = now or datetime.now(timezone.utc)
-        plan, reason_kwargs, record_expiry = self._evaluation_inputs(trigger, now=moment)
+        plan, reason_kwargs, record_expiry, readings = self._evaluation_inputs(trigger, now=moment)
         blocks = () if self._shared_surface else read_memory_blocks(self._omh_home)
         selection = self._block_selection(blocks=blocks, now=moment)
         reasons = self._with_replay_reminders(consolidation_reasons(state, **reason_kwargs), selection)
@@ -652,10 +655,15 @@ class OmhMemoryProvider(_MemoryProviderBase):
             # inspection object gave it a raise time for a raise that never was.
             raised_at=_utc_now() if reasons else "",
             demotion_rows=(
-                self._demotion_rows()
+                self._demotion_rows(readings)
                 if any(reason.startswith("headroom_below_floor") for reason in reasons)
                 else []
             ),
+            hermes_files=[
+                {"label": item.label, "headroom_chars": item.headroom_chars, "floor": headroom_floor_for_cap(item.cap)}
+                for item in readings
+                if item.exists
+            ],
         )
         if reasons:
             self._write_handoff(handoff)
@@ -681,7 +689,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
         *,
         count_expiry: bool = True,
         now: datetime | None = None,
-    ) -> tuple[dict[str, object], dict[str, object], dict[str, int]]:
+    ) -> tuple[dict[str, object], dict[str, object], dict[str, int], tuple[HermesMemoryFile, ...]]:
         """The eviction plan, reason kwargs, and expiry counts for one evaluation.
 
         The expiry scan is one glob plus a JSON parse per approved record and
@@ -691,7 +699,8 @@ class OmhMemoryProvider(_MemoryProviderBase):
         block `_retire_stale_brief` forever.
         """
         moment = now or datetime.now(timezone.utc)
-        reading = self._memory_reading()
+        readings = self._hermes_snapshot()
+        reading = next((item for item in readings if item.label == "MEMORY.md" and item.exists), None)
         plan = (
             build_eviction_plan(reading.entries, cap=reading.cap, cap_source=reading.cap_source)
             if reading is not None
@@ -706,11 +715,18 @@ class OmhMemoryProvider(_MemoryProviderBase):
             plan,
             {
                 "headroom_chars": reading.headroom_chars if reading is not None else None,
+                "headroom_floor_chars": headroom_floor_for_cap(reading.cap) if reading is not None else 0,
+                "file_headrooms": {
+                    item.label: (item.headroom_chars, headroom_floor_for_cap(item.cap))
+                    for item in readings
+                    if item.label != "MEMORY.md" and item.exists
+                },
                 "duplicate_count": len(plan.get("duplicate_clusters", []) or []),
                 "expiring_count": record_expiry["expired"] + record_expiry["expiring_soon"],
                 "session_ending": trigger in _SESSION_ENDING_TRIGGERS,
             },
             record_expiry,
+            readings,
         )
 
     def _refresh_brief_record_expiry(self, record_expiry: dict[str, int]) -> None:
@@ -732,7 +748,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
         clear a notice whose fact had not cleared.
         """
         state = read_dreaming_state(self._omh_home)
-        _, reason_kwargs, _record_expiry = self._evaluation_inputs("memory_write", count_expiry=False)
+        _, reason_kwargs, _record_expiry, _readings = self._evaluation_inputs("memory_write", count_expiry=False)
         blocks = () if self._shared_surface else read_memory_blocks(self._omh_home)
         selection = self._block_selection(blocks=blocks)
         return [
@@ -817,56 +833,58 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # as the rest of this consolidation decision.
         return [*reasons, *self._replay_reminder_reasons(selection)]
 
-    def _demotion_rows(self) -> list[dict[str, object]]:
-        """The MEMORY.md entries a nearly-full brief asks the model to demote, metadata only.
+    def _demotion_rows(self, snapshot: tuple[HermesMemoryFile, ...]) -> list[dict[str, object]]:
+        """The Hermes entries a nearly-full brief asks the model to demote, metadata only.
 
-        MEMORY.md alone, because it is the file whose headroom raised the
-        reason: a USER.md row would not clear it. Largest first, because the
-        first move should free the most. Rows the model's `demote` would
-        refuse -- redacted, over the summary bound, a pending, rejected or
-        unknown candidate for exactly that entry -- are left out, or the same
-        refused row would ride every brief. Whether an entry is already held
-        is not decided here: `demote` decides it live, under its own rule.
+        Every Hermes memory file below the headroom floor contributes, because
+        a USER.md row is what clears a USER.md reason and a MEMORY.md row would
+        not. Largest first across the files, because the first move should free
+        the most. Rows the model's `demote` would refuse -- redacted, over the
+        summary bound, a pending, rejected or unknown candidate for exactly
+        that entry, or an entry held by both files (one digest, two files) --
+        are left out, or the same refused row would ride every brief. Whether
+        an entry is already held is not decided here: `demote` decides it live.
 
         A failure costs the rows, never the brief: it is recorded like a
         swallowed write and the brief goes out without them.
         """
-        if self._hermes_home is None:
-            return []
+        label = "memories"
         try:
-            readings = {item.label: item for item in read_hermes_memory(self._hermes_home)}
-            reading = readings.get("MEMORY.md")
-            entries = sorted(dict.fromkeys(reading.entries if reading is not None else ()), key=lambda item: -len(item))
-            # `demote` refuses an entry that is also in USER.md (one digest,
-            # two files), so offering it would ride every brief unmoved.
-            in_user = set(readings["USER.md"].entries) if "USER.md" in readings else set()
+            readings = {item.label: item for item in snapshot}
             parked = {
                 str(candidate.get("source_ref", ""))
                 for candidate in read_project_memory_candidates(self._omh_home)
                 if str(candidate.get("status", "")) != "approved"
             }
-            rows: list[dict[str, object]] = []
-            for entry in entries:
-                if entry in in_user or demotion_refusal_reason(entry) or demotion_origin_ref("MEMORY.md", entry) in parked:
+            offered: list[tuple[str, str]] = []
+            for label, reading in readings.items():
+                if not reading.exists or reading.headroom_chars > headroom_floor_for_cap(reading.cap):
                     continue
-                rows.append({"kind": "demote", "file": "MEMORY.md", "sha12": entry_digest(entry)[:12], "chars": len(entry)})
-                if len(rows) == DEMOTION_BRIEF_MAX_ROWS:
-                    break
-            return rows
+                elsewhere = {item for other, held in readings.items() if other != label for item in held.entries}
+                offered.extend(
+                    (label, item)
+                    for item in dict.fromkeys(reading.entries)
+                    if item not in elsewhere and not demotion_refusal_reason(item) and demotion_origin_ref(label, item) not in parked
+                )
+            offered.sort(key=lambda pair: -len(pair[1]))
+            return [
+                {"kind": "demote", "file": label, "sha12": entry_digest(item)[:12], "chars": len(item)}
+                for label, item in offered[:DEMOTION_BRIEF_MAX_ROWS]
+            ]
         except Exception as error:
             self._write_failure_count += 1
-            self._write_failures.append({"op": "demotion_rows", "path": "MEMORY.md", "error": type(error).__name__})
+            self._write_failures.append({"op": "demotion_rows", "path": label, "error": type(error).__name__})
             del self._write_failures[:-WRITE_FAILURE_LIMIT]
             return []
 
-    def _memory_reading(self):
+    def _hermes_snapshot(self) -> tuple[HermesMemoryFile, ...]:
+        """Every Hermes memory file, read once per evaluation; empty when unreadable."""
         if self._hermes_home is None:
-            return None
+            return ()
         try:
-            readings = read_hermes_memory(self._hermes_home)
+            return read_hermes_memory(self._hermes_home)
         except OSError:
-            return None
-        return next((item for item in readings if item.label == "MEMORY.md" and item.exists), None)
+            return ()
 
     def _mutate_state(self, mutate) -> None:
         """Read-modify-write the counters under the state lock; a failure is counted."""
@@ -1191,6 +1209,20 @@ def render_consolidation_brief(brief: dict[str, Any] | None, *, hermes_home: str
             f' duplicate_clusters="{len(clusters)}" />'
         )
     rows = _demotion_row_lines(brief.get("demotion_rows"), hermes_home)
+    # A per-file headroom line only for a file that has a reason or an offered
+    # row: the others are not why this brief exists, and each line costs budget
+    # the rows need.
+    named = {
+        reason.split(":")[1] if not reason.split(":")[1][:1].isdecimal() else "MEMORY.md"
+        for reason in reasons
+        if reason.startswith("headroom_below_floor:")
+    } | {label for label in ("MEMORY.md", "USER.md") if any(row.startswith(f'  <demote file="{label}" ') for row in rows)}
+    for item in brief.get("hermes_files") if isinstance(brief.get("hermes_files"), list) else []:
+        if item.get("label") in named and (item.get("label") != "MEMORY.md" or not (clusters or plan.get("headroom_chars") is not None)):
+            lines.append(
+                f'  <hermes_memory file="{_attr(item.get("label"))}" headroom_chars="{_attr(item.get("headroom_chars"))}"'
+                f' floor="{_attr(item.get("floor"))}" />'
+            )
     requested = [str(item) for item in brief.get("requested_of_executor", []) if isinstance(item, str)]
 
     def tail_lines(rendered: list[str]) -> list[str]:
@@ -1198,6 +1230,8 @@ def render_consolidation_brief(brief: dict[str, Any] | None, *, hermes_home: str
         # re-chosen here from the rows actually rendered, so a section whose
         # rows were all dropped never says "for each demote row".
         chosen = [HEADROOM_TRIM_INSTRUCTION if item == HEADROOM_DEMOTE_INSTRUCTION and not rendered else item for item in requested]
+        if not any(row.startswith('  <demote file="USER.md" ') for row in rendered):
+            chosen = [item for item in chosen if item != HEADROOM_USER_GUARD_INSTRUCTION]
         tail = [f"  <do>{_text(item)}</do>" for item in chosen[:CONSOLIDATION_MAX_ITEMS]]
         tail.append("  <do>Then tell the user in one short line what you remembered or trimmed, or that nothing needed changing.</do>")
         tail.append("</memory_consolidation>")

@@ -41,6 +41,17 @@ DEFAULT_TURN_INTERVAL = 5
 # whatever the turn count says. A full file is the failure this is meant to
 # reach before it happens, not after.
 DEFAULT_HEADROOM_FLOOR_CHARS = 300
+_FLOOR_REFERENCE_CAP_CHARS = 2200  # MEMORY.md's default cap, where the floor is exactly the default
+
+
+def headroom_floor_for_cap(cap: int) -> int:
+    """The headroom floor for one file: proportional to its cap, never above the default.
+
+    A flat floor is wrong for a smaller file: a cap at or below it would be
+    below its floor while empty, and USER.md's 1375 would warn at 22% of the
+    cap against MEMORY.md's 14%. MEMORY.md at its default 2200 keeps 300.
+    """
+    return min(DEFAULT_HEADROOM_FLOOR_CHARS, max(cap, 0) * DEFAULT_HEADROOM_FLOOR_CHARS // _FLOOR_REFERENCE_CAP_CHARS)
 
 # Modes. There is no auto-launch: OMH cannot start Hermes' consolidation, so
 # offering the word would claim a capability the wrapper does not have.
@@ -185,6 +196,7 @@ def consolidation_reasons(
     turn_interval: int = DEFAULT_TURN_INTERVAL,
     headroom_chars: int | None = None,
     headroom_floor_chars: int = DEFAULT_HEADROOM_FLOOR_CHARS,
+    file_headrooms: dict[str, tuple[int, int]] | None = None,
     duplicate_count: int = 0,
     expiring_count: int = 0,
     session_ending: bool = False,
@@ -209,6 +221,14 @@ def consolidation_reasons(
     on every single turn and the journal filled with the same sentence. Each
     reason encodes its own value, so an unchanged condition is an unchanged
     string, and that is what the suppression compares.
+
+    ``headroom_chars`` is MEMORY.md's and keeps its original reason string.
+    ``file_headrooms`` maps every other Hermes memory file (USER.md) to its
+    ``(headroom, floor)``; its reason names the file --
+    ``headroom_below_floor:USER.md:34<=187`` -- so suppression compares each
+    file's own string and an unchanged file condition stays quiet while another
+    file's change still raises. The brief is retired only once no file is below
+    its floor.
     """
     if normalize_dreaming_mode(mode) == "off":
         return []
@@ -223,6 +243,9 @@ def consolidation_reasons(
         reasons.append("context_compaction_observed")
     if headroom_chars is not None and headroom_chars <= max(headroom_floor_chars, 0):
         reasons.append(f"headroom_below_floor:{headroom_chars}<={headroom_floor_chars}")
+    for label, (file_headroom, file_floor) in (file_headrooms or {}).items():
+        if file_headroom <= max(file_floor, 0):
+            reasons.append(f"headroom_below_floor:{label}:{file_headroom}<={file_floor}")
     if duplicate_count > 0:
         reasons.append(f"duplicate_records:{duplicate_count}")
     if expiring_count > 0:
@@ -297,6 +320,12 @@ HEADROOM_DEMOTE_INSTRUCTION = (
     "entry_sha256=<entry>), and remove the entry with Hermes' memory tool only when the status is "
     "demoted or already_covered. Keep anything refused or pending_review."
 )
+# Only with a USER.md row. The model decides what is about the user; OMH does
+# not read the entries to guess. SOUL owns voice and language, not memory.
+HEADROOM_USER_GUARD_INSTRUCTION = (
+    "In USER.md keep entries about who the user is, how to address them, and reply language or voice; "
+    "demote only the other entries."
+)
 HEADROOM_TRIM_INSTRUCTION = "When Hermes memory headroom is low, trim or merge its entries with Hermes' own memory tool."
 
 # Only `demote`: an entry is removed only on the action's own live verdict, so
@@ -328,6 +357,19 @@ def normalize_demotion_rows(value: Any) -> list[dict[str, object]]:
     return rows
 
 
+def normalize_hermes_files(value: Any) -> list[dict[str, object]]:
+    """Well-formed ``{label, headroom_chars, floor}`` per-file headroom rows; numbers and a label only."""
+    return [
+        {
+            "label": str(item["label"]),
+            "headroom_chars": _non_negative_int(item.get("headroom_chars")),
+            "floor": _non_negative_int(item.get("floor")),
+        }
+        for item in (value if isinstance(value, list) else [])
+        if isinstance(item, dict) and isinstance(item.get("label"), str) and item["label"]
+    ]
+
+
 def build_consolidation_handoff(
     reasons: list[str],
     *,
@@ -340,6 +382,7 @@ def build_consolidation_handoff(
     session_id: str = "",
     raised_at: str = "",
     demotion_rows: list[dict[str, object]] | None = None,
+    hermes_files: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     """A prepared brief for whoever actually consolidates.
 
@@ -369,6 +412,7 @@ def build_consolidation_handoff(
                 if rows
                 else HEADROOM_TRIM_INSTRUCTION
             ),
+            *([HEADROOM_USER_GUARD_INSTRUCTION] if any(row["file"] == "USER.md" for row in rows) else []),
             "Leave anything you cannot source; an unsourced entry is not evidence it is wrong.",
         ]
     )
@@ -388,6 +432,7 @@ def build_consolidation_handoff(
         "blocks": list(block_summaries or []),
         "eviction_plan": dict(eviction_plan or {}),
         "demotion_rows": rows,
+        "hermes_files": normalize_hermes_files(hermes_files),
         "requested_of_executor": requested,
         "redaction_policy": "metadata_only",
         "claim_boundary": (
@@ -431,6 +476,7 @@ def read_latest_consolidation(omh_home: str | Path) -> dict[str, Any] | None:
     normalized["raised_at"] = str(data.get("raised_at", "") or "")
     normalized["record_expiry"] = normalize_record_expiry(data.get("record_expiry"))
     normalized["demotion_rows"] = normalize_demotion_rows(data.get("demotion_rows"))
+    normalized["hermes_files"] = normalize_hermes_files(data.get("hermes_files"))
     if normalized["due"] and not normalized["reasons"]:
         # A brief that claims to be due but cannot say why is not actionable.
         normalized["due"] = False

@@ -1871,12 +1871,22 @@ def _unreclaimable_full_pack_message(reasons: list[str], brief: dict[str, object
     both numbers, and the eviction plan the brief was built with carries
     `reclaimable_chars` and `duplicate_clusters`.
 
+    Reasons are `headroom_below_floor:<chars><=<floor>` for MEMORY.md and
+    `headroom_below_floor:<file>:<chars><=<floor>` for any other file (USER.md);
+    only the first form is described by the plan, and a brief with demote rows
+    never qualifies.
+
     Only a brief whose ENTIRE reason set is the headroom condition qualifies.
     A brief also woken by the turn interval, a compaction, expiring records,
     or a replay reminder is asking for work that can actually be done, and
     downgrading it would hide that.
     """
     if not reasons or any(not reason.startswith(_HEADROOM_REASON_PREFIX) for reason in reasons):
+        return ""
+    # A per-file reason (`headroom_below_floor:USER.md:34<=187`) is about a file
+    # the eviction plan (MEMORY.md's) does not describe, and a brief carrying
+    # demote rows is asking for work the model can do.
+    if brief.get("demotion_rows") or any(not reason[len(_HEADROOM_REASON_PREFIX) :][:1].isdecimal() for reason in reasons):
         return ""
     plan = brief.get("eviction_plan")
     if not isinstance(plan, dict):
