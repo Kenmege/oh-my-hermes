@@ -3678,6 +3678,15 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "ai-slop-cleaner",
     ),
+    # A report of a finished anti-slop sweep is not a new request: `sweep` is
+    # held back, so the phrase alone keeps it a question.
+    RoutingPrecisionCase(
+        "finished-anti-slop-sweep-report-stays-a-clarify",
+        "Asking whether an anti-slop sweep finished does not start one",
+        "did the anti-slop sweep finish?",
+        "answer_clarification",
+        "",
+    ),
     # `anti-slop` as an adjective of quality or a topic, beside the README,
     # the docs, code, or a module.
     RoutingPrecisionCase(

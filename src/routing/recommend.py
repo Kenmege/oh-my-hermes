@@ -3875,14 +3875,19 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # description word (`metadata:slop`, +1), and the lexical shortlist ranks
     # on trigger text with two-letter words such as `ai`, which never become
     # routing tokens and so cannot be held back here at all.
-    # Measured: without `anti` and `slop`, "our hero section screams ai slop"
-    # and "this settings page feels like AI slop" dispatched the cleaner, and
-    # "the anti-virus flagged slop in the logs" named it as the candidate.
-    # `review` is defensive rather than measured: it is `code-review`'s word,
-    # and no sentence in the corpus moved when it was held back.
+    # Measured: without `anti-slop` (and with it `anti` and `slop`), "anti-slop
+    # pass on src/auth", stance talk such as "our anti-slop policy for pull
+    # requests", and UI sentences such as "this settings page feels like AI
+    # slop" dispatched the cleaner, and "the anti-virus flagged slop in the
+    # logs" named it as the candidate; without `pass` and `sweep` the pass
+    # and a report of a finished sweep dispatched. `review` is defensive
+    # rather than measured: it is `code-review`'s word, and no sentence in the
+    # corpus moved when it was held back.
     # Beside its own slop words the cleaner earns its code and prose nouns and
     # cleanup verbs back; see `_SLOP_CLEANER_CONTEXT_TOKENS`.
-    "ai-slop-cleaner": frozenset({"anti", "anti-slop", "slop", "pass", "review", "sweep"}),
+    # `anti-slop` normalizes to `anti-slop`, `anti`, and `slop`, so this one
+    # entry holds back all three.
+    "ai-slop-cleaner": frozenset({"anti-slop", "pass", "review", "sweep"}),
 }
 
 
