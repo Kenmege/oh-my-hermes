@@ -12,8 +12,8 @@ follow-up authority rule in force.
 `ultrawork` already has its one entry in `MECHANISM_POINTERS` (the
 file-ownership manifest), so the same contract is asserted here directly: the
 always-loaded body names this reference on exactly one line, and the
-reference records no date or volatile count. The per-skill byte ceiling is the
-structure-lint gate's to hold.
+reference records no date or volatile count. The per-skill byte ceiling on the
+shipped body is held by `tests/test_shipped_skill_body_ceiling.py`.
 
 Content is read from the producers, never from the generated `skills/` tree.
 """

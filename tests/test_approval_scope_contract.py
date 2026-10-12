@@ -29,7 +29,6 @@ from omh.skills.catalog import builtin_definitions
 from omh.skills.catalog_definitions import _PLAN_ACCEPTANCE_ANSWER_RULE
 from omh.skills.packaging import builtin_skill_templates
 from omh.skills.render import agent_skill_templates, workflow_skill_from_definition
-from omh.skills.validation import STRUCTURE_LINT_SKILL_BODY_BYTE_CEILING
 
 RALPLAN_NO_ANSWER_TOKENS = (
     "times out",  # the three ways a question ends without an answer
@@ -125,13 +124,6 @@ class ApprovalScopeContractTests(unittest.TestCase):
         for token in DEEP_INTERVIEW_TOKENS:
             with self.subTest(token=token):
                 self.assertIn(token, body)
-
-    def test_shipped_deep_interview_body_stays_under_the_byte_ceiling(self) -> None:
-        # The structure-lint gate measures the generic workflow render, which
-        # already covers `ralplan`. The shipped `deep-interview` is the bespoke
-        # `deep_interview_skill()` render, which that gate never measures.
-        body = next(item.content for item in builtin_skill_templates() if item.name == "deep-interview")
-        self.assertLessEqual(len(body.encode("utf-8")), STRUCTURE_LINT_SKILL_BODY_BYTE_CEILING)
 
 
 if __name__ == "__main__":
