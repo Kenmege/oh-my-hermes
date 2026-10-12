@@ -44,6 +44,7 @@ from .policy import (
     SKILL_SCOUT_CANDIDATE_ALIAS_PHRASES,
     SKILL_SCOUT_CANDIDATE_BLOCKER_PHRASES,
     SKILL_SCOUT_CANDIDATE_INTENT_PHRASES,
+    _UI_BUILD_SURFACES,
     _explicit_skill_candidate_is_negated,
     active_routing_guard_rules,
     context_query_is_budget_sense,
@@ -4244,13 +4245,25 @@ def _score_definition(
         trigger_token_matches -= {"index", "refresh", "stale", "갱신"}
     if definition.name == "external-connector-readiness" and not ecosystem_identity_connector_match:
         trigger_token_matches -= _ECOSYSTEM_IDENTITY_CONNECTOR_TRIGGER_NOISE
-    # The cleaner's own slop words earn its code and prose nouns and cleanup
-    # verbs (`_SLOP_CLEANER_CONTEXT_TOKENS`), so "this module looks like ai
-    # slop" leads with the cleaner while "this pricing card looks like ai
-    # slop" stays with frontend's appearance phrase. Without a slop word the
-    # nouns earn nothing: "the module failed to load" names no cleanup.
-    if definition.name == "ai-slop-cleaner" and query_tokens & {"slop", "deslop", "anti-slop"}:
-        trigger_token_matches |= query_tokens & _SLOP_CLEANER_CONTEXT_TOKENS
+    # The cleaner's code and prose nouns and cleanup verbs
+    # (`_SLOP_CLEANER_CONTEXT_TOKENS`) exist to answer frontend's appearance
+    # phrases, so they count only where one can compete: a slop word, an
+    # appearance word (`_SLOP_CLEANER_APPEARANCE_TOKENS`), and no UI surface.
+    # "this module looks like ai slop" then leads with the cleaner, while
+    # "this pricing card looks like ai slop" and "the pricing card component
+    # file looks like ai slop" stay with frontend. Without an appearance word
+    # they earn nothing either, which keeps a mention from reaching dispatch
+    # strength ("the docs explain what ai slop is" is a clarify, not a
+    # dispatch), and without a slop word "the module failed to load" names no
+    # cleanup. `routing_tokens` splits `anti-slop` into `slop` too, so the
+    # gate needs no separate entry for it.
+    if (
+        definition.name == "ai-slop-cleaner"
+        and query_tokens & {"slop", "deslop"}
+        and query_tokens & _SLOP_CLEANER_APPEARANCE_TOKENS
+        and not query_tokens & _SLOP_CLEANER_UI_SURFACE_TOKENS
+    ):
+        trigger_token_matches |= set(sorted(query_tokens & _SLOP_CLEANER_CONTEXT_TOKENS)[:_SLOP_CLEANER_CONTEXT_CAP])
     # `production` is held back for production-audit (see
     # `_WHOLE_PHRASE_ONLY_TRIGGER_TOKENS`) and credited again only beside a
     # readiness or audit word ("production readiness audit").
@@ -4429,6 +4442,23 @@ _SLOP_CLEANER_CONTEXT_TOKENS = frozenset(
         "clean", "simplify", "dedupe", "deduplicate", "prune", "tidy",
     }
 )
+# A UI surface named beside the slop word makes it frontend's restyle, so the
+# code nouns above earn nothing there ("the pricing card component file looks
+# like ai slop"). The page and screen nouns are the coding-edit guard's own
+# `_UI_BUILD_SURFACES`; the rest are the component-level nouns frontend
+# requests name.
+_SLOP_CLEANER_UI_SURFACE_TOKENS = _UI_BUILD_SURFACES | frozenset(
+    {"component", "components", "card", "cards", "section", "sections", "hero", "button", "buttons", "navbar", "layout", "ui"}
+)
+# At most this many context words count, so a slop word beside a stack of
+# nouns ("clean the files, simplify the code, tidy the docs ...") cannot run
+# away: two are enough to lead an appearance phrase, and a dispatch still
+# needs the cleaner's own phrase.
+_SLOP_CLEANER_CONTEXT_CAP = 2
+# The words of frontend's appearance phrases that say how something seems
+# ("looks like ai slop"); `like` is left out because it is a preposition in
+# far more sentences than it is half of an appearance phrase.
+_SLOP_CLEANER_APPEARANCE_TOKENS = frozenset({"look", "looks", "feels", "screams"})
 _PRODUCTION_AUDIT_CONTEXT_TOKENS = frozenset(
     {"audit", "readiness", "ready", "launch", "preflight", "checklist", "go-live", "rollback"}
 )

@@ -437,7 +437,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # three sentences that carry a code noun or cleanup verb with no
             # slop word (a module that fails to load, "clean it up later",
             # "simplify this function"), none of which may name the cleaner.
-            expected=446,
+            # Its review adds four: a README that mentions an anti-slop policy
+            # and a question whether a docs anti-slop policy is too strict
+            # (stances, not requests, which dispatched the cleaner), docs that
+            # explain AI slop, and a slop word beside a stack of code nouns,
+            # both of which must stay a clarify.
+            expected=450,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -540,7 +545,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # cleanup verb, and a README that look like AI slop each clarify
             # with the cleaner leading frontend's appearance phrase, and a
             # module to simplify without changing behavior dispatches it.
-            expected=667,
+            # Its review adds one: a pricing card component file that looks like
+            # AI slop keeps frontend's dispatch, because a UI surface withholds
+            # the cleaner's code nouns.
+            expected=668,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

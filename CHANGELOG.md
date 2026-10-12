@@ -11,13 +11,17 @@ All notable changes will be documented here.
   back from trigger-token scoring (`slop` still counts as a description word,
   and the lexical shortlist still reads the trigger text). A question about
   the word, a subagent's quoted report, and a plain "review this PR" stay
-  where they were. `frontend` gains `slop ui` and the appearance phrases
-  "looks like ai slop", "feels like ai slop", and "screams ai slop", so a
-  page, card, or section called AI slop stays with it. Beside a slop word the
-  cleaner earns code and prose nouns (module, function, file, README, docs)
-  and cleanup verbs (clean, simplify, dedupe, prune) back, so "this README
-  looks like ai slop" asks first with the cleaner leading; both skills still
-  appear in that question, and the words alone earn the cleaner nothing. A
+  where they were, and `anti-slop` counts only beside cleanup or code words,
+  so a README that mentions an anti-slop policy is not a request. `frontend`
+  gains `slop ui` and the appearance phrases "looks like ai slop", "feels like
+  ai slop", and "screams ai slop", so a page, card, section, or component
+  called AI slop keeps frontend first: it dispatches frontend or asks with
+  frontend leading. Beside a slop word and one of those appearance words, and
+  with no UI surface named, the cleaner earns up to two code and prose nouns
+  (module, function, file, README, docs) or cleanup verbs (clean, simplify,
+  dedupe, prune) back, so "this README looks like ai slop" asks first with the
+  cleaner leading; both skills still appear in that question, and the words
+  alone earn the cleaner nothing. A
   no-edit review mode inspects a drafted cleanup against the six taxonomy
   categories and returns findings in the `code-review` shape, handing fixes to
   a separate writer pass. A new `references/ui-review-checklist.md` lists six

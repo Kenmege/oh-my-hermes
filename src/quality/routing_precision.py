@@ -3605,6 +3605,42 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     # The cleaner's code and prose nouns and cleanup verbs score only beside
     # its own slop words (`_SLOP_CLEANER_CONTEXT_TOKENS`); without one these
     # stay where they were and never name the cleaner.
+    # `anti-slop` as a stance, not a request: it counts only beside the
+    # cleaner's work or code words (`EVERYDAY_SENSE_PHRASES` in policy.py).
+    RoutingPrecisionCase(
+        "readme-anti-slop-policy-mention-does-not-name-slop-cleaner",
+        "A README that mentions an anti-slop policy is not a cleanup request",
+        "our README mentions an anti-slop policy",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "docs-anti-slop-policy-question-does-not-name-slop-cleaner",
+        "Asking whether an anti-slop policy is too strict is not a cleanup request",
+        "is our docs anti-slop policy too strict?",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    # A mention of AI slop in the docs, and a slop word beside a stack of code
+    # nouns, ask rather than dispatch: the context words count only beside an
+    # appearance word, and at most two of them count. The cleaner may still
+    # lead the question, so neither names a forbidden candidate.
+    RoutingPrecisionCase(
+        "docs-explain-ai-slop-stays-a-clarify",
+        "Docs that explain AI slop are a mention, not a cleanup request",
+        "the docs explain what ai slop is",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "slop-beside-stacked-code-nouns-stays-a-clarify",
+        "A slop word beside a stack of code nouns does not run away into a dispatch",
+        "pig slop: clean the files, simplify the code, tidy the docs, prune the module, dedupe the classes",
+        "answer_clarification",
+        "",
+    ),
     RoutingPrecisionCase(
         "module-load-failure-does-not-name-slop-cleaner",
         "A module that fails to load is not a cleanup request",
@@ -8789,11 +8825,13 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_frontend_handoff",
         "frontend_handoff",
     ),
-    # Code and prose nouns beside a slop word put the cleaner back in the
-    # lead over frontend's appearance phrases. Both skills say a phrase of
-    # their own, so these stay a clarify with the cleaner first: the
-    # appearance phrase still names frontend, and a code noun alone does not
-    # settle that a restyle was not meant (owner decision, 2026-10-12).
+    # Code and prose nouns beside a slop word and an appearance word put the
+    # cleaner back in the lead over frontend's appearance phrases (owner
+    # decision, 2026-10-12). Where both skills say one phrase each, the first
+    # three stay a clarify with the cleaner first: a code noun alone does not
+    # settle that a restyle was not meant. The fourth names the cleanup and
+    # behavior preservation as well, which is enough to dispatch. A UI surface
+    # beside the code noun keeps frontend's dispatch (the last case).
     RoutingInterventionCase(
         "function-feels-like-ai-slop-leads-with-slop-cleaner",
         "A function that feels like AI slop asks first, with the cleaner leading",
@@ -8832,6 +8870,15 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "ai-slop-cleaner",
         "forward_plan_to_selected_workflow",
         "plan",
+    ),
+    RoutingInterventionCase(
+        "ui-component-file-looks-like-ai-slop-stays-with-frontend",
+        "A UI component file that looks like AI slop stays a frontend restyle",
+        "the pricing card component file looks like ai slop, simplify it",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
     ),
     RoutingInterventionCase(
         "hero-section-screams-ai-slop-keeps-frontend-leading",

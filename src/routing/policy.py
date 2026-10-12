@@ -2313,6 +2313,23 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
             }
         ),
     ),
+    # `anti-slop` is also an adjective for a stance ("our README mentions an
+    # anti-slop policy", "is our docs anti-slop policy too strict?"), and both
+    # of those dispatched the cleaner. A cleanup request names the work (a
+    # pass, a review, a sweep) or what it runs on (code, a module, a diff, a
+    # path under src). README and docs are deliberately absent: they are what
+    # a policy is written in as often as what a cleanup runs on.
+    "ai-slop-cleaner": (
+        ("anti-slop",),
+        frozenset(
+            {
+                "branch", "class", "classes", "clean", "cleanup", "code", "codebase", "commit",
+                "deslop", "diff", "directory", "file", "files", "folder", "function", "functions",
+                "method", "methods", "module", "modules", "pass", "refactor", "repo", "review",
+                "run", "src", "sweep",
+            }
+        ),
+    ),
 }
 # Words a bare request wraps around the phrase without adding a sense of its own.
 # "draft" and "write" are the request verbs of a writing phrase ("draft the PR
