@@ -105,14 +105,25 @@ def terminal_stdio():
 
 
 @contextmanager
-def launched(hermes_home: Path, argv: list[str], *, returncode: int = 0):
+def launched(
+    hermes_home: Path,
+    argv: list[str],
+    *,
+    returncode: int | list[int] = 0,
+    omh_tui: bool = False,
+    environments: list[dict[str, str] | None] | None = None,
+):
     """Run the bare launch with a faked `hermes` child.
 
     Yields ``(recorded, stdout, status)``: the argv handed to
     ``subprocess.run``, everything the launch printed, and the code it
-    returned.
+    returned. ``omh_tui`` says whether the OMH TUI can run here; the
+    surface-neutral tests keep it off, so they pin Hermes' own door. A list of
+    return codes answers successive children in order, and ``environments``
+    (when given) collects the ``env`` each child was started with.
     """
     recorded: list[list[str]] = []
+    codes = list(returncode) if isinstance(returncode, list) else None
 
     class _Completed:
         def __init__(self, code: int) -> None:
@@ -120,12 +131,15 @@ def launched(hermes_home: Path, argv: list[str], *, returncode: int = 0):
 
     def fake_run(command, *args, **kwargs):
         recorded.append(list(command))
-        return _Completed(returncode)
+        if environments is not None:
+            environments.append(kwargs.get("env"))
+        return _Completed(codes.pop(0) if codes is not None else returncode)
 
     parsed = build_parser().parse_args(["--hermes-home", str(hermes_home), *argv])
     with terminal_stdio() as stdout, \
             patch("shutil.which", return_value="/usr/local/bin/hermes"), \
             patch("omh.commands.main._run_startup_update_check"), \
+            patch("omh.commands.main._omh_tui_available", return_value=omh_tui), \
             patch("omh.commands.main.subprocess.run", side_effect=fake_run), \
             patch("omh.commands.main.time.time", side_effect=[CHILD_STARTED_AT, CHILD_ENDED_AT]):
         status = _launch_hermes_tui(parsed)
@@ -417,6 +431,61 @@ class PassThroughArgvTests(unittest.TestCase):
             ["/usr/local/bin/hermes", "--profile", "work", "--resume", "sess-alpha"],
         )
 
+
+
+class OmhTuiDoorTests(unittest.TestCase):
+    """When the OMH TUI can run, bare `omh` opens it through `hermes --tui`."""
+
+    def test_the_omh_tui_attempt_adds_tui_after_the_profile(self) -> None:
+        with TemporaryDirectory() as tmp:
+            with launched(Path(tmp), ["--resume", "sess-alpha", "-p", "work"], omh_tui=True) as (recorded, _o, _s):
+                pass
+        self.assertEqual(
+            recorded,
+            [["/usr/local/bin/hermes", "--profile", "work", "--tui", "--resume", "sess-alpha"]],
+        )
+
+    def test_the_attempt_carries_the_frontend_dir_the_interpreter_and_the_omh_home(self) -> None:
+        from omh.tui.launch import FRONTEND_DIR
+
+        environments: list[dict[str, str] | None] = []
+        with TemporaryDirectory() as tmp:
+            with launched(Path(tmp), ["--omh-home", str(Path(tmp) / "omh")], omh_tui=True,
+                          environments=environments) as (_r, _o, _s):
+                pass
+        (environment,) = environments
+        self.assertEqual(environment["HERMES_TUI_DIR"], str(FRONTEND_DIR))
+        self.assertEqual(environment["OMH_TUI_PYTHON"], sys.executable)
+        self.assertEqual(Path(environment["OMH_HOME"]).name, "omh")
+
+    def test_the_fallback_code_reopens_hermes_own_terminal(self) -> None:
+        from omh.tui.launch import FALLBACK_EXIT
+
+        with TemporaryDirectory() as tmp:
+            with launched(Path(tmp), ["-c"], returncode=[FALLBACK_EXIT, 0], omh_tui=True) as (recorded, _o, status):
+                pass
+        self.assertEqual(
+            recorded,
+            [["/usr/local/bin/hermes", "--tui", "--continue"], ["/usr/local/bin/hermes", "--continue"]],
+        )
+        self.assertEqual(status, 0)
+
+    def test_any_other_code_ends_the_launch_without_a_second_terminal(self) -> None:
+        with TemporaryDirectory() as tmp:
+            for code in (0, 1, 2, 42, 130):
+                with self.subTest(code=code):
+                    with launched(Path(tmp), [], returncode=[code], omh_tui=True) as (recorded, _o, status):
+                        pass
+                    self.assertEqual(len(recorded), 1)
+                    self.assertEqual(status, code)
+
+    def test_without_the_omh_tui_hermes_own_door_runs_unchanged(self) -> None:
+        environments: list[dict[str, str] | None] = []
+        with TemporaryDirectory() as tmp:
+            with launched(Path(tmp), [], omh_tui=False, environments=environments) as (recorded, _o, _s):
+                pass
+        self.assertEqual(recorded, [["/usr/local/bin/hermes"]])
+        self.assertEqual(environments, [None])
 
 class LaunchExitTests(unittest.TestCase):
     """What the launch prints, and what it returns, once the child is gone."""

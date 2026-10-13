@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -618,18 +619,21 @@ def _reject_tui_passthrough_with_subcommand(args: argparse.Namespace) -> None:
             )
 
 
-def _hermes_passthrough_argv(args: argparse.Namespace) -> list[str]:
+def _hermes_passthrough_argv(args: argparse.Namespace, *, omh_tui: bool = False) -> list[str]:
     """The bare-launch flags forwarded to `hermes`, in one fixed order.
 
     Every value is its own argv element: nothing is interpolated into a string
-    and nothing goes through a shell. Nothing else is added -- which terminal
-    opens is still Hermes' `display.interface` decision, for the reason the
+    and nothing goes through a shell. `--tui` is added only for the OMH TUI
+    attempt, right after the profile that selects the home; Hermes' own
+    terminal stays Hermes' `display.interface` decision, for the reason the
     launcher's docstring records.
     """
     argv: list[str] = []
     profile = getattr(args, "tui_profile", None)
     if profile:
         argv += ["--profile", profile]
+    if omh_tui:
+        argv.append("--tui")
     resume = getattr(args, "tui_resume", None)
     if resume:
         argv += ["--resume", resume]
@@ -685,19 +689,18 @@ def _print_resume_hint(
 
 
 def _launch_hermes_tui(args: argparse.Namespace) -> int | None:
-    """Open the OH-MY-HERMES terminal: bare `omh` is the same door as `hermes`.
+    """Open the OH-MY-HERMES terminal: bare `omh` opens the OMH TUI.
 
     The oh-my-zsh contract, applied here: the wrapper's bare name IS the
-    styled experience. This execs the user's own `hermes` binary carrying
+    styled experience. This runs the user's own `hermes` binary carrying
     nothing but the three session flags the bare launch passes through
     (`_hermes_passthrough_argv`) -- a user-invoked local launch, not
-    background dispatch. It used to force `--tui`, which made the two doors
-    open DIFFERENT terminals whenever `display.interface` selected the
-    classic REPL: `omh` showed the HUD, bare `hermes` showed no OMH surface
-    at all, and the split read as a bug from the first boot. Which terminal
-    opens belongs to Hermes' own `display.interface`; OMH's door just walks
-    through it. No terminal or no Hermes install means there is nothing to
-    launch, and the caller falls back to the welcome text.
+    background dispatch. When the OMH TUI can run here (`_run_terminal`), the
+    launch adds `--tui` and `HERMES_TUI_DIR`, so Hermes' launcher starts the
+    OMH frontend in place of its own; when it cannot, or it exits with
+    `FALLBACK_EXIT`, the launch walks through Hermes' own door exactly as it
+    did before the OMH TUI existed. No terminal or no Hermes install means
+    there is nothing to launch, and the caller falls back to the welcome text.
 
     The child's start and end wall-clock times are recorded because they are
     the only handle OMH has on which session closed with it: see
@@ -715,11 +718,37 @@ def _launch_hermes_tui(args: argparse.Namespace) -> int | None:
     paths = _paths(args)
     started_at = time.time()
     try:
-        returncode = int(subprocess.run([hermes, *_hermes_passthrough_argv(args)]).returncode)
+        returncode = _run_terminal(hermes, args, paths)
     except (OSError, KeyboardInterrupt):
         return None
     _print_resume_hint(args, paths, started_at, time.time(), returncode)
     return returncode
+
+
+def _omh_tui_available(paths) -> bool:
+    from ..tui.launch import omh_tui_available
+
+    return omh_tui_available(sys.stdin, sys.stdout, os.environ, paths.hermes_home)
+
+
+def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
+    """Run the OMH TUI through `hermes --tui`, or Hermes' own terminal when it cannot start.
+
+    Only `FALLBACK_EXIT` reopens Hermes' terminal: it is the OMH TUI saying it
+    never got going (it has already said why). Any other code is the person's
+    session ending and is returned as it is, so a session the person closed is
+    never followed by a second terminal.
+    """
+    from ..tui.launch import FALLBACK_EXIT, omh_tui_environment
+
+    if _omh_tui_available(paths):
+        environment = omh_tui_environment(os.environ, python=sys.executable, omh_home=paths.omh_home)
+        returncode = int(
+            subprocess.run([hermes, *_hermes_passthrough_argv(args, omh_tui=True)], env=environment).returncode
+        )
+        if returncode != FALLBACK_EXIT:
+            return returncode
+    return int(subprocess.run([hermes, *_hermes_passthrough_argv(args)]).returncode)
 
 
 def main(argv: list[str] | None = None) -> int:
