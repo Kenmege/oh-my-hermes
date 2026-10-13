@@ -424,6 +424,15 @@ def _managed_skill_locations(skills_dir: Path, manifest: dict[str, Any] | None) 
     the operator say. The label is recorded first so a canonical name that
     happens to equal another skill's label never displaces it.
 
+    Rule: only a label match is a contest inside Hermes' resolution, so only
+    a label match can be `shadowed` or `ambiguous`. Hermes resolves a skill by
+    its directory name, its frontmatter name, or its path under a root, and
+    for an OMH skill the first two are the label; a foreign skill holding the
+    canonical name (`doctor` beside `omh-doctor`) answers a different name and
+    hides nothing. That match is still reported, as `separate`, because the
+    router and the operator say the canonical name, but calling it shadowing
+    would claim an outcome the tier order does not produce.
+
     A managed location is recorded only when the manifest accounts for it. A
     file sitting under `skills_dir` that no record explains is not something OMH
     installed, and letting it stand in for OMH's side would fabricate a

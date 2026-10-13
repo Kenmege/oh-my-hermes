@@ -10,10 +10,11 @@ All notable changes will be documented here.
   managed skills included. The OMH plugin's `pre_tool_call` now refuses a
   `skill_manage` edit, patch, write_file, or remove_file whose target resolves
   to a skill OMH's install manifest records (by installed directory name, never
-  by prefix; a same-name skill in the Hermes home's own skills directory takes
-  the edit and passes), and the refusal names where the lesson goes: a
-  separately named companion skill, or OMH's workflow-learning lane. A skill
-  OMH did not install passes untouched. When Hermes' curator ledger
+  by prefix; a same-name skill in the Hermes home's own skills directory or in
+  `skills.create_dir` takes the edit and passes, and a `config.yaml` the hook
+  cannot read lets the call through), and the refusal names where the lesson
+  goes: a separately named companion skill, or OMH's workflow-learning lane.
+  A skill OMH did not install passes untouched. When Hermes' curator ledger
   (`<hermes_home>/skills/.curator_ledger.jsonl`) shows a managed skill still
   holds a Hermes edit, `omh install` / `omh update` keep that skill as it is,
   carry it into a new generation on a staged update, and list it with the

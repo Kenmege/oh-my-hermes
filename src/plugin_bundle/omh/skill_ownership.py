@@ -20,21 +20,31 @@ The hook reaches the background-review fork too. `hermes_cli/plugins.py`
 then invokes `pre_tool_call` for every tool the whitelist admits, and
 `skill_manage` is one of them.
 
-Resolution follows `tools/skill_manager_tool.py::_find_skill`: a bare name is
-served from the profile's own skills directory before any external one, so a
-name a local skill also holds edits that local skill and passes through here.
-Matching is by the installed directory name, which is also every OMH skill's
-frontmatter `name`, and never by prefix: a user skill called `omh-notes` is
-not OMH's. A categorized `category/name` only ever resolves inside the local
-directory, so it never reaches an OMH skill. `skills.create_dir` is not read
-here. Anything this cannot read -- no manifest, an unreadable one -- lets the
-call through; the installer and `omh doctor` still report the edit.
+Resolution follows `tools/skill_manager_tool.py::_find_skill`, which serves a
+bare name from the profile's own skills directory, then `skills.create_dir`,
+then the external directories. A name either of the first two also holds
+edits that copy, not OMH's, so it passes through here.
+
+Rule: only the installed directory name is a target, never the canonical
+catalog name and never a prefix. The installed name is also every OMH
+skill's frontmatter `name`, and it is the only one of OMH's names that
+`_find_skill` resolves to the managed directory; `skill_manage` on a
+canonical name such as `doctor` edits some other skill or nothing, and a
+user skill called `omh-notes` is not OMH's. A categorized `category/name`
+only resolves inside the local directory, so it never reaches an OMH skill.
+
+Anything this cannot read -- no manifest, an unreadable one, a `config.yaml`
+that exists but cannot be read, or a `skills:` block in a shape this scan
+does not parse -- lets the call through: the installer and `omh doctor`
+still report the edit, and a refusal aimed at a copy OMH does not own would
+be the worse error.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 import json
+import os
 from pathlib import Path, PurePosixPath
 from typing import Final
 
@@ -87,6 +97,60 @@ def skill_directories(root: Path, errors: list[str] | None = None) -> list[Path]
                 continue
             pending.append(child)
     return sorted(found)
+
+
+def configured_create_dir(hermes_home: Path) -> tuple[Path | None, bool]:
+    """`skills.create_dir` as Hermes resolves it, and whether the config could be read.
+
+    A text scan in the spirit of the bundle's other `config.yaml` readers: only
+    a direct child of the top-level `skills:` block counts, the last one wins
+    as in YAML, and a null or empty value is unset. Like
+    `agent/skill_utils.py::get_skill_create_dir`, `~` and `${VAR}` expand and a
+    relative path is anchored at the Hermes home. A missing `config.yaml` is
+    an ordinary home with nothing configured; one that exists but cannot be
+    read, or an inline `skills:` value, answers "not readable".
+    """
+    try:
+        text = (hermes_home / "config.yaml").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None, True
+    except (OSError, UnicodeDecodeError):
+        return None, False
+    raw = ""
+    in_skills = False
+    child_indent: int | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not line[0].isspace():
+            key, _separator, rest = stripped.partition(":")
+            in_skills = key.strip() == "skills"
+            child_indent = None
+            inline = rest.split("#", 1)[0].strip()
+            if in_skills and inline not in {"", "{}", "~", "null", "Null", "NULL"}:
+                return None, False
+            continue
+        if not in_skills:
+            continue
+        indent = len(line) - len(line.lstrip())
+        if child_indent is None:
+            child_indent = indent
+        key, separator, rest = stripped.partition(":")
+        if indent == child_indent and separator and key.strip() == "create_dir":
+            raw = _config_scalar(rest)
+    if not raw:
+        return None, True
+    path = Path(os.path.expanduser(os.path.expandvars(raw)))
+    return (path if path.is_absolute() else hermes_home / path), True
+
+
+def _config_scalar(value: str) -> str:
+    stripped = value.strip()
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {"'", '"'}:
+        return stripped[1:-1].strip()
+    stripped = stripped.split("#", 1)[0].strip()
+    return "" if stripped in {"~", "null", "Null", "NULL"} else stripped
 
 
 def managed_skill_files(omh_home: str | Path) -> dict[str, tuple[str, Path]]:
@@ -155,14 +219,19 @@ def managed_skill_edit_directive(
     if not writes:
         return None
     managed = managed_skill_files(omh_home)
-    local_names: set[str] | None = None
+    higher_tier_names: set[str] | None = None
     for action, name in writes:
         entry = managed.get(name)
         if entry is None or not entry[1].is_file():
             continue
-        if local_names is None:
-            local_names = {directory.name for directory in skill_directories(Path(hermes_home) / "skills")}
-        if name in local_names:
+        if higher_tier_names is None:
+            # The two tiers `_find_skill` searches before the external ones.
+            create_dir, readable = configured_create_dir(Path(hermes_home))
+            if not readable:
+                return None
+            roots = [Path(hermes_home) / "skills", *([create_dir] if create_dir is not None else [])]
+            higher_tier_names = {directory.name for root in roots for directory in skill_directories(root)}
+        if name in higher_tier_names:
             continue
         workflow_learning = next(
             (label for label, (canonical, _path) in managed.items() if canonical == WORKFLOW_LEARNING_SKILL), ""
@@ -189,6 +258,7 @@ def managed_skill_edit_message(label: str, action: str, workflow_learning: str =
 __all__ = [
     "CONTENT_WRITE_ACTIONS",
     "SKILL_MANAGE_TOOL",
+    "configured_create_dir",
     "managed_skill_edit_directive",
     "managed_skill_edit_message",
     "managed_skill_files",

@@ -157,6 +157,18 @@ def hermes_edited_skills(manifest: dict | None, paths: OmhPaths, *, overwritten:
     happened in. `--force` keeps its meaning and replaces it, and the report
     says that it did.
 
+    Rule: a skill counts as Hermes-edited only while a ledger write still
+    accounts for what is on disk -- the file holds the content the write left,
+    or is still absent after a write removed it. A SHA that differs from the
+    manifest is not enough on its own, and neither is a row that merely names
+    the skill. A difference no ledger row explains is a person's hand edit,
+    which keeps its existing contract (refuse the install until `--force`),
+    and a row whose result was since replaced, by `--force` or a rollback, is
+    history; counting it would hold the skill back from every later update.
+    That narrows "differs from the manifest and/or the ledger names it" on
+    purpose, and its cost is stated: a Hermes edit made while the ledger is
+    switched off (`skills.ledger: false`) still refuses like a hand edit.
+
     A skill kept once stays kept while its SKILL.md is unchanged since, through
     the evidence its manifest record carries. Read against the pack the
     manifest describes, which on a staged update is the previous generation.

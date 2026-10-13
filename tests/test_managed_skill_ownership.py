@@ -203,6 +203,55 @@ class HookRedirectTests(_Home):
         (local / "SKILL.md").write_text(f"---\nname: {self.label}\n---\n", encoding="utf-8")
         self.assertIsNone(self.call({"operations": [{"action": "patch", "name": self.label, "old_string": "a", "new_string": "b"}]}))
 
+    def write_config(self, text: str | bytes) -> None:
+        config = self.paths.hermes_home / "config.yaml"
+        if isinstance(text, bytes):
+            config.write_bytes(text)
+        else:
+            config.write_text(text, encoding="utf-8")
+
+    def patch_call(self, session: str) -> dict | None:
+        return self.call(
+            {"operations": [{"action": "patch", "name": self.label, "old_string": "a", "new_string": "b"}]},
+            session=session,
+        )
+
+    def test_a_same_name_skill_in_skills_create_dir_takes_the_edit_and_passes(self) -> None:
+        # `_find_skill` searches create_dir after the profile's own directory
+        # and before every external one, relative paths anchored at the home.
+        self.write_config("model: x\nskills:\n  external_dirs:\n    - /elsewhere\n  create_dir: fleet-skills  # shared\n")
+        copy = self.paths.hermes_home / "fleet-skills" / self.label
+        copy.mkdir(parents=True)
+        (copy / "SKILL.md").write_text(f"---\nname: {self.label}\n---\n", encoding="utf-8")
+        self.assertIsNone(self.patch_call(f"{SESSION}-create-dir"))
+
+    def test_a_create_dir_without_that_name_still_blocks(self) -> None:
+        create_dir = self.root / "fleet-skills"
+        (create_dir / "someone-elses-skill").mkdir(parents=True)
+        (create_dir / "someone-elses-skill" / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
+        self.write_config(f'skills:\n  create_dir: "{create_dir}"\n')
+        self.assertEqual(self.patch_call(f"{SESSION}-create-dir-other")["action"], "block")
+        # A deeper `create_dir` key is some other setting, not the tier.
+        copy = self.root / "nested" / self.label
+        copy.mkdir(parents=True)
+        (copy / "SKILL.md").write_text(f"---\nname: {self.label}\n---\n", encoding="utf-8")
+        self.write_config(f"skills:\n  hub:\n    create_dir: {self.root / 'nested'}\n")
+        self.assertEqual(self.patch_call(f"{SESSION}-create-dir-deep")["action"], "block")
+
+    def test_an_empty_skills_block_still_blocks(self) -> None:
+        for index, text in enumerate(("skills: {}\n", "skills:\n  create_dir: ~\n", "skills:\n  create_dir: ''\n")):
+            with self.subTest(text=text):
+                self.write_config(text)
+                self.assertEqual(self.patch_call(f"{SESSION}-empty-{index}")["action"], "block")
+
+    def test_a_config_this_scan_cannot_read_lets_the_call_through(self) -> None:
+        # Fail open: create_dir might hold the name, and a refusal aimed at a
+        # copy OMH does not own is the worse error.
+        for index, text in enumerate((b"skills:\n  create_dir: \xff\xfe\n", "skills: {create_dir: fleet-skills}\n")):
+            with self.subTest(text=text):
+                self.write_config(text)
+                self.assertIsNone(self.patch_call(f"{SESSION}-unread-{index}"))
+
     def test_no_readable_manifest_lets_the_call_through(self) -> None:
         manifest = self.paths.omh_home / "manifest.json"
         manifest.write_text("{not json", encoding="utf-8")
