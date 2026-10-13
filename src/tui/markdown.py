@@ -4,7 +4,8 @@ A reply streams in token by token, and a line that has left the live region is
 in the terminal's scrollback for good (plan §4.2). So the renderer never looks
 ahead: `render_line` turns ONE complete source line into rows, and the only
 thing a line can learn from the lines before it is `MarkdownState` (an open
-fence and its language, the content column of the last list item). Rendering
+fence and its language, the multi-line string or comment a highlighted fence
+line ended inside, the content column of the last list item). Rendering
 a reply line by line, threading the state, gives exactly the rows rendering it
 whole gives; that equality is what lets the transcript flush a reply while it
 is still streaming.
@@ -12,7 +13,8 @@ is still streaming.
 The subset: ATX headings, bullet and numbered lists (wrapped rows hang under
 the item text), blockquotes, fenced code (verbatim, hard-wrapped by cells, no
 inline markup inside; the opening fence shows only its language as a dim label,
-or nothing, and the closing fence shows nothing), ```diff fences whose added
+or nothing, and the closing fence shows nothing; a language `highlight.py` knows
+is syntax-coloured, any other stays one code colour), ```diff fences whose added
 and removed lines are full-row bands, inline `code`, **bold**, *italic* / _italic_, links
 `[t](u)` -> `t (u)`, and horizontal rules. Tables pass through as plain text.
 Constructs that need a later line to decide an earlier one (setext headings,
@@ -31,7 +33,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+import unicodedata
 
+from .highlight import highlight_line, highlights
 from .style import Line, Span, Style
 from .theme import Theme
 from .width import cell_width, cluster_width, clusters, is_control, line_width, wrap_line
@@ -71,6 +75,7 @@ class MarkdownState:
     fence_lang: str = ""
     fence_indent: int = 0
     list_indent: int = 0  # content column of the most recent list item; 0 outside a list
+    code_carry: str = ""  # the string or comment opener a highlighted fence line ended inside
 
     @property
     def in_fence(self) -> bool:
@@ -171,8 +176,8 @@ def render_line(source: str, state: MarkdownState, width: int, theme: Theme) -> 
     width = max(1, width)
     if state.in_fence:
         if _closes_fence(text, state.fence):
-            return [], replace(state, fence="", fence_lang="", fence_indent=0)
-        return _code_rows(text, state, width, theme), state
+            return [], replace(state, fence="", fence_lang="", fence_indent=0, code_carry="")
+        return _code_rows(text, state, width, theme)
     opened = _fence_open(text)
     if opened is not None:
         fence, lang = opened
@@ -331,9 +336,39 @@ def _band_rows(text: str, width: int, band: Style) -> list[Line]:
     return rows
 
 
-def _code_rows(text: str, state: MarkdownState, width: int, theme: Theme) -> list[Line]:
-    if state.fence_lang not in DIFF_LANGUAGES:
-        return _verbatim_rows(text, width, theme.code)
+def _span_rows(spans: Sequence[Span], width: int) -> list[Line]:
+    """Styled spans cut into rows of at most `width` cells, keeping every space and never splitting a cluster."""
+    rows: list[Line] = []
+    row: list[Span] = []
+    used = 0
+    for span in spans:
+        piece = ""
+        for cluster in clusters(span.text):
+            cluster_cells = cluster_width(cluster)
+            if (row or piece) and used + cluster_cells > width:
+                if piece:
+                    row.append(Span(piece, span.style))
+                    piece = ""
+                rows.append(tuple(row))
+                row, used = [], 0
+            piece += cluster
+            used += cluster_cells
+        if piece:
+            row.append(Span(piece, span.style))
+    rows.append(tuple(row))
+    return rows
+
+
+def _code_rows(text: str, state: MarkdownState, width: int, theme: Theme) -> tuple[list[Line], MarkdownState]:
+    if state.fence_lang in DIFF_LANGUAGES:
+        return _diff_fence_rows(text, state, width, theme), state
+    if not highlights(state.fence_lang):
+        return _verbatim_rows(text, width, theme.code), state
+    spans, carry = highlight_line(unicodedata.normalize("NFC", text), state.fence_lang, state.code_carry, theme)
+    return _span_rows(spans, width), replace(state, code_carry=carry)
+
+
+def _diff_fence_rows(text: str, state: MarkdownState, width: int, theme: Theme) -> list[Line]:
     body = text[min(state.fence_indent, _leading_spaces(text)) :]
     if body.startswith(("+++", "---")):
         return _verbatim_rows(text, width, theme.label)

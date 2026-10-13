@@ -26,6 +26,14 @@ class ThemeTests(unittest.TestCase):
         amber = theme_named("amber")
         self.assertEqual(amber.accent.fg, skin_colors("omh-amber")["ui_accent"])
         self.assertEqual(amber.diff_add.bg, skin_colors("omh-amber")["diff_added"])
+        for role in ("syntax_keyword", "syntax_string", "syntax_number", "syntax_comment"):
+            with self.subTest(role=role):
+                self.assertEqual(getattr(amber, role).fg, skin_colors("omh-amber")[role])
+
+    def test_keywords_and_comments_differ_from_text_even_where_the_colours_match(self) -> None:
+        mono = theme_named("mono")
+        self.assertNotEqual(mono.syntax_keyword, mono.text)
+        self.assertNotEqual(mono.syntax_comment, mono.text)
 
     def test_names_resolve_by_short_or_skin_name_and_default_otherwise(self) -> None:
         self.assertEqual(theme_named("omh-crimson").name, "crimson")

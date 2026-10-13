@@ -9,6 +9,7 @@ other expectation here is a literal row, never a call back into the module.
 from __future__ import annotations
 
 from dataclasses import replace
+import random
 import unicodedata
 import unittest
 
@@ -116,8 +117,9 @@ class FenceTests(unittest.TestCase):
     def test_code_is_verbatim_with_no_inline_markup(self) -> None:
         rows = render("```python\nx = *a* `b` [c](d)\n```")
         self.assertEqual(texts(rows), ["python", "x = *a* `b` [c](d)"])
-        self.assertEqual(rows[1], (Span("x = *a* `b` [c](d)", THEME.code),))
+        self.assertEqual(rows[1], (Span("x = *a* `b` [c](d)", THEME.text),))
         self.assertEqual(rows[0], (Span("python", THEME.dim),))
+        self.assertEqual(render("```\nx = *a*\n```"), [(Span("x = *a*", THEME.code),)])
 
     def test_fence_markers_are_never_painted(self) -> None:
         rows = render("before\n```\ncode\n~~~~ruby extra\n```\n~~~~ruby extra\nputs 1\n~~~~\nafter")
@@ -331,6 +333,92 @@ class EscapeSequenceTests(unittest.TestCase):
             for span in row:
                 self.assertNotIn("\x1b", span.text)
                 self.assertNotIn("[3", span.text)
+
+
+HIGHLIGHTED = "\n".join(
+    [
+        "Some code:",
+        "```python",
+        "def greet(name):",
+        '    """Say hello.',
+        "",
+        "    # still the docstring",
+        '    """',
+        "    return f'hi {name}'  # 한글 " + FAMILY,
+        "```",
+        "```ts",
+        "const msg = `line one",
+        "line two ${x}`; /* block",
+        "comment */ let n = 0x1F;",
+        "```",
+        "```go",
+        "s := `raw",
+        "```",
+        "after the fence *stays markdown*",
+    ]
+)
+
+
+class HighlightTests(unittest.TestCase):
+    def test_line_by_line_render_equals_whole_render_across_multiline_strings_and_comments(self) -> None:
+        for width in (8, 30, 80):
+            with self.subTest(width=width):
+                streamed: list[Line] = []
+                state = MarkdownState()
+                for source in HIGHLIGHTED.split("\n"):
+                    rows, state = render_line(source, state, width, THEME)
+                    streamed.extend(rows)
+                self.assertEqual(streamed, render_markdown(HIGHLIGHTED, width, THEME))
+                self.assertEqual(state, MarkdownState())
+
+    def test_highlighted_rows_take_the_syntax_roles(self) -> None:
+        rows = render("```python\nreturn 'x'  # c\n```")
+        self.assertEqual(
+            rows[1],
+            (Span("return", THEME.syntax_keyword), Span(" ", THEME.text), Span("'x'", THEME.syntax_string),
+             Span("  ", THEME.text), Span("# c", THEME.syntax_comment)),
+        )
+
+    def test_the_carry_threads_through_the_state_and_the_fence_close_resets_it(self) -> None:
+        _, state = render_lines(["```python", "s = '''open"], MarkdownState(), 40, THEME)
+        self.assertEqual(state.code_carry, "'''")
+        rows, state = render_line("    # inside", state, 40, THEME)
+        self.assertEqual(rows, [(Span("    # inside", THEME.syntax_string),)])
+        rows, state = render_line("```", state, 40, THEME)
+        self.assertEqual((rows, state), ([], MarkdownState()))
+        self.assertEqual(texts(render("```python\ns = '''open\n```\nafter *it*")), ["python", "s = '''open", "after it"])
+
+    def test_a_wrapped_highlighted_line_keeps_its_styles_and_never_splits_a_glyph(self) -> None:
+        rows = render('```js\nlet s = "한글한글" // 끝\n```', width=9)[1:]
+        self.assertEqual(
+            rows,
+            [
+                (Span("let", THEME.syntax_keyword), Span(" s = ", THEME.text), Span('"', THEME.syntax_string)),
+                (Span('한글한글"', THEME.syntax_string),),
+                (Span(" ", THEME.text), Span("// 끝", THEME.syntax_comment)),
+            ],
+        )
+        self.assertEqual([line_width(row) for row in rows], [9, 9, 6])
+
+    def test_random_fenced_documents_never_raise_and_stream_like_the_whole(self) -> None:
+        generator = random.Random(2087)
+        langs = ["python", "js", "json", "bash", "go", "rust", "yaml", "c", "sql", "nope", ""]
+        alphabet = ['"""', "'''", "`", "/*", "*/", '"', "'", "#", "//", "x", " ", "\\", "한", FAMILY, "\x1b[31m"]
+        for _ in range(60):
+            sources: list[str] = []
+            for _ in range(generator.randrange(1, 8)):
+                sources.append("```" + generator.choice(langs))
+                for _ in range(generator.randrange(0, 5)):
+                    sources.append("".join(generator.choice(alphabet) for _ in range(generator.randrange(0, 12))))
+                if generator.random() < 0.7:
+                    sources.append("```")
+            width = generator.choice((1, 7, 40))
+            with self.subTest(sources=sources, width=width):
+                streamed, _ = render_lines(sources, MarkdownState(), width, THEME)
+                self.assertEqual(streamed, render_markdown("\n".join(sources), width, THEME))
+                for row in streamed:
+                    for span in row:
+                        self.assertFalse(any(is_control(ch) for ch in span.text), span.text)
 
 
 if __name__ == "__main__":

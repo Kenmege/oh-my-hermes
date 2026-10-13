@@ -15,7 +15,7 @@ import unicodedata
 import unittest
 
 from omh.tui.gateway import Event
-from omh.tui.style import Line
+from omh.tui.style import Line, Span
 from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.transcript import (
     AssistantBlock,
@@ -185,14 +185,35 @@ class PlainTurnTests(LoopTestCase):
 
     def test_an_open_fence_stays_code_across_the_flush_boundary(self) -> None:
         self.step(ev("message.start"))
-        self.assertEqual(self.step(ev("message.delta", text="Here:\n```python\nx = 1\n")), ["Here:", "python", "x = 1"])
-        self.assertEqual(self.taken[-1][0].style, THEME.code)
+        flushed = self.step(ev("message.delta", text="Here:\n```python\nx = None  # one\n"))
+        self.assertEqual(flushed, ["Here:", "python", "x = None  # one"])
+        self.assertEqual(
+            self.taken[-1],
+            (Span("x = ", THEME.text), Span("None", THEME.syntax_keyword), Span("  ", THEME.text),
+             Span("# one", THEME.syntax_comment)),
+        )
         self.assertEqual(self.step(ev("message.delta", text="y = '*no*'\n``")), ["y = '*no*'"])
-        self.assertEqual(self.taken[-1][0].style, THEME.code)
+        self.assertEqual(self.taken[-1], (Span("y = ", THEME.text), Span("'*no*'", THEME.syntax_string)))
         self.assertEqual(self.live(), ["``"])
         self.assertEqual(self.step(ev("message.delta", text="`\nafter *it*")), [])
         self.assertEqual(self.live(), ["after it"])
         self.assertEqual(self.step(ev("message.complete", text="", status="complete")), ["after it"])
+
+    def test_a_docstring_open_across_flushes_stays_a_string_for_any_chunking(self) -> None:
+        answer = 'Code:\n```python\ndef f():\n    """Doc.\n\n    # not a comment\n    """\n    return 1  # one\n```\nDone.'
+        expected: list[Line] | None = None
+        for size in (1, 4, 9, 200):
+            with self.subTest(chunk=size):
+                self.setUp()
+                self.step(ev("message.start"))
+                for start in range(0, len(answer), size):
+                    self.step(ev("message.delta", text=answer[start : start + size]))
+                self.step(ev("message.complete", text=answer, status="complete"))
+                expected = expected or list(self.taken)
+                self.assertEqual(self.taken, expected)
+        self.assertEqual(expected[5], (Span("    # not a comment", THEME.syntax_string),))
+        self.assertEqual(expected[6], (Span('    """', THEME.syntax_string),))
+        self.assertEqual(expected[7][-1], Span("# one", THEME.syntax_comment))
 
     def test_a_resize_changes_only_lines_not_yet_taken(self) -> None:
         self.step(ev("message.start"))

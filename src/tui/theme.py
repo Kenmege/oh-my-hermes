@@ -1,10 +1,12 @@
 """The OMH TUI's colours, by role, from the same palettes `omh theme` ships.
 
-Every renderer asks for a role (`theme.dim`, `theme.tool`, `theme.diff_add`)
-instead of a colour, so a palette change is one lookup and no renderer knows a
-hex value. The palettes are the shipped skin files read through
-`skin_pack.skin_colors`; a key a palette lacks falls back to the default
-palette's value, so a partial skin still paints every role.
+Every renderer asks for a role (`theme.dim`, `theme.tool`, `theme.diff_add`,
+`theme.syntax_keyword`) instead of a colour, so a palette change is one lookup
+and no renderer knows a hex value. The palettes are the shipped skin files
+read through `skin_pack.skin_colors`; a key a palette lacks falls back to the
+default palette's value, so a partial skin still paints every role. Keywords
+are bold and comments italic as well as coloured, so the `mono` palette, whose
+keyword and text colours nearly match, still tells them apart.
 """
 
 from __future__ import annotations
@@ -38,6 +40,10 @@ class Theme:
     diff_add_word: Style
     diff_remove: Style
     diff_remove_word: Style
+    syntax_keyword: Style
+    syntax_string: Style
+    syntax_number: Style
+    syntax_comment: Style
     status: Style
     status_dim: Style
     status_good: Style
@@ -78,6 +84,10 @@ def build_theme(skin: SkinTheme) -> Theme:
         diff_add_word=Style(fg=c["diff_added_word"], bg=c["diff_added"]),
         diff_remove=Style(bg=c["diff_removed"]),
         diff_remove_word=Style(fg=c["diff_removed_word"], bg=c["diff_removed"]),
+        syntax_keyword=Style(fg=c["syntax_keyword"], bold=True),
+        syntax_string=Style(fg=c["syntax_string"]),
+        syntax_number=Style(fg=c["syntax_number"]),
+        syntax_comment=Style(fg=c["syntax_comment"], italic=True),
         status=Style(fg=c["status_bar_text"], bg=status_bg),
         status_dim=Style(fg=c["status_bar_dim"], bg=status_bg),
         status_good=Style(fg=c["status_bar_good"], bg=status_bg),
