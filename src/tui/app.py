@@ -2598,8 +2598,7 @@ class App:
         """Drop the agents and every piece of tail bookkeeping that names them."""
         self.roster.clear()
         self.tail_misses.clear()
-        self._forget_tail_calls()
-        self.tail_seq += 1  # an answer still on its way is for an agent no longer listed
+        self._forget_tail_calls()  # an answer still on its way is for an agent no longer listed
         self.tail_asked_at, self.tail_open = None, False
 
     def _forget_tail_calls(self) -> None:
