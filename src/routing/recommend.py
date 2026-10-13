@@ -30,7 +30,7 @@ from .trigger_language_packs import (
     merged_trigger_phrases,
     shipped_trigger_language_packs,
 )
-from .path_signal import PATH_GLOB_SCORE, matching_path_glob
+from .path_signal import PATH_GLOB_SCORE, matching_path_glob, path_mentions
 from .query import RoutingQuery
 from .policy import (
     appearance_edit_request,
@@ -4283,6 +4283,24 @@ def _score_definition(
         # counted word is also a `trigger:` label, which is what dispatch
         # evidence reads, so the labels themselves are what gets capped.
         trigger_token_matches |= set(sorted(context)[:_SLOP_CLEANER_CONTEXT_CAP])
+    # `ai slop` is the cleaner's phrase only beside something it can clean: a
+    # path or file name, a code, docs, or prose target
+    # (`_SLOP_CLEANER_TARGET_TOKENS`), or a context word the appearance phrase
+    # above just credited ("this slack message feels like ai slop"). Without
+    # one -- "clean up the ai slop in my inbox", "... in my photo library" --
+    # the phrase is credited as the single word `slop`, so it names the
+    # cleaner in a question but is no longer phrase evidence that can
+    # dispatch it.
+    if (
+        definition.name == "ai-slop-cleaner"
+        and "trigger:ai slop" in matched
+        and not query_tokens & _SLOP_CLEANER_TARGET_TOKENS
+        and not trigger_token_matches & _SLOP_CLEANER_CONTEXT_TOKENS
+        and not path_mentions(normalized_phrase(original_query))
+    ):
+        matched.discard("trigger:ai slop")
+        matched.add("trigger:slop")
+        score -= 3
     # `production` is held back for production-audit (see
     # `_WHOLE_PHRASE_ONLY_TRIGGER_TOKENS`) and credited again only beside a
     # readiness or audit word ("production readiness audit").
@@ -4468,6 +4486,17 @@ _SLOP_CLEANER_CONTEXT_TOKENS = frozenset(
         "better", "clean", "dedupe", "deduplicate", "prune", "simplify", "tidy",
     }
 )
+# What `ai slop` must sit beside to be the cleaner's request: the code, docs,
+# and prose nouns above, plus the repository words a cleanup runs on. Left
+# out: the verbs, and the prose nouns that name a feed someone reads as often
+# as text they wrote -- "delete the ai slop comments on my blog", "clean up
+# the ai slop emails in my inbox", "the ai slop posts on my timeline" each
+# dispatched the cleaner with them in.
+_SLOP_CLEANER_TARGET_TOKENS = (
+    _SLOP_CLEANER_CONTEXT_TOKENS
+    - {"better", "clean", "dedupe", "deduplicate", "prune", "simplify", "tidy"}
+    - {"article", "articles", "blog", "email", "emails", "message", "messages", "post", "posts"}
+) | {"repo", "repository", "diff", "branch"}
 # A UI surface named beside the slop word makes it frontend's restyle, so the
 # code nouns above earn nothing there ("the pricing card component file looks
 # like ai slop") -- unless a code unit (`_SLOP_CLEANER_CODE_UNIT_TOKENS`) is

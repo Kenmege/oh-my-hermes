@@ -426,7 +426,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The quoted/relay/URL masks (#2049) add five: a block-quoted
             # invocation, a relayed report, an arrow-relayed and a
             # sender-relayed invocation, and a workflow name in a URL path.
-            # The ai-slop-cleaner OMC parity work adds thirty, none of
+            # The ai-slop-cleaner OMC parity work adds thirty-four, none of
             # which may dispatch the cleaner: a question about what deslop
             # means, a subagent's quoted report, a plain "review this PR", and
             # anti-virus noise called slop (4); a code noun or cleanup verb with
@@ -446,8 +446,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # cleaner's context words (1); and five remarks about AI slop with
             # a bare appearance word ("looks better", "looks interesting",
             # "looks like this", "look the same"), which dispatched the cleaner
-            # while a token check opened its context words (5).
-            expected=469,
+            # while a token check opened its context words (5); and AI slop to
+            # clean out of an inbox, video recommendations, a photo library, and
+            # blog comments, which dispatched while `ai slop` counted as phrase
+            # evidence whatever the target (4).
+            expected=473,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -538,20 +541,19 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # line before a Korean request, a leading link as the target
             # (four), punctuation ending a link (two), and a `>` that is not a
             # block-quote marker (two).
-            # The ai-slop-cleaner OMC parity work adds sixteen. To the
-            # cleaner: AI slop in a code directory and a no-edit deslop review
-            # dispatch, as does a module called AI slop to simplify without
-            # changing behavior; an anti-slop pass, and a function (moved here
-            # from the negative corpus), a module with a cleanup verb, a
-            # README, a layout module, and layout code that look like AI slop,
-            # clarify with the cleaner leading, as do an essay and a PR
-            # description called AI slop, which dispatched frontend before
-            # prose nouns joined its context words (11). To `frontend`: `ai slop
-            # ui`, generic AI slop on a landing page, a settings page that
-            # feels like AI slop, and a pricing card component file that looks
-            # like it dispatch, and a hero section that screams it clarifies
-            # with frontend leading (5).
-            expected=672,
+            # The ai-slop-cleaner OMC parity work adds eighteen. To the
+            # cleaner: AI slop in a code directory, AI slop in a module that
+            # needs cleanup, and a no-edit deslop review dispatch, as does a
+            # module called AI slop to simplify without changing behavior; an
+            # anti-slop pass, and a function (moved here from the negative
+            # corpus), a module with a cleanup verb, a README, a layout module,
+            # and layout code that look like AI slop, clarify with the cleaner
+            # leading, as do an essay and a PR description called AI slop
+            # (12). To `frontend`, each a dispatch: `ai slop ui`, generic AI
+            # slop on a landing page, a settings page that feels like AI slop,
+            # a pricing page and a hero section that scream it, and a pricing
+            # card component file that looks like it (6).
+            expected=674,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

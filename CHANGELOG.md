@@ -8,22 +8,26 @@ All notable changes will be documented here.
   slop`, `deslop review`, and the request-shaped `anti-slop pass`, `anti-slop
   review`, and `anti-slop sweep` reach the cleaner through the existing route
   hint: AI slop in a code directory and a no-edit deslop review dispatch it,
-  and an anti-slop pass asks first, with the cleaner among the choices. The
-  bare word `anti-slop` is not a trigger, because as an adjective it names a
-  stance or a quality ("our anti-slop policy for pull requests", "the README
-  is anti-slop now") as often as a request; those stay quiet, and so do bare
-  imperatives such as "anti-slop the README", which ask as they did before.
-  `anti`, `anti-slop`, `slop`, `pass`, `review`, and `sweep` are held back
-  from trigger-token scoring (`slop` still counts as a description word, and
-  the lexical shortlist still reads the trigger text). A question about the
-  word, a subagent's quoted report, and a plain "review this PR" stay where
-  they were. `frontend` gains `slop ui` and the appearance phrases "looks like
-  ai slop", "feels like ai slop", and "screams ai slop", so a page, card,
-  section, or component called AI slop keeps frontend first: it dispatches
-  frontend or asks with frontend leading, unless a code unit (module,
-  function, class, method, code) is named too, which puts the cleaner first.
-  Where one of those appearance phrases is said whole (a bare "looks" or
-  "feels" does not count), the cleaner earns up to two code and prose nouns
+  and an anti-slop pass asks first, with the cleaner among the choices. `AI
+  slop` is phrase evidence only beside something the cleaner can clean -- a
+  path or file name, or a code, docs, or prose target such as a module, the
+  README, or an essay; beside anything else ("clean up the ai slop in my
+  inbox", "... in my photo library") it asks rather than dispatching the
+  cleaner. The bare word `anti-slop` is not a trigger, because as an adjective
+  it names a stance or a quality ("our anti-slop policy for pull requests",
+  "the README is anti-slop now") as often as a request; those stay quiet, and
+  so do bare imperatives such as "anti-slop the README", which ask as they did
+  before. `anti`, `anti-slop`, `slop`, `pass`, `review`, and `sweep` are held
+  back from trigger-token scoring (`slop` still counts as a description word,
+  and the lexical shortlist still reads the trigger text). A question about
+  the word, a subagent's quoted report, and a plain "review this PR" stay
+  where they were. `frontend` gains `slop ui` and the appearance phrases
+  "looks like ai slop", "feels like ai slop", and "screams ai slop", so a
+  page, card, section, or component called AI slop keeps frontend first: it
+  dispatches frontend or asks with frontend leading, unless a code unit
+  (module, function, class, method, code) is named too, which puts the cleaner
+  first. Where one of those appearance phrases is said whole (a bare "looks"
+  or "feels" does not count), the cleaner earns up to two code and prose nouns
   (module, function, class, method, file, code, codebase, README, docs,
   article, blog, copy, description, email, essay, letter, message, poem, post)
   or cleanup verbs (clean, simplify, dedupe, prune, better) back, so "this

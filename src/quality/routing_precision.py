@@ -3760,6 +3760,39 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
     ),
+    # `ai slop` beside a cleanup verb but no path, code, docs, or prose target
+    # is credited as the word `slop`, not as phrase evidence: these name the
+    # cleaner in a question and each dispatched it while the phrase counted
+    # whatever the target. `blog` is deliberately not a target (a feed someone
+    # reads as often as text they wrote).
+    RoutingPrecisionCase(
+        "ai-slop-in-inbox-stays-a-clarify",
+        "Cleaning AI slop out of an inbox names nothing the cleaner can clean",
+        "clean up the ai slop in my inbox",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "ai-slop-in-youtube-recommendations-stays-a-clarify",
+        "Cleaning AI slop out of video recommendations is not a code cleanup",
+        "clean up the ai slop in my youtube recommendations",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "ai-slop-in-photo-library-stays-a-clarify",
+        "Cleaning AI slop out of a photo library is not a code cleanup",
+        "cleanup the ai slop in my photo library",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "ai-slop-comments-on-blog-stays-a-clarify",
+        "Deleting AI slop comments on a blog is moderation, not a code cleanup",
+        "delete the ai slop comments on my blog",
+        "answer_clarification",
+        "",
+    ),
     # A bare appearance word is not frontend's appearance phrase: "looks
     # better", "looks interesting", "look the same" said about AI slop open no
     # context words for the cleaner, so its own `ai slop` phrase asks rather
@@ -8956,6 +8989,15 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "ai-slop-cleaner",
     ),
     RoutingInterventionCase(
+        "ai-slop-in-module-needs-cleanup-reaches-slop-cleaner",
+        "AI slop in a module that needs cleanup reaches the slop cleaner",
+        "the ai slop in this module needs cleanup",
+        "dispatch",
+        "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    RoutingInterventionCase(
         "ai-slop-in-code-reaches-slop-cleaner",
         "Cleaning up AI slop in a code directory reaches the slop cleaner",
         "clean up the AI slop in src/auth",
@@ -9100,15 +9142,27 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_frontend_handoff",
         "frontend_handoff",
     ),
+    # A UI surface called AI slop names nothing the cleaner can clean, so its
+    # `ai slop` is no longer phrase evidence and frontend's appearance phrase
+    # dispatches the restyle (it was a clarify led by frontend while the
+    # cleaner's phrase competed).
     RoutingInterventionCase(
-        "hero-section-screams-ai-slop-keeps-frontend-leading",
-        "A hero section that screams AI slop leads with frontend, not the code cleaner",
+        "hero-section-screams-ai-slop-reaches-frontend",
+        "A hero section that screams AI slop is a frontend restyle",
         "our hero section screams ai slop, give it a distinctive look",
-        "clarify",
-        "oh-my-hermes",
-        "answer_clarification",
-        "clarification",
+        "dispatch",
         "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+    ),
+    RoutingInterventionCase(
+        "pricing-page-screams-ai-slop-reaches-frontend",
+        "A pricing page that screams AI slop is a frontend restyle",
+        "our pricing page screams ai slop",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
     ),
     RoutingInterventionCase(
         "gemini-second-opinion-reaches-ask",
