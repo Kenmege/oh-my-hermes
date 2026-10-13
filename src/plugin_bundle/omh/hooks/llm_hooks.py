@@ -232,9 +232,8 @@ def _record_delivery(
 #
 # A session without a trusted record keeps the per-turn primer, and can then
 # carry it twice, once in each place. It never carries it zero times, with
-# two stated exceptions: a section the host drops past the shared budget
-# above, and a fork of a parent with no history (see the trust rule below).
-# The cases:
+# one stated exception: a section the host drops past the shared budget
+# above. The cases:
 # - an older host, or a section the host refused;
 # - a resume after a restart, where the host restores the section from the
 #   persisted prompt without calling this;
@@ -258,10 +257,9 @@ AWARENESS_SECTION_MAX_CHARS = 4000
 # session's own first turn follows it: Hermes builds that turn's prompt
 # (`restore_or_build_system_prompt`, `agent/turn_context.py`) before it runs
 # `pre_llm_call` with `is_first_turn` true, which it sets from an empty
-# history (same file). A fork runs with the parent's history, so its turn is
-# never a first turn. A compaction that keeps the id re-renders a session
-# already trusted. The residual gap: a fork of a parent with no history at
-# all would pass as a first turn.
+# history (same file). A fork's turn promotes nothing, whatever its history:
+# `pre_llm_call` returns for a fork before reading anything. A compaction
+# that keeps the id re-renders a session already trusted.
 #
 # Each recorded id maps to its state, least recently used first. Bounded
 # rather than cleared at a lifecycle hook: Hermes fires `on_session_end` at
@@ -512,7 +510,23 @@ def _rendered_route_hint(
 
 def pre_llm_call(**kwargs) -> dict[str, object] | None:
     """Inject bounded OMH role/status context without storing prompts."""
-    # First, before anything can return early or raise: this turn has not
+    # A detached fork is not one of the session's turns, and gets nothing.
+    # Hermes builds its background review and the `/btw` side question as a
+    # fork of the live agent that keeps the parent's session id and names
+    # that same id as its parent (`build_cache_parity_fork`,
+    # `agent/background_review.py`). On the plugin's floor, 0.21.1 (tag
+    # v2026.9.7), the fork's turn still runs this hook; from 0.21.2 (tag
+    # v2026.9.11) Hermes skips it for a persistence-disabled agent. What this
+    # hook keeps once per session is for the person's next turn -- the route
+    # guidance claim, the candidate line, the board card, the plan line's
+    # turn count, the Jev marker, the held-write line -- and the review runs
+    # right after a turn and the side question during one, so a fork let
+    # through here spends each of them first. A delegate child names its
+    # parent's id, never its own, and an agent that is not a child names none.
+    fork_of = str(kwargs.get("parent_session_id") or "").strip()
+    if fork_of and fork_of == str(kwargs.get("session_id") or "").strip():
+        return None
+    # Next, before anything else can return early or raise: this turn has not
     # asked for Jev until its own request is read below. A marker left from
     # the previous turn must never survive a degraded turn.
     clear_jev_turn(kwargs.get("session_id"))
@@ -764,15 +778,11 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
             context_parts.append(todo_reminder)
         # Once, on the session's next turn after a todo_list write the plan's
         # hold kept out of the record (`native_todo`): the only place the
-        # model learns why its list and the plan line disagree. Not on a fork
-        # that shares the session's id -- Hermes' background review runs right
-        # after the turn as `session_id == parent_session_id` and would spend
-        # the line before the person's next message; a delegate child and a
-        # compression continuation carry a different parent id.
-        if str(kwargs.get("parent_session_id") or "").strip() != session_id.strip():
-            held_note = held_native_write_note(session_id.strip(), omh_home)
-            if held_note:
-                context_parts.append(held_note)
+        # model learns why its list and the plan line disagree. A fork that
+        # shares the session's id never reaches here (top of this hook).
+        held_note = held_native_write_note(session_id.strip(), omh_home)
+        if held_note:
+            context_parts.append(held_note)
         workflow_context = active_workflow_context(
             omh_home, session_id
         )
