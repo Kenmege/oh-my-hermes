@@ -4,6 +4,43 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The run-efficiency report now carries what Hermes itself recorded for a
+  named session, and the tracker skills point at Hermes' own usage, compaction,
+  tool, agent, stop, and skill surfaces.** `omh runtime efficiency-report
+  --hermes-session <id>` adds a `host_usage` section from the part of the cost
+  receipt `omh_run_summary` returns that Hermes itself accounts for in
+  `state.db` (the session, its delegated children, and its kanban workers;
+  executor-reported fanout units are left out), read-only: observed only when
+  that usage recorded tokens, with each amount's basis kept beside it (a
+  Hermes estimate is not a charge), while a session Hermes has no row for, one
+  with no recorded tokens, or a Hermes home whose `state.db` is missing or
+  unreadable stays `not_observed` with that reason instead of reading as
+  zero, and provider billing stays `not_observed` either way. The cost
+  receipt now names which of its reads hit a bound (`truncated_sources`).
+  `run-efficiency`, `ops-observability-card`, and `context-budget-review`
+  answer "what has this conversation used or cost" by what each Hermes
+  surface shows: `/usage` this session's tokens and context, `/insights` an
+  estimated cost across recent sessions, and `omh_run_summary` this
+  conversation's recorded tokens and cost; `context-budget-review` stops
+  sending the question to the ops card, which cannot answer it.
+  `context-budget-review` turns its summarization checkpoint into a
+  `/compress <focus>` the person runs, offers `--preview` only in the classic
+  CLI or on a messaging platform and never when the surface is unknown,
+  because a modern TUI that does not parse the flag compresses for real, and
+  counts a preview only from Hermes' own "no changes made" reply. `toolbelt-readiness` counts a tool deferred behind
+  tool_search as present, never missing. `running-work-board` adds this
+  conversation's Hermes delegate children and kanban workers from `omh_hud`.
+  `cancel` clears OMH state with OMH's own commands and hands host work to the
+  person's own Hermes stop commands (`/stop`, `/loop stop`, `/goal pause` or
+  `/goal clear`, `/heartbeat clear`, `/pause`), never ending a host process
+  itself, and reports a host stop as requested until Hermes answers. `skill`
+  lists, reads, and edits the person's skills with Hermes' `skills_list`,
+  `skill_view`, and `skill_manage`, leaves search, install, and hiding to the
+  person's `hermes skills` commands, and never edits an OMH-managed skill in
+  place. `capability-toggle` sends hiding one skill on one platform to Hermes'
+  own `hermes skills config`.
+
+
 - **Hermes' background review and `/btw` side question no longer use up the
   once-per-session OMH lines meant for the person's next turn.** On Hermes
   0.21.1, the plugin's floor, both run as a fork of the live agent that keeps

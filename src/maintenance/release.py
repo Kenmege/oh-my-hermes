@@ -665,7 +665,29 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # source, never one OMH writes; `visual-qa`'s handoff policy counts captures
 # the session's own browser tools take; `report-package`'s line is shorter.
 # Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 490030
+# 490030 -> 492322: tracker skills onto Hermes' own surfaces. `cancel` and
+# `skill` replace the operator shape's two generic quality-bar lines and safety
+# rules with their own -- which OMH record each clear uses and which stop is
+# the person's own host command; Hermes' skill tools, the person's `hermes
+# skills` commands, and no in-place edit of an OMH-managed skill -- so their
+# rows carry what the skill does. `toolbelt-readiness` gains the native-tool
+# presence rule as its fourth quality-bar line, `running-work-board` names
+# `omh_hud`'s delegate and kanban rows in its inputs, outputs, and handoff
+# policy, `run-efficiency` names `host_usage` in its outputs and boundary, and
+# six rows carry a new first Do-Not-Use line. The rows were tightened before
+# raising. Re-derived from the producer.
+# 492322 -> 492768: review of that change. The first Do-Not-Use line of
+# `run-efficiency`, `ops-observability-card`, and `context-budget-review` now
+# says what each Hermes surface shows -- `/usage` tokens, `/status` context,
+# `/insights` an estimated cost, `omh_run_summary` this conversation's
+# recorded tokens and cost -- since neither `/usage` nor `/status` shows a
+# cost; `cancel`'s `/stop` line says what it ends on each surface, and
+# `skill` names the in-chat `/skills` commands. Re-derived from the producer.
+# 492768 -> 492733: second review. The shared usage clause credits `/status`
+# with nothing (the modern TUI's shows no context) and says `/usage` shows
+# tokens and context; `skill`'s in-chat `/skills` line covers the TUI too.
+# Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 492733
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -1842,9 +1864,9 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # above removes. So it takes the same policy: the measurement plus
 # `FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT`, rounded UP to the next multiple
 # of `FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS` (10,000, about a
-# tenth of the measurement). The 15,906 chars of headroom (130,000 - 114,094)
-# hold about ten median lane members, while a renderer change that stamps
-# one more shared sentence longer than about 112 chars into every one of the
+# tenth of the measurement). The 18,407 chars of headroom (130,000 - 111,593)
+# hold about twelve median lane members, while a renderer change that stamps
+# one more shared sentence longer than about 129 chars into every one of the
 # 142 bodies, or a few skills that copy other skills' own sections, still
 # fails.
 #
@@ -1885,7 +1907,14 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # shared lines, and `ultraqa` its own instead of the catalog's two fallback
 # lines, so neither section is byte-identical to another skill's any more.
 # 114,094 plus 10%, rounded up to the next 10,000, is still 130,000.
-FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 114094
+# 130,000 -> 130,000 (measurement 114,094 -> 111,593): `run-efficiency`,
+# `ops-observability-card`, and `toolbelt-readiness` state their own
+# Do-Not-Use instead of the feature-surface shape's three shared lines, and
+# `cancel` and `skill` carry their own Why, Do-Not-Use, examples, checklist,
+# and recovery notes instead of the operator defaults, so those sections are
+# no longer byte-identical to another skill's. 111,593 plus 10%, rounded up to
+# the next 10,000, is still 130,000.
+FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 111593
 FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS = 10000
 FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT = 130000
 

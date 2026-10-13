@@ -45,10 +45,12 @@ Bad example:
 - Token counts and session references are observed values or the literal unknown, never estimates.
 - Elapsed time for an unfinished unit comes from its start marker, which cannot prove the unit is still alive.
 - The board is labelled observed activity, not result, verification, review, CI, or merge evidence.
+- On Hermes, `delegate_task` children and kanban workers of this conversation come from `omh_hud` (its `subagents` rows and `kanban` block, read from Hermes' own records) beside the OMH units, each labelled by source; `/agents` is the person's own Hermes list of running agents and tasks.
 
 ## Recovery Notes
 
 - If no units are found, say so plainly rather than implying nothing ever ran.
+- If `omh_hud` is not available, say delegate children and kanban workers were not read rather than implying none are running.
 - If a marker is stale because a process died, report it as observed-start-without-end instead of claiming the unit is running.
 - If tokens are unknown for a runtime with no structured output, say the runtime does not report them.
 
@@ -75,11 +77,13 @@ Quality bar:
 Required inputs:
 
 - local coding artifacts
+- on Hermes, this conversation's `omh_hud` rows
 
 Expected outputs:
 
 - per-unit runtime and model
 - observed tokens and elapsed
+- on Hermes, delegate children and kanban workers, labelled by source
 - explicit unknowns
 
 Artifact expectations:

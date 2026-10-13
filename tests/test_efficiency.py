@@ -217,7 +217,14 @@ class EfficiencyContractTests(unittest.TestCase):
         # 76,000 -> 78,000: `plan` is a core body and now carries ralplan's
         # acceptance-answer rule, one shared literal (#2067); the ceiling
         # restores headroom.
-        self.assertLess(core["skill_body"]["bytes"], 78_000)
+        # 78,000 -> 81,000: `cancel` and `skill` are core bodies and now state
+        # their own guidance -- which OMH record each clear uses and which stop
+        # is the person's own host command; Hermes' skill tools and no in-place
+        # edit of an OMH-managed skill -- in place of the operator defaults, and
+        # `ops-observability-card` (also core) states its own Do-Not-Use and
+        # where Hermes' recorded usage comes from. Measured 79,429; the ceiling
+        # restores the ~1.6k headroom this gate carried.
+        self.assertLess(core["skill_body"]["bytes"], 81_000)
         # 815,000 -> 825,000: one new installable body (`web-research`) plus the
         # sentence that split `best-practice-research`'s boundary in two. Set to
         # restore the ~10k headroom this gate is meant to carry rather than to

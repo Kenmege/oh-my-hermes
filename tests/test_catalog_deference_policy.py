@@ -276,9 +276,18 @@ NON_SKILL_BACKTICKS = frozenset(
 # `report-package`; `ultraqa` replaces the catalog's generic fallback lines and
 # adds `visual-qa` and `verification-gate`. Four cases, four pairs, two new
 # owners.
-EXPECTED_DEFERENCE_CASES = 342
-EXPECTED_DEFERENCE_PAIRS = 356
-EXPECTED_DEFERRING_OWNERS = 98
+# Tracker skills onto Hermes' own surfaces: `run-efficiency` and
+# `ops-observability-card` state their own Do-Not-Use and name each other;
+# `toolbelt-readiness` names `external-connector-readiness` and
+# `executor-runtime-readiness` in two statements; `cancel` names
+# `running-work-board`; `skill` names `capability-toggle`, `skill-scout`, and
+# `skill-health` in three statements; `context-budget-review` stops naming
+# `ops-observability-card`, which cannot produce a session's own usage (Hermes'
+# /usage and omh_run_summary do). Seven cases and seven pairs net, five new
+# owners.
+EXPECTED_DEFERENCE_CASES = 349
+EXPECTED_DEFERENCE_PAIRS = 363
+EXPECTED_DEFERRING_OWNERS = 103
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.

@@ -120,7 +120,7 @@ Trigger phrases and the role registry live in `references/workflow-registry.md`;
 - `omh-research-brief`: [omh] Business question on market, competitors, pricing: business research brief - turns a market, competitor, pricing, or customer question into a structured evidence-vs-inference brief; for raw link gathering use ulw-research, and for ongoing multi-role research use research-department.
 - `omh-research-department`: [omh] Recurring market or topic research: research operations department - coordinate Scout, Analyst, and Briefer work with source-inbox and status boundaries; for one decision brief use research-brief, and for typed candidates before research starts use source-finder.
 - `omh-rules-distill`: [omh] Turn repeated lessons into written rules: extract repeated principles from skills, prompts, traces, reviews, and failures into reviewed rule candidates without auto-mutating guidance.
-- `omh-run-efficiency`: [omh] Run efficiency and context usage report: report supplied local run efficiency while provider and host data stay unobserved.
+- `omh-run-efficiency`: [omh] Run efficiency and context usage report: report supplied local run efficiency while provider data stays unobserved.
 - `omh-running-work-board`: [omh] Live view of running coding units: showing which coding units are running right now, on which runtime and model, with observed tokens and elapsed time.
 - `omh-rust`: [omh] Rust ownership, lifetime, or unsafe trouble: prepare Rust changes with ownership, error, and API discipline, and escalate any unsafe, FFI, or lock-free change to the UB checklist.
 - `omh-sales-development`: [omh] Prospect or account worth pursuing: turn an account or market opportunity into a focused discovery, qualification, and next-step brief.

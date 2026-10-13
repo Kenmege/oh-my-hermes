@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from .catalog_types import HERMES_USAGE_SURFACES_CLAUSE
+
 
 def native_capability_skill_definitions(feature_surface_skill: Callable[..., object]) -> tuple[object, ...]:
     return (
@@ -40,7 +42,7 @@ def native_capability_skill_definitions(feature_surface_skill: Callable[..., obj
         ),
         feature_surface_skill(
             "run-efficiency",
-            "[omh] Run efficiency and context usage report: report supplied local run efficiency while provider and host data stay unobserved.",
+            "[omh] Run efficiency and context usage report: report supplied local run efficiency while provider data stays unobserved.",
             (
                 "run-efficiency",
                 "run efficiency report",
@@ -48,19 +50,48 @@ def native_capability_skill_definitions(feature_surface_skill: Callable[..., obj
                 "context utilization",
                 "tool duration report",
             ),
-            "Use for a bounded local efficiency report from supplied metadata with provider and host gaps explicit.",
+            "Use for a bounded local efficiency report from supplied metadata with provider gaps explicit.",
             category="observability",
             phase="run-efficiency",
             next_action="show_run_efficiency_report",
-            boundary="Run efficiency is supplied OMH-local metadata, not provider, billing, cron, or host evidence.",
+            boundary=(
+                "Run efficiency is supplied OMH-local metadata plus, for a named Hermes session, Hermes' own "
+                "recorded usage; it is not provider billing, cron, or host-load evidence."
+            ),
             good_prompt="Show the local run efficiency report from this run's supplied context budget and timings.",
             bad_prompt="Claim this report proves provider billing, host load, or cron execution without observations.",
-            expected_outputs=("run_efficiency_report/v1", "context utilization", "not_observed provider and host gaps"),
-            artifact_expectations=("run_efficiency_report/v1 metadata-only report", "supplied `session_activity_receipt/v1` when available; unavailable metrics stay unavailable, never zero"),
+            expected_outputs=(
+                "run_efficiency_report/v1",
+                "context utilization",
+                "host_usage: Hermes' recorded usage for a named session, or not_observed",
+                "not_observed provider and billing gaps",
+            ),
+            artifact_expectations=(
+                "run_efficiency_report/v1 metadata-only report",
+                "supplied `session_activity_receipt/v1` when available; unavailable metrics stay unavailable, never zero",
+                "`host_usage` from the Hermes-accounted part of the cost receipt `omh_run_summary` returns (the "
+                "session, its delegated children, and its kanban workers; `--hermes-session`, and a local Hermes "
+                "terminal holds the id in `$HERMES_SESSION_ID`): observed only when Hermes recorded tokens for it; "
+                "no session row or no tokens stays not_observed, never zero",
+            ),
             final_checklist=(
                 "The run ID, context budget, surfaces, and supplied observations are explicit.",
-                "Provider billing, cron, and host claims remain not_observed unless separately recorded.",
+                "Host usage is Hermes' recorded accounting for the named session, observed only when it recorded "
+                "tokens; provider billing and cron stay not_observed.",
                 "The report does not intercept, route, or execute provider or host work.",
+            ),
+            why_this_exists=(
+                "`run-efficiency` exists so a question about how a run spent its time, tools, and context gets the "
+                "supplied timings and context budget, plus what Hermes itself recorded for a named session's tokens "
+                "and cost, instead of figures a model guesses."
+            ),
+            do_not_use_when=(
+                "The user asks only what this Hermes conversation has used or cost so far; "
+                f"{HERMES_USAGE_SURFACES_CLAUSE}.",
+                "The user wants service latency, uptime, error rates, or supplied metric-provider figures; use "
+                "`ops-observability-card`.",
+                "The user wants a provider invoice or quota truth; no OMH report observes either, so name the "
+                "provider's own console as the source.",
             ),
             situations=(
                 "how efficient was the last run",
@@ -122,12 +153,15 @@ def native_capability_harnesses(feature_surface_harness: Callable[..., object]) 
             "run-efficiency",
             "Render a deterministic report from supplied local run metadata.",
             "Use when an operator has run/context-budget metadata and needs a bounded latency or context report.",
-            ("run ID", "context budget", "surface counts", "supplied observations"),
+            ("run ID", "context budget", "surface counts", "supplied observations", "optional Hermes session id"),
             ("run_efficiency_report/v1", "context utilization", "not_observed gaps"),
             quality_tier="workflow-surface-gated",
             evidence_ladder=("input_validated", "local_report_prepared", "not_observed_gaps_rendered"),
             wrapper_actions=("show_run_efficiency_report",),
-            overclaim_guard="A run efficiency report is not provider billing, cron, host, or performance proof beyond supplied local metadata.",
+            overclaim_guard=(
+                "A run efficiency report is not provider billing, cron, host-load, or performance proof beyond "
+                "supplied local metadata and Hermes' recorded usage for a named session."
+            ),
         ),
         feature_surface_harness(
             "provider-profile-posture",
@@ -160,7 +194,7 @@ def native_capability_surface_exposures(surface_exposure: Callable[..., object])
             projections,
             True,
             "primary_workflow_skill",
-            "Use as an installed Hermes workflow skill to render bounded local run efficiency from supplied metadata and keep provider/host gaps visible.",
+            "Use as an installed Hermes workflow skill to render bounded local run efficiency from supplied metadata, with Hermes' recorded usage for a named session, and keep provider and billing gaps visible.",
         ),
         surface_exposure(
             "provider-profile-posture",

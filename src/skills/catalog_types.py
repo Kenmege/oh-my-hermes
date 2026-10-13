@@ -406,6 +406,18 @@ EXECUTION_WAIT_DISCIPLINE_RULE = (
     "stay allowed; neither is the wait mechanism. Ladder and terminal states: shared rail."
 )
 
+# Where a "what has this used or cost" question is answered on Hermes, read at
+# the v2026.9.7 floor and on upstream main: `/usage` shows tokens and context
+# and no cost on the classic CLI, the gateway, and the modern TUI (`/status`
+# is not used here: the TUI's shows no context), `/insights` sums an estimated
+# cost over recent days, and only the cost receipt is per conversation. One
+# copy for the three skills that hand that question away, so none of them
+# credits a command with a figure it does not show.
+HERMES_USAGE_SURFACES_CLAUSE = (
+    "Hermes' /usage shows this session's tokens and context, /insights estimates cost across recent sessions, and "
+    "the omh_run_summary tool relays this conversation's recorded tokens and cost"
+)
+
 # Follow-on engine gate: finishing one workflow (an accepted plan, a clarified
 # brief, a routing recommendation) is planning evidence, never permission to
 # start the next engine. Planning-lane skills compose the fit-recommendation
@@ -1126,11 +1138,6 @@ _DEFAULT_GOOD_EXAMPLES = {
         prompt="ask: ask Claude as an external advisor to critique this plugin bridge plan before implementation.",
         expected="Prepare an advisor prompt, capture the response boundary, and summarize reusable critique.",
         why="The user wants outside review before committing to a direction.",
-    ),
-    "skill": SkillExample(
-        prompt="$skill list installed OMH skills and show the catalog metadata for each workflow.",
-        expected="Manage or inspect the skill catalog without claiming runtime execution or external evidence.",
-        why="The request is operator skill management, not a user workflow run.",
     ),
 }
 

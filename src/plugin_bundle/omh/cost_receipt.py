@@ -111,13 +111,25 @@ def build_cost_receipt(*, hermes_home: str | Path, omh_home: str | Path, session
         "claim_boundary": COST_RECEIPT_CLAIM_BOUNDARY,
         "not_covered": list(NOT_COVERED),
     }
+    state_db = Path(hermes_home).expanduser() / "state.db"
+    if session_id and not state_db.is_file():
+        receipt["status"] = "not_observed"
+        receipt["reason"] = "Hermes state.db not found"
+        receipt["text"] = "No cost receipt: Hermes' session store was not found."
+        return receipt
     conversation = conversation_session_ids(hermes_home, session_id) if session_id else set()
     if not conversation:
+        # The lineage read answers "no such row" and "could not read" alike;
+        # an unreadable store is not a conversation that recorded nothing.
+        if session_id and _read_sessions(state_db, {session_id}) is None:
+            receipt["status"] = "not_observed"
+            receipt["reason"] = "state.db could not be read"
+            receipt["text"] = "No cost receipt: Hermes' session store could not be read."
+            return receipt
         receipt["status"] = "not_observed"
         receipt["reason"] = "no Hermes session row for this session id"
         receipt["text"] = "No cost receipt: Hermes has no session record for this conversation."
         return receipt
-    state_db = Path(hermes_home).expanduser() / "state.db"
     sessions = _read_sessions(state_db, conversation)
     if sessions is None:
         receipt["status"] = "not_observed"
@@ -144,6 +156,14 @@ def build_cost_receipt(*, hermes_home: str | Path, omh_home: str | Path, session
     for bucket in buckets.values():
         _finish_bucket(bucket)
     totals = _totals(buckets.values())
+    # Which read hit its bound: the delegate walk (the conversation's own rows
+    # are always read first), the fanout listing, or the kanban runs.
+    bounded = {
+        "delegated_children": sessions["truncated"],
+        "fanout_units": fanout_truncated,
+        "kanban_workers": kanban["truncated"],
+    }
+    truncated_sources = [source for source in _SOURCES if bounded.get(source)]
     receipt.update(
         {
             "status": "observed",
@@ -154,7 +174,8 @@ def build_cost_receipt(*, hermes_home: str | Path, omh_home: str | Path, session
             "unpriced_tokens": totals["unpriced_tokens"],
             "missing": missing,
             "kanban": {key: kanban[key] for key in ("boards_read", "boards_unreadable")},
-            "truncated": bool(sessions["truncated"] or fanout_truncated or kanban["truncated"]),
+            "truncated": bool(truncated_sources),
+            "truncated_sources": truncated_sources,
         }
     )
     receipt["text"] = format_cost_receipt(receipt)

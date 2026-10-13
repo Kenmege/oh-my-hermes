@@ -3628,7 +3628,9 @@ class RouterContentTests(unittest.TestCase):
         self.assertIn("source boundaries", " ".join(definitions["research"].final_checklist))
         self.assertIn("agenda", " ".join(definitions["meeting-brief"].final_checklist).lower())
         self.assertIn("selected coding or runtime owner", " ".join(definitions["ralph"].final_checklist))
-        self.assertIn("managed path", " ".join(definitions["skill"].final_checklist))
+        # `skill` and `cancel` state their own checklists now; `agent-ops-review`
+        # still takes the operator lane's default.
+        self.assertIn("managed path", " ".join(definitions["agent-ops-review"].final_checklist))
 
     def test_coding_handoff_skills_include_executor_readiness_fallback(self) -> None:
         templates = {template.name: template.content for template in builtin_skill_templates()}

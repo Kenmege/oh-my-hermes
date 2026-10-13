@@ -23,6 +23,7 @@ This is a Hermes-native `capability-toggle` workflow skill.
 - The user wants to run the workflow a family owns rather than change whether that family is offered.
 - The user is asking to build an on/off switch inside their own product.
 - The user wants OMH removed entirely, which is the uninstall path rather than a capability policy change.
+- The user wants one skill hidden on one messaging platform or everywhere; that is Hermes' own hermes skills config, an interactive command the person runs in a terminal, and OMH writes no Hermes config.
 
 ## Examples
 
