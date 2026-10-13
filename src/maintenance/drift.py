@@ -541,8 +541,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # file or column names, pricing details, a flag, a header row,
             # markers), that remove the protection itself, that review a pull
             # request, notebook or slides, or that lead with another job
-            # before a later clause (23).
-            expected=603,
+            # before a later clause (23). Its fourth review adds two: a lead verb
+            # that is being defined ("de-identify means what exactly ...?",
+            # "de-identify is the term we use ..."), which is not a command (2).
+            expected=605,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

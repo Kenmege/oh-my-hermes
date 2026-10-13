@@ -227,6 +227,18 @@ class DataShareReviewRoutingTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertIs(_offered(message), offered)
 
+    def test_a_defined_lead_verb_or_a_question_is_not_a_command(self) -> None:
+        for message, offered in (
+            ("de-identify this export for the researcher", True),
+            ("de-identify means what exactly, before we send the file to the researcher?", False),
+            ("de-identify is the term we use in the guide; write a page on how we send files to vendors", False),
+            ("redact stands for removing text, so redact the export before sending it to the vendor", False),
+            ("pseudonymize refers to replacing ids in the export we send the vendor", False),
+            ("redact the pii in this export before sending it to the vendor?", False),
+        ):
+            with self.subTest(message=message):
+                self.assertIs(_offered(message), offered)
+
     def test_a_carrier_and_a_recipient_must_both_be_present(self) -> None:
         for message, offered in (
             ("redact the pii in the export and hand it over to the vendor", True),
@@ -294,6 +306,8 @@ class DataShareReviewRoutingTests(unittest.TestCase):
             "close the github issue titled redact pii from logs",
             "how do I enable redact pii in hermes",
             "send a slack message saying the export file is ready to share once we redact pii",
+            "de-identify means what exactly, before we send the file to the researcher?",
+            "de-identify is the term we use in the guide; write a page on how we send files to vendors",
         ):
             with self.subTest(message=message):
                 self.assertFalse(hinted(message))
@@ -338,6 +352,8 @@ NEGATIVES = (
     "review the pii redaction pull request before we send the export to the vendor",
     "check the log file for pii redaction bugs before sending it to the vendor",
     "merge the pr, then redact the pii in the export before sending it to the vendor",
+    "de-identify means what exactly, before we send the file to the researcher?",
+    "de-identify is the term we use in the guide; write a page on how we send files to vendors",
 )
 OWNERS = (
     ("attach the crash log to the github issue", "github-event-ops"),

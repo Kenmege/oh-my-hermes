@@ -4982,6 +4982,25 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "data-share-review",
     ),
+    # Review round four: a lead verb that is being defined, or a question, is
+    # not a command to clean a file.
+    RoutingPrecisionCase(
+        "de-identify-means-what-question-is-not-a-data-share-review",
+        "Asking what de-identify means is a question, not a request to clean the file",
+        "de-identify means what exactly, before we send the file to the researcher?",
+        "answer_clarification",
+        "",
+        "data-share-review",
+    ),
+    # No `forbidden_candidate`: the shortlist lists the skill below
+    # research-brief, which leads; the claim is that it does not dispatch.
+    RoutingPrecisionCase(
+        "de-identify-is-the-term-is-not-a-data-share-review",
+        "Saying de-identify is the guide's term defines a word, not a request to clean a file",
+        "de-identify is the term we use in the guide; write a page on how we send files to vendors",
+        "answer_clarification",
+        "",
+    ),
 )
 
 

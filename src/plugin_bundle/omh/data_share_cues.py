@@ -12,6 +12,8 @@ not personal data at all, so all of these must hold:
   "can you", with an inherently protective verb: redact, pseudonymize,
   anonymize, or de-identify. Words are read Unicode-aware, so a sentence that
   opens in Hangul or another script has no Latin lead;
+- the verb is a command: it is not defined ("de-identify means ...",
+  "de-identify is the term ...") and the sentence is not a question;
 - that verb's object does not end in a word for something other than data (a
   label, a flag, a script, a pull request, slides, a header row, ...);
 - a file-shaped carrier is leaving: an export, dataset, csv, file, logs,
@@ -91,6 +93,9 @@ DATA_SHARE_LEAD_VERBS = frozenset(
 )
 # The object runs from the verb up to the first of these words.
 DATA_SHARE_OBJECT_ENDS = frozenset({"and", "before", "for", "from", "in", "of"})
+# A lead verb followed by one of these is being defined, not asked for:
+# "de-identify means what exactly", "de-identify is the term we use".
+DATA_SHARE_DEFINITION_WORDS = frozenset({"is", "means", "refers", "stands"})
 # An object ending in one of these is not data: "redact the pii redaction
 # label", "pseudonymize the export script".
 DATA_SHARE_NON_DATA_NOUNS = frozenset(
@@ -170,6 +175,8 @@ def _protective_lead(text: str) -> bool:
     words = _words(_without_filler(text))
     if not words or words[0] not in DATA_SHARE_LEAD_VERBS:
         return False
+    if words[1:2] and words[1] in DATA_SHARE_DEFINITION_WORDS:
+        return False
     obj: list[str] = []
     for word in words[1:]:
         if word in DATA_SHARE_OBJECT_ENDS:
@@ -203,6 +210,9 @@ def _leaving(text: str, tokens: set[str], words: list[str]) -> bool:
 
 def data_share_request_admitted(text: str) -> bool:
     """A sentence that leads with redact, pseudonymize, anonymize or de-identify a file leaving the team."""
+    # A question is not a request to clean a file.
+    if text.rstrip().endswith("?"):
+        return False
     words = _words(text)
     tokens = set(words) | {part for word in words for part in word.split("-") if part}
     if tokens & DATA_SHARE_WITHDRAWAL_TOKENS or contains_boundary_phrase(text, DATA_SHARE_WITHDRAWAL_PHRASES):
