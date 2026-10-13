@@ -4,7 +4,8 @@
 # Scanner v2 is what `hermes skills install` runs on a community skill from Hermes 0.21.1, the
 # floor `requires_hermes` names, through 0.21.3. 0.21.3 (tag v2026.9.14) narrowed `dns_exfil` and
 # changed nothing else, so this 0.21.1 copy is the stricter of the two v2 builds.
-# tests/test_hermes_install_scan.py runs it beside v8 and v10. Replace it only when the floor moves.
+# tests/test_hermes_install_scan.py runs it beside v6, v8 and v10. Replace it only when the floor
+# moves.
 
 #!/usr/bin/env python3
 """Skills Guard — regex static scan of externally-sourced skills plus a trust-aware install policy.

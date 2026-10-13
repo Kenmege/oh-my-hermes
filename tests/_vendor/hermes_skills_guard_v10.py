@@ -3,7 +3,7 @@
 # (commit 71d34bad10, byte-identical at origin/main 63d0b94120; MIT License, Copyright (c) 2025
 # Nous Research), read 2026-10-13. Scanner v10 is the newest `hermes skills install` runs on a
 # community skill; 87a281e0c1 made a bare `setgid` and a `sudo` in Markdown informational (medium).
-# tests/test_hermes_install_scan.py runs it beside v2 (the floor) and v8. Refresh by copying the
+# tests/test_hermes_install_scan.py runs it beside v2 (the floor), v6 and v8. Refresh by copying the
 # upstream file below this header and updating the tag and commit; keep the older copies.
 
 #!/usr/bin/env python3

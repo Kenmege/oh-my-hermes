@@ -2,8 +2,8 @@
 # Vendored verbatim from hermes-agent tools/skills_guard.py at commit 2be78cbcf7
 # (2026-10-01; MIT License, Copyright (c) 2025 Nous Research), read 2026-10-07.
 # This is the install scanner `hermes skills install` runs on a community skill in Hermes 0.21.6
-# (tag v0.21.6 carries the same bytes); tests/test_hermes_install_scan.py runs it, beside v2 and
-# v10, over the shipped skill directories so a wording that trips a critical or high rule fails
+# (tag v0.21.6 carries the same bytes); tests/test_hermes_install_scan.py runs it, beside v2, v6
+# and v10, over the shipped skill directories so a wording that trips a critical or high rule fails
 # here before a user hits it (#2000, #2014). A newer scanner gets its own file; keep this one.
 
 #!/usr/bin/env python3

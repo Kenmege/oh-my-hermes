@@ -13,7 +13,8 @@ file move together -- so this runs the scanner itself, vendored verbatim in
 `tests/_vendor`, over `skills/` and `agent-skills/` exactly as Hermes runs it.
 
 The scanner changes between Hermes releases and OMH installs on every release
-from the `requires_hermes` floor up, so three versions run:
+from the `requires_hermes` floor up, so every scanner a supported release
+ships runs here, one vendored copy each:
 
 - v2 (`hermes_skills_guard_v2`): Hermes 0.21.1 through 0.21.3, the floor. Its
   `context_exfil` rule is `(include|output|print|send|share)\s+(?:\w+\s+)*`
@@ -22,19 +23,19 @@ from the `requires_hermes` floor up, so three versions run:
   "A blueprint is prepared design context" reads as `print ... context`. Four
   lines in ulw-loop, omh-wiki and omh-routing scanned `caution` under v2 alone
   until they were reworded.
+- v6 (`hermes_skills_guard_v6`): Hermes 0.21.4 and 0.21.5. Measured on
+  2026-10-13 by importing each copy, every v6 rule id is also a v2, v8 or v10
+  rule id, but a regex diff found five v6 patterns that match none of the
+  three byte for byte. `dns_exfil` is narrower than v2's and
+  `bash_reverse_shell` is equivalent to v8's; `curl_pipe_shell`,
+  `wget_pipe_shell` and `echo_pipe_exec` widen the shell names to `zsh`, `ksh`
+  and `dash` without the `\b` v8 later added after them, so v6 alone flags a
+  pipe into a word such as `dashboard`. `V6_ONLY_PIPES` pins that this slot
+  is the one that catches it.
 - v8 (`hermes_skills_guard_v8`): Hermes 0.21.6.
 - v10 (`hermes_skills_guard_v10`): Hermes 0.21.7 and upstream main. Upstream
   87a281e0c1 made a bare `setgid` and a `sudo` in Markdown informational
   (medium), so the pinned severities below differ per version.
-
-Hermes 0.21.4 and 0.21.5 ship scanner v6, which is not vendored. Measured on
-2026-10-13 by importing each copy: every v6 rule id is also a v2, v8 or v10
-rule id. A regex diff was run as well: five v6 patterns match none of the
-three byte for byte. `dns_exfil` is narrower than v2's and `bash_reverse_shell`
-is equivalent to v8's, but `curl_pipe_shell`, `wget_pipe_shell` and
-`echo_pipe_exec` lack the `\b` v8 added after the shell name, so v6 alone also
-flags a pipe into a word that starts with `zsh`, `ksh` or `dash` (for example
-`curl ... | dashboard`). This module cannot see that case.
 """
 
 from __future__ import annotations
@@ -43,12 +44,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from _vendor import hermes_skills_guard_v2, hermes_skills_guard_v8, hermes_skills_guard_v10
+from _vendor import hermes_skills_guard_v2, hermes_skills_guard_v6, hermes_skills_guard_v8, hermes_skills_guard_v10
 
 REPO = Path(__file__).resolve().parents[1]
 SHIPPED_SKILL_ROOTS = (REPO / "skills", REPO / "agent-skills")
 SCANNERS = {
     "v2": hermes_skills_guard_v2,
+    "v6": hermes_skills_guard_v6,
     "v8": hermes_skills_guard_v8,
     "v10": hermes_skills_guard_v10,
 }
@@ -74,6 +76,13 @@ EXPECTED_SEVERITY = {
         "sudo_usage": "high",
         "context_exfil": "high",
     },
+    "v6": {
+        "setuid_setgid": "critical",
+        "deception_hide": "high",
+        "other_agent_config_mod_shell": "critical",
+        "crypto_mining": "critical",
+        "sudo_usage": "high",
+    },
     "v8": {
         "setuid_setgid": "critical",
         "deception_hide": "high",
@@ -88,6 +97,15 @@ EXPECTED_SEVERITY = {
         "crypto_mining": "critical",
         "sudo_usage": "medium",
     },
+}
+
+# A pipe into a word that starts with a shell name. v6 scores each line
+# critical and no other version finds anything in them, so without the v6
+# copy a Hermes 0.21.4 or 0.21.5 install could be refused while this gate passed.
+V6_ONLY_PIPES = {
+    "curl_pipe_shell": "Refresh the panel with `curl -s localhost:8080/status | dashboard-render`.",
+    "wget_pipe_shell": "Refresh the panel with `wget -q localhost:8080/status -O - | dashboard-render`.",
+    "echo_pipe_exec": "Print a marker with `echo ready | dashboard-render`.",
 }
 
 
@@ -148,6 +166,17 @@ class HermesInstallScanTests(unittest.TestCase):
                     {rule: scored.get(rule) for rule in expected},
                     {rule: {severity} for rule, severity in expected.items()},
                 )
+
+    def test_only_the_v6_slot_catches_a_pipe_into_a_word_that_starts_with_a_shell_name(self) -> None:
+        with TemporaryDirectory() as tmp:
+            skill = Path(tmp) / "probe"
+            skill.mkdir()
+            (skill / "SKILL.md").write_text("\n".join(V6_ONLY_PIPES.values()) + "\n", encoding="utf-8")
+            results = {version: guard.scan_skill(skill, "community") for version, guard in SCANNERS.items()}
+        for version, result in results.items():
+            with self.subTest(version=version):
+                expected = {(rule, "critical") for rule in V6_ONLY_PIPES} if version == "v6" else set()
+                self.assertEqual({(f.pattern_id, f.severity) for f in result.findings}, expected)
 
 
 if __name__ == "__main__":

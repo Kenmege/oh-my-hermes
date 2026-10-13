@@ -17,14 +17,15 @@ All notable changes will be documented here.
   heading is now "Context Safety For Large Output", the wiki blueprint
   reference calls a blueprint a prepared design artifact, and ulw-loop's
   log rule and measured-loop reference speak of logging a cycle to a file.
-  `tests/test_hermes_install_scan.py` now runs the scanners from Hermes
-  0.21.1 (v2), 0.21.6 (v8) and 0.21.7 and upstream main (v10), each
-  vendored verbatim under `tests/_vendor/`, over `skills/` and
-  `agent-skills/`, and pins each version's severity for the sentences that
+  `tests/test_hermes_install_scan.py` now runs every scanner a supported
+  release ships, each vendored verbatim under `tests/_vendor/`: Hermes
+  0.21.1 through 0.21.3 (v2), 0.21.4 and 0.21.5 (v6), 0.21.6 (v8), and
+  0.21.7 and upstream main (v10). It scans `skills/` and `agent-skills/`
+  under each one and pins each version's severity for the sentences that
   blocked installs (v10 scores a bare `setgid` and a `sudo` in Markdown as
-  informational). The scanner in Hermes 0.21.4 and 0.21.5 (v6) is not
-  vendored: its rule ids all appear in the three, and the test's docstring
-  names the pipe shape only v6 flags. `requires_hermes` is unchanged.
+  informational). It also pins the one shape only v6 flags, a pipe into a
+  word that starts with a shell name such as `| dashboard`, so the v6 copy
+  is not redundant. `requires_hermes` is unchanged.
 
 
 - **OMH memory works in messenger DMs and group channels (#2088).** Every
