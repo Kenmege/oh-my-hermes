@@ -48,6 +48,10 @@ Ctrl+T and `/effort <level>` set the session's reasoning effort the same way
 (`config.set` with the session id); the level shown is the one Hermes
 confirmed or reports in `session.info`.
 
+Subagents: every `subagent.*` event of the live session is folded into one
+`subagents.Roster`, which a new turn and a new session empty. While it holds
+an agent the mode row carries a strip of them.
+
 Prompt text, the transcript, attachments, secrets, server-request frames and
 the gateway's stderr stay in memory and on the person's own terminal; nothing
 here writes them anywhere. The files the TUI writes are metadata: that
@@ -124,10 +128,11 @@ from .slash import (
     plan_invocation,
 )
 from .style import Line, Span, Style
+from .subagents import Hit, Roster
 from .terminal import Terminal, terminal_supported
 from .theme import DEFAULT_THEME, Theme, build_theme, theme_named
 from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, as_text
-from .width import line_width, truncate_left, truncate_line, wrap_line
+from .width import cell_width, line_width, truncate_left, truncate_line, wrap_line
 from ..version import __version__
 
 READ_TIMEOUT_SECONDS = 0.05
@@ -206,6 +211,10 @@ QUEUE_HINT_GAP = 2
 STEERED_NOTICE = "↪ steered: {}"
 STEER_REJECTED = "rejected"  # `session.steer`'s status when the turn ended before the text arrived
 STEER_USAGE = "Usage: /steer <text to add to the running turn>"
+
+# Subagents: the strip on the mode row.
+SUBAGENT_EVENT_PREFIX = "subagent."
+STRIP_SEPARATOR = " · "
 
 # One BEL when an approval opens, so a terminal in the background can flag the tab or bounce.
 BELL = "\a"
@@ -330,24 +339,52 @@ def context_percent(usage: object) -> float | None:
     return usage["context_used"] / usage["context_max"] * 100
 
 
-def mode_row_line(
-    *, mode: str, busy: bool, queued: int, keyboard_protocol: bool, effort: str, width: int, theme: Theme
-) -> Line:
-    """The row under the composer frame: the mode's label (accept, plan) or the keys that matter now, then the effort.
-
-    The label always survives: the hint is cut from its end first, and the
-    effort on the right goes only when even the label beside it does not fit.
-    """
-    label: Line = ()
+def mode_label(mode: str, theme: Theme) -> Line:
+    """The mode's own words on the mode row: accept and plan have them, normal has none."""
     if mode == MODE_ACCEPT:
-        label, hint = (Span(ACCEPT_LABEL, replace(theme.mode_accept, bold=True)),), ACCEPT_HINT
+        return (Span(ACCEPT_LABEL, replace(theme.mode_accept, bold=True)),)
+    if mode == MODE_PLAN:
+        return (Span(PLAN_LABEL, replace(theme.mode_plan, bold=True)),)
+    return ()
+
+
+def strip_column(mode: str, theme: Theme) -> int:
+    """The mode row cell the agent strip starts on: after the mode's label and a separator, or the row's first."""
+    label = mode_label(mode, theme)
+    return line_width(label) + cell_width(STRIP_SEPARATOR) if label else 0
+
+
+def mode_row_line(
+    *,
+    mode: str,
+    busy: bool,
+    queued: int,
+    keyboard_protocol: bool,
+    effort: str,
+    width: int,
+    theme: Theme,
+    strip: Line = (),
+) -> Line:
+    """The row under the composer frame: the mode's label (accept, plan), the agent strip, the keys that matter now, the effort.
+
+    `strip` is the roster's strip while it holds an agent, drawn from cell
+    `strip_column(mode, theme)` on. The label always survives, and the strip
+    after it: the hint is cut from its end first, and the effort on the right
+    goes only when even the label and the strip beside it do not fit.
+    """
+    label = mode_label(mode, theme)
+    if mode == MODE_ACCEPT:
+        hint = ACCEPT_HINT
     elif mode == MODE_PLAN:
-        label, hint = (Span(PLAN_LABEL, replace(theme.mode_plan, bold=True)),), PLAN_HINT
+        hint = PLAN_HINT
     elif busy:
         keys = [INTERRUPT_KEY_HINT, STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
         hint = " · ".join(keys + ([QUEUED_KEY_HINT] if queued else []))
     else:
         hint = IDLE_KEYS_HINT
+    if strip:
+        label = (*label, Span(STRIP_SEPARATOR, theme.hint), *strip) if label else strip
+        hint = hint if hint.startswith(STRIP_SEPARATOR) else STRIP_SEPARATOR + hint.strip()
     right: Line = (Span(f"effort {effort}", theme.muted),) if effort else ()
     room = width - line_width(label) - (line_width(right) + MODE_ROW_GAP if right else 0)
     if room < 0:
@@ -692,6 +729,7 @@ class App:
         self.path_seq = 0  # the newest call; an answer to an older one is stale
         self.path_items: list[PathItem] = []
         self.connection_ops: set[str] = set()  # `connection.request` operations already named in a notice
+        self.roster = Roster()  # the running turn's subagents
         self.dirty = True
         self.last_render = 0.0
 
@@ -929,6 +967,8 @@ class App:
             self._on_connection_request(payload)
         elif event.type == "error":
             self._on_error_event(as_text(payload.get("message")) or "The gateway reported an error.")
+        elif event.type.startswith(SUBAGENT_EVENT_PREFIX):
+            self.roster.apply(event.type, payload, self.clock())  # folds what it knows; raises on nothing
         else:
             self.transcript.apply(event)
             if event.type == "message.start":
@@ -1286,6 +1326,7 @@ class App:
         self.transcript.add_user(shown or text)
         self.sticky = shown or text
         self.flushed_since_prompt = 0
+        self.roster.clear()  # the agents shown were the last turn's
         self.turn_pending = True
         self.busy_since = self.clock()
         self.attachments.clear()  # the gateway sends its queued images with this turn
@@ -1642,7 +1683,8 @@ class App:
 
         The old session's open requests are declined and its runtime closed;
         everything that belonged to it (transcript, queue, sticky prompt,
-        attachments, HUD snapshot) is dropped before the new one is adopted.
+        attachments, HUD snapshot, subagents) is dropped before the new one
+        is adopted.
         The caller says so in the new transcript, after its own notice.
         """
         old = self.sid
@@ -1655,6 +1697,7 @@ class App:
         self.flushed_since_prompt = 0  # rows printed above the region since the last prompt was sent
         self.attachments.clear()  # the gateway queued them for the session being left
         self.hud = None
+        self.roster.clear()
         self._adopt_session(result, fallback_stored)
         return declined
 
@@ -1958,6 +2001,7 @@ class App:
         self.flushed_since_prompt += len(stable)
         previous = 0 if anchoring else self.region.height
         self.anchor = False
+        strip, _hits = self._agent_strip(cols)
         frame = build_frame(
             cols=cols,
             rows=rows,
@@ -1980,6 +2024,7 @@ class App:
                 effort=self.effort,
                 width=cols,
                 theme=self.theme,
+                strip=strip,
             ),
             placeholder=PLACEHOLDER if self.slot is None and self.picker is None else "",
         )
@@ -1989,6 +2034,17 @@ class App:
             # (the banner, a resumed history) would be pushed off the top before anyone
             # saw them; flushed after it, they land in those pad rows instead.
             self.region.flush_above(stable, cols)
+
+    # ── subagents ──
+
+    def _spinner_frame(self) -> int:
+        return int(self.clock() / TICK_SECONDS)
+
+    def _agent_strip(self, cols: int) -> tuple[Line, tuple[Hit, ...]]:
+        """The roster's strip for the mode row, and the cells each entry covers as 0-based screen columns."""
+        start = strip_column(self.mode, self.theme)
+        line, hits = self.roster.strip_line(cols - start, self.theme, self._spinner_frame())
+        return line, tuple(Hit(hit.start + start, hit.end + start, hit.subagent_id) for hit in hits)
 
     @property
     def keyboard_protocol(self) -> bool:
