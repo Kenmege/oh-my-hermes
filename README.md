@@ -348,6 +348,10 @@ omh
   </tr>
 </table>
 
+Where the OMH TUI cannot start (Windows, a terminal without `termios`,
+`OMH_NO_TUI=1`, no Node), `omh` opens Hermes' own terminal instead; see
+[The OMH TUI](docs/INSTALLATION.md#the-omh-tui).
+
 What the terminal shows while OMH workflows run:
 
 - **Mixture-of-Models Routing** — each delegated lane is routed onto a

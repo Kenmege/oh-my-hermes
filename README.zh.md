@@ -284,6 +284,10 @@ omh
   </tr>
 </table>
 
+在无法启动 OMH TUI 的环境中(Windows、没有 `termios` 的终端、`OMH_NO_TUI=1`、
+没有 Node),`omh` 会改为打开 Hermes 自己的终端。详见
+[The OMH TUI](docs/INSTALLATION.md#the-omh-tui)。
+
 OMH 工作流运行时,终端会展示:
 
 - **Mixture-of-Models Routing** — 每条委派 lane 按类别(ultrabrain、deep、

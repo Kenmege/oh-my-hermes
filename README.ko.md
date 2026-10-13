@@ -288,6 +288,10 @@ omh
   </tr>
 </table>
 
+OMH TUI를 열 수 없는 환경(Windows, `termios`가 없는 터미널, `OMH_NO_TUI=1`,
+Node 없음)에서는 `omh`가 Hermes 자체 터미널을 엽니다.
+[The OMH TUI](docs/INSTALLATION.md#the-omh-tui)를 참고하세요.
+
 OMH 워크플로가 도는 동안 터미널이 보여주는 것:
 
 - **Mixture-of-Models Routing** — 위임되는 lane마다 카테고리(ultrabrain,

@@ -175,7 +175,9 @@ PR without the chat history.
   answers an approval, clarify, sudo, or secret request on its own: Esc or
   Ctrl+C declines, an approval decline is an explicit deny, allowing a
   command takes the arrows and then Enter, and a request the gateway
-  withdraws (its own timeout, an interrupt) closes without an answer. It
+  withdraws (its own timeout, an interrupt) closes without an answer.
+  Leaving a session (`/new`, a switch) declines that session's open requests
+  and says so in the new transcript. It
   never attaches to a session another runtime owns: when the launcher sets
   `HERMES_TUI_GATEWAY_URL`, it exits and names `hermes`. It writes no prompt
   text, transcript, attachment, secret or server-request frame to disk or to
@@ -184,7 +186,8 @@ PR without the chat history.
   already write under the OMH home (the HUD fan-out cache and its lock, and
   the chains `/omh-model` saves). The frontend opens no socket and makes no
   network call, strips the sidecar and attach URLs from the gateway's
-  environment, and reaps the gateway when it exits. OMH itself still makes no
+  environment, and reaps the gateway when it exits, SIGTERM and SIGHUP
+  included. OMH itself still makes no
   LLM call; every model call, and every other network call the gateway makes,
   is Hermes'. This is a foreground terminal the person launched, not a
   background runtime, a transport bot, or a third process bridge.

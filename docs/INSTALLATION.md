@@ -355,8 +355,13 @@ When the OMH TUI cannot start — Windows, a terminal without `termios` or with
 `TERM=dumb`, `OMH_NO_TUI=1`, no Node for Hermes' launcher, or a Hermes whose
 gateway no longer speaks what the TUI was built for — it says why and `omh`
 opens Hermes' own terminal instead, so you lose the OMH screen, never the
-session. If the gateway changes mid-session, the TUI leaves with the command
-that reopens the same session in `hermes`. The OMH TUI writes no prompt text,
+session. If the gateway stops accepting a method or a key mid-session, the
+TUI leaves with the command that reopens the same session in `hermes`; an
+event Hermes renames is not detected yet, and shows as a turn that never
+finishes. The gateway, and every tool it runs, inherits the environment `omh`
+set for the frontend, `OMH_HOME` included, so `omh --omh-home <dir>` also picks
+the store the OMH plugin inside that gateway uses when the profile names none.
+The OMH TUI writes no prompt text,
 transcript, attachment, secret or Hermes question to disk. What it does write
 is metadata: the launcher's active-session file, which holds the session id,
 and what OMH's own HUD reader and model-chain picker write under the OMH home

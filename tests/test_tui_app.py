@@ -26,6 +26,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import stat
 import time
 import unittest
@@ -369,6 +370,47 @@ class StartupRefusalTests(AppTestCase):
         self.assertEqual(run.terminal.entered, 0)
         with self.assertRaises(GatewayUnavailable):  # its input was closed: the child is being reaped
             run.clients[0].request("session.list", {"limit": 1})
+
+
+class SignalledTerminal(ScriptedTerminal):
+    """Raises `signum` in this process from inside the loop, the first time the TUI is idle."""
+
+    def __init__(self, signum: int) -> None:
+        super().__init__()
+        self.signum = signum
+
+    def read(self, timeout: float) -> bytes:
+        if self.signum and self.idle():
+            signum, self.signum = self.signum, 0
+            signal.raise_signal(signum)
+        return super().read(timeout)
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class ExitSignalTests(AppTestCase):
+    def test_sigterm_and_sighup_restore_the_terminal_reap_the_gateway_and_put_the_handler_back(self) -> None:
+        for name in ("SIGTERM", "SIGHUP"):
+            with self.subTest(signal=name):
+                signum = getattr(signal, name)
+                caught: list[int] = []
+
+                def outer(number: int, frame: object) -> None:
+                    caught.append(number)  # only reached if the TUI installed no handler of its own
+
+                # The handler the TUI must restore, and a guard: a TUI that installs none
+                # leaves this runner alive and the script below exits it.
+                self.addCleanup(signal.signal, signum, signal.signal(signum, outer))
+                run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+                run.terminal = SignalledTerminal(signum)
+                run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="the first frame"))
+                with self.assertRaises(SystemExit) as raised:
+                    self.run_main(run)
+                self.assertEqual(raised.exception.code, 128 + signum)
+                self.assertEqual(caught, [])
+                self.assertEqual((run.terminal.entered, run.terminal.exited), (1, 1))
+                with self.assertRaises(GatewayUnavailable):  # its input was closed: the child is being reaped
+                    run.clients[0].request("session.list", {"limit": 1})
+                self.assertIs(signal.getsignal(signum), outer)
 
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
@@ -1285,6 +1327,8 @@ class LocalCommandTests(AppTestCase):
         self.assertEqual(run.calls("slash.exec")[0]["params"], {"command": "fresh", "session_id": "f05e2691"})
         # The closed session's remaining events never reach the fresh transcript.
         self.assertNotIn("It was blocked", run.terminal.history())
+        # The decline was the TUI's, not the person's: the fresh transcript says so.
+        self.assertIn("Declined 1 open request from the session you left.", run.terminal.history())
         self.assertEqual(run.poller.sessions, [APPROVAL_STORED_ID, FRESH_STORED_ID])
         self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": FRESH_STORED_ID})
 

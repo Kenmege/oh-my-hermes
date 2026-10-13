@@ -7,7 +7,9 @@ settled before the first byte is drawn, and each such failure exits with
 cannot run the TUI, a gateway that does not start, and a startup call this
 Hermes no longer understands. An attach hand-off is refused with exit 1 and a
 line naming `hermes --tui --resume <id>` (0 would make `omh` print a resume
-hint for a session this TUI never opened).
+hint for a session this TUI never opened). SIGTERM and SIGHUP leave through
+`SystemExit(128 + signum)`, so the terminal is restored and the gateway reaped
+as on any other exit.
 
 `App` is the loop. One thread owns the terminal and every model: it reads
 input with a short timeout, routes keys (the pager while it is open, then
@@ -45,8 +47,10 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 import json
 import os
+import signal
 import sys
 import time
+from types import FrameType
 from typing import Any, Protocol, TextIO
 
 from ..plugin_bundle.omh.runtime_reader import elapsed_text
@@ -120,6 +124,9 @@ INTERRUPTED_EXIT = 130
 # region is already cleared and the terminal restored before this wait starts.
 CLOSE_GRACE_SECONDS = 0.5
 TERMINATE_GRACE_SECONDS = 2.0
+# By default these end the process without unwinding: the shell stays raw and the
+# gateway is orphaned. Raised as SystemExit, they restore and reap on the way out.
+EXIT_SIGNALS = ("SIGTERM", "SIGHUP")
 
 BANNER_BRAND = "⚚ OH-MY-HERMES"
 BANNER_HINT = "/help for commands · Ctrl+C twice to exit · bare hermes opens Hermes' own terminal"
@@ -844,14 +851,18 @@ class App:
         while self.slot is None and self.waiting_requests:
             self._on_server_request(self.waiting_requests.popleft())
 
-    def _decline_all_requests(self) -> None:
-        """Answer every open and waiting request with its decline frame (the session is going away)."""
+    def _decline_all_requests(self) -> int:
+        """Answer every open and waiting request with its decline frame (the session is going away); how many."""
+        declined = 0
         while self.slot is not None:
             self._answer(self.slot.decline())
+            declined += 1
         while self.waiting_requests:
             request = self.waiting_requests.popleft()
             opened = open_request(request.id, request.method, request.params)
             self._respond(opened.answer if isinstance(opened, ImmediateAnswer) else opened.decline())
+            declined += 1
+        return declined
 
     # ── input ──
 
@@ -1203,8 +1214,9 @@ class App:
         self._request("session.create", self._create_params(), self._on_new_session, self._on_create_refused)
 
     def _on_new_session(self, result: dict[str, Any]) -> None:
-        self._enter_session(result)
+        declined = self._enter_session(result)
         self.transcript.add_notice(f"New session {self.stored_id}.")
+        self._notice_declined(declined)
 
     def _on_create_refused(self, error: dict[str, Any]) -> bool:
         message = as_text(error.get("message")) or "refused"
@@ -1213,15 +1225,16 @@ class App:
         )
         return True
 
-    def _enter_session(self, result: Mapping[str, Any], fallback_stored: str = "") -> None:
-        """Leave the current session for the one `result` opened.
+    def _enter_session(self, result: Mapping[str, Any], fallback_stored: str = "") -> int:
+        """Leave the current session for the one `result` opened; how many of its requests were declined.
 
         The old session's open requests are declined and its runtime closed;
         everything that belonged to it (transcript, queue, sticky prompt,
         attachments, HUD snapshot) is dropped before the new one is adopted.
+        The caller says so in the new transcript, after its own notice.
         """
         old = self.sid
-        self._decline_all_requests()
+        declined = self._decline_all_requests()
         if old and old != as_text(result.get("session_id")):
             self._request("session.close", {"session_id": old}, lambda result: None, lambda error: True)
         self.transcript = Transcript(self.clock)
@@ -1231,6 +1244,12 @@ class App:
         self.attachments.clear()  # the gateway queued them for the session being left
         self.hud = None
         self._adopt_session(result, fallback_stored)
+        return declined
+
+    def _notice_declined(self, declined: int) -> None:
+        if declined:
+            noun = "request" if declined == 1 else "requests"
+            self.transcript.add_notice(f"Declined {declined} open {noun} from the session you left.", NOTICE_WARN)
 
     # ── switching sessions ──
 
@@ -1273,8 +1292,9 @@ class App:
 
     def _on_session_resumed(self, target: str, result: dict[str, Any]) -> None:
         """Leave the old session and redraw the screen as the resumed one."""
-        self._enter_session(result, fallback_stored=target)
+        declined = self._enter_session(result, fallback_stored=target)
         self._draw_history(result.get("messages"))
+        self._notice_declined(declined)
         self.banner_record = self._banner_record(result, resumed=self.stored_id)
         self._full_redraw()
         self._redeliver(result.get("open_requests"))
@@ -1622,6 +1642,29 @@ class App:
 # ── entry point ───────────────────────────────────────────────────────────
 
 
+def _exit_on_signal(signum: int, frame: FrameType | None) -> None:
+    raise SystemExit(128 + signum)
+
+
+def _install_exit_signals() -> dict[int, Any]:
+    """Route `EXIT_SIGNALS` through SystemExit; the handlers they replace."""
+    previous: dict[int, Any] = {}
+    for name in EXIT_SIGNALS:
+        signum = getattr(signal, name, None)
+        if signum is None:
+            continue
+        try:
+            previous[signum] = signal.signal(signum, _exit_on_signal)
+        except ValueError:
+            break  # handlers can only be installed from the main thread
+    return previous
+
+
+def _restore_signals(previous: Mapping[int, Any]) -> None:
+    for signum, handler in previous.items():
+        signal.signal(signum, handler if handler is not None else signal.SIG_DFL)
+
+
 def _say(stream: TextIO, text: str) -> None:
     """One line to the shell, after the terminal is restored; gateway text in it is cleaned of escapes and controls."""
     stream.write(clean_text(text) + "\n")
@@ -1697,6 +1740,7 @@ def main(
     except GatewayUnavailable as error:
         _say(stderr, f"omh: the Hermes gateway did not start: {error}")
         return FALLBACK_EXIT
+    previous_handlers = _install_exit_signals()
     try:
         return _run(client, environ, stderr, open_terminal, make_poller)
     except KeyboardInterrupt:
@@ -1706,4 +1750,7 @@ def main(
         return INTERRUPTED_EXIT
     finally:
         # The screen has settled and the terminal is the shell's again; only now wait on the child.
-        client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
+        try:
+            client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
+        finally:
+            _restore_signals(previous_handlers)
