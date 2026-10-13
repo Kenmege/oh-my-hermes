@@ -62,8 +62,8 @@ def plain(text: str) -> Line:
 class Session:
     """One terminal, one live region, the app loop's repaint order."""
 
-    def __init__(self, test: unittest.TestCase, rows: int, cols: int, history: int) -> None:
-        self.test = test
+    def __init__(self, case: unittest.TestCase, rows: int, cols: int, history: int) -> None:
+        self.case = case
         self.rows = rows
         self.cols = cols
         self.screen = VTScreen(rows, cols)
@@ -115,7 +115,7 @@ class Session:
         # the caret claim itself, counted without the composer: one row of text, caret at its end
         text = self.composer.text
         if text and "\n" not in text and self.composer.caret == len(text) and cell_width(PROMPT + text) < self.cols:
-            self.test.assertEqual(self.screen.cursor[1], cell_width(PROMPT + text), f"{label}: cursor column")
+            self.case.assertEqual(self.screen.cursor[1], cell_width(PROMPT + text), f"{label}: cursor column")
 
     def keys(self, label: str, events: Sequence[Key | Paste]) -> None:
         for event in events:
@@ -125,7 +125,7 @@ class Session:
     # -- the invariants -------------------------------------------------------
 
     def check(self, expected: Sequence[Line], view: tuple[list[Line], tuple[int, int]]) -> None:
-        t = self.test
+        t = self.case
         where = f"{self.rows}x{self.cols} after {self.label!r}"
         screen = self.screen.lines()
         status_rows = [row for row, text in enumerate(screen) if text.startswith(STATUS_PREFIX)]
