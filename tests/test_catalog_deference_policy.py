@@ -105,6 +105,15 @@ NON_SKILL_BACKTICKS = frozenset(
         # a kanban review card's transition to it. No deference case follows,
         # because the router can only rank catalog skills.
         "sdlc-review",
+        # Hermes' own session commands, their flags, and its cron tool, named
+        # in `loop`'s do_not_use_when where a request belongs to the host's
+        # timer, schedule, or single-objective driver rather than a sibling.
+        "/loop",
+        "--until",
+        "--times",
+        "cronjob_manage",
+        "/goal",
+        "/goal draft",
     }
 )
 

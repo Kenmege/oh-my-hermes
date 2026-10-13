@@ -65,8 +65,10 @@ from .policy import (
     SKILL_SCOUT_CANDIDATE_INTENT_PHRASES,
     active_routing_guard_rules,
     explicit_skill_invocation as explicit_skill_name,
+    host_owned_command_turn,
     is_ambiguous_scores,
     meets_confidence_threshold,
+    native_loop_cadence_request,
     point_in_time_web_guard_applies,
 )
 from .policy import _doctor_health_guard_applies
@@ -115,6 +117,16 @@ FILE_LOOKUP_REASON = (
 )
 DIRECT_ANSWER_REASON = (
     "Plain user question; answer directly in chat instead of opening an OMH workflow or picker."
+)
+# Two turns Hermes owns, answered in chat without a workflow. Each reason keeps
+# the direct-answer wording the wrapper reads (`_is_direct_answer_fallback`).
+HOST_COMMAND_TURN_REASON = (
+    "Hermes wrote this turn from its own /plan or /loop command, and its text is the host's "
+    "instruction for the turn; answer directly by following it instead of opening an OMH workflow or picker."
+)
+NATIVE_LOOP_CADENCE_REASON = (
+    "A check repeated on a timer is Hermes' native /loop, which the user starts (for example "
+    "/loop 5m <the check>); answer directly with that command instead of opening an OMH workflow or goal loop."
 )
 WEAK_DISPATCH_EVIDENCE_REASON = (
     "The best match scored high on shared everyday words or a guard boost, not on its own trigger "
@@ -2006,9 +2018,17 @@ def _route_chat_message_cached(
     limit: int,
     min_confidence: str,
 ) -> dict[str, object]:
+    if host_owned_command_turn(message):
+        return _direct_answer_decision(
+            message, source=source, min_confidence=min_confidence, reason=HOST_COMMAND_TURN_REASON
+        ).to_dict()
     routing_message = _with_canonical_display_names(scrub_diagnostic_status_text(executable_routing_text(message)))
     if not routing_message.strip():
         return _direct_answer_decision(message, source=source, min_confidence=min_confidence).to_dict()
+    if native_loop_cadence_request(routing_message):
+        return _direct_answer_decision(
+            message, source=source, min_confidence=min_confidence, reason=NATIVE_LOOP_CADENCE_REASON
+        ).to_dict()
     # Built once: the fast paths and the scorer below read its stages instead
     # of each re-deriving the prep chain from `routing_message`.
     query = RoutingQuery.from_message(routing_message)
@@ -6672,9 +6692,9 @@ def _direct_answer_decision(
     *,
     source: str,
     min_confidence: str,
+    reason: str = DIRECT_ANSWER_REASON,
 ) -> ChatRouteDecision:
     selected_harness = primary_harness_for_skill(_ROUTER_SKILL)
-    reason = DIRECT_ANSWER_REASON
     return ChatRouteDecision(
         schema_version=1,
         source=source,
@@ -7630,7 +7650,7 @@ def _is_file_lookup_reason(reason: str) -> bool:
 
 
 def _is_direct_answer_reason(reason: str) -> bool:
-    return reason == DIRECT_ANSWER_REASON
+    return reason in (DIRECT_ANSWER_REASON, HOST_COMMAND_TURN_REASON, NATIVE_LOOP_CADENCE_REASON)
 
 
 def _is_heavy_lane_vagueness_reason(reason: str) -> bool:

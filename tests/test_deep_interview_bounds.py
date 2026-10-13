@@ -35,7 +35,11 @@ SKILL_MD = REPO_ROOT / "skills" / "ulw-interview" / "SKILL.md"
 # 10_600 -> 10_900: the interview protocol gained the idea-approval sentence (a
 # yes to an idea approves only the idea; a later plan, handoff, or change is
 # accepted at its own gate); the body measures 10,688. Same headroom rule.
-DEEP_INTERVIEW_SKILL_CHAR_CEILING = 10_900
+# 10_900 -> 11_400: the answer-options block now sends the candidates through
+# Hermes' native `clarify` tool when it is present (recommended first, no own
+# free-input row, batching only independent questions) and keeps the numbered
+# list as the fallback; the body measures 11,185. Same headroom rule.
+DEEP_INTERVIEW_SKILL_CHAR_CEILING = 11_400
 
 
 def _skill_body() -> str:
@@ -97,13 +101,15 @@ class DeepInterviewProtocolTest(unittest.TestCase):
         self.assertIn("Translate those terms, never transliterate them.", _unwrapped_body())
 
     def test_every_question_offers_candidate_answers_plus_free_input(self) -> None:
-        # Live ulw-interview runs forced free-text-only replies; the OMH-native equivalent of
-        # a structured question UI is a numbered candidate list ending in a free-input entry
-        # (the same shape the model-chains interview already uses).
+        # Live ulw-interview runs forced free-text-only replies. Where Hermes' own `clarify`
+        # tool is absent, the OMH-native equivalent of a structured question UI is a numbered
+        # candidate list ending in a free-input entry (the same shape the model-chains
+        # interview already uses).
         body = _skill_body()
         self.assertIn("**Answer options — every question ships with candidates.**", body)
         unwrapped = _unwrapped_body()
-        self.assertIn("two to four real candidates, then one final free-input entry.", unwrapped)
+        self.assertIn("Give every question two to four real candidates, the one you recommend first:", unwrapped)
+        self.assertIn("a short numbered list of the candidates, then one final free-input entry", unwrapped)
         # English is the canonical rendering; Korean is the localized illustration.
         self.assertIn("Something else — type your answer", body)
         self.assertIn("기타 — 직접 입력", body)
@@ -120,6 +126,32 @@ class DeepInterviewProtocolTest(unittest.TestCase):
         self.assertIn("no numbered sub-questions.", unwrapped)
         self.assertNotIn("no numbered sub-parts", body)
 
+    def test_candidates_go_through_native_clarify_when_it_is_present(self) -> None:
+        # Hermes' `clarify` schema takes the options ONLY in `choices` (recommended first) and
+        # its picker appends its own typed-answer row; options written into the message or the
+        # question text are rows the user cannot click, and an OMH "Something else" entry would
+        # duplicate the picker's own row. Presence is the tool list or the tool_search catalog,
+        # never a Hermes version.
+        unwrapped = _unwrapped_body()
+        self.assertIn("**With Hermes' `clarify` tool** (in your tool list or tool search)", unwrapped)
+        self.assertIn("the sentence as `question`, the candidates as `choices`.", unwrapped)
+        self.assertIn("Add no free-input row of your own", unwrapped)
+        self.assertIn("keep the candidates out of the question sentence", unwrapped)
+        # The numbered list stays as the fallback for surfaces and lanes without `clarify`.
+        self.assertIn("**Without it**: after the question sentence, a short numbered list", unwrapped)
+        self.assertLess(unwrapped.index("**With Hermes' `clarify`"), unwrapped.index("**Without it**"))
+        self.assertLess(unwrapped.index("**Without it**"), unwrapped.index("Something else — type your answer"))
+
+    def test_clarify_batching_stays_one_question_by_default(self) -> None:
+        # `clarify` accepts several independent questions per call, but an interview round's
+        # next question usually depends on the last answer; batching only independent ones
+        # keeps the one-question round the header advertises.
+        self.assertIn(
+            "Put a second question in the same `clarify` call only when neither answer could change the "
+            "other, which an interview rarely has.",
+            _unwrapped_body(),
+        )
+
     def test_option_block_sits_between_voice_rules_and_the_soft_check(self) -> None:
         body = _skill_body()
         self.assertLess(body.index("**Voice —"), body.index("**Answer options —"))
@@ -127,7 +159,7 @@ class DeepInterviewProtocolTest(unittest.TestCase):
 
     def test_mid_interview_check_uses_the_same_option_shape(self) -> None:
         self.assertIn(
-            "with the same option shape: keep going / plan now / free input.",
+            "with the same option shape: keep going / plan now.",
             _unwrapped_body(),
         )
 
@@ -146,7 +178,10 @@ class DeepInterviewProtocolTest(unittest.TestCase):
         harness = next(item for item in builtin_harnesses() if item.name == "deep-interview")
         self.assertIn("numbered list ending in a free-input entry", harness.fallback)
         self.assertTrue(
-            any("free-input entry" in item and "free text" in item for item in harness.quality_bar),
+            any(
+                "free-input entry" in item and "free text" in item and "`clarify` choices" in item
+                for item in harness.quality_bar
+            ),
             harness.quality_bar,
         )
 

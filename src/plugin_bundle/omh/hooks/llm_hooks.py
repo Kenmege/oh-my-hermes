@@ -31,6 +31,7 @@ from ..active_workflow_context import active_workflow_context, render_active_wor
 from ..approval_bypass import record_approval_bypass
 from ..awareness_delivery import claim_route_guidance_delivery, record_awareness_delivery
 from ..context_budget_plan import context_budget_continuation, render_context_budget
+from ..hermes_session_commands import host_command_turn
 from ..host_context import record_active_main_agent_model
 from ..host_observation import observe_plugin_hook_call
 from ..installed_skills import installed_skill_names
@@ -564,7 +565,14 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
     # plan drive, the dispatch outcome lines, the active-workflow line, the
     # role marker, the first-turn primer -- because a completion notice is
     # exactly the turn on which those matter.
-    request_message = "" if host_synthesized_turn(turn_display_kind) else user_message
+    #
+    # `/plan` and `/loop` wakeup turns are host-written too, but carry no
+    # `display_kind`; their template's opening frame is the record
+    # (`hermes_session_commands`). Each already holds the host's instruction for the
+    # turn, which a route hint would only contradict.
+    request_message = (
+        "" if host_synthesized_turn(turn_display_kind) or host_command_turn(user_message) else user_message
+    )
     # `omh_jev_ask` sends data off the machine only when THIS turn's own
     # request names Jev. A notice, a tracker event, a delegated child, a turn
     # on a platform nobody types into, and another participant of a shared

@@ -4049,6 +4049,59 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "ai-slop-cleaner",
     ),
+    # A loop on a timer is Hermes' native `/loop`, and a turn Hermes wrote from
+    # its own `/plan` or `/loop` template carries the host's instruction for
+    # itself; neither is OMH's to route. Before, the cadence sentences
+    # dispatched the goal loop through the bare word "loop" (or "루프"), the
+    # plan-mode turn dispatched the ops-observability card on its own rules,
+    # and the wakeup fell back as a file lookup. The goal-shaped and
+    # `./loop` forms beside these stay with the loop (intervention corpus).
+    RoutingPrecisionCase(
+        "loop-on-a-timer-is-native-loop",
+        "A loop on a timer is Hermes' /loop, not the goal loop",
+        "loop every 5 minutes and check whether CI is green",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "korean-loop-on-a-timer-is-native-loop",
+        "A Korean loop on a timer is Hermes' /loop, not the goal loop",
+        "5분마다 CI가 초록색인지 확인하는 루프 돌려줘",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "native-loop-command-syntax-is-not-the-goal-loop",
+        "The native /loop interval syntax is not an OMH loop invocation",
+        "/loop 5m check whether CI is green",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "hermes-plan-mode-turn-is-host-owned",
+        "Hermes' own /plan turn is not routed",
+        "[/plan \u2014 plan mode]\n\nFor this turn, you are in PLAN MODE \u2014 planning only.\n\n"
+        "- Do not implement code.\n- Do not edit project files except the plan markdown file itself.\n"
+        "- Do not run mutating terminal commands, commit, push, or perform external\n  actions.\n\n"
+        "Task to plan:\nadd a dark mode toggle to the settings page\n",
+        "answer_directly",
+        "direct_answer",
+        "ops-observability-card",
+    ),
+    RoutingPrecisionCase(
+        "hermes-loop-wakeup-turn-is-host-owned",
+        "A Hermes /loop wakeup turn is not routed",
+        "[/loop wakeup #3, every 5m]\nRecurring task: check whether CI is green on PR 42\n\n"
+        "This is an automatic wakeup from the /loop the user set. Perform the task now against the "
+        "CURRENT state. If the task is now complete, say so and end your reply with LOOP_COMPLETE "
+        "on its own line \u2014 that stops the loop.",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
 )
 
 
@@ -10861,6 +10914,37 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "clarification",
         "code-review",
         expected_route_question=ROUTE_QUESTION_ASKED,
+    ),
+    # The other side of the native-loop cases in the negative corpus: a timer
+    # does not take the goal loop away from OMH's own invocation forms or from
+    # a request that carries a product goal, and a plain `./loop` goal still
+    # opens it.
+    RoutingInterventionCase(
+        "omh-loop-goal-invocation-opens-loop",
+        "An OMH ./loop goal still opens the goal loop",
+        "./loop make OMH a credible Hermes workflow pack with install, docs, QA, and feedback cycles.",
+        "dispatch",
+        "loop",
+        "choose_permission_profile",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "omh-loop-invocation-on-a-timer-keeps-loop",
+        "OMH's own ./loop form keeps the goal loop even with a timer",
+        "./loop every 5 minutes check whether CI is green",
+        "dispatch",
+        "loop",
+        "start_loop_cycle",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "product-goal-loop-on-a-timer-keeps-loop",
+        "A timed loop that carries a product goal stays the goal loop",
+        "run a loop every 30 minutes to improve first-run experience until install friction is lower",
+        "dispatch",
+        "loop",
+        "choose_permission_profile",
+        "loop",
     ),
 )
 

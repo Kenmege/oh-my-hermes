@@ -478,7 +478,13 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The kanban review-lane hand-off adds one: the literal prompt
             # Hermes' dispatcher opens every kanban worker with, a clarify that
             # must never offer code-review as its workflow (1).
-            expected=490,
+            # The native Hermes command work adds five, each answered
+            # directly: a loop on a timer in English, in Korean, and in the
+            # native `/loop 5m` syntax, which dispatched the goal loop through
+            # the bare loop word (3); and the turns Hermes writes for its own
+            # `/plan` and `/loop` wakeup, which dispatched the ops card and
+            # fell back as a file lookup (2).
+            expected=495,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -609,7 +615,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The kanban review-lane hand-off adds one: a bug hunt over the
             # diff attached to a kanban task, which stays a code-review
             # dispatch (1).
-            expected=694,
+            # The native Hermes command work adds three loop dispatches that a
+            # timer must not take away: an OMH `./loop` goal, the `./loop`
+            # form on a timer, and a timed loop carrying a first-run goal.
+            expected=697,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

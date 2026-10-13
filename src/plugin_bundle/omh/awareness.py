@@ -13,6 +13,7 @@ from .executor_cues import (
     OMO_RUNTIME_CODING_AGENT_PHRASES as _OMO_RUNTIME_CODING_AGENT_PHRASES,
     SUBSTRING_NAMED_CODING_AGENT_PHRASES as _SUBSTRING_NAMED_CODING_AGENT_PHRASES,
 )
+from .hermes_session_commands import native_loop_cadence
 from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
 from .reference_regions import executable_routing_text
@@ -7476,6 +7477,8 @@ def _direct_workflow_invocation_hint(
     if not direct_prefix_workflow and "workflow_marker" not in structural and not direct_omh_form:
         return {}
     workflow = direct_prefix_workflow or mentioned[0]
+    if workflow == "loop" and _native_loop_cadence_only(routing_normalized):
+        return {}
     next_action = _DIRECT_WORKFLOW_NEXT_ACTIONS.get(workflow, "route_to_downstream_workflow")
     if workflow == "loop":
         next_action = _loop_route_hint_next_action(message, next_action, degraded)
@@ -7496,6 +7499,26 @@ def _direct_workflow_invocation_hint(
         if isinstance(context_card, dict)
         else [],
     }
+
+
+# The loopability phrases that only name a loop. Every other phrase of that
+# rule names a goal (first-run friction, a star target) and keeps the loop
+# hint even on a timer, as do the goal words the router's loop guard reads
+# (`_loop_goal_guard_applies`), so the two surfaces draw the same line.
+_BARE_LOOP_PHRASES = frozenset({"/loop", "run a loop", "run loop", "start a loop", "start loop", "keep looping", "루프"})
+_LOOP_GOAL_WORDS = ("improve", "friction", "first-run", "stars", "adoption")
+
+
+def _native_loop_cadence_only(text: str) -> bool:
+    """A loop put on a timer with no goal beside it: Hermes' native `/loop`, not this hint."""
+    if not native_loop_cadence(text):
+        return False
+    rule = _route_hint_rule_by_id("loopability_goal") or {}
+    goal_phrases = (
+        *(phrase for phrase in rule.get("phrases", ()) if phrase not in _BARE_LOOP_PHRASES),
+        *_LOOP_GOAL_WORDS,
+    )
+    return not any(phrase in text for phrase in goal_phrases)
 
 
 def _workflow_not_evidence_yet(
@@ -8339,6 +8362,8 @@ def _rule_suppressed_by_context(rule: dict[str, object], text: str) -> bool:
     if rule_id in {"visual_summary", "visual_qa_gate"} and media_extraction_requested:
         return True
     if rule_id == "loopability_goal" and any(phrase in text for phrase in visual_markers):
+        return True
+    if rule_id == "loopability_goal" and _native_loop_cadence_only(text):
         return True
     if rule_id == "content_operator" and any(
         phrase in text
