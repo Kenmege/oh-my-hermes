@@ -44,17 +44,15 @@ across reads (over SSH, jitter can stall one mid-way):
 - a started report (`ESC[<` and digits and semicolons so far) waits for up to
   `MOUSE_REPORT_SECONDS` of silence, and is then dropped as one unknown key
   (this one holds whenever the input started);
-- `ESC` and `ESC[` wait `REPORTING_ESCAPE_SECONDS`, the escape-time tmux and
-  vim use, and then settle as Esc and as one unknown key; a later read that
-  does not start with `[` ends an ESC's wait at once: the ESC is Esc and the
-  new bytes are keys of their own (an ESC and a key in one read stay an Alt
-  chord);
+- `ESC` and `ESC[` wait `REPORTING_ESCAPE_SECONDS`, and then settle as Esc and
+  as one unknown key; a later read that does not start with `[` ends an ESC's
+  wait at once: the ESC is Esc and the new bytes are keys of their own (an ESC
+  and a key in one read stay an Alt chord);
 - for `MOUSE_REPORT_SECONDS` after either settled, the bytes that would finish
   the report it began are dropped as they arrive, up to its `M` or `m`.
 
 So such a report split right after its first byte by more than
-`REPORTING_ESCAPE_SECONDS` is Esc, as in tmux and vim, and nothing of it is
-typed. A report that starts arriving later than `MOUSE_REPORT_SECONDS` after
+`REPORTING_ESCAPE_SECONDS` is Esc, and nothing of it is typed. A report that starts arriving later than `MOUSE_REPORT_SECONDS` after
 reporting went off, split right after its `ESC` or its `ESC[`, is read as
 keys, as any input is with reporting off. A terminal that ignores the SGR request sends the legacy
 `ESC[M` and three payload bytes instead; that is one unknown key.
@@ -176,9 +174,11 @@ _SGR_FINAL_BYTES = (SGR_MOUSE_PRESS + SGR_MOUSE_RELEASE).encode("ascii")
 # the bytes that would finish it are dropped as they arrive, so its tail is never typed either.
 MOUSE_REPORT_SECONDS = 0.5
 # While a mouse report may still arrive, `ESC` and `ESC[` wait this long for the rest of one before they
-# settle: the escape-time tmux and vim use. Shorter, a report split after its first byte would read as
-# Esc and interrupt the turn. Esc during a running turn is exactly when reporting is on, so this is
-# what the key costs then; with no report in flight a lone ESC still settles at the first silence.
+# settle. The wait trades two things: the longer it is, the longer a stall between a report's first byte
+# and the rest can be without the ESC reading as Esc (and interrupting a running turn); the shorter, the
+# sooner Esc acts when it is pressed on its own. 300 ms covers a stall of a few hundred milliseconds on a
+# slow link and keeps Esc within a third of a second; a key typed after Esc does not wait for it at all.
+# With no report in flight a lone ESC still settles at the first silence.
 REPORTING_ESCAPE_SECONDS = 0.3
 # Legacy (X10) mouse report: `ESC[M` and three bytes, each 32 plus a value.
 X10_MOUSE_FINAL = ord("M")

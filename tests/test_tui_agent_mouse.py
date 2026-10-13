@@ -645,7 +645,7 @@ class SplitReportLoopTests(unittest.TestCase):
         before = state(self.app, self.client)
         step_through(self.app, self.now, paused(b"\x1b", 0.06, b"[<65;12;40M"))
         self.assertEqual(state(self.app, self.client), before)
-        # Split longer than the escape-time, the ESC is Esc, as in tmux and vim; the rest is still dropped.
+        # Split for longer than the 300 ms wait, the ESC is Esc; the rest is still dropped.
         step_through(self.app, self.now, paused(b"\x1b", 0.4, b"[<65;12;40M"))
         self.assertEqual(self.app.composer.text, "")
         self.assertEqual(self.client.named("session.interrupt"), [{"session_id": SID}])
@@ -939,6 +939,14 @@ class DocumentedMouseTests(unittest.TestCase):
         agents = self.prose("AGENTS.md")
         self.assertIn(f"within {grace:g} s after it goes off, types: if {round(seconds * 1000)} ms pass after its first byte "
                       "without the next, that byte is read as Esc", agents)
+
+    def test_the_wait_is_not_credited_to_tmux_or_vim(self) -> None:
+        # tmux's escape-time default is 500 ms (10 ms since 3.5) and Vim's ttimeoutlen 100: neither is 300.
+        for name in ("src/tui/keys.py", "src/tui/app.py", "docs/INSTALLATION.md", "AGENTS.md"):
+            with self.subTest(name=name):
+                text = self.prose(name)
+                self.assertNotIn("tmux and vim", text)
+                self.assertNotIn("escape-time", text)
 
     def test_the_way_to_select_anyway_is_named_for_each_terminal_no_more_surely_than_it_is_known(self) -> None:
         text = self.prose("docs/INSTALLATION.md")
