@@ -13,10 +13,16 @@ those lines joined by "\\n".
 So the colour is stripped (`clean_text`, which drops whole escape sequences),
 the review header is dropped as Ink drops it, every other line is classified
 by its first characters, and the theme paints it: added and removed lines as
-full-row bands padded to the width, hunk headers in the accent, the file
-header in the label style, context like code, anything else dim. Diff lines
-hard-wrap like fenced code, never splitting a glyph; the summary and other
-prose word-wrap.
+bands from the gutter's edge to the right edge, the file header in the label
+style, context like code, anything else dim. Diff lines hard-wrap like fenced
+code, never splitting a glyph; the summary and other prose word-wrap.
+
+Hunk headers are not rows. Their `-a +c` starts number the lines after them
+in a dim, right-aligned gutter (the new file's number for added and context
+lines, the old file's for removed ones), and a hunk after the first leaves a
+`⋮` in the gutter where the numbering jumps. The gutter is `DIFF_INDENT`
+cells, wider only for a number that needs it, so a band starts where the
+indent ends; a terminal too narrow for it gets neither gutter nor indent.
 """
 
 from __future__ import annotations
@@ -40,6 +46,7 @@ DIFF_INDENT = 4  # the diff hangs under the tool row's name, where a result summ
 PREVIEW_LINES = 24  # diff lines shown in the live and flushed view; /history shows them all
 
 FILE_ARROW = " → "  # `_render_inline_unified_diff` joins the two file names with it
+HUNK_GAP_MARK = "⋮"  # in the gutter where a later hunk starts
 REVIEW_HEADER_MARK = "┊"  # `display.diff.review_header` in every Hermes locale
 
 
@@ -125,12 +132,55 @@ def _indent(width: int) -> Line:
     return (Span(" " * DIFF_INDENT),) if width > DIFF_INDENT * 2 else ()
 
 
-def _code_rows(text: str, style: Style, width: int, band: bool) -> list[Line]:
-    """A diff line hard-wrapped like fenced code under the indent; a band row is padded to the right edge."""
-    indent = _indent(width)
-    cells = width - line_width(indent)
+def _hunk_starts(text: str) -> tuple[int, int] | None:
+    """(old, new) first line numbers from `@@ -a,b +c,d @@`; None when the header does not carry both."""
+    parts = text.split("@@")
+    fields = parts[1].split() if len(parts) >= 3 else []
+    if len(fields) < 2 or not fields[0].startswith("-") or not fields[1].startswith("+"):
+        return None
+    try:
+        return int(fields[0][1:].partition(",")[0]), int(fields[1][1:].partition(",")[0])
+    except ValueError:
+        return None
+
+
+def _numbered(lines: Sequence[DiffLine]) -> list[tuple[DiffLine, int | None]]:
+    """Each line with its gutter number: new-file numbers for added and context lines, old-file for removed."""
+    old: int | None = None
+    new: int | None = None
+    numbered: list[tuple[DiffLine, int | None]] = []
+    for line in lines:
+        number = None
+        if line.kind == DIFF_HUNK:
+            old, new = _hunk_starts(line.text) or (None, None)
+        elif line.kind in (DIFF_ADDED, DIFF_CONTEXT) and new is not None:
+            number, new = new, new + 1
+        elif line.kind == DIFF_REMOVED and old is not None:
+            number, old = old, old + 1
+        if line.kind == DIFF_CONTEXT and old is not None:
+            old += 1
+        numbered.append((line, number))
+    return numbered
+
+
+def _gutter_cells(numbers: Sequence[int | None], width: int) -> int:
+    """`DIFF_INDENT`, wider for a long number; 0 on a terminal too narrow to leave the text more room than it takes."""
+    longest = max((len(str(number)) for number in numbers if number is not None), default=0)
+    cells = max(DIFF_INDENT, longest + 1)
+    return cells if width > cells * 2 else 0
+
+
+def _gutter(label: str, gutter: int, theme: Theme) -> Line:
+    """`label` right-aligned in the gutter, one space before the text; nothing when there is no gutter."""
+    return (Span(label.rjust(gutter - 1) + " ", theme.dim),) if gutter else ()
+
+
+def _code_rows(text: str, style: Style, width: int, band: bool, number: int | None, gutter: int, theme: Theme) -> list[Line]:
+    """A diff line hard-wrapped like fenced code after the gutter, its number on the first row; a band reaches the right edge."""
+    cells = width - gutter
     rows = band_rows(text, cells, style) if band else hard_wrap((Span(text, style),), cells)
-    return [(*indent, *row) if row else () for row in rows]
+    label = str(number) if number is not None else ""
+    return [(*_gutter(label if index == 0 else "", gutter, theme), *row) for index, row in enumerate(rows)]
 
 
 def _note_rows(text: str, style: Style, width: int) -> list[Line]:
@@ -139,7 +189,7 @@ def _note_rows(text: str, style: Style, width: int) -> list[Line]:
     return wrap_prefixed((Span(text, style),), indent, indent, width)
 
 
-def _line_rows(line: DiffLine, width: int, theme: Theme) -> list[Line]:
+def _line_rows(line: DiffLine, number: int | None, width: int, gutter: int, theme: Theme) -> list[Line]:
     style = _style(line.kind, theme)
     if line.kind == DIFF_NOTE:
         return _note_rows(line.text, style, width)
@@ -147,7 +197,7 @@ def _line_rows(line: DiffLine, width: int, theme: Theme) -> list[Line]:
         # One row, cut from the left: the end of a path names the file.
         indent = _indent(width)
         return [(*indent, Span(truncate_left(line.text, width - line_width(indent)), style))]
-    return _code_rows(line.text, style, width, band=line.kind in (DIFF_ADDED, DIFF_REMOVED))
+    return _code_rows(line.text, style, width, line.kind in (DIFF_ADDED, DIFF_REMOVED), number, gutter, theme)
 
 
 def _hidden_note(hidden: int) -> str:
@@ -156,13 +206,24 @@ def _hidden_note(hidden: int) -> str:
 
 
 def diff_rows(lines: Sequence[DiffLine], width: int, theme: Theme, full: bool = False) -> list[Line]:
-    """The rows for a parsed diff at `width`: the first `PREVIEW_LINES` lines and a count of the rest, or all."""
+    """The rows for a parsed diff at `width`: the first `PREVIEW_LINES` lines and a count of the rest, or all.
+
+    Hunk headers count toward the preview, but not toward the hidden count, which names rows.
+    """
     width = max(1, width)
-    shown = lines if full else lines[:PREVIEW_LINES]
+    numbered = _numbered(lines)
+    gutter = _gutter_cells([number for _line, number in numbered], width)
+    shown = numbered if full else numbered[:PREVIEW_LINES]
     rows: list[Line] = []
-    for line in shown:
-        rows.extend(_line_rows(line, width, theme))
-    hidden = len(lines) - len(shown)
+    hunks = 0
+    for line, number in shown:
+        if line.kind == DIFF_HUNK:
+            hunks += 1
+            if hunks > 1 and gutter:
+                rows.append((Span(HUNK_GAP_MARK.rjust(gutter - 1), theme.dim),))
+            continue
+        rows.extend(_line_rows(line, number, width, gutter, theme))
+    hidden = sum(1 for line, _number in numbered[len(shown) :] if line.kind != DIFF_HUNK)
     if hidden:
         rows.extend(_note_rows(_hidden_note(hidden), theme.dim, width))
     return rows

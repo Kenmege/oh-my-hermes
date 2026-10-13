@@ -102,10 +102,10 @@ class RowTests(unittest.TestCase):
             rows,
             [
                 (indent, Span("src/app.py", THEME.label)),
-                (indent, Span("@@ -1,3 +1,3 @@", THEME.accent)),
-                (indent, Span(" import os", THEME.code)),
-                (indent, Span("-print('hello')" + " " * 21, THEME.diff_remove)),
-                (indent, Span(f"+print('안녕 {EARTH}')" + " " * 19, THEME.diff_add)),  # 17 cells of text
+                # the hunk header is no row: its starts number the lines in the dim gutter
+                (Span("  1 ", THEME.dim), Span(" import os", THEME.code)),
+                (Span("  2 ", THEME.dim), Span("-print('hello')" + " " * 21, THEME.diff_remove)),
+                (Span("  2 ", THEME.dim), Span(f"+print('안녕 {EARTH}')" + " " * 19, THEME.diff_add)),  # 17 cells
                 (indent, Span("\\ No newline at end of file", THEME.dim)),
                 (indent, Span("… omitted 12 diff line(s) across 1", THEME.dim)),
                 (indent, Span("additional file(s)/section(s)", THEME.dim)),
@@ -123,21 +123,57 @@ class RowTests(unittest.TestCase):
                 self.assertEqual(rows[-1][-1].style, THEME.diff_remove)
 
     def test_a_terminal_too_narrow_for_the_indent_drops_it(self) -> None:
-        rows = diff_rows((DiffLine(DIFF_ADDED, "+abc"), DiffLine(DIFF_HUNK, "@@ -1 +1 @@")), 8, THEME)
-        self.assertEqual(lines_text(rows), ["+abc    ", "@@ -1 +1", " @@"])
+        lines = (DiffLine(DIFF_HUNK, "@@ -1 +1 @@"), DiffLine(DIFF_ADDED, "+abc"), DiffLine(DIFF_CONTEXT, " x"))
+        self.assertEqual(lines_text(diff_rows(lines, 8, THEME)), ["+abc    ", " x"])
+        self.assertEqual(lines_text(diff_rows(lines, 9, THEME)), ["  1 +abc ", "  2  x"])
+
+    def test_the_gutter_numbers_each_side_and_marks_where_a_later_hunk_jumps(self) -> None:
+        lines = (
+            DiffLine(DIFF_FILE, "app.py"),
+            DiffLine(DIFF_HUNK, "@@ -10,3 +10,3 @@ def main():"),
+            DiffLine(DIFF_CONTEXT, " keep"),
+            DiffLine(DIFF_REMOVED, "-old"),
+            DiffLine(DIFF_ADDED, "+new"),
+            DiffLine(DIFF_ADDED, "+more"),
+            DiffLine(DIFF_CONTEXT, " tail"),
+            DiffLine(DIFF_HUNK, "@@ -120 +121 @@"),
+            DiffLine(DIFF_REMOVED, "-x = 1"),
+            DiffLine(DIFF_ADDED, "+x = 2"),
+        )
+        rows = diff_rows(lines, 20, THEME)
+        self.assertEqual(
+            [line_text(row).rstrip() for row in rows],
+            ["    app.py", " 10  keep", " 11 -old", " 11 +new", " 12 +more", " 13  tail", "  ⋮", "120 -x = 1", "121 +x = 2"],
+        )
+        self.assertEqual(rows[6], (Span("  ⋮", THEME.dim),))
+        # every numbered row's text starts where the indent ends; a band runs from there to the edge
+        for row in rows[1:6] + rows[7:]:
+            self.assertEqual((line_width(row[:1]), row[0].style), (4, THEME.dim))
+        for row in (rows[2], rows[3], rows[4], rows[7], rows[8]):
+            self.assertEqual(line_width(row), 20)
+            self.assertIn(row[1].style, (THEME.diff_add, THEME.diff_remove))
+
+    def test_a_number_longer_than_the_indent_widens_the_gutter_for_the_whole_diff(self) -> None:
+        lines = (DiffLine(DIFF_HUNK, "@@ -9999,2 +9999,2 @@"), DiffLine(DIFF_CONTEXT, " a"), DiffLine(DIFF_ADDED, "+b"))
+        self.assertEqual(lines_text(diff_rows(lines, 20, THEME)), [" 9999  a", "10000 +b" + " " * 12])
+
+    def test_a_header_without_both_starts_numbers_nothing(self) -> None:
+        lines = (DiffLine(DIFF_HUNK, "@@ garbage @@"), DiffLine(DIFF_ADDED, "+b"))
+        self.assertEqual(lines_text(diff_rows(lines, 20, THEME)), ["    +b" + " " * 14])
 
     def test_the_preview_shows_24_lines_and_counts_the_rest(self) -> None:
         lines = parse_inline_diff(long_diff(28))
         self.assertEqual(len(lines), 30)
         rows = diff_rows(lines, 60, THEME)
-        self.assertEqual(len(rows), 25)
-        self.assertEqual(lines_text(rows)[23].rstrip(), "    +line 22")
+        # the file row, the 22 added lines the preview reaches (its hunk header is the gutter), the count
+        self.assertEqual(len(rows), 1 + 22 + 1)
+        self.assertEqual(lines_text(rows)[22].rstrip(), " 22 +line 22")
         self.assertEqual(rows[-1], (Span("    "), Span("… +6 lines (/history shows all)", THEME.dim)))
         full = diff_rows(lines, 60, THEME, full=True)
-        self.assertEqual(len(full), 30)
-        self.assertEqual(lines_text(full)[-1].rstrip(), "    +line 28")
+        self.assertEqual(len(full), 1 + 28)
+        self.assertEqual(lines_text(full)[-1].rstrip(), " 28 +line 28")
         self.assertEqual(lines_text(diff_rows(parse_inline_diff(long_diff(23)), 60, THEME))[-1], "    … +1 line (/history shows all)")
-        self.assertEqual(len(diff_rows(parse_inline_diff(long_diff(22)), 60, THEME)), 24)
+        self.assertEqual(len(diff_rows(parse_inline_diff(long_diff(22)), 60, THEME)), 1 + 22)
 
     def test_random_payloads_never_raise_or_paint_a_control_character(self) -> None:
         generator = random.Random(2085)

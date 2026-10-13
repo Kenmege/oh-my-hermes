@@ -91,7 +91,7 @@ class SpacingTests(LoopTestCase):
         self.step(ev("message.delta", text="done\n"))
         self.step(ev("message.complete", text="done", status="complete"))
         self.user("second")
-        expected = ["› first", "", "▸ thought for 0.0s", "", "⏺ Tool calls (1)", "  ✓ terminal  ls  0.5s", "", "done", "", "› second"]
+        expected = ["› first", "", "▸ thought for 0.0s", "", "  ✓ terminal  ls  0.5s", "", "⏺ done", "", "› second"]
         self.assertEqual(lines_text(self.taken), expected)
         self.assertEqual(self.history(details=False), expected)
 
@@ -99,7 +99,7 @@ class SpacingTests(LoopTestCase):
         self.user("hi")
         self.transcript.add_assistant("**hello** there\n\n```sh\nls\n```")
         self.transcript.add_assistant("   ")
-        self.assertEqual(self.step(), ["", "hello there", "", "sh", "ls"])
+        self.assertEqual(self.step(), ["", "⏺ hello there", "", "  sh", "  ls"])
         self.assertEqual(len(self.transcript.blocks), 2)
 
 
@@ -167,14 +167,14 @@ class PlainTurnTests(LoopTestCase):
         self.assertEqual(self.transcript.activity, "ヽ(>∀<☆)☆ formulating...")
         self.step(ev("thinking.delta", text=""))
         self.assertEqual(self.transcript.activity, "")
-        self.assertEqual(self.step(ev("message.delta", text="ok\n\n")), ["", "ok"])
+        self.assertEqual(self.step(ev("message.delta", text="ok\n\n")), ["", "⏺ ok"])
         self.assertEqual(self.step(ev("message.delta", text="I")), [])
         self.step(ev("message.delta", text="'m Hermes,"))
         self.step(ev("message.delta", text=" your agent — `/help` lists the commands."))
-        self.assertEqual(self.live(), ["", "I'm Hermes, your agent — /help lists the commands."])
+        self.assertEqual(self.live(), ["", "  I'm Hermes, your agent — /help lists the commands."])
         self.step(ev("reasoning.available", text=PLAIN_ANSWER))
         flushed = self.step(ev("message.complete", text=PLAIN_ANSWER, status="complete", usage={"total": 13874}))
-        self.assertEqual(flushed, ["", "I'm Hermes, your agent — /help lists the commands."])
+        self.assertEqual(flushed, ["", "  I'm Hermes, your agent — /help lists the commands."])
         self.assertEqual(self.live(), [])
         self.assertFalse(self.transcript.running)
         self.assertFalse(any(isinstance(block, ThinkingBlock) for block in self.transcript.blocks))
@@ -183,24 +183,25 @@ class PlainTurnTests(LoopTestCase):
             [
                 "› Reply with exactly the word: ok",
                 "",
-                "ok",
+                "⏺ ok",
                 "",
-                "I'm Hermes, your agent — /help lists the commands.",
+                "  I'm Hermes, your agent — /help lists the commands.",
             ],
         )
 
     def test_live_lines_shrink_as_lines_flush(self) -> None:
         self.transcript.apply(ev("message.start"))
         self.transcript.apply(ev("message.delta", text="line one\nline two\npartial"))
-        self.assertEqual(self.live(), ["line one", "line two", "partial"])
-        self.assertEqual(self.step(), ["line one", "line two"])
-        self.assertEqual(self.live(), ["partial"])
+        self.assertEqual(self.live(), ["⏺ line one", "  line two", "  partial"])
+        self.assertEqual(self.step(), ["⏺ line one", "  line two"])
+        self.assertEqual(self.live(), ["  partial"])
+        self.assertEqual(self.taken[0][0], Span("⏺ ", THEME.accent))
 
     def test_a_trailing_blank_line_waits_for_the_text_after_it(self) -> None:
         self.step(ev("message.start"))
-        self.assertEqual(self.step(ev("message.delta", text="1\n\n")), ["1"])
+        self.assertEqual(self.step(ev("message.delta", text="1\n\n")), ["⏺ 1"])
         self.assertEqual(self.step(ev("message.delta", text="\n")), [])
-        self.assertEqual(self.step(ev("message.delta", text="2\n")), ["", "", "2"])
+        self.assertEqual(self.step(ev("message.delta", text="2\n")), ["", "", "  2"])
         self.assertEqual(self.step(ev("message.complete", text="1\n\n\n2", status="complete")), [])
 
     def test_any_chunking_of_the_stream_flushes_the_same_lines(self) -> None:
@@ -218,24 +219,24 @@ class PlainTurnTests(LoopTestCase):
                 self.assertEqual(lines_text(self.taken), expected)
         self.assertEqual(
             expected,
-            ["Plan", "", "• step one", "• step two", "", "python", "x = 1", "Done, see docs (https://x.y)."],
+            ["⏺ Plan", "", "  • step one", "  • step two", "", "  python", "  x = 1", "  Done, see docs (https://x.y)."],
         )
 
     def test_an_open_fence_stays_code_across_the_flush_boundary(self) -> None:
         self.step(ev("message.start"))
         flushed = self.step(ev("message.delta", text="Here:\n```python\nx = None  # one\n"))
-        self.assertEqual(flushed, ["Here:", "python", "x = None  # one"])
+        self.assertEqual(flushed, ["⏺ Here:", "  python", "  x = None  # one"])
         self.assertEqual(
             self.taken[-1],
-            (Span("x = ", THEME.text), Span("None", THEME.syntax_keyword), Span("  ", THEME.text),
+            (Span("  "), Span("x = ", THEME.text), Span("None", THEME.syntax_keyword), Span("  ", THEME.text),
              Span("# one", THEME.syntax_comment)),
         )
-        self.assertEqual(self.step(ev("message.delta", text="y = '*no*'\n``")), ["y = '*no*'"])
-        self.assertEqual(self.taken[-1], (Span("y = ", THEME.text), Span("'*no*'", THEME.syntax_string)))
-        self.assertEqual(self.live(), ["``"])
+        self.assertEqual(self.step(ev("message.delta", text="y = '*no*'\n``")), ["  y = '*no*'"])
+        self.assertEqual(self.taken[-1], (Span("  "), Span("y = ", THEME.text), Span("'*no*'", THEME.syntax_string)))
+        self.assertEqual(self.live(), ["  ``"])
         self.assertEqual(self.step(ev("message.delta", text="`\nafter *it*")), [])
-        self.assertEqual(self.live(), ["after it"])
-        self.assertEqual(self.step(ev("message.complete", text="", status="complete")), ["after it"])
+        self.assertEqual(self.live(), ["  after it"])
+        self.assertEqual(self.step(ev("message.complete", text="", status="complete")), ["  after it"])
 
     def test_a_docstring_open_across_flushes_stays_a_string_for_any_chunking(self) -> None:
         answer = 'Code:\n```python\ndef f():\n    """Doc.\n\n    # not a comment\n    """\n    return 1  # one\n```\nDone.'
@@ -249,16 +250,16 @@ class PlainTurnTests(LoopTestCase):
                 self.step(ev("message.complete", text=answer, status="complete"))
                 expected = expected or list(self.taken)
                 self.assertEqual(self.taken, expected)
-        self.assertEqual(expected[5], (Span("    # not a comment", THEME.syntax_string),))
-        self.assertEqual(expected[6], (Span('    """', THEME.syntax_string),))
+        self.assertEqual(expected[5], (Span("  "), Span("    # not a comment", THEME.syntax_string)))
+        self.assertEqual(expected[6], (Span("  "), Span('    """', THEME.syntax_string)))
         self.assertEqual(expected[7][-1], Span("# one", THEME.syntax_comment))
 
     def test_a_resize_changes_only_lines_not_yet_taken(self) -> None:
         self.step(ev("message.start"))
         long_line = "alpha beta gamma delta epsilon zeta eta theta"
-        self.assertEqual(self.step(ev("message.delta", text=long_line + "\n" + long_line), width=80), [long_line])
+        self.assertEqual(self.step(ev("message.delta", text=long_line + "\n" + long_line), width=80), ["⏺ " + long_line])
         narrow = self.live(width=20)
-        self.assertEqual(narrow, ["alpha beta gamma", "delta epsilon zeta", "eta theta"])
+        self.assertEqual(narrow, ["  alpha beta gamma", "  delta epsilon zeta", "  eta theta"])
         self.transcript.apply(ev("message.complete", text="", status="complete"))
         fresh = self.transcript.take_stable_lines(20, THEME)
         self.assertEqual(lines_text(fresh), narrow)
@@ -268,22 +269,22 @@ class PlainTurnTests(LoopTestCase):
         self.step(ev("message.start"))
         self.step(ev("message.delta", text="Hello wrld"))
         self.step(ev("message.complete", text="Hello world", status="complete"))
-        self.assertEqual(self.history(), ["Hello world"])
+        self.assertEqual(self.history(), ["⏺ Hello world"])
         self.setUp()
         self.step(ev("message.start"))
         self.step(ev("message.delta", text="first\nsecond"))
         self.step(ev("message.complete", text="FIRST\nsecond", status="complete"))
-        self.assertEqual(self.history(), ["first", "second"])
+        self.assertEqual(self.history(), ["⏺ first", "  second"])
 
     def test_text_that_never_streamed_arrives_with_complete(self) -> None:
         self.step(ev("message.start"))
-        self.assertEqual(self.step(ev("message.complete", text="blue", status="complete")), ["blue"])
+        self.assertEqual(self.step(ev("message.complete", text="blue", status="complete")), ["⏺ blue"])
 
     def test_control_characters_never_reach_a_line(self) -> None:
         self.step(ev("message.start"))
         self.step(ev("message.delta", text="\x1b[2Jboom\x07\n"))
         self.step(ev("message.complete", text="", status="complete"))
-        self.assertEqual(lines_text(self.taken), ["boom"])
+        self.assertEqual(lines_text(self.taken), ["⏺ boom"])
         self.assertFalse(any(is_control(ch) for row in self.taken for span in row for ch in span.text))
 
     def test_user_text_is_plain_wrapped_and_composed(self) -> None:
@@ -311,7 +312,7 @@ class ReasoningAndToolTests(LoopTestCase):
 
         flushed = self.step(ev("tool.generating", name="terminal"), at=114.2)
         self.assertEqual(flushed, ["", "▸ thought for 4.2s"])
-        self.assertEqual(self.live(), ["", "⏺ Tool calls (1)", "  ◌ terminal"])
+        self.assertEqual(self.live(), ["", "  ◌ terminal"])
         self.step(
             ev(
                 "tool.start",
@@ -322,7 +323,7 @@ class ReasoningAndToolTests(LoopTestCase):
             ),
             at=114.3,
         )
-        self.assertEqual(self.live(), ["", "⏺ Tool calls (1)", "  ◔ terminal  rm -rf ./omh-m0-probe-dir"])
+        self.assertEqual(self.live(), ["", "  ◔ terminal  rm -rf ./omh-m0-probe-dir"])
         self.step(ev("session.usage", usage={"total": 27946}))
         self.step(
             ev(
@@ -339,16 +340,16 @@ class ReasoningAndToolTests(LoopTestCase):
                 },
             )
         )
-        self.assertEqual(self.live(), ["", "⏺ Tool calls (1)", "  ✓ terminal  rm -rf ./omh-m0-probe-dir  1.9s"])
+        self.assertEqual(self.live(), ["", "  ✓ terminal  rm -rf ./omh-m0-probe-dir  1.9s"])
         self.step(ev("thinking.delta", text="(◔_◔) brainstorming..."))
         flushed = self.step(ev("message.delta", text="\n\nRan it"))
-        self.assertEqual(flushed, ["", "⏺ Tool calls (1)", "  ✓ terminal  rm -rf ./omh-m0-probe-dir  1.9s"])
+        self.assertEqual(flushed, ["", "  ✓ terminal  rm -rf ./omh-m0-probe-dir  1.9s"])
         self.step(ev("message.delta", text=" — exit code 0."))
         self.step(ev("reasoning.available", text="Ran it — exit code 0."))
         flushed = self.step(
             ev("message.complete", text="Ran it — exit code 0.", status="complete", reasoning="The user asks ...")
         )
-        self.assertEqual(flushed, ["", "Ran it — exit code 0."])
+        self.assertEqual(flushed, ["", "⏺ Ran it — exit code 0."])
         self.assertEqual(self.history(details=False), lines_text(self.taken))
         self.assertEqual(
             self.history(),
@@ -360,10 +361,9 @@ class ReasoningAndToolTests(LoopTestCase):
                 "",
                 "  Let me just run it.",
                 "",
-                "⏺ Tool calls (1)",
                 "  ✓ terminal  rm -rf ./omh-m0-probe-dir  1.9s",
                 "",
-                "Ran it — exit code 0.",
+                "⏺ Ran it — exit code 0.",
             ],
         )
 
@@ -373,7 +373,7 @@ class ReasoningAndToolTests(LoopTestCase):
         self.step(ev("message.delta", text="Answer."), at=101.0)
         self.transcript.toggle_details()
         self.assertEqual(lines_text(self.taken), ["▸ thought for 1.0s"])
-        self.assertEqual(self.live(), ["", "Answer."])
+        self.assertEqual(self.live(), ["", "⏺ Answer."])
 
     def test_overlapping_tools_get_a_parallel_badge(self) -> None:
         self.step(ev("message.start"))
@@ -436,7 +436,7 @@ class ReasoningAndToolTests(LoopTestCase):
             )
         )
         flushed = self.step(ev("message.delta", text="\n\nIt was blocked — the command did not run."))
-        self.assertEqual(flushed, ["", "⏺ Tool calls (1)", "  ⊘ terminal  rm -rf ./omh-m0-probe-dir  0.1s"])
+        self.assertEqual(flushed, ["", "  ⊘ terminal  rm -rf ./omh-m0-probe-dir  0.1s"])
         self.assertEqual(self.taken[-1][1].style, THEME.warn)
         self.step(ev("message.complete", text="It was blocked — the command did not run.", status="complete"))
         history = self.history()
@@ -462,27 +462,27 @@ class ReasoningAndToolTests(LoopTestCase):
         self.step(ev("tool.start", tool_id="a", name="terminal", context="x" * 200))
         self.step(ev("tool.complete", tool_id="a", name="terminal", duration_s=12.0, result={"exit_code": 0}))
         self.step(ev("message.complete", text="", status="complete"), width=40)
-        row = lines_text(self.taken)[1]
+        row = lines_text(self.taken)[0]
         self.assertEqual(row, "  ✓ terminal  " + "x" * 18 + "…  12.0s")
-        self.assertEqual(line_width(self.taken[1]), 40)
+        self.assertEqual(line_width(self.taken[0]), 40)
 
     def test_interim_commentary_is_sealed_before_the_tools(self) -> None:
         self.step(ev("message.start"))
         self.step(ev("message.delta", text="Let me check the file."))
         flushed = self.step(ev("message.interim", text="Let me check the file.", already_streamed=True))
-        self.assertEqual(flushed, ["Let me check the file."])
+        self.assertEqual(flushed, ["⏺ Let me check the file."])
         self.step(ev("tool.start", tool_id="a", name="read_file", context="a.py"))
         self.step(ev("tool.complete", tool_id="a", name="read_file", duration_s=0.1, result={"content": "ok"}))
         self.step(ev("message.delta", text="\n\nIt is fine."))
         self.step(ev("message.complete", text="It is fine.", status="complete"))
         self.assertEqual(
             self.history(details=False),
-            ["Let me check the file.", "", "⏺ Tool calls (1)", "  ✓ read_file  a.py  0.1s", "", "It is fine."],
+            ["⏺ Let me check the file.", "", "  ✓ read_file  a.py  0.1s", "", "⏺ It is fine."],
         )
 
     def test_interim_text_that_never_streamed_becomes_its_own_block_once(self) -> None:
         self.step(ev("message.start"))
-        self.assertEqual(self.step(ev("message.interim", text="Checking.", already_streamed=False)), ["Checking."])
+        self.assertEqual(self.step(ev("message.interim", text="Checking.", already_streamed=False)), ["⏺ Checking."])
         self.step(ev("message.complete", text="Checking.", status="complete"))
         self.assertEqual(sum(isinstance(block, AssistantBlock) for block in self.transcript.blocks), 1)
 
@@ -503,7 +503,7 @@ class TurnEndTests(LoopTestCase):
             )
         )
         flushed = self.step(ev("message.delta", text="\n\n1\n2\n"))
-        self.assertEqual(flushed, ["", "⏺ Tool calls (1)", "  ✓ terminal  seq 1 300  0.1s", "", "1", "2"])
+        self.assertEqual(flushed, ["", "  ✓ terminal  seq 1 300  0.1s", "", "⏺ 1", "  2"])
         flushed = self.step(ev("message.complete", text="1\n2", status="interrupted", partial=True))
         self.assertEqual(flushed, ["", "⚠ Interrupted."])
         self.assertEqual(self.taken[-1][0].style, THEME.warn)
@@ -513,7 +513,7 @@ class TurnEndTests(LoopTestCase):
         self.step(ev("message.start"))
         self.step(ev("tool.start", tool_id="a", name="terminal", context="sleep 60"))
         flushed = self.step(ev("message.complete", text="", status="interrupted"))
-        self.assertEqual(flushed, ["⏺ Tool calls (1)", "  ▪ terminal  sleep 60", "", "⚠ Interrupted."])
+        self.assertEqual(flushed, ["  ▪ terminal  sleep 60", "", "⚠ Interrupted."])
 
     def test_an_error_with_no_reply_shows_only_the_error(self) -> None:
         self.user("hi")
@@ -529,7 +529,7 @@ class TurnEndTests(LoopTestCase):
         self.step(ev("message.start"))
         self.step(ev("message.delta", text="Partial answer\nsecond"))
         self.step(ev("message.complete", text="Partial answer\nsecond", status="error", error="stream cut", partial=True))
-        self.assertEqual(self.history(), ["Partial answer", "second", "", "✗ stream cut"])
+        self.assertEqual(self.history(), ["⏺ Partial answer", "  second", "", "✗ stream cut"])
 
     def test_an_error_without_error_text_still_says_the_turn_failed(self) -> None:
         self.step(ev("message.start"))
@@ -543,7 +543,7 @@ class TurnEndTests(LoopTestCase):
         self.assertEqual(self.transcript.status, "Compacting context…")
         self.step(ev("message.complete", text="done", status="complete", warning="Context is 90% full."))
         self.assertEqual(self.transcript.status, "")
-        self.assertEqual(self.history(), ["done", "", "⚠ Context is 90% full."])
+        self.assertEqual(self.history(), ["⏺ done", "", "⚠ Context is 90% full."])
 
     def test_notices_flush_at_once_in_their_level_style(self) -> None:
         self.transcript.add_notice("Ctrl+C again to exit")
@@ -556,7 +556,7 @@ class TurnEndTests(LoopTestCase):
         self.step(ev("session.info", running=True))
         self.step(Event(type="message.delta", session_id=SID, payload={"text": 42}))
         self.step(ev("tool.complete"))
-        self.assertEqual(self.history(), ["⏺ Tool calls (1)", "  ✓ tool"])
+        self.assertEqual(self.history(), ["  ✓ tool"])
 
 
 SGR_RED = "\x1b[38;2;255;80;80m"
@@ -617,11 +617,10 @@ class EscapeHygieneTests(LoopTestCase):
                 "▾ thought for 0.0s",
                 "  weighing it",
                 "",
-                "⏺ Tool calls (1)",
                 "  ✓ terminal  ls -la  0.5s",
                 "    ⎿ listed 3 files",
                 "",
-                "answer line",
+                "⏺ answer line",
                 "",
                 "⚠ context is 90% full",
                 "",
@@ -671,39 +670,37 @@ class InlineDiffTests(LoopTestCase):
         live = self.live()
         self.assertEqual(live[live.index("  ✓ patch  src/app.py  0.3s") + 1], "    src/app.py")
         flushed = self.step(ev("message.delta", text="\n\nDone — it prints 안녕 now."))
-        diff = self.taken[-5:]
+        diff = self.taken[-4:]
         self.step(ev("message.complete", text="Done — it prints 안녕 now.", status="complete"))
         self.assertEqual(
             flushed,
             [
                 "",
-                "⏺ Tool calls (1)",
                 "  ✓ patch  src/app.py  0.3s",
                 "    src/app.py",
-                "    @@ -1,2 +1,2 @@",
-                "     import os",
-                "    -print('hello')" + " " * 41,
-                "    +print('안녕 🌏')" + " " * 39,
+                "  1  import os",
+                "  2 -print('hello')" + " " * 41,
+                "  2 +print('안녕 🌏')" + " " * 39,
             ],
         )
-        self.assertEqual([row[-1].style for row in diff],
-                         [THEME.label, THEME.accent, THEME.code, THEME.diff_remove, THEME.diff_add])
+        self.assertEqual([row[-1].style for row in diff], [THEME.label, THEME.code, THEME.diff_remove, THEME.diff_add])
         self.assertEqual([line_width(row) for row in diff[-2:]], [WIDTH, WIDTH])
         self.assertFalse(any(is_control(ch) for row in self.taken for span in row for ch in span.text))
         self.assertEqual(self.history(details=False), lines_text(self.taken))
-        self.assertEqual(self.history()[-1], "Done — it prints 안녕 now.")
+        self.assertEqual(self.history()[-1], "⏺ Done — it prints 안녕 now.")
 
     def test_a_long_diff_is_capped_until_history_shows_it_all(self) -> None:
         self.step(ev("message.start"))
         self.edit(big_inline_diff(40), {"success": True})
         flushed = self.step(ev("message.complete", text="", status="complete"))
-        self.assertEqual(len(flushed), 2 + 24 + 1)
-        self.assertEqual(flushed[-2].rstrip(), "    +row 22")
+        # the tool row, then the first 24 diff lines less the hunk header that became the gutter, then the count
+        self.assertEqual(len(flushed), 1 + 23 + 1)
+        self.assertEqual(flushed[-2].rstrip(), " 22 +row 22")
         self.assertEqual(flushed[-1], "    … +18 lines (/history shows all)")
         self.assertEqual(self.taken[-1][-1].style, THEME.dim)
         full = self.history(details=True)
-        self.assertEqual(len(full), 2 + 42)
-        self.assertEqual(full[-1].rstrip(), "    +row 40")
+        self.assertEqual(len(full), 1 + 41)
+        self.assertEqual(full[-1].rstrip(), " 40 +row 40")
         self.assertNotIn("    … +18 lines (/history shows all)", full)
 
     def test_toggled_details_show_the_whole_live_diff_and_never_reach_a_taken_one(self) -> None:
@@ -711,7 +708,7 @@ class InlineDiffTests(LoopTestCase):
         self.edit(big_inline_diff(30), {"success": True})
         self.assertEqual(self.live()[-1], "    … +8 lines (/history shows all)")
         self.transcript.toggle_details()
-        self.assertEqual(self.live()[-1].rstrip(), "    +row 30")
+        self.assertEqual(self.live()[-1].rstrip(), " 30 +row 30")
         self.transcript.toggle_details()
         self.step(ev("message.complete", text="", status="complete"))
         self.transcript.toggle_details()

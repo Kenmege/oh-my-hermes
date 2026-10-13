@@ -16,6 +16,10 @@ by `live_lines()` equal `history_lines(details=False)` at the same width
 still change; appending any block first closes the one before it, so a block
 is flushed only after every block above it.
 
+Assistant text opens with `⏺ ` in the accent on its first row, and every
+later row of that reply, however many flushes it arrives in, is indented to
+match, so a reply reads as one block beside the `› ` of the prompt above it.
+
 Flush policy: a user or notice block flushes at once; assistant text flushes
 per completed source line (a trailing blank line waits for the text after it,
 so a reply that ends there leaves nothing to take back) and fully at
@@ -23,7 +27,7 @@ so a reply that ends there leaves nothing to take back) and fully at
 flush boundary; thinking flushes as ONE collapsed row ("▸ thought for 4.2s");
 a tool group flushes when the next block arrives (message text, thinking) or
 at `message.complete`, as "⏺ Tool calls (N)" (plus "parallel ×K" when K tools
-ran at once) and one line per tool. An edit tool whose `tool.complete` carries
+ran at once) and one line per tool; a group of one call is that one line. An edit tool whose `tool.complete` carries
 an `inline_diff` shows that diff under its row (`diff_view.py`): the first
 `PREVIEW_LINES` diff lines and a count of the rest, which `history_lines` with
 details shows in full. Lines rendered at one width stay as they were taken; a
@@ -74,6 +78,8 @@ USER_MARK = "› "
 COLLAPSED_MARK = "▸"
 EXPANDED_MARK = "▾"
 TOOL_GROUP_MARK = "⏺ "
+ASSISTANT_MARK = "⏺ "
+ASSISTANT_INDENT = "  "
 TOOL_SUMMARY_MARK = "⎿ "
 TOOL_ROW_INDENT = "  "
 DETAIL_INDENT = "  "
@@ -290,8 +296,21 @@ def _notice_rows(block: NoticeBlock, width: int, theme: Theme) -> list[Line]:
     return _text_rows(block.text, style, (Span(mark, style),), (Span(" " * len(mark)),), width)
 
 
+def _marked(rows: list[Line], opens_block: bool, theme: Theme) -> list[Line]:
+    """Assistant rows behind the reply's margin: `⏺ ` on the block's first row, an indent on every other one."""
+    first: Line = (Span(ASSISTANT_MARK, theme.accent),)
+    rest: Line = (Span(ASSISTANT_INDENT),)
+    return [(*(first if opens_block and index == 0 else rest), *row) if row else () for index, row in enumerate(rows)]
+
+
+def _reply_width(width: int) -> int:
+    """The cells left for reply text beside its margin."""
+    return max(1, width - len(ASSISTANT_INDENT))
+
+
 def _assistant_rows(block: AssistantBlock, width: int, theme: Theme) -> list[Line]:
-    return render_lines(_display_lines(block.text), MarkdownState(), width, theme)[0]
+    rows = render_lines(_display_lines(block.text), MarkdownState(), _reply_width(width), theme)[0]
+    return _marked(rows, True, theme)
 
 
 def _seconds(value: float) -> str:
@@ -353,7 +372,8 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool) -> li
     header = [Span(TOOL_GROUP_MARK, theme.tool), Span(f"Tool calls ({len(group.tools)})", theme.label)]
     if group.parallel > 1:
         header.append(Span(f"{COLUMN_GAP}parallel ×{group.parallel}", theme.accent))
-    rows = [truncate_line(tuple(header), width)]
+    # One call needs no header: its own row already says what ran.
+    rows = [truncate_line(tuple(header), width)] if len(group.tools) != 1 else []
     summary_first: Line = (Span(TOOL_ROW_INDENT * 2 + TOOL_SUMMARY_MARK, theme.dim),)
     summary_rest: Line = (Span(" " * (len(TOOL_ROW_INDENT) * 2 + len(TOOL_SUMMARY_MARK))),)
     for tool in group.tools:
@@ -644,10 +664,10 @@ class Transcript:
         fresh = sources[self._cursor_lines :]
         if not fresh:
             return []
-        rows, self._cursor_state = render_lines(fresh, self._cursor_state, max(1, width), theme)
+        rows, self._cursor_state = render_lines(fresh, self._cursor_state, _reply_width(width), theme)
         opens_block = self._cursor_lines == 0
         self._cursor_lines = len(sources)
-        return self._spaced(rows, opens_block)
+        return self._spaced(_marked(rows, opens_block, theme), opens_block)
 
     def _spaced(self, rows: list[Line], opens_block: bool) -> list[Line]:
         if not rows:
@@ -677,8 +697,9 @@ class Transcript:
             opens_block = True
             if index == self._cursor and isinstance(block, AssistantBlock):
                 rest = _display_lines(block.text)[self._cursor_lines :]
-                block_lines = render_lines(rest, self._cursor_state, max(1, width), theme)[0]
                 opens_block = self._cursor_lines == 0
+                rendered = render_lines(rest, self._cursor_state, _reply_width(width), theme)[0]
+                block_lines = _marked(rendered, opens_block, theme)
             else:
                 block_lines = block_rows(block, width, theme, expanded=self.details_expanded and not block.done)
             if block_lines:
