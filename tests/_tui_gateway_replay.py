@@ -15,6 +15,15 @@ recorded `srq-*` id and exactly the recorded result or error. A mismatch is
 written to stderr and the fake exits with MISMATCH_EXIT, which the test sees as
 a `GatewayExited` whose reason is in `stderr_tail()`.
 
+Answer table (`Scenario.answers`): a call whose method the table names is
+answered from the table, re-addressed to its id, whenever it arrives -- in
+place of a recorded client frame, or after the recorded frames -- and does not
+advance the recording. It lets a client whose startup calls differ from the
+recording's (say, `config.get` and `commands.catalog` before `session.create`)
+replay the recorded turns unchanged; `recorded_answer` builds an entry from a
+recorded answer. Every client line the fake reads is appended, as received, to
+`client_frames.jsonl` beside the scenario, which `client_frames` reads back.
+
 Fixtures: `tests/fixtures/tui_gateway/*.jsonl`, sanitized from real Hermes
 6c61c3e27d recordings. The first line is a header naming the Hermes commit, the
 sanitizing and trimming steps, and the named segments `spans` resolves.
@@ -37,6 +46,7 @@ from typing import Any
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "tui_gateway"
 SCENARIO_FILE = "scenario.json"
+CLIENT_LOG_FILE = "client_frames.jsonl"
 MISMATCH_EXIT = 3
 
 # What the fake does once its frames run out.
@@ -55,6 +65,7 @@ class Scenario:
     after: str = WAIT_EOF
     ignore_sigterm: bool = False
     exit_code: int = 0
+    answers: tuple[tuple[str, dict[str, Any]], ...] = ()  # (method, {"result": ...} or {"error": ...})
 
 
 def load_fixture(name: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -67,6 +78,22 @@ def spans(fixture: str, *segments: str) -> tuple[tuple[int, int], ...]:
     """The [start, stop) row ranges of the named segments, in the order given."""
     header, _rows = load_fixture(fixture)
     return tuple(tuple(header["segments"][name]) for name in segments)
+
+
+def recorded_answer(fixture: str, segment: str) -> dict[str, Any]:
+    """The segment's recorded answer to the client's call, as an answer-table entry (`result` or `error`)."""
+    (start, stop), = spans(fixture, segment)
+    rows = load_fixture(fixture)[1][start:stop]
+    frame = next(row["frame"] for row in rows if row["dir"] == "in" and "method" not in row["frame"])
+    return {key: frame[key] for key in ("result", "error") if key in frame}
+
+
+def client_frames(root: Path) -> list[dict[str, Any]]:
+    """Every client frame the fake materialized in `root` has read so far, in order."""
+    path = root / "tui_gateway" / CLIENT_LOG_FILE
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def played_rows(scenario: Scenario) -> list[dict[str, Any]]:
@@ -87,6 +114,7 @@ def materialize(root: Path, scenario: Scenario) -> None:
         "after": scenario.after,
         "ignore_sigterm": scenario.ignore_sigterm,
         "exit_code": scenario.exit_code,
+        "answers": {method: frame for method, frame in scenario.answers},
     }
     (package / SCENARIO_FILE).write_text(json.dumps(plan), encoding="utf-8")
 
@@ -129,17 +157,43 @@ def _readdressed(frame: dict[str, Any], ids: dict[int, int]) -> dict[str, Any]:
     return frame
 
 
-def _check_client_frame(recorded: dict[str, Any], ids: dict[int, int]) -> str | None:
+def _log_client_line(line: bytes) -> None:
+    with Path(__file__).with_name(CLIENT_LOG_FILE).open("ab") as log:
+        log.write(line if line.endswith(b"\n") else line + b"\n")
+
+
+def _answered_from_table(frame: dict[str, Any], answers: dict[str, Any]) -> bool:
+    method = frame.get("method")
+    if not isinstance(method, str) or method not in answers or type(frame.get("id")) is not int:
+        return False
+    _emit_line(json.dumps({"jsonrpc": "2.0", "id": frame["id"], **answers[method]}))
+    return True
+
+
+def _read_client_frame(answers: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+    """The client's next frame the answer table does not cover; `(None, None)` at end of input."""
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return None, None
+        _log_client_line(line)
+        try:
+            frame = json.loads(line)
+        except ValueError:
+            return None, f"the client sent a line that is not JSON: {line[:120]!r}"
+        if not isinstance(frame, dict):
+            return None, f"the client sent a non-object frame: {_describe(frame)}"
+        if not _answered_from_table(frame, answers):
+            return frame, None
+
+
+def _check_client_frame(recorded: dict[str, Any], ids: dict[int, int], answers: dict[str, Any]) -> str | None:
     """None when the client's next frame matches `recorded`, else what went wrong."""
-    line = sys.stdin.buffer.readline()
-    if not line:
+    frame, problem = _read_client_frame(answers)
+    if problem is not None:
+        return problem
+    if frame is None:
         return f"stdin closed while waiting for {_describe(recorded)}"
-    try:
-        frame = json.loads(line)
-    except ValueError:
-        return f"the client sent a line that is not JSON: {line[:120]!r}"
-    if not isinstance(frame, dict):
-        return f"the client sent a non-object frame: {_describe(frame)}"
     if "method" in recorded:
         if frame.get("method") != recorded["method"] or type(frame.get("id")) is not int:
             return f"expected a {recorded['method']} call, got {_describe(frame)}"
@@ -163,6 +217,7 @@ def main() -> int:
     for position, text in plan["inject"]:
         injected.setdefault(position, []).append(text)
     rows = plan["rows"]
+    answers = plan.get("answers", {})
     ids: dict[int, int] = {}
     for position, row in enumerate(rows):
         for text in injected.get(position, ()):
@@ -170,7 +225,7 @@ def main() -> int:
         if row["dir"] == "in":
             _emit_line(json.dumps(_readdressed(row["frame"], ids)))
             continue
-        problem = _check_client_frame(row["frame"], ids)
+        problem = _check_client_frame(row["frame"], ids, answers)
         if problem is not None:
             return _complain(problem)
     for text in injected.get(len(rows), ()):
@@ -180,9 +235,11 @@ def main() -> int:
         while time.monotonic() < give_up:
             time.sleep(0.05)
     elif plan["after"] == WAIT_EOF:
-        extra = sys.stdin.buffer.readline()
-        if extra:
-            return _complain(f"a client frame after the recorded ones: {extra[:200]!r}")
+        extra, problem = _read_client_frame(answers)
+        if problem is not None:
+            return _complain(problem)
+        if extra is not None:
+            return _complain(f"a client frame after the recorded ones: {_describe(extra)}")
     return plan["exit_code"]
 
 

@@ -3,9 +3,11 @@
 It interprets the subset of terminal output the TUI's screen layer emits:
 printable text, CR, LF (scrolling the top row into `scrollback` at the
 bottom), cursor up/down/forward/back, CUP, erase in line 0/1/2, erase in
-display 0/1/2, SGR (recorded per cell), cursor show/hide, and the autowrap
-and bracketed-paste mode switches (recorded, never acted on). Any other CSI
-or two-byte escape is ignored.
+display 0/1/2, SGR (recorded per cell), cursor show/hide, the autowrap and
+bracketed-paste mode switches (recorded, never acted on), and the alternate
+screen (1049: the main screen and cursor are saved on entry and restored on
+exit). Any other CSI or two-byte escape is ignored. `resize` changes the size
+the way xterm does without reflow.
 
 Text never wraps. Writing past the right margin raises `VTOverflow` instead,
 because the screen layer clips every row itself: a write that reaches the
@@ -53,6 +55,45 @@ class VTScreen:
         self.cursor_visible = True
         self.autowrap = True
         self.bracketed_paste = False
+        self._saved_main: tuple[list[list[str]], list[list[tuple[int, ...]]], int, int] | None = None
+
+    @property
+    def alternate(self) -> bool:
+        """Whether the alternate screen is showing."""
+        return self._saved_main is not None
+
+    def resize(self, rows: int, cols: int) -> None:
+        """Change the size as xterm does without reflow.
+
+        A shorter screen first drops the rows below the cursor, then pushes rows
+        off the top into scrollback until the cursor row fits; a taller one adds
+        blank rows at the bottom. A narrower screen cuts every row (a 2-cell
+        glyph cut in half is blanked), a wider one pads it.
+        """
+        overflow = max(self._row + 1 - rows, 0)
+        for _ in range(overflow):
+            self.scrollback.append(self.line(0))
+            del self._text[0]
+            del self._attrs[0]
+        self._row -= overflow
+        self._text = self._text[:rows]
+        self._attrs = self._attrs[:rows]
+        while len(self._text) < rows:
+            self._text.append([BLANK] * self.cols)
+            self._attrs.append([() for _ in range(self.cols)])
+        for row in range(rows):
+            if cols < self.cols:
+                if self._text[row][cols] == CONTINUATION:
+                    self._text[row][cols - 1] = BLANK
+                self._text[row] = self._text[row][:cols]
+                self._attrs[row] = self._attrs[row][:cols]
+            else:
+                self._text[row] += [BLANK] * (cols - self.cols)
+                self._attrs[row] += [() for _ in range(cols - self.cols)]
+        self.rows = rows
+        self.cols = cols
+        self._col = min(self._col, cols - 1)
+        self._at_margin = False
 
     # -- reading the model ---------------------------------------------------
 
@@ -239,6 +280,18 @@ class VTScreen:
                 self.autowrap = enabled
             elif parameter == "2004":
                 self.bracketed_paste = enabled
+            elif parameter == "1049":
+                self._switch_screen(enabled)
+
+    def _switch_screen(self, alternate: bool) -> None:
+        if alternate and self._saved_main is None:
+            self._saved_main = (self._text, self._attrs, self._row, self._col)
+            self._text = [self._blank_row() for _ in range(self.rows)]
+            self._attrs = [[() for _ in range(self.cols)] for _ in range(self.rows)]
+        elif not alternate and self._saved_main is not None:
+            self._text, self._attrs, self._row, self._col = self._saved_main
+            self._saved_main = None
+        self._at_margin = False
 
     def _select_graphic_rendition(self, parameters: str) -> None:
         values = [int(part) if part.isdigit() else 0 for part in parameters.split(";")] if parameters else [0]
