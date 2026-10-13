@@ -145,17 +145,17 @@ class PlainTurnTests(LoopTestCase):
                 self.assertEqual(texts(self.taken), expected)
         self.assertEqual(
             expected,
-            ["Plan", "", "• step one", "• step two", "", "```python", "x = 1", "```", "Done, see docs (https://x.y)."],
+            ["Plan", "", "• step one", "• step two", "", "python", "x = 1", "Done, see docs (https://x.y)."],
         )
 
     def test_an_open_fence_stays_code_across_the_flush_boundary(self) -> None:
         self.step(ev("message.start"))
-        self.assertEqual(self.step(ev("message.delta", text="Here:\n```python\nx = 1\n")), ["Here:", "```python", "x = 1"])
+        self.assertEqual(self.step(ev("message.delta", text="Here:\n```python\nx = 1\n")), ["Here:", "python", "x = 1"])
         self.assertEqual(self.taken[-1][0].style, THEME.code)
         self.assertEqual(self.step(ev("message.delta", text="y = '*no*'\n``")), ["y = '*no*'"])
         self.assertEqual(self.taken[-1][0].style, THEME.code)
         self.assertEqual(self.live(), ["``"])
-        self.assertEqual(self.step(ev("message.delta", text="`\nafter *it*")), ["```"])
+        self.assertEqual(self.step(ev("message.delta", text="`\nafter *it*")), [])
         self.assertEqual(self.live(), ["after it"])
         self.assertEqual(self.step(ev("message.complete", text="", status="complete")), ["after it"])
 

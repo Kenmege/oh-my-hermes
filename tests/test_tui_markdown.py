@@ -115,9 +115,17 @@ class BlockTests(unittest.TestCase):
 class FenceTests(unittest.TestCase):
     def test_code_is_verbatim_with_no_inline_markup(self) -> None:
         rows = render("```python\nx = *a* `b` [c](d)\n```")
-        self.assertEqual(texts(rows), ["```python", "x = *a* `b` [c](d)", "```"])
+        self.assertEqual(texts(rows), ["python", "x = *a* `b` [c](d)"])
         self.assertEqual(rows[1], (Span("x = *a* `b` [c](d)", THEME.code),))
-        self.assertEqual(rows[0][0].style, THEME.dim)
+        self.assertEqual(rows[0], (Span("python", THEME.dim),))
+
+    def test_fence_markers_are_never_painted(self) -> None:
+        rows = render("before\n```\ncode\n~~~~ruby extra\n```\n~~~~ruby extra\nputs 1\n~~~~\nafter")
+        self.assertEqual(texts(rows), ["before", "code", "~~~~ruby extra", "ruby", "puts 1", "after"])
+
+    def test_an_indented_fence_labels_at_its_indent(self) -> None:
+        rows = render("- step:\n  ```sh\n  ls\n  ```")
+        self.assertEqual(texts(rows), ["• step:", "  sh", "  ls"])
 
     def test_fence_state_opens_and_closes(self) -> None:
         _, state = render_line("```Python extra", MarkdownState(), 40, THEME)
@@ -134,7 +142,7 @@ class FenceTests(unittest.TestCase):
 
     def test_long_code_lines_hard_wrap_by_cells_keeping_every_space(self) -> None:
         rows = render("```\nab  cd  ef\n```", width=4)
-        self.assertEqual(texts(rows)[1:-1], ["ab  ", "cd  ", "ef"])
+        self.assertEqual(texts(rows), ["ab  ", "cd  ", "ef"])
 
     def test_inline_triple_backticks_are_code_not_a_fence(self) -> None:
         rows = render("```a``` after")
@@ -142,6 +150,8 @@ class FenceTests(unittest.TestCase):
 
     def test_diff_lines_get_full_row_bands(self) -> None:
         rows = render("```diff\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old\n+new\n ctx\n```", width=20)
+        self.assertEqual(len(rows), 7)
+        self.assertEqual(rows[0], (Span("diff", THEME.dim),))
         self.assertEqual(rows[1], (Span("--- a/f", THEME.label),))
         self.assertEqual(rows[2], (Span("+++ b/f", THEME.label),))
         self.assertEqual(rows[3], (Span("@@ -1 +1 @@", THEME.accent),))
@@ -150,7 +160,7 @@ class FenceTests(unittest.TestCase):
         self.assertEqual(rows[6], (Span(" ctx", THEME.code),))
 
     def test_a_wrapped_diff_line_bands_every_row(self) -> None:
-        rows = render("```patch\n+" + "x" * 24 + "\n```", width=10)[1:-1]
+        rows = render("```patch\n+" + "x" * 24 + "\n```", width=10)[1:]
         self.assertEqual(
             rows,
             [
@@ -218,7 +228,7 @@ class StreamingTests(unittest.TestCase):
     def test_wide_code_wraps_on_glyph_boundaries_and_decomposed_hangul_is_composed(self) -> None:
         decomposed = unicodedata.normalize("NFD", "가나다라마바사")
         rows = render("```\n" + decomposed + "\n```", width=5)
-        self.assertEqual(texts(rows)[1:-1], ["가나", "다라", "마바", "사"])
+        self.assertEqual(texts(rows), ["가나", "다라", "마바", "사"])
 
 
 class MalformedInputTests(unittest.TestCase):

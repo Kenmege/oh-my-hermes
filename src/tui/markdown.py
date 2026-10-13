@@ -11,8 +11,9 @@ is still streaming.
 
 The subset: ATX headings, bullet and numbered lists (wrapped rows hang under
 the item text), blockquotes, fenced code (verbatim, hard-wrapped by cells, no
-inline markup inside), ```diff fences whose added and removed lines are
-full-row bands, inline `code`, **bold**, *italic* / _italic_, links
+inline markup inside; the opening fence shows only its language as a dim label,
+or nothing, and the closing fence shows nothing), ```diff fences whose added
+and removed lines are full-row bands, inline `code`, **bold**, *italic* / _italic_, links
 `[t](u)` -> `t (u)`, and horizontal rules. Tables pass through as plain text.
 Constructs that need a later line to decide an earlier one (setext headings,
 indented code) are left out on purpose.
@@ -89,15 +90,15 @@ def render_line(source: str, state: MarkdownState, width: int, theme: Theme) -> 
     width = max(1, width)
     if state.in_fence:
         if _closes_fence(text, state.fence):
-            closed = replace(state, fence="", fence_lang="", fence_indent=0)
-            return _verbatim_rows(text, width, theme.dim), closed
+            return [], replace(state, fence="", fence_lang="", fence_indent=0)
         return _code_rows(text, state, width, theme), state
     opened = _fence_open(text)
     if opened is not None:
         fence, lang = opened
         indent = _leading_spaces(text)
         list_indent = state.list_indent if indent else 0
-        return _verbatim_rows(text, width, theme.dim), MarkdownState(fence, lang, indent, list_indent)
+        label = _verbatim_rows(" " * indent + lang, width, theme.dim) if lang else []
+        return label, MarkdownState(fence, lang, indent, list_indent)
     if not text.strip():
         return [()], state
     return _block_rows(text, state, width, theme)
