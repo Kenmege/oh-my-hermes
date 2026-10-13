@@ -39,7 +39,7 @@ from .escapes import strip_escapes
 from .highlight import highlight_line, highlights
 from .style import Line, Span, Style
 from .theme import Theme
-from .width import TAB_CELLS, cell_width, cluster_width, clusters, is_control, line_width, wrap_line
+from .width import TAB_CELLS, cell_width, cluster_width, clusters, is_unpainted, line_width, wrap_line
 
 BULLET = "•"
 RULE = "─"
@@ -76,14 +76,14 @@ class MarkdownState:
 
 
 def clean_text(text: str) -> str:
-    """One source line made safe to measure: escape sequences dropped whole, tabs expanded, controls dropped.
+    """One source line made safe to measure: escapes dropped whole, tabs expanded, controls and bidi controls dropped.
 
     The transcript runs model and tool text through it so widths and wraps are
     computed on what will show. The guarantee that no escape sequence reaches
     the terminal is not this function's: `screen.paint_line` strips every row,
     whatever produced it.
     """
-    return "".join(ch for ch in strip_escapes(text).expandtabs(TAB_CELLS) if not is_control(ch))
+    return "".join(ch for ch in strip_escapes(text).expandtabs(TAB_CELLS) if not is_unpainted(ch))
 
 
 def wrap_prefixed(spans: Sequence[Span], first: Line, rest: Line, width: int) -> list[Line]:

@@ -19,7 +19,7 @@ from test_tui_modes import SID, RecordingClient, answer, drawn, make_app, show_m
 from test_tui_subagents import FIRST, FRAMES, SECOND, cells, payload
 from omh.tui.app import App, mode_label, mode_row_line, strip_column
 from omh.tui.frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
-from omh.tui.gateway import Event
+from omh.tui.gateway import Event, ServerRequest
 from omh.tui.keys import CHAR, ENTER, Key
 from omh.tui.panels import SPINNER_FRAMES
 from omh.tui.subagents import MAIN_ID, Roster
@@ -57,6 +57,35 @@ def mode_row(app: App) -> str:
     """The row right above the status line, where the mode row is drawn on a terminal of 10 rows or more."""
     screen = drawn(app)
     return screen[status_index(screen) - 1]
+
+
+class BidiControlTests(unittest.TestCase):
+    """Bidi embeddings and overrides in gateway text never reach the terminal, so what is drawn is what was measured."""
+
+    BIDI = "\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
+
+    def test_the_strips_cells_match_the_screen_with_bidi_controls_in_the_goals(self) -> None:
+        app, _client = make_app(busy=True, clock=lambda: 0.0, cols=120)
+        agent_event(app, "start", FIRST, goal=f"\u202efind usages{self.BIDI} of old_api")
+        second_goal = "read\u2067 the diff\u2069 for risks"
+        agent_event(app, "start", SECOND, goal=second_goal)
+        agent_event(app, "tool", SECOND, goal=second_goal, tool_name="read\u202e_file", tool_preview="\u2066a.py")
+        row = mode_row(app)
+        writes = "".join(app.terminal.writes)  # type: ignore[attr-defined]
+        self.assertFalse(any(ch in writes for ch in self.BIDI))
+        _line, hits = app._agent_strip(120)
+        shown = [cells(row, hit.start, hit.end) for hit in hits]
+        self.assertEqual(shown, ["● main", f"{SPIN} find usages of", f"{SPIN} read the diff"])
+        self.assertEqual(app.roster.agents[SECOND].last_tool, "read_file")
+
+    def test_an_approvals_command_row_shows_the_command_in_the_order_it_runs(self) -> None:
+        app, _client = make_app()
+        command = "echo safe \u202e~ fr- mr ;\u202c done"
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": command, "description": "\u2066rm\u2069"}))
+        screen = drawn(app)
+        writes = "".join(app.terminal.writes)  # type: ignore[attr-defined]
+        self.assertFalse(any(ch in writes for ch in self.BIDI))
+        self.assertTrue(any("echo safe ~ fr- mr ; done" in line for line in screen), screen)
 
 
 class RosterFeedTests(unittest.TestCase):

@@ -50,6 +50,18 @@ def is_control(ch: str) -> bool:
     return code_point < 0x20 or 0x7F <= code_point < 0xA0
 
 
+# Unicode's bidirectional embeddings, overrides and isolates (U+202A to U+202E, U+2066 to U+2069). A
+# bidi-aware terminal reorders the rest of the row around them, so the cells it draws would not be the
+# cells measured (a click would land on another entry), and a command could read in another order than
+# it runs. They are zero width already; they are dropped so that no row the TUI paints carries one.
+BIDI_CONTROLS = frozenset(map(chr, (*range(0x202A, 0x202F), *range(0x2066, 0x206A))))
+
+
+def is_unpainted(ch: str) -> bool:
+    """A control (`is_control`) or a bidi control (`BIDI_CONTROLS`): dropped from text the TUI did not write."""
+    return is_control(ch) or ch in BIDI_CONTROLS
+
+
 def _is_zero_width(ch: str) -> bool:
     code_point = ord(ch)
     if any(_in_range(code_point, bounds) for bounds in _HANGUL_TRAILING_JAMO):

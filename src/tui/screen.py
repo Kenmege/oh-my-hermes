@@ -16,8 +16,10 @@ cursor is parked where the caller asked (the composer caret), so an IME
 pre-edit appears in place.
 
 Every row is clipped to `width` cells (a wide glyph that would straddle the
-edge is dropped whole) and has its control characters removed, so neither a
-stray escape in model output nor a long line can move the cursor. Autowrap is
+edge is dropped whole) and has its control characters and bidi controls
+removed, so neither a stray escape in model output nor a long line can move
+the cursor, and no embedding or override can make a bidi-aware terminal draw
+a row in another order than the one measured. Autowrap is
 switched off while a frame paints: if the terminal measures a glyph wider
 than the width table does, the row is cut at the edge instead of wrapping
 into the next row and shifting the whole region by one.
@@ -53,7 +55,7 @@ from collections.abc import Callable, Sequence
 
 from .escapes import strip_escapes
 from .style import CSI, SGR_RESET, Line, Span
-from .width import is_control, line_width, truncate_line
+from .width import is_unpainted, line_width, truncate_line
 
 CARRIAGE_RETURN = "\r"
 NEWLINE = "\r\n"
@@ -81,14 +83,14 @@ def cursor_forward(cols: int) -> str:
 
 
 def _without_controls(line: Line) -> Line:
-    """The last guard before bytes reach the terminal: no escape sequence or control in span text.
+    """The last guard before bytes reach the terminal: no escape sequence, control or bidi control in span text.
 
     Styles are painted from `Span.style`, never from the text, so any sequence
     found in text came from somewhere else (a gateway string, a tool summary)
     and is removed whole rather than leaving its parameters on screen.
     """
     return tuple(
-        Span("".join(ch for ch in strip_escapes(span.text) if not is_control(ch)), span.style) for span in line
+        Span("".join(ch for ch in strip_escapes(span.text) if not is_unpainted(ch)), span.style) for span in line
     )
 
 

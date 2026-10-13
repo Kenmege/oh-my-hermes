@@ -498,6 +498,14 @@ class VTScreenModelTests(unittest.TestCase):
         self.assertEqual(screen.lines(), ["ac", "  d"])
 
 
+class BidiGuardTests(unittest.TestCase):
+    def test_no_painted_row_carries_a_bidi_control(self) -> None:
+        bidi = "\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
+        painted = paint_line((Span(f"rm{bidi[4]} -rf{bidi[2]} ~"), Span(f"{bidi}x")), 40)
+        self.assertEqual(painted, "rm -rf ~x\x1b[K")
+        self.assertEqual(paint_line((Span("a\u200fb"),), 5), "a\u200fb\x1b[K")  # a plain mark stays
+
+
 class EscapeGuardTests(unittest.TestCase):
     def test_a_sequence_inside_span_text_never_reaches_the_terminal(self) -> None:
         from omh.tui.screen import paint_line

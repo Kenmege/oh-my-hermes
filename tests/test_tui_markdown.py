@@ -356,6 +356,24 @@ HIGHLIGHTED = "\n".join(
 )
 
 
+class BidiControlTests(unittest.TestCase):
+    BIDI = "\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
+
+    def test_clean_text_drops_every_embedding_override_and_isolate(self) -> None:
+        self.assertEqual(clean_text(f"a{self.BIDI}b"), "ab")
+        self.assertEqual(clean_text("echo safe\u202e; rm -rf ~\u202c"), "echo safe; rm -rf ~")
+
+    def test_other_format_characters_and_right_to_left_text_stay(self) -> None:
+        # Marks that only lean a neutral one way, joiners, and Hebrew or Arabic letters themselves.
+        for kept in ("\u200e", "\u200f", "\u061c", "\u200d", "שלום", "مرحبا"):
+            with self.subTest(kept=kept):
+                self.assertEqual(clean_text(f"a{kept}b"), f"a{kept}b")
+
+    def test_rendered_markdown_carries_none(self) -> None:
+        rows = render_markdown(f"# {self.BIDI}Title\n- item{self.BIDI}\n`code{self.BIDI}`", 60, THEME)
+        self.assertFalse(any(ch in self.BIDI for row in rows for span in row for ch in span.text))
+
+
 class HighlightTests(unittest.TestCase):
     def test_line_by_line_render_equals_whole_render_across_multiline_strings_and_comments(self) -> None:
         for width in (8, 30, 80):
