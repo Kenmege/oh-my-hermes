@@ -1288,6 +1288,79 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         forbidden_candidate="frontend",
     ),
+    # `websearch-setup` triggers on "web search backend", the Hermes setting
+    # that picks which provider serves search. `backend` is held back in
+    # `_WHOLE_PHRASE_ONLY_TRIGGER_TOKENS`: measured without the hold, this
+    # sentence about the user's own server named the setup guide in its
+    # shortlist.
+    RoutingPrecisionCase(
+        "deploy-the-backend-stays-out-of-websearch-setup",
+        "Deploying an app backend never names the web search setup guide",
+        "deploy the backend",
+        "answer_clarification",
+        "",
+        forbidden_candidate="websearch-setup",
+    ),
+    # The complete phrase also names the search service of the user's own
+    # app. It may lead the shortlist there, but it must never dispatch the
+    # setup guide; before the phrase joined the setup-guide list this
+    # sentence dispatched a live web lookup. No `forbidden_candidate`: the
+    # setup guide is the scored leader and stays the named candidate.
+    # `costs`, `too`, `much`, `free`, and `tier` are held back for
+    # `websearch-setup` too. Measured without the hold, the first turned from
+    # a direct answer into a clarify, and the other two named the setup guide.
+    RoutingPrecisionCase(
+        "how-much-does-it-cost-stays-direct",
+        "A bare price question stays a direct answer",
+        "how much does it cost",
+        "answer_directly",
+        "direct_answer",
+        forbidden_candidate="websearch-setup",
+    ),
+    RoutingPrecisionCase(
+        "vendor-free-tier-question-stays-out-of-websearch-setup",
+        "A question about a vendor's free tier never names the web search setup guide",
+        "is there a free tier for supabase",
+        "answer_clarification",
+        "",
+        forbidden_candidate="websearch-setup",
+    ),
+    RoutingPrecisionCase(
+        "api-cost-complaint-stays-out-of-websearch-setup",
+        "An API cost complaint never names the web search setup guide",
+        "the api costs too much per call",
+        "answer_clarification",
+        "",
+        forbidden_candidate="websearch-setup",
+    ),
+    # Measured with `web extract backend` as a catalog trigger, this
+    # sentence about the user's own parser dispatched the setup guide.
+    RoutingPrecisionCase(
+        "slow-web-extract-backend-stays-out-of-websearch-setup",
+        "Profiling an app's web extract backend never names the web search setup guide",
+        "the web extract backend is slow, profile the parser",
+        "answer_clarification",
+        "",
+        forbidden_candidate="websearch-setup",
+    ),
+    # Building a search service is the user's own code. The setup guide may
+    # lead the shortlist on the phrase, but it must never dispatch; before the
+    # phrase joined the setup-guide list this sentence dispatched
+    # `deep-interview`, which no longer appears among the candidates.
+    RoutingPrecisionCase(
+        "building-a-web-search-backend-never-dispatches-the-setup-guide",
+        "Building a web search backend asks rather than opening the setup guide",
+        "build a web search backend with elasticsearch",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "debugging-a-web-search-backend-never-dispatches-the-setup-guide",
+        "Debugging an app's web search backend asks rather than opening the setup guide",
+        "our web search backend returns 500, debug the handler",
+        "answer_clarification",
+        "",
+    ),
     # Infra-cache maintenance guards for the "prompt caching"/"prompt cache"/
     # "cache hygiene" triggers: build- and HTTP-cache work shares the word
     # "cache" but has nothing to do with prompt-prefix placement.
@@ -4599,6 +4672,20 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "clarification",
         "websearch-setup",
     ),
+    # Choosing which provider serves search is Hermes' `web.search_backend`
+    # setting. Before the phrase joined the setup-guide list, this sentence
+    # dispatched a live web lookup; now the route asks with the setup guide
+    # leading the shortlist.
+    RoutingInterventionCase(
+        "web-search-backend-choice-reaches-websearch-setup",
+        "Switching the web search backend leads with websearch-setup rather than running a lookup",
+        "switch the web search backend to the free tier",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "websearch-setup",
+    ),
     RoutingInterventionCase(
         "hindi-research",
         "Hindi current-source request routes to the web lookup lane",
@@ -6357,6 +6444,174 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "websearch-setup",
         "run_setup_guide",
         "setup_guide",
+    ),
+    # Setup and cost phrasing reaches the setup guide; before these phrases
+    # joined the setup-guide list each one dispatched a live web lookup.
+    # `configure web search` counts only as the whole request: said bare it
+    # dispatches, and with a courtesy word or trailing punctuation around it
+    # the route asks with the setup guide leading. The cost and free-tier
+    # phrases are built from held-back pricing words, so they ask too.
+    RoutingInterventionCase(
+        "configure-web-search-opens-the-setup-guide",
+        "Configuring web search opens the web search setup guide instead of a lookup",
+        "configure web search",
+        "dispatch",
+        "websearch-setup",
+        "run_setup_guide",
+        "setup_guide",
+    ),
+    RoutingInterventionCase(
+        "courteous-configure-web-search-leads-with-the-setup-guide",
+        "A courteous request to configure web search leads with websearch-setup rather than running a lookup",
+        "please configure web search",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "websearch-setup",
+    ),
+    # Naming Hermes makes the target Hermes' own setting, but only beside a
+    # setup verb: a lookup or a fault report about Hermes' web search names
+    # it too, and stays on its own lane.
+    RoutingInterventionCase(
+        "configure-hermes-web-search-leads-with-the-setup-guide",
+        "Configuring Hermes' web search leads with websearch-setup rather than running a lookup",
+        "configure hermes web search",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "websearch-setup",
+    ),
+    RoutingInterventionCase(
+        "hermes-web-search-free-tier-switch-leads-with-the-setup-guide",
+        "Switching Hermes' web search to the free tier leads with websearch-setup rather than running a lookup",
+        "switch hermes web search to the free tier",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "websearch-setup",
+    ),
+    RoutingInterventionCase(
+        "configure-web-search-in-hermes-leads-with-the-setup-guide",
+        "Asking how to configure web search in Hermes leads with websearch-setup rather than running a lookup",
+        "how do I configure web search in hermes",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "websearch-setup",
+    ),
+    # With an object, "configure web search" is the user's own app. Measured
+    # with the phrase matched anywhere in the message, the first dispatched
+    # the setup guide. These stay where origin/main sends them; the point of
+    # the pin is that the setup guide is not the destination.
+    RoutingInterventionCase(
+        "app-catalog-search-configuration-stays-off-the-setup-guide",
+        "Configuring search for a store's catalog stays on the lookup lane, not the web search setup guide",
+        "configure web search for the store's product catalog",
+        "dispatch",
+        "web-research",
+        "run_hermes_research",
+        "web_research",
+    ),
+    RoutingInterventionCase(
+        "nextjs-search-configuration-stays-off-the-setup-guide",
+        "Configuring search in a Next.js app stays on the lookup lane, not the web search setup guide",
+        "configure web search in our nextjs app",
+        "dispatch",
+        "web-research",
+        "run_hermes_research",
+        "web_research",
+    ),
+    RoutingInterventionCase(
+        "web-search-cost-complaint-leads-with-the-setup-guide",
+        "A web search cost complaint leads with websearch-setup rather than running a lookup",
+        "web search costs too much",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "websearch-setup",
+    ),
+    RoutingInterventionCase(
+        "keyless-web-search-tier-leads-with-the-setup-guide",
+        "Choosing the keyless free web search tier leads with websearch-setup rather than running a lookup",
+        "use the keyless free web search tier",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "websearch-setup",
+    ),
+    # `web extract backend` is a setup-guide phrase but not a trigger: as a
+    # trigger it dispatched the guide on an app-performance sentence (pinned
+    # in the negative corpus), so the phrase only stands down the lookup
+    # guard and the route asks with the guide leading.
+    RoutingInterventionCase(
+        "web-extract-backend-choice-leads-with-the-setup-guide",
+        "Setting the web extract backend leads with websearch-setup rather than the lookup lane",
+        "set the web extract backend to firecrawl",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "websearch-setup",
+    ),
+    # The other side of the same phrases: a lookup ABOUT costs or free tiers
+    # stays a lookup. Measured: widening the trigger and setup-guide phrases
+    # to "web search costs" and "free tier" turns the cloud-GPU cost lookup
+    # and the free-tier API lookup into clarifies, and "free web search tier"
+    # as a setup-guide phrase does the same to the free-tier comparison, which
+    # is why that setup-guide phrase is "keyless free web search".
+    RoutingInterventionCase(
+        "web-search-cost-lookup-stays-on-web-research",
+        "A cited lookup about costs stays on the web lookup lane",
+        "web search costs of cloud GPUs and cite sources",
+        "dispatch",
+        "web-research",
+        "run_hermes_research",
+        "web_research",
+    ),
+    # "hermes web search" without a setup verb is a lookup or a report.
+    # Measured with the phrase standing down the lookup guard on its own,
+    # these became clarifies.
+    RoutingInterventionCase(
+        "hermes-web-search-comparison-stays-on-web-research",
+        "A cited comparison of Hermes' web search stays on the web lookup lane",
+        "compare hermes web search with openai web search, cite sources",
+        "dispatch",
+        "web-research",
+        "run_hermes_research",
+        "web_research",
+    ),
+    RoutingInterventionCase(
+        "hermes-web-search-outage-check-stays-on-browser-operator",
+        "Checking whether Hermes' web search is down stays on the browser operator",
+        "is hermes web search down right now? check the status page",
+        "dispatch",
+        "browser-operator",
+        "prepare_browser_operator_card",
+        "browser_operator",
+    ),
+    RoutingInterventionCase(
+        "free-tier-comparison-lookup-stays-on-web-research",
+        "A cited comparison of vendors' free web search tiers stays on the web lookup lane",
+        "compare the free web search tier of brave and exa, cite sources",
+        "dispatch",
+        "web-research",
+        "run_hermes_research",
+        "web_research",
+    ),
+    RoutingInterventionCase(
+        "web-search-free-tier-lookup-stays-on-web-research",
+        "A lookup about which search APIs have a free tier stays on the web lookup lane",
+        "web search which search APIs have a free tier",
+        "dispatch",
+        "web-research",
+        "run_hermes_research",
+        "web_research",
     ),
     RoutingInterventionCase(
         "english-morning-brief-connect-guide",

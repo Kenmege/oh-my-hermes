@@ -453,7 +453,21 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # target (4); and a report that AI slop on a settings page comes
             # from a module, which dispatched the cleaner when its context
             # credit did not need the appearance phrase said whole (1).
-            expected=477,
+            # The websearch-setup backend trigger adds two: deploying an app
+            # backend, which named the setup guide in its shortlist while the
+            # bare `backend` token was credited to it, and debugging an app's
+            # web search backend, a clarify that must never become a dispatch
+            # of the setup guide (2).
+            # Its cost and free-tier phrases add three: a bare price question,
+            # which became a clarify while `much` was credited to the setup
+            # guide; a vendor free-tier question, which named the setup guide
+            # while `free` and `tier` were; and an API cost complaint, which
+            # named it while `costs` and `too` were (3). Its review adds two:
+            # profiling an app's web extract backend, which dispatched the
+            # setup guide while `web extract backend` was a trigger, and
+            # building a web search backend, a clarify that must never become
+            # a dispatch of the setup guide (2).
+            expected=484,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -556,7 +570,32 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # landing page, a settings page that feels like AI slop, a pricing
             # page and a hero section that scream it, a pricing card component
             # file, an onboarding flow, and a nav menu that look like it (8).
-            expected=677,
+            # The websearch-setup backend trigger adds one: switching the web
+            # search backend to a free tier, a clarify with the setup guide
+            # leading, which dispatched a live web lookup before (1).
+            # Setup and cost phrasing adds five: configuring web search, a
+            # dispatch of the setup guide; a web search cost complaint and the
+            # keyless free web search tier, each a clarify with the setup guide
+            # leading, all three of which dispatched a live web lookup before;
+            # and two lookups about costs and free tiers that stay on
+            # `web-research` (5). Its review adds one: setting the web extract
+            # backend, a clarify with the setup guide leading, which led with
+            # the lookup lane before (1). The second review adds six:
+            # configuring Hermes' web search, switching it to the free tier,
+            # and asking how to configure web search in Hermes, each a clarify
+            # with the setup guide leading that dispatched a live web lookup
+            # before; and three that must not reach the guide -- configuring
+            # search for a store's catalog, which dispatched the guide, and in
+            # a Next.js app, which asked with it leading, while "configure web
+            # search" matched anywhere, and a cited free-tier comparison, which
+            # became a clarify while "free web search tier" was a setup-guide
+            # phrase (6). The third review adds three: a courteous "please
+            # configure web search", a clarify with the setup guide leading
+            # that dispatched a live web lookup before; and a cited comparison
+            # of Hermes' web search and a check whether it is down, which
+            # became clarifies while "hermes web search" counted without a
+            # setup verb (3).
+            expected=693,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

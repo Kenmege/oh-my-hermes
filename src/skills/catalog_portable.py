@@ -215,7 +215,7 @@ _PORTABILITY: dict[str, str] = {
     'omh-model-setup': PORTABILITY_HERMES_ONLY,
     # required_inputs require installed Hermes version and native parallel-tool capability.
     'omh-parallel-tools': PORTABILITY_HERMES_ONLY,
-    # required_inputs target auxiliary web-extract slots; expected_outputs edit Hermes env/routing.
+    # required_inputs read the Hermes `web` config and backend picker; expected_outputs edit Hermes env and `web` keys.
     'omh-websearch-setup': PORTABILITY_HERMES_ONLY,
     # expected_outputs include MCP configuration writes under the Hermes setup harness.
     'omh-morning-brief': PORTABILITY_HERMES_ONLY,

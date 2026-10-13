@@ -46,25 +46,29 @@ class HermesModelSettingsTests(unittest.TestCase):
             },
         )
         self.assertEqual(result["configured_count"], 1)
-        self.assertEqual(result["inherit_count"], 14)
+        self.assertEqual(result["inherit_count"], len(HERMES_AUX_ALIASES))
 
     def test_reads_known_auxiliary_model_and_effort_without_resolving_inheritance(self) -> None:
         result = self._read(
             "model:\n  default: main-model\nauxiliary:\n"
             "  vision:\n    model:\n    reasoning_effort: high\n"
-            "  web_extract:\n    model: google/gemini-2.5-flash\n    reasoning_effort: low\n"
+            "  approval:\n    model: google/gemini-2.5-flash\n    reasoning_effort: low\n"
             "  invented_alias:\n    model: must-not-appear\n"
+            "  web_extract:\n    model: leftover-hermes-ignores\n"
         )
         aliases = {entry["alias"]: entry for entry in result["aliases"]}
         self.assertEqual(aliases["vision"]["label"], "inherit")
         self.assertFalse(aliases["vision"]["configured"])
         self.assertEqual(aliases["vision"]["effort"], "high")
-        self.assertEqual(aliases["web_extract"]["model"], "google/gemini-2.5-flash")
-        self.assertEqual(aliases["web_extract"]["label"], "google/gemini-2.5-flash:low")
-        self.assertTrue(aliases["web_extract"]["configured"])
+        self.assertEqual(aliases["approval"]["model"], "google/gemini-2.5-flash")
+        self.assertEqual(aliases["approval"]["label"], "google/gemini-2.5-flash:low")
+        self.assertTrue(aliases["approval"]["configured"])
         self.assertNotIn("invented_alias", aliases)
+        # Hermes stopped reading `auxiliary.web_extract` before the supported
+        # floor; a leftover block is not reported as a configured slot.
+        self.assertNotIn("web_extract", aliases)
         self.assertEqual(result["configured_count"], 2)
-        self.assertEqual(result["inherit_count"], 13)
+        self.assertEqual(result["inherit_count"], len(HERMES_AUX_ALIASES) - 1)
 
     def test_strips_quotes_and_comments_from_configured_scalars(self) -> None:
         result = self._read(
@@ -72,14 +76,14 @@ class HermesModelSettingsTests(unittest.TestCase):
             "# top-level comment does not end the model block\n"
             '  provider: "auto" # provider note\n'
             "agent:\n  reasoning_effort: medium # effort note\n"
-            "auxiliary:\n  web_extract:\n    # task comment\n"
+            "auxiliary:\n  approval:\n    # task comment\n"
             "    model: \"gpt-5.6-sol\"  # inline note\n"
         )
         self.assertEqual(result["provider"], "auto")
         self.assertEqual(result["aliases"][0]["model"], "anthropic/model#revision")
         self.assertEqual(result["aliases"][0]["effort"], "medium")
-        web_extract = next(entry for entry in result["aliases"] if entry["alias"] == "web_extract")
-        self.assertEqual(web_extract["model"], "gpt-5.6-sol")
+        approval = next(entry for entry in result["aliases"] if entry["alias"] == "approval")
+        self.assertEqual(approval["model"], "gpt-5.6-sol")
 
     def test_missing_config_degrades_to_config_unreadable(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -114,16 +118,16 @@ class HermesModelSettingsTests(unittest.TestCase):
     def test_yaml_null_scalars_mean_inherit(self) -> None:
         result = self._read(
             "model:\n  default: null\nauxiliary:\n"
-            "  web_extract:\n    model: ~\n"
+            "  approval:\n    model: ~\n"
         )
 
         aliases = {entry["alias"]: entry for entry in result["aliases"]}
         self.assertTrue(result["observed"])
         self.assertFalse(aliases["main"]["configured"])
         self.assertEqual(aliases["main"]["label"], "inherit")
-        self.assertFalse(aliases["web_extract"]["configured"])
+        self.assertFalse(aliases["approval"]["configured"])
         self.assertEqual(result["configured_count"], 0)
-        self.assertEqual(result["inherit_count"], 15)
+        self.assertEqual(result["inherit_count"], len(HERMES_AUX_ALIASES) + 1)
 
     def test_tab_indentation_degrades_as_unreadable(self) -> None:
         result = self._read("model:\n\tdefault: gpt-5.6-sol\n")
@@ -140,7 +144,7 @@ class HermesModelSettingsTests(unittest.TestCase):
     def test_nested_tracked_scalar_degrades_as_unreadable(self) -> None:
         configs = (
             "model:\n  default:\n    name: gpt-5.6-sol\n",
-            "auxiliary:\n  web_extract:\n    model:\n      name: gpt-5.6-sol\n",
+            "auxiliary:\n  approval:\n    model:\n      name: gpt-5.6-sol\n",
         )
         for config_text in configs:
             with self.subTest(config_text=config_text):
@@ -175,15 +179,39 @@ class HermesModelSettingsTests(unittest.TestCase):
         self.assertFalse(absent["delegation"]["configured"])
         self.assertEqual(absent["delegation"]["label"], "inherit")
 
-    def test_alias_order_is_the_exact_hermes_contract(self) -> None:
+    def test_alias_order_is_the_hermes_floor_auxiliary_contract(self) -> None:
         result = self._read("model:\n  default:\n")
         self.assertEqual(
             tuple(entry["alias"] for entry in result["aliases"]),
             ("main",) + HERMES_AUX_ALIASES,
         )
-        self.assertEqual(len(HERMES_AUX_ALIASES), 14)
+        # The task blocks of `auxiliary` in hermes_cli/config_defaults.py at the
+        # floor tag v2026.9.7, in order; upstream main still reads every one.
+        self.assertEqual(
+            HERMES_AUX_ALIASES,
+            (
+                "vision",
+                "compression",
+                "skills_hub",
+                "approval",
+                "review",
+                "mcp",
+                "title_generation",
+                "memory_query_rewrite",
+                "tts_audio_tags",
+                "triage_specifier",
+                "kanban_decomposer",
+                "profile_describer",
+                "goal_judge",
+                "curator",
+                "monitor",
+                "background_review",
+                "moa_reference",
+                "moa_aggregator",
+            ),
+        )
         self.assertEqual(result["configured_count"], 0)
-        self.assertEqual(result["inherit_count"], 15)
+        self.assertEqual(result["inherit_count"], len(HERMES_AUX_ALIASES) + 1)
 
 
 if __name__ == "__main__":

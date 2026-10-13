@@ -4,6 +4,42 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`websearch-setup` configures the web search settings Hermes actually
+  reads, and OMH stops treating the removed auxiliary web-extract slot as
+  configuration.** The guide's second step used to assign a model to the
+  auxiliary web-extract slot, which Hermes removed before the oldest release
+  OMH supports; the guide wrote a key nothing reads and its verify step could
+  read that key back as success. The step is now a backend and tier choice
+  over the `web` config: `web.search_backend` and `web.extract_backend` (or
+  the shared `web.backend`), `web.provider_tier.<name>: free|paid`, and
+  `web.keyless_fallback`. Diagnosis names which backend serves search and
+  which serves extract, and why, including the releases where any
+  per-capability key sends the other capability to Hermes' default backend,
+  and checks the levers that need no key first: the keyless free tier, and a
+  split that keeps search free while only extract uses a paid account. The
+  provider key and the backend or tier change stay two separate diff
+  approvals, and verify reads back the keys Hermes consumes. The guide never
+  writes `auxiliary.web_extract` and reports a leftover block there as
+  ignored. A `web` key missing from `config.yaml` is read as its default, and
+  support is read from the merged config, never inferred from a Hermes
+  version. Setup and cost phrasing now reaches the guide instead of a live
+  web lookup: "configure web search" said on its own opens it, and with a
+  courtesy word or trailing punctuation around it the route asks with the
+  guide leading. The route also asks with the guide leading for Hermes' web
+  search named beside a setup verb ("switch hermes web search to the free
+  tier"), "web search backend", "web search costs too much", "the keyless
+  free web search tier", and setting the web extract backend. "Configure web
+  search" with an object, such as a store's catalog or a Next.js app, routes
+  as before, and so do lookups, outage checks, and code changes that name
+  Hermes' web search without a setup verb. Cited lookups about costs or
+  vendors' free tiers stay lookups, and pricing words alone ("how much does
+  it cost", a vendor's free tier, "deploy the backend") do not name the
+  guide. The `omh menubar status` Models card lists the auxiliary slots every
+  supported Hermes reads, without `web_extract`; the doctor advisory for
+  unpinned auxiliary slots names the same slots without a fixed count and no
+  longer counts a leftover `web_extract` pin as routing.
+
+
 - **Achievements are read from where the bundled Hermes plugin keeps them
   now.** The hermes-achievements plugin stores `scan_snapshot.json` and
   `state.json` under `plugin-data/hermes-achievements/` in the active

@@ -576,7 +576,24 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64158
 # approval binding and the stop rule are in that reference, counted outside
 # this budget; the capability row carries only the pointer. Re-derived from
 # the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 486332
+# 486332 -> 486951: `websearch-setup` stops targeting the auxiliary
+# web-extract slot Hermes removed before the supported floor. Its required
+# inputs, expected outputs, and safety rules now name the `web` keys Hermes
+# reads (`search_backend`, `extract_backend`, `provider_tier`,
+# `keyless_fallback`), the selections and fallbacks a capability's backend
+# comes from, and the rule against writing or verifying the dead slot;
+# `web-research`'s pointer at it was reworded. The rows were tightened before
+# raising. Re-derived from the producer.
+# 486951 -> 487167: review of that change. The diagnosis output now names the
+# managed-gateway selection and the release difference where any
+# per-capability key counts as a selection and the other capability lands on
+# Hermes' default backend, and the safety rule says a key absent from
+# `config.yaml` is at its default rather than unsupported and where to read
+# support instead. Re-derived from the producer.
+# 487167 -> 487221: second review. The diagnosis output ends its list with
+# Hermes' default backend when nothing else resolves. Re-derived from the
+# producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 487221
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

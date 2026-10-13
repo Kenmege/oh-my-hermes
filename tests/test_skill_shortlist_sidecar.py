@@ -282,8 +282,11 @@ class AdmissionTests(unittest.TestCase):
         # is IDF-weighted, so a new skill moves it: once `iac-change` (#1566)
         # joined the skills that say "change", `external-connector-readiness`
         # overtook `model-setup` by 0.035 in the old wording and ranked third.
-        # "setup" keeps the admitting skill fourth.
-        message = "The provider changed how their model handles tools; adapt our routing setup to it."
+        # "setup" keeps the admitting skill fourth. `websearch-setup` used to
+        # lead this ranking on its auxiliary "model routing" wording; once that
+        # wording left the catalog the admitting skill rose to third, and
+        # "tool calls" puts `parallel-tools` back above it.
+        message = "The provider changed how their model handles tool calls; adapt our routing setup to it."
         self.assertEqual(bundle.skill_candidates(message), ())
         with mock.patch.object(bundle, "ADMISSION_HEAD", bundle.ADMISSION_HEAD + 2):
             self.assertTrue(bundle.skill_candidates(message))

@@ -24,7 +24,7 @@ This is an OMH `web-research` workflow skill, projected for Agent Skills hosts (
 - The output is a typed candidate inventory and acquisition status rather than an answer; use `source-finder`.
 - The ask is a market, competitor, pricing, or customer decision brief; use `research-brief`.
 - The user wants recurring monitoring, a source inbox, or Scout/Analyst/Briefer operations; use `research-department`.
-- The user wants to configure or cheapen web search itself, such as a scraper API key or an auxiliary extract model; use `websearch-setup`.
+- The user wants to configure or cheapen web search itself, such as a provider API key or a search or extract backend or tier; use `websearch-setup`.
 - The study target is this repository rather than the open web; use `codebase-onboarding`.
 
 ## Examples

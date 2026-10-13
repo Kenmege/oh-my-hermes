@@ -179,7 +179,7 @@
     "omh-visual-qa/SKILL.md": "e57a45f135b4f1224cf65766e9fc851511ddecf4c56482b183205e8f8fb14cfc",
     "omh-visual-qa/references/visual-verdict-contract.md": "7c803a3997dc58be0a4b88f2d7aa081cc5cac49a227d0cc19437cd1aad420759",
     "omh-voice-input/SKILL.md": "d15fab885fb53df39b45466ab376d983a70a204ecba10a809e442c8ce2f7c283",
-    "omh-web-research/SKILL.md": "d52ac78758bf8dd79cf02bc86a1b71138d119de1fc75fdeec47a791886a3507a",
+    "omh-web-research/SKILL.md": "b500c570de1facc4066511b11276db3b6af5c51b7304bae3822323df1635495e",
     "omh-wiki/SKILL.md": "5d166038d310402a398e81bccbe225b7d5f6843046deb2170dbb87dc39f8bc60",
     "omh-wiki/references/wiki-blueprint.md": "2ff6894489712962ea86e135462c8bdc74039bb2587566d5abec0201c8828c9d",
     "omh-wiki/references/wiki-operations.md": "656b7873c4d9ad4458244bb376d4808dac9af7a520c35b6f22b58cbbe8434528",
@@ -318,7 +318,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "d582bae9250ee510cd5b7de7078a1b5fe1ca61c513ea570456582c7f29172529",
+  "source_digest": "980f21ae511ac71ca7d2e987c3772203d2703f1558da116dc1cf2b4da2940980",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

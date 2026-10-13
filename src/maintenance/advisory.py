@@ -30,6 +30,7 @@ from ..config_adapter import external_dirs, read_config
 from ..paths import default_hermes_home, expand_path, find_project_root
 from ..plugin_bundle.omh import hermes_memory
 from ..routing.owner_preference import owner_preference_path, validate_owner_preference
+from ..surfaces.hermes_model_settings import HERMES_AUX_ALIASES
 from ..system.local_store import read_json_object_result
 from ..system.metadata_safety import require_opaque_metadata_ref
 from ..system.paths import OmhPaths
@@ -40,20 +41,9 @@ CONTRACT = "hermes_config_advice/v1"
 _NULL_MARKERS = frozenset({"", "null", "~"})
 _AUTO_PROVIDER_MARKERS = frozenset({"", "auto", "null", "~", "default"})
 
-# Named Hermes auxiliary task slots (11), locked here for the remediation copy.
-AUXILIARY_TASK_SLOTS = (
-    "vision",
-    "compression",
-    "web_extract",
-    "approval scoring",
-    "skills-hub lookup",
-    "MCP routing",
-    "triage specifier",
-    "kanban decomposer",
-    "profile describer",
-    "curator",
-    "title",
-)
+# Slots Hermes stopped reading before the supported floor; its config defaults
+# say a leftover block in user config is ignored, so a pin there routes nothing.
+_IGNORED_AUXILIARY_SLOTS = frozenset({"web_extract", "session_search"})
 
 # Hermes memory files and the caps Hermes falls back to when config.yaml does
 # not override them. Sourced from the reader so the cap and the unit it is
@@ -536,10 +526,9 @@ def check_auxiliary_routing_unset(hermes_home: str | Path | None = None) -> Advi
         "Hermes routing decisions are not observed."
     )
     remediation = (
-        "Hermes routes 11 auxiliary task slots (vision, compression, web_extract, "
-        "approval scoring, skills-hub lookup, MCP routing, triage specifier, "
-        "kanban decomposer, profile describer, curator, title). With every slot on "
-        "provider `auto` and no model pin, the main model can burn premium tokens "
+        "Hermes routes auxiliary tasks through per-task slots; every supported release "
+        f"reads {', '.join(HERMES_AUX_ALIASES)}, and a newer one can add more. With every "
+        "slot on provider `auto` and no model pin, the main model can burn premium tokens "
         "on these auxiliary tasks. Consider pinning a cheaper model per slot in "
         "`~/.hermes/config.yaml` under `auxiliary:`."
     )
@@ -554,6 +543,8 @@ def check_auxiliary_routing_unset(hermes_home: str | Path | None = None) -> Advi
             )
         config_text = read_config(config_path)
         slots = _parse_auxiliary_slots(config_text)
+        if slots is not None:
+            slots = [slot for slot in slots if slot["__name__"] not in _IGNORED_AUXILIARY_SLOTS]
         if slots is None or not slots:
             return AdviceEntry(
                 "auxiliary_routing_unset",
