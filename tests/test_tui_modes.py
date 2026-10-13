@@ -397,6 +397,18 @@ class DocumentedApprovalsToggleTests(unittest.TestCase):
             entry,
         )
 
+    def test_the_boundary_and_the_changelog_say_when_accept_shows_and_when_the_off_goes(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        agents = " ".join((root / "AGENTS.md").read_text(encoding="utf-8").split())
+        changelog = " ".join((root / "CHANGELOG.md").read_text(encoding="utf-8").split())
+        self.assertIn("Leaving a session it turned yolo on for, or whose yolo call is still unanswered", agents)
+        self.assertIn(
+            "is shown on the composer once Hermes confirms it, or when Hermes confirms neither it nor the switch back "
+            "off, and is switched off again before the TUI leaves the session",
+            changelog,
+        )
+        self.assertIn("(a steer Hermes does not take waits in the queue for the turn to end)", changelog)
+
 
 class SteerReplayTests(AppTestCase):
     def steer_run(self, status: str, *segments: str) -> object:

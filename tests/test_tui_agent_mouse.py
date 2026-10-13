@@ -1093,13 +1093,27 @@ class DocumentedMouseTests(unittest.TestCase):
 
     def test_the_escape_time_and_the_grace_the_docs_name_are_the_decoders(self) -> None:
         seconds, grace = keys_module.REPORTING_ESCAPE_SECONDS, keys_module.MOUSE_REPORT_SECONDS
+        whole = round(seconds + grace, 3)  # past this a stalled report can type its rest
         installation = self.prose("docs/INSTALLATION.md")
         self.assertIn(f"for {grace:g} s after they go off, an Esc pressed on its own acts after {seconds:g} s", installation)
-        self.assertIn("any key but `[` typed within that time ends the wait, and both keys act", installation)
+        self.assertIn("Another key typed within that time ends the wait, and both keys act, except `[`", installation)
+        self.assertIn("a key the terminal sends in the same burst as the Esc is Alt with that key", installation)
         self.assertIn(f"A report that starts later than {grace:g} s after they went off", installation)
+        self.assertIn(f"so can any report that takes more than {whole:g} s to arrive whole", installation)
         agents = self.prose("AGENTS.md")
-        self.assertIn(f"within {grace:g} s after it goes off, types: if {round(seconds * 1000)} ms pass after its first byte "
-                      "without the next, that byte is read as Esc", agents)
+        self.assertIn(f"within {grace:g} s after it goes off, types nothing if it arrives whole within {whole:g} s of its "
+                      f"first byte. If {round(seconds * 1000)} ms pass after that byte without the next, the byte is read "
+                      f"as Esc, and the rest is dropped only if it arrives within {grace:g} s after that.", agents)
+        self.assertIn(f"types nothing if it arrives whole within {whole:g} s of its first byte",
+                      self.prose("src/tui/app.py"))
+
+    def test_no_doc_says_a_split_report_never_types_however_long_the_pause(self) -> None:
+        for name in ("src/tui/keys.py", "src/tui/app.py", "docs/INSTALLATION.md", "AGENTS.md"):
+            with self.subTest(name=name):
+                text = self.prose(name)
+                self.assertNotIn("however a pause splits it", text)
+                self.assertNotIn("the rest is dropped.", text)
+                self.assertNotIn("any key but `[`", text)
 
     def test_the_wait_is_not_credited_to_tmux_or_vim(self) -> None:
         # tmux's escape-time default is 500 ms (10 ms since 3.5) and Vim's ttimeoutlen 100: neither is 300.

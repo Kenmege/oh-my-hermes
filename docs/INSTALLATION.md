@@ -341,10 +341,14 @@ run and approval decision stays Hermes'; the screen is OMH's.
   runs does not bring them back, since the strip is clickable again. While
   click reports are on, and for 0.5 s after they go off, an Esc pressed on
   its own acts after 0.3 s, the time a click report split by a slow
-  connection has to arrive whole; any key but `[` typed within that time
-  ends the wait, and both keys act. A report that starts later than 0.5 s
-  after they went off, split by the connection right after its first byte
-  or two, can still type its rest.
+  connection has to arrive whole. Another key typed within that time ends
+  the wait, and both keys act, except `[`, which is read as the rest of a
+  sequence, as is `O` arriving together with the letter that ends F1 to F4
+  or an arrow; a key the terminal sends in the same burst as the Esc is Alt
+  with that key. A report that starts later than 0.5 s after they went off,
+  split by the connection right after its first byte or two, can still type
+  its rest, and so can any report that takes more than 0.8 s to arrive
+  whole.
   A click is read only where the OMH TUI can tell which row it landed on:
   once the session's output has reached the bottom of the screen, or after
   Ctrl+L. Until then it leaves the mouse to the terminal and the keys open

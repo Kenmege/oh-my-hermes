@@ -38,8 +38,9 @@ SGR report (`ESC[<b;x;yM` press, `ESC[<b;x;ym` release) and decodes to a
 before it acted on an off still arrive after it (the release of the click that
 opened a log, over SSH most of all), so the rules below hold for input that
 starts arriving while reporting is on or within `MOUSE_REPORT_SECONDS` after it
-went off. No byte of such a report is typed as text, however a pause splits it
-across reads (over SSH, jitter can stall one mid-way):
+went off. A pause can split such a report across reads (over SSH, jitter can
+stall one mid-way); no byte of it is typed as text if it arrives whole within
+`REPORTING_ESCAPE_SECONDS` plus `MOUSE_REPORT_SECONDS` (0.8 s) of its first byte:
 
 - a started report (`ESC[<` and digits and semicolons so far) waits for up to
   `MOUSE_REPORT_SECONDS` of silence, and is then dropped as one unknown key
@@ -54,10 +55,12 @@ across reads (over SSH, jitter can stall one mid-way):
   the report it began are dropped as they arrive, up to its `M` or `m`.
 
 So such a report split right after its first byte by more than
-`REPORTING_ESCAPE_SECONDS` is Esc, and nothing of it is typed. A report that starts arriving later than `MOUSE_REPORT_SECONDS` after
-reporting went off, split right after its `ESC` or its `ESC[`, is read as
-keys, as any input is with reporting off. A terminal that ignores the SGR request sends the legacy
-`ESC[M` and three payload bytes instead; that is one unknown key.
+`REPORTING_ESCAPE_SECONDS` is Esc, and its rest is dropped only if it arrives
+within `MOUSE_REPORT_SECONDS` after that; what arrives later is read as keys.
+A report that starts arriving later than `MOUSE_REPORT_SECONDS` after reporting
+went off, split right after its `ESC` or its `ESC[`, is read as keys, as any
+input is with reporting off. A terminal that ignores the SGR request sends the
+legacy `ESC[M` and three payload bytes instead; that is one unknown key.
 """
 
 from __future__ import annotations

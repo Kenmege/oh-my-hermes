@@ -74,11 +74,13 @@ that agent's log, or on the list's main row leaves the list; every other
 report does nothing. Reports the terminal sent before it acted on an off
 arrive after it, so `_set_mouse` notes when reporting went off and the
 decoder is told: a report that starts arriving while reporting is on, or
-within `keys.MOUSE_REPORT_SECONDS` after the off, types nothing however a
-pause splits it across reads, and acts as a key in one way only: when the
-pause right after its first byte outlasts `keys.REPORTING_ESCAPE_SECONDS`,
-that ESC is Esc. One that starts later and is split right after its `ESC`
-or `ESC[` is read as keys (`keys`).
+within `keys.MOUSE_REPORT_SECONDS` after the off, types nothing if it
+arrives whole within 0.8 s of its first byte, split across reads or not.
+When the pause right after its first byte outlasts
+`keys.REPORTING_ESCAPE_SECONDS`, that ESC is Esc, and the rest is dropped
+only if it arrives within `keys.MOUSE_REPORT_SECONDS` after that. One that
+starts later and is split right after its `ESC` or `ESC[` is read as keys
+(`keys`).
 
 Prompt text, the transcript, attachments, secrets, server-request frames and
 the gateway's stderr stay in memory and on the person's own terminal; nothing

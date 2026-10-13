@@ -29,15 +29,18 @@ All notable changes will be documented here.
   control byte (Ctrl+2 a NUL, Ctrl+3 Esc, Ctrl+8 Backspace);
   `OMH_TUI_KEYBOARD=legacy` keeps the plain bytes. Shift+Tab cycles normal,
   accept all and plan: accept all turns off Hermes' approvals for that session
-  only (Hermes' per-session switch, never `approvals.mode`) and is shown on
-  the composer once Hermes confirms it, and plan sends each prompt as
-  `/plan <text>`; where Hermes has approvals off on its own, Shift+Tab sends
-  nothing and turns plan on and off beside accept all. Ctrl+T or
-  `/effort <level>` sets the session's reasoning effort, Ctrl+Enter or
-  `/steer <text>` adds typed text to the running turn,
-  queued prompts are listed above the composer and Up takes them back to
-  edit, `?` or `/keys` lists every key from the table the docs are held to,
-  and an approval rings the terminal bell once (`OMH_TUI_BELL=0` silences it).
+  only (Hermes' per-session switch, never `approvals.mode`), is shown on the
+  composer once Hermes confirms it, or when Hermes confirms neither it nor
+  the switch back off, and is switched off again before the TUI leaves the
+  session, and plan sends each prompt as `/plan <text>`; where Hermes has
+  approvals off on its own, Shift+Tab sends nothing and turns plan on and
+  off beside accept all. Ctrl+T or `/effort <level>` sets the session's
+  reasoning effort, Ctrl+Enter or `/steer <text>` adds typed text to the
+  running turn (a steer Hermes does not take waits in the queue for the turn
+  to end), queued prompts are listed above the composer and Up takes them
+  back to edit, `?` or `/keys` lists every key from the table the docs are
+  held to, and an approval rings the terminal bell once (`OMH_TUI_BELL=0`
+  silences it).
   A turn's subagents show as a strip on the mode row; Down opens them as a
   list, and Enter or a click opens one agent's read-only log, with mouse
   reports on only while an agent is there to click.
