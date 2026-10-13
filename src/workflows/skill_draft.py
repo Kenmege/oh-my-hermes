@@ -286,14 +286,14 @@ def check_skill_draft_generated_output(draft: Mapping[str, Any]) -> dict[str, An
     description = frontmatter_description(definition)
     # Frontmatter is one line per key, so an embedded newline would break the
     # generated YAML rather than merely look untidy.
-    description_ok = description.startswith("[omh] ") and "\n" not in description and "\r" not in description
+    description_ok = bool(description.strip()) and "\n" not in description and "\r" not in description
     checks.append(
         _check(
             "rendered_frontmatter_description",
             description_ok,
             f"Rendered {len(description)} description characters on one line."
             if description_ok
-            else "Projected definition does not render a single-line [omh]-prefixed frontmatter description.",
+            else "Projected definition does not render a non-empty single-line frontmatter description.",
         )
     )
 

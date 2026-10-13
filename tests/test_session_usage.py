@@ -24,7 +24,7 @@ from omh.quality.session_usage import (
     build_session_usage,
     format_session_usage_summary,
 )
-from test_reply_lint import OTHER_SKILL_VIEW, _write_state_db
+from test_reply_lint import OMH_PLAN_SKILL_VIEW, OTHER_SKILL_VIEW, ULW_WORK_SKILL_VIEW, _write_state_db
 
 
 TUI_ROW = {
@@ -179,32 +179,90 @@ class SessionUsageCountTests(unittest.TestCase):
         self.assertEqual(tui["omh_skill_views"], 3)
         self.assertEqual(tui["omh_skill_names"], {"omh-plan": 2, "ulw-work": 1})
 
-    def test_omh_skill_signal_is_the_description_prefix_with_a_marker_fallback(self) -> None:
+    def test_a_catalog_label_decides_with_or_without_the_description_prefix(self) -> None:
+        with_prefix = "[omh] Reviewing a diff: bug-first findings."
+        without_prefix = "Reviewing a diff: bug-first findings."
         with TemporaryDirectory() as tmp:
             home = Path(tmp) / ".hermes"
             path = _write_state_db(home)
-            _append_tool_row(
-                path,
-                (
-                    30,
-                    "desk",
-                    json.dumps({"name": "omh-review", "description": "Review, [omh] mentioned later."}),
-                    "skill_view",
-                    "c20",
-                ),
-            )
+            results = [
+                {"name": "omh-code-review", "description": with_prefix},  # a body installed before the prefix went
+                {"name": "omh-code-review", "description": without_prefix},
+                {"name": "ulw-team", "description": without_prefix},  # a retired skill's label
+                {"name": "omh-ultragoal", "description": without_prefix},  # a retired skill's historical label
+                {"name": "omh-ultrawork", "description": without_prefix},  # the `omh-` era of `ulw-work`
+                {"name": "reviewer", "description": without_prefix},  # not a catalog label, no prefix
+                {"name": "plan", "description": without_prefix},  # a bare canonical name is not a label
+            ]
+            for offset, result in enumerate(results):
+                _append_tool_row(path, (30 + offset, "desk", json.dumps(result), "skill_view", f"c{20 + offset}"))
 
             desktop = build_session_usage(home, source="desktop")["rows"][0]
+
+        self.assertEqual(desktop["skill_views"], 3 + len(results))
+        self.assertEqual(
+            desktop["omh_skill_names"],
+            {
+                "(unparsed)": 1,
+                "omh-code-review": 2,
+                "omh-routing": 1,
+                "omh-ultragoal": 1,
+                "omh-ultrawork": 1,
+                "ulw-team": 1,
+            },
+        )
+        self.assertEqual(desktop["omh_skill_views"], 7)
+
+    def test_the_fixture_counts_one_prefixed_and_one_unprefixed_body(self) -> None:
+        # The hand counts in TUI_ROW rest on both shapes: an old installed body
+        # keeps the prefix until its next update, a current one never has it.
+        self.assertTrue(json.loads(OMH_PLAN_SKILL_VIEW)["description"].startswith("[omh] "))
+        self.assertNotIn("[omh]", json.loads(ULW_WORK_SKILL_VIEW)["description"])
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp) / ".hermes"
+            _write_state_db(home)
+
             tui = build_session_usage(home, source="tui")["rows"][0]
 
-        # The JSON shape with a description is decided by the description alone:
-        # a marker in the body of a non-OMH description does not count, whatever
-        # the name. Plain text falls back to the marker, and the ulw-* display
-        # name in the tui row shows the `omh-` name prefix is not required.
-        self.assertEqual(desktop["skill_views"], 4)
-        self.assertEqual(desktop["omh_skill_views"], 2)
-        self.assertEqual(desktop["omh_skill_names"], {"(unparsed)": 1, "omh-routing": 1})
         self.assertEqual(tui["omh_skill_names"], {"omh-plan": 2, "ulw-work": 1})
+
+    def test_a_prefixed_description_still_counts_under_a_name_the_catalog_does_not_render(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp) / ".hermes"
+            path = _write_state_db(home)
+            results = [
+                {"name": "omh-imported-notes", "description": "[omh] Hermes workflow skill for imported-notes."},
+                {"description": "[omh] A prefixed body with no name."},
+                {"name": "omh-review", "description": "Review, [omh] mentioned later."},
+            ]
+            for offset, result in enumerate(results):
+                _append_tool_row(path, (30 + offset, "desk", json.dumps(result), "skill_view", f"c{20 + offset}"))
+
+            desktop = build_session_usage(home, source="desktop")["rows"][0]
+
+        # The prefix is read at the start of the description only: a marker
+        # later in a description whose name the catalog does not render is not
+        # a signal.
+        self.assertEqual(desktop["skill_views"], 6)
+        self.assertEqual(desktop["omh_skill_views"], 4)
+        self.assertEqual(desktop["omh_skill_names"], {"(unparsed)": 2, "omh-imported-notes": 1, "omh-routing": 1})
+
+    def test_non_json_content_counts_by_its_frontmatter_name_then_by_the_marker(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp) / ".hermes"
+            path = _write_state_db(home)
+            raw_skill = '---\nname: "ulw-work"\ndescription: "Carry a goal to done."\n---\n\n# Work\n'
+            other_skill = "---\nname: reviewer\ndescription: Review code.\n---\n"
+            _append_tool_row(path, (30, "desk", raw_skill, "skill_view", "c20"))
+            _append_tool_row(path, (31, "desk", other_skill, "skill_view", "c21"))
+
+            desktop = build_session_usage(home, source="desktop")["rows"][0]
+
+        # A host that returns the file itself still names the skill; the
+        # fixture's own `loaded [omh] guidance as text` row is the marker fallback.
+        self.assertEqual(desktop["skill_views"], 5)
+        self.assertEqual(desktop["omh_skill_views"], 3)
+        self.assertEqual(desktop["omh_skill_names"], {"(unparsed)": 1, "omh-routing": 1, "ulw-work": 1})
 
     def test_a_name_only_result_counts_when_the_name_is_a_catalog_skill(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -214,16 +272,21 @@ class SessionUsageCountTests(unittest.TestCase):
             _append_tool_row(path, (31, "desk", "[skill_view] name=reviewer (5 chars)", "skill_view", "c21"))
             _append_tool_row(path, (32, "desk", "[skill_view] name=", "skill_view", "c22"))
             _append_tool_row(path, (33, "desk", json.dumps({"name": "omh-ultrawork", "file": "SKILL.md"}), "skill_view", "c23"))
+            _append_tool_row(path, (34, "desk", "[skill_view] name=ulw-process (9 chars)", "skill_view", "c24"))
 
             desktop = build_session_usage(home, source="desktop")["rows"][0]
 
         # A reference-file load and a placeholder carry only a name: a name that
         # is not a catalog skill's does not count, a historical label (the
-        # `omh-ultrawork` era of `ulw-work`) does, and the fixture's own
-        # `omh-plan` reference file and `omh-routing` placeholder are in the hand counts.
-        self.assertEqual(desktop["skill_views"], 7)
-        self.assertEqual(desktop["omh_skill_views"], 3)
-        self.assertEqual(desktop["omh_skill_names"], {"(unparsed)": 1, "omh-routing": 1, "omh-ultrawork": 1})
+        # `omh-ultrawork` era of `ulw-work`) and a retired skill's label
+        # (`ulw-process`) do, and the fixture's own `omh-plan` reference file
+        # and `omh-routing` placeholder are in the hand counts.
+        self.assertEqual(desktop["skill_views"], 8)
+        self.assertEqual(desktop["omh_skill_views"], 4)
+        self.assertEqual(
+            desktop["omh_skill_names"],
+            {"(unparsed)": 1, "omh-routing": 1, "omh-ultrawork": 1, "ulw-process": 1},
+        )
 
     def test_since_accepts_iso_or_epoch_and_drops_older_sessions(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -299,6 +362,7 @@ class SessionUsageCountTests(unittest.TestCase):
         self.assertEqual(first["source"]["kind"], "hermes_state_db")
         self.assertEqual(first["source"]["path"], str(path))
         self.assertEqual(first["counting"]["archived_hidden"], "included")
+        self.assertIn("a label the OMH catalog renders", first["counting"]["omh_skill_view"])
         self.assertIn("[omh] ", first["counting"]["omh_skill_view"])
         self.assertIn("persisted to a session", first["claim_boundary"])
         self.assertIn("not execution, review, CI, or merge evidence", first["claim_boundary"])

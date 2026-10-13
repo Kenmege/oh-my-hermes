@@ -22,7 +22,14 @@ from omh.plugin_bundle.omh.awareness import awareness_route_hint
 from omh.plugin_bundle.omh.degradation import DEGRADATION_CHAT_NOTE
 from omh.routing.chat import route_chat_message
 from omh.routing.display_names import canonical_display_mentions
-from omh.skills.catalog import historical_skill_display_names, installable_skill_definitions, omh_skill_display_name
+from omh.skills.catalog import (
+    builtin_definitions,
+    canonical_skill_for_label,
+    historical_skill_display_names,
+    installable_skill_definitions,
+    omh_skill_display_name,
+    retired_skill_names,
+)
 from omh.wrapper.contract import build_chat_interaction_payload
 from omh.wrapper.route_hints import build_chat_route_hint_payload
 from _route_owner import route_owner
@@ -290,6 +297,39 @@ class HistoricalLabelAliasTests(unittest.TestCase):
         self.assertEqual(mapping.get("omh-ultragoal"), "ultragoal")
         self.assertEqual(mapping.get("ulw-ultrawork"), "ultrawork")
         self.assertEqual(mapping.get("ulw-goal"), "ultragoal")
+
+
+class SkillLabelOwnershipTests(unittest.TestCase):
+    """`canonical_skill_for_label` is how a reader tells an OMH skill from another product's."""
+
+    def test_every_label_the_catalog_renders_or_rendered_resolves_to_its_skill(self) -> None:
+        definitions = builtin_definitions()
+        self.assertTrue(set(retired_skill_names()) <= {definition.name for definition in definitions})
+        for definition in definitions:
+            with self.subTest(skill=definition.name):
+                self.assertEqual(canonical_skill_for_label(omh_skill_display_name(definition.name)), definition.name)
+                for label in historical_skill_display_names(definition.name):
+                    self.assertEqual(canonical_skill_for_label(label), definition.name, label)
+
+    def test_a_retired_skill_resolves_under_every_label_era(self) -> None:
+        for label, canonical in (
+            ("ulw-team", "team"),
+            ("omh-team", "team"),
+            ("ulw-goal", "ultragoal"),
+            ("ulw-ultragoal", "ultragoal"),
+            ("omh-ultragoal", "ultragoal"),
+            ("omh-best-practice-research", "best-practice-research"),
+        ):
+            with self.subTest(label=label):
+                self.assertIn(canonical, retired_skill_names())
+                self.assertEqual(canonical_skill_for_label(label), canonical)
+
+    def test_a_name_the_catalog_never_rendered_owns_nothing(self) -> None:
+        # A bare canonical name is an ordinary word another product's skill can
+        # carry, and the display prefix alone names no skill.
+        for label in ("plan", "team", "ultrawork", "omh-", "ulw-", "omh-not-a-skill", "reviewer", ""):
+            with self.subTest(label=label):
+                self.assertEqual(canonical_skill_for_label(label), "")
 
 
 class DisplayNamesLeaveDegradationRenderingAloneTests(unittest.TestCase):

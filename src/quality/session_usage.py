@@ -5,10 +5,10 @@ Hermes tags a session row with the surface that opened it
 without a tag groups as ``(none)``. It persists every tool result as a
 ``messages`` row with ``role = 'tool'``, ``tool_name`` and ``tool_call_id``.
 OMH's plugin registers its tools as ``omh_<name>``, and every OMH skill's
-``SKILL.md`` description starts with ``OMH_DESCRIPTION_PREFIX``, which a
-``skill_view`` result carries back. Nothing observed which host surfaces
-those signals reached until a person opened the database by hand; this
-reader groups them per source.
+``SKILL.md`` carries a ``name`` the catalog rendered, which a ``skill_view``
+result carries back. Nothing observed which host surfaces those signals
+reached until a person opened the database by hand; this reader groups them
+per source.
 
 The database is opened ``mode=ro``; nothing is written. A compaction
 re-persists tool rows under new ids, so every count is over distinct
@@ -22,18 +22,14 @@ unreadable database is an error.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import lru_cache
 import json
 from pathlib import Path
+import re
 import sqlite3
 from typing import Any, Mapping
 
-from ..skills.catalog import installable_skill_names
-from ..skills.catalog_types import (
-    OMH_DESCRIPTION_PREFIX,
-    historical_skill_display_names,
-    omh_skill_display_name,
-)
+from ..skills.catalog import canonical_skill_for_label
+from ..skills.catalog_types import OMH_DESCRIPTION_PREFIX
 from .hermes_state import (
     NO_SOURCE_LABEL,
     TOOL_CALL_KEY_SQL as _CALL_KEY,
@@ -47,7 +43,10 @@ SESSION_USAGE_SCHEMA_VERSION = "session_usage/v1"
 OMH_TOOL_NAME_PREFIX = "omh_"
 SKILL_VIEW_TOOL_NAME = "skill_view"
 _UNPARSED_SKILL_LABEL = "(unparsed)"
-_OMH_MARKER = OMH_DESCRIPTION_PREFIX.strip()
+# The description prefix is never required: the name decides. It is read only so
+# a prefixed body whose name the catalog does not render still counts.
+_DESCRIPTION_MARKER = OMH_DESCRIPTION_PREFIX.strip()
+_FRONTMATTER_NAME = re.compile(r"^name:[ \t]*[\"']?([A-Za-z0-9][A-Za-z0-9._-]*)", re.MULTILINE)
 # A compaction replaces a skill_view result with `[skill_view] name=<x> (N chars) ...`.
 _PLACEHOLDER_PREFIX = f"[{SKILL_VIEW_TOOL_NAME}] name="
 
@@ -74,10 +73,11 @@ _COUNTING_RULES: dict[str, str] = {
     "tool_calls": "distinct tool_call_id per session over messages with role = 'tool', the first row "
     "by id deciding (a compaction re-persists rows; a row without a tool_call_id counts once by its own id)",
     "omh_tool": f"tool_name starts with {OMH_TOOL_NAME_PREFIX!r}",
-    "omh_skill_view": f"skill_view result whose JSON description starts with {OMH_DESCRIPTION_PREFIX!r}; "
-    f"a result carrying only a name (a reference-file load, or the {_PLACEHOLDER_PREFIX!r} placeholder a "
-    "compaction leaves) counts when the name is a catalog skill's display name; other non-JSON content "
-    f"counts when it contains {_OMH_MARKER!r}",
+    "omh_skill_view": "skill_view result whose name is a label the OMH catalog renders, current, historical "
+    "or retired; that covers a SKILL.md load, a reference-file load, the "
+    f"{_PLACEHOLDER_PREFIX!r} placeholder a compaction leaves, and a non-JSON result carrying a frontmatter "
+    f"name line. Whatever its name, a result also counts when its JSON description starts with "
+    f"{OMH_DESCRIPTION_PREFIX!r} or its non-JSON content contains {_DESCRIPTION_MARKER!r}",
     "window_field": "COALESCE(last_activity_at, started_at); with --since, a session without a "
     "parseable stamp is excluded",
     "archived_hidden": "included",
@@ -246,15 +246,20 @@ def _finish_row(row: dict[str, Any]) -> dict[str, Any]:
 def _omh_skill_name(content: str) -> str | None:
     """The skill name when a ``skill_view`` result is an OMH skill, else ``None``.
 
-    A SKILL.md load is a JSON object whose ``description`` carries the
-    frontmatter, so the catalog's own ``[omh] `` prefix decides it; the
-    display name is not consulted there because ``ulw-*`` skills are OMH
-    skills too. A reference-file load (``file`` present, no ``description``)
-    and the ``[skill_view] name=<x> ...`` placeholder a compaction leaves
-    carry only the name, which is resolved against the catalog's installed
-    display names, current and historical. Any other non-JSON content falls
-    back to the marker substring so a host that changes the result shape
-    still counts.
+    The name decides it: a label the catalog renders, under any era, is an
+    OMH skill (``canonical_skill_for_label``), which holds for the ``ulw-*``
+    labels and for retired skills alike. That one rule reads every shape a
+    result takes: a SKILL.md load (a JSON object with ``description``), a
+    reference-file load (``file`` present, no ``description``), the
+    ``[skill_view] name=<x> ...`` placeholder a compaction leaves, and
+    non-JSON content that still carries the frontmatter ``name:`` line, so a
+    host that changes the result shape still counts.
+
+    The description is consulted only when the name is not a catalog label:
+    a body that starts with the ``[omh] `` prefix counts under whatever name
+    it carries (a skill imported from a local source, or one the catalog no
+    longer names). Non-JSON content with no catalog name falls back to that
+    same marker.
     """
     try:
         result = json.loads(content)
@@ -263,23 +268,16 @@ def _omh_skill_name(content: str) -> str | None:
     if isinstance(result, dict):
         description = result.get("description")
         name = result.get("name")
-        if isinstance(description, str):
-            if not description.startswith(OMH_DESCRIPTION_PREFIX):
-                return None
+        if isinstance(name, str) and canonical_skill_for_label(name):
+            return name
+        if isinstance(description, str) and description.startswith(OMH_DESCRIPTION_PREFIX):
             return str(name) if isinstance(name, str) and name.strip() else _UNPARSED_SKILL_LABEL
-        return name if isinstance(name, str) and name in _catalog_display_names() else None
+        return None
     if content.startswith(_PLACEHOLDER_PREFIX):
         words = content[len(_PLACEHOLDER_PREFIX):].split(None, 1)
         name = words[0] if words else ""
-        return name if name in _catalog_display_names() else None
-    return _UNPARSED_SKILL_LABEL if _OMH_MARKER in content else None
-
-
-@lru_cache(maxsize=1)
-def _catalog_display_names() -> frozenset[str]:
-    """Every display name an installed OMH skill has been loaded under."""
-    names: set[str] = set()
-    for name in installable_skill_names():
-        names.add(omh_skill_display_name(name))
-        names.update(historical_skill_display_names(name))
-    return frozenset(names)
+        return name if canonical_skill_for_label(name) else None
+    named = _FRONTMATTER_NAME.search(content)
+    if named is not None and canonical_skill_for_label(named.group(1)):
+        return named.group(1)
+    return _UNPARSED_SKILL_LABEL if _DESCRIPTION_MARKER in content else None
