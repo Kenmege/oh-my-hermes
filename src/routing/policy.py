@@ -8282,6 +8282,7 @@ _HERMES_SETUP_GUIDE_PHRASES = (
     "make web search cheaper",
     "reduce web search cost",
     "web search cheaper",
+    "web search backend",
     "웹 검색 설정",
     "웹 검색 싸게",
     "웹 검색 비용",

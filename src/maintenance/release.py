@@ -576,7 +576,15 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64158
 # approval binding and the stop rule are in that reference, counted outside
 # this budget; the capability row carries only the pointer. Re-derived from
 # the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 486332
+# 486332 -> 486951: `websearch-setup` stops targeting the auxiliary
+# web-extract slot Hermes removed before the supported floor. Its required
+# inputs, expected outputs, and safety rules now name the `web` keys Hermes
+# reads (`search_backend`, `extract_backend`, `provider_tier`,
+# `keyless_fallback`), the order a capability's backend resolves in, and the
+# rule against writing or verifying the dead slot; `web-research`'s pointer
+# at it was reworded. The rows were tightened before raising. Re-derived from
+# the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 486951
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

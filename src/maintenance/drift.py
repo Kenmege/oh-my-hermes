@@ -453,7 +453,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # target (4); and a report that AI slop on a settings page comes
             # from a module, which dispatched the cleaner when its context
             # credit did not need the appearance phrase said whole (1).
-            expected=477,
+            # The websearch-setup backend trigger adds two: deploying an app
+            # backend, which named the setup guide in its shortlist while the
+            # bare `backend` token was credited to it, and debugging an app's
+            # web search backend, a clarify that must never become a dispatch
+            # of the setup guide (2).
+            expected=479,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -556,7 +561,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # landing page, a settings page that feels like AI slop, a pricing
             # page and a hero section that scream it, a pricing card component
             # file, an onboarding flow, and a nav menu that look like it (8).
-            expected=677,
+            # The websearch-setup backend trigger adds one: switching the web
+            # search backend to a free tier, a clarify with the setup guide
+            # leading, which dispatched a live web lookup before (1).
+            expected=678,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

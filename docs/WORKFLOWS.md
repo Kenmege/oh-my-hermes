@@ -878,7 +878,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The output is a typed candidate inventory and acquisition status rather than an answer; use `source-finder`.
   - The ask is a market, competitor, pricing, or customer decision brief; use `research-brief`.
   - The user wants recurring monitoring, a source inbox, or Scout/Analyst/Briefer operations; use `research-department`.
-  - The user wants to configure or cheapen web search itself, such as a scraper API key or an auxiliary extract model; use `websearch-setup`.
+  - The user wants to configure or cheapen web search itself, such as a provider API key or a search or extract backend or tier; use `websearch-setup`.
   - The study target is this repository rather than the open web; use `codebase-onboarding`.
 - Strong routing signals: `web-research`, `web research`, `web search`, `search the web`, `internet search`, `look up`, `look up sources`, `latest sources`, `fresh sources`, `current sources`, `current web evidence`, `source-backed research`, `source search`, `find sources`, `find citations`, `citation check`, `evidence scan`, `source diversity`, `retrieval gap`, `best-practice-research`, `best practice`, `official docs`, `upstream guidance`, `what do the docs say`, `check the docs`, `웹서치`, `웹 서치`, `웹 검색`, `인터넷 검색`, `검색해줘`, `검색해서`, `최신 자료`, `최신 출처`, `자료 찾아`, `출처`
 - Good example:
@@ -5972,7 +5972,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### websearch-setup
 
-[omh] Expensive or unconfigured web search: diagnose scraper and auxiliary extract-model configuration, guide account setup, and apply each change as its own diff approval.
+[omh] Expensive or unconfigured web search: diagnose which search and extract providers, provider tiers, and keyless free tier Hermes reads, guide provider account setup, and apply each change as its own diff approval.
 
 - Category: `hermes-setup`
 - Phase: `setup`
@@ -5986,17 +5986,17 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
 - Handoff policy: Run diagnosis and guidance directly in Hermes for web search setup. Diagnosis reads non-secret metadata only; no writes. Show redacted placeholders in the config or `.env` diff; apply only after the user explicitly approves. Never ask the user to paste secrets into chat. Use Hermes-native secure entry or user-side OAuth/token setup; if unavailable, stop credential application and guide user-side setup. Use only a user-authorized credential store or local configuration; disclose destination and scope first. Keep secrets out of chat, previews, logs and evidence. Do not promise chat or platform non-retention. Delegate to a selected coding executor only if the user needs a change outside chat-driven config or `.env` edits.
-- Why this exists: `websearch-setup` exists to make web search cost and routing configurable through two clearly separated, diff-approved steps instead of one opaque edit.
-- Use when: Use when the user wants to reduce web search cost or configure web search by setting up a scraper API key or an auxiliary web-extract model routing block, following the shared prerequisite-check, diagnose, guide, diff-approved apply, and verify contract.
+- Why this exists: `websearch-setup` exists to make web search cost and backend choice configurable through two clearly separated, diff-approved steps against the `web` keys Hermes reads, instead of one opaque edit.
+- Use when: Use when the user wants to reduce web search cost or configure web search by choosing the search and extract providers, a provider's free or paid tier, or the keyless free tier, or by adding a provider API key, following the shared prerequisite-check, diagnose, guide, diff-approved apply, and verify contract.
 - Do not use when:
   - The user wants Hermes to run a web search now, not configure how web search is set up.
-  - No scraper key or auxiliary extract-model intent has been named yet.
-  - The request needs a repository code change rather than a local `.env` or routing edit.
-- Strong routing signals: `websearch-setup`, `web search setup`, `make web search cheaper`, `set up web search`, `configure web search`, `reduce web search cost`, `connect scraper api key`, `set up auxiliary web-extract model`, `웹 검색 싸게 만들어줘`, `웹 검색 설정`, `웹서치 설정`, `웹 검색 비용 줄이기`
+  - No provider key, backend, or tier intent has been named yet.
+  - The request needs a repository code change rather than a local `.env` or Hermes config edit.
+- Strong routing signals: `websearch-setup`, `web search setup`, `make web search cheaper`, `set up web search`, `configure web search`, `reduce web search cost`, `connect scraper api key`, `web search backend`, `웹 검색 싸게 만들어줘`, `웹 검색 설정`, `웹서치 설정`, `웹 검색 비용 줄이기`
 - Good example:
-  - Prompt: make web search cheaper — I have a scraper account I want to use, and I want an auxiliary model handling extraction.
-  - Expected behavior: Diagnose the current `.env` and routing state, guide the scraper API key setup as one diff approval, then the auxiliary web-extract model routing as a second, separate diff approval.
-  - Why: The request needs the two independently-approved writes this skill exists to keep separate.
+  - Prompt: make web search cheaper — I have a scraper account I want to use for reading pages, and search can stay free.
+  - Expected behavior: Read the `web` section and `.env` key names, guide the provider API key setup as one diff approval, then set `web.extract_backend` to that provider and `web.search_backend` to a free backend the user picks from `hermes tools` as a second, separate diff approval, and read both keys back.
+  - Why: The request needs the two independently-approved writes this skill exists to keep separate, aimed at keys Hermes consumes.
 - Bad example:
   - Prompt: websearch-setup: search the web for the latest news.
   - Expected behavior: Run or route to the search request directly instead of starting a setup walkthrough.
@@ -6007,27 +6007,35 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Guide: use Hermes-native secure entry or user-side OAuth/token setup, never chat secrets.
   - Diff-approved apply: show the config or `.env` diff with redacted placeholders; apply only after the user explicitly approves.
   - Verify: confirm applicable items using non-secret metadata, never secret values.
-  - Show the scraper API key diff as one diff approval and the auxiliary web-extract model routing diff as a second, separate diff approval; never merge them.
+  - Show the provider API key diff as one diff approval and the `web` backend or tier diff as a second, separate diff approval; never merge them.
+  - Check the cost levers that need no key first: with no backend selected or keyed and `web.keyless_fallback` not set to false, Hermes already rotates search and extract across keyless vendor free tiers, and a per-capability split can keep search free while only extract uses a paid account.
+  - A new `.env` key alone does not change which backend serves a capability once a shared `web.backend` is written; diagnose that before proposing a key as the fix.
+  - When the diff sets only one of `web.search_backend` and `web.extract_backend`, name the other capability's backend in the same diff or confirm its resolution in verify, because Hermes releases differ in how an unset sibling resolves.
+  - Before proposing `web.keyless_fallback: false`, say that with no keyed backend it leaves web search and extract unavailable.
 - Completion checklist:
   - If a prerequisite is unmet, mark that item "not applicable" and continue with the rest of the guide instead of blocking or guessing.
   - Success is applicable-only: verification passes when every applicable item is confirmed complete, not when every possible item exists.
-  - The scraper API key write and the auxiliary web-extract model write were verified as two separate, independently-approved changes.
+  - The provider API key write and the `web` backend or tier change were verified as two separate, independently-approved changes, each read back from the key Hermes consumes.
+  - Nothing was written to `auxiliary.web_extract`, and a leftover block there was reported as ignored rather than counted as configuration.
 - Recovery notes:
-  - If the scraper provider prerequisite is unmet, mark that step "not applicable" and continue with the auxiliary model routing step alone.
+  - If no provider account or key is available, mark the key step "not applicable" and continue with the backend and tier step alone; the keyless free tier needs no key.
   - If either diff is rejected, keep the other step's state independent and do not roll both back together.
+  - If the config still holds an `auxiliary.web_extract` block, report it as a leftover Hermes ignores and leave it in place unless the user asks to remove it as its own diff.
 - Required inputs:
-  - scraper API key availability; value through secure entry or user-side setup only
-  - target auxiliary web-extract model role slot
+  - the Hermes config `web` section (`backend`, `search_backend`, `extract_backend`, `provider_tier`, `keyless_fallback`) as non-secret metadata; an absent key is the Hermes default
+  - the backend names `hermes tools` lists under Web Search & Extract
+  - provider API key availability; value through secure entry or user-side setup only
 - Expected outputs:
-  - read-only diagnosis of the current scraper `.env` key and auxiliary web-extract model routing state
-  - a diff-approved `.env` write adding the scraper API key, approved on its own
-  - a diff-approved routing block change assigning the auxiliary web-extract model, approved separately from the key write
-  - verification checklist confirming both writes were applied
+  - read-only diagnosis of which backend serves search and which serves extract, and why: per-capability key, shared `web.backend`, credential detection while no shared selection exists, or the keyless free tier
+  - a diff-approved `.env` write adding the provider API key, approved on its own, or the user's own key entry in `hermes tools`
+  - a diff-approved `web` backend or tier change (`web.search_backend`, `web.extract_backend`, `web.provider_tier.<name>: free|paid`, `web.keyless_fallback`), approved separately from the key write
+  - verification checklist reading back each written `web` key and the provider key name's presence
 - Artifact expectations:
   - setup verification note when the wrapper captures it
 - Safety rules:
-  - Never combine the scraper API key `.env` write and the auxiliary web-extract model routing write into a single apply step; each gets its own diff and its own approval.
-  - Do not name a specific scraper product, extract-model provider, or price; ask the user which provider they hold an account with and read the current config instead of assuming one.
+  - Never combine the provider API key `.env` write and the `web` backend or tier change into a single apply step; each gets its own diff and its own approval.
+  - Never write or verify against `auxiliary.web_extract`: Hermes no longer reads that slot, so writing it changes nothing and reading it back proves nothing.
+  - Do not name a specific web backend, vendor, free-tier quota, or price; take backend names from the user's `hermes tools` and `web` config, and read which `web` keys exist from that config, never from a Hermes version number.
 
 ### morning-brief
 

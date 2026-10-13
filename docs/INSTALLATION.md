@@ -3274,7 +3274,7 @@ the outcome in chat and let Hermes run the guide.
 | Audience | Chat intent | What the guide covers |
 | --- | --- | --- |
 | Person using Hermes | Ask Hermes to set up your models. | Walks through the main / realtime-search / design model role slots, provider connection, and session model switching. |
-| Person using Hermes | Ask Hermes to make web search cheaper. | Walks through the scraper API key and an auxiliary web-extract model as two separate reviewed diffs. |
+| Person using Hermes | Ask Hermes to make web search cheaper. | Walks through a provider API key and the web search and extract backend or free-tier choice as two separate reviewed diffs. |
 | Person using Hermes | Ask Hermes to connect mail and calendar for a morning brief. | Walks through read/draft-only mail and calendar access for an on-demand morning brief. Mail Send permission is never enabled, and any token pasted by the user is never stored. |
 | Person using Hermes | Ask Hermes to check it is up to date. | Reports whether the installed Hermes/parallel-tools version is current and, if not, the update command to run. |
 

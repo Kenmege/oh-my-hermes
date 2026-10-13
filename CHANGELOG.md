@@ -4,6 +4,25 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`websearch-setup` configures the web search settings Hermes actually
+  reads.** Its second step used to assign a model to the auxiliary
+  web-extract slot, which Hermes removed before the oldest release OMH
+  supports; the guide wrote a key nothing reads and its verify step could
+  read that key back as success. The step is now a backend and tier choice
+  over the `web` config: `web.search_backend` and `web.extract_backend` (or
+  the shared `web.backend`), `web.provider_tier.<name>: free|paid`, and
+  `web.keyless_fallback`. Diagnosis names which backend serves search and
+  which serves extract, and why, and checks the levers that need no key
+  first: the keyless free tier, and a split that keeps search free while
+  only extract uses a paid account. The provider key and the backend or tier
+  change stay two separate diff approvals, and verify reads back the keys
+  Hermes consumes. The guide never writes `auxiliary.web_extract` and reports
+  a leftover block there as ignored. Which `web` keys exist is read from the
+  user's config, never inferred from a Hermes version. "web search backend"
+  now opens a clarify led by the setup guide instead of a live web lookup;
+  `backend` alone, as in "deploy the backend", does not name the guide.
+
+
 - **Achievements are read from where the bundled Hermes plugin keeps them
   now.** The hermes-achievements plugin stores `scan_snapshot.json` and
   `state.json` under `plugin-data/hermes-achievements/` in the active

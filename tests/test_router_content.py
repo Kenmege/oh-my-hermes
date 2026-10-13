@@ -1569,8 +1569,12 @@ class RouterContentTests(unittest.TestCase):
                 "user-authorized credential store or local configuration",
             ),
             "websearch-setup": (
-                "scraper API key",
-                "auxiliary web-extract model",
+                "provider API key",
+                "`web.search_backend`",
+                "`web.extract_backend`",
+                "`web.provider_tier.<name>: free|paid`",
+                "`web.keyless_fallback`",
+                "Never write or verify against `auxiliary.web_extract`",
             ),
         }
         templates = {template.name: template.content for template in builtin_skill_templates()}

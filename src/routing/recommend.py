@@ -3888,6 +3888,11 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # `anti-slop` normalizes to `anti-slop`, `anti`, and `slop`, so this one
     # entry holds back all three.
     "ai-slop-cleaner": frozenset({"anti-slop", "pass", "review", "sweep"}),
+    # `web search backend` names the Hermes setting that picks which provider
+    # serves search; `backend` alone is the server side of the user's own app
+    # ("deploy the backend", "set up a new backend for the web app"), where the
+    # bare token credited this setup guide. Only the complete phrase scores.
+    "websearch-setup": frozenset({"backend"}),
 }
 
 

@@ -1314,19 +1314,19 @@
 }
 },
 {
-"anchors":"auxiliary cheaper configur connect cost extract extraction reduc scraper search websearch",
+"anchors":"cheaper configur connect cost extraction reduc scraper search websearch",
 "hangul":"검색 비용 서치 설정 싸게 웹서 이기 줄이",
 "hangul_anchors":"검색 비용 서치 설정 싸게 웹서 이기 줄이",
 "label":"omh-websearch-setup",
 "name":"websearch-setup",
 "situation":"Expensive or unconfigured web search",
 "terms":{
-"1":"account approv approval block chang check configuration contract expensiv follow prerequisit rout shar unconfigur user verify want",
-"2":"add apply connect diagnos diff extraction guid herm page provider",
-"3":"reduc set",
-"4":"auxiliary cheaper extract",
+"1":"account adding approv approval chang check choos contract expensiv follow paid prerequisit read shar unconfigur user verify want",
+"2":"add apply backend connect diagnos diff extract extraction free guid keyless page set tier",
+"3":"herm reduc",
+"4":"cheaper provider scraper",
 "5":"api configur cost key websearch",
-"6":"model scraper search web",
+"6":"search web",
 "8":"setup"
 }
 },

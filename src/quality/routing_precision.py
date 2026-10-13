@@ -1288,6 +1288,31 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         forbidden_candidate="frontend",
     ),
+    # `websearch-setup` triggers on "web search backend", the Hermes setting
+    # that picks which provider serves search. `backend` is held back in
+    # `_WHOLE_PHRASE_ONLY_TRIGGER_TOKENS`: measured without the hold, this
+    # sentence about the user's own server named the setup guide in its
+    # shortlist.
+    RoutingPrecisionCase(
+        "deploy-the-backend-stays-out-of-websearch-setup",
+        "Deploying an app backend never names the web search setup guide",
+        "deploy the backend",
+        "answer_clarification",
+        "",
+        forbidden_candidate="websearch-setup",
+    ),
+    # The complete phrase also names the search service of the user's own
+    # app. It may lead the shortlist there, but it must never dispatch the
+    # setup guide; before the phrase joined the setup-guide list this
+    # sentence dispatched a live web lookup. No `forbidden_candidate`: the
+    # setup guide is the scored leader and stays the named candidate.
+    RoutingPrecisionCase(
+        "debugging-a-web-search-backend-never-dispatches-the-setup-guide",
+        "Debugging an app's web search backend asks rather than opening the setup guide",
+        "our web search backend returns 500, debug the handler",
+        "answer_clarification",
+        "",
+    ),
     # Infra-cache maintenance guards for the "prompt caching"/"prompt cache"/
     # "cache hygiene" triggers: build- and HTTP-cache work shares the word
     # "cache" but has nothing to do with prompt-prefix placement.
@@ -4593,6 +4618,20 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "websearch-setup-outranks-the-lookup-lane",
         "Configuring web search still reaches websearch-setup rather than the lookup lane",
         "set up web search",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "websearch-setup",
+    ),
+    # Choosing which provider serves search is Hermes' `web.search_backend`
+    # setting. Before the phrase joined the setup-guide list, this sentence
+    # dispatched a live web lookup; now the route asks with the setup guide
+    # leading the shortlist.
+    RoutingInterventionCase(
+        "web-search-backend-choice-reaches-websearch-setup",
+        "Switching the web search backend leads with websearch-setup rather than running a lookup",
+        "switch the web search backend to the free tier",
         "clarify",
         "oh-my-hermes",
         "answer_clarification",
