@@ -562,6 +562,72 @@
       "reviewed_on": "2026-10-13",
       "rationale": "Adopted the action-item fields outcome, owner, due date, dependency, acceptance, and source, with open values marked unknown; the bundled skill's extraction stays a reading of the notes.",
       "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-14-ultrawork-hermes-native-delegation",
+      "candidate_key": "ultrawork@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2117",
+      "reviewed_on": "2026-10-14",
+      "rationale": "Adopted the host's lane-answer schema, per-lane worktrees, one-shot child budget, and board completion fields as extra evidence; the verification fan-in still decides completion.",
+      "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-14-agent-instructions-hermes-context-files",
+      "candidate_key": "agent-instructions@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2117",
+      "reviewed_on": "2026-10-14",
+      "rationale": "Adopted Hermes' context-file loading as a reader row: one file type per session, the AGENTS.md chain from the repository root, and a per-directory override the inventory must list.",
+      "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-14-plan-hermes-plan-mode",
+      "candidate_key": "plan@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2117",
+      "reviewed_on": "2026-10-14",
+      "rationale": "Adopted the built-in /plan turn as the host's own and its saved file as this skill's draft; its request for complete code in each step was rejected by the proportion check.",
+      "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-14-decision-prototype-hermes-spike",
+      "candidate_key": "decision-prototype@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2117",
+      "reviewed_on": "2026-10-14",
+      "rationale": "Adopted spike's kill-first ordering, two-arm comparisons, and verdicts mapped onto decision_prototype/v1; its repository-root spikes/ directory was rejected for the declared scratch boundary.",
+      "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-14-app-debugging-hermes-debugging-skills",
+      "candidate_key": "app-debugging@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2117",
+      "reviewed_on": "2026-10-14",
+      "rationale": "Adopted systematic-debugging's phases as the method this skill records against, and a debugger read as one discriminating observation; a bug hidden under a breakpoint stays open.",
+      "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-14-ask-hermes-cli-skills",
+      "candidate_key": "ask@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2117",
+      "reviewed_on": "2026-10-14",
+      "rationale": "Adopted the bundled claude-code, codex, and opencode skills for invoking a named CLI advisor only; the run stays advice with no edits, and no CLI is the default.",
+      "supersedes": null
     }
   ]
 }

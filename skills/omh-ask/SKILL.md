@@ -19,7 +19,7 @@ This is a Hermes-native `ask` workflow skill.
 
 ## Why This Exists
 
-`ask` exists to keep `review` work explicit, evidence-backed, and inside the Hermes/executor boundary instead of relying on ad hoc chat narration.
+`ask` exists to put one outside model's critique beside the agent's own answer when the user wants it, as advice the agent weighs in the open rather than a verdict it adopts, from the advisor the user named or configured and never from a default one.
 
 ## Do Not Use When
 
@@ -74,8 +74,9 @@ Reasoning demand: `standard`
 
 Quality bar:
 
-- Name the workflow target, constraints, validation evidence, and stop condition.
-- Separate Hermes guidance from executor or wrapper behavior unless evidence proves the step happened.
+- Before consulting, name the question, why an outside answer could change yours, and the advisor the user named or configured; with none configured, say so and answer without one.
+- Report the advice as one input: which points you accept, which you reject and why, and none of it as a verdict, a review, or a verified fact.
+- When the advisor is a coding CLI the user named and Hermes' bundled skill for it (`claude-code`, `codex`, or `opencode`) is in your skill list, take only the invocation from that skill and keep the run to advice, with no edits; load `references/cli-advisors.md`. None of these CLIs is the default advisor.
 
 Handoff policy:
 

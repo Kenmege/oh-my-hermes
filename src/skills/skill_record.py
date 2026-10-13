@@ -73,6 +73,7 @@ from .render import (
     app_debugging_reference_templates,
     apple_design_reference_templates,
     application_threat_model_reference_templates,
+    ask_reference_templates,
     automation_blueprint_reference_templates,
     award_bar_score_reference_templates,
     buzz_reference_templates,
@@ -83,6 +84,7 @@ from .render import (
     context_reference_templates,
     context_skill,
     data_pipelines_reference_templates,
+    decision_prototype_reference_templates,
     deep_interview_reference_templates,
     deep_interview_skill,
     design_reference_templates,
@@ -115,6 +117,7 @@ from .render import (
     mobile_release_reference_templates,
     model_finetuning_reference_templates,
     plan_constitution_reference_templates,
+    plan_mode_reference_templates,
     portable_reference_templates,
     prose_lexicon_reference_templates,
     refactor_plan_reference_templates,
@@ -274,6 +277,12 @@ REFERENCE_PRODUCERS: tuple[Callable[[], list[SkillReferenceTemplate]], ...] = (
     prose_lexicon_reference_templates,
     plan_constitution_reference_templates,
     jev_preset_reference_templates,
+    # Hermes-only references a skill's Hermes body points at for a bundled
+    # Hermes skill or command it composes with (`spike`, `/plan`, the coding
+    # CLI skills); the portable projection ships neither the file nor the line.
+    plan_mode_reference_templates,
+    ask_reference_templates,
+    decision_prototype_reference_templates,
 )
 
 
