@@ -671,16 +671,17 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # install friction; and `ulw-loop` named after a cadence on a flaky
             # list and on build failures, which now open the goal loop where
             # app-debugging and build-failure-triage took them before.
-            # The bundled-skill boundary adds nine on the OMH side of it: an
+            # The bundled-skill boundary adds twelve on the OMH side of it: an
             # image card beside a kanban card, and a dashboard card and a
             # scoreboard card for a review, still reaching `img-summary` (3); a
             # class diagram of a cloud SDK module, an architecture diagram of
-            # the codebase, and one of an AWS CDK app still reaching
-            # `codebase-uml` (3); a team wiki in Notion still reaching `wiki`
-            # (1); and a research department digest into an LLM wiki and a
-            # team's paper research pipeline still reaching
-            # `research-department` (2).
-            expected=723,
+            # the codebase, one of an AWS CDK app, one of a cloud app from its
+            # services folder, one of a services directory, and one of AWS
+            # infrastructure from the src tree still reaching `codebase-uml`
+            # (6); a team wiki in Notion still reaching `wiki` (1); and a
+            # research department digest into an LLM wiki and a team's paper
+            # research pipeline still reaching `research-department` (2).
+            expected=726,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

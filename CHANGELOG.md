@@ -20,21 +20,21 @@ All notable changes will be documented here.
 - **Three request shapes that belong to a skill Hermes bundles, or to a
   work board, stop dispatching an OMH skill.** An architecture diagram of
   cloud or infrastructure pieces described in words, with no codebase,
-  repository, module, source, CDK or Terraform named, no longer dispatches
-  `codebase-uml`; Hermes bundles `architecture-diagram` for it. An English
-  message naming an LLM wiki no longer reaches the wiki blueprint, nor the
-  research department unless one is named outright; Hermes bundles
-  `llm-wiki`. A review of what sits on a kanban, board, task, Trello or
-  Jira card no longer opens an image card; a dashboard, scoreboard or
-  storyboard card still does. Each of those turns now asks instead.
+  repository, module, folder, `src` tree, CDK or Terraform named, no longer
+  dispatches `codebase-uml`; Hermes bundles `architecture-diagram` for it.
+  An English message naming an LLM wiki no longer reaches the wiki
+  blueprint, nor the research department unless one is named outright;
+  Hermes bundles `llm-wiki`. A review of what sits on a kanban, board, task,
+  Trello or Jira card no longer opens an image card; a dashboard, scoreboard
+  or storyboard card still does. Each of those turns now asks instead.
   Measured on the chat-interaction surface over both routing corpora, every
   sentence literal in the routing tests, the sentences this change was
-  probed with, and its review's sentences: those are the only routes that
-  move, each from a dispatch to a clarify. arXiv lookups, citation checks
-  and paper research route as they did. The research-department body maps
-  Scout to the `research` and `web-research` lanes its prepared plan emits,
-  and handoff policies, like Do Not Use When lines, name siblings by the
-  labels `skill_view` loads.
+  probed with, and its reviews' sentences: those are the only routes whose
+  action or selected skill moves, each from a dispatch to a clarify. arXiv
+  lookups, citation checks and paper research route as they did. The
+  research-department body maps Scout to the `research` and `web-research`
+  lanes its prepared plan emits, and handoff policies, like Do Not Use When
+  lines, name siblings by the labels `skill_view` loads.
 
 - **Skill bodies name their siblings by the name Hermes can load, and say
   which requests belong to a skill Hermes bundles.** A `## Do Not Use When`

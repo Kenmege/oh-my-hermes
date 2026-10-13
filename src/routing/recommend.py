@@ -5507,7 +5507,8 @@ def _context_alignment_offers_itself(normalized_query: str, query_tokens: set[st
 _CODE_DIAGRAM_TOKENS = frozenset(
     {
         "code", "codebase", "repo", "repository", "module", "modules", "package", "packages", "class", "classes",
-        "source", "src",
+        # A source tree or one of its folders is code to read the structure from.
+        "src", "folder", "folders", "directory", "directories",
         # Infrastructure defined in code is still code to read the structure from.
         "cdk", "terraform",
     }

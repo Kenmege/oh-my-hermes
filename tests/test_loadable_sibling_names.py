@@ -18,7 +18,12 @@ from omh.skills.catalog import builtin_definitions, installable_skill_definition
 from omh.skills.catalog_portable import portable_skill_names
 from omh.skills.catalog_types import HERMES_BUNDLED_SKILL_NAMES, HermesSkillLine
 from omh.skills.packaging import builtin_skill_reference_templates
-from omh.skills.render import agent_skill_template, builtin_skill_templates, related_skill_names
+from omh.skills.render import (
+    agent_skill_template,
+    builtin_skill_templates,
+    loadable_skill_mentions,
+    related_skill_names,
+)
 
 _BACKTICKED = re.compile(r"`([^`]+)`")
 
@@ -54,6 +59,11 @@ def _do_not_use_section(content: str) -> list[str]:
     return [line[2:] for line in match.group(1).split("\n")]
 
 
+def _handoff_paragraph(content: str) -> str | None:
+    match = re.search(r"^Handoff policy:\n\n(.*?)(?:\n\n|\Z)", content, re.S | re.M)
+    return match.group(1) if match else None
+
+
 def _related_line(content: str) -> str | None:
     frontmatter = content.split("---", 2)[1]
     match = re.search(r"^    related_skills: \[(.*)\]$", frontmatter, re.M)
@@ -85,6 +95,28 @@ class LoadableSiblingNameTests(unittest.TestCase):
             if token in self.installed and omh_skill_display_name(token) != token
         )
         self.assertEqual(stale, [], "a Do Not Use When line names an installed skill by its canonical name")
+
+    def test_handoff_policies_name_installed_siblings_by_label_on_every_hermes_surface(self) -> None:
+        # The policy renders in the body's Catalog Metadata and, for a
+        # progressive-disclosure skill, in `references/full-contract.md`; both
+        # are what the model loads, so both are read.
+        checked: dict[str, int] = {"SKILL.md": 0, "references/full-contract.md": 0}
+        for name, definition in self.definitions.items():
+            surfaces = {"SKILL.md": self.hermes[name], "references/full-contract.md": self.full_contracts.get(name, "")}
+            for surface, content in surfaces.items():
+                paragraph = _handoff_paragraph(content)
+                if paragraph is None:
+                    continue
+                checked[surface] += 1
+                with self.subTest(skill=name, surface=surface):
+                    stale = [
+                        token
+                        for token in _BACKTICKED.findall(paragraph)
+                        if token in self.installed and omh_skill_display_name(token) != token
+                    ]
+                    self.assertEqual(stale, [], "a handoff policy names an installed skill by its canonical name")
+                    self.assertEqual(paragraph, loadable_skill_mentions(definition.handoff_policy))
+        self.assertTrue(all(checked.values()), checked)
 
     def test_every_catalog_sibling_renders_under_its_label_in_place(self) -> None:
         translated = 0
