@@ -8497,7 +8497,7 @@ _DEFINITIONS = [
             "If the config still holds an `auxiliary.web_extract` block, report it as a leftover Hermes ignores and leave it in place unless the user asks to remove it as its own diff.",
         ),
         situations=(
-            "web search costs too much",
+            "the search bill keeps growing",
             "add a scraper api key",
             "cheaper page extraction",
             "configure the search provider",
