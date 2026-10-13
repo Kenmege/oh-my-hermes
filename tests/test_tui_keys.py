@@ -799,6 +799,53 @@ class EscapeWaitTests(unittest.TestCase):
         self.assertEqual(decoder.feed(b"\x1b") + decoder.feed(b"n"), [char("n", alt=True)])
 
 
+class ArrivalTests(unittest.TestCase):
+    """Each key carries when its first byte arrived, however long the decoder held it before deciding."""
+
+    def arrivals(self, events: list) -> list:
+        return [(event, round(event.arrived_at, 9)) for event in events]
+
+    def test_an_escape_held_for_a_report_carries_its_arrival_not_its_settling(self) -> None:
+        paused = PausedInput(reporting=True)
+        paused.now = 0.1
+        paused.feed(b"\x1b")
+        paused.pause(0.35)
+        self.assertEqual(self.arrivals(paused.events), [(Key("escape"), 0.1)])
+
+    def test_a_key_split_after_its_escape_carries_the_escapes_arrival_and_the_next_key_its_own(self) -> None:
+        paused = PausedInput(reporting=True)
+        paused.feed(b"\x1b")
+        paused.pause(0.2)
+        paused.feed(b"[Cx")
+        self.assertEqual(self.arrivals(paused.events), [(Key("right"), 0.0), (char("x"), 0.2)])
+
+    def test_an_escape_a_later_key_ends_carries_its_own_arrival(self) -> None:
+        paused = PausedInput(reporting=False, off_at=0.0)
+        paused.now = 0.1
+        paused.feed(b"\x1b")
+        paused.pause(0.2)
+        paused.feed(b"n")
+        self.assertEqual(self.arrivals(paused.events), [(Key("escape"), 0.1), (char("n"), 0.3)])
+
+    def test_a_key_after_the_rest_of_a_settled_report_carries_its_own_read(self) -> None:
+        paused = PausedInput(reporting=True)
+        paused.feed(b"\x1b")
+        paused.pause(0.35)  # Esc
+        paused.now = 0.4
+        paused.feed(b"[<0")  # the report's rest, held
+        paused.now = 0.5
+        paused.feed(b";5;5mx")  # its end, dropped, and a key
+        self.assertEqual(self.arrivals(paused.events), [(Key("escape"), 0.0), (char("x"), 0.5)])
+
+    def test_a_key_decided_at_once_carries_the_read_it_came_in(self) -> None:
+        now = [7.0]
+        decoder = KeyDecoder(lambda: now[0])
+        self.assertEqual(self.arrivals(decoder.feed(b"a\r")), [(char("a"), 7.0), (Key("enter"), 7.0)])
+        decoder.feed(b"\x1b")
+        now[0] = 7.05
+        self.assertEqual(self.arrivals(decoder.flush()), [(Key("escape"), 7.0)])
+
+
 class LegacyMouseReportTests(unittest.TestCase):
     """`ESC[M` and three bytes: what a terminal that ignores the SGR request sends instead."""
 

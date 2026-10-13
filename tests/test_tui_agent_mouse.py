@@ -796,6 +796,60 @@ class LateReportLoopTests(unittest.TestCase):
         self.assertEqual(app.composer.text, "[<0;5;5m")
 
 
+class SlotArmFromArrivalTests(unittest.TestCase):
+    """A question turns reports off as it opens, so an Esc pressed then waits out the grace before it is decided.
+
+    The arm delay counts from when a key's first byte arrived, not from when
+    the decoder decided it: an Esc pressed 0.1 s after an approval opened is
+    decided 0.4 s after, and must still answer nothing.
+    """
+
+    APPROVAL = ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"})
+    SUDO = ServerRequest("srq-1", "sudo", {"command": "apt install x"})
+    DENY = ("srq-1", {"result": {"choice": "deny"}})
+    ONCE = ("srq-1", {"result": {"choice": "once"}})
+    QUIET = [(READ_TIMEOUT_SECONDS, b"")]
+
+    def press(self, request: ServerRequest, at: float, first: bytes, rest: bytes = b"", then: bytes = b"") -> list:
+        """`first` `at` s after `request` opened, `rest` 0.2 s later when given, `then` 2 s after that; the answers sent."""
+        now = [100.0]
+        app, client = running(clock=lambda: now[0])
+        self.assertTrue(reporting(app))
+        app._on_server_request(request)
+        step_through(app, now, [(0.0, b"")])  # the frame that turns reports off as the question opens
+        self.assertEqual((app.terminal.mouse_reporting, app.mouse_off_at), (False, 100.0))  # type: ignore[attr-defined]
+        reads = [(at, first)]
+        if rest:
+            reads += [*self.QUIET * 3, (READ_TIMEOUT_SECONDS, rest)]
+        reads += self.QUIET * 40
+        if then:
+            reads += [(0.0, then), *self.QUIET]
+        step_through(app, now, reads)
+        return client.answers
+
+    def test_an_esc_whose_first_byte_came_inside_the_delay_answers_nothing(self) -> None:
+        for at in (0.10, 0.30, 0.39):
+            with self.subTest(at=at):
+                self.assertEqual(self.press(self.APPROVAL, at, b"\x1b"), [])
+        self.assertEqual(self.press(self.APPROVAL, 0.45, b"\x1b"), [self.DENY])
+
+    def test_an_enter_split_after_its_escape_is_timed_from_the_escape(self) -> None:
+        for at in (0.10, 0.30, 0.39):
+            with self.subTest(at=at):
+                self.assertEqual(self.press(self.APPROVAL, at, b"\x1b", b"[13u"), [])
+        self.assertEqual(self.press(self.APPROVAL, 0.45, b"\x1b", b"[13u"), [self.DENY])
+
+    def test_a_right_arrow_split_after_its_escape_is_timed_from_the_escape(self) -> None:
+        for at in (0.10, 0.30, 0.39):
+            with self.subTest(at=at):
+                self.assertEqual(self.press(self.APPROVAL, at, b"\x1b", b"[C", then=b"\r"), [self.DENY])
+        self.assertEqual(self.press(self.APPROVAL, 0.45, b"\x1b", b"[C", then=b"\r"), [self.ONCE])
+
+    def test_the_composers_enter_on_a_question_answered_with_text_is_timed_the_same_way(self) -> None:
+        self.assertEqual(self.press(self.SUDO, 0.39, b"\x1b", b"[13u"), [])
+        self.assertEqual(self.press(self.SUDO, 0.45, b"\x1b", b"[13u"), [("srq-1", {"result": {"value": ""}})])
+
+
 class ResizeTests(unittest.TestCase):
     def test_reports_go_off_as_the_size_changes_and_come_back_with_the_settled_redraw(self) -> None:
         now = [100.0]

@@ -186,9 +186,11 @@ TICK_SECONDS = 0.1
 # A window drag sends a burst of SIGWINCH; redraw once the size has held this long.
 RESIZE_SETTLE_SECONDS = 0.15
 EXIT_CONFIRM_SECONDS = 2.0
-# Every key a prompt slot takes, and the composer's Enter, is ignored this long
-# after the slot opens, so Enter, an arrow or a digit typed for the composer as
-# the request arrives cannot answer it (an approval, a clarify, a value prompt).
+# Every key a prompt slot takes, and the composer's Enter, is ignored when its
+# first byte arrived before the slot opened or less than this long after, so
+# Enter, Esc, an arrow or a digit typed for the composer as the request arrives
+# cannot answer it (an approval, a clarify, a value prompt), however late the
+# decoder decides the key.
 SLOT_ARM_SECONDS = 0.4
 STARTUP_TAIL_LINES = 10
 INTERRUPTED_EXIT = 130
@@ -1321,7 +1323,7 @@ class App:
         if self._display_key(event):
             return
         if self.slot is not None and _slot_owns(self.slot, event, self.composer.text):
-            if self._slot_arming():
+            if self._slot_arming(event):
                 return
             answer = self.slot.handle_key(event)
             if answer is not None:
@@ -1344,17 +1346,28 @@ class App:
         action = self.composer.handle(event)
         if self.composer.text != before:
             self.menu_index = 0
-        self._on_composer(action, steer=isinstance(event, Key) and event.name == ENTER and event.ctrl)
+        self._on_composer(action, event, steer=isinstance(event, Key) and event.name == ENTER and event.ctrl)
 
-    def _slot_arming(self) -> bool:
-        """Whether the open slot opened too recently to take a key or a submit (`SLOT_ARM_SECONDS`)."""
-        return self.slot is not None and self.clock() - self.slot_opened_at < SLOT_ARM_SECONDS
+    def _slot_arming(self, event: Key | Paste) -> bool:
+        """Whether `event` came too early to answer the open slot (`SLOT_ARM_SECONDS`).
 
-    def _on_composer(self, action: ComposerAction, steer: bool = False) -> None:
-        """Act on what the composer made of a key; `steer` says the key was Ctrl+Enter."""
+        Timed from when the key's first byte arrived, not from when it was
+        decided: an Esc waits up to `keys.REPORTING_ESCAPE_SECONDS` for a
+        report's `[` after the question turned reports off, and an Esc pressed
+        for the composer must not answer the question it then meets. A key
+        that arrived before the slot opened is early too. A key the decoder
+        did not make carries no arrival and is timed from now.
+        """
+        if self.slot is None:
+            return False
+        arrived_at = event.arrived_at if isinstance(event, Key) else None
+        return (self.clock() if arrived_at is None else arrived_at) - self.slot_opened_at < SLOT_ARM_SECONDS
+
+    def _on_composer(self, action: ComposerAction, event: Key | Paste, steer: bool = False) -> None:
+        """Act on what the composer made of `event`; `steer` says the key was Ctrl+Enter."""
         if action.kind == SUBMIT:
             if self.slot is not None:
-                if self._slot_arming():
+                if self._slot_arming(event):
                     return  # an Enter meant for something else answers nothing, not the highlighted choice
                 answer = self.slot.submit_text(action.text)
                 if answer is not None:

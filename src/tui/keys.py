@@ -211,6 +211,11 @@ class Key:
     very `Key` its legacy bytes give, and compares equal to it. It says which
     form the terminal used, a form only a terminal that honoured the request
     for richer reports sends.
+
+    `arrived_at` is when the key's first byte arrived, on the decoder's clock,
+    and is not part of its identity either. A key can be decided well after
+    that (an ESC waits for a report's `[`), so a deadline about when the person
+    pressed it reads this. None on a key the decoder did not make.
     """
 
     name: str
@@ -219,6 +224,7 @@ class Key:
     alt: bool = False
     shift: bool = False
     protocol: bool = field(default=False, compare=False, repr=False)
+    arrived_at: float | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -535,25 +541,28 @@ class KeyDecoder:
         # An ESC that waited through a silence for a report's `[`: anything else ends the wait. It was Esc.
         escape = self._escape_waited and self._pending == bytes((ESC_BYTE,)) and not data.startswith(b"[")
         self._escape_waited = False
+        events: list[Key | Paste | Mouse] = [Key(ESCAPE, arrived_at=self._held_at)] if escape else []
         if escape:
             self._pending.clear()
         if not self._pending:
             self._held_at = now
         self._fed_at = now
+        earlier = len(self._pending)  # bytes held from earlier reads, in front of this one's
         self._pending.extend(data)
-        events: list[Key | Paste | Mouse] = [Key(ESCAPE)] if escape else []
         if self._settled_start:
             held = self._settled_start + bytes(self._pending)
             length = _report_length(held)
             if length:
-                del self._pending[: length - len(self._settled_start)]  # the rest of a report already settled
+                rest = length - len(self._settled_start)
+                del self._pending[:rest]  # the rest of a report already settled
+                earlier = max(earlier - rest, 0)
                 self._settled_start = b""
             elif _report_started(held):
                 return events  # still that report's rest: held, and dropped when the window closes
             else:
                 self._settled_start = b""
         held = len(self._pending)
-        events += self._drain(final=False)
+        events += self._drain(final=False, earlier=earlier)
         if self._pending and len(self._pending) < held:
             self._held_at = now  # what is still held came in this read
         return events
@@ -586,13 +595,13 @@ class KeyDecoder:
                 self._escape_waited = len(held) == 1
                 return []
             return self._settle_start(held, Key(ESCAPE) if len(held) == 1 else Key(UNKNOWN), now)
-        return self._drain(final=True)
+        return self._drain(final=True, earlier=len(held))
 
     def _settle_start(self, held: bytes, key: Key, now: float) -> list[Key | Paste | Mouse]:
         """`key` for the start of a report held too long, and the window in which the rest of it is dropped."""
         self._pending.clear()
         self._settled_start, self._drop_until = held, now + MOUSE_REPORT_SECONDS
-        return [key]
+        return [replace(key, arrived_at=self._held_at)]
 
     def _close_drop_window(self) -> None:
         """Drop what is held of a settled report's rest once it reached `<`; before that it is still a key's."""
@@ -600,7 +609,13 @@ class KeyDecoder:
             self._pending.clear()
         self._settled_start = b""
 
-    def _drain(self, final: bool) -> list[Key | Paste | Mouse]:
+    def _drain(self, final: bool, earlier: int) -> list[Key | Paste | Mouse]:
+        """Decode what is held, each key stamped with when its first byte arrived.
+
+        The first `earlier` bytes were held from earlier reads, the first of
+        them since `_held_at`, so a key starting among them carries `_held_at`
+        (the earliest it can have arrived); any other key came in the last read.
+        """
         events: list[Key | Paste | Mouse] = []
         while True:
             if self._paste is not None:
@@ -614,13 +629,17 @@ class KeyDecoder:
                 key, end = _decode_one(data, index, final)
                 if key is None:
                     break
+                arrived_at = self._held_at if index < earlier else self._fed_at
                 index = end
                 if key is _PASTE_START:
                     self._paste = bytearray()
+                elif isinstance(key, Key):
+                    self.protocol_reported = self.protocol_reported or key.protocol
+                    events.append(replace(key, arrived_at=arrived_at))
                 else:
-                    self.protocol_reported = self.protocol_reported or (isinstance(key, Key) and key.protocol)
                     events.append(key)
             del self._pending[:index]
+            earlier = max(earlier - index, 0)
             if self._paste is None:
                 return events
 
