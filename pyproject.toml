@@ -61,6 +61,7 @@ packages = [
   "omh.plugin_bundle.omh.references",
   "omh.plugin_bundle.omh.tools",
   "omh.skins",
+  "omh.tui",
   "omh.tui_widgets",
   "omh.profiles",
   "omh.quality",
@@ -97,6 +98,7 @@ packages = [
 "omh.skills" = "src/skills"
 "omh.surfaces" = "src/surfaces"
 "omh.system" = "src/system"
+"omh.tui" = "src/tui"
 "omh.workflows" = "src/workflows"
 "omh.wrapper" = "src/wrapper"
 

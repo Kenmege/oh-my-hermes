@@ -78,6 +78,7 @@ class ArchitectureLayoutTests(unittest.TestCase):
             "skills",
             "surfaces",
             "system",
+            "tui",
             "workflows",
             "wrapper",
         )
