@@ -656,6 +656,11 @@ class SplitReportLoopTests(unittest.TestCase):
         step_through(self.app, self.now, [(READ_TIMEOUT_SECONDS, b"")] * 2)
         self.assertEqual(self.client.named("session.interrupt"), [{"session_id": SID}])  # by 350 ms
 
+    def test_a_key_typed_while_esc_waits_interrupts_at_once_and_is_typed(self) -> None:
+        step_through(self.app, self.now, [(0.0, b"\x1b"), *[(READ_TIMEOUT_SECONDS, b"")] * 4, (0.0, b"n")])
+        self.assertEqual(self.client.named("session.interrupt"), [{"session_id": SID}])  # at 200 ms, not lost
+        self.assertEqual(self.app.composer.text, "n")
+
     def test_with_reports_off_esc_interrupts_at_the_first_silence(self) -> None:
         now = [100.0]
         app, client = make_app(busy=True, clock=lambda: now[0])
@@ -928,7 +933,8 @@ class DocumentedMouseTests(unittest.TestCase):
     def test_the_escape_time_and_the_grace_the_docs_name_are_the_decoders(self) -> None:
         seconds, grace = keys_module.REPORTING_ESCAPE_SECONDS, keys_module.MOUSE_REPORT_SECONDS
         installation = self.prose("docs/INSTALLATION.md")
-        self.assertIn(f"for {grace:g} s after they go off, Esc acts after {seconds:g} s", installation)
+        self.assertIn(f"for {grace:g} s after they go off, an Esc pressed on its own acts after {seconds:g} s", installation)
+        self.assertIn("any key but `[` typed within that time ends the wait, and both keys act", installation)
         self.assertIn(f"A report that starts later than {grace:g} s after they went off", installation)
         agents = self.prose("AGENTS.md")
         self.assertIn(f"within {grace:g} s after it goes off, types: if {round(seconds * 1000)} ms pass after its first byte "

@@ -757,6 +757,48 @@ class ReportsAfterTheOffTests(unittest.TestCase):
         self.assertEqual(paused.events, [Key("escape")])
 
 
+class EscapeWaitTests(unittest.TestCase):
+    """The 300 ms an ESC waits for a report's `[`: a key typed after it ends the wait, and stays its own key."""
+
+    def test_a_key_read_after_a_waiting_escape_ends_the_wait_and_is_its_own_key(self) -> None:
+        for reporting, off_at in ((True, None), (False, 0.0)):
+            with self.subTest(reporting=reporting):
+                paused = PausedInput(reporting, off_at)
+                paused.feed(b"\x1b")
+                paused.pause(0.2)
+                self.assertEqual(paused.events, [])
+                paused.feed(b"n")
+                self.assertEqual(paused.events, [Key("escape"), char("n")])
+                paused.feed(b"\x1b")
+                paused.pause(0.1)
+                paused.feed(b"\x1b[A")  # another ESC first: Esc, then the arrow
+                self.assertEqual(paused.events[2:], [Key("escape"), Key("up")])
+
+    def test_escape_and_a_key_in_one_read_stay_an_alt_chord(self) -> None:
+        paused = PausedInput(reporting=True)
+        paused.feed(b"\x1bn")
+        paused.pause(0.4)
+        self.assertEqual(paused.events, [char("n", alt=True)])
+
+    def test_a_later_read_that_starts_with_the_bracket_goes_on_with_the_sequence(self) -> None:
+        paused = PausedInput(reporting=True)
+        paused.feed(b"\x1b")
+        paused.pause(0.2)
+        paused.feed(b"[<0;5;5M")
+        paused.pause(1.0)
+        self.assertEqual(paused.events, [Mouse(BUTTON_LEFT, 5, 5)])
+        paused = PausedInput(reporting=True)
+        paused.feed(b"\x1b")
+        paused.pause(0.2)
+        paused.feed(b"[A")
+        self.assertEqual(paused.events, [Key("up")])
+
+    def test_without_a_silence_an_escape_split_from_its_key_is_still_the_alt_chord(self) -> None:
+        # The wait ends early only after it began: a read that follows before any silence goes on as before.
+        decoder = KeyDecoder()
+        self.assertEqual(decoder.feed(b"\x1b") + decoder.feed(b"n"), [char("n", alt=True)])
+
+
 class LegacyMouseReportTests(unittest.TestCase):
     """`ESC[M` and three bytes: what a terminal that ignores the SGR request sends instead."""
 

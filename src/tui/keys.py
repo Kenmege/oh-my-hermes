@@ -45,7 +45,10 @@ across reads (over SSH, jitter can stall one mid-way):
   `MOUSE_REPORT_SECONDS` of silence, and is then dropped as one unknown key
   (this one holds whenever the input started);
 - `ESC` and `ESC[` wait `REPORTING_ESCAPE_SECONDS`, the escape-time tmux and
-  vim use, and then settle as Esc and as one unknown key;
+  vim use, and then settle as Esc and as one unknown key; a later read that
+  does not start with `[` ends an ESC's wait at once: the ESC is Esc and the
+  new bytes are keys of their own (an ESC and a key in one read stay an Alt
+  chord);
 - for `MOUSE_REPORT_SECONDS` after either settled, the bytes that would finish
   the report it began are dropped as they arrive, up to its `M` or `m`.
 
@@ -517,6 +520,7 @@ class KeyDecoder:
         self._paste: bytearray | None = None
         self._fed_at = 0.0  # when the last byte arrived
         self._held_at = 0.0  # when the first byte of what is held arrived
+        self._escape_waited = False  # a lone ESC held through a silence, waiting to see whether `[` follows
         # The start of a report `flush` settled, and until when the bytes that would finish it are dropped.
         self._settled_start = b""
         self._drop_until = 0.0
@@ -528,10 +532,16 @@ class KeyDecoder:
         now = self._clock()
         if self._settled_start and now >= self._drop_until:
             self._close_drop_window()
+        # An ESC that waited through a silence for a report's `[`: anything else ends the wait. It was Esc.
+        escape = self._escape_waited and self._pending == bytes((ESC_BYTE,)) and not data.startswith(b"[")
+        self._escape_waited = False
+        if escape:
+            self._pending.clear()
         if not self._pending:
             self._held_at = now
         self._fed_at = now
         self._pending.extend(data)
+        events: list[Key | Paste | Mouse] = [Key(ESCAPE)] if escape else []
         if self._settled_start:
             held = self._settled_start + bytes(self._pending)
             length = _report_length(held)
@@ -539,11 +549,11 @@ class KeyDecoder:
                 del self._pending[: length - len(self._settled_start)]  # the rest of a report already settled
                 self._settled_start = b""
             elif _report_started(held):
-                return []  # still that report's rest: held, and dropped when the window closes
+                return events  # still that report's rest: held, and dropped when the window closes
             else:
                 self._settled_start = b""
         held = len(self._pending)
-        events = self._drain(final=False)
+        events += self._drain(final=False)
         if self._pending and len(self._pending) < held:
             self._held_at = now  # what is still held came in this read
         return events
@@ -557,8 +567,9 @@ class KeyDecoder:
         `MOUSE_REPORT_SECONDS` after the off. A started report waits for
         `MOUSE_REPORT_SECONDS` and then is one unknown key; while a report may
         still arrive, `ESC` and `ESC[` wait for `REPORTING_ESCAPE_SECONDS` and
-        then are Esc and one unknown key. Anything else held settles now: a
-        lone ESC becomes `Key("escape")`.
+        then are Esc and one unknown key (a lone ESC's wait also ends at the
+        next read that does not start with `[`: see `feed`). Anything else
+        held settles now: a lone ESC becomes `Key("escape")`.
         """
         now = self._clock()
         if self._settled_start:
@@ -572,6 +583,7 @@ class KeyDecoder:
         in_flight = reporting or (off_at is not None and self._held_at - off_at < MOUSE_REPORT_SECONDS)
         if in_flight and _report_started(held):
             if silence < REPORTING_ESCAPE_SECONDS:
+                self._escape_waited = len(held) == 1
                 return []
             return self._settle_start(held, Key(ESCAPE) if len(held) == 1 else Key(UNKNOWN), now)
         return self._drain(final=True)
