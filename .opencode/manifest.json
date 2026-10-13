@@ -80,7 +80,7 @@
     "omh-frontend/SKILL.md": "60f33cc66fc0ff83808e223eba0382b482f559747bb58aa9ed38a19bbc33c498",
     "omh-frontend/references/chart-styling.md": "aaaa79f8c52fd7e1b7daaa3a1142df79116eadfb7bb5653da5b0af0cbf0aecc3",
     "omh-frontend/references/component-registry-adoption.md": "8ec6284a7ad4e25e41f662474c85f280bed69869194c53509a22e23f3a3bc96e",
-    "omh-frontend/references/design-system-contract.md": "03bf3dcd04728a393074a94dcfdf14d6e576f173a2c5208465ebd95a9e895566",
+    "omh-frontend/references/design-system-contract.md": "551c4de7c97d31e1733af48a7ecfc6e9b4492c1be2fe35be65e8d24103f80dcd",
     "omh-frontend/references/reference-token-extraction.md": "b36dedde2f859f83a95563cddab06f4002ce8c0a2c3b4ef64abc8a954c1e12bf",
     "omh-frontend/references/screenshot-loop.md": "ddaaf841a154130222c98945d070f4a8b157a564ef59a3f960a3e48e01113e09",
     "omh-frontend/references/scroll-motion-libraries.md": "605393baaed428e2adab937fdbc1ab3e5db20a6592039d948a2447da80ceb245",
@@ -318,7 +318,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "5999245728b58f2bb5b0b25c1a45249f01f5629a58998ce13f4461412aa6cb44",
+  "source_digest": "d582bae9250ee510cd5b7de7078a1b5fe1ca61c513ea570456582c7f29172529",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

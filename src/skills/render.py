@@ -10831,10 +10831,10 @@ does not know, and the order check never sees it.
      instead of once per component.
    - **The focus ring is its own token** (`ring`), not the accent reused, so
      focus stays visible on every surface the accent sits on. Once
-     `components:` exists, a color token no component references and outside
-     the families the linter exempts (`on-` partners and the Material color
-     families) draws an `orphaned-tokens` warning; for `ring` and the
-     `chart-N` set that warning is expected, not a contract failure.
+     `components:` exists, a color token no component references draws an
+     `orphaned-tokens` warning unless it is in a referenced token's family or
+     in the Material baseline families; for `ring` and the `chart-N` set that
+     warning is expected, not a contract failure.
    - **Themes redefine variables; components never branch.** A front-matter
      token holds one value, so it records the default theme, and the prose
      gives every other theme's values under the same token names. In CSS,
@@ -10889,11 +10889,13 @@ that layout is still a valid contract and satisfies the gate.
   rewrite it into the format unasked.
 - Other references name the format's sections and token groups. In a legacy
   file, write each into its counterpart by reading the conversion map below
-  in reverse, as prose and without adding front matter: Overview, Signature
-  Element, and Do's and Don'ts into Atmosphere & Identity; Colors, Shapes,
-  `colors:`, and `rounded:` into Color; Layout and `spacing:` into Spacing &
-  Layout; Elevation & Depth into Depth & Surface; `typography:` and
-  `components:` into Typography and Components.
+  in reverse, as prose and without adding front matter: Overview and
+  Signature Element into Atmosphere & Identity; Colors, Shapes, `colors:`,
+  and `rounded:` into Color; Layout and `spacing:` into Spacing & Layout;
+  Elevation & Depth into Depth & Surface; `typography:` and `components:`
+  into Typography and Components. Do's and Don'ts has no counterpart, since
+  the format added it; as an added mapping, its rules go into Atmosphere &
+  Identity.
 - Lint says nothing about it: with no front matter and no fenced YAML block,
   the linter reports a single no-YAML warning and runs no other check. That
   warning is not a contract failure.

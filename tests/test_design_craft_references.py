@@ -149,6 +149,13 @@ class DesignSystemContractTests(unittest.TestCase):
             "the pattern of the format's recommended `surface` / `on-surface` names",
             unwrapped,
         )
+        # The linter exempts a token's whole family, not only its `on-`
+        # partner, plus the Material baseline families.
+        self.assertIn(
+            "draws an `orphaned-tokens` warning unless it is in a referenced token's family or "
+            "in the Material baseline families",
+            unwrapped,
+        )
         self.assertIn("for `ring` and the `chart-N` set that warning is expected, not a contract failure", unwrapped)
 
     def test_the_earlier_numbered_layout_stays_valid_until_the_user_asks(self) -> None:
@@ -182,12 +189,20 @@ class DesignSystemContractTests(unittest.TestCase):
             legacy,
         )
         for mapping in (
-            "Overview, Signature Element, and Do's and Don'ts into Atmosphere & Identity",
+            "Overview and Signature Element into Atmosphere & Identity",
             "Colors, Shapes, `colors:`, and `rounded:` into Color",
             "Layout and `spacing:` into Spacing & Layout",
             "Elevation & Depth into Depth & Surface",
+            "`typography:` and `components:` into Typography and Components",
         ):
             self.assertIn(mapping, legacy, mapping)
+        # Do's and Don'ts is new in the forward map, so its reverse is an
+        # added mapping, said as such rather than passed off as a reversal.
+        self.assertIn(
+            "Do's and Don'ts has no counterpart, since the format added it; as an added mapping, "
+            "its rules go into Atmosphere & Identity",
+            legacy,
+        )
         # A file with no YAML gets one no-YAML warning and no other check.
         self.assertIn("the linter reports a single no-YAML warning and runs no other check", legacy)
         self.assertIn("That warning is not a contract failure", legacy)
@@ -221,7 +236,13 @@ class DesignSystemContractTests(unittest.TestCase):
         # else in the format, so every pointer names the section instead.
         # The subject is every packaged `frontend` text, so a new reference
         # joins the guard without being listed.
-        numbered = re.compile(r"DESIGN\.md`?\s+sections?\s+\d")
+        # Both word orders: "`DESIGN.md` section 2" / "DESIGN.md's sections 2
+        # and 3", and "section 2 of DESIGN.md" / "sections 2 and 3 in the
+        # `DESIGN.md`". A section named in words carries no digit and passes.
+        numbered = re.compile(
+            r"DESIGN\.md`?(?:'s)?\s+sections?\s+\d"
+            r"|\bsections?\s+\d+(?:(?:,\s*|,?\s+(?:and|or)\s+)\d+)*\s+(?:of|in)\s+(?:the\s+)?`?DESIGN\.md"
+        )
         texts = [
             (template.relative_path, template.content)
             for template in builtin_skill_reference_templates()
