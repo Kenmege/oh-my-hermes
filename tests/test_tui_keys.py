@@ -873,6 +873,21 @@ class ArrivalTests(unittest.TestCase):
         paused.feed(b";5;5mx")  # its end, dropped, and a key
         self.assertEqual(self.arrivals(paused.events), [(Key("escape"), 0.0), (char("x"), 0.5)])
 
+    def test_an_escape_left_after_the_rest_of_a_settled_report_carries_its_own_read(self) -> None:
+        # The rest's `[` came at 0.36 and was dropped with the rest at 0.84: the ESC after it came at 0.84.
+        now = [0.0]
+        decoder = KeyDecoder(lambda: now[0])
+        events = decoder.feed(b"\x1b")
+        now[0] = 0.35
+        events += decoder.flush(True)  # Esc, its report's rest dropped while it arrives
+        now[0] = 0.36
+        events += decoder.feed(b"[")
+        now[0] = 0.84
+        events += decoder.feed(b"<0;5;5m\x1b")
+        now[0] = 1.2
+        events += decoder.flush(True)
+        self.assertEqual(self.arrivals(events), [(Key("escape"), 0.0), (Key("escape"), 0.84)])
+
     def test_a_key_decided_at_once_carries_the_read_it_came_in(self) -> None:
         now = [7.0]
         decoder = KeyDecoder(lambda: now[0])
