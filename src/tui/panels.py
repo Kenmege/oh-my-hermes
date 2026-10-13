@@ -11,8 +11,9 @@ the plan stays directly above the composer where it always sat.
 The information design is the widget's (`src/omh/tui_widgets/omh-status.mjs`,
 which `tests/test_tui_widget_pack.py` pins): the same glyphs, labels, colour
 roles, column grid and shed priorities, ported to `Line`s. The widget's
-`⚚ [OMH] vX` brand and its session-wide chips (repeat guard, in-flight tool
-calls, yolo) move to the status line through `status_segments`; the agents
+`⚚ [OMH] vX` brand (as `⚚ OMH`; the version stays in the banner) and its
+session-wide chips (repeat guard, in-flight tool calls, yolo) move to the
+status line through `status_segments`; the agents
 block opens with `[Agents]` the way the plan block opens with `[Plan]`.
 
 The panel never draws more than the rows it is given. Under pressure it sheds
@@ -393,7 +394,10 @@ def _repeat_chip(repeat: Mapping[str, Any]) -> tuple[str, str]:
 
 
 def status_segments(payload: Any, theme: Theme) -> Line:
-    """The OMH part of the status line: `⚚ OMH vX`, then the session-wide chips.
+    """The OMH part of the status line: `⚚ OMH`, then the session-wide chips.
+
+    The version is the banner's; the status line keeps its cells for the
+    model, the context and the state.
 
     The chips are the widget header's facts about the whole session rather
     than its agents: a repeating call (muted while watched, warn once refused,
@@ -403,8 +407,7 @@ def status_segments(payload: Any, theme: Theme) -> Line:
     """
     valid = _valid(payload)
     data = payload if valid else {}
-    version = _safe_text(data.get("version")) or __version__
-    spans: list[Span] = [Span("⚚ OMH", theme.heading), Span(f" v{version}", theme.dim)]
+    spans: list[Span] = [Span("⚚ OMH", theme.heading)]
     if not valid:
         return _line(*spans)
     chip, stage = _repeat_chip(_mapping(data.get("repeat")))

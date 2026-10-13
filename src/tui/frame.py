@@ -1,9 +1,15 @@
 """One repaint: from what the app holds to the rows `LiveRegion.render` draws.
 
 The app loop calls `build_frame` once per repaint with the terminal size, the
-parts it holds (sticky prompt, streaming tail, slot, composer, status line)
-and the region's current height, then hands the result to
-`LiveRegion.render(frame.lines, frame.cursor, cols, pad=frame.pad)`.
+parts it holds (sticky prompt, streaming tail, slot, composer, mode row,
+status line), the input mode and the region's current height, then hands the
+result to `LiveRegion.render(frame.lines, frame.cursor, cols, pad=frame.pad)`.
+
+The composer is framed: a rule above it and a rule below it, both drawn in
+the input mode's glyph and colour (normal `─` in the rule colour, accept `━`
+in `mode_accept`, plan `┄` in `mode_plan`), so the mode reads from the frame
+even where hue alone would not tell it apart. The mode row under the bottom
+rule is a line the app builds; the frame only places it.
 
 The composer stays put. The first frame at a terminal size
 (previous height 0: nothing drawn yet, or the region was just cleared for a
@@ -12,8 +18,17 @@ lands on the screen's last row. Every later frame passes the region's
 current height, so content that shrinks becomes pad rows instead of a
 shorter region, content that grows scrolls the screen up from that same
 bottom, and `flush_above` turns pad rows into transcript without moving it.
-The composer's first row is then the bottom row minus the status row minus
-its own row count, whatever the panel, prompt slot, completion menu or tail do.
+The rows under the composer (bottom rule, mode row, status line) are a
+function of the terminal size alone (`layout.under_composer`), so the
+composer's first row is the bottom row minus those rows minus its own row
+count: `composer_rows + 3` rows up from the region's end on any terminal of
+`MODE_ROW_MIN_ROWS` rows or more, whatever the panel, prompt slot, completion
+menu, tail or mode do. A shorter terminal drops the mode row, then the bottom
+rule, by its height alone, so the offset is still fixed for each size.
+
+An empty composer shows `placeholder` after the prompt glyph in the hint
+colour while the app asks for it (no slot open). It is drawn, never typed:
+the caret stays right after the glyph and the composer's text stays empty.
 
 The attachment row (the images queued for the next message) is the composer's
 first row while there is one: it counts against the composer's cap, so the
@@ -40,6 +55,11 @@ RULE_GLYPH = "─"
 STICKY_PREFIX = "↳ you: "
 STATUS_SEPARATOR = " │ "
 
+MODE_NORMAL = "normal"
+MODE_ACCEPT = "accept"
+MODE_PLAN = "plan"
+MODE_RULE_GLYPHS = {MODE_NORMAL: RULE_GLYPH, MODE_ACCEPT: "━", MODE_PLAN: "┄"}
+
 
 @dataclass(frozen=True)
 class Frame:
@@ -63,15 +83,22 @@ def build_frame(
     theme: Theme = DEFAULT_THEME,
     prompt: str = PROMPT,
     attachments: Line | None = None,
+    mode: str = MODE_NORMAL,
+    mode_row: Line = (),
+    placeholder: str = "",
 ) -> Frame:
     """The region for one repaint; `previous_height` is `LiveRegion.height` right now.
 
     `attachments` is drawn as the composer's first row when the composer may
     have two rows; a terminal too short for that shows the input alone.
+    `mode` picks both rules' glyph and colour; `mode_row` is drawn under the
+    bottom rule where the terminal has room for it.
     """
     cap = composer_cap(rows)
     chips = [attachments] if attachments is not None and cap >= 2 else []
     input_lines, (caret_line, caret_col) = composer.render(cols, cap - len(chips), prompt, theme.prompt)
+    if placeholder and not composer.text and input_lines:
+        input_lines[0] = truncate_line((*input_lines[0], Span(placeholder, theme.hint)), cols)
     composer_lines = chips + input_lines
     caret_line += len(chips)
     min_height = previous_height if previous_height > 0 else max_height(rows)
@@ -84,13 +111,16 @@ def build_frame(
         composer_rows=len(composer_lines),
         min_height=min_height,
     )
+    rule = rule_line(cols, theme, mode)
     lines = compose(
         budget,
         sticky=sticky,
         tail=tail,
         slot=slot,
-        rule=rule_line(cols, theme),
+        rule=rule,
         composer=composer_lines,
+        bottom_rule=rule,
+        mode=truncate_line(mode_row, cols),
         status=status,
     )
     return Frame(
@@ -102,9 +132,10 @@ def build_frame(
     )
 
 
-def rule_line(width: int, theme: Theme = DEFAULT_THEME) -> Line:
-    """The rule above the composer, full width, in the theme's input-rule colour."""
-    return (Span(RULE_GLYPH * max(width, 0), theme.rule),)
+def rule_line(width: int, theme: Theme = DEFAULT_THEME, mode: str = MODE_NORMAL) -> Line:
+    """One edge of the composer frame, full width, in the mode's glyph and colour (normal for an unknown mode)."""
+    style = {MODE_ACCEPT: theme.mode_accept, MODE_PLAN: theme.mode_plan}.get(mode, theme.rule)
+    return (Span(MODE_RULE_GLYPHS.get(mode, RULE_GLYPH) * max(width, 0), style),)
 
 
 def sticky_line(prompt_text: str, width: int, theme: Theme = DEFAULT_THEME) -> Line:

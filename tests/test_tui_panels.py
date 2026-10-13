@@ -40,7 +40,6 @@ from omh.tui.panels import (
 from omh.tui.theme import DEFAULT_THEME
 from omh.tui.width import line_width
 from omh.tui_widget_pack import INTERPRETER_MARKER
-from omh.version import __version__
 
 NODE = shutil.which("node")
 THEME = DEFAULT_THEME
@@ -374,16 +373,17 @@ class BudgetInvariantTests(unittest.TestCase):
 
 
 class StatusSegmentsTests(unittest.TestCase):
-    def test_version_and_session_wide_chips(self) -> None:
+    def test_brand_and_session_wide_chips(self) -> None:
+        # The version is the banner's: the status line spends its cells on model, context and state.
         payload = hud_payload()
-        self.assertEqual(line_text(status_segments(payload, THEME)), "⚚ OMH v3.0.2")
+        self.assertEqual(line_text(status_segments(payload, THEME)), "⚚ OMH")
         payload["repeat"] = {"status": "observed", "consecutive": 4, "period": 2, "intercepted": 1, "stage": "blocking"}
         payload["activity"].update(
             live=True, post_tool_call_observed=True, open_call_count=2, oldest_open_elapsed_seconds=12
         )
         payload["yolo"] = {"status": "observed", "enabled": True}
         line = status_segments(payload, THEME)
-        self.assertEqual(line_text(line), "⚚ OMH v3.0.2 · repeat x4 cycle-of-2 blocked • 2 tools · 12s • yolo mode: on")
+        self.assertEqual(line_text(line), "⚚ OMH · repeat x4 cycle-of-2 blocked • 2 tools · 12s • yolo mode: on")
         chip = next(span for span in line if span.text.startswith("repeat"))
         self.assertEqual(chip.style.fg, THEME.warn.fg)
 
@@ -393,8 +393,8 @@ class StatusSegmentsTests(unittest.TestCase):
         self.assertNotIn("tools", line_text(status_segments(payload, THEME)))
 
     def test_without_a_payload_the_line_still_names_omh(self) -> None:
-        self.assertEqual(line_text(status_segments(None, THEME)), f"⚚ OMH v{__version__}")
-        self.assertEqual(line_text(status_segments({"error": "OSError"}, THEME)), f"⚚ OMH v{__version__}")
+        self.assertEqual(line_text(status_segments(None, THEME)), "⚚ OMH")
+        self.assertEqual(line_text(status_segments({"error": "OSError"}, THEME)), "⚚ OMH")
 
 
 class FakeReader:

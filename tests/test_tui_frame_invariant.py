@@ -9,24 +9,30 @@ height and render it) through event sequences: a streaming tail that grows
 past the screen, stable lines flushed with and without pad rows, a panel slot
 that grows and shrinks, a server-request prompt slot, a completion menu, a
 composer that grows to its maximum and back, a multi-line paste, the end of a
-turn. After every step, and after every flush before the next frame, it reads
-the VT screen back and asserts:
+turn, and the input mode switching between normal, accept and plan (each
+redraws both composer rules and the mode row). After every step, and after
+every flush before the next frame, it reads the VT screen back and asserts:
 
 (a) the composer's first screen row changes only when the composer's own row
     count changes, and then by exactly that count, because the region's
-    bottom never moves;
+    bottom never moves and the rows under the composer are fixed for the
+    terminal size;
 (b) the hardware cursor sits on the composer caret;
 (c) the status line is the region's last row and sits on the screen's last
     row, with the region's rows exactly the frame's rows above it;
 (d) the shell history and every line flushed so far are above the region,
-    complete and in order.
+    complete and in order;
+(e) between the composer and the status line sit exactly the bottom rule (in
+    the mode's glyph) and the mode row, where the height has room for them:
+    both from 10 rows, the bottom rule alone from 7, neither below that.
 
-Sampling: heights 10, 11, 12, 13, 16, 20, 24, 31, 40, 57, 80 (the ends of the
-10..80 range, the small heights where the budget caps bind, and a spread in
-between) x widths 40, 80, 120, with the launch cursor on the screen's last
-row. Launch rows 1 and mid-screen run for heights 10, 24, 80 at every width.
-A launch from row 0 has its own test: there the composer moves down once by
-one row and never up.
+Sampling: heights 6, 7, 9, 10, 11, 12, 13, 16, 20, 24, 31, 40, 57, 80 (the
+heights where the mode row and the bottom rule drop out, the small heights
+where the budget caps bind, and a spread up to 80) x widths 40, 80, 120, with
+the launch cursor on the screen's last row. Launch rows 1 and mid-screen run
+for heights 10, 24, 80 at every width. Each mode also holds for a whole
+scenario at 10 and 24 rows. A launch from row 0 has its own test: there the
+composer moves down once by one row and never up.
 """
 
 from __future__ import annotations
@@ -37,8 +43,9 @@ import unittest
 from _tui_lines import line_text
 from _vt_screen import VTScreen
 
+from omh.tui.app import mode_row_line
 from omh.tui.composer import PROMPT, SUBMIT, Composer
-from omh.tui.frame import build_frame, sticky_line
+from omh.tui.frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN, build_frame, sticky_line
 from omh.tui.keys import BACKSPACE, CHAR, ENTER, ESCAPE, Key, Paste
 from omh.tui.layout import composer_cap, slot_cap
 from omh.tui.screen import LiveRegion
@@ -46,10 +53,17 @@ from omh.tui.style import Line, Span
 from omh.tui.theme import DEFAULT_THEME
 from omh.tui.width import cell_width, truncate_line
 
-HEIGHTS = (10, 11, 12, 13, 16, 20, 24, 31, 40, 57, 80)
+HEIGHTS = (6, 7, 9, 10, 11, 12, 13, 16, 20, 24, 31, 40, 57, 80)
 WIDTHS = (40, 80, 120)
 LAUNCH_ROW_HEIGHTS = (10, 24, 80)
-STATUS_PREFIX = "⚚ OMH v"
+MODE_HEIGHTS = (10, 24)
+STATUS_PREFIX = "⚚ OMH"
+RULE_GLYPHS = {MODE_NORMAL: "─", MODE_ACCEPT: "━", MODE_PLAN: "┄"}
+
+
+def rows_under_composer(rows: int) -> int:
+    """The spec, written out: bottom rule from 7 rows, mode row from 10, on a terminal of 20+ columns."""
+    return (rows >= 7) + (rows >= 10)
 
 
 def text_of(line: Line) -> str:
@@ -63,7 +77,9 @@ def plain(text: str) -> Line:
 class Session:
     """One terminal, one live region, the app loop's repaint order."""
 
-    def __init__(self, case: unittest.TestCase, rows: int, cols: int, history: int) -> None:
+    def __init__(
+        self, case: unittest.TestCase, rows: int, cols: int, history: int, mode: str = MODE_NORMAL, switching: bool = True
+    ) -> None:
         self.case = case
         self.rows = rows
         self.cols = cols
@@ -81,7 +97,10 @@ class Session:
         self.lines: tuple[Line, ...] = ()
         self.view: tuple[list[Line], tuple[int, int]] = ([], (0, 0))  # the composer as last drawn
         self.last: tuple[int, int, int] | None = None  # status row, composer top, composer rows
-        self.status = truncate_line((Span(f"{STATUS_PREFIX}9.9.9 │ test-model │ ctx 12% │ idle", DEFAULT_THEME.status),), cols)
+        self.status = truncate_line((Span(f"{STATUS_PREFIX} │ test-model │ ctx 12% │ idle", DEFAULT_THEME.status),), cols)
+        self.mode = mode
+        self.switching = switching  # whether the scenario's mode switches apply
+        self.modes_seen: set[str] = set()
         self.pinned = True  # the bottom sits on the screen's last row
         self.bottom_moves = 0
         self.label = ""
@@ -99,6 +118,16 @@ class Session:
             self.label = f"{label} (after flush, before the frame)"
             self.check(self.lines[consumed:], self.view)
             self.label = label
+        self.modes_seen.add(self.mode)
+        mode_row = mode_row_line(
+            mode=self.mode,
+            busy=self.sticky is not None,
+            queued=0,
+            keyboard_protocol=False,
+            effort="high",
+            width=self.cols,
+            theme=DEFAULT_THEME,
+        )
         frame = build_frame(
             cols=self.cols,
             rows=self.rows,
@@ -108,6 +137,8 @@ class Session:
             sticky=self.sticky,
             tail=self.tail,
             slot=self.slot,
+            mode=self.mode,
+            mode_row=mode_row,
         )
         self.region.render(frame.lines, frame.cursor, self.cols, pad=frame.pad)
         self.lines = frame.lines
@@ -122,6 +153,12 @@ class Session:
         for event in events:
             self.composer.handle(event)
         self.paint(label)
+
+    def switch(self, mode: str) -> None:
+        """Change the input mode; nothing else changes, so only the rules and the mode row repaint."""
+        if self.switching:
+            self.mode = mode
+            self.paint(f"mode switches to {mode}")
 
     # -- the invariants -------------------------------------------------------
 
@@ -141,10 +178,18 @@ class Session:
         t.assertTrue(all(not text for text in screen[status_row + 1 :]), f"{where}: rows below the status line")
         if self.pinned:
             t.assertEqual(status_row, self.rows - 1, f"{where}: status line left the screen's last row")
-        # the composer sits directly on the status line
+        # (e) the composer sits on the bottom rule and the mode row, or as many of them as the height keeps
         lines, (caret_row, caret_col) = view
-        composer_top = status_row - len(lines)
-        t.assertEqual(screen[composer_top:status_row], [text_of(line) for line in lines], where)
+        under = rows_under_composer(self.rows)
+        composer_top = status_row - under - len(lines)
+        t.assertEqual(screen[composer_top : status_row - under], [text_of(line) for line in lines], where)
+        rule = RULE_GLYPHS[self.mode] * self.cols
+        t.assertEqual(screen[composer_top - 1], rule, f"{where}: the top rule")
+        if under:
+            t.assertEqual(screen[status_row - under], rule, f"{where}: the bottom rule")
+        if under == 2:
+            t.assertEqual(screen[status_row - 1], text_of(expected[-2]), f"{where}: the mode row")
+            t.assertTrue(screen[status_row - 1], f"{where}: the mode row is empty")
         # (a) the composer's first row moves only with its own row count
         if self.last is not None:
             last_status, last_top, last_rows = self.last
@@ -189,10 +234,11 @@ def run_scenario(session: Session) -> None:
             session.tail = session.tail[5:]
             session.paint("stable lines flush mid-stream", flush=stable)
 
-    # a panel grows past its cap, shrinks, closes
+    # a panel grows past its cap, shrinks, closes; the mode switches while it is open
     for size in range(1, slot_cap(rows, session.cols) + 5, 2):
         session.slot = [plain(f"panel row {n}") for n in range(size)]
         session.paint("panel grows")
+    session.switch(MODE_ACCEPT)
     session.slot = session.slot[:2]
     session.paint("panel shrinks")
     session.slot = []
@@ -201,6 +247,7 @@ def run_scenario(session: Session) -> None:
     # a server-request prompt takes the slot, then closes
     session.slot = [plain("approve: rm -rf build?"), plain("  1 once"), plain("  2 session"), plain("  3 deny")]
     session.paint("prompt slot opens")
+    session.switch(MODE_PLAN)
     session.slot = []
     session.paint("prompt slot closes")
 
@@ -215,6 +262,7 @@ def run_scenario(session: Session) -> None:
     # the composer grows to its cap and beyond (its window scrolls), then shrinks back
     for line_number in range(composer_cap(rows) + 3):
         session.keys("composer grows", [Key(ENTER, alt=True), *typed(f"line {line_number}")])
+    session.switch(MODE_ACCEPT)
     while session.composer.text:
         session.keys("composer shrinks", [Key(BACKSPACE)] * 3)
     session.keys("multi-line paste", [Paste("first\nsecond\nthird\nfourth\nfifth")])
@@ -225,6 +273,7 @@ def run_scenario(session: Session) -> None:
     session.tail = []
     session.sticky = None
     session.paint("turn complete flushes the tail", flush=stable)
+    session.switch(MODE_NORMAL)
     session.paint("a big flush", flush=[f"history line {next(counter)}" for _ in range(rows + 5)])
 
     # a second turn with a panel, a shrink, and a small flush into the pad rows
@@ -243,7 +292,16 @@ class ComposerStaysPutTests(unittest.TestCase):
     def run_one(self, rows: int, cols: int, history: int) -> Session:
         session = Session(self, rows, cols, history)
         run_scenario(session)
+        self.assertEqual(session.modes_seen, {MODE_NORMAL, MODE_ACCEPT, MODE_PLAN})
         return session
+
+    def test_each_mode_holds_for_a_whole_scenario(self) -> None:
+        for mode in (MODE_NORMAL, MODE_ACCEPT, MODE_PLAN):
+            for rows in MODE_HEIGHTS:
+                with self.subTest(mode=mode, rows=rows):
+                    session = Session(self, rows, 80, history=rows + 3, mode=mode, switching=False)
+                    run_scenario(session)
+                    self.assertEqual(session.modes_seen, {mode})
 
     def test_composer_row_is_fixed_at_every_sampled_size(self) -> None:
         paths = set()

@@ -67,7 +67,7 @@ from ..commands.theme_picker import (
 from ..skin_pack import default_theme, skin_colors, theme_for_name, theme_for_skin_name, theme_names
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
-from .frame import STATUS_SEPARATOR, build_frame, sticky_line
+from .frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN, STATUS_SEPARATOR, build_frame, sticky_line
 from .gateway import (
     Event,
     GatewayCallError,
@@ -102,7 +102,7 @@ from .slash import (
     hermes_notice,
     parse_slash,
 )
-from .style import Line, Span
+from .style import Line, Span, Style
 from .terminal import Terminal, terminal_supported
 from .theme import DEFAULT_THEME, Theme, build_theme, theme_named
 from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, as_text
@@ -129,7 +129,24 @@ TERMINATE_GRACE_SECONDS = 2.0
 EXIT_SIGNALS = ("SIGTERM", "SIGHUP")
 
 BANNER_BRAND = "⚚ OH-MY-HERMES"
-BANNER_HINT = "/help for commands · Ctrl+C twice to exit · bare hermes opens Hermes' own terminal"
+BANNER_HINT = "/ commands · @ files · ? shortcuts · ⇧⇥ modes"
+PLACEHOLDER = "Ask Hermes anything"
+BARE_HERMES_NOTE = "Bare `hermes` opens Hermes' own terminal."
+
+# The mode row under the composer frame. In normal mode it carries the keys that matter now.
+IDLE_KEYS_HINT = "? shortcuts · ⇧⇥ mode · ctrl+t effort"
+INTERRUPT_KEY_HINT = "esc interrupt"
+STEER_KEY_HINT = "ctrl+enter steer"  # only where the terminal reports Ctrl+Enter apart from Enter
+STEER_COMMAND_HINT = "/steer <text> steers"
+QUEUED_KEY_HINT = "↑ edit queued"
+ACCEPT_LABEL = "⏵⏵ accept all on"
+ACCEPT_HINT = " · approvals off for this session (⇧⇥ to cycle)"
+PLAN_LABEL = "⏸ plan mode on"
+PLAN_HINT = " (⇧⇥ to cycle)"
+MODE_ROW_GAP = 3
+# The context figure turns warn, then bad, on the status line.
+CONTEXT_WARN_PERCENT = 80
+CONTEXT_BAD_PERCENT = 95
 
 BUSY_QUEUE = "queue"
 BUSY_MODES = frozenset({"queue", "steer", "interrupt"})
@@ -248,6 +265,44 @@ def context_text(usage: object) -> str:
     if isinstance(percent, int | float) and not isinstance(percent, bool):
         text += f" {percent:.0f}%"
     return text
+
+
+def context_percent(usage: object) -> float | None:
+    """How full the context is, 0 to 100, from the same usage block; None without the figures."""
+    if not isinstance(usage, dict) or not context_text(usage):
+        return None
+    percent = usage.get("context_percent")
+    if isinstance(percent, int | float) and not isinstance(percent, bool):
+        return float(percent)
+    return usage["context_used"] / usage["context_max"] * 100
+
+
+def mode_row_line(
+    *, mode: str, busy: bool, queued: int, keyboard_protocol: bool, effort: str, width: int, theme: Theme
+) -> Line:
+    """The row under the composer frame: the mode's label (accept, plan) or the keys that matter now, then the effort.
+
+    The label always survives: the hint is cut from its end first, and the
+    effort on the right goes only when even the label beside it does not fit.
+    """
+    label: Line = ()
+    if mode == MODE_ACCEPT:
+        label, hint = (Span(ACCEPT_LABEL, replace(theme.mode_accept, bold=True)),), ACCEPT_HINT
+    elif mode == MODE_PLAN:
+        label, hint = (Span(PLAN_LABEL, replace(theme.mode_plan, bold=True)),), PLAN_HINT
+    elif busy:
+        keys = [INTERRUPT_KEY_HINT, STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
+        hint = " · ".join(keys + ([QUEUED_KEY_HINT] if queued else []))
+    else:
+        hint = IDLE_KEYS_HINT
+    right: Line = (Span(f"effort {effort}", theme.muted),) if effort else ()
+    room = width - line_width(label) - (line_width(right) + MODE_ROW_GAP if right else 0)
+    if room < 0:
+        right, room = (), width - line_width(label)
+    left = truncate_line(label, width) + truncate_line((Span(hint, theme.hint),), max(room, 0))
+    if not right:
+        return left
+    return (*left, Span(" " * (width - line_width(left) - line_width(right))), *right)
 
 
 def initial_theme(ready_payload: Mapping[str, Any]) -> Theme:
@@ -505,6 +560,10 @@ class App:
         self.stored_id = ""
         self.model = ""
         self.context = ""
+        self.context_percent: float | None = None
+        # The input mode (normal, accept, plan) and the reasoning effort the mode row shows; "" shows none.
+        self.mode = MODE_NORMAL
+        self.effort = ""
         self.busy_mode = BUSY_QUEUE
         self.catalog: list[tuple[str, str]] = []
         self.slot: PromptSlot | None = None
@@ -619,6 +678,7 @@ class App:
         info = result.get("info")
         self.model = as_text(info.get("model")) if isinstance(info, dict) else ""
         self.context = ""  # the next session.usage says how full this session is
+        self.context_percent = None
         cwd = as_text(info.get("cwd")) if isinstance(info, dict) else ""
         self.transcript.cwd = cwd or str(self._create_params().get("cwd", ""))
         self.turn_pending = bool(result.get("running"))
@@ -758,7 +818,7 @@ class App:
         if event.type == "session.info":
             self._on_session_info(payload)
         elif event.type == "session.usage":
-            self.context = context_text(payload.get("usage")) or self.context
+            self._take_usage(payload.get("usage"))
         elif event.type == "connection.request":
             self._on_connection_request(payload)
         elif event.type == "error":
@@ -797,10 +857,15 @@ class App:
 
     def _on_session_info(self, payload: Mapping[str, Any]) -> None:
         self.model = as_text(payload.get("model")) or self.model
-        self.context = context_text(payload.get("usage")) or self.context
+        self._take_usage(payload.get("usage"))
         # `running` is not read: the previous turn's closing `running: false` arrives after
         # `message.complete`, by which time a queued prompt may already be pending.
         self._adopt_stored(as_text(payload.get("stored_session_id")))
+
+    def _take_usage(self, usage: object) -> None:
+        """A usage block with context figures replaces the shown ones; one without leaves them."""
+        if context_text(usage):
+            self.context, self.context_percent = context_text(usage), context_percent(usage)
 
     def _on_withdrawn(self, payload: Mapping[str, Any]) -> None:
         ids = {as_text(payload.get("id"))} - {""}
@@ -1200,6 +1265,7 @@ class App:
         rows.append(f"Hermes commands ({len(self.catalog)}): {names}" if names else "Hermes commands: none listed.")
         rows.append(YOLO_NOTE)
         rows.append(HELP_KEYS)
+        rows.append(BARE_HERMES_NOTE)
         self.transcript.add_notice("\n".join(rows))
 
     def _quit(self, arg: str) -> None:
@@ -1561,6 +1627,17 @@ class App:
             attachments=attachment_line(self.attachments, cols, self.theme)
             if self.attachments and self.slot is None
             else None,
+            mode=self.mode,
+            mode_row=mode_row_line(
+                mode=self.mode,
+                busy=self._busy(),
+                queued=len(self.queued),
+                keyboard_protocol=self.keyboard_protocol,
+                effort=self.effort,
+                width=cols,
+                theme=self.theme,
+            ),
+            placeholder=PLACEHOLDER if self.slot is None and self.picker is None else "",
         )
         self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad)
         if stable and anchoring:
@@ -1568,6 +1645,11 @@ class App:
             # (the banner, a resumed history) would be pushed off the top before anyone
             # saw them; flushed after it, they land in those pad rows instead.
             self.region.flush_above(stable, cols)
+
+    @property
+    def keyboard_protocol(self) -> bool:
+        """Whether the terminal reports Ctrl+Enter apart from Enter; read live, since the terminal turns it on when entered."""
+        return bool(getattr(self.terminal, "keyboard_protocol", False))
 
     def _sticky_needed(self, rows: int) -> bool:
         """Whether the sent prompt needs echoing above the composer: only once it has scrolled off.
@@ -1616,23 +1698,33 @@ class App:
             state = STATE_IDLE
         return f"{state} · queued {len(self.queued)}" if self.queued else state
 
+    def _context_style(self) -> Style:
+        percent = self.context_percent if self.context_percent is not None else 0.0
+        if percent >= CONTEXT_BAD_PERCENT:
+            return self.theme.status_bad
+        return self.theme.status_warn if percent >= CONTEXT_WARN_PERCENT else self.theme.status
+
     def _status_line(self, cols: int) -> Line:
         """OMH's segments, then model, context and state, on the status bar's background.
 
-        When it does not fit, the context goes first and the model next; then
-        OMH's segments are cut from their right, so the state (idle / running /
-        waiting on you) is the last thing cut.
+        The context turns warn from `CONTEXT_WARN_PERCENT` full and bad from
+        `CONTEXT_BAD_PERCENT`. When the line does not fit, the context goes
+        first and the model next; then OMH's segments are cut from their right,
+        so the state (idle / running / waiting on you) is the last thing cut.
         """
         bar = self.theme.status
         payload = self.hud.payload if self.hud is not None else None
         head: Line = tuple(
             Span(span.text, replace(span.style, bg=bar.bg)) for span in status_segments(payload, self.theme)
         )
-        state = self._state_text()
+        model, context, state = (self.model, bar), (self.context, self._context_style()), (self._state_text(), bar)
         tail: Line = ()
-        for fields in ((self.model, self.context, state), (self.model, state), (state,)):
+        for fields in ((model, context, state), (model, state), (state,)):
             tail = tuple(
-                span for text in fields if text for span in (Span(STATUS_SEPARATOR, self.theme.status_dim), Span(text, bar))
+                span
+                for text, style in fields
+                if text
+                for span in (Span(STATUS_SEPARATOR, self.theme.status_dim), Span(text, style))
             )
             if line_width(head) + line_width(tail) <= cols:
                 break

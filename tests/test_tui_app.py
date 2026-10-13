@@ -20,7 +20,7 @@ from __future__ import annotations
 import base64
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import io
 import json
 import os
@@ -54,6 +54,7 @@ from omh.tui.app import (
     App,
     initial_theme,
     main,
+    mode_row_line,
     picker_key,
     run_model_chain_picker,
 )
@@ -72,6 +73,8 @@ APPROVAL_STORED_ID = "20261013_115811_9850e7"
 ROTATED_ID = "20261013_130000_rotated"
 STATUS_MARK = "⚚ OMH"
 RULE_MARK = "────"
+# Between the composer and the status line on these 24-row terminals: the bottom rule and the mode row.
+UNDER_COMPOSER = 2
 STARTUP_METHODS = ["client.capabilities", "config.get", "commands.catalog", "session.create"]
 NO_TERMIOS = terminal_module.termios is None
 TURN_CANCELLED = "Turn cancelled before the agent was ready"
@@ -423,8 +426,11 @@ class SessionTests(AppTestCase):
         screen = run.terminal.captures["ready"]
         status = next(index for index, line in enumerate(screen) if STATUS_MARK in line)
         self.assertIn("deepseek/deepseek-v4.1-flash-ultrafast", screen[status])
-        self.assertTrue(screen[status - 1].startswith("›"), screen)
-        self.assertIn(RULE_MARK, screen[status - 2])
+        composer = status - 1 - UNDER_COMPOSER
+        self.assertEqual(screen[composer], "› Ask Hermes anything", screen)
+        self.assertIn(RULE_MARK, screen[composer - 1])
+        self.assertIn(RULE_MARK, screen[composer + 1])
+        self.assertEqual(screen[status - 1], "? shortcuts · ⇧⇥ mode · ctrl+t effort", screen)
         self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
         self.assertEqual(run.calls("config.get")[0]["params"], {"key": "full"})
         self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": STORED_ID})
@@ -650,9 +656,10 @@ class SessionTests(AppTestCase):
                 self.assertEqual(len(screen), rows)
                 drawn = [line for line in screen if line]
                 self.assertEqual(sum(STATUS_MARK in line for line in screen), 1, screen)
-                self.assertEqual(sum(RULE_MARK in line for line in screen), 1, screen)
-                # The redrawn session (banner + hint) and the region (rule, composer, status), nothing else.
-                self.assertEqual(len(drawn), 5, screen)
+                self.assertEqual(sum(RULE_MARK in line for line in screen), 2, screen)
+                # The redrawn session (banner + hint) and the region (rule, composer, rule, mode row, status),
+                # nothing else.
+                self.assertEqual(len(drawn), 7, screen)
                 self.assertTrue(drawn[0].startswith("⚚ OH-MY-HERMES"), screen)
                 self.assertTrue(all(len(line) <= cols for line in screen))
 
@@ -1017,14 +1024,77 @@ class SlashCommandTests(AppTestCase):
 
 class StatusLineTests(unittest.TestCase):
     def test_the_state_is_the_last_thing_cut(self) -> None:
-        app = App(ScriptedTerminal(rows=24, cols=24), None, {}, poller=FakePoller())  # type: ignore[arg-type]
+        # 20 cells: since the version left the brand, brand and state alone fit 24.
+        app = App(ScriptedTerminal(rows=24, cols=20), None, {}, poller=FakePoller())  # type: ignore[arg-type]
         app.model, app.context = "a-model", "ctx 4%"
         app.slot = open_request("srq-1", "approval", {"command": "ls"})  # type: ignore[assignment]
-        line = app._status_line(24)
+        line = app._status_line(20)
         self.assertTrue(line_text(line).startswith("⚚"), line_text(line))
         self.assertTrue(line_text(line).endswith(" │ waiting on you"), line_text(line))
-        self.assertEqual(line_width(line), 24)
+        self.assertEqual(line_width(line), 20)
 
+    def test_the_order_is_brand_model_context_state_with_no_version(self) -> None:
+        app = App(ScriptedTerminal(rows=24, cols=80), None, {}, poller=FakePoller())  # type: ignore[arg-type]
+        app.model, app.context = "a-model", "ctx 14k/1M 1%"
+        self.assertEqual(line_text(app._status_line(80)).rstrip(), "⚚ OMH │ a-model │ ctx 14k/1M 1% │ idle")
+
+    def test_the_context_turns_warn_then_bad_as_it_fills(self) -> None:
+        app = App(ScriptedTerminal(rows=24, cols=80), None, {}, poller=FakePoller())  # type: ignore[arg-type]
+        theme = app.theme
+        for percent, style in ((None, theme.status), (79.9, theme.status), (80, theme.status_warn),
+                               (94.9, theme.status_warn), (95, theme.status_bad), (100, theme.status_bad)):
+            with self.subTest(percent=percent):
+                app._take_usage({"context_used": 1, "context_max": 2, "context_percent": percent}
+                                if percent is not None else {"context_used": 1, "context_max": 1_000_000})
+                span = next(span for span in app._status_line(80) if span.text.startswith("ctx"))
+                self.assertEqual(span.style, style)
+
+
+
+class ModeRowTests(unittest.TestCase):
+    def row(self, width: int = 80, **facts: object) -> str:
+        defaults: dict[str, object] = {"mode": "normal", "busy": False, "queued": 0, "keyboard_protocol": False, "effort": ""}
+        return line_text(mode_row_line(**{**defaults, **facts}, width=width, theme=DEFAULT_THEME))  # type: ignore[arg-type]
+
+    def test_normal_mode_names_the_keys_that_matter_now(self) -> None:
+        self.assertEqual(self.row(), "? shortcuts · ⇧⇥ mode · ctrl+t effort")
+        self.assertEqual(self.row(busy=True), "esc interrupt · /steer <text> steers")
+        self.assertEqual(self.row(busy=True, keyboard_protocol=True), "esc interrupt · ctrl+enter steer")
+        self.assertEqual(self.row(busy=True, queued=2), "esc interrupt · /steer <text> steers · ↑ edit queued")
+
+    def test_ctrl_enter_is_named_only_where_the_terminal_tells_it_from_enter(self) -> None:
+        for busy in (False, True):
+            with self.subTest(busy=busy):
+                self.assertNotIn("ctrl+enter", self.row(busy=busy, keyboard_protocol=False))
+
+    def test_accept_and_plan_say_so_in_their_own_colour(self) -> None:
+        accept = mode_row_line(mode="accept", busy=False, queued=0, keyboard_protocol=False, effort="", width=80,
+                               theme=DEFAULT_THEME)
+        self.assertEqual(line_text(accept), "⏵⏵ accept all on · approvals off for this session (⇧⇥ to cycle)")
+        self.assertEqual(accept[0].style, replace(DEFAULT_THEME.mode_accept, bold=True))
+        plan = mode_row_line(mode="plan", busy=True, queued=1, keyboard_protocol=True, effort="", width=80,
+                             theme=DEFAULT_THEME)
+        self.assertEqual(line_text(plan), "⏸ plan mode on (⇧⇥ to cycle)")
+        self.assertEqual(plan[0].style, replace(DEFAULT_THEME.mode_plan, bold=True))
+
+    def test_the_effort_sits_on_the_right_only_when_known(self) -> None:
+        self.assertNotIn("effort high", self.row())
+        row = self.row(effort="high")
+        self.assertTrue(row.endswith("effort high"), row)
+        self.assertEqual(len(row), 80)
+        self.assertTrue(row.startswith("? shortcuts"), row)
+
+    def test_the_hint_is_cut_from_its_end_and_the_label_survives(self) -> None:
+        for width in range(18, 70):
+            with self.subTest(width=width):
+                row = self.row(width, mode="accept", effort="xhigh")
+                self.assertTrue(row.startswith("⏵⏵ accept all on"), row)
+                self.assertLessEqual(len(row), width)
+                if "effort" in row:
+                    self.assertTrue(row.endswith("effort xhigh"), row)
+        self.assertEqual(self.row(40, effort="high"), "? shortcuts · ⇧⇥ mode · c…   effort high")
+        # Too narrow for the label and the effort together: the effort goes, the label stays whole.
+        self.assertEqual(self.row(20, mode="accept", effort="xhigh"), "⏵⏵ accept all on · …")
 
 
 class LeaveSessionDeclineTests(unittest.TestCase):
@@ -1432,6 +1502,8 @@ class LocalCommandTests(AppTestCase):
         self.assertIn("Hermes commands (8): /new /clear /redraw /history /save /retry /prompt /undo", history)
         self.assertIn("Ctrl+D on empty input exits", history)
         self.assertIn("/yolo included", history)
+        # The banner no longer says it, so /help is where the way back to Hermes' own terminal stays.
+        self.assertIn("Bare `hermes` opens Hermes' own terminal.", history)
         self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
 
     def test_queue_lists_what_waits_for_the_running_turn(self) -> None:
@@ -1518,7 +1590,8 @@ def status_row_of(screen: list[str]) -> str:
 
 
 def composer_row(screen: list[str]) -> str:
-    return screen[status_index(screen) - 1]
+    """The row of a one-row composer: above the bottom rule and the mode row."""
+    return screen[status_index(screen) - 1 - UNDER_COMPOSER]
 
 
 def resumed_other(messages: list[dict] | None = None) -> dict:
@@ -1554,9 +1627,10 @@ class AttachmentTests(AppTestCase):
         status = status_index(chip)
         # The chip row sits between the rule and the input; the input row did not move.
         self.assertEqual(status, status_index(before))
-        self.assertTrue(chip[status - 1].startswith("›"), chip)
-        self.assertEqual(chip[status - 2], "📎 shot.png 1280×720  Backspace removes")
-        self.assertIn(RULE_MARK, chip[status - 3])
+        composer = status - 1 - UNDER_COMPOSER
+        self.assertTrue(chip[composer].startswith("›"), chip)
+        self.assertEqual(chip[composer - 1], "📎 shot.png 1280×720  Backspace removes")
+        self.assertIn(RULE_MARK, chip[composer - 2])
         self.assertEqual(len(run.calls("prompt.submit")), 1)
         self.assertNotIn("shot.png", "\n".join(terminal.captures["after"]))
 
@@ -1609,8 +1683,8 @@ class AttachmentTests(AppTestCase):
             {"session_id": LIVE_ID, "text": "/fixture/project/notes.txt"},
             {"session_id": LIVE_ID, "text": " and hello"},
         ])
-        # An image drop is queued by the gateway: a chip, and nothing typed.
-        self.assertEqual(composer_row(terminal.captures["image"]), "›")
+        # An image drop is queued by the gateway: a chip, and nothing typed (the placeholder is drawn, not typed).
+        self.assertEqual(composer_row(terminal.captures["image"]), "› Ask Hermes anything")
         self.assertEqual(composer_row(terminal.captures["typed"]), f"› {file_ref} and hello")
 
     def test_backspace_on_an_empty_composer_detaches_the_last_image(self) -> None:
@@ -1795,9 +1869,10 @@ class KeyTests(AppTestCase):
         self.assertEqual(asked["params"], {"word": "@sr", "session_id": LIVE_ID})
         menu = terminal.captures["menu"]
         status = status_index(menu)
-        self.assertTrue(menu[status - 4].startswith(" app.py"), menu)
-        self.assertTrue(menu[status - 3].startswith(" src/"), menu)
-        self.assertIn("dir", menu[status - 3])
+        rule = status - 2 - UNDER_COMPOSER
+        self.assertTrue(menu[rule - 2].startswith(" app.py"), menu)
+        self.assertTrue(menu[rule - 1].startswith(" src/"), menu)
+        self.assertIn("dir", menu[rule - 1])
         accepted = terminal.captures["accepted"]
         self.assertFalse(any(line.startswith(" src/") for line in accepted), accepted)
 
