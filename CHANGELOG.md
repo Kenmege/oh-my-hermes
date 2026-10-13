@@ -4,6 +4,36 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Every shipped skill passes the Hermes install scanner of every
+  supported Hermes release, not only one.** Hermes changes
+  `tools/skills_guard.py` between releases, and the repo gate ran only the
+  copy Hermes 0.21.6 ships. The scanner in Hermes 0.21.1 through 0.21.3, the
+  `requires_hermes` floor, matches `context_exfil` across a whole line of
+  plain words and inside a word ("A blueprint is prepared design context"
+  reads as `print … context`), so `omh-routing`, `omh-wiki` and `ulw-loop`,
+  and the `agent-skills/` copies of the last two, scanned `caution` there,
+  which blocks a community tap install. Four lines are reworded at their
+  producers with their meaning kept: the omh-routing wrapper reference
+  heading is now "Context Safety For Large Output", the wiki blueprint
+  reference calls a blueprint a prepared design artifact, ulw-loop's log
+  rule speaks of logging a cycle to a file, and its measured-loop reference
+  of re-reading a passing cycle's log. The omh-wiki skill's own boundary
+  sentence, which passed only because a backticked name preceded it, now
+  calls a blueprint a prepared design artifact too.
+  `tests/test_hermes_install_scan.py` now runs every scanner a Hermes
+  release tag from the floor up ships, each vendored verbatim under
+  `tests/_vendor/` and pinned by its upstream sha256: Hermes 0.21.1 through
+  0.21.3 (v2), 0.21.4 and 0.21.5 (v6), 0.21.6 (v8), and 0.21.7 and upstream
+  main (v10). A release-to-scanner map is checked against the floor in
+  `plugin.yaml`, so dropping a release's copy fails. The test scans
+  `skills/` and `agent-skills/` under each one and pins each version's
+  severity for the sentences that blocked installs (v10 scores a bare
+  `setgid` and a `sudo` in Markdown as informational). It also pins a shape
+  only v6 flags, a pipe into a word that starts with `zsh`, `ksh` or `dash`
+  such as `| dashboard`, so the v6 copy is not redundant. Canary builds are
+  not gated. `requires_hermes` is unchanged.
+
+
 - **OMH memory works in messenger DMs and group channels (#2088).** Every
   gateway session was a shared surface, which denies every identity-unbound
   record, so a single user's own Slack DM recalled none of their 33 approved
