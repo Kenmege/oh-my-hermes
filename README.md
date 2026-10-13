@@ -402,17 +402,17 @@ credential, dispatch, or execution evidence:
 | Category alias | What it is for | Editable recommendation order |
 | --- | --- | --- |
 | `ultrabrain` | Deepest reasoning | GPT-6 Astra (xhigh) |
-| `deep` | Strong default tier | GPT-6.1 Sol, then DeepSeek Flash (V4.1) (high) |
-| `architect` | Architecture and system design | Claude Fable 5.1, then GPT-6 Astra, then Kimi K3 (xhigh) |
-| `unspecified-high` | Default working model | Kimi K3, then Claude Opus 5.5 (medium) |
-| `unspecified-low` | Cheaper fallback | GLM 5.3, then DeepSeek Flash (V4.1), then Claude Opus 5.5 (low) |
-| `quick` | Short tasks | GLM 5.3 Flash, then Kimi K3, then GPT-6 Luna, then Claude Fable 5.1 (low) |
-| `writing` | Prose and docs | Kimi K3, then Qwen3-Coder, then Gemini 3.1 Pro (medium) |
-| `visual-engineering` | Frontend and visual | Claude Fable 5.1, then Kimi K3 (high) |
-| `artistry` | Unconventional work | Gemini 3.1 Pro, then Claude Fable 5.1, then Kimi K3 (high) |
-| `capable` | Strong general work | Claude Fable 5.1, then Claude Opus 5.5, then Kimi K3, then GLM 5.3 (medium) |
-| `simple-work` | Small everyday tasks | GPT-6 Luna, then DeepSeek Flash (V4.1), then Claude Haiku 4.5 (low) |
-| `deep-work` | Long tasks at frontier depth | GPT-6 Astra (high) |
+| `deep` | Strong default tier | Claude Opus 5.5, then GPT-6.1 Sol, then Kimi K3 (high) |
+| `architect` | Architecture and system design | Claude Opus 5.5, then GPT-6 Astra, then Claude Fable 5.1, then Kimi K3 (xhigh) |
+| `unspecified-high` | Default working model | GPT-6.1 Sol, then Claude Opus 5.5, then Kimi K3 (medium) |
+| `unspecified-low` | Cheaper fallback | GLM 5.3, then DeepSeek V4.1 Flash, then GPT-6.1 Sol, then Claude Sonnet 5.5 (low) |
+| `quick` | Short tasks | GLM 5.3 Flash, then GPT-6 Luna, then Claude Haiku 5.5, then Kimi K3 (low) |
+| `writing` | Prose and docs | Claude Opus 5.5, then Claude Sonnet 5.5, then Kimi K3, then Gemini 3.1 Pro (medium) |
+| `visual-engineering` | Frontend and visual | Claude Opus 5.5, then Claude Fable 5.1, then Gemini 3.1 Pro, then Kimi K3 (high) |
+| `artistry` | Unconventional work | Gemini 3.1 Pro, then Claude Opus 5.5, then Claude Fable 5.1, then Kimi K3 (high) |
+| `capable` | Strong general work | Claude Opus 5.5, then GPT-6.1 Sol, then Claude Fable 5.1, then Kimi K3 (medium) |
+| `simple-work` | Small everyday tasks | GPT-6 Luna, then Claude Haiku 5.5, then DeepSeek V4.1 Flash (low) |
+| `deep-work` | Long tasks at frontier depth | Claude Opus 5.5, then GPT-6.1 Sol (max) |
 
 Want to try the Ultrafast tier — Kimi K3 Ultrafast (300 TPS) and
 GLM 5.3 Ultrafast? They are served on
@@ -496,8 +496,11 @@ which edits `~/.omh/routing/category-maestro.json`
 effective table with operator overrides marked, and the interactive
 `omh setup` offers the same walk. An explicit `--model` on a run always wins,
 and `~/.omh/routing/dispatch-models.json` remains the per-owner default used
-only when no route resolves at all (for the strongest Claude Code tier, set
-`"claude-code": "opus"` there). See `docs/FANOUT.md` (Category-maestro and
+only when no route resolves at all. The interactive `omh setup` seeds
+`"claude-code": "claude-opus-5-5"` there once you confirm a Claude Code
+subscription and no entry exists; set the `opus` alias instead when the
+account does not serve that pinned id, or to follow whichever Opus the
+client recommends. See `docs/FANOUT.md` (Category-maestro and
 Dispatch-model preference) for schemas and the full precedence order.
 
 <details>

@@ -3439,7 +3439,11 @@ def _seed_claude_code_dispatch_head(paths: OmhPaths) -> dict[str, object]:
     unparsable) is left alone and reported as `unreadable`, so the seed is
     never a write the reader ignores. The value is the head of the Maestro
     lane's Claude chain, so it moves with the shipped chain rather than being
-    a second place to maintain.
+    a second place to maintain. Since 2026-10-13 that head is the pinned
+    `claude-opus-5-5` id (owner decision), not an alias: a dispatch preference
+    has no fallback walk, so an account that does not serve the pinned id
+    sees the CLI's rejection and edits the entry (to `opus`, the chain's
+    always-resolving tail).
     """
     from ..coding.model_routing import CLAUDE_FRONTIER_CHAIN_MODELS
 

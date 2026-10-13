@@ -751,6 +751,8 @@ class DelegateRouteToolTest(unittest.TestCase):
             result["applied"],
             {"alias": "claude-opus-5-5", "model": "claude-opus-5-5"},
         )
+        # The chain from the named entry onward: Opus 5.5 sits second in
+        # unspecified-high since 2026-10-13, with Kimi K3 behind it.
         self.assertEqual(
             result["fallback_candidates"],
             [
@@ -759,7 +761,13 @@ class DelegateRouteToolTest(unittest.TestCase):
                     "provider": "",
                     "model": "claude-opus-5-5",
                     "reasoning_effort": "medium",
-                }
+                },
+                {
+                    "alias": "kimi-k3",
+                    "provider": "",
+                    "model": "kimi-k3",
+                    "reasoning_effort": "medium",
+                },
             ],
         )
 
@@ -774,29 +782,30 @@ class DelegateRouteToolTest(unittest.TestCase):
         self.assertEqual(result["status"], "fell_back")
         self.assertEqual(result["category"], "quick")
         self.assertEqual(result["from"], "glm-5.3-flash")
-        # quick runs the owner-ordered Flash -> Kimi -> Luna -> Fable 5.1
-        # sequence (the superseded 5.2 Ultrafast and Fable 5 entries left on
-        # 2026-09-11), so a rejected ecosystem cannot exhaust the chain.
+        # quick runs the owner-ordered Flash -> Luna -> Haiku 5.5 -> Kimi
+        # sequence (2026-10-13: Fable 5.1 left the tail, a frontier model at
+        # the end of a cheap lane), so a rejected ecosystem cannot exhaust
+        # the chain.
         self.assertEqual(
             result["fallback_candidates"],
             [
                 {
-                    "alias": "gpt-6-luna",
+                    "alias": "claude-haiku-5-5",
                     "provider": "",
-                    "model": "gpt-6-luna",
+                    "model": "claude-haiku-5-5",
                     "reasoning_effort": "low",
                 },
                 {
-                    "alias": "claude-fable-5-1",
+                    "alias": "kimi-k3",
                     "provider": "",
-                    "model": "claude-fable-5-1",
+                    "model": "kimi-k3",
                     "reasoning_effort": "low",
                 },
             ],
         )
         self.assertEqual(
             read_delegation_route(self.home),
-            {"model": "kimi-k3", "reasoning_effort": "low"},
+            {"model": "gpt-6-luna", "reasoning_effort": "low"},
         )
 
     def test_an_exhausted_chain_clears_the_route_to_parent_inheritance(self):
@@ -810,7 +819,7 @@ class DelegateRouteToolTest(unittest.TestCase):
         result = self._call(action="fallback", category="quick")
         self.assertEqual(result["status"], "exhausted_to_inherit")
         self.assertEqual(result["category"], "quick")
-        self.assertEqual(result["from"], "claude-fable-5-1")
+        self.assertEqual(result["from"], "kimi-k3")
         self.assertEqual(read_delegation_route(self.home), {})
 
     def test_fallback_without_a_route_is_an_error(self):
@@ -866,23 +875,30 @@ class DelegateRouteToolTest(unittest.TestCase):
         for model in ("claude-sonnet-5", "sonnet"):
             result = self._call(action="set", model=model, reasoning_effort="none")
             self.assertEqual(result["status"], "routed", model)
+        # Haiku 5.5 is not in the set: its migration guide accepts
+        # `thinking.type=disabled` at effort `high` or below.
+        for model in ("claude-haiku-5-5", "anthropic.claude-haiku-5-5"):
+            result = self._call(action="set", model=model, reasoning_effort="none")
+            self.assertEqual(result["status"], "routed", model)
         # Opus 5.5 at a documented rung is untouched by the guard.
         result = self._call(action="set", model="claude-opus-5-5", reasoning_effort="low")
         self.assertEqual(result["status"], "routed")
-        # A category head on the Fable tier at its declared effort is untouched.
+        # A category head on an always-thinking model at its declared effort
+        # is untouched: architect heads on Opus 5.5 at xhigh since 2026-10-13.
         result = self._call(action="set", category="architect")
         self.assertEqual(result["status"], "routed")
-        self.assertEqual(result["applied"]["alias"], "claude-fable-5-1")
+        self.assertEqual(result["applied"]["alias"], "claude-opus-5-5")
 
     def test_an_explicit_category_disambiguates_a_shared_model(self):
-        # kimi-k3:medium sits in more than one chain; the caller who routed
-        # writing passes the category so fallback advances inside writing.
+        # claude-opus-5-5:medium heads both writing and capable (accepted
+        # label collision, 2026-10-13); the caller who routed writing passes
+        # the category so fallback advances inside writing.
         self._call(action="set", category="writing")
         result = self._call(action="fallback", category="writing")
         self.assertEqual(result["status"], "fell_back")
         self.assertEqual(
             read_delegation_route(self.home),
-            {"model": "qwen3-coder", "reasoning_effort": "medium"},
+            {"model": "claude-sonnet-5-5", "reasoning_effort": "medium"},
         )
 
     def test_clear_then_status_shows_an_inherited_route(self):
@@ -1047,9 +1063,9 @@ class RouteProvenanceRecordingTest(unittest.TestCase):
         )
         self.assertEqual(records[0]["alias"], "glm-5.3-flash")
         self.assertEqual(records[1]["from_alias"], "glm-5.3-flash")
-        self.assertEqual(records[1]["alias"], "kimi-k3")
+        self.assertEqual(records[1]["alias"], "gpt-6-luna")
         self.assertEqual(records[-1]["category"], "quick")
-        self.assertEqual(records[-1]["from_alias"], "claude-fable-5-1")
+        self.assertEqual(records[-1]["from_alias"], "kimi-k3")
 
     def test_clear_records_a_superseding_cleared_origin(self):
         # Without this record, a later child on a coincidentally matching

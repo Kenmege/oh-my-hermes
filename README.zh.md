@@ -330,17 +330,17 @@ OMH 随附以下可编辑的有序 recommendation chain。guided model setup 只
 | 类别 alias | 用途 | 可编辑的 recommendation 顺序 |
 | --- | --- | --- |
 | `ultrabrain` | 最深度推理 | GPT-6 Astra (xhigh) |
-| `deep` | 强力默认层 | GPT-6.1 Sol，其次 DeepSeek Flash (V4.1) (high) |
-| `architect` | 架构与系统设计 | Claude Fable 5.1，其次 GPT-6 Astra，其次 Kimi K3 (xhigh) |
-| `unspecified-high` | 默认工作模型 | Kimi K3，其次 Claude Opus 5.5 (medium) |
-| `unspecified-low` | 低成本回退 | GLM 5.3，其次 DeepSeek Flash (V4.1)，其次 Claude Opus 5.5 (low) |
-| `quick` | 短任务 | GLM 5.3 Flash，其次 Kimi K3，其次 GPT-6 Luna，其次 Claude Fable 5.1 (low) |
-| `writing` | 文章与文档 | Kimi K3，其次 Qwen3-Coder，其次 Gemini 3.1 Pro (medium) |
-| `visual-engineering` | 前端与视觉 | Claude Fable 5.1，其次 Kimi K3 (high) |
-| `artistry` | 非常规创作 | Gemini 3.1 Pro，其次 Claude Fable 5.1，其次 Kimi K3 (high) |
-| `capable` | 通用高能力工作 | Claude Fable 5.1，其次 Claude Opus 5.5，其次 Kimi K3，其次 GLM 5.3 (medium) |
-| `simple-work` | 简单的日常任务 | GPT-6 Luna，其次 DeepSeek Flash (V4.1)，其次 Claude Haiku 4.5 (low) |
-| `deep-work` | 最高深度的长任务 | GPT-6 Astra (high) |
+| `deep` | 强力默认层 | Claude Opus 5.5，其次 GPT-6.1 Sol，其次 Kimi K3 (high) |
+| `architect` | 架构与系统设计 | Claude Opus 5.5，其次 GPT-6 Astra，其次 Claude Fable 5.1，其次 Kimi K3 (xhigh) |
+| `unspecified-high` | 默认工作模型 | GPT-6.1 Sol，其次 Claude Opus 5.5，其次 Kimi K3 (medium) |
+| `unspecified-low` | 低成本回退 | GLM 5.3，其次 DeepSeek V4.1 Flash，其次 GPT-6.1 Sol，其次 Claude Sonnet 5.5 (low) |
+| `quick` | 短任务 | GLM 5.3 Flash，其次 GPT-6 Luna，其次 Claude Haiku 5.5，其次 Kimi K3 (low) |
+| `writing` | 文章与文档 | Claude Opus 5.5，其次 Claude Sonnet 5.5，其次 Kimi K3，其次 Gemini 3.1 Pro (medium) |
+| `visual-engineering` | 前端与视觉 | Claude Opus 5.5，其次 Claude Fable 5.1，其次 Gemini 3.1 Pro，其次 Kimi K3 (high) |
+| `artistry` | 非常规创作 | Gemini 3.1 Pro，其次 Claude Opus 5.5，其次 Claude Fable 5.1，其次 Kimi K3 (high) |
+| `capable` | 通用高能力工作 | Claude Opus 5.5，其次 GPT-6.1 Sol，其次 Claude Fable 5.1，其次 Kimi K3 (medium) |
+| `simple-work` | 简单的日常任务 | GPT-6 Luna，其次 Claude Haiku 5.5，其次 DeepSeek V4.1 Flash (low) |
+| `deep-work` | 最高深度的长任务 | Claude Opus 5.5，其次 GPT-6.1 Sol (max) |
 
 想试试 Ultrafast 档? Kimi K3 Ultrafast(300 TPS)与 GLM 5.3 Ultrafast都在 [OpenGateway](https://opengateway.ai/) 上提供。
 
@@ -387,7 +387,7 @@ $ omh coding category-maestro interview   # 引导式问答，回车保留每条
 $ omh coding run --owner codex --category ultrabrain --goal ...
 ```
 
-这会编辑 `~/.omh/routing/category-maestro.json`（`omh_category_maestro/v1`）；`omh coding category-maestro show` 会打印生效表并标出 operator 覆盖项，交互式 `omh setup` 也提供同样的问答流程。单次运行里的显式 `--model` 始终优先，而 `~/.omh/routing/dispatch-models.json` 仍是按 owner 的默认值，仅在没有任何路由能解析时才会用到（要给 Claude Code 最强档位，就在那里设 `"claude-code": "opus"`）。schema 与完整优先级顺序见 `docs/FANOUT.md`（Category-maestro 与 Dispatch-model preference）。
+这会编辑 `~/.omh/routing/category-maestro.json`（`omh_category_maestro/v1`）；`omh coding category-maestro show` 会打印生效表并标出 operator 覆盖项，交互式 `omh setup` 也提供同样的问答流程。单次运行里的显式 `--model` 始终优先，而 `~/.omh/routing/dispatch-models.json` 仍是按 owner 的默认值，仅在没有任何路由能解析时才会用到（交互式 `omh setup` 在你确认 Claude Code 订阅且尚无条目时，会在那里写入 `"claude-code": "claude-opus-5-5"`；如果账户不提供这个固定 id，或想跟随客户端推荐的 Opus，就改设 `opus` 别名）。schema 与完整优先级顺序见 `docs/FANOUT.md`（Category-maestro 与 Dispatch-model preference）。
 
 <details>
 <summary><strong>也可以把以下内容粘贴给 Hermes 或其他 coding agent</strong></summary>

@@ -79,11 +79,16 @@ class ModelRoutingStatusTests(unittest.TestCase):
             [entry["model_id"] for entry in payload["models"]["discovered_only"]],
             ["gpt-6.1-sol"],
         )
-        deep = payload["maestro"]["categories"]["deep"]
-        self.assertEqual(deep["status"], "owner_default")
-        self.assertEqual(deep["missing_head"], "gpt-6.1-sol")
+        # A discovered-only model is not confirmed. Since 2026-10-13 `deep`
+        # ends on Kimi K3 and resolves, so the owner-default case is
+        # unspecified-low: it names gpt-6.1-sol and still falls through, and
+        # unspecified-high reports gpt-6.1-sol as its missing head.
+        low = payload["maestro"]["categories"]["unspecified-low"]
+        self.assertEqual(low["status"], "owner_default")
+        self.assertEqual(low["missing_head"], "glm-5.3")
         unspecified = payload["maestro"]["categories"]["unspecified-high"]
         self.assertEqual(unspecified["selected_model"], "kimi-k3")
+        self.assertEqual(unspecified["missing_head"], "gpt-6.1-sol")
         self.assertIn("metadata", payload["claim_boundary"])
         self.assertNotIn("execution confirmed", json.dumps(payload).lower())
 

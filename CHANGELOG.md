@@ -4,6 +4,51 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The shipped model chains move to the 2026-10-13 table, and Claude Haiku
+  5.5 is onboarded.** Every category chain, the `main` role suggestion, the
+  public tables (`docs/INSTALLATION.md` regenerated, the four READMEs and two
+  site pages), the plugin mirror, and the `model-setup` skill text carry the
+  owner's table of that date. Inside a chain Claude Opus 5.5 now comes before
+  Claude Fable 5.1, reversing the 2026-09-06 order, in both lanes. The
+  Maestro lane's Claude Code frontier chain is `claude-opus-5-5`, then
+  `claude-fable-5-1`, then the `opus` alias as the always-resolving tail
+  (owner decision), its `unspecified-high` and `visual-engineering` rows now
+  name `medium` and `high` instead of leaving the effort to the CLI, and the
+  setup interview seeds the Claude Code `--model` preference with the pinned
+  `claude-opus-5-5`. Claude Haiku 5.5 (`claude-haiku-5-5`, released
+  2026-10-07) gets an exact contract with its `low`..`max` ladder (`medium`
+  default; a thinking disable is accepted at `high` or below, so `off`
+  passes through and `minimal` is raised to `low`), the Bedrock and dotted
+  declared spellings, a display label, and placements in `quick` and
+  `simple-work`. Its price row is the up-to-100K card (0.10/0.50); the
+  0.50/2.50 card above 100K prompt tokens stays on the contract, so Haiku
+  5.5 cost is under-reported up to 5x above 100K prompt tokens. Its shipped
+  `low` rung takes effect only on a Hermes build that forwards Haiku effort:
+  on the Anthropic route, Hermes through v0.21.6 sends neither thinking nor
+  effort for any `haiku` id, so the unit runs at the API default `medium`;
+  v0.21.7 forwards it. Claude Sonnet 5.5 joins `unspecified-low` and
+  `writing`, and its cache-read rate follows Anthropic's 2026-10-07 price
+  cut from $0.20 to $0.10 per MTok (0.05x input). Claude Haiku 4.5 and the
+  2025 Qwen3-Coder leave every shipped chain; the bare aliases
+  `claude-haiku-4-5` and `qwen3-coder` stay recognized, priced, and
+  provider-mapped for an operator override, and `qwen-oauth` stays a valid
+  provider kind so a recorded `providers.json` naming it stays valid.
+  DeepSeek leaves `deep`, Opus 5.5 leaves the tail of `unspecified-low`, and
+  Fable 5.1 leaves the tail of `quick`. `deepseek-flash` is labelled
+  "DeepSeek V4.1 Flash" (the alias stays the served pointer). Two chain
+  heads are now shared, so for a child with no matching route-provenance
+  record `mixture_category_for` projects a visual-engineering head to
+  "deep" and a capable head to "writing"; a lane routed through
+  `omh_delegate_route` keeps its own category, routing is unaffected, and
+  `deep-work` runs at `max` so its own label survives. Every placement is
+  editorial and unmeasured except the `unspecified-high` GPT head, which
+  rests on a measurement of its predecessor: on
+  `benchmarks/live-model-tools/v1` (30 evaluation tasks, 2026-09-05) OMH
+  routing passed 18/30 with `gpt-5.6-sol` at that head and 12/30 with
+  `kimi-k3-ultrafast` there (the other 24 tasks routed to the `quick` head
+  in both arms; Kimi passed 0/6 of the six search tasks). GPT-6.1 Sol itself
+  is unmeasured on that corpus.
+
 - **The plugin bundle's cold load is now held under Hermes' per-plugin load
   deadline, and `omh doctor` reports what that deadline did to OMH.** Hermes
   0.21.5 and later (and canary builds from 2026-09-25) skip a plugin whose

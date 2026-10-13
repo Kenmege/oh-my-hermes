@@ -130,15 +130,16 @@ class GeneratedChainTableTests(unittest.TestCase):
         main = {row.row_id: row for row in chain_table_rows()}["role.main"]
         self.assertEqual(
             main.order,
-            "Kimi K3, Claude Fable 5.1, Claude Opus 5.5, "
-            "GPT-6 Astra (`xhigh`), GPT-6.1 Sol (`high`)",
+            "GPT-6.1 Sol (`high`), Claude Opus 5.5, Claude Fable 5.1, "
+            "GPT-6 Astra (`xhigh`), Kimi K3",
         )
 
     def test_every_declared_effort_is_annotated_on_its_own_entry(self) -> None:
         architect = {row.row_id: row for row in chain_table_rows()}["architect"]
         self.assertEqual(
             architect.order,
-            "Claude Fable 5.1 (`xhigh`), GPT-6 Astra (`xhigh`), Kimi K3 (`xhigh`)",
+            "Claude Opus 5.5 (`xhigh`), GPT-6 Astra (`xhigh`), "
+            "Claude Fable 5.1 (`xhigh`), Kimi K3 (`xhigh`)",
         )
 
     def test_empty_chain_renders_without_inventing_a_model(self) -> None:

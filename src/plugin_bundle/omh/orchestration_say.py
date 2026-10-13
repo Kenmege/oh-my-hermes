@@ -43,9 +43,11 @@ from typing import Any, Final
 MODEL_DISPLAY_LABELS: Final[dict[str, str]] = {
     "claude-fable-5-1": "Claude Fable 5.1",
     "claude-haiku-4-5": "Claude Haiku 4.5",
+    "claude-haiku-5-5": "Claude Haiku 5.5",
     "claude-opus-5": "Claude Opus 5",
     "claude-opus-5-5": "Claude Opus 5.5",
-    "deepseek-flash": "DeepSeek Flash (V4.1)",
+    "claude-sonnet-5-5": "Claude Sonnet 5.5",
+    "deepseek-flash": "DeepSeek V4.1 Flash",
     "gemini-3.1-pro": "Gemini 3.1 Pro",
     "glm-5.3": "GLM 5.3",
     "glm-5.3-flash": "GLM 5.3 Flash",

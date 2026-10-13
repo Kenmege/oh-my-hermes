@@ -60,15 +60,19 @@ MODEL_CHAIN_TABLE_PATH: Final[str] = "docs/INSTALLATION.md"
 _SOURCE_MODULE: Final[str] = "src/catalogs/model_chain_table.py"
 _REGEN_COMMAND: Final[str] = "uv run python -m omh.cli docs chain-table"
 
-# Reader-facing label per model alias. `deepseek-flash` keeps its version in
-# the label because the alias is the vendor's served pointer id and the
-# generation behind it is the thing a reader is checking.
+# Reader-facing label per model alias. Every label a shipped chain uses names
+# its generation. `deepseek-flash` is the vendor's served pointer id, which
+# carries none, so its label spells the generation behind it in the vendor's
+# own order, "DeepSeek V4.1 Flash" (owner decision, 2026-10-13); the alias
+# stays the pointer because the endpoint rejects `deepseek-v4.1-flash`.
 MODEL_DISPLAY_LABELS: Final[dict[str, str]] = {
     "claude-fable-5-1": "Claude Fable 5.1",
     "claude-haiku-4-5": "Claude Haiku 4.5",
+    "claude-haiku-5-5": "Claude Haiku 5.5",
     "claude-opus-5": "Claude Opus 5",
     "claude-opus-5-5": "Claude Opus 5.5",
-    "deepseek-flash": "DeepSeek Flash (V4.1)",
+    "claude-sonnet-5-5": "Claude Sonnet 5.5",
+    "deepseek-flash": "DeepSeek V4.1 Flash",
     "gemini-3.1-pro": "Gemini 3.1 Pro",
     "glm-5.3": "GLM 5.3",
     "glm-5.3-flash": "GLM 5.3 Flash",

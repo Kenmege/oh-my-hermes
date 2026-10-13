@@ -592,7 +592,12 @@ pairing so a benchmark claim can never mix in other prompt changes.
   (the shared last resort, the head of `deep`, the `main` suggestion, and
   the codex lighter categories), each at its previous effort, and since
   2026-10-01 GPT-6.1 Sol holds every one of them; Astra lists at 5x Sol, so
-  it heads no cost-tier slot. The Luna lane is a cost-tier
+  it heads no cost-tier slot. The 2026-10-13 table (owner decision) moved
+  the Hermes lane: Opus 5.5 heads `deep` with GPT-6.1 Sol second, GPT-6.1
+  Sol heads `unspecified-high` and the `main` suggestion, and `deep-work`
+  moved from Astra at `high` to Opus 5.5 then GPT-6.1 Sol at `max`, so Astra
+  now sits only in `ultrabrain`, `architect`, and `main` there; the Maestro
+  `codex` rows are unchanged. The Luna lane is a cost-tier
   pick and stays as it was. An
   account the staged rollout has not reached gets a provider rejection and
   the chain falls through to the next ecosystem.
@@ -692,12 +697,19 @@ pairing so a benchmark claim can never mix in other prompt changes.
   Sol as a Codex main agent inherits it, consistent with taking every GPT-6
   Sol slot (owner decision, 2026-10-01); `tests/test_executor_prompting.py`
   names `gpt-6.1-sol` so the inheritance is reviewed, not a suffix accident.
-- **Routing:** holds every slot GPT-6 Sol held, each at its effort: `deep`
-  head at `high`, `last_resort.any` at `medium`, `role_suggestions.main` at
+- **Routing:** on 2026-10-01 it took every slot GPT-6 Sol held, each at its
+  effort: the `deep` head at `high` (second there since 2026-10-13, below),
+  `last_resort.any` at `medium`, `role_suggestions.main` at
   `high`, and the Maestro `codex` rows GPT-6 Astra does not head. The five
   `codex` categories that left the effort to the CLI now name `medium`,
   because the Codex catalog defaults GPT-6 Sol to `medium` but 6.1 Sol to
-  `low`, so an empty effort would have lowered them silently.
+  `low`, so an empty effort would have lowered them silently. The
+  2026-10-13 table (owner decision) widens the Hermes lane: it heads
+  `unspecified-high` at `medium` (the 2026-09-05 live-model-tools run put a
+  GPT head at 18 / 30 against Kimi's 12 / 30 there, measured on
+  `gpt-5.6-sol`), sits behind Opus 5.5 in `deep` (`high`), `capable`
+  (`medium`), and `deep-work` (`max`), and is the GPT entry of
+  `unspecified-low` (`low`); `main` now leads with it.
 - **Pricing:** 2/10 list, cached input 0.10 (5% of input, an
   `APPROX_CACHE_READ_RATIO` row), cache write 2.5; `-pro` inherits the base
   row through its projection (pro mode bills at the selected model's
@@ -745,8 +757,9 @@ pairing so a benchmark claim can never mix in other prompt changes.
 - **Measured (2026-09-23, subagent block):** three arms on
   `benchmarks/live-model-tools/v1`, evaluation split (30 instances),
   `hermes_current_session` path, `og` / `anthropic/claude-fable-5-1` at
-  `xhigh` (the `architect` chain head, which puts the route in the
-  high-effort tier), condition `optimized`, one arm at a time, same UTC day.
+  `xhigh` (then the `architect` chain head, third behind Opus 5.5 and
+  GPT-6 Astra since 2026-10-13; `xhigh` puts the route in the high-effort
+  tier), condition `optimized`, one arm at a time, same UTC day.
   `current` is the old block (sha256 `78dc1ff9…`), run twice; `deletion` is
   the block above, identical except that the push sentence is removed
   (sha256 `7a237a14…`).
@@ -834,10 +847,12 @@ pairing so a benchmark claim can never mix in other prompt changes.
   is a 400, which is why `omh_delegate_route` refuses a no-thinking effort
   for this id); and text between tool calls arrives in `thinking` blocks
   that are empty at the default display setting, which the existing "every
-  progress claim points at a tool result" sentence already covers. The
-  shipped rungs are `medium` and `low`, so the subagent block does not fire
-  in shipped chains; the composer block does, because Opus 5.5 is in the
-  `main` role suggestion. Anthropic's "Unattended agentic runs" paragraph is
+  progress claim points at a tool result" sentence already covers. Until
+  2026-10-13 the shipped rungs were `medium` and `low`, so the subagent
+  block did not fire in shipped chains; the 2026-10-13 table ships Opus 5.5
+  at `high` (`deep`, `visual-engineering`, `artistry`), `xhigh`
+  (`architect`), and `max` (`deep-work`), so it now does. The composer block
+  fires too, because Opus 5.5 is in the `main` role suggestion. Anthropic's "Unattended agentic runs" paragraph is
   deliberately not adopted: it tells the model to keep working. Editorial,
   unmeasured: Opus 5 vs Opus 5.5 at the same rung is the named follow-up.
 - **Measured (2026-09-24, subagent block on Opus 5.5, block vs no block):**
@@ -852,10 +867,13 @@ pairing so a benchmark claim can never mix in other prompt changes.
   baseline on average, bootstrap CI95 [−3,983, +12,842]; running the same
   block-bearing text twice moved +5,439 [−1,033, +12,334]. The block's cost
   sits inside its own same-text drift — no measurable effect either way —
-  so it is kept. `xhigh` is not a shipped Opus 5.5 setting: the subagent
-  block fires only at `high` or above (`HIGH_EFFORT_TIER`), and no shipped
-  Opus 5.5 chain slot requests `high` or above, so this measurement bears on
-  an operator running Opus 5.5 manually at `xhigh`, not on a shipped route.
+  so it is kept. When it ran, `xhigh` was not a shipped Opus 5.5 setting
+  and the measurement bore only on an operator running Opus 5.5 manually.
+  Since the 2026-10-13 table it bears on a shipped route: Opus 5.5 heads
+  `architect` at `xhigh`, the rung these arms ran at, and sits at `high` or
+  `max` in four more chains, so the subagent block (`HIGH_EFFORT_TIER`)
+  now fires on shipped Opus 5.5 units; the `high` and `max` rungs are
+  unmeasured.
   Not measured: O4 (Opus 5.5 at `medium`, the shipped rung) and O5 (Opus 5
   at `medium`) were skipped for cost on the owner's decision, so this makes
   no claim about Opus effort placement and no claim about the Opus 5 → 5.5
@@ -898,8 +916,13 @@ pairing so a benchmark claim can never mix in other prompt changes.
   `between_tools`, is a request neither Hermes nor Claude Code sends, so
   `off` / `none` / `minimal` are raised to `low` on record and
   `omh_delegate_route` refuses a no-thinking effort for it.
-- **Placement:** none (owner decision, 2026-10-01). No pinned Sonnet id
-  sits in a shipped chain. The Maestro Claude Code rows `unspecified-low`
+- **Placement:** none from 2026-10-01 (owner decision) until the
+  2026-10-13 table, which closes `unspecified-low` with it at `low` and puts
+  it second in `writing` at `medium`. Neither rung reaches the high-effort
+  tier, so the subagent block does not fire on a shipped Sonnet unit.
+  Anthropic lowered its cache reads from $0.20 to $0.10 per MTok on
+  2026-10-07 (the Haiku 5.5 launch post, read 2026-10-13), and the contract
+  and the approximation ratio follow. The Maestro Claude Code rows `unspecified-low`
   and `artistry` name the `sonnet` alias, which Claude Code resolves to
   Sonnet 5.5 on the Anthropic API from v2.1.284 and to Sonnet 4.5 on
   Bedrock, Google Cloud, and Foundry; that alias carries no contract.
@@ -949,6 +972,55 @@ pairing so a benchmark claim can never mix in other prompt changes.
 - **Version rule:** the contract is keyed to `claude-sonnet-5-5` and the
   forms that project onto it; calibration follows the family like Sonnet 5,
   Opus 5.5, and Fable 5.1.
+
+### `claude-haiku-5-5` (Claude Haiku 5.5, exact contract; `claude` family calibration)
+
+- **Documented contract:** `claude-haiku-5-5` (released 2026-10-07,
+  retirement not sooner than 2027-10-07) is the exact contract; the Bedrock
+  id `anthropic.claude-haiku-5-5` and OpenRouter's dotted
+  `claude-haiku-5.5` are declared projections, and a dated snapshot form
+  resolves through the base. 1M context, 128K max output. Two prices chosen
+  by prompt length: 0.10/0.50 per MTok up to 100K prompt tokens (cache read
+  0.01) and 0.50/2.50 above (cache read 0.05); the approximation table
+  carries the lower card, so a run with prompts over 100K is under-reported.
+  The first Haiku with an effort ladder: `low` through `max`, API default
+  `medium`. Unlike Opus 5.5 and Sonnet 5.5 it accepts
+  `thinking.type=disabled` at `high` or below, so `off` passes through on
+  record and `omh_delegate_route` does not refuse it; `minimal` is raised to
+  `low`. Sources: Anthropic's models overview, pricing, model-deprecations,
+  Haiku 5.5 migration and prompting guides, and the launch post, read
+  2026-10-13.
+- **Placement:** the 2026-10-13 table (owner decision) puts it at `low` in
+  `quick` (third) and `simple-work` (second), taking Claude Haiku 4.5's
+  slot. Editorial and unmeasured. The Maestro Claude Code `haiku` rows are
+  an alias the client resolves to Haiku 5.5 on the Anthropic API from
+  v2.1.293 and to Haiku 4.5 elsewhere; that alias carries no contract.
+- **Documented traits, no counter shipped.** Official (Haiku 5.5 prompting
+  guide): at `low`, in a long agent prompt, it sometimes stops early and
+  hands the task back; at `low` and `medium` it sometimes reports a code
+  change as done without running a check; at `xhigh` in multi-turn chats it
+  can end a turn with its whole answer in thinking. The reason no counter
+  ships is placement, the GPT-6 Luna precedent: the shipped rung is `low`,
+  the subagent block fires only at `high` and above (`HIGH_EFFORT_TIER`),
+  and Haiku 5.5 is not a `main` suggestion, so no shipped Haiku unit
+  receives either block. The family block's single verification pass is
+  what a unit at `high` would get. The guide's fix for early stopping
+  ("Keep working until everything the user asked for is done") is not
+  imported: it pushes the model to keep working, which
+  `docs/MODEL-ONBOARDING.md` §2 forbids.
+- **Runtime gap (observed in the Hermes source):** the shipped `low` rung
+  takes effect only on a Hermes build that forwards Haiku effort. On Hermes'
+  Anthropic route, builds through v0.21.6 (2026-10-08), the 0.21.1 floor
+  included, treat every `haiku` id as pre-thinking and send neither thinking
+  nor effort, so a Haiku 5.5 unit there runs at the API default `medium`
+  whatever rung the chain names. v0.21.7 (2026-10-12; fix 8ed7d31b20 of
+  2026-10-11 UTC) and origin/main 63d0b941200 send adaptive thinking plus
+  `output_config.effort`. No served
+  route was probed in this onboarding, so the placement is documented, not
+  observed.
+- **Named follow-up:** Haiku 4.5 vs Haiku 5.5 at `low` on
+  `benchmarks/live-model-tools/v1`, and a `family` vs `optimized` pair if a
+  counter for the low-effort traits is proposed.
 
 ### `gemini` (Gemini 3.1 Pro)
 
@@ -1199,18 +1271,20 @@ pairing so a benchmark claim can never mix in other prompt changes.
   byte-identical preamble was removed on 2026-10-04: it restated the
   universal prompt-cache discipline printed beside it, and
   `build_unit_prompt` already places the shared head first.
-- **Routing:** takes the slots DeepSeek V3.2 held — the reasoning-capable
-  budget fall-through behind GPT-6.1 Sol on `deep` at `high` (behind GPT-5.6
-  Terra until 2026-09-23, GPT-6 Sol until 2026-10-01), and the
-  DeepSeek entry on `unspecified-low` at `low`. Both efforts are documented
-  rungs. The chain alias is `deepseek-flash`, the id the vendor's API
+- **Routing:** took the slots DeepSeek V3.2 held — the reasoning-capable
+  budget fall-through on `deep` at `high` and the DeepSeek entry on
+  `unspecified-low` at `low` — and joined `simple-work` at `low` on
+  2026-09-11. The 2026-10-13 table (owner decision) removed it from `deep`:
+  a Flash budget model does not fit the strong tier, and Opus 5.5 and Kimi
+  K3 carry that chain's cross-ecosystem fallback. It now sits at `low` in
+  `unspecified-low` and `simple-work`, a documented rung. The chain alias is `deepseek-flash`, the id the vendor's API
   serves and Hermes forwards: the first-party endpoint rejects the
   versioned spelling `deepseek-v4.1-flash` with HTTP 400 (observed in the
   Hermes DeepSeek provider profile, 2026-09-11), so a shipped chain naming
   the versioned id would 400 out of the box on the one provider that is
   never a gateway. The versioned contract sits behind the pointer as the
   declared projection; a child observed under the gateway spelling
-  `deepseek/deepseek-v4.1-flash` still labels `deep` / `unspecified-low`
+  `deepseek/deepseek-v4.1-flash` still labels `unspecified-low`
   because `mixture_category_for` projects an exact id onto its declared
   *pointer* aliases (`EXACT_CONTRACT_POINTER_ALIASES` — the same model at
   the contract's own mode and tier) as well as the other way round; a
@@ -1697,7 +1771,7 @@ change chains, infer entitlement, or call a provider. These states differ:
 | Supported | Present in the caller's accepted inventory, not necessarily recognized or usable on this account | `minimax/minimax-m3` in the seed fixture |
 | Optimized | Model-specific guidance has documented trait-to-counter provenance; calibration presence alone does not prove improvement | `gpt-6-astra` has an exact calibration pair; consult its measurement stage separately |
 | Eligible | A reviewed decision permits a particular model-and-role placement; it does not imply selection or global promotion | `kimi-k3` is eligible for `architect`, even behind another chain head |
-| Recommended | An eligible placement actually appears in a shipped chain | `deepseek-flash` in `deep`, with its explicit versioned pointer relationship |
+| Recommended | An eligible placement actually appears in a shipped chain | `deepseek-flash` in `unspecified-low`, with its explicit versioned pointer relationship |
 | Excluded | A reviewed decision deliberately withholds placement and records its scope and evidence | `claude-fable-5` is superseded by `claude-fable-5-1` |
 
 New discoveries default to `unmeasured`, even if their family is recognized

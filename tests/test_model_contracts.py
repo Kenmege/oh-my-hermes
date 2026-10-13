@@ -264,8 +264,9 @@ class EffortFloorTests(unittest.TestCase):
         self.assertEqual(route["effort_change"]["kind"], EFFORT_FLOOR_KIND)
         # A model without a contract keeps the previous behavior byte for byte.
         # (GPT-5.6 Sol, the earlier subject here, left the shipped chains on
-        # 2026-09-23 and no longer resolves as a chain head; Kimi K3 heads
-        # `unspecified-high` and has no contract.)
+        # 2026-09-23; Kimi K3 has no contract and is the only active model
+        # here, so it is selected from the tail of `unspecified-high`, which
+        # GPT-6.1 Sol heads since 2026-10-13.)
         route = resolve_model_route(
             "hermes",
             role="brain",
@@ -1142,8 +1143,9 @@ class Gpt6SolContractTests(unittest.TestCase):
 
     def test_the_retired_id_is_no_longer_a_chain_head(self) -> None:
         # GPT-6.1 Sol took every GPT-6 Sol slot (owner decision, 2026-10-01):
-        # `deep` names the new id, so a machine confirming only the old one
-        # is not reached through the shipped chain.
+        # `deep` names the new id (second behind Opus 5.5 since 2026-10-13),
+        # so a machine confirming only the old one is not reached through the
+        # shipped chain.
         from omh.coding.model_recommendations import SHIPPED_MODEL_RECOMMENDATIONS
 
         for section in ("categories", "role_suggestions", "domain_affinities", "last_resort"):
@@ -1151,7 +1153,10 @@ class Gpt6SolContractTests(unittest.TestCase):
                 aliases = [candidate["model_alias"] for candidate in chain]
                 with self.subTest(section=section, slot=slot):
                     self.assertNotIn("gpt-6-sol", aliases)
-        self.assertEqual(SHIPPED_MODEL_RECOMMENDATIONS["categories"]["deep"][0]["model_alias"], "gpt-6.1-sol")
+        self.assertIn(
+            "gpt-6.1-sol",
+            [candidate["model_alias"] for candidate in SHIPPED_MODEL_RECOMMENDATIONS["categories"]["deep"]],
+        )
         route = resolve_model_route(
             "hermes", requested_effort="high", requested_category="deep", active_models=("gpt-6-sol",)
         )
@@ -1294,7 +1299,9 @@ class Gpt61SolContractTests(unittest.TestCase):
         self.assertEqual(route["effort_change"]["kind"], "unchanged")
 
     def test_hermes_recommendation_chain_head_applies_the_contract(self) -> None:
-        # No named model: 6.1 Sol is reached as the head of `deep`.
+        # No named model: 6.1 Sol is the only active model, so it is the
+        # first eligible entry of `deep` (second behind Opus 5.5 since
+        # 2026-10-13) and the resolver reports it as the chain head.
         for effort, selected, kind in (
             ("none", "low", EFFORT_FLOOR_KIND),
             ("off", "low", EFFORT_FLOOR_KIND),
@@ -1497,7 +1504,7 @@ class ClaudeOpus55ContractTests(unittest.TestCase):
 
 class ClaudeSonnet55ContractTests(unittest.TestCase):
     """Sonnet 5.5 (2026-10-01) takes the Opus 5.5 shape: a no-thinking rung is
-    raised to `low` on record, and the contract sits in no shipped chain."""
+    raised to `low` on record. It joined the shipped chains on 2026-10-13."""
 
     def test_every_served_and_declared_form_resolves_the_contract(self) -> None:
         contract = model_contract("claude-sonnet-5-5")
@@ -1519,6 +1526,8 @@ class ClaudeSonnet55ContractTests(unittest.TestCase):
                 self.assertIsNone(model_contract(model_id))
 
     def test_contract_records_the_ladder_price_and_retirement(self) -> None:
+        from omh.plugin_bundle.omh.hermes_delegation import APPROX_CACHE_READ_RATIO
+
         contract = model_contract("claude-sonnet-5-5")
         assert contract is not None
         self.assertEqual(contract["reasoning_efforts"], ("low", "medium", "high", "xhigh", "max"))
@@ -1526,7 +1535,11 @@ class ClaudeSonnet55ContractTests(unittest.TestCase):
         self.assertIn("between_tools", contract["unsupported_efforts"]["off"])
         pricing = contract["pricing_usd_per_mtok"]
         self.assertEqual(APPROX_PRICE_PER_MTOK["claude-sonnet-5-5"], (pricing["input"], pricing["output"]))
-        self.assertEqual((pricing["input"], pricing["output"], pricing["cached_input"]), (2.0, 10.0, 0.20))
+        # Anthropic lowered Sonnet 5.5 cache reads from $0.20 to $0.10 on
+        # 2026-10-07 (the Haiku 5.5 launch post), which is 0.05x input, the
+        # Opus 5.5 ratio; the approximation table carries the same ratio.
+        self.assertEqual((pricing["input"], pricing["output"], pricing["cached_input"]), (2.0, 10.0, 0.10))
+        self.assertAlmostEqual(APPROX_CACHE_READ_RATIO["claude-sonnet-5-5"] * pricing["input"], pricing["cached_input"])
         self.assertIn("2027-09-28", contract["retirement"])
         self.assertEqual(contract["sources_read"], "2026-10-01")
 
@@ -1569,6 +1582,81 @@ class ClaudeSonnet55ContractTests(unittest.TestCase):
             with self.subTest(model=model):
                 self.assertEqual(route["selected_reasoning_effort"], "off")
                 self.assertNotIn("model_contract", route)
+
+
+class ClaudeHaiku55ContractTests(unittest.TestCase):
+    """Haiku 5.5 (2026-10-07) is the first Haiku with an effort ladder. Unlike
+    Opus 5.5 and Sonnet 5.5 it accepts a thinking disable at `high` or below,
+    so `off` passes through on record instead of being raised."""
+
+    def test_every_served_and_declared_form_resolves_the_contract(self) -> None:
+        contract = model_contract("claude-haiku-5-5")
+        assert contract is not None
+        for form in (
+            "claude-haiku-5-5",
+            "anthropic/claude-haiku-5-5",
+            "anthropic.claude-haiku-5-5",
+            "claude-haiku-5.5",
+            "openrouter/anthropic/claude-haiku-5.5",
+        ):
+            with self.subTest(form=form):
+                self.assertIs(model_contract(form), contract)
+                off = resolve_model_route("hermes", requested_model=form, requested_effort="off")
+                self.assertEqual(off["selected_reasoning_effort"], "off")
+                self.assertNotEqual(off["effort_change"]["kind"], EFFORT_FLOOR_KIND)
+                minimal = resolve_model_route("hermes", requested_model=form, requested_effort="minimal")
+                self.assertEqual(minimal["selected_reasoning_effort"], "low")
+                self.assertEqual(minimal["effort_change"]["kind"], EFFORT_FLOOR_KIND)
+        # The superseded generation and the bare alias stay uncontracted.
+        for model_id in ("claude-haiku-4-5", "haiku", "us.anthropic.claude-haiku-5-5"):
+            with self.subTest(model_id=model_id):
+                self.assertIsNone(model_contract(model_id))
+
+    def test_contract_records_the_ladder_both_price_cards_and_retirement(self) -> None:
+        from omh.plugin_bundle.omh.hermes_delegation import APPROX_CACHE_READ_RATIO
+
+        contract = model_contract("claude-haiku-5-5")
+        assert contract is not None
+        self.assertEqual(contract["reasoning_efforts"], ("low", "medium", "high", "xhigh", "max"))
+        self.assertEqual((contract["effort_floor"], contract["effort_default"]), ("low", "medium"))
+        self.assertNotIn("off", contract["unsupported_efforts"])
+        self.assertEqual((contract["released"], contract["context_window_tokens"]), ("2026-10-07", 1_000_000))
+        self.assertEqual(contract["max_output_tokens"], 128_000)
+        pricing = contract["pricing_usd_per_mtok"]
+        # The approximation table carries the up-to-100K card; the higher
+        # card is recorded on the contract, not flattened into the table.
+        self.assertEqual(APPROX_PRICE_PER_MTOK["claude-haiku-5-5"], (pricing["input"], pricing["output"]))
+        self.assertEqual((pricing["input"], pricing["output"], pricing["cached_input"]), (0.10, 0.50, 0.01))
+        self.assertEqual((pricing["cache_write_5m"], pricing["cache_write_1h"]), (0.125, 0.20))
+        self.assertNotIn("claude-haiku-5-5", APPROX_CACHE_READ_RATIO)
+        # The higher card, rate by rate and with its threshold: each number
+        # is its own fragment, so one mistyped rate fails by name.
+        higher = pricing["long_context_over_100k_prompt"]
+        for fragment in (
+            "input 0.50,",
+            "cached input 0.05,",
+            "cache write 0.625 (5m) and 1.00 (1h),",
+            "output 2.50 ",
+            "exceeds 100,000 tokens",
+        ):
+            with self.subTest(card="over_100k", fragment=fragment):
+                self.assertIn(fragment, higher)
+        self.assertTrue(higher.startswith("input 0.50,"), higher)
+        # Batch halves both cards, and the same 100K threshold splits them.
+        self.assertEqual(
+            pricing["batch"], "input 0.05, output 0.25 up to 100K; input 0.25, output 1.25 above"
+        )
+        self.assertIn("a prompt over 100,000 tokens is billed on the higher price card", contract["limits_note"])
+        self.assertIn("2027-10-07", contract["retirement"])
+        # The superseded generation stays priced for an operator override.
+        self.assertEqual(APPROX_PRICE_PER_MTOK["claude-haiku-4-5"], (1.0, 5.0))
+
+    def test_family_blocks_apply(self) -> None:
+        self.assertNotIn("claude-haiku-5-5", MODEL_HIGH_EFFORT_CALIBRATIONS)
+        self.assertNotIn("claude-haiku-5-5", MODEL_COMPOSITION_CALIBRATIONS)
+        route = resolve_model_route("hermes", requested_model="claude-haiku-5-5", requested_effort="max")
+        self.assertEqual(route["model_family"], "claude")
+        self.assertEqual(calibration_for_route(route), HIGH_EFFORT_CALIBRATIONS["claude"])
 
 
 class GrokBuildPriceTests(unittest.TestCase):

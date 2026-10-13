@@ -49,6 +49,7 @@ _MODEL_DOCS: Final[dict[str, tuple[str, ...]]] = {
     "gpt-6-luna": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
     "claude-opus-5-5": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
     "claude-sonnet-5-5": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
+    "claude-haiku-5-5": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
     "deepseek-v4.1-flash": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
     "jev-1.13.0": ("MODEL_OPTI.md", "docs/MODEL-ONBOARDING.md"),
 }

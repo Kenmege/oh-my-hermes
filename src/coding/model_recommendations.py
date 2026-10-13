@@ -86,12 +86,12 @@ _OPUS_55 = _candidate(
     "claude-opus-5-5",
     "claude",
     ("ccapi", "anthropic", "openrouter"),
-    reasoning="Editorial high-capability alternative; not a benchmark claim.",
+    reasoning="Editorial strong-tier Claude recommendation; not a benchmark claim.",
 )
-# The Claude vendor order inside every chain is Fable 5.1 -> Opus (owner
-# decision, 2026-09-06); Opus 5.5 took Opus 5's slots on 2026-09-23 at the
-# same positions and efforts (editorial, unmeasured), and Opus 5 left the
-# shipped chains under the superseded-generation rule below. Claude Mythos 5.1 is the same model as Fable 5.1
+# The Claude vendor order inside every chain is Opus 5.5 -> Fable 5.1 (owner
+# decision, 2026-10-13), reversing the 2026-09-06 Fable -> Opus rule. Opus 5.5
+# had taken Opus 5's slots on 2026-09-23, and Opus 5 left the shipped chains
+# under the superseded-generation rule below. Claude Mythos 5.1 is the same model as Fable 5.1
 # served only to Project Glasswing-approved organizations, so a shipped chain
 # naming it would read as a second model most accounts cannot reach; a user
 # who explicitly names it is still recognized and routed. Fable 5 left the
@@ -105,14 +105,35 @@ _FABLE_51 = _candidate(
     ("ccapi", "anthropic", "openrouter"),
     reasoning="Editorial most-capable Claude recommendation; not a benchmark claim.",
 )
+# Claude Sonnet 5.5 (2026-09-28) was contract-only until the 2026-10-13
+# table, which places it one tier under Opus 5.5: the cheap-lane tail of
+# `unspecified-low` and second in `writing`. Families match every other
+# Claude entry, so the entitlement vocabulary does not widen.
+_SONNET_55 = _candidate(
+    "claude-sonnet-5-5",
+    "claude",
+    ("ccapi", "anthropic", "openrouter"),
+    reasoning="Editorial standard-tier Claude recommendation; not a benchmark claim.",
+)
+# Claude Haiku 5.5 (2026-10-07) takes the slot Claude Haiku 4.5 held in
+# `simple-work` and the Claude entry of `quick` (owner decision, 2026-10-13).
+# Its ladder is low through max, so `low` is a documented rung. Haiku 4.5
+# left the shipped chains under the superseded-generation rule.
+_HAIKU_55 = _candidate(
+    "claude-haiku-5-5",
+    "claude",
+    ("ccapi", "anthropic", "openrouter"),
+    reasoning="Editorial low-cost Claude candidate; not a benchmark claim.",
+)
 # GPT-6.1 Sol (2026-09-29) holds every slot GPT-6 Sol held (owner decision,
-# 2026-10-01), each at the effort that slot already carried: medium in the
-# shared last resort, high at the head of `deep` and in the main-role
-# suggestions. Every one of those rungs is on its ladder, which unlike GPT-6
-# Sol's has no `none`. GPT-6 Sol itself had taken the slots of GPT-5.6 Sol and
-# GPT-5.6 Terra on 2026-09-23. Same list price as GPT-6 Sol with a cheaper
-# cache read. Editorial and unmeasured; GPT-6 Sol left the shipped chains
-# under the superseded-generation rule (owner decision, 2026-09-11).
+# 2026-10-01). GPT-6 Sol itself had taken the slots of GPT-5.6 Sol and
+# GPT-5.6 Terra on 2026-09-23. The 2026-10-13 table widens it: the head of
+# `unspecified-high` (the one measured head, see that chain), the fallback
+# behind Opus 5.5 in `deep`, `capable`, and `deep-work`, and the GPT entry of
+# `unspecified-low`. Every rung it is named at (low, medium, high, max) is on
+# its ladder, which unlike GPT-6 Sol's has no `none`. Same list price as GPT-6
+# Sol with a cheaper cache read. GPT-6 Sol left the shipped chains under the
+# superseded-generation rule (owner decision, 2026-09-11).
 _SOL = _candidate(
     "gpt-6.1-sol",
     "gpt",
@@ -121,7 +142,12 @@ _SOL = _candidate(
     reasoning="Editorial reasoning recommendation; not a benchmark claim.",
 )
 # GPT-6 Astra (2026-09-03) heads the frontier GPT slots. The Luna lane is a
-# cost-tier pick below it: Astra lists at 5x Sol and 100x Luna.
+# cost-tier pick below it: Astra lists at 5x Sol and 100x Luna. It stays the
+# Astra generation, the only Astra id OpenAI serves. Press coverage dated
+# 2026-09-28/29 (9to5Google, Engadget, The Register) reports that OpenAI
+# cancelled the GPT-6.1 Astra release; no OpenAI docs page states it: the
+# model page returns 404 and the models, pricing, and changelog pages do not
+# name it (read 2026-10-13).
 _ASTRA = _candidate(
     "gpt-6-astra",
     "gpt",
@@ -129,11 +155,11 @@ _ASTRA = _candidate(
     reasoning_effort="xhigh",
     reasoning="Editorial GPT frontier recommendation; staged rollout, not a benchmark claim.",
 )
-# DeepSeek V4.1 Flash (released 2026-09-10) takes the slots DeepSeek V3.2
-# held: the reasoning-capable budget fall-through behind Sol on `deep` and
-# the DeepSeek entry on `unspecified-low`. Its documented effort ladder is
-# low/high/max with high as the default, so both placements name a
-# documented rung. The chain names `deepseek-flash` — the id the vendor's
+# DeepSeek V4.1 Flash (released 2026-09-10) took the slots DeepSeek V3.2
+# held. Since 2026-10-13 it is the DeepSeek entry of `unspecified-low` and
+# `simple-work` only: it left `deep` because a Flash budget model does not fit
+# the strong tier. Its documented effort ladder is low/high/max with high as
+# the default, so `low` is a documented rung. The chain names `deepseek-flash` — the id the vendor's
 # own API serves and Hermes forwards — because the first-party endpoint
 # rejects the versioned spelling `deepseek-v4.1-flash` with HTTP 400
 # (observed in the Hermes DeepSeek profile, 2026-09-11). The exact contract
@@ -170,39 +196,32 @@ _GROK = _candidate(
     ("xai", "openrouter"),
     reasoning="Editorial X-platform domain affinity; not a benchmark claim.",
 )
+# Gemini 3.1 Pro stays the Gemini entry: Google's model list names no newer
+# Pro tier (ai.google.dev models and changelog, read 2026-10-13; the served
+# id is still the `gemini-3.1-pro-preview` Preview).
 _GEMINI = _candidate(
     "gemini-3.1-pro",
     "gemini",
     ("google", "gemini", "openrouter"),
     reasoning="Editorial synthesis and visual-work alternative; not a benchmark claim.",
 )
-_QWEN = _candidate(
-    "qwen3-coder",
-    "qwen",
-    ("qwen-oauth", "openrouter", "opencode"),
-    reasoning="Editorial coding and structured-writing alternative; not a benchmark claim.",
-)
 # GPT-6 Luna took GPT-5.6 Luna's slots on 2026-09-23 at the same positions
 # and effort (editorial, unmeasured); GPT-5.6 Luna left the shipped chains
-# under the superseded-generation rule (owner decision, 2026-09-11).
+# under the superseded-generation rule (owner decision, 2026-09-11). It stays
+# the current Luna: OpenAI publishes no GPT-6.1 Luna (the model page returns
+# 404, read 2026-10-13).
 _LUNA = _candidate(
     "gpt-6-luna",
     "gpt",
     ("openai-codex", "openai"),
     reasoning="Editorial fast GPT-tier quick candidate; not a benchmark claim.",
 )
-# Claude Haiku 4.5 was priced before it was ever recommended: the price table
-# has carried a `claude-haiku-4-5` row for a user who names it, but no shipped
-# chain recommended it, so it had no editorial candidate and no
-# provider-families row. `simple-work` is the first chain to name it, and that
-# is what pulls it onto the catalog side. Families match every other Claude
-# entry, so the entitlement vocabulary does not widen.
-_HAIKU_45 = _candidate(
-    "claude-haiku-4-5",
-    "claude",
-    ("ccapi", "anthropic", "openrouter"),
-    reasoning="Editorial low-cost Claude candidate; not a benchmark claim.",
-)
+# Qwen3-Coder (2025) left `writing`, its only slot, on 2026-10-13 with no Qwen
+# successor; Claude Haiku 4.5 left `simple-work` behind Haiku 5.5 the same
+# day. The bare aliases `qwen3-coder` and `claude-haiku-4-5` stay recognized,
+# priced, and provider-mapped for an operator who names them in
+# ~/.omh/routing/model-chains.json. (Haiku 4.5's dated and Bedrock spellings
+# never had a price row; that predates this change.)
 
 # The category keys are exactly the existing closed vocabulary. Categories for
 # which the approved profile defines no recommendation remain explicit empty
@@ -220,74 +239,113 @@ def _with_effort(candidate: Mapping[str, object], effort: str) -> dict[str, obje
 # category IS the model+effort pair; a per-lane override still wins.
 SHIPPED_MODEL_RECOMMENDATIONS: Final[dict[str, object]] = {
     "schema_version": MODEL_RECOMMENDATION_CATALOG_SCHEMA_VERSION,
+    # The categories below are the 2026-10-13 table (owner decision), set in
+    # one pass; editorial and unmeasured unless a comment cites a measurement.
+    #
+    # Two chain heads share a (model, effort) pair, and `mixture_category_for`
+    # labels a child by the first category in canonical order whose head
+    # matches. The owner accepted both collisions (2026-10-13):
+    #   (claude-opus-5-5, high)   heads deep and visual-engineering -> "deep"
+    #   (claude-opus-5-5, medium) heads writing and capable         -> "writing"
+    # Routing is unaffected, and so is a lane routed through
+    # `omh_delegate_route`: its route-provenance record overrides the
+    # projection, so that row keeps the lane's own category. Only a child with
+    # no matching record is labelled by projection.
+    # Non-head entries move the same way: (claude-opus-5-5, medium) projects
+    # to writing, which covers unspecified-high's second entry and the
+    # last_resort head; (kimi-k3, high) projects to deep from
+    # visual-engineering and artistry; (gpt-6-luna, low) and
+    # (claude-haiku-5-5, low) reached through quick project to simple-work.
     "categories": {
         "ultrabrain": [deepcopy(_ASTRA)],
-        # DeepSeek gives deep a reasoning-capable budget fallback from a
-        # fourth provider ecosystem — before it, deep sat entirely on GPT
-        # and one rejected ecosystem exhausted the chain (owner rule below).
-        "deep": [_with_effort(_SOL, "high"), _with_effort(_DEEPSEEK_FLASH, "high")],
+        # The strong tier across three provider ecosystems. DeepSeek V4.1
+        # Flash left it: a Flash budget model does not fit the strong tier,
+        # and Opus 5.5 and Kimi K3 now carry the cross-ecosystem fallback.
+        # visual-engineering children are labelled "deep" (collision above).
+        "deep": [
+            _with_effort(_OPUS_55, "high"),
+            _with_effort(_SOL, "high"),
+            _with_effort(_KIMI_K3, "high"),
+        ],
         # Architecture and system-design lanes (owner request, 2026-08-19):
         # deepest declared effort across three provider ecosystems so a
         # rejected ecosystem cannot exhaust the chain. Efforts stay xhigh
         # end-to-end — the category IS "design at full depth".
         "architect": [
-            _with_effort(_FABLE_51, "xhigh"),
+            _with_effort(_OPUS_55, "xhigh"),
             _with_effort(_ASTRA, "xhigh"),
+            _with_effort(_FABLE_51, "xhigh"),
             _with_effort(_KIMI_K3, "xhigh"),
         ],
-        "unspecified-high": [_with_effort(_KIMI_K3, "medium"), _with_effort(_OPUS_55, "medium")],
+        # The one placement in this table backed by a measurement, of its
+        # predecessor: on benchmarks/live-model-tools/v1 (30 evaluation tasks,
+        # 2026-09-05) OMH routing passed 18/30 with gpt-5.6-sol at this head
+        # and 12/30 with kimi-k3-ultrafast here (the other 24 tasks routed to
+        # the quick head in both arms); Kimi passed 0/6 of the six search
+        # tasks the `exhaustive_search` signal lifts to this category. GPT-6.1
+        # Sol carries the GPT slot by the superseded-generation rule and is
+        # itself unmeasured on that corpus.
+        "unspecified-high": [
+            _with_effort(_SOL, "medium"),
+            _with_effort(_OPUS_55, "medium"),
+            _with_effort(_KIMI_K3, "medium"),
+        ],
         # Owner rule (2026-08-19): a chain that would otherwise sit in one
         # provider ecosystem ends with a comparable-tier candidate from
         # another, so one rejected ecosystem cannot exhaust the whole chain
         # (observed live: a Codex-billed account 400'd every GLM child and
-        # quick fell straight to inherit). Tails are the owner's explicit
-        # picks: Opus 5.5 at low closes unspecified-low, and quick runs the
-        # owner-ordered Ultrafast -> Kimi -> Luna -> Fable sequence.
-        # GLM 5.3 leads (owner decision, 2026-08-31). The 5.2 entries left
-        # with the other superseded generations (owner decision, 2026-09-11).
+        # quick fell straight to inherit). GLM 5.3 leads (owner decision,
+        # 2026-08-31). Opus 5.5 left the tail on 2026-10-13: a frontier model
+        # at the end of a cheap lane inverts cost order, so Sonnet 5.5 closes
+        # it one tier down.
         "unspecified-low": [
             _with_effort(_GLM_53, "low"),
             _with_effort(_DEEPSEEK_FLASH, "low"),
-            _with_effort(_OPUS_55, "low"),
+            _with_effort(_SOL, "low"),
+            _with_effort(_SONNET_55, "low"),
         ],
+        # Fable 5.1 left the tail for the same cost-order reason; Haiku 5.5
+        # is the Claude entry at this tier.
         "quick": [
             _with_effort(_GLM_53_FLASH, "low"),
-            _with_effort(_KIMI_K3, "low"),
             _with_effort(_LUNA, "low"),
-            _with_effort(_FABLE_51, "low"),
+            _with_effort(_HAIKU_55, "low"),
+            _with_effort(_KIMI_K3, "low"),
         ],
+        # Writing keeps the (claude-opus-5-5, medium) label: it is earlier in
+        # canonical order than capable, whose head is the same pair.
         "writing": [
+            _with_effort(_OPUS_55, "medium"),
+            _with_effort(_SONNET_55, "medium"),
             _with_effort(_KIMI_K3, "medium"),
-            _with_effort(_QWEN, "medium"),
             _with_effort(_GEMINI, "medium"),
         ],
+        # Labelled "deep" by projection: its head is deep's (collision above).
         "visual-engineering": [
+            _with_effort(_OPUS_55, "high"),
             _with_effort(_FABLE_51, "high"),
+            _with_effort(_GEMINI, "high"),
             _with_effort(_KIMI_K3, "high"),
         ],
         "artistry": [
             _with_effort(_GEMINI, "high"),
+            _with_effort(_OPUS_55, "high"),
             _with_effort(_FABLE_51, "high"),
             _with_effort(_KIMI_K3, "high"),
         ],
         # The three categories below are appended rather than interleaved
         # (owner request, 2026-09-11). Position is not cosmetic: canonical
-        # order breaks ties in `mixture_category_for`, so appending is what
-        # keeps `(claude-opus-5-5, medium)` labeled unspecified-high instead of
-        # moving to capable on an equal-position tie.
+        # order breaks head and chain-position ties in `mixture_category_for`,
+        # so a name inserted earlier would take an existing model's label.
         #
         # capable: the strong general-work lane, one rung under the frontier
-        # categories, spanning four provider ecosystems. Effort is medium
-        # because that is how opus-5-5 and kimi-k3 are already used in
-        # unspecified-high, the nearest neighbour to what this is for. High
-        # was rejected: `(claude-fable-5-1, high)` is visual-engineering's
-        # chain head, so a capable chain at high would have taken that
-        # category's projection label away from it.
+        # categories, spanning three provider ecosystems. Labelled "writing"
+        # by projection: its head is writing's (collision above).
         "capable": [
-            _with_effort(_FABLE_51, "medium"),
             _with_effort(_OPUS_55, "medium"),
+            _with_effort(_SOL, "medium"),
+            _with_effort(_FABLE_51, "medium"),
             _with_effort(_KIMI_K3, "medium"),
-            _with_effort(_GLM_53, "medium"),
         ],
         # simple-work: cheap models for work that is small rather than fast.
         # It differs from quick in what leads — quick leads with the
@@ -296,27 +354,23 @@ SHIPPED_MODEL_RECOMMENDATIONS: Final[dict[str, object]] = {
         # has somewhere to ask for it. Low throughout, matching quick.
         "simple-work": [
             _with_effort(_LUNA, "low"),
+            _with_effort(_HAIKU_55, "low"),
             _with_effort(_DEEPSEEK_FLASH, "low"),
-            _with_effort(_HAIKU_45, "low"),
         ],
-        # deep-work: the GPT frontier model on a long task. Effort is high,
-        # NOT xhigh: at xhigh this chain's head would be ultrabrain's head,
-        # and since head-match resolves in canonical order the earlier
-        # category would take every projection and leave deep-work a label
-        # nothing could ever carry. High also mirrors `deep`, the same shape
-        # one price rung down. The original request named Sol behind Astra;
-        # the owner dropped it (2026-09-11, after that request) for
-        # consistency with the same-day superseded-generation retirement, so
-        # the single entry is deliberate.
-        "deep-work": [_with_effort(_ASTRA, "high")],
+        # deep-work: a long task at frontier depth. Effort is `max` so that
+        # its label survives (owner choice, 2026-10-13): at `high` the head
+        # would be deep's, and because a head match resolves in canonical
+        # order deep-work would be a label nothing could ever carry. `max` is
+        # a documented rung of both entries' ladders.
+        "deep-work": [_with_effort(_OPUS_55, "max"), _with_effort(_SOL, "max")],
     },
     "role_suggestions": {
         "main": [
-            deepcopy(_KIMI_K3),
-            deepcopy(_FABLE_51),
-            deepcopy(_OPUS_55),
-            deepcopy(_ASTRA),
             _with_effort(_SOL, "high"),
+            deepcopy(_OPUS_55),
+            deepcopy(_FABLE_51),
+            deepcopy(_ASTRA),
+            deepcopy(_KIMI_K3),
         ],
     },
     "domain_affinities": {

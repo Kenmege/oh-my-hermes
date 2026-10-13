@@ -59,6 +59,18 @@ _ALL_ACTIVE = (
 
 class RecommendationCatalogTests(unittest.TestCase):
     def test_public_readmes_and_site_cover_every_shipped_category_chain(self) -> None:
+        """Each hand-maintained public row lists exactly its chain, in order.
+
+        The four READMEs and the two site pages are edited by hand, so no
+        producer regenerates them. Every row's order cell is split into its
+        entries on that surface's own separator and compared whole against
+        the catalog's display labels: a missing model, an extra entry whether
+        or not it is a known label, a swapped pair, and a wrong generation
+        each fail. Where a surface prints the row's effort, that is compared
+        too.
+        """
+        from omh.catalogs.model_chain_table import MODEL_DISPLAY_LABELS
+
         docs = {
             "readme": Path("README.md").read_text(encoding="utf-8"),
             "ko": Path("README.ko.md").read_text(encoding="utf-8"),
@@ -69,31 +81,52 @@ class RecommendationCatalogTests(unittest.TestCase):
         }
         # Both HTML surfaces put one category per source line and key the row
         # on a bare ``<span>{category}</span>``; the markdown READMEs use a
-        # table row instead.
+        # table row instead, with a connector word between entries.
         html_surfaces = {"site", "home"}
+        readme_separators = {"readme": ", then ", "ko": ", 다음 ", "ja": "、次に ", "zh": "，其次 "}
+
+        def entries_listed(surface: str, row: str) -> list[str]:
+            if surface == "home":
+                cell = re.search(r'<td class="chain-order">(.*?)</td>', row)
+                assert cell is not None, row
+                return re.findall(r"<code>([^<]*)</code>", cell.group(1))
+            if surface == "site":
+                paragraph = re.search(r"<p>([^<]*)\.</p>", row)
+                assert paragraph is not None, row
+                return paragraph.group(1).split(" → ")
+            cell = row.rstrip().removesuffix("|").rstrip().rsplit(" | ", 1)[-1]
+            return re.sub(r" \(\w+\)$", "", cell).split(readme_separators[surface])
+
         categories = SHIPPED_MODEL_RECOMMENDATIONS["categories"]
         assert isinstance(categories, dict)
 
         for name, chain in categories.items():
             assert isinstance(chain, list)
-            aliases = [str(candidate["model_alias"]) for candidate in chain]
+            expected_labels = [MODEL_DISPLAY_LABELS[str(candidate["model_alias"])] for candidate in chain]
+            # These surfaces print one effort per row, which is only honest
+            # while every entry of the chain declares the same one.
+            efforts = {str(candidate["reasoning_effort"]) for candidate in chain}
+            self.assertEqual(len(efforts), 1, f"{name} mixes efforts; the public rows print one per row")
+            (effort,) = efforts
             for surface, text in docs.items():
                 with self.subTest(category=name, surface=surface):
                     if surface in html_surfaces:
-                        row = next(
-                            line for line in text.splitlines() if f"<span>{name}</span>" in line
-                        )
+                        rows = [line for line in text.splitlines() if f"<span>{name}</span>" in line]
                     else:
-                        row = next(
-                            line for line in text.splitlines() if line.startswith(f"| `{name}` |")
-                        )
-                    normalized_text = re.sub(r"[^a-z0-9]", "", row.casefold())
-                    position = -1
-                    for alias in aliases:
-                        normalized_alias = re.sub(r"[^a-z0-9]", "", alias.casefold())
-                        next_position = normalized_text.find(normalized_alias, position + 1)
-                        self.assertGreater(next_position, position)
-                        position = next_position
+                        rows = [line for line in text.splitlines() if line.startswith(f"| `{name}` |")]
+                    self.assertEqual(len(rows), 1, "one row per category")
+                    row = rows[0]
+                    listed = entries_listed(surface, row)
+                    self.assertEqual(len(listed), len(expected_labels), row)
+                    self.assertEqual(listed, expected_labels, row)
+                    if surface == "home":
+                        shown = re.findall(r'<span class="chain-badge">([^<]*)</span>', row)
+                    elif surface == "site":
+                        # The routing page lists the order only, no effort.
+                        continue
+                    else:
+                        shown = re.findall(r"\((\w+)\) \|\s*$", row)
+                    self.assertEqual(shown, [effort], row)
 
     def test_last_resort_prose_names_the_shipped_final_order(self) -> None:
         """The shared-final-order sentences name `last_resort.any` by label.
@@ -237,65 +270,63 @@ class RecommendationCatalogTests(unittest.TestCase):
         def aliases(section: str, name: str) -> list[str]:
             return [entry["model_alias"] for entry in catalog[section][name]]
 
-        # Superseded generations left every shipped chain (owner decision,
-        # 2026-09-11): Fable 5, GLM 5.2 and its Ultrafast tier, DeepSeek
-        # V3.2, and Sol behind Astra; on 2026-09-23 GPT-6 Sol took both
-        # GPT-5.6 tiers' slots at the effort each slot carried, and on
-        # 2026-10-01 GPT-6.1 Sol took every GPT-6 Sol slot the same way. A chain names
-        # the current generation of each line; an older id lives on only in a
-        # machine-level override.
+        def efforts(section: str, name: str) -> list[str]:
+            return [entry["reasoning_effort"] for entry in catalog[section][name]]
+
+        # The 2026-10-13 table (owner decision). Superseded generations left
+        # every shipped chain (owner decision, 2026-09-11) and keep leaving
+        # it: that day Claude Haiku 4.5 behind Haiku 5.5, and the 2025
+        # Qwen3-Coder with no Qwen successor. A chain names the current
+        # generation of each line; an older id lives on only in a
+        # machine-level override. Inside a chain Claude Opus 5.5 comes before
+        # Claude Fable 5.1 (owner decision, 2026-10-13, reversing 2026-09-06).
         self.assertEqual(aliases("role_suggestions", "main"), [
-            "kimi-k3", "claude-fable-5-1", "claude-opus-5-5", "gpt-6-astra", "gpt-6.1-sol",
+            "gpt-6.1-sol", "claude-opus-5-5", "claude-fable-5-1", "gpt-6-astra", "kimi-k3",
         ])
-        self.assertEqual(catalog["role_suggestions"]["main"][4]["reasoning_effort"], "high")
-        self.assertEqual(catalog["categories"]["deep"][0]["reasoning_effort"], "high")
+        # `main` keeps its convention: Sol names `high`, Astra carries its
+        # candidate default, and the rest leave the effort to the session.
+        self.assertEqual(efforts("role_suggestions", "main"), ["high", "", "", "xhigh", ""])
         self.assertEqual(catalog["last_resort"]["any"][1]["reasoning_effort"], "medium")
         # Opus 5.5 in the shared last resort names its effort (2026-09-24):
         # an entry with none leaves the level to the executor CLI's default.
         self.assertEqual(catalog["last_resort"]["any"][0]["reasoning_effort"], "medium")
-        # A chain that would otherwise sit in one provider ecosystem ends on
-        # a comparable-tier candidate from another (owner rule, 2026-08-19)
-        # so one rejected ecosystem cannot exhaust the chain.
-        self.assertEqual(
-            aliases("categories", "unspecified-low"),
-            ["glm-5.3", "deepseek-flash", "claude-opus-5-5"],
-        )
-        self.assertEqual(aliases("categories", "unspecified-high"), ["kimi-k3", "claude-opus-5-5"])
-        # GPT-6 Astra heads the GPT frontier slots (2026-09-03).
-        self.assertEqual(aliases("categories", "ultrabrain"), ["gpt-6-astra"])
-        # DeepSeek closes deep's single-ecosystem exposure with a
-        # reasoning-capable budget fallback (owner request, 2026-08-21);
-        # V4.1 Flash took the slot from V3.2 on 2026-09-11; the alias is the
-        # vendor-served pointer id, and the versioned contract sits behind it.
-        self.assertEqual(aliases("categories", "deep"), ["gpt-6.1-sol", "deepseek-flash"])
-        self.assertEqual(
-            aliases("categories", "architect"),
-            ["claude-fable-5-1", "gpt-6-astra", "kimi-k3"],
-        )
-        self.assertEqual(
-            aliases("categories", "quick"),
-            ["glm-5.3-flash", "kimi-k3", "gpt-6-luna", "claude-fable-5-1"],
-        )
-        self.assertEqual(
-            aliases("categories", "writing"),
-            ["kimi-k3", "qwen3-coder", "gemini-3.1-pro"],
-        )
-        self.assertEqual(
-            aliases("categories", "visual-engineering"),
-            ["claude-fable-5-1", "kimi-k3"],
-        )
-        self.assertEqual(
-            aliases("categories", "artistry"),
-            ["gemini-3.1-pro", "claude-fable-5-1", "kimi-k3"],
-        )
-        self.assertEqual(aliases("categories", "writing"), ["kimi-k3", "qwen3-coder", "gemini-3.1-pro"])
+        expected = {
+            "ultrabrain": (["gpt-6-astra"], "xhigh"),
+            # DeepSeek V4.1 Flash left `deep`: a Flash budget model does not
+            # fit the strong tier; Opus 5.5 and Kimi K3 carry the fallback.
+            "deep": (["claude-opus-5-5", "gpt-6.1-sol", "kimi-k3"], "high"),
+            "architect": (["claude-opus-5-5", "gpt-6-astra", "claude-fable-5-1", "kimi-k3"], "xhigh"),
+            # The GPT head rests on the 2026-09-05 live-model-tools run.
+            "unspecified-high": (["gpt-6.1-sol", "claude-opus-5-5", "kimi-k3"], "medium"),
+            # A chain that would otherwise sit in one provider ecosystem ends
+            # on a comparable-tier candidate from another (owner rule,
+            # 2026-08-19). Opus 5.5 left the tail: a frontier model at the end
+            # of a cheap lane inverts cost order.
+            "unspecified-low": (
+                ["glm-5.3", "deepseek-flash", "gpt-6.1-sol", "claude-sonnet-5-5"], "low",
+            ),
+            # Fable 5.1 left the tail of `quick` for the same reason.
+            "quick": (["glm-5.3-flash", "gpt-6-luna", "claude-haiku-5-5", "kimi-k3"], "low"),
+            "writing": (
+                ["claude-opus-5-5", "claude-sonnet-5-5", "kimi-k3", "gemini-3.1-pro"], "medium",
+            ),
+            "visual-engineering": (
+                ["claude-opus-5-5", "claude-fable-5-1", "gemini-3.1-pro", "kimi-k3"], "high",
+            ),
+            "artistry": (["gemini-3.1-pro", "claude-opus-5-5", "claude-fable-5-1", "kimi-k3"], "high"),
+            "capable": (["claude-opus-5-5", "gpt-6.1-sol", "claude-fable-5-1", "kimi-k3"], "medium"),
+            "simple-work": (["gpt-6-luna", "claude-haiku-5-5", "deepseek-flash"], "low"),
+            # `max` keeps deep-work's head distinct from deep's (owner choice).
+            "deep-work": (["claude-opus-5-5", "gpt-6.1-sol"], "max"),
+        }
+        self.assertEqual(set(expected), set(catalog["categories"]))
+        for name, (chain, effort) in expected.items():
+            with self.subTest(category=name):
+                self.assertEqual(aliases("categories", name), chain)
+                self.assertEqual(efforts("categories", name), [effort] * len(chain))
         self.assertEqual(aliases("domain_affinities", "x_platform_data"), [
             "grok-build-0.1", "kimi-k3", "gemini-3.1-pro",
         ])
-        main = catalog["role_suggestions"]["main"]
-        self.assertEqual([entry["reasoning_effort"] for entry in main[-2:]], ["xhigh", "high"])
-        self.assertEqual(catalog["categories"]["ultrabrain"][0]["reasoning_effort"], "xhigh")
-        self.assertEqual(catalog["categories"]["deep"][0]["reasoning_effort"], "high")
         for section in ("categories", "role_suggestions", "domain_affinities"):
             for chain in catalog[section].values():
                 for candidate in chain:
@@ -358,20 +389,22 @@ class RecommendationResolverTests(unittest.TestCase):
             owner="maestro", category="unspecified-high", active_models=reversed(_ALL_ACTIVE)
         )
         self.assertEqual(all_active["status"], "resolved")
-        self.assertEqual(all_active["selected"]["model_alias"], "kimi-k3")
+        # The shipped head (GPT-6.1 Sol) is not in this active set, so the
+        # chain falls through to its next two entries in order.
+        self.assertEqual(all_active["selected"]["model_alias"], "claude-opus-5-5")
         self.assertEqual(
             [entry["model_alias"] for entry in all_active["projection"]["chain"]],
-            ["kimi-k3", "claude-opus-5-5"],
+            ["claude-opus-5-5", "kimi-k3"],
         )
 
         only_next = resolve_model_recommendation(
             owner="maestro",
             category="unspecified-high",
-            active_models=[_active("claude-opus-5-5", provider="ccapi", family="claude")],
+            active_models=[_active("kimi-k3", provider="apitopia", family="kimi")],
         )
-        self.assertEqual(only_next["selected"]["model_alias"], "claude-opus-5-5")
-        self.assertEqual([entry["model_alias"] for entry in only_next["projection"]["chain"]], ["claude-opus-5-5"])
-        self.assertEqual(only_next["inactive_candidates"], ["kimi-k3"])
+        self.assertEqual(only_next["selected"]["model_alias"], "kimi-k3")
+        self.assertEqual([entry["model_alias"] for entry in only_next["projection"]["chain"]], ["kimi-k3"])
+        self.assertEqual(only_next["inactive_candidates"], ["gpt-6.1-sol", "claude-opus-5-5"])
 
     def test_explicit_unavailable_freezes_as_choice_required_without_substitution(self) -> None:
         route = resolve_model_recommendation(
@@ -384,7 +417,7 @@ class RecommendationResolverTests(unittest.TestCase):
         self.assertEqual(route["requested_model"], "grok-build-0.1")
         self.assertIsNone(route["selected"])
         self.assertIsNone(route["projection"])
-        self.assertEqual(route["available_chain"], ["kimi-k3", "claude-opus-5-5"])
+        self.assertEqual(route["available_chain"], ["claude-opus-5-5", "kimi-k3"])
 
     def test_explicit_active_model_wins_over_editorial_chain(self) -> None:
         route = resolve_model_recommendation(
@@ -440,9 +473,10 @@ class RecommendationResolverTests(unittest.TestCase):
         projection = route["projection"]
         self.assertEqual(projection["kind"], "hermes_native_binding")
         self.assertEqual(projection["alias"], "main")
-        self.assertEqual(projection["provider"], "apitopia")
-        self.assertEqual(projection["model_id"], "kimi-k3")
-        self.assertEqual(projection["binding"], "apitopia/kimi-k3")
+        # `main` leads with GPT-6.1 Sol, absent here; Opus 5.5 is next.
+        self.assertEqual(projection["provider"], "ccapi")
+        self.assertEqual(projection["model_id"], "claude-opus-5-5")
+        self.assertEqual(projection["binding"], "ccapi/claude-opus-5-5")
         self.assertEqual(projection["apply_state"], "approval_required")
         self.assertNotIn("providers", projection)
         self.assertNotIn("credentials", serialize_recommendation_payload(route).casefold())
@@ -494,7 +528,7 @@ class RecommendationResolverTests(unittest.TestCase):
         )
         self.assertEqual(route["selected"]["model_alias"], "qwen3-coder")
         self.assertEqual(route["selected"]["recommendation_source"], "user_override")
-        self.assertEqual(SHIPPED_MODEL_RECOMMENDATIONS["categories"]["deep"][0]["model_alias"], "gpt-6.1-sol")
+        self.assertEqual(SHIPPED_MODEL_RECOMMENDATIONS["categories"]["deep"][0]["model_alias"], "claude-opus-5-5")
 
     def test_resolution_serialization_is_stable_across_active_input_order(self) -> None:
         first = resolve_model_recommendation(
@@ -602,7 +636,7 @@ class LastResortFallbackTests(unittest.TestCase):
         self.assertEqual(route["available_chain"], ["claude-opus-5-5"])
         self.assertEqual(
             route["inactive_candidates"],
-            ["glm-5.3-flash", "kimi-k3", "gpt-6-luna", "claude-fable-5-1", "gpt-6.1-sol"],
+            ["glm-5.3-flash", "gpt-6-luna", "claude-haiku-5-5", "kimi-k3", "gpt-6.1-sol"],
         )
         self.assertEqual(route["projection"]["kind"], "hermes_native_binding")
         self.assertEqual(route["projection"]["apply_state"], "approval_required")
@@ -612,7 +646,7 @@ class LastResortFallbackTests(unittest.TestCase):
             owner="hermes",
             category="quick",
             active_models=(
-                # Position 2 of `quick`, not the head: a non-head chain
+                # The tail of `quick`, not the head: a non-head chain
                 # candidate still outranks the shared last resort.
                 _active("kimi-k3", provider="apitopia", family="kimi"),
                 *self._OPUS_ONLY,
@@ -649,9 +683,9 @@ class LastResortFallbackTests(unittest.TestCase):
             route["inactive_candidates"],
             [
                 "glm-5.3-flash",
-                "kimi-k3",
                 "gpt-6-luna",
-                "claude-fable-5-1",
+                "claude-haiku-5-5",
+                "kimi-k3",
                 "claude-opus-5-5",
                 "gpt-6.1-sol",
             ],

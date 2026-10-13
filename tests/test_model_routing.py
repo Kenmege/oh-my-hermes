@@ -57,7 +57,13 @@ class ResearchRoleTests(unittest.TestCase):
         self.assertEqual(shallow["selected_model"], "haiku")
         self.assertEqual(shallow["depth"], "shallow")
         deep = resolve_model_route("claude-code", role="research", requested_depth="deep")
-        self.assertEqual(deep["selected_model"], "claude-fable-5-1")
+        # The Claude chain runs Opus 5.5 before Fable 5.1 (owner decision,
+        # 2026-10-13): the pinned id heads it and the `opus` alias is its tail.
+        self.assertEqual(deep["selected_model"], "claude-opus-5-5")
+        self.assertEqual(
+            [entry["model_id"] for entry in deep["chain"]][:3],
+            ["claude-opus-5-5", "claude-fable-5-1", "opus"],
+        )
         # `deep` reads the `ultrabrain` category, which is the deepest rung and
         # is reachable only by DECLARING it -- so the escalation to xhigh costs
         # nothing until someone asks for it.
@@ -807,6 +813,37 @@ class RouteVocabularyPolicyTests(unittest.TestCase):
             with self.subTest(profile=route["executor_profile"], provenance=route["provenance"]):
                 self.assertIn(route["status"], MODEL_ROUTE_STATUSES)
                 self.assertIn(route["provenance"], MODEL_ROUTE_PROVENANCES)
+
+    def test_claude_code_frontier_chain_pins_opus_then_fable_then_the_alias(self) -> None:
+        # Owner decision, 2026-10-13: the pinned Opus 5.5 id heads the Claude
+        # Code frontier chain, Fable 5.1 is the fall-through, and the `opus`
+        # alias is the always-resolving tail. No frontier row leaves its
+        # effort to the CLI any more: Opus 5.5 defaults to `medium`, so an
+        # empty effort would run below what the category asks for.
+        from omh.coding.model_routing import BUILTIN_CATEGORY_MODELS, CLAUDE_FRONTIER_CHAIN_MODELS
+
+        self.assertEqual(CLAUDE_FRONTIER_CHAIN_MODELS, ("claude-opus-5-5", "claude-fable-5-1", "opus"))
+        claude = BUILTIN_CATEGORY_MODELS["claude-code"]
+        expected_efforts = {
+            "ultrabrain": "xhigh",
+            "deep": "high",
+            "architect": "xhigh",
+            "unspecified-high": "medium",
+            "visual-engineering": "high",
+            "capable": "medium",
+            "deep-work": "high",
+        }
+        frontier = {
+            category: chain
+            for category, chain in claude.items()
+            if tuple(entry["model_id"] for entry in chain) == CLAUDE_FRONTIER_CHAIN_MODELS
+        }
+        self.assertEqual(set(frontier), set(expected_efforts))
+        for category, chain in frontier.items():
+            with self.subTest(category=category):
+                self.assertEqual(
+                    [entry["reasoning_effort"] for entry in chain], [expected_efforts[category]] * len(chain)
+                )
 
     def test_bidirectional_chain_catalog_parity(self) -> None:
         # chains ⊆ catalog AND every catalog profile has a chain for every

@@ -139,10 +139,17 @@ CODING_MODEL_ROUTE_CLAIM_BOUNDARY: Final[str] = (
 # Codex takes vendor model ids. Both CLIs also accept
 # ids this catalog has never heard of, so requested models always pass
 # through unvalidated — the catalog is a default candidate list, not an
-# allowlist. The Fable-tier rows are concrete ids on purpose: the CLI's
-# `fable` alias exists but cannot express the owner-ordered Claude chain
-# (Fable 5.1 -> Opus, 2026-09-06), which needs the Fable-tier id named
-# exactly. Claude Mythos 5.1 stays listed here as a recognized candidate for
+# allowlist. The Opus 5.5 and Fable-tier rows are concrete ids on purpose:
+# the owner-ordered Claude chain (Opus 5.5 -> Fable 5.1, owner decision
+# 2026-10-13, reversing the 2026-09-06 Fable -> Opus order) needs both
+# generations named exactly, which neither alias can do -- `opus` is whatever
+# Opus the client recommends, and `fable` cannot pin the tier. The `opus`
+# alias stays as the chain's always-resolving tail. The `haiku` and
+# `sonnet` rows are aliases the client resolves: `haiku` is Haiku 5.5 on the
+# Anthropic API from Claude Code v2.1.293 and Haiku 4.5 on Claude Platform on
+# AWS, Bedrock, Google Cloud, and Foundry (code.claude.com/docs/en/model-config,
+# read 2026-10-13), so the same row runs different generations on different
+# machines. Claude Mythos 5.1 stays listed here as a recognized candidate for
 # a user who names it: it is the same model as Fable 5.1 served only to
 # Project Glasswing-approved organizations, so an unapproved account gets a
 # provider rejection and no shipped chain recommends it.
@@ -224,6 +231,16 @@ EXECUTOR_MODEL_OPTIONS: Final[dict[str, tuple[dict[str, object], ...]]] = {
         },
     ),
     "claude-code": (
+        {
+            # The pinned Opus generation the Claude chain heads on (owner
+            # decision, 2026-10-13); the `opus` alias row below is its
+            # always-resolving tail. Ladder from the exact contract.
+            "model_id": "claude-opus-5-5",
+            "label": "Claude Opus 5.5 (pinned Opus generation; heads the Claude chain)",
+            "tier": "frontier",
+            "recommended_roles": ("brain", "review", "design_visual"),
+            "reasoning_efforts": ("low", "medium", "high", "xhigh", "max"),
+        },
         {
             "model_id": "claude-fable-5-1",
             "label": "Claude Fable 5.1 (most capable widely released tier)",
@@ -371,9 +388,11 @@ CATEGORY_SCALE_SOURCES: Final[dict[str, tuple[str, ...]]] = {
 }
 
 # The built-in category->model table, the fallback for a profile with no local
-# inventory. Codex takes vendor model ids; Claude Code takes concrete ids for
-# the Fable tier (no alias tracks it) and the `opus` alias for the Opus tier.
-CLAUDE_FRONTIER_CHAIN_MODELS: Final[tuple[str, ...]] = ("claude-fable-5-1", "opus")
+# inventory. Codex takes vendor model ids; Claude Code takes the pinned Opus
+# 5.5 id, then the pinned Fable 5.1 id, then the `opus` alias (owner decision,
+# 2026-10-13: literally "Opus 5.5 before Fable 5.1", with the alias as the
+# always-resolving tail the pre-2026-10-13 chain also ended on).
+CLAUDE_FRONTIER_CHAIN_MODELS: Final[tuple[str, ...]] = ("claude-opus-5-5", "claude-fable-5-1", "opus")
 
 
 def _CLAUDE_FRONTIER_CHAIN(effort: str) -> tuple[dict[str, str], ...]:
@@ -412,20 +431,34 @@ BUILTIN_CATEGORY_MODELS: Final[dict[str, dict[str, tuple[dict[str, str], ...]]]]
         "deep-work": ({"model_id": "gpt-6-astra", "reasoning_effort": "high"},),
     },
     # Claude Code: every frontier category runs the owner-ordered Claude chain
-    # (Fable 5.1 -> Opus, 2026-09-06). Fable 5.1 is the most capable widely
-    # released tier; where a provider does not serve it the CLI's rejection
-    # falls the chain through to `opus`, so the tail keeps the previous
-    # out-of-the-box behavior. The sonnet/haiku lanes are cost-tier picks
-    # below the ordered chain and stay as they were.
+    # (owner decision, 2026-10-13, reversing the 2026-09-06 Fable -> Opus
+    # order the Hermes lane also left that day): the pinned `claude-opus-5-5`
+    # heads it, `claude-fable-5-1` is the fall-through, and the `opus` alias
+    # is the tail. The chain is next-candidate advice (omh never retries or
+    # switches models itself), so a run moves down it only when the operator
+    # or a dispatcher acts on a rejection: Fable 5.1 when the account does
+    # not serve the pinned Opus 5.5 id, then `opus`, which every Claude Code
+    # resolves -- to Opus 5.5 from v2.1.280 and to Opus 4.6 on Microsoft
+    # Foundry -- so the tail keeps the out-of-the-box behavior.
+    #
+    # `unspecified-high` and `visual-engineering` used to leave the effort to
+    # the CLI (`""`). They now name `medium` and `high`, the rungs the Hermes
+    # lane's same categories carry: Opus 5.5's API default is `medium` where
+    # the Fable head they ran on before defaulted to `high`, so an empty
+    # effort would have lowered `visual-engineering` silently (the 2026-10-01
+    # Codex fix above is the precedent). The sonnet/haiku lanes are cost-tier
+    # picks below the ordered chain and stay as they were; the `haiku` alias
+    # moved to Haiku 5.5 only where the client resolves it there (see
+    # EXECUTOR_MODEL_OPTIONS above).
     "claude-code": {
         "ultrabrain": _CLAUDE_FRONTIER_CHAIN("xhigh"),
         "deep": _CLAUDE_FRONTIER_CHAIN("high"),
         "architect": _CLAUDE_FRONTIER_CHAIN("xhigh"),
-        "unspecified-high": _CLAUDE_FRONTIER_CHAIN(""),
+        "unspecified-high": _CLAUDE_FRONTIER_CHAIN("medium"),
         "unspecified-low": ({"model_id": "sonnet", "reasoning_effort": ""},),
         "quick": ({"model_id": "haiku", "reasoning_effort": ""},),
         "writing": ({"model_id": "haiku", "reasoning_effort": ""},),
-        "visual-engineering": _CLAUDE_FRONTIER_CHAIN(""),
+        "visual-engineering": _CLAUDE_FRONTIER_CHAIN("high"),
         "artistry": ({"model_id": "sonnet", "reasoning_effort": ""},),
         # capable and deep-work are frontier-shaped, so they run the ordered
         # Claude chain at their declared effort; simple-work is a cost-tier

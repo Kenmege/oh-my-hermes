@@ -82,32 +82,41 @@ QUALIFICATION_HOLDS: Final[dict[str, dict[str, object]]] = {
 # computed from the catalog: adding a candidate or a new role must fail the
 # qualification guard until its evidence decision lands in the same change.
 # No new measured advantage is claimed by grandfathering these placements.
+# Re-reviewed 2026-10-13 against the owner's table of that date: every slot
+# below is that decision, editorial except the `unspecified-high` GPT head,
+# which rests on the 2026-09-05 live-model-tools measurement of its
+# predecessor (gpt-5.6-sol); GPT-6.1 Sol itself is unmeasured there.
 RECOMMENDATION_DECISIONS: Final[dict[str, tuple[str, ...]]] = {
     "claude-fable-5-1": (
         "categories:architect", "categories:artistry", "categories:capable",
-        "categories:quick", "categories:visual-engineering", "role_suggestions:main",
+        "categories:visual-engineering", "role_suggestions:main",
     ),
-    "claude-haiku-4-5": ("categories:simple-work",),
+    "claude-haiku-5-5": ("categories:quick", "categories:simple-work"),
     "claude-opus-5-5": (
-        "categories:capable", "categories:unspecified-high", "categories:unspecified-low",
-        "last_resort:any", "role_suggestions:main",
+        "categories:architect", "categories:artistry", "categories:capable", "categories:deep",
+        "categories:deep-work", "categories:unspecified-high", "categories:visual-engineering",
+        "categories:writing", "last_resort:any", "role_suggestions:main",
     ),
-    "deepseek-flash": ("categories:deep", "categories:simple-work", "categories:unspecified-low"),
-    "gemini-3.1-pro": ("categories:artistry", "categories:writing", "domain_affinities:x_platform_data"),
-    "glm-5.3": ("categories:capable", "categories:unspecified-low"),
+    "claude-sonnet-5-5": ("categories:unspecified-low", "categories:writing"),
+    "deepseek-flash": ("categories:simple-work", "categories:unspecified-low"),
+    "gemini-3.1-pro": (
+        "categories:artistry", "categories:visual-engineering", "categories:writing",
+        "domain_affinities:x_platform_data",
+    ),
+    "glm-5.3": ("categories:unspecified-low",),
     "glm-5.3-flash": ("categories:quick",),
-    "gpt-6-astra": (
-        "categories:architect", "categories:deep-work", "categories:ultrabrain", "role_suggestions:main",
-    ),
+    "gpt-6-astra": ("categories:architect", "categories:ultrabrain", "role_suggestions:main"),
     "gpt-6-luna": ("categories:quick", "categories:simple-work"),
-    "gpt-6.1-sol": ("categories:deep", "last_resort:any", "role_suggestions:main"),
+    "gpt-6.1-sol": (
+        "categories:capable", "categories:deep", "categories:deep-work", "categories:unspecified-high",
+        "categories:unspecified-low", "last_resort:any", "role_suggestions:main",
+    ),
     "grok-build-0.1": ("domain_affinities:x_platform_data",),
     "kimi-k3": (
-        "categories:architect", "categories:artistry", "categories:capable", "categories:quick",
-        "categories:unspecified-high", "categories:visual-engineering", "categories:writing",
-        "domain_affinities:x_platform_data", "role_suggestions:main",
+        "categories:architect", "categories:artistry", "categories:capable", "categories:deep",
+        "categories:quick", "categories:unspecified-high", "categories:visual-engineering",
+        "categories:writing", "domain_affinities:x_platform_data", "role_suggestions:main",
     ),
-    "qwen3-coder": ("categories:writing",),
 }
 # Each row carries its own decision date: retirements land one onboarding at
 # a time, so a shared date would misdate every row after the first round.
@@ -138,7 +147,25 @@ RETIREMENT_DECISIONS: Final[dict[str, dict[str, object]]] = {
         # aliases of Grok Build 0.1.
         ("grok-code-fast", "grok-build-0.1", "all_shipped_chains", "2026-10-01"),
         ("gpt-6-sol", "gpt-6.1-sol", "all_shipped_chains", "2026-10-01"),
+        ("claude-haiku-4-5", "claude-haiku-5-5", "all_shipped_chains", "2026-10-13"),
     )
+} | {
+    # Qwen3-Coder (2025) left its only slot on 2026-10-13 and no Qwen-line
+    # generation replaced it, so the row is written out rather than generated:
+    # an empty successor, and a reason that names the model now holding the
+    # slot instead of calling it a successor generation.
+    "qwen3-coder": {
+        "disposition": "excluded_superseded",
+        "successor": "",
+        "reason": (
+            "Owner retired this line from all_shipped_chains with no same-line successor; "
+            "its slot (writing, second, medium) is now held by claude-sonnet-5-5."
+        ),
+        "scope": "all_shipped_chains",
+        "decision_date": "2026-10-13",
+        "evidence_state": "editorial_not_measured",
+        "evidence_pointers": ["docs/MODEL-ONBOARDING.md#4-place-routing", "src/coding/model_recommendations.py"],
+    },
 }
 
 
@@ -167,7 +194,9 @@ def _superseded_by(canonical: str, inventory_ids: frozenset[str]) -> dict[str, o
     does not count.
     """
     retirement = RETIREMENT_DECISIONS.get(canonical)
-    if not retirement:
+    # A retirement with no same-line successor (an empty `successor`) has no
+    # link to offer; its own reason says which model now holds the slot.
+    if not retirement or not retirement["successor"]:
         return None
     successor = str(retirement["successor"])
     return {

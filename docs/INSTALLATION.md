@@ -587,19 +587,19 @@ The shipped catalog is editorial policy, not benchmark output:
 <!-- omh:model-chain-table:begin (generated: uv run python -m omh.cli docs chain-table; source: src/coding/model_recommendations.py) -->
 | Surface | What it is for | Shipped editable order |
 | --- | --- | --- |
-| Hermes `main` suggestion | The session's own model | Kimi K3, Claude Fable 5.1, Claude Opus 5.5, GPT-6 Astra (`xhigh`), GPT-6.1 Sol (`high`) |
+| Hermes `main` suggestion | The session's own model | GPT-6.1 Sol (`high`), Claude Opus 5.5, Claude Fable 5.1, GPT-6 Astra (`xhigh`), Kimi K3 |
 | `ultrabrain` | Deepest reasoning | GPT-6 Astra (`xhigh`) |
-| `deep` | Strong default tier | GPT-6.1 Sol (`high`), DeepSeek Flash (V4.1) (`high`) |
-| `architect` | Architecture and system design | Claude Fable 5.1 (`xhigh`), GPT-6 Astra (`xhigh`), Kimi K3 (`xhigh`) |
-| `unspecified-high` | Default working model | Kimi K3 (`medium`), Claude Opus 5.5 (`medium`) |
-| `unspecified-low` | Cheaper fallback | GLM 5.3 (`low`), DeepSeek Flash (V4.1) (`low`), Claude Opus 5.5 (`low`) |
-| `quick` | Short tasks | GLM 5.3 Flash (`low`), Kimi K3 (`low`), GPT-6 Luna (`low`), Claude Fable 5.1 (`low`) |
-| `writing` | Prose and docs | Kimi K3 (`medium`), Qwen3-Coder (`medium`), Gemini 3.1 Pro (`medium`) |
-| `visual-engineering` | Frontend and visual | Claude Fable 5.1 (`high`), Kimi K3 (`high`) |
-| `artistry` | Unconventional work | Gemini 3.1 Pro (`high`), Claude Fable 5.1 (`high`), Kimi K3 (`high`) |
-| `capable` | Strong general work | Claude Fable 5.1 (`medium`), Claude Opus 5.5 (`medium`), Kimi K3 (`medium`), GLM 5.3 (`medium`) |
-| `simple-work` | Small everyday tasks | GPT-6 Luna (`low`), DeepSeek Flash (V4.1) (`low`), Claude Haiku 4.5 (`low`) |
-| `deep-work` | Long tasks at frontier depth | GPT-6 Astra (`high`) |
+| `deep` | Strong default tier | Claude Opus 5.5 (`high`), GPT-6.1 Sol (`high`), Kimi K3 (`high`) |
+| `architect` | Architecture and system design | Claude Opus 5.5 (`xhigh`), GPT-6 Astra (`xhigh`), Claude Fable 5.1 (`xhigh`), Kimi K3 (`xhigh`) |
+| `unspecified-high` | Default working model | GPT-6.1 Sol (`medium`), Claude Opus 5.5 (`medium`), Kimi K3 (`medium`) |
+| `unspecified-low` | Cheaper fallback | GLM 5.3 (`low`), DeepSeek V4.1 Flash (`low`), GPT-6.1 Sol (`low`), Claude Sonnet 5.5 (`low`) |
+| `quick` | Short tasks | GLM 5.3 Flash (`low`), GPT-6 Luna (`low`), Claude Haiku 5.5 (`low`), Kimi K3 (`low`) |
+| `writing` | Prose and docs | Claude Opus 5.5 (`medium`), Claude Sonnet 5.5 (`medium`), Kimi K3 (`medium`), Gemini 3.1 Pro (`medium`) |
+| `visual-engineering` | Frontend and visual | Claude Opus 5.5 (`high`), Claude Fable 5.1 (`high`), Gemini 3.1 Pro (`high`), Kimi K3 (`high`) |
+| `artistry` | Unconventional work | Gemini 3.1 Pro (`high`), Claude Opus 5.5 (`high`), Claude Fable 5.1 (`high`), Kimi K3 (`high`) |
+| `capable` | Strong general work | Claude Opus 5.5 (`medium`), GPT-6.1 Sol (`medium`), Claude Fable 5.1 (`medium`), Kimi K3 (`medium`) |
+| `simple-work` | Small everyday tasks | GPT-6 Luna (`low`), Claude Haiku 5.5 (`low`), DeepSeek V4.1 Flash (`low`) |
+| `deep-work` | Long tasks at frontier depth | Claude Opus 5.5 (`max`), GPT-6.1 Sol (`max`) |
 | `x_platform_data` affinity | X-platform data affinity | Grok Build 0.1, Kimi K3, Gemini 3.1 Pro |
 | Shared final order (`last_resort.any`) | Last resort when a chain is exhausted | Claude Opus 5.5 (`medium`), GPT-6.1 Sol (`medium`) |
 <!-- omh:model-chain-table:end -->
@@ -1035,13 +1035,17 @@ implicit default.
    dispatch` spawns each CLI headlessly and falls back to a `--model` value
    only when a unit's prepared handoff routed no model at all. That fallback
    lives at `~/.omh/routing/dispatch-models.json` — seeded empty only by an
-   explicit "yes" to the interactive setup's maestro question, otherwise
-   operator-edited —
+   explicit "yes" to the interactive setup's maestro question, given a
+   `"claude-code": "claude-opus-5-5"` entry by the setup's provider question
+   once a Claude Code subscription is confirmed and no entry exists (the head
+   of the Maestro lane's Claude chain, a pinned id since 2026-10-13),
+   otherwise operator-edited —
    (`omh_dispatch_model_preferences/v1`, a `profiles` map from owner to model
    string, e.g. `{"schema_version": "omh_dispatch_model_preferences/v1",
    "profiles": {"claude-code": "opus"}}`). Neither profile ships a shipped
-   default; `"opus"` is documented here only as the recommended claude-code
-   value for an operator whose account is entitled to that tier. Claude Code
+   default; `"opus"` is documented here as the alias to use when the account
+   does not serve the pinned `claude-opus-5-5` id the setup seeds, or when
+   the entry should follow whichever Opus the client recommends. Claude Code
    resolves that alias to the provider's recommended Opus: Opus 5.5 needs
    Claude Code v2.1.280 or later, and Microsoft Foundry resolves it to Opus
    4.6 (official, code.claude.com/docs/en/model-config). A one-off
