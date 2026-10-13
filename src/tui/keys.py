@@ -574,8 +574,8 @@ class KeyDecoder:
             if length:
                 rest = length - len(self._settled_start)
                 del self._pending[:rest]  # the rest of a report already settled
-                # Every byte held from earlier reads was that rest (one that could not be ended the window),
-                # so the rest used them all up and what is left came in this read.
+                # Every byte held from earlier reads belonged to that rest (it stayed held because the report
+                # was not complete yet), so deleting the rest used them all up and what is left came in this read.
                 self._held_at = now
                 earlier = max(earlier - rest, 0)
                 self._settled_start = b""
