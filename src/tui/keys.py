@@ -18,7 +18,9 @@ Terminals that `Terminal` asks for richer key reports send some keys as kitty
 CSI u (`ESC[99;5u`) or xterm modifyOtherKeys (`ESC[27;5;99~`). Each of those
 decodes to the very `Key` its legacy bytes give, so Ctrl+C, Esc, Tab, Alt+b or
 Shift+a behave the same either way; the reports only add what legacy bytes
-cannot say, such as Ctrl+Enter and Shift+Enter.
+cannot say, such as Ctrl+Enter and Shift+Enter. A key decoded from either
+form carries `protocol=True`, and `KeyDecoder.protocol_reported` turns on at
+the first one: the terminal is known to send them only once it has.
 
 While `Terminal.set_mouse(True)` has mouse reporting on, a click arrives as an
 SGR report (`ESC[<b;x;yM` press, `ESC[<b;x;ym` release) and decodes to a
@@ -29,7 +31,7 @@ legacy `ESC[M` and three payload bytes instead; that is one unknown key.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 CHAR = "char"
 ENTER = "enter"
@@ -150,11 +152,20 @@ _MOUSE_BUTTONS = {
 
 @dataclass(frozen=True)
 class Key:
+    """One key press. `protocol` says it arrived as a kitty CSI u or xterm modifyOtherKeys report.
+
+    `protocol` is not part of a key's identity: such a report decodes to the
+    very `Key` its legacy bytes give, and compares equal to it. It says which
+    form the terminal used, a form only a terminal that honoured the request
+    for richer reports sends.
+    """
+
     name: str
     char: str = ""
     ctrl: bool = False
     alt: bool = False
     shift: bool = False
+    protocol: bool = field(default=False, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -316,14 +327,19 @@ def _sgr_mouse(parameters: str, pressed: bool) -> Key | Mouse:
     )
 
 
+def _reported(key: Key) -> Key:
+    """A key decoded from a CSI u or modifyOtherKeys report, marked as such; an unknown one is not marked."""
+    return key if key.name == UNKNOWN else replace(key, protocol=True)
+
+
 def _csi_key(parameters: str, final: str) -> Key | Mouse:
     if parameters.startswith(SGR_MOUSE_PREFIX) and final in (SGR_MOUSE_PRESS, SGR_MOUSE_RELEASE):
         return _sgr_mouse(parameters[len(SGR_MOUSE_PREFIX) :], final == SGR_MOUSE_PRESS)
     fields = parameters.split(";")
     if final == CSI_U_FINAL and len(fields) <= 2:
-        return _protocol_key(fields[0], fields[1] if len(fields) == 2 else "1")
+        return _reported(_protocol_key(fields[0], fields[1] if len(fields) == 2 else "1"))
     if final == "~" and len(fields) == 3 and fields[0] == MODIFY_OTHER_KEYS_PARAMETER and ":" not in parameters:
-        return _protocol_key(fields[2], fields[1])
+        return _reported(_protocol_key(fields[2], fields[1]))
     if len(fields) > 2:
         return Key(UNKNOWN)
     modifier = fields[1] if len(fields) == 2 else ""
@@ -428,6 +444,9 @@ class KeyDecoder:
     def __init__(self) -> None:
         self._pending = bytearray()
         self._paste: bytearray | None = None
+        # True from the first key that arrived as a CSI u or modifyOtherKeys report: the terminal does
+        # send them, so Ctrl+Enter reaches the caller apart from Enter. Asking for them proves nothing.
+        self.protocol_reported = False
 
     def feed(self, data: bytes) -> list[Key | Paste | Mouse]:
         self._pending.extend(data)
@@ -455,6 +474,7 @@ class KeyDecoder:
                 if key is _PASTE_START:
                     self._paste = bytearray()
                 else:
+                    self.protocol_reported = self.protocol_reported or (isinstance(key, Key) and key.protocol)
                     events.append(key)
             del self._pending[:index]
             if self._paste is None:

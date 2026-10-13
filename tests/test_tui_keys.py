@@ -348,6 +348,45 @@ class KeyboardProtocolTests(unittest.TestCase):
                 self.assertEqual(len(decode(data)), 1)
 
 
+class ProtocolReportedTests(unittest.TestCase):
+    """Which form a key came in, and whether the terminal has sent one of the richer reports at all."""
+
+    LEGACY = b"a\r\x03\t\x7f\x1b[A\x1b[1;5C\x1b[Z\x1b[3~\x1bOP\x1bb\x1b[200~pasted\x1b[201~\x1b[<0;3;4M"
+
+    def test_legacy_bytes_never_say_the_reports_arrive(self) -> None:
+        decoder = KeyDecoder()
+        events = decoder.feed(self.LEGACY) + decoder.feed(b"\x1b") + decoder.flush()
+        self.assertGreater(len(events), 10)
+        self.assertFalse(any(getattr(event, "protocol", False) for event in events))
+        self.assertFalse(decoder.protocol_reported)
+
+    def test_the_first_csi_u_or_modify_other_keys_key_says_they_do(self) -> None:
+        for report in (csi_u(ord("c"), CTRL), csi_u(27), csi_u(13, CTRL), modify_other_keys(ord("c"), CTRL),
+                       modify_other_keys(13, CTRL), csi_u(9, SHIFT), b"\x1b[97:65;2u"):
+            with self.subTest(report=report):
+                decoder = KeyDecoder()
+                decoder.feed(self.LEGACY)
+                self.assertFalse(decoder.protocol_reported)
+                (key,) = decoder.feed(report)
+                self.assertTrue(key.protocol)
+                self.assertTrue(decoder.protocol_reported)
+                decoder.feed(self.LEGACY)
+                self.assertTrue(decoder.protocol_reported)  # it stays on
+
+    def test_the_form_is_not_part_of_the_key(self) -> None:
+        reported, (legacy,) = decode(csi_u(ord("c"), CTRL))[0], decode(b"\x03")
+        self.assertEqual(reported, legacy)
+        self.assertEqual(hash(reported), hash(legacy))
+        self.assertEqual(repr(reported), repr(legacy))
+        self.assertTrue(reported.protocol)
+        self.assertFalse(legacy.protocol)
+
+    def test_a_report_that_decodes_to_no_key_says_nothing(self) -> None:
+        decoder = KeyDecoder()
+        self.assertEqual(decoder.feed(b"\x1b[99;9u\x1b[99;5:3u\x1b[27;9;99~"), [Key("unknown")] * 3)
+        self.assertFalse(decoder.protocol_reported)
+
+
 def sgr_mouse(code: int, x: int, y: int, pressed: bool = True) -> bytes:
     return f"\x1b[<{code};{x};{y}{'M' if pressed else 'm'}".encode()
 

@@ -365,7 +365,7 @@ Esc closes it):
 | --- | --- |
 | Enter | Sends the composer |
 | `\` then Enter, Alt+Enter, Shift+Enter, Ctrl+J | Adds a line |
-| Ctrl+Enter | Steers a running turn with the composer's text; idle, sends it as Enter does |
+| Ctrl+Enter | Steers a running turn with the composer's text, on a terminal that tells it from Enter (`/steer <text>` steers on any terminal); idle, sends it as Enter does |
 | Tab | Completes a slash command, or the `@` reference being typed |
 | Shift+Tab | Cycles the input mode: normal, accept all, plan; while Hermes itself has approvals off, turns plan on and off |
 | Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max |
@@ -404,6 +404,9 @@ terminals Hermes' own TUI asks, recognised as Hermes recognises them, from
 switched off on exit, a crash, SIGTERM and SIGHUP included. Elsewhere,
 Terminal.app among them, both keys send what Enter sends, so there
 `/steer <text>` steers and `\` then Enter, Alt+Enter or Ctrl+J adds a line.
+A terminal on the list can ignore the request too (tmux with
+`extended-keys off`), so the mode row names `/steer <text>` until a key has
+arrived in one of those reports, and `ctrl+enter steer` from then on.
 `OMH_TUI_KEYBOARD=legacy` stops the request on any terminal.
 
 Shift+Tab cycles three input modes, and both composer rules and the mode row

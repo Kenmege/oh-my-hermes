@@ -13,8 +13,12 @@ put back on exit whether the block ended normally or by an exception.
 
 On the terminals Hermes' own TUI trusts with them, entering also asks for the
 kitty keyboard protocol and xterm modifyOtherKeys, so Ctrl+Enter and
-Shift+Enter arrive as keys of their own (`keyboard_protocol` says whether it
-asked); `OMH_TUI_KEYBOARD=legacy` keeps the plain bytes everywhere.
+Shift+Enter can arrive as keys of their own; `OMH_TUI_KEYBOARD=legacy` keeps
+the plain bytes everywhere. `keyboard_protocol` says only that it asked: a
+terminal on the list can ignore the request (tmux with `extended-keys off`),
+and then Ctrl+Enter arrives as Enter. Whether the reports really come is
+`KeyDecoder.protocol_reported`, which turns on at the first key that arrives
+as one.
 
 Mouse reporting is off unless `set_mouse(True)` turns it on, and then only
 clicks and the wheel are reported, in SGR form; motion tracking is never
@@ -173,7 +177,7 @@ class Terminal:
         self._winch_installed = False
         self._resized = False
         self._keyboard_request = keyboard_protocol_request(environ or {})
-        # True while the richer key reports were asked for, so Ctrl+Enter can reach the TUI.
+        # True while the richer key reports are asked for. Asked, not reported: see the module docstring.
         self.keyboard_protocol = False
         # True while mouse reports are on (`set_mouse`).
         self.mouse_reporting = False

@@ -75,6 +75,11 @@ class TableTests(unittest.TestCase):
                 self.assertNotIn("|", "".join(row))  # a pipe would split the doc table's cell
                 self.assertNotIn("`", "".join(row))
 
+    def test_the_steer_row_names_the_key_and_the_command_that_works_everywhere(self) -> None:
+        # The mode row names /steer until the terminal has sent a CSI u or modifyOtherKeys key; the list names both.
+        (steer,) = [does for keys, does in SHORTCUTS if keys.startswith("Ctrl+Enter")]
+        self.assertIn("/steer <text>", steer)
+
     def test_the_ctrl_letters_named_are_the_ones_that_do_something(self) -> None:
         named = ctrl_letters_named()
         self.assertEqual(named, set("acdejkltouvw"))

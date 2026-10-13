@@ -19,7 +19,8 @@ from .width import cell_width, wrap_line
 SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Enter", "Sends the composer"),
     ("\\ then Enter, Alt+Enter, Shift+Enter, Ctrl+J", "Adds a line"),
-    ("Ctrl+Enter", "Steers a running turn with the composer's text; idle, sends it as Enter does"),
+    ("Ctrl+Enter", "Steers a running turn with the composer's text, on a terminal that tells it from Enter "
+                   "(/steer <text> steers on any terminal); idle, sends it as Enter does"),
     ("Tab", "Completes a slash command, or the @ reference being typed"),
     ("Shift+Tab", "Cycles the input mode: normal, accept all, plan; while Hermes itself has approvals off, "
                   "turns plan on and off"),

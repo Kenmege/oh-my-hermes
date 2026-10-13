@@ -194,7 +194,7 @@ BARE_HERMES_NOTE = "Bare `hermes` opens Hermes' own terminal."
 # The mode row under the composer frame. In normal mode it carries the keys that matter now.
 IDLE_KEYS_HINT = "? shortcuts · ⇧⇥ mode · ctrl+t effort"
 INTERRUPT_KEY_HINT = "esc interrupt"
-STEER_KEY_HINT = "ctrl+enter steer"  # only where the terminal reports Ctrl+Enter apart from Enter
+STEER_KEY_HINT = "ctrl+enter steer"  # only once the terminal has sent a key in a CSI u or modifyOtherKeys report
 STEER_COMMAND_HINT = "/steer <text> steers"
 QUEUED_KEY_HINT = "↑ edit queued"
 ACCEPT_LABEL = "⏵⏵ accept all on"
@@ -2384,8 +2384,14 @@ class App:
 
     @property
     def keyboard_protocol(self) -> bool:
-        """Whether the terminal reports Ctrl+Enter apart from Enter; read live, since the terminal turns it on when entered."""
-        return bool(getattr(self.terminal, "keyboard_protocol", False))
+        """Whether Ctrl+Enter reaches the TUI apart from Enter: a key has arrived as a CSI u or modifyOtherKeys report.
+
+        Asking the terminal for those reports is not enough, since a terminal
+        on the list can ignore the request and send Ctrl+Enter as Enter. So
+        the mode row names `/steer` until the first such key, and Ctrl+Enter
+        from then on.
+        """
+        return self.decoder.protocol_reported
 
     def _sticky_needed(self, rows: int) -> bool:
         """Whether the sent prompt needs echoing above the composer: only once it has scrolled off.

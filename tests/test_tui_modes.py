@@ -278,6 +278,22 @@ class SteerTests(unittest.TestCase):
         app._on_response(Response(steer, None, {"code": 4010, "message": "agent does not support steer"}))
         self.assertEqual(app.composer.text, "a draft\nkeep this")
 
+    def test_the_mode_row_names_ctrl_enter_only_once_the_terminal_has_sent_a_report(self) -> None:
+        app, _client = make_app(busy=True)
+        app.terminal.keyboard_protocol = True  # type: ignore[attr-defined]  # asked, as on an allowlisted terminal
+
+        def hint() -> str:
+            row = next(line for line in drawn(app) if line.startswith("esc interrupt"))
+            return row.strip()
+
+        self.assertEqual(hint(), "esc interrupt · /steer <text> steers")
+        for event in app.decoder.feed(b"x\r"):  # a terminal that ignored the request: Ctrl+Enter comes as Enter
+            app._on_input(event)
+        self.assertEqual(hint(), "esc interrupt · /steer <text> steers · ↑ edit queued")
+        for event in app.decoder.feed(b"\x1b[27u"):  # Esc, as kitty reports it
+            app._on_input(event)
+        self.assertEqual(hint(), "esc interrupt · ctrl+enter steer · ↑ edit queued")
+
     def test_only_ctrl_enter_and_the_steer_command_can_steer(self) -> None:
         # Steer text is what the person typed and sent, so `session.steer` has one sender with two callers.
         tree = ast.parse(Path(app_module.__file__).read_text(encoding="utf-8"))
