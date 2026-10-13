@@ -493,6 +493,49 @@ _INTERNAL_AUDIT_EXPLICIT_PHRASES = tuple(
     )
 )
 
+# `spend-gate` holds back every everyday token its phrases are built from.
+# Listed are the phrases that ask the agent to move money for the person, or
+# name the gate itself. Not boosted: the cap and limit phrases (a government
+# has a spending cap), the 402 status phrases (a developer adds HTTP 402 to
+# their own API) and "retry the payment" (a payment service retries on its
+# own); those score as ordinary phrases. "from my wallet" is boosted and also
+# needs a word of money beside it (`EVERYDAY_SENSE_PHRASES`): a photo falls
+# from a wallet.
+_SPEND_GATE_EXPLICIT_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "spend-gate",
+        "spend gate",
+        "pre-spend",
+        "pre-spend card",
+        "spend request",
+        "spend approval",
+        "approve the spend",
+        "approve this purchase",
+        "approve the purchase",
+        "complete the purchase",
+        "complete the checkout",
+        "buy this for me",
+        "buy it for me",
+        "place the order",
+        "place an order",
+        "pay with my card",
+        "pay with my saved card",
+        "with my saved card",
+        "402 challenge",
+        "paid data endpoint",
+        "wallet transfer",
+        "from my wallet",
+        "money on my behalf",
+        "spend on my behalf",
+        "pay on my behalf",
+        "buy on my behalf",
+        "did the payment go through",
+        "did the charge go through",
+        "pay for the booking",
+    )
+)
+
 # `mobile-release` holds back every everyday token its phrases are built from.
 # Listed are the phrases that name releasing through a store. A bare "play
 # store", "app store" or "google play" is not: a phone's store app, a gift card
@@ -1249,6 +1292,19 @@ _SKILL_POLICIES = {
             "Prepare field_inventory/v1 with each field's class; minimization_plan/v1 with one action per field and the "
             "local path of any pseudonym mapping; residual_scan/v1 with observed counts per class on the shipped file, "
             "or not_observed; and the metadata-only share_record/v1."
+        ),
+    ),
+    "spend-gate": RecommendationPolicy(
+        next_action="prepare_pre_spend_card",
+        evidence_boundary=(
+            "A pre-spend card is not a confirmation, a payment, or a charge; a spend is done only on an observed order id, "
+            "transaction id, or receipt header, and OMH moves no money and holds no credential."
+        ),
+        wrapper_guidance=(
+            "Prepare pre_spend_card/v1 from the quote's own source with payee, total with fees and currency, rail, cap, "
+            "refund terms, reversibility, and approver; spend_confirmation/v1 from the person's typed yes in this session; "
+            "spend_receipt/v1 from an observed receipt; and a metadata-only spend_cap_ledger/v1. Never spend in a run nobody "
+            "can answer, and reconcile an unknown outcome before any retry."
         ),
     ),
     "mobile-release": RecommendationPolicy(
@@ -3149,6 +3205,54 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "these",
         }
     ),
+    # `spend-gate` is built from "spend", "pay", "paid", "payment", "buy",
+    # "purchase", "order", "checkout", "card", "wallet", "transfer", "money",
+    # "cap", "limit" and "retry" -- time is spent, attention is paid, a branch
+    # is checked out, imports are put in order, a wallet is lost and a repo is
+    # transferred, and none of those moves money. Only the complete phrases
+    # score. The two hyphenated names stay creditable: `spend-gate` and
+    # `pre-spend` mean nothing else.
+    "spend-gate": frozenset(
+        {
+            "402",
+            "approval",
+            "approve",
+            "behalf",
+            "booking",
+            "buy",
+            "cap",
+            "card",
+            "challenge",
+            "charge",
+            "checkout",
+            "complete",
+            "data",
+            "did",
+            "endpoint",
+            "from",
+            "gate",
+            "http",
+            "limit",
+            "money",
+            "order",
+            "paid",
+            "pay",
+            "pay-per",
+            "payment",
+            "per",
+            "place",
+            "pre",
+            "purchase",
+            "required",
+            "retry",
+            "saved",
+            "spend",
+            "spending",
+            "through",
+            "transfer",
+            "wallet",
+        }
+    ),
     # `mobile-release` is built from "app", "store", "play", "google",
     # "release", "code", "signing", "privacy", "data", "safety", "form",
     # "review", "track" and "android" -- a phone's store app, a gift card, a
@@ -4422,6 +4526,9 @@ def _score_definition(
     if definition.name == "internal-audit" and _internal_audit_explicit_match(normalized_query):
         score += 30
         matched.add("direct:internal_audit")
+    if definition.name == "spend-gate" and _spend_gate_explicit_match(normalized_query):
+        score += 30
+        matched.add("direct:spend_gate")
     if definition.name == "mobile-release" and _mobile_release_explicit_match(normalized_query):
         score += 30
         matched.add("direct:mobile_release")
@@ -5305,6 +5412,10 @@ def _internal_audit_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _INTERNAL_AUDIT_EXPLICIT_PHRASES)
 
 
+def _spend_gate_explicit_match(normalized_query: str) -> bool:
+    return any(_trigger_phrase_match(normalized_query, phrase) for phrase in _SPEND_GATE_EXPLICIT_PHRASES)
+
+
 def _mobile_release_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _MOBILE_RELEASE_EXPLICIT_PHRASES)
 
@@ -5687,6 +5798,72 @@ def _sales_pipeline_review_offers_itself(normalized_query: str, query_tokens: se
     )
 
 
+# `spend-gate` is for money the agent is about to move for the person. The
+# same phrases name payment software someone is building ("our wallet transfer
+# feature needs integration tests", "why is the paid endpoint in our api
+# returning 401"), a payment someone else asked about ("a customer emailed
+# asking did the payment go through") and an ordering of things ("place the
+# order of the slides"); each of those dispatched here at high confidence when
+# measured, and none moves money.
+_SPEND_GATE_NOT_SPENDING_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "our api",
+        "my own api",
+        "our app",
+        "our product",
+        "our store",
+        "our checkout",
+        "our payment",
+        "the payment service",
+        "the payment module",
+        "the order of",
+        "support ticket",
+        "demo copy",
+    )
+)
+_SPEND_GATE_NOT_SPENDING_TOKENS = frozenset(
+    {
+        "401",
+        "500",
+        "customer",
+        "customers",
+        "docs",
+        "documentation",
+        "feature",
+        "features",
+        "figma",
+        "implement",
+        "implementation",
+        "implementing",
+        "integration",
+        "javascript",
+        "mockup",
+        "phrase",
+        "portal",
+        "pricing",
+        "python",
+        "redesign",
+        "returning",
+        "schema",
+        "sdk",
+        "storefront",
+        "testing",
+        "tests",
+        "typescript",
+        "webhook",
+        "webhooks",
+    }
+)
+
+
+def _spend_gate_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
+    """Withdraw when the payment is software being built or someone else's, not a spend."""
+    if query_tokens & _SPEND_GATE_NOT_SPENDING_TOKENS:
+        return False
+    return not any(phrase_is_spoken(normalized_query, phrase) for phrase in _SPEND_GATE_NOT_SPENDING_PHRASES)
+
+
 # Skills that withdraw from the shortlist unless their own precondition holds,
 # checked in `_score_definition`. An explicit invocation always overrides this:
 # naming a skill outright is the user overruling its self-assessment.
@@ -5718,4 +5895,5 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     # An LLM wiki is the pattern Hermes' bundled `llm-wiki` skill builds.
     "wiki": lambda normalized_query, query_tokens: not llm_wiki_request(normalized_query),
     "data-share-review": data_share_review_offers_itself,
+    "spend-gate": _spend_gate_offers_itself,
 }

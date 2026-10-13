@@ -170,6 +170,8 @@
     "omh-skill-health/SKILL.md": "2baa78a23f52abe74b41dd970b3804e8d063e1557210078b97c07b25f5c90aba",
     "omh-skill-scout/SKILL.md": "0e002bb03faf9cbcdeaa7f65c988f5ff3c312e84f371734a047e41b9046d0e1e",
     "omh-source-finder/SKILL.md": "aa364fdd6e3fa91d404cdcb7226e5675f472cae800455305e4b9a8e0ad52aad0",
+    "omh-spend-gate/SKILL.md": "deb8bb53ff1422e7facf12926c3297b5d9c81d425542c5e2f417337894f645de",
+    "omh-spend-gate/references/spend-rails.md": "4ceb9744be490c238256d0338f2bdd199403884af6110754e4ceaba17dd10b90",
     "omh-support-operations/SKILL.md": "8f1cbbc2c3647debc830558621ad73eef4d3dad6960cc92573c8720169d8c323",
     "omh-tech-debt-audit/SKILL.md": "b428ffad47c4b2789adc99f08293a543b44bd0d43add239a27ac0d29e5d7b78c",
     "omh-tech-debt-audit/references/debt-dimensions.md": "7d0d601c1fc8897f0ce433dfa2ae44c2a5c9dd69ded28d7775cb6adbdd2afb75",
@@ -301,6 +303,7 @@
     "omh-skill-health",
     "omh-skill-scout",
     "omh-source-finder",
+    "omh-spend-gate",
     "omh-support-operations",
     "omh-tech-debt-audit",
     "omh-terminal",
@@ -321,7 +324,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "49bc4d3b7b9a37d94e7970d6d65ba374ac439d9981ecec2fd560206909956263",
+  "source_digest": "fff1dececdca0c0fa3d230448a6abea85375d3d3cb039e2f7414998d86cb1098",
   "targets": {
     "repo": ".claude/skills",
     "user": ".claude/skills"

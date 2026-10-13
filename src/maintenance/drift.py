@@ -544,7 +544,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # before a later clause (23). Its fourth review adds two: a lead verb
             # that is being defined ("de-identify means what exactly ...?",
             # "de-identify is the term we use ..."), which is not a command (2).
-            expected=605,
+            # The spend-gate lane adds eleven sentences that use its words and
+            # move no money for the person, none of which may name the gate:
+            # rent already paid, a lunch budget, a government's spending cap, a
+            # photo from a wallet, tests for a wallet-transfer feature, a
+            # customer's payment question, slides placed in order, a git
+            # checkout, HTTP 402 returned from one's own API, a model-provider
+            # cost comparison, and paying attention to a log (11).
+            expected=616,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -734,7 +741,15 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # residual-scan one with an export de-identified for a researcher,
             # and adds six requests other skills hold, three of them opening in
             # Hangul (+6, -3).
-            expected=752,
+            # The spend-gate lane adds ten: seven spends that dispatch the
+            # pre-spend card without naming it (an HTTP 402 to pay, a booking
+            # paid by card, a cap before the agent buys, a timed-out payment, a
+            # wallet transfer, money spent on the person's behalf, a purchase
+            # under a stated total), and three that keep their owners: a
+            # checkout URL login on browser-operator, payment failure reports
+            # on feedback-triage, and budget vs actual for marketing spend on
+            # finance-analysis (10).
+            expected=762,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -744,8 +759,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             describe="Installable workflow skills quoted in reference surfaces",
             live=_installable_skill_count,
             # The current workflow additions are part of the installable catalog.
-            # `data-share-review` adds one.
-            expected=143,
+            # `data-share-review` adds one. `spend-gate` adds one.
+            expected=144,
             sites=(
                 "docs/README.md",
                 # The docs index quotes the count in prose and

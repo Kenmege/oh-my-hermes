@@ -3393,6 +3393,7 @@ _PRIMARY_HARNESSES = {
     "mobile-release": "app-delivery-loop",
     "internal-audit": "critic",
     "data-share-review": "critic",
+    "spend-gate": "security-safety-review",
     "ask": "critic",
     "cancel": "goal-execution",
     "skill": "docs-specialist",

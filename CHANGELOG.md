@@ -4,6 +4,35 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A new `spend-gate` skill shows what a spend will cost before the agent
+  moves any money, and calls it done only on a receipt.** It covers every
+  rail: a card checkout in a page, an HTTP 402 or pay-per-request call, a
+  wallet transfer, a booking or deposit, a paid data endpoint, and a renewal
+  that charges again. Before money moves the person sees a pre-spend card
+  with the payee and its exact origin or address, the item, the total with
+  fees and currency, the rail, the cap and what remains of it, the refund
+  terms, whether the spend can be undone, and who approves it, and the
+  person's typed yes in that session is required whether or not Hermes shows
+  an approval prompt of its own. A host prompt that appears is recorded beside
+  that yes; one that did not appear, or an auto-approval, is no
+  confirmation. A run nobody can answer -- a cron job, a webhook, an
+  API-server run, a single-query `hermes chat -q`, a kanban worker, or a
+  delegated subagent -- never spends: it prepares the card for the person's
+  next interactive turn. A quote is not a purchase; only an observed order id,
+  transaction id, or receipt header completes a spend, and an outcome nobody
+  saw is `unknown` and is reconciled before any retry. The cap ledger keeps
+  metadata only. Hermes' saved-card fill, `clarify`, and the optional
+  `stripe-link-cli` and `mpp-agent` skills are used only when present, and a
+  saved card is never typed into a page without the fill tool. OMH moves no
+  money and holds no credential. The skill is guidance only: no hook holds a
+  payment tool call. Spend requests reach it from phrases such as "pay with my
+  card", "buy it for me", "402 challenge" and "from my wallet"; the bare
+  words `spend`, `pay`, `checkout`, `wallet` and their siblings score only
+  inside a complete phrase, `budget` is not one of its words at all, the
+  router withdraws the skill from a sentence that names a customer, a feature
+  or its tests, or the speaker's own API, and budget variances, payment
+  failure reports and browser logins keep their owners.
+
 - **A new `data-share-review` skill prepares a dataset, log, ticket export, or
   transcript excerpt to leave the team, and calls it redacted only after the
   file that leaves was scanned.** It asks where the file goes and what that
@@ -558,7 +587,6 @@ All notable changes will be documented here.
   tool_search finds it" rule, never a version. The feature-surface skills
   among these state their own Why and Do-Not-Use instead of the shape's
   shared lines, through a per-skill override that later skills can reuse.
-
 
 - **Review and verification skills use the contracts Hermes already enforces,
   and a failing check now says whether the change caused it.** `code-review`

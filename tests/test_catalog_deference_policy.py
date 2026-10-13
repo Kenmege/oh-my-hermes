@@ -290,9 +290,12 @@ NON_SKILL_BACKTICKS = frozenset(
 # `github-issue-intake`, `model-finetuning`, and `support-operations`, and
 # `legal-compliance-review` gains the statement pointing back. Seven cases,
 # seven pairs, one owner.
-EXPECTED_DEFERENCE_CASES = 377
-EXPECTED_DEFERENCE_PAIRS = 392
-EXPECTED_DEFERRING_OWNERS = 111
+# `spend-gate` defers to `browser-operator`, `feedback-triage`,
+# `finance-analysis`, and `provider-profile-posture`; no sibling gains a
+# statement pointing back. Four cases, four pairs, one owner.
+EXPECTED_DEFERENCE_CASES = 381
+EXPECTED_DEFERENCE_PAIRS = 396
+EXPECTED_DEFERRING_OWNERS = 112
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.

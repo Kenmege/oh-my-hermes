@@ -301,6 +301,8 @@ VISIBLE_ACTIONS = (
     "show_severity_grade",
     "prepare_data_share_review",
     "show_residual_scan",
+    "prepare_pre_spend_card",
+    "show_spend_ledger",
     "prepare_release_plan",
     "show_release_readiness",
     "show_frontend_handoff",
@@ -1154,6 +1156,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "show_severity_grade": ("show_severity_grade", "Show the severity criteria"),
     "prepare_data_share_review": ("prepare_data_share_review", "Review the data share"),
     "show_residual_scan": ("show_residual_scan", "Show the residual scan"),
+    "prepare_pre_spend_card": ("prepare_pre_spend_card", "Show the pre-spend card"),
+    "show_spend_ledger": ("show_spend_ledger", "Show the spend ledger"),
     "prepare_release_plan": ("prepare_release_plan", "Plan the release"),
     "show_release_readiness": ("show_release_readiness", "Show release readiness"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
@@ -2478,6 +2482,36 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "fields removed",
             "residual scan run",
             "file shared",
+        ],
+    },
+    "spend-gate": {
+        "kind": "pre_spend_card",
+        "headline": "I can show what this spend will cost before any money moves.",
+        "body": (
+            "I will read the payee, the total with fees, and the currency from the quote itself, check it against your cap, "
+            "name the refund terms and whether it can be undone, and wait for your typed yes. I move no money and hold no "
+            "card, and the spend counts as done only once its receipt is observed."
+        ),
+        "phase": "pre_spend_card_prepared",
+        "next_action": "prepare_pre_spend_card",
+        "artifact_schema": "pre_spend_card/v1",
+        "claim_boundary_suffix": "It is not a confirmation, a payment, or a charge until the receipt is observed.",
+        "actions": [
+            {"id": "prepare_pre_spend_card", "label": "Show the pre-spend card", "style": "primary"},
+            {"id": "show_spend_ledger", "label": "Show the spend ledger", "style": "secondary"},
+            {"id": "show_status", "label": "Show status", "style": "secondary"},
+        ],
+        "recommended_flow": [
+            "read_the_quote_from_its_source",
+            "check_the_cap",
+            "show_the_pre_spend_card",
+            "wait_for_typed_confirmation",
+            "observe_the_receipt",
+        ],
+        "evidence_not_observed": [
+            "spend confirmed",
+            "payment submitted",
+            "receipt observed",
         ],
     },
     "iac-change": {
