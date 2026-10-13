@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from . import runtime_paths
 
+import codecs
 import errno
 import hashlib
 import heapq
@@ -343,7 +344,19 @@ def _open_hud_descriptor(path: Path, *, root: Path | None) -> int:
         os.close(directory_descriptor)
 
 
-def _read_hud_text(path: Path, *, root: Path | None = None) -> str | None:
+def _read_hud_text(
+    path: Path,
+    *,
+    root: Path | None = None,
+    encoding: str = "utf-8",
+    prefix: bool = False,
+) -> str | None:
+    """A HUD metadata file's text, never more than `MAX_HUD_METADATA_BYTES`.
+
+    A larger file is refused, unless `prefix` asks for its first
+    `MAX_HUD_METADATA_BYTES` instead; that prefix can end inside a multi-byte
+    character, which the incremental decoder holds back rather than failing on.
+    """
     try:
         descriptor = _open_hud_descriptor(path, root=root)
     except (OSError, ValueError):
@@ -352,7 +365,7 @@ def _read_hud_text(path: Path, *, root: Path | None = None) -> str | None:
         opened = os.fstat(descriptor)
         if (
             not stat.S_ISREG(opened.st_mode)
-            or opened.st_size > MAX_HUD_METADATA_BYTES
+            or (opened.st_size > MAX_HUD_METADATA_BYTES and not prefix)
         ):
             return None
         chunks: list[bytes] = []
@@ -365,21 +378,67 @@ def _read_hud_text(path: Path, *, root: Path | None = None) -> str | None:
             remaining -= len(chunk)
         raw = b"".join(chunks)
         if len(raw) > MAX_HUD_METADATA_BYTES:
-            return None
-        return raw.decode("utf-8")
+            if not prefix:
+                return None
+            return codecs.getincrementaldecoder(encoding)().decode(raw[:MAX_HUD_METADATA_BYTES], final=False)
+        return raw.decode(encoding)
     except (OSError, UnicodeDecodeError):
         return None
     finally:
         os.close(descriptor)
 
 
+_JSON_WHITESPACE = re.compile(r"[ \t\n\r]*")
+
+
+def _read_hud_json_leading_members(path: Path, *, root: Path | None = None) -> dict[str, Any]:
+    """The top-level members of a JSON object file that lie whole within the HUD read cap.
+
+    For a file that can outgrow the cap while the HUD needs only its early
+    members. Every key and value is decoded by the stdlib decoder in file
+    order, and a member counts only when a `,` or the closing `}` follows it,
+    so a member the cap cuts off (a number can decode short) is never read.
+    Reading stops at the first member that is cut off or malformed.
+    """
+    text = _read_hud_text(path, root=root, encoding="utf-8-sig", prefix=True)
+    if text is None:
+        return {}
+    decoder = json.JSONDecoder()
+    index = _JSON_WHITESPACE.match(text).end()
+    if not text.startswith("{", index):
+        return {}
+    members: dict[str, Any] = {}
+    index += 1
+    while True:
+        try:
+            key, index = decoder.raw_decode(text, _JSON_WHITESPACE.match(text, index).end())
+            index = _JSON_WHITESPACE.match(text, index).end()
+            if not isinstance(key, str) or not text.startswith(":", index):
+                break
+            value, index = decoder.raw_decode(text, _JSON_WHITESPACE.match(text, index + 1).end())
+        except (ValueError, RecursionError):
+            break
+        index = _JSON_WHITESPACE.match(text, index).end()
+        if not text.startswith((",", "}"), index):
+            break
+        members[key] = value
+        if text.startswith("}", index):
+            break
+        index += 1
+    try:
+        return members if not _has_raw_or_hidden_content(members) else {}
+    except RecursionError:
+        return {}
+
+
 def _read_hud_json_with_read_state(
     path: Path,
     *,
     root: Path | None = None,
+    encoding: str = "utf-8",
 ) -> tuple[dict[str, Any], bool]:
     try:
-        text = _read_hud_text(path, root=root)
+        text = _read_hud_text(path, root=root, encoding=encoding)
         if text is None:
             return {}, False
         data = json.loads(text) if text is not None else {}
@@ -393,8 +452,8 @@ def _read_hud_json_with_read_state(
         return {}, False
 
 
-def _read_hud_json(path: Path, *, root: Path | None = None) -> dict[str, Any]:
-    return _read_hud_json_with_read_state(path, root=root)[0]
+def _read_hud_json(path: Path, *, root: Path | None = None, encoding: str = "utf-8") -> dict[str, Any]:
+    return _read_hud_json_with_read_state(path, root=root, encoding=encoding)[0]
 
 
 def _read_hud_coding_projection(path: Path, *, root: Path | None = None) -> dict[str, Any]:
@@ -1842,12 +1901,20 @@ def _achievements_summary(hermes_home: Path) -> dict[str, Any]:
     # install-dir copy is read only when plugin-data has none.
     data_dir = hermes_home / "plugin-data" / "hermes-achievements"
     legacy_dir = hermes_home / "plugins" / "hermes-achievements"
-    snapshot, state = (
-        _read_hud_json(data_dir / name if os.path.exists(data_dir / name) else legacy_dir / name, root=hermes_home)
+    snapshot_path, state_path = (
+        data_dir / name if os.path.exists(data_dir / name) else legacy_dir / name
         for name in ("scan_snapshot.json", "state.json")
     )
-    total = 0
-    unlocked_flags = 0
+    # The snapshot also embeds per-session stats for the whole history, so a
+    # real install outgrows the HUD read cap. The badge list the HUD counts is
+    # bounded by the catalog and the plugin writes keys sorted, so it sits
+    # ahead of `sessions` and is read from the leading members alone.
+    # `utf-8-sig` matches how the plugin reads both files.
+    snapshot = _read_hud_json_leading_members(snapshot_path, root=hermes_home)
+    state = _read_hud_json(state_path, root=hermes_home, encoding="utf-8-sig")
+    # None means not observed: an unread count is never reported as 0.
+    total: int | None = None
+    unlocked_flags: int | None = None
     for key in ("achievements", "badges", "catalog", "items"):
         entries = snapshot.get(key)
         if isinstance(entries, dict):
@@ -1861,16 +1928,18 @@ def _achievements_summary(hermes_home: Path) -> dict[str, Any]:
                 and (entry.get("unlocked") is True or str(entry.get("state", "")).lower() == "unlocked")
             )
             break
-    unlocked = 0
+    unlocked: int | None = None
     for key in ("unlocked", "unlocks", "unlocked_badges"):
         container = state.get(key)
         if isinstance(container, (dict, list)):
             unlocked = len(container)
             break
+    unlocked_counts = [count for count in (unlocked, unlocked_flags) if count is not None]
     return {
-        "observed": bool(snapshot or state),
-        "unlocked_count": max(unlocked, unlocked_flags),
+        "observed": bool(unlocked_counts),
+        "unlocked_count": max(unlocked_counts) if unlocked_counts else None,
         "total_count": total,
+        "total_status": "observed" if total is not None else "not_observed",
     }
 
 
@@ -2887,7 +2956,9 @@ def _hud_segments(payload: dict[str, Any], *, preset: str) -> list[str]:
         focused.append(f"evidence:{_evidence_display_status(evidence_state)}")
     achievements = payload.get("achievements", {})
     if preset == "full" and isinstance(achievements, dict) and achievements.get("observed"):
-        focused.append(f"ach:{achievements.get('unlocked_count', 0)}/{achievements.get('total_count', 0)}")
+        total = achievements.get("total_count")
+        # An unobserved total gets no denominator rather than a made-up 0.
+        focused.append(f"ach:{achievements.get('unlocked_count')}" + (f"/{total}" if total is not None else ""))
     return focused
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import math
 import os
 from pathlib import Path
@@ -42,10 +43,12 @@ def observe_achievements(
     snapshot_path, snapshot_location = _plugin_file(paths, "scan_snapshot.json")
     state_path, state_location = _plugin_file(paths, "state.json")
     errors: list[str] = []
-    snapshot, snapshot_error = read_json_object_result(snapshot_path)
+    # `utf-8-sig` as the plugin reads them: a legacy file saved with a BOM
+    # still parses, and one without is unaffected.
+    snapshot, snapshot_error = read_json_object_result(snapshot_path, encoding="utf-8-sig")
     if snapshot_error:
         errors.append(f"scan_snapshot.json: {snapshot_error}")
-    state, state_error = read_json_object_result(state_path)
+    state, state_error = read_json_object_result(state_path, encoding="utf-8-sig")
     if state_error:
         errors.append(f"state.json: {state_error}")
 
@@ -155,7 +158,7 @@ def render_achievements_markdown(payload: dict[str, Any]) -> str:
     if summary.get("top_tier"):
         lines.append(f"- Top tier: {summary['top_tier']}")
     if summary.get("last_scan_at"):
-        lines.append(f"- Last plugin scan: {summary['last_scan_at']}")
+        lines.append(f"- Last plugin scan: {display_timestamp(summary['last_scan_at'])}")
     freshness_line = snapshot_freshness_text(payload)
     if freshness_line:
         lines.append(f"- {freshness_line}")
@@ -177,7 +180,7 @@ def render_achievements_markdown(payload: dict[str, Any]) -> str:
             lines.append(
                 f"| {badge['name']} (`{badge['badge_id']}`) | {badge.get('tier') or ''} "
                 f"| {badge['state']} | {_progress_text(badge.get('progress_percent'))} "
-                f"| {badge.get('unlocked_at') or ''} |"
+                f"| {display_timestamp(badge.get('unlocked_at'))} |"
             )
     else:
         lines.extend(["", "No local hermes-achievements badge artifacts were observed."])
@@ -192,8 +195,29 @@ def snapshot_freshness_text(payload: dict[str, Any]) -> str:
     verdict = "stale" if freshness.get("stale") else "fresh"
     return (
         f"Snapshot: {verdict} by the plugin's {freshness.get('ttl_seconds')}s rescan rule "
-        f"(generated_at {freshness['generated_at']}, age {freshness.get('age_seconds')}s)"
+        f"(generated {display_timestamp(freshness['generated_at'])}, age {freshness.get('age_seconds')}s)"
     )
+
+
+def display_timestamp(value: Any) -> str:
+    """A plugin timestamp for people to read; the JSON payload keeps it raw.
+
+    The plugin writes epoch seconds, shown here as UTC ISO-8601 to the second.
+    A value that is not a positive epoch number, such as an ISO string from an
+    older artifact, is shown as written.
+    """
+    text = _clean_text(value)
+    try:
+        epoch = float(text)
+    except ValueError:
+        return text
+    if not math.isfinite(epoch) or epoch <= 0:
+        return text
+    try:
+        moment = datetime.fromtimestamp(epoch, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return text
+    return moment.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _progress_text(value: Any) -> str:

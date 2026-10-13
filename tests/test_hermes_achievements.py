@@ -4,12 +4,14 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from _cli_harness import run_cli
 from _local_package import load_local_package
 
 load_local_package()
 from omh.paths import OmhPaths
+from omh.plugin_bundle.omh import runtime_reader
 from omh.workflows.hermes_achievements import (
     filter_badges,
     find_badge,
@@ -369,9 +371,47 @@ class PluginDataLayoutTests(HermesAchievementsTestCase):
         document = render_achievements_markdown(observe_achievements(self.paths, now=1_760_000_060))
 
         self.assertIn(
-            "- Snapshot: fresh by the plugin's 120s rescan rule (generated_at 1760000000, age 60s)",
+            "- Snapshot: fresh by the plugin's 120s rescan rule (generated 2025-10-09T08:53:20Z, age 60s)",
             document,
         )
+
+    def test_epoch_timestamps_render_as_utc_and_stay_raw_in_json(self) -> None:
+        self._write_plugin_data_artifacts()
+
+        payload = observe_achievements(self.paths, now=1_760_000_060)
+        document = render_achievements_markdown(payload)
+
+        self.assertEqual(payload["summary"]["last_scan_at"], "1760000000")
+        self.assertEqual(find_badge(payload["badges"], "let_him_cook")["unlocked_at"], "1759000000")
+        self.assertIn("- Last plugin scan: 2025-10-09T08:53:20Z", document)
+        self.assertIn("| Let Him Cook (`let_him_cook`) | silver | unlocked | 20% | 2025-09-27T19:06:40Z |", document)
+        self.assertNotIn("1759000000", document)
+
+    def test_iso_timestamps_render_as_written(self) -> None:
+        self._write_list_shaped_artifacts()
+
+        document = render_achievements_markdown(observe_achievements(self.paths))
+
+        self.assertIn("- Last plugin scan: 2026-07-01T10:00:00Z", document)
+        self.assertIn("| 2026-06-30T09:00:00Z |", document)
+
+    def test_files_saved_with_a_byte_order_mark_are_read(self) -> None:
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        (self.data_dir / "scan_snapshot.json").write_text(
+            "\ufeff" + json.dumps({"generated_at": 1_760_000_000, "achievements": [{"id": "a", "state": "unlocked"}]}),
+            encoding="utf-8",
+        )
+        (self.data_dir / "state.json").write_text(
+            "\ufeff" + json.dumps({"unlocks": {"b": {"unlocked_at": 1_760_000_000}}}),
+            encoding="utf-8",
+        )
+
+        payload = observe_achievements(self.paths)
+
+        self.assertEqual(payload["errors"], [])
+        self.assertTrue(payload["source"]["snapshot_observed"])
+        self.assertTrue(payload["source"]["state_observed"])
+        self.assertEqual(payload["summary"]["unlocked_count"], 2)
 
 
 class AgentProfileTests(HermesAchievementsTestCase):
@@ -485,7 +525,19 @@ class AchievementsCliTests(HermesAchievementsTestCase):
 
         self.assertEqual(status, 0, stderr)
         self.assertIn("Unlocked: 2 / 4", stdout)
-        self.assertIn("Snapshot: stale by the plugin's 120s rescan rule (generated_at 1760000000", stdout)
+        self.assertIn("Snapshot: stale by the plugin's 120s rescan rule (generated 2025-10-09T08:53:20Z", stdout)
+        self.assertIn("Last plugin scan: 2025-10-09T08:53:20Z", stdout)
+        self.assertIn("- weekend_warrior [copper] (2025-10-03T14:00:00Z)", stdout)
+
+    def test_show_text_renders_unlock_time_as_utc(self) -> None:
+        self._write_plugin_data_artifacts()
+
+        status, stdout, stderr = run_cli(
+            [*self._base_args(), "achievements", "show", "let_him_cook"], output_json=False
+        )
+
+        self.assertEqual(status, 0, stderr)
+        self.assertIn("Unlocked At: 2025-09-27T19:06:40Z", stdout)
 
     def test_summary_text_prints_unlocks_and_boundary(self) -> None:
         self._write_list_shaped_artifacts()
@@ -571,8 +623,104 @@ class AchievementsHudTests(HermesAchievementsTestCase):
 
         self.assertEqual(status, 0, stderr)
         payload = json.loads(stdout)
-        self.assertEqual(payload["achievements"], {"observed": True, "unlocked_count": 2, "total_count": 3})
+        self.assertEqual(
+            payload["achievements"],
+            {"observed": True, "unlocked_count": 2, "total_count": 3, "total_status": "observed"},
+        )
         self.assertIn("ach:2/3", payload["display"]["segments"])
+
+    def _write_oversized_snapshot(self, *, sessions_first: bool) -> None:
+        # Shaped like the plugin's own file: per-session stats for a long
+        # history make it far larger than the HUD read cap.
+        sessions = [
+            {"session_id": f"s-{index:05d}", "title": f"session {index}", "tool_call_count": index}
+            for index in range(6000)
+        ]
+        badges = [
+            {"id": "let_him_cook", "state": "unlocked", "unlocked": True},
+            {"id": "patch_wizard", "state": "discovered", "unlocked": False},
+            {"id": "port_3000_taken", "state": "secret", "unlocked": False},
+        ]
+        members = {"generated_at": 1_760_000_000, "total_count": 3, "unlocked_count": 1}
+        if sessions_first:
+            text = json.dumps({"sessions": sessions, "achievements": badges, **members}, indent=2)
+        else:
+            text = json.dumps({"achievements": badges, "sessions": sessions, **members}, indent=2, sort_keys=True)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        path = self.data_dir / "scan_snapshot.json"
+        path.write_text(text, encoding="utf-8")
+        self.assertGreater(path.stat().st_size, runtime_reader.MAX_HUD_METADATA_BYTES)
+        self._write_plugin_file(
+            "state.json",
+            {"unlocks": {"let_him_cook": {"unlocked_at": 1}, "weekend_warrior": {"unlocked_at": 2}}},
+            directory=self.data_dir,
+        )
+
+    def test_full_preset_hud_counts_badges_in_a_snapshot_over_the_read_cap(self) -> None:
+        self._write_oversized_snapshot(sessions_first=False)
+
+        status, stdout, stderr = run_cli([*self._base_args(), "hud", "--preset", "full", "--json"])
+
+        self.assertEqual(status, 0, stderr)
+        payload = json.loads(stdout)
+        self.assertEqual(
+            payload["achievements"],
+            {"observed": True, "unlocked_count": 2, "total_count": 3, "total_status": "observed"},
+        )
+        self.assertIn("ach:2/3", payload["display"]["segments"])
+        self.assertNotIn("s-00001", stdout)
+
+    def test_full_preset_hud_reports_an_unreadable_total_as_not_observed(self) -> None:
+        self._write_oversized_snapshot(sessions_first=True)
+
+        status, stdout, stderr = run_cli([*self._base_args(), "hud", "--preset", "full", "--json"])
+
+        self.assertEqual(status, 0, stderr)
+        payload = json.loads(stdout)
+        self.assertEqual(
+            payload["achievements"],
+            {"observed": True, "unlocked_count": 2, "total_count": None, "total_status": "not_observed"},
+        )
+        self.assertIn("ach:2", payload["display"]["segments"])
+        self.assertFalse(any(segment.startswith("ach:2/") for segment in payload["display"]["segments"]))
+
+    def test_hud_reads_a_state_file_saved_with_a_byte_order_mark(self) -> None:
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        (self.data_dir / "state.json").write_text(
+            "\ufeff" + json.dumps({"unlocks": {"a": {}, "b": {}}}), encoding="utf-8"
+        )
+        (self.data_dir / "scan_snapshot.json").write_text(
+            "\ufeff" + json.dumps({"achievements": [{"id": "a"}, {"id": "b"}, {"id": "c"}]}), encoding="utf-8"
+        )
+
+        status, stdout, stderr = run_cli([*self._base_args(), "hud", "--preset", "full", "--json"])
+
+        self.assertEqual(status, 0, stderr)
+        self.assertIn("ach:2/3", json.loads(stdout)["display"]["segments"])
+
+    def test_leading_member_reader_never_takes_a_member_the_cap_cuts_off(self) -> None:
+        path = self.hermes_home / "doc.json"
+        self.hermes_home.mkdir(parents=True, exist_ok=True)
+        text = '{"achievements": [1], "count": 123456789}'
+        path.write_text(text, encoding="utf-8")
+        cut = text.index("123456789") + 5
+
+        with mock.patch.object(runtime_reader, "MAX_HUD_METADATA_BYTES", cut):
+            members = runtime_reader._read_hud_json_leading_members(path, root=self.hermes_home)
+
+        self.assertEqual(members, {"achievements": [1]})
+
+    def test_leading_member_reader_survives_a_cap_inside_a_multibyte_character(self) -> None:
+        path = self.hermes_home / "doc.json"
+        self.hermes_home.mkdir(parents=True, exist_ok=True)
+        raw = '{"achievements": [1], "title": "\u00e9\u00e9"}'.encode("utf-8")
+        cut = raw.index("\u00e9".encode("utf-8")) + 1
+        path.write_bytes(raw)
+
+        with mock.patch.object(runtime_reader, "MAX_HUD_METADATA_BYTES", cut):
+            members = runtime_reader._read_hud_json_leading_members(path, root=self.hermes_home)
+
+        self.assertEqual(members, {"achievements": [1]})
 
     def test_full_preset_hud_prefers_plugin_data_over_legacy(self) -> None:
         self._write_list_shaped_artifacts()
@@ -587,7 +735,10 @@ class AchievementsHudTests(HermesAchievementsTestCase):
 
         self.assertEqual(status, 0, stderr)
         payload = json.loads(stdout)
-        self.assertEqual(payload["achievements"], {"observed": True, "unlocked_count": 1, "total_count": 1})
+        self.assertEqual(
+            payload["achievements"],
+            {"observed": True, "unlocked_count": 1, "total_count": 1, "total_status": "observed"},
+        )
         self.assertIn("ach:1/1", payload["display"]["segments"])
 
     def test_focused_preset_hud_omits_achievements_segment(self) -> None:

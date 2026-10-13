@@ -8,6 +8,7 @@ from ..installer import OmhError
 from ..system.local_store import atomic_write_text
 from ..workflows.hermes_achievements import (
     BADGE_STATES,
+    display_timestamp,
     filter_badges,
     find_badge,
     observe_achievements,
@@ -33,7 +34,7 @@ def cmd_achievements_summary(args: argparse.Namespace) -> int:
         if summary["top_tier"]:
             print(f"Top tier: {summary['top_tier']}")
         if summary["last_scan_at"]:
-            print(f"Last plugin scan: {summary['last_scan_at']}")
+            print(f"Last plugin scan: {display_timestamp(summary['last_scan_at'])}")
         freshness_line = snapshot_freshness_text(payload)
         if freshness_line:
             print(freshness_line)
@@ -41,7 +42,7 @@ def cmd_achievements_summary(args: argparse.Namespace) -> int:
             print("Recent unlocks:")
         for badge in payload["recent_unlocks"]:
             tier = f" [{badge['tier']}]" if badge["tier"] else ""
-            unlocked_at = f" ({badge['unlocked_at']})" if badge["unlocked_at"] else ""
+            unlocked_at = f" ({display_timestamp(badge['unlocked_at'])})" if badge["unlocked_at"] else ""
             print(f"- {badge['name']}{tier}{unlocked_at}")
         for error in payload["errors"]:
             print(f"Warning: {error}")
@@ -100,7 +101,8 @@ def cmd_achievements_show(args: argparse.Namespace) -> int:
     print(f"Badge: {badge['name']} (`{badge['badge_id']}`)")
     for key in ("category", "tier", "state", "unlocked_at"):
         if badge.get(key):
-            print(f"{key.replace('_', ' ').title()}: {badge[key]}")
+            value = display_timestamp(badge[key]) if key == "unlocked_at" else badge[key]
+            print(f"{key.replace('_', ' ').title()}: {value}")
     progress = badge.get("progress_percent")
     if isinstance(progress, (int, float)):
         print(f"Progress: {float(progress):g}%")

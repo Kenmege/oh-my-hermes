@@ -23,7 +23,16 @@ All notable changes will be documented here.
   `first_tier`, never lowers a tier, and keeps the snapshot's next-tier
   progress instead of overwriting it with 100%. `agent_summary.json` is no
   longer read: the plugin has no writer for it, and the profile is derived
-  from the observed badges.
+  from the observed badges. The snapshot also carries per-session stats for
+  the whole history, so on a real install it is far larger than the HUD's
+  read cap and the HUD used to count nothing from it. The HUD now reads only
+  the leading members that fit whole within its cap, where the plugin's
+  sorted keys put the badge list. A total it cannot read is reported as
+  `total_status: not_observed` with no denominator in the `ach:` segment,
+  never as 0. Plugin timestamps, which are epoch seconds, appear as UTC
+  ISO-8601 in `omh achievements` text and the Markdown export, while the
+  JSON keeps the raw values. Both readers accept a file saved with a
+  byte-order mark, as the plugin does.
 
 
 - **The `frontend` design contract now uses Google's DESIGN.md format, so it
