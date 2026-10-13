@@ -2085,7 +2085,16 @@ class App:
         )
 
     def _on_session_resumed(self, target: str, result: dict[str, Any]) -> None:
-        """Leave the old session and redraw the screen as the resumed one."""
+        """Leave the old session and redraw the screen as the resumed one.
+
+        Hermes resolves a title or a compressed ancestor to the session
+        already live and answers with that session's id. That is no switch:
+        nothing is left, declined or reset, so the yolo the TUI set there is
+        still the TUI's to turn off.
+        """
+        if as_text(result.get("session_id")) == self.sid:
+            self.transcript.add_notice(f"Already in session {self.stored_id}.")
+            return
         declined = self._enter_session(result, fallback_stored=target)
         self._draw_history(result.get("messages"))
         self._notice_declined(declined)

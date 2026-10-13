@@ -1031,6 +1031,61 @@ class LeavingTurnsYoloOffTests(unittest.TestCase):
         self.assertEqual(app.exit_code, 1)
 
 
+class ResumingTheLiveSessionTests(unittest.TestCase):
+    """Hermes 6c61c3e27d resolves a title to the session already live and answers with its id (`_resume_reuse_live`)."""
+
+    APPROVAL = ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"})
+
+    def resume(self, app: App, client: RecordingClient, session_id: str) -> list[str]:
+        """`/sessions <title>` answered with `session_id`; the methods it sent after the resume."""
+        app.stored_id = "stored-1"
+        app._switch_session("my title")
+        sent = len(client.calls)
+        answer(app, client, {"session_id": session_id, "stored_session_id": "stored-1", "messages": [], "info": {}})
+        return [method for method, _params in client.calls[sent:]]
+
+    def test_it_is_no_switch_and_shift_tab_still_turns_off_the_yolo_the_tui_set(self) -> None:
+        app, client = in_accept()
+        self.assertEqual(self.resume(app, client, SID), [])
+        self.assertEqual(notices(app)[-1], "Already in session stored-1.")
+        self.assertEqual((app.sid, app.mode, app.yolo_by_tui), (SID, MODE_ACCEPT, True))
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls[-1], YOLO_OFF_CALL)
+
+    def test_quit_then_sends_the_off_before_the_close(self) -> None:
+        app, client = in_accept()
+        self.resume(app, client, SID)
+        sent = len(client.calls)
+        app._quit("")
+        self.assertEqual(client.calls[sent:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+
+    def test_a_yolo_call_still_out_still_holds_shift_tab(self) -> None:
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)  # on, unanswered
+        self.resume(app, client, SID)
+        self.assertTrue(app.mode_request_open)
+        sent = len(client.calls)
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls[sent:], [])
+
+    def test_an_open_approval_in_that_session_is_not_declined(self) -> None:
+        app, client = make_app()
+        app._on_server_request(self.APPROVAL)
+        self.resume(app, client, SID)
+        self.assertEqual(client.answers, [])
+        self.assertIsNotNone(app.slot)
+        self.assertEqual(app.slot.request_id, "srq-1")  # type: ignore[union-attr]
+
+    def test_a_real_switch_still_turns_off_declines_and_closes(self) -> None:
+        app, client = in_accept()
+        app._on_server_request(self.APPROVAL)
+        self.assertEqual(self.resume(app, client, "live-2"), ["config.set", "session.close"])
+        self.assertEqual(client.calls[-2:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+        self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "deny"}})])
+        self.assertEqual((app.sid, app.mode, app.slot), ("live-2", MODE_NORMAL, None))
+        self.assertNotIn("Already in session stored-1.", notices(app))
+
+
 class PlanModeTests(unittest.TestCase):
     def plan_app(self, busy: bool = False) -> tuple[App, RecordingClient]:
         app, client = make_app(busy=busy)
