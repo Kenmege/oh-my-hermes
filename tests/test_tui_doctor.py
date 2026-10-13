@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -25,6 +26,7 @@ def _hermes_install(root: Path, *, hook: bool = True, gateway: bool = True) -> N
         (install / "tui_gateway" / "entry.py").write_text("", encoding="utf-8")
 
 
+@unittest.skipIf(os.name == "nt", "the OMH TUI is POSIX-only; on Windows the check reports that before any other step")
 class OmhTuiDoctorTests(unittest.TestCase):
     def test_all_parts_present_reports_the_omh_tui_reachable(self) -> None:
         with TemporaryDirectory() as tmp, patch("omh.tui.launch.node_available", return_value=True):
@@ -67,6 +69,17 @@ class OmhTuiDoctorTests(unittest.TestCase):
             check = _omh_tui_check(_paths(Path(tmp)))
         self.assertEqual(check.severity, "warning")
         self.assertIn("shim", check.message)
+
+
+@unittest.skipUnless(os.name == "nt", "the Windows message is only reachable on Windows")
+class OmhTuiDoctorWindowsTests(unittest.TestCase):
+    def test_windows_reports_that_bare_omh_opens_hermes_own_terminal(self) -> None:
+        with TemporaryDirectory() as tmp:
+            check = _omh_tui_check(_paths(Path(tmp)))
+        self.assertTrue(check.ok)
+        self.assertEqual(check.severity, "ok")
+        self.assertIn("Windows", check.message)
+        self.assertIn("Hermes' own terminal", check.message)
 
 
 if __name__ == "__main__":

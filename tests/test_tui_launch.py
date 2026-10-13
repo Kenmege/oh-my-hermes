@@ -33,6 +33,7 @@ class NodeAvailabilityTests(unittest.TestCase):
             node = _executable(Path(tmp) / "node", "#!/bin/sh\n")
             self.assertTrue(launch.node_available({"HERMES_NODE": str(node), "PATH": ""}, Path(tmp)))
 
+    @unittest.skipIf(os.name == "nt", "shutil.which needs a PATHEXT extension on Windows, where the TUI is never attempted")
     def test_node_on_path_counts(self) -> None:
         with TemporaryDirectory() as tmp:
             _executable(Path(tmp) / "bin" / "node", "#!/bin/sh\n")
