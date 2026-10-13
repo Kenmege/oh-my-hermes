@@ -677,6 +677,31 @@ def ensure_plugin_enabled(config_text: str, name: str) -> ConfigChange:
     return ConfigChange(True, "inserted plugins.enabled", "\n".join(lines) + "\n")
 
 
+def plugin_load_timeout_setting(config_text: str) -> str:
+    """The raw `plugins.load_timeout_seconds`, or "" when none was read.
+
+    Hermes allows a plugin that many seconds to import and `register()`, and
+    drops the plugin past it. Read-only, and only from the block `plugins:`
+    node `plugin_enablement` walks. "" therefore means "not read" -- unset, or
+    written in the flow form or another shape this reader does not follow --
+    and a caller must not report it as "unset".
+    """
+    in_plugins = False
+    for line in config_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not line.startswith(" "):
+            node = _plugins_node_line_shape(line)
+            in_plugins = node is not None and node[0] == _PLUGINS_NODE_BLOCK
+            continue
+        if in_plugins and line.startswith("  ") and not line.startswith("    "):
+            key, separator, rest = stripped.partition(":")
+            if separator and key.strip() == "load_timeout_seconds":
+                return _scalar_value(rest)
+    return ""
+
+
 PLUGIN_OMH_HOME_KEY_PATH: tuple[str, ...] = ("plugins", "entries", "omh", "settings", "omh_home")
 
 

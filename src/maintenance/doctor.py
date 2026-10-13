@@ -19,6 +19,7 @@ from ..config_adapter import (
     plugin_enablement_is_readable,
     plugin_enablement_shape_error,
     plugin_is_enabled,
+    plugin_load_timeout_setting,
     plugins_enabled_extension_error,
     read_config,
 )
@@ -29,6 +30,7 @@ from ..install.hook_integrity import HOOK_HOST_TARGET, VALID_HOOK_EVENTS, build_
 from ..install.identity_conflicts import build_identity_conflict_report
 from ..install.installer import installed_skill_directories, installed_skill_names
 from ..install.plugin_bundle_import_scan import describe_findings, scan_bundle_core_imports
+from ..install.plugin_load_deadline import LOAD_TIMEOUT_RECORDED, read_recorded_load_timeouts
 from ..install.plugin_loader_observation import observe_real_loader_registration, resolve_hermes_code_root
 from ..install.skill_registration import (
     AMBIGUOUS_REGISTRATION_NEXT_ACTION,
@@ -397,6 +399,7 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
                 ),
                 _plugin_enforcement_check(plugin),
                 _plugin_loader_observation_check(loader_observation),
+                _plugin_load_deadline_check(paths, config_text),
                 _plugin_bundle_import_scan_check(bundle_import_scan),
                 Check(
                     "plugin_runtime_observed",
@@ -1515,6 +1518,74 @@ def _plugin_loader_observation_check(observation: dict[str, object] | None) -> C
         remediation="Run `omh setup --force`, then reload Hermes and run `omh doctor` again.",
         next_action="Run `omh setup --force`, reload Hermes, then run `omh doctor` again.",
         observed=True,
+    )
+
+
+def _plugin_load_deadline_check(paths: OmhPaths, config_text: str) -> Check:
+    """What Hermes' load deadline is set to here, and whether it ever cost this plugin a load.
+
+    Hermes skips a plugin whose import + `register()` overruns
+    `plugins.load_timeout_seconds`, and its plugin loader registers none of
+    OMH's tools or hooks from a skipped load. `plugin_loader_observed` replays
+    the loader in an isolated home under Hermes' own default, so it can
+    neither see a deadline the operator shortened nor say what a past session
+    did. This row reads the two things on disk that can: the setting, and the
+    line Hermes logs when it skips (`install/plugin_load_deadline.py`).
+
+    The three answers stay apart. A record is a past load, so it warns without
+    failing: this check cannot tell whether the next load made it. A log with
+    no record is what the retained log holds and nothing more. A log that is
+    not there is `observed=False` and says so -- never a pass by absence.
+    """
+    config_path = paths.hermes_config_path
+    setting = plugin_load_timeout_setting(config_text)
+    setting_clause = (
+        f"plugins.load_timeout_seconds={setting} in {config_path}"
+        if setting
+        else (
+            f"no plugins.load_timeout_seconds read from {config_path} "
+            "(no such file, the key unset, or a form OMH does not read)"
+        )
+    )
+    record = read_recorded_load_timeouts(paths.hermes_home, PLUGIN_NAME)
+    log_path = record["log_path"]
+    if not record["observed"]:
+        why = f"{record['reason']}: {record['detail']}" if record["detail"] else str(record["reason"])
+        return Check(
+            "plugin_load_deadline",
+            True,
+            (
+                f"{setting_clause}; not_observed ({why}): {log_path} was not read, so whether Hermes "
+                f"skipped `{PLUGIN_NAME}` at load is not established"
+            ),
+            observed=False,
+        )
+    if record["reason"] != LOAD_TIMEOUT_RECORDED:
+        return Check(
+            "plugin_load_deadline",
+            True,
+            (
+                f"{setting_clause}; no load-timeout record for `{PLUGIN_NAME}` in {log_path}. "
+                "That is what the retained log holds, not evidence that the plugin loaded"
+            ),
+        )
+    next_action = (
+        f"Open `/plugins` in a running Hermes session; if `{PLUGIN_NAME}` still shows a load timeout, "
+        f"raise `plugins.load_timeout_seconds` in {config_path} and restart Hermes."
+    )
+    return Check(
+        "plugin_load_deadline",
+        True,
+        (
+            f"Hermes recorded skipping `{PLUGIN_NAME}` at load: {record['count']} record(s) in {log_path}, "
+            f"latest {record['latest_at'] or 'at an unread time'} "
+            f"(load timed out after {record['latest_deadline'] or 'an unread deadline'}); {setting_clause}. "
+            "Hermes' plugin loader registers no OMH tool or hook from a skipped load. "
+            "This is a record of a past load, not the current load state"
+        ),
+        severity="warning",
+        remediation=next_action,
+        next_action=next_action,
     )
 
 

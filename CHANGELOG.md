@@ -4,6 +4,30 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The plugin bundle's cold load is now held under Hermes' per-plugin load
+  deadline, and `omh doctor` reports what that deadline did to OMH.** Hermes
+  0.21.5 and later skip a plugin whose import plus `register()` takes longer
+  than `plugins.load_timeout_seconds` (10 seconds by default), and its plugin
+  loader then registers no OMH tool or hook for that process. The bundle had
+  never been timed. Loaded the way Hermes loads it, in a fresh interpreter
+  with no bytecode cached anywhere, it takes 0.4-0.8 s on a contended 14-core
+  Mac, and 0.23-0.31 s through Hermes' own loader in an isolated home, so no
+  bundle code changed. `tests/test_plugin_load_deadline.py` now measures that
+  cold load in a subprocess and fails above half of Hermes' default, on a
+  host without the `omh` package and on one that can import it; it compares
+  the fastest of three runs so a starved CI runner does not fail it, and its
+  failure message separates a slow runner from a slow bundle. Windows cold
+  load was not measured locally: that test running on the Windows CI shards
+  is the first observation of it. `omh doctor` gains a `plugin_load_deadline`
+  row. It names the `plugins.load_timeout_seconds` value it read from the
+  Hermes config, and reads `<hermes-home>/logs/errors.log` for the line Hermes
+  writes when it skips `omh` on that deadline. A record is a warning that
+  carries Hermes' own timestamp and deadline and says it is a past load, not
+  the current state; a log with no record says only that, never that the
+  plugin loaded; and a missing or unreadable log is `not_observed`. OMH reads
+  both files and writes neither.
+
+
 - **A plan has one checklist: Hermes' `todo_list` and `omh_todo` no longer
   ask for the same list twice.** Hermes ships its own checklist tool,
   `todo_list`, and OMH told the model to declare every plan with `omh_todo`
