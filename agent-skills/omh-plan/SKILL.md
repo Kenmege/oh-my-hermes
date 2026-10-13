@@ -17,7 +17,7 @@ This is an OMH `plan` workflow skill, projected for Agent Skills hosts (Claude C
 
 ## Why This Exists
 
-`plan` exists to keep `planning` work explicit, evidence-backed, and inside the Hermes/executor boundary instead of relying on ad hoc chat narration.
+`plan` exists so a feature or a fix gets its goals, non-goals, risks, acceptance criteria, and verification shape written down and accepted by the user before any code moves, with every step small enough to check and no implementation hidden inside the plan text.
 
 ## Do Not Use When
 

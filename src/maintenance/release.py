@@ -699,7 +699,15 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # lanes its prepared plan emits, `research`/`web-research`, instead of
 # `research`/`source-finder`; the row is one character shorter. Re-derived
 # from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 492654
+# 492654 -> 493103: the coding lane onto Hermes' native delegation. `ask`
+# states its own quality bar instead of the two shared default lines: name the
+# question and the advisor before consulting, report the advice as one input,
+# and, for a coding CLI the user named, take only the invocation from Hermes'
+# bundled `claude-code`, `codex`, or `opencode` skill. All three lines are in
+# the row's first four. The `ultrawork`, `plan`, `app-debugging`, and
+# `decision-prototype` additions sit past the row's bounds, in the compact
+# body, or in references, and move nothing here. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 493103
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

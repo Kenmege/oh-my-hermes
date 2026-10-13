@@ -9,7 +9,7 @@
     "omh-adversarial-consensus/references/consensus-protocol.md": "e2337062d98214abc440d3909d7c076db284c817dc45c9b67a292003a6b51a89",
     "omh-agent-debug/SKILL.md": "eec3d6d37b1127cc205498bc748639ddb07494d1657a1d95bdfad73cf37be1d0",
     "omh-agent-instructions/SKILL.md": "5232de7e18232c9c9925c4ddb12a9e89ed79bfc9b4a3c4d4f4695ac27ec93f99",
-    "omh-agent-instructions/references/instruction-file-method.md": "cc8f82b67198fa905f1336ea0fb8b50a2451b290ca4678efc41cc2c195828446",
+    "omh-agent-instructions/references/instruction-file-method.md": "135882a420601481ccfd3e5ad91c2337b47d34512342699ad615aa3934845757",
     "omh-agent-ops-review/SKILL.md": "3ee6124af2d9dbe661cf893f12a240c0ccdf8632c00d79479ba8f667fd3a6308",
     "omh-agent-ops-review/references/instrumentation-ladder.md": "d9dab70027ab489a122df7e5814e9580e6bc1cc1899fa70da680ef54bfd65291",
     "omh-ai-slop-cleaner/SKILL.md": "864afd1d662f893a7e39f9b0c9f173c5bf3aac7e35636d45a0b597c48444337c",
@@ -27,7 +27,7 @@
     "omh-application-threat-model/SKILL.md": "e1e249b1407f88b19b6c2f59cb4b688092b8f01f7cca3488b15135eabe845ffa",
     "omh-application-threat-model/references/threat-model-method.md": "ed3819fecf9c8d7208a49fbbebc5863dcc9df009a663e0d012431bc3296e5e8e",
     "omh-apps/SKILL.md": "7fa089637e60107df776cb89bafd73595aaeb641ff15db8852d151fec7ad4a2a",
-    "omh-ask/SKILL.md": "2a79a9296aae74d7da0b51d41618b441cafaa6b8dd91ff6a388532f2d01ae19d",
+    "omh-ask/SKILL.md": "b73e203e662c9eae9e97d09baf84bd313110721ebde24aec477843b70e9cefaf",
     "omh-award-bar-score/SKILL.md": "7761bbefc505b6fabb756da932151ecbfeebcff7a72546f9bdfb27d0f090d9bf",
     "omh-award-bar-score/references/award-judging-model.md": "3eb04c94402da5efaa2d3bc18bb66acd1121b234a8b82a47a878c5d01725be50",
     "omh-backend/SKILL.md": "96b3ce8c4bd3081d61871c37e42437330c1369a9c47ec2cd8db5b02f26352a79",
@@ -134,7 +134,7 @@
     "omh-paper-learning/SKILL.md": "a53974bcc9b80b7338a276cdeb3170c97b9181c02216b591bbc6306220bcefe8",
     "omh-people-ops/SKILL.md": "8abe6c890fe7ec9b73639d1a7ea79a867cd2a1bf07ce1756e20cc168f60c77ac",
     "omh-physical-device-readiness/SKILL.md": "0f562fa38773cc7d8659e25d0be29e68791e90604e7d743109f91079b1931016",
-    "omh-plan/SKILL.md": "c8fc1141736a40561cca912db0f88652881ac76e97e1bc1197dca932a23ba342",
+    "omh-plan/SKILL.md": "41dce9f34af6a1154b3afda0e9896f6ad31ca016614aa3186977b3527e6240cd",
     "omh-plan/references/project-constitution.md": "577991e718cf3e1d62ce93704d4a734f7e058a3d516b0722c636cc8cf7a519da",
     "omh-product-brief/SKILL.md": "d6562846d0770d4c6edcd5379bd09bd4262e6a62c8d2da5266927e5460ff0185",
     "omh-product-discovery-validation/SKILL.md": "abde8d80c947107164f1fa45c5a1b538dc0be7f985d4d0a321e7917b67f2a10d",
@@ -318,7 +318,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "b77fb678d30c3d3ef63b18e2f11634910ca0786586476b52a05011762a585fb7",
+  "source_digest": "51fabfc4c2c3cfdff6b1ffe4b1f4946743ffc77f533df6bcf41f9aa4bec42e7a",
   "targets": {
     "repo": ".claude/skills",
     "user": ".claude/skills"

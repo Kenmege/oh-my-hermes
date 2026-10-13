@@ -89,6 +89,7 @@ Quality bar:
 - Pick the next observation by cost and by how many hypotheses its result eliminates, and record the eliminations.
 - Keep reproduction, root cause, fix, and verification as separate observed states.
 - Count a fix as failed when an executed run of the same reproduction command still shows the original symptom or shows a new symptom the fix caused rather than unmasked; planned runs and other commands do not count. After the third failed fix, prepare no fourth; re-examine the architecture assumptions every fix shared, per the method reference, and offer the user the next step as a question.
+- When Hermes' bundled `systematic-debugging` skill is loaded for the same bug, follow its phases and write this skill's records at each; a breakpoint read through `python-debugpy` or `node-inspect-debugger` is one discriminating observation. Load `references/debugging-skill-composition.md` for the mapping.
 
 Handoff policy:
 

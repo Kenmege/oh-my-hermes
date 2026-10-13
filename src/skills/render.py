@@ -2817,7 +2817,7 @@ def _progressive_workflow_body(definition: SkillDefinition, name: str) -> str:
     operation = _PROGRESSIVE_WORKFLOW_OPERATIONS[name]
     title = name.replace("-", " ").title()
     compact_contracts = {
-        "decision-prototype": "Required: one decision, a bounded experiment, an isolated scratch boundary, and a measurement method. Output: a decision record, prepared handoff, observation ledger, and receipt.",
+        "decision-prototype": "Required: one decision, a bounded experiment, an isolated scratch boundary, and a measurement method. Output: a decision record, prepared handoff, observation ledger, and receipt. When Hermes' bundled `spike` skill is loaded for the same question, build the way it says and keep these records: `references/spike-composition.md`.",
         "lifecycle-growth": "Required: lifecycle objective, audience/events, consent, budget, and owner. Output: a brief, audience/safety policy, experiment, readout, and handoff.",
         "product-discovery-validation": "Required: problem, segment/evidence, owner, learning budget, and criteria. Output: a decision frame, evidence and customer plan, test portfolio, receipt, and GTM hypothesis.",
         "sales-pipeline-review": "Required: supplied snapshot and as-of time, definitions, prior outcomes, and owner. Output: scope, health, forecast, supported annexes, and follow-up handoff.",
@@ -3419,8 +3419,40 @@ def app_debugging_reference_templates() -> list[SkillReferenceTemplate]:
             "app-debugging",
             APP_DEBUGGING_METHOD_REFERENCE_PATH,
             _app_debugging_method_reference(),
-        )
+        ),
+        SkillReferenceTemplate(
+            "app-debugging",
+            "references/debugging-skill-composition.md",
+            _debugging_skill_composition_reference(),
+        ),
     ]
+
+
+def _debugging_skill_composition_reference() -> str:
+    """Hermes-only: this skill's records when Hermes' own debugging skills drive the method."""
+    return """# Composing with Hermes' Debugging Skills
+
+Hermes bundles three skills that meet this one: `systematic-debugging` (MIT, adapted from obra/superpowers), a four-phase root-cause method, and two debugger guides, `python-debugpy` for pdb and debugpy and `node-inspect-debugger` for Node's inspector. When one of them is loaded beside `app-debugging`, follow its method; this skill adds its records and its gates, never a second method.
+
+## `systematic-debugging`, phase by phase
+
+| Its phase | What this skill records there |
+| --- | --- |
+| Root cause investigation, around one tight command that goes red on the symptom | `reproduction_record/v1`: the command, its observed output, and the hit rate over N runs |
+| Pattern analysis | nothing of its own; working examples and differences feed the hypotheses |
+| Hypothesis and testing | `competing_hypotheses/v1` with at least three hypotheses on distinct axes, then `discriminating_observation_plan/v1`, then `root_cause_record/v1` citing the observation that decided it |
+| Implementation | `fix_handoff/v1`, still blocked until the reproduction reads observed, then `observed_fix_verification/v1` |
+
+Both skills stop after three failed fixes and question the architecture instead of trying a fourth. Count failures by this skill's rule: the same reproduction command, executed, still showing the symptom or a new one the fix caused.
+
+## The debuggers are observations
+
+- A breakpoint stop, a stepped call, or a post-mortem frame is one discriminating observation: record what it showed and which hypotheses it ruled out, as for a log line.
+- Stopping at a breakpoint changes timing. For a hypothesis about ordering or timing, a bug that does not appear under the debugger is still open; observe the interleaving another way, such as a log of it or a forced order.
+- Attaching to a process that is already running acts on a live service and needs the same authority as any other command against it.
+
+Without these skills loaded, `references/hypothesis-and-race-method.md` is the method, as before.
+"""
 
 
 def _app_debugging_method_reference() -> str:
@@ -4072,13 +4104,18 @@ Load this while writing or updating an agent instruction file. OMH prepares the 
 
 | File | Read by | Note |
 | --- | --- | --- |
-| `AGENTS.md` | Codex, and most agents that follow the open format | nested files apply to their directory; the closest file wins |
+| `AGENTS.md` | Codex, Hermes Agent, and most agents that follow the open format | nested files apply to their directory; the closest file wins |
 | `CLAUDE.md` | Claude Code | may point at `AGENTS.md` instead of repeating it |
 | `GEMINI.md` | Gemini CLI | |
 | `.cursor/rules/*.mdc`, `.cursorrules` | Cursor | rules carry their own globs |
 | `.github/copilot-instructions.md` | GitHub Copilot | |
+| `.hermes.md`, `HERMES.md` | Hermes Agent | the nearest one between the working directory and the repository root |
 
-When several exist, keep one source and point the others at it, so two files cannot disagree.
+When several exist, keep one source and point the others at it, so two files cannot disagree. A pointer works only for a reader that follows it, so check how each reader loads before choosing which file holds the text:
+
+- **Hermes Agent loads one project file type per session.** It takes the first type that has a non-empty file and reads no other: `.hermes.md` or `HERMES.md`, the nearest from the working directory up to the repository root; then `AGENTS.md`; then `CLAUDE.md`, in the working directory only; then `.cursorrules` with `.cursor/rules/*.mdc`, in the working directory only. Outside a repository it looks in the working directory alone. It follows no pointer written inside the file it loaded, so a `.hermes.md` that only points elsewhere is all Hermes reads, and `CLAUDE.md` reaches Hermes only where neither of the first two types exists. In a repository Hermes works in, keep the text in `AGENTS.md`, make `CLAUDE.md` and the rest pointers, and add no `.hermes.md`.
+- **Hermes Agent reads every `AGENTS.md` on that path.** Each directory from the repository root down to the working directory adds its own file, root first, and a file identical to one already read is skipped, so a nested file adds to the root file rather than replacing it.
+- **An `AGENTS.override.md` replaces the `AGENTS.md` beside it** for Hermes Agent, in that one directory. It is usually untracked, so an edit to the committed `AGENTS.md` there changes nothing for a session that finds the override. The inventory lists every override, and a drift check reads the override rather than the committed file.
 
 ## 2. The marked region
 
@@ -5407,6 +5444,7 @@ def _ultrawork_reference_templates_cached() -> tuple[SkillReferenceTemplate, ...
         ),
         SkillReferenceTemplate("ultrawork", "references/kanban-lane.md", _kanban_lane_reference()),
         SkillReferenceTemplate("ultrawork", "references/team-lane.md", _team_lane_reference()),
+        SkillReferenceTemplate("ultrawork", "references/native-delegation.md", _native_delegation_reference()),
         SkillReferenceTemplate(
             "ultrawork",
             "references/execution-rulings.md",
@@ -5447,10 +5485,71 @@ Load this reference when an accepted `ultrawork` plan splits into in-session `de
 
 ## Limits to State
 
-- Helpers share one workspace. A check is attributed to its lane, but another lane's edits are in the same tree; checks wait until every team helper is back to narrow this, not remove it.
+- Helpers share one workspace by default. A check is attributed to its lane, but another lane's edits are in the same tree; checks wait until every team helper is back to narrow this, not remove it.
+- With Hermes' `delegation.worktree_isolation` on, a helper works in a git worktree of its own and its edits land on its own branch, not in this workspace. A check run here then tests a tree without that lane's work, and a pass would accept a lane nobody checked. Once every helper is back, commit what each left uncommitted in its worktree, then merge each returned helper's branch into this workspace before `team_reconcile`; `references/native-delegation.md` says how to find the branches.
 - A check runs code the helpers wrote, as the person's own user account with the real home folder.
 - Parallel helpers in one call share one model route; a lane that needs a different model is dispatched in its own call after `omh_delegate_route`.
 - Board lanes (`references/kanban-lane.md`) are not checked by `omh_team` yet; they still follow the prepare and readback recipe there.
+"""
+
+
+def _native_delegation_reference() -> str:
+    """Hermes' own handling of a delegated lane: answer schema, worktrees, one-shot budget."""
+    return """# Native Delegation
+
+Load this before a `delegate_task` dispatch in an `ultrawork` run. Three host mechanisms decide what the parent may read from a delegated lane: Hermes can check the shape of a lane's answer, give each lane a git worktree of its own, and cap how many lanes a one-shot run may delegate. Each applies only while """ + native_tool_presence_clause("delegate_task", code=True) + """. A lane's answer stays the lane's report whatever the host checked; the run is complete only on the verification fan-in this session runs (`references/dependency-topology.md`).
+
+## 1. A fixed shape for the lane's answer
+
+For a lane you write yourself, pass an `output_schema` holding only the fields the integration step reads, for example:
+
+```json
+{
+  "type": "object",
+  "required": ["status", "changed_files"],
+  "properties": {
+    "status": {"enum": ["done", "blocked"]},
+    "changed_files": {"type": "array", "items": {"type": "string"}},
+    "verify": {
+      "type": "object",
+      "required": ["command", "exit_code"],
+      "properties": {"command": {"type": "string"}, "exit_code": {"type": "integer"}}
+    },
+    "blocked_reason": {"type": "string"}
+  }
+}
+```
+
+A `done` with no `verify` is a lane that ran no check of its own. An `omh_team` entry is the exception to all of this section: dispatch it unchanged (`references/team-lane.md`), because its acceptance is the check OMH runs.
+
+The host tells the lane the shape before it starts, checks the final answer against it, and asks once more on a mismatch. Its `schema_valid` record reaches you only when the call returns its results in the same turn; a result that arrives later as a completion message carries none, so check that summary against the schema yourself and never read `completed` as validated. `omh-code-review/references/native-review-contract.md` describes both kinds of return, and a lane's return reads the same way.
+
+A matched shape is a checked shape, not a checked claim. `changed_files` and `verify.exit_code` are what the lane says it did: the manifest comparison reads the diff, and the fan-in runs the command again on the integrated tree. A lane whose answer did not match is `not_observed`; its text holds leads, not a result.
+
+## 2. Lanes in worktrees of their own
+
+`delegation.worktree_isolation` is the user's Hermes setting and is off unless they turned it on. OMH never writes it: when lanes would collide in one checkout, propose the one-line change for the user to apply. With it on, in a git repository, with Hermes' terminal running locally, each lane gets `<repo>/.worktrees/subagent-<id>` on branch `hermes-subagent/subagent-<id>`, created from the commit your checkout is on. Anywhere else the host skips isolation without saying so, and the lanes write into the shared checkout.
+
+What changes for the parent:
+
+- A lane starts from the last commit, not from your working tree: uncommitted edits in your checkout are not in its worktree.
+- A lane's edits are not in your checkout. They are commits on its branch, or uncommitted changes left in its worktree. Integration is a merge you perform: merge each lane's branch in dependency order, then run the verification fan-in on the merged tree. A check before that merge tests a tree without the lane's work.
+- A worktree left dirty (`dirty: true`, or `git -C <path> status --porcelain` non-empty) is committed on its branch before the merge; find lanes with `git worktree list`, and a branch with no commits is not an empty lane until its worktree is checked.
+- Only after a lane has returned, and in the completion-message case only once every lane whose worktree `git worktree list` shows has returned (the message does not say which worktree is whose), commit a dirty worktree on its branch, merge it, and remove it. A worktree whose lane may still be running is not committed, merged, or removed.
+- A same-turn result carries a `worktree` entry for each lane with `path`, `branch`, `commits`, `dirty`, and `pruned`. The host deletes a worktree only when its lane made no commits and left it clean (`pruned: true`). `inspection_failed: true` means the host could not count the commits or read the status; it kept the worktree, and nothing about the lane's work is known until you look.
+- A completion message carries no `worktree` entry. Find the lanes yourself before integrating, and remove each worktree and branch once it is merged.
+- The first isolated lane makes the host add `.worktrees/` to the repository's `.gitignore` when it is missing: an uncommitted change in your checkout that is the host's, not a lane's.
+- Isolation moves a collision from the working tree to the merge; it does not remove it. The file-ownership manifest still decides which lanes may run together.
+
+## 3. The one-shot delegation budget
+
+A one-shot run (`hermes chat -q`, which is also how a kanban worker runs) may cap how many children it delegates in total. When `delegate_task` refuses with an error that names `delegation.oneshot_max_children`, treat this run's budget as spent, even when the refusal counts fewer used than the cap:
+
+- Do not retry the call, and do not split it smaller to fit under the cap.
+- Run each remaining lane yourself in this session, one at a time in dependency order, each with its own `VERIFY`.
+- The closing brief names each such lane as run inline: it was not delegated and has no helper of its own.
+
+The rule follows the refusal, not a version: a host without the cap never sends it.
 """
 
 
@@ -5556,6 +5655,8 @@ One `omh_agent_board` `prepare` per lane, with `coordination` set to `durable` a
 | `parents` | every dependency edge the lane consumes, declared on this create |
 | `max_runtime_seconds` | the lane's time budget, so a stuck worker ends instead of holding the row |
 | `model`, `provider` | the lane's route category from `omh_delegate_route`, when the category pins one |
+| `completion_contract` | where the lane publishes a pull request, as `OWNER/REPO` or the PR's exact URL; omitted for a lane that publishes none (see What the Board Enforces) |
+| `goal_mode`, `goal_max_turns` | `true` and a turn budget, for a builder whose `STOP WHEN` rarely lands in one worker turn (see What the Board Enforces) |
 
 The role is a contract, not an instruction. OMH fills the lane fields the role implies and refuses a create that contradicts them:
 
@@ -5575,7 +5676,7 @@ Then invoke the returned `native_action` through the ordinary Hermes tool loop. 
 
 ## Main Session Only
 
-`kanban_*` tools are visible only to a chat session whose profile enables the `kanban` toolset. `delegate_task` children never see them, so only the main session prepares board actions. A board worker is itself a main-style session and may run in-session `delegate_task` lanes, but it does not create further board rows: lanes nest to depth one, and a plan that needs deeper nesting is a plan that needs re-splitting.
+`kanban_*` tools are visible only to a chat session whose profile enables the `kanban` toolset. `delegate_task` children never see them, so only the main session prepares board actions. A board worker is itself a main-style session and may run in-session `delegate_task` lanes, but it does not create further board rows: lanes nest to depth one, and a plan that needs deeper nesting is a plan that needs re-splitting. A worker runs as a one-shot session, so a host that caps one-shot delegation refuses its `delegate_task` calls past that budget; `references/native-delegation.md` says what the worker does on that refusal.
 
 ## Readback Discipline
 
@@ -5610,6 +5711,15 @@ The verifier's `parents` are the observed task ids from the two builder receipts
 ## Closing the Run
 
 The run closes in the main session, never in a worker. Read back once, confirm the verifier row is `done` with a `result` naming the command and its pass/fail output, re-run the integration verification in this session when the workspace is reachable, and record the run through `omh_run_summary`. A verifier row that is `done` without pasted output is `worker reported done` and the closing brief says so.
+
+## What the Board Enforces
+
+Three create fields and two worker transitions put part of a lane's contract on the board itself. What the board records for them is the host's record: one more piece of evidence beside OMH's own checks, never a replacement for them.
+
+- `completion_contract`. A lane that publishes a pull request declares where at create time: `OWNER/REPO`, or the exact PR URL. Its worker completes with `metadata.published_pr` naming the PR, and the board refuses `kanban_complete` until every check the repository requires has passed on that PR's current head commit. It reads those checks with the `gh` CLI on the machine that completes the card and records a `pr_acceptance` event, visible in `kanban_show`, listing each required check, its conclusion, and the head SHA. A repository with no required checks never satisfies the contract, so a lane there omits the field, as does a lane that publishes nothing. The event describes that head at that moment: the closing brief still reads the PR head again before it says a change landed, and a passed contract is neither review nor merge evidence.
+- `goal_mode` with `goal_max_turns`. After each turn a judge model decides from the worker's reply whether what the card's title and body ask for is met; while it is not and turns remain, the worker continues in that session, and spending the whole budget leaves the card blocked for a person. Use it for a builder whose `STOP WHEN` takes more than one turn; leave verifier and reviewer lanes single-run. The judge's agreement is a model's reading of the card, so the row is still `worker reported done`.
+- `kanban_request_review`. A builder whose work must be reviewed before it counts ends with this transition instead of `kanban_complete`, naming the reviewing profile in `reviewer`; its `STOP WHEN` says which of the two ends the lane. The card moves to the `review` column, which is not a block. Unless the operator turned review dispatch off, the dispatcher then opens a review run on the card with Hermes' bundled `sdlc-review` loaded beside the card's own skills, and that run either requests changes, which sends the card back to its builder, or completes it. A separate reviewer row still fits a review that spans several builders; it is ordinary work, and its `done` is not the review column's approval.
+- `kanban_schedule`. In a worker, when """ + native_tool_presence_clause("kanban_schedule", code=True) + """, a lane that must wait for a time or an outside event parks its card with it and puts the wake condition in `reason`. The run ends and the card stops being dispatched, but nothing wakes it: the tool sets no timer, so the lane's `body` names who unblocks it. Without the tool, the worker blocks the card with the same reason (`kanban_block`). A `goal_mode` card cannot be parked: it blocks only with `kind` `dependency` or `needs_input`; give no goal mode to a lane that may wait on time.
 
 ## Provenance Words
 
@@ -5646,7 +5756,7 @@ Profile is the permission envelope; role is the per-task overlay stated as `lane
 | Main session | none (this chat) | none | planner and operator; prepares every row, owns the todo, closes the run |
 | Builder | `builder` | its upstream builders, if any | one per component |
 | Verifier | `verifier` | every builder | exactly one; runs the repository's real test or build command |
-| Reviewer | `reviewer` | the builders it reviews | findings first; a review claim is not merge evidence |
+| Reviewer | `reviewer` | the builders it reviews | findings first; a review claim is not merge evidence; one builder's review can go through `kanban_request_review` instead |
 | Docs | `docs` | the builders whose behaviour it documents | only when behaviour, setup, commands, or public claims changed |
 | QA probe | `qa` | the builders it probes | only for checks a unit suite cannot make from inside the code |
 
@@ -12549,6 +12659,17 @@ comparison rather than the intent.
 - A declared file nobody touched is usually harmless and occasionally the tell
   that a stream stopped early.
 
+## When each lane has its own worktree
+
+Hermes' `delegation.worktree_isolation` gives every delegated lane a git
+worktree and branch of its own (`references/native-delegation.md`). That stops
+two lanes writing into one checkout at the same time. It does not make an
+overlap safe: the two edits now meet at the merge instead of in the working
+tree, and a clean merge of them is the same silent defect. Write the manifest
+exactly as strictly, and run the comparison above per lane against that lane's
+branch plus anything its worktree still holds uncommitted, which is where its
+changes are, before merging any of them.
+
 ## Reporting
 
 A parallel split earns its coordination cost only when the lanes are genuinely
@@ -12965,4 +13086,113 @@ carries the written cost.
 Record the result as part of the plan, not as a separate note. The check is
 cheap, it is the only reason the document has force, and a plan that does not
 show it was performed has not been.
+"""
+
+
+# Hermes-only references for skills whose Hermes body points at a bundled
+# Hermes skill or command. None of them is in PORTABLE_REFERENCE_PATHS, so the
+# Agent Skills projection neither ships them nor the lines that point at them.
+
+
+def plan_mode_reference_templates() -> list[SkillReferenceTemplate]:
+    return [SkillReferenceTemplate("plan", "references/hermes-plan-mode.md", _hermes_plan_mode_reference())]
+
+
+def _hermes_plan_mode_reference() -> str:
+    """Where Hermes' built-in `/plan` turn ends and the `plan` skill begins."""
+    return """# Hermes `/plan` and `plan`
+
+Hermes ships a built-in planning command, `/plan`. This page says where its turn ends and this skill begins, so one request does not end up with two plans or two acceptance rules.
+
+## The `/plan` turn
+
+`/plan <task>`, or `/plan` alone to plan whatever the conversation is about, makes Hermes send a turn of its own that opens `[/plan — plan mode]`. That turn allows read-only inspection and nothing that changes the project apart from one markdown file: `.hermes/plans/<timestamp>-<slug>.md` in the workspace, or a path the runtime supplies. It closes with a short reply naming the file and an offer to carry the plan out.
+
+In that turn, follow its instructions: write the file, reply, and stop. OMH's router does not route a turn Hermes wrote, and nothing in this skill overrides it there.
+
+## After it: the file is the draft
+
+When the user then asks to review, refine, accept, or hand off the plan, read that file and run this skill on it instead of writing another plan:
+
+- Add what the file lacks among goals, non-goals, risks, acceptance criteria, and verification shape, and the `Review Focus` section when it describes code changes.
+- Hold every step to this skill's step shape.
+- Run the proportion check. `/plan` asks for complete code inside its steps, and this skill keeps code bodies out of a plan: reduce each body to the test name and what it asserts, an exact signature and its file, or a command and the output that passes. Say which steps you reduced. The file is the user's; change it only as part of the plan you put to them for acceptance.
+- Take acceptance from the user's own answer, exactly as for any plan. The file existing is not acceptance, and neither is `/plan`'s offer to carry it out: nothing is handed off or started until the user accepts.
+
+## Two stores
+
+The file stays where `/plan` wrote it. A reviewed plan that `ralplan` records goes under `.omh/plans/`; when a task has both, the closing brief names the one the user accepted.
+"""
+
+
+def ask_reference_templates() -> list[SkillReferenceTemplate]:
+    return [SkillReferenceTemplate("ask", "references/cli-advisors.md", _cli_advisors_reference())]
+
+
+def _cli_advisors_reference() -> str:
+    """Which bundled Hermes skill runs each coding-CLI advisor, and what stays with `ask`."""
+    return """# CLI Advisors on Hermes
+
+`ask` consults an outside model. When the advisor the user named is a coding CLI installed on this machine, Hermes bundles a skill for running that CLI from the terminal:
+
+| Advisor | Bundled Hermes skill |
+| --- | --- |
+| Claude Code | `claude-code` |
+| Codex | `codex` |
+| OpenCode | `opencode` |
+
+Load the one for the advisor the user named, when it is in your skill list, and take only the invocation from it: a single non-interactive run, started in the repository the question is about. Those skills are written for handing coding work to the CLI; here the CLI answers a question. A CLI with no bundled skill is run from its own help output, or reported as unavailable.
+
+What stays with `ask`:
+
+- The advisor is the one the user named or configured. None of these CLIs is the default, and this table recommends none of them.
+- An advisor answers; it does not edit. Run it in its read-only or planning mode where it has one, or with its file-writing tools turned off, and read `git status` afterwards: a changed file means the run did more than advise, and you say so.
+- The question carries what the advisor needs to answer: the question, and the files or excerpts it concerns. Secrets, credentials, and private material stay out unless the user opted in for this question.
+- The answer is advice. Attribute it to the advisor, say which points you accept and which you reject and why, and record no review, verification, or approval from it.
+- A run that fails, times out, or stops for a sign-in is reported as that, with no advice written in its place.
+"""
+
+
+def decision_prototype_reference_templates() -> list[SkillReferenceTemplate]:
+    return [
+        SkillReferenceTemplate("decision-prototype", "references/spike-composition.md", _spike_composition_reference())
+    ]
+
+
+def _spike_composition_reference() -> str:
+    """How a `decision-prototype` run keeps its records when Hermes' `spike` builds the experiment."""
+    return """# Composing with Hermes' `spike`
+
+Hermes bundles `spike` (MIT, adapted from the GSD project), a method for throwaway feasibility experiments. It and `decision-prototype` can load for the same request. `spike` owns how an experiment is built; this skill owns what the result may settle and how it is recorded. When both are loaded, build the way `spike` says and keep every record below.
+
+## Who owns what
+
+| Concern | Owner |
+| --- | --- |
+| Breaking an idea into questions, ordering them, building each experiment | `spike` |
+| One decision id, its alternatives, and a falsifiable hypothesis | this skill. A `spike` table of several questions is several decisions: take the one planning is blocked on, or HOLD |
+| Budgets with units, the scratch boundary, the observed cleanup | this skill |
+| The verdict | `spike` writes one per experiment; this skill turns it into the receipt `ralplan` reads |
+
+## Taken from `spike`
+
+- Order experiments by how likely each is to kill the preferred option, and run the likeliest first; proving an easy part before the hard one buys nothing.
+- Two approaches to one question are two arms of one experiment, numbered `002a` and `002b`, built one after the other, or as two `delegate_task` lanes when each arm is substantial, and closed with one side-by-side table on the measurement the decision named.
+- Prefer an artifact someone can run and watch over output that only reports success, and try more than the happy path before calling an option supported.
+
+## Verdict to record
+
+| `spike` verdict | `execution_status` | Receipt |
+| --- | --- | --- |
+| `VALIDATED` | `observed` | the supported option, with the fixture and environment limits it was shown under |
+| `PARTIAL` | `inconclusive` | the constraints it held under become evidence limits and unresolved questions; no option is chosen past them |
+| `INVALIDATED` | `observed` | the rejected option, as a result: an experiment that kills an option has done its job |
+
+A verdict from a single run, or from output nobody observed, is not `observed`.
+
+## Where the files go
+
+`spike` keeps its experiments under `spikes/` at the repository root and leaves them there. This skill writes only inside the declared scratch boundary, so point the experiment directory into it: a temporary worktree or a scratch directory. A `spikes/` directory left in the repository is a write outside the boundary unless the user approved it, `discarded` is reported only after the cleanup is observed, and experiment code reaches production only through a separate accepted plan.
+
+Without `spike` loaded, the contract in `references/full-contract.md` runs exactly as before.
 """

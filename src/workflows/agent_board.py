@@ -29,13 +29,17 @@ _NO_HOOKS: Final[frozenset[str]] = frozenset()
 CLAIM_BOUNDARY = "Prepared actions are not invocations; receipts prove only the correlated operation, not review approval, CI or merge."
 _REFERENCE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
 _MIME = re.compile(r"[A-Za-z0-9!#$&^_.+-]{1,64}/[A-Za-z0-9!#$&^_.+-]{1,64}\Z")
-_STATUSES = frozenset({"triage", "todo", "ready", "running", "review", "blocked", "done", "archived"})
+# `scheduled` is a host status since the floor release: a card parked until
+# something unblocks it (`kanban_schedule` on newer hosts). A readback that
+# refused it would leave a parked lane unreadable. It is not a `list` filter:
+# the floor host's `kanban_list` status enum lacks it, as it lacks `review`.
+_STATUSES = frozenset({"triage", "todo", "scheduled", "ready", "running", "review", "blocked", "done", "archived"})
 _WORKSPACE_KINDS = frozenset({"scratch", "dir", "worktree"})
 # Required arguments, selected optional arguments, required native success keys.
 _OPERATIONS = {
     "create": ("title assignee",
                "body parents skills workspace_kind workspace_path priority max_runtime_seconds "
-               "idempotency_key initial_status model provider completion_contract",
+               "idempotency_key initial_status model provider completion_contract goal_mode goal_max_turns",
                "ok task_id status"),
     "link": ("parent_id child_id", "", "ok parent_id child_id"),
     "comment": ("task_id body", "", "ok task_id comment_id"),
@@ -51,10 +55,14 @@ _OPERATIONS = {
 }
 _TYPES = {"parents": "array", "skills": "array", "created_cards": "array", "tasks": "array", "metadata": "object",
           "limit": "integer", "priority": "integer", "max_runtime_seconds": "integer",
-          "include_archived": "boolean"}
+          "include_archived": "boolean", "goal_mode": "boolean", "goal_max_turns": "integer"}
 # Inclusive bounds for every integer-typed argument; an unlisted integer name is a
 # programming error, so the lookup below indexes rather than defaults.
-_INTEGER_BOUNDS = {"limit": (1, 200), "priority": (0, 100), "max_runtime_seconds": (60, 86_400)}
+# `goal_max_turns` has no host ceiling. Each goal turn is a full model turn the
+# person pays for while nobody watches the card, and the host default is 20;
+# 100 is five times that, so a larger value is refused as a likely slip rather
+# than prepared for an unattended worker.
+_INTEGER_BOUNDS = {"limit": (1, 200), "priority": (0, 100), "max_runtime_seconds": (60, 86_400), "goal_max_turns": (1, 100)}
 # Array arguments that are not task-id lists carry their own ceiling and reason.
 _ARRAY_LIMITS = {"skills": (MAX_SKILLS, "too_many_skills")}
 
@@ -322,7 +330,7 @@ def _arguments(operation: str, payload: dict[str, object], request_id: str, boar
         raise ValueError("self_link")
     if operation == "complete" and not (args.get("summary") or args.get("result")):
         raise ValueError("completion_text_required")
-    if operation == "list" and "status" in args and args["status"] not in _STATUSES - {"review"}:
+    if operation == "list" and "status" in args and args["status"] not in _STATUSES - {"review", "scheduled"}:
         raise ValueError("invalid_list_status")
     if "initial_status" in args and args["initial_status"] not in {"todo", "running", "blocked", "triage"}:
         raise ValueError("invalid_initial_status")

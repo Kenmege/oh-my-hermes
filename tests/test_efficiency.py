@@ -224,7 +224,12 @@ class EfficiencyContractTests(unittest.TestCase):
         # `ops-observability-card` (also core) states its own Do-Not-Use and
         # where Hermes' recorded usage comes from. Measured 79,429; the ceiling
         # restores the ~1.6k headroom this gate carried.
-        self.assertLess(core["skill_body"]["bytes"], 81_000)
+        # 81,000 -> 83,000: `plan` is a core body; on top of the loadable
+        # sibling names (#2116), which took the core bodies to 80,921, it now
+        # says why it exists in its own words and points at its boundary with
+        # Hermes' built-in `/plan`. Measured 81,390; the ceiling restores the
+        # ~1.6k headroom this gate carried.
+        self.assertLess(core["skill_body"]["bytes"], 83_000)
         # 815,000 -> 825,000: one new installable body (`web-research`) plus the
         # sentence that split `best-practice-research`'s boundary in two. Set to
         # restore the ~10k headroom this gate is meant to carry rather than to

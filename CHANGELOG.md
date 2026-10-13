@@ -4,6 +4,43 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The coding lane works with Hermes' own delegation, board, and debugging
+  skills instead of beside them.** `ulw-work` loads a Hermes-only
+  `native-delegation` reference before a `delegate_task` dispatch. Each lane it
+  writes itself carries an `output_schema` holding only the fields integration
+  reads; the host's `schema_valid` is read only from a result returned in the
+  same turn, a later completion message is checked against the schema by hand,
+  `completed` is never read as validated, and a lane's answer stays its own
+  report until the verification fan-in runs. With the user's
+  `delegation.worktree_isolation` on, each lane works on its own
+  `hermes-subagent/…` branch, so integration is a merge the parent performs
+  before any check, after committing whatever a lane left uncommitted in its
+  worktree: the checked team lane now says a check run before that
+  merge tests a tree without the lane's work, and the file-ownership manifest
+  is compared per lane branch. A one-shot run, which is also how a kanban
+  worker runs, that is refused for its delegation budget finishes the
+  remaining lanes inline in dependency order instead of retrying. The kanban
+  lane recipe adds `completion_contract` (the board refuses completion until
+  the repository's required checks pass on the PR's current head, a record the
+  closing brief still checks against the PR head), `goal_mode` with
+  `goal_max_turns`, `kanban_request_review` into the review column, and
+  `kanban_schedule` where the worker has it; `omh_agent_board` now admits the
+  two goal fields on a create and reads back a card in the host's `scheduled`
+  status instead of failing the receipt. `agent-instructions` documents how
+  Hermes loads context files: one file type per session, `.hermes.md` first,
+  every `AGENTS.md` from the repository root down, and a per-directory
+  `AGENTS.override.md` the inventory has to list. `plan` treats a file saved
+  by Hermes' built-in `/plan` as its draft after that turn, with pasted code
+  reduced by the proportion check and acceptance still taken only from the
+  user. On Hermes, `decision-prototype` keeps its decision record when the
+  bundled `spike` builds the experiment, `app-debugging` writes its records at
+  each phase of the bundled `systematic-debugging` and counts a
+  `python-debugpy` or `node-inspect-debugger` read as one observation, and
+  `ask` takes only the invocation from the bundled `claude-code`, `codex`, or
+  `opencode` skill for a CLI advisor the user named, with no CLI as the
+  default.
+
+
 - **Generated skills follow more of Hermes' own skill-authoring
   conventions.** Every Hermes skill body now opens its trigger section with
   `## When to Use`, the heading Hermes' skill linter looks for, and carries

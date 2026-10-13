@@ -1159,7 +1159,6 @@ _DEFINITIONS = [
             "For each behavioral increment follow PIN -> RED -> GREEN -> SURFACE -> CLEAN: pin behavior a refactor could hide, capture the intended failing proof before implementation, make the smallest change, exercise the real user surface, and tear down every QA resource with a cleanup receipt; tests alone never prove completion.",
             "Keep one inspectable, append-only evidence ledger for the run using the available goal/runtime records: record the tier decision, dependency topology, todo transitions, command outputs, real-surface artifacts, and cleanup receipts when each occurs.",
             "For mid-run rulings and re-reviews, load `references/execution-rulings.md`.",
-            "For a tests-first (TDD or red-green) run, every implementation lane follows the observed red/green contract in `references/tdd-red-green.md`.",
             "[capability:coordinated_scope] Keep Hermes as coordinator and status narrator for lane framing and status while coding lanes become runtime handoffs with explicit ownership.",
             "[capability:delivery_boundary] Complete exactly one plan-to-PR delivery cycle, then stop with status, evidence gaps, or a next recommended workflow.",
             "[capability:delivery_boundary] Start a delivery cycle with codebase/source research and a ralplan-style decision record before implementation handoff.",
@@ -1168,6 +1167,7 @@ _DEFINITIONS = [
             "[capability:delivery_boundary] For implementation, default to Hermes-native delegation with a per-lane `omh_delegate_route` mixture route and acceptance criteria and verification commands attached; hand off to the `durable_checkpoint` capability for work that must survive sessions, and prepare a selected external executor/runtime path only on the user's explicit owner acceptance.",
             "When a lane's coding owner is an external CLI rather than the Hermes harness, that lane's handoff runs under `ulw-maestro`'s contract — load it and follow it whole; a lane with an external owner is never a Hermes-native `delegate_task` lane. Lane framing, disjointness, integration verification, and the closing brief stay here.",
             "Route each Hermes-native lane before dispatch: an inherit-labeled delegation wave is an unrouted wave, not mixture routing — re-route it or state why parent inheritance is intended.",
+            "Before a `delegate_task` dispatch, load `references/native-delegation.md`: the answer schema, worktree-isolated lanes, and the one-shot budget.",
             EXECUTION_WAIT_DISCIPLINE_RULE,
             ENGINE_INTERJECTION_RESUME_RULE,
             ENGINE_FOLLOW_UP_AUTHORITY_RULE,
@@ -1328,7 +1328,7 @@ _DEFINITIONS = [
             ),
         },
         portable_override_shadows={
-            "quality_bar": "4da819b34e0cadefe525df0cb5bc43116e034cf54212574a59a2ad9f58468dff",
+            "quality_bar": "ead94c17a79d078cd7148af8fa7fb4d01bae566bf196c12da352663da0952c3a",
             "safety_rules": "f5a8f74812425af82829bc083dac62883a283ed8acfa5bc299a594c107ccd4f7",
             "opening_steps": "632f26cd6eeb333b99ad0312a3c568a456d6e36c66d510b6af201ae25f65abf0",
             "final_checklist": "aa86ffc317352fb5f4a3cfa3dac07f436232e87055edb9a6adc7bf8b70896366",
@@ -6946,6 +6946,15 @@ _DEFINITIONS = [
             "When the plan describes code changes, run a proportion check before acceptance: if the plan text outgrows the code it leads to, or is mostly function bodies, implementation has leaked into it; reduce bodies to test names, assertions, and signatures.",
             PLAN_ACCEPTANCE_ANSWER_RULE,
             ENGINE_FIT_RECOMMENDATION_RULE,
+            HermesReferenceLine(
+                "Hermes' built-in `/plan` writes one plan file under `.hermes/plans/` in a turn of its own that opens `[/plan — plan mode]` and executes nothing; in that turn, follow its instructions. When the user later asks to review, accept, or hand off that file, it is this skill's draft, not a reason to write a second plan: load `references/hermes-plan-mode.md`.",
+                "references/hermes-plan-mode.md",
+            ),
+        ),
+        why_this_exists=(
+            "`plan` exists so a feature or a fix gets its goals, non-goals, risks, acceptance criteria, and verification "
+            "shape written down and accepted by the user before any code moves, with every step small enough to check "
+            "and no implementation hidden inside the plan text."
         ),
         final_checklist=_CATEGORY_FINAL_CHECKLISTS["planning"]
         + ("When the plan describes code changes, it has a `Review Focus` section with at most 5 uncovered inputs and their owning tasks, or one stating the check found none.",),
@@ -8151,6 +8160,19 @@ _DEFINITIONS = [
             "Use only when configured and materially useful.",
             "Treat advisor output as evidence to evaluate, not authority.",
             "Do not send secrets or private prompts without explicit opt-in.",
+        ),
+        quality_bar=(
+            "Before consulting, name the question, why an outside answer could change yours, and the advisor the user named or configured; with none configured, say so and answer without one.",
+            "Report the advice as one input: which points you accept, which you reject and why, and none of it as a verdict, a review, or a verified fact.",
+            HermesReferenceLine(
+                "When the advisor is a coding CLI the user named and Hermes' bundled skill for it (`claude-code`, `codex`, or `opencode`) is in your skill list, take only the invocation from that skill and keep the run to advice, with no edits; load `references/cli-advisors.md`. None of these CLIs is the default advisor.",
+                "references/cli-advisors.md",
+            ),
+        ),
+        why_this_exists=(
+            "`ask` exists to put one outside model's critique beside the agent's own answer when the user wants it, as "
+            "advice the agent weighs in the open rather than a verdict it adopts, from the advisor the user named or "
+            "configured and never from a default one."
         ),
         do_not_use_when=(
             "The request is casual chat, a status-only acknowledgement, or another workflow has stronger routing evidence.",
@@ -9781,6 +9803,10 @@ _DEFINITIONS.append(
             "Pick the next observation by cost and by how many hypotheses its result eliminates, and record the eliminations.",
             "Keep reproduction, root cause, fix, and verification as separate observed states.",
             "Count a fix as failed when an executed run of the same reproduction command still shows the original symptom or shows a new symptom the fix caused rather than unmasked; planned runs and other commands do not count. After the third failed fix, prepare no fourth; re-examine the architecture assumptions every fix shared, per the method reference, and offer the user the next step as a question.",
+            HermesReferenceLine(
+                "When Hermes' bundled `systematic-debugging` skill is loaded for the same bug, follow its phases and write this skill's records at each; a breakpoint read through `python-debugpy` or `node-inspect-debugger` is one discriminating observation. Load `references/debugging-skill-composition.md` for the mapping.",
+                "references/debugging-skill-composition.md",
+            ),
         ),
         why_this_exists=(
             "`app-debugging` exists because a wrong result in application code had no owner: `native-debugging` covers native "
