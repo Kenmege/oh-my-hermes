@@ -4907,7 +4907,10 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
         # a manifest from before marks cannot say who rendered the directory.
         note = "removal_render_mark_note" if item.get("rule") == "render_mark" else "removal_earlier_manifest_note"
         directory = str(item.get("path", "")).rsplit("/", 1)[0]
-        line = f"{tr(language, key, name=item.get('name', ''), directory=directory)} {tr(language, note)}"
+        # Only what went: a category directory may have had no references/ to remove.
+        entries = item.get("removed_entries") if isinstance(item.get("removed_entries"), list) else ["SKILL.md"]
+        files = ", ".join(f"{directory}/{entry}" for entry in entries)
+        line = f"{tr(language, key, name=item.get('name', ''), directory=directory, files=files)} {tr(language, note)}"
         print(_color(f"  {line}", "1;33", use_color))
     for item in force_pruned if isinstance(force_pruned, list) else []:
         if not isinstance(item, dict):

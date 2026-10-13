@@ -622,11 +622,11 @@ def install_skill_pack(
     install_names = {template.name for template in templates}
     pack = manifest_pack(manifest, paths) if manifest else paths.skills_dir
     # One ledger read per install, cut to the two packs it can concern. Only
-    # the pruners read the unread list: a removal is final, so a ledger that
-    # exists and cannot be read, or a line naming these packs that is not a
-    # row, keeps what they would otherwise remove.
+    # the pruners read the unread list: a removal is final, so whatever may
+    # record a write and could not be read (a ledger, a line, the profile
+    # list) keeps what they would otherwise remove.
     ledger_writes, unreadable_ledgers = (
-        read_ledger_writes(paths.hermes_home, within=[pack, paths.skills_dir], report_unparsed_rows=True)
+        read_ledger_writes(paths.hermes_home, within=[pack, paths.skills_dir], fail_closed=True)
         if manifest
         else ([], [])
     )
@@ -1082,7 +1082,8 @@ def _prune_flat_layout_skill_directories(
     names the rule that admitted it (`render_mark`, or `earlier_manifest` for
     a manifest from before marks), and `kind` is `flat_copy` for a whole
     directory or `flat_copy_in_category` when the directory is also a
-    category and only its top-level SKILL.md and references/ went.
+    category, where only its top-level SKILL.md and a real references/
+    directory go and `removed_entries` names the ones that did.
     """
     if not manifest:
         return {"removed": [], "retained": [], "skipped": [], "forced": []}
@@ -1135,19 +1136,20 @@ def _prune_flat_layout_skill_directories(
         if not remove:
             continue
         in_category = entry.name in categories
-        _remove_flat_skill_payload(entry, is_category_dir=in_category)
-        removed.append(
-            {
-                "name": canonical,
-                "path": rel,
-                "rule": "render_mark" if marked else "earlier_manifest",
-                "kind": "flat_copy_in_category" if in_category else "flat_copy",
-            }
-        )
+        removed_entries = _remove_flat_skill_payload(entry, is_category_dir=in_category)
+        item = {
+            "name": canonical,
+            "path": rel,
+            "rule": "render_mark" if marked else "earlier_manifest",
+            "kind": "flat_copy_in_category" if in_category else "flat_copy",
+        }
+        if in_category:
+            item["removed_entries"] = removed_entries
+        removed.append(item)
     return {"removed": removed, "retained": sorted(retained), "skipped": skipped, "forced": forced}
 
 
-def _remove_flat_skill_payload(entry: Path, *, is_category_dir: bool) -> None:
+def _remove_flat_skill_payload(entry: Path, *, is_category_dir: bool) -> list[str]:
     """Remove a flat skill directory without taking a category directory with it.
 
     One directory name is both: `ultrawork` was the pre-relabel canonical
@@ -1155,15 +1157,18 @@ def _remove_flat_skill_payload(entry: Path, *, is_category_dir: bool) -> None:
     under, so `skills/ultrawork/` can legitimately hold `SKILL.md` (stale) beside
     `ulw-work/SKILL.md` (current). Removing the tree would delete the skills that
     were just written, so for a category directory only the flat payload goes:
-    the SKILL.md at that level and the `references/` beside it.
+    the SKILL.md at that level and the `references/` beside it, when it is a
+    real directory. Returns what went from a category directory, by name.
     """
     if not is_category_dir:
         shutil.rmtree(entry)
-        return
+        return []
     (entry / "SKILL.md").unlink()
     references = entry / "references"
     if references.is_dir() and not references.is_symlink():
         shutil.rmtree(references)
+        return ["SKILL.md", "references/"]
+    return ["SKILL.md"]
 
 
 def _remove_empty_category_directories(skills_dir: Path) -> None:

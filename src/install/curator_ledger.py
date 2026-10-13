@@ -24,9 +24,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+import errno
 import json
 import os
 from pathlib import Path
+import stat
 
 from ..hashutil import sha256_file
 from .manifest import same_directory
@@ -60,8 +62,43 @@ def curator_ledger_paths(hermes_home: Path) -> list[Path]:
     return paths
 
 
+# A profile entry that is not there, or not a directory, holds no ledger.
+_NO_PROFILE_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR})
+
+
+def _curator_ledger_paths_reporting(hermes_home: Path, unread: list[str]) -> list[Path]:
+    """`curator_ledger_paths`, naming in `unread` what of the profile list could not be read.
+
+    `hermes_profile_dirs` answers [] when the listing fails, and when any one
+    entry's stat fails, which every other caller of it wants. Here each of
+    those may hide a ledger, so the listing and each entry are judged apart:
+    a failure is named, and only the entry that failed is skipped. An entry
+    that does not exist (a dangling link) or is not a directory is no profile.
+    """
+    paths = [hermes_home / CURATOR_LEDGER_RELATIVE_PATH]
+    root = hermes_home / "profiles"
+    try:
+        entries = sorted(root.iterdir())
+    except OSError as error:
+        if error.errno not in _NO_PROFILE_ERRNOS:
+            unread.append(f"{root}: {error}")
+        return paths
+    for entry in entries:
+        if entry.name.startswith("."):
+            continue
+        try:
+            is_directory = stat.S_ISDIR(entry.stat().st_mode)
+        except OSError as error:
+            if error.errno not in _NO_PROFILE_ERRNOS:
+                unread.append(f"{entry}: {error}")
+            continue
+        if is_directory:
+            paths.append(entry / CURATOR_LEDGER_RELATIVE_PATH)
+    return paths
+
+
 def read_ledger_writes(
-    hermes_home: Path, within: Iterable[Path] | None = None, *, report_unparsed_rows: bool = False
+    hermes_home: Path, within: Iterable[Path] | None = None, *, fail_closed: bool = False
 ) -> tuple[list[LedgerWrite], list[str]]:
     """Every file write the home's ledgers record, oldest first, and the ledgers that could not be read.
 
@@ -71,14 +108,17 @@ def read_ledger_writes(
     and could grow to hundreds of megabytes.
 
     A line that is not a ledger row (not JSON, or not an object) is skipped.
-    With `report_unparsed_rows` it is also named in the unread list, for a
-    caller that must not act on a write it could not read: such a line may
-    record one.
+    With `fail_closed`, for a caller that must not act on a write it could not
+    read, the unread list also names everything that may hold one: a line
+    under `within` that is not a row, a last line with no line end (an append
+    may be in progress, so it is named whatever it says), and a profile
+    directory, or entry in it, that could not be read.
     """
     needles = _path_needles(within) if within is not None else None
     writes: list[LedgerWrite] = []
     unread: list[str] = []
-    for ledger in curator_ledger_paths(hermes_home):
+    ledgers = _curator_ledger_paths_reporting(hermes_home, unread) if fail_closed else curator_ledger_paths(hermes_home)
+    for ledger in ledgers:
         try:
             text = ledger.read_bytes().decode("utf-8-sig")
         except FileNotFoundError:
@@ -86,12 +126,16 @@ def read_ledger_writes(
         except (OSError, UnicodeDecodeError) as error:
             unread.append(f"{ledger}: {error}")
             continue
-        for number, line in enumerate(text.splitlines(), start=1):
+        lines = text.splitlines()
+        open_line = len(lines) if fail_closed and lines and not text.endswith(("\n", "\r")) else 0
+        for number, line in enumerate(lines, start=1):
+            if number == open_line and line.strip():
+                unread.append(f"{ledger}: line {number} is unterminated, so an append may be in progress")
             if needles is not None and not any(needle in line for needle in needles):
                 continue
             row_writes = _row_writes(line, str(ledger))
             if row_writes is None:
-                if report_unparsed_rows:
+                if fail_closed and number != open_line:
                     unread.append(f"{ledger}: line {number} is not a ledger row")
                 continue
             writes.extend(row_writes)

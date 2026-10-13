@@ -42,6 +42,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import tempfile
 import unittest
 from unittest import mock
@@ -57,7 +58,8 @@ from omh.hashutil import sha256_file
 from omh.install import installer
 from omh.install import manifest as manifest_module
 from omh.install.config_adapter import memory_provider_selection, skill_create_dir_selection
-from omh.install.curator_ledger import CURATOR_LEDGER_RELATIVE_PATH, read_ledger_writes
+from omh.install.curator_ledger import CURATOR_LEDGER_RELATIVE_PATH, curator_ledger_paths, read_ledger_writes
+from omh.install.skill_registration import hermes_profile_dirs
 from omh.install.installer import (
     HERMES_EDIT_RECORD_KEY,
     PRUNE_SKIP_REASONS,
@@ -1235,7 +1237,8 @@ class RenderMarkPruneTests(_Home):
 
         self.assertTrue(retired.is_file())
         self.assertIn(
-            "it changed since OMH rendered it there (its SKILL.md, or a Hermes write recorded under it)",
+            "its SKILL.md changed since OMH rendered it there, or a Hermes write is recorded under it (OMH cannot "
+            "tell whether before or after it last rendered there)",
             self.summary(again),
         )
 
@@ -1621,21 +1624,42 @@ class RetiredSkillEditTests(_Home):
         # every file in the directory did.
         install_skill_pack(self.paths, profile="full")
         category = self.paths.skills_dir / skill_install_relative_dir("ultrawork").parts[0]
-        (category / "SKILL.md").write_text("---\nname: ultrawork\n---\nstale pre-relabel render\n", encoding="utf-8")
-        install_skill_pack(self.paths, profile="full")
-        self.edit_manifest(legacy=True)
+        outside = self.root / "kept-references"
+        outside.mkdir()
+        # Without references/, with a real one, and with a link the removal keeps.
+        for references, removed in ((None, ["SKILL.md"]), ("dir", ["SKILL.md", "references/"]), ("link", ["SKILL.md"])):
+            with self.subTest(references=references):
+                (category / "SKILL.md").write_text("---\nname: ultrawork\n---\nstale pre-relabel render\n", encoding="utf-8")
+                if references == "dir":
+                    (category / "references").mkdir()
+                    (category / "references" / "old.md").write_text("old\n", encoding="utf-8")
+                elif references == "link":
+                    try:
+                        (category / "references").symlink_to(outside, target_is_directory=True)
+                    except OSError:
+                        self.skipTest("symlinks unavailable")
+                install_skill_pack(self.paths, profile="full")
+                self.edit_manifest(legacy=True)
 
-        result = install_skill_pack(self.paths, profile="full")
+                result = install_skill_pack(self.paths, profile="full")
 
-        self.assertFalse((category / "SKILL.md").exists())
-        self.assertEqual(
-            [(item["path"], item["rule"], item["kind"]) for item in result["removed_skill_directories"]],
-            [(f"{category.name}/SKILL.md", "earlier_manifest", "flat_copy_in_category")],
-        )
-        [line] = self.removal_lines(result)
-        self.assertIn(f"Removed {category.name}/SKILL.md and {category.name}/references/", line)
-        self.assertIn(f"the rest of {category.name}/ stays", line)
-        self.assertNotIn("every file", line)
+                self.assertFalse((category / "SKILL.md").exists())
+                self.assertEqual((category / "references").is_symlink(), references == "link")
+                self.assertEqual(
+                    [
+                        (item["path"], item["rule"], item["kind"], item["removed_entries"])
+                        for item in result["removed_skill_directories"]
+                    ],
+                    [(f"{category.name}/SKILL.md", "earlier_manifest", "flat_copy_in_category", removed)],
+                )
+                [line] = self.removal_lines(result)
+                named = ", ".join(f"{category.name}/{entry}" for entry in removed)
+                self.assertTrue(line.startswith(f"Removed {named}, named for ultrawork,"), line)
+                self.assertEqual(f"{category.name}/references/" in line, references == "dir")
+                self.assertIn(f"the rest of {category.name}/ stays", line)
+                self.assertNotIn("every file", line)
+                if references == "link":
+                    (category / "references").unlink()
 
     def test_a_recorded_hermes_write_keeps_it_after_the_file_changed_again(self) -> None:
         # Probe case 3: one recorded write_file row, then the person added to
@@ -1835,6 +1859,122 @@ class RetiredSkillEditTests(_Home):
             (self.REL, "changed_since_rendered"),
             [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
         )
+
+    @unittest.skipIf(os.name == "nt" or getattr(os, "geteuid", lambda: 1)() == 0, "POSIX permissions, not as root")
+    def test_a_profiles_directory_that_cannot_be_listed_keeps_it(self) -> None:
+        # Probe L5: every bot-profile ledger sits behind the listing; a bot's
+        # write under the directory is unknown, not absent.
+        directory = self.marked_retired_skill()
+        (directory / "references").mkdir()
+        lessons = directory / "references" / "lessons.md"
+        lessons.write_text("lesson the bot's Hermes wrote\n", encoding="utf-8")
+        _append_ledger(self.paths.hermes_home / "profiles" / "bot", _ledger_row(lessons, action="write_file"))
+        profiles = self.paths.hermes_home / "profiles"
+        os.chmod(profiles, 0)
+        self.addCleanup(os.chmod, profiles, stat.S_IRWXU)
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue(lessons.is_file())
+        self.assertIn(
+            (self.REL, "ledger_unreadable"),
+            [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
+        )
+        [unread] = result["unreadable_ledgers"]
+        self.assertTrue(unread.startswith(f"{profiles}: "), unread)
+        # Every other reader of the profile list behaves as before.
+        self.assertEqual(hermes_profile_dirs(self.paths.hermes_home), [])
+        self.assertEqual(curator_ledger_paths(self.paths.hermes_home), [self.paths.hermes_home / CURATOR_LEDGER_RELATIVE_PATH])
+        self.assertEqual(read_ledger_writes(self.paths.hermes_home, within=[self.paths.skills_dir]), ([], []))
+
+    @unittest.skipIf(os.name == "nt" or getattr(os, "geteuid", lambda: 1)() == 0, "POSIX permissions, not as root")
+    def test_a_profile_entry_that_cannot_be_read_does_not_hide_the_others(self) -> None:
+        # Probe P1: one entry whose stat fails used to empty the whole list,
+        # so a readable bot ledger was never read.
+        directory = self.marked_retired_skill()
+        profiles = self.paths.hermes_home / "profiles"
+        (profiles / "bot").mkdir(parents=True)
+        locked = self.root / "locked"
+        (locked / "inner").mkdir(parents=True)
+        (profiles / "zz-link").symlink_to(locked / "inner", target_is_directory=True)
+        os.chmod(locked, 0)
+        self.addCleanup(os.chmod, locked, stat.S_IRWXU)
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue(directory.is_dir())
+        self.assertIn(
+            (self.REL, "ledger_unreadable"),
+            [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
+        )
+        [unread] = result["unreadable_ledgers"]
+        self.assertTrue(unread.startswith(f"{profiles / 'zz-link'}: "), unread)
+
+        (directory / "references").mkdir()
+        lessons = directory / "references" / "lessons.md"
+        lessons.write_text("lesson the bot's Hermes wrote\n", encoding="utf-8")
+        _append_ledger(profiles / "bot", _ledger_row(lessons, action="write_file"))
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        # The readable bot ledger is read: its write is known, and outranks the unknown.
+        self.assertIn(
+            (self.REL, "changed_since_rendered"),
+            [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
+        )
+
+    def test_a_write_recorded_before_the_last_render_keeps_it_and_says_so(self) -> None:
+        # Probe H1: Hermes wrote, a --force render put OMH's files back, then
+        # the skill retired. The row still counts; the line may not say the
+        # directory changed since OMH rendered it.
+        directory = self.marked_retired_skill()
+        gone = directory / "references" / "lessons.md"
+        _append_ledger(self.paths.hermes_home, _change_row(gone, after_sha="c" * 64, action="write_file", ts="2026-09-01T00:00:00+00:00"))
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue(directory.is_dir())
+        [line] = self.removal_lines(result, needle=self.REL)
+        self.assertIn(
+            "its SKILL.md changed since OMH rendered it there, or a Hermes write is recorded under it (OMH cannot "
+            "tell whether before or after it last rendered there)",
+            line,
+        )
+        self.assertNotIn("it changed since", line)
+
+        forced = install_skill_pack(self.paths, profile="core", force=True)
+
+        [line] = [line for line in self.removal_lines(forced) if "because --force was given" in line]
+        self.assertIn("its SKILL.md changed since OMH rendered it there, or a Hermes write is recorded under it", line)
+        self.assertNotIn("it had changed", line)
+
+    def test_an_unterminated_last_line_keeps_it(self) -> None:
+        # Probe L3b: an append in progress, cut before any path, names nothing
+        # in the pack, and may be the write that changed the directory.
+        directory = self.marked_retired_skill()
+        ledger = _append_ledger(self.paths.hermes_home, _ledger_row(self.root / "elsewhere.md", action="write_file"))
+        torn = '{"id": "t", "ts": "2026-10-13T02:00:00+00:00", "actor": "curator", "action": "write_file", "skill": "omh-old-skill", "before": [], '
+        with ledger.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(torn)
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue(directory.is_dir())
+        self.assertEqual(result["unreadable_ledgers"], [f"{ledger}: line 2 is unterminated, so an append may be in progress"])
+        self.assertIn(
+            (self.REL, "ledger_unreadable"),
+            [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
+        )
+        # Every other reader skips it as before.
+        self.assertEqual(read_ledger_writes(self.paths.hermes_home, within=[self.paths.skills_dir]), ([], []))
+
+        with ledger.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write('"after": []}\n')
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertFalse(directory.exists())
+        self.assertNotIn("unreadable_ledgers", result)
 
     def test_an_unreadable_ledger_keeps_a_flat_leftover_too(self) -> None:
         install_skill_pack(self.paths, profile="core")

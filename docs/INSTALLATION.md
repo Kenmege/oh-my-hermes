@@ -350,33 +350,37 @@ does not ship, or a top-level directory named for a catalog skill that now
 renders in its category directory) only when it rendered that directory, the
 `SKILL.md` it rendered there is unchanged, and no Hermes write is recorded
 under it; every other file in that directory is removed with it (for a
-directory that is also a category, only its own `SKILL.md` and `references/`
-go). The summary names each directory removed by its path and says what was
+directory that is also a category, only its own `SKILL.md` and, when it is a
+real directory, its `references/` go, and the summary names only what went).
+The summary names each directory removed by its path and says what was
 checked, and nothing more; the `--json` result lists each one under
 `removed_skill_directories` with the rule that removed it. A directory whose
-record has no mark is one an
-install merely found, such as your own skill in a category directory or a
-renamed copy beside a managed skill: it is never removed, with or without
-`--force`, and is listed under `prune_skipped_skills` as `not_rendered_by_omh`
-on every install; the summary names it once, on the install that first
-records it. A marked directory whose `SKILL.md` was edited after OMH wrote it,
-whose record carries kept Hermes-edit evidence, or under which Hermes' ledger
-records any write -- still on disk or not, since a removal is final -- is
-listed as `changed_since_rendered` and left by a plain install in the skills
-directory it writes; a staged `omh update` starts its new generation without
-that directory, as it does without any other local change that is not a kept
-Hermes edit, and the directory stays in the previous generation. `--force`
-removes it, except under `OMH_SECURITY=strict`, where `--force` overrides no
-local change, and lists it under `force_pruned_skills`, with the files Hermes'
-ledger still holds a copy of and the files that are gone for good. A Hermes
-curator ledger that exists but cannot be read (for example a permission error,
-or bytes that are not UTF-8), or that holds a line naming a path in the skills
-directory that is not a ledger row, may record such a write, so a marked
-directory with nothing else against it is listed as `ledger_unreadable` and
-left in place, with the ledger and its error named in the summary (and under
-`unreadable_ledgers` in the `--json` result); a ledger that does not exist
-records nothing. `--force` removes it on the same terms, and says the ledger
-could not be read instead of what it holds. A manifest
+record has no mark is one an install merely found, such as your own skill in a
+category directory or a renamed copy beside a managed skill: it is never
+removed, with or without `--force`, and is listed under `prune_skipped_skills`
+as `not_rendered_by_omh` on every install; the summary names it once, on the
+install that first records it. A marked directory whose `SKILL.md` was edited
+after OMH wrote it, whose record carries kept Hermes-edit evidence, or under
+which Hermes' ledger records any write -- still on disk or not, and whether it
+came before or after OMH last rendered there, which OMH cannot tell, since a
+removal is final -- is listed as `changed_since_rendered` and left by a plain
+install in the skills directory it writes; a staged `omh update` starts its
+new generation without that directory, as it does without any other local
+change that is not a kept Hermes edit, and the directory stays in the previous
+generation. `--force` removes it, except under `OMH_SECURITY=strict`, where
+`--force` overrides no local change, and lists it under `force_pruned_skills`,
+with the files Hermes' ledger still holds a copy of and the files that are
+gone for good. A Hermes curator ledger that exists but cannot be read (for
+example a permission error, or bytes that are not UTF-8), that holds a line
+naming a path in the skills directory that is not a ledger row, or whose last
+line has no line end (an append may be in progress), may record such a write,
+and so may a bot profile's ledger when `<hermes_home>/profiles` cannot be
+listed or an entry in it cannot be read. So a marked directory with nothing
+else against it is listed as `ledger_unreadable` and left in place, with
+what could not be read and its error named in the summary (and under
+`unreadable_ledgers` in the `--json` result); a ledger that does not exist records nothing. `--force`
+removes it on the same terms, and says the ledger could not be read instead of
+what it holds. A manifest
 written before marks existed is handled once more by the earlier rule, which
 does not know what OMH rendered or look for Hermes writes: an unchanged record
 at the top level or in a category directory, inside the skills directory, is

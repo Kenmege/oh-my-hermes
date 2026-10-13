@@ -43,26 +43,32 @@ All notable changes will be documented here.
   manifest, the orphan pruner and the flat-layout pruner remove a marked
   directory only when its SKILL.md still has that hash, its record carries no
   kept Hermes-edit evidence, and Hermes' ledger records no write under it (a
-  recorded write counts whether or not it is still on disk, since a removal is
-  final); every other file in that directory goes with it (for a directory
-  that is also a category, only its own SKILL.md and `references/`), and the
+  recorded write counts whether or not it is still on disk, and whether it
+  came before or after OMH last rendered there, which OMH cannot tell, since a
+  removal is final); every other file in that directory goes with it (for a
+  directory that is also a category, only its own SKILL.md and a real
+  `references/` directory, and the summary names only what went), and the
   summary names each directory removed by its path
   (`removed_skill_directories` in the result) and says only what was checked.
   An unmarked record (`not_rendered_by_omh`) is never removed, with or without
   `--force`: your own skill in a category directory or beside a managed one
-  stays. A marked directory that changed (`changed_since_rendered`) is left by
-  a plain install in the skills directory it writes (a staged update starts
-  its new generation without it, as it does without any other local change
-  that is not a kept Hermes edit) and removed by `--force`, except under
-  `OMH_SECURITY=strict`, where `--force` overrides no local change; `--force`
-  lists it under `force_pruned_skills` with the files the ledger still holds a
-  copy of and the files that are gone for good. A ledger that exists but
-  cannot be read, or a line in it that names a path in the skills directory
-  and is not a ledger row, may record such a write, so a marked directory with
-  nothing else against it is left in place as `ledger_unreadable`, naming the
-  ledger and its error (`unreadable_ledgers` in the result); a missing ledger
-  records nothing, and `--force` removes it on the same terms without claiming
-  what the ledger holds. Every directory left in place is listed under
+  stays. A marked directory whose SKILL.md changed or under which a Hermes
+  write is recorded (`changed_since_rendered`) is left by a plain install in
+  the skills directory it writes (a staged update starts its new generation
+  without it, as it does without any other local change that is not a kept
+  Hermes edit) and removed by `--force`, except under `OMH_SECURITY=strict`,
+  where `--force` overrides no local change; `--force` lists it under
+  `force_pruned_skills` with the files the ledger still holds a copy of and
+  the files that are gone for good. A ledger that exists but cannot be read, a
+  line in it that names a path in the skills directory and is not a ledger
+  row, an unterminated last line (an append may be in progress), or a profile
+  list under `<hermes_home>/profiles` that cannot be listed (or an entry in it
+  that cannot be read) may hide such a write, so a marked directory with
+  nothing else against it is left in place as `ledger_unreadable`, naming what
+  could not be read and its error (`unreadable_ledgers` in the result); a
+  missing ledger records nothing, and `--force` removes it on the same terms
+  without claiming what the ledger holds. Every directory left in place is
+  listed under
   `prune_skipped_skills` on every install, and the manifest stays
   byte-identical across installs over an unchanged disk; the summary names a
   `not_rendered_by_omh` directory once, on the install that first records it,
