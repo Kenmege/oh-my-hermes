@@ -28,6 +28,7 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("↑ / ↓", "Move between the composer's rows, walk the input history at its first and last row, "
               "or move through an open completion menu"),
     ("↑", "On an empty composer with prompts queued, takes them all back into the composer to edit"),
+    ("↓", "On an empty composer while the mode row shows subagents, opens the agent list under the composer"),
     ("← / →", "Move by a character; with Ctrl or Alt, by a word"),
     ("Home / End, Ctrl+A / Ctrl+E", "Go to the start or the end of the line"),
     ("Backspace / Delete", "Delete a character; Backspace on an empty composer removes the last attached image"),
@@ -47,8 +48,13 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
                     "Ctrl+C first clears an answer being typed"),
     ("↑ / ↓, PageUp / PageDown, Enter, Esc", "In the /sessions list, move, switch to the highlighted session, "
                                              "or close it; typing filters the list"),
-    ("j / k, Space / b, g / G, q or Esc", "In a pager (/history, /logs, long command output, this list), "
-                                          "move a line, a page, or to either end, or leave"),
+    ("↑ / ↓, Enter, Esc", "In the agent list, move, open the highlighted agent's log (on main, only leave), "
+                          "or go back; typing leaves it too"),
+    ("Click", "On an agent on the mode row's strip while a turn runs, or on a row of the agent list, "
+              "opens that agent's log"),
+    ("← / →, q or Esc", "In an agent's log, show the agent before or after, or go back; the pager's keys scroll it"),
+    ("j / k, Space / b, g / G, q or Esc", "In a pager (/history, /logs, long command output, an agent's log, "
+                                          "this list), move a line, a page, or to either end, or leave"),
 )
 
 TITLE = "OMH TUI keys"

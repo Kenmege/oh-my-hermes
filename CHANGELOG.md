@@ -34,6 +34,9 @@ All notable changes will be documented here.
   queued prompts are listed above the composer and Up takes them back to
   edit, `?` or `/keys` lists every key from the table the docs are held to,
   and an approval rings the terminal bell once (`OMH_TUI_BELL=0` silences it).
+  A turn's subagents show as a strip on the mode row; Down opens them as a
+  list, and Enter or a click opens one agent's read-only log, with mouse
+  reports on only while an agent is there to click.
 
 - **The OMH status widget and the Hermes Desktop pane keep ordinary
   punctuation and drop whole escape sequences.** Their character allowlists

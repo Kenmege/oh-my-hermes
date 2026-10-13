@@ -194,7 +194,14 @@ PR without the chat history.
   turned on with Shift+Tab: while it is on, a prompt the person types goes to
   Hermes as `/plan <text>`. A steer (Ctrl+Enter, `/steer`) sends into the
   running turn only text the person typed and sent that way; the TUI never
-  steers on its own, and a queued prompt is never turned into a steer. It
+  steers on its own, and a queued prompt is never turned into a steer. The
+  subagent views (the strip, the list, one agent's log) are read-only:
+  `subagent.tail` is the only subagent call the TUI makes, it reads the tail
+  of the log the person opened, and the TUI never steers, interrupts or
+  answers for a subagent. Mouse reporting is on in two states only, a turn
+  running with agents named on the strip and the agent list open, and off in
+  every other and on every exit; a report can open an agent's log and
+  nothing else, and never types. It
   never attaches to a session another runtime owns: when the launcher sets
   `HERMES_TUI_GATEWAY_URL`, it exits and names `hermes`. It writes no prompt
   text, transcript, attachment, secret or server-request frame to disk or to

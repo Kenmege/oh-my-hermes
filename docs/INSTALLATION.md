@@ -316,7 +316,23 @@ run and approval decision stays Hermes'; the screen is OMH's.
   mode row the status line names the mode (`⏵⏵ accept`, `⏸ plan`) whenever it
   is not normal.
 - The composer does not move when the panel grows or shrinks; only its own
-  lines move it.
+  lines move it, and the agent list for as long as it is open.
+- While a turn has delegated work, the mode row carries a strip of its
+  subagents, each named by the first words of its goal
+  (`● main  ⠹ find usages of  ○ read the diff  ↓`); Down on an empty composer
+  opens them as a list under the composer, which sits higher while the list is
+  open and returns to its row when it closes. Enter, or a click, opens that
+  agent's log on the alternate screen (its thinking lines, tool calls and
+  reply, read-only, refreshed while it runs); Left and Right move between
+  agents and q or Esc goes back.
+- While the strip is clickable (a turn running with agents, or the list open),
+  the OMH TUI asks the terminal for click reports, so a plain drag no longer
+  selects text in most terminals (Option-drag in Terminal.app and iTerm2,
+  Shift-drag elsewhere) and the wheel does not scroll; both return when the
+  turn ends or the list closes. A click is read only where the OMH TUI can
+  tell which row it landed on: once the session's output has reached the
+  bottom of the screen, or after Ctrl+L. Until then it leaves the mouse to the
+  terminal and the keys open the list.
 - When Hermes asks something (an approval, a clarify question, a sudo
   password), the question takes the slot until you answer. Nothing is answered
   for you: Esc or Ctrl+C declines. An approval offers deny, allow once and
@@ -357,6 +373,7 @@ Esc closes it):
 | `?` | On an empty composer, shows this list; `/keys` does too |
 | ↑ / ↓ | Move between the composer's rows, walk the input history at its first and last row, or move through an open completion menu |
 | ↑ | On an empty composer with prompts queued, takes them all back into the composer to edit |
+| ↓ | On an empty composer while the mode row shows subagents, opens the agent list under the composer |
 | ← / → | Move by a character; with Ctrl or Alt, by a word |
 | Home / End, Ctrl+A / Ctrl+E | Go to the start or the end of the line |
 | Backspace / Delete | Delete a character; Backspace on an empty composer removes the last attached image |
@@ -373,7 +390,10 @@ Esc closes it):
 | 1 to 9 | On a clarify question with choices, pick one; ↑ / ↓ then Enter on an empty answer does too |
 | Esc, Ctrl+C | On a question Hermes asked, decline it (an approval is denied); Ctrl+C first clears an answer being typed |
 | ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions` list, move, switch to the highlighted session, or close it; typing filters the list |
-| j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, long command output, this list), move a line, a page, or to either end, or leave |
+| ↑ / ↓, Enter, Esc | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; typing leaves it too |
+| Click | On an agent on the mode row's strip while a turn runs, or on a row of the agent list, opens that agent's log |
+| ← / →, q or Esc | In an agent's log, show the agent before or after, or go back; the pager's keys scroll it |
+| j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, long command output, an agent's log, this list), move a line, a page, or to either end, or leave |
 
 Ctrl+Enter and Shift+Enter reach the OMH TUI as keys of their own only where
 the terminal reports them. On start it asks iTerm2, kitty, WezTerm, tmux, VS
