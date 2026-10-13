@@ -10,7 +10,7 @@ metadata:
     phase: legal-compliance-review
     role: reviewer
     quality_tier: review-gated
-    related_skills: [omh-security-safety-review, omh-content-operator, omh-apps]
+    related_skills: [omh-security-safety-review, omh-content-operator, omh-apps, omh-data-share-review]
 ---
 
 # Legal Compliance Review
@@ -27,6 +27,7 @@ This is a Hermes-native `legal-compliance-review` workflow skill.
 - The review is about code, secrets, permissions, prompt injection, dependencies, or unsafe tool behavior; use `omh-security-safety-review`.
 - The request is a plain-language rewrite without a legal-risk review objective; use `omh-content-operator`.
 - The user asks to sign, accept, submit, file, publish, or change a policy or contract in an external system; use `omh-apps` only after explicit authority.
+- The file itself is about to leave and needs its PII redaction and a residual PII scan first; use `omh-data-share-review` once sharing it is cleared.
 
 ## Examples
 
@@ -55,7 +56,7 @@ Bad example:
 
 ## Workflow Lane
 
-- Current lane: **Research and company ops** (`product-docs`, `source-finder`, `web-research`, `research`, `model-optimization`, `inference-serving`, `model-finetuning`, `research-brief`, `+20 more`) - research, signals, ops, and briefings.
+- Current lane: **Research and company ops** (`product-docs`, `source-finder`, `web-research`, `research`, `model-optimization`, `inference-serving`, `model-finetuning`, `research-brief`, `+21 more`) - research, signals, ops, and briefings.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
 - Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 

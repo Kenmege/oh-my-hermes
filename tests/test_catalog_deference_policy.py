@@ -285,9 +285,13 @@ NON_SKILL_BACKTICKS = frozenset(
 # `workflow-learning`, and `skill-scout`; `workflow-learning` adds
 # `memory-new`, `instinct-ledger`, and `agent-debug`. Twenty-one cases,
 # twenty-two pairs, seven new owners.
-EXPECTED_DEFERENCE_CASES = 370
-EXPECTED_DEFERENCE_PAIRS = 385
-EXPECTED_DEFERRING_OWNERS = 110
+# `data-share-review` (#2118) defers to `legal-compliance-review`,
+# `security-safety-review`, `data-analysis`, `github-issue-intake`,
+# `model-finetuning`, and `support-operations`, and `legal-compliance-review`
+# gains the statement pointing back. Seven cases, seven pairs, one owner.
+EXPECTED_DEFERENCE_CASES = 377
+EXPECTED_DEFERENCE_PAIRS = 392
+EXPECTED_DEFERRING_OWNERS = 111
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.

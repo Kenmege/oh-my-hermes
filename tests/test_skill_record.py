@@ -46,7 +46,7 @@ class SkillRecordTests(unittest.TestCase):
         # Catalog facts, not targets: these move when a skill gains or loses a
         # `_SKILL_POLICIES` entry or changes category/role. Re-measure then.
         counts = Counter(record.policy_source for record in skill_records())
-        self.assertEqual(counts, Counter({"skill": 115, "category": 27, "role": 8}))
+        self.assertEqual(counts, Counter({"skill": 116, "category": 27, "role": 8}))
         self.assertEqual(counts["default"], 0)
 
     def test_next_action_label_is_the_action_copy_label(self) -> None:

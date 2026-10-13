@@ -166,7 +166,9 @@ CONCEPTUAL_AWARENESS_SURFACES = ("request-to-handoff", "executor selection", "co
 # name and the visible description window. Re-derived from the producer.
 # 12377 -> 12464: one index line for the new `internal-audit` skill (#1569); the
 # name and the visible description window. Re-derived from the producer.
-SKILL_INDEX_CHAR_LIMIT = 12464
+# 12464 -> 12554: one index line for the new `data-share-review` skill; the
+# name and the visible description window. Re-derived from the producer.
+SKILL_INDEX_CHAR_LIMIT = 12554
 # The longest single skill line in that index. Every description is already cut
 # to 60 characters, so what moves this is a longer skill name.
 SKILL_INDEX_LINE_CHAR_LIMIT = 100
@@ -707,7 +709,10 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # the row's first four. The `ultrawork`, `plan`, `app-debugging`, and
 # `decision-prototype` additions sit past the row's bounds, in the compact
 # body, or in references, and move nothing here. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 493103
+# 493103 -> 497416: one capability row for the new `data-share-review` skill
+# plus the reciprocal boundary line `legal-compliance-review` gains. Re-derived
+# from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 497416
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -793,7 +798,11 @@ FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 133234 -> 134172: one standalone capability row for the new `internal-audit`
 # skill (#1569) plus its siblings' reciprocal boundary lines; warranted
 # growth. Re-derived from the producer.
-STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 134172
+# 134172 -> 135119: one standalone capability row for the new
+# `data-share-review` skill plus the reciprocal boundary line
+# `legal-compliance-review` gains; warranted growth. Re-derived from the
+# producer.
+STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 135119
 STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # ULW fold context ceiling (issue #954, PR D). The limit is the pre-D measured
 # value of the full profile's `skill_body` chars on `main` @ acb9a060, in the

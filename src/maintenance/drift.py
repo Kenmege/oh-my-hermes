@@ -519,7 +519,13 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # workbook column and a Word text edit, clarifies already that pin
             # that none of them reaches an OMH wiki, cleanup or material lane
             # (7).
-            expected=528,
+            # The `data-share-review` skill adds eight: a PII acronym question
+            # and a shared doc, a redacted film and a photo mask, which use its
+            # held-back words in their everyday sense; two GDPR questions and a
+            # logging-pipeline change, which carry its phrases and must not
+            # dispatch it; and an analysis of an already pseudonymized dataset,
+            # whose finished state is not one of its phrases (8).
+            expected=536,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -681,7 +687,16 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # (6); a team wiki in Notion still reaching `wiki` (1); and a
             # research department digest into an LLM wiki and a team's paper
             # research pipeline still reaching `research-department` (2).
-            expected=726,
+            # The `data-share-review` skill adds ten: seven files leaving the
+            # team with personal data to take out first -- for a vendor, a
+            # fine-tune corpus, a public GitHub issue, a public tracker, a
+            # contractor, a model provider, and a residual scan -- four of
+            # which dispatched model-finetuning, GitHub event ops, the media
+            # operator, or the connector operator before; and three that keep
+            # three of those owners when nothing is to be taken out: a crash
+            # log for a GitHub issue, a support transcript summary, and
+            # fine-tuning on tickets (10).
+            expected=736,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -691,7 +706,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             describe="Installable workflow skills quoted in reference surfaces",
             live=_installable_skill_count,
             # The current workflow additions are part of the installable catalog.
-            expected=142,
+            # `data-share-review` adds one.
+            expected=143,
             sites=(
                 "docs/README.md",
                 # The docs index quotes the count in prose and

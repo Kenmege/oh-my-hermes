@@ -564,6 +564,39 @@
       "supersedes": null
     },
     {
+      "receipt_id": "ssc-2026-10-13-data-share-review-hermes-native-redaction",
+      "candidate_key": "data-share-review@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2118",
+      "reviewed_on": "2026-10-13",
+      "rationale": "Adopted the scope of Hermes' own redaction as a stated boundary: privacy.redact_pii and security.redact_secrets never change a file that leaves, so the residual scan runs on the shipped file.",
+      "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-13-data-share-review-privacy-gateway-mapping",
+      "candidate_key": "data-share-review@github.com/saiteja-madha/hermes-privacy-gateway",
+      "prior_checkpoint": null,
+      "next_checkpoint": "032bda954ad89599c16b655c9b3d11c91083f3e3",
+      "disposition": "adopted",
+      "decision_ref": "#2118",
+      "reviewed_on": "2026-10-13",
+      "rationale": "Adopted the idea of a pseudonym mapping kept local; OMH keeps it outside the shipped file and stores none. Repository not read and license not checked.",
+      "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-13-data-share-review-redaction-pack-key-formats",
+      "candidate_key": "data-share-review@github.com/pierrenode/hermes-redaction-pack",
+      "prior_checkpoint": null,
+      "next_checkpoint": "febd8bfe9971a3242d0ca18e8e7ca71d685d503b",
+      "disposition": "adopted",
+      "decision_ref": "#2118",
+      "reviewed_on": "2026-10-13",
+      "rationale": "Adopted vendor credential formats as part of the secret class the residual scan counts. Repository not read and license not checked.",
+      "supersedes": null
+    },
+    {
       "receipt_id": "ssc-2026-10-14-ultrawork-hermes-native-delegation",
       "candidate_key": "ultrawork@github.com/nousresearch/hermes-agent",
       "prior_checkpoint": null,

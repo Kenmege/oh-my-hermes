@@ -2971,6 +2971,71 @@ _SECURITY_EVENT_OVER_GITHUB_EVENT_PHRASES = (
     "leaked credential",
     "committed a secret",
 )
+# Taking personal data out of a file before it leaves the team is owned by
+# `data-share-review`, even when the file is headed for a GitHub issue, a
+# contractor, or a transcript tool: the destination is the carrier, and what
+# has to come out first decides the work. Each phrase counts only as its own
+# words, so a finished state ("the pseudonymized dataset", "a de-identified
+# extract") names data someone already cleaned and claims nothing.
+DATA_SHARE_REVIEW_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in (
+        "data-share-review",
+        "data share review",
+        "pii redaction",
+        "redact pii",
+        "redact the pii",
+        "redact personal data",
+        "strip pii",
+        "strip the pii",
+        "remove pii",
+        "remove the pii",
+        "scrub pii",
+        "scrub the pii",
+        "mask pii",
+        "mask personal data",
+        "remove personal data",
+        "residual pii",
+        "scan for pii",
+        "pseudonymize",
+        "pseudonymise",
+        "pseudonymization",
+        "pseudonymisation",
+        "de-identify",
+        "deidentify",
+        "quasi-identifier",
+        "direct identifiers",
+        "anonymize the dataset",
+        "anonymize this dataset",
+        "anonymize the data",
+        "anonymize the logs",
+        "redact the logs",
+        "redact these logs",
+    )
+)
+# Whether the law requires or allows the work ("does gdpr require us to
+# pseudonymize", "is that gdpr compliant") is `legal-compliance-review`'s
+# question, and a phrase about a system rather than a file ("strip pii from our
+# logging pipeline", "remove the pii field from the api response") is an
+# engineering change. Beside either, the phrase claims nothing.
+_DATA_SHARE_REVIEW_LEGAL_QUESTION_TOKENS = frozenset(
+    {"ccpa", "compliance", "compliant", "gdpr", "hipaa", "lawful", "legal", "legally", "regulation", "regulations", "regulatory"}
+)
+_DATA_SHARE_REVIEW_SYSTEM_TOKENS = frozenset({"api", "codebase", "endpoint", "logger", "middleware", "pipeline"})
+
+
+def data_share_review_spoken(normalized_query: str) -> bool:
+    return any(phrase_is_spoken(normalized_query, phrase) for phrase in DATA_SHARE_REVIEW_PHRASES)
+
+
+def data_share_review_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
+    return not query_tokens & (_DATA_SHARE_REVIEW_LEGAL_QUESTION_TOKENS | _DATA_SHARE_REVIEW_SYSTEM_TOKENS)
+
+
+def _data_share_review_claims(normalized_query: str, query_tokens: set[str]) -> bool:
+    return data_share_review_spoken(normalized_query) and data_share_review_offers_itself(normalized_query, query_tokens)
+
+
 # A build waiting in TestFlight or a store's review is a store release owned by
 # `mobile-release` (#1568), not a CI build or a pull-request review: the store,
 # not GitHub, decides what happens next.
@@ -8717,6 +8782,8 @@ def _github_event_ops_guard_applies(normalized_query: str, query_tokens: set[str
         return False
     if _contains_phrase(normalized_query, _MOBILE_RELEASE_OVER_GITHUB_EVENT_PHRASES):
         return False
+    if _data_share_review_claims(normalized_query, query_tokens):
+        return False
     if _contains_phrase(normalized_query, _GITHUB_EVENT_OPS_PHRASES):
         return True
     github_context = _contains_phrase(normalized_query, ("github", "깃허브"))
@@ -9915,6 +9982,8 @@ def _command_operator_guard_applies(normalized_query: str, query_tokens: set[str
 def _connector_operator_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     if _contains_phrase(normalized_query, _CONNECTOR_OPERATOR_BLOCKERS):
         return False
+    if _data_share_review_claims(normalized_query, query_tokens):
+        return False
     # A digest on a cadence is a scheduled job, and a deploy command is a
     # release, not an action in a connected app.
     if has_cadence(normalized_query, query_tokens):
@@ -9983,6 +10052,8 @@ def _live_info_operator_guard_applies(normalized_query: str, query_tokens: set[s
 
 def _media_input_operator_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     if _contains_phrase(normalized_query, _MEDIA_INPUT_OPERATOR_BLOCKERS):
+        return False
+    if _data_share_review_claims(normalized_query, query_tokens):
         return False
     if _connector_operator_guard_applies(normalized_query, query_tokens):
         return False

@@ -183,7 +183,7 @@
 }
 },
 {
-"anchors":"acquisition area arxiv benchmark collect dataset download evaluat finder gather github intak link list oss paper presentation public slid spec worth",
+"anchors":"acquisition area arxiv benchmark collect dataset download evaluat finder gather github intak link oss paper presentation slid spec worth",
 "hangul":"공개 깃허 논문 데이 링크 문서 발표 스펙 이터 자료 장소 저장 찾아 출처 터셋 표자 허브 후보",
 "hangul_anchors":"공개 깃허 논문 데이 링크 문서 발표 스펙 이터 자료 장소 저장 찾아 출처 터셋 표자 허브 후보",
 "label":"omh-source-finder",
@@ -349,7 +349,7 @@
 }
 },
 {
-"anchors":"angry cannot customer draft email engineer escalation log refund reply respons ticket urgent",
+"anchors":"angry cannot customer draft email engineer escalation refund reply respons ticket urgent",
 "hangul":"고객 답변 레이 분류 스컬 에스 이션 지원 초안 컬레 티켓",
 "hangul_anchors":"고객 답변 분류 스컬 에스 이션 지원 초안 컬레 티켓",
 "label":"omh-support-operations",
@@ -444,7 +444,7 @@
 }
 },
 {
-"anchors":"history item log meet minut operat organiz retro retrospectiv rhythm scrum sprint standup",
+"anchors":"history item meet minut operat organiz retro retrospectiv rhythm scrum sprint standup",
 "hangul":"결정 관리 기록 리듬 린트 스크 스토 스프 아이 액션 운영 의록 이템 크럼 토리 프린 회고 회의 히스",
 "hangul_anchors":"결정 관리 기록 리듬 린트 스크 스토 스프 아이 액션 운영 의록 이템 크럼 토리 프린 회고 회의 히스",
 "label":"omh-operating-rhythm",
@@ -609,7 +609,7 @@
 }
 },
 {
-"anchors":"auth authentication authorization backend connection databas db deprecat deprecation end endpoint flow graphql grpc handler idempotency map messag migration old openapi orm pagination pool postgr queu receiver respons rest retir rule schedul schema server side sunset tabl webhook",
+"anchors":"auth authentication authorization backend connection databas db deprecat deprecation end endpoint flow graphql grpc handler idempotency messag migration old openapi orm pagination pool postgr queu receiver respons rest retir rule schedul schema server side sunset tabl webhook",
 "hangul":"개발 권한 그레 드포 디비 레이 마이 백엔 서버 설계 스키 엔드 이그 이션 인증 인트 체크 키마 포인 흐름",
 "hangul_anchors":"개발 권한 그레 드포 디비 마이 백엔 서버 설계 스키 엔드 이그 이션 인증 인트 체크 키마 포인 흐름",
 "label":"omh-backend",
@@ -709,7 +709,7 @@
 }
 },
 {
-"anchors":"config configur gap hook inventory list mcp plugin repository workspac",
+"anchors":"config configur gap hook inventory mcp plugin repository workspac",
 "hangul":"감사 레포 벤토 설정 스킬 스페 워크 이스 인벤 크스 토리 페이",
 "hangul_anchors":"감사 레포 벤토 설정 스킬 스페 워크 이스 인벤 크스 토리 페이",
 "label":"omh-workspace-audit",
@@ -807,7 +807,7 @@
 }
 },
 {
-"anchors":"big codegraph codemap date index intelligenc map merg navigation pack rebuild refresh stal symbol",
+"anchors":"big codegraph codemap date index intelligenc merg navigation pack rebuild refresh stal symbol",
 "hangul":"갱신 그래 덱스 드그 드맵 래프 인덱 코드",
 "hangul_anchors":"갱신 그래 덱스 드그 드맵 래프 인덱",
 "label":"omh-codegraph-refresh",
@@ -824,7 +824,7 @@
 }
 },
 {
-"anchors":"depend imag map plantuml slack teammat uml visual",
+"anchors":"depend imag plantuml slack teammat uml visual",
 "hangul":"각화 구조 그램 그림 다이 드베 래스 림으 베이 스를 시각 아키 어그 으로 이스 이어 조도 코드 클래 키지 키텍 텍처 패키 화해",
 "hangul_anchors":"각화 구조 그램 그림 다이 드베 래스 림으 베이 스를 시각 아키 어그 으로 이스 이어 조도 클래 키지 키텍 텍처 패키 화해",
 "label":"omh-codebase-uml",
@@ -1280,7 +1280,7 @@
 }
 },
 {
-"anchors":"account chain cheaper configur connect default different exceed limit log openai quick quota rate role slot switch",
+"anchors":"account chain cheaper configur connect default different exceed limit openai quick quota rate role slot switch",
 "hangul":"계정 고리 그인 다른 로그 로바 리별 모델 바이 설정 세팅 슬롯 연결 으로 이더 전환 정으 체인 카테 테고 프로",
 "hangul_anchors":"계정 고리 그인 다른 로그 로바 리별 모델 바이 설정 세팅 슬롯 연결 으로 이더 전환 정으 체인 카테 테고",
 "label":"omh-model-setup",
@@ -1365,7 +1365,7 @@
 }
 },
 {
-"anchors":"bug creat discord duplicat github intak log maintainer submit",
+"anchors":"bug creat discord duplicat github intak maintainer submit",
 "hangul":"깃허 등록 록해 리포 버그 생성 성해 슈로 올려 이슈 포트 허브",
 "hangul_anchors":"깃허 등록 록해 리포 버그 생성 성해 슈로 올려 이슈 포트 허브",
 "label":"omh-github-issue-intake",
@@ -1382,7 +1382,7 @@
 }
 },
 {
-"anchors":"list obligation past",
+"anchors":"obligation past",
 "hangul":"계약 고서 뉴얼 매뉴 문서 보고 약서 약해 연간 요약 읽기 읽어 전체",
 "hangul_anchors":"계약 고서 뉴얼 매뉴 문서 보고 약서 약해 연간 읽기 읽어 전체",
 "label":"omh-long-document-reading",
@@ -1433,7 +1433,7 @@
 }
 },
 {
-"anchors":"away cannot ci fifth figur function give goes heisenbug log negativ number overwrit",
+"anchors":"away cannot ci fifth figur function give goes heisenbug negativ number overwrit",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-app-debugging",
@@ -1449,7 +1449,7 @@
 }
 },
 {
-"anchors":"branch describ fill log put reviewer say word",
+"anchors":"branch describ fill put reviewer say word",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-commit-pr-authoring",
@@ -1501,7 +1501,7 @@
 }
 },
 {
-"anchors":"agpl critical cve ended env flag github gpl library log4j npm ok public push reachabl scanner token",
+"anchors":"agpl critical cve ended env flag github gpl library log4j npm ok push reachabl scanner token",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-security-event-response",
@@ -1612,6 +1612,23 @@
 "4":"control deficiency evidenc icfr population re sox test",
 "6":"sampl",
 "7":"audit internal"
+}
+},
+{
+"anchors":"asked attach bug chat contractor copy customer de deidentify email export number phon pseudonymis pseudonymisation pseudonymiz pseudonymization researcher server spreadsheet still train usag vendor",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-data-share-review",
+"name":"data-share-review",
+"situation":"Before data leaves the team -- a dataset, log, ticket export or transcript excerpt bound for a vendor, a public issue, a model provider or a training corpus",
+"terms":{
+"1":"after befor bound bundl call class classify come count crm file inventory keep kept left local map metadata minimiz minimization noth observ output plan raw record secret upload",
+"2":"anonymiz asked attach bug chat copy corpus customer de deidentify direct email excerpt field first hand identify issu leav list mask model number phon pii provider pseudonymis pseudonymisation pseudonymization quasi redaction remov report researcher safe scrub server set spreadsheet still strip support team ticket transcript usag want",
+"3":"contractor identifier personal pseudonymiz redact",
+"4":"dataset export public residual scan train vendor",
+"5":"review shar",
+"6":"log",
+"9":"data"
 }
 },
 {
@@ -1936,7 +1953,7 @@
 }
 },
 {
-"anchors":"automat automation blocker browser button captur checkout click fill flow form interactiv link log login navigat observation playwright site stag submit trac url visit webpag",
+"anchors":"automat automation blocker browser button captur checkout click fill flow form interactiv link login navigat observation playwright site stag submit trac url visit webpag",
 "hangul":"그인 라우 로그 링크 막히 부분 브라 열고 우저 웹페 이지 입력 작성 작업 조작 캡처 클릭 페이 히는",
 "hangul_anchors":"그인 라우 로그 링크 막히 부분 브라 열고 우저 웹페 이지 입력 작성 작업 조작 캡처 클릭 페이 히는",
 "label":"omh-browser",
@@ -1953,7 +1970,7 @@
 }
 },
 {
-"anchors":"archiv clean cleanup copy delet directory download duplicat filesystem folder list move name old organiz pdf remov renam safely search system workspac",
+"anchors":"archiv clean cleanup copy delet directory download duplicat filesystem folder move name old organiz pdf remov renam safely search system workspac",
 "hangul":"검색 다운 디렉 렉터 로드 목록 변경 복사 삭제 운로 이동 이름 작업 정리 조작 찾아 터리 파일 폴더",
 "hangul_anchors":"검색 다운 디렉 렉터 로드 목록 변경 복사 삭제 운로 이동 이름 작업 정리 조작 찾아 터리 파일 폴더",
 "label":"omh-files",
@@ -2002,7 +2019,7 @@
 }
 },
 {
-"anchors":"airport bitcoin btc crypto current direction exchang forecast game info information krw last live map near nearby night pric rate real restaurant scor seoul sport stock timezon today traffic usd weather won york zone",
+"anchors":"airport bitcoin btc crypto current direction exchang forecast game info information krw last live near nearby night pric rate real restaurant scor seoul sport stock timezon today traffic usd weather won york zone",
 "hangul":"가격 간대 결과 경기 길찾 날씨 스포 시간 식당 예보 점수 주가 주변 지도 찾기 코인 포츠 현재 환율",
 "hangul_anchors":"가격 간대 결과 경기 길찾 날씨 스포 시간 식당 예보 점수 주가 주변 지도 찾기 코인 포츠 현재 환율",
 "label":"omh-live-info",
@@ -2036,7 +2053,7 @@
 }
 },
 {
-"anchors":"arg argument bring clash claud cli codex collision compatibility directory folder frontmatter gemini import interpolation library map name opencod reus slash",
+"anchors":"arg argument bring clash claud cli codex collision compatibility directory folder frontmatter gemini import interpolation library name opencod reus slash",
 "hangul":"가져 디렉 래시 렉터 롬프 매핑 명령 슬래 오기 인자 져오 터리 폴더 프롬 프트",
 "hangul_anchors":"가져 디렉 래시 렉터 롬프 매핑 명령 슬래 오기 인자 져오 터리 폴더 프롬 프트",
 "label":"omh-prompt-import-readiness",
@@ -2104,7 +2121,7 @@
 }
 },
 {
-"anchors":"analyz anomaly causal causality chart cohort column correlation csv dataset delta executiv json log retention schema segment spreadsheet tabl trend",
+"anchors":"analyz anomaly causal causality chart cohort column correlation csv dataset delta executiv json retention schema segment spreadsheet tabl trend",
 "hangul":"과관 관계 관관 데이 델타 로그 분석 상관 상치 오류 요약 이상 이터 인과 전환 차트 추세 컬럼 패턴 환율",
 "hangul_anchors":"과관 관계 관관 데이 델타 로그 분석 상관 상치 오류 이상 이터 인과 전환 차트 추세 컬럼 패턴 환율",
 "label":"omh-data-analysis",
@@ -2137,7 +2154,7 @@
 }
 },
 {
-"anchors":"adapter around between claud codex config control differ drift earlier harness inventory last lifecycl list mcp pane previous recall recover still worktree",
+"anchors":"adapter around between claud codex config control differ drift earlier harness inventory last lifecycl mcp pane previous recall recover still worktree",
 "hangul":"기억 네스 넥터 드리 리프 벤토 복구 설정 세션 워크 인벤 지난 커넥 코딩 크트 토리 트리 프트 하네",
 "hangul_anchors":"기억 네스 넥터 드리 리프 벤토 복구 설정 세션 워크 인벤 지난 커넥 코딩 크트 토리 트리 프트 하네",
 "label":"omh-harness-session-inventory",

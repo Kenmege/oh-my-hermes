@@ -4396,6 +4396,75 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
     ),
+    # `data-share-review` (#2118). "pii", "redact", "mask" and "share" are held
+    # back as bare tokens; a legal question or a system change withdraws the
+    # skill's phrases; and a finished state ("pseudonymized") is not a phrase.
+    RoutingPrecisionCase(
+        "pii-acronym-question-is-not-a-data-share-review",
+        "Asking what PII stands for is a definition, not a file to clean",
+        "what does pii stand for",
+        "answer_directly",
+        "direct_answer",
+        "data-share-review",
+    ),
+    RoutingPrecisionCase(
+        "gdpr-pseudonymization-question-is-not-a-data-share-review",
+        "Whether GDPR requires pseudonymization is a legal question, not a file to clean",
+        "does gdpr require us to pseudonymize customer data",
+        "answer_clarification",
+        "",
+        "data-share-review",
+    ),
+    RoutingPrecisionCase(
+        "gdpr-compliance-of-a-redaction-policy-is-not-a-data-share-review",
+        "Whether a redaction policy is GDPR compliant is a legal question, not a file to clean",
+        "our privacy policy says we redact pii from logs, is that gdpr compliant",
+        "answer_clarification",
+        "",
+        "data-share-review",
+    ),
+    RoutingPrecisionCase(
+        "logging-pipeline-change-is-not-a-data-share-review",
+        "Changing a logging pipeline is an engineering change, not a file about to leave",
+        "strip pii from our logging pipeline going forward",
+        "answer_clarification",
+        "",
+        "data-share-review",
+    ),
+    # No `forbidden_candidate`: the shortlist may still list the skill below
+    # `data-analysis`, which leads; the claim is that the finished state does
+    # not dispatch it.
+    RoutingPrecisionCase(
+        "analysis-of-a-pseudonymized-dataset-is-not-a-data-share-review",
+        "Analysing a dataset someone already pseudonymized is not a file to clean",
+        "run churn analysis on the pseudonymized dataset",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "redacted-film-cut-is-not-a-data-share-review",
+        "A redacted cut of a film is not a file to clean",
+        "the movie is a redacted version of the original cut",
+        "answer_clarification",
+        "",
+        "data-share-review",
+    ),
+    RoutingPrecisionCase(
+        "sharing-a-doc-with-the-team-is-not-a-data-share-review",
+        "Sharing a doc inside the team is not data leaving it",
+        "share this doc with my team",
+        "answer_clarification",
+        "",
+        "data-share-review",
+    ),
+    RoutingPrecisionCase(
+        "photo-background-mask-is-not-a-data-share-review",
+        "Masking a photo's background is not masking personal data",
+        "mask the background in this photo",
+        "answer_clarification",
+        "",
+        "data-share-review",
+    ),
 )
 
 
@@ -11523,6 +11592,100 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "wiki",
         "prepare_wiki_blueprint",
         "wiki_blueprint",
+    ),
+    # `data-share-review` (#2118): a file about to leave the team with its
+    # personal data still in it. The destination guards (a GitHub issue, a
+    # contractor, a transcript) stand down beside one of the skill's phrases
+    # and still fire without one.
+    RoutingInterventionCase(
+        "ticket-export-for-a-vendor-reaches-data-share-review",
+        "A ticket export for a vendor with the PII to strip first reaches the data share review",
+        "we need to share a ticket export with a vendor, strip the pii first",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "fine-tune-corpus-pseudonymization-reaches-data-share-review",
+        "Pseudonymizing ids before a fine-tune corpus reaches the data share review",
+        "pseudonymize the customer ids in this dataset before it goes into the fine-tune corpus",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "logs-for-a-public-github-issue-reach-data-share-review",
+        "Redacting server logs before a public GitHub issue reaches the data share review, not GitHub event ops",
+        "redact personal data from these server logs before I attach them to a public github issue",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "transcript-excerpt-for-a-public-tracker-reaches-data-share-review",
+        "Redacting a transcript excerpt before a public tracker reaches the data share review, not the media operator",
+        "redact the pii in this support transcript excerpt before we post it in the public tracker",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "dataset-for-a-contractor-reaches-data-share-review",
+        "Stripping PII before a contractor gets the dataset reaches the data share review, not the connector operator",
+        "strip the pii from this dataset before we send it to an external contractor",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "patient-csv-for-a-model-provider-reaches-data-share-review",
+        "De-identifying patient records before a model provider sees them reaches the data share review",
+        "de-identify this csv of patient records before the model provider sees it",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "residual-pii-scan-reaches-data-share-review",
+        "Scanning a masked export for residual PII reaches the data share review",
+        "scan the masked export for residual pii before we hand it over",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "crash-log-for-a-github-issue-stays-on-github-event-ops",
+        "Attaching a crash log to a GitHub issue with nothing to strip stays on GitHub event ops",
+        "attach the crash log to the github issue",
+        "dispatch",
+        "github-event-ops",
+        "prepare_github_event_ops_card",
+        "github_event_ops",
+    ),
+    RoutingInterventionCase(
+        "support-transcript-summary-stays-on-media-input-operator",
+        "Summarizing a support transcript with nothing to strip stays on the media operator",
+        "summarize this customer support transcript",
+        "dispatch",
+        "media-input-operator",
+        "prepare_media_input_card",
+        "media_input",
+    ),
+    RoutingInterventionCase(
+        "fine-tuning-on-tickets-stays-on-model-finetuning",
+        "Fine-tuning on support tickets with nothing to strip stays on model-finetuning",
+        "fine-tune a model on our support tickets",
+        "dispatch",
+        "model-finetuning",
+        "prepare_finetune_decision",
+        "finetune_plan",
     ),
 )
 
