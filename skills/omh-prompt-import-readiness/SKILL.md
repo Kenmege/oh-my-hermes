@@ -16,13 +16,13 @@ This is a Hermes-native `prompt-import-readiness` workflow skill.
 
 ## Why This Exists
 
-`prompt-import-readiness` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+`prompt-import-readiness` exists because a prompt library from another CLI agent does not become Hermes commands by copying files: Hermes' own importer skips Claude Code's slash-command prompts and never reads Codex prompt files, its quick commands hold no prompt, and a new name can collide with a built-in command, a quick command, or a skill. This card inventories the sources, maps arguments, and settles each name before anything is written.
 
 ## Do Not Use When
 
-- The request is already handled by a narrower explicit skill with stronger evidence.
-- The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-- The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+- Adopting a plugin, connector, API, or memory provider; use `external-connector-readiness`.
+- A runtime capability or CLI the work needs is missing; use `toolbelt-readiness`.
+- Searching for an existing skill to reuse before writing one; use `skill-scout`.
 
 ## Examples
 
@@ -44,6 +44,9 @@ Bad example:
 - Explicit-path audit reads and compatibility results are observed only in their audit output; source discovery, command registration, prompt mutation, slash-command activation, and dry-run execution remain marked not_observed.
 - Route broad candidate discovery to skill-scout, prompt/tool safety to security-safety-review, missing CLIs or directories to toolbelt-readiness, and approved implementation to a selected executor handoff.
 - Imported prompts, generated command files, registry updates, and dry-run results are reported only from observed prompt-import evidence.
+- Seed `prompt_source_inventory/v1` from the user's `hermes import-agent claude-code --dry-run` (or `codex`) preview, which imports nothing (it only writes a default `config.yaml` when the Hermes home has none): it reports Claude Code's `commands/` directory as one skipped item with no direct Hermes equivalent, so this card enumerates the `*.md` files in it itself, and it reads no Codex prompt files at all, so those come from the files the user names. The preview is observed only when its output is seen.
+- Make a skill the conversion target for a prompt the model should follow; a Hermes quick command (`quick_commands`) runs only a shell command (`exec`) or another slash command (`alias`) and cannot hold a prompt.
+- In the Hermes CLI a slash name resolves to a built-in command first, then a quick command, a plugin command, a skill bundle, and a skill, so `slash_command_collision_report/v1` checks each candidate name against all five in that order.
 
 ## Recovery Notes
 
