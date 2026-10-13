@@ -65,8 +65,11 @@ read-only: `subagent.tail` is asked for the open agent while it runs, at most
 every `TAIL_POLL_SECONDS`, and nothing is ever sent to a subagent. Mouse
 reports are on only while a click has an agent to land on and the row it
 would land on is certain: a turn running with agents named on the strip, or
-the list open. A report is a left click on one of those cells or it is
-nothing; none can type.
+the list open. A plain left click on one of those cells opens that agent's
+log, or on the list's main row leaves the list; every other report does
+nothing. None types, however a pause splits it across reads (`keys`), and the
+one way a report can act as a key is a split right after its first byte that
+lasts over `keys.REPORTING_ESCAPE_SECONDS`: that ESC is Esc, as in tmux and vim.
 
 Prompt text, the transcript, attachments, secrets, server-request frames and
 the gateway's stderr stay in memory and on the person's own terminal; nothing
@@ -749,7 +752,7 @@ class App:
         self.transcript = Transcript(clock)
         self.composer = Composer()
         self.region = LiveRegion(terminal.write)
-        self.decoder = KeyDecoder()
+        self.decoder = KeyDecoder(clock)
         self.size = terminal.size()
         self.sid = ""
         self.stored_id = ""
@@ -934,7 +937,7 @@ class App:
         except EOFError:
             self.exit_code = 0
             return
-        for event in self.decoder.feed(data) if data else self.decoder.flush():
+        for event in self.decoder.feed(data) if data else self.decoder.flush(self.terminal.mouse_reporting):
             self.dirty = True
             self._on_input(event)
             if self.exit_code is not None:

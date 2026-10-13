@@ -6,10 +6,13 @@ decodes everything complete and keeps the incomplete tail for the next call,
 so the caller never sees half a key.
 
 A lone ESC is ambiguous until time passes: it is the Escape key, or the first
-byte of an arrow or an Alt chord whose next byte is still in flight. The
-decoder never guesses; `flush()`, which the caller runs after a short silence,
-settles a held ESC as `Key("escape")`. A paste is not settled by `flush()`: it
-ends only at the terminal's paste-end marker.
+byte of an arrow, an Alt chord or a mouse report whose next byte is still in
+flight. The decoder never guesses. The caller runs `flush()` after every short
+silence, and what is held settles only once the silence since its last byte,
+read from the decoder's clock, is long enough for it: a lone ESC becomes
+`Key("escape")` at once, or after `REPORTING_ESCAPE_SECONDS` while mouse
+reporting is on (the caller says when it is). A paste is not settled by
+`flush()`: it ends only at the terminal's paste-end marker.
 
 Nothing here raises on input. A sequence it does not know becomes
 `Key("unknown")` and decoding continues with the next byte.
@@ -30,14 +33,28 @@ known to send them only once it has.
 
 While `Terminal.set_mouse(True)` has mouse reporting on, a click arrives as an
 SGR report (`ESC[<b;x;yM` press, `ESC[<b;x;ym` release) and decodes to a
-`Mouse`. A wheel turn or a motion report decodes too, so no byte of a report
-is ever typed as text. A terminal that ignores the SGR request sends the
-legacy `ESC[M` and three payload bytes instead; that is one unknown key.
+`Mouse`. A wheel turn or a motion report decodes too. No byte of a report is
+ever typed as text, however a pause splits it across reads (over SSH, jitter
+can stall one mid-way):
+
+- a started report (`ESC[<` and digits and semicolons so far) waits for up to
+  `MOUSE_REPORT_SECONDS` of silence, and is then dropped as one unknown key;
+- while reporting is on, `ESC` and `ESC[` wait `REPORTING_ESCAPE_SECONDS`, the
+  escape-time tmux and vim use, and then settle as Esc and as one unknown key;
+- for `MOUSE_REPORT_SECONDS` after either settled, the bytes that would finish
+  the report it began are dropped as they arrive, up to its `M` or `m`.
+
+So a report split after its first byte by more than `REPORTING_ESCAPE_SECONDS`
+is Esc, as in tmux and vim, and nothing of it is typed. A terminal that ignores
+the SGR request sends the legacy `ESC[M` and three payload bytes instead; that
+is one unknown key.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+import time
 
 CHAR = "char"
 ENTER = "enter"
@@ -141,6 +158,18 @@ WHEEL_RIGHT = "wheel-right"
 SGR_MOUSE_PREFIX = "<"
 SGR_MOUSE_PRESS = "M"
 SGR_MOUSE_RELEASE = "m"
+_SGR_REPORT_START = bytes((ESC_BYTE, CSI_BYTE)) + SGR_MOUSE_PREFIX.encode("ascii")
+_SGR_PARAMETER_BYTES = b"0123456789;"
+_SGR_FINAL_BYTES = (SGR_MOUSE_PRESS + SGR_MOUSE_RELEASE).encode("ascii")
+# A report a pause splits across reads: once `ESC[<` has arrived, a silence shorter than this does
+# not settle what is held, and a longer one drops it as one unknown key. For as long again after that,
+# the bytes that would finish it are dropped as they arrive, so its tail is never typed either.
+MOUSE_REPORT_SECONDS = 0.5
+# While mouse reporting is on, `ESC` and `ESC[` wait this long for the rest of a report before they
+# settle: the escape-time tmux and vim use. Shorter, a report split after its first byte would read as
+# Esc and interrupt the turn. Esc during a running turn is exactly when reporting is on, so this is
+# what the key costs then; with reporting off a lone ESC still settles at the first silence.
+REPORTING_ESCAPE_SECONDS = 0.3
 # Legacy (X10) mouse report: `ESC[M` and three bytes, each 32 plus a value.
 X10_MOUSE_FINAL = ord("M")
 _X10_MOUSE_PAYLOAD_BYTES = 3
@@ -452,25 +481,93 @@ def _decode_one(data: bytes, start: int, final: bool) -> tuple[Key | Mouse | Non
     return _decode_plain(data, start, final)
 
 
+def _report_started(data: bytes) -> bool:
+    """Whether `data` is all of a report's start so far: `ESC`, `ESC[`, or `ESC[<` and digits and semicolons."""
+    if not data or len(data) > _MAX_CSI_LENGTH:
+        return False
+    head, rest = data[: len(_SGR_REPORT_START)], data[len(_SGR_REPORT_START) :]
+    return _SGR_REPORT_START.startswith(head) and all(byte in _SGR_PARAMETER_BYTES for byte in rest)
+
+
+def _report_length(data: bytes) -> int:
+    """The length of the whole SGR mouse report `data` starts with; 0 when it starts with none."""
+    if not data.startswith(_SGR_REPORT_START):
+        return 0
+    end = len(_SGR_REPORT_START)
+    while end < len(data) and data[end] in _SGR_PARAMETER_BYTES:
+        end += 1
+    return end + 1 if end < len(data) and data[end] in _SGR_FINAL_BYTES else 0
+
+
 def _paste_text(raw: bytes) -> str:
     return raw.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
 
 
 class KeyDecoder:
-    def __init__(self) -> None:
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
         self._pending = bytearray()
         self._paste: bytearray | None = None
+        self._fed_at = 0.0  # when the last byte arrived
+        # The start of a report `flush` settled, and until when the bytes that would finish it are dropped.
+        self._settled_start = b""
+        self._drop_until = 0.0
         # True from the first key that arrived as a CSI u or modifyOtherKeys report: the terminal does
         # send them, so Ctrl+Enter reaches the caller apart from Enter. Asking for them proves nothing.
         self.protocol_reported = False
 
     def feed(self, data: bytes) -> list[Key | Paste | Mouse]:
+        now = self._clock()
+        if self._settled_start and now >= self._drop_until:
+            self._close_drop_window()
+        self._fed_at = now
         self._pending.extend(data)
+        if self._settled_start:
+            held = self._settled_start + bytes(self._pending)
+            length = _report_length(held)
+            if length:
+                del self._pending[: length - len(self._settled_start)]  # the rest of a report already settled
+                self._settled_start = b""
+            elif _report_started(held):
+                return []  # still that report's rest: held, and dropped when the window closes
+            else:
+                self._settled_start = b""
         return self._drain(final=False)
 
-    def flush(self) -> list[Key | Paste | Mouse]:
-        """Settle what is held after a silence: a lone ESC becomes `Key("escape")`."""
+    def flush(self, reporting: bool = False) -> list[Key | Paste | Mouse]:
+        """Settle what is held once the silence since its last byte is long enough for it.
+
+        `reporting` says mouse reporting is on. A started report waits for
+        `MOUSE_REPORT_SECONDS` and then is one unknown key; with reporting on,
+        `ESC` and `ESC[` wait for `REPORTING_ESCAPE_SECONDS` and then are Esc
+        and one unknown key. Anything else held settles now: a lone ESC
+        becomes `Key("escape")`.
+        """
+        now = self._clock()
+        if self._settled_start:
+            if now < self._drop_until:
+                return []
+            self._close_drop_window()
+        held, silence = bytes(self._pending), now - self._fed_at
+        if len(held) >= len(_SGR_REPORT_START) and _report_started(held):
+            return [] if silence < MOUSE_REPORT_SECONDS else self._settle_start(held, Key(UNKNOWN), now)
+        if reporting and _report_started(held):
+            if silence < REPORTING_ESCAPE_SECONDS:
+                return []
+            return self._settle_start(held, Key(ESCAPE) if len(held) == 1 else Key(UNKNOWN), now)
         return self._drain(final=True)
+
+    def _settle_start(self, held: bytes, key: Key, now: float) -> list[Key | Paste | Mouse]:
+        """`key` for the start of a report held too long, and the window in which the rest of it is dropped."""
+        self._pending.clear()
+        self._settled_start, self._drop_until = held, now + MOUSE_REPORT_SECONDS
+        return [key]
+
+    def _close_drop_window(self) -> None:
+        """Drop what is held of a settled report's rest once it reached `<`; before that it is still a key's."""
+        if (self._settled_start + bytes(self._pending)).startswith(_SGR_REPORT_START):
+            self._pending.clear()
+        self._settled_start = b""
 
     def _drain(self, final: bool) -> list[Key | Paste | Mouse]:
         events: list[Key | Paste | Mouse] = []

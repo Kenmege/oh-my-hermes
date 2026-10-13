@@ -549,6 +549,152 @@ class MouseReportTests(unittest.TestCase):
                 self.assertEqual(len(decode(data)), 1)
 
 
+READ_SECONDS = 0.05  # the loop's read timeout: it runs `flush` after every read that brought nothing
+
+
+class PausedInput:
+    """Bytes fed to a decoder on a test clock, with the loop's `flush` after each empty read of a pause."""
+
+    def __init__(self, reporting: bool) -> None:
+        self.now = 0.0
+        self.reporting = reporting
+        self.decoder = KeyDecoder(lambda: self.now)
+        self.events: list = []
+
+    def feed(self, data: bytes) -> None:
+        self.events += self.decoder.feed(data)
+
+    def pause(self, seconds: float) -> None:
+        """`seconds` without a byte: a flush at the end of every whole read in it, then the rest of the time."""
+        end = self.now + seconds
+        while self.now + READ_SECONDS <= end + 1e-9:
+            self.now += READ_SECONDS
+            self.events += self.decoder.flush(self.reporting)
+        self.now = end
+
+
+class SplitReportTests(unittest.TestCase):
+    """A report a pause splits across two reads, as SSH jitter does: none of it is ever typed."""
+
+    REPORT = sgr_mouse(65, 12, 40)  # a wheel turn, the report the review split
+    DECODED = Mouse(WHEEL_DOWN, 12, 40)
+
+    def split(self, cut: int, pause: float, reporting: bool = True) -> list:
+        paused = PausedInput(reporting)
+        paused.feed(self.REPORT[:cut])
+        paused.pause(pause)
+        paused.feed(self.REPORT[cut:])
+        paused.pause(2.0)
+        return paused.events
+
+    def test_a_60_ms_pause_at_any_split_still_gives_the_report(self) -> None:
+        for cut in range(1, len(self.REPORT)):
+            with self.subTest(cut=self.REPORT[:cut]):
+                self.assertEqual(self.split(cut, 0.06), [self.DECODED])
+
+    def test_a_400_ms_pause_gives_the_report_from_the_marker_on_and_types_nothing_before_it(self) -> None:
+        # Before `<` nothing says it is a report: ESC waits 300 ms and is then Esc, `ESC[` one unknown key,
+        # and the rest that follows is dropped. From `<` on it waits 500 ms, so the report arrives whole.
+        for cut in range(1, len(self.REPORT)):
+            with self.subTest(cut=self.REPORT[:cut]):
+                expected = {1: [Key("escape")], 2: [Key("unknown")]}.get(cut, [self.DECODED])
+                self.assertEqual(self.split(cut, 0.4), expected)
+
+    def test_past_500_ms_a_started_report_is_one_unknown_key_and_its_tail_is_dropped(self) -> None:
+        for cut in range(3, len(self.REPORT)):
+            for pause in (0.6, 0.95):
+                with self.subTest(cut=self.REPORT[:cut], pause=pause):
+                    self.assertEqual(self.split(cut, pause), [Key("unknown")])
+
+    def test_a_started_report_waits_with_reporting_off_too(self) -> None:
+        # Reports already on their way when reporting goes off still arrive.
+        for cut in range(3, len(self.REPORT)):
+            with self.subTest(cut=self.REPORT[:cut]):
+                self.assertEqual(self.split(cut, 0.4, reporting=False), [self.DECODED])
+                self.assertEqual(self.split(cut, 0.6, reporting=False), [Key("unknown")])
+
+    def test_no_split_and_no_pause_inside_the_window_types_anything(self) -> None:
+        # The window ends 500 ms after the start settles: at 0.8 s for ESC and `ESC[` (settled at 300 ms),
+        # at 1.0 s for a report past its `<` (settled at 500 ms).
+        for cut in range(1, len(self.REPORT)):
+            window = 0.8 if cut < 3 else 1.0
+            for pause in (0.01, 0.05, 0.06, 0.2, 0.29, 0.31, 0.4, 0.49, 0.51, 0.6, 0.79, 0.95, 0.99):
+                if pause >= window:
+                    continue
+                with self.subTest(cut=self.REPORT[:cut], pause=pause):
+                    events = self.split(cut, pause)
+                    self.assertEqual(len(events), 1, events)
+                    self.assertNotEqual(events[0].name if isinstance(events[0], Key) else "", "char", events)
+
+    def test_a_key_that_cannot_finish_the_report_is_a_key(self) -> None:
+        paused = PausedInput(reporting=True)
+        paused.feed(b"\x1b[<65;12")
+        paused.pause(0.6)
+        paused.feed(b"x\x1b[A")
+        self.assertEqual(paused.events, [Key("unknown"), char("x"), Key("up")])
+        paused = PausedInput(reporting=True)
+        paused.feed(b"\x1b")
+        paused.pause(0.35)
+        paused.feed(b"[a")  # after Esc, `[` and a letter: not a report's rest
+        self.assertEqual(paused.events, [Key("escape"), char("["), char("a")])
+
+    def test_once_the_window_has_closed_keys_type_again(self) -> None:
+        paused = PausedInput(reporting=True)
+        paused.feed(b"\x1b[<65;12")
+        paused.pause(1.1)  # dropped at 0.5 s, the window closed at 1.0 s
+        paused.feed(b";4")
+        self.assertEqual(paused.events, [Key("unknown"), char(";"), char("4")])
+
+    def test_a_rest_cut_off_by_the_window_is_dropped_once_it_reached_the_marker(self) -> None:
+        paused = PausedInput(reporting=True)
+        paused.feed(b"\x1b")
+        paused.pause(0.35)  # Esc
+        paused.feed(b"[<65")
+        paused.pause(1.0)
+        self.assertEqual(paused.events, [Key("escape")])
+        paused = PausedInput(reporting=True)
+        paused.feed(b"\x1b")
+        paused.pause(0.35)
+        paused.feed(b"[")  # no `<` yet: it may be the bracket key, so it is one
+        paused.pause(1.0)
+        self.assertEqual(paused.events, [Key("escape"), char("[")])
+
+
+class EscapeTimeTests(unittest.TestCase):
+    """A lone ESC: at the first silence with mouse reporting off, after 300 ms with it on."""
+
+    def escape(self, reporting: bool, pause: float) -> list:
+        paused = PausedInput(reporting)
+        paused.feed(b"\x1b")
+        paused.pause(pause)
+        return paused.events
+
+    def test_with_reporting_off_it_is_esc_at_50_ms(self) -> None:
+        self.assertEqual(self.escape(False, 0.05), [Key("escape")])
+        self.assertEqual(self.escape(False, 0.35), [Key("escape")])
+
+    def test_with_reporting_on_it_is_nothing_yet_at_50_ms_and_esc_at_350_ms(self) -> None:
+        self.assertEqual(self.escape(True, 0.05), [])
+        self.assertEqual(self.escape(True, 0.25), [])
+        self.assertEqual(self.escape(True, 0.35), [Key("escape")])
+
+    def test_an_escape_bracket_with_reporting_on_waits_too_and_is_then_no_key(self) -> None:
+        paused = PausedInput(reporting=True)
+        paused.feed(b"\x1b[")
+        paused.pause(0.25)
+        self.assertEqual(paused.events, [])
+        paused.pause(0.1)
+        self.assertEqual(paused.events, [Key("unknown")])
+
+    def test_a_second_escape_inside_the_window_is_its_own_esc(self) -> None:
+        paused = PausedInput(reporting=True)
+        paused.feed(b"\x1b")
+        paused.pause(0.35)
+        paused.feed(b"\x1b")
+        paused.pause(0.35)
+        self.assertEqual(paused.events, [Key("escape"), Key("escape")])
+
+
 class LegacyMouseReportTests(unittest.TestCase):
     """`ESC[M` and three bytes: what a terminal that ignores the SGR request sends instead."""
 

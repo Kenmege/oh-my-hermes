@@ -24,7 +24,14 @@ from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, FakePoller, ScriptedT
 from test_tui_modes import SID, RecordingClient, drawn, make_app, show_mode, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND
 from omh.tui import terminal as terminal_module
-from omh.tui.app import AGENT_LIST_HINT, EXIT_DRAIN_READS, EXIT_DRAIN_SECONDS, SLOT_ARM_SECONDS, App
+from omh.tui.app import (
+    AGENT_LIST_HINT,
+    EXIT_DRAIN_READS,
+    EXIT_DRAIN_SECONDS,
+    READ_TIMEOUT_SECONDS,
+    SLOT_ARM_SECONDS,
+    App,
+)
 from omh.tui.frame import MODE_ACCEPT, MODE_PLAN
 from omh.tui.gateway import Event, ServerRequest
 from omh.tui.keys import (
@@ -562,6 +569,68 @@ class UnknownRowTests(unittest.TestCase):
         drawn(app)
         self.assertIsNone(app.region.last_row(24))
         self.assertFalse(app.terminal.mouse_reporting)  # type: ignore[attr-defined]
+
+
+def step_through(app: App, now: list[float], reads: list[tuple[float, bytes]]) -> None:
+    """Run the loop one step per read: each read takes its time on the app's clock, then hands back its bytes."""
+    queue = list(reads)
+
+    def read(timeout: float) -> bytes:
+        delay, data = queue.pop(0)
+        now[0] += delay
+        return data
+
+    app.terminal.read = read  # type: ignore[method-assign]
+    app.client.poll = lambda: []  # type: ignore[attr-defined]
+    while queue:
+        app._step()
+
+
+def paused(first: bytes, pause: float, rest: bytes) -> list[tuple[float, bytes]]:
+    """`first`, then `pause` seconds of empty reads, then `rest`, then two seconds of quiet."""
+    silences = int(pause / READ_TIMEOUT_SECONDS + 1e-9)
+    quiet = [(READ_TIMEOUT_SECONDS, b"")]
+    return [(0.0, first), *quiet * silences, (pause - silences * READ_TIMEOUT_SECONDS, rest), *quiet * 40]
+
+
+class SplitReportLoopTests(unittest.TestCase):
+    """The review's two splits of a wheel report, in the loop, while a running turn's strip is clickable."""
+
+    def setUp(self) -> None:
+        self.now = [100.0]
+        self.app, self.client = running(clock=lambda: self.now[0])
+        self.assertTrue(reporting(self.app))
+
+    def test_a_report_split_after_its_marker_types_nothing_and_does_nothing(self) -> None:
+        for pause in (0.06, 0.4, 0.6):
+            with self.subTest(pause=pause):
+                before = state(self.app, self.client)
+                step_through(self.app, self.now, paused(b"\x1b[<65;12", pause, b";40M"))
+                self.assertEqual(state(self.app, self.client), before)
+                self.assertEqual(self.app.composer.text, "")
+
+    def test_a_report_split_after_its_escape_types_nothing_and_within_300_ms_interrupts_nothing(self) -> None:
+        before = state(self.app, self.client)
+        step_through(self.app, self.now, paused(b"\x1b", 0.06, b"[<65;12;40M"))
+        self.assertEqual(state(self.app, self.client), before)
+        # Split longer than the escape-time, the ESC is Esc, as in tmux and vim; the rest is still dropped.
+        step_through(self.app, self.now, paused(b"\x1b", 0.4, b"[<65;12;40M"))
+        self.assertEqual(self.app.composer.text, "")
+        self.assertEqual(self.client.named("session.interrupt"), [{"session_id": SID}])
+
+    def test_esc_pressed_while_reports_are_on_interrupts_once_300_ms_have_passed(self) -> None:
+        step_through(self.app, self.now, [(0.0, b"\x1b"), *[(READ_TIMEOUT_SECONDS, b"")] * 5])
+        self.assertEqual(self.client.named("session.interrupt"), [])  # 250 ms: it may still be a report
+        step_through(self.app, self.now, [(READ_TIMEOUT_SECONDS, b"")] * 2)
+        self.assertEqual(self.client.named("session.interrupt"), [{"session_id": SID}])  # by 350 ms
+
+    def test_with_reports_off_esc_interrupts_at_the_first_silence(self) -> None:
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        settled(app)
+        self.assertFalse(reporting(app))
+        step_through(app, now, [(0.0, b"\x1b"), (READ_TIMEOUT_SECONDS, b"")])
+        self.assertEqual(client.named("session.interrupt"), [{"session_id": SID}])
 
 
 class DrainTerminal(ScriptedTerminal):
