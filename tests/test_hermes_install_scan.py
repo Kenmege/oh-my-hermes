@@ -16,8 +16,9 @@ itself, vendored verbatim in `tests/_vendor`, over `skills/` and
 The scanner changes between Hermes releases and OMH installs on every release
 from the `requires_hermes` floor up, so every scanner a release tag in that
 range ships runs here, one vendored copy each. `RELEASE_SCANNER` maps each
-release to its copy and is tied to the floor in `plugin.yaml`. Canary builds
-between releases carried other scanner builds and are not gated.
+release to its tag's file digest and its copy, and is tied to the floor in
+`plugin.yaml` with no release skipped after it. Canary builds between
+releases carried other scanner builds and are not gated.
 
 - v2 (`hermes_skills_guard_v2`): Hermes 0.21.1 through 0.21.3, the floor. Its
   `context_exfil` rule is `(include|output|print|send|share)\s+(?:\w+\s+)*`
@@ -69,15 +70,25 @@ SCANNERS = {
     "v10": hermes_skills_guard_v10,
 }
 
-# The scanner each Hermes release tag ships (tools/skills_guard.py at the tag).
+# Each Hermes release from the floor up: its tag, the sha256 of
+# tools/skills_guard.py at that tag (read with `git show <tag>:tools/skills_guard.py`
+# on 2026-10-13), and the vendored copy that stands for it. Each release ships its
+# copy's exact bytes except those in NARROWER_THAN_ITS_COPY.
 RELEASE_SCANNER = {
-    "0.21.1": "v2",
-    "0.21.2": "v2",
-    "0.21.3": "v2",
-    "0.21.4": "v6",
-    "0.21.5": "v6",
-    "0.21.6": "v8",
-    "0.21.7": "v10",
+    "0.21.1": ("v2026.9.7", "007846383d775bbda8ac6ed9f6d9fedef4f4cebf052ad059e0cfcb15c9d3fb27", "v2"),
+    "0.21.2": ("v2026.9.11", "007846383d775bbda8ac6ed9f6d9fedef4f4cebf052ad059e0cfcb15c9d3fb27", "v2"),
+    "0.21.3": ("v2026.9.14", "0c193bdefd6dead5e3b8f5d03c51a4e77dfa3cc4a5afc6498f0625600295dabb", "v2"),
+    "0.21.4": ("v2026.9.21", "ad9d3616c67fa2f0707dd8c6007d652a0cb44ad6ae51eb5d888ed57be2230bd1", "v6"),
+    "0.21.5": ("v2026.9.24", "ad9d3616c67fa2f0707dd8c6007d652a0cb44ad6ae51eb5d888ed57be2230bd1", "v6"),
+    "0.21.6": ("v0.21.6", "0c33d15095cff5f980d02e4f1bf056bf43f39789600604c885c673fb68d9cbb3", "v8"),
+    "0.21.7": ("v0.21.7", "2b39ae73585709c51af62cbf8c3f23c5330ca1e297ac01453e9328996e281562", "v10"),
+}
+
+# A release whose bytes differ from the copy that stands for it, and why the copy
+# still covers it: 0.21.3 (tag v2026.9.14) ships a second v2 build that only
+# narrowed `dns_exfil`, so the 0.21.1 copy is the stricter of the two.
+NARROWER_THAN_ITS_COPY = {
+    "0.21.3": "v2 with a narrower dns_exfil; every other byte equals 0.21.1's",
 }
 
 # sha256 of each vendored copy below its OMH header (line endings read as LF),
@@ -185,11 +196,22 @@ class HermesInstallScanTests(unittest.TestCase):
 
     def test_every_release_from_the_floor_up_has_its_scanner_vendored(self) -> None:
         requirement = declared_range(PLUGIN_MANIFEST)
-        floors = [".".join(map(str, bound)) for op, bound in parse_range(requirement) if op == ">="]
+        floors = [bound for op, bound in parse_range(requirement) if op == ">="]
         self.assertEqual(len(floors), 1, requirement)
-        self.assertIn(floors[0], RELEASE_SCANNER)
+        major, minor, first_patch = floors[0]
+        releases = sorted(tuple(int(part) for part in release.split(".")) for release in RELEASE_SCANNER)
+        last_patch = releases[-1][2]
+        # The patch series from the floor to the newest listed release, none skipped.
+        self.assertEqual(releases, [(major, minor, patch) for patch in range(first_patch, last_patch + 1)])
         self.assertEqual([release for release in RELEASE_SCANNER if not version_satisfies(release, requirement)], [])
-        self.assertEqual(set(RELEASE_SCANNER.values()), set(SCANNERS))
+        for release, (tag, digest, copy) in RELEASE_SCANNER.items():
+            with self.subTest(release=release, tag=tag):
+                if release in NARROWER_THAN_ITS_COPY:
+                    self.assertNotEqual(digest, UPSTREAM_SHA256[copy])
+                else:
+                    self.assertEqual(digest, UPSTREAM_SHA256[copy])
+        self.assertLessEqual(set(NARROWER_THAN_ITS_COPY), set(RELEASE_SCANNER))
+        self.assertEqual({copy for _, _, copy in RELEASE_SCANNER.values()}, set(SCANNERS))
         self.assertEqual(set(EXPECTED_SEVERITY), set(SCANNERS))
         self.assertEqual(set(UPSTREAM_SHA256), set(SCANNERS))
 
