@@ -129,6 +129,7 @@ Quality bar:
 - [capability:single_owner_persistence] For single-owner coding edits, prepare and track the selected runtime path instead of implying unobserved work happened or hiding execution inside chat narration.
 - [capability:single_owner_persistence] Report single-owner completion only from observed execution and verification evidence, with remaining risks named.
 - [capability:durable_checkpoint] Keep goal state durable, inspectable, and separate from chat narration in the metadata-only .omh/goals goal_ledger/v1.
+- [capability:durable_checkpoint] Create a code-changing goal with `omh goal create --obligation slop-cleanup`: its AC-SLOP refuses completion until `omh goal checkpoint --goal <goal_id> --summary <outcome> --criterion AC-SLOP --evidence-ref run:<run_id>` cites an `ai-slop-cleaner` record made with `--goal <goal_id> --cleanup-outcome passed|skipped|reverted` and a non-empty `--outputs-summary`. A goal created without the flag is not gated.
 - [capability:durable_checkpoint] Checkpoint every success, blocker, and final quality gate with fresh evidence.
 - [capability:durable_checkpoint] Reject completion with a summary-only goal_completion_gate/v1 result until required criteria, blockers, and explicitly linked runtime runs are satisfied.
 - [capability:durable_checkpoint] Name the one element gating goal progress from the linked loop's loop_constraint_assessment/v1 before checkpointing the next step; load `ulw-loop/references/goal-constraint-discipline.md` for the method.

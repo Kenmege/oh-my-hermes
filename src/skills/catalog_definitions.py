@@ -424,7 +424,7 @@ _DEFINITIONS = [
             "Send long-running cycle output to a log file and pull only the declared metric and error lines into context; read the whole log only when the cycle crashed.",
             EXECUTION_WAIT_DISCIPLINE_RULE,
             "On an equal metric keep the simpler change, always keep an improvement achieved by deletion, and do not let a small gain buy added complexity.",
-            "After the judge passes, an optional `ai-slop-cleaner` pass may run scoped to the `changed_files` the cycle's `loop_subagent_result_contract/v1` results reported, never wider; the loop's own verification then reruns and must not regress - on a measured loop neither may the metric - or the cleaner's edits are reverted. The user can skip it, and a cycle that reported no `changed_files` has nothing to scope it to: either way the pass is reported as skipped, and a reverted pass as reverted, never as passed; saying it ran cites the cleaner's `omh runtime record` row.",
+            "After the judge passes, run an `ai-slop-cleaner` pass scoped to the `changed_files` the cycle's `loop_subagent_result_contract/v1` results reported, never wider; the loop's own verification then reruns and must not regress - on a measured loop neither may the metric - or the cleaner's edits are reverted. Record the outcome with `omh runtime record --skill ai-slop-cleaner --harness coding-handling --status completed --cleanup-outcome passed|skipped|reverted --goal <linked goal id> --outputs-summary <what changed, or why skipped>`: a user's skip, or a cycle that reported no `changed_files`, is an explicit `skipped`, and a reverted pass is `reverted`, never `passed`. A loop that allows `repo_edit` arms AC-SLOP on its linked goal, which then refuses completion until `omh goal checkpoint --goal <goal_id> --summary <outcome> --criterion AC-SLOP --evidence-ref run:<run_id>` cites that record; a missing record is never read as nothing to clean.",
         ),
         why_this_exists="`loop` exists for goals whose correct implementation cannot be known upfront but can be discovered through bounded cycles of definition, action, verification, and revision without confusing planned cycles with observed progress.",
         do_not_use_when=(
@@ -503,7 +503,7 @@ _DEFINITIONS = [
                 "Send long-running cycle output to a log file and pull only the declared metric and error lines into context; read the whole log only when the cycle crashed.",
                 "Choose the wait strategy before starting long-running work and bind it to a completion signal the host exposes, never to a status loop: a command that fits one tool call runs once in the foreground with a duration-sized timeout; a longer terminal command runs in the background with completion notification armed and no process-status polling; a delegated lane relies on its delivered result while the parent continues independent work or ends the turn; a CI, PR, deploy, file, port, log-line, or external-session condition uses the host's monitor when observed, else exactly ONE bounded watcher or adaptive backoff outside model turns. Record the handle and observation mode at dispatch; every armed wait needs a hard deadline, a cancellation path, and a fallback naming the missing capability. Each wait closes in one terminal state with bounded evidence; an unbounded idle or busy-wait is a defect and a lost notification times out. One decision-changing midpoint peek and any user-requested status check stay allowed; neither is the wait mechanism. Ladder and terminal states: shared rail.",
                 "On an equal metric keep the simpler change, always keep an improvement achieved by deletion, and do not let a small gain buy added complexity.",
-                "After the judge passes, an optional `ai-slop-cleaner` pass may run scoped to the `changed_files` the cycle's `loop_subagent_result_contract/v1` results reported, never wider; the loop's own verification then reruns and must not regress - on a measured loop neither may the metric - or the cleaner's edits are reverted. The user can skip it, and a cycle that reported no `changed_files` has nothing to scope it to: either way the pass is reported as skipped, and a reverted pass as reverted, never as passed; saying it ran cites the cleaner's `omh runtime record` row.",
+                "After the judge passes, run an `ai-slop-cleaner` pass scoped to the `changed_files` the cycle's `loop_subagent_result_contract/v1` results reported, never wider; the loop's own verification then reruns and must not regress - on a measured loop neither may the metric - or the cleaner's edits are reverted. Record the outcome with `omh runtime record --skill ai-slop-cleaner --harness coding-handling --status completed --cleanup-outcome passed|skipped|reverted --goal <linked goal id> --outputs-summary <what changed, or why skipped>`: a user's skip, or a cycle that reported no `changed_files`, is an explicit `skipped`, and a reverted pass is `reverted`, never `passed`. A loop that allows `repo_edit` arms AC-SLOP on its linked goal, which then refuses completion until `omh goal checkpoint --goal <goal_id> --summary <outcome> --criterion AC-SLOP --evidence-ref run:<run_id>` cites that record; a missing record is never read as nothing to clean.",
             ),
             "expected_outputs": (
                 "loopability_assessment/v1 task/project/ambition classification",
@@ -555,7 +555,7 @@ _DEFINITIONS = [
             ),
         },
         portable_override_shadows={
-            "quality_bar": "1df7c931b64d145e6ed2f046772d93e9a806c2ef7ccc65259ae1c6298ec2ed8f",
+            "quality_bar": "70bc360304b9fd9cb0e0448c4f861ac878ae1f360bffff1381e3940381efd959",
             "expected_outputs": "780eec788fe069700b05a39880a50a3813715f50fcd6401cb6fe486f1750616d",
             "artifact_expectations": "a0b60b9744a8ba2ea968e39cb84e90f2bc7125aaa4f40cee0996c658eeddc7ff",
             "final_checklist": "0e74ac3a35cd511b7db3310dc8040cfd5340bef69e367ee912228348616aa2c4",
@@ -1124,6 +1124,7 @@ _DEFINITIONS = [
             "[capability:single_owner_persistence] For single-owner coding edits, prepare and track the selected runtime path instead of implying unobserved work happened or hiding execution inside chat narration.",
             "[capability:single_owner_persistence] Report single-owner completion only from observed execution and verification evidence, with remaining risks named.",
             "[capability:durable_checkpoint] Keep goal state durable, inspectable, and separate from chat narration in the metadata-only .omh/goals goal_ledger/v1.",
+            "[capability:durable_checkpoint] Create a code-changing goal with `omh goal create --obligation slop-cleanup`: its AC-SLOP refuses completion until `omh goal checkpoint --goal <goal_id> --summary <outcome> --criterion AC-SLOP --evidence-ref run:<run_id>` cites an `ai-slop-cleaner` record made with `--goal <goal_id> --cleanup-outcome passed|skipped|reverted` and a non-empty `--outputs-summary`. A goal created without the flag is not gated.",
             "[capability:durable_checkpoint] Checkpoint every success, blocker, and final quality gate with fresh evidence.",
             "[capability:durable_checkpoint] Reject completion with a summary-only goal_completion_gate/v1 result until required criteria, blockers, and explicitly linked runtime runs are satisfied.",
             "[capability:durable_checkpoint] Name the one element gating goal progress from the linked loop's loop_constraint_assessment/v1 before checkpointing the next step; load `ulw-loop/references/goal-constraint-discipline.md` for the method.",
@@ -1227,6 +1228,7 @@ _DEFINITIONS = [
                 "[capability:single_owner_persistence] For single-owner coding edits, prepare and track the selected runtime path instead of implying unobserved work happened or hiding execution inside chat narration.",
                 "[capability:single_owner_persistence] Report single-owner completion only from observed execution and verification evidence, with remaining risks named.",
                 "[capability:durable_checkpoint] Keep goal state durable, inspectable, and separate from chat narration in the metadata-only .omh/goals goal_ledger/v1.",
+                "[capability:durable_checkpoint] Create a code-changing goal with `omh goal create --obligation slop-cleanup`: its AC-SLOP refuses completion until `omh goal checkpoint --goal <goal_id> --summary <outcome> --criterion AC-SLOP --evidence-ref run:<run_id>` cites an `ai-slop-cleaner` record made with `--goal <goal_id> --cleanup-outcome passed|skipped|reverted` and a non-empty `--outputs-summary`. A goal created without the flag is not gated.",
                 "[capability:durable_checkpoint] Checkpoint every success, blocker, and final quality gate with fresh evidence.",
                 "[capability:durable_checkpoint] Reject completion with a summary-only goal_completion_gate/v1 result until required criteria, blockers, and explicitly linked runtime runs are satisfied.",
                 "[capability:durable_checkpoint] Name the one element gating goal progress from the linked loop's loop_constraint_assessment/v1 before checkpointing the next step; load `ulw-loop/references/goal-constraint-discipline.md` for the method.",
@@ -1268,7 +1270,7 @@ _DEFINITIONS = [
             ),
         },
         portable_override_shadows={
-            "quality_bar": "f7711bc943943178ac01479450f01d2c2e2c708795931d48d976ba9bd4f5a6d8",
+            "quality_bar": "d55dc6e97ad4cece4109d54a86711c9e8503c59e835a77eacf59711d53400ba7",
             "safety_rules": "f5a8f74812425af82829bc083dac62883a283ed8acfa5bc299a594c107ccd4f7",
             "opening_steps": "2236c7c8fd525d9c02c60cf9e6429e0b663ac3748f46b5565e6d844b443a9bf7",
             "final_checklist": "aa86ffc317352fb5f4a3cfa3dac07f436232e87055edb9a6adc7bf8b70896366",
@@ -7121,7 +7123,7 @@ _DEFINITIONS = [
             "When the cleanup target is UI code, load `omh-ai-slop-cleaner/references/ui-review-checklist.md`; its items are review prompts a stated rationale closes, not bans.",
             "Prefer deletion, reuse, and boundary repair over new abstractions.",
             "Rerun verification after cleanup before claiming behavior is preserved, and close with the four-part report: changed files, simplifications, behavior lock, remaining risks.",
-            "Close every run with `omh runtime record --skill ai-slop-cleaner --harness coding-handling --status completed` (or `failed` / `blocked`): a cleanup run carries changed files, simplifications, and remaining risks in `--outputs-summary` and the behavior lock in `--verification-summary`; a review-mode run carries the ship or no_ship verdict and the finding count per priority in `--outputs-summary`. A caller that says the cleaner ran cites that record, and without one the pass is not_observed.",
+            "Close every run with `omh runtime record --skill ai-slop-cleaner --harness coding-handling --status completed` (or `failed` / `blocked`), adding `--goal <goal_id> --cleanup-outcome passed|skipped|reverted` when the pass serves a goal: a cleanup run carries changed files, simplifications, and remaining risks in `--outputs-summary` and the behavior lock in `--verification-summary`; a review-mode run carries the ship or no_ship verdict and the finding count per priority in `--outputs-summary`. A caller that says the cleaner ran cites that record, and without one the pass is not_observed. A goal carrying AC-SLOP completes only after `omh goal checkpoint --goal <goal_id> --summary <outcome> --criterion AC-SLOP --evidence-ref run:<run_id>` cites such a record; `skipped` and `reverted` are reported as recorded, never as passed.",
         ),
         situations=(
             "remove dead code",

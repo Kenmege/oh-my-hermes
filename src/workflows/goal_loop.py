@@ -13,7 +13,12 @@ from ..coding.executor_auth_signals import (
     last_limit_signal_for_profile,
 )
 from ..codex_progress import summarize_codex_jsonl_text
-from ..goal_ledger import build_goal_completion_gate, read_goal_ledger
+from ..goal_ledger import (
+    arm_slop_cleanup_obligation,
+    build_goal_completion_gate,
+    read_goal_ledger,
+    slop_cleanup_arm_needed,
+)
 from ..hashutil import sha256_text
 from ..local_store import ensure_dir, read_json_object, utc_now
 from ..system.record_revision import DuplicateMutationReplay, guarded_record_update, revision_field_errors
@@ -562,8 +567,7 @@ def create_loop_cycle(
         raise ValueError("goal reframe is required")
     criteria = _criteria_objects(success_criteria)
     loop_id = _storage_id(loop_id or new_loop_id(goal_summary), "loop_id")
-    if linked_goal_id:
-        read_goal_ledger(paths, linked_goal_id)
+    linked_goal = read_goal_ledger(paths, linked_goal_id) if linked_goal_id else None
     loopability = assess_loopability(goal_summary, expose_goal=True)
     _enforce_loopability_start(loopability, allow_unloopable=allow_unloopable)
     loopability = _started_loopability_assessment(loopability, goal_reframe)
@@ -614,15 +618,41 @@ def create_loop_cycle(
     validation = validate_loop_cycle(cycle)
     if not validation["ok"]:
         raise ValueError("; ".join(validation["errors"]))
+    # Decided (and a terminal goal refused) before the cycle is written, and the
+    # criterion appended only after it is: a refused or failed create then
+    # leaves neither a loop without its obligation nor a stray AC-SLOP.
+    arm_goal = (
+        linked_goal is not None
+        and _loop_allows_repo_edit(cycle["authority_envelope"])
+        and slop_cleanup_arm_needed(linked_goal)
+    )
     ensure_dir(_loop_dir(paths, loop_id), private=True)
     def initialize(current):
         if current:
             raise LoopDriverError("loop_already_exists")
         return dict(cycle)
 
-    return _guarded_cycle_update(
+    created = _guarded_cycle_update(
         paths, loop_id, initialize, operation="create_loop_cycle", default={}
     )
+    if arm_goal:
+        arm_slop_cleanup_obligation(paths, linked_goal_id, mutation_id=_slop_cleanup_arm_mutation_id(loop_id))
+    return created
+
+
+def _loop_allows_repo_edit(envelope: Mapping[str, Any]) -> bool:
+    """The one signal that arms AC-SLOP on a linked goal: the loop may edit the repo.
+
+    Deliberately `repo_edit` alone: it is the action that authorizes this loop
+    to change repository files itself. `executor_dispatch` and the PR actions
+    are not that authority and do not arm, and `work_kind` is a driver-selection
+    input that defaults to non_coding and is not persisted on the cycle.
+    """
+    return "repo_edit" in _string_set(envelope.get("allowed_actions", []))
+
+
+def _slop_cleanup_arm_mutation_id(loop_id: str) -> str:
+    return f"slop-cleanup-{loop_id}"
 
 
 def loop_executor_capability(executor: str) -> dict[str, Any]:
@@ -1008,6 +1038,7 @@ def update_loop_permission(
     requested_allow = _valid_actions(allow_actions or [])
     requested_forbid = _valid_actions(forbid_actions or [])
     requested_executors = _safe_list(allowed_executors or [], limit=120)
+    arm = {"goal_id": ""}
 
     def mutate(cycle: dict[str, Any]) -> dict[str, Any]:
         # The merge reads the envelope that is current inside the lock, so a
@@ -1024,11 +1055,22 @@ def update_loop_permission(
             allow_actions=allowed,
             forbid_actions=forbidden,
         )
+        # A grant that newly lets this loop edit the repo arms AC-SLOP on its
+        # linked goal, decided here so a terminal goal refuses the whole grant,
+        # and appended after this write so a refused write leaves no criterion.
+        linked_goal_id = str(cycle.get("linked_goal_id", ""))
+        if (
+            linked_goal_id
+            and "repo_edit" not in existing_allowed
+            and _loop_allows_repo_edit(cycle["authority_envelope"])
+            and slop_cleanup_arm_needed(read_goal_ledger(paths, linked_goal_id))
+        ):
+            arm["goal_id"] = linked_goal_id
         _normalize_permission_state(cycle)
         cycle["updated_at"] = utc_now()
         return cycle
 
-    return _guarded_cycle_update(
+    updated = _guarded_cycle_update(
         paths,
         loop_id,
         mutate,
@@ -1039,14 +1081,18 @@ def update_loop_permission(
             "update_loop_permission", sorted(requested_allow), sorted(requested_forbid), requested_executors
         ),
     )
+    if arm["goal_id"]:
+        arm_slop_cleanup_obligation(paths, arm["goal_id"], mutation_id=_slop_cleanup_arm_mutation_id(loop_id))
+    return updated
 
 
 def goal_ledger_entry_count(goal: Mapping[str, Any] | None) -> int:
     """Records written into one goal ledger: checkpoints, blockers, quality gates.
 
     The three lists a loop can actually append to. Acceptance criteria are
-    declared at creation and only change status, so counting them would make a
-    loop that writes nothing look like a loop that started well.
+    declared at creation (AC-SLOP may be appended once, when a `repo_edit` loop
+    binds the goal) and otherwise only change status, so counting them would
+    make a loop that writes nothing look like a loop that started well.
     """
     if not isinstance(goal, Mapping):
         return 0

@@ -133,6 +133,12 @@ SCHEMA_VERSION = 1
 # state exists to end. The shipped reader does that by asking whether the record
 # is observed rather than by matching the result against a list.
 RUN_STATUSES = ("started", "prepared", "completed", "blocked", "failed", "cancelled", "unknown")
+# What an ai-slop-cleaner pass concluded, carried beside `status` and never as
+# one: a run can complete with any of the three, and a goal that carries the
+# AC-SLOP obligation reads this field rather than the run's summary text. Only
+# written when the caller supplied it, so a record without it stays the shape
+# it always was.
+CLEANUP_OUTCOMES = ("passed", "skipped", "reverted")
 PRIVACY_MODES = ("metadata_only",)
 RUN_ARTIFACT_KINDS = ("workflow_run", "prepared_coding_delegation")
 RUN_PHASES = ("runtime", "prepared", "unknown")
@@ -729,7 +735,11 @@ def build_run_record(metadata: dict[str, Any], run_id: str) -> dict[str, Any]:
         raise ValueError(f"unsupported run phase: {phase}")
     if observation_status not in RUN_OBSERVATION_STATUSES:
         raise ValueError(f"unsupported run observation_status: {observation_status}")
-    return {
+    cleanup_outcome = str(metadata.get("cleanup_outcome") or "")
+    if cleanup_outcome and cleanup_outcome not in CLEANUP_OUTCOMES:
+        raise ValueError(f"unsupported run cleanup_outcome: {cleanup_outcome}")
+    goal_id = str(metadata.get("goal_id") or "")
+    record = {
         "schema_version": SCHEMA_VERSION,
         "run_id": run_id,
         "created_at": created_at,
@@ -746,6 +756,11 @@ def build_run_record(metadata: dict[str, Any], run_id: str) -> dict[str, Any]:
         "outputs_summary": metadata.get("outputs_summary", ""),
         "verification_summary": metadata.get("verification_summary", ""),
     }
+    if goal_id:
+        record["goal_id"] = goal_id
+    if cleanup_outcome:
+        record["cleanup_outcome"] = cleanup_outcome
+    return record
 
 
 def build_event_record(event: dict[str, Any]) -> dict[str, Any]:
@@ -2255,6 +2270,18 @@ def validate_run_record(run: dict[str, Any]) -> list[str]:
         )
     for key in ("trigger", "inputs_summary", "outputs_summary", "verification_summary"):
         _require(isinstance(run.get(key, ""), str), errors, f"run {key} must be a string")
+    if "goal_id" in run:
+        _require(
+            isinstance(run.get("goal_id"), str) and bool(run["goal_id"].strip()),
+            errors,
+            "run goal_id must be a non-empty string",
+        )
+    if "cleanup_outcome" in run:
+        _require(
+            run.get("cleanup_outcome") in CLEANUP_OUTCOMES,
+            errors,
+            f"run cleanup_outcome is invalid: {run.get('cleanup_outcome')!r}",
+        )
     return errors
 
 
