@@ -45,7 +45,7 @@ class OperationsArtifactTests(unittest.TestCase):
             created_at="2026-06-16T00:00:00Z",
         )
 
-        self.assertEqual(blueprint["schema_version"], "hermes_ops_blueprint/v1")
+        self.assertEqual(blueprint["schema_version"], "prepared_native_blueprint/v1")
         self.assertEqual(blueprint["kind"], "scheduled-ops-blueprint")
         self.assertEqual(blueprint["observation_status"], "prepared")
         self.assertEqual(blueprint["projection"]["authority"], "projection_only")
@@ -153,7 +153,7 @@ class OperationsArtifactTests(unittest.TestCase):
         )
 
         self.assertEqual(validate_hermes_ops_blueprint(payload), [])
-        self.assertEqual(payload["schema_version"], "hermes_ops_blueprint/v1")
+        self.assertEqual(payload["schema_version"], "prepared_native_blueprint/v1")
         self.assertIn("gateway_delivery_sent", payload["not_evidence_until_observed"])
         self.assertEqual(payload, generated)
 

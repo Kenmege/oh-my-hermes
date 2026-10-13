@@ -4,6 +4,28 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`automation-blueprint` now prepares Hermes' own Automation Blueprint
+  instead of a look-alike with the same name.** The record `omh ops
+  blueprint` writes is renamed from `hermes_ops_blueprint/v1` to
+  `prepared_native_blueprint/v1` and gains a `native_blueprint` projection:
+  the `metadata.hermes.blueprint` block (schedule, deliver, prompt,
+  no_agent) and the matching `cronjob_manage` create call, with the current
+  conversation as `origin`, a report-on-change rule as a `[SILENT]` final
+  reply plus `continuity`, and the fields still open listed under
+  `needs_confirmation`. Model and provider pins stay the user's, and the
+  validator refuses a projection that sets them. The skill and its
+  recurring-surface reference map OMH's overlap, missed-run, retry,
+  backfill, and failure-pause decisions onto what Hermes cron does by
+  itself and name the postures it cannot honour; Hermes' re-run of a fire
+  that failed before any model call and its global missed-run switch are
+  stated by presence in the installed Hermes, never by version. Post-activation
+  status comes from Hermes (`cronjob_manage` list, `hermes cron runs`,
+  open `hermes cron incidents`), and OMH still creates no cron job:
+  activation is `/blueprint`, an accepted Suggested Cron Job, or a create
+  the user asked for. Records, index caches, and saved recurring intents
+  written under the old id stay readable and valid.
+
+
 - **A Maestro supervisor now waits on a dispatch with one bounded background
   watcher instead of polling the roster every minute in its own turns.**
   `omh coding fanout status --wait` re-reads the same read-only roster until

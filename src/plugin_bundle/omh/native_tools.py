@@ -35,6 +35,9 @@ both places.
 from __future__ import annotations
 
 NATIVE_TODO_TOOL = "todo_list"
+# Hermes' cron tool. `automation-blueprint` prepares its `create` call and reads
+# its `list` output as post-activation status; OMH never calls it.
+NATIVE_CRON_TOOL = "cronjob_manage"
 TOOL_SEARCH_TOOL = "tool_search"
 # The `blocked_reason` a cancelled todo_list item carries in the OMH plan
 # record (`native_todo`). Written by OMH, not the model, and worded as what the

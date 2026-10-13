@@ -4221,17 +4221,18 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when the user asks for recurring automation or scheduled ops planning.
 - Handoff policy: Keep schedule intent, delivery policy, silence rules, context-chain selection, and status narration in Hermes; prepare host automation or no-agent follow-up only after an operator/wrapper records observed runtime evidence.
-- Why this exists: `automation-blueprint` exists so Hermes can make recurring operational work feel native and scheduled without OMH becoming a hidden cron runner, transport bot, source retriever, or executor.
+- Why this exists: `automation-blueprint` exists so a recurring request reaches Hermes' own Automation Blueprints and cron with the decisions they leave open (overlap, missed run, retry, backfill, failure pause, silence) settled first, without OMH becoming a hidden cron runner, transport bot, source retriever, or executor.
 - Use when: Use when Hermes should turn a natural recurring/cron-like request into a scheduled ops blueprint without claiming host automation, platform delivery, source retrieval, or no-agent execution.
 - Do not use when:
   - An undecided lifecycle journey or growth experiment needs audience, consent, and measurement design before any schedule; use `lifecycle-growth` first.
   - The user needs a one-off report or deck; use `report-package` or `materials-package`.
   - The user asks to review incident metrics once; use `reliability-review`.
   - The user needs actual code changes; prepare a selected executor/runtime handoff after the blueprint or plan is accepted.
+  - The person is inside Hermes' own /blueprint setup for one of its catalog automations; answer the questions that flow asks and let it create the job instead of preparing a second blueprint.
 - Strong routing signals: `automation-blueprint`, `scheduled ops`, `scheduled operation`, `scheduled operations`, `automation blueprint`, `cron blueprint`, `cron-ready`, `recurring ops`, `recurring workflow`, `keep watching`, `keep monitoring`, `watch continuously`, `monitor continuously`, `every morning`, `every day`, `daily digest`, `weekly digest`, `automate this`, `automate workflow`, `send to slack`, `send to discord`, `post to telegram`, `only if changed`, `silent if nothing changed`, `schedule this`, `ずっと監視`, `監視し続け`, `継続的に監視`, `매일`, `매주`, `정기`, `예약`, `반복`, `자동화`, `자동화해줘`, `스케줄`, `슬랙`, `디스코드`, `텔레그램`, `보내`, `공유`, `변화 없으면`, `조용히`, `계속 감시`, `계속 모니터링`, `계속 지켜봐`, `持续监控`, `持續監控`, `一直监控`
 - Good example:
   - Prompt: automation-blueprint every weekday run an uptime check and send a Slack digest only if status changes.
-  - Expected behavior: Prepare hermes_ops_blueprint/v1 with schedule intent, Slack delivery policy, silence rule, research/report skills, missing evidence, and next confirmation.
+  - Expected behavior: Draft prepared_native_blueprint/v1 with schedule intent, Slack delivery, a `[SILENT]` reply for unchanged runs, research/report skills, missing evidence, and the next confirmation.
   - Why: The request is recurring, delivery-shaped, and must stay prepared until host automation and gateway delivery are observed.
 - Bad example:
   - Prompt: automation-blueprint prove the Slack digest was delivered this morning.
@@ -4242,6 +4243,9 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Name cadence/timezone uncertainty, delivery target, silence/no-change rule, selected skills, and context chain.
   - When the recurring work is saved, say it is paused and name what activation needs: explicit overlap, missed-run, retry, backfill, and failure-pause decisions, an approval reference, and an observer from the approved runtime surface.
   - Before activation, say what the policy does when a prior run is still active, when a window is missed, and when failures repeat; after a safety pause, report the applied policy and that resuming needs a policy revision.
+  - Project the prepared native blueprint onto Hermes' own fields: the `metadata.hermes.blueprint` block (schedule, deliver, prompt, no_agent) and the matching `cronjob_manage` create call when `cronjob_manage` is in your tool list or tool_search finds it; report-on-change is a `[SILENT]` final reply, and model or provider pins stay the user's.
+  - Map overlap, missed-run, retry, backfill, and failure-pause onto what Hermes cron does natively and say which choices it cannot honour, so nobody is asked for a policy the runtime ignores; the map is in `references/recurring-surface-choice.md`.
+  - After activation, read status from Hermes, not from the blueprint: `cronjob_manage` list (state, last_status, next_run_at), `hermes cron runs`, and open `hermes cron incidents` (detected or alerted).
   - Expose whether a no-agent watchdog is a candidate without claiming it exists or ran.
   - List host automation, gateway delivery, source retrieval, and no-agent execution as not evidence until observed.
 - Completion checklist:
@@ -4257,14 +4261,14 @@ These surfaces are generated command references, not installed Hermes workflow s
   - delivery target or current-thread default
   - silence/no-change preference
 - Expected outputs:
-  - hermes_ops_blueprint/v1 projection
+  - prepared_native_blueprint/v1 projection
   - recurring_surface_comparison/v1 naming the recommended surface and why the other three lost
   - hermes_recurring_intent/v1 paused lifecycle record when the user wants the recurring work saved
   - schedule/delivery/silence confirmation needs
   - status-card boundary
   - not-evidence list
 - Artifact expectations:
-  - hermes_ops_blueprint/v1 under .omh/hermes-ops/blueprints when a wrapper or CLI records it
+  - prepared_native_blueprint/v1 under .omh/hermes-ops/blueprints when a wrapper or CLI records it
   - recurring_surface_comparison/v1 with the recommended surface among cron, heartbeat, loop, and native goal, its stop condition, and a per-surface reason the other three were not chosen
   - hermes_recurring_intent/v1 under .omh/hermes-ops/recurring-intents when the user asks to save the recurring work
 - Safety rules:
@@ -4273,6 +4277,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - A saved recurring intent is paused; never report that an occurrence ran without a runtime run reference recorded against that exact intent revision.
   - A prepared failure policy is not enforcement: OMH never starts, skips, queues, retries, or backfills an occurrence, and a policy decision is not proof the runtime honoured it.
   - Route later coding, material generation, or report delivery into separate accepted handoffs when needed.
+  - OMH creates, pauses, and removes no cron job: activation is the user's or Hermes' (`/blueprint`, an accepted Suggested Cron Job, or a `cronjob_manage` create the user asked for in this conversation), and a job Hermes lists is observed status, not proof that a run delivered.
 
 ### reliability-review
 
@@ -12554,7 +12559,7 @@ Prepare recurring Hermes operations as schedule/delivery/silence blueprints with
   - delivery target
   - silence/no-change policy
 - Outputs:
-  - hermes_ops_blueprint/v1
+  - prepared_native_blueprint/v1
   - hermes_recurring_intent/v1 when the recurring work is saved
   - schedule/delivery/silence policy
   - skill context chain
@@ -12564,7 +12569,7 @@ Prepare recurring Hermes operations as schedule/delivery/silence blueprints with
   - missing schedule/delivery decisions are explicit
   - runtime and delivery claims remain observed-only
 - Verification:
-  - validate hermes_ops_blueprint/v1
+  - validate prepared_native_blueprint/v1
   - check schedule/delivery/silence fields
   - verify a saved recurring intent is paused and names its overlap, missed-run, retry, backfill, and failure-pause policy, approval, and activation observer
   - verify not_evidence_until_observed lists runtime and gateway claims
@@ -12587,10 +12592,10 @@ Prepare recurring Hermes operations as schedule/delivery/silence blueprints with
   - `schedule_policy_prepared`
   - `delivery_policy_prepared`
   - `status_boundary_recorded`
-- Delegation expectation: Record scheduled ops blueprints as Hermes-retained projection metadata; record host automation, delivery, retrieval, or no-agent execution only from observed runtime evidence.
+- Delegation expectation: Record prepared native blueprints as Hermes-retained projection metadata; record host automation, delivery, retrieval, or no-agent execution only from observed runtime evidence.
 - Privacy default: `metadata_only`
 - Overclaim guards:
-  - A hermes_ops_blueprint/v1 artifact is not host cron creation, Hermes automation, gateway delivery, source retrieval, no-agent execution, plugin load, or connector evidence.
+  - A prepared_native_blueprint/v1 artifact is not host cron creation, Hermes automation, gateway delivery, source retrieval, no-agent execution, plugin load, or connector evidence.
   - A hermes_recurring_intent/v1 record stays paused until an approved runtime surface records an activation observer, and an activated intent is still not occurrence-execution evidence.
   - A declared overlap, missed-run, retry, backfill, or failure-pause policy is a decision the runtime surface applies; OMH runs nothing and a policy decision is not evidence that anything was skipped, retried, or backfilled.
   - A silence policy is not proof that a run happened or that there were no changes.

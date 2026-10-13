@@ -8,12 +8,32 @@ from typing import Any
 
 from ..local_store import atomic_write_json, ensure_dir, read_json_object, read_json_object_result, utc_now
 from ..paths import OmhPaths
-from ..skills.catalog import installable_skill_definitions
+from ..plugin_bundle.omh.native_tools import NATIVE_CRON_TOOL
+from ..skills.catalog import installable_skill_definitions, omh_skill_display_name
 
 
-HERMES_OPS_BLUEPRINT_SCHEMA_VERSION = "hermes_ops_blueprint/v1"
-HERMES_OPS_INDEX_SCHEMA_VERSION = "hermes_ops_blueprint_index/v1"
-HERMES_OPS_VALIDATION_SCHEMA_VERSION = "hermes_ops_blueprint_validation/v1"
+# Hermes ships its own "Automation Blueprints": a skill whose frontmatter
+# carries `metadata.hermes.blueprint`, activated by `/blueprint`, by accepting
+# a Suggested Cron Job, or by `cronjob_manage` action `create`. This record is
+# OMH's preparation of exactly that block, so it is named for it. Records
+# written before the rename carry `hermes_ops_blueprint/v1`; they live in the
+# user's `.omh/hermes-ops/` store, so they stay readable and valid, and only
+# new records gain the `native_blueprint` projection.
+PREPARED_NATIVE_BLUEPRINT_SCHEMA_VERSION = "prepared_native_blueprint/v1"
+LEGACY_BLUEPRINT_SCHEMA_VERSION = "hermes_ops_blueprint/v1"
+READABLE_BLUEPRINT_SCHEMA_VERSIONS = (PREPARED_NATIVE_BLUEPRINT_SCHEMA_VERSION, LEGACY_BLUEPRINT_SCHEMA_VERSION)
+HERMES_OPS_INDEX_SCHEMA_VERSION = "prepared_native_blueprint_index/v1"
+# The index is a cache rewritten on every write; an index left by an older OMH
+# is still a valid cache, so validation accepts it rather than failing a store
+# nobody has written to since.
+READABLE_INDEX_SCHEMA_VERSIONS = (HERMES_OPS_INDEX_SCHEMA_VERSION, "hermes_ops_blueprint_index/v1")
+HERMES_OPS_VALIDATION_SCHEMA_VERSION = "prepared_native_blueprint_validation/v1"
+NATIVE_BLUEPRINT_FRONTMATTER_KEY = "metadata.hermes.blueprint"
+NATIVE_BLUEPRINT_FIELDS = ("schedule", "deliver", "prompt", "no_agent", "model", "provider", "enabled_toolsets")
+# Delivery surfaces the blueprint normalizer names that Hermes' cron `deliver`
+# field spells differently: the current conversation is `origin`. A platform
+# name such as `slack` sends to the home channel configured for it.
+_NATIVE_ORIGIN_SURFACES = ("current-hermes-thread", "hermes-chat")
 BLUEPRINT_KINDS = ("scheduled-ops-blueprint",)
 BLUEPRINT_STATUSES = ("prepared", "blocked", "archived")
 OBSERVATION_STATUSES = ("prepared", "not_observed")
@@ -33,7 +53,7 @@ OBSERVED_CLAIM_STATUSES = {
 }
 
 PREPARED_IS_NOT_OBSERVED = (
-    "A Hermes ops blueprint is projection metadata only. It is not host cron creation, gateway delivery, "
+    "A prepared native blueprint is projection metadata only. It is not host cron creation, gateway delivery, "
     "source retrieval, no-agent execution, plugin load, review, CI, merge-readiness, or merge evidence."
 )
 STAGED_GAP_MAP_STAGE_CONTRACT = {
@@ -56,7 +76,7 @@ DEFAULT_NOT_EVIDENCE = (
     "merge",
 )
 OBSERVED_EVIDENCE_REQUIRED = (
-    "Hermes host automation or cron listing that references the configured schedule.",
+    "Hermes cron listing (cronjob_manage action list, or hermes cron list) that shows the job on the configured schedule.",
     "Gateway or Hermes message delivery record when delivery is claimed.",
     "Observed source retrieval or supplied source artifacts when research/report content is claimed.",
     "No-agent script/file/run evidence if a no-agent lane is later implemented.",
@@ -173,8 +193,9 @@ def build_scheduled_ops_blueprint(
     silence_policy = _silence_policy(clean_request, silence=silence)
     no_agent_suitability = _no_agent_suitability(clean_request)
     prompt_outline = _prompt_outline(clean_request, skill_suggestions, schedule_intent, delivery_intent, silence_policy)
+    request_summary = _preview(clean_request, limit=BLUEPRINT_SUMMARY_LIMIT)
     record = {
-        "schema_version": HERMES_OPS_BLUEPRINT_SCHEMA_VERSION,
+        "schema_version": PREPARED_NATIVE_BLUEPRINT_SCHEMA_VERSION,
         "blueprint_id": blueprint_id or new_hermes_ops_blueprint_id(clean_request, created),
         "kind": "scheduled-ops-blueprint",
         "title": title.strip() or _default_title(clean_request),
@@ -194,7 +215,7 @@ def build_scheduled_ops_blueprint(
             "source_refs": list(PROJECTION_SOURCE_REFS),
         },
         "source": source.strip(),
-        "request_summary": _preview(clean_request, limit=BLUEPRINT_SUMMARY_LIMIT),
+        "request_summary": request_summary,
         "schedule_intent": schedule_intent,
         "delivery_intent": delivery_intent,
         "silence_policy": silence_policy,
@@ -202,6 +223,7 @@ def build_scheduled_ops_blueprint(
         "context_chain": _context_chain(skill_suggestions),
         "no_agent_suitability": no_agent_suitability,
         "prompt_outline": prompt_outline,
+        "native_blueprint": _native_blueprint(request_summary, skill_suggestions, schedule_intent, delivery_intent, silence_policy),
         "wrapper_actions": [
             "show_blueprint",
             "revise_schedule",
@@ -224,7 +246,10 @@ def build_scheduled_ops_blueprint(
         "prepared_is_not": PREPARED_IS_NOT_OBSERVED,
         "staged_gap_map_stage_contract": dict(STAGED_GAP_MAP_STAGE_CONTRACT),
         "staged_gap_map": staged_gap_map(),
-        "next_action": "Present the blueprint in Hermes, ask for schedule/delivery confirmation, then create host automation only outside this prepared artifact.",
+        "next_action": (
+            "Present the prepared native blueprint in Hermes and ask for the schedule/delivery confirmation it still needs; "
+            "the user or Hermes activates it (/blueprint, a Suggested Cron Job, or cronjob_manage create), never OMH."
+        ),
         "status_card": _status_card(schedule_intent, delivery_intent, silence_policy, no_agent_suitability),
     }
     errors = validate_hermes_ops_blueprint(record)
@@ -241,8 +266,11 @@ def new_hermes_ops_blueprint_id(request: str, now: datetime | str | None = None)
 
 def validate_hermes_ops_blueprint(record: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if record.get("schema_version") != HERMES_OPS_BLUEPRINT_SCHEMA_VERSION:
-        errors.append("schema_version must be hermes_ops_blueprint/v1")
+    schema_version = record.get("schema_version")
+    if schema_version not in READABLE_BLUEPRINT_SCHEMA_VERSIONS:
+        errors.append(f"schema_version must be {PREPARED_NATIVE_BLUEPRINT_SCHEMA_VERSION} (or legacy {LEGACY_BLUEPRINT_SCHEMA_VERSION})")
+    if schema_version == PREPARED_NATIVE_BLUEPRINT_SCHEMA_VERSION:
+        errors.extend(_native_blueprint_errors(record.get("native_blueprint")))
     if record.get("kind") not in BLUEPRINT_KINDS:
         errors.append(f"unsupported blueprint kind: {record.get('kind', '')}")
     blueprint_id = str(record.get("blueprint_id", ""))
@@ -315,7 +343,7 @@ def write_hermes_ops_blueprint(paths: OmhPaths, record: dict[str, Any]) -> dict[
         raise ValueError("; ".join(errors))
     blueprint_id = str(record["blueprint_id"])
     if hermes_ops_blueprint_exists(paths, blueprint_id):
-        raise ValueError(f"Hermes ops blueprint already exists: {blueprint_id}")
+        raise ValueError(f"prepared native blueprint already exists: {blueprint_id}")
     atomic_write_json(_blueprint_path(paths, blueprint_id), record, private=True)
     _write_index_cache(paths)
     return record
@@ -383,7 +411,7 @@ def validate_hermes_ops_store(paths: OmhPaths) -> dict[str, Any]:
         for error in validate_hermes_ops_blueprint(record):
             errors.append(f"{blueprint_id or '<unknown>'}: {error}")
     index = read_json_object(paths.hermes_ops_index_path)
-    if index and index.get("schema_version") != HERMES_OPS_INDEX_SCHEMA_VERSION:
+    if index and index.get("schema_version") not in READABLE_INDEX_SCHEMA_VERSIONS:
         errors.append("Hermes ops index cache has unsupported schema_version")
     return {
         "schema_version": HERMES_OPS_VALIDATION_SCHEMA_VERSION,
@@ -619,6 +647,76 @@ def _missing_decisions(
     return missing
 
 
+def _native_blueprint(
+    request_summary: str,
+    skill_suggestions: list[dict[str, str]],
+    schedule_intent: dict[str, object],
+    delivery_intent: dict[str, object],
+    silence_policy: dict[str, object],
+) -> dict[str, object]:
+    """Project the prepared intents onto Hermes' own blueprint block and cron call.
+
+    Only fields Hermes reads are written. `model` and `provider` stay unset:
+    `cronjob_manage` does not take them from the agent, because a per-job
+    model pin is the user's to set. A schedule the normalizer could not pin
+    down is passed through as the user wrote it and listed under
+    `needs_confirmation`; Hermes parses it when the job is created.
+    """
+    schedule = str(schedule_intent.get("explicit_schedule", "")).strip()
+    deliver = _native_deliver(delivery_intent)
+    report_changes_only = silence_policy.get("mode") == "only_report_changes"
+    prompt = request_summary
+    if report_changes_only:
+        prompt = f"{prompt}\n\nIf nothing changed since the previous run, reply with [SILENT] alone."
+    create: dict[str, object] = {"action": "create", "schedule": schedule, "prompt": prompt, "deliver": deliver}
+    job_skills = [omh_skill_display_name(item["skill"]) for item in skill_suggestions if item["skill"] != "automation-blueprint"]
+    if job_skills:
+        create["skills"] = job_skills
+    if report_changes_only:
+        create["continuity"] = True
+    needs_confirmation = []
+    if not schedule or schedule_intent.get("requires_confirmation"):
+        needs_confirmation.append("schedule")
+    if delivery_intent.get("requires_observed_gateway_evidence"):
+        needs_confirmation.append("deliver")
+    return {
+        "status": "prepared",
+        "frontmatter_key": NATIVE_BLUEPRINT_FRONTMATTER_KEY,
+        "block": {"schedule": schedule, "deliver": deliver, "prompt": prompt, "no_agent": False},
+        "cronjob_manage_create": create,
+        "needs_confirmation": needs_confirmation,
+        "activation_owner": "user_or_hermes",
+    }
+
+
+def _native_deliver(delivery_intent: dict[str, object]) -> str:
+    targets: list[str] = []
+    for surface in _string_list(delivery_intent.get("surfaces")):
+        target = "origin" if surface in _NATIVE_ORIGIN_SURFACES else surface
+        if target not in targets:
+            targets.append(target)
+    return ",".join(targets) or "origin"
+
+
+def _native_blueprint_errors(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return ["native_blueprint must be an object"]
+    errors: list[str] = []
+    if value.get("frontmatter_key") != NATIVE_BLUEPRINT_FRONTMATTER_KEY:
+        errors.append(f"native_blueprint.frontmatter_key must be {NATIVE_BLUEPRINT_FRONTMATTER_KEY}")
+    block = value.get("block")
+    if not isinstance(block, dict) or not set(block) <= set(NATIVE_BLUEPRINT_FIELDS):
+        errors.append(f"native_blueprint.block may hold only Hermes blueprint fields: {', '.join(NATIVE_BLUEPRINT_FIELDS)}")
+    create = value.get("cronjob_manage_create")
+    if not isinstance(create, dict) or create.get("action") != "create":
+        errors.append(f"native_blueprint.cronjob_manage_create must be a {NATIVE_CRON_TOOL} create call")
+    elif {"model", "provider"} & set(create):
+        errors.append(f"native_blueprint.cronjob_manage_create must not pin model or provider; {NATIVE_CRON_TOOL} leaves those to the user")
+    if value.get("activation_owner") != "user_or_hermes":
+        errors.append("native_blueprint.activation_owner must be user_or_hermes; OMH creates no cron job")
+    return errors
+
+
 def _status_card(
     schedule_intent: dict[str, object],
     delivery_intent: dict[str, object],
@@ -627,7 +725,7 @@ def _status_card(
 ) -> dict[str, object]:
     return {
         "schema_version": "hermes_ops_status_card/v1",
-        "headline": "Scheduled ops blueprint prepared",
+        "headline": "Prepared native blueprint",
         "prepared": [
             "schedule intent",
             "delivery policy",

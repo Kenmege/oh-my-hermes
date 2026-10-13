@@ -1914,7 +1914,7 @@ _HARNESSES = [
         "Use when recurring, cron-like, digest, monitoring, or platform-delivery requests need a Hermes-native setup plan and status card.",
         ("recurring request", "cadence or schedule hint", "delivery target", "silence/no-change policy"),
         (
-            "hermes_ops_blueprint/v1",
+            "prepared_native_blueprint/v1",
             "hermes_recurring_intent/v1 when the recurring work is saved",
             "schedule/delivery/silence policy",
             "skill context chain",
@@ -1922,14 +1922,14 @@ _HARNESSES = [
         ),
         ("blueprint is prepared", "missing schedule/delivery decisions are explicit", "runtime and delivery claims remain observed-only"),
         (
-            "validate hermes_ops_blueprint/v1",
+            "validate prepared_native_blueprint/v1",
             "check schedule/delivery/silence fields",
             "verify a saved recurring intent is paused and names its overlap, missed-run, retry, backfill, and failure-pause policy, approval, and activation observer",
             "verify not_evidence_until_observed lists runtime and gateway claims",
         ),
         "If cadence, delivery, or silence policy is missing, prepare the blueprint and ask for the smallest missing confirmation.",
         ("blueprint_scope_recorded", "schedule_policy_prepared", "delivery_policy_prepared", "status_boundary_recorded"),
-        "Record scheduled ops blueprints as Hermes-retained projection metadata; record host automation, delivery, retrieval, or no-agent execution only from observed runtime evidence.",
+        "Record prepared native blueprints as Hermes-retained projection metadata; record host automation, delivery, retrieval, or no-agent execution only from observed runtime evidence.",
         "metadata_only",
         quality_tier="ops-blueprint-gated",
         quality_bar=(
@@ -1955,7 +1955,7 @@ _HARNESSES = [
             "show_status",
         ),
         overclaim_guards=(
-            "A hermes_ops_blueprint/v1 artifact is not host cron creation, Hermes automation, gateway delivery, source retrieval, no-agent execution, plugin load, or connector evidence.",
+            "A prepared_native_blueprint/v1 artifact is not host cron creation, Hermes automation, gateway delivery, source retrieval, no-agent execution, plugin load, or connector evidence.",
             "A hermes_recurring_intent/v1 record stays paused until an approved runtime surface records an activation observer, and an activated intent is still not occurrence-execution evidence.",
             "A declared overlap, missed-run, retry, backfill, or failure-pause policy is a decision the runtime surface applies; OMH runs nothing and a policy decision is not evidence that anything was skipped, retried, or backfilled.",
             "A silence policy is not proof that a run happened or that there were no changes.",

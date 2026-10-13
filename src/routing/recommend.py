@@ -1592,7 +1592,7 @@ _SKILL_POLICIES = {
             "source retrieval, no-agent execution, plugin load, connector invocation, review, CI, or merge evidence."
         ),
         wrapper_guidance=(
-            "Prepare hermes_ops_blueprint/v1 with schedule, delivery, silence, skill/context chain, and status-card "
+            "Draft prepared_native_blueprint/v1 with schedule, delivery, silence, skill/context chain, and status-card "
             "copy; ask for missing runtime/delivery decisions and record observed evidence only when Hermes or the host runtime provides it."
         ),
     ),

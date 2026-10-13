@@ -223,7 +223,7 @@ def _prepared_artifacts(pattern_id: str) -> list[str]:
         "executor_session_handoff": ["coding_delegation/v1", "wrapper_session/v1"],
         "hermes_coding_team_path": ["coding_runtime_handoff/v1", "hermes_coding_team_path/v1", "runtime_observation/v1 when observed"],
         "loop_run_once": ["loop_runtime/v1", "loop_status_card/v1"],
-        "scheduled_ops_blueprint": ["hermes_ops_blueprint/v1"],
+        "scheduled_ops_blueprint": ["prepared_native_blueprint/v1"],
         "research_department_workflow": ["research_department_plan/v1", "source_inbox/v1", "briefing_status/v1"],
         "materials_generation_handoff": ["material_artifact/v1"],
         "worktree_isolated_workers": ["runtime_observation/v1 when observed"],

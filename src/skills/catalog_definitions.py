@@ -24,7 +24,7 @@ from ..paper_learning import (
     PAPER_LEARNING_SOURCE_STATES,
 )
 from ..plugin_bundle.omh.domain_signals import SPECIALIST_DOMAIN_TRIGGERS
-from ..plugin_bundle.omh.native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
+from ..plugin_bundle.omh.native_tools import NATIVE_CRON_TOOL, NATIVE_TODO_TOOL, native_tool_presence_clause
 from ..routing.materials_cues import (
     OFFICE_FILE_MATERIAL_CATALOG_TRIGGERS,
 )
@@ -6313,7 +6313,7 @@ _DEFINITIONS = [
         ),
         required_inputs=("recurring request", "schedule or cadence hint", "delivery target or current-thread default", "silence/no-change preference"),
         expected_outputs=(
-            "hermes_ops_blueprint/v1 projection",
+            "prepared_native_blueprint/v1 projection",
             "recurring_surface_comparison/v1 naming the recommended surface and why the other three lost",
             "hermes_recurring_intent/v1 paused lifecycle record when the user wants the recurring work saved",
             "schedule/delivery/silence confirmation needs",
@@ -6321,7 +6321,7 @@ _DEFINITIONS = [
             "not-evidence list",
         ),
         artifact_expectations=(
-            "hermes_ops_blueprint/v1 under .omh/hermes-ops/blueprints when a wrapper or CLI records it",
+            "prepared_native_blueprint/v1 under .omh/hermes-ops/blueprints when a wrapper or CLI records it",
             "recurring_surface_comparison/v1 with the recommended surface among cron, heartbeat, loop, and native goal, its stop condition, and a per-surface reason the other three were not chosen",
             "hermes_recurring_intent/v1 under .omh/hermes-ops/recurring-intents when the user asks to save the recurring work",
         ),
@@ -6331,6 +6331,11 @@ _DEFINITIONS = [
             "A saved recurring intent is paused; never report that an occurrence ran without a runtime run reference recorded against that exact intent revision.",
             "A prepared failure policy is not enforcement: OMH never starts, skips, queues, retries, or backfills an occurrence, and a policy decision is not proof the runtime honoured it.",
             "Route later coding, material generation, or report delivery into separate accepted handoffs when needed.",
+            (
+                "OMH creates, pauses, and removes no cron job: activation is the user's or Hermes' (`/blueprint`, an accepted "
+                f"Suggested Cron Job, or a `{NATIVE_CRON_TOOL}` create the user asked for in this conversation), and a job Hermes "
+                "lists is observed status, not proof that a run delivered."
+            ),
         ),
         quality_tier="ops-blueprint-gated",
         quality_bar=(
@@ -6338,11 +6343,20 @@ _DEFINITIONS = [
             "Name cadence/timezone uncertainty, delivery target, silence/no-change rule, selected skills, and context chain.",
             "When the recurring work is saved, say it is paused and name what activation needs: explicit overlap, missed-run, retry, backfill, and failure-pause decisions, an approval reference, and an observer from the approved runtime surface.",
             "Before activation, say what the policy does when a prior run is still active, when a window is missed, and when failures repeat; after a safety pause, report the applied policy and that resuming needs a policy revision.",
+            (
+                "Project the prepared native blueprint onto Hermes' own fields: the `metadata.hermes.blueprint` block (schedule, "
+                f"deliver, prompt, no_agent) and the matching `{NATIVE_CRON_TOOL}` create call when "
+                f"{native_tool_presence_clause(NATIVE_CRON_TOOL, code=True)}; report-on-change is a `[SILENT]` final reply, and "
+                "model or provider pins stay the user's."
+            ),
+            "Map overlap, missed-run, retry, backfill, and failure-pause onto what Hermes cron does natively and say which choices it cannot honour, so nobody is asked for a policy the runtime ignores; the map is in `references/recurring-surface-choice.md`.",
+            f"After activation, read status from Hermes, not from the blueprint: `{NATIVE_CRON_TOOL}` list (state, last_status, next_run_at), `hermes cron runs`, and open `hermes cron incidents` (detected or alerted).",
             "Expose whether a no-agent watchdog is a candidate without claiming it exists or ran.",
             "List host automation, gateway delivery, source retrieval, and no-agent execution as not evidence until observed.",
         ),
         why_this_exists=(
-            "`automation-blueprint` exists so Hermes can make recurring operational work feel native and scheduled "
+            "`automation-blueprint` exists so a recurring request reaches Hermes' own Automation Blueprints and cron with the "
+            "decisions they leave open (overlap, missed run, retry, backfill, failure pause, silence) settled first, "
             "without OMH becoming a hidden cron runner, transport bot, source retriever, or executor."
         ),
         do_not_use_when=(
@@ -6350,10 +6364,11 @@ _DEFINITIONS = [
             "The user needs a one-off report or deck; use `report-package` or `materials-package`.",
             "The user asks to review incident metrics once; use `reliability-review`.",
             "The user needs actual code changes; prepare a selected executor/runtime handoff after the blueprint or plan is accepted.",
+            "The person is inside Hermes' own /blueprint setup for one of its catalog automations; answer the questions that flow asks and let it create the job instead of preparing a second blueprint.",
         ),
         good_example=SkillExample(
             prompt="automation-blueprint every weekday run an uptime check and send a Slack digest only if status changes.",
-            expected="Prepare hermes_ops_blueprint/v1 with schedule intent, Slack delivery policy, silence rule, research/report skills, missing evidence, and next confirmation.",
+            expected="Draft prepared_native_blueprint/v1 with schedule intent, Slack delivery, a `[SILENT]` reply for unchanged runs, research/report skills, missing evidence, and the next confirmation.",
             why="The request is recurring, delivery-shaped, and must stay prepared until host automation and gateway delivery are observed.",
         ),
         bad_example=SkillExample(
