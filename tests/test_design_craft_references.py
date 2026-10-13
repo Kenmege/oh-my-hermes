@@ -89,24 +89,82 @@ class DesignSystemContractTests(unittest.TestCase):
     def test_the_gate_is_stated_before_the_structure(self) -> None:
         content = _reference("frontend", "references/design-system-contract.md")
         self.assertIn("no component code before `DESIGN.md` exists", content)
-        for heading in (
-            "Research Log",
-            "Atmosphere & Identity",
-            "Color",
-            "Typography",
-            "Spacing & Layout",
-            "Components",
-            "Motion & Interaction",
-            "Depth & Surface",
-            "Accessibility Constraints & Accepted Debt",
-        ):
-            self.assertIn(heading, content, heading)
+        self.assertLess(
+            content.index("no component code before `DESIGN.md` exists"),
+            content.index("## Body sections"),
+        )
         # Empty sections are decisions; existing UI without a contract stops
         # and asks; a code value outside the contract is drift.
         self.assertIn("silence is not a decision", _unwrapped(content))
         self.assertIn("Never decide silently", content)
         self.assertIn("drift", content)
         self.assertIn("observed-only", content)
+
+    def test_new_contracts_use_the_format_sections_in_the_format_order(self) -> None:
+        # Hermes bundles `design-md` for Google's DESIGN.md format under the
+        # same file name. OMH's own numbered layout gave the model two
+        # contradicting instructions for one file, so a new contract is the
+        # format: token front matter, the format's eight sections in the
+        # format's order, and OMH's sections beside them under names the
+        # format does not use (the format rejects a repeated heading).
+        content = _reference("frontend", "references/design-system-contract.md")
+        body = content.split("## Body sections", 1)[1].split("## A contract in the earlier OMH layout", 1)[0]
+        format_sections = (
+            "**Overview**",
+            "**Colors**",
+            "**Typography**",
+            "**Layout**",
+            "**Elevation & Depth**",
+            "**Shapes**",
+            "**Components**",
+            "**Do's and Don'ts**",
+        )
+        positions = [body.index(heading) for heading in format_sections]
+        self.assertEqual(positions, sorted(positions))
+        for extension in (
+            "**Signature Element** *(OMH)*",
+            "**Motion & Interaction** *(OMH)*",
+            "**Accessibility Constraints & Accepted Debt** *(OMH)*",
+            "**Research Log** *(OMH, greenfield builds)*",
+        ):
+            self.assertIn(extension, body, extension)
+        front_matter = _unwrapped(content.split("## Token front matter", 1)[1].split("## Body sections", 1)[0])
+        for token in ("`name:`", "`colors:`", "`primary`", "`omitted:`", "`{colors.primary}`", "`button-primary-hover`"):
+            self.assertIn(token, front_matter, token)
+
+    def test_the_earlier_numbered_layout_stays_valid_until_the_user_asks(self) -> None:
+        # Migration default: a file already written in the 0-8 layout is a
+        # contract the gate accepts; conversion happens only on request and
+        # moves decisions without making new ones.
+        content = _reference("frontend", "references/design-system-contract.md")
+        legacy = _unwrapped(content.split("## A contract in the earlier OMH layout", 1)[1].split("## Local reference data", 1)[0])
+        for heading in (
+            "0 Research Log",
+            "1 Atmosphere & Identity",
+            "2 Color",
+            "3 Typography",
+            "4 Spacing & Layout",
+            "5 Components",
+            "6 Motion & Interaction",
+            "7 Depth & Surface",
+            "8 Accessibility Constraints & Accepted Debt",
+        ):
+            self.assertIn(heading, legacy, heading)
+        self.assertIn("still a valid contract and satisfies the gate", legacy)
+        self.assertIn("Do not rewrite it into the format unasked", legacy)
+        self.assertIn("they are not contract failures", legacy)
+        self.assertIn("Convert only when the user asks", legacy)
+        self.assertIn("A conversion moves decisions and makes none", legacy)
+
+    def test_lint_is_evidence_only_from_a_run_and_file_mechanics_defer_to_design_md(self) -> None:
+        content = _unwrapped(_reference("frontend", "references/design-system-contract.md"))
+        self.assertIn("Hermes' bundled `design-md` skill is available", content)
+        self.assertIn("`npx -y @google/design.md lint DESIGN.md`", content)
+        self.assertIn("the lint status is `not_observed`", content)
+        self.assertIn("OMH itself runs no package and makes no network call", content)
+        self.assertIn("never for the rendered UI", content)
+        self.assertIn("google-labs-code/design.md@", content)
+        self.assertIn("NousResearch/hermes-agent@", content)
 
     def test_section_one_carries_the_taste_direction_the_rubric_judges_by(self) -> None:
         # The rubric judges inside the claimed direction, so the contract
@@ -179,7 +237,7 @@ class TasteFoundationsTests(unittest.TestCase):
         self.assertIn("A negation names what to stop; it never names where to go", content)
         self.assertIn("a palette as hex", content)
         self.assertIn("a typeface stack", content)
-        self.assertIn("`DESIGN.md` sections 2 and 3", content)
+        self.assertIn("Those land in `DESIGN.md` as `colors:`, `typography:`, `rounded:`, and `spacing:` tokens", content)
 
     def test_review_prompts_are_questions_not_a_second_ban_list(self) -> None:
         # These patterns are legitimate when something chose them, so they
@@ -420,6 +478,17 @@ class SkillBodyPointerTests(unittest.TestCase):
         self.assertIn("references/taste-foundations.md", body)
         self.assertIn("references/reference-token-extraction.md", body)
         self.assertIn("no component code before the contract exists", body)
+
+    def test_frontend_body_names_the_format_and_hands_file_mechanics_to_design_md(self) -> None:
+        # The two DESIGN.md contracts meet in the always-loaded body, so the
+        # body itself says which format a new file uses, that the earlier
+        # layout stays valid, and that Hermes' bundled skill owns authoring,
+        # lint, diff, and export.
+        body = _body("frontend")
+        self.assertIn("A new DESIGN.md is Google's DESIGN.md format", body)
+        self.assertIn("converted only when the user asks", body)
+        self.assertIn("Hermes' bundled `design-md` skill is available", body)
+        self.assertIn("lint is evidence only from a run that executed, otherwise `not_observed`", body)
 
     def test_frontend_body_carries_the_default_prior_and_the_override_test(self) -> None:
         # The prior and the "negations are not overrides" rule are wrong to
