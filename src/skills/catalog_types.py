@@ -1127,11 +1127,6 @@ _DEFAULT_GOOD_EXAMPLES = {
         expected="Prepare an advisor prompt, capture the response boundary, and summarize reusable critique.",
         why="The user wants outside review before committing to a direction.",
     ),
-    "skill": SkillExample(
-        prompt="$skill list installed OMH skills and show the catalog metadata for each workflow.",
-        expected="Manage or inspect the skill catalog without claiming runtime execution or external evidence.",
-        why="The request is operator skill management, not a user workflow run.",
-    ),
 }
 
 

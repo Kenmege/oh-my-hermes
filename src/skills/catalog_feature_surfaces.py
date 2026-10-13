@@ -1510,6 +1510,22 @@ _FEATURE_SURFACE_SKILLS = (
         boundary="A toolbelt readiness card is not MCP server installation, credential validation, API access, connector invocation, or successful workflow execution evidence.",
         good_prompt="toolbelt-readiness what MCP or CLI tools do I need for weekly Linear and GitHub triage?",
         bad_prompt="toolbelt-readiness claim Gmail access works without an observed credential check.",
+        extra_quality_bar=(
+            f"On Hermes, count a native tool as present when {native_tool_presence_clause('it')}: a tool deferred "
+            "behind tool_search is reached through `tool_call` and is never listed as missing, and a Hermes version "
+            "number never decides presence. Present is not authorized or working.",
+        ),
+        why_this_exists=(
+            "`toolbelt-readiness` exists so the tools, CLIs, credentials, and connectors a workflow needs are listed "
+            "as present, missing, optional, or unsafe before the work starts, instead of failing midway on a tool "
+            "nobody checked."
+        ),
+        do_not_use_when=(
+            "One named integration needs assessing end to end before adoption; use `external-connector-readiness`.",
+            "The question is which coding owner should run the work; use `executor-runtime-readiness`.",
+            "The user wants a tool installed, a credential validated, or a connector called now; the card names that "
+            "step and who runs it, and performs none of them.",
+        ),
         situations=(
             "which mcp integrations does this need",
             "which cli is missing for this",
@@ -1640,6 +1656,22 @@ _FEATURE_SURFACE_SKILLS = (
             "budget threshold each level checks against before recommending any optimization signal.",
             "Never recommend logging raw prompts, responses, or secret values into telemetry; counts, lengths, "
             "hashes, and key-set booleans carry the signal without the leak.",
+            "On Hermes, token and cost figures come from recorded usage -- the cost receipt `omh_run_summary` "
+            "returns for this conversation, which keeps Hermes' own accounting apart from executor-reported fanout "
+            "units, or the person's `/insights` across sessions -- labeled observed: a conversation with no "
+            "recorded tokens is not_observed, never zero, and provider billing stays not_observed.",
+        ),
+        why_this_exists=(
+            "`ops-observability-card` exists so service, loop, and automation operations get one board where each "
+            "cost, latency, token, failure-mode, and metric-provider figure is marked observed or prepared, instead "
+            "of an improvised dashboard."
+        ),
+        do_not_use_when=(
+            "The user asks what their own Hermes conversation has used or cost; Hermes' own /usage and /insights "
+            "answer that, and the omh_run_summary tool relays this conversation's recorded usage.",
+            "The user wants one run's timing and context-budget report; use `run-efficiency`.",
+            "The user asks OMH to sign in to a metric provider, billing console, or dashboard and pull live "
+            "figures; the card reads only supplied payloads and Hermes' own records.",
         ),
         situations=(
             "how much are we spending on tokens",

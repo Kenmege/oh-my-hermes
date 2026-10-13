@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 import hashlib
 import json
@@ -18,6 +19,15 @@ _INPUT_KEYS = {"schema_version", "run_id", "context_budget", "observations"}
 _OBSERVATION_KEYS = {"metric", "value", "source_ref"}
 _METRICS = frozenset({"wall_clock_duration_ms", "tool_duration_ms", "context_bytes"})
 _RUN_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
+# The cost receipt's sources Hermes itself accounts for in state.db. Its
+# `fanout_units` carry what each executor reported, which is not host usage.
+_HOST_USAGE_SOURCES = ("session", "delegated_children", "kanban_workers")
+_HOST_USAGE_BUCKET_KEYS = ("count", "cost_usd", "priced_tokens", "unpriced_tokens")
+HOST_USAGE_CLAIM_BOUNDARY = (
+    "Hermes' own state.db accounting for the named session's conversation, its delegated children, and its kanban "
+    "workers, read through the cost receipt; fanout units an executor reported are left out. Tokens with no recorded "
+    "price are not in the cost, and none of it is a provider invoice."
+)
 
 
 @dataclass(frozen=True)
@@ -66,8 +76,19 @@ def parse_run_efficiency_input(raw: object) -> RunEfficiencyInput:
     return RunEfficiencyInput(run_id, budget, observations)
 
 
-def build_run_efficiency_report(value: RunEfficiencyInput) -> dict[str, object]:
+def build_run_efficiency_report(
+    value: RunEfficiencyInput, *, cost_receipt: Mapping[str, object] | None = None
+) -> dict[str, object]:
+    """The report; ``cost_receipt`` is the named Hermes session's ``omh_cost_receipt/v1``, when one was read."""
     budget = value.context_budget
+    host_usage = _host_usage(cost_receipt)
+    not_observed: dict[str, object] = {
+        "provider": {"status": "not_observed"},
+        "billing": {"status": "not_observed"},
+        "cron": {"status": "not_observed"},
+    }
+    if host_usage["status"] != "observed":
+        not_observed["host"] = {"status": "not_observed"}
     return {
         "schema_version": RUN_EFFICIENCY_REPORT_SCHEMA_VERSION,
         "run_id": value.run_id,
@@ -75,16 +96,57 @@ def build_run_efficiency_report(value: RunEfficiencyInput) -> dict[str, object]:
         "context_utilization_ratio": f"{budget.emitted_bytes / budget.budget_bytes:.6f}",
         "surface_counts": dict(budget.surface_counts),
         "observations": [observation.to_dict() for observation in value.observations],
-        "not_observed": {
-            "provider": {"status": "not_observed"},
-            "billing": {"status": "not_observed"},
-            "cron": {"status": "not_observed"},
-            "host": {"status": "not_observed"},
-        },
+        "host_usage": host_usage,
+        "not_observed": not_observed,
         "claim_boundary": (
-            "Run-efficiency reports are OMH-local metadata prepared from supplied observations, not provider, "
-            "billing, cron, or host evidence. They do not intercept tools, collect sessions, or infer costs."
+            "Run-efficiency reports are OMH-local metadata prepared from supplied observations; `host_usage` is "
+            "Hermes' own recorded accounting for a named session, taken from its cost receipt and observed only when "
+            "it recorded tokens. Neither is provider billing, cron, or host-load evidence, and nothing is intercepted "
+            "or estimated."
         ),
+    }
+
+
+def _host_usage(receipt: Mapping[str, object] | None) -> dict[str, object]:
+    """Project the Hermes-accounted part of the session's cost receipt; no recorded tokens stays not_observed, never zero."""
+    if receipt is None:
+        return {"status": "not_observed", "reason": "no Hermes session named"}
+    session_id = receipt.get("session_id")
+    if receipt.get("status") != "observed":
+        return {"status": "not_observed", "session_id": session_id, "reason": receipt.get("reason")}
+    sources = receipt.get("sources")
+    sources = sources if isinstance(sources, Mapping) else {}
+    buckets = {
+        name: sources[name] if isinstance(sources.get(name), Mapping) else {} for name in _HOST_USAGE_SOURCES
+    }
+    priced = sum(int(bucket.get("priced_tokens") or 0) for bucket in buckets.values())
+    unpriced = sum(int(bucket.get("unpriced_tokens") or 0) for bucket in buckets.values())
+    missing = [
+        item
+        for item in receipt.get("missing") or []
+        if isinstance(item, Mapping) and item.get("source") in _HOST_USAGE_SOURCES
+    ]
+    if not (priced or unpriced):
+        return {
+            "status": "not_observed",
+            "session_id": session_id,
+            "reason": "Hermes recorded no token usage for this session",
+            "missing": missing,
+        }
+    costs = [float(bucket["cost_usd"]) for bucket in buckets.values() if bucket.get("cost_usd") is not None]
+    return {
+        "status": "observed",
+        "source": receipt.get("schema_version"),
+        "session_id": session_id,
+        "sources": {
+            name: {key: bucket.get(key) for key in _HOST_USAGE_BUCKET_KEYS} for name, bucket in buckets.items()
+        },
+        "observed_cost_usd": round(sum(costs), 6) if costs else None,
+        "priced_tokens": priced,
+        "unpriced_tokens": unpriced,
+        "missing": missing,
+        "truncated": bool(receipt.get("truncated")),
+        "claim_boundary": HOST_USAGE_CLAIM_BOUNDARY,
     }
 
 

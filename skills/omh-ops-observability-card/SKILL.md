@@ -16,13 +16,13 @@ This is a Hermes-native `ops-observability-card` workflow skill.
 
 ## Why This Exists
 
-`ops-observability-card` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+`ops-observability-card` exists so service, loop, and automation operations get one board where each cost, latency, token, failure-mode, and metric-provider figure is marked observed or prepared, instead of an improvised dashboard.
 
 ## Do Not Use When
 
-- The request is already handled by a narrower explicit skill with stronger evidence.
-- The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-- The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+- The user asks what their own Hermes conversation has used or cost; Hermes' own /usage and /insights answer that, and the omh_run_summary tool relays this conversation's recorded usage.
+- The user wants one run's timing and context-budget report; use `run-efficiency`.
+- The user asks OMH to sign in to a metric provider, billing console, or dashboard and pull live figures; the card reads only supplied payloads and Hermes' own records.
 
 ## Examples
 
@@ -77,6 +77,7 @@ Quality bar:
 - When advising what to record per model call, require the five answers - which model, how long, how many tokens in and out, whether it succeeded, and why it failed - with streaming calls adding time-to-first-token; the attribute tiers live in `omh-agent-ops-review/references/instrumentation-ladder.md`.
 - Aggregate cost at the four levels - per call, per agent run, per session, per user - and name the budget threshold each level checks against before recommending any optimization signal.
 - Never recommend logging raw prompts, responses, or secret values into telemetry; counts, lengths, hashes, and key-set booleans carry the signal without the leak.
+- On Hermes, token and cost figures come from recorded usage -- the cost receipt `omh_run_summary` returns for this conversation, which keeps Hermes' own accounting apart from executor-reported fanout units, or the person's `/insights` across sessions -- labeled observed: a conversation with no recorded tokens is not_observed, never zero, and provider billing stays not_observed.
 
 Handoff policy:
 

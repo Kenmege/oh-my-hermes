@@ -4086,7 +4086,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Why this exists: `context-budget-review` ports ECC's context-budget and token-budget instincts into OMH as a compactness gate that protects long-running work without redefining success around a smaller task.
 - Use when: Use before long-running research, coding, review, or multi-agent work when context, token, cost, or summary drift could break quality.
 - Do not use when:
-  - The user asks for live token/cost telemetry; use `ops-observability-card`.
+  - The user asks only what this Hermes session has used or cost so far; Hermes' own /usage and /status show it, and the omh_run_summary tool relays this conversation's recorded usage.
   - The user asks to continue a loopable goal; use `loop` unless budget planning is the explicit blocker.
   - The task is a short one-step answer with no meaningful context risk.
 - Strong routing signals: `context-budget-review`, `context budget review`, `context budget`, `token budget review`, `token budget`, `prompt budget`, `prompt caching`, `prompt cache`, `cache hygiene`, `context compaction`, `compact context`, `too much context`, `context window`, `running out of context`, `hand off to a new session`, `summarization checkpoint`, `budget this task`, `컨텍스트 예산`, `토큰 예산`, `컨텍스트 압축`, `요약 체크포인트`
@@ -4105,6 +4105,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Use bounded copy while preserving the full objective and evidence gaps.
   - Count the must-keep pack by item class, so a replaced pack reports which class lost entries instead of only that a digest moved; a pack that recorded no classes reports the comparison unavailable and never reports zero items.
   - Keep prompt-prefix placement cache-stable: fixed section order, volatile bytes never above the fold, mid-run changes as appended messages never system-prompt mutations — load `references/cache-placement.md` for the placement rules.
+  - On Hermes, bind the summarization checkpoint to Hermes' own compaction: render the must-keep classes as one short focus topic and hand the person `/compress <focus>` to run when the checkpoint is due. OMH never compresses, and a compaction is observed only from Hermes' own reply to that command.
+  - On Hermes, offer `/compress --preview <focus>` only in the classic CLI or on a messaging platform, and count it as a preview only when the reply says `Preview — no changes made.`: a modern TUI whose `/compress` does not parse the flag compresses for real with the flag in its focus. Context occupancy is the person's `/status` reading when shared, otherwise an estimate.
 - Completion checklist:
   - The run or workflow scope, metric window, failure modes, and cost/latency boundary are named.
   - Local telemetry, provider truth, billing truth, and completion evidence are separate states.
@@ -5573,30 +5575,33 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
 - Handoff policy: Run directly in Hermes/runtime state; never delegate cancellation to a coding executor.
-- Why this exists: `cancel` exists to keep `operator` work explicit, evidence-backed, and inside the Hermes/executor boundary instead of relying on ad hoc chat narration.
+- Why this exists: `cancel` exists so a request to stop ends the right thing: OMH clears the state this session owns, and work the host owns stops through the person's own host command, so nothing reads as stopped before a record or the host's own reply says it is.
 - Use when: Use to cleanly end active adapted workflow state.
 - Do not use when:
-  - The request is casual chat, a status-only acknowledgement, or another workflow has stronger routing evidence.
-  - The user needs implementation, review, CI, merge, or external publishing evidence that has not been delegated or observed.
+  - The workflow finished and its outcome should be kept; record it with omh state finish instead of clearing it.
+  - The user wants to see what is still running rather than stop it; use `running-work-board`.
+  - The user means cancelling something in their own product or accounts, such as an order, a subscription, or a meeting, rather than OMH or host work.
 - Strong routing signals: `cancel`, `$cancel`, `stop the workflow`, `abort the run`, `cancel the loop`
 - Good example:
-  - Prompt: cancel: handle a operator request that needs explicit evidence boundaries and a clear stop condition.
-  - Expected behavior: Run `cancel` only after naming the target, evidence boundary, and stop condition.
-  - Why: The request matches the catalog use case and keeps observed evidence separate from prepared guidance.
+  - Prompt: cancel the loop and stop everything that is running
+  - Expected behavior: Clear this session's OMH state with its own commands, name the host's stop commands (on Hermes, `/loop stop` and `/stop`) for the person to run, and report each OMH clear from its result and each host stop as requested.
+  - Why: The request spans OMH state and host-owned work, which stop through different owners.
 - Bad example:
-  - Prompt: cancel: treat casual chat or unaccepted work as if this workflow already produced verified results.
-  - Expected behavior: Ask a clarification question or route to a narrower workflow instead of forcing `cancel`.
-  - Why: The request lacks the required inputs or would overclaim work that Hermes did not observe.
+  - Prompt: cancel: kill the background processes yourself and say everything stopped
+  - Expected behavior: Leave the processes to the person's own stop command (on Hermes, `/stop`), and report them stopped only after the host's own reply.
+  - Why: OMH never ends a host process, and a requested stop is not an observed one.
 - Quality bar:
-  - Name the workflow target, constraints, validation evidence, and stop condition.
-  - Separate Hermes guidance from executor or wrapper behavior unless evidence proves the step happened.
+  - Name each thing to stop and its owner: OMH state (workflow lifecycle, plan checklist, OMH goal) or host work (the running turn, background processes, delegations, a Hermes /loop or /goal).
+  - Clear OMH state with its own commands: `omh state clear --workflow <name>` (`--session-ref` when session-bound), `omh_todo action=clear`, `omh goal cancel --goal <id>`; an OMH loop stops through its linked goal, and one without a goal has no cancel record.
+  - Hand host work to the person's own stop command; on Hermes `/stop` (background processes, plus background delegations in the classic CLI; the running turn on a messaging platform), `/loop stop`, `/goal pause` or `/goal clear`, `/heartbeat clear`, `/pause` (all new work on a gateway).
+  - Report an OMH clear as done only from its command result, and a host stop as requested until the host's own reply to it is seen.
 - Completion checklist:
-  - The local command, managed path, config surface, and state artifact inspected are named.
-  - Blocking issues, warnings, and optional surfaces are separated.
-  - The next repair action is explicit and does not claim a reload or runtime observation.
+  - Every stopped item is named with its owner: OMH state or host work.
+  - Each OMH clear cites its command result; each host stop stays requested until the host's reply is seen.
+  - Nothing outside this session's own state was cleared, and no host process was ended by OMH.
 - Recovery notes:
-  - If a managed path or config key is missing, route to setup/update repair instead of editing hidden state.
-  - If a reload or plugin load was not observed, keep the diagnostic result as local health evidence only.
+  - If a session-bound clear is refused for a missing --session-ref, report the refusal rather than clearing without it.
+  - If the host's reply to a stop never appears, keep the stop requested and ask the person what it said.
 - Required inputs:
   - active workflow state
   - cancellation intent
@@ -5606,8 +5611,8 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Artifact expectations:
   - state clear record when state exists
 - Safety rules:
-  - Do not imply hidden Hermes runtime behavior.
-  - Use the smallest verification that can prove the claim.
+  - Never end, kill, or signal a host process, background job, or delegation from this workflow, through the terminal or any other tool (on Hermes, `process_manage` included); that stop is the person's own host command.
+  - Clear only what this session owns; another session's plan, workflow state, or goal stays as it is.
 
 ### skill
 
@@ -5625,30 +5630,33 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
 - Handoff policy: Use Hermes for inventory and guidance; delegate only repository code changes to the selected coding executor.
-- Why this exists: `skill` exists to keep `operator` work explicit, evidence-backed, and inside the Hermes/executor boundary instead of relying on ad hoc chat narration.
+- Why this exists: `skill` exists to route listing, reading, searching, installing, and editing skills to Hermes' own skill tools and commands, and to keep OMH-managed skills, whose bodies OMH generates, out of hand edits.
 - Use when: Use for local skill listing, search, add, remove, or edit tasks.
 - Do not use when:
-  - The request is casual chat, a status-only acknowledgement, or another workflow has stronger routing evidence.
-  - The user needs implementation, review, CI, merge, or external publishing evidence that has not been delegated or observed.
+  - The user wants an OMH capability family turned on or off; use `capability-toggle`.
+  - The user wants a public skill found and vetted before installing it; use `skill-scout`.
+  - The user wants skill health checked: stale surfaces, failure patterns, or pending amendments; use `skill-health`.
 - Strong routing signals: `skill`, `$skill`, `skills`, `manage skills`
 - Good example:
-  - Prompt: $skill list installed OMH skills and show the catalog metadata for each workflow.
-  - Expected behavior: Manage or inspect the skill catalog without claiming runtime execution or external evidence.
-  - Why: The request is operator skill management, not a user workflow run.
+  - Prompt: which skills do I have, and add one for our release checklist
+  - Expected behavior: List with `skills_list`, read close matches with `skill_view`, create the new skill with `skill_manage` under a name of the person's own, and report it from the tool result.
+  - Why: Listing and creating a person's own skill are Hermes' native skill tools' job.
 - Bad example:
-  - Prompt: skill: treat casual chat or unaccepted work as if this workflow already produced verified results.
-  - Expected behavior: Ask a clarification question or route to a narrower workflow instead of forcing `skill`.
-  - Why: The request lacks the required inputs or would overclaim work that Hermes did not observe.
+  - Prompt: skill: patch omh-plan's SKILL.md with skill_manage so it asks fewer questions
+  - Expected behavior: Decline the in-place edit and offer a separately named skill or an OMH catalog change instead.
+  - Why: An OMH-managed body is generated from OMH's catalog, so the patch would not carry into the next generation.
 - Quality bar:
-  - Name the workflow target, constraints, validation evidence, and stop condition.
-  - Separate Hermes guidance from executor or wrapper behavior unless evidence proves the step happened.
+  - Read skills with Hermes' own tools: `skills_list` to list them and `skill_view` to read a skill or one of its files.
+  - Create, edit, or delete a skill of the person's own with `skill_manage` when `skill_manage` is in your tool list or tool_search finds it; otherwise hand the person the exact change.
+  - Registry search, install, removal of a hub-installed skill, and per-platform hiding are the person's own `hermes skills search`, `install`, `uninstall`, and `config` in a terminal.
+  - Never edit or delete an OMH-managed skill (an `omh-*` or `ulw-*` name) with `skill_manage`: OMH generates its body from its catalog, so the change does not carry into the next generation; put the lesson in a separately named skill instead.
 - Completion checklist:
-  - The local command, managed path, config surface, and state artifact inspected are named.
-  - Blocking issues, warnings, and optional surfaces are separated.
-  - The next repair action is explicit and does not claim a reload or runtime observation.
+  - Every listed or read skill came from `skills_list` or `skill_view`, not a guessed path.
+  - Each create, edit, or delete is reported from `skill_manage`'s result, and no OMH-managed skill was edited.
+  - Search, install, uninstall, and hiding are named as the person's own `hermes skills` commands.
 - Recovery notes:
-  - If a managed path or config key is missing, route to setup/update repair instead of editing hidden state.
-  - If a reload or plugin load was not observed, keep the diagnostic result as local health evidence only.
+  - If `skill_manage` is absent from this session, give the person the exact change instead of writing the skill through another tool.
+  - If the person wants an OMH-managed skill changed, offer a separately named companion skill or an OMH catalog change, never an in-place edit.
 - Required inputs:
   - skill action
   - target skill name or directory
@@ -5658,8 +5666,8 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Artifact expectations:
   - manifest update when managed skills change
 - Safety rules:
-  - Do not imply hidden Hermes runtime behavior.
-  - Use the smallest verification that can prove the claim.
+  - Write no Hermes config: hiding, enabling, or installing a skill is the person's own command.
+  - Report a skill changed only from `skill_manage`'s result or a re-read with `skill_view`.
 
 ### doctor
 
@@ -5741,6 +5749,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user wants to run the workflow a family owns rather than change whether that family is offered.
   - The user is asking to build an on/off switch inside their own product.
   - The user wants OMH removed entirely, which is the uninstall path rather than a capability policy change.
+  - The user wants one skill hidden on one messaging platform or everywhere; that is Hermes' own hermes skills config, an interactive command the person runs in a terminal, and OMH writes no Hermes config.
 - Strong routing signals: `capability-toggle`, `capability policy`, `disable memory`, `enable memory`, `disable coding orchestration`, `disable a capability family`, `enable a capability family`, `메모리 기능 꺼줘`, `메모리 기능 끄기`, `메모리 기능 켜줘`, `메모리 비활성화`, `메모리 관리 비활성화`, `코딩 오케스트레이션 비활성화`, `코딩 오케스트레이션 꺼줘`, `기능 비활성화`, `기능 활성화`
 - Good example:
   - Prompt: turn off memory, I already run my own memory system
@@ -5790,7 +5799,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Compatibility alias: `false`
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
-- Handoff policy: Read local dispatch and progress artifacts directly and render the board; never dispatch or modify a unit from this workflow.
+- Handoff policy: Read local dispatch and progress artifacts and, on Hermes, `omh_hud`'s delegate and kanban rows, and render the board; never dispatch, stop, or modify a unit from this workflow.
 - Why this exists: `running-work-board` exists because multi-session coding work was invisible: the runtime was tracked but the model was dropped, token counts had no write site at all, and a blocking dispatch could not report that it was still running. The board answers which model on which runtime, or says unknown.
 - Use when: Use when the user asks what coding work is running right now -- which unit, which runtime, which model, how long, how many tokens -- rather than asking to start, plan, or review work.
 - Do not use when:
@@ -5814,15 +5823,19 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Token counts and session references are observed values or the literal unknown, never estimates.
   - Elapsed time for an unfinished unit comes from its start marker, which cannot prove the unit is still alive.
   - The board is labelled observed activity, not result, verification, review, CI, or merge evidence.
+  - On Hermes, `delegate_task` children and kanban workers of this conversation come from `omh_hud` (its `subagents` rows and `kanban` block, read from Hermes' own records) beside the OMH units, each labelled by source; `/agents` is the person's own Hermes list of running agents and tasks.
 - Recovery notes:
   - If no units are found, say so plainly rather than implying nothing ever ran.
+  - If `omh_hud` is not available, say delegate children and kanban workers were not read rather than implying none are running.
   - If a marker is stale because a process died, report it as observed-start-without-end instead of claiming the unit is running.
   - If tokens are unknown for a runtime with no structured output, say the runtime does not report them.
 - Required inputs:
   - local coding artifacts
+  - on Hermes, this conversation's `omh_hud` rows
 - Expected outputs:
   - per-unit runtime and model
   - observed tokens and elapsed
+  - Hermes delegate children and kanban workers, labelled by source
   - explicit unknowns
 - Artifact expectations:
   - metadata-only status board projection from local artifacts
@@ -9707,12 +9720,12 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when users ask which plugins, MCP servers, CLIs, APIs, credentials, or external connectors a workflow needs before it can run.
 - Handoff policy: Keep this as Hermes-facing orchestration guidance first. Prepare executor, connector, gateway, or host-runtime handoff only when the user accepts that next step and observed evidence can be recorded.
-- Why this exists: `toolbelt-readiness` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+- Why this exists: `toolbelt-readiness` exists so the tools, CLIs, credentials, and connectors a workflow needs are listed as present, missing, optional, or unsafe before the work starts, instead of failing midway on a tool nobody checked.
 - Use when: Use when a workflow depends on MCP, CLI, API credentials, or connectors and Hermes must show installed, missing, optional, and unsafe tools.
 - Do not use when:
-  - The request is already handled by a narrower explicit skill with stronger evidence.
-  - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-  - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+  - One named integration needs assessing end to end before adoption; use `external-connector-readiness`.
+  - The question is which coding owner should run the work; use `executor-runtime-readiness`.
+  - The user wants a tool installed, a credential validated, or a connector called now; the card names that step and who runs it, and performs none of them.
 - Strong routing signals: `toolbelt-readiness`, `mcp readiness`, `tool readiness`, `plugin readiness`, `connector readiness`, `needed mcp`, `api credential`, `missing cli`, `missing plugin`, `missing connector`, `external connector`, `external tool`, `mcp server`, `mcp servers`, `mcp tool`, `mcp tools`, `toolbelt`, `github cli`, `linear cli`, `jira cli`, `notion connector`, `google drive connector`, `gmail connector`, `slack api`, `browser tool`, `image generator connector`, `mcp`, `credential`, `외부 도구`, `외부 연결`, `커넥터`, `플러그인`, `자격증명`
 - Good example:
   - Prompt: toolbelt-readiness what MCP or CLI tools do I need for weekly Linear and GitHub triage?
@@ -9726,6 +9739,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Name the user-facing workflow objective, required context, next action, and stop condition.
   - Separate prepared guidance from observed platform, runtime, connector, file, memory, or delivery evidence.
   - Expose missing tools, credentials, targets, or observations as user-visible gaps.
+  - On Hermes, count a native tool as present when it is in your tool list or tool_search finds it: a tool deferred behind tool_search is reached through `tool_call` and is never listed as missing, and a Hermes version number never decides presence. Present is not authorized or working.
 - Completion checklist:
   - Confirm the workflow target, evidence boundary, and stop condition are named.
   - Report which outputs are prepared, observed, blocked, or missing.
@@ -9830,12 +9844,12 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when operators need an evidence-bounded command-board for telemetry, supplied metric-provider payloads, and service-quality gaps.
 - Handoff policy: Keep this as Hermes-facing orchestration guidance first. Prepare executor, connector, gateway, or host-runtime handoff only when the user accepts that next step and observed evidence can be recorded.
-- Why this exists: `ops-observability-card` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+- Why this exists: `ops-observability-card` exists so service, loop, and automation operations get one board where each cost, latency, token, failure-mode, and metric-provider figure is marked observed or prepared, instead of an improvised dashboard.
 - Use when: Use when automation, loops, gateway work, executor handoffs, or service operations need a safe command-board for cost, latency, token, history, failure-mode, supplied metric-provider, and service-quality visibility.
 - Do not use when:
-  - The request is already handled by a narrower explicit skill with stronger evidence.
-  - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-  - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+  - The user asks what their own Hermes conversation has used or cost; Hermes' own /usage and /insights answer that, and the omh_run_summary tool relays this conversation's recorded usage.
+  - The user wants one run's timing and context-budget report; use `run-efficiency`.
+  - The user asks OMH to sign in to a metric provider, billing console, or dashboard and pull live figures; the card reads only supplied payloads and Hermes' own records.
 - Strong routing signals: `ops-observability-card`, `observability card`, `operations command board`, `ops command board`, `service quality board`, `service quality`, `external metric provider`, `metric provider`, `prometheus metrics`, `grafana metrics`, `cost telemetry`, `latency telemetry`, `token telemetry`, `run history`, `loop telemetry`, `failure mode`, `monitor tokens`, `service health`, `slo dashboard`, `비용`, `토큰`, `지연시간`, `관측성`, `운영 지휘판`, `서비스 품질`, `메트릭`, `프로메테우스`, `그라파나`
 - Good example:
   - Prompt: ops-observability-card show token, cost, latency, supplied Prometheus/Grafana metrics, and missing service-quality evidence for this loop.
@@ -9852,6 +9866,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - When advising what to record per model call, require the five answers - which model, how long, how many tokens in and out, whether it succeeded, and why it failed - with streaming calls adding time-to-first-token; the attribute tiers live in `omh-agent-ops-review/references/instrumentation-ladder.md`.
   - Aggregate cost at the four levels - per call, per agent run, per session, per user - and name the budget threshold each level checks against before recommending any optimization signal.
   - Never recommend logging raw prompts, responses, or secret values into telemetry; counts, lengths, hashes, and key-set booleans carry the signal without the leak.
+  - On Hermes, token and cost figures come from recorded usage -- the cost receipt `omh_run_summary` returns for this conversation, which keeps Hermes' own accounting apart from executor-reported fanout units, or the person's `/insights` across sessions -- labeled observed: a conversation with no recorded tokens is not_observed, never zero, and provider billing stays not_observed.
 - Completion checklist:
   - The run or workflow scope, metric window, failure modes, and cost/latency boundary are named.
   - Local telemetry, provider truth, billing truth, and completion evidence are separate states.
@@ -10450,7 +10465,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### run-efficiency
 
-[omh] Run efficiency and context usage report: report supplied local run efficiency while provider and host data stay unobserved.
+[omh] Run efficiency and context usage report: report supplied local run efficiency while provider data stays unobserved.
 
 - Category: `observability`
 - Phase: `run-efficiency`
@@ -10462,14 +10477,14 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Docs visibility: `primary_workflow_skill`
 - Compatibility alias: `false`
 - Lifecycle stage: `canonical`
-- Preferred usage: Use as an installed Hermes workflow skill to render bounded local run efficiency from supplied metadata and keep provider/host gaps visible.
+- Preferred usage: Use as an installed Hermes workflow skill to render bounded local run efficiency from supplied metadata, with Hermes' recorded usage for a named session, and keep provider and billing gaps visible.
 - Handoff policy: Keep this as Hermes-facing orchestration guidance first. Prepare executor, connector, gateway, or host-runtime handoff only when the user accepts that next step and observed evidence can be recorded.
-- Why this exists: `run-efficiency` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
-- Use when: Use for a bounded local efficiency report from supplied metadata with provider and host gaps explicit.
+- Why this exists: `run-efficiency` exists so a question about how a run spent its time, tools, and context gets the supplied timings and context budget, plus what Hermes itself recorded for a named session's tokens and cost, instead of figures a model guesses.
+- Use when: Use for a bounded local efficiency report from supplied metadata with provider gaps explicit.
 - Do not use when:
-  - The request is already handled by a narrower explicit skill with stronger evidence.
-  - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-  - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+  - The user asks only what this Hermes conversation has used or cost so far; Hermes' own /usage answers that, and the omh_run_summary tool relays this conversation's recorded usage.
+  - The user wants service latency, uptime, error rates, or supplied metric-provider figures; use `ops-observability-card`.
+  - The user wants a provider invoice or quota truth; no OMH report observes either, so name the provider's own console as the source.
 - Strong routing signals: `run-efficiency`, `run efficiency report`, `local run efficiency`, `context utilization`, `tool duration report`, `실행 효율 리포트`, `컨텍스트 사용량`, `도구 지연 시간`
 - Good example:
   - Prompt: Show the local run efficiency report from this run's supplied context budget and timings.
@@ -10485,7 +10500,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Expose missing tools, credentials, targets, or observations as user-visible gaps.
 - Completion checklist:
   - The run ID, context budget, surfaces, and supplied observations are explicit.
-  - Provider billing, cron, and host claims remain not_observed unless separately recorded.
+  - Host usage is Hermes' recorded accounting for the named session, observed only when it recorded tokens; provider billing and cron stay not_observed.
   - The report does not intercept, route, or execute provider or host work.
 - Recovery notes:
   - If provider metrics are unavailable, report only local metadata and mark provider truth not_observed.
@@ -10498,12 +10513,14 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Expected outputs:
   - run_efficiency_report/v1
   - context utilization
-  - not_observed provider and host gaps
+  - host_usage: Hermes' recorded usage for a named session, or not_observed
+  - not_observed provider and billing gaps
 - Artifact expectations:
   - run_efficiency_report/v1 metadata-only report
   - supplied `session_activity_receipt/v1` when available; unavailable metrics stay unavailable, never zero
+  - `host_usage` from the Hermes-accounted part of the cost receipt `omh_run_summary` returns (the session, its delegated children, and its kanban workers; `--hermes-session`, and a local Hermes terminal holds the id in `$HERMES_SESSION_ID`): observed only when Hermes recorded tokens for it; no session row or no tokens stays not_observed, never zero
 - Safety rules:
-  - Run efficiency is supplied OMH-local metadata, not provider, billing, cron, or host evidence.
+  - Run efficiency is supplied OMH-local metadata plus, for a named Hermes session, Hermes' own recorded usage; it is not provider billing, cron, or host-load evidence.
   - Do not claim connector, gateway, runtime, file generation, memory mutation, or host automation evidence from prepared guidance.
 
 ### provider-profile-posture
@@ -14990,6 +15007,7 @@ Render a deterministic report from supplied local run metadata.
   - context budget
   - surface counts
   - supplied observations
+  - optional Hermes session id
 - Outputs:
   - run_efficiency_report/v1
   - context utilization
@@ -15014,7 +15032,7 @@ Render a deterministic report from supplied local run metadata.
 - Delegation expectation: Record this harness as Hermes-retained orchestration; external runtime/platform/file/memory/connector evidence requires a separate observed artifact.
 - Privacy default: `metadata_only`
 - Overclaim guards:
-  - A run efficiency report is not provider billing, cron, host, or performance proof beyond supplied local metadata.
+  - A run efficiency report is not provider billing, cron, host-load, or performance proof beyond supplied local metadata and Hermes' recorded usage for a named session.
 - Fallback: If a required target, credential, runtime, or observation is missing, show a blocker or confirmation action instead of claiming completion.
 
 ### provider-profile-posture
