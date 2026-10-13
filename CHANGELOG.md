@@ -11,30 +11,39 @@ All notable changes will be documented here.
   that can show it, and judge that result by its field rather than its exit
   code: the render and recalculation scripts exit 0 with `"rendered": false`
   or `"recalculated": false` when the renderer is missing, and that leaves the
-  rung not observed. Slide or page images count only after each one was
-  inspected, `docx_validate.py` is a package health check rather than a
-  render, and a producer's `"ok": true` is never the QA verdict.
+  rung not observed. Other observed evidence for a rung still counts. Slide
+  or page images count only after each one was inspected, a slide render goes
+  into a fresh directory and must match the slide count, a recalculation
+  writes to a copy, `docx_validate.py` is a package health check rather than
+  a render, and a producer's `"ok": true` is never the QA verdict.
   `deliverable-package` reports a file as generated, approved, or attached
   only from that state's own evidence, and states its own purpose and
   Do-Not-Use instead of the shared generic lines. `report-package` names the
-  bundled `powerpoint` skill as the tool that builds the binary deck.
+  bundled `powerpoint` skill as a tool that builds the binary deck.
   `img-summary` reports the image generator as connected when the session has
   `image_generate`, which Hermes offers only while an image backend is
-  configured, and never from a version or a key. `visual-qa` takes its own
+  configured, and never from a version or a key. `visual-qa` can take its own
   captures through `browser_vision` when the session has it, binds each one
   to its screenshot path, URL, read-back viewport width, and target revision,
-  sets viewports through `browser_cdp` when a CDP endpoint is configured
-  (otherwise a viewport it cannot set is a named blocker), and reads the
-  console after every step; open-ended exploratory web QA goes to Hermes'
-  bundled `dogfood` skill, whose report is a set of findings and never a
-  PASS. `ultraqa` runs web scenarios the same way and states its own purpose
-  and Do-Not-Use. `deploy-and-monitor` prepares a watchlist that must keep
+  scores a round from the image itself rather than an auxiliary model's
+  description, sets viewports through `browser_cdp` when a CDP endpoint is
+  configured, and reads the console after every step; a viewport it cannot
+  set is a named blocker only for its own captures, so captures from the
+  wrapper, executor, or user still count, and the portable body states these
+  rules without Hermes tool names. Open-ended exploratory web QA goes to
+  Hermes' bundled `dogfood` skill, whose report is a set of findings and
+  never a PASS. `ultraqa` runs web scenarios the same way, against the target
+  the user named, with a submit, purchase, send, or delete on a live surface
+  waiting for the user's approval, and states its own purpose and
+  Do-Not-Use. `deploy-and-monitor` prepares a watchlist that must keep
   running as a native blueprint with a monitor-mode cron job, which the user
-  or Hermes activates; a silent tick is not health. `operating-rhythm` and
-  `meeting-brief` record each action item's outcome, owner, due date,
-  dependency, acceptance condition, and source, with unknowns marked, and an
-  extraction by the bundled `meeting-action-items` skill stays a reading of
-  the notes until they or the owner confirm it.
+  or Hermes activates; the first tick is not a detected change, and a silent
+  tick says only that nothing was delivered, never that the release is
+  healthy. `operating-rhythm` and `meeting-brief` record each action item's
+  outcome, owner, due date, dependency, acceptance condition, and source,
+  with unknowns marked, and an extraction by the bundled
+  `meeting-action-items` skill stays a reading of the notes until they or the
+  owner confirm it.
 
 - **`automation-blueprint` now prepares Hermes' own Automation Blueprint
   instead of a look-alike with the same name.** The record `omh ops

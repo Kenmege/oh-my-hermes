@@ -485,20 +485,26 @@ ENGINE_CLOSING_BRIEF_RULE = (
 # are `FORMAT_QA_LADDER`'s in `src/workflows/materials.py`. Composed into the
 # quality bars of `materials-package` and `deliverable-package`.
 DOCUMENT_PRODUCER_QA_RULE = (
-    "On Hermes, a file's QA rung is observed only from the bundled document skill's result for that exact file, "
-    "judged by its field, not its exit code: `\"rendered\": false` or `\"recalculated\": false` exits 0 yet leaves "
-    "the rung not observed, blocked on the missing tools it names."
+    "On Hermes, a rung taken from a bundled document skill is observed only from that skill's result for that "
+    "exact file, judged by its field, not its exit code: `\"rendered\": false` or `\"recalculated\": false` exits 0 "
+    "yet leaves that rung not observed, blocked on the missing tools it names; other observed evidence for a rung "
+    "still counts."
 )
+# `pptx_render.py` lists every image already in its output directory, and
+# `xlsx_recalc.py` overwrites its input unless `--out` is given; both shape
+# how the rung is read.
 DOCUMENT_PRODUCER_RUNGS_RULE = (
-    "Rung sources, when the bundled skill is available: `powerpoint` gives `slide_count` (`pptx_read.py "
-    "--outline`) and `render_screenshot` (`pptx_render.py`, one image per slide in `files`); `pdf` gives "
-    "`page_count` (`pdf_read.py --meta`) and `render_preview` (`pdf_page_image.py`); `xlsx` gives "
-    "`sheet_schema` (`xlsx_read.py --sheets`) and `formula_recalculation` (`xlsx_recalc.py`, then the cached "
-    "results read back with `xlsx_read.py --formulas`, where an error value is a finding); `docx` gives "
+    "On Hermes, the bundled skills give these rungs when available: `powerpoint` gives `slide_count` "
+    "(`pptx_read.py --outline`) and `render_screenshot` (`pptx_render.py` into a fresh directory, its image count "
+    "matching `slide_count`, since it lists every image already in that directory); `pdf` gives `page_count` "
+    "(`pdf_read.py --meta`) and `render_preview` (`pdf_page_image.py`); `xlsx` gives `sheet_schema` (`xlsx_read.py "
+    "--sheets`) and `formula_recalculation` (`xlsx_recalc.py --out <copy>`, since without `--out` it replaces the "
+    "input and rungs or approvals already recorded were for other bytes, then the cached results read back with "
+    "`xlsx_read.py --formulas`, where an error value or a formula with no cached value is a finding); `docx` gives "
     "`section_structure` and `required_clause_check` (`docx_read.py --structure` and `--text`) but no "
-    "`page_count` or appearance until a converted PDF is rendered, and `docx_validate.py` checks package "
-    "health, never rendering. Images that exist are not a render pass until each one has been inspected, and "
-    "a producer's `\"ok\": true` is never the QA verdict."
+    "`page_count` or appearance until a converted PDF is rendered, and `docx_validate.py` checks package health, "
+    "never rendering. Images that exist are not a render pass until each one has been inspected, and a "
+    "producer's `\"ok\": true` is never the QA verdict."
 )
 
 # Shared five-step contract for the Hermes setup-guide skills (model-setup,

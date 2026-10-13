@@ -538,7 +538,7 @@
       "disposition": "adopted",
       "decision_ref": "#2110",
       "reviewed_on": "2026-10-13",
-      "rationale": "Adopted Hermes' bundled document skills as the source of materials QA rungs; a rung is observed only from the result field for that file, and rendered or recalculated false stays not_observed.",
+      "rationale": "Adopted Hermes' bundled document skills as a source of materials QA rungs; a rung taken from one is observed only from its result field for that file, false stays not_observed, other evidence still counts.",
       "supersedes": null
     },
     {

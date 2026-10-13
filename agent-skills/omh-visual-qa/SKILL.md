@@ -77,10 +77,10 @@ Quality bar:
 - Score every round through `references/visual-verdict-contract.md`: integer 0-100 score, PASS/REVISE/BLOCK, and a differences list pairing each observed problem with the smallest fix.
 - Hold 90 as the pass line: under it the verdict is REVISE and the named edits, a recapture of the same pages/states/viewports, and a fresh scored round are owed; rescoring the same captures is not a new round.
 - A host-collected sub-90 baseline needs a changed revision, next round ordinal, and newer same-condition capture; plan caps only tighten.
-- On Hermes, when `browser_vision` is in your tool list or tool_search finds it, the session takes its own captures: each render_capture_manifest/v1 entry records the `screenshot_path` it returned, the URL, the viewport width the page reported, and the target revision, and an entry missing any of the four is not evidence; otherwise captures come from the wrapper, executor, or user.
-- Set each required viewport with `browser_cdp` `Emulation.setDeviceMetricsOverride` when `browser_cdp` is in your tool list or tool_search finds it (Hermes offers it only with a CDP endpoint the user configured), then read the width back with `browser_console` (`window.innerWidth`) before the capture; a width that reads back other than the one requested is not that viewport, and without `browser_cdp` every required width the browser does not already report stays a named blocker.
-- In the same session, read `browser_console` after every navigation and every interaction in scope and record its errors in console_network_health/v1; a clean console read is console evidence only, never network, accessibility, or visual evidence.
-- Exploratory bug-hunting goes to Hermes' bundled `dogfood` skill when it is available: its issues and screenshots enter this verdict only as observed findings bound to the target lineage, and a report with no issues is not a PASS.
+- Bind each capture to its screenshot path, URL, the viewport width the page reported, and the target revision; an entry missing any of the four is not evidence.
+- Score a round from the captured image itself, never from another model's text description of it.
+- Set a viewport only through a tool that can, and read the width back before the capture; a width that reads back other than the one requested is not that viewport, and a width nothing could set is a named blocker unless a capture of it is supplied.
+- Read the browser console after every navigation and every interaction in scope; a clean console read is console evidence only, never network, accessibility, or visual evidence.
 
 Required inputs:
 

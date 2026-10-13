@@ -74,7 +74,8 @@ Quality bar:
 - Report pass/fail evidence separately from proposed fixes.
 - Delegate code mutations discovered by QA to the selected coding executor.
 - Read actual host/executor evidence before claiming build, verification, review, documentation, or PR-preparation results.
-- On a web app, read the browser console after every navigation and interaction, and keep a failing scenario's screenshot and console errors as its observed evidence.
+- On a web app, run hostile scenarios against the target the user named (local or staging unless stated); a scenario that would submit, buy, send, or delete on a live surface waits for the user's approval.
+- Read the browser console after every navigation and interaction, and keep a failing scenario's screenshot and console errors as its observed evidence.
 
 Required inputs:
 

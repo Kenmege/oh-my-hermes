@@ -658,7 +658,14 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # instead of a generic one. The detail of each rule sits past the row's
 # bounds, and the shared document rule and `report-package`'s line were
 # tightened before raising. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 489837
+# 489837 -> 490030: review of that change. The shared document rule now says
+# a rung taken from a bundled producer is observed only from its field while
+# other observed evidence for a rung still counts (`materials-package`,
+# `deliverable-package`); `deploy-and-monitor`'s monitor source is the user's
+# source, never one OMH writes; `visual-qa`'s handoff policy counts captures
+# the session's own browser tools take; `report-package`'s line is shorter.
+# Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 490030
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
