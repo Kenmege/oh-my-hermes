@@ -121,6 +121,8 @@ class ScriptedTerminal:
         self.exited = 0
         self.fired: dict[str, float] = {}  # label -> when that step fired
         self.exited_at = 0.0
+        self.mouse_reporting = False
+        self.mouse_calls: list[bool] = []  # every `set_mouse` that changed the state, in order
         self._resized = False
         self._quiet = False
 
@@ -147,6 +149,14 @@ class ScriptedTerminal:
     def write(self, text: str) -> None:
         self.writes.append(text)
         self.screen.feed(text)
+
+    def set_mouse(self, enabled: bool) -> None:
+        """As `Terminal.set_mouse`: the mode switch is written only when the state changes."""
+        if enabled == self.mouse_reporting:
+            return
+        self.mouse_reporting = enabled
+        self.mouse_calls.append(enabled)
+        self.write(terminal_module.MOUSE_REPORTING_ON if enabled else terminal_module.MOUSE_REPORTING_OFF)
 
     def _wait(self, what: str) -> bytes:
         if time.monotonic() > self.deadline:
@@ -743,7 +753,8 @@ class SessionTests(AppTestCase):
         self.assertTrue(screen[0].startswith("⚚ OH-MY-HERMES"), screen[:2])
         self.assertTrue(all(len(line) <= 60 for line in everything))
 
-    def test_the_tui_never_turns_on_mouse_reporting_so_drag_selection_stays_native(self) -> None:
+    def test_a_session_without_subagents_never_turns_on_mouse_reporting_so_drag_selection_stays_native(self) -> None:
+        # With agents to click it does, for as long as they are clickable: `test_tui_agent_mouse`.
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
         run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="the first frame"))
         self.run_main(run)

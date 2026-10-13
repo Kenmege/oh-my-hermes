@@ -52,9 +52,13 @@ Subagents: every `subagent.*` event of the live session is folded into one
 `subagents.Roster`, which a new turn and a new session empty. While it holds
 an agent the mode row carries a strip of them, Down on an empty composer
 gives the keys to a list of them (the one thing that moves the composer: see
-`frame`), and Enter opens one agent's log in the pager. The log is
+`frame`), and Enter or a click opens one agent's log in the pager. The log is
 read-only: `subagent.tail` is asked for the open agent while it runs, at most
-every `TAIL_POLL_SECONDS`, and nothing is ever sent to a subagent.
+every `TAIL_POLL_SECONDS`, and nothing is ever sent to a subagent. Mouse
+reports are on only while a click has an agent to land on and the row it
+would land on is certain: a turn running with agents named on the strip, or
+the list open. A report is a left click on one of those cells or it is
+nothing; none can type.
 
 Prompt text, the transcript, attachments, secrets, server-request frames and
 the gateway's stderr stay in memory and on the person's own terminal; nothing
@@ -107,9 +111,25 @@ from .gateway import (
     attach_refused,
     gateway_spawn,
 )
-from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Mouse, Paste
+from .keys import (
+    BACKSPACE,
+    BUTTON_LEFT,
+    CHAR,
+    DOWN,
+    ENTER,
+    ESCAPE,
+    LEFT,
+    RIGHT,
+    TAB,
+    UNKNOWN,
+    UP,
+    Key,
+    KeyDecoder,
+    Mouse,
+    Paste,
+)
 from .launch import FALLBACK_EXIT
-from .layout import agent_list_cap, slot_cap, under_composer
+from .layout import Budget, agent_list_cap, slot_cap, under_composer
 from .markdown import clean_text
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
@@ -223,6 +243,11 @@ AGENT_LIST_ROWS = 7  # main and six agents; a longer roster scrolls
 AGENT_LIST_HINT = "↑↓ select · ⏎ view log · esc back"
 AGENT_LOG_KEYS = "←/→ agents"
 TAIL_POLL_SECONDS = 2.0
+# On the way out, after mouse reports are switched off: the terminal acts on that a moment later,
+# so reports already on their way are read and dropped instead of landing on the shell's prompt.
+# At most `EXIT_DRAIN_READS` reads, each waiting its share of `EXIT_DRAIN_SECONDS`.
+EXIT_DRAIN_SECONDS = 0.05
+EXIT_DRAIN_READS = 5
 
 # One BEL when an approval opens, so a terminal in the background can flag the tab or bounce.
 BELL = "\a"
@@ -253,12 +278,15 @@ GUIDE_KEY = "?"
 
 
 class TerminalLike(Protocol):
+    mouse_reporting: bool
+
     def __enter__(self) -> Any: ...
     def __exit__(self, *exc: object) -> Any: ...
     def size(self) -> tuple[int, int]: ...
     def resized(self) -> bool: ...
     def read(self, timeout: float) -> bytes: ...
     def write(self, text: str) -> None: ...
+    def set_mouse(self, enabled: bool) -> None: ...
 
 
 class PollerLike(Protocol):
@@ -742,6 +770,8 @@ class App:
         self.log_agent = ""  # the agent whose log the pager shows; "" for every other pager
         self.tail_asked_at: float | None = None  # when the last `subagent.tail` went out
         self.tail_open = False  # that call has no answer yet
+        # The cells a click opens, as last drawn: rows above the status line → the entries on that row.
+        self.clickable: dict[int, tuple[Hit, ...]] = {}
         self.dirty = True
         self.last_render = 0.0
 
@@ -888,6 +918,8 @@ class App:
 
     def _shutdown(self) -> None:
         self.poller.stop()
+        reporting = self.terminal.mouse_reporting
+        self.terminal.set_mouse(False)
         if self.pager is not None:
             self.pager = None
             self.terminal.write(ALT_SCREEN_OFF + SHOW_CURSOR)
@@ -896,6 +928,22 @@ class App:
         if stable:
             self.region.flush_above(stable, cols)
         self.region.clear()
+        if reporting:
+            self._discard_late_reports()
+
+    def _discard_late_reports(self) -> None:
+        """Read and drop what the terminal still sends after mouse reports were switched off (`EXIT_DRAIN_SECONDS`).
+
+        It stops at the first read that brings nothing. Keys typed in that
+        moment are dropped with the reports: nothing here can tell them apart
+        without acting on them.
+        """
+        for _ in range(EXIT_DRAIN_READS):
+            try:
+                if not self.terminal.read(EXIT_DRAIN_SECONDS / EXIT_DRAIN_READS):
+                    return
+            except EOFError:
+                return  # the terminal hung up: nothing more is coming
 
     def _busy(self) -> bool:
         return self.transcript.running or self.turn_pending
@@ -1120,7 +1168,8 @@ class App:
 
     def _on_input(self, event: Key | Paste | Mouse) -> None:
         if isinstance(event, Mouse):
-            return  # not a key; a report from mouse tracking another program left on must type nothing
+            self._on_mouse(event)  # never a key: whatever it is, it types nothing
+            return
         if self.pager is not None:
             if self.log_agent and isinstance(event, Key) and event.name in (LEFT, RIGHT):
                 self._step_agent_log(-1 if event.name == LEFT else 1)
@@ -1900,6 +1949,7 @@ class App:
         own timeout meanwhile. Nothing is answered for the person either way.
         """
         before = self.size
+        self.terminal.set_mouse(False)  # the strip is not on the picker's screen; the next frame asks again
         self.terminal.write(ALT_SCREEN_ON + CURSOR_HOME + HIDE_CURSOR)
         try:
             message = self.pick_model_chains(
@@ -1977,7 +2027,9 @@ class App:
         in scrollback. Scrollback from before the TUI started is erased with it.
         """
         self.terminal.write(CLEAR_SCREEN_AND_SCROLLBACK)
-        self.region = LiveRegion(self.terminal.write)
+        # The clear homes the cursor, so the next first frame starts on the screen's top row: unless a
+        # pager is open, when it cleared the alternate screen and the main screen's cursor is where it was.
+        self.region = LiveRegion(self.terminal.write, at_top=self.pager is None)
         self.transcript.retake()
         if self.banner_record is not None:
             self.banner_facts = dict(self.banner_record)
@@ -2010,6 +2062,8 @@ class App:
         cols, rows = self.size
         self._settle_list()
         if self.pager is not None:
+            self.clickable = {}
+            self.terminal.set_mouse(False)
             self._refresh_agent_log()
             self.terminal.write(self.pager.frame(cols, rows, self.theme))
             return
@@ -2023,8 +2077,8 @@ class App:
         self.flushed_since_prompt += len(stable)
         previous = 0 if anchoring else self.region.height
         self.anchor = False
-        strip, _hits = self._agent_strip(cols)
-        agent_list, _listed = self._agent_list(cols, rows)
+        strip, hits = self._agent_strip(cols)
+        agent_list, listed = self._agent_list(cols, rows)
         frame = build_frame(
             cols=cols,
             rows=rows,
@@ -2058,6 +2112,7 @@ class App:
             # (the banner, a resumed history) would be pushed off the top before anyone
             # saw them; flushed after it, they land in those pad rows instead.
             self.region.flush_above(stable, cols)
+        self._take_clickable(frame.budget, hits, listed)
 
     # ── subagents ──
 
@@ -2080,6 +2135,24 @@ class App:
         )
         return [*lines, truncate_line((Span(AGENT_LIST_HINT, self.theme.hint),), cols)], listed
 
+    def _take_clickable(self, budget: Budget, hits: Sequence[Hit], listed: Sequence[str]) -> None:
+        """Note the cells of the frame just drawn that a click opens, and ask for mouse reports only while there are some.
+
+        A list row is clickable from edge to edge. The strip's agents are
+        clickable while a turn runs and no question is open; its `main` entry
+        opens nothing. Reports stay off while the region's place on the screen
+        is not certain, since no click could be read then.
+        """
+        cols, rows = self.size
+        under = budget.status + budget.mode - 1  # rows above the status line of the mode block's first row
+        self.clickable = {}
+        if listed:
+            self.clickable = {under - index: (Hit(0, cols, row_id),) for index, row_id in enumerate(listed[: budget.mode])}
+        elif budget.mode and self._busy() and self.slot is None:
+            agents = tuple(hit for hit in hits if hit.subagent_id != MAIN_ID)
+            self.clickable = {under: agents} if agents else {}
+        self.terminal.set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
+
     def _list_available(self) -> bool:
         """Whether the agent list can be shown: agents to list, the mode row it replaces, and nothing else holding the keys."""
         cols, rows = self.size
@@ -2101,7 +2174,10 @@ class App:
         agent, while there is one to list and no completion menu is open.
         Then Up and Down move, Enter opens the highlighted agent's log (on
         main it only leaves) and Esc or Ctrl+C leaves. Anything else leaves
-        too and is then read as it would have been, so typing types.
+        too and is then read as it would have been, so typing types. The
+        exception is a sequence the decoder has no name for, which does
+        nothing: with mouse reports on, a terminal that answers in the legacy
+        encoding sends one for every click.
         """
         self._settle_list()
         name = event.name if isinstance(event, Key) else ""  # a paste is no key of the list's
@@ -2118,8 +2194,32 @@ class App:
         if name == ENTER and self.list_selected != MAIN_ID:
             self._open_agent_log(self.list_selected)  # over the list: leaving the log comes back to it
             return True
+        if name == UNKNOWN:
+            return True
         self.list_selected = None
         return name in (ENTER, ESCAPE) or event == Key(CHAR, "c", ctrl=True)
+
+    def _on_mouse(self, event: Mouse) -> None:
+        """A plain left press on an agent, on the strip or in the list, opens that agent's log; nothing else does anything.
+
+        `clickable` holds the cells of the last frame a click opens and is
+        empty whenever the TUI has not asked for reports, so a report another
+        program left on opens nothing. The report's row is read against the
+        region's last row, and dropped while that row is not certain or the
+        screen is being redrawn for a new size.
+        """
+        plain = event.button == BUTTON_LEFT and event.pressed and not (event.motion or event.shift or event.alt or event.ctrl)
+        last = self.region.last_row(self.size[1])
+        if not plain or last is None or self.pager is not None or self.redraw_at is not None:
+            return
+        above, column = last - (event.y - 1), event.x - 1  # a report counts rows and columns from 1
+        target = next((hit.subagent_id for hit in self.clickable.get(above, ()) if hit.start <= column < hit.end), None)
+        if target is None:
+            return
+        if self.list_selected is not None:
+            self.list_selected = target if target != MAIN_ID else None  # main has no log: the click leaves the list
+        if target != MAIN_ID:
+            self._open_agent_log(target)
 
     def _open_agent_log(self, subagent_id: str) -> None:
         """One agent's log on the alternate screen, opened at its newest rows; nothing for an agent no longer held."""
