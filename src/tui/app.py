@@ -2232,7 +2232,11 @@ class App:
         self.transcript.add_notice(message)
 
     def _picker_reader(self) -> Callable[[], str]:
-        """A picker's `read_key` over the TUI's terminal and key decoder; a hung-up terminal cancels."""
+        """A picker's `read_key` over the TUI's terminal and key decoder; a hung-up terminal cancels.
+
+        The decoder is told what the loop tells it, so a report sent before
+        the picker's off still types nothing and its ESC does not cancel.
+        """
         pending: deque[Key | Paste | Mouse] = deque()
 
         def read_key() -> str:
@@ -2241,7 +2245,10 @@ class App:
                     data = self.terminal.read(READ_TIMEOUT_SECONDS)
                 except EOFError:
                     return KEY_QUIT
-                pending.extend(self.decoder.feed(data) if data else self.decoder.flush())
+                if data:
+                    pending.extend(self.decoder.feed(data))
+                else:
+                    pending.extend(self.decoder.flush(self.terminal.mouse_reporting, self.mouse_off_at))
             return picker_key(pending.popleft())
 
         return read_key

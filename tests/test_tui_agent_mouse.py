@@ -25,6 +25,7 @@ from test_tui_agent_strip import STARTS, agent_app, relay
 from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, FakePoller, ScriptedTerminal, Step, status_index
 from test_tui_modes import SID, RecordingClient, drawn, make_app, show_mode, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND
+from omh.commands.theme_picker import KEY_DOWN, KEY_NONE
 from omh.tui import keys as keys_module
 from omh.tui import terminal as terminal_module
 from omh.tui.app import (
@@ -235,6 +236,29 @@ class MouseStateTests(unittest.TestCase):
         self.assertEqual(during, [False])
         self.assertTrue(reporting(app))
         self.assertEqual(mouse_calls(app), [True, False, True])
+
+    def test_a_report_split_after_its_escape_does_not_cancel_the_model_chain_picker(self) -> None:
+        # A release the terminal sent before it acted on the picker's off, split after its ESC by 200 ms.
+        now = [100.0]
+        keys: list[str] = []
+
+        def pick(environ: object, theme: object, *, read_key, write: object, width: int) -> str:
+            keys.extend((read_key(), read_key()))
+            return "Cancelled; nothing was changed."
+
+        app, _client = running(clock=lambda: now[0], pick_model_chains=pick)
+        self.assertTrue(reporting(app))
+        reads = [(0.0, b"\x1b"), *[(READ_TIMEOUT_SECONDS, b"")] * 3, (READ_TIMEOUT_SECONDS, b"[<0;5;5m"), (0.0, b"j")]
+
+        def read(timeout: float) -> bytes:
+            delay, data = reads.pop(0)
+            now[0] += delay
+            return data
+
+        app.terminal.read = read  # type: ignore[method-assign]
+        type_text(app, "/omh-model")
+        app._on_input(Key(ENTER))
+        self.assertEqual(keys, [KEY_NONE, KEY_DOWN])  # the report is no key, and the picker is still open for j
 
     def test_shutdown_turns_them_off_before_the_screen_is_handed_back(self) -> None:
         for paging in (False, True):
