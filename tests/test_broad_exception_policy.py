@@ -440,8 +440,9 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "the work: 0 every unit verified, 1 one unit terminal and not verified, 3 stuck, 65 "
         "journal unreadable, 124 deadline. An escaping exception would exit 1 and read as a unit "
         "that failed, so with --wait the handler prints the traceback to stderr and returns 70, "
-        "a code no answer uses; stdout stays empty. A single read re-raises, so its crash stays "
-        "Python's own. The failure is never relabeled as a roster or a verdict.",
+        "a code no answer uses; stdout stays empty. An OmhError is re-raised ahead of it and stays "
+        "`main`'s exit 2, and a single read re-raises, so its crash stays Python's own. The "
+        "failure is never relabeled as a roster or a verdict.",
     ),
     ClassifiedSite(
         "src/commands/docs.py",

@@ -369,17 +369,27 @@ def _apply_unit_progress(paths: OmhPaths, fanout_id: str, units: list[dict[str, 
     An in-flight marker wins over the dispatch summary for the same unit, the
     same precedence the status board's `SOURCE_ORDER` already uses: a marker
     means this unit is in flight NOW, and a summary row from an earlier
-    dispatch of the same id must not report over it.
+    dispatch of the same id must not report over it. A marker with no reading
+    yet wins only when it was written after that row (`_written_after`): a
+    capacity-reuse reservation marker that an early return before the spawn
+    never cleared is OLDER than the summary row its own attempt wrote, and
+    hiding that row would turn a refused unit into one "in flight" forever.
 
     Best-effort: an unreadable marker directory or summary leaves every row at
     `unknown`, which is honest and keeps a poll loop waiting rather than
     concluding the work finished.
     """
-    from_markers = _marker_progress(paths, fanout_id)
-    from_summary = _summary_progress(paths, fanout_id)
+    from_markers, unassessed = _marker_progress(paths, fanout_id)
+    from_summary, summary_recorded_at = _summary_progress(paths, fanout_id)
     for unit in units:
         row_id = str(unit.get("unit_id", ""))
-        observed = from_markers.get(row_id) or from_summary.get(row_id)
+        observed = from_markers.get(row_id)
+        if observed is None and row_id in unassessed and (
+            row_id not in from_summary or _written_after(unassessed[row_id], summary_recorded_at.get(row_id))
+        ):
+            observed = (_UNIT_STATE_UNKNOWN, "", None, "inflight_marker")
+        if observed is None:
+            observed = from_summary.get(row_id)
         if observed is None:
             state, reason, stalled, source = _UNIT_STATE_UNKNOWN, "", None, "none"
         else:
@@ -418,9 +428,17 @@ def _row_is_terminal(state: str, source: str) -> bool:
     return is_terminal(state)
 
 
-def _marker_progress(paths: OmhPaths, fanout_id: str) -> dict[str, tuple[str, str, int | None, str]]:
-    """Live progress readings, keyed by unit id, from this fanout's markers."""
+def _marker_progress(
+    paths: OmhPaths, fanout_id: str,
+) -> tuple[dict[str, tuple[str, str, int | None, str]], dict[str, str]]:
+    """Live progress readings, keyed by unit id, from this fanout's markers.
+
+    The second mapping names the markers with no reading yet, by unit id, with
+    the `written_at` each one carries; the caller decides whether one of them
+    outranks the dispatch summary.
+    """
     rows: dict[str, tuple[str, str, int | None, str]] = {}
+    unassessed: dict[str, str] = {}
     for marker in read_inflight_markers(paths, fanout_id=fanout_id, limit=_MARKER_READ_LIMIT):
         if not isinstance(marker, Mapping) or marker.get("marker_status") != "present":
             continue
@@ -431,12 +449,10 @@ def _marker_progress(paths: OmhPaths, fanout_id: str) -> dict[str, tuple[str, st
         if not state:
             # A marker written before the first stdout snapshot carries no
             # state. It proves a spawn, not that the work is moving, so it
-            # reads `unknown` rather than a fabricated `running` -- and it
-            # still wins over the dispatch summary, whose row for this unit
-            # is an earlier attempt's. Falling through to that row once
-            # turned a re-dispatched unit's old `account_limit` into a
-            # terminal, stuck reading for a process that had just started.
-            rows[unit_id] = (_UNIT_STATE_UNKNOWN, "", None, "inflight_marker")
+            # reads `unknown` rather than a fabricated `running`. Whether it
+            # outranks the dispatch summary depends on which was written
+            # later, which only the caller can see.
+            unassessed[unit_id] = str(marker.get("written_at", "") or "")
             continue
         rows[unit_id] = (
             state,
@@ -444,18 +460,30 @@ def _marker_progress(paths: OmhPaths, fanout_id: str) -> dict[str, tuple[str, st
             _non_negative_int(marker.get("stalled_for_seconds")),
             "inflight_marker",
         )
-    return rows
+    return rows, unassessed
 
 
-def _summary_progress(paths: OmhPaths, fanout_id: str) -> dict[str, tuple[str, str, int | None, str]]:
-    """Post-exit progress readings, keyed by unit id, from the dispatch summary."""
-    summary, error = read_json_object_result(fanout_dispatch_summary_path(paths, fanout_id))
+def _summary_progress(
+    paths: OmhPaths, fanout_id: str,
+) -> tuple[dict[str, tuple[str, str, int | None, str]], dict[str, datetime | None]]:
+    """Post-exit progress readings, keyed by unit id, from the dispatch summary.
+
+    The second mapping is when each row was recorded: the row's own
+    `finished_at` when it carries one, else the summary file's modification
+    time (a unit refused before its spawn records no finish of its own), else
+    None. A partial re-dispatch rewrites the file around rows it carries
+    forward, so the row's own time is read first.
+    """
+    summary_path = fanout_dispatch_summary_path(paths, fanout_id)
+    summary, error = read_json_object_result(summary_path)
     if error is not None or not isinstance(summary, Mapping):
-        return {}
+        return {}, {}
     entries = summary.get("units")
     if not isinstance(entries, list):
-        return {}
+        return {}, {}
+    file_time = _file_mtime(summary_path)
     rows: dict[str, tuple[str, str, int | None, str]] = {}
+    recorded_at: dict[str, datetime | None] = {}
     for entry in entries:
         if not isinstance(entry, Mapping):
             continue
@@ -482,7 +510,28 @@ def _summary_progress(paths: OmhPaths, fanout_id: str) -> dict[str, tuple[str, s
             _non_negative_int(progress.get("stalled_for_seconds")) if isinstance(progress, Mapping) else None,
             "dispatch_summary",
         )
-    return rows
+        recorded_at[unit_id] = _parse_timestamp(str(entry.get("finished_at", "") or "")) or file_time
+    return rows, recorded_at
+
+
+def _file_mtime(path: Path) -> datetime | None:
+    """The file's modification time in UTC, or None when it cannot be read."""
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    except (OSError, ValueError, OverflowError):
+        return None
+
+
+def _written_after(marker_written_at: str, recorded_at: datetime | None) -> bool:
+    """Whether a marker's `written_at` is strictly later than a summary row's record time.
+
+    False whenever either side cannot be read: without both times the row
+    could be this attempt's own, and a row that needs a person must not be
+    hidden on a guess. `written_at` is whole seconds, so a marker written in
+    the same second as the summary also loses.
+    """
+    written = _parse_timestamp(marker_written_at)
+    return written is not None and recorded_at is not None and written > recorded_at
 
 
 def _non_negative_int(value: object) -> int | None:

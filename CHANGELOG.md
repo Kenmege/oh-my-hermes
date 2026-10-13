@@ -23,10 +23,12 @@ All notable changes will be documented here.
   and 300) are refused without `--wait`; an unknown fanout id fails on the
   first read rather than at the deadline; the watcher writes nothing. Without
   `--wait` the command exits 0 as before. The roster itself now reads a unit
-  whose in-flight marker has no state yet as `unknown` and not terminal,
-  instead of falling back to the dispatch summary: that row is an earlier
-  attempt's, and it made a re-dispatched unit's old `account_limit` read as
-  stuck the moment the new process started. The `ulw-maestro` skill now
+  whose in-flight marker has no state yet as `unknown` and not terminal when
+  that marker was written after the dispatch summary's row for the unit,
+  instead of falling back to that row: a re-dispatched unit's old
+  `account_limit` read as stuck the moment the new process started. A marker
+  that is not later than the row, such as a reservation marker an early
+  return left behind, leaves the row standing. The `ulw-maestro` skill now
   starts the watcher once through Hermes' `terminal(background=true,
   notify=true)` when the tool is present, waits on it in the turn when the
   spawn result says the session cannot receive the completion, reads the

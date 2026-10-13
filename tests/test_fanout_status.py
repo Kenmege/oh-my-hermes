@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -39,6 +41,7 @@ from omh.commands.coding import (  # noqa: E402
     _fanout_status_wait_exit_code,
 )
 from omh.coding.unit_execution_state import UNIT_STUCK_STATES  # noqa: E402
+from omh.core.errors import OmhError  # noqa: E402
 from omh.system.paths import OmhPaths  # noqa: E402
 
 _FANOUT_ID = "fanout-0123456789ab"
@@ -475,6 +478,56 @@ class FanoutStatusCliTests(unittest.TestCase):
             self.assertIn("nope", stdout + stderr)
 
 
+def _summary_written(paths: OmhPaths, core_row: dict[str, object], *, mtime_offset: float) -> Path:
+    """A dispatch summary whose file time is `mtime_offset` seconds from now."""
+    summary_path = fanout_dispatch_summary_path(paths, _FANOUT_ID)
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(json.dumps({
+        "fanout_id": _FANOUT_ID,
+        "units": [
+            {"unit_id": "core", **core_row},
+            {"unit_id": "docs", "unit_state": "verified"},
+            {"unit_id": "flaky", "unit_state": "verified"},
+        ],
+    }), encoding="utf-8")
+    moment = time.time() + mtime_offset
+    os.utime(summary_path, (moment, moment))
+    return summary_path
+
+def _redispatched_core(paths: OmhPaths) -> None:
+    """An earlier dispatch's summary, and a fresh marker for `core` with no reading yet.
+
+    The recovery path: `core` hit its account limit an hour ago, every
+    other unit verified, and `core` was just dispatched again. Until the
+    new process's first output snapshot the marker carries no state.
+    """
+    _seed_journal(paths, _roster_fixture())
+    _summary_written(
+        paths, {"unit_state": "account_limit", "unit_state_reason": "session limit"}, mtime_offset=-3600,
+    )
+    write_inflight_marker(paths, _FANOUT_ID, "core", {
+        "owner": "codex", "run_ref": f"{_FANOUT_ID}-core",
+        "worktree": "/tmp/wt/core", "started_at": _stamp(0),
+    })
+
+def _leaked_reservation(paths: OmhPaths) -> None:
+    """A capacity-reuse reservation marker this attempt never cleared, then its own summary.
+
+    The worktree reuse writes a marker with owner, run ref and worktree
+    only; an early return before the spawn (here the unfenced refusal,
+    which records `permission_blocked`) skips the `finally` that clears
+    it, and the dispatch then writes its summary. So the marker is OLDER
+    than the summary row it would otherwise hide.
+    """
+    _seed_journal(paths, _roster_fixture())
+    write_inflight_marker(paths, _FANOUT_ID, "core", {
+        "owner": "codex", "run_ref": f"{_FANOUT_ID}-core", "worktree": "/tmp/wt/core",
+    })
+    _summary_written(
+        paths, {"unit_state": "permission_blocked", "reason": "no filesystem fence"}, mtime_offset=60,
+    )
+
+
 class FanoutStatusUnitProgressTests(unittest.TestCase):
     """The supervisor poll loop's inputs: is this unit's WORK moving, and is
     it over? Neither question is a ladder rung, and neither can move
@@ -686,34 +739,86 @@ class FanoutStatusUnitProgressTests(unittest.TestCase):
             self.assertEqual(core["unit_state_source"], "inflight_marker")
             self.assertIs(core["terminal"], False)
 
-    def _redispatched_core(self, paths: OmhPaths) -> None:
-        """An earlier dispatch's summary, and a fresh marker for `core` with no reading yet.
+    def test_a_leaked_reservation_marker_never_hides_its_own_attempts_summary_row(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+            _leaked_reservation(paths)
 
-        The recovery path: `core` hit its account limit last time, every other
-        unit verified, and `core` was just dispatched again. Until the new
-        process's first output snapshot the marker carries no state.
-        """
-        _seed_journal(paths, _roster_fixture())
-        summary_path = fanout_dispatch_summary_path(paths, _FANOUT_ID)
-        summary_path.parent.mkdir(parents=True, exist_ok=True)
-        summary_path.write_text(json.dumps({
-            "fanout_id": _FANOUT_ID,
-            "units": [
-                {"unit_id": "core", "unit_state": "account_limit", "unit_state_reason": "session limit"},
-                {"unit_id": "docs", "unit_state": "verified"},
-                {"unit_id": "flaky", "unit_state": "verified"},
-            ],
-        }), encoding="utf-8")
-        write_inflight_marker(paths, _FANOUT_ID, "core", {
-            "owner": "codex", "run_ref": f"{_FANOUT_ID}-core",
-            "worktree": "/tmp/wt/core", "started_at": _stamp(0),
-        })
+            roster = project_fanout_status(paths, _FANOUT_ID)
+            core = {unit["unit_id"]: unit for unit in roster["units"]}["core"]
+            text = render_fanout_status_text(roster)
+
+            self.assertEqual(core["unit_state"], "permission_blocked")
+            self.assertEqual(core["unit_state_source"], "dispatch_summary")
+            self.assertIs(core["terminal"], True)
+            self.assertEqual(roster["stuck_units"], ["core"])
+            self.assertIn("Stuck, needs intervention: core", text)
+            self.assertNotIn("in flight", text)
+
+    def test_the_rows_recorded_finish_decides_before_the_file_time(self) -> None:
+        # A partial re-dispatch of another unit rewrites the file, so its time
+        # can be later than the row it carries forward; the row's own
+        # `finished_at` is the better answer whenever it is recorded.
+        for finished_minutes_ago, mtime_offset, hidden in ((-60, -3600, False), (60, 3600, True)):
+            with self.subTest(finished_minutes_ago=finished_minutes_ago), TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+                _seed_journal(paths, _roster_fixture())
+                write_inflight_marker(paths, _FANOUT_ID, "core", {
+                    "owner": "codex", "run_ref": f"{_FANOUT_ID}-core", "worktree": "/tmp/wt/core",
+                })
+                _summary_written(
+                    paths, {"unit_state": "account_limit", "finished_at": _stamp(finished_minutes_ago)},
+                    mtime_offset=mtime_offset,
+                )
+
+                core = {u["unit_id"]: u for u in project_fanout_status(paths, _FANOUT_ID)["units"]}["core"]
+
+                self.assertEqual(core["unit_state"], "unknown" if hidden else "account_limit")
+
+    def test_a_marker_wins_only_when_strictly_later_than_the_row(self) -> None:
+        recorded = datetime(2026, 10, 13, 12, 0, 0, tzinfo=timezone.utc)
+        written_after = fanout_status_module._written_after
+        self.assertTrue(written_after("2026-10-13T12:00:01Z", recorded))
+        # Whole seconds: the same second is not later.
+        self.assertFalse(written_after("2026-10-13T12:00:00Z", recorded))
+        self.assertFalse(written_after("2026-10-13T11:59:59Z", recorded))
+        self.assertFalse(written_after("2026-10-13T12:00:01Z", None))
+        self.assertFalse(written_after("", recorded))
+        self.assertFalse(written_after("not a time", recorded))
+
+    def test_without_a_readable_time_on_either_side_the_summary_row_stands(self) -> None:
+        with self.subTest(side="summary"), TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+            _redispatched_core(paths)
+
+            with mock.patch.object(fanout_status_module, "_file_mtime", return_value=None):
+                core = {u["unit_id"]: u for u in project_fanout_status(paths, _FANOUT_ID)["units"]}["core"]
+
+            self.assertEqual(core["unit_state"], "account_limit")
+        with self.subTest(side="marker"), TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+            _seed_journal(paths, _roster_fixture())
+            _summary_written(paths, {"unit_state": "account_limit"}, mtime_offset=-3600)
+            marker = write_inflight_marker(paths, _FANOUT_ID, "core", {
+                "owner": "codex", "run_ref": f"{_FANOUT_ID}-core", "worktree": "/tmp/wt/core",
+            })
+            payload = json.loads(marker.read_text(encoding="utf-8"))
+            payload["written_at"] = "not a time"
+            marker.write_text(json.dumps(payload), encoding="utf-8")
+
+            core = {u["unit_id"]: u for u in project_fanout_status(paths, _FANOUT_ID)["units"]}["core"]
+
+            self.assertEqual(core["unit_state"], "account_limit")
 
     def test_a_fresh_marker_without_state_hides_the_earlier_dispatchs_summary_row(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
-            self._redispatched_core(paths)
+            _redispatched_core(paths)
 
             roster = project_fanout_status(paths, _FANOUT_ID)
             core = {unit["unit_id"]: unit for unit in roster["units"]}["core"]
@@ -736,7 +841,7 @@ class FanoutStatusUnitProgressTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
-            self._redispatched_core(paths)
+            _redispatched_core(paths)
             base = ["--omh-home", str(root / ".omh"), "--hermes-home", str(root / ".hermes")]
             clock = _FakeClock()
 
@@ -1110,6 +1215,40 @@ class FanoutStatusWaitCliTests(unittest.TestCase):
             self.assertEqual(status, FANOUT_STATUS_WAIT_CRASH_EXIT_CODE)
             self.assertIn("RuntimeError: roster reader broke", stderr)
             self.assertEqual(stdout, "")
+
+    def test_a_watcher_over_a_leaked_reservation_marker_stops_on_the_stuck_unit(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+            _leaked_reservation(paths)
+
+            with self._no_sleep():
+                status, stdout, stderr = self._run(root, "--wait", "--json")
+
+            self.assertEqual(status, FANOUT_STATUS_WAIT_STUCK_EXIT_CODE, stderr)
+            payload = json.loads(stdout)
+            self.assertEqual(payload["wait"]["reads"], 1)
+            self.assertEqual(payload["stuck_units"], ["core"])
+
+    def test_an_omh_error_inside_the_watcher_stays_the_commands_own_error(self) -> None:
+        # OmhError is a RuntimeError, so the crash handler must not catch it:
+        # a refusal the command words for its caller is exit 2, not a crash.
+        def refuse(*_args: object, **_kwargs: object) -> dict[str, object]:
+            raise OmhError("journal root refused")
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed(root)
+
+            with mock.patch.object(fanout_status_module, "project_fanout_status", refuse), self._no_sleep():
+                waited = self._run(root, "--wait", output_json=False)
+                single = self._run(root, output_json=False)
+
+            for label, (status, stdout, stderr) in (("wait", waited), ("single", single)):
+                with self.subTest(read=label):
+                    self.assertEqual(status, 2)
+                    self.assertIn("omh: journal root refused", stderr)
+                    self.assertNotIn("Traceback", stderr)
 
     def test_a_single_read_still_exits_zero_whatever_the_roster_says(self) -> None:
         # Without --wait the command reports; it does not grade.

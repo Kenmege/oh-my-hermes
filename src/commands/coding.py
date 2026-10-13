@@ -2383,6 +2383,10 @@ def cmd_coding_fanout_status(args: argparse.Namespace) -> int:
             roster = read_roster()
     except (OSError, ValueError) as exc:
         raise OmhError(f"fanout status unavailable: {exc}") from exc
+    except OmhError:
+        # A RuntimeError, so the handler below would catch it: a refusal this
+        # command words for its caller stays `main`'s exit 2, never a crash.
+        raise
     except Exception:
         # Python's own exit for an uncaught exception is 1, which a watcher
         # caller reads as "every unit terminal and one not verified". The
