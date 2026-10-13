@@ -126,8 +126,15 @@ def read_ledger_writes(
         except (OSError, UnicodeDecodeError) as error:
             unread.append(f"{ledger}: {error}")
             continue
-        lines = text.splitlines()
-        open_line = len(lines) if fail_closed and lines and not text.endswith(("\n", "\r")) else 0
+        # Hermes ends each row with "\n" and splits on it alone (its own trim
+        # path says why): a row written with ensure_ascii=False may hold a raw
+        # U+2028, U+2029 or U+0085, where `str.splitlines` would cut it.
+        segments = text.split("\n")
+        tail = segments.pop()  # after the last "\n": "" when the text ends with one
+        lines = [segment.removesuffix("\r") for segment in segments]
+        if tail:
+            lines.append(tail.removesuffix("\r"))
+        open_line = len(lines) if fail_closed and tail else 0
         for number, line in enumerate(lines, start=1):
             if number == open_line and line.strip():
                 unread.append(f"{ledger}: line {number} is unterminated, so an append may be in progress")

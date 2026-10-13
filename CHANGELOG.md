@@ -67,18 +67,19 @@ All notable changes will be documented here.
   nothing else against it is left in place as `ledger_unreadable`, naming what
   could not be read and its error (`unreadable_ledgers` in the result); a
   missing ledger records nothing, and `--force` removes it on the same terms
-  without claiming what the ledger holds. Every directory left in place is
-  listed under
-  `prune_skipped_skills` on every install, and the manifest stays
-  byte-identical across installs over an unchanged disk; the summary names a
-  `not_rendered_by_omh` directory once, on the install that first records it,
-  and the other reasons each time. The first install over a manifest written
-  before marks existed still applies the earlier rule once: it removes an
-  unchanged directory at an OMH position inside the skills directory --
-  including one of your own, as earlier releases did -- and `--force` also
-  removes a changed one; the summary names each directory it removed by its
-  path and says OMH cannot tell whether it rendered it, and the manifest it
-  writes carries marks. Whichever rule applies,
+  without claiming what the ledger holds. Ledger rows are split on a newline
+  alone, as Hermes writes and trims them, so a row holding a raw U+2028,
+  U+2029, or U+0085 stays one row for every reader. Every directory left in
+  place is listed under `prune_skipped_skills` on every install, and the
+  manifest stays byte-identical across installs over an unchanged disk; the
+  summary names a `not_rendered_by_omh` directory once, on the install that
+  first records it, and the other reasons each time. The first install over a
+  manifest written before marks existed still applies the earlier rule once:
+  it removes an unchanged directory at an OMH position inside the skills
+  directory -- including one of your own, as earlier releases did -- and
+  `--force` also removes a changed one; the summary names each directory it
+  removed by its path and says OMH cannot tell whether it rendered it, and the
+  manifest it writes carries marks. Whichever rule applies,
   a pruner never follows a recorded path out of the skills directory or a
   link that leads out, never removes a category directory or any directory
   holding other skills (a stray `guide/SKILL.md` used to take the whole

@@ -1976,6 +1976,36 @@ class RetiredSkillEditTests(_Home):
         self.assertFalse(directory.exists())
         self.assertNotIn("unreadable_ledgers", result)
 
+    def test_a_row_holding_a_raw_line_separator_is_one_row(self) -> None:
+        # Hermes writes rows with ensure_ascii=False and splits them on "\n"
+        # alone; str.splitlines would cut a row at U+2028, U+2029 or U+0085.
+        directory = self.marked_retired_skill()
+        (directory / "references").mkdir()
+        odd = directory / "references" / "note\u2028\u2029\u0085.md"
+        odd.write_text("lesson\n", encoding="utf-8")
+        real = os.path.realpath(odd)
+        row = json.dumps(
+            {
+                "id": "u", "ts": "2026-10-13T03:00:00+00:00", "actor": "curator", "action": "write_file",
+                "skill": "omh-old-skill", "evidence": {}, "before": [], "after": [{"path": real, "sha256": sha256_file(odd)}],
+            },
+            ensure_ascii=False,
+        )
+        self.assertIn("\u2028", row)
+        _append_ledger(self.paths.hermes_home, row)
+
+        writes, unread = read_ledger_writes(self.paths.hermes_home, within=[self.paths.skills_dir])
+        self.assertEqual(([write.path for write in writes], unread), ([real], []))
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue(odd.is_file())
+        self.assertNotIn("unreadable_ledgers", result)
+        self.assertIn(
+            (self.REL, "changed_since_rendered"),
+            [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
+        )
+
     def test_an_unreadable_ledger_keeps_a_flat_leftover_too(self) -> None:
         install_skill_pack(self.paths, profile="core")
         flat = self.paths.skills_dir / SKILL
