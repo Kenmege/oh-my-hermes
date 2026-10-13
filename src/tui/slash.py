@@ -6,7 +6,9 @@ own (it runs a full Hermes CLI per session), so the OMH TUI only has to own
 three kinds:
 
 - `local`: commands about this terminal (help, quit, history, theme, the OMH
-  model picker). The TUI handles them without the gateway.
+  model picker) and the ones whose screen is the TUI's own (attaching an
+  image). The TUI handles them, calling the gateway
+  method underneath where there is one.
 - `hermes`: commands whose surface is Ink-only (voice, the pet, the billing
   flows, overlays) or that would make the TUI persist raw prompts (`/save`,
   `/prompt`). The TUI names the Hermes door instead of half-supporting them.
@@ -48,6 +50,8 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("queue", LOCAL, "Show messages waiting for the current turn", ("q",)),
     SlashCommand("logs", LOCAL, "Show the gateway's recent stderr (kept in memory only)"),
     SlashCommand("copy", LOCAL, "Copy the last reply to the clipboard"),
+    SlashCommand("image", LOCAL, "Attach an image file to the next message (/image <path>)"),
+    SlashCommand("paste", LOCAL, "Attach the clipboard image to the next message (also Ctrl+V)"),
     SlashCommand("theme", LOCAL, "Switch the OMH colour theme"),
     SlashCommand("omh-model", LOCAL, "Pick OMH model chains"),
     # Surfaces that only Hermes' own terminal has.
@@ -69,8 +73,6 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("save", HERMES, "Export the transcript to a file"),
     SlashCommand("prompt", HERMES, "Compose in $EDITOR", ("compose",)),
     SlashCommand("terminal-setup", HERMES, "Write IDE keybindings"),
-    SlashCommand("paste", HERMES, "Attach a clipboard image"),
-    SlashCommand("image", HERMES, "Attach an image"),
     # Ink display preferences and debug widgets.
     SlashCommand("mouse", DROPPED, "Mouse tracking", ("scroll",)),
     SlashCommand("density", DROPPED, "Compact display"),

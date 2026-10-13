@@ -233,6 +233,30 @@ class FrameTests(unittest.TestCase):
         self.assertEqual(texts(list(frame.lines))[-4:], ["  3", "  4", "  5", "status"])
         self.assertEqual(frame.cursor, (9, 3))
 
+    def test_the_attachment_row_tops_the_composer_and_the_input_row_stays_put(self) -> None:
+        chips = (Span("📎 shot.png 1280×720"),)
+        for text in ("", "1\n2\n3\n4\n5"):
+            with self.subTest(text=text):
+                composer = Composer(text=text, caret=len(text))
+                plain_frame = build_frame(cols=40, rows=12, composer=composer, status=self.status, previous_height=11)
+                with_chips = build_frame(
+                    cols=40, rows=12, composer=composer, status=self.status, previous_height=11, attachments=chips
+                )
+                self.assertEqual(with_chips.height, plain_frame.height)
+                self.assertEqual(with_chips.cursor, plain_frame.cursor)
+                above_status = with_chips.height - 2
+                self.assertEqual(texts([with_chips.lines[above_status]]), texts([plain_frame.lines[above_status]]))
+                self.assertLessEqual(with_chips.budget.composer, composer_cap(12))
+                top = with_chips.budget.composer_top
+                self.assertEqual(texts([with_chips.lines[top]]), ["📎 shot.png 1280×720"])
+                self.assertEqual(texts([with_chips.lines[top - 1]]), ["─" * 40])
+
+    def test_a_terminal_too_short_for_two_composer_rows_drops_the_attachment_row(self) -> None:
+        frame = build_frame(
+            cols=40, rows=7, composer=Composer(), status=self.status, previous_height=6, attachments=(Span("📎 x"),)
+        )
+        self.assertNotIn("📎 x", texts(list(frame.lines)))
+
     def test_a_tiny_terminal_frame_is_composer_and_status(self) -> None:
         frame = build_frame(
             cols=12, rows=4, composer=Composer(), status=self.status, previous_height=2, slot=plain("menu")

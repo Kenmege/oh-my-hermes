@@ -11,7 +11,8 @@ hint for a session this TUI never opened).
 
 `App` is the loop. One thread owns the terminal and every model: it reads
 input with a short timeout, routes keys (an open prompt slot first, then the
-completion menu, then the composer), takes everything the gateway sent since
+attachment keys, the completion menu, then the
+composer), takes everything the gateway sent since
 the last step, takes the newest HUD snapshot, and repaints when something
 changed or a spinner is due. Calls made from the loop go out with
 `GatewayClient.request` and their answers come back through `poll`, so a
@@ -27,14 +28,16 @@ for `interrupt` or `steer`.
 
 Nothing here writes to disk except that file. Prompt text, the transcript,
 server-request frames and the gateway's stderr stay in memory and on the
-person's own terminal.
+person's own terminal. An attached image is a path the gateway resolves and
+queues itself (`image.attach`, `clipboard.paste`, `input.detect_drop`); the
+TUI keeps only its name for the chip row.
 """
 
 from __future__ import annotations
 
 import base64
 from collections import deque
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 import json
@@ -59,7 +62,7 @@ from .gateway import (
     attach_refused,
     gateway_spawn,
 )
-from .keys import CHAR, DOWN, ESCAPE, UP, Key, KeyDecoder, Paste
+from .keys import BACKSPACE, CHAR, DOWN, ESCAPE, UP, Key, KeyDecoder, Paste
 from .launch import FALLBACK_EXIT
 from .layout import slot_cap
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
@@ -110,9 +113,13 @@ STATE_WAITING = "waiting on you"
 EXIT_HINT = "Ctrl+C again to exit"
 OSC52_COPY = "\x1b]52;c;{}\x07"
 MENU_NAME_CELLS = 16
+ATTACH_ICON = "📎"
+ATTACH_HINT = "Backspace removes"
+NO_SESSION_NOTICE = "No session is open yet; try again in a moment."
 HELP_KEYS = (
     "Keys: Enter sends · Alt+Enter or Ctrl+J adds a line · Tab completes a /command · "
-    "Ctrl+C interrupts a turn or clears the input · Ctrl+D on empty input exits"
+    "Ctrl+C interrupts a turn or clears the input · Ctrl+D on empty input exits\n"
+    "Ctrl+V attaches the clipboard image (drag & drop works too) · Backspace on empty input removes the last one"
 )
 
 
@@ -142,6 +149,15 @@ class _Pending:
     method: str
     on_result: Callable[[dict[str, Any]], None]
     on_error: Callable[[dict[str, Any]], bool] | None = None
+
+
+@dataclass(frozen=True)
+class Attachment:
+    """An image the gateway queued for the next message; the gateway holds the file, this is its label."""
+
+    path: str
+    name: str
+    size: str  # "1280×720", or "" when the gateway could not read the dimensions
 
 
 # ── small pure helpers ────────────────────────────────────────────────────
@@ -244,6 +260,22 @@ def banner_lines(*, model: str, cwd: str, resumed: str, theme: Theme, width: int
     room = width - line_width(header("")) - len(" · ")
     path = _left_truncate(cwd, room) if cwd and room >= _BANNER_MIN_PATH_CELLS else ""
     return [truncate_line(header(path), width), truncate_line((Span(BANNER_HINT, theme.dim),), width), ()]
+
+
+def attachment_from(result: Mapping[str, Any]) -> Attachment | None:
+    """The chip for an image the gateway queued (`image.attach`, `clipboard.paste`, an image drop); None without a path."""
+    path = _text(result.get("path"))
+    if not path:
+        return None
+    width, height = result.get("width"), result.get("height")
+    sized = all(isinstance(value, int) and not isinstance(value, bool) and value > 0 for value in (width, height))
+    return Attachment(path, _text(result.get("name")) or os.path.basename(path) or path, f"{width}×{height}" if sized else "")
+
+
+def attachment_line(attachments: Sequence[Attachment], width: int, theme: Theme) -> Line:
+    """`📎 shot.png 1280×720 · notes.png  Backspace removes`, cut to `width` (the hint goes first)."""
+    labels = " · ".join(f"{item.name} {item.size}".strip() for item in attachments)
+    return truncate_line((Span(f"{ATTACH_ICON} {labels}", theme.accent), Span(f"  {ATTACH_HINT}", theme.dim)), width)
 
 
 def _tool_summary(message: Mapping[str, Any]) -> str:
@@ -426,6 +458,7 @@ class App:
         self.banner_record: dict[str, str] | None = None  # kept, so a full redraw can print it again
         self.redraw_at: float | None = None  # when a settled resize redraws everything
         self.anchor = True  # the next frame re-anchors the region (first frame, resize, redraw)
+        self.attachments: list[Attachment] = []  # images the gateway queued for the next prompt
         self.dirty = True
         self.last_render = 0.0
 
@@ -728,6 +761,8 @@ class App:
             if answer is not None:
                 self._answer(answer)
             return
+        if self.slot is None and self._attachment_input(event):
+            return
         if self.slot is None and isinstance(event, Key) and self._menu_moves(event):
             return
         before = self.composer.text
@@ -750,6 +785,27 @@ class App:
             self.exit_code = 0
         elif action.kind == COMPLETE and self.slot is None:
             self._accept_completion()
+
+    def _attachment_input(self, event: Key | Paste) -> bool:
+        """Ctrl+V, Backspace on an empty composer with images queued, and a one-line paste (a drop); True when handled."""
+        if isinstance(event, Paste):
+            if "\n" in event.text or not event.text.strip() or not self.sid:
+                return False
+            self._request(
+                "input.detect_drop",
+                {"session_id": self.sid, "text": event.text},
+                lambda result: self._on_drop(event.text, result),
+                lambda error: self._on_drop_refused(event.text),
+            )
+            return True
+        if event.name == CHAR and event.ctrl and not event.alt and event.char == "v":
+            self._paste("")
+            return True
+        if event.name == BACKSPACE and not self.composer.text and self.attachments:
+            detached = self.attachments.pop()
+            self._request("image.detach", {"session_id": self.sid, "path": detached.path}, lambda result: None)
+            return True
+        return False
 
     def _interrupt_or_exit(self) -> None:
         """Ctrl+C on empty input: interrupt a running turn, else exit on a second press within 2 s."""
@@ -812,6 +868,7 @@ class App:
         self.transcript.add_user(shown or text)
         self.sticky = shown or text
         self.turn_pending = True
+        self.attachments.clear()  # the gateway sends its queued images with this turn
         params: dict[str, Any] = {"session_id": self.sid, "text": text}
         if queued:
             params["queued"] = True  # the busy path holds a drained prompt; it never redirects or steers it
@@ -919,6 +976,8 @@ class App:
             "copy": self._copy,
             "theme": self._theme,
             "omh-model": self._omh_model,
+            "image": self._image,
+            "paste": self._paste,
         }
 
     def _help(self, arg: str) -> None:
@@ -952,8 +1011,72 @@ class App:
         self.transcript = Transcript(self.clock)
         self.queued.clear()
         self.sticky = ""
+        self.attachments.clear()  # they were queued in the closed session
         self._adopt_session(result)
         self.transcript.add_notice(f"New session {self.stored_id}.")
+
+    # ── attachments ──
+
+    def _image(self, arg: str) -> None:
+        if not arg:
+            self.transcript.add_notice("Usage: /image <path to an image file>", NOTICE_WARN)
+        elif not self.sid:
+            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
+        else:
+            self._request(
+                "image.attach",
+                {"session_id": self.sid, "path": arg},
+                self._on_image_attached,
+                lambda error: self._attach_failed("/image", error),
+            )
+
+    def _paste(self, arg: str) -> None:
+        if not self.sid:
+            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
+            return
+        self._request(
+            "clipboard.paste",
+            {"session_id": self.sid},
+            self._on_clipboard_pasted,
+            lambda error: self._attach_failed("/paste", error),
+        )
+
+    def _on_image_attached(self, result: dict[str, Any]) -> None:
+        attachment = attachment_from(result) if result.get("attached") is True else None
+        if attachment is None:
+            self.transcript.add_notice("/image: Hermes did not attach the file.", NOTICE_WARN)
+            return
+        self.attachments.append(attachment)
+        remainder = _text(result.get("remainder")).strip()
+        if remainder:  # `/image shot.png what is this?` keeps the question for the person to send
+            self.composer.handle(Paste(remainder))
+
+    def _on_clipboard_pasted(self, result: dict[str, Any]) -> None:
+        attachment = attachment_from(result) if result.get("attached") is True else None
+        if attachment is None:
+            self.transcript.add_notice(_text(result.get("message")) or "No image found in the clipboard.")
+        else:
+            self.attachments.append(attachment)
+
+    def _attach_failed(self, command: str, error: dict[str, Any]) -> bool:
+        message = _text(error.get("message")) or "not attached"
+        self.transcript.add_notice(f"{command}: {message} ({error.get('code')}).", NOTICE_WARN)
+        return True
+
+    def _on_drop(self, text: str, result: dict[str, Any]) -> None:
+        """An image drop is already queued (a chip, nothing typed); a file drop types its reference; else the paste."""
+        if result.get("matched") is True and result.get("is_image") is True:
+            attachment = attachment_from(result)
+            if attachment is not None:
+                self.attachments.append(attachment)
+            return
+        if result.get("matched") is True and _text(result.get("text")):
+            text = _text(result.get("text"))
+        self.composer.handle(Paste(text))
+
+    def _on_drop_refused(self, text: str) -> bool:
+        self.composer.handle(Paste(text))
+        return True
 
     def _redraw(self, arg: str) -> None:
         self._full_redraw()
@@ -1106,6 +1229,9 @@ class App:
             tail=self._tail(cols),
             slot=self._slot_lines(cols, rows),
             theme=self.theme,
+            attachments=attachment_line(self.attachments, cols, self.theme)
+            if self.attachments and self.slot is None
+            else None,
         )
         self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad)
         if stable and anchoring:

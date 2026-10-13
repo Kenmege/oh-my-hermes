@@ -39,6 +39,11 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "session.interrupt": frozenset({"session_id"}),
     "session.list": frozenset(),
     "prompt.submit": frozenset({"session_id", "text", "queued"}),
+    # Attachments: the gateway resolves and queues the file; the TUI sends a path, never bytes.
+    "image.attach": frozenset({"session_id", "path"}),
+    "image.detach": frozenset({"session_id", "path"}),
+    "clipboard.paste": frozenset({"session_id"}),
+    "input.detect_drop": frozenset({"session_id", "text"}),
     "slash.exec": frozenset({"command", "session_id"}),
     "command.dispatch": frozenset({"name", "arg", "session_id"}),
     "config.set": frozenset({"key", "value", "session_id"}),

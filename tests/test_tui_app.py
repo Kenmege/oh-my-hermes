@@ -1024,5 +1024,141 @@ class LocalCommandTests(AppTestCase):
                 self.assertEqual(second["params"], {"session_id": LIVE_ID, "text": "second prompt"})
                 self.assertNotIn("queued", terminal.history())
 
+SHOT = {
+    "attached": True,
+    "path": "/fixture/project/shot.png",
+    "count": 1,
+    "remainder": "",
+    "text": "[User attached image: shot.png]",
+    "name": "shot.png",
+    "width": 1280,
+    "height": 720,
+    "token_estimate": 510,
+}
+CLIP = {
+    "attached": True,
+    "path": "/fixture/hermes-home/images/clip_20261013_120000_1.png",
+    "count": 1,
+    "name": "clip_20261013_120000_1.png",
+    "width": 640,
+    "height": 480,
+    "token_estimate": 85,
+}
+
+
+def bracketed(text: str) -> bytes:
+    return b"\x1b[200~" + text.encode("utf-8") + b"\x1b[201~"
+
+
+def status_index(screen: list[str]) -> int:
+    return next(index for index, line in enumerate(screen) if STATUS_MARK in line)
+
+
+def composer_row(screen: list[str]) -> str:
+    return screen[status_index(screen) - 1]
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class AttachmentTests(AppTestCase):
+    def test_image_shows_a_chip_above_the_composer_and_the_submit_that_sends_it_clears_it(self) -> None:
+        answers = (*startup_answers(), ("image.attach", {"result": SHOT}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            Step(b"/image ./shot.png\r", when=terminal.idle, capture="before", label="idle"),
+            Step(b"Reply with exactly the word: ok\r", when=terminal.shows("shot.png 1280×720"), capture="chip",
+                 label="the chip"),
+            Step(b"\x04", when=lambda: "later." in terminal.history() and terminal.idle(), capture="after",
+                 label="the reply"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (attach,) = run.calls("image.attach")
+        self.assertEqual(attach["params"], {"session_id": LIVE_ID, "path": "./shot.png"})
+        before, chip = terminal.captures["before"], terminal.captures["chip"]
+        status = status_index(chip)
+        # The chip row sits between the rule and the input; the input row did not move.
+        self.assertEqual(status, status_index(before))
+        self.assertTrue(chip[status - 1].startswith("›"), chip)
+        self.assertEqual(chip[status - 2], "📎 shot.png 1280×720  Backspace removes")
+        self.assertIn(RULE_MARK, chip[status - 3])
+        self.assertEqual(len(run.calls("prompt.submit")), 1)
+        self.assertNotIn("shot.png", "\n".join(terminal.captures["after"]))
+
+    def test_paste_reports_an_empty_clipboard_and_ctrl_v_attaches_its_image(self) -> None:
+        answers = (
+            *startup_answers(),
+            ("clipboard.paste", {"result": {"attached": False, "message": "No image found in clipboard"}}),
+            ("clipboard.paste", {"result": CLIP}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "/paste"),
+            Step(b"\x16", when=terminal.shows("No image found in clipboard"), label="the empty-clipboard notice"),
+            Step(b"\x04", when=terminal.shows("clip_20261013_120000_1.png 640×480"), label="the clipboard chip"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual([frame["params"] for frame in run.calls("clipboard.paste")], [{"session_id": LIVE_ID}] * 2)
+
+    def test_a_one_line_paste_is_offered_to_detect_drop_first(self) -> None:
+        answers = (
+            *startup_answers(),
+            ("input.detect_drop", {"result": {
+                "matched": True, "is_image": True, "path": "/fixture/project/drop.png", "count": 1,
+                "text": "[User attached image: drop.png]", "name": "drop.png", "width": 800, "height": 600,
+                "token_estimate": 340}}),
+            ("input.detect_drop", {"result": {
+                "matched": True, "is_image": False, "path": "/fixture/project/notes.txt", "name": "notes.txt",
+                "text": "[User attached file: /fixture/project/notes.txt]"}}),
+            ("input.detect_drop", {"result": {"matched": False}}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        file_ref = "[User attached file: /fixture/project/notes.txt]"
+        terminal.script(
+            Step(bracketed("/fixture/project/drop.png"), when=terminal.idle, label="idle"),
+            Step(bracketed("/fixture/project/notes.txt"), when=terminal.shows("drop.png 800×600"), capture="image",
+                 label="the image chip"),
+            Step(bracketed(" and hello"), when=terminal.shows(f"› {file_ref}"), label="the file reference"),
+            Step(bracketed("line one\nline two"), when=terminal.shows("and hello"), capture="typed",
+                 label="the unmatched paste"),
+            Step(b"\x03\x04", when=terminal.shows("line two"), label="the multi-line paste"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        sent = [frame["params"] for frame in run.calls("input.detect_drop")]
+        self.assertEqual(sent, [
+            {"session_id": LIVE_ID, "text": "/fixture/project/drop.png"},
+            {"session_id": LIVE_ID, "text": "/fixture/project/notes.txt"},
+            {"session_id": LIVE_ID, "text": " and hello"},
+        ])
+        # An image drop is queued by the gateway: a chip, and nothing typed.
+        self.assertEqual(composer_row(terminal.captures["image"]), "›")
+        self.assertEqual(composer_row(terminal.captures["typed"]), f"› {file_ref} and hello")
+
+    def test_backspace_on_an_empty_composer_detaches_the_last_image(self) -> None:
+        answers = (
+            *startup_answers(),
+            ("image.attach", {"result": SHOT}),
+            ("image.detach", {"result": {"detached": True, "count": 0}}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "/image ./shot.png"),
+            Step(b"\x7f", when=terminal.shows("shot.png 1280×720"), label="the chip"),
+            Step(b"\x04", when=lambda: not terminal.shows("shot.png")() and terminal.idle(), capture="gone",
+                 label="the chip gone"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (detach,) = run.calls("image.detach")
+        self.assertEqual(detach["params"], {"session_id": LIVE_ID, "path": "/fixture/project/shot.png"})
+        self.assertTrue(composer_row(terminal.captures["gone"]).startswith("›"))
+
+
+
 if __name__ == "__main__":
     unittest.main()

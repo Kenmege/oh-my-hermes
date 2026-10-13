@@ -15,6 +15,10 @@ bottom, and `flush_above` turns pad rows into transcript without moving it.
 The composer's first row is then the bottom row minus the status row minus
 its own row count, whatever the panel, prompt slot, completion menu or tail do.
 
+The attachment row (the images queued for the next message) is the composer's
+first row while there is one: it counts against the composer's cap, so the
+input rows keep their place and only the block's top moves.
+
 Boundary: when the region starts on the screen's top row (the launch cursor
 on row 0), the first frame's bottom is one row above the screen's last row.
 The first time the region grows after that it reaches the last row, so the
@@ -59,9 +63,18 @@ def build_frame(
     slot: Sequence[Line] = (),
     theme: Theme = DEFAULT_THEME,
     prompt: str = PROMPT,
+    attachments: Line | None = None,
 ) -> Frame:
-    """The region for one repaint; `previous_height` is `LiveRegion.height` right now."""
-    composer_lines, (caret_line, caret_col) = composer.render(cols, composer_cap(rows), prompt, theme.prompt)
+    """The region for one repaint; `previous_height` is `LiveRegion.height` right now.
+
+    `attachments` is drawn as the composer's first row when the composer may
+    have two rows; a terminal too short for that shows the input alone.
+    """
+    cap = composer_cap(rows)
+    chips = [attachments] if attachments is not None and cap >= 2 else []
+    input_lines, (caret_line, caret_col) = composer.render(cols, cap - len(chips), prompt, theme.prompt)
+    composer_lines = chips + input_lines
+    caret_line += len(chips)
     min_height = previous_height if previous_height > 0 else max_height(rows)
     budget = allocate(
         rows,
