@@ -1,16 +1,17 @@
 """Recurring-intent lifecycle records (`hermes_recurring_intent/v1`).
 
-# Why this is a sibling record and not more fields on `hermes_ops_blueprint/v1`
+# Why this is a sibling record and not more fields on `prepared_native_blueprint/v1`
 
 There is one recurring-work concept in OMH, not two. A recurring intent is the
-*lifecycle envelope* around a scheduled-ops blueprint: it never re-derives
+*lifecycle envelope* around a prepared native blueprint: it never re-derives
 cadence, delivery, or silence, it calls `build_scheduled_ops_blueprint` and
 keeps the sub-records that builder produced. The blueprint stays the single
 normalizer, and both records live under `.omh/hermes-ops/`.
 
 The blueprint could not carry the lifecycle itself for three reasons:
 
-1. `hermes_ops_blueprint/v1` is `projection_only` and write-once.
+1. `prepared_native_blueprint/v1` (`hermes_ops_blueprint/v1` before the
+   rename) is `projection_only` and write-once.
    `write_hermes_ops_blueprint` refuses to overwrite an existing id and there is
    no update path, because a projection of catalog metadata has nothing to
    update. A recurring intent is revised, activated, and accumulates occurrence
@@ -88,7 +89,9 @@ from ..hashutil import sha256_text
 from ..local_store import atomic_write_json, ensure_dir, read_json_object, read_json_object_result, utc_now
 from ..paths import OmhPaths
 from .hermes_ops import (
+    PREPARED_NATIVE_BLUEPRINT_SCHEMA_VERSION,
     PROJECTION_SOURCE_REFS,
+    READABLE_BLUEPRINT_SCHEMA_VERSIONS,
     build_scheduled_ops_blueprint,
     nested_status_boundary_errors,
 )
@@ -354,7 +357,7 @@ def build_recurring_intent(
         "source": source.strip(),
         "request_summary": _preview(clean_request, limit=INTENT_SUMMARY_LIMIT),
         "derived_from": {
-            "schema_version": "hermes_ops_blueprint/v1",
+            "schema_version": PREPARED_NATIVE_BLUEPRINT_SCHEMA_VERSION,
             "authority": "projection_only",
             "normalizer": "build_scheduled_ops_blueprint",
             "source_refs": list(PROJECTION_SOURCE_REFS),
@@ -892,8 +895,10 @@ def validate_recurring_intent(record: dict[str, Any]) -> list[str]:
     if not isinstance(derived_from, dict):
         errors.append("derived_from must be an object")
     else:
-        if derived_from.get("schema_version") != "hermes_ops_blueprint/v1":
-            errors.append("derived_from.schema_version must be hermes_ops_blueprint/v1")
+        # A saved intent written before the blueprint rename names the legacy
+        # id; it is the user's record and stays valid.
+        if derived_from.get("schema_version") not in READABLE_BLUEPRINT_SCHEMA_VERSIONS:
+            errors.append(f"derived_from.schema_version must be one of {', '.join(READABLE_BLUEPRINT_SCHEMA_VERSIONS)}")
         if derived_from.get("authority") != "projection_only":
             errors.append("derived_from.authority must be projection_only")
     for key in (

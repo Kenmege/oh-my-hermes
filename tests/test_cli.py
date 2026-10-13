@@ -5711,7 +5711,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertFalse(dry["store"]["written"])
             self.assertFalse((omh_home / "hermes-ops").exists())
             blueprint = dry["blueprint"]
-            self.assertEqual(blueprint["schema_version"], "hermes_ops_blueprint/v1")
+            self.assertEqual(blueprint["schema_version"], "prepared_native_blueprint/v1")
             self.assertEqual(blueprint["kind"], "scheduled-ops-blueprint")
             self.assertEqual(blueprint["schedule_intent"]["cadence"], "daily")
             self.assertEqual(blueprint["delivery_intent"]["surfaces"], ["slack"])

@@ -4,6 +4,38 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`automation-blueprint` now prepares Hermes' own Automation Blueprint
+  instead of a look-alike with the same name.** The record `omh ops
+  blueprint` writes is renamed from `hermes_ops_blueprint/v1` to
+  `prepared_native_blueprint/v1` and gains a `native_blueprint` projection:
+  the `metadata.hermes.blueprint` block (schedule, deliver, prompt,
+  no_agent) and the matching `cronjob_manage` create call. The stored
+  prompt is the bounded request preview (the record keeps no raw request),
+  the current conversation is `origin`, a report-on-change rule is a
+  `[SILENT]` final reply plus `continuity`, and the fields still open are
+  listed under `needs_confirmation`, `prompt` included while the silence
+  rule is unsettled or the request ran past the preview, in which case the
+  full prompt is written from the conversation when the job is created. The
+  validator refuses a block field Hermes does not read, a `model`,
+  `provider`, or `pinned` argument on the create call, and any argument the
+  `cronjob_manage` schema does not advertise at the plugin floor; a model pin stays the user's (the block's own keys, `hermes cron
+  create` or `edit` with `--model` and `--provider`, or `pinned=true` on
+  their explicit request where `cronjob_manage` offers it). The skill and
+  its recurring-surface reference map OMH's overlap, missed-run, retry,
+  backfill, and failure-pause decisions onto what Hermes cron does by
+  itself and name the postures it cannot honour; Hermes' re-run of a
+  recurring job's fire that failed on a transient network or DNS error
+  before any model call, and its global missed-run switch, are stated by
+  presence in the installed Hermes, never by version. Where `cronjob_manage`
+  is absent the skill hands the user the equivalent `hermes cron create`
+  command. Post-activation status comes from Hermes (`cronjob_manage` list,
+  `hermes cron runs`, open `hermes cron incidents`), and OMH still creates
+  no cron job: activation is `/blueprint`, an accepted Suggested Cron Job,
+  a create the user asked for, or a `hermes cron create` the user runs.
+  Records, index caches, and saved recurring intents written under the old
+  id stay readable and valid.
+
+
 - **A Maestro supervisor now waits on a dispatch with one bounded background
   watcher instead of polling the roster every minute in its own turns.**
   `omh coding fanout status --wait` re-reads the same read-only roster until

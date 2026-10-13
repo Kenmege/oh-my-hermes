@@ -639,7 +639,14 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # bridge blocks them. The restored chat confirmations in `command-operator`
 # and `connector-operator` sit past the row's bounds. Re-derived from the
 # producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 488220
+# 488220 -> 488225: `automation-blueprint`'s artifact is renamed from
+# `hermes_ops_blueprint/v1` to `prepared_native_blueprint/v1`, the record that
+# prepares Hermes' own `metadata.hermes.blueprint` block, so it stops sharing a
+# name with Hermes' Automation Blueprints. The row's first expected output is
+# the only capability field that moved, by the five characters the new id is
+# longer; the native field mapping itself sits below the capability row's
+# quality-bar and safety-rule windows. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 488225
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

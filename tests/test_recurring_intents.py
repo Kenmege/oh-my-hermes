@@ -147,7 +147,7 @@ class RecurringIntentPreparationTests(unittest.TestCase):
         intent = build_recurring_intent(REQUEST, created_at="2026-06-16T00:00:00Z")
         blueprint = build_scheduled_ops_blueprint(REQUEST, created_at="2026-06-16T00:00:00Z")
 
-        self.assertEqual(intent["derived_from"]["schema_version"], "hermes_ops_blueprint/v1")
+        self.assertEqual(intent["derived_from"]["schema_version"], "prepared_native_blueprint/v1")
         self.assertEqual(intent["derived_from"]["authority"], "projection_only")
         self.assertEqual(intent["schedule_intent"], blueprint["schedule_intent"])
         self.assertEqual(intent["delivery_intent"], blueprint["delivery_intent"])

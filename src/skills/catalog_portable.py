@@ -155,7 +155,7 @@ _PORTABILITY: dict[str, str] = {
     'omh-security-safety-review': PORTABILITY_PORTABLE,
     # required_inputs: components, data flows, known trust boundaries, deployed controls, threat actors in scope; expected_outputs: application_threat_model/v1; the whole workflow is analysis over supplied architecture with no OMH CLI call and no Hermes-only tool.
     'omh-application-threat-model': PORTABILITY_PORTABLE,
-    # expected_outputs require hermes_ops_blueprint and hermes_recurring_intent lifecycle records.
+    # expected_outputs require prepared_native_blueprint and hermes_recurring_intent lifecycle records.
     'omh-automation-blueprint': PORTABILITY_HERMES_ONLY,
     # required_inputs: what is broken now, blast radius, available responders, the recovery signal; expected_outputs: live_incident_record/v1; the workflow is judgement over supplied facts, and every external effect is already delegated to connector-operator.
     'omh-live-incident-response': PORTABILITY_PORTABLE,

@@ -145,9 +145,11 @@ delivery, conflict resolution, or verified briefing evidence.
 Pure schedule or delivery requests still route to `scheduled-ops-blueprint`.
 The wrapper can show cadence, delivery surface, silence policy, selected
 skills, context chain, and missing runtime evidence. The blueprint can prepare
-`hermes_ops_blueprint/v1`; it cannot prove host cron creation, Hermes
-automation enablement, source retrieval, Slack delivery, no-agent execution,
-plugin load, connector invocation, review, CI, or merge evidence.
+`prepared_native_blueprint/v1`: Hermes' own `metadata.hermes.blueprint` block
+and the matching `cronjob_manage` create call, which only the user or Hermes
+activates. It cannot prove host cron creation, Hermes automation enablement,
+source retrieval, Slack delivery, no-agent execution, plugin load, connector
+invocation, review, CI, or merge evidence.
 
 `operating-rhythm-history` keeps cadence records, decisions, and action items
 durable without claiming the meeting happened unless notes are observed.

@@ -1,5 +1,5 @@
 {
-  "schema_version": "hermes_ops_blueprint/v1",
+  "schema_version": "prepared_native_blueprint/v1",
   "blueprint_id": "20260616T000000Z-scheduled-ops-competitor-digest-example",
   "kind": "scheduled-ops-blueprint",
   "title": "Scheduled ops: competitor digest",
@@ -99,6 +99,33 @@
       "confirm Hermes/gateway delivery target and evidence source"
     ]
   },
+  "native_blueprint": {
+    "status": "prepared",
+    "frontmatter_key": "metadata.hermes.blueprint",
+    "block": {
+      "schedule": "every morning",
+      "deliver": "slack",
+      "prompt": "every morning check competitor news and send a Slack digest only if something changed\n\nIf nothing changed since the previous run, reply with [SILENT] alone.",
+      "no_agent": false
+    },
+    "cronjob_manage_create": {
+      "action": "create",
+      "schedule": "every morning",
+      "prompt": "every morning check competitor news and send a Slack digest only if something changed\n\nIf nothing changed since the previous run, reply with [SILENT] alone.",
+      "deliver": "slack",
+      "skills": [
+        "ulw-research",
+        "omh-research-brief",
+        "omh-report-package"
+      ],
+      "continuity": true
+    },
+    "needs_confirmation": [
+      "schedule",
+      "deliver"
+    ],
+    "activation_owner": "user_or_hermes"
+  },
   "wrapper_actions": [
     "show_blueprint",
     "revise_schedule",
@@ -131,12 +158,12 @@
     "merge"
   ],
   "observed_evidence_required": [
-    "Hermes host automation or cron listing that references the configured schedule.",
+    "Hermes cron listing (cronjob_manage action list, or hermes cron list) that shows the job on the configured schedule.",
     "Gateway or Hermes message delivery record when delivery is claimed.",
     "Observed source retrieval or supplied source artifacts when research/report content is claimed.",
     "No-agent script/file/run evidence if a no-agent lane is later implemented."
   ],
-  "prepared_is_not": "A Hermes ops blueprint is projection metadata only. It is not host cron creation, gateway delivery, source retrieval, no-agent execution, plugin load, review, CI, merge-readiness, or merge evidence.",
+  "prepared_is_not": "A prepared native blueprint is projection metadata only. It is not host cron creation, gateway delivery, source retrieval, no-agent execution, plugin load, review, CI, merge-readiness, or merge evidence.",
   "staged_gap_map_stage_contract": {
     "implemented": "The OMH feature surface exists in local skill, playbook, CLI, or artifact guidance; this is not observed host/runtime execution evidence.",
     "prepared_only": "This blueprint can prepare policy or intent, but observed host/gateway evidence is still required before claiming execution.",
@@ -194,10 +221,10 @@
       "scope": "ops-observability-card playbook standardizes wrapper-safe token, cost, latency, run-history, and failure-mode boundaries"
     }
   ],
-  "next_action": "Present the blueprint in Hermes, ask for schedule/delivery confirmation, then create host automation only outside this prepared artifact.",
+  "next_action": "Present the prepared native blueprint in Hermes and ask for the schedule/delivery confirmation it still needs; the user or Hermes activates it (/blueprint, a Suggested Cron Job, cronjob_manage create, or hermes cron create), never OMH.",
   "status_card": {
     "schema_version": "hermes_ops_status_card/v1",
-    "headline": "Scheduled ops blueprint prepared",
+    "headline": "Prepared native blueprint",
     "prepared": [
       "schedule intent",
       "delivery policy",
