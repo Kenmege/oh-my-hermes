@@ -137,6 +137,12 @@ class NativeDelegation(unittest.TestCase):
             "an empty lane until its worktree is checked.",
             "The first isolated lane makes the host add `.worktrees/` to the repository's `.gitignore` when it is "
             "missing: an uncommitted change in your checkout that is the host's, not a lane's.",
+            # Several background calls can be in flight, `git worktree list` shows
+            # running lanes too, and a completion message names no worktree.
+            "Only after a lane has returned, and in the completion-message case only once every lane whose worktree "
+            "`git worktree list` shows has returned (the message does not say which worktree is whose), commit a "
+            "dirty worktree on its branch, merge it, and remove it. A worktree whose lane may still be running is "
+            "not committed, merged, or removed.",
         ):
             with self.subTest(clause=clause[:60]):
                 self.assertIn(clause, text)
@@ -159,8 +165,8 @@ class NativeDelegation(unittest.TestCase):
     def test_a_team_check_waits_for_the_merge_under_isolation(self) -> None:
         self.assertIn(
             "A check run here then tests a tree without that lane's work, and a pass would accept a lane nobody "
-            "checked. Commit what a helper left uncommitted in its worktree, then merge each returned helper's "
-            "branch into this workspace before `team_reconcile`;",
+            "checked. Once every helper is back, commit what each left uncommitted in its worktree, then merge each "
+            "returned helper's branch into this workspace before `team_reconcile`;",
             _reference("ultrawork", "references/team-lane.md"),
         )
 
