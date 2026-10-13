@@ -284,9 +284,12 @@ class MaestroObserveToTerminalStateTests(unittest.TestCase):
         )
         from omh.commands.coding import _fanout_status_wait_exit_code
 
-        def graded(outcome: str, states: list[str], stuck: list[str]) -> int:
+        def graded(outcome: str, states: list[str], stuck: list[str], journal_errors: list[str] = []) -> int:
             units = [{"unit_id": f"u{index}", "unit_state": state} for index, state in enumerate(states)]
-            return _fanout_status_wait_exit_code({"units": units, "stuck_units": stuck, "wait": {"outcome": outcome}})
+            roster = {"units": units, "stuck_units": stuck, "wait": {"outcome": outcome}}
+            if journal_errors:
+                roster["journal_errors"] = journal_errors
+            return _fanout_status_wait_exit_code(roster)
 
         combined = " ".join(_maestro_definition().quality_bar)
         cases = (
@@ -294,12 +297,39 @@ class MaestroObserveToTerminalStateTests(unittest.TestCase):
             (graded(WAIT_OUTCOME_ALL_UNITS_TERMINAL, ["verified"], []), "when `all_units_terminal` is true and every unit is `verified`"),
             (graded(WAIT_OUTCOME_ALL_UNITS_TERMINAL, ["verified", "failed"], []), "when all are terminal and one is not"),
             (graded(WAIT_OUTCOME_TIMED_OUT, ["running"], []), "when the timeout passed first"),
+            (
+                graded(WAIT_OUTCOME_ALL_UNITS_TERMINAL, ["verified"], [], ["events.jsonl:8: torn"]),
+                "when they all verified but the journal had unreadable lines",
+            ),
         )
         for code, clause in cases:
             with self.subTest(code=code):
                 self.assertIn(f"{code} {clause}", combined)
+        self.assertEqual(len({code for code, _clause in cases}), len(cases))
         self.assertIn(f"exit {cases[0][0]} is that moment", combined)
         self.assertIn(f"on exit {cases[3][0]} a unit whose `unit_state` is still `unknown`", combined)
+
+    def test_a_code_the_watcher_did_not_choose_is_still_an_instruction(self) -> None:
+        # A kill, a crash, or an OmhError (an id the journal has not named yet)
+        # ends the watcher with a code none of the sentences above names.
+        combined = " ".join(_maestro_definition().quality_bar)
+        self.assertIn("Any other code means the watcher itself did not finish", combined)
+        self.assertIn("start a fresh watcher only if units are still running", combined)
+
+    def test_a_session_that_cannot_receive_the_completion_waits_before_ending_the_turn(self) -> None:
+        # Hermes drops the notification in sessions that cannot take an async
+        # completion (one-shot runs, cron, kanban workers, stateless HTTP) and
+        # says so in the spawn result; ending the turn there loses the answer.
+        combined = " ".join(_maestro_definition().quality_bar)
+        self.assertIn(
+            "unless the spawn result says this session cannot receive the completion: then wait on that "
+            "process the way the result names before ending the turn",
+            combined,
+        )
+        # The tool that waits is named by the result itself, because its name
+        # differs between Hermes revisions.
+        self.assertNotIn("process(", combined)
+        self.assertNotIn("process_manage", combined)
 
     def test_the_quality_bar_names_the_roster_fields_it_tells_the_agent_to_read(self) -> None:
         from omh.coding.fanout_status import FANOUT_UNIT_STATES

@@ -92,17 +92,27 @@ advances on journal events alone — and `all_units_terminal` is false for an
 empty roster, because "nothing to wait for" and "everything finished" are
 different answers.
 
+A marker written before the unit's first output snapshot carries no state
+yet. Its row reads `unknown` from `inflight_marker`, not terminal, and it still
+hides the dispatch summary's row for that unit: that row is an earlier
+attempt's, and reading it would report a re-dispatched unit's old
+`account_limit` as the state of a process that has just started.
+
 A supervisor does not loop on that command in its own turns. `--wait` turns
 it into one bounded watcher, run once in the background with an exit
 notification: it re-reads the same roster every `--interval` seconds (default
-30) and stops at the first read where `stuck_units` names a unit (exit 3), or
-every unit is terminal (exit 0 when each is `verified`, else 1), or when
-`--timeout` (default 600, at most 3600) passes first (exit 124). A stuck unit
-outranks a finished roster, because a unit the dispatch summary recorded at
-`account_limit` is over and still needs a person. It prints only the last
-roster, with a `wait` block naming the outcome, and like every read it writes
-nothing. Without `--wait` the command still exits 0: a read reports, it does
-not grade.
+30, at least 5) and stops at the first read where `stuck_units` names a unit
+(exit 3), or every unit is terminal (exit 0 when each is `verified`, else 1),
+or when `--timeout` (default 600, at most 3600) passes first (exit 124). A
+stuck unit outranks a finished roster, because a unit the dispatch summary
+recorded at `account_limit` is over and still needs a person. When every
+listed unit verified but the journal had lines it could not parse, it exits 65
+instead of 0: the roster lists units from journal events, so a torn line can
+hide a unit. A watcher that raises exits 70 with its traceback on stderr,
+because Python's own 1 already means a unit did not verify. It prints only the
+last roster, with a `wait` block naming the outcome, and like every read it
+writes nothing. Without `--wait` the command still exits 0: a read reports, it
+does not grade.
 
 ### Unit execution states
 

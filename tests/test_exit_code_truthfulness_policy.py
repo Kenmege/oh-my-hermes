@@ -226,6 +226,58 @@ class ExitCodeTruthfulnessPolicyTests(unittest.TestCase):
                 else:
                     self.assertEqual(_fanout_dispatch_exit_code(summary), 0)
 
+    def test_a_wait_over_an_unreadable_journal_is_never_success(self) -> None:
+        """A watcher whose roster lost a unit to a torn journal line is not done.
+
+        Re-derived from the roster producer and the wait loop, not from a
+        hand-built roster: one unit's journal lines are torn, so the roster
+        cannot list it, and every unit it can list verified. That still may
+        not grade as 0. Only the wait mapper grades rosters; other mappers keep
+        their own vocabulary, as this module's docstring promises.
+        """
+        import json
+        import tempfile
+
+        from omh.coding.fanout_artifacts import fanout_dispatch_summary_path
+        from omh.coding.fanout_status import project_fanout_status, wait_for_fanout_status
+        from omh.commands.coding import _fanout_status_wait_exit_code
+        from omh.system.paths import OmhPaths
+        from test_fanout_status import _FANOUT_ID, _FakeClock, _roster_fixture
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+            journal = paths.runtime_journal_events_path
+            journal.parent.mkdir(parents=True, exist_ok=True)
+            journal.write_text(
+                "".join(
+                    (text[:-3] if "flaky" in text else text) + "\n"
+                    for text in (json.dumps(event, sort_keys=True) for event in _roster_fixture())
+                ),
+                encoding="utf-8",
+            )
+            summary_path = fanout_dispatch_summary_path(paths, _FANOUT_ID)
+            summary_path.parent.mkdir(parents=True, exist_ok=True)
+            summary_path.write_text(json.dumps({"fanout_id": _FANOUT_ID, "units": [
+                {"unit_id": "core", "unit_state": "verified"},
+                {"unit_id": "docs", "unit_state": "verified"},
+                {"unit_id": "flaky", "unit_state": "failed"},
+            ]}), encoding="utf-8")
+            clock = _FakeClock()
+
+            roster = wait_for_fanout_status(
+                lambda: project_fanout_status(paths, _FANOUT_ID),
+                timeout_seconds=60, interval_seconds=5, clock=clock.monotonic, sleep=clock.sleep,
+            )
+
+            self.assertTrue(roster.get("journal_errors"))
+            self.assertIs(roster["all_units_terminal"], True)
+            self.assertNotEqual(
+                _fanout_status_wait_exit_code(roster),
+                0,
+                "_fanout_status_wait_exit_code reported success over a roster that lost a unit to the journal",
+            )
+
     def test_a_clean_summary_still_maps_to_zero(self) -> None:
         for module_stem, function_name in _discovered_mappers():
             mapper = _load(module_stem, function_name)

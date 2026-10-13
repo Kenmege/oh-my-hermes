@@ -7,6 +7,7 @@ import math
 import os
 import re
 import sys
+import traceback
 from pathlib import Path
 
 from ..plugin_bundle.omh.run_records import FANOUT_CONTRACT_FILE, RUN_FILE
@@ -2361,8 +2362,11 @@ def cmd_coding_fanout_status(args: argparse.Namespace) -> int:
     interval = FANOUT_STATUS_WAIT_DEFAULT_INTERVAL_SECONDS if interval is None else interval
     if not 1 <= timeout <= FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS:
         raise OmhError(f"fanout status --timeout must be 1..{FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS} seconds")
-    if not 1 <= interval <= FANOUT_STATUS_WAIT_MAX_INTERVAL_SECONDS:
-        raise OmhError(f"fanout status --interval must be 1..{FANOUT_STATUS_WAIT_MAX_INTERVAL_SECONDS} seconds")
+    if not FANOUT_STATUS_WAIT_MIN_INTERVAL_SECONDS <= interval <= FANOUT_STATUS_WAIT_MAX_INTERVAL_SECONDS:
+        raise OmhError(
+            f"fanout status --interval must be {FANOUT_STATUS_WAIT_MIN_INTERVAL_SECONDS}.."
+            f"{FANOUT_STATUS_WAIT_MAX_INTERVAL_SECONDS} seconds"
+        )
 
     paths = _paths(args)
 
@@ -2379,6 +2383,15 @@ def cmd_coding_fanout_status(args: argparse.Namespace) -> int:
             roster = read_roster()
     except (OSError, ValueError) as exc:
         raise OmhError(f"fanout status unavailable: {exc}") from exc
+    except Exception:
+        # Python's own exit for an uncaught exception is 1, which a watcher
+        # caller reads as "every unit terminal and one not verified". The
+        # traceback still reaches stderr; only the code changes. A single read
+        # grades nothing, so it keeps Python's own crash.
+        if not wait:
+            raise
+        traceback.print_exc()
+        return FANOUT_STATUS_WAIT_CRASH_EXIT_CODE
     if _wants_json(args):
         _print_json(roster)
     else:
@@ -2393,6 +2406,9 @@ def cmd_coding_fanout_status(args: argparse.Namespace) -> int:
 FANOUT_STATUS_WAIT_DEFAULT_TIMEOUT_SECONDS = 600
 FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS = 3600
 FANOUT_STATUS_WAIT_DEFAULT_INTERVAL_SECONDS = 30
+# Each read projects the whole journal, so a floor keeps a careless value from
+# turning the watcher into a busy loop over a large file.
+FANOUT_STATUS_WAIT_MIN_INTERVAL_SECONDS = 5
 FANOUT_STATUS_WAIT_MAX_INTERVAL_SECONDS = 300
 # `fanout status --wait` stopped because `stuck_units` named a unit: the work
 # needs a person now. Not 0, because nothing finished; not 1, because nothing
@@ -2403,6 +2419,15 @@ FANOUT_STATUS_WAIT_STUCK_EXIT_CODE = 3
 # The deadline passed while units were neither terminal nor stuck. timeout(1)'s
 # 124, so a shell can tell "the clock ran out" from every answer about the work.
 FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE = 124
+# Every unit the roster lists is terminal and verified, but the journal had
+# lines it could not parse, and a lost line can be a whole unit: the roster
+# lists units from journal events only. sysexits' EX_DATAERR, "the input data
+# was incorrect". Not 0, because the answer may be missing a unit; not 1,
+# because no listed unit failed.
+FANOUT_STATUS_WAIT_JOURNAL_UNREADABLE_EXIT_CODE = 65
+# The watcher itself raised. sysexits' EX_SOFTWARE, "an internal software
+# error", because Python's own 1 is already "a unit did not verify".
+FANOUT_STATUS_WAIT_CRASH_EXIT_CODE = 70
 
 
 def _fanout_status_wait_exit_code(roster: dict) -> int:
@@ -2414,9 +2439,11 @@ def _fanout_status_wait_exit_code(roster: dict) -> int:
     124 when the deadline passed first; the roster then answers nothing about
     whether the work finished. 1 when every unit is terminal and one of them is
     not `verified` -- `verified` is the only success state, so a unit that
-    exited 0 without a validated result is a failure here too. A roster row
-    always carries `unit_state`; a row without one is graded only by the
-    generic failure signals below.
+    exited 0 without a validated result is a failure here too. 65 when every
+    listed unit verified but the roster carries `journal_errors`: the roster
+    lists units from journal events, so a torn line can hide a unit that
+    failed. A roster row always carries `unit_state`; a row without one is
+    graded only by the generic failure signals below.
 
     Generic failure signals -- a refused or interrupted run, or a unit
     carrying a failure kind -- are never success either, so this mapper cannot
@@ -2443,6 +2470,8 @@ def _fanout_status_wait_exit_code(roster: dict) -> int:
         for unit in units
     ):
         return 1
+    if summary.get("journal_errors"):
+        return FANOUT_STATUS_WAIT_JOURNAL_UNREADABLE_EXIT_CODE
     return 0
 
 
@@ -3587,8 +3616,10 @@ def _add_coding_commands(sub) -> None:
         action="store_true",
         help=(
             f"Re-read the roster until it names a unit in stuck_units (exit {FANOUT_STATUS_WAIT_STUCK_EXIT_CODE}), "
-            "every unit is terminal (exit 0 when all verified, else 1), or --timeout passes "
-            f"(exit {FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE}); print only the last roster."
+            "every unit is terminal (exit 0 when all verified, else 1; "
+            f"{FANOUT_STATUS_WAIT_JOURNAL_UNREADABLE_EXIT_CODE} when all verified but journal lines were unreadable), "
+            f"or --timeout passes (exit {FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE}); print only the last roster. "
+            f"A watcher that crashes exits {FANOUT_STATUS_WAIT_CRASH_EXIT_CODE}."
         ),
     )
     fanout_status.add_argument(
@@ -3602,7 +3633,7 @@ def _add_coding_commands(sub) -> None:
         "--interval", type=int, default=None,
         help=(
             f"With --wait: seconds between roster reads (default {FANOUT_STATUS_WAIT_DEFAULT_INTERVAL_SECONDS}, "
-            f"maximum {FANOUT_STATUS_WAIT_MAX_INTERVAL_SECONDS})."
+            f"minimum {FANOUT_STATUS_WAIT_MIN_INTERVAL_SECONDS}, maximum {FANOUT_STATUS_WAIT_MAX_INTERVAL_SECONDS})."
         ),
     )
     fanout_status.add_argument("--json", action="store_true", help="Emit the machine payload instead of plain text.")

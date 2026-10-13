@@ -326,8 +326,13 @@ def _unit_progress_phrase(unit: Mapping[str, object]) -> str:
 
     Empty when nothing observed the unit's work, so a roster projected from a
     journal that predates progress evidence renders exactly as it did before.
+    A marker with no reading yet is the one `unknown` that is said aloud: its
+    journal rung can be an earlier attempt's, and without this line the row
+    would read as that attempt's result.
     """
     state = str(unit.get("unit_state", "") or "")
+    if state == _UNIT_STATE_UNKNOWN and unit.get("unit_state_source") == "inflight_marker":
+        return f"{_UNIT_STATE_UNKNOWN} (in flight, no output assessed yet), not terminal"
     if not state or state == _UNIT_STATE_UNKNOWN:
         return ""
     progress = unit.get("progress")
@@ -347,7 +352,8 @@ def _unit_progress_phrase(unit: Mapping[str, object]) -> str:
 # every real state: absent evidence is not `running`, and it is not terminal.
 _UNIT_STATE_UNKNOWN = "unknown"
 # Where a row's `unit_state` came from, so a reader can tell a live reading
-# from a post-exit record from no reading at all.
+# from a post-exit record from no reading at all. A marker with no reading yet
+# is still the live source: its state is `unknown`, never a summary's word.
 _PROGRESS_SOURCES = ("inflight_marker", "dispatch_summary", "none")
 
 
@@ -419,11 +425,18 @@ def _marker_progress(paths: OmhPaths, fanout_id: str) -> dict[str, tuple[str, st
         if not isinstance(marker, Mapping) or marker.get("marker_status") != "present":
             continue
         unit_id = str(marker.get("unit_id", "") or "")
+        if not unit_id:
+            continue
         state = str(marker.get("unit_state", "") or "")
-        if not unit_id or not state:
+        if not state:
             # A marker written before the first stdout snapshot carries no
             # state. It proves a spawn, not that the work is moving, so it
-            # contributes nothing here rather than a fabricated `running`.
+            # reads `unknown` rather than a fabricated `running` -- and it
+            # still wins over the dispatch summary, whose row for this unit
+            # is an earlier attempt's. Falling through to that row once
+            # turned a re-dispatched unit's old `account_limit` into a
+            # terminal, stuck reading for a process that had just started.
+            rows[unit_id] = (_UNIT_STATE_UNKNOWN, "", None, "inflight_marker")
             continue
         rows[unit_id] = (
             state,

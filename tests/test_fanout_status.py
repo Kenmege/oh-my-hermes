@@ -32,6 +32,8 @@ from omh.coding.fanout_status import (  # noqa: E402
     wait_for_fanout_status,
 )
 from omh.commands.coding import (  # noqa: E402
+    FANOUT_STATUS_WAIT_CRASH_EXIT_CODE,
+    FANOUT_STATUS_WAIT_JOURNAL_UNREADABLE_EXIT_CODE,
     FANOUT_STATUS_WAIT_STUCK_EXIT_CODE,
     FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE,
     _fanout_status_wait_exit_code,
@@ -666,7 +668,8 @@ class FanoutStatusUnitProgressTests(unittest.TestCase):
 
     def test_a_marker_with_no_assessed_state_claims_nothing(self) -> None:
         # Written before the first stdout snapshot: it proves a spawn, not
-        # that the work is moving.
+        # that the work is moving. It is still the in-flight reading, so its
+        # source is the marker and its state is `unknown`.
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
@@ -680,8 +683,74 @@ class FanoutStatusUnitProgressTests(unittest.TestCase):
             core = {unit["unit_id"]: unit for unit in roster["units"]}["core"]
 
             self.assertEqual(core["unit_state"], "unknown")
-            self.assertEqual(core["unit_state_source"], "none")
+            self.assertEqual(core["unit_state_source"], "inflight_marker")
             self.assertIs(core["terminal"], False)
+
+    def _redispatched_core(self, paths: OmhPaths) -> None:
+        """An earlier dispatch's summary, and a fresh marker for `core` with no reading yet.
+
+        The recovery path: `core` hit its account limit last time, every other
+        unit verified, and `core` was just dispatched again. Until the new
+        process's first output snapshot the marker carries no state.
+        """
+        _seed_journal(paths, _roster_fixture())
+        summary_path = fanout_dispatch_summary_path(paths, _FANOUT_ID)
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(json.dumps({
+            "fanout_id": _FANOUT_ID,
+            "units": [
+                {"unit_id": "core", "unit_state": "account_limit", "unit_state_reason": "session limit"},
+                {"unit_id": "docs", "unit_state": "verified"},
+                {"unit_id": "flaky", "unit_state": "verified"},
+            ],
+        }), encoding="utf-8")
+        write_inflight_marker(paths, _FANOUT_ID, "core", {
+            "owner": "codex", "run_ref": f"{_FANOUT_ID}-core",
+            "worktree": "/tmp/wt/core", "started_at": _stamp(0),
+        })
+
+    def test_a_fresh_marker_without_state_hides_the_earlier_dispatchs_summary_row(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+            self._redispatched_core(paths)
+
+            roster = project_fanout_status(paths, _FANOUT_ID)
+            core = {unit["unit_id"]: unit for unit in roster["units"]}["core"]
+            text = render_fanout_status_text(roster)
+
+            self.assertEqual(core["unit_state"], "unknown")
+            self.assertEqual(core["unit_state_source"], "inflight_marker")
+            self.assertIs(core["terminal"], False)
+            self.assertEqual(core["progress"]["reason"], "")
+            self.assertEqual(roster["stuck_units"], [])
+            self.assertIs(roster["all_units_terminal"], False)
+            # A plain read says the unit is in flight and not yet assessed,
+            # and nothing of the earlier attempt's limit reaches it.
+            self.assertIn("  work: unknown (in flight, no output assessed yet), not terminal", text)
+            self.assertNotIn("Stuck, needs intervention", text)
+            self.assertNotIn("account_limit", text)
+            self.assertNotIn("session limit", text)
+
+    def test_a_watcher_over_a_redispatched_unit_waits_instead_of_reporting_the_old_limit(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+            self._redispatched_core(paths)
+            base = ["--omh-home", str(root / ".omh"), "--hermes-home", str(root / ".hermes")]
+            clock = _FakeClock()
+
+            with mock.patch.object(fanout_status_module, "time", clock):
+                status, stdout, stderr = run_cli(
+                    base + ["coding", "fanout", "status", "--fanout-id", _FANOUT_ID,
+                            "--wait", "--timeout", "60", "--interval", "20", "--json"],
+                )
+
+            self.assertEqual(status, FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE, stderr)
+            self.assertEqual(clock.sleeps, [20.0, 20.0, 20.0])
+            payload = json.loads(stdout)
+            self.assertEqual(payload["wait"]["outcome"], WAIT_OUTCOME_TIMED_OUT)
+            self.assertEqual(payload["stuck_units"], [])
 
 
 class _FakeClock:
@@ -803,11 +872,41 @@ class FanoutStatusWaitExitCodeTests(unittest.TestCase):
         units = [{"unit_id": "a", "unit_state": "running"}]
         self.assertEqual(self._graded(WAIT_OUTCOME_TIMED_OUT, units), FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE)
 
-    def test_the_codes_are_distinct_and_none_collides_with_success_or_an_error(self) -> None:
-        codes = {FANOUT_STATUS_WAIT_STUCK_EXIT_CODE, FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE}
-        self.assertEqual(len(codes), 2)
-        # 0 is success, 1 a finished failure, 2 `main`'s OmhError.
-        self.assertFalse(codes & {0, 1, 2})
+    def test_an_unreadable_journal_line_keeps_a_clean_roster_from_reading_as_success(self) -> None:
+        # The line could have named a unit that is now missing from the roster.
+        roster = {
+            "units": [{"unit_id": "a", "unit_state": "verified"}],
+            "stuck_units": [],
+            "journal_errors": ["events.jsonl:8: Unterminated string"],
+            "wait": {"outcome": WAIT_OUTCOME_ALL_UNITS_TERMINAL},
+        }
+        self.assertEqual(_fanout_status_wait_exit_code(roster), FANOUT_STATUS_WAIT_JOURNAL_UNREADABLE_EXIT_CODE)
+
+    def test_a_concrete_answer_outranks_an_unreadable_journal_line(self) -> None:
+        errors = ["events.jsonl:8: Unterminated string"]
+        for outcome, units, stuck, expected in (
+            (WAIT_OUTCOME_STUCK_UNITS, [{"unit_id": "a", "unit_state": "awaiting_input"}], ["a"],
+             FANOUT_STATUS_WAIT_STUCK_EXIT_CODE),
+            (WAIT_OUTCOME_TIMED_OUT, [{"unit_id": "a", "unit_state": "running"}], [],
+             FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE),
+            (WAIT_OUTCOME_ALL_UNITS_TERMINAL, [{"unit_id": "a", "unit_state": "failed"}], [], 1),
+        ):
+            with self.subTest(outcome=outcome, expected=expected):
+                roster = {"units": units, "stuck_units": stuck, "journal_errors": errors, "wait": {"outcome": outcome}}
+                self.assertEqual(_fanout_status_wait_exit_code(roster), expected)
+
+    def test_the_codes_are_distinct_and_none_collides_with_success_an_error_or_a_signal(self) -> None:
+        codes = {
+            FANOUT_STATUS_WAIT_STUCK_EXIT_CODE,
+            FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE,
+            FANOUT_STATUS_WAIT_JOURNAL_UNREADABLE_EXIT_CODE,
+            FANOUT_STATUS_WAIT_CRASH_EXIT_CODE,
+        }
+        self.assertEqual(len(codes), 4)
+        # 0 is success, 1 a finished failure (and Python's own uncaught
+        # exception), 2 `main`'s OmhError; 130, 137 and 143 are SIGINT,
+        # SIGKILL and SIGTERM as a shell reports them.
+        self.assertFalse(codes & {0, 1, 2, 130, 137, 143})
 
     def test_the_documented_bounds_and_codes_are_the_commands_own(self) -> None:
         from omh.commands import coding as coding_commands
@@ -815,7 +914,10 @@ class FanoutStatusWaitExitCodeTests(unittest.TestCase):
         doc = Path(__file__).resolve().parents[1] / "docs" / "CODING-OBSERVABILITY.md"
         text = " ".join(doc.read_text(encoding="utf-8").split())
         for phrase in (
-            f"every `--interval` seconds (default {coding_commands.FANOUT_STATUS_WAIT_DEFAULT_INTERVAL_SECONDS})",
+            f"every `--interval` seconds (default {coding_commands.FANOUT_STATUS_WAIT_DEFAULT_INTERVAL_SECONDS}, "
+            f"at least {coding_commands.FANOUT_STATUS_WAIT_MIN_INTERVAL_SECONDS})",
+            f"it exits {FANOUT_STATUS_WAIT_JOURNAL_UNREADABLE_EXIT_CODE} instead of 0",
+            f"exits {FANOUT_STATUS_WAIT_CRASH_EXIT_CODE} with its traceback on stderr",
             f"`stuck_units` names a unit (exit {FANOUT_STATUS_WAIT_STUCK_EXIT_CODE})",
             f"`--timeout` (default {coding_commands.FANOUT_STATUS_WAIT_DEFAULT_TIMEOUT_SECONDS}, at most "
             f"{coding_commands.FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS}) passes first "
@@ -955,6 +1057,7 @@ class FanoutStatusWaitCliTests(unittest.TestCase):
                 (("--wait", "--timeout", "0"), "--timeout must be"),
                 (("--wait", "--timeout", "999999"), "--timeout must be"),
                 (("--wait", "--interval", "0"), "--interval must be"),
+                (("--wait", "--interval", "4"), "--interval must be"),
                 (("--timeout", "60"), "apply only with --wait"),
                 (("--interval", "5"), "apply only with --wait"),
             ):
@@ -962,6 +1065,51 @@ class FanoutStatusWaitCliTests(unittest.TestCase):
                     status, stdout, stderr = self._run(root, *extra, output_json=False)
                     self.assertEqual(status, 2)
                     self.assertIn(needle, stdout + stderr)
+
+    def test_a_torn_journal_line_keeps_a_clean_looking_roster_from_exiting_zero(self) -> None:
+        # `flaky`'s lines are torn, so the roster cannot list it at all, and
+        # the two units it can list both verified. The summary that recorded
+        # `flaky` failing is never consulted for a unit the journal lost.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+            journal = paths.runtime_journal_events_path
+            journal.parent.mkdir(parents=True, exist_ok=True)
+            lines = []
+            for event in _roster_fixture():
+                text = json.dumps(event, sort_keys=True)
+                lines.append((text[:-3] if "flaky" in text else text) + "\n")
+            journal.write_text("".join(lines), encoding="utf-8")
+            self._summary(paths, {"core": "verified", "docs": "verified", "flaky": "failed"})
+
+            with self._no_sleep():
+                status, stdout, stderr = self._run(root, "--wait", "--json")
+
+            self.assertEqual(status, FANOUT_STATUS_WAIT_JOURNAL_UNREADABLE_EXIT_CODE, stderr)
+            payload = json.loads(stdout)
+            self.assertEqual([unit["unit_id"] for unit in payload["units"]], ["core", "docs"])
+            self.assertTrue(payload["journal_errors"])
+            self.assertEqual(payload["wait"]["outcome"], WAIT_OUTCOME_ALL_UNITS_TERMINAL)
+
+    def test_a_watcher_that_crashes_says_so_with_its_own_code(self) -> None:
+        # Python's own exit for an uncaught exception is 1, the code that
+        # means "every unit terminal and one not verified".
+        def crash(*_args: object, **_kwargs: object) -> dict[str, object]:
+            raise RuntimeError("roster reader broke")
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed(root)
+
+            with mock.patch.object(fanout_status_module, "project_fanout_status", crash), self._no_sleep():
+                status, stdout, stderr = self._run(root, "--wait", output_json=False)
+                with self.assertRaises(RuntimeError):
+                    # A single read grades nothing, so it keeps Python's own crash.
+                    self._run(root, output_json=False)
+
+            self.assertEqual(status, FANOUT_STATUS_WAIT_CRASH_EXIT_CODE)
+            self.assertIn("RuntimeError: roster reader broke", stderr)
+            self.assertEqual(stdout, "")
 
     def test_a_single_read_still_exits_zero_whatever_the_roster_says(self) -> None:
         # Without --wait the command reports; it does not grade.
