@@ -24,7 +24,13 @@ from omh.tui import terminal as terminal_module
 from omh.tui.terminal import (
     BRACKETED_PASTE_OFF,
     BRACKETED_PASTE_ON,
+    KITTY_KEYBOARD_POP,
+    KITTY_KEYBOARD_PUSH,
+    MODIFY_OTHER_KEYS_OFF,
+    MODIFY_OTHER_KEYS_ON,
+    RESTORE_SEQUENCE,
     Terminal,
+    keyboard_protocol_request,
     terminal_supported,
 )
 
@@ -90,6 +96,68 @@ class TerminalSupportedTests(unittest.TestCase):
             self.assertFalse(terminal_supported(_Stream(), _Stream(), {}))
 
 
+BOTH_REPORTS = KITTY_KEYBOARD_PUSH + MODIFY_OTHER_KEYS_ON
+
+
+class KeyboardProtocolRequestTests(unittest.TestCase):
+    """Which terminals are asked for Ctrl+Enter and friends; the list is Hermes' own TUI's."""
+
+    def test_the_allowlisted_terminals_are_asked_for_both_reports(self) -> None:
+        for program in ("iTerm.app", "kitty", "WezTerm", "tmux", "vscode", "windows-terminal"):
+            with self.subTest(program=program):
+                self.assertEqual(keyboard_protocol_request({"TERM_PROGRAM": program}), BOTH_REPORTS)
+
+    def test_ghostty_is_asked_for_modify_other_keys_only(self) -> None:
+        # Its kitty mode drops Alt from Backspace (Hermes' own TUI skips it there too).
+        self.assertEqual(keyboard_protocol_request({"TERM_PROGRAM": "ghostty"}), MODIFY_OTHER_KEYS_ON)
+        self.assertEqual(keyboard_protocol_request({"TERM": "xterm-ghostty"}), MODIFY_OTHER_KEYS_ON)
+
+    def test_other_terminals_are_not_asked(self) -> None:
+        for environ in (
+            {},
+            {"TERM_PROGRAM": "Apple_Terminal"},
+            {"TERM_PROGRAM": "Hyper"},
+            {"TERM_PROGRAM": "iterm.app"},  # the name is matched exactly
+            {"TERM": "xterm-256color"},
+            {"STY": "1234.pts-0.host"},  # GNU screen
+            # Cursor sets TERM_PROGRAM=vscode; Hermes reads it as its own terminal, not allowlisted.
+            {"TERM_PROGRAM": "vscode", "CURSOR_TRACE_ID": "abc"},
+        ):
+            with self.subTest(environ=environ):
+                self.assertEqual(keyboard_protocol_request(environ), "")
+
+    def test_the_terminal_is_named_as_hermes_names_it(self) -> None:
+        # kitty sets no TERM_PROGRAM; tmux and Windows Terminal are also known by their own variables.
+        for environ in (
+            {"TERM": "xterm-kitty"},
+            {"KITTY_WINDOW_ID": "1"},
+            {"TMUX": "/tmp/tmux-501/default,1,0"},
+            {"WT_SESSION": "id"},
+        ):
+            with self.subTest(environ=environ):
+                self.assertEqual(keyboard_protocol_request(environ), BOTH_REPORTS)
+        # TERM_PROGRAM wins over TMUX, as in Hermes.
+        self.assertEqual(keyboard_protocol_request({"TERM_PROGRAM": "Apple_Terminal", "TMUX": "x"}), "")
+
+    def test_legacy_keeps_plain_bytes_everywhere(self) -> None:
+        for program in ("iTerm.app", "kitty", "ghostty", "tmux"):
+            with self.subTest(program=program):
+                environ = {"TERM_PROGRAM": program, "OMH_TUI_KEYBOARD": "legacy"}
+                self.assertEqual(keyboard_protocol_request(environ), "")
+        for value in ("", "kitty", "LEGACY "):
+            with self.subTest(value=value):
+                environ = {"TERM_PROGRAM": "iTerm.app", "OMH_TUI_KEYBOARD": value}
+                self.assertEqual(keyboard_protocol_request(environ), BOTH_REPORTS)
+
+    def test_the_restore_sequence_always_switches_both_reports_off(self) -> None:
+        # Written on every exit, a crash and a signal included, whether or not they were asked for.
+        self.assertIn(MODIFY_OTHER_KEYS_OFF, RESTORE_SEQUENCE)
+        self.assertIn(KITTY_KEYBOARD_POP, RESTORE_SEQUENCE)
+        self.assertEqual(KITTY_KEYBOARD_POP, "\x1b[<u")
+        self.assertEqual(MODIFY_OTHER_KEYS_OFF, "\x1b[>4m")
+        self.assertEqual(BOTH_REPORTS, "\x1b[>1u\x1b[>4;2m")
+
+
 @unittest.skipUnless(pty is not None and termios is not None, "needs a POSIX pty")
 class TerminalPtyTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -149,6 +217,43 @@ class TerminalPtyTests(unittest.TestCase):
             self.assertEqual(self.master_output(), BRACKETED_PASTE_ON.encode())
         tail = self.master_output()
         self.assertTrue(tail.endswith(BRACKETED_PASTE_OFF.encode()), tail)
+
+    def test_an_allowlisted_terminal_is_asked_for_key_reports_and_released(self) -> None:
+        cases = {
+            "iTerm.app": BOTH_REPORTS,
+            "ghostty": MODIFY_OTHER_KEYS_ON,
+        }
+        for program, request in cases.items():
+            with self.subTest(program=program):
+                term = Terminal(self.slave, self.slave, environ={"TERM_PROGRAM": program})
+                self.assertFalse(term.keyboard_protocol)
+                with term:
+                    self.assertEqual(self.master_output(), (BRACKETED_PASTE_ON + request).encode())
+                    self.assertTrue(term.keyboard_protocol)
+                self.assertFalse(term.keyboard_protocol)
+                self.assertTrue(self.master_output().endswith(RESTORE_SEQUENCE.encode()))
+
+    def test_no_request_without_an_allowlisted_terminal_or_with_legacy(self) -> None:
+        for environ in (None, {"TERM_PROGRAM": "Apple_Terminal"}, {"TERM_PROGRAM": "kitty", "OMH_TUI_KEYBOARD": "legacy"}):
+            with self.subTest(environ=environ):
+                term = Terminal(self.slave, self.slave, environ=environ)
+                with term:
+                    self.assertEqual(self.master_output(), BRACKETED_PASTE_ON.encode())
+                    self.assertFalse(term.keyboard_protocol)
+                # Released anyway: harmless where nothing was asked.
+                self.assertTrue(self.master_output().endswith(RESTORE_SEQUENCE.encode()))
+
+    def test_key_reports_are_released_when_the_block_raises_or_a_signal_exits(self) -> None:
+        for error in (RuntimeError("boom"), SystemExit(128 + signal.SIGTERM)):
+            with self.subTest(error=type(error).__name__):
+                term = Terminal(self.slave, self.slave, environ={"TERM_PROGRAM": "kitty"})
+                with self.assertRaises(type(error)):
+                    with term:
+                        self.master_output()
+                        raise error
+                self.assertFalse(term.keyboard_protocol)
+                tail = self.master_output().decode()
+                self.assertIn(MODIFY_OTHER_KEYS_OFF + KITTY_KEYBOARD_POP, tail)
 
     def test_attributes_come_back_when_the_block_raises(self) -> None:
         before = termios.tcgetattr(self.slave)

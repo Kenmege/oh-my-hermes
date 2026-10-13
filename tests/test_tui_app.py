@@ -30,6 +30,7 @@ import signal
 import stat
 import time
 import unittest
+from unittest.mock import patch
 
 from _test_temp_root import make_test_tempdir
 from _tui_gateway_replay import (
@@ -504,6 +505,40 @@ class SessionTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
+
+    def test_ctrl_c_as_kitty_and_modify_other_keys_reports_exits_like_the_byte(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.terminal.script(
+            Step(b"\x1b[99;5u", when=run.terminal.idle, label="idle"),
+            Step(b"\x1b[27;5;99~", when=run.terminal.shows(EXIT_HINT), label="the exit hint"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
+
+    def test_the_default_terminal_reads_the_environment_main_was_given(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers()),
+            env={"TERM_PROGRAM": "iTerm.app"},
+        )
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="the first frame"))
+        given: list[object] = []
+
+        def build_terminal(*, environ: object) -> ScriptedTerminal:
+            given.append(environ)
+            return run.terminal
+
+        with patch("omh.tui.app.Terminal", build_terminal):
+            run.code = main(
+                run.environ,
+                stdin=TtyStream(),
+                stdout=TtyStream(),
+                stderr=run.stderr,
+                make_client=self.make_client(run),
+                make_poller=lambda omh_home, hermes_home: run.poller,
+            )
+        self.assert_clean_run(run)
+        self.assertEqual(given, [run.environ])
 
     def test_a_new_stored_id_rewrites_the_session_file_and_repoints_the_poller(self) -> None:
         rotated = {

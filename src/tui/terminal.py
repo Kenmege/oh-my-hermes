@@ -1,4 +1,4 @@
-"""The real terminal: raw mode, bracketed paste, size, resize signal, and byte IO.
+"""The real terminal: raw mode, bracketed paste, key reports, size, resize signal, and byte IO.
 
 This is the only module of the OMH TUI that touches a tty. Everything above it
 works on bytes in (`read`) and text out (`write`), so it runs in tests against
@@ -10,6 +10,11 @@ anyway), IXON is off so Ctrl+S/Ctrl+Q reach it too, ICRNL is off so Enter
 reads as CR and Ctrl+J as LF, and OPOST is off so "\\n" is a bare line feed:
 the screen writes "\\r\\n" itself and owns every cursor move. Attributes are
 put back on exit whether the block ended normally or by an exception.
+
+On the terminals Hermes' own TUI trusts with them, entering also asks for the
+kitty keyboard protocol and xterm modifyOtherKeys, so Ctrl+Enter and
+Shift+Enter arrive as keys of their own (`keyboard_protocol` says whether it
+asked); `OMH_TUI_KEYBOARD=legacy` keeps the plain bytes everywhere.
 
 Windows has no termios; `terminal_supported` reports that, and the caller
 takes the fallback path instead of entering a `Terminal`.
@@ -36,9 +41,30 @@ except ImportError:  # pragma: no cover - Windows ships no termios
 
 BRACKETED_PASTE_ON = f"{CSI}?2004h"
 BRACKETED_PASTE_OFF = f"{CSI}?2004l"
+# Richer key reports, so Ctrl+Enter and Shift+Enter differ from Enter: the kitty
+# keyboard protocol (push flag 1, "disambiguate") and xterm modifyOtherKeys level 2.
+KITTY_KEYBOARD_PUSH = f"{CSI}>1u"
+KITTY_KEYBOARD_POP = f"{CSI}<u"
+MODIFY_OTHER_KEYS_ON = f"{CSI}>4;2m"
+MODIFY_OTHER_KEYS_OFF = f"{CSI}>4m"
 # Written on exit even after a crash mid-frame: the screen hides the cursor and
-# turns autowrap off while it paints, and a shell must not inherit either.
-RESTORE_SEQUENCE = f"{SGR_RESET}{AUTOWRAP_ON}{SHOW_CURSOR}{BRACKETED_PASTE_OFF}"
+# turns autowrap off while it paints, and a shell must not inherit either. The
+# key reports are switched off whether or not they were asked for, as Hermes'
+# own TUI does on every exit (hermes-ink `ink.tsx`, its signal-exit path too),
+# so no exit path depends on remembering whether they were asked for.
+RESTORE_SEQUENCE = (
+    f"{SGR_RESET}{AUTOWRAP_ON}{SHOW_CURSOR}{MODIFY_OTHER_KEYS_OFF}{KITTY_KEYBOARD_POP}{BRACKETED_PASTE_OFF}"
+)
+
+# Terminals asked for the richer key reports, by the name Hermes' own TUI gives
+# them (hermes-ink `ink/terminal.ts` EXTENDED_KEYS_TERMINALS, an allowlist
+# because some terminals honour the request and then send codes a parser does
+# not expect). Ghostty's kitty mode drops Alt from Backspace, so it gets
+# modifyOtherKeys only.
+KEYBOARD_PROTOCOL_TERMINALS = frozenset({"iTerm.app", "kitty", "WezTerm", "ghostty", "tmux", "windows-terminal", "vscode"})
+MODIFY_OTHER_KEYS_ONLY_TERMINALS = frozenset({"ghostty"})
+# OMH_TUI_KEYBOARD=legacy keeps the plain key bytes on any terminal.
+KEYBOARD_OPT_OUT = "legacy"
 
 READ_CHUNK_BYTES = 4096
 FALLBACK_SIZE = (80, 24)
@@ -73,6 +99,40 @@ def terminal_supported(stdin: _TtyProbe | None, stdout: _TtyProbe | None, enviro
     return True
 
 
+def terminal_name(environ: Mapping[str, str]) -> str:
+    """The terminal's name, read the way Hermes' own TUI reads it (hermes-ink `utils/env.ts` detectTerminal)."""
+    term = environ.get("TERM", "")
+    if environ.get("CURSOR_TRACE_ID"):
+        return "cursor"
+    if term == "xterm-ghostty":
+        return "ghostty"
+    if "kitty" in term:
+        return "kitty"
+    if environ.get("TERM_PROGRAM"):
+        return environ["TERM_PROGRAM"]
+    if environ.get("TMUX"):
+        return "tmux"
+    if environ.get("STY"):
+        return "screen"
+    if environ.get("KITTY_WINDOW_ID"):
+        return "kitty"
+    if environ.get("WT_SESSION"):
+        return "windows-terminal"
+    return term
+
+
+def keyboard_protocol_request(environ: Mapping[str, str]) -> str:
+    """What `Terminal` writes on entry to ask for the richer key reports; "" when it does not ask."""
+    if environ.get("OMH_TUI_KEYBOARD", "") == KEYBOARD_OPT_OUT:
+        return ""
+    name = terminal_name(environ)
+    if name not in KEYBOARD_PROTOCOL_TERMINALS:
+        return ""
+    if name in MODIFY_OTHER_KEYS_ONLY_TERMINALS:
+        return MODIFY_OTHER_KEYS_ON
+    return KITTY_KEYBOARD_PUSH + MODIFY_OTHER_KEYS_ON
+
+
 def raw_attributes(saved: list) -> list:
     """`saved` with raw mode applied (what `tty.cfmakeraw` does on 3.12+, kept for 3.11)."""
     mode = list(saved)
@@ -88,13 +148,22 @@ def raw_attributes(saved: list) -> list:
 
 
 class Terminal:
-    def __init__(self, input_fd: int | None = None, output_fd: int | None = None) -> None:
+    def __init__(
+        self,
+        input_fd: int | None = None,
+        output_fd: int | None = None,
+        *,
+        environ: Mapping[str, str] | None = None,
+    ) -> None:
         self._input = input_fd if input_fd is not None else sys.stdin.fileno()
         self._output = output_fd if output_fd is not None else sys.stdout.fileno()
         self._saved: list | None = None
         self._previous_winch: object = None
         self._winch_installed = False
         self._resized = False
+        self._keyboard_request = keyboard_protocol_request(environ or {})
+        # True while the richer key reports were asked for, so Ctrl+Enter can reach the TUI.
+        self.keyboard_protocol = False
 
     def __enter__(self) -> Terminal:
         if termios is None:
@@ -106,7 +175,8 @@ class Terminal:
         entered = False
         try:
             self._install_winch()
-            self.write(BRACKETED_PASTE_ON)
+            self.write(BRACKETED_PASTE_ON + self._keyboard_request)
+            self.keyboard_protocol = bool(self._keyboard_request)
             entered = True
         finally:
             if not entered:  # __exit__ never runs for a failed __enter__
@@ -128,6 +198,7 @@ class Terminal:
         saved, self._saved = self._saved, None
         if saved is None:
             return
+        self.keyboard_protocol = False
         hung_up = False
         try:
             self.write(RESTORE_SEQUENCE)

@@ -352,6 +352,17 @@ Keys:
 | Ctrl+C | Clears the composer, interrupts a running turn, or (twice when idle) exits |
 | Ctrl+D | On an empty composer, exits |
 
+Ctrl+Enter and Shift+Enter reach the OMH TUI as keys of their own only where
+the terminal reports them. On start it asks iTerm2, kitty, WezTerm, tmux, VS
+Code's terminal and Windows Terminal (under WSL) for the kitty keyboard
+protocol and xterm modifyOtherKeys, and Ghostty for modifyOtherKeys only: the
+terminals Hermes' own TUI asks, recognised as Hermes recognises them, from
+`TERM_PROGRAM`, `TERM`, `TMUX`, `KITTY_WINDOW_ID` or `WT_SESSION`. Both are
+switched off on exit, a crash, SIGTERM and SIGHUP included. Elsewhere,
+Terminal.app among them, both keys send what Enter sends. Every key the TUI
+binds today works the same either way. `OMH_TUI_KEYBOARD=legacy` stops the
+request on any terminal.
+
 Slash commands the OMH TUI runs itself: `/help`, `/quit`, `/new`,
 `/sessions`, `/redraw`, `/history` (an in-memory pager over this session),
 `/details` (show or hide thinking and tool detail on the live block),

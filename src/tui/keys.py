@@ -13,6 +13,12 @@ ends only at the terminal's paste-end marker.
 
 Nothing here raises on input. A sequence it does not know becomes
 `Key("unknown")` and decoding continues with the next byte.
+
+Terminals that `Terminal` asks for richer key reports send some keys as kitty
+CSI u (`ESC[99;5u`) or xterm modifyOtherKeys (`ESC[27;5;99~`). Each of those
+decodes to the very `Key` its legacy bytes give, so Ctrl+C, Esc, Tab, Alt+b or
+Shift+a behave the same either way; the reports only add what legacy bytes
+cannot say, such as Ctrl+Enter and Shift+Enter.
 """
 
 from __future__ import annotations
@@ -68,6 +74,35 @@ _CSI_TILDE_KEYS = {
 _SHIFT_BIT = 1
 _ALT_BIT = 2
 _CTRL_BIT = 4
+# kitty adds caps lock 64 and num lock 128, which change no key OMH reads;
+# super, hyper and meta (8, 16, 32) have no place in `Key`, so such a chord is unknown.
+_LOCK_BITS = 64 | 128
+_READ_BITS = _SHIFT_BIT | _ALT_BIT | _CTRL_BIT
+
+# kitty CSI u (`ESC[<code>[:<shifted>[:<base>]][;<mods>[:<event>]]u`) and xterm
+# modifyOtherKeys (`ESC[27;<mods>;<code>~`) name a key by its code point.
+CSI_U_FINAL = "u"
+MODIFY_OTHER_KEYS_PARAMETER = "27"
+# kitty event types: 1 press, 2 repeat, 3 release. A release is not a key.
+_PRESS_EVENTS = ("", "1", "2")
+_PROTOCOL_KEYS = {
+    CARRIAGE_RETURN: ENTER,
+    HORIZONTAL_TAB: TAB,
+    ESC_BYTE: ESCAPE,
+    DELETE_BYTE: BACKSPACE,
+    57414: ENTER,  # keypad Enter
+}
+# kitty's keypad code points (functional key table), for the keys that type text.
+_KEYPAD_TEXT = {57399 + digit: str(digit) for digit in range(10)} | {
+    57409: ".",
+    57410: "/",
+    57411: "*",
+    57412: "-",
+    57413: "+",
+    57415: "=",
+}
+# Besides the letters, the keys whose Ctrl chord a legacy terminal sends as a C0 byte.
+_CTRL_PUNCTUATION = "@[\\]^_ "
 
 
 @dataclass(frozen=True)
@@ -142,8 +177,66 @@ def _modifiers(parameter: str) -> dict[str, bool] | None:
     return {"shift": bool(bits & _SHIFT_BIT), "alt": bool(bits & _ALT_BIT), "ctrl": bool(bits & _CTRL_BIT)}
 
 
+def _digits(field: str) -> bool:
+    return field.isascii() and field.isdigit()
+
+
+def _protocol_modifiers(field: str) -> dict[str, bool] | None:
+    """`<mods>[:<event>]` of a CSI u or modifyOtherKeys key; None when it is no key press `Key` can carry."""
+    mods, _, event = field.partition(":")
+    if event not in _PRESS_EVENTS or not _digits(mods) or int(mods) < 1:
+        return None
+    bits = (int(mods) - 1) & ~_LOCK_BITS
+    if bits & ~_READ_BITS:
+        return None
+    return {"shift": bool(bits & _SHIFT_BIT), "alt": bool(bits & _ALT_BIT), "ctrl": bool(bits & _CTRL_BIT)}
+
+
+def _code_text(field: str) -> str:
+    """The character a code point field names; "" when it is empty or names nothing printable."""
+    if not _digits(field) or int(field) > 0x10FFFF:
+        return ""
+    text = chr(int(field))
+    return text if text.isprintable() else ""
+
+
+def _protocol_key(code_field: str, modifier_field: str) -> Key:
+    """A kitty CSI u or xterm modifyOtherKeys key, as the `Key` its legacy bytes give.
+
+    `code_field` is `<code>[:<shifted>[:<base>]]`. Enter, Tab, Esc and
+    Backspace keep every modifier, which is how Ctrl+Enter and Shift+Enter
+    exist at all. A Ctrl chord on a letter or on `@[\\]^_` and space is what
+    its C0 byte decodes to (Ctrl+C, Ctrl+J a newline, Ctrl+M Enter, Ctrl+[
+    Esc), and Shift on a printable key is in its character (Shift+a is "A"),
+    as a legacy terminal sends them.
+    """
+    codes = code_field.split(":")
+    flags = _protocol_modifiers(modifier_field)
+    if flags is None or len(codes) > 3 or not _digits(codes[0]) or any(part and not _digits(part) for part in codes):
+        return Key(UNKNOWN)
+    code = int(codes[0])
+    if code in _PROTOCOL_KEYS:
+        return Key(_PROTOCOL_KEYS[code], **flags)
+    text = _KEYPAD_TEXT.get(code) or _code_text(codes[0])
+    if not text:
+        return Key(UNKNOWN)
+    lowered = text.lower()
+    if flags["ctrl"] and (lowered.isascii() and lowered.isalpha() or text in _CTRL_PUNCTUATION):
+        control = ord(lowered) & 0x1F
+        key = Key(ESCAPE) if control == ESC_BYTE else _single_byte_key(control)
+        return replace(key, alt=True) if flags["alt"] else key
+    if flags["shift"]:
+        upper = text.upper()
+        text = _code_text(codes[1] if len(codes) > 1 else "") or (upper if len(upper) == 1 else text)
+    return Key(CHAR, text, ctrl=flags["ctrl"], alt=flags["alt"])
+
+
 def _csi_key(parameters: str, final: str) -> Key:
     fields = parameters.split(";")
+    if final == CSI_U_FINAL and len(fields) <= 2:
+        return _protocol_key(fields[0], fields[1] if len(fields) == 2 else "1")
+    if final == "~" and len(fields) == 3 and fields[0] == MODIFY_OTHER_KEYS_PARAMETER and ":" not in parameters:
+        return _protocol_key(fields[2], fields[1])
     if len(fields) > 2:
         return Key(UNKNOWN)
     modifier = fields[1] if len(fields) == 2 else ""

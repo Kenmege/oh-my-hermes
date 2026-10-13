@@ -1815,7 +1815,7 @@ def main(
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
-    open_terminal: Callable[[], TerminalLike] = Terminal,
+    open_terminal: Callable[[], TerminalLike] | None = None,
     make_client: Callable[..., GatewayClient] = GatewayClient,
     make_poller: Callable[[str | None, str | None], PollerLike] = HudPoller,
 ) -> int:
@@ -1836,7 +1836,8 @@ def main(
         return FALLBACK_EXIT
     previous_handlers = _install_exit_signals()
     try:
-        return _run(client, environ, stderr, open_terminal, make_poller)
+        # The terminal picks its key reports from the environment the TUI was given (TERM_PROGRAM and kin).
+        return _run(client, environ, stderr, open_terminal or (lambda: Terminal(environ=environ)), make_poller)
     except KeyboardInterrupt:
         # Ctrl+C is a signal, not a key, until the terminal goes raw: while the gateway starts
         # and the session opens. The child is reaped below either way.

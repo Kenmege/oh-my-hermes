@@ -21,6 +21,11 @@ All notable changes will be documented here.
   the input mode's glyph and colour, over a mode row that names the mode or
   the keys that matter now; replies open with `⏺`, a diff numbers its lines
   in a gutter, and the status line reads brand, model, context, state.
+  On the terminals Hermes' own TUI trusts with it (iTerm2, kitty, WezTerm,
+  Ghostty, tmux, VS Code, Windows Terminal) it asks for the kitty keyboard
+  protocol and xterm modifyOtherKeys, so Ctrl+Enter and Shift+Enter arrive as
+  keys of their own while every other key decodes as before;
+  `OMH_TUI_KEYBOARD=legacy` keeps the plain bytes.
 
 - **The OMH status widget and the Hermes Desktop pane keep ordinary
   punctuation and drop whole escape sequences.** Their character allowlists

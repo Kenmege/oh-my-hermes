@@ -201,6 +201,140 @@ class BracketedPasteTests(unittest.TestCase):
         self.assertEqual(decode(b"\x1b[200~\x1b[201~"), [Paste("")])
 
 
+def csi_u(code: int, modifiers: int | None = None) -> bytes:
+    return f"\x1b[{code}u".encode() if modifiers is None else f"\x1b[{code};{modifiers}u".encode()
+
+
+def modify_other_keys(code: int, modifiers: int) -> bytes:
+    return f"\x1b[27;{modifiers};{code}~".encode()
+
+
+SHIFT, ALT, CTRL = 2, 3, 5  # the modifier parameter: 1 + (shift 1 | alt 2 | ctrl 4)
+
+
+class KeyboardProtocolTests(unittest.TestCase):
+    """kitty CSI u and xterm modifyOtherKeys, which `Terminal` asks for on some terminals."""
+
+    def assert_same_key(self, report: bytes, legacy: bytes) -> None:
+        expected = decode(legacy)
+        self.assertEqual(len(expected), 1, legacy)
+        self.assertEqual(decode(report), expected, f"{report!r} must decode as {legacy!r} does")
+
+    def test_every_ctrl_letter_decodes_as_its_control_byte(self) -> None:
+        # Ctrl+C stays an interrupt, Ctrl+J a newline, and Ctrl+H, Ctrl+I, Ctrl+M stay
+        # Backspace, Tab and Enter, exactly as without the protocol.
+        for letter in "abcdefghijklmnopqrstuvwxyz":
+            control = bytes([ord(letter) - 0x60])
+            for report in (csi_u(ord(letter), CTRL), modify_other_keys(ord(letter), CTRL)):
+                with self.subTest(report=report):
+                    self.assert_same_key(report, control)
+        self.assert_same_key(csi_u(ord("c"), CTRL), b"\x03")
+        self.assert_same_key(modify_other_keys(ord("C"), CTRL + 1), b"\x03")  # xterm may send the shifted code
+
+    def test_the_keys_legacy_bytes_already_have_decode_to_the_same_key(self) -> None:
+        cases = {
+            "Esc": (csi_u(27), b"\x1b"),
+            "Enter": (csi_u(13), b"\r"),
+            "Tab": (csi_u(9), b"\t"),
+            "Shift+Tab": (csi_u(9, SHIFT), b"\x1b[Z"),
+            "Shift+Tab (modifyOtherKeys)": (modify_other_keys(9, SHIFT), b"\x1b[Z"),
+            "Backspace": (csi_u(127), b"\x7f"),
+            "Alt+Backspace": (csi_u(127, ALT), b"\x1b\x7f"),
+            "Alt+Enter": (csi_u(13, ALT), b"\x1b\r"),
+            "Alt+b": (csi_u(ord("b"), ALT), b"\x1bb"),
+            "Alt+b (modifyOtherKeys)": (modify_other_keys(ord("b"), ALT), b"\x1bb"),
+            "Alt+Shift+b": (csi_u(ord("b"), ALT + 1), b"\x1bB"),
+            "Ctrl+Alt+c": (csi_u(ord("c"), CTRL + 2), b"\x1b\x03"),
+            "Ctrl+[ is Esc": (csi_u(ord("["), CTRL), b"\x1b"),
+            "Ctrl+[ is Esc (modifyOtherKeys)": (modify_other_keys(ord("["), CTRL), b"\x1b"),
+            "Ctrl+space": (csi_u(32, CTRL), b"\x00"),
+            "Ctrl+@": (csi_u(ord("@"), CTRL), b"\x00"),
+            "Ctrl+\\": (csi_u(ord("\\"), CTRL), b"\x1c"),
+            "Ctrl+]": (csi_u(ord("]"), CTRL), b"\x1d"),
+            "Ctrl+^": (csi_u(ord("^"), CTRL), b"\x1e"),
+            "Ctrl+_": (csi_u(ord("_"), CTRL), b"\x1f"),
+            "a": (csi_u(ord("a")), b"a"),
+            "Shift+a": (csi_u(ord("a"), SHIFT), b"A"),
+            "Shift+a (shifted key reported)": (b"\x1b[97:65;2u", b"A"),
+            "Shift+1 (shifted key reported)": (b"\x1b[49:33;2u", b"!"),
+            "Shift+a (modifyOtherKeys)": (modify_other_keys(ord("A"), SHIFT), b"A"),
+            "Shift+space": (csi_u(32, SHIFT), b" "),
+            "Shift+non-ASCII letter": (csi_u(ord("ф"), SHIFT), "Ф".encode()),
+            "Ctrl+c with caps lock": (csi_u(ord("c"), 1 + 4 + 64), b"\x03"),
+            "Ctrl+c with num lock": (csi_u(ord("c"), 1 + 4 + 128), b"\x03"),
+            "Ctrl+c, press event": (b"\x1b[99;5:1u", b"\x03"),
+            "Ctrl+c, repeat event": (b"\x1b[99;5:2u", b"\x03"),
+            "Ctrl+c, base layout key": (b"\x1b[99::99;5u", b"\x03"),
+            "keypad Enter": (csi_u(57414), b"\r"),
+            "keypad 1": (csi_u(57400), b"1"),
+            "keypad +": (csi_u(57413), b"+"),
+        }
+        for name, (report, legacy) in cases.items():
+            with self.subTest(name):
+                self.assert_same_key(report, legacy)
+
+    def test_ctrl_enter_and_shift_enter_are_keys_of_their_own(self) -> None:
+        for report in (b"\x1b[13;5u", b"\x1b[27;5;13~"):
+            with self.subTest(report=report):
+                self.assertEqual(decode(report), [Key("enter", ctrl=True)])
+        for report in (b"\x1b[13;2u", b"\x1b[27;2;13~"):
+            with self.subTest(report=report):
+                self.assertEqual(decode(report), [Key("enter", shift=True)])
+        self.assertNotEqual(Key("enter", ctrl=True), Key("enter"))
+        self.assertNotEqual(Key("enter", shift=True), Key("enter"))
+
+    def test_every_split_of_a_report_agrees(self) -> None:
+        for data in (b"\x1b[13;5u", b"\x1b[27;5;13~", b"\x1b[99;5u", b"\x1b[97:65;2u", b"\x1b[99;5:2u", b"x\x1b[27uy"):
+            with self.subTest(data=data):
+                decode_split_everywhere(self, data)
+
+    def test_a_report_split_across_two_reads_waits_for_its_final_byte(self) -> None:
+        decoder = KeyDecoder()
+        self.assertEqual(decoder.feed(b"\x1b[13;"), [])
+        self.assertEqual(decoder.feed(b"5u"), [Key("enter", ctrl=True)])
+        self.assertEqual(decoder.feed(b"\x1b[27;5;"), [])
+        self.assertEqual(decoder.feed(b"99~"), [char("c", ctrl=True)])
+
+    def test_malformed_and_unknown_reports_are_one_unknown_key_and_no_text(self) -> None:
+        for data in (
+            b"\x1b[99;9u",  # super: no place in Key, so not Ctrl or plain c
+            b"\x1b[99;33u",  # meta
+            b"\x1b[99;5:3u",  # a release is not a key
+            b"\x1b[99;5:4u",  # no such event type
+            b"\x1b[99;5:1:2u",
+            b"\x1b[99;0u",
+            b"\x1b[99;u",
+            b"\x1b[;5u",
+            b"\x1b[u",
+            b"\x1b[99;5;99u",  # associated text: never asked for
+            b"\x1b[99:65:99:1u",
+            b"\x1b[99:=;2u",  # a sub-field that is not a number
+            b"\x1b[1114112u",  # past the last code point
+            b"\x1b[55296u",  # a surrogate
+            b"\x1b[0u",
+            b"\x1b[57441u",  # a modifier key on its own (kitty private use code point)
+            b"\x1b[?1u",  # a keyboard-flags reply, not a key
+            b"\x1b[>1u",
+            b"\x1b[27;9;99~",
+            b"\x1b[27;5;99:67~",
+            b"\x1b[27;5;0~",
+            b"\x1b[27;0;99~",
+            b"\x1b[27;;99~",
+        ):
+            with self.subTest(data=data):
+                self.assertEqual(decode(data), [Key("unknown")])
+        self.assertEqual(decode(b"\x1b[99;9ua"), [Key("unknown"), char("a")])
+
+    def test_any_parameters_with_a_u_final_are_exactly_one_key(self) -> None:
+        # Whatever digits, colons and semicolons arrive, the report is one key: no byte of it is left over as text.
+        generator = random.Random(2095)
+        for _ in range(2000):
+            parameters = "".join(generator.choice("0123456789:;") for _ in range(generator.randrange(0, 20)))
+            data = f"\x1b[{parameters}u".encode()
+            with self.subTest(data=data):
+                self.assertEqual(len(decode(data)), 1)
+
+
 class RobustnessTests(unittest.TestCase):
     def test_random_bytes_in_random_chunks_never_raise(self) -> None:
         generator = random.Random(2084)
