@@ -205,6 +205,11 @@ STEERED_NOTICE = "↪ steered: {}"
 STEER_REJECTED = "rejected"  # `session.steer`'s status when the turn ended before the text arrived
 STEER_USAGE = "Usage: /steer <text to add to the running turn>"
 
+# One BEL when an approval opens, so a terminal in the background can flag the tab or bounce.
+BELL = "\a"
+BELL_ENV = "OMH_TUI_BELL"
+BELL_OFF = "0"
+
 EXIT_HINT = "Ctrl+C again to exit"
 INTERRUPT_HINT = "esc to interrupt"
 OSC52_COPY = "\x1b]52;c;{}\x07"
@@ -1015,6 +1020,8 @@ class App:
             return
         self.slot = opened
         self.slot_opened_at = self.clock()
+        if opened.method == "approval" and self.environ.get(BELL_ENV) != BELL_OFF:
+            self.terminal.write(BELL)  # once per approval, as its slot opens; the wait is on the person
         if opened.wants_text:
             self.slot_draft = self.composer.text
             self._set_composer("")

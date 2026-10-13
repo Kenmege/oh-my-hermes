@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import time
 import unittest
 
 from _tui_gateway_replay import Scenario, spans
@@ -925,6 +926,92 @@ class QueueTests(unittest.TestCase):
         self.assertTrue(rows[1].startswith("⧗ learn: the build"))
         app._on_input(Key(UP))
         self.assertEqual(app.composer.text, "fix the flaky test\n/learn the build")
+
+
+def bells(app_or_terminal: object) -> int:
+    terminal = getattr(app_or_terminal, "terminal", app_or_terminal)
+    return "".join(terminal.writes).count("\a")  # type: ignore[attr-defined]
+
+
+class BellTests(unittest.TestCase):
+    APPROVAL = ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"})
+
+    def test_an_approval_opening_rings_once(self) -> None:
+        app, _client = make_app(busy=True)
+        self.assertEqual(bells(app), 0)
+        app._on_server_request(self.APPROVAL)
+        self.assertEqual(bells(app), 1)
+        for _ in range(3):  # repaints of the open slot ring nothing more
+            drawn(app)
+        self.assertEqual(bells(app), 1)
+
+    def test_omh_tui_bell_0_keeps_it_quiet_and_nothing_else_does(self) -> None:
+        for value, expected in (("0", 0), ("1", 1), ("", 1), ("off", 1), ("00", 1)):
+            with self.subTest(value=value):
+                app, _client = make_app(busy=True, environ={"OMH_TUI_BELL": value})
+                app._on_server_request(self.APPROVAL)
+                self.assertEqual(bells(app), expected)
+                self.assertIsNotNone(app.slot)  # quiet or not, the approval is shown
+
+    def test_other_questions_and_requests_the_tui_cannot_show_do_not_ring(self) -> None:
+        requests = (
+            ("clarify", {"questions": [{"qid": "q0", "question": "Which?", "choices": ["red", "blue"]}]}),
+            ("sudo", {"command": "apt install x"}),
+            ("secret", {"env_var": "TOKEN_X"}),
+            ("vault.code", {}),
+            ("vault.unlock_prompt", {}),
+            ("terminal.read", {}),
+        )
+        for method, params in requests:
+            with self.subTest(method=method):
+                app, _client = make_app(busy=True)
+                app._on_server_request(ServerRequest("srq-1", method, params))
+                self.assertEqual(bells(app), 0)
+
+    def test_an_approval_waiting_behind_another_rings_when_its_own_slot_opens(self) -> None:
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        app._on_server_request(self.APPROVAL)
+        app._on_server_request(ServerRequest("srq-2", "approval", {"command": "rm -rf ./y"}))
+        self.assertEqual(bells(app), 1)
+        now[0] += SLOT_ARM_SECONDS
+        app._on_input(Key(CHAR, "d"))
+        self.assertEqual([request_id for request_id, _frame in client.answers], ["srq-1"])
+        self.assertEqual(bells(app), 2)
+
+    def test_a_withdrawn_approval_rings_nothing_more(self) -> None:
+        app, _client = make_app(busy=True)
+        app._on_server_request(self.APPROVAL)
+        app._on_event(Event("request.cancel", app.sid, {"id": "srq-1", "reason": "timeout"}))
+        self.assertIsNone(app.slot)
+        self.assertEqual(bells(app), 1)
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class BellReplayTests(AppTestCase):
+    def test_the_recorded_approval_rings_once_and_omh_tui_bell_0_not_at_all(self) -> None:
+        for env, expected in (({}, 1), ({"OMH_TUI_BELL": "0"}, 0)):
+            with self.subTest(env=env):
+                run = self.prepare(
+                    Scenario("approval", spans("approval", "startup", "create", "approval_turn"), answers=startup_answers()),
+                    env=env,
+                )
+                terminal = run.terminal
+                terminal.script(
+                    Step(b"Run rm -rf ./omh-m0-probe-dir\r", when=terminal.idle, label="idle"),
+                    Step(when=terminal.shows("Hermes asks to run"), label="the approval slot"),
+                    Step(
+                        b"d",
+                        when=lambda terminal=terminal: time.monotonic() - terminal.fired["the approval slot"]
+                        > SLOT_ARM_SECONDS + 0.05,
+                        label="armed",
+                    ),
+                    Step(b"\x04", when=lambda terminal=terminal: "proceed." in terminal.history() and terminal.idle(),
+                         label="end"),
+                )
+                self.run_main(run)
+                self.assert_clean_run(run)
+                self.assertEqual(bells(terminal), expected)
 
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")

@@ -323,7 +323,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   do nothing), `d` or `n` denies, and Enter on an untouched approval denies.
   Keys pressed in the first moment after any question appears are ignored,
   Enter included, so typing that was meant for the composer cannot answer it.
-  Approving a command permanently stays a choice for `hermes --tui`.
+  Approving a command permanently stays a choice for `hermes --tui`. The
+  terminal bell rings once as an approval opens, so a terminal in the
+  background can flag it; `OMH_TUI_BELL=0` keeps it quiet.
 - Images: drag an image file onto the terminal, press Ctrl+V for an image on
   the clipboard, or type `/image <path>`. Each one shows as a chip on the row
   above the input (`📎 shot.png 1280×720`) and goes with the next message you
