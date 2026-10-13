@@ -138,9 +138,11 @@ tool proceeds only when every armed call runs in the recorded turn. A
 background-review fork or a `/btw` side question shares the session id but runs
 under its own `turn_id`, so it cannot spend the main turn's consent, and while
 its call overlaps the main turn's, neither proceeds: the handler is not told
-its own call id, so it cannot tell which arm is its own. Residual: a host path
-that runs the tool without `pre_tool_call` leaves no arm of its own, and would
-read another in-flight call's.
+its own call id, so it cannot tell which arm is its own. Nor does the fork
+replace the main turn's marker: `pre_llm_call` records nothing for a turn whose
+`parent_session_id` is its own session id. Residual: a host path that runs the
+tool without `pre_tool_call` leaves no arm of its own, and would read another
+in-flight call's.
 
 Process-local and bounded, like `session_attendance`: nothing about it is
 written to disk. Every copy of this module in the process shares the one

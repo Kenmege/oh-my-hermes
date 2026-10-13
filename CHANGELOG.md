@@ -4,6 +4,26 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Hermes' background review and `/btw` side question no longer use up the
+  once-per-session OMH lines meant for the person's next turn.** On Hermes
+  0.21.1, the plugin's floor, both run as a fork of the live agent that keeps
+  the session's id and names that same id as its parent, and the fork's turn
+  still ran OMH's `pre_llm_call`. A review runs right after a turn, so it took
+  the board card naming this chat's open lanes, counted toward the plan line's
+  turns with the full reconciliation rule, and replaced the session's last
+  route-hint and skill-candidate claims; a side question asked mid-turn
+  cleared that turn's Jev marker, so an `omh_jev_ask` the person had asked for
+  returned `consent_not_observed`. The fork was handed OMH context of its own
+  as well: with Hermes' review prompts, the primer, a route hint, the
+  candidate line, the plan line, and the board card. `pre_llm_call` now
+  returns nothing for a turn whose `parent_session_id` equals its
+  `session_id`, before it reads or records anything, which is what Hermes
+  0.21.2 and later do by not calling the hook for such a fork. A delegate
+  child, which names its parent's id, and a turn that names no parent are
+  unchanged. The held-write line's own fork check moves to that one place.
+  Other hooks a fork reaches are unchanged.
+
+
 - **A Hermes edit to an OMH-managed skill is redirected, kept, and reported
   instead of breaking the next update.** Hermes' background self-improvement
   review may patch, edit, or write files into any skill it loaded, OMH's
