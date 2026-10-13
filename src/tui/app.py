@@ -1474,8 +1474,12 @@ class App:
     # ── input modes ──
 
     def _mode_key(self, event: Key | Paste) -> bool:
-        """Shift+Tab cycles the input mode; with a completion menu open it stays the no-op it was."""
-        if not isinstance(event, Key) or event.name != TAB or not event.shift or self._menu_rows():
+        """Shift+Tab cycles the input mode; with a completion menu open it stays the no-op it was.
+
+        Shift+Tab alone: a key report that adds Ctrl or Alt to it is another
+        chord, and a chord that may turn approvals off is never a guess.
+        """
+        if event != Key(TAB, shift=True) or self._menu_rows():
             return False
         self._cycle_mode()
         return True

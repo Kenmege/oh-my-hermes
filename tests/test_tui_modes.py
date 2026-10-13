@@ -34,7 +34,7 @@ from omh.tui import gateway_contract as contract
 from omh.tui.app import EFFORT_CYCLE, SLOT_ARM_SECONDS, App, queue_lines
 from omh.tui.frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, Response, ServerRequest
-from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key
+from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder
 from omh.tui.layout import slot_cap
 from omh.tui.pager import Pager
 from omh.tui.session_picker import SessionPicker, SessionRow
@@ -426,6 +426,23 @@ class ModeCycleTests(unittest.TestCase):
                 self.assertEqual(client.calls, [])
                 self.assertEqual(client.answers, [])
                 self.assertEqual(app.mode, MODE_NORMAL)
+
+    def test_only_shift_tab_itself_cycles_a_ctrl_or_alt_chord_on_it_does_nothing(self) -> None:
+        # Kitty CSI u and xterm modifyOtherKeys forms of Ctrl+Shift+Tab, Alt+Shift+Tab and Ctrl+Alt+Shift+Tab.
+        for chord in (b"\x1b[9;6u", b"\x1b[27;6;9~", b"\x1b[9;4u", b"\x1b[27;4;9~", b"\x1b[9;8u"):
+            with self.subTest(chord=chord):
+                app, client = make_app()
+                (key,) = KeyDecoder().feed(chord)
+                self.assertEqual((key.name, key.shift, key.ctrl or key.alt), (TAB, True, True))
+                app._on_input(key)
+                self.assertEqual(client.calls, [])
+                self.assertEqual(app.mode, MODE_NORMAL)
+        for plain in (SHIFT_TAB_BYTES, b"\x1b[9;2u", b"\x1b[27;2;9~"):
+            with self.subTest(plain=plain):
+                app, client = make_app()
+                (key,) = KeyDecoder().feed(plain)
+                app._on_input(key)
+                self.assertEqual(client.calls, [YOLO_ON_CALL])
 
     def test_no_call_the_app_builds_carries_a_scope(self) -> None:
         tree = ast.parse(Path(app_module.__file__).read_text(encoding="utf-8"))
