@@ -8,6 +8,7 @@ metadata:
     phase: content-task
     role: guide
     quality_tier: workflow-surface-gated
+    related_skills: [humanizer]
 ---
 
 # Content Operator
@@ -23,6 +24,7 @@ This is a Hermes-native `content-operator` workflow skill.
 - The request is already handled by a narrower explicit skill with stronger evidence.
 - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
 - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+- The user wants a draft to stop sounding machine-written - strip AI tells or match their own voice - with no audience, source, or review gate to scope; load Hermes' bundled `humanizer` skill instead of this one.
 
 ## Examples
 

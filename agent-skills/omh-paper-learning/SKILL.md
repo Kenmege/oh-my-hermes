@@ -20,10 +20,10 @@ This is an OMH `paper-learning` workflow skill, projected for Agent Skills hosts
 
 ## Do Not Use When
 
-- The request asks to export, convert, render, or package a file; use `materials-package`.
-- The request asks for daily/weekly paper monitoring, digest, source inbox, or Scout/Analyst/Briefer operations; use `research-department`.
-- The request asks to find current papers or sources when no supplied paper exists; use `research`.
-- The request asks for a visual/image card; use `img-summary`.
+- The request asks to export, convert, render, or package a file; use `omh-materials-package`.
+- The request asks for daily/weekly paper monitoring, digest, source inbox, or Scout/Analyst/Briefer operations; use `omh-research-department`.
+- The request asks to find current papers or sources when no supplied paper exists; use `ulw-research`.
+- The request asks for a visual/image card; use `omh-image-cards`.
 - The request asks to implement or reproduce the paper's code; prepare a coding handoff only after a paper learning or reproduction plan is accepted.
 
 ## Examples

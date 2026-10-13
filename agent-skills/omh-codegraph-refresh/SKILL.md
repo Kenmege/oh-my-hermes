@@ -21,9 +21,9 @@ This is an OMH `codegraph-refresh` workflow skill, projected for Agent Skills ho
 
 ## Do Not Use When
 
-- The user needs a narrative first-read tour of an unfamiliar repo; use `codebase-onboarding`.
-- The user already has accepted implementation criteria and wants code changes; use `ultrawork` or a coding handoff.
-- The user asks for visual, frontend, or rendered UI QA; use `frontend`, `design-quality-gate`, or `visual-qa`.
+- The user needs a narrative first-read tour of an unfamiliar repo; use `omh-codebase-onboarding`.
+- The user already has accepted implementation criteria and wants code changes; use `ulw-work` or a coding handoff.
+- The user asks for visual, frontend, or rendered UI QA; use `omh-frontend`, `omh-design-quality-gate`, or `omh-visual-qa`.
 
 ## Examples
 

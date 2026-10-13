@@ -8,6 +8,7 @@ metadata:
     phase: package-status
     role: operator
     quality_tier: workflow-surface-gated
+    related_skills: [omh-materials-package, omh-report-package]
 ---
 
 # Deliverable Package
@@ -20,8 +21,8 @@ This is a Hermes-native `deliverable-package` workflow skill.
 
 ## Do Not Use When
 
-- Planning a deck, PDF, workbook, or document from source inputs before any file exists (its outline, target formats, and QA ladder); use `materials-package`.
-- A text-only report, executive brief, or slide outline with no file to produce; use `report-package`.
+- Planning a deck, PDF, workbook, or document from source inputs before any file exists (its outline, target formats, and QA ladder); use `omh-materials-package`.
+- A text-only report, executive brief, or slide outline with no file to produce; use `omh-report-package`.
 
 ## Examples
 

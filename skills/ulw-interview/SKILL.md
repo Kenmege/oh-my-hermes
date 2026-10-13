@@ -8,6 +8,7 @@ metadata:
     phase: discovery
     role: planner
     quality_tier: clarity-gated
+    related_skills: [ulw-context, omh-decision-prototype]
 ---
 
 # Deep Interview
@@ -23,8 +24,8 @@ This is a Hermes-native `deep-interview` workflow skill.
 - The request already has concrete scope, acceptance criteria, and verification commands.
 - The missing information is discoverable from the repository or local artifacts without asking the user.
 - The user asked for immediate read-only analysis and the ambiguity does not change the answer.
-- The ambiguity is specifically repository terminology or project-language alignment; use `context` and its direct-lookup/frontier boundary.
-- The open question is answerable by a small reversible experiment rather than another interview round; use `decision-prototype`.
+- The ambiguity is specifically repository terminology or project-language alignment; use `ulw-context` and its direct-lookup/frontier boundary.
+- The open question is answerable by a small reversible experiment rather than another interview round; use `omh-decision-prototype`.
 
 ## Examples
 

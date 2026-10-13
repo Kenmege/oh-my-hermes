@@ -22,7 +22,7 @@ This is an OMH `context-budget-review` workflow skill, projected for Agent Skill
 ## Do Not Use When
 
 - The user asks only what this Hermes session has used or cost so far; Hermes' /usage shows this session's tokens and context, /insights estimates cost across recent sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost.
-- The user asks to continue a loopable goal; use `loop` unless budget planning is the explicit blocker.
+- The user asks to continue a loopable goal; use `ulw-loop` unless budget planning is the explicit blocker.
 - The task is a short one-step answer with no meaningful context risk.
 
 ## Examples

@@ -8,6 +8,7 @@ metadata:
     phase: verification-gate
     role: reviewer
     quality_tier: verification-gated
+    related_skills: [omh-visual-qa, omh-production-audit, omh-code-review]
 ---
 
 # Verification Gate
@@ -20,9 +21,9 @@ This is a Hermes-native `verification-gate` workflow skill.
 
 ## Do Not Use When
 
-- The user asks for visual render QA; use `visual-qa`.
-- The user asks for production release readiness beyond verification commands; use `production-audit`.
-- The user wants a bug-first code review of a diff; use `code-review`.
+- The user asks for visual render QA; use `omh-visual-qa`.
+- The user asks for production release readiness beyond verification commands; use `omh-production-audit`.
+- The user wants a bug-first code review of a diff; use `omh-code-review`.
 
 ## Examples
 

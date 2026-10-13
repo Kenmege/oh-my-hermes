@@ -20,7 +20,7 @@ This is an OMH `apple-design` workflow skill, projected for Agent Skills hosts (
 
 ## Do Not Use When
 
-- The request is generic frontend design, accessibility, screenshot QA, image-card work, or material guidance without an Apple-specific phrase or explicit `apple-design` invocation; use the existing specialist lane.
+- The request is generic frontend design, accessibility, screenshot QA, image-card work, or material guidance without an Apple-specific phrase or explicit `omh-apple-design` invocation; use the existing specialist lane.
 - The message concerns Apple fruit, stock, support, a glass database, material science, or unrelated Swift/macOS discussion.
 - The user needs a conformance, accessibility PASS, or visual PASS claim without supplied and observed evidence.
 

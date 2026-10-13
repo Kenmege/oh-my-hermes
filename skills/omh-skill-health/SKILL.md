@@ -8,6 +8,7 @@ metadata:
     phase: skill-health
     role: operator
     quality_tier: workflow-surface-gated
+    related_skills: [omh-doctor, omh-workflow-learning, omh-skill-scout]
 ---
 
 # Skill Health
@@ -20,9 +21,9 @@ This is a Hermes-native `skill-health` workflow skill.
 
 ## Do Not Use When
 
-- OMH setup, install, or a skill that does not load; use `doctor`.
-- One run that missed a route or went wrong; use `workflow-learning`.
-- Finding a new skill to adopt; use `skill-scout`.
+- OMH setup, install, or a skill that does not load; use `omh-doctor`.
+- One run that missed a route or went wrong; use `omh-workflow-learning`.
+- Finding a new skill to adopt; use `omh-skill-scout`.
 
 ## Examples
 

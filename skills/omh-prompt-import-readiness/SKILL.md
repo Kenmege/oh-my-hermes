@@ -8,6 +8,7 @@ metadata:
     phase: prompt-import-readiness
     role: guide
     quality_tier: workflow-surface-gated
+    related_skills: [omh-external-connector-readiness, omh-toolbelt-readiness, omh-skill-scout]
 ---
 
 # Prompt Import Readiness
@@ -20,9 +21,9 @@ This is a Hermes-native `prompt-import-readiness` workflow skill.
 
 ## Do Not Use When
 
-- Adopting a plugin, connector, API, or memory provider; use `external-connector-readiness`.
-- A runtime capability or CLI the work needs is missing; use `toolbelt-readiness`.
-- Searching for an existing skill to reuse before writing one; use `skill-scout`.
+- Adopting a plugin, connector, API, or memory provider; use `omh-external-connector-readiness`.
+- A runtime capability or CLI the work needs is missing; use `omh-toolbelt-readiness`.
+- Searching for an existing skill to reuse before writing one; use `omh-skill-scout`.
 
 ## Examples
 

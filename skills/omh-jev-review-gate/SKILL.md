@@ -8,6 +8,7 @@ metadata:
     phase: jev-review-gate
     role: reviewer
     quality_tier: evidence-gated
+    related_skills: [omh-code-review, omh-verification-gate, omh-security-safety-review]
     requires_tools: [omh_jev_ask]
 ---
 

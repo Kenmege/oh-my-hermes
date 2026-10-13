@@ -8,6 +8,7 @@ metadata:
     phase: lifecycle-growth
     role: operator
     quality_tier: decision-gated
+    related_skills: [omh-content-operator, omh-data-analysis, omh-automation-blueprint, omh-apps, omh-product-brief]
 ---
 
 # Lifecycle Growth

@@ -1928,7 +1928,13 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # `workflow-learning`) state their own Do-Not-Use instead of the shape's three
 # shared lines, so those sections are no longer byte-identical to another
 # skill's. 109,048 plus 10%, rounded up to the next 10,000, is 120,000.
-FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 109048
+# 120,000 -> 120,000 (measurement 109,048 -> 108,465): every byte of the drop
+# is `## Do Not Use When`. `wiki` and `content-operator` each gained a line
+# handing one request to the Hermes-bundled skill that shares its job, so
+# their sections stop being copies of a shared boundary, and `plan`'s, which
+# only `wiki`'s matched, stops having a twin. 108,465 plus 10%, rounded up
+# to the next 10,000, is still 120,000.
+FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 108465
 FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS = 10000
 FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT = 120000
 

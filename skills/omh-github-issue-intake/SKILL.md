@@ -8,6 +8,7 @@ metadata:
     phase: issue-intake
     role: operator
     quality_tier: workflow-surface-gated
+    related_skills: [github]
 ---
 
 # Github Issue Intake
@@ -24,6 +25,7 @@ This is a Hermes-native `github-issue-intake` workflow skill.
 - The event concerns an already-existing issue, PR, review, or CI run; use github-event-ops instead.
 - The user wants implementation; coding stays a separate follow-up lane with its own maintainer authority.
 - The report describes a security vulnerability; redirect to the private SECURITY.md path.
+- The issue is already decided and the user only wants it filed or edited with the gh CLI, with no chat report to classify, question, or de-duplicate; load Hermes' bundled `github` skill instead of this one.
 
 ## Examples
 

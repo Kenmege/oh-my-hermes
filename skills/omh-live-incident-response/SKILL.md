@@ -8,6 +8,7 @@ metadata:
     phase: live-incident-command
     role: operator
     quality_tier: incident-command-gated
+    related_skills: [omh-reliability-review, omh-support-operations, omh-deploy-and-monitor, omh-apps, omh-production-audit]
 ---
 
 # Live Incident Response
@@ -20,11 +21,11 @@ This is a Hermes-native `live-incident-response` workflow skill.
 
 ## Do Not Use When
 
-- The incident is over and the request is the postmortem, the SLO or error-budget consequence, or remediation follow-up; use `reliability-review`.
-- The request is one customer's support case needing a reply, a severity opinion, and an escalation path, with no incident declared; use `support-operations`.
-- The request is a release being rolled out and watched -- deploy checklist, health signals, rollback criteria -- and nothing has been declared broken; use `deploy-and-monitor`.
-- The request is to send the page, publish the status-page update, or deliver the customer notice; use `connector-operator`, which records a send as observed only on a returned result.
-- The request asks whether a release is ready across rollout, rollback, and observability, before anything broke; use `production-audit`.
+- The incident is over and the request is the postmortem, the SLO or error-budget consequence, or remediation follow-up; use `omh-reliability-review`.
+- The request is one customer's support case needing a reply, a severity opinion, and an escalation path, with no incident declared; use `omh-support-operations`.
+- The request is a release being rolled out and watched -- deploy checklist, health signals, rollback criteria -- and nothing has been declared broken; use `omh-deploy-and-monitor`.
+- The request is to send the page, publish the status-page update, or deliver the customer notice; use `omh-apps`, which records a send as observed only on a returned result.
+- The request asks whether a release is ready across rollout, rollback, and observability, before anything broke; use `omh-production-audit`.
 
 ## Examples
 

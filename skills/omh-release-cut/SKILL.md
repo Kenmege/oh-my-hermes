@@ -8,6 +8,7 @@ metadata:
     phase: release-cut
     role: planner
     quality_tier: rollback-trigger-gated
+    related_skills: [omh-deploy-and-monitor, omh-live-incident-response, omh-production-audit, omh-commit-pr-authoring, omh-mobile-release]
 ---
 
 # Release Cut
@@ -25,11 +26,11 @@ This is a Hermes-native `release-cut` workflow skill.
 
 ## Do Not Use When
 
-- The rollout is already running and the ask is watching its health signals and post-deploy status; use `deploy-and-monitor`.
-- Production is down or degraded and the work is commanding the incident; use `live-incident-response`.
-- The ask is a readiness audit across observability, security, and operations before launch; use `production-audit`.
-- The ask is drafting the commit message or the pull request description for a change; use `commit-pr-authoring`.
-- The app ships through the App Store or Google Play -- signing, a TestFlight or Play testing-track beta, a phased release, a store hotfix; use `mobile-release`.
+- The rollout is already running and the ask is watching its health signals and post-deploy status; use `omh-deploy-and-monitor`.
+- Production is down or degraded and the work is commanding the incident; use `omh-live-incident-response`.
+- The ask is a readiness audit across observability, security, and operations before launch; use `omh-production-audit`.
+- The ask is drafting the commit message or the pull request description for a change; use `omh-commit-pr-authoring`.
+- The app ships through the App Store or Google Play -- signing, a TestFlight or Play testing-track beta, a phased release, a store hotfix; use `omh-mobile-release`.
 
 ## Examples
 

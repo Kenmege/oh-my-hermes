@@ -20,8 +20,8 @@ This is an OMH `ops-review` workflow skill, projected for Agent Skills hosts (Cl
 
 ## Do Not Use When
 
-- The review is over sales stages, forecast categories, deal aging, or seller forecast rather than generic operating status; use `sales-pipeline-review`.
-- The primary output is durable cadence history, minutes, a decision log, or action history; use `operating-rhythm`.
+- The review is over sales stages, forecast categories, deal aging, or seller forecast rather than generic operating status; use `omh-sales-pipeline-review`.
+- The primary output is durable cadence history, minutes, a decision log, or action history; use `omh-operating-rhythm`.
 
 ## Examples
 

@@ -64,6 +64,7 @@ import unittest
 
 from omh.routing.recommend import recommend_skills
 from omh.skills.catalog import builtin_definitions, routable_skill_names
+from omh.skills.catalog_types import HermesSkillLine
 
 # Skill references in `do_not_use_when` use the catalog's own name shape. The
 # pattern is deliberately narrower than "any backticked token" because the field
@@ -83,6 +84,9 @@ _ANY_BACKTICKED_TOKEN = re.compile(r"`([^`]+)`")
 # The three `ulw-work` internal capability ids that its do_not_use_when
 # boundaries reference after the ULW fold (issue #954, PR D) are deliberate
 # non-skill names: they are capabilities of `ultrawork`, not catalog siblings.
+# A skill Hermes bundles is named only inside a `HermesSkillLine`, which
+# declares its names itself, so it needs no entry here; it adds no deference
+# pair, because the router can only rank catalog skills.
 NON_SKILL_BACKTICKS = frozenset(
     {
         ".env",
@@ -94,17 +98,6 @@ NON_SKILL_BACKTICKS = frozenset(
         # A Rust language keyword, backticked as code in `backend` and
         # `native-debugging`'s do_not_use_when, never a skill name.
         "unsafe",
-        # Skills Hermes bundles, named by `web-research` and
-        # `research-department` for requests those skills own outright. They
-        # are not catalog siblings, so they add no deference pair and the
-        # router has no rank for them.
-        "grounded-citations",
-        "competitor-news-monitor",
-        "arxiv",
-        # A skill Hermes bundles, not an OMH catalog skill: `code-review` hands
-        # a kanban review card's transition to it. No deference case follows,
-        # because the router can only rank catalog skills.
-        "sdlc-review",
         # Hermes' own session commands, their flags, and its cron tool, named
         # in `loop`'s do_not_use_when where a request belongs to the host's
         # timer, schedule, or single-objective driver rather than a sibling.
@@ -114,11 +107,6 @@ NON_SKILL_BACKTICKS = frozenset(
         "cronjob_manage",
         "/goal",
         "/goal draft",
-        # A skill Hermes bundles, named by `visual-qa` and `ultraqa` for
-        # open-ended exploratory web QA it owns outright. It is not a catalog
-        # sibling, so it adds no deference pair and the router has no rank for
-        # it.
-        "dogfood",
     }
 )
 
@@ -395,8 +383,11 @@ class CatalogDeferenceGraphTests(unittest.TestCase):
             if definition.name not in routable:
                 continue
             for statement in definition.do_not_use_when:
+                # A `HermesSkillLine` hands the request to a skill Hermes
+                # bundles; it declares those names itself, and only those pass.
+                bundled = statement.skills if isinstance(statement, HermesSkillLine) else ()
                 for token in _ANY_BACKTICKED_TOKEN.findall(statement):
-                    if token not in catalog_names and token not in NON_SKILL_BACKTICKS:
+                    if token not in catalog_names and token not in NON_SKILL_BACKTICKS and token not in bundled:
                         unknown.append((definition.name, token))
         self.assertEqual(
             sorted(unknown),

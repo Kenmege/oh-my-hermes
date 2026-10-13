@@ -20,8 +20,8 @@ This is an OMH `operating-rhythm` workflow skill, projected for Agent Skills hos
 
 ## Do Not Use When
 
-- The user only needs a one-off meeting agenda before the meeting; use `meeting-brief`.
-- The request is a weekly status/risk summary rather than cadence history; use `ops-review`.
+- The user only needs a one-off meeting agenda before the meeting; use `omh-meeting-brief`.
+- The request is a weekly status/risk summary rather than cadence history; use `omh-ops-review`.
 - The user asks for report packaging, PPT outline, or reliability evidence review.
 
 ## Examples

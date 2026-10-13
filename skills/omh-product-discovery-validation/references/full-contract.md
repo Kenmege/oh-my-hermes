@@ -11,12 +11,12 @@ holds the workflow-specific detail without copying those shared rails.
 
 ## Do Not Use When
 
-- The user needs market, competitor, pricing, or customer research on named sources without a discovery decision to make; use `research-brief`.
-- The user is clarifying their own request, requirements, or preferences rather than testing a customer problem with external people; use `deep-interview`.
-- The user needs a company or product strategy decision across existing options with evidence already in hand; use `strategy-brief`.
-- The problem, segment, and evidence are already validated and accepted and the user wants a PRD or prioritization; use `product-brief`.
-- An accepted product brief and plan exist and the user wants implementation, QA, and release gates; use `idea-to-deploy`.
-- The user has one falsifiable technical or empirical question a disposable prototype can answer; use `decision-prototype`.
+- The user needs market, competitor, pricing, or customer research on named sources without a discovery decision to make; use `omh-research-brief`.
+- The user is clarifying their own request, requirements, or preferences rather than testing a customer problem with external people; use `ulw-interview`.
+- The user needs a company or product strategy decision across existing options with evidence already in hand; use `omh-decide`.
+- The problem, segment, and evidence are already validated and accepted and the user wants a PRD or prioritization; use `omh-product-brief`.
+- An accepted product brief and plan exist and the user wants implementation, QA, and release gates; use `omh-idea-to-deploy`.
+- The user has one falsifiable technical or empirical question a disposable prototype can answer; use `omh-decision-prototype`.
 
 ## Examples
 

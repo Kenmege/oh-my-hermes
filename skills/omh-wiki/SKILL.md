@@ -8,6 +8,7 @@ metadata:
     phase: design-and-capture
     role: memory-keeper
     quality_tier: knowledge-gated
+    related_skills: [llm-wiki]
 ---
 
 # Wiki
@@ -22,6 +23,7 @@ This is a Hermes-native `wiki` workflow skill.
 
 - The request is casual chat, a status-only acknowledgement, or another workflow has stronger routing evidence.
 - The user needs implementation, review, CI, merge, or external publishing evidence that has not been delegated or observed.
+- The user wants the agent to ingest sources into, query, or lint an interlinked markdown knowledge base it maintains itself in the Karpathy LLM Wiki pattern; load Hermes' bundled `llm-wiki` skill instead of this one.
 
 ## Examples
 

@@ -8,6 +8,7 @@ metadata:
     phase: accessibility-audit
     role: reviewer
     quality_tier: accessibility-audit-gated
+    related_skills: [omh-frontend, omh-visual-qa, omh-design-quality-gate]
 ---
 
 # Accessibility Audit
@@ -20,9 +21,9 @@ This is a Hermes-native `accessibility-audit` workflow skill.
 
 ## Do Not Use When
 
-- The user needs initial frontend design or redesign planning before accessibility-specific review; use `frontend` first.
-- The user needs rendered layout, screenshot, CJK, or pixel-diff QA rather than accessibility semantics; use `visual-qa`.
-- The user needs a broad premium-quality gate across web, deck, PDF, or posters; use `design-quality-gate`.
+- The user needs initial frontend design or redesign planning before accessibility-specific review; use `omh-frontend` first.
+- The user needs rendered layout, screenshot, CJK, or pixel-diff QA rather than accessibility semantics; use `omh-visual-qa`.
+- The user needs a broad premium-quality gate across web, deck, PDF, or posters; use `omh-design-quality-gate`.
 - The user asks to implement accessibility fixes directly; prepare a selected executor/runtime handoff after the audit or use the coding workflow.
 
 ## Examples

@@ -8,6 +8,7 @@ metadata:
     phase: mobile-release
     role: planner
     quality_tier: store-gate-halt-planned
+    related_skills: [omh-release-cut, omh-deploy-and-monitor, omh-production-audit, omh-app-debugging]
 ---
 
 # Mobile Release
@@ -25,10 +26,10 @@ This is a Hermes-native `mobile-release` workflow skill.
 
 ## Do Not Use When
 
-- The ask is a versioned release of a service or library -- what goes in, the tag, a canary, the rollback command; use `release-cut`.
-- A web or backend deploy is already out and the ask is watching its health; use `deploy-and-monitor`.
-- The ask is a readiness audit across observability, security, and operations before launch; use `production-audit`.
-- The app crashes or misbehaves and the ask is finding the cause in the code; use `app-debugging`.
+- The ask is a versioned release of a service or library -- what goes in, the tag, a canary, the rollback command; use `omh-release-cut`.
+- A web or backend deploy is already out and the ask is watching its health; use `omh-deploy-and-monitor`.
+- The ask is a readiness audit across observability, security, and operations before launch; use `omh-production-audit`.
+- The app crashes or misbehaves and the ask is finding the cause in the code; use `omh-app-debugging`.
 
 ## Examples
 

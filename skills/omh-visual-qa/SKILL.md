@@ -8,6 +8,7 @@ metadata:
     phase: visual-qa
     role: operator
     quality_tier: visual-qa-gated
+    related_skills: [omh-frontend, omh-design-quality-gate, omh-image-cards, dogfood]
 ---
 
 # Visual Qa
@@ -20,9 +21,9 @@ This is a Hermes-native `visual-qa` workflow skill.
 
 ## Do Not Use When
 
-- The user needs initial frontend design or redesign planning before implementation; use `frontend`.
-- The user needs a broad visual quality rubric before generation; use `design-quality-gate`.
-- The user needs image-card prompt creation; use `img-summary`.
+- The user needs initial frontend design or redesign planning before implementation; use `omh-frontend`.
+- The user needs a broad visual quality rubric before generation; use `omh-design-quality-gate`.
+- The user needs image-card prompt creation; use `omh-image-cards`.
 - The user wants non-visual code tests, CI, or PR review only; use the coding/review workflow.
 - Open-ended bug-hunting across a web app with no page, state, and viewport matrix or target revision to judge; on Hermes, use the bundled `dogfood` skill when it is available.
 

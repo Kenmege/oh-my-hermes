@@ -8,6 +8,7 @@ metadata:
     phase: codebase-onboarding
     role: planner
     quality_tier: onboarding-gated
+    related_skills: [ulw-work, omh-idea-to-deploy, omh-workspace-audit, omh-code-review]
 ---
 
 # Codebase Onboarding
@@ -20,9 +21,9 @@ This is a Hermes-native `codebase-onboarding` workflow skill.
 
 ## Do Not Use When
 
-- The user already named a concrete implementation task and acceptance criteria; use `ultrawork` or `idea-to-deploy`.
-- The user needs a whole-workspace capability inventory; use `workspace-audit`.
-- The user wants a code diff review; use `code-review`.
+- The user already named a concrete implementation task and acceptance criteria; use `ulw-work` or `omh-idea-to-deploy`.
+- The user needs a whole-workspace capability inventory; use `omh-workspace-audit`.
+- The user wants a code diff review; use `omh-code-review`.
 
 ## Examples
 

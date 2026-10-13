@@ -25,10 +25,10 @@ This is an OMH `internal-audit` workflow skill, projected for Agent Skills hosts
 
 ## Do Not Use When
 
-- The ask is the month's figures, a budget variance, or the close itself; use `finance-analysis`.
-- The ask is reading a contract or a regulation for legal risk; use `legal-compliance-review`.
-- The ask is whether a service is ready to launch; use `production-audit`.
-- The ask is ranking a codebase's debt; use `tech-debt-audit`.
+- The ask is the month's figures, a budget variance, or the close itself; use `omh-finance-analysis`.
+- The ask is reading a contract or a regulation for legal risk; use `omh-legal-compliance-review`.
+- The ask is whether a service is ready to launch; use `omh-production-audit`.
+- The ask is ranking a codebase's debt; use `omh-tech-debt-audit`.
 
 ## Examples
 

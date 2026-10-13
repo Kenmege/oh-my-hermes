@@ -8,6 +8,7 @@ metadata:
     phase: app-root-cause
     role: reviewer
     quality_tier: root-cause-evidence-gated
+    related_skills: [omh-native-debugging, omh-build-failure-triage, omh-agent-debug, omh-verification-gate, systematic-debugging]
 ---
 
 # App Debugging
@@ -25,10 +26,11 @@ This is a Hermes-native `app-debugging` workflow skill.
 
 ## Do Not Use When
 
-- The fault is a crash, memory corruption, or core dump in a compiled native binary that needs a debugger session; use `native-debugging`.
-- The build, compile, or CI job fails the same way on every run; use `build-failure-triage`.
-- The subject is an agent or workflow run that misbehaved rather than the application code; use `agent-debug`.
-- The cause is already demonstrated and the request is to judge whether the fix is proven; use `verification-gate`.
+- The fault is a crash, memory corruption, or core dump in a compiled native binary that needs a debugger session; use `omh-native-debugging`.
+- The build, compile, or CI job fails the same way on every run; use `omh-build-failure-triage`.
+- The subject is an agent or workflow run that misbehaved rather than the application code; use `omh-agent-debug`.
+- The cause is already demonstrated and the request is to judge whether the fix is proven; use `omh-verification-gate`.
+- Hermes' bundled `systematic-debugging` skill is already loaded for this bug; follow its phases instead of loading this one too, unless the reproduction, the rival hypotheses, and the observation that separated them must be kept as a record.
 
 ## Examples
 

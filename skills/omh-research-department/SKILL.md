@@ -8,6 +8,7 @@ metadata:
     phase: research-department
     role: researcher
     quality_tier: research-ops-gated
+    related_skills: [ulw-research, omh-research-brief, omh-automation-blueprint, competitor-news-monitor, arxiv]
 ---
 
 # Research Department
@@ -20,9 +21,9 @@ This is a Hermes-native `research-department` workflow skill.
 
 ## Do Not Use When
 
-- The user only needs a one-off current-source lookup; use `research`.
-- The user only needs a one-off business synthesis; use `research-brief`.
-- The request is pure scheduling with no source collection or synthesis; use `automation-blueprint`.
+- The user only needs a one-off current-source lookup; use `ulw-research`.
+- The user only needs a one-off business synthesis; use `omh-research-brief`.
+- The request is pure scheduling with no source collection or synthesis; use `omh-automation-blueprint`.
 - The user asks for coding implementation; prepare a selected executor/runtime handoff after the research plan is accepted.
 - The request is one news watch over named companies, or a scheduled run of a watch that already exists, with no knowledge store, synthesis tool, or briefing lanes to set up, and Hermes' bundled `competitor-news-monitor` skill is available; load that skill.
 - The user wants a one-off paper search by topic, author, category, or paper id rather than a recurring paper review, and Hermes' bundled `arxiv` skill is available; load that skill.

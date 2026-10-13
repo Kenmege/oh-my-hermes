@@ -8,6 +8,7 @@ metadata:
     phase: instinct-ledger
     role: tracker
     quality_tier: workflow-surface-gated
+    related_skills: [omh-workflow-learning, omh-rules-distill, omh-agent-debug]
 ---
 
 # Instinct Ledger
@@ -20,9 +21,9 @@ This is a Hermes-native `instinct-ledger` workflow skill.
 
 ## Do Not Use When
 
-- A single missed route or one run's trace; use `workflow-learning` first.
-- Writing reviewed lessons into AGENTS guidance, prompts, or skills; use `rules-distill`.
-- A run that is stuck right now; use `agent-debug` before drawing a lesson from it.
+- A single missed route or one run's trace; use `omh-workflow-learning` first.
+- Writing reviewed lessons into AGENTS guidance, prompts, or skills; use `omh-rules-distill`.
+- A run that is stuck right now; use `omh-agent-debug` before drawing a lesson from it.
 
 ## Examples
 

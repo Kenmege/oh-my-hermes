@@ -20,9 +20,9 @@ This is an OMH `skill-scout` workflow skill, projected for Agent Skills hosts (C
 
 ## Do Not Use When
 
-- Repairing an OMH install or a skill that does not load; use `doctor`.
-- A health overview of the skills already installed; use `skill-health`.
-- Writing or changing a skill once the scout decision is made; use `skill`.
+- Repairing an OMH install or a skill that does not load; use `omh-doctor`.
+- A health overview of the skills already installed; use `omh-skill-health`.
+- Writing or changing a skill once the scout decision is made; use `omh-skill`.
 
 ## Examples
 

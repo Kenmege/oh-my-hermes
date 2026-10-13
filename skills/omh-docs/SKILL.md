@@ -8,6 +8,7 @@ metadata:
     phase: product-documentation
     role: researcher
     quality_tier: source-gated
+    related_skills: [omh-doctor, omh-skill, omh-model-setup]
 ---
 
 # OMH Docs

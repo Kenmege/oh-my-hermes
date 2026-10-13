@@ -8,6 +8,7 @@ metadata:
     phase: decision-prototype
     role: planner
     quality_tier: decision-gated
+    related_skills: [ulw-context, ulw-interview, ulw-plan, ulw-work, omh-frontend, omh-design-quality-gate, omh-product-discovery-validation, spike]
 ---
 
 # Decision Prototype

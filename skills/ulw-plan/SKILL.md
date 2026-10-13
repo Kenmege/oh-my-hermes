@@ -8,6 +8,7 @@ metadata:
     phase: reviewed-plan
     role: planner
     quality_tier: reviewed-plan-gated
+    related_skills: [ulw-interview, ulw-work, omh-ai-slop-cleaner, omh-refactor-plan, omh-decision-prototype, ulw-context]
 ---
 
 # Ralplan
@@ -24,13 +25,13 @@ This is a Hermes-native `ralplan` workflow skill.
 
 ## Do Not Use When
 
-- The request is still too ambiguous to name requirements, non-goals, or acceptance criteria; use `deep-interview` first.
-- The user asks for one full research-plan-implementation-review-PR cycle; use `ultrawork` (its `delivery_boundary` capability) and keep ralplan as the planning stage.
-- The change is a small local refactor or cleanup with no architectural or regression risk; use `ultrawork`, or `ai-slop-cleaner` when observable behavior must stay identical.
-- The refactor's direction is already decided and what is missing is its execution shape - which files move in which phase, what verifies each phase, where each phase rolls back to; use `refactor-plan`.
-- One plan-blocking choice still needs behavior evidence rather than argument; run `decision-prototype` first and consume its decision receipt without transcript replay.
+- The request is still too ambiguous to name requirements, non-goals, or acceptance criteria; use `ulw-interview` first.
+- The user asks for one full research-plan-implementation-review-PR cycle; use `ulw-work` (its `delivery_boundary` capability) and keep ralplan as the planning stage.
+- The change is a small local refactor or cleanup with no architectural or regression risk; use `ulw-work`, or `omh-ai-slop-cleaner` when observable behavior must stay identical.
+- The refactor's direction is already decided and what is missing is its execution shape - which files move in which phase, what verifies each phase, where each phase rolls back to; use `omh-refactor-plan`.
+- One plan-blocking choice still needs behavior evidence rather than argument; run `omh-decision-prototype` first and consume its decision receipt without transcript replay.
 - The user wants a pure source lookup, citation check, or paper explanation with no implementation plan.
-- The unresolved work is repository terminology alignment or a project-language decision frontier; use `context` before planning.
+- The unresolved work is repository terminology alignment or a project-language decision frontier; use `ulw-context` before planning.
 
 ## Examples
 

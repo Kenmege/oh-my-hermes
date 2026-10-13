@@ -8,6 +8,7 @@ metadata:
     phase: sales-pipeline-review
     role: operator
     quality_tier: decision-gated
+    related_skills: [omh-sales-development, omh-ops-review, omh-finance-analysis, omh-data-analysis, omh-feedback-triage, omh-apps]
 ---
 
 # Sales Pipeline Review

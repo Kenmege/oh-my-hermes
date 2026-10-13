@@ -8,6 +8,7 @@ metadata:
     phase: rust-development
     role: planner
     quality_tier: rust-safety-gated
+    related_skills: [omh-backend, omh-native-debugging, omh-code-review]
 ---
 
 # Rust
@@ -20,9 +21,9 @@ This is a Hermes-native `rust` workflow skill.
 
 ## Do Not Use When
 
-- The request is a server, API, or schema design that happens to mention a Rust stack; use `backend` for the contract and name Rust as the stack.
-- The request is debugging a stripped or source-less native binary; use `native-debugging`.
-- The request is a general code review of finished Rust; use `code-review`.
+- The request is a server, API, or schema design that happens to mention a Rust stack; use `omh-backend` for the contract and name Rust as the stack.
+- The request is debugging a stripped or source-less native binary; use `omh-native-debugging`.
+- The request is a general code review of finished Rust; use `omh-code-review`.
 - The request is a Rust vocabulary or concept question with no change to prepare; answer it directly.
 
 ## Examples

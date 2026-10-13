@@ -8,6 +8,7 @@ metadata:
     phase: run-efficiency
     role: tracker
     quality_tier: workflow-surface-gated
+    related_skills: [omh-ops-observability-card]
 ---
 
 # Run Efficiency
@@ -21,7 +22,7 @@ This is a Hermes-native `run-efficiency` workflow skill.
 ## Do Not Use When
 
 - The user asks only what this Hermes conversation has used or cost so far; Hermes' /usage shows this session's tokens and context, /insights estimates cost across recent sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost.
-- The user wants service latency, uptime, error rates, or supplied metric-provider figures; use `ops-observability-card`.
+- The user wants service latency, uptime, error rates, or supplied metric-provider figures; use `omh-ops-observability-card`.
 - The user wants a provider invoice or quota truth; no OMH report observes either, so name the provider's own console as the source.
 
 ## Examples

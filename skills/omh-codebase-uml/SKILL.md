@@ -8,6 +8,7 @@ metadata:
     phase: codebase-uml
     role: planner
     quality_tier: codegraph-gated
+    related_skills: [omh-codegraph-refresh, omh-codebase-onboarding, omh-image-cards, architecture-diagram]
 ---
 
 # Codebase Uml
@@ -20,9 +21,10 @@ This is a Hermes-native `codebase-uml` workflow skill.
 
 ## Do Not Use When
 
-- The user wants the local code index refreshed or a task-scoped handoff pack, not a picture; use `codegraph-refresh`.
-- The user wants a narrative first-read tour, reading path, or glossary; use `codebase-onboarding`.
-- The user wants a summary card, thumbnail, or explainer image of a PR, meeting, or release rather than a structural diagram; use `img-summary`.
+- The user wants the local code index refreshed or a task-scoped handoff pack, not a picture; use `omh-codegraph-refresh`.
+- The user wants a narrative first-read tour, reading path, or glossary; use `omh-codebase-onboarding`.
+- The user wants a summary card, thumbnail, or explainer image of a PR, meeting, or release rather than a structural diagram; use `omh-image-cards`.
+- The user describes a system, cloud, or infrastructure architecture in words and wants it drawn as a styled diagram, with no repository to read the structure from; load Hermes' bundled `architecture-diagram` skill instead of this one.
 
 ## Examples
 

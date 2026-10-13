@@ -5,6 +5,7 @@ from dataclasses import dataclass, fields, replace
 from typing import Literal
 from functools import lru_cache
 import json
+import re
 
 from .catalog import (
     DEEP_INTERVIEW_MAX_ROUNDS,
@@ -17,6 +18,7 @@ from .catalog import (
     decision_frontier_policy,
     declared_primary_harness,
     harness_quality_contract,
+    installable_skill_definitions,
     memory_context_policy_for_skill,
     omh_description,
     omh_skill_display_name,
@@ -36,6 +38,7 @@ from .catalog_types import (
     EXECUTION_WAIT_DISCIPLINE_RULE,
     HERMES_SCANNER_EXCLUDED_TERMS,
     HermesReferenceLine,
+    HermesSkillLine,
     LLM_APP_DEV_EVAL_DELIVERABLES,
     LLM_APP_DEV_PUBLIC_BOARD_ACTIONS,
     LLM_APP_DEV_RAILS,
@@ -290,6 +293,57 @@ def _definitions_by_name() -> dict[str, SkillDefinition]:
     return {definition.name: definition for definition in builtin_definitions()}
 
 
+# A sibling named in a `do_not_use_when` line: a backticked token in the catalog
+# name shape, the same shape `tests/test_catalog_deference_policy.py` reads the
+# deference graph with.
+_BACKTICKED_SKILL_NAME = re.compile(r"`([a-z0-9][a-z0-9-]*)`")
+
+
+@lru_cache(maxsize=1)
+def _installable_skill_names() -> frozenset[str]:
+    return frozenset(definition.name for definition in installable_skill_definitions())
+
+
+def loadable_skill_mentions(line: str) -> str:
+    """Rewrite each backticked installed catalog name in `line` to its display label.
+
+    `skill_view` loads a skill by the label its directory carries (`omh-apps`,
+    `ulw-research`), not by the canonical catalog name (`connector-operator`,
+    `research`), so a sibling named canonically is a pointer the model cannot
+    follow. The catalog keeps canonical names, which routing and the deference
+    graph read; only the rendered line changes. A name that is not installed
+    stays as written, because no label would load it either.
+    """
+    installed = _installable_skill_names()
+
+    def _label(match: re.Match[str]) -> str:
+        name = match.group(1)
+        return f"`{omh_skill_display_name(name)}`" if name in installed else match.group(0)
+
+    return _BACKTICKED_SKILL_NAME.sub(_label, line)
+
+
+def related_skill_names(definition: SkillDefinition) -> tuple[str, ...]:
+    """The skills this body hands a request to, by the name Hermes loads each one under.
+
+    Derived from `do_not_use_when` rather than declared beside it: every
+    installed catalog sibling its lines name, as a display label, and every
+    bundled Hermes skill its `HermesSkillLine`s name, each once and in the
+    order the lines name them. Rendered as `metadata.hermes.related_skills`,
+    which `skill_view` returns beside the body; Hermes' per-turn skill index
+    does not read it.
+    """
+    installed = _installable_skill_names()
+    related: list[str] = []
+    for line in definition.do_not_use_when:
+        for name in _BACKTICKED_SKILL_NAME.findall(line):
+            if name in installed and name != definition.name:
+                related.append(omh_skill_display_name(name))
+        if isinstance(line, HermesSkillLine):
+            related.extend(line.skills)
+    return tuple(dict.fromkeys(related))
+
+
 # A host's skill picker reads frontmatter `name` + `description` only — the
 # curated trigger phrases rendered into skill BODIES are invisible at
 # selection time (measured live: `ulw` routes because the token is in the
@@ -425,8 +479,16 @@ def _frontmatter(
         f"    category: {category}\n    phase: {phase}\n"
         f"    role: {definition.hermes_role if definition else 'guide'}\n"
         f"    quality_tier: {definition.quality_tier if definition else 'evidence-gated'}\n"
-        f"{_requires_tools_line(definition, target)}---\n"
+        f"{_related_skills_line(definition, target)}{_requires_tools_line(definition, target)}---\n"
     )
+
+
+def _related_skills_line(definition: SkillDefinition | None, target: str) -> str:
+    """Hermes `related_skills`: `skill_view` returns it beside the body. Hermes-only."""
+    related = related_skill_names(definition) if definition is not None and target == "hermes" else ()
+    if not related:
+        return ""
+    return f"    related_skills: [{', '.join(related)}]\n"
 
 
 def _requires_tools_line(definition: SkillDefinition | None, target: str) -> str:
@@ -578,7 +640,7 @@ def _quality_rubric_sections(
 {_opening_steps_block(definition)}
 ## Do Not Use When
 
-{_tuple_list(definition.do_not_use_when)}
+{_tuple_list(tuple(loadable_skill_mentions(line) for line in definition.do_not_use_when))}
 
 ## Examples
 
@@ -2616,20 +2678,21 @@ def _target_definition(
         return definition
     if target != "agent-skills":
         raise ValueError(f"Unsupported skill target: {target}")
-    misplaced = sorted(
-        field.name for field in fields(definition)
-        if field.name != "quality_bar"
-        and isinstance(getattr(definition, field.name), tuple)
-        and any(isinstance(item, HermesReferenceLine) for item in getattr(definition, field.name))
-    )
-    if misplaced:
-        # Only quality_bar is filtered below; anywhere else the line would
-        # reach the portable body pointing at a reference it does not ship.
-        raise ValueError(f"{definition.name}: HermesReferenceLine is honoured only in quality_bar, found in {misplaced}")
-    if any(isinstance(line, HermesReferenceLine) for line in definition.quality_bar):
-        definition = replace(definition, quality_bar=tuple(
-            line for line in definition.quality_bar if not isinstance(line, HermesReferenceLine)
-        ))
+    # Each Hermes-only line type is filtered from one field below; anywhere
+    # else the line would reach the portable body pointing at a reference it
+    # does not ship or a skill its host does not bundle.
+    for line_type, honoured in ((HermesReferenceLine, "quality_bar"), (HermesSkillLine, "do_not_use_when")):
+        misplaced = sorted(
+            field.name for field in fields(definition)
+            if field.name != honoured
+            and isinstance(getattr(definition, field.name), tuple)
+            and any(isinstance(item, line_type) for item in getattr(definition, field.name))
+        )
+        if misplaced:
+            raise ValueError(f"{definition.name}: {line_type.__name__} is honoured only in {honoured}, found in {misplaced}")
+        lines = getattr(definition, honoured)
+        if any(isinstance(line, line_type) for line in lines):
+            definition = replace(definition, **{honoured: tuple(line for line in lines if not isinstance(line, line_type))})
     overrides = definition.portable_overrides
     return replace(definition, **{
         field: "\n".join(lines) if isinstance(getattr(definition, field), str) else lines

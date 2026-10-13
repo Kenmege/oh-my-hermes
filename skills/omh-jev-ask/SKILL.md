@@ -8,6 +8,7 @@ metadata:
     phase: jev-ask
     role: guide
     quality_tier: evidence-gated
+    related_skills: [omh-ask, omh-decide, omh-model-setup]
     requires_tools: [omh_jev_ask]
 ---
 

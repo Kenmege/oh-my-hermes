@@ -20,8 +20,8 @@ This is an OMH `deliverable-package` workflow skill, projected for Agent Skills 
 
 ## Do Not Use When
 
-- Planning a deck, PDF, workbook, or document from source inputs before any file exists (its outline, target formats, and QA ladder); use `materials-package`.
-- A text-only report, executive brief, or slide outline with no file to produce; use `report-package`.
+- Planning a deck, PDF, workbook, or document from source inputs before any file exists (its outline, target formats, and QA ladder); use `omh-materials-package`.
+- A text-only report, executive brief, or slide outline with no file to produce; use `omh-report-package`.
 
 ## Examples
 

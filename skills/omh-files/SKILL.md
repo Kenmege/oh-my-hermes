@@ -8,6 +8,7 @@ metadata:
     phase: file-task
     role: guide
     quality_tier: workflow-surface-gated
+    related_skills: [omh-materials-package, omh-deliverable-package]
 ---
 
 # Workspace File Operator
@@ -21,7 +22,7 @@ This is a Hermes-native `workspace-file-operator` workflow skill.
 ## Do Not Use When
 
 - An ordinary list, search, read, or one-file edit inside a known folder; use the native file tools directly.
-- The request converts files or produces a deck, PDF, or attachment; use `materials-package` or `deliverable-package`.
+- The request converts files or produces a deck, PDF, or attachment; use `omh-materials-package` or `omh-deliverable-package`.
 
 ## Examples
 

@@ -20,9 +20,8 @@ This is an OMH `ultraqa` workflow skill, projected for Agent Skills hosts (Claud
 
 ## Do Not Use When
 
-- Exploratory bug-hunting across a web app with no changed behavior to attack; on Hermes, use the bundled `dogfood` skill when it is available, and bring a finding back here as a scenario to reproduce.
-- Judging whether a rendered page, image, or terminal frame looks right across viewports and states; use `visual-qa`.
-- Confirming that a finished change meets its acceptance criteria with the smallest proving check, when no hostile scenarios are wanted; use `verification-gate`.
+- Judging whether a rendered page, image, or terminal frame looks right across viewports and states; use `omh-visual-qa`.
+- Confirming that a finished change meets its acceptance criteria with the smallest proving check, when no hostile scenarios are wanted; use `omh-verification-gate`.
 
 ## Examples
 

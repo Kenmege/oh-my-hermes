@@ -8,6 +8,7 @@ metadata:
     phase: product-discovery-validation
     role: planner
     quality_tier: decision-gated
+    related_skills: [omh-research-brief, ulw-interview, omh-decide, omh-product-brief, omh-idea-to-deploy, omh-decision-prototype]
 ---
 
 # Product Discovery Validation

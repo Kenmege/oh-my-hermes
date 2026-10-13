@@ -20,7 +20,7 @@ This is an OMH `cto-loop` workflow skill, projected for Agent Skills hosts (Clau
 
 ## Do Not Use When
 
-- The request is a settings-only change, one bounded edit that is explicitly low-risk and has a direct owner and verification path, or a direct answer/diagnosis; handle it directly or use `strategy-brief` for a decision brief instead of starting a leadership operating loop.
+- The request is a settings-only change, one bounded edit that is explicitly low-risk and has a direct owner and verification path, or a direct answer/diagnosis; handle it directly or use `omh-decide` for a decision brief instead of starting a leadership operating loop.
 
 ## Examples
 

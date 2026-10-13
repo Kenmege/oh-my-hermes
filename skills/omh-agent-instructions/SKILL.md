@@ -8,6 +8,7 @@ metadata:
     phase: agent-instructions
     role: planner
     quality_tier: verified-command-and-region-gated
+    related_skills: [omh-rules-distill, omh-codebase-onboarding, ulw-context, omh-docs]
 ---
 
 # Agent Instructions
@@ -25,10 +26,10 @@ This is a Hermes-native `agent-instructions` workflow skill.
 
 ## Do Not Use When
 
-- The ask is distilling repeated lessons into reviewed rule candidates; use `rules-distill`.
-- The ask is a reading path through the codebase for a new engineer; use `codebase-onboarding`.
-- The ask is project terminology alignment -- reviewing the terms this project uses and correcting inconsistent vocabulary; use `context`.
-- The ask is user-facing product documentation; use `product-docs`.
+- The ask is distilling repeated lessons into reviewed rule candidates; use `omh-rules-distill`.
+- The ask is a reading path through the codebase for a new engineer; use `omh-codebase-onboarding`.
+- The ask is project terminology alignment -- reviewing the terms this project uses and correcting inconsistent vocabulary; use `ulw-context`.
+- The ask is user-facing product documentation; use `omh-docs`.
 
 ## Examples
 

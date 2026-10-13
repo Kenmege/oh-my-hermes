@@ -20,9 +20,9 @@ This is an OMH `instinct-ledger` workflow skill, projected for Agent Skills host
 
 ## Do Not Use When
 
-- A single missed route or one run's trace; use `workflow-learning` first.
-- Writing reviewed lessons into AGENTS guidance, prompts, or skills; use `rules-distill`.
-- A run that is stuck right now; use `agent-debug` before drawing a lesson from it.
+- A single missed route or one run's trace; use `omh-workflow-learning` first.
+- Writing reviewed lessons into AGENTS guidance, prompts, or skills; use `omh-rules-distill`.
+- A run that is stuck right now; use `omh-agent-debug` before drawing a lesson from it.
 
 ## Examples
 

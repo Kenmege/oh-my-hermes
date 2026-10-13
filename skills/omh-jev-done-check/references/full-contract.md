@@ -11,8 +11,8 @@ holds the workflow-specific detail without copying those shared rails.
 
 ## Do Not Use When
 
-- The user wants release evidence collected and recorded; use `verification-gate`.
-- A loop is deciding whether to stop; stop rules read record fields and belong to `loop`.
+- The user wants release evidence collected and recorded; use `omh-verification-gate`.
+- A loop is deciding whether to stop; stop rules read record fields and belong to `ulw-loop`.
 
 ## Examples
 

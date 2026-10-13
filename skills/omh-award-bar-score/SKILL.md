@@ -8,6 +8,7 @@ metadata:
     phase: award-bar-score
     role: operator
     quality_tier: design-orchestration-gated
+    related_skills: [omh-design-quality-gate, omh-frontend, omh-accessibility-audit, omh-visual-qa]
 ---
 
 # Award Bar Score
@@ -20,10 +21,10 @@ This is a Hermes-native `award-bar-score` workflow skill.
 
 ## Do Not Use When
 
-- The request is broad premium quality across decks, PDFs, or posters; use `design-quality-gate`.
-- The request is frontend implementation, layout, or design-system work; use `frontend`.
-- The request is WCAG, keyboard, or screen-reader conformance; use `accessibility-audit`.
-- The request is a rendered capture or a pixel verdict; use `visual-qa`.
+- The request is broad premium quality across decks, PDFs, or posters; use `omh-design-quality-gate`.
+- The request is frontend implementation, layout, or design-system work; use `omh-frontend`.
+- The request is WCAG, keyboard, or screen-reader conformance; use `omh-accessibility-audit`.
+- The request is a rendered capture or a pixel verdict; use `omh-visual-qa`.
 - The award is a business, sales, or team award with no judged web surface.
 
 ## Examples

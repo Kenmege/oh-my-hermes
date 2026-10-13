@@ -20,10 +20,10 @@ This is an OMH `refactor-plan` workflow skill, projected for Agent Skills hosts 
 
 ## Do Not Use When
 
-- The refactor's direction is still contested or the goal itself needs consensus planning; use `ralplan`.
-- The work is deletion-first cleanup with no boundary changes; use `ai-slop-cleaner`.
-- The plan is done and the claim is that work is complete; use `verification-gate` for the evidence close.
-- The version bump carries a security advisory, a CVE, or a leaked secret; use `security-event-response`, which owns containment and closure.
+- The refactor's direction is still contested or the goal itself needs consensus planning; use `ulw-plan`.
+- The work is deletion-first cleanup with no boundary changes; use `omh-ai-slop-cleaner`.
+- The plan is done and the claim is that work is complete; use `omh-verification-gate` for the evidence close.
+- The version bump carries a security advisory, a CVE, or a leaked secret; use `omh-security-event-response`, which owns containment and closure.
 
 ## Examples
 

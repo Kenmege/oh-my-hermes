@@ -8,6 +8,7 @@ metadata:
     phase: operating-loop
     role: operator
     quality_tier: decision-gated
+    related_skills: [omh-decide]
 ---
 
 # Cto Loop
@@ -20,7 +21,7 @@ This is a Hermes-native `cto-loop` workflow skill.
 
 ## Do Not Use When
 
-- The request is a settings-only change, one bounded edit that is explicitly low-risk and has a direct owner and verification path, or a direct answer/diagnosis; handle it directly or use `strategy-brief` for a decision brief instead of starting a leadership operating loop.
+- The request is a settings-only change, one bounded edit that is explicitly low-risk and has a direct owner and verification path, or a direct answer/diagnosis; handle it directly or use `omh-decide` for a decision brief instead of starting a leadership operating loop.
 
 ## Examples
 

@@ -8,6 +8,7 @@ metadata:
     phase: browser-task
     role: guide
     quality_tier: workflow-surface-gated
+    related_skills: [omh-visual-qa, omh-web-research]
 ---
 
 # Browser Operator
@@ -21,8 +22,8 @@ This is a Hermes-native `browser-operator` workflow skill.
 ## Do Not Use When
 
 - An ordinary read of a public page with no sign-in, form, or purchase; use the native browser tools directly unless OMH's browser adapter bridge is enabled, which blocks them.
-- The question is whether a page looks right at each viewport; use `visual-qa`.
-- A web lookup or a cited answer rather than an interaction with a page; use `web-research`.
+- The question is whether a page looks right at each viewport; use `omh-visual-qa`.
+- A web lookup or a cited answer rather than an interaction with a page; use `omh-web-research`.
 
 ## Examples
 

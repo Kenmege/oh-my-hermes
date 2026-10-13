@@ -25,10 +25,10 @@ This is an OMH `relational-db` workflow skill, projected for Agent Skills hosts 
 
 ## Do Not Use When
 
-- The request is a service or API change whose storage part is one section of the contract; use `backend`, which owns schema_migration_plan/v1.
-- The request is an end-to-end performance goal across the whole system rather than one database; use `ultraperf`.
-- The request is analysis of the data itself -- trends, metrics, a report; use `data-analysis`.
-- The request is watching a release roll out with its health signals and rollback criteria; use `deploy-and-monitor`.
+- The request is a service or API change whose storage part is one section of the contract; use `omh-backend`, which owns schema_migration_plan/v1.
+- The request is an end-to-end performance goal across the whole system rather than one database; use `ulw-perf`.
+- The request is analysis of the data itself -- trends, metrics, a report; use `omh-data-analysis`.
+- The request is watching a release roll out with its health signals and rollback criteria; use `omh-deploy-and-monitor`.
 
 ## Examples
 

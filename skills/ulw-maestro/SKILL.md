@@ -8,6 +8,7 @@ metadata:
     phase: external-handoff
     role: handoff-guide
     quality_tier: handoff-gated
+    related_skills: [omh-executor-runtime-readiness, ulw-work, claude-code, codex, opencode]
 ---
 
 # Maestro
@@ -23,8 +24,9 @@ This is a Hermes-native `maestro` workflow skill.
 - No coding owner is chosen yet for this run; the Hermes harness stays the default and this engine never picks one.
 - The request is a concept question about maestro, prepared handoffs, or a coding-agent name, or a filename that happens to contain one -- answer directly instead.
 - The user wants advice on which coding owner to pick -- ask, don't compose.
-- The user is asking whether an owner CAN run right now -- use `executor-runtime-readiness` instead.
-- The request is lane-splitting or a full delivery cycle rather than one lane's handoff -- use `ultrawork`, which enters this engine for lanes with an external owner.
+- The user is asking whether an owner CAN run right now -- use `omh-executor-runtime-readiness` instead.
+- The request is lane-splitting or a full delivery cycle rather than one lane's handoff -- use `ulw-work`, which enters this engine for lanes with an external owner.
+- The user wants a coding task handed straight to the Claude Code, Codex, or opencode CLI in the terminal, with no prompt composed from that CLI's own installed skills -- load Hermes' bundled `claude-code`, `codex`, or `opencode` skill instead of this one.
 
 ## Examples
 

@@ -20,10 +20,10 @@ This is an OMH `adversarial-consensus` workflow skill, projected for Agent Skill
 
 ## Do Not Use When
 
-- The user wants the plan itself, with options, acceptance criteria, and verification commands; use `ralplan`, which this workflow feeds.
-- The request is still too ambiguous to state the proposal being attacked; use `deep-interview` first.
-- The user wants completed code reviewed for defects rather than a proposal attacked before it is built; use `code-review`.
-- The user wants hostile runtime scenarios against a built change; use `ultraqa`.
+- The user wants the plan itself, with options, acceptance criteria, and verification commands; use `ulw-plan`, which this workflow feeds.
+- The request is still too ambiguous to state the proposal being attacked; use `ulw-interview` first.
+- The user wants completed code reviewed for defects rather than a proposal attacked before it is built; use `omh-code-review`.
+- The user wants hostile runtime scenarios against a built change; use `ulw-qa`.
 - One perspective would do: a small local change with no contested decision does not earn three rounds.
 
 ## Examples

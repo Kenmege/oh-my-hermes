@@ -8,6 +8,7 @@ metadata:
     phase: feedback
     role: operator
     quality_tier: triage-gated
+    related_skills: [omh-lifecycle-growth, omh-sales-pipeline-review]
 ---
 
 # Feedback Triage
@@ -23,8 +24,8 @@ This is a Hermes-native `feedback-triage` workflow skill.
 - The request already contains an accepted product decision and asks for implementation.
 - There are no feedback items, source boundary, or product area to classify.
 - The user wants current market research rather than triage of supplied signals.
-- The triage result asks for a retention or activation intervention rather than another cluster; use `lifecycle-growth`.
-- The supplied material is opportunity records and the request is portfolio health or forecast review; use `sales-pipeline-review`.
+- The triage result asks for a retention or activation intervention rather than another cluster; use `omh-lifecycle-growth`.
+- The supplied material is opportunity records and the request is portfolio health or forecast review; use `omh-sales-pipeline-review`.
 
 ## Examples
 

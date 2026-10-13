@@ -11,9 +11,9 @@ holds the workflow-specific detail without copying those shared rails.
 
 ## Do Not Use When
 
-- The user wants a generative second opinion from Claude, Gemini, or another advisor; use `ask`.
-- The user is choosing between strategic options and wants tradeoffs and a recommendation; use `strategy-brief`.
-- The user wants Jev as a chat or coding model; that is a model setting, and Jev writes no text; use `model-setup`.
+- The user wants a generative second opinion from Claude, Gemini, or another advisor; use `omh-ask`.
+- The user is choosing between strategic options and wants tradeoffs and a recommendation; use `omh-decide`.
+- The user wants Jev as a chat or coding model; that is a model setting, and Jev writes no text; use `omh-model-setup`.
 - The user is writing application code that calls TypeSafe; point at the vendor's own SDK documentation rather than calling the tool.
 
 ## Examples

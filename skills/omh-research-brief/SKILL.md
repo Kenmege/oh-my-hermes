@@ -8,6 +8,7 @@ metadata:
     phase: business-brief
     role: researcher
     quality_tier: source-gated
+    related_skills: [omh-product-discovery-validation, ulw-research, omh-source-finder]
 ---
 
 # Research Brief
@@ -20,9 +21,9 @@ This is a Hermes-native `research-brief` workflow skill.
 
 ## Do Not Use When
 
-- The user needs to decide whether a customer problem deserves product investment with evidence typing and customer re-entry; use `product-discovery-validation`.
-- The request is only fresh links, citations, or current facts without a business question or decision audience; use `research`.
-- Sources have not yet been selected and the user wants source types, candidates, or acquisition state; use `source-finder`.
+- The user needs to decide whether a customer problem deserves product investment with evidence typing and customer re-entry; use `omh-product-discovery-validation`.
+- The request is only fresh links, citations, or current facts without a business question or decision audience; use `ulw-research`.
+- Sources have not yet been selected and the user wants source types, candidates, or acquisition state; use `omh-source-finder`.
 
 ## Examples
 

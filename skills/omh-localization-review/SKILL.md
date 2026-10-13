@@ -8,6 +8,7 @@ metadata:
     phase: localization-review
     role: reviewer
     quality_tier: review-gated
+    related_skills: [omh-content-operator, omh-visual-qa, omh-files, omh-apps, omh-legal-compliance-review]
 ---
 
 # Localization Review
@@ -20,10 +21,10 @@ This is a Hermes-native `localization-review` workflow skill.
 
 ## Do Not Use When
 
-- The request is a short sentence or word translation or rewrite with no product or locale QA context; answer directly or use `content-operator`.
-- The user needs fresh rendered UI evidence, clipping checks, or a visual PASS/REVISE/BLOCK verdict; use `visual-qa`.
-- The user asks to edit locale files, push a translation-management-system job, publish strings, or configure localization settings; use `workspace-file-operator` or `connector-operator` with explicit target and authority.
-- The request asks for a regulatory or contractual conclusion about translated legal text; use `legal-compliance-review`.
+- The request is a short sentence or word translation or rewrite with no product or locale QA context; answer directly or use `omh-content-operator`.
+- The user needs fresh rendered UI evidence, clipping checks, or a visual PASS/REVISE/BLOCK verdict; use `omh-visual-qa`.
+- The user asks to edit locale files, push a translation-management-system job, publish strings, or configure localization settings; use `omh-files` or `omh-apps` with explicit target and authority.
+- The request asks for a regulatory or contractual conclusion about translated legal text; use `omh-legal-compliance-review`.
 
 ## Examples
 

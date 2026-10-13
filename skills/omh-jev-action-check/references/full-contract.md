@@ -11,8 +11,8 @@ holds the workflow-specific detail without copying those shared rails.
 
 ## Do Not Use When
 
-- The user wants approval or permission policy written; use `security-safety-review`.
-- The user wants a command explained, prepared, or run; use `command-operator`.
+- The user wants approval or permission policy written; use `omh-security-safety-review`.
+- The user wants a command explained, prepared, or run; use `omh-terminal`.
 
 ## Examples
 

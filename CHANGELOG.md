@@ -4,6 +4,30 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Skill bodies name their siblings by the name Hermes can load, and say
+  which requests belong to a skill Hermes bundles.** A `## Do Not Use When`
+  line that hands a request to a sibling used to name it by its catalog name
+  (`connector-operator`, `strategy-brief`, `research`), which `skill_view`
+  cannot load because the installed directory carries the display label
+  (`omh-apps`, `omh-decide`, `ulw-research`). The renderer now writes the
+  label in both the Hermes body and the Agent Skills projection; the catalog
+  keeps canonical names, so routing and the deference graph are unchanged. A
+  sibling that is no longer installed keeps its catalog name. The Hermes
+  frontmatter gains `metadata.hermes.related_skills`, derived from those same
+  lines, which `skill_view` returns beside the body; Hermes' per-turn skill
+  index does not read it, and the index size is unchanged. A skill whose job
+  overlaps a skill Hermes bundles now carries one line naming which request
+  belongs to the bundled one: `requesting-code-review`, `systematic-debugging`,
+  `simplify-code`, `spike`, `dogfood`, `llm-wiki`, `grounded-citations`,
+  `arxiv`, `architecture-diagram`, `github`, `claude-code` / `codex` /
+  `opencode`, `sdlc-review`, `meeting-action-items`, `humanizer`, `pdf` /
+  `docx` / `powerpoint` / `xlsx`, `hermes-agent-skill-authoring`, and
+  `competitor-news-monitor`. Those lines are Hermes-only, no other host
+  bundles those skills: the deferral lines `web-research`,
+  `research-department`, `visual-qa`, `ultraqa` and `code-review` already
+  carried for `grounded-citations`, `arxiv`, `competitor-news-monitor`,
+  `dogfood` and `sdlc-review` keep their wording and now leave the Agent
+  Skills projection too, each counterpart named once per skill.
 - **The memory and learning skills now read what Hermes' own learning loop
   wrote or is holding: pending memory writes, staged skill writes, the skill
   audit ledger, curator run reports, and the one memory-provider slot.**

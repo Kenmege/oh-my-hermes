@@ -8,6 +8,7 @@ metadata:
     phase: event-routing
     role: operator
     quality_tier: workflow-surface-gated
+    related_skills: [omh-github-issue-intake, omh-build-failure-triage, omh-security-event-response, omh-refactor-plan, github]
 ---
 
 # Github Event Ops
@@ -20,10 +21,11 @@ This is a Hermes-native `github-event-ops` workflow skill.
 
 ## Do Not Use When
 
-- One issue to file from a bug report or an idea, with no incoming event to route; use `github-issue-intake`.
-- A failing build log to diagnose, with no event routing left to decide; use `build-failure-triage`.
-- The event is a security advisory, a CVE in a dependency, or a leaked credential; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.
-- The PR is a dependabot or renovate version bump with no advisory; use `refactor-plan`, which decides whether it is safe to merge from the breaking changes against this repository's call sites.
+- One issue to file from a bug report or an idea, with no incoming event to route; use `omh-github-issue-intake`.
+- A failing build log to diagnose, with no event routing left to decide; use `omh-build-failure-triage`.
+- The event is a security advisory, a CVE in a dependency, or a leaked credential; use `omh-security-event-response`, which orders containment and closes only on an observed rotation or fix.
+- The PR is a dependabot or renovate version bump with no advisory; use `omh-refactor-plan`, which decides whether it is safe to merge from the breaking changes against this repository's call sites.
+- The user wants a GitHub operation carried out with the gh CLI - open or label an issue, open or merge a PR, leave review comments, manage a repository - rather than an incoming event routed to a handoff card; load Hermes' bundled `github` skill instead of this one.
 
 ## Examples
 

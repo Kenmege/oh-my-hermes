@@ -11,9 +11,9 @@ holds the workflow-specific detail without copying those shared rails.
 
 ## Do Not Use When
 
-- The user wants the root cause of a failing build and a fix; use `build-failure-triage`.
-- The agent itself is looping or misbehaving and needs a diagnosis; use `agent-debug`.
-- Production is down; use `live-incident-response`.
+- The user wants the root cause of a failing build and a fix; use `omh-build-failure-triage`.
+- The agent itself is looping or misbehaving and needs a diagnosis; use `omh-agent-debug`.
+- Production is down; use `omh-live-incident-response`.
 
 ## Examples
 

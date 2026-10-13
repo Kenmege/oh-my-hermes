@@ -20,9 +20,9 @@ This is an OMH `verification-gate` workflow skill, projected for Agent Skills ho
 
 ## Do Not Use When
 
-- The user asks for visual render QA; use `visual-qa`.
-- The user asks for production release readiness beyond verification commands; use `production-audit`.
-- The user wants a bug-first code review of a diff; use `code-review`.
+- The user asks for visual render QA; use `omh-visual-qa`.
+- The user asks for production release readiness beyond verification commands; use `omh-production-audit`.
+- The user wants a bug-first code review of a diff; use `omh-code-review`.
 
 ## Examples
 

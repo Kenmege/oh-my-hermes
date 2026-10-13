@@ -8,6 +8,7 @@ metadata:
     phase: security-safety-review
     role: reviewer
     quality_tier: security-safety-gated
+    related_skills: [omh-production-audit, omh-verification-gate, omh-code-review, omh-application-threat-model, omh-security-event-response]
 ---
 
 # Security Safety Review
@@ -20,11 +21,11 @@ This is a Hermes-native `security-safety-review` workflow skill.
 
 ## Do Not Use When
 
-- The user asks for production readiness across release, rollback, and observability; use `production-audit`.
-- The user asks for merge verification commands; use `verification-gate`.
-- The user asks for a normal code review focused on bugs; use `code-review`.
-- The subject is an application or service rather than the agent's own runtime -- its assets, trust boundaries, attack scenarios, and the controls that defend them; use `application-threat-model`.
-- Something already happened to shipped code -- a CVE published against a dependency, a credential pushed to a repository, a license question about a package; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.
+- The user asks for production readiness across release, rollback, and observability; use `omh-production-audit`.
+- The user asks for merge verification commands; use `omh-verification-gate`.
+- The user asks for a normal code review focused on bugs; use `omh-code-review`.
+- The subject is an application or service rather than the agent's own runtime -- its assets, trust boundaries, attack scenarios, and the controls that defend them; use `omh-application-threat-model`.
+- Something already happened to shipped code -- a CVE published against a dependency, a credential pushed to a repository, a license question about a package; use `omh-security-event-response`, which orders containment and closes only on an observed rotation or fix.
 
 ## Examples
 

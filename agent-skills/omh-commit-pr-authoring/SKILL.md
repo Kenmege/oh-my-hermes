@@ -25,10 +25,10 @@ This is an OMH `commit-pr-authoring` workflow skill, projected for Agent Skills 
 
 ## Do Not Use When
 
-- The request is to find defects in the diff or judge whether the change is ready; use `code-review`.
-- The request routes an incoming pull-request, issue, or CI webhook event; use `github-event-ops`.
-- The request turns a chat report into a GitHub issue; use `github-issue-intake`.
-- The request is release notes or product copy for readers outside the repository; use `content-operator`.
+- The request is to find defects in the diff or judge whether the change is ready; use `omh-code-review`.
+- The request routes an incoming pull-request, issue, or CI webhook event; use `omh-github-event-ops`.
+- The request turns a chat report into a GitHub issue; use `omh-github-issue-intake`.
+- The request is release notes or product copy for readers outside the repository; use `omh-content-operator`.
 
 ## Examples
 

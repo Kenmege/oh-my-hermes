@@ -20,8 +20,8 @@ This is an OMH `connector-operator` workflow skill, projected for Agent Skills h
 
 ## Do Not Use When
 
-- Only the reply or thread policy of a Discord, Slack, or Telegram conversation is in question; use `gateway-intent-card`.
-- The user is choosing or adopting a new provider, MCP server, or integration rather than acting through one; use `external-connector-readiness`.
+- Only the reply or thread policy of a Discord, Slack, or Telegram conversation is in question; use `omh-gateway-intent-card`.
+- The user is choosing or adopting a new provider, MCP server, or integration rather than acting through one; use `omh-external-connector-readiness`.
 
 ## Examples
 

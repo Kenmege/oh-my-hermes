@@ -20,10 +20,10 @@ This is an OMH `design-orchestration` workflow skill, projected for Agent Skills
 
 ## Do Not Use When
 
-- The request is directly about premium multi-format quality or publishing; use `design-quality-gate`.
-- The request is directly about frontend implementation, layout, responsive behavior, or a design system; use `frontend`.
-- The request is directly about WCAG, keyboard, screen-reader, or semantic accessibility; use `accessibility-audit`.
-- The request is directly about screenshots, visual regression, pixel diff, rendered layout, or a verdict; use `visual-qa`.
+- The request is directly about premium multi-format quality or publishing; use `omh-design-quality-gate`.
+- The request is directly about frontend implementation, layout, responsive behavior, or a design system; use `omh-frontend`.
+- The request is directly about WCAG, keyboard, screen-reader, or semantic accessibility; use `omh-accessibility-audit`.
+- The request is directly about screenshots, visual regression, pixel diff, rendered layout, or a verdict; use `omh-visual-qa`.
 
 ## Examples
 

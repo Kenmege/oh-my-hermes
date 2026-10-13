@@ -8,6 +8,7 @@ metadata:
     phase: agent-evaluation
     role: operator
     quality_tier: agent-eval-gated
+    related_skills: [omh-executor-runtime-readiness, omh-workflow-learning, ulw-perf]
 ---
 
 # Agent Evaluation
@@ -20,10 +21,10 @@ This is a Hermes-native `agent-evaluation` workflow skill.
 
 ## Do Not Use When
 
-- The user needs current runtime readiness only; use `executor-runtime-readiness`.
+- The user needs current runtime readiness only; use `omh-executor-runtime-readiness`.
 - The user already selected an executor and wants implementation; use the coding handoff or delivery workflow.
-- The user asks for workflow learning from a single failed route; use `workflow-learning`.
-- The ask is to find and fix runtime, memory, cost, or rendering hotspots rather than score executor or model output quality; use `ultraperf`.
+- The user asks for workflow learning from a single failed route; use `omh-workflow-learning`.
+- The ask is to find and fix runtime, memory, cost, or rendering hotspots rather than score executor or model output quality; use `ulw-perf`.
 
 ## Examples
 

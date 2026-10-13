@@ -8,6 +8,7 @@ metadata:
     phase: jev-action-check
     role: reviewer
     quality_tier: evidence-gated
+    related_skills: [omh-security-safety-review, omh-terminal]
     requires_tools: [omh_jev_ask]
 ---
 

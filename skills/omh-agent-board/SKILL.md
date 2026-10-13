@@ -8,6 +8,7 @@ metadata:
     phase: board-status
     role: tracker
     quality_tier: workflow-surface-gated
+    related_skills: [sdlc-review]
 ---
 
 # Agent Board
@@ -24,6 +25,7 @@ This is a Hermes-native `agent-board` workflow skill.
 - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
 - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
 - A multi-lane implementation of an accepted plan is ultrawork, which prepares its durable lanes through this board.
+- The turn is a Kanban worker that the review dispatcher started on a review-lane task to verify a review-requested handoff; that worker loads Hermes' bundled `sdlc-review` skill, not this one.
 
 ## Examples
 

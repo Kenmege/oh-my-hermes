@@ -20,7 +20,7 @@ This is an OMH `report-package` workflow skill, projected for Agent Skills hosts
 
 ## Do Not Use When
 
-- The user needs SLO, incident, or error-budget review; use `reliability-review`.
+- The user needs SLO, incident, or error-budget review; use `omh-reliability-review`.
 - The user asks for a live `.pptx` deck file rather than a PPT-ready outline.
 - The request is meeting minutes, scrum history, or action-item tracking.
 

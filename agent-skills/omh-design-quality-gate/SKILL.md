@@ -20,9 +20,9 @@ This is an OMH `design-quality-gate` workflow skill, projected for Agent Skills 
 
 ## Do Not Use When
 
-- Basic image prompt card only; use `img-summary`.
-- The artifact is a throwaway probe whose quality is irrelevant to the decision it answers; use `decision-prototype`.
-- Ordinary file packaging/export plan only; use `materials-package` or `deliverable-package`.
+- Basic image prompt card only; use `omh-image-cards`.
+- The artifact is a throwaway probe whose quality is irrelevant to the decision it answers; use `omh-decision-prototype`.
+- Ordinary file packaging/export plan only; use `omh-materials-package` or `omh-deliverable-package`.
 - Pure backend, CLI, data, or text-only research with no visual surface.
 - The user asks to claim deployment, export, publication, or visual QA without evidence.
 

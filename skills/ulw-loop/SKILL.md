@@ -8,6 +8,7 @@ metadata:
     phase: continuous-goal-loop
     role: planner
     quality_tier: loop-gated
+    related_skills: [ulw-work]
 ---
 
 # Loop
@@ -20,8 +21,8 @@ This is a Hermes-native `loop` workflow skill.
 
 ## Do Not Use When
 
-- The user asks for one bounded delivery cycle; use `ultrawork`'s delivery-boundary capability instead.
-- Scope and milestones are already known and only durable checkpoint/resume tracking is needed; use `ultrawork`'s durable-checkpoint capability.
+- The user asks for one bounded delivery cycle; use `ulw-work`'s delivery-boundary capability instead.
+- Scope and milestones are already known and only durable checkpoint/resume tracking is needed; use `ulw-work`'s durable-checkpoint capability.
 - The user gives only a north-star outcome such as revenue, stars, or adoption and has not accepted a bounded first loop goal.
 - The goal is too vague to name an observable problem, next artifact, verification signal, or stop condition.
 - The goal depends mainly on external waiting, adoption, revenue, or community response without observable local next actions.

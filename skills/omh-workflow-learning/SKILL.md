@@ -8,6 +8,7 @@ metadata:
     phase: workflow-learning
     role: tracker
     quality_tier: workflow-surface-gated
+    related_skills: [omh-memory-new, omh-instinct-ledger, omh-agent-debug]
 ---
 
 # Workflow Learning
@@ -20,9 +21,9 @@ This is a Hermes-native `workflow-learning` workflow skill.
 
 ## Do Not Use When
 
-- A lasting fact the user wants kept; capture it with `memory-new`.
-- Lessons seen across runs or projects to score and promote; use `instinct-ledger`.
-- A run that is stuck or looping right now; use `agent-debug`.
+- A lasting fact the user wants kept; capture it with `omh-memory-new`.
+- Lessons seen across runs or projects to score and promote; use `omh-instinct-ledger`.
+- A run that is stuck or looping right now; use `omh-agent-debug`.
 
 ## Examples
 

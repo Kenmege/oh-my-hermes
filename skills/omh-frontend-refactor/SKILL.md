@@ -8,6 +8,7 @@ metadata:
     phase: frontend-refactor
     role: handoff-guide
     quality_tier: behavior-lock-gated
+    related_skills: [omh-ai-slop-cleaner, omh-frontend, omh-code-review, omh-refactor-plan, ulw-plan]
 ---
 
 # Frontend Refactor
@@ -20,10 +21,10 @@ This is a Hermes-native `frontend-refactor` workflow skill.
 
 ## Do Not Use When
 
-- The target is not UI code, or the smell is generic slop, duplication, or dead code outside a component tree; use `ai-slop-cleaner`.
-- The user wants new UI built or redesigned rather than restructured; use `frontend`.
-- The user wants findings and a verdict without changing the code; use `code-review`.
-- The restructuring crosses module boundaries or changes architecture beyond the component tree; use `refactor-plan` for the phased execution shape, or `ralplan` first when the direction itself is still contested.
+- The target is not UI code, or the smell is generic slop, duplication, or dead code outside a component tree; use `omh-ai-slop-cleaner`.
+- The user wants new UI built or redesigned rather than restructured; use `omh-frontend`.
+- The user wants findings and a verdict without changing the code; use `omh-code-review`.
+- The restructuring crosses module boundaries or changes architecture beyond the component tree; use `omh-refactor-plan` for the phased execution shape, or `ulw-plan` first when the direction itself is still contested.
 
 ## Examples
 

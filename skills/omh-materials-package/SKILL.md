@@ -8,6 +8,7 @@ metadata:
     phase: material-plan
     role: operator
     quality_tier: material-gated
+    related_skills: [omh-report-package, omh-operating-rhythm, pdf, docx, powerpoint, xlsx]
 ---
 
 # Materials Package
@@ -20,9 +21,10 @@ This is a Hermes-native `materials-package` workflow skill.
 
 ## Do Not Use When
 
-- The user only needs a weekly/monthly report outline; use `report-package`.
-- The user asks for recurring meeting minutes or scrum history; use `operating-rhythm`.
+- The user only needs a weekly/monthly report outline; use `omh-report-package`.
+- The user asks for recurring meeting minutes or scrum history; use `omh-operating-rhythm`.
 - The request is code documentation, README, or project wiki maintenance; use the docs/wiki workflow.
+- The user wants an operation done on one existing file - fill a PDF form, merge or split PDFs, or edit the text of a Word document, the slides of a deck, or the cells of a workbook - rather than a material plan with an export and QA ladder; load Hermes' bundled `pdf`, `docx`, `powerpoint`, or `xlsx` skill for that file instead of this one.
 
 ## Examples
 

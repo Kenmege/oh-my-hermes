@@ -8,6 +8,7 @@ metadata:
     phase: long-document-reading
     role: researcher
     quality_tier: long-document-gated
+    related_skills: [omh-paper-learning, omh-materials-package, omh-media-input, omh-source-finder]
 ---
 
 # Long Document Reading
@@ -20,10 +21,10 @@ This is a Hermes-native `long-document-reading` workflow skill.
 
 ## Do Not Use When
 
-- The document is a research paper and the user wants it explained by level; use `paper-learning`.
-- The request asks to convert, export, split into a new file, compare two PDFs, or extract tables into CSV; use `materials-package`.
-- The input is an image, screenshot, receipt, audio, or video rather than a document; use `media-input-operator`.
-- The user is still looking for the document or its download link; use `source-finder`.
+- The document is a research paper and the user wants it explained by level; use `omh-paper-learning`.
+- The request asks to convert, export, split into a new file, compare two PDFs, or extract tables into CSV; use `omh-materials-package`.
+- The input is an image, screenshot, receipt, audio, or video rather than a document; use `omh-media-input`.
+- The user is still looking for the document or its download link; use `omh-source-finder`.
 - The document fits one read (under about 60 pages of prose); read it directly and answer.
 
 ## Examples

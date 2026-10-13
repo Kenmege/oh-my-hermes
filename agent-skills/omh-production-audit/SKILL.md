@@ -21,8 +21,8 @@ This is an OMH `production-audit` workflow skill, projected for Agent Skills hos
 ## Do Not Use When
 
 - The user wants to implement a feature or fix; prepare a coding handoff first.
-- The user wants incident/SLO analysis after production behavior; use `reliability-review`.
-- The user wants a narrow code diff review; use `code-review`.
+- The user wants incident/SLO analysis after production behavior; use `omh-reliability-review`.
+- The user wants a narrow code diff review; use `omh-code-review`.
 
 ## Examples
 

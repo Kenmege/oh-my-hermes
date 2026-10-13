@@ -25,10 +25,10 @@ This is an OMH `git-workflow` workflow skill, projected for Agent Skills hosts (
 
 ## Do Not Use When
 
-- The request is to write the commit message or the PR body for a finished change; use `commit-pr-authoring`.
-- The request is to find defects in a diff before merging it; use `code-review`.
-- The build or CI job fails and the question is why; use `build-failure-triage`.
-- The request is a code change to deliver rather than branch or history repair; use `ultrawork`.
+- The request is to write the commit message or the PR body for a finished change; use `omh-commit-pr-authoring`.
+- The request is to find defects in a diff before merging it; use `omh-code-review`.
+- The build or CI job fails and the question is why; use `omh-build-failure-triage`.
+- The request is a code change to deliver rather than branch or history repair; use `ulw-work`.
 
 ## Examples
 

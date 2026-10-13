@@ -159,7 +159,7 @@ class AgentSkillsProjectionTests(unittest.TestCase):
         from dataclasses import fields
         from omh.skills.catalog import installable_skill_definitions, omh_skill_display_name
         from omh.skills.catalog_types import SkillDefinition
-        from omh.skills.render import agent_skill_template
+        from omh.skills.render import agent_skill_template, loadable_skill_mentions
         from omh.skills.catalog_portable import portable_skill_names
 
         sections = {field.name for field in fields(SkillDefinition)} - {"portable_overrides"}
@@ -177,10 +177,15 @@ class AgentSkillsProjectionTests(unittest.TestCase):
                 problems.append(f"{name} (overrides a skill with no Agent Skills projection)")
                 continue
             body = agent_skill_template(definition).content
+            # A Do Not Use When line renders its siblings under their loadable
+            # labels (`loadable_skill_mentions`), so that is the line to find.
             problems.extend(
                 f"{name}::{section} (replacement line absent from the portable body)"
                 for section, lines in definition.portable_overrides.items()
-                if any(line not in body for line in lines)
+                if any(
+                    (loadable_skill_mentions(line) if section == "do_not_use_when" else line) not in body
+                    for line in lines
+                )
             )
         self.assertEqual(
             problems,

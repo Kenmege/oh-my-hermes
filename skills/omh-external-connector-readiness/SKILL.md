@@ -8,6 +8,7 @@ metadata:
     phase: connector-readiness
     role: guide
     quality_tier: workflow-surface-gated
+    related_skills: [omh-executor-runtime-readiness, omh-toolbelt-readiness, omh-live-info, omh-apps]
 ---
 
 # External Connector Readiness
@@ -20,9 +21,9 @@ This is a Hermes-native `external-connector-readiness` workflow skill.
 
 ## Do Not Use When
 
-- Choosing which coding owner runs a task; use `executor-runtime-readiness`.
-- Finding which tool, credential, or install is missing for work already chosen; use `toolbelt-readiness`.
-- A read-only live lookup or an external write through a connector already adopted; use `live-info-operator` or `connector-operator`.
+- Choosing which coding owner runs a task; use `omh-executor-runtime-readiness`.
+- Finding which tool, credential, or install is missing for work already chosen; use `omh-toolbelt-readiness`.
+- A read-only live lookup or an external write through a connector already adopted; use `omh-live-info` or `omh-apps`.
 
 ## Examples
 

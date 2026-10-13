@@ -8,6 +8,7 @@ metadata:
     phase: llm-app-dev
     role: operator
     quality_tier: delivery-gated
+    related_skills: [omh-agent-evaluation, omh-agent-debug, omh-context-budget-review, omh-security-safety-review, omh-model-finetuning]
 ---
 
 # Llm App Dev
@@ -20,12 +21,12 @@ This is a Hermes-native `llm-app-dev` workflow skill.
 
 ## Do Not Use When
 
-- The subject is comparing executors or agent harnesses - Codex against Claude Code against Hermes coding - rather than evaluating the product's own model calls; use `agent-evaluation`.
-- An agent run is already stuck, looping, or drifting and needs diagnosis; use `agent-debug`.
-- The subject is the harness's own context window, prompt caching, or token budget rather than the application being built; use `context-budget-review`.
-- The request is a prompt-injection, secret-handling, or dependency risk gate on work that already exists; use `security-safety-review`.
+- The subject is comparing executors or agent harnesses - Codex against Claude Code against Hermes coding - rather than evaluating the product's own model calls; use `omh-agent-evaluation`.
+- An agent run is already stuck, looping, or drifting and needs diagnosis; use `omh-agent-debug`.
+- The subject is the harness's own context window, prompt caching, or token budget rather than the application being built; use `omh-context-budget-review`.
+- The request is a prompt-injection, secret-handling, or dependency risk gate on work that already exists; use `omh-security-safety-review`.
 - The feature makes no model call - the LLM is only mentioned as the subject being discussed - so this is a direct answer, not a build handoff.
-- The ask is training the weights themselves on your own data -- SFT, DPO, RLVR, or a LoRA adapter; use `model-finetuning`.
+- The ask is training the weights themselves on your own data -- SFT, DPO, RLVR, or a LoRA adapter; use `omh-model-finetuning`.
 
 ## Examples
 

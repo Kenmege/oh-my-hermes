@@ -12,7 +12,7 @@ holds the workflow-specific detail without copying those shared rails.
 ## Do Not Use When
 
 - The route was already decided; there is no route question to answer.
-- The user is choosing a model or provider rather than a workflow; use `model-setup`.
+- The user is choosing a model or provider rather than a workflow; use `omh-model-setup`.
 - The host model is recording its own pick; recording a main_model answer needs no ask.
 
 ## Examples

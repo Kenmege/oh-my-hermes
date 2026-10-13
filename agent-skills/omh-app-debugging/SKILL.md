@@ -25,10 +25,10 @@ This is an OMH `app-debugging` workflow skill, projected for Agent Skills hosts 
 
 ## Do Not Use When
 
-- The fault is a crash, memory corruption, or core dump in a compiled native binary that needs a debugger session; use `native-debugging`.
-- The build, compile, or CI job fails the same way on every run; use `build-failure-triage`.
-- The subject is an agent or workflow run that misbehaved rather than the application code; use `agent-debug`.
-- The cause is already demonstrated and the request is to judge whether the fix is proven; use `verification-gate`.
+- The fault is a crash, memory corruption, or core dump in a compiled native binary that needs a debugger session; use `omh-native-debugging`.
+- The build, compile, or CI job fails the same way on every run; use `omh-build-failure-triage`.
+- The subject is an agent or workflow run that misbehaved rather than the application code; use `omh-agent-debug`.
+- The cause is already demonstrated and the request is to judge whether the fix is proven; use `omh-verification-gate`.
 
 ## Examples
 

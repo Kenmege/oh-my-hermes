@@ -20,10 +20,10 @@ This is an OMH `tech-debt-audit` workflow skill, projected for Agent Skills host
 
 ## Do Not Use When
 
-- The target is one diff, PR, or claim rather than the codebase's accumulated state; use `code-review`.
-- The user wants the debt removed now, behavior preserved; use `ai-slop-cleaner` for deletion-first cleanup.
-- A boundary-changing fix from the ledger needs its execution shaped into phases; use `refactor-plan`.
-- The question is release risk for a specific deploy rather than source quality; use `production-audit`.
+- The target is one diff, PR, or claim rather than the codebase's accumulated state; use `omh-code-review`.
+- The user wants the debt removed now, behavior preserved; use `omh-ai-slop-cleaner` for deletion-first cleanup.
+- A boundary-changing fix from the ledger needs its execution shaped into phases; use `omh-refactor-plan`.
+- The question is release risk for a specific deploy rather than source quality; use `omh-production-audit`.
 
 ## Examples
 

@@ -20,11 +20,11 @@ This is an OMH `build-failure-triage` workflow skill, projected for Agent Skills
 
 ## Do Not Use When
 
-- The user needs a pre-merge evidence matrix for passing or missing checks; use `verification-gate`.
-- The user needs a code review of changed behavior rather than failing command triage; use `code-review`.
-- The user needs broad production readiness; use `production-audit`.
-- The user asks for incident or SLO review after deployment; use `reliability-review`.
-- A test passes on some runs and not others, or the code returns a wrong value whose cause is unknown; use `app-debugging`.
+- The user needs a pre-merge evidence matrix for passing or missing checks; use `omh-verification-gate`.
+- The user needs a code review of changed behavior rather than failing command triage; use `omh-code-review`.
+- The user needs broad production readiness; use `omh-production-audit`.
+- The user asks for incident or SLO review after deployment; use `omh-reliability-review`.
+- A test passes on some runs and not others, or the code returns a wrong value whose cause is unknown; use `omh-app-debugging`.
 
 ## Examples
 

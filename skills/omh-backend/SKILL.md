@@ -8,6 +8,7 @@ metadata:
     phase: backend-design
     role: planner
     quality_tier: backend-contract-gated
+    related_skills: [omh-relational-db, omh-frontend, omh-security-safety-review, omh-verification-gate, omh-rust, omh-data-pipelines]
 ---
 
 # Backend
@@ -20,12 +21,12 @@ This is a Hermes-native `backend` workflow skill.
 
 ## Do Not Use When
 
-- The work is the database itself -- a slow query and the index that fixes it, DDL that locks a live table, N+1 queries, or when to partition or shard; use `relational-db`, which owns the lock behaviour and rollback of each statement.
-- The request is about web UI, layout, or a design system; use `frontend`.
-- The request is a security posture or threat review rather than a service design; use `security-safety-review`.
-- The request is to run or judge the verification of an already-built service; use `verification-gate`.
-- The request is a Rust-language change whose risk is compiler, ownership, or `unsafe` discipline; use `rust`.
-- The work is a batch or streaming job's rerun, backfill, duplicate rows, or a warehouse table's downstream readers; use `data-pipelines`.
+- The work is the database itself -- a slow query and the index that fixes it, DDL that locks a live table, N+1 queries, or when to partition or shard; use `omh-relational-db`, which owns the lock behaviour and rollback of each statement.
+- The request is about web UI, layout, or a design system; use `omh-frontend`.
+- The request is a security posture or threat review rather than a service design; use `omh-security-safety-review`.
+- The request is to run or judge the verification of an already-built service; use `omh-verification-gate`.
+- The request is a Rust-language change whose risk is compiler, ownership, or `unsafe` discipline; use `omh-rust`.
+- The work is a batch or streaming job's rerun, backfill, duplicate rows, or a warehouse table's downstream readers; use `omh-data-pipelines`.
 
 ## Examples
 

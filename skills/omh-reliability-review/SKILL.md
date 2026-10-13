@@ -8,6 +8,7 @@ metadata:
     phase: incident-and-slo-review
     role: operator
     quality_tier: reliability-gated
+    related_skills: [omh-live-incident-response]
 ---
 
 # Reliability Review
@@ -23,7 +24,7 @@ This is a Hermes-native `reliability-review` workflow skill.
 - The user only needs a generic status report or leadership deck.
 - No service, incident, SLO, metric, or reliability source boundary is available.
 - The request is implementation of remediation rather than review of reliability evidence.
-- The incident is still open and the user needs severity declared, a commander assigned, a running timeline, and recovery verified; use `live-incident-response` and review it once it is closed.
+- The incident is still open and the user needs severity declared, a commander assigned, a running timeline, and recovery verified; use `omh-live-incident-response` and review it once it is closed.
 
 ## Examples
 

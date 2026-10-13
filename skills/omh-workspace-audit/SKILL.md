@@ -8,6 +8,7 @@ metadata:
     phase: workspace-audit
     role: operator
     quality_tier: workspace-audit-gated
+    related_skills: [omh-doctor, omh-source-finder, ulw-research]
 ---
 
 # Workspace Audit
@@ -21,8 +22,8 @@ This is a Hermes-native `workspace-audit` workflow skill.
 ## Do Not Use When
 
 - The user already named a concrete implementation task with files and acceptance criteria; use the coding handoff or delivery workflow.
-- The request is local OMH installation health only; use `doctor`.
-- The request is a source acquisition or current web lookup; use `source-finder` or `research`.
+- The request is local OMH installation health only; use `omh-doctor`.
+- The request is a source acquisition or current web lookup; use `omh-source-finder` or `ulw-research`.
 
 ## Examples
 

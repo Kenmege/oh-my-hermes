@@ -20,9 +20,9 @@ This is an OMH `people-ops` workflow skill, projected for Agent Skills hosts (Cl
 
 ## Do Not Use When
 
-- The request asks for a jurisdiction-specific employment-law conclusion, policy compliance ruling, or contract interpretation; use `legal-compliance-review`.
-- The user only needs a one-off job-ad, rejection, or interview-email rewrite; use `content-operator`.
-- The user asks to create ATS records, send invitations, book interviews, change employment status, or modify HRIS settings; use `connector-operator` with explicit authorization and observed results.
+- The request asks for a jurisdiction-specific employment-law conclusion, policy compliance ruling, or contract interpretation; use `omh-legal-compliance-review`.
+- The user only needs a one-off job-ad, rejection, or interview-email rewrite; use `omh-content-operator`.
+- The user asks to create ATS records, send invitations, book interviews, change employment status, or modify HRIS settings; use `omh-apps` with explicit authorization and observed results.
 - The prompt asks the workflow to make an unsupported candidate decision from protected characteristics or missing interview evidence; retain the process and evidence gap instead.
 
 ## Examples

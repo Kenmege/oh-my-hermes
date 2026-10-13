@@ -20,11 +20,11 @@ This is an OMH `support-operations` workflow skill, projected for Agent Skills h
 
 ## Do Not Use When
 
-- The request clusters a backlog of customer signals to find product patterns or roadmap candidates; use `feedback-triage`.
-- The user only needs a generic, non-support marketing or email rewrite with no case, severity, or escalation context; use `content-operator`.
-- The request asks to send a reply, change ticket priority or status, issue a refund, modify an account, or update a helpdesk; use `connector-operator` with an explicit target and observed result.
-- The request is an incident that is still open, needing severity declared, a commander assigned, and a running timeline rather than a support-case response; use `live-incident-response`.
-- The request is a closed incident's postmortem or reliability evidence rather than a support-case response; use `reliability-review`.
+- The request clusters a backlog of customer signals to find product patterns or roadmap candidates; use `omh-feedback-triage`.
+- The user only needs a generic, non-support marketing or email rewrite with no case, severity, or escalation context; use `omh-content-operator`.
+- The request asks to send a reply, change ticket priority or status, issue a refund, modify an account, or update a helpdesk; use `omh-apps` with an explicit target and observed result.
+- The request is an incident that is still open, needing severity declared, a commander assigned, and a running timeline rather than a support-case response; use `omh-live-incident-response`.
+- The request is a closed incident's postmortem or reliability evidence rather than a support-case response; use `omh-reliability-review`.
 
 ## Examples
 

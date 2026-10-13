@@ -8,6 +8,7 @@ metadata:
     phase: decision-grounding
     role: researcher
     quality_tier: source-gated
+    related_skills: [ulw-work, omh-codebase-onboarding, omh-source-finder, omh-research-brief, omh-research-department, omh-web-research]
 ---
 
 # Research
@@ -24,14 +25,14 @@ This is a Hermes-native `research` workflow skill.
 
 ## Do Not Use When
 
-- The user asks for a full plan-to-PR delivery cycle; use `ultrawork` (its `delivery_boundary` capability) or a planning workflow after research instead.
+- The user asks for a full plan-to-PR delivery cycle; use `ulw-work` (its `delivery_boundary` capability) or a planning workflow after research instead.
 - The request is purely local repo inspection with no external, current, citation, or source-comparison need.
-- The study target is this repository itself rather than external references; use `codebase-onboarding`.
+- The study target is this repository itself rather than external references; use `omh-codebase-onboarding`.
 - The user needs coding execution, review, CI, or merge evidence rather than research synthesis.
-- The requested output is a typed candidate list or acquisition status without factual synthesis; use `source-finder`.
-- The user needs a market, customer, or pricing decision brief with evidence-versus-inference treatment; use `research-brief`.
-- The user asks for recurring monitoring, a source inbox, or Scout/Analyst/Briefer operations; use `research-department`.
-- One cited retrieval round settles the question and no reference implementation needs reading; use `web-research`.
+- The requested output is a typed candidate list or acquisition status without factual synthesis; use `omh-source-finder`.
+- The user needs a market, customer, or pricing decision brief with evidence-versus-inference treatment; use `omh-research-brief`.
+- The user asks for recurring monitoring, a source inbox, or Scout/Analyst/Briefer operations; use `omh-research-department`.
+- One cited retrieval round settles the question and no reference implementation needs reading; use `omh-web-research`.
 
 ## Examples
 

@@ -20,8 +20,8 @@ This is an OMH `img-summary` workflow skill, projected for Agent Skills hosts (C
 
 ## Do Not Use When
 
-- The user needs a deck, PDF, spreadsheet, HWP, Markdown package, or binary file export plan; use `materials-package`.
-- The user wants a text-only report, leadership brief, or PPT-ready outline; use `report-package`.
+- The user needs a deck, PDF, spreadsheet, HWP, Markdown package, or binary file export plan; use `omh-materials-package`.
+- The user wants a text-only report, leadership brief, or PPT-ready outline; use `omh-report-package`.
 - The user asks OMH to directly generate, inspect, upload, or post an image without a wrapper-supplied observed evidence path.
 
 ## Examples

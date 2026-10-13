@@ -8,6 +8,7 @@ metadata:
     phase: curation-review
     role: memory-keeper
     quality_tier: workflow-surface-gated
+    related_skills: [omh-memory-new, omh-decision-recall, omh-external-connector-readiness]
 ---
 
 # Memory Sync
@@ -20,9 +21,9 @@ This is a Hermes-native `memory-sync` workflow skill.
 
 ## Do Not Use When
 
-- The user states a new fact to remember; capture it with `memory-new`.
-- The user asks what was decided or rejected before; use `decision-recall`.
-- The user wants a memory provider enabled, switched, paused, or removed; use `external-connector-readiness`, which owns the provider slot.
+- The user states a new fact to remember; capture it with `omh-memory-new`.
+- The user asks what was decided or rejected before; use `omh-decision-recall`.
+- The user wants a memory provider enabled, switched, paused, or removed; use `omh-external-connector-readiness`, which owns the provider slot.
 
 ## Examples
 

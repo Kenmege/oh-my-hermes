@@ -21,9 +21,9 @@ This is an OMH `skill-health` workflow skill, projected for Agent Skills hosts (
 
 ## Do Not Use When
 
-- OMH setup, install, or a skill that does not load; use `doctor`.
-- One run that missed a route or went wrong; use `workflow-learning`.
-- Finding a new skill to adopt; use `skill-scout`.
+- OMH setup, install, or a skill that does not load; use `omh-doctor`.
+- One run that missed a route or went wrong; use `omh-workflow-learning`.
+- Finding a new skill to adopt; use `omh-skill-scout`.
 
 ## Examples
 

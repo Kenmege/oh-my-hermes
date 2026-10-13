@@ -8,6 +8,7 @@ metadata:
     phase: production-readiness
     role: reviewer
     quality_tier: production-readiness-gated
+    related_skills: [omh-reliability-review, omh-code-review]
 ---
 
 # Production Audit
@@ -21,8 +22,8 @@ This is a Hermes-native `production-audit` workflow skill.
 ## Do Not Use When
 
 - The user wants to implement a feature or fix; prepare a coding handoff first.
-- The user wants incident/SLO analysis after production behavior; use `reliability-review`.
-- The user wants a narrow code diff review; use `code-review`.
+- The user wants incident/SLO analysis after production behavior; use `omh-reliability-review`.
+- The user wants a narrow code diff review; use `omh-code-review`.
 
 ## Examples
 

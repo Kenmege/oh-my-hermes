@@ -20,7 +20,7 @@ This is an OMH `idea-to-deploy` workflow skill, projected for Agent Skills hosts
 
 ## Do Not Use When
 
-- The task is already a concrete repo change whose stopping point is one PR-ready cycle, not product or release operations; use `ultrawork`.
+- The task is already a concrete repo change whose stopping point is one PR-ready cycle, not product or release operations; use `ulw-work`.
 - The request is a settings-only change, one bounded edit that is explicitly low-risk and has a direct owner and verification path, or a direct answer/diagnosis; handle it directly instead of opening a product delivery loop.
 
 ## Examples

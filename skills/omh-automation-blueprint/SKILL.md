@@ -8,6 +8,7 @@ metadata:
     phase: scheduled-ops-blueprint
     role: operator
     quality_tier: ops-blueprint-gated
+    related_skills: [omh-lifecycle-growth, omh-report-package, omh-materials-package, omh-reliability-review]
 ---
 
 # Automation Blueprint
@@ -20,9 +21,9 @@ This is a Hermes-native `automation-blueprint` workflow skill.
 
 ## Do Not Use When
 
-- An undecided lifecycle journey or growth experiment needs audience, consent, and measurement design before any schedule; use `lifecycle-growth` first.
-- The user needs a one-off report or deck; use `report-package` or `materials-package`.
-- The user asks to review incident metrics once; use `reliability-review`.
+- An undecided lifecycle journey or growth experiment needs audience, consent, and measurement design before any schedule; use `omh-lifecycle-growth` first.
+- The user needs a one-off report or deck; use `omh-report-package` or `omh-materials-package`.
+- The user asks to review incident metrics once; use `omh-reliability-review`.
 - The user needs actual code changes; prepare a selected executor/runtime handoff after the blueprint or plan is accepted.
 - The person is inside Hermes' own /blueprint setup for one of its catalog automations; answer the questions that flow asks and let it create the job instead of preparing a second blueprint.
 

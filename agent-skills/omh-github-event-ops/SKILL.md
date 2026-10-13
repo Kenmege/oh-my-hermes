@@ -20,10 +20,10 @@ This is an OMH `github-event-ops` workflow skill, projected for Agent Skills hos
 
 ## Do Not Use When
 
-- One issue to file from a bug report or an idea, with no incoming event to route; use `github-issue-intake`.
-- A failing build log to diagnose, with no event routing left to decide; use `build-failure-triage`.
-- The event is a security advisory, a CVE in a dependency, or a leaked credential; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.
-- The PR is a dependabot or renovate version bump with no advisory; use `refactor-plan`, which decides whether it is safe to merge from the breaking changes against this repository's call sites.
+- One issue to file from a bug report or an idea, with no incoming event to route; use `omh-github-issue-intake`.
+- A failing build log to diagnose, with no event routing left to decide; use `omh-build-failure-triage`.
+- The event is a security advisory, a CVE in a dependency, or a leaked credential; use `omh-security-event-response`, which orders containment and closes only on an observed rotation or fix.
+- The PR is a dependabot or renovate version bump with no advisory; use `omh-refactor-plan`, which decides whether it is safe to merge from the breaking changes against this repository's call sites.
 
 ## Examples
 

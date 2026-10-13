@@ -8,6 +8,7 @@ metadata:
     phase: data-pipelines
     role: planner
     quality_tier: idempotent-replay-gated
+    related_skills: [omh-backend, omh-data-analysis, omh-relational-db, omh-memory-sync]
 ---
 
 # Data Pipelines
@@ -25,10 +26,10 @@ This is a Hermes-native `data-pipelines` workflow skill.
 
 ## Do Not Use When
 
-- The ask is a service's own database migration, API, or queue design; use `backend`.
-- The ask is analyzing, charting, or summarizing a dataset that was handed over; use `data-analysis`.
-- The ask is a slow query, an index, or DDL locking a live table; use `relational-db`.
-- The ask is remembering or syncing what the assistant knows about the user; use `memory-sync`.
+- The ask is a service's own database migration, API, or queue design; use `omh-backend`.
+- The ask is analyzing, charting, or summarizing a dataset that was handed over; use `omh-data-analysis`.
+- The ask is a slow query, an index, or DDL locking a live table; use `omh-relational-db`.
+- The ask is remembering or syncing what the assistant knows about the user; use `omh-memory-sync`.
 
 ## Examples
 

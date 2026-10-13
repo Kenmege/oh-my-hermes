@@ -20,10 +20,10 @@ This is an OMH `curriculum-design` workflow skill, projected for Agent Skills ho
 
 ## Do Not Use When
 
-- The user wants an explanation of a supplied academic paper rather than a teachable sequence; use `paper-learning`.
-- The user needs a deck, workbook, PDF, or other exported learning artifact; route packaging to `materials-package` after the curriculum is accepted.
-- The user asks to create or publish an LMS course, enroll students, grade work, or change course settings; use `connector-operator` with explicit authorization and observed evidence.
-- The user needs only a short rewrite or one isolated worksheet prompt, not curriculum structure; use `content-operator`.
+- The user wants an explanation of a supplied academic paper rather than a teachable sequence; use `omh-paper-learning`.
+- The user needs a deck, workbook, PDF, or other exported learning artifact; route packaging to `omh-materials-package` after the curriculum is accepted.
+- The user asks to create or publish an LMS course, enroll students, grade work, or change course settings; use `omh-apps` with explicit authorization and observed evidence.
+- The user needs only a short rewrite or one isolated worksheet prompt, not curriculum structure; use `omh-content-operator`.
 
 ## Examples
 

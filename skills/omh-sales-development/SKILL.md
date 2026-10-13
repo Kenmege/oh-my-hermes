@@ -8,6 +8,7 @@ metadata:
     phase: sales-development
     role: operator
     quality_tier: decision-gated
+    related_skills: [omh-decide, omh-sales-pipeline-review, omh-content-operator, omh-apps, ulw-research]
 ---
 
 # Sales Development
@@ -20,11 +21,11 @@ This is a Hermes-native `sales-development` workflow skill.
 
 ## Do Not Use When
 
-- The user needs a company-level positioning, market-entry, or strategic-options decision rather than account-level discovery; use `strategy-brief`.
-- The user supplies a CRM export or pipeline snapshot and needs portfolio health, aging, slipped deals, forecast calibration, or renewal-risk review; use `sales-pipeline-review`.
-- The user only wants a polished social post, newsletter, or one-off outbound-copy rewrite; use `content-operator`.
-- The user asks to send outreach, update Salesforce or HubSpot, create an opportunity, or book a meeting; use `connector-operator` with explicit recipient, object, and authority.
-- The request asks for current competitor or company evidence but supplies no source material; begin with `research` before presenting claims as observed.
+- The user needs a company-level positioning, market-entry, or strategic-options decision rather than account-level discovery; use `omh-decide`.
+- The user supplies a CRM export or pipeline snapshot and needs portfolio health, aging, slipped deals, forecast calibration, or renewal-risk review; use `omh-sales-pipeline-review`.
+- The user only wants a polished social post, newsletter, or one-off outbound-copy rewrite; use `omh-content-operator`.
+- The user asks to send outreach, update Salesforce or HubSpot, create an opportunity, or book a meeting; use `omh-apps` with explicit recipient, object, and authority.
+- The request asks for current competitor or company evidence but supplies no source material; begin with `ulw-research` before presenting claims as observed.
 
 ## Examples
 

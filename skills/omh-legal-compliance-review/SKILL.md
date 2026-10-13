@@ -8,6 +8,7 @@ metadata:
     phase: legal-compliance-review
     role: reviewer
     quality_tier: review-gated
+    related_skills: [omh-security-safety-review, omh-content-operator, omh-apps]
 ---
 
 # Legal Compliance Review
@@ -21,9 +22,9 @@ This is a Hermes-native `legal-compliance-review` workflow skill.
 ## Do Not Use When
 
 - The user needs a final jurisdiction-specific legal opinion, legal representation, or authoritative filing decision; prepare the issue and counsel brief instead.
-- The review is about code, secrets, permissions, prompt injection, dependencies, or unsafe tool behavior; use `security-safety-review`.
-- The request is a plain-language rewrite without a legal-risk review objective; use `content-operator`.
-- The user asks to sign, accept, submit, file, publish, or change a policy or contract in an external system; use `connector-operator` only after explicit authority.
+- The review is about code, secrets, permissions, prompt injection, dependencies, or unsafe tool behavior; use `omh-security-safety-review`.
+- The request is a plain-language rewrite without a legal-risk review objective; use `omh-content-operator`.
+- The user asks to sign, accept, submit, file, publish, or change a policy or contract in an external system; use `omh-apps` only after explicit authority.
 
 ## Examples
 

@@ -8,6 +8,7 @@ metadata:
     phase: jev-failure-triage
     role: reviewer
     quality_tier: evidence-gated
+    related_skills: [omh-build-failure-triage, omh-agent-debug, omh-live-incident-response]
     requires_tools: [omh_jev_ask]
 ---
 

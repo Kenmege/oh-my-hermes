@@ -57,7 +57,13 @@ from omh.skills.expert_question_rendering import (
     expert_question_reference_lines,
     expert_questions_markdown,
 )
-from omh.skills.render import frontmatter_description, workflow_reference_markdown, workflow_reference_payload, workflow_skill
+from omh.skills.render import (
+    frontmatter_description,
+    loadable_skill_mentions,
+    workflow_reference_markdown,
+    workflow_reference_payload,
+    workflow_skill,
+)
 from omh.snippet import WORKSPACE_SNIPPET
 from omh.use_cases import USE_CASES, list_use_cases
 from test_loop_cycle import WORKFLOW_PATTERN_PROSE
@@ -3154,7 +3160,8 @@ class RouterContentTests(unittest.TestCase):
                 self.assertIn("Bad example:", content)
                 self.assertIn(definition.why_this_exists, content)
                 for rule in definition.do_not_use_when:
-                    self.assertIn(rule, content)
+                    # Rendered with each installed sibling under its loadable label.
+                    self.assertIn(loadable_skill_mentions(rule), content)
                 self.assertIn(definition.good_example.prompt, content)
                 self.assertIn(definition.good_example.expected, content)
                 self.assertIn(definition.good_example.why, content)

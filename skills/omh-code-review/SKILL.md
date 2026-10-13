@@ -8,6 +8,7 @@ metadata:
     phase: critique
     role: reviewer
     quality_tier: finding-evidence-gated
+    related_skills: [sdlc-review, requesting-code-review]
 ---
 
 # Code Review
@@ -24,6 +25,7 @@ This is a Hermes-native `code-review` workflow skill.
 - There is no diff, file set, claim, artifact, or expected behavior to review.
 - The request is broad product critique, strategy, or planning rather than code or evidence review.
 - A kanban review worker needs its card's transition decided: Hermes' bundled `sdlc-review` owns approve, request-changes, and escalate there, and this skill only supplies the findings that decision cites.
+- The user wants their own uncommitted changes checked before a commit or push, with a security scan, quality gates, and fixes applied in place; load Hermes' bundled `requesting-code-review` skill for that pre-commit pass instead of this one.
 
 ## Examples
 

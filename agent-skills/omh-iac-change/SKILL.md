@@ -25,10 +25,10 @@ This is an OMH `iac-change` workflow skill, projected for Agent Skills hosts (Cl
 
 ## Do Not Use When
 
-- The ask is shipping a new version of the application and watching its health signals after the deploy; use `deploy-and-monitor`.
-- The ask is deciding a versioned release -- what goes in, its tag, or its canary -- rather than changing declared infrastructure; use `release-cut`.
-- The ask is choosing and deploying a model-serving engine; use `inference-serving`.
-- Production is down or degraded right now and the ask is command of the incident; use `live-incident-response`.
+- The ask is shipping a new version of the application and watching its health signals after the deploy; use `omh-deploy-and-monitor`.
+- The ask is deciding a versioned release -- what goes in, its tag, or its canary -- rather than changing declared infrastructure; use `omh-release-cut`.
+- The ask is choosing and deploying a model-serving engine; use `omh-inference-serving`.
+- Production is down or degraded right now and the ask is command of the incident; use `omh-live-incident-response`.
 
 ## Examples
 

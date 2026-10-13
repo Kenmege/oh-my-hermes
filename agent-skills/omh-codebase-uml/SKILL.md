@@ -21,9 +21,9 @@ This is an OMH `codebase-uml` workflow skill, projected for Agent Skills hosts (
 
 ## Do Not Use When
 
-- The user wants the local code index refreshed or a task-scoped handoff pack, not a picture; use `codegraph-refresh`.
-- The user wants a narrative first-read tour, reading path, or glossary; use `codebase-onboarding`.
-- The user wants a summary card, thumbnail, or explainer image of a PR, meeting, or release rather than a structural diagram; use `img-summary`.
+- The user wants the local code index refreshed or a task-scoped handoff pack, not a picture; use `omh-codegraph-refresh`.
+- The user wants a narrative first-read tour, reading path, or glossary; use `omh-codebase-onboarding`.
+- The user wants a summary card, thumbnail, or explainer image of a PR, meeting, or release rather than a structural diagram; use `omh-image-cards`.
 
 ## Examples
 

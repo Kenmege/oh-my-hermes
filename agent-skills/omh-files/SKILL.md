@@ -21,7 +21,7 @@ This is an OMH `workspace-file-operator` workflow skill, projected for Agent Ski
 ## Do Not Use When
 
 - An ordinary list, search, read, or one-file edit inside a known folder; use the native file tools directly.
-- The request converts files or produces a deck, PDF, or attachment; use `materials-package` or `deliverable-package`.
+- The request converts files or produces a deck, PDF, or attachment; use `omh-materials-package` or `omh-deliverable-package`.
 
 ## Examples
 

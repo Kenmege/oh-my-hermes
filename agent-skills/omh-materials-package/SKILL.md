@@ -20,8 +20,8 @@ This is an OMH `materials-package` workflow skill, projected for Agent Skills ho
 
 ## Do Not Use When
 
-- The user only needs a weekly/monthly report outline; use `report-package`.
-- The user asks for recurring meeting minutes or scrum history; use `operating-rhythm`.
+- The user only needs a weekly/monthly report outline; use `omh-report-package`.
+- The user asks for recurring meeting minutes or scrum history; use `omh-operating-rhythm`.
 - The request is code documentation, README, or project wiki maintenance; use the docs/wiki workflow.
 
 ## Examples

@@ -8,6 +8,7 @@ metadata:
     phase: skill-management
     role: tracker
     quality_tier: evidence-gated
+    related_skills: [omh-capability-toggle, omh-skill-scout, omh-skill-health, hermes-agent-skill-authoring]
 ---
 
 # Skill
@@ -20,9 +21,10 @@ This is a Hermes-native `skill` workflow skill.
 
 ## Do Not Use When
 
-- The user wants an OMH capability family turned on or off; use `capability-toggle`.
-- The user wants a public skill found and vetted before installing it; use `skill-scout`.
-- The user wants skill health checked: stale surfaces, failure patterns, or pending amendments; use `skill-health`.
+- The user wants an OMH capability family turned on or off; use `omh-capability-toggle`.
+- The user wants a public skill found and vetted before installing it; use `omh-skill-scout`.
+- The user wants skill health checked: stale surfaces, failure patterns, or pending amendments; use `omh-skill-health`.
+- The user is writing or editing a skill that ships in the hermes-agent repository itself rather than a local one; load Hermes' bundled `hermes-agent-skill-authoring` skill instead of this one.
 
 ## Examples
 

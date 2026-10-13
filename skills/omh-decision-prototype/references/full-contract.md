@@ -11,14 +11,15 @@ holds the workflow-specific detail without copying those shared rails.
 
 ## Do Not Use When
 
-- $context is the explicit-only route for a repository terminology or product decision frontier (`context`); preference or policy decisions that behavior cannot test stay with `deep-interview`.
-- $context is the explicit-only route for unresolved repository terminology or project language (`context`); hand only an empirical decision here.
-- The decision is already made and the request is an implementation plan with acceptance criteria; use `ralplan` and consume the decision receipt there.
-- The user wants the feature built, reviewed, or shipped rather than one question answered; use `ultrawork` after an accepted plan.
-- The request is UI creation, redesign, or polish of a real surface rather than a throwaway wireframe that answers one interaction question; use `frontend`.
-- The request is a premium content, layout, or visual quality gate on deliverables; use `design-quality-gate`.
-- The uncertainty is whether customers have the problem or would adopt the solution, which needs customer evidence rather than a technical or interaction spike; use `product-discovery-validation`.
+- $context is the explicit-only route for a repository terminology or product decision frontier (`ulw-context`); preference or policy decisions that behavior cannot test stay with `ulw-interview`.
+- $context is the explicit-only route for unresolved repository terminology or project language (`ulw-context`); hand only an empirical decision here.
+- The decision is already made and the request is an implementation plan with acceptance criteria; use `ulw-plan` and consume the decision receipt there.
+- The user wants the feature built, reviewed, or shipped rather than one question answered; use `ulw-work` after an accepted plan.
+- The request is UI creation, redesign, or polish of a real surface rather than a throwaway wireframe that answers one interaction question; use `omh-frontend`.
+- The request is a premium content, layout, or visual quality gate on deliverables; use `omh-design-quality-gate`.
+- The uncertainty is whether customers have the problem or would adopt the solution, which needs customer evidence rather than a technical or interaction spike; use `omh-product-discovery-validation`.
 - The request needs QA certification, production-readiness evidence, or a performance baseline for release; prototype results do not generalize beyond their declared fixture and environment.
+- The user wants an idea's feasibility probed across several questions with throwaway spikes, with no single decision for a plan to consume; load Hermes' bundled `spike` skill instead of this one.
 
 ## Examples
 

@@ -8,6 +8,7 @@ metadata:
     phase: rhythm-history
     role: operator
     quality_tier: operations-gated
+    related_skills: [omh-meeting-brief, omh-ops-review]
 ---
 
 # Operating Rhythm
@@ -20,8 +21,8 @@ This is a Hermes-native `operating-rhythm` workflow skill.
 
 ## Do Not Use When
 
-- The user only needs a one-off meeting agenda before the meeting; use `meeting-brief`.
-- The request is a weekly status/risk summary rather than cadence history; use `ops-review`.
+- The user only needs a one-off meeting agenda before the meeting; use `omh-meeting-brief`.
+- The request is a weekly status/risk summary rather than cadence history; use `omh-ops-review`.
 - The user asks for report packaging, PPT outline, or reliability evidence review.
 
 ## Examples

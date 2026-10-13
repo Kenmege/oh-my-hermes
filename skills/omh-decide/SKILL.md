@@ -8,6 +8,7 @@ metadata:
     phase: brief
     role: operator
     quality_tier: decision-gated
+    related_skills: [omh-product-discovery-validation, omh-people-ops, omh-jev-ask]
 ---
 
 # Strategy Brief
@@ -20,9 +21,9 @@ This is a Hermes-native `strategy-brief` workflow skill.
 
 ## Do Not Use When
 
-- The strategic question is whether an early idea's customer problem and segment are real, and no validated discovery receipt exists yet; use `product-discovery-validation`.
-- The question is how to run a hiring process — scorecards, interview loops, candidate comparison — rather than whether to hire at all; use `people-ops`.
-- The user wants Jev's typed probabilities for a yes/no, pick-one, or scored question over supplied text rather than tradeoffs and a recommendation; use `jev-ask`.
+- The strategic question is whether an early idea's customer problem and segment are real, and no validated discovery receipt exists yet; use `omh-product-discovery-validation`.
+- The question is how to run a hiring process — scorecards, interview loops, candidate comparison — rather than whether to hire at all; use `omh-people-ops`.
+- The user wants Jev's typed probabilities for a yes/no, pick-one, or scored question over supplied text rather than tradeoffs and a recommendation; use `omh-jev-ask`.
 
 ## Examples
 

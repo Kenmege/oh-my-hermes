@@ -8,6 +8,7 @@ metadata:
     phase: observability
     role: tracker
     quality_tier: evidence-gated
+    related_skills: [ulw-work, ulw-plan, omh-running-work-board]
 ---
 
 # Todo Checklist
@@ -21,9 +22,9 @@ This is a Hermes-native `todo-checklist` workflow skill.
 ## Do Not Use When
 
 - The work is one step, already finished, or answerable in this turn; a checklist that never advances is a panel of noise.
-- The user wants an accepted implementation plan split into parallel lanes with owners and verification commands; use `ultrawork`.
-- The user wants the planning content itself -- options, risks, acceptance criteria before execution; use `ralplan`.
-- The user is asking what coding work is running right now rather than what the plan says; use `running-work-board`.
+- The user wants an accepted implementation plan split into parallel lanes with owners and verification commands; use `ulw-work`.
+- The user wants the planning content itself -- options, risks, acceptance criteria before execution; use `ulw-plan`.
+- The user is asking what coding work is running right now rather than what the plan says; use `omh-running-work-board`.
 
 ## Examples
 

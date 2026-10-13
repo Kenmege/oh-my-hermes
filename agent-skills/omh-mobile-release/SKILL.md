@@ -25,10 +25,10 @@ This is an OMH `mobile-release` workflow skill, projected for Agent Skills hosts
 
 ## Do Not Use When
 
-- The ask is a versioned release of a service or library -- what goes in, the tag, a canary, the rollback command; use `release-cut`.
-- A web or backend deploy is already out and the ask is watching its health; use `deploy-and-monitor`.
-- The ask is a readiness audit across observability, security, and operations before launch; use `production-audit`.
-- The app crashes or misbehaves and the ask is finding the cause in the code; use `app-debugging`.
+- The ask is a versioned release of a service or library -- what goes in, the tag, a canary, the rollback command; use `omh-release-cut`.
+- A web or backend deploy is already out and the ask is watching its health; use `omh-deploy-and-monitor`.
+- The ask is a readiness audit across observability, security, and operations before launch; use `omh-production-audit`.
+- The app crashes or misbehaves and the ask is finding the cause in the code; use `omh-app-debugging`.
 
 ## Examples
 

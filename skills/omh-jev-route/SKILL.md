@@ -8,6 +8,7 @@ metadata:
     phase: jev-route
     role: guide
     quality_tier: evidence-gated
+    related_skills: [omh-model-setup]
     requires_tools: [omh_jev_ask]
 ---
 

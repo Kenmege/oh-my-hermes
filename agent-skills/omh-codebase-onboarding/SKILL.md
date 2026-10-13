@@ -20,9 +20,9 @@ This is an OMH `codebase-onboarding` workflow skill, projected for Agent Skills 
 
 ## Do Not Use When
 
-- The user already named a concrete implementation task and acceptance criteria; use `ultrawork` or `idea-to-deploy`.
-- The user needs a whole-workspace capability inventory; use `workspace-audit`.
-- The user wants a code diff review; use `code-review`.
+- The user already named a concrete implementation task and acceptance criteria; use `ulw-work` or `omh-idea-to-deploy`.
+- The user needs a whole-workspace capability inventory; use `omh-workspace-audit`.
+- The user wants a code diff review; use `omh-code-review`.
 
 ## Examples
 

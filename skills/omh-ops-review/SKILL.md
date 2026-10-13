@@ -8,6 +8,7 @@ metadata:
     phase: status-review
     role: operator
     quality_tier: status-gated
+    related_skills: [omh-sales-pipeline-review, omh-operating-rhythm]
 ---
 
 # Ops Review
@@ -20,8 +21,8 @@ This is a Hermes-native `ops-review` workflow skill.
 
 ## Do Not Use When
 
-- The review is over sales stages, forecast categories, deal aging, or seller forecast rather than generic operating status; use `sales-pipeline-review`.
-- The primary output is durable cadence history, minutes, a decision log, or action history; use `operating-rhythm`.
+- The review is over sales stages, forecast categories, deal aging, or seller forecast rather than generic operating status; use `omh-sales-pipeline-review`.
+- The primary output is durable cadence history, minutes, a decision log, or action history; use `omh-operating-rhythm`.
 
 ## Examples
 

@@ -20,12 +20,12 @@ This is an OMH `finance-analysis` workflow skill, projected for Agent Skills hos
 
 ## Do Not Use When
 
-- The request is for a current quote, exchange rate, crypto price, or other live market lookup; use `live-info-operator`.
-- The user wants generic exploration of a supplied CSV or table without accounting periods, controls, or finance decision framing; use `data-analysis`.
-- The user asks to post journal entries, reconcile accounts, approve payments, submit tax filings, or configure an accounting system; use `connector-operator` for an explicit observed action path.
-- The user wants pipeline coverage, deal health, or a seller forecast scenario rather than authoritative revenue or close reporting; use `sales-pipeline-review`.
-- The user needs an enterprise or product direction decision after analysis; route that decision to `strategy-brief`.
-- The ask is testing whether an internal control operated -- a SOX or ICFR sample, re-performance, or a deficiency's severity; use `internal-audit`.
+- The request is for a current quote, exchange rate, crypto price, or other live market lookup; use `omh-live-info`.
+- The user wants generic exploration of a supplied CSV or table without accounting periods, controls, or finance decision framing; use `omh-data-analysis`.
+- The user asks to post journal entries, reconcile accounts, approve payments, submit tax filings, or configure an accounting system; use `omh-apps` for an explicit observed action path.
+- The user wants pipeline coverage, deal health, or a seller forecast scenario rather than authoritative revenue or close reporting; use `omh-sales-pipeline-review`.
+- The user needs an enterprise or product direction decision after analysis; route that decision to `omh-decide`.
+- The ask is testing whether an internal control operated -- a SOX or ICFR sample, re-performance, or a deficiency's severity; use `omh-internal-audit`.
 
 ## Examples
 

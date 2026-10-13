@@ -8,6 +8,7 @@ metadata:
     phase: package-outline
     role: operator
     quality_tier: report-gated
+    related_skills: [omh-reliability-review]
 ---
 
 # Report Package
@@ -20,7 +21,7 @@ This is a Hermes-native `report-package` workflow skill.
 
 ## Do Not Use When
 
-- The user needs SLO, incident, or error-budget review; use `reliability-review`.
+- The user needs SLO, incident, or error-budget review; use `omh-reliability-review`.
 - The user asks for a live `.pptx` deck file rather than a PPT-ready outline.
 - The request is meeting minutes, scrum history, or action-item tracking.
 

@@ -21,8 +21,8 @@ This is an OMH `ultraperf` workflow skill, projected for Agent Skills hosts (Cla
 ## Do Not Use When
 
 - Metric, baseline, budget, and benchmark command are already declared for one measurable goal; use `performance-goal`.
-- The ask is to judge code quality, structure, or correctness rather than measured cost; use `code-review`.
-- The ask is to score model or agent output quality on a task suite; use `agent-evaluation`.
+- The ask is to judge code quality, structure, or correctness rather than measured cost; use `omh-code-review`.
+- The ask is to score model or agent output quality on a task suite; use `omh-agent-evaluation`.
 - The request is a settings-only change, one bounded edit that is explicitly low-risk and has a direct owner and verification path, or one already-identified slow query or hotspot fix; handle it directly instead of opening a performance loop.
 
 ## Examples

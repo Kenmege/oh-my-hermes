@@ -20,11 +20,11 @@ This is an OMH `application-threat-model` workflow skill, projected for Agent Sk
 
 ## Do Not Use When
 
-- The subject is the agent's own prompts, tools, files, credentials, dependencies, or destructive actions; use `security-safety-review`, which maps that runtime surface.
-- The user wants defects found in a diff or a file; use `code-review`.
-- The user asks whether a release is ready across rollout, rollback, and observability; use `production-audit`.
-- The user asks which commands prove a merge is safe; use `verification-gate`.
-- The user asks for a contractual or regulatory obligation rather than an attacker; use `legal-compliance-review`.
+- The subject is the agent's own prompts, tools, files, credentials, dependencies, or destructive actions; use `omh-security-safety-review`, which maps that runtime surface.
+- The user wants defects found in a diff or a file; use `omh-code-review`.
+- The user asks whether a release is ready across rollout, rollback, and observability; use `omh-production-audit`.
+- The user asks which commands prove a merge is safe; use `omh-verification-gate`.
+- The user asks for a contractual or regulatory obligation rather than an attacker; use `omh-legal-compliance-review`.
 
 ## Examples
 

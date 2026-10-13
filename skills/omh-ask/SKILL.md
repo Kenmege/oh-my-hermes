@@ -8,6 +8,7 @@ metadata:
     phase: external-advice
     role: reviewer
     quality_tier: evidence-gated
+    related_skills: [omh-jev-ask]
 ---
 
 # Ask
@@ -22,7 +23,7 @@ This is a Hermes-native `ask` workflow skill.
 
 - The request is casual chat, a status-only acknowledgement, or another workflow has stronger routing evidence.
 - The user needs implementation, review, CI, merge, or external publishing evidence that has not been delegated or observed.
-- The user wants typed yes/no, pick-one, or scored probabilities from Jev over supplied text; use `jev-ask`.
+- The user wants typed yes/no, pick-one, or scored probabilities from Jev over supplied text; use `omh-jev-ask`.
 
 ## Examples
 

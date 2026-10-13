@@ -8,6 +8,7 @@ metadata:
     phase: device-readiness
     role: operator
     quality_tier: workflow-surface-gated
+    related_skills: [omh-external-connector-readiness, omh-toolbelt-readiness, omh-terminal, omh-apps]
 ---
 
 # Physical Device Readiness
@@ -20,9 +21,9 @@ This is a Hermes-native `physical-device-readiness` workflow skill.
 
 ## Do Not Use When
 
-- The device is reached through a provider or connector the user has not adopted yet; use `external-connector-readiness`.
-- The tool that would control the device is missing; use `toolbelt-readiness`.
-- The user asks to run the command, move the hardware, or start the print now; use `command-operator` or `connector-operator`, which need observed operator approval before any execution claim.
+- The device is reached through a provider or connector the user has not adopted yet; use `omh-external-connector-readiness`.
+- The tool that would control the device is missing; use `omh-toolbelt-readiness`.
+- The user asks to run the command, move the hardware, or start the print now; use `omh-terminal` or `omh-apps`, which need observed operator approval before any execution claim.
 
 ## Examples
 

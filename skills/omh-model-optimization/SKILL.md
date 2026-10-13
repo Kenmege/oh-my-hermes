@@ -8,6 +8,7 @@ metadata:
     phase: model-onboarding
     role: tracker
     quality_tier: evidence-gated
+    related_skills: [omh-model-setup, ulw-perf]
 ---
 
 # Model Optimization
@@ -20,8 +21,8 @@ This is a Hermes-native `model-optimization` workflow skill.
 
 ## Do Not Use When
 
-- The user wants their own machine's model routing configured or providers connected; use `model-setup`.
-- The goal is measurable performance of an application or system, not model handling; use `ultraperf`.
+- The user wants their own machine's model routing configured or providers connected; use `omh-model-setup`.
+- The goal is measurable performance of an application or system, not model handling; use `ulw-perf`.
 - The user wants benchmark-superiority or provider-readiness claims without measurements.
 
 ## Examples
