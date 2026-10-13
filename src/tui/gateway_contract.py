@@ -37,7 +37,7 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "session.resume": frozenset({"session_id", "cols"}),
     "session.close": frozenset({"session_id"}),
     "session.interrupt": frozenset({"session_id"}),
-    "session.list": frozenset(),
+    "session.list": frozenset({"limit"}),
     "prompt.submit": frozenset({"session_id", "text", "queued"}),
     # Attachments: the gateway resolves and queues the file; the TUI sends a path, never bytes.
     "image.attach": frozenset({"session_id", "path"}),

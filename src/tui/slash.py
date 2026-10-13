@@ -7,7 +7,7 @@ three kinds:
 
 - `local`: commands about this terminal (help, quit, history, theme, the OMH
   model picker) and the ones whose screen is the TUI's own (attaching an
-  image). The TUI handles them, calling the gateway
+  image, the session picker). The TUI handles them, calling the gateway
   method underneath where there is one.
 - `hermes`: commands whose surface is Ink-only (voice, the pet, the billing
   flows, overlays) or that would make the TUI persist raw prompts (`/save`,
@@ -44,6 +44,8 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("help", LOCAL, "Show commands and keys"),
     SlashCommand("quit", LOCAL, "Leave the OMH TUI", ("exit",)),
     SlashCommand("new", LOCAL, "Start a new session", ("clear", "reset")),
+    SlashCommand("sessions", LOCAL, "Switch to a stored session (a picker, or /sessions <id or title>)",
+                 ("switch", "session", "resume")),
     SlashCommand("redraw", LOCAL, "Repaint the screen"),
     SlashCommand("history", LOCAL, "Page through this session's transcript"),
     SlashCommand("details", LOCAL, "Show or hide thinking and tool details", ("detail",)),
@@ -68,8 +70,6 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("subscription", HERMES, "Change plan", ("upgrade",)),
     SlashCommand("setup", HERMES, "Run Hermes setup"),
     SlashCommand("skin", HERMES, "Hermes skin (the OMH TUI uses /theme)"),
-    SlashCommand("sessions", HERMES, "Switch sessions (or leave and run `omh --resume <id>`)",
-                 ("switch", "session", "resume")),
     SlashCommand("save", HERMES, "Export the transcript to a file"),
     SlashCommand("prompt", HERMES, "Compose in $EDITOR", ("compose",)),
     SlashCommand("terminal-setup", HERMES, "Write IDE keybindings"),

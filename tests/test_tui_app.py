@@ -1044,6 +1044,8 @@ CLIP = {
     "height": 480,
     "token_estimate": 85,
 }
+OTHER_STORED_ID = "20261012_090000_router"
+OTHER_LIVE_ID = "c0ffee01"
 
 
 def bracketed(text: str) -> bytes:
@@ -1056,6 +1058,18 @@ def status_index(screen: list[str]) -> int:
 
 def composer_row(screen: list[str]) -> str:
     return screen[status_index(screen) - 1]
+
+
+def resumed_other(messages: list[dict] | None = None) -> dict:
+    return {
+        "result": {
+            "session_id": OTHER_LIVE_ID,
+            "stored_session_id": OTHER_STORED_ID,
+            "message_count": len(messages or []),
+            "messages": messages or [],
+            "info": {"model": "deepseek/deepseek-v4.1-flash-ultrafast", "cwd": "/fixture/project"},
+        }
+    }
 
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
@@ -1157,6 +1171,97 @@ class AttachmentTests(AppTestCase):
         (detach,) = run.calls("image.detach")
         self.assertEqual(detach["params"], {"session_id": LIVE_ID, "path": "/fixture/project/shot.png"})
         self.assertTrue(composer_row(terminal.captures["gone"]).startswith("›"))
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class SessionSwitchTests(AppTestCase):
+    def test_sessions_opens_a_picker_and_enter_switches_to_the_picked_session(self) -> None:
+        listed = recorded_answer("session", "session_list")
+        recorded_row = listed["result"]["sessions"][0]
+        listed["result"]["sessions"].append(
+            {**recorded_row, "id": OTHER_STORED_ID, "title": "Refactor the router", "preview": "Split the router",
+             "started_at": recorded_row["started_at"] - 86400, "message_count": 2, "source": "cli"}
+        )
+        history = [
+            {"role": "user", "text": "Split the router in two"},
+            {"role": "assistant", "text": "Done: chat.py and recommend.py."},
+        ]
+        answers = (
+            *startup_answers(),
+            ("session.list", listed),
+            ("session.resume", resumed_other(history)),
+            ("session.close", {"result": {"closed": True}}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=answers),
+                           env={"HOME": "/fixture"})
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "Reply with exactly the word: ok"),
+            Step(b"/sessions\r", when=lambda: "later." in terminal.history() and terminal.idle(), label="the reply"),
+            Step(b"\x1b[B\r", when=terminal.shows("Refactor the router"), capture="picker", label="the picker"),
+            Step(b"\x04", when=lambda: f"resumed {OTHER_STORED_ID}" in terminal.history() and terminal.idle(),
+                 label="the switch"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (listing,) = run.calls("session.list")
+        self.assertEqual(listing["params"], {"limit": 50})
+        picker = "\n".join(terminal.captures["picker"])
+        self.assertIn("● Reply with ok", picker)
+        self.assertIn("2 messages", picker)
+        methods = [frame.get("method") for frame in run.frames]
+        (resume,) = run.calls("session.resume")
+        self.assertEqual(resume["params"], {"session_id": OTHER_STORED_ID, "cols": 80})
+        (close,) = run.calls("session.close")
+        self.assertEqual(close["params"], {"session_id": LIVE_ID})
+        # The old session closes only once the new one is open: a refused resume leaves it untouched.
+        self.assertLess(methods.index("session.resume"), methods.index("session.close"))
+        shown = terminal.history()
+        self.assertTrue(shown.startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {OTHER_STORED_ID}"), shown[:200])
+        self.assertIn("› Split the router in two", shown)
+        self.assertIn("Done: chat.py and recommend.py.", shown)
+        self.assertNotIn("I'm Hermes, your agent", shown)  # the old transcript went with the redraw
+        self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": OTHER_STORED_ID})
+        self.assertEqual(run.poller.sessions, [STORED_ID, OTHER_STORED_ID])
+
+    def test_sessions_with_an_id_switches_directly(self) -> None:
+        answers = (
+            *startup_answers(),
+            ("session.resume", resumed_other()),
+            ("session.close", {"result": {"closed": True}}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        run.terminal.script(
+            self.submit(run, f"/resume {OTHER_STORED_ID}"),
+            Step(b"\x04", when=lambda: f"resumed {OTHER_STORED_ID}" in run.terminal.history() and run.terminal.idle(),
+                 label="the switch"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual(run.calls("session.list"), [])
+        (resume,) = run.calls("session.resume")
+        self.assertEqual(resume["params"], {"session_id": OTHER_STORED_ID, "cols": 80})
+        self.assertEqual(run.calls("session.close")[0]["params"], {"session_id": LIVE_ID})
+
+    def test_a_refused_resume_keeps_the_current_session(self) -> None:
+        refused = {"error": {"code": 4090, "message": "the session is open in another process"}}
+        answers = (*startup_answers(), ("session.resume", refused))
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=answers), cols=200
+        )
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, f"/sessions {OTHER_STORED_ID}"),
+            Step(b"Reply with exactly the word: ok\r", when=terminal.shows("Could not switch"), label="the notice"),
+            Step(b"\x04", when=lambda: "later." in terminal.history() and terminal.idle(), label="the reply"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertIn(f"Could not switch to {OTHER_STORED_ID} (4090): the session is open in another process. "
+                      f"Still in {STORED_ID}.", terminal.history())
+        self.assertEqual(run.calls("session.close"), [])
+        self.assertEqual(run.calls("prompt.submit")[0]["params"]["session_id"], LIVE_ID)
+        self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": STORED_ID})
 
 
 

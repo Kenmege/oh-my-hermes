@@ -43,13 +43,20 @@ class RouteTableTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(slash.parse_slash(f"/{name}").route, slash.HERMES)
 
-    def test_attachments_run_in_the_tui(self) -> None:
-        for name in ("image", "paste"):
+    def test_attachments_and_session_switching_run_in_the_tui(self) -> None:
+        for name, command in (
+            ("image", "image"),
+            ("paste", "paste"),
+            ("sessions", "sessions"),
+            ("switch", "sessions"),
+            ("session", "sessions"),
+            ("resume", "sessions"),
+        ):
             with self.subTest(name=name):
                 invocation = slash.parse_slash(f"/{name} x")
-                self.assertEqual((invocation.command.name, invocation.route), (name, slash.LOCAL))
+                self.assertEqual((invocation.command.name, invocation.route), (command, slash.LOCAL))
         names = [c.name for c in slash.completions("", [])]
-        self.assertTrue({"image", "paste"} <= set(names))
+        self.assertTrue({"image", "paste", "sessions"} <= set(names))
 
     def test_the_network_widget_is_dropped(self) -> None:
         self.assertEqual(slash.parse_slash("/weather").route, slash.DROPPED)

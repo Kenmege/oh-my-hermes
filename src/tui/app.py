@@ -11,7 +11,7 @@ hint for a session this TUI never opened).
 
 `App` is the loop. One thread owns the terminal and every model: it reads
 input with a short timeout, routes keys (an open prompt slot first, then the
-attachment keys, the completion menu, then the
+session picker, the attachment keys, the completion menu, then the
 composer), takes everything the gateway sent since
 the last step, takes the newest HUD snapshot, and repaints when something
 changed or a spinner is due. Calls made from the loop go out with
@@ -69,6 +69,7 @@ from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
 from .prompts import CHOICE_DIGITS, Answer, ImmediateAnswer, PromptSlot, open_request
 from .screen import CLEAR_SCREEN_AND_SCROLLBACK, SHOW_CURSOR, LiveRegion
+from .session_picker import PICK, SessionPicker, session_rows
 from .slash import (
     COMMANDS,
     DROPPED,
@@ -113,6 +114,7 @@ STATE_WAITING = "waiting on you"
 EXIT_HINT = "Ctrl+C again to exit"
 OSC52_COPY = "\x1b]52;c;{}\x07"
 MENU_NAME_CELLS = 16
+SESSION_LIST_LIMIT = 50
 ATTACH_ICON = "📎"
 ATTACH_HINT = "Backspace removes"
 NO_SESSION_NOTICE = "No session is open yet; try again in a moment."
@@ -459,6 +461,7 @@ class App:
         self.redraw_at: float | None = None  # when a settled resize redraws everything
         self.anchor = True  # the next frame re-anchors the region (first frame, resize, redraw)
         self.attachments: list[Attachment] = []  # images the gateway queued for the next prompt
+        self.picker: SessionPicker | None = None
         self.dirty = True
         self.last_render = 0.0
 
@@ -479,17 +482,20 @@ class App:
         else:
             result = self.client.call("session.create", self._create_params())
         self._adopt_session(result, fallback_stored=resume)
-        info = result.get("info")
-        cwd = (_text(info.get("cwd")) if isinstance(info, dict) else "") or self._create_params().get("cwd", "")
-        self.banner_facts = {
-            "model": self.model,
-            "cwd": short_path(cwd, self.environ.get("HOME", "")),
-            "resumed": self.stored_id if resume else "",
-        }
-        self.banner_record = dict(self.banner_facts)
+        self.banner_record = self._banner_record(result, resumed=self.stored_id if resume else "")
+        self.banner_facts = dict(self.banner_record)
         if resume:
             self._draw_history(result.get("messages"))
-        for entry in result.get("open_requests") or []:
+        self._redeliver(result.get("open_requests"))
+
+    def _banner_record(self, result: Mapping[str, Any], resumed: str) -> dict[str, str]:
+        info = result.get("info")
+        cwd = (_text(info.get("cwd")) if isinstance(info, dict) else "") or self._create_params().get("cwd", "")
+        return {"model": self.model, "cwd": short_path(cwd, self.environ.get("HOME", "")), "resumed": resumed}
+
+    def _redeliver(self, open_requests: object) -> None:
+        """A resumed session's open requests, delivered as live ones."""
+        for entry in open_requests if isinstance(open_requests, list) else []:
             if isinstance(entry, dict) and isinstance(entry.get("id"), str) and isinstance(entry.get("method"), str):
                 params = entry.get("params")
                 self._on_server_request(ServerRequest(entry["id"], entry["method"], params if isinstance(params, dict) else {}))
@@ -761,6 +767,9 @@ class App:
             if answer is not None:
                 self._answer(answer)
             return
+        if self.slot is None and self.picker is not None:
+            self._picker_key(event)
+            return
         if self.slot is None and self._attachment_input(event):
             return
         if self.slot is None and isinstance(event, Key) and self._menu_moves(event):
@@ -976,6 +985,7 @@ class App:
             "copy": self._copy,
             "theme": self._theme,
             "omh-model": self._omh_model,
+            "sessions": self._sessions,
             "image": self._image,
             "paste": self._paste,
         }
@@ -1014,6 +1024,69 @@ class App:
         self.attachments.clear()  # they were queued in the closed session
         self._adopt_session(result)
         self.transcript.add_notice(f"New session {self.stored_id}.")
+
+    # ── switching sessions ──
+
+    def _sessions(self, arg: str) -> None:
+        if not self.sid:
+            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
+        elif arg:
+            self._switch_session(arg)
+        else:
+            self._request("session.list", {"limit": SESSION_LIST_LIMIT}, self._open_session_picker)
+
+    def _open_session_picker(self, result: dict[str, Any]) -> None:
+        rows = session_rows(result)
+        if rows:
+            self.picker = SessionPicker(rows, current=self.stored_id)
+        else:
+            self.transcript.add_notice("Hermes has no stored sessions to switch to.")
+
+    def _picker_key(self, event: Key | Paste) -> None:
+        if self.picker is None:
+            return
+        action = self.picker.handle_key(event)
+        if action is None:
+            return
+        self.picker = None
+        if action.kind == PICK:
+            self._switch_session(action.session_id)
+
+    def _switch_session(self, target: str) -> None:
+        """Resume `target` (a stored id or an exact title); the current session closes once that worked."""
+        if target == self.stored_id:
+            self.transcript.add_notice(f"Already in session {target}.")
+            return
+        self._request(
+            "session.resume",
+            {"session_id": target, "cols": self.size[0]},
+            lambda result: self._on_session_resumed(target, result),
+            lambda error: self._on_resume_refused(target, error),
+        )
+
+    def _on_session_resumed(self, target: str, result: dict[str, Any]) -> None:
+        """Leave the old session (its requests declined, its runtime closed) and redraw the screen as the new one."""
+        old = self.sid
+        self._decline_all_requests()
+        if old and old != _text(result.get("session_id")):
+            self._request("session.close", {"session_id": old}, lambda result: None, lambda error: True)
+        self.transcript = Transcript(self.clock)
+        self.queued.clear()
+        self.sticky = ""
+        self.attachments.clear()
+        self.hud = None
+        self._adopt_session(result, fallback_stored=target)
+        self._draw_history(result.get("messages"))
+        self.banner_record = self._banner_record(result, resumed=self.stored_id)
+        self._full_redraw()
+        self._redeliver(result.get("open_requests"))
+
+    def _on_resume_refused(self, target: str, error: dict[str, Any]) -> bool:
+        message = _text(error.get("message")) or "refused"
+        self.transcript.add_notice(
+            f"Could not switch to {target} ({error.get('code')}): {message}. Still in {self.stored_id}.", NOTICE_WARN
+        )
+        return True
 
     # ── attachments ──
 
@@ -1255,6 +1328,8 @@ class App:
             return []
         if self.slot is not None:
             return self.slot.lines(cols, self.theme, cap)
+        if self.picker is not None:
+            return self.picker.lines(cols, self.theme, cap, self.wall_clock())
         entries = self._menu_entries()
         if entries:
             return _menu_lines(entries, min(self.menu_index, len(entries) - 1), cols, cap, self.theme)
