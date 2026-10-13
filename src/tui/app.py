@@ -245,6 +245,10 @@ HERMES_APPROVALS_NOTICE = (
     "without changing Hermes' setting."
 )
 SWITCH_BACK_FAILED_NOTICE = "Hermes did not confirm the switch back either ({}). Check /yolo in Hermes."
+LEFT_YOLO_NOTICE = (
+    "Hermes did not confirm that the session you left asks for approvals again ({}). "
+    "Its approvals may stay off while this Hermes gateway runs."
+)
 
 # Ctrl+T steps through these; `/effort` takes any level in `contract.REASONING_LEVELS`.
 EFFORT_CYCLE = ("low", "medium", "high", "xhigh", "max")
@@ -991,6 +995,8 @@ class App:
         self.region.clear()
         if reports_may_arrive:
             self._discard_late_reports()
+        if self.sid:  # the gateway may outlive the TUI by its close grace, or longer
+            self._turn_off_yolo_set_here(self.sid)
 
     def _set_mouse(self, enabled: bool) -> None:
         """Turn mouse reports on or off, noting when they went off: reports sent before the off still arrive after it."""
@@ -1884,8 +1890,37 @@ class App:
     def _quit(self, arg: str) -> None:
         """Close the session first, so Hermes ends its runtime before the gateway reads end of input."""
         if self.sid:
+            self._turn_off_yolo_set_here(self.sid)
             self._request("session.close", {"session_id": self.sid}, lambda result: None, lambda error: True)
         self.exit_code = 0
+
+    def _turn_off_yolo_set_here(self, sid: str) -> None:
+        """Before leaving `sid`: an explicit yolo off for it, when the TUI turned yolo on there or a yolo call is out.
+
+        Hermes clears a session's yolo as it closes it only when it owns the
+        session's lifecycle, and never for a session a messaging gateway
+        started (`tui_gateway/session_lifecycle.py`), so the switch the TUI
+        set would outlive the TUI's attachment. Sent before `session.close`:
+        Hermes runs both inline, in the order they arrive, and answers the id
+        of a session it closed with 4001. An off for a call still out is
+        harmless and lands after it. A refused off is a notice in whatever
+        transcript is live when the answer comes; nothing waits for it, so a
+        switch or an exit is never held up.
+        """
+        if not (self.yolo_by_tui or self.mode_request_open):
+            return
+        self.yolo_by_tui = self.mode_request_open = False  # sent once; the session is being left
+        self._request(
+            "config.set",
+            {"key": "yolo", "session_id": sid, "value": YOLO_OFF},
+            lambda result: self._on_left_yolo_off(yolo_answer_problem(result, False)),
+            lambda error: self._on_left_yolo_off(f"{error.get('code')}: {as_text(error.get('message')) or 'refused'}"),
+        )
+
+    def _on_left_yolo_off(self, problem: str) -> bool:
+        if problem:
+            self.transcript.add_notice(LEFT_YOLO_NOTICE.format(problem), NOTICE_ERROR)
+        return True
 
     def _new_session(self, arg: str) -> None:
         """Create the new session first; the current one closes only once that worked."""
@@ -1909,15 +1944,16 @@ class App:
     def _enter_session(self, result: Mapping[str, Any], fallback_stored: str = "") -> int:
         """Leave the current session for the one `result` opened; how many of its requests were declined.
 
-        The old session's open requests are declined and its runtime closed;
-        everything that belonged to it (transcript, queue, sticky prompt,
-        attachments, HUD snapshot, subagents) is dropped before the new one
-        is adopted.
+        The old session's open requests are declined, yolo the TUI set there
+        is turned off, and its runtime closed; everything that belonged to it
+        (transcript, queue, sticky prompt, attachments, HUD snapshot,
+        subagents) is dropped before the new one is adopted.
         The caller says so in the new transcript, after its own notice.
         """
         old = self.sid
         declined = self._decline_all_requests()
         if old and old != as_text(result.get("session_id")):
+            self._turn_off_yolo_set_here(old)
             self._request("session.close", {"session_id": old}, lambda result: None, lambda error: True)
         self.transcript = Transcript(self.clock)
         self.queued.clear()

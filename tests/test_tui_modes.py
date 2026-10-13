@@ -33,7 +33,7 @@ from omh.tui import app as app_module
 from omh.tui import gateway_contract as contract
 from omh.tui.app import EFFORT_CYCLE, SLOT_ARM_SECONDS, App, queue_lines
 from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
-from omh.tui.gateway import Event, Response, ServerRequest
+from omh.tui.gateway import Event, GatewayUnavailable, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder
 from omh.tui.layout import slot_cap
 from omh.tui.pager import Pager
@@ -804,6 +804,80 @@ class ModeFollowsHermesTests(unittest.TestCase):
         self.assertEqual(notices(app), [])
         app._on_input(SHIFT_TAB)  # and the new session's key is not stuck behind the old call
         self.assertEqual(client.calls[-1], ("config.set", {"key": "yolo", "session_id": "live-2", "value": "on"}))
+
+
+class LeavingTurnsYoloOffTests(unittest.TestCase):
+    """Hermes keeps a messaging-gateway session's yolo through session.close, so the TUI turns off what it set."""
+
+    NEW = {"session_id": "live-2", "info": {}}
+
+    def methods(self, client: RecordingClient, start: int = 0) -> list[str]:
+        return [method for method, _params in client.calls[start:]]
+
+    def answer_call(self, app: App, client: RecordingClient, call: tuple[str, dict], **frame: object) -> None:
+        app._on_response(Response(client.calls.index(call) + 1, frame.get("result"), frame.get("error")))
+
+    def test_a_new_session_sends_off_for_the_old_one_before_closing_it(self) -> None:
+        app, client = in_accept()
+        app._new_session("")
+        answer(app, client, self.NEW)
+        self.assertEqual(client.calls[1:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+        self.answer_call(app, client, YOLO_OFF_CALL, result=YOLO_IS_OFF)
+        self.assertEqual(notices(app, NOTICE_ERROR), [])
+        self.assertEqual((app.sid, app.mode), ("live-2", MODE_NORMAL))
+
+    def test_a_switch_does_too_and_an_off_hermes_does_not_confirm_is_a_notice_in_the_new_transcript(self) -> None:
+        for frame in ({"error": {"code": 5001, "message": "boom"}}, {"result": YOLO_IS_ON}, {"result": {"value": "0"}}):
+            with self.subTest(frame=frame):
+                app, client = in_accept()
+                app._switch_session("stored-2")
+                answer(app, client, {**self.NEW, "stored_session_id": "stored-2", "messages": []})
+                self.assertEqual(self.methods(client, 1), ["config.set", "session.close"])
+                self.assertEqual(client.calls[1], YOLO_OFF_CALL)
+                self.answer_call(app, client, YOLO_OFF_CALL, **frame)
+                (notice,) = notices(app, NOTICE_ERROR)
+                self.assertIn("the session you left", notice)
+                self.assertEqual(app.sid, "live-2")  # the switch was never held up
+
+    def test_a_yolo_call_still_out_gets_an_off_after_it(self) -> None:
+        for on in (True, False):
+            with self.subTest(on=on):
+                app, client = in_accept() if not on else make_app()
+                app._on_input(SHIFT_TAB)  # on from normal, off from accept; no answer yet
+                app._enter_session(self.NEW)
+                self.assertEqual(client.calls[-2:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+
+    def test_nothing_is_sent_for_yolo_the_tui_did_not_set(self) -> None:
+        for hermes_own in (False, True):
+            with self.subTest(hermes_own=hermes_own):
+                app, client = make_app()
+                if hermes_own:
+                    session_info(app, yolo=True)  # approvals off for Hermes' own reasons
+                app._enter_session(self.NEW)
+                self.assertEqual(self.methods(client), ["session.close"])
+
+    def test_quit_sends_off_before_the_close_and_the_exit_does_not_send_it_again(self) -> None:
+        app, client = in_accept()
+        app._quit("")
+        app._shutdown()
+        self.assertEqual(client.calls, [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+
+    def test_any_other_exit_sends_off_for_the_open_session_and_waits_for_no_answer(self) -> None:
+        app, client = in_accept()
+        app.exit_code = 0  # Ctrl+D, Ctrl+C twice, SIGTERM: the loop ends without /quit
+        app._shutdown()
+        self.assertEqual(client.calls, [YOLO_OFF_CALL])
+
+    def test_an_exit_with_the_gateway_gone_still_ends(self) -> None:
+        app, client = in_accept()
+        app.exit_code = 1
+
+        def gone(method: str, params: dict) -> int:
+            raise GatewayUnavailable("the gateway stopped reading its input")
+
+        client.request = gone  # type: ignore[method-assign]
+        app._shutdown()
+        self.assertEqual(app.exit_code, 1)
 
 
 class PlanModeTests(unittest.TestCase):

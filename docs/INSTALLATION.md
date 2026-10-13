@@ -430,7 +430,9 @@ show the one that is on. Accept all turns off Hermes' approval prompts for that
 session only. The OMH TUI sets Hermes' per-session switch, the one Shift+Tab
 sets in Hermes' own terminal, and never `approvals.mode`; it shows the mode
 only once Hermes confirms the switch for this session, and switches it back off
-when you leave the mode. A new or resumed session starts from what Hermes
+when you leave the mode, and before it leaves the session (`/new`, a switch,
+`/quit`, any exit), since Hermes keeps it through closing a session a
+messaging gateway started. A new or resumed session starts from what Hermes
 reports for it, and when Hermes reports approvals off for its own reasons
 (`approvals.mode` is off, it was started with `--yolo`, or `/yolo` turned them
 off) the composer shows accept all as well. Those approvals are not the OMH

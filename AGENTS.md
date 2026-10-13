@@ -184,7 +184,10 @@ PR without the chat history.
   sends none. It does this only on the person's keypress, with a `config.set`
   that names the session and an explicit value and never a `scope`, so it
   never writes the global `approvals.mode` and never sets the switch for the
-  gateway process. The mode is shown on the composer (both rules and the mode
+  gateway process. Leaving a session it turned yolo on for (`/new`, a switch,
+  `/quit`, any exit), it first sends that session an explicit off, since
+  Hermes keeps yolo through `session.close` for a session a messaging gateway
+  started. The mode is shown on the composer (both rules and the mode
   row, or the status line on a short terminal) only once Hermes confirms it
   for that session; when turning it on, an answer that confirms anything else
   is a failure, followed by an explicit off; and `session.info` corrects
