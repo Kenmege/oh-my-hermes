@@ -1027,6 +1027,23 @@ class StatusLineTests(unittest.TestCase):
 
 
 
+class LeaveSessionDeclineTests(unittest.TestCase):
+    def test_every_request_of_the_session_being_left_is_declined_and_counted(self) -> None:
+        from types import SimpleNamespace
+
+        sent: list[tuple[str, dict]] = []
+        client = SimpleNamespace(respond=lambda request_id, frame: sent.append((request_id, frame)))
+        app = App(ScriptedTerminal(), client, {}, poller=FakePoller())  # type: ignore[arg-type]
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+        app._on_server_request(ServerRequest("srq-2", "vault.unlock_prompt", {}))  # never shown
+        app._on_server_request(ServerRequest("srq-3", "sudo", {"command": "apt install x"}))
+        self.assertEqual(app._decline_all_requests(), 3)
+        self.assertEqual(sorted(request_id for request_id, _ in sent), ["srq-1", "srq-2", "srq-3"])
+        self.assertIn(("srq-1", {"result": {"choice": "deny"}}), sent)
+        self.assertIsNone(app.slot)
+        self.assertFalse(app.waiting_requests)
+
+
 class SlotArmingTests(unittest.TestCase):
     """Every slot, not only an approval, ignores its keys and the composer's Enter while it arms."""
 

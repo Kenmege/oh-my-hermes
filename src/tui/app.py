@@ -854,13 +854,15 @@ class App:
     def _decline_all_requests(self) -> int:
         """Answer every open and waiting request with its decline frame (the session is going away); how many."""
         declined = 0
-        while self.slot is not None:
-            self._answer(self.slot.decline())
-            declined += 1
+        # The waiting ones first: closing the open slot would pull the next one in, and one the
+        # TUI cannot show would then be declined into the transcript being dropped, uncounted.
         while self.waiting_requests:
             request = self.waiting_requests.popleft()
             opened = open_request(request.id, request.method, request.params)
             self._respond(opened.answer if isinstance(opened, ImmediateAnswer) else opened.decline())
+            declined += 1
+        if self.slot is not None:
+            self._answer(self.slot.decline())
             declined += 1
         return declined
 
