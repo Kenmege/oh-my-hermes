@@ -7697,8 +7697,8 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Safety rules:
   - Show the pre-spend card and get the person's typed confirmation before any money moves, whether or not Hermes shows an approval prompt of its own; a host prompt is additional evidence, never a replacement, and a prompt that did not appear is no confirmation.
   - Never spend from a run nobody can answer -- a scheduled job, a webhook, an API-server or single-query run (`hermes chat -q` on Hermes), a background or kanban worker, or a delegated subagent; prepare the card and hand it to the person's next interactive turn.
-  - A script, scheduled job, or watcher that will pay later is a spend set up now: show the card for what it may spend, get the typed yes now, give it a cap it cannot pass, and never put card details in it.
-  - A payment command Hermes holds as `pending_approval` has not run; never run it again or reword it, because it runs once the person approves and a second copy charges twice.
+  - A payment set up to recur without the agent -- a subscription, a standing order, or a capped auto top-up on the payee's own surface, or a script with no agent in it -- is a spend set up now: show the card for what it may spend, get the typed yes now, give it a cap it cannot pass, and never put card details in it. An agent run on a schedule still never spends; it only prepares a card for the person's next turn.
+  - A payment command Hermes holds as `pending_approval` has not run and will not run on its own: never re-run or reword it; hand it to the person's turn and record the spend as not submitted.
   - Never retry a declined card fill or a `payment_declined` result; ask the person instead.
   - A quote is not a purchase and a confirmation is not a charge; call a spend done only on an observed receipt -- an order id, a transaction id, or a receipt header -- with the amount charged.
   - Treat an outcome nobody saw -- a timeout, a dropped connection, a page that reloaded -- as unknown, not failed; find the charge or show it absent before any retry, and a retry is a new spend with a new card.

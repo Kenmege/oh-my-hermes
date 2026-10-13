@@ -19,42 +19,47 @@ All notable changes will be documented here.
   as the typed yes. A run nobody can answer -- a scheduled job, a webhook, an
   API-server or single-query run, a background worker, or a delegated
   subagent -- never spends: it prepares the card for the person's next
-  interactive turn, and a script that will pay later gets its card and cap
-  now. A quote is not a purchase; only an observed order id, transaction id,
-  or receipt header completes a spend, an outcome nobody saw is `unknown` and
-  is reconciled before any retry, a payment Hermes holds for approval is
-  never issued twice, and a declined card is not retried. The cap ledger
+  interactive turn. A payment set up to recur without the agent (a
+  subscription, a standing order, a capped auto top-up, a script with no
+  agent in it) gets its card, typed yes and cap now. A quote is not a
+  purchase; only an observed order id, transaction id, or receipt header
+  completes a spend, an outcome nobody saw is `unknown` and is reconciled
+  before any retry, a payment Hermes holds for approval (it never runs on its
+  own) is never re-run or reworded and is recorded as not submitted, and a
+  declined card is not retried. The cap ledger
   keeps metadata only. Hermes' saved-card fill, `clarify`, and the optional
   `stripe-link-cli` and `mpp-agent` skills are used only when present;
   without the fill tool the person enters the card and the agent never types
   one into a page. OMH moves no money and holds no credential. The skill is
   guidance only: no hook holds a payment tool call.
 
-  The gate reads the request, not the topic. Only the sentence's first
-  words count, after filler such as "hey", "please", "go ahead and" or "can
-  you", read Unicode-aware so a sentence that opens in another script has no
-  English lead. They must be a spend addressed to the agent: "buy", "pay",
-  "order", "book", "top up", "renew", "place the order", "complete the
-  checkout", "use my card", and the like, whose object does not end in a
-  thing being built or filed ("complete the checkout flow", "pay with my
-  saved card toggle"). "send" and "transfer" also need money, an amount, or
-  the person's own card, wallet or account in the sentence; "did the payment
-  go through" counts only when the agent paid; and naming the gate as a
-  command ("use spend gate") counts. A purchase in a later clause does not:
-  "transcribe this call, then buy it for me" stays with transcription. Every
-  other sentence routes as before the skill existed, so "write a blog post on
-  how to pay with my saved card", "schedule a reminder to pay my rent" and
-  "the place the order button doesn't respond" keep their old route, and the
-  gate never takes a request another skill's guard holds. An admitted
-  sentence that is still about an app being built, procurement, a
-  comparison, a quoted phrase, or "the order of" things withdraws the skill
-  too. The route hint keeps only phrases that make the person the payer or
-  name the skill, matches them as whole words, and reads the same rule. The
-  bare words `spend`, `pay`, `checkout`, `wallet` and their siblings score
-  only inside a complete phrase, and `budget` is not one of the skill's words
-  at all. Budget variances, payment failure reports, browser logins,
-  spend-approval research, checkout test failures and issue triage, purchase
-  acceptance criteria and a saved-card settings toggle keep their owners.
+  Routing is deliberately conservative, because the gate's phrases are
+  everyday words that also name payment features, articles, tickets and
+  questions. The gate reads only the request: the sentence's first words,
+  after filler such as "hey", "please", "go ahead and" or "can you", read
+  Unicode-aware with hyphens kept, up to the first comma, colon, question
+  mark, "and", "or", "if", "when", "which" or "about". That clause must be a
+  spend addressed to the agent -- "buy", "pay", "order", "book", "top up",
+  "renew", "place the order", "complete the checkout", "use my card", and
+  the like -- whose object is not a thing being built or filed ("complete
+  the checkout flow", "pay again button", "my card toggle"). "send" and
+  "transfer" also need money, an amount, or the person's own card, wallet or
+  account; "did the payment go through" counts only when the agent paid; and
+  naming the gate as a command counts. A sentence ending in "?", a lead used
+  as a noun or idiom ("check out this article", "pay attention", "tip:",
+  "order 5512:", "order of events", "pay-per-request"), and a clause where a
+  verb such as "is", "returns" or "fails" follows the lead ("pay with my
+  saved card returns a 500 error") are not requests. The gate's phrases
+  count only inside that clause, there is no boost, and nothing stands down
+  another skill's guard: a spend dispatches only when its clause scores high
+  on the gate's own phrases, otherwise the gate leads a clarify, and every
+  other sentence routes as before the skill existed. The route hint and the awareness markers read the same
+  clause, as whole words. The bare words `spend`, `pay`, `checkout`, `wallet`
+  and their siblings score only inside a complete phrase, and `budget` is
+  not one of the skill's words at all. Budget variances, payment failure and
+  checkout failure reports, browser logins, spend-approval research, checkout
+  test failures and issue triage, purchase acceptance criteria and a
+  saved-card settings toggle keep their owners.
 
 - **A new `data-share-review` skill prepares a dataset, log, ticket export, or
   transcript excerpt to leave the team, and calls it redacted only after the

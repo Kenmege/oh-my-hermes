@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 import re
 
-from ..plugin_bundle.omh.spend_signals import spend_frame_withdraws, spend_request_admitted
+from ..plugin_bundle.omh.spend_signals import spend_frame_withdraws, spend_lead_clause
 from ..skills.catalog import SkillDefinition, builtin_definitions, routable_definitions
 from .domain_signals import (
     DomainOperatorOverride,
@@ -494,59 +494,6 @@ _INTERNAL_AUDIT_EXPLICIT_PHRASES = tuple(
     )
 )
 
-# `spend-gate` holds back every everyday token its phrases are built from.
-# Listed are the phrases that ask the agent to move money for the person, or
-# name the gate itself, and even these score only in a sentence the gate
-# admits (`spend_request_admitted`, through `_spend_gate_offers_itself`: a
-# clause that BEGINS with a spend lead addressed to the agent): "the place the
-# order button doesn't respond on safari" says a listed phrase and dispatched
-# here while the phrase alone counted. Not boosted at all: the cap and limit phrases (a government has a
-# spending cap, and an amount beside it still anchors), the 402 status
-# phrases (a developer adds HTTP 402 to their own API) and "retry the payment"
-# (a queue retries a payment job); those score as ordinary phrases. "from my wallet" also needs a word of money beside it
-# (`EVERYDAY_SENSE_PHRASES`): a photo falls from a wallet.
-_SPEND_GATE_EXPLICIT_PHRASES = tuple(
-    normalized_phrase(phrase)
-    for phrase in (
-        "spend-gate",
-        "spend gate",
-        "pre-spend",
-        "pre-spend card",
-        "spend request",
-        "spend approval",
-        "approve the spend",
-        "approve this purchase",
-        "approve the purchase",
-        "complete the purchase",
-        "complete the checkout",
-        "buy this for me",
-        "buy it for me",
-        "place the order",
-        "place an order",
-        "pay with my card",
-        "pay with my saved card",
-        "with my saved card",
-        "with my card",
-        "with my credit card",
-        "use my card",
-        "use my credit card",
-        "top up my",
-        "send money",
-        "pay again",
-        "click pay again",
-        "402 challenge",
-        "paid data endpoint",
-        "wallet transfer",
-        "from my wallet",
-        "money on my behalf",
-        "spend on my behalf",
-        "pay on my behalf",
-        "buy on my behalf",
-        "did the payment go through",
-        "did the charge go through",
-        "pay for the booking",
-    )
-)
 
 # `mobile-release` holds back every everyday token its phrases are built from.
 # Listed are the phrases that name releasing through a store. A bare "play
@@ -4412,15 +4359,24 @@ def _score_definition(
     ):
         self_name = ""
 
+    # `spend-gate` scores only on the request clause it admitted
+    # (`_spend_gate_offers_itself`) -- its phrases and its words alike:
+    # "check out this thread about agents that buy it for me automatically"
+    # says one of them as a topic, and words after the clause are not the
+    # request either.
+    trigger_text = normalized_query
+    if definition.name == "spend-gate":
+        trigger_text = spend_lead_clause(normalized_query)
+        query_tokens = routing_tokens(trigger_text)
     for trigger_phrase in prepared.plain_trigger_phrases:
         if trigger_phrase == self_name:
             continue
-        if _trigger_phrase_match(normalized_query, trigger_phrase):
+        if _trigger_phrase_match(trigger_text, trigger_phrase):
             score += 6
             matched.add(f"trigger:{trigger_phrase}")
 
     for trigger_phrase in prepared.command_trigger_phrases:
-        if _command_trigger_match(normalized_query, trigger_phrase):
+        if _command_trigger_match(trigger_text, trigger_phrase):
             score += 6
             matched.add(f"trigger:{trigger_phrase}")
 
@@ -4546,12 +4502,6 @@ def _score_definition(
     if definition.name == "internal-audit" and _internal_audit_explicit_match(normalized_query):
         score += 30
         matched.add("direct:internal_audit")
-    # `_spend_gate_offers_itself` already withdrew the gate from any sentence
-    # `spend_request_admitted` does not admit, so the boost needs no check of
-    # its own.
-    if definition.name == "spend-gate" and _spend_gate_explicit_match(normalized_query):
-        score += 30
-        matched.add("direct:spend_gate")
     if definition.name == "mobile-release" and _mobile_release_explicit_match(normalized_query):
         score += 30
         matched.add("direct:mobile_release")
@@ -5435,10 +5385,6 @@ def _internal_audit_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _INTERNAL_AUDIT_EXPLICIT_PHRASES)
 
 
-def _spend_gate_explicit_match(normalized_query: str) -> bool:
-    return any(_trigger_phrase_match(normalized_query, phrase) for phrase in _SPEND_GATE_EXPLICIT_PHRASES)
-
-
 def _mobile_release_explicit_match(normalized_query: str) -> bool:
     return any(_explicit_phrase_match(normalized_query, phrase) for phrase in _MOBILE_RELEASE_EXPLICIT_PHRASES)
 
@@ -5828,21 +5774,22 @@ def _spend_gate_trigger_phrases() -> tuple[str, ...]:
 
 
 def _spend_gate_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
-    """Offer the gate only on one of its own phrases, in a sentence that asks the agent to spend.
+    """Offer the gate only when the request clause asks the agent to spend and says one of its phrases.
 
-    Without a phrase the skill's description words alone ("the government will
-    spend up to 5 billion dollars on roads" shares `spend`) turned a direct
-    answer into a clarify. Without admission a phrase that is only the topic
-    ("write a blog post on how to pay with my saved card", "schedule a
-    reminder to pay my rent") reached the gate. The admission rule and the
-    frames live in the bundle's `spend_signals`, which the awareness route
-    hint reads too, so every other sentence routes exactly as before this
-    skill existed.
+    Routing is deliberately conservative. The gate competes only in ordinary
+    scoring, through phrases held to whole-phrase matches, and only when
+    `spend_lead_clause` (the bundle's `spend_signals`, which the awareness
+    route hint reads too) admits the sentence's request clause and one of the
+    gate's own phrases is inside that clause. Every other sentence -- a
+    phrase used as a topic, a feature's name, a question, a later clause --
+    routes exactly as before this skill existed, and nothing here stands down
+    another skill's guard.
     """
     del query_tokens
-    if not any(phrase_is_spoken(normalized_query, phrase) for phrase in _spend_gate_trigger_phrases()):
+    clause = spend_lead_clause(normalized_query)
+    if not clause or spend_frame_withdraws(normalized_query):
         return False
-    return spend_request_admitted(normalized_query) and not spend_frame_withdraws(normalized_query)
+    return any(phrase_is_spoken(clause, phrase) for phrase in _spend_gate_trigger_phrases())
 
 
 # Skills that withdraw from the shortlist unless their own precondition holds,

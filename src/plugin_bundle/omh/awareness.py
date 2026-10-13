@@ -21,7 +21,7 @@ from .hermes_session_commands import (
 )
 from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
-from .spend_signals import spend_frame_withdraws, spend_request_admitted
+from .spend_signals import spend_frame_withdraws, spend_lead_clause
 from .reference_regions import executable_routing_text
 from .degradation import (
     COMPONENT_LOCALIZED_ROUTING_TEXT,
@@ -1603,15 +1603,6 @@ _AWARENESS_MESSAGE_MARKERS = (
     "de-identify",
     "quasi-identifier",
     "residual pii",
-    # Spending the person's money: only the skill's own names and phrases that
-    # make the person the payer arm awareness. "spend", "pay", "checkout" and
-    # "wallet" alone are everyday words, and a substring such as "spending cap"
-    # is also inside "consumer spending capacity is falling".
-    "spend-gate",
-    "pre-spend",
-    "money on my behalf",
-    "pay with my card",
-    "buy it for me",
     "tech-debt-audit",
     "tech debt",
     "debt ledger",
@@ -4141,9 +4132,9 @@ _ROUTE_HINT_RULES = (
             "receipt observed",
         ),
         # Only the skill's own names and phrases that make the person the
-        # payer, matched as whole words (`_WHOLE_WORD_ROUTE_HINT_RULES`), and
-        # only in a sentence the router admits too (`spend_request_admitted`
-        # and `spend_frame_withdraws`, in `_rule_suppressed_by_context`). The other trigger phrases are absent:
+        # payer, matched as whole words inside the request clause the router
+        # admits too (`_route_hint_phrase_matches`, `spend_lead_clause`), and
+        # withdrawn by the same frames (`_rule_suppressed_by_context`). The other trigger phrases are absent:
         # this table has no anchor, and "complete the checkout", "wallet
         # transfer", "did the payment go through", "spending cap" and "http 402"
         # also name a checkout screen, a question about wallets, a customer's
@@ -6020,8 +6011,10 @@ def _awareness_context_matches_message_cached(message: str) -> tuple[bool, str]:
     localized_text = unicodedata.normalize("NFKC", _localized_routing_text(message, degraded)).casefold()
     text = f"{raw_text} {localized_text}"
     tokens = set(re.findall(r"[a-z0-9][a-z0-9_-]*", text))
-    result = bool(tokens & _AWARENESS_TOKEN_MARKERS) or any(
-        marker in text for marker in _AWARENESS_MESSAGE_MARKERS
+    result = (
+        bool(tokens & _AWARENESS_TOKEN_MARKERS)
+        or any(marker in text for marker in _AWARENESS_MESSAGE_MARKERS)
+        or _spend_awareness_marked(raw_text)
     )
     # `degraded[0][1]` is lossless here because the `_localized_routing_text`
     # call above is the sole guarded call in this function body, so the
@@ -6029,6 +6022,18 @@ def _awareness_context_matches_message_cached(message: str) -> tuple[bool, str]:
     # here, widen this accessor (and `awareness_context_match_degradation`) to
     # carry the whole list instead of the first error type.
     return (result, degraded[0][1] if degraded else "")
+
+
+# Spending the person's money arms awareness only through the request clause
+# the router admits (`spend_lead_clause`), as whole words: "consumer spending
+# capacity is falling" and "check out this thread about agents that buy it for
+# me" are not spends.
+_SPEND_AWARENESS_MARKERS = ("spend-gate", "spend gate", "money on my behalf", "pay with my card", "buy it for me")
+
+
+def _spend_awareness_marked(text: str) -> bool:
+    clause = spend_lead_clause(text)
+    return bool(clause) and _contains_boundary_phrase(clause, _SPEND_AWARENESS_MARKERS)
 
 
 def awareness_route_hint(message: str, *, max_hints: int = 2) -> dict[str, object]:
@@ -6227,12 +6232,7 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
                 continue
             if rule["id"] == "build_failure_triage" and fixed_or_pass_verification_context:
                 continue
-            if rule["id"] in _WHOLE_WORD_ROUTE_HINT_RULES:
-                phrase_matches = [
-                    phrase for phrase in rule["phrases"] if _contains_boundary_phrase(routing_normalized, (phrase,))
-                ]
-            else:
-                phrase_matches = [phrase for phrase in rule["phrases"] if phrase in routing_normalized]
+            phrase_matches = _route_hint_phrase_matches(rule, routing_normalized)
             token_matches = [token for token in rule["tokens"] if token in tokens]
             if rule["id"] == "jit_learn" and jit_learn_match and not phrase_matches and not token_matches:
                 phrase_matches = ["guard:jit_learn"]
@@ -6469,10 +6469,20 @@ def _route_hint_rule_matches(
     for rule in _ROUTE_HINT_RULES:
         if rule.get("id") != rule_id:
             continue
-        return any(phrase in routing_normalized for phrase in rule["phrases"]) or any(
+        return bool(_route_hint_phrase_matches(rule, routing_normalized)) or any(
             token in tokens for token in rule["tokens"]
         )
     return False
+
+
+def _route_hint_phrase_matches(rule: dict[str, object], routing_normalized: str) -> list[str]:
+    phrases = [str(phrase) for phrase in rule["phrases"]]
+    if rule["id"] not in _WHOLE_WORD_ROUTE_HINT_RULES:
+        return [phrase for phrase in phrases if phrase in routing_normalized]
+    # `spend_gate`: whole words, and only inside the request clause the router
+    # admits too (`spend_lead_clause`); a phrase used as a topic is not a hint.
+    clause = spend_lead_clause(routing_normalized)
+    return [phrase for phrase in phrases if clause and _contains_boundary_phrase(clause, (phrase,))]
 
 
 def _route_hint_rule_by_id(rule_id: str) -> dict[str, object] | None:
@@ -8305,7 +8315,9 @@ def _rule_suppressed_by_context(rule: dict[str, object], text: str) -> bool:
     if rule_id == "data_share_review":
         return not data_share_request_admitted(text)
     if rule_id == "spend_gate":
-        return not spend_request_admitted(text) or spend_frame_withdraws(text)
+        # The phrases are read inside `spend_lead_clause` already
+        # (`_route_hint_phrase_matches`); this adds the router's frames.
+        return spend_frame_withdraws(text)
     visual_markers = (
         "image card",
         "summary card",

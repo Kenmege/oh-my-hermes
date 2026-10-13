@@ -6,9 +6,9 @@ from _local_package import load_local_package
 
 load_local_package()
 
-from omh.plugin_bundle.omh.awareness import awareness_route_hint
+from omh.plugin_bundle.omh.awareness import _route_hint_rule_matches, _spend_awareness_marked, awareness_route_hint
 from omh.plugin_bundle.omh.native_tools import native_tool_presence_clause
-from omh.plugin_bundle.omh.spend_signals import spend_frame_withdraws, spend_request_admitted
+from omh.plugin_bundle.omh.spend_signals import spend_frame_withdraws, spend_lead_clause, spend_request_admitted
 from omh.quality.routing_precision import ROUTING_PRECISION_CASES
 from omh.routing.localization import normalized_phrase
 from omh.routing.policy import everyday_sense_phrase_unanchored
@@ -152,17 +152,24 @@ class SpendGateContractTests(unittest.TestCase):
         )
         self.assertTrue(_definition(SKILL).opening_steps[0].startswith("Check that a person can answer in this session"))
 
-    def test_a_spend_set_up_for_later_is_gated_now(self) -> None:
+    def test_a_payment_that_recurs_without_the_agent_is_gated_now(self) -> None:
         self.assertInBoth(
-            "A script, scheduled job, or watcher that will pay later is a spend set up now: show the card for what it "
-            "may spend, get the typed yes now, give it a cap it cannot pass, and never put card details in it.",
+            "A payment set up to recur without the agent -- a subscription, a standing order, or a capped auto top-up "
+            "on the payee's own surface, or a script with no agent in it -- is a spend set up now: show the card for "
+            "what it may spend, get the typed yes now, give it a cap it cannot pass, and never put card details in it.",
+            _bodies(),
+        )
+
+    def test_an_agent_run_on_a_schedule_still_never_spends(self) -> None:
+        self.assertInBoth(
+            "An agent run on a schedule still never spends; it only prepares a card for the person's next turn.",
             _bodies(),
         )
 
     def test_a_held_payment_command_is_never_run_again(self) -> None:
         self.assertInBoth(
-            "A payment command Hermes holds as `pending_approval` has not run; never run it again or reword it, "
-            "because it runs once the person approves and a second copy charges twice.",
+            "A payment command Hermes holds as `pending_approval` has not run and will not run on its own: never "
+            "re-run or reword it; hand it to the person's turn and record the spend as not submitted.",
             _bodies(),
         )
         self.assertInBoth("Never retry a declined card fill or a `payment_declined` result; ask the person instead.", _bodies())
@@ -223,7 +230,7 @@ class SpendGateContractTests(unittest.TestCase):
                     self.assertNotIn("0.21", text)
 
     def test_the_chat_card_waits_for_the_typed_yes_and_keeps_no_card(self) -> None:
-        body = build_chat_interaction_payload("book the hotel for friday and pay with my card", source="discord")[
+        body = build_chat_interaction_payload("pay for the hotel booking with my card", source="discord")[
             "chat_response"
         ]["body"]
         self.assertIn("and wait for your typed yes.", body)
@@ -263,17 +270,29 @@ class SpendGateContractTests(unittest.TestCase):
 
 
 class SpendGateRoutingTests(unittest.TestCase):
-    def test_spends_of_the_persons_own_money_dispatch_here(self) -> None:
-        for message in INTERVENTIONS:
+    def test_spends_that_score_high_on_the_gates_phrases_dispatch_here(self) -> None:
+        for message in DISPATCHES:
             with self.subTest(message=message):
                 route = _route(message)
                 self.assertEqual(route["action"], "dispatch")
                 self.assertEqual(route["selected_skill"], SKILL)
 
-    def test_the_same_phrases_elsewhere_never_dispatch_here(self) -> None:
+    def test_other_spends_ask_with_the_gate_leading(self) -> None:
+        # Deliberately conservative: there is no boost, so a clause that scores
+        # below high on the gate's phrases leads a clarify rather than
+        # dispatching.
+        for message in LEADS:
+            with self.subTest(message=message):
+                route = _route(message)
+                self.assertEqual(route["action"], "clarify")
+                self.assertEqual(route["candidate_skill"], SKILL)
+
+    def test_the_same_phrases_elsewhere_never_dispatch_or_lead_here(self) -> None:
         for message in NOT_SPENDING:
             with self.subTest(message=message):
-                self.assertNotEqual(_route(message).get("selected_skill"), SKILL)
+                route = _route(message)
+                self.assertNotEqual(route.get("selected_skill"), SKILL)
+                self.assertNotEqual(route.get("candidate_skill"), SKILL)
 
     def test_siblings_keep_their_owners(self) -> None:
         for message, owner in OWNERS:
@@ -300,6 +319,20 @@ class SpendGateRoutingTests(unittest.TestCase):
             ("complete the checkout flow for my card payments", False),
             ("pay with my saved card toggle is broken", False),
             ("place the order of the slides so the demo comes first", False),
+            ("Check out this article on why you should never pay with my card abroad", False),
+            ("Pay attention when someone says buy it for me in chat", False),
+            ("Tip: always pay with my card abroad", False),
+            ("Order 5512: did the payment go through? the customer is asking", False),
+            ("Order of events when you pay with my card: auth, capture, settle", False),
+            ("Pay with my card or PayPal, which is safer?", False),
+            ("Pay-per-request APIs are cheaper for low traffic", False),
+            ("Buy-side analysts use my credit card data in their models", False),
+            ("Pay stubs with my card number on them are a privacy risk", False),
+            ("Pay with my saved card returns a 500 error", False),
+            ("Buy it for me is the copy marketing wants on the CTA", False),
+            ("Checkout with my saved card fails on staging", False),
+            ("Buy it for me buttons convert better than add to cart", False),
+            ("Pay the invoice with my card toggle", False),
             ("write a blog post on how to pay with my saved card", False),
             ("triage the issues about the checkout flow for my card payments", False),
             ("send a slack message saying I paid the vendor", False),
@@ -310,9 +343,33 @@ class SpendGateRoutingTests(unittest.TestCase):
             ("the place the order button doesn't respond on safari", False),
             ("my mom asked did the payment go through", False),
             ("did the payment go through is the most common support question we get", False),
+            ("did the payment go through for my mom's order", False),
         ):
             with self.subTest(message=message):
                 self.assertIs(spend_request_admitted(normalized_phrase(message)), admitted)
+
+    def test_the_gates_phrases_count_only_inside_the_request_clause(self) -> None:
+        self.assertEqual(spend_lead_clause("book the hotel for friday and pay with my card"), "book the hotel for friday")
+        self.assertEqual(spend_lead_clause("pay on my behalf for the hotel, but show me the total"), "pay on my behalf for the hotel")
+        self.assertEqual(spend_lead_clause("Book the meeting with finance about money on my behalf"), "book the meeting with finance")
+        for message in (
+            "Book the meeting with finance about money on my behalf",
+            "Subscribe to the newsletter about money on my behalf",
+            "book the hotel for friday and pay with my card",
+            "renew the tls certificate when the money on my behalf policy allows",
+            "renew the domain registration about money on my behalf",
+        ):
+            with self.subTest(message=message):
+                route = _route(message)
+                self.assertNotEqual(route.get("selected_skill"), SKILL)
+                self.assertNotEqual(route.get("candidate_skill"), SKILL)
+
+    def test_a_direct_answer_stays_a_direct_answer(self) -> None:
+        # The skill's description words alone must not turn a direct answer
+        # into a clarify.
+        for message in ("congress raised the spending cap by 500 billion dollars", "what's my budget for lunch"):
+            with self.subTest(message=message):
+                self.assertEqual(_route(message)["action"], "fallback")
 
     def test_an_admitted_sentence_without_a_spend_phrase_routes_as_before(self) -> None:
         # "renew" admits the sentence, but no phrase of the gate is in it, so
@@ -376,6 +433,21 @@ class SpendGateRouteHintTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertNotIn(SKILL, _hinted_workflows(message))
 
+    def test_the_rule_helper_reads_whole_words_inside_the_clause(self) -> None:
+        self.assertTrue(_route_hint_rule_matches("spend_gate", "buy it for me", set()))
+        self.assertFalse(_route_hint_rule_matches("spend_gate", "order the pre-spending review notes by date", set()))
+        self.assertFalse(_route_hint_rule_matches("spend_gate", "check out this thread about agents that buy it for me", set()))
+
+    def test_spend_markers_arm_awareness_only_inside_an_admitted_clause(self) -> None:
+        self.assertTrue(_spend_awareness_marked("buy it for me"))
+        for message in (
+            "consumer spending capacity is falling",
+            "check out this thread about agents that buy it for me automatically",
+            "write a blog post on why agents should not spend money on my behalf",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(_spend_awareness_marked(message))
+
     def test_a_spend_of_the_persons_own_money_gets_the_hint(self) -> None:
         for message in (
             "buy it for me",
@@ -388,16 +460,19 @@ class SpendGateRouteHintTests(unittest.TestCase):
                 self.assertEqual(awareness_route_hint(message)["selected_workflow"], SKILL)
 
 
-INTERVENTIONS = (
+DISPATCHES = (
     "go ahead and pay the http 402 payment required the api returned",
     "pay the 402 challenge on this paid data endpoint",
-    "buy this monitor for me on amazon with my saved card",
-    "book the hotel for friday and pay with my card",
-    "buy what you need for the trip with my card, up to $200",
-    "did the payment go through after you clicked pay? the checkout page timed out",
-    "transfer 40 dollars from my wallet to the vendor",
+    "pay for the hotel booking with my card",
+    "transfer 40 dollars from my wallet to my landlord",
     "pay on my behalf for the hotel, but show me the total and fees first",
-    "place the order for the replacement keyboard and pay for it",
+    "pay with my saved card on amazon",
+    "approve the purchase of the dataset from the paid data endpoint",
+    "pay the invoice from acme with my card",
+)
+LEADS = (
+    "buy the trip supplies with my card, up to $200",
+    "did the payment go through after you clicked pay? it timed out",
     "go ahead and buy it for me if the total stays under 50 dollars",
     "renew my netflix subscription with my card",
     "use my credit card to buy the concert tickets",
@@ -405,6 +480,10 @@ INTERVENTIONS = (
     "send money to my friend on venmo",
     "buy it for me if it is under $20, check the pricing first",
     "use spend gate before you buy anything",
+    # Words after the request clause do not score: each of these dispatched
+    # while they did.
+    "use my credit card to buy the concert tickets, and the note about pay with my saved card can wait",
+    "renew my netflix subscription with my card, the pay with my saved card setting stays",
 )
 # Each is a sense of the gate's words that moves no money for the person:
 # everyday money talk, a branch checkout, payment software being built or
@@ -450,6 +529,35 @@ NOT_SPENDING = (
     "슬랙에 메시지 보내줘: pay with my card for the vendor invoice",
     "complete the checkout flow for my card payments",
     "pay with my saved card toggle is broken",
+    "did the payment go through for my mom's order",
+    "Check out this article on why you should never pay with my card abroad",
+    "Check out this thread about agents that buy it for me automatically",
+    "Pay attention when someone says buy it for me in chat",
+    "Tip: always pay with my card abroad",
+    "Order 5512: did the payment go through? the customer is asking",
+    "Order of events when you pay with my card: auth, capture, settle",
+    "Pay with my card or PayPal, which is safer?",
+    "Pay with my saved card, is it safe on public wifi?",
+    "Pay-per-request APIs are cheaper for low traffic",
+    "Pay per request pricing is what we chose for the api",
+    "Buy-side analysts use my credit card data in their models",
+    "Send the team a note about the money on my behalf policy",
+    "Use my credit card as the default in the seed data",
+    "Pay stubs with my card number on them are a privacy risk",
+    "Pay with my saved card returns a 500 error",
+    "Pay with my card is greyed out on the checkout page",
+    "Buy it for me doesn't work on safari",
+    "Buy it for me is the copy marketing wants on the CTA",
+    "Pay on my behalf permissions need a design review",
+    "Send money feature needs rate limiting",
+    "Pay again button shows twice after a timeout",
+    "Purchase with my card is disabled for minors by policy",
+    "Check out the new pay with my card flow",
+    "Pay the invoice with my card toggle",
+    "Checkout times out for users who pick pay with my saved card",
+    "Click pay again only if the first charge is shown absent, that's our rule",
+    "Use my credit card number 4242 in the checkout test",
+    "Buy it for me buttons convert better than add to cart",
 )
 OWNERS = (
     ("open the staging checkout url, click login and fill the form", "browser-operator"),
@@ -461,6 +569,8 @@ OWNERS = (
     ("write acceptance criteria for complete the purchase", "ralplan"),
     ("add a pay with my saved card toggle to settings", "ultrawork"),
     ("triage the issues about the checkout flow for my card payments", "feedback-triage"),
+    ("Checkout with my saved card fails on staging", "feedback-triage"),
+    ("Checkout with my card breaks when the cart has 0 items", "feedback-triage"),
 )
 
 

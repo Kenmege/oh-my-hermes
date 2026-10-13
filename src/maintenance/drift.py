@@ -568,8 +568,15 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # sentence's first verb counts, and its object must not end in a
             # thing being built: a purchase in a second clause after a
             # transcription, a checkout flow for card payments, and a broken
-            # saved-card toggle (3).
-            expected=664,
+            # saved-card toggle (3). Its second review adds thirty-one that
+            # dispatched or got the hint while the first word alone was read:
+            # a lead used as a noun or idiom ("check out this article", "pay
+            # attention", "tip:", "order 5512:", "order of events", "pay
+            # stubs", "pay-per-request", "buy-side"), a phrase after the request
+            # clause, a question, a statement about a feature ("pay with my
+            # saved card returns a 500 error"), a UI label ("buy it for me
+            # buttons", "my card toggle"), and test or seed data (31).
+            expected=695,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -760,24 +767,27 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # and adds six requests other skills hold, three of them opening in
             # Hangul (+6, -3).
             # The spend-gate lane adds ten: seven spends that dispatch the
-            # pre-spend card without naming it (an HTTP 402 to pay, a booking
-            # paid by card, a card purchase under a stated cap, a timed-out
-            # payment the agent made, a wallet transfer, a payment on the
-            # person's behalf, a purchase under a stated total), and three
-            # that keep their owners: a
-            # checkout URL login on browser-operator, payment failure reports
-            # on feedback-triage, and budget vs actual for marketing spend on
+            # pre-spend card, or ask with it leading, without naming it (an
+            # HTTP 402 to pay, a booking paid by card, a card purchase under a
+            # stated cap, a timed-out payment the agent made, a wallet
+            # transfer, a payment on the person's behalf, a purchase under a
+            # stated total), and three that keep their owners: a checkout URL
+            # login on browser-operator, payment failure reports on
+            # feedback-triage, and budget vs actual for marketing spend on
             # finance-analysis (10).
-            # Its review adds nine: five spends anchored on the person's own
-            # money (a renewal with their card, tickets on their credit card, a
-            # top-up with an amount, money to a friend, a buy under a stated
-            # limit after a pricing check), and four that keep their owners
+            # Its review adds nine: five spends of the person's own money that
+            # ask with the pre-spend card leading (a renewal with their card,
+            # tickets on their credit card, a top-up with an amount, money to a
+            # friend, a buy under a stated limit with a pricing check), and
+            # four that keep their owners
             # (spend-approval best practices on web-research, a checkout Cypress
             # spec on feedback-triage, purchase acceptance criteria on ralplan,
             # a saved-card settings toggle on ultrawork) (9). Lead-anchored
             # admission adds one owner: triaging issues about card payments in
-            # a checkout stays on feedback-triage (1).
-            expected=772,
+            # a checkout stays on feedback-triage (1). Its second review adds
+            # two more checkout failure reports that stay on feedback-triage,
+            # where the noun "checkout" was read as the verb (2).
+            expected=774,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
