@@ -26,38 +26,47 @@ All notable changes will be documented here.
   removed is still absent; a row's unchanged files are not counted. Only the
   directory OMH renders for the skill counts: a same-name copy of a managed
   skill elsewhere in the skills directory is never kept, carried, or cleared
-  as a Hermes edit, and an edit in a directory an earlier release rendered
-  the skill into, after a release moved it, is reported as `left_behind`:
-  not carried, and left exactly where it is by every pruner, with or without
-  `--force`. A kept skill is carried into a new generation on a staged
-  update (when the install's skill profile carries it) and listed with the
-  ledger's actor, action, and time. `--force` clears the render directory of
-  every skill it renders again that holds a Hermes write, never through a
-  category directory that links out of the skills directory, and the summary
-  says whether the ledger still holds a copy of the replaced files and names
-  any file it removed that OMH does not render and the ledger has no copy of.
-  Pruning now follows provenance. An install marks every manifest record
-  whose SKILL.md it wrote with the hash it wrote (`rendered_sha256`) and flags
-  the manifest (`render_marks`). Under a flagged manifest, the orphan pruner
-  and the flat-layout pruner remove a marked directory only when its SKILL.md
-  still has that hash and it holds no Hermes edit (no kept evidence on its
-  record, no ledger write still on disk); every other file in that directory
-  goes with it, and the summary now names every directory removed. An
-  unmarked record (`not_rendered_by_omh`) is never removed, with or without
+  as a Hermes edit, and an edit in a directory an earlier release rendered the
+  skill into, after a release moved it, is reported as `left_behind`: not
+  carried, and, while the catalog ships the skill, left exactly where it is by
+  every pruner, with or without `--force`; the summary says to delete that
+  directory by hand once it is no longer needed. A kept skill is carried into
+  a new generation on a staged update (when the install's skill profile
+  carries it) and listed with the ledger's actor, action, and time. `--force`
+  clears the render directory of every skill it renders again that holds a
+  Hermes write, never through a category directory that links out of the
+  skills directory, and the summary says whether the ledger still holds a copy
+  of the replaced files and names any file it removed that OMH does not render
+  and the ledger has no copy of. Pruning now follows provenance. An install
+  marks every manifest record whose SKILL.md it wrote with the hash it wrote
+  (`rendered_sha256`) and flags the manifest (`render_marks`). Under a flagged
+  manifest, the orphan pruner and the flat-layout pruner remove a marked
+  directory only when its SKILL.md still has that hash, its record carries no
+  kept Hermes-edit evidence, and Hermes' ledger records no write under it (a
+  recorded write counts whether or not it is still on disk, since a removal is
+  final); every other file in that directory goes with it (for a directory
+  that is also a category, only its own SKILL.md and `references/`), and the
+  summary names each directory removed by its path
+  (`removed_skill_directories` in the result) and says only what was checked.
+  An unmarked record (`not_rendered_by_omh`) is never removed, with or without
   `--force`: your own skill in a category directory or beside a managed one
-  stays. A marked directory that changed (`changed_since_rendered`) is left
-  by a plain install and removed by `--force`, which lists it under
-  `force_pruned_skills` with the files the ledger still holds a copy of and
-  the files that are gone for good. Every directory left in place is listed
-  under `prune_skipped_skills` on every install, and the manifest stays
-  byte-identical across installs over an unchanged disk; the summary names a
-  `not_rendered_by_omh` directory once, on the install that first records
-  it, and the other reasons each time. The first install over a manifest
-  written before marks existed still applies the earlier rule once: it
-  removes an unchanged directory at an OMH position inside the skills
+  stays. A marked directory that changed (`changed_since_rendered`) is left by
+  a plain install in the skills directory it writes (a staged update starts
+  its new generation without it, as it does without any other local change
+  that is not a kept Hermes edit) and removed by `--force`, except under
+  `OMH_SECURITY=strict`, where `--force` overrides no local change; `--force`
+  lists it under `force_pruned_skills` with the files the ledger still holds a
+  copy of and the files that are gone for good. Every directory left in place
+  is listed under `prune_skipped_skills` on every install, and the manifest
+  stays byte-identical across installs over an unchanged disk; the summary
+  names a `not_rendered_by_omh` directory once, on the install that first
+  records it, and the other reasons each time. The first install over a
+  manifest written before marks existed still applies the earlier rule once:
+  it removes an unchanged directory at an OMH position inside the skills
   directory -- including one of your own, as earlier releases did -- and
-  `--force` also removes a changed one; the summary now names what it
-  removed, and the manifest it writes carries marks. Whichever rule applies,
+  `--force` also removes a changed one; the summary names each directory it
+  removed by its path and says OMH cannot tell whether it rendered it, and the
+  manifest it writes carries marks. Whichever rule applies,
   a pruner never follows a recorded path out of the skills directory or a
   link that leads out, never removes a category directory or any directory
   holding other skills (a stray `guide/SKILL.md` used to take the whole

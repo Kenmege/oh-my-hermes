@@ -345,33 +345,44 @@ model at a separately named skill or the workflow-learning lane instead, and
 
 Each install marks the manifest record of every `SKILL.md` it wrote with the
 hash it wrote, and flags the manifest as carrying such marks. Under a flagged
-manifest, OMH removes a skill directory (a skill the catalog no longer ships,
-or a leftover top-level copy from the pre-category layout) only when it
-rendered that directory, the `SKILL.md` it rendered there is unchanged, and no
-Hermes write is recorded under it; every other file in that directory is
-removed with it, and the summary names every directory removed. A directory
-whose record has no mark is one an install merely found,
-such as your own skill in a category directory or a renamed copy beside a
-managed skill: it is never removed, with or without `--force`, and is listed
-under `prune_skipped_skills` as `not_rendered_by_omh` on every install; the
-summary names it once, on the install that first records it. A marked
-directory whose `SKILL.md` was edited after OMH wrote it, or that holds a Hermes
-edit (kept evidence on its record, or a ledger write still on disk), is listed
-as `changed_since_rendered` and left by a plain install; `--force` removes it
-and lists it under `force_pruned_skills`, with the files Hermes' ledger still
-holds a copy of and the files that are gone for good. A manifest written
-before marks existed is handled once more by the earlier rule, which does not
-know what OMH rendered or look for Hermes writes: an unchanged record at the
-top level or in a category directory, inside the skills directory, is
+manifest, OMH removes a skill directory (one recorded for a skill the catalog
+does not ship, or a top-level directory named for a catalog skill that now
+renders in its category directory) only when it rendered that directory, the
+`SKILL.md` it rendered there is unchanged, and no Hermes write is recorded
+under it; every other file in that directory is removed with it (for a
+directory that is also a category, only its own `SKILL.md` and `references/`
+go). The summary names each directory removed by its path and says what was
+checked, and nothing more; the `--json` result lists each one under
+`removed_skill_directories` with the rule that removed it. A directory whose
+record has no mark is one an
+install merely found, such as your own skill in a category directory or a
+renamed copy beside a managed skill: it is never removed, with or without
+`--force`, and is listed under `prune_skipped_skills` as `not_rendered_by_omh`
+on every install; the summary names it once, on the install that first
+records it. A marked directory whose `SKILL.md` was edited after OMH wrote it,
+whose record carries kept Hermes-edit evidence, or under which Hermes' ledger
+records any write -- still on disk or not, since a removal is final -- is
+listed as `changed_since_rendered` and left by a plain install in the skills
+directory it writes; a staged `omh update` starts its new generation without
+that directory, as it does without any other local change that is not a kept
+Hermes edit, and the directory stays in the previous generation. `--force`
+removes it, except under `OMH_SECURITY=strict`, where `--force` overrides no
+local change, and lists it under `force_pruned_skills`, with the files Hermes'
+ledger still holds a copy of and the files that are gone for good. A manifest
+written before marks existed is handled once more by the earlier rule, which
+does not know what OMH rendered or look for Hermes writes: an unchanged record
+at the top level or in a category directory, inside the skills directory, is
 removed, including a directory of your own there, and `--force` also removes a
-changed one. The summary names what it removed, and the manifest that install
-writes carries marks from then on.
+changed one. The summary names each directory that install removed by its
+path and says that OMH cannot tell whether it rendered it, and the manifest
+that install writes carries marks from then on.
 Under either rule a directory is never removed when it resolves outside the
 skills directory, when it is a category directory or holds other skills, or
 when it is, under another spelling, a directory OMH renders a skill into (a
 render directory renamed to another letter case on a case-insensitive
-filesystem). An edit reported as left behind is likewise never removed, with
-or without `--force`.
+filesystem). An edit reported as left behind is likewise never removed while
+the catalog ships its skill, with or without `--force`: it stays until you
+delete its directory yourself, which the summary says each time it names it.
 
 Plugin reinstalls protect local additions as well as edits to managed files.
 If `$HERMES_HOME/plugins/omh/` contains entries absent from its installed OMH

@@ -16,6 +16,7 @@ from .curator_ledger import (
     newest_write_to,
     read_ledger_writes,
     write_still_on_disk,
+    writes_in_skill_dir,
     writes_under,
 )
 from .plugin_pack import host_managed_plugin
@@ -720,11 +721,13 @@ def install_skill_pack(
         else None
     )
     catalog_names = {template.name for template in all_templates}
-    pruned_skills, prune_skipped, force_pruned = _prune_orphaned_skills(
+    # `overwrite_allowed`, not `force`: under OMH_SECURITY=strict `--force`
+    # no longer overrides a local change, and a changed retired skill is one.
+    orphans_removed, prune_skipped, force_pruned = _prune_orphaned_skills(
         paths.skills_dir,
         prune_manifest,
         catalog_names,
-        force=force,
+        force=overwrite_allowed,
         hermes_home=paths.hermes_home,
         writes=ledger_writes,
     )
@@ -732,10 +735,11 @@ def install_skill_pack(
         paths.skills_dir,
         prune_manifest,
         catalog_names,
-        force=force,
+        force=overwrite_allowed,
         hermes_home=paths.hermes_home,
         writes=ledger_writes,
     )
+    removed_directories = orphans_removed + flat_layout["removed"]
     prune_skipped = prune_skipped + flat_layout["skipped"]
     force_pruned = force_pruned + flat_layout["forced"]
     _remove_empty_category_directories(paths.skills_dir)
@@ -772,11 +776,13 @@ def install_skill_pack(
         manifest_data["prune_skipped_skills"] = standing
     if force_pruned:
         manifest_data["force_pruned_skills"] = force_pruned
+    if removed_directories:
+        manifest_data["removed_skill_directories"] = removed_directories
     manifest_data["skill_profile"] = profile
     if context_cost_warning is not None:
         manifest_data["context_cost_warning"] = context_cost_warning
-    manifest_data["pruned_skills"] = pruned_skills
-    manifest_data["flat_layout_skills_removed"] = flat_layout["removed"]
+    manifest_data["pruned_skills"] = [item["name"] for item in orphans_removed]
+    manifest_data["flat_layout_skills_removed"] = sorted(item["name"] for item in flat_layout["removed"])
     manifest_data["flat_layout_skills_retained"] = flat_layout["retained"]
     manifest_data["skill_profile_state"] = skill_profile_state(paths.skills_dir, manifest_data)
     manifest_data = _carry_installed_at_when_nothing_moved(manifest, manifest_data)
@@ -905,12 +911,14 @@ def _render_mark_refusal(record: dict, skill_file: Path, writes: list[LedgerWrit
     left on a plain install and removed only by `--force`, which is the
     person's consent to lose local changes to something OMH rendered.
 
-    "Changed" is the same question the rest of the installer asks of a live
-    skill, not the SKILL.md hash alone: the SKILL.md no longer has the hash
-    OMH wrote, the record carries kept Hermes-edit evidence, or a ledger write
-    to any file in the directory is still on disk. Judged by the SKILL.md
-    alone, a Hermes write to a supporting file of a skill a release retired
-    went with the directory on a plain install, and nothing said so.
+    "Changed" is not the SKILL.md hash alone: the SKILL.md no longer has the
+    hash OMH wrote, the record carries kept Hermes-edit evidence, or the
+    ledger records any write to a file in the directory -- recorded, not
+    still on disk, since a removal here is final: a file Hermes wrote and the
+    person then edited by hand holds neither OMH's render nor Hermes' write.
+    Judged by the SKILL.md alone, a Hermes write to a supporting file of a
+    skill a release retired went with the directory on a plain install, and
+    nothing said so.
     """
     mark = record.get(RENDER_MARK_KEY)
     if not isinstance(mark, str) or not mark:
@@ -921,7 +929,7 @@ def _render_mark_refusal(record: dict, skill_file: Path, writes: list[LedgerWrit
         unchanged = False
     if not unchanged or isinstance(record.get(HERMES_EDIT_RECORD_KEY), dict):
         return "changed_since_rendered"
-    if hermes_edit_still_on_disk(skill_file.parent, writes, _SKILL_FILE_ONLY) is not None:
+    if writes_in_skill_dir(skill_file.parent, writes):
         return "changed_since_rendered"
     return ""
 
@@ -1037,6 +1045,12 @@ def _prune_flat_layout_skill_directories(
     Under a manifest written before marks existed, (d) is the rule it was
     written under: byte-identical to what the manifest recorded, with anything
     a user edited kept and reported in `retained` unless ``force``.
+
+    Each removal is returned in `removed` as {name, path, rule, kind}: `rule`
+    names the rule that admitted it (`render_mark`, or `earlier_manifest` for
+    a manifest from before marks), and `kind` is `flat_copy` for a whole
+    directory or `flat_copy_in_category` when the directory is also a
+    category and only its top-level SKILL.md and references/ went.
     """
     if not manifest:
         return {"removed": [], "retained": [], "skipped": [], "forced": []}
@@ -1053,7 +1067,7 @@ def _prune_flat_layout_skill_directories(
         canonical_by_directory[name] = name
         canonical_by_directory.setdefault(skill_directory_name(name), name)
     categories = {skill_install_relative_dir(name).parts[0] for name in catalog_names}
-    removed: list[str] = []
+    removed: list[dict] = []
     retained: list[str] = []
     skipped: list[dict] = []
     forced: list[dict] = []
@@ -1088,9 +1102,17 @@ def _prune_flat_layout_skill_directories(
             continue
         if not remove:
             continue
-        _remove_flat_skill_payload(entry, is_category_dir=entry.name in categories)
-        removed.append(canonical)
-    return {"removed": sorted(removed), "retained": sorted(retained), "skipped": skipped, "forced": forced}
+        in_category = entry.name in categories
+        _remove_flat_skill_payload(entry, is_category_dir=in_category)
+        removed.append(
+            {
+                "name": canonical,
+                "path": rel,
+                "rule": "render_mark" if marked else "earlier_manifest",
+                "kind": "flat_copy_in_category" if in_category else "flat_copy",
+            }
+        )
+    return {"removed": removed, "retained": sorted(retained), "skipped": skipped, "forced": forced}
 
 
 def _remove_flat_skill_payload(entry: Path, *, is_category_dir: bool) -> None:
@@ -1186,12 +1208,14 @@ def _prune_orphaned_skills(
     hermes_home: Path | None = None,
     writes: list[LedgerWrite] | None = None,
     remove: bool = True,
-) -> tuple[list[str], list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], list[dict]]:
     """Remove managed skill dirs recorded in the prior manifest that the full catalog no longer ships.
 
     ``catalog_names`` must be the FULL ``builtin_skill_templates()`` catalog, never the
     profile-filtered install set, so a full->core reinstall does not shed full-only skills.
-    Removed directory names are returned first; every candidate left in place is returned
+    Each removed directory is returned first as {name, path, rule, kind}, `rule` naming the
+    rule that admitted it (`render_mark`, or `earlier_manifest` for a manifest from before
+    marks) and `kind` always `retired_skill`; every candidate left in place is returned
     second with the reason; third, what ``force`` lost for each changed directory it removed.
     ``writes`` are Hermes' ledger writes, for what "changed" means (`_render_mark_refusal`);
     with ``remove`` false nothing is deleted and only the verdicts are returned.
@@ -1203,7 +1227,7 @@ def _prune_orphaned_skills(
       pruned only when its record (a) names a skill absent from the full catalog, (b)
       carries the render mark, and (c) nothing in it changed since OMH rendered it: its
       SKILL.md still has the hash OMH wrote, its record carries no kept Hermes-edit
-      evidence, and no ledger write under it is still on disk (`_render_mark_refusal`).
+      evidence, and the ledger records no write under it (`_render_mark_refusal`).
       Every other file in the directory goes with it. A record
       without the mark is a directory an install merely found (`not_rendered_by_omh`) and
       is never removed, ``force`` or not. A marked one whose SKILL.md changed
@@ -1232,7 +1256,7 @@ def _prune_orphaned_skills(
     real_skills_dir = os.path.realpath(skills_dir)
     category_dirs = [skills_dir / category for category in sorted(categories)]
     render_dirs = [skills_dir / skill_install_relative_dir(catalog_name) for catalog_name in sorted(catalog_names)]
-    removed: list[str] = []
+    removed: list[dict] = []
     skipped: list[dict] = []
     forced: list[dict] = []
     for record in manifest.get("skills", []):
@@ -1274,7 +1298,14 @@ def _prune_orphaned_skills(
         if not remove:
             continue
         shutil.rmtree(target_dir)
-        removed.append(name)
+        removed.append(
+            {
+                "name": str(name),
+                "path": str(rel),
+                "rule": "render_mark" if marked else "earlier_manifest",
+                "kind": "retired_skill",
+            }
+        )
     return removed, skipped, forced
 
 

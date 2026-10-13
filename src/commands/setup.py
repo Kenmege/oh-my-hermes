@@ -4887,19 +4887,26 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
             line = tr(language, key, name=item.get("name", ""), path=item.get("path", ""), reason=reason)
             print(_color(f"  {line}", "1;33", use_color))
     force_pruned = payload.get("force_pruned_skills")
-    forced_names = {
-        str(item.get("name", "")) for item in (force_pruned if isinstance(force_pruned, list) else []) if isinstance(item, dict)
+    forced_paths = {
+        str(item.get("path", "")) for item in (force_pruned if isinstance(force_pruned, list) else []) if isinstance(item, dict)
     }
-    # Everything an install removes is named here; a `--force` removal has its
-    # own lines below, with what it lost.
-    pruned = payload.get("pruned_skills")
-    for name in pruned if isinstance(pruned, list) else []:
-        if str(name) not in forced_names:
-            print(_color(f"  {tr(language, 'pruned_skill_line', name=name)}", "1;33", use_color))
-    flat_removed = payload.get("flat_layout_skills_removed")
-    for name in flat_removed if isinstance(flat_removed, list) else []:
-        if str(name) not in forced_names:
-            print(_color(f"  {tr(language, 'flat_layout_removed_line', name=name)}", "1;33", use_color))
+    # Every directory an install removes is named here, by its path: one
+    # retired name can sit in two directories, and a `--force` removal of
+    # either has its own lines below, with what it lost.
+    removed = payload.get("removed_skill_directories")
+    for item in removed if isinstance(removed, list) else []:
+        if not isinstance(item, dict) or str(item.get("path", "")) in forced_paths:
+            continue
+        kind = str(item.get("kind", ""))
+        key = {"flat_copy": "flat_layout_removed_line", "flat_copy_in_category": "flat_layout_payload_removed_line"}.get(
+            kind, "pruned_skill_line"
+        )
+        # What the rule that admitted the removal checked, and nothing more:
+        # a manifest from before marks cannot say who rendered the directory.
+        note = "removal_render_mark_note" if item.get("rule") == "render_mark" else "removal_earlier_manifest_note"
+        directory = str(item.get("path", "")).rsplit("/", 1)[0]
+        line = f"{tr(language, key, name=item.get('name', ''), directory=directory)} {tr(language, note)}"
+        print(_color(f"  {line}", "1;33", use_color))
     for item in force_pruned if isinstance(force_pruned, list) else []:
         if not isinstance(item, dict):
             continue

@@ -913,7 +913,14 @@ class InstallerKeepsHermesEditTests(_Home):
                 self.assertEqual(result["flat_layout_skills_removed"], [])
                 # The skill itself renders where this release renders it.
                 self.assertTrue(self.skill_file().is_file())
-                self.assertIn(f"stays at {flat.name}/SKILL.md", self._summary(result))
+                summary = self._summary(result)
+                self.assertIn(f"stays at {flat.name}/SKILL.md", summary)
+                # It stays for good, so the line says how it goes: by hand.
+                self.assertIn(
+                    f"While the catalog ships {SKILL}, no install removes it, with or without --force; "
+                    "delete that directory yourself",
+                    summary,
+                )
                 # Reported as left behind, and not listed a second time as
                 # something the pruners left in place.
                 self.assertNotIn("prune_skipped_skills", result)
@@ -1227,7 +1234,10 @@ class RenderMarkPruneTests(_Home):
             again = install_skill_pack(self.paths, profile="core")
 
         self.assertTrue(retired.is_file())
-        self.assertIn("it changed since OMH rendered it (its SKILL.md, or a Hermes edit in it)", self.summary(again))
+        self.assertIn(
+            "it changed since OMH rendered it there (its SKILL.md, or a Hermes write recorded under it)",
+            self.summary(again),
+        )
 
     def test_an_emptied_category_with_a_stray_skill_file_is_not_removed(self) -> None:
         # No other skill below it, so "holds another SKILL.md" is false; it is
@@ -1434,11 +1444,14 @@ class RetiredSkillEditTests(_Home):
         self.edit_manifest(lambda manifest: manifest["skills"].append(record))
         return directory, lessons
 
-    def summary(self, payload: dict) -> str:
+    def summary(self, payload: dict, language: str = "en") -> str:
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            setup_commands._print_install_summary({"skills": [], **payload}, command="install")
+            setup_commands._print_install_summary({"skills": [], **payload}, command="install", language=language)
         return out.getvalue()
+
+    def removal_lines(self, payload: dict, language: str = "en", needle: str = "Removed ") -> list[str]:
+        return [line.strip() for line in self.summary(payload, language).splitlines() if needle in line]
 
     def assert_left_then_forced(self, directory: Path, lessons: Path) -> None:
         plain = install_skill_pack(self.paths, profile="core")
@@ -1525,17 +1538,30 @@ class RetiredSkillEditTests(_Home):
 
         self.assertFalse(flat.exists())
         self.assertEqual(result["flat_layout_skills_removed"], [SKILL])
-        self.assertIn(f"Removed the top-level copy of {SKILL}", self.summary(result))
+        self.assertEqual(
+            [(item["path"], item["rule"], item["kind"]) for item in result["removed_skill_directories"]],
+            [(f"{SKILL}/SKILL.md", "render_mark", "flat_copy")],
+        )
+        self.assertEqual(
+            self.removal_lines(result),
+            [
+                f"Removed {SKILL}/, a top-level directory named for {SKILL}, which now renders in its category "
+                "directory, with every file in it. OMH rendered it there, its SKILL.md is unchanged, and no "
+                "Hermes write is recorded under it."
+            ],
+        )
 
     def test_a_retired_skill_with_no_edit_is_removed_and_the_summary_says_so(self) -> None:
-        # A person's file beside an unchanged SKILL.md, no ledger row: the
-        # mark proves OMH rendered the directory and the whole of it goes,
-        # which the summary now names (it printed nothing before).
+        # Probe G5: a person's files beside an unchanged SKILL.md, no ledger
+        # row. The mark proves OMH rendered the directory and the whole of it
+        # goes; the line says what was checked and that every file went,
+        # never that nothing in the directory changed.
         install_skill_pack(self.paths, profile="core")
         directory = self.paths.skills_dir / "tracker" / "omh-old-skill"
-        directory.mkdir(parents=True)
+        (directory / "references").mkdir(parents=True)
         (directory / "SKILL.md").write_text("---\nname: omh-old-skill\n---\nretired\n", encoding="utf-8")
-        (directory / "my-notes.md").write_text("mine\n", encoding="utf-8")
+        (directory / "references" / "rail.md").write_text("I rewrote this\n", encoding="utf-8")
+        (directory / "work.md").write_text("weeks of work\n", encoding="utf-8")
         sha = sha256_file(directory / "SKILL.md")
         self.edit_manifest(
             lambda manifest: manifest["skills"].append(
@@ -1547,7 +1573,170 @@ class RetiredSkillEditTests(_Home):
 
         self.assertFalse(directory.exists())
         self.assertEqual(result["pruned_skills"], [self.NAME])
-        self.assertIn(f"Removed {self.NAME}: the catalog no longer ships it", self.summary(result))
+        self.assertEqual(
+            self.removal_lines(result),
+            [
+                f"Removed tracker/omh-old-skill/ ({self.NAME}), a skill the catalog does not ship, with every file "
+                "in it. OMH rendered it there, its SKILL.md is unchanged, and no Hermes write is recorded under it."
+            ],
+        )
+        for language in ("ko", "ja", "zh"):
+            with self.subTest(language=language):
+                [line] = self.removal_lines(result, language, "tracker/omh-old-skill/")
+                self.assertIn(MESSAGES[language]["removal_render_mark_note"], line)
+                self.assertNotIn(MESSAGES[language]["removal_earlier_manifest_note"], line)
+
+    def test_a_removal_under_a_manifest_from_before_marks_does_not_claim_omh_rendered_it(self) -> None:
+        # Probe case 1, a real upgrade: an earlier manifest recorded a
+        # person's top-level skill, and the earlier rule removes it. Nothing
+        # tells OMH whether it rendered that directory, so the line says so.
+        install_skill_pack(self.paths, profile="core")
+        own = self.own_skill("my-own-top")
+        install_skill_pack(self.paths, profile="core")
+        self.edit_manifest(legacy=True)
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertFalse(own.exists())
+        self.assertEqual(
+            [(item["path"], item["rule"], item["kind"]) for item in result["removed_skill_directories"]],
+            [("my-own-top/SKILL.md", "earlier_manifest", "retired_skill")],
+        )
+        self.assertEqual(
+            self.removal_lines(result),
+            [
+                "Removed my-own-top/ (my-own-top), a skill the catalog does not ship, with every file in it. The install "
+                "manifest is from an earlier release, so OMH cannot tell whether it rendered it."
+            ],
+        )
+        for language in ("ko", "ja", "zh"):
+            with self.subTest(language=language):
+                [line] = self.removal_lines(result, language, "my-own-top/")
+                self.assertIn(MESSAGES[language]["removal_earlier_manifest_note"], line)
+                self.assertNotIn(MESSAGES[language]["removal_render_mark_note"], line)
+
+    def test_a_flat_copy_at_the_top_of_a_category_names_only_the_files_that_went(self) -> None:
+        # `ultrawork` is a skill name and a category: only the SKILL.md and
+        # references/ at the top of the category go, so the line may not say
+        # every file in the directory did.
+        install_skill_pack(self.paths, profile="full")
+        category = self.paths.skills_dir / skill_install_relative_dir("ultrawork").parts[0]
+        (category / "SKILL.md").write_text("---\nname: ultrawork\n---\nstale pre-relabel render\n", encoding="utf-8")
+        install_skill_pack(self.paths, profile="full")
+        self.edit_manifest(legacy=True)
+
+        result = install_skill_pack(self.paths, profile="full")
+
+        self.assertFalse((category / "SKILL.md").exists())
+        self.assertEqual(
+            [(item["path"], item["rule"], item["kind"]) for item in result["removed_skill_directories"]],
+            [(f"{category.name}/SKILL.md", "earlier_manifest", "flat_copy_in_category")],
+        )
+        [line] = self.removal_lines(result)
+        self.assertIn(f"Removed {category.name}/SKILL.md and {category.name}/references/", line)
+        self.assertIn(f"the rest of {category.name}/ stays", line)
+        self.assertNotIn("every file", line)
+
+    def test_a_recorded_hermes_write_keeps_it_after_the_file_changed_again(self) -> None:
+        # Probe case 3: one recorded write_file row, then the person added to
+        # that file. No write is still on disk, but one is recorded under the
+        # directory, which is what "changed since OMH rendered it" counts.
+        install_skill_pack(self.paths, profile="core")
+        directory = self.paths.skills_dir / "tracker" / "omh-old-skill"
+        (directory / "references").mkdir(parents=True)
+        (directory / "SKILL.md").write_text("---\nname: omh-old-skill\n---\nretired\n", encoding="utf-8")
+        lessons = directory / "references" / "lessons.md"
+        lessons.write_text("lesson Hermes wrote\n", encoding="utf-8")
+        _append_ledger(self.paths.hermes_home, _ledger_row(lessons, action="write_file"))
+        with lessons.open("a", encoding="utf-8") as handle:
+            handle.write("plus what I added by hand\n")
+        sha = sha256_file(directory / "SKILL.md")
+        self.edit_manifest(
+            lambda manifest: manifest["skills"].append(
+                {"name": self.NAME, "path": self.REL, "sha256": sha, "source": "builtin", RENDER_MARK_KEY: sha}
+            )
+        )
+
+        for _ in range(2):
+            result = install_skill_pack(self.paths, profile="core")
+            self.assertTrue(lessons.is_file())
+            self.assertEqual(result["pruned_skills"], [])
+            self.assertNotIn("removed_skill_directories", result)
+            self.assertIn(
+                (self.REL, "changed_since_rendered"),
+                [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
+            )
+
+    def test_force_names_each_removed_directory_once_by_path(self) -> None:
+        # Probe G6: one retired name at two directories, one changed and one
+        # not. Both go under --force; the changed one has the --force line and
+        # the unchanged one its own, so two directories read as two removals.
+        install_skill_pack(self.paths, profile="core")
+        changed = self.paths.skills_dir / "tracker" / "omh-old-skill"
+        unchanged = self.paths.skills_dir / "omh-old-skill"
+        records = []
+        for directory in (changed, unchanged):
+            directory.mkdir(parents=True)
+            (directory / "SKILL.md").write_text("---\nname: omh-old-skill\n---\nretired\n", encoding="utf-8")
+            sha = sha256_file(directory / "SKILL.md")
+            rel = f"{directory.relative_to(self.paths.skills_dir).as_posix()}/SKILL.md"
+            records.append({"name": self.NAME, "path": rel, "sha256": sha, "source": "builtin", RENDER_MARK_KEY: sha})
+        with (changed / "SKILL.md").open("a", encoding="utf-8") as handle:
+            handle.write("\nchanged by hand\n")
+        records[0]["sha256"] = sha256_file(changed / "SKILL.md")
+        self.edit_manifest(lambda manifest: manifest["skills"].extend(records))
+
+        result = install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertFalse(changed.exists())
+        self.assertFalse(unchanged.exists())
+        self.assertEqual([item["path"] for item in result["force_pruned_skills"]], [self.REL])
+        lines = self.removal_lines(result)
+        self.assertEqual(len(lines), 2, lines)
+        [forced] = [line for line in lines if "because --force was given" in line]
+        [plain] = [line for line in lines if line != forced]
+        self.assertTrue(forced.startswith(f"Removed {self.NAME} at {self.REL} because --force was given"), lines)
+        self.assertTrue(plain.startswith(f"Removed omh-old-skill/ ({self.NAME}), a skill the catalog"), lines)
+        self.assertIn("OMH rendered it there, its SKILL.md is unchanged", plain)
+
+    def test_strict_security_keeps_a_retired_skill_with_a_hermes_edit_under_force(self) -> None:
+        # OMH_SECURITY=strict takes away --force's override of a local
+        # change; a retired skill holding a Hermes write is one.
+        directory, lessons = self.retired_skill(kept=False)
+
+        with mock.patch.dict(os.environ, {"OMH_SECURITY": "strict"}):
+            result = install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertTrue(lessons.is_file())
+        self.assertEqual(result["pruned_skills"], [])
+        self.assertNotIn("force_pruned_skills", result)
+        self.assertIn(
+            (self.REL, "changed_since_rendered"),
+            [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
+        )
+
+    def test_strict_security_keeps_a_changed_flat_leftover_under_force(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        flat = self.paths.skills_dir / SKILL
+        shutil.copytree(self.skill_file().parent, flat)
+        install_skill_pack(self.paths, profile="core")
+        with (flat / "SKILL.md").open("a", encoding="utf-8") as handle:
+            handle.write("\nchanged by hand\n")
+
+        def claim_rendered(manifest: dict) -> None:
+            for record in manifest["skills"]:
+                if record["path"] == f"{SKILL}/SKILL.md":
+                    record[RENDER_MARK_KEY] = record["sha256"]
+                    record["sha256"] = sha256_file(flat / "SKILL.md")
+
+        self.edit_manifest(claim_rendered)
+
+        with mock.patch.dict(os.environ, {"OMH_SECURITY": "strict"}):
+            result = install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertTrue(flat.is_dir())
+        self.assertEqual(result["flat_layout_skills_removed"], [])
+        self.assertNotIn("force_pruned_skills", result)
 
 
 class ManifestStabilityTests(_Home):
