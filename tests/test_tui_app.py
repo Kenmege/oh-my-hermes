@@ -910,6 +910,9 @@ class SlashCommandTests(AppTestCase):
         # The terminal stayed in the TUI's raw mode: never handed back and re-entered.
         self.assertEqual((terminal.entered, terminal.exited), (1, 1))
         self.assertIn("picker frame\r\nsecond row\r\n", "".join(terminal.writes))
+        # Drawn on the alternate screen: nothing of the picker is left on the main screen or in scrollback.
+        self.assertIn("\x1b[?1049h", "".join(terminal.writes))
+        self.assertNotIn("picker frame", "\n".join(terminal.screen.scrollback + terminal.screen.lines()))
 
 
 class StatusLineTests(unittest.TestCase):

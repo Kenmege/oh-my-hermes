@@ -83,7 +83,7 @@ from .markdown import clean_text
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
 from .prompts import CHOICE_DIGITS, Answer, ImmediateAnswer, PromptSlot, open_request
-from .screen import CLEAR_SCREEN_AND_SCROLLBACK, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
+from .screen import CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
 from .session_picker import PICK, SessionPicker, session_rows
 from .slash import (
     COMMANDS,
@@ -1391,20 +1391,29 @@ class App:
             self.transcript.add_notice(f"No theme named {arg}. Available: {', '.join(theme_names())}.", NOTICE_WARN)
 
     def _omh_model(self, arg: str) -> None:
-        """Run the model-chain picker below the transcript, on the terminal as it is (raw)."""
-        self.region.clear()
-        self.terminal.write(HIDE_CURSOR)
-        message = self.pick_model_chains(
-            self.environ,
-            self.theme,
-            read_key=self._picker_reader(),
-            # Raw mode writes "\n" as a bare line feed; the picker's lines need a carriage return too.
-            write=lambda text: self.terminal.write(text.replace("\n", "\r\n")),
-            width=self.size[0],
-        )
-        self.terminal.write(SHOW_CURSOR)
+        """Run the model-chain picker on the alternate screen, over the TUI's own raw terminal.
+
+        The main screen (scrollback and the live region) stays untouched underneath
+        and comes back as it was, so the picker leaves no frame behind; only a resize
+        while it was open needs the full redraw.
+        """
+        before = self.size
+        self.terminal.write(ALT_SCREEN_ON + CURSOR_HOME + HIDE_CURSOR)
+        try:
+            message = self.pick_model_chains(
+                self.environ,
+                self.theme,
+                read_key=self._picker_reader(),
+                # Raw mode writes "\n" as a bare line feed; the picker's lines need a carriage return too.
+                write=lambda text: self.terminal.write(text.replace("\n", "\r\n")),
+                width=self.size[0],
+            )
+        finally:
+            self.terminal.write(ALT_SCREEN_OFF + SHOW_CURSOR)
         self.size = self.terminal.size()
-        self.anchor = True
+        if self.size != before:
+            self._full_redraw()
+        self.dirty = True
         self.transcript.add_notice(message)
 
     def _picker_reader(self) -> Callable[[], str]:
