@@ -677,6 +677,83 @@ def ensure_plugin_enabled(config_text: str, name: str) -> ConfigChange:
     return ConfigChange(True, "inserted plugins.enabled", "\n".join(lines) + "\n")
 
 
+def plugin_load_timeout_setting(config_text: str) -> str:
+    """The raw `plugins.load_timeout_seconds`, or "" when none was read.
+
+    Hermes allows a plugin that many seconds to import and `register()`, and
+    drops the plugin past it. Read-only, and a line reader rather than a YAML
+    parser, so it states a value for one shape only: the key written once, on
+    one line, as a direct child of the single block `plugins:` node
+    `plugin_enablement` walks. Every shape it can tell is something else
+    returns "" -- the flow form, an anchored node, a second `plugins:` node or
+    a second copy of the key (YAML keeps the last, and guessing which one
+    Hermes saw is how a reader ends up reporting the other), a value that
+    continues on the lines below, a sibling whose quote stays open and may
+    hold this line as text. "" therefore means "not read", and a caller must
+    not report it as "unset".
+    """
+    value = ""
+    key_seen = False
+    after_key = False
+    plugins_nodes = 0
+    in_plugins = False
+    child_indent = 0  # the indent of the first child under `plugins:`; every direct child shares it
+    for line in config_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            node = _plugins_node_line_shape(line)
+            plugins_nodes += node is not None
+            if plugins_nodes > 1:
+                return ""
+            in_plugins = node is not None and node[0] == _PLUGINS_NODE_BLOCK
+            after_key = False
+            continue
+        if not in_plugins:
+            continue
+        child_indent = child_indent or indent
+        if indent < child_indent or (indent > child_indent and after_key):
+            return ""  # shallower than its first sibling, or more text under the key's own value
+        if indent > child_indent:
+            continue  # a grandchild, or the text of a block scalar: never this key
+        after_key = False
+        key, separator, rest = stripped.partition(":")
+        if _opens_unclosed_quote(rest):
+            return ""
+        if not separator or key.strip() != "load_timeout_seconds" or rest[:1] not in {"", " "}:
+            continue
+        if key_seen:
+            return ""
+        key_seen = after_key = True
+        value = _one_line_scalar(rest)
+    return value
+
+
+def _one_line_scalar(rest: str) -> str:
+    """The scalar after `key:` on its own line, or "" when it is not one plain value.
+
+    The quotes and a trailing comment are YAML's, not the value's. A YAML
+    null, an anchor, alias, tag, flow node or block-scalar header, and a quote
+    that does not close cleanly, are all "" rather than text that looks like a
+    setting.
+    """
+    value = rest.strip()
+    if value[:1] in {"'", '"'}:
+        end = value.find(value[0], 1)
+        tail = value[end + 1 :].strip()
+        return value[1:end] if end > 0 and (not tail or tail.startswith("#")) else ""
+    value = value.partition(" #")[0].strip()
+    return "" if value in _BARE_YAML_NULLS or value[:1] in set("#&*!|>[{@`%") else value
+
+
+def _opens_unclosed_quote(rest: str) -> bool:
+    """Whether the value after `key:` opens a quoted scalar it does not close on that line."""
+    value = rest.strip()
+    return value[:1] in {"'", '"'} and value.find(value[0], 1) == -1
+
+
 PLUGIN_OMH_HOME_KEY_PATH: tuple[str, ...] = ("plugins", "entries", "omh", "settings", "omh_home")
 
 

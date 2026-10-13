@@ -4,6 +4,39 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The plugin bundle's cold load is now held under Hermes' per-plugin load
+  deadline, and `omh doctor` reports what that deadline did to OMH.** Hermes
+  0.21.5 and later (and canary builds from 2026-09-25) skip a plugin whose
+  import plus `register()` takes longer than `plugins.load_timeout_seconds`
+  (10 seconds by default), and its plugin loader then registers no OMH tool
+  or hook for that load. The bundle had never been timed. Loaded the way
+  Hermes loads it, in a fresh interpreter with no bytecode cached anywhere,
+  it takes 0.4-0.8 s on a contended 14-core Mac, and 0.23-0.31 s through
+  Hermes' own loader in an isolated home, so no bundle code changed.
+  `tests/test_plugin_load_deadline.py` now measures that cold load in a
+  subprocess and fails above half of Hermes' default, on a host without the
+  `omh` package and on one that can import it, and checks which of the two it
+  actually timed; it compares the fastest of three runs so a starved CI
+  runner does not fail it, its failure message separates a slow runner from a
+  slow bundle, and a passing run prints its timings to stderr. Windows cold
+  load was not measured locally: the timing that test prints on the Windows
+  CI shards is the first observation of it. `omh doctor` gains a
+  `plugin_load_deadline` row. It names the `plugins.load_timeout_seconds`
+  value it read from the Hermes config -- only when the key is written once,
+  on one line, directly under a single block `plugins:` node; anything else
+  is reported as not read, never as unset. It reads
+  `<hermes-home>/logs/errors.log` and its two rotated backups for the lines
+  Hermes writes when the deadline costs `omh` its load: its own overrun, or a
+  refusal because other plugins' abandoned loaders reached Hermes' cap. A
+  record is a warning that carries Hermes' own timestamp and cause and says
+  it is a past load, not the current state. Files with no record are named
+  one by one, with "last 4 MiB only" beside any that was larger than what
+  was read, and never as proof that the plugin loaded. A missing log, or
+  something other than a regular file in its place, is `not_observed`. The
+  record rides in the row's `detail` for `--json` readers. OMH reads the
+  config and the logs and writes none of them.
+
+
 - **A plan has one checklist: Hermes' `todo_list` and `omh_todo` no longer
   ask for the same list twice.** Hermes ships its own checklist tool,
   `todo_list`, and OMH told the model to declare every plan with `omh_todo`

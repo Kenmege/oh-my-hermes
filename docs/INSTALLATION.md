@@ -503,6 +503,22 @@ managed bundle from the current OMH package (`omh setup --force` if this copy
 carries local edits you are willing to replace), then restart Hermes Agent and
 run `omh doctor` again.
 
+Hermes 0.21.5 and later (and canary builds from 2026-09-25) also put a
+deadline on that load: a plugin's import plus `register()` must finish within
+`plugins.load_timeout_seconds` (10 seconds unless the Hermes config sets it;
+`0` turns the deadline off), or Hermes skips the plugin for that load and its
+plugin loader registers no OMH tool or hook. The bundle loads cold in
+0.4-0.8 s on a contended 14-core Mac (2026-10-13), and
+`tests/test_plugin_load_deadline.py` holds it under half the default; on
+Windows the only measurement is the timing that test prints in CI.
+`omh doctor` reports the `plugin_load_deadline` row: the value it read from
+the Hermes config, and whether `<hermes-home>/logs/errors.log` or its two
+rotated backups hold a line Hermes writes when the deadline costs `omh` its
+load. A record there is a past load, so check `/plugins` in a running session
+for the current state; files with no record are named for what was read of
+them (at most the last 4 MiB of each) and are not proof the plugin loaded;
+and a missing log reads `not_observed`.
+
 ## Guided Model Setup
 
 Normal users can ask Hermes **set up my models**. The CLI in this section is an
