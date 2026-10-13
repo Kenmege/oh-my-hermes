@@ -665,6 +665,49 @@ class SplitReportLoopTests(unittest.TestCase):
         self.assertEqual(client.named("session.interrupt"), [{"session_id": SID}])
 
 
+class LateReportLoopTests(unittest.TestCase):
+    """Reports the terminal sent before it acted on an off arrive after it, split, and still type nothing."""
+
+    def test_the_release_of_the_click_that_opens_a_log_types_nothing_and_leaves_the_log_open(self) -> None:
+        for code in (0, 65):  # the click's own release, and the review's wheel turn
+            for pause in (0.06, 0.2, 0.4):
+                with self.subTest(code=code, pause=pause):
+                    now = [100.0]
+                    app, _client = running(clock=lambda: now[0])
+                    y, x = row_of(app, "● main  "), column_of(app, "read the diff")
+                    step_through(app, now, [(0.0, f"\x1b[<0;{x};{y}M".encode("ascii"))])  # the press opens the log
+                    self.assertEqual(app.log_agent, SECOND)
+                    self.assertFalse(app.terminal.mouse_reporting)  # type: ignore[attr-defined]  # the log's frame
+                    late = f"\x1b[<{code};{x};{y}{'m' if code == 0 else 'M'}".encode("ascii")
+                    step_through(app, now, paused(late[:1], pause, late[1:]))
+                    self.assertEqual(app.composer.text, "")
+                    # Past the 300 ms wait the ESC is Esc, which leaves the log; the rest is still dropped.
+                    self.assertEqual(app.log_agent, "" if pause > 0.3 else SECOND)
+
+    def test_a_report_split_after_the_turn_ended_types_nothing_and_interrupts_nothing(self) -> None:
+        for pause in (0.06, 0.2, 0.4):
+            with self.subTest(pause=pause):
+                now = [100.0]
+                app, client = running(clock=lambda: now[0])
+                app._on_event(Event("message.complete", SID, {"text": "done"}))
+                app.turn_pending = False
+                step_through(app, now, [(0.0, b"")])  # the frame after the turn: the strip is not clickable
+                self.assertFalse(app.terminal.mouse_reporting)  # type: ignore[attr-defined]
+                step_through(app, now, paused(b"\x1b", pause, b"[<0;5;5m"))
+                self.assertEqual(app.composer.text, "")
+                self.assertEqual(client.named("session.interrupt"), [])
+
+    def test_a_report_that_starts_after_the_grace_is_read_as_keys_as_documented(self) -> None:
+        now = [100.0]
+        app, _client = running(clock=lambda: now[0])
+        app.turn_pending = False
+        step_through(app, now, [(0.0, b"")])
+        self.assertFalse(app.terminal.mouse_reporting)  # type: ignore[attr-defined]
+        now[0] += MOUSE_REPORT_SECONDS
+        step_through(app, now, paused(b"\x1b", 0.06, b"[<0;5;5m"))
+        self.assertEqual(app.composer.text, "[<0;5;5m")
+
+
 class ResizeTests(unittest.TestCase):
     def test_reports_go_off_as_the_size_changes_and_come_back_with_the_settled_redraw(self) -> None:
         now = [100.0]
@@ -882,10 +925,14 @@ class DocumentedMouseTests(unittest.TestCase):
     def prose(self, name: str) -> str:
         return " ".join((self.ROOT / name).read_text(encoding="utf-8").split())
 
-    def test_the_escape_time_the_docs_name_is_the_decoders(self) -> None:
-        seconds = keys_module.REPORTING_ESCAPE_SECONDS
-        self.assertIn(f"Esc acts after {seconds:g} s", self.prose("docs/INSTALLATION.md"))
-        self.assertIn(f"more than {round(seconds * 1000)} ms before the rest is read as Esc", self.prose("AGENTS.md"))
+    def test_the_escape_time_and_the_grace_the_docs_name_are_the_decoders(self) -> None:
+        seconds, grace = keys_module.REPORTING_ESCAPE_SECONDS, keys_module.MOUSE_REPORT_SECONDS
+        installation = self.prose("docs/INSTALLATION.md")
+        self.assertIn(f"for {grace:g} s after they go off, Esc acts after {seconds:g} s", installation)
+        self.assertIn(f"A report that starts later than {grace:g} s after they went off", installation)
+        agents = self.prose("AGENTS.md")
+        self.assertIn(f"within {grace:g} s after it goes off, types: if {round(seconds * 1000)} ms pass after its first byte "
+                      "without the next, that byte is read as Esc", agents)
 
     def test_the_way_to_select_anyway_is_named_for_each_terminal_no_more_surely_than_it_is_known(self) -> None:
         text = self.prose("docs/INSTALLATION.md")
@@ -896,10 +943,12 @@ class DocumentedMouseTests(unittest.TestCase):
         )
         self.assertNotIn("Option-drag in Terminal.app", text)
 
-    def test_the_boundary_says_what_each_click_does(self) -> None:
+    def test_the_boundary_says_what_each_click_does_and_when_a_report_can_still_type(self) -> None:
         text = self.prose("AGENTS.md")
-        self.assertIn("No report ever types. A plain left click on an agent opens its log, one on the list's `main` row "
-                      "leaves the list, and every other report does nothing", text)
+        self.assertIn("A plain left click on an agent opens its log, one on the list's `main` row leaves the list, and "
+                      "every other report does nothing.", text)
+        self.assertIn("One that starts later and is split right after its first or second byte is read as keys.", text)
+        self.assertNotIn("No report ever types", text)
         self.assertNotIn("a report can open an agent's log and nothing else", text)
 
 

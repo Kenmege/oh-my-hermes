@@ -68,10 +68,14 @@ a subagent. Mouse reports are on only while a click has an agent to land on
 and the row it would land on is certain: a turn running with agents named on
 the strip, or the list open. A plain left click on one of those cells opens
 that agent's log, or on the list's main row leaves the list; every other
-report does nothing. None types, however a pause splits it across reads
-(`keys`), and the one way a report can act as a key is a split right after
-its first byte that lasts over `keys.REPORTING_ESCAPE_SECONDS`: that ESC is
-Esc, as in tmux and vim.
+report does nothing. Reports the terminal sent before it acted on an off
+arrive after it, so `_set_mouse` notes when reporting went off and the
+decoder is told: a report that starts arriving while reporting is on, or
+within `keys.MOUSE_REPORT_SECONDS` after the off, types nothing however a
+pause splits it across reads, and acts as a key in one way only: when the
+pause right after its first byte outlasts `keys.REPORTING_ESCAPE_SECONDS`,
+that ESC is Esc. One that starts later and is split right after its `ESC`
+or `ESC[` is read as keys (`keys`).
 
 Prompt text, the transcript, attachments, secrets, server-request frames and
 the gateway's stderr stay in memory and on the person's own terminal; nothing
@@ -955,7 +959,11 @@ class App:
         except EOFError:
             self.exit_code = 0
             return
-        for event in self.decoder.feed(data) if data else self.decoder.flush(self.terminal.mouse_reporting):
+        if data:
+            events = self.decoder.feed(data)
+        else:  # a report the terminal sent before an off may still be on its way: the decoder waits for it
+            events = self.decoder.flush(self.terminal.mouse_reporting, self.mouse_off_at)
+        for event in events:
             self.dirty = True
             self._on_input(event)
             if self.exit_code is not None:

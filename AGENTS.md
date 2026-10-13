@@ -205,10 +205,12 @@ PR without the chat history.
   of the log the person opened, and the TUI never steers, interrupts or
   answers for a subagent. Mouse reporting is on in two states only, a turn
   running with agents named on the strip and the agent list open, and off in
-  every other and on every exit. No report ever types. A plain left click on
-  an agent opens its log, one on the list's `main` row leaves the list, and
-  every other report does nothing, except that one whose first byte arrives
-  more than 300 ms before the rest is read as Esc. It
+  every other and on every exit. A plain left click on an agent opens its
+  log, one on the list's `main` row leaves the list, and every other report
+  does nothing. No report that starts while reporting is on, or within 0.5 s
+  after it goes off, types: if 300 ms pass after its first byte without the
+  next, that byte is read as Esc and the rest is dropped. One that starts
+  later and is split right after its first or second byte is read as keys. It
   never attaches to a session another runtime owns: when the launcher sets
   `HERMES_TUI_GATEWAY_URL`, it exits and names `hermes`. It writes no prompt
   text, transcript, attachment, secret or server-request frame to disk or to

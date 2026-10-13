@@ -14,6 +14,7 @@ from omh.tui.keys import (
     BUTTON_LEFT,
     BUTTON_MIDDLE,
     BUTTON_RIGHT,
+    MOUSE_REPORT_SECONDS,
     NO_BUTTON,
     WHEEL_DOWN,
     WHEEL_LEFT,
@@ -555,9 +556,10 @@ READ_SECONDS = 0.05  # the loop's read timeout: it runs `flush` after every read
 class PausedInput:
     """Bytes fed to a decoder on a test clock, with the loop's `flush` after each empty read of a pause."""
 
-    def __init__(self, reporting: bool) -> None:
+    def __init__(self, reporting: bool, off_at: float | None = None) -> None:
         self.now = 0.0
         self.reporting = reporting
+        self.off_at = off_at  # when reporting last went off, as the loop passes it
         self.decoder = KeyDecoder(lambda: self.now)
         self.events: list = []
 
@@ -569,7 +571,7 @@ class PausedInput:
         end = self.now + seconds
         while self.now + READ_SECONDS <= end + 1e-9:
             self.now += READ_SECONDS
-            self.events += self.decoder.flush(self.reporting)
+            self.events += self.decoder.flush(self.reporting, self.off_at)
         self.now = end
 
 
@@ -693,6 +695,66 @@ class EscapeTimeTests(unittest.TestCase):
         paused.feed(b"\x1b")
         paused.pause(0.35)
         self.assertEqual(paused.events, [Key("escape"), Key("escape")])
+
+
+class ReportsAfterTheOffTests(unittest.TestCase):
+    """Reports sent before the terminal acted on an off arrive after it: for half a second they are held as if it were on."""
+
+    RELEASE = sgr_mouse(0, 5, 5, pressed=False)  # the release of the click that opened a log
+    DECODED = Mouse(BUTTON_LEFT, 5, 5, pressed=False)
+
+    def split(self, cut: int, pause: float, started: float) -> list:
+        """The release, split at `cut` by `pause`, starting `started` seconds after reporting went off at 0."""
+        paused = PausedInput(reporting=False, off_at=0.0)
+        paused.now = started
+        paused.feed(self.RELEASE[:cut])
+        paused.pause(pause)
+        paused.feed(self.RELEASE[cut:])
+        paused.pause(2.0)
+        return paused.events
+
+    def test_within_the_grace_every_split_types_nothing(self) -> None:
+        for started in (0.0, 0.2, 0.45):
+            for cut in range(1, len(self.RELEASE)):
+                for pause in (0.06, 0.2, 0.4):
+                    with self.subTest(started=started, cut=self.RELEASE[:cut], pause=pause):
+                        events = self.split(cut, pause, started)
+                        self.assertEqual(len(events), 1, events)
+                        self.assertNotEqual(events[0].name if isinstance(events[0], Key) else "", "char", events)
+                        if pause < 0.3 or cut >= 3:
+                            self.assertEqual(events, [self.DECODED])
+
+    def test_the_grace_counts_from_when_the_report_started_not_when_it_is_settled(self) -> None:
+        # Its ESC arrived 0.45 s after the off; the silence that would settle it ends past 0.5 s.
+        self.assertEqual(self.split(1, 0.2, 0.45), [self.DECODED])
+
+    def test_an_escape_that_arrived_while_reporting_was_on_waits_though_it_is_off_now(self) -> None:
+        paused = PausedInput(reporting=False, off_at=0.01)
+        paused.feed(b"\x1b")  # at 0: reporting was still on
+        paused.pause(0.2)
+        paused.feed(self.RELEASE[1:])
+        self.assertEqual(paused.events, [self.DECODED])
+
+    def test_a_tail_left_by_a_later_read_is_timed_from_that_read(self) -> None:
+        # An ESC from while reporting was on, then 0.6 s of reads with no silence: the ESC left at the end
+        # came 0.55 s after the off, so it is Esc at the first silence, not held as the first one would be.
+        paused = PausedInput(reporting=False, off_at=0.05)
+        paused.feed(b"\x1b")
+        paused.now = 0.6
+        paused.feed(b"x\x1b")
+        paused.pause(0.05)
+        self.assertEqual(paused.events, [char("x", alt=True), Key("escape")])
+
+    def test_a_report_that_starts_after_the_grace_and_splits_before_its_marker_is_keys(self) -> None:
+        events = self.split(1, 0.06, MOUSE_REPORT_SECONDS)
+        self.assertEqual(events, [Key("escape"), *(char(c) for c in self.RELEASE[1:].decode())])
+
+    def test_a_lone_escape_long_after_the_off_is_esc_at_the_first_silence(self) -> None:
+        paused = PausedInput(reporting=False, off_at=0.0)
+        paused.now = 0.6
+        paused.feed(b"\x1b")
+        paused.pause(0.05)
+        self.assertEqual(paused.events, [Key("escape")])
 
 
 class LegacyMouseReportTests(unittest.TestCase):

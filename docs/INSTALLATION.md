@@ -339,11 +339,14 @@ run and approval decision stays Hermes'; the screen is OMH's.
   (`● 2 agents ↓`), while a view such as an agent's log has the screen, and
   while the window is being resized. Closing the list while the turn still
   runs does not bring them back, since the strip is clickable again. While
-  click reports are on, Esc acts after 0.3 s, the time a click report split
-  by a slow connection has to arrive whole. A click is read only where the
-  OMH TUI can tell which row it landed on: once the session's output has
-  reached the bottom of the screen, or after Ctrl+L. Until then it leaves the
-  mouse to the terminal and the keys open the list.
+  click reports are on, and for 0.5 s after they go off, Esc acts after
+  0.3 s, the time a click report split by a slow connection has to arrive
+  whole. A report that starts later than 0.5 s after they went off, split by
+  the connection right after its first byte or two, can still type its rest.
+  A click is read only where the OMH TUI can tell which row it landed on:
+  once the session's output has reached the bottom of the screen, or after
+  Ctrl+L. Until then it leaves the mouse to the terminal and the keys open
+  the list.
 - When Hermes asks something (an approval, a clarify question, a sudo
   password), the question takes the slot until you answer. Nothing is answered
   for you: Esc or Ctrl+C declines. An approval offers deny, allow once and
