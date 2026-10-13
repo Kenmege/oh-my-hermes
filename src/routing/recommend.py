@@ -3891,8 +3891,12 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # `web search backend` names the Hermes setting that picks which provider
     # serves search; `backend` alone is the server side of the user's own app
     # ("deploy the backend", "set up a new backend for the web app"), where the
-    # bare token credited this setup guide. Only the complete phrase scores.
-    "websearch-setup": frozenset({"backend"}),
+    # bare token credited this setup guide. `web search costs too much` and
+    # `free web search tier` are built from pricing words: as bare tokens they
+    # led clarifies about cloud bills, a vendor's free tier, and "too much
+    # logging", and turned "how much does it cost" from a direct answer into
+    # a clarify. Only the complete phrases score.
+    "websearch-setup": frozenset({"backend", "costs", "free", "much", "tier", "too"}),
 }
 
 

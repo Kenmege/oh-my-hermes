@@ -7,12 +7,18 @@ from ..paths import OmhPaths
 
 
 HERMES_MODEL_SETTINGS_SCHEMA_VERSION = "hermes_model_settings/v1"
+# The `auxiliary:` task slots every supported Hermes reads, in Hermes' order:
+# the task blocks of `auxiliary` in `hermes_cli/config_defaults.py` at the
+# floor tag `v2026.9.7`, all of which upstream main still reads. Hermes stopped
+# reading `web_extract` before the floor and ignores a leftover block, so it is
+# not listed. A slot Hermes added after the floor is not listed either: the
+# floor does not read it.
 HERMES_AUX_ALIASES = (
     "vision",
-    "web_extract",
     "compression",
     "skills_hub",
     "approval",
+    "review",
     "mcp",
     "title_generation",
     "memory_query_rewrite",
@@ -22,6 +28,10 @@ HERMES_AUX_ALIASES = (
     "profile_describer",
     "goal_judge",
     "curator",
+    "monitor",
+    "background_review",
+    "moa_reference",
+    "moa_aggregator",
 )
 
 _KEY = re.compile(r"^([a-z_]+):")
@@ -183,7 +193,7 @@ def read_hermes_model_settings(paths: OmhPaths) -> dict[str, Any]:
     # `delegation:` is the model every delegate_task child inherits when no
     # OMH route is set, so it is what the fan-out actually runs on; it is
     # reported beside the aliases, not among them, because the alias tuple is
-    # the exact Hermes auxiliary contract.
+    # the auxiliary slots Hermes reads.
     delegation = _alias_entry(
         alias="delegation",
         model=settings.get("delegation.model", ""),

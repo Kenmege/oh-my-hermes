@@ -17,6 +17,7 @@ load_local_package()
 from omh.cli import build_parser
 from omh.menubar_status import build_menubar_status_payload, model_icon_descriptor, source_icon_descriptor
 from omh.paths import resolve_paths
+from omh.surfaces.hermes_model_settings import HERMES_AUX_ALIASES
 from omh.surfaces.hermes_sessions import hermes_state_watch_paths
 from omh.surfaces.menubar_status import _display, _models_card, _sessions_card, menubar_watch_paths
 from omh.targets import record_target_observation
@@ -172,8 +173,8 @@ class MenubarStatusTests(unittest.TestCase):
                 "aliases": [
                     {"alias": "main", "configured": True, "label": "main-model"},
                     {"alias": "vision", "configured": True, "label": "vision-model"},
-                    {"alias": "web_extract", "configured": True, "label": "extract-model"},
                     {"alias": "compression", "configured": True, "label": "compression-model"},
+                    {"alias": "monitor", "configured": True, "label": "monitor-model"},
                     *[
                         {"alias": alias, "configured": False, "label": "inherit"}
                         for alias in (
@@ -201,7 +202,7 @@ class MenubarStatusTests(unittest.TestCase):
                 ("current", "current-model"),
                 ("main", "main-model"),
                 ("vision", "vision-model"),
-                ("web_extract", "extract-model"),
+                ("compression", "compression-model"),
                 ("+11 aliases", "inherit default"),
             ],
         )
@@ -214,25 +215,10 @@ class MenubarStatusTests(unittest.TestCase):
                     {"alias": "main", "configured": False, "label": "inherit"},
                     *[
                         {"alias": alias, "configured": False, "label": "inherit"}
-                        for alias in (
-                            "vision",
-                            "web_extract",
-                            "compression",
-                            "skills_hub",
-                            "approval",
-                            "mcp",
-                            "title_generation",
-                            "memory_query_rewrite",
-                            "tts_audio_tags",
-                            "triage_specifier",
-                            "kanban_decomposer",
-                            "profile_describer",
-                            "goal_judge",
-                            "curator",
-                        )
+                        for alias in HERMES_AUX_ALIASES
                     ],
                 ],
-                "inherit_count": 15,
+                "inherit_count": len(HERMES_AUX_ALIASES) + 1,
             },
         )
 
@@ -241,7 +227,7 @@ class MenubarStatusTests(unittest.TestCase):
             [
                 ("current", "current-model"),
                 ("main", "inherit"),
-                ("+14 aliases", "inherit default"),
+                (f"+{len(HERMES_AUX_ALIASES)} aliases", "inherit default"),
             ],
         )
 
@@ -313,8 +299,8 @@ class MenubarStatusTests(unittest.TestCase):
                     ("current", "gpt-5.6-sol:medium"),
                     ("main", "anthropic/claude-opus-4.6:medium"),
                     ("vision", "google/gemini-2.5-pro"),
-                    ("web_extract", "google/gemini-2.5-flash"),
-                    ("+12 aliases", "inherit default"),
+                    ("approval", "google/gemini-2.5-flash"),
+                    (f"+{len(HERMES_AUX_ALIASES) - 2} aliases", "inherit default"),
                 ],
             )
             self.assertEqual(
@@ -936,7 +922,7 @@ class MenubarStatusTests(unittest.TestCase):
 agent:
   reasoning_effort: medium
 auxiliary:
-  web_extract:
+  approval:
     model: google/gemini-2.5-flash
   vision:
     model: google/gemini-2.5-pro

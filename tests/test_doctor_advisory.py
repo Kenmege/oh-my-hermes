@@ -33,6 +33,7 @@ from omh.maintenance.advisory import (
     run_config_advisories,
 )
 from omh.maintenance.doctor import Check, doctor_ok, recommended_next_action, run_doctor, run_doctor_advisories
+from omh.surfaces.hermes_model_settings import HERMES_AUX_ALIASES
 from omh.commands import setup as setup_commands
 from omh.installer import install_skill_pack
 from omh.manifest import read_manifest, write_manifest
@@ -112,11 +113,23 @@ class AuxiliaryRoutingTests(unittest.TestCase):
         entry = check_auxiliary_routing_unset(self._home(ALL_AUTO_AUXILIARY))
         self.assertEqual(entry.status, "advice")
         self.assertTrue(entry.read_only)
-        self.assertIn("11 observed", entry.observed)
+        # The fixture's leftover `web_extract` block is not counted.
+        self.assertIn("10 observed", entry.observed)
 
     def test_one_pinned_model_is_ok(self) -> None:
         entry = check_auxiliary_routing_unset(self._home(ONE_PINNED_AUXILIARY))
         self.assertEqual(entry.status, "ok")
+
+    def test_a_pin_on_a_slot_hermes_ignores_is_not_routing(self) -> None:
+        # Hermes stopped reading `auxiliary.web_extract` before the supported
+        # floor and ignores a leftover block, so pinning it routes nothing.
+        config = ALL_AUTO_AUXILIARY.replace(
+            "  web_extract:\n    provider: auto\n    model:\n",
+            "  web_extract:\n    provider: openai\n    model: gpt-4o\n",
+        )
+        entry = check_auxiliary_routing_unset(self._home(config))
+        self.assertEqual(entry.status, "advice")
+        self.assertIn("10 observed", entry.observed)
 
     def test_missing_config_is_unobserved(self) -> None:
         entry = check_auxiliary_routing_unset(self._home(None))
@@ -373,9 +386,9 @@ class GoldenStringTests(unittest.TestCase):
 
     def test_auxiliary_facts_present(self) -> None:
         entry = check_auxiliary_routing_unset(Path(tempfile.mkdtemp()))
-        for slot in ("vision", "compression", "curator", "title"):
+        for slot in HERMES_AUX_ALIASES:
             self.assertIn(slot, entry.remediation)
-        self.assertIn("11", entry.remediation)
+        self.assertNotIn("web_extract", entry.remediation)
 
     def test_soul_and_memory_boundary_copy(self) -> None:
         report = run_config_advisories(Path(tempfile.mkdtemp()))

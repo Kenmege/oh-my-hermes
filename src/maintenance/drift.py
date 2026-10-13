@@ -458,7 +458,16 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # bare `backend` token was credited to it, and debugging an app's
             # web search backend, a clarify that must never become a dispatch
             # of the setup guide (2).
-            expected=479,
+            # Its cost and free-tier phrases add three: a bare price question,
+            # which became a clarify while `much` was credited to the setup
+            # guide; a vendor free-tier question, which named the setup guide
+            # while `free` and `tier` were; and an API cost complaint, which
+            # named it while `costs` and `too` were (3). Its review adds two:
+            # profiling an app's web extract backend, which dispatched the
+            # setup guide while `web extract backend` was a trigger, and
+            # building a web search backend, a clarify that must never become
+            # a dispatch of the setup guide (2).
+            expected=484,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -564,7 +573,15 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The websearch-setup backend trigger adds one: switching the web
             # search backend to a free tier, a clarify with the setup guide
             # leading, which dispatched a live web lookup before (1).
-            expected=678,
+            # Setup and cost phrasing adds five: configuring web search, a
+            # dispatch of the setup guide; a web search cost complaint and the
+            # keyless free web search tier, each a clarify with the setup guide
+            # leading, all three of which dispatched a live web lookup before;
+            # and two lookups about costs and free tiers that stay on
+            # `web-research` (5). Its review adds one: setting the web extract
+            # backend, a clarify with the setup guide leading, which led with
+            # the lookup lane before (1).
+            expected=684,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

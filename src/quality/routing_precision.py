@@ -1306,6 +1306,54 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     # setup guide; before the phrase joined the setup-guide list this
     # sentence dispatched a live web lookup. No `forbidden_candidate`: the
     # setup guide is the scored leader and stays the named candidate.
+    # `costs`, `too`, `much`, `free`, and `tier` are held back for
+    # `websearch-setup` too. Measured without the hold, the first turned from
+    # a direct answer into a clarify, and the other two named the setup guide.
+    RoutingPrecisionCase(
+        "how-much-does-it-cost-stays-direct",
+        "A bare price question stays a direct answer",
+        "how much does it cost",
+        "answer_directly",
+        "direct_answer",
+        forbidden_candidate="websearch-setup",
+    ),
+    RoutingPrecisionCase(
+        "vendor-free-tier-question-stays-out-of-websearch-setup",
+        "A question about a vendor's free tier never names the web search setup guide",
+        "is there a free tier for supabase",
+        "answer_clarification",
+        "",
+        forbidden_candidate="websearch-setup",
+    ),
+    RoutingPrecisionCase(
+        "api-cost-complaint-stays-out-of-websearch-setup",
+        "An API cost complaint never names the web search setup guide",
+        "the api costs too much per call",
+        "answer_clarification",
+        "",
+        forbidden_candidate="websearch-setup",
+    ),
+    # Measured with `web extract backend` as a catalog trigger, this
+    # sentence about the user's own parser dispatched the setup guide.
+    RoutingPrecisionCase(
+        "slow-web-extract-backend-stays-out-of-websearch-setup",
+        "Profiling an app's web extract backend never names the web search setup guide",
+        "the web extract backend is slow, profile the parser",
+        "answer_clarification",
+        "",
+        forbidden_candidate="websearch-setup",
+    ),
+    # Building a search service is the user's own code. The setup guide may
+    # lead the shortlist on the phrase, but it must never dispatch; before the
+    # phrase joined the setup-guide list this sentence dispatched
+    # `deep-interview`, which no longer appears among the candidates.
+    RoutingPrecisionCase(
+        "building-a-web-search-backend-never-dispatches-the-setup-guide",
+        "Building a web search backend asks rather than opening the setup guide",
+        "build a web search backend with elasticsearch",
+        "answer_clarification",
+        "",
+    ),
     RoutingPrecisionCase(
         "debugging-a-web-search-backend-never-dispatches-the-setup-guide",
         "Debugging an app's web search backend asks rather than opening the setup guide",
@@ -6396,6 +6444,75 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "websearch-setup",
         "run_setup_guide",
         "setup_guide",
+    ),
+    # Setup and cost phrasing reaches the setup guide; before these phrases
+    # joined the setup-guide list each one dispatched a live web lookup.
+    # `configure web search` is a complete trigger and dispatches; the cost
+    # and free-tier phrases are built from held-back pricing words, so they
+    # ask with the setup guide leading.
+    RoutingInterventionCase(
+        "configure-web-search-opens-the-setup-guide",
+        "Configuring web search opens the web search setup guide instead of a lookup",
+        "configure web search",
+        "dispatch",
+        "websearch-setup",
+        "run_setup_guide",
+        "setup_guide",
+    ),
+    RoutingInterventionCase(
+        "web-search-cost-complaint-leads-with-the-setup-guide",
+        "A web search cost complaint leads with websearch-setup rather than running a lookup",
+        "web search costs too much",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "websearch-setup",
+    ),
+    RoutingInterventionCase(
+        "keyless-web-search-tier-leads-with-the-setup-guide",
+        "Choosing the keyless free web search tier leads with websearch-setup rather than running a lookup",
+        "use the keyless free web search tier",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "websearch-setup",
+    ),
+    # `web extract backend` is a setup-guide phrase but not a trigger: as a
+    # trigger it dispatched the guide on an app-performance sentence (pinned
+    # in the negative corpus), so the phrase only stands down the lookup
+    # guard and the route asks with the guide leading.
+    RoutingInterventionCase(
+        "web-extract-backend-choice-leads-with-the-setup-guide",
+        "Setting the web extract backend leads with websearch-setup rather than the lookup lane",
+        "set the web extract backend to firecrawl",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "websearch-setup",
+    ),
+    # The other side of the same phrases: a lookup ABOUT costs or free tiers
+    # stays a lookup. Measured: widening the trigger and setup-guide phrases
+    # to "web search costs" and "free tier" turns both into clarifies.
+    RoutingInterventionCase(
+        "web-search-cost-lookup-stays-on-web-research",
+        "A cited lookup about costs stays on the web lookup lane",
+        "web search costs of cloud GPUs and cite sources",
+        "dispatch",
+        "web-research",
+        "run_hermes_research",
+        "web_research",
+    ),
+    RoutingInterventionCase(
+        "web-search-free-tier-lookup-stays-on-web-research",
+        "A lookup about which search APIs have a free tier stays on the web lookup lane",
+        "web search which search APIs have a free tier",
+        "dispatch",
+        "web-research",
+        "run_hermes_research",
+        "web_research",
     ),
     RoutingInterventionCase(
         "english-morning-brief-connect-guide",
