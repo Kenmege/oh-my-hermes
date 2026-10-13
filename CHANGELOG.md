@@ -4,6 +4,46 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The memory and learning skills now read what Hermes' own learning loop
+  wrote or is holding: pending memory writes, staged skill writes, the skill
+  audit ledger, curator run reports, and the one memory-provider slot.**
+  `memory-sync` lists the memory writes Hermes holds for approval under
+  `pending/memory/` as proposals the person decides with `/memory approve` or
+  `/memory reject`, reports a native write that comes back `staged: true` as
+  waiting rather than saved, and reads each file's cap from the inventory,
+  with the fallback figures taken from the plugin bundle's own Hermes memory
+  reader rather than a second copy. Hermes' `write_approval` is described
+  as Hermes' gate on Hermes' own writes: a safe `omh_memory` capture is still
+  approved by OMH's auto-safe policy with no person in the loop, OMH never
+  approves or rejects a pending write, and it never proposes turning the gate
+  on.
+  `external-connector-readiness` states that Hermes runs one external memory
+  provider, so adopting another provider where `memory.provider` reads `omh`
+  stops OMH's per-turn recall and dreaming reminders and leaves `omh_memory`
+  refusing to recall or write records; the switch stays a proposed diff the
+  user applies. It also records the plugin install scan and the OSV malware
+  check for `npx`/`uvx` MCP servers only from output that was seen, since a
+  quiet install or launch is not a clean result. `workflow-learning` reads
+  the skill audit ledger and reports agent or background-review skill writes
+  that no store route accounts for as `unreviewed_native_write`;
+  `instinct-ledger` keeps such a write out of an instinct's evidence and
+  promotes through store routes; `rules-distill` lands an approved candidate
+  in the user's own Hermes skills through `skill_manage`, never an OMH-managed
+  skill, and reads curator run reports as one observation each.
+  `skill-health` reads the ledger for managed skills changed outside OMH,
+  `lint_warnings` from skill writes, and `hermes skills check` for hub
+  updates, and never presents use or load counts as a reason to prune,
+  archive, or retire a skill. `skill-scout` fills its candidates from
+  `hermes skills search` and `inspect` with each source's trust level, and a
+  scan verdict only from install or audit output. `prompt-import-readiness`
+  starts from the `hermes import-agent --dry-run` preview, which skips Claude
+  Code's slash-command prompts and does not read Codex prompt files, makes a
+  skill the conversion target, and checks names against built-in commands,
+  quick commands, plugin commands, skill bundles, and skills in the CLI's
+  order. The seven feature-surface skills among these state their own Why
+  and Do-Not-Use.
+
+
 - **The run-efficiency report now carries what Hermes itself recorded for a
   named session, and the tracker skills point at Hermes' own usage, compaction,
   tool, agent, stop, and skill surfaces.** `omh runtime efficiency-report

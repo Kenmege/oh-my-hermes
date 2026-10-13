@@ -74,6 +74,7 @@ from ..plugin_bundle.omh.awareness import (
     awareness_workflow_context_markdown,
     router_keyword_summary,
 )
+from ..plugin_bundle.omh.hermes_memory import HERMES_MEMORY_FILES
 from ..plugin_bundle.omh.native_tools import NATIVE_CRON_TOOL, NATIVE_TODO_TOOL, native_tool_presence_clause
 from ..plugin_bundle.omh.todo_store import (
     MAX_TODO_ITEMS,
@@ -1529,6 +1530,15 @@ def memory_sync_skill() -> SkillTemplate:
     title = name.replace("-", " ").title()
     triggers = _shipped_triggers(definition)
     primary_harness = declared_primary_harness(name)
+    # The caps Hermes falls back to come from the bundle's own reader, which
+    # also reports the cap it read from config, so the body never restates them.
+    caps = (
+        "Caps: use each file's `cap` and `cap_source` from the inventory; Hermes reads them from "
+        + " and ".join(f"`memory.{key}`" for _label, key, _default in HERMES_MEMORY_FILES)
+        + " and falls back to "
+        + " and ".join(f"{default:,} characters for {label}" for label, _key, default in HERMES_MEMORY_FILES)
+        + "."
+    )
     body = f"""# {title}
 
 This is a Hermes-native `{name}` workflow skill.
@@ -1540,6 +1550,7 @@ This is a Hermes-native `{name}` workflow skill.
 ## English-Canonical Interview Protocol
 
 - **Inventory (목록)** - Call `omh_memory` with `action="status"` for the entry inventory: per-file counts, per-entry index and size, headroom, and entries with no OMH record. It returns counts and hashes, never entry text.
+- **Pending writes (대기)** - Also list the memory writes Hermes is holding for approval: one JSON record per write under `pending/memory/` in the active profile's Hermes home, carrying `id`, `action`, `summary`, `origin`, and `created_at`. `/memory pending` shows the same list and tags `[auto]` a write whose `origin` is `background_review`, one Hermes' own background review proposed. Read the directory whatever `memory.write_approval` says now, since a record stays there until the person decides it. A pending write is not in `MEMORY.md` or `USER.md` yet: review it as a proposal, never as a remembered claim, and leave approving or rejecting it to the person (`/memory approve <id>` or `/memory reject <id>`).
 - **Claim extraction (추출)** - Break the `USER.md` and `MEMORY.md` material into claims; quote only observed claims and never invent provenance.
 - **Provenance (출처)** - Ask for the source class and distinguish Hermes-native, provider, and vector material as `not_omh_reviewed`. A provider posture's `input_fidelity_summary.readiness` is literal: only `complete_observed` rests on an observed complete receipt (`docs/MEMORY-SYNC-FIDELITY.md`).
 - **Target (대상)** - Review existing native-memory claims only; route a new project/product fact to `memory-new`.
@@ -1550,10 +1561,10 @@ This is a Hermes-native `{name}` workflow skill.
 - **Source recovery (출처 회수)** - A whole wrong source is not a record-by-record review. Enumerate it with `omh memory sources --source <label>` (a read; it quarantines nothing), then follow `references/source-recovery.md`.
 - **Review (검토)** - Prioritize stale, conflicting, duplicate, and overgeneralized claims. Offer keep, revise, or archive; never call an archive a removal.
 - **Attention (주의)** - For a reviewed OMH-local record, keep/archive is an attention tier: `active` leads the working context, `reference` stays recallable behind it, `archive` leaves default recall. Preview with `omh memory attention <record-id> --tier <tier>`, name which records stay in or leave the working context, then add `--apply` only after the user agrees. The preview writes nothing.
-- **Diff (차이)** - Prepare one concise native write diff with before/after claims and counts. Caps: MEMORY.md about 2,200 characters, USER.md about 1,375 characters.
-- **Move to OMH** - A durable entry the user agrees belongs in OMH, you capture yourself with `omh_memory` and `action="capture"` (one bounded summary per fact; never hand the user a CLI step), and the diff shrinks its Hermes entry to a short pointer line. The capture result is OMH-local evidence only; the Hermes side changes only through the native write below.
+- **Diff (차이)** - Prepare one concise native write diff with before/after claims and counts. {caps}
+- **Move to OMH** - A durable entry the user agrees belongs in OMH, you capture yourself with `omh_memory` and `action="capture"` (one bounded summary per fact; never hand the user a CLI step), and the diff shrinks its Hermes entry to a short pointer line. The capture result is OMH-local evidence only; the Hermes side changes only through the native write below. Hermes' `write_approval` gates only Hermes' own memory and skill writes, never this capture: OMH's own policy approves a safe capture at once (`approved_auto_safe`), and a capture waits for review only when its result names a `review_reason`.
 - **Native-write boundary (쓰기)** - OMH prepares guidance and a native write diff only; no OMH surface invokes, applies, or observes a `MEMORY.md`/`USER.md` write.
-- **Apply after approval (적용)** - Per-entry answers feed the diff without approving it. Ask for one explicit approval of the assembled diff, then apply the approved entries yourself through the Hermes-native memory tool that owns these files and report what the write observably changed; an approved diff left unapplied while the tool is available fails the interview. Without the tool, report the approved diff and stop; never edit the files directly. The OMH artifact stays `memory_curation_review/v1` metadata either way; the native write is Hermes's own act and never becomes OMH mutation evidence.
+- **Apply after approval (적용)** - Per-entry answers feed the diff without approving it. Ask for one explicit approval of the assembled diff, then apply the approved entries yourself through the Hermes-native memory tool that owns these files and report what the write observably changed; an approved diff left unapplied while the tool is available fails the interview. Without the tool, report the approved diff and stop; never edit the files directly. When the native write returns `staged: true` with a `pending_id`, nothing was saved even though `success` is true: Hermes' own write approval, the user's setting, is holding it, so report it as staged and waiting for the person's `/memory approve <id>`, never as an applied write, and do not repeat the write. When Hermes asks the person before the write and they decline, the error result saved nothing: report that entry as declined and do not retry it. The OMH artifact stays `memory_curation_review/v1` metadata either way; the native write is Hermes's own act and never becomes OMH mutation evidence.
 
 ## Open Records
 

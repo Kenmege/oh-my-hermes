@@ -687,7 +687,15 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # with nothing (the modern TUI's shows no context) and says `/usage` shows
 # tokens and context; `skill`'s in-chat `/skills` line covers the TUI too.
 # Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 492733
+# 492733 -> 492655: memory and learning skills onto Hermes' native loop. Seven
+# feature-surface skills (`memory-sync`, `external-connector-readiness`,
+# `prompt-import-readiness`, `instinct-ledger`, `skill-scout`, `skill-health`,
+# `workflow-learning`) now state their own Do-Not-Use, so each row's one
+# `do_not_use_when` entry is that skill's first boundary, shorter than the
+# shape's shared generic line. The pending-write, provider-slot, ledger, scan,
+# import-preview, and usage-count rules sit past the rows' bounds and move
+# nothing here. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 492655
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -1864,9 +1872,9 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # above removes. So it takes the same policy: the measurement plus
 # `FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT`, rounded UP to the next multiple
 # of `FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS` (10,000, about a
-# tenth of the measurement). The 18,407 chars of headroom (130,000 - 111,593)
-# hold about twelve median lane members, while a renderer change that stamps
-# one more shared sentence longer than about 129 chars into every one of the
+# tenth of the measurement). The 10,952 chars of headroom (120,000 - 109,048)
+# hold about seven median lane members, while a renderer change that stamps
+# one more shared sentence longer than about 77 chars into every one of the
 # 142 bodies, or a few skills that copy other skills' own sections, still
 # fails.
 #
@@ -1914,9 +1922,15 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # and recovery notes instead of the operator defaults, so those sections are
 # no longer byte-identical to another skill's. 111,593 plus 10%, rounded up to
 # the next 10,000, is still 130,000.
-FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 111593
+# 130,000 -> 120,000 (measurement 111,593 -> 109,048): seven more
+# feature-surface skills (`memory-sync`, `external-connector-readiness`,
+# `prompt-import-readiness`, `instinct-ledger`, `skill-scout`, `skill-health`,
+# `workflow-learning`) state their own Do-Not-Use instead of the shape's three
+# shared lines, so those sections are no longer byte-identical to another
+# skill's. 109,048 plus 10%, rounded up to the next 10,000, is 120,000.
+FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 109048
 FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS = 10000
-FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT = 130000
+FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT = 120000
 
 
 @dataclass(frozen=True)

@@ -5764,6 +5764,7 @@ _DEFINITIONS = [
             "Do not silently mutate skills, prompts, AGENTS.md, docs, memory, or catalog data from a distillation result.",
             "Do not promote one-off preferences, weak anecdotes, or stale traces into global rules.",
             "Keep observed sources, inferred principles, candidate wording, review state, and implementation patches separate.",
+            "On Hermes, when the destination is the user's own Hermes skills, an approved candidate lands through `skill_manage`: report it landed only from a result that succeeded without `staged: true`, with the matching skill audit ledger entry as its record while the ledger is on, and report a staged write as waiting in `/skills pending` for the person's own `/skills approve <id>` under their `skills.write_approval` setting. OMH-managed `omh-*` skills are generated from OMH's catalog and are never the destination; a lesson about one goes to `workflow-learning`.",
         ),
         quality_tier="rules-distillation-gated",
         quality_bar=(
@@ -5771,6 +5772,7 @@ _DEFINITIONS = [
             "Deduplicate against existing guidance and name conflicts or narrower scopes.",
             "Use imperative, testable wording and include non-goals for each candidate.",
             "Require review approval before any patch handoff or generated-skill update.",
+            "On Hermes, read a curator run report (`logs/curator/<run>/REPORT.md` and `run.json` under the active profile's Hermes home) as a source like a review or a trace: it records which skills the curator consolidated, archived, or created in that run, and one report is one observation, never repeated evidence by itself.",
         ),
         why_this_exists=(
             "`rules-distill` gives OMH a disciplined way to learn from large skill ecosystems like ECC without wholesale copying: "

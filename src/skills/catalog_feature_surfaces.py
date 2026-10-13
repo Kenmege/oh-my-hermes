@@ -270,10 +270,22 @@ _FEATURE_SURFACE_SKILLS = (
             "Keep English as the canonical protocol; Korean routing triggers and concise Korean help labels remain available.",
             "Quote claims only when observed, do not invent provenance, and keep the prepared native diff separate from any native write.",
             "A memory_provider_posture/v1 block arrives as not_omh_reviewed context and a next-action handoff; it imports no provider record into OMH review and authorizes no native-memory mutation.",
+            "A write Hermes holds in `pending/memory/` is the person's to decide: OMH never approves, rejects, edits, or deletes one, and never proposes turning `memory.write_approval` on or off.",
         ),
         extra_quality_bar=(
             "State that Hermes-native and external provider/vector context is not_omh_reviewed, can nominate a candidate only, and may receive rendered OMH prefetch content through a configured Hermes runtime model request.",
             "Send memory-provider lifecycle questions -- enabling, switching, pausing, retention, deletion, export, or failed synchronization -- to external-connector-readiness, which owns the provider posture this review cannot establish.",
+        ),
+        why_this_exists=(
+            "`memory-sync` exists because Hermes' memory files are small, capped, and written by more than one hand -- "
+            "the model, Hermes' own background review, and the person -- so a stale or wrong entry rides in every prompt "
+            "until someone checks it: this review walks the entries with the person one claim at a time, prepares one "
+            "diff they approve, and reports only the write Hermes itself returns."
+        ),
+        do_not_use_when=(
+            "The user states a new fact to remember; capture it with `memory-new`.",
+            "The user asks what was decided or rejected before; use `decision-recall`.",
+            "The user wants a memory provider enabled, switched, paused, or removed; use `external-connector-readiness`, which owns the provider slot.",
         ),
         situations=(
             "you have outdated info about me",
@@ -1038,6 +1050,7 @@ _FEATURE_SURFACE_SKILLS = (
             "For a memory provider, disabling it, removing its local cache, deleting its remote memory, deleting the account, and switching away are reported as distinct operations with distinct postconditions.",
             "Unknown deletion, isolation, or write semantics block automatic writes and irreversible adoption instead of resolving to an OMH or Hermes default.",
             "For a realtime voice connector, keep turn integrity, latency, fallback, interruption, and spoken tool safety separate; report unsupported or unobserved dimensions as hold or block rather than as a pass.",
+            "On Hermes, record its install-time scans as observed evidence beside the card, never in place of it: `hermes plugins install` scans a plugin before installing it (`safe`, `caution`, or `dangerous`, and a `dangerous` verdict is refused even with `--force`), and an MCP server started through `npx` or `uvx` is checked against OSV malware advisories and refused with a `BLOCKED:` message on a match. A scan counts only when its output was seen: the plugin scan does not run with `plugins.scan_on_install` off, and the OSV check covers known malware only and lets the server start when its lookup fails, so a quiet install or launch is not a clean result.",
         ),
         recovery_notes=(
             "If the candidate list is unknown, route to skill-scout or source-finder before readiness scoring.",
@@ -1049,7 +1062,8 @@ _FEATURE_SURFACE_SKILLS = (
         extra_safety_rules=(
             "A hook registration or lifecycle callback is an observation point only; it never grants write or synchronization authority.",
             "Documentation and open package code declare a contract; neither establishes a hosted service's storage, retention, cost, or deletion postcondition.",
-            "A memory provider stays optional: an unknown or unavailable provider never becomes a required default and never makes OMH memory unusable.",
+            "A memory provider stays optional: an unknown or unavailable provider never becomes a required default.",
+            "On Hermes, the memory provider is one slot: Hermes runs its built-in memory and no more than one external provider, the one `memory.provider` names, so adopting another provider (honcho or mem0, for example) where that key reads `omh` displaces OMH's provider. OMH's per-turn recall and dreaming reminders then stop, and the `omh_memory` tool stays registered but refuses to recall or write records (`session_lens_unavailable`), because the session lens it reads comes from the provider. State that displacement in the posture before adoption, and keep the switch a proposed `memory.provider` diff the user applies.",
             "A realtime voice verdict comes only from a supplied realtime_voice_trial_receipt/v1. OMH opens no microphone, call, room, socket, or provider session, installs no connector, downloads no voice model, and authorizes no tool from a receipt.",
             "A synthetic voice fixture never proves the intended room, microphone, network, or telephony path, and a fallback path succeeding is never success for the requested voice stack, provider, or model.",
             "Generic connector, voice-input, and media-input records are not realtime voice readiness; a turn that lost its onset, split, merged, dispatched twice, truncated, or replayed after audible output blocks the verdict rather than reporting latency.",
@@ -1058,6 +1072,17 @@ _FEATURE_SURFACE_SKILLS = (
         ),
         extra_quality_bar=(
             "Trial two or more memory providers on one corpus and one query set, never on each provider's own sample — load `references/memory-provider-trial.md` for the corpus, query, and reversibility rules.",
+        ),
+        why_this_exists=(
+            "`external-connector-readiness` exists because adopting a plugin, connector, API, or memory provider changes "
+            "what the agent can reach, spend, and remember, and a host's install-time scan or a vendor's docs answer only "
+            "part of that: it scores capability, auth, cost, freshness, safety, and fallback for each candidate, and "
+            "reports a trial only from what was observed."
+        ),
+        do_not_use_when=(
+            "Choosing which coding owner runs a task; use `executor-runtime-readiness`.",
+            "Finding which tool, credential, or install is missing for work already chosen; use `toolbelt-readiness`.",
+            "A read-only live lookup or an external write through a connector already adopted; use `live-info-operator` or `connector-operator`.",
         ),
         situations=(
             "should we adopt this plugin",
@@ -1131,11 +1156,26 @@ _FEATURE_SURFACE_SKILLS = (
             "Explicit-path audit reads and compatibility results are observed only in their audit output; source discovery, command registration, prompt mutation, slash-command activation, and dry-run execution remain marked not_observed.",
             "Route broad candidate discovery to skill-scout, prompt/tool safety to security-safety-review, missing CLIs or directories to toolbelt-readiness, and approved implementation to a selected executor handoff.",
             "Imported prompts, generated command files, registry updates, and dry-run results are reported only from observed prompt-import evidence.",
+            "Seed `prompt_source_inventory/v1` from the user's `hermes import-agent claude-code --dry-run` (or `codex`) preview, which stops before importing anything: it lists Claude Code's `commands/*.md` as skipped with no direct Hermes equivalent, the list this card converts, and it reads no Codex prompt files at all, so those come from the files the user names. The preview is observed only when its output is seen.",
+            "Make a skill the conversion target for a prompt the model should follow; a Hermes quick command (`quick_commands`) runs only a shell command (`exec`) or another slash command (`alias`) and cannot hold a prompt.",
+            "In the Hermes CLI a slash name resolves to a built-in command first, then a quick command, a plugin command, a skill bundle, and a skill, so `slash_command_collision_report/v1` checks each candidate name against all five in that order.",
         ),
         recovery_notes=(
             "If source prompt directories are unknown, route to workspace-audit or skill-scout before readiness scoring.",
             "If source trust, prompt-injection risk, secrets, or destructive command content is unclear, route to security-safety-review before import.",
             "If the user asks to actually copy, generate, or register prompt files, prepare an executor or workspace-file handoff and keep readiness prepared_not_observed until file evidence exists.",
+        ),
+        why_this_exists=(
+            "`prompt-import-readiness` exists because a prompt library from another CLI agent does not become Hermes "
+            "commands by copying files: Hermes' own importer skips Claude Code's slash-command prompts and never reads "
+            "Codex prompt files, its quick commands hold no prompt, and a new name can collide with a built-in command, "
+            "a quick command, or a skill. This card inventories the sources, maps arguments, and settles each name "
+            "before anything is written."
+        ),
+        do_not_use_when=(
+            "Adopting a plugin, connector, API, or memory provider; use `external-connector-readiness`.",
+            "A runtime capability or CLI the work needs is missing; use `toolbelt-readiness`.",
+            "Searching for an existing skill to reuse before writing one; use `skill-scout`.",
         ),
         situations=(
             "bring my claude code commands into hermes",
@@ -1976,11 +2016,24 @@ _FEATURE_SURFACE_SKILLS = (
             "Each instinct is atomic: one trigger, one action, one scope, confidence, evidence refs, and review state.",
             "Project-specific conventions, global practices, project/global promotion candidates, imports, and exports are separated.",
             "No hooks, memory writes, skill edits, global promotion, import/export, or behavior-change claims are made without observed approval and implementation evidence.",
+            "A promoted instinct leaves as a store route, `memory_candidate` for `memory-new` or `skill_update_candidate` for `workflow-learning`, never as a parallel store of its own.",
+            "On Hermes, the skill audit ledger (`skills/.curator_ledger.jsonl` under the active profile's Hermes home) is observed evidence of what the agent or its background review already wrote; an instinct that matches a ledger entry no store route accounts for is reported as `unreviewed_native_write`, never counted as repeated evidence for the instinct.",
         ),
         recovery_notes=(
             "If the request is a single missed route or run trace, route to workflow-learning first.",
             "If the request is to mutate durable rules, prompts, skills, or AGENTS guidance, route to rules-distill or implementation after review approval.",
             "If evidence comes from a stuck run, use agent-debug before converting lessons into instincts.",
+        ),
+        why_this_exists=(
+            "`instinct-ledger` exists because a lesson seen once is an anecdote and one seen across runs or projects is a "
+            "candidate rule: it records each as one atomic instinct with its trigger, action, scope, confidence, and "
+            "evidence, and promotes one only through a reviewed store route, never by writing a host's memory or skills "
+            "on its own."
+        ),
+        do_not_use_when=(
+            "A single missed route or one run's trace; use `workflow-learning` first.",
+            "Writing reviewed lessons into AGENTS guidance, prompts, or skills; use `rules-distill`.",
+            "A run that is stuck right now; use `agent-debug` before drawing a lesson from it.",
         ),
         situations=(
             "lessons we keep relearning",
@@ -2041,11 +2094,23 @@ _FEATURE_SURFACE_SKILLS = (
             "Intent, keywords, source scope, and stop condition are explicit.",
             "Local and external search evidence is separated from planned search.",
             "No install, copy, write, credential, or trust claim is made without observed review or implementation.",
+            "On Hermes, fill the external candidates from `hermes skills search <query>` and `hermes skills inspect <identifier>`, whose hub requests are Hermes' own, not OMH's. Keep the trust level each shows (`builtin`, `trusted`, or `community`, highest first) beside the candidate as its source's standing, never as a review of its content, and record a scan verdict (`safe`, `caution`, or `dangerous`) only from install or `hermes skills audit` output that was seen, so a candidate nobody installed has none.",
         ),
         recovery_notes=(
             "If the request is about setup or installed skill repair, route to doctor.",
             "If the request is a portfolio health dashboard, route to skill-health.",
             "If the request is an approved skill mutation or creation task, route to skill or implementation after the scout decision.",
+        ),
+        why_this_exists=(
+            "`skill-scout` exists because writing a skill that already exists, or adopting a public one on its "
+            "popularity, both cost more than a search: it compares installed, bundled, and public candidates first, "
+            "keeps each source's trust level and any scan verdict beside it, and recommends using, extending, or "
+            "creating one without installing, copying, or trusting anything."
+        ),
+        do_not_use_when=(
+            "Repairing an OMH install or a skill that does not load; use `doctor`.",
+            "A health overview of the skills already installed; use `skill-health`.",
+            "Writing or changing a skill once the scout decision is made; use `skill`.",
         ),
         situations=(
             "does a skill for this already exist",
@@ -2089,10 +2154,24 @@ _FEATURE_SURFACE_SKILLS = (
             "Dashboard scope, source surfaces, stale/duplicate criteria, and stop condition are explicit.",
             "Install/setup health is routed to doctor; catalog operations are routed to skill; failure retrospectives are routed to workflow-learning.",
             "No skill, prompt, doc, memory, or model behavior is claimed changed until a reviewed implementation records evidence.",
+            "Never present use, view, or load counts, `.usage.json` included, as a health, prune, archive, or retire signal: a rarely used skill is not an unhealthy one, and no health card recommends removing, archiving, or pruning a skill for being used little.",
+            "On Hermes, read the skill audit ledger read-only (`hermes curator ledger --skill <name>`, or that skill's entries in `skills/.curator_ledger.jsonl` under the active profile's Hermes home): an entry against an `omh-*` skill means Hermes changed that managed copy outside OMH, so it may no longer match its generated body; report it as drift with the entry's `action` and `actor` (`agent`, `user`, or `curator`, which covers Hermes' curator and its background review). An empty ledger is unknown, not clean, because `skills.ledger: false` turns it off.",
+            "On Hermes, record an authoring finding only from the `lint_warnings` a `skill_manage` write returned, which are advisory and never proof a skill works, and an available update for a hub-installed skill only from `hermes skills check` output that was seen; that hub request is Hermes' own, not OMH's.",
         ),
         recovery_notes=(
             "If the request is about OMH setup, install, stale package paths, or command availability, route to doctor.",
             "If the request is a missed-route or self-improvement trace, route to workflow-learning before adding health actions.",
+        ),
+        why_this_exists=(
+            "`skill-health` exists because a skill portfolio drifts in ways no single run shows -- a managed skill "
+            "changed in place, an authoring finding nobody fixed, an update waiting on its hub -- and use counts measure "
+            "none of that: it gathers the observed signals into one card with an owner lane and a safe next action for "
+            "each, and changes nothing itself."
+        ),
+        do_not_use_when=(
+            "OMH setup, install, or a skill that does not load; use `doctor`.",
+            "One run that missed a route or went wrong; use `workflow-learning`.",
+            "Finding a new skill to adopt; use `skill-scout`.",
         ),
         situations=(
             "which skills are failing",
@@ -2155,6 +2234,23 @@ _FEATURE_SURFACE_SKILLS = (
         recovery_notes=(
             *_GENERAL_RECOVERY_NOTES,
             "Native write policy `required` stops promotion as unsupported and `not_required` is not an approval; drift unlinks only the managed SKILL.md and keeps generations and receipts, and an incomplete promotion resumes only via explicit `retry --receipt-id`.",
+        ),
+        final_checklist=(
+            "Read Hermes' skill audit ledger read-only (`hermes curator ledger`, or `skills/.curator_ledger.jsonl` under the active profile's Hermes home) and report each entry whose `actor` is `agent` or `curator` (Hermes' curator or its background review) that no store-route record (`omh learning store-routes`) or approved `skill_update_candidate` accounts for as `unreviewed_native_write`. An empty ledger is unknown, not clean, because `skills.ledger: false` turns it off.",
+            "Mark an approved `skill_update_candidate` landed only from a `skill_manage` result for that skill that succeeded without `staged: true`, or a ledger entry for that skill dated after the approval; a staged result waits in `/skills pending` for the person and has not landed.",
+            "The ledger records skill writes only: a memory write by Hermes' background review is visible only when Hermes staged it under `pending/memory/` with `origin: background_review`, and is `not_observed` otherwise.",
+            "Point the user to `/journey` in the Hermes CLI for Hermes' own view of what it learned; reading the ledger or the journey changes nothing, and undoing an entry (`hermes curator rollback <id>`) is the person's own step, never OMH's.",
+        ),
+        why_this_exists=(
+            "`workflow-learning` exists because a lesson from a run can land in the wrong store or in none, and Hermes' "
+            "own background review can write skills and memory after a turn with no OMH review: it routes each lesson to "
+            "memory, skill, wiki, failure-retrospective, or automation review as metadata-only records, and checks what "
+            "Hermes wrote on its own against what was reviewed."
+        ),
+        do_not_use_when=(
+            "A lasting fact the user wants kept; capture it with `memory-new`.",
+            "Lessons seen across runs or projects to score and promote; use `instinct-ledger`.",
+            "A run that is stuck or looping right now; use `agent-debug`.",
         ),
         situations=(
             "why didn't omh pick a skill",

@@ -285,9 +285,21 @@ NON_SKILL_BACKTICKS = frozenset(
 # `ops-observability-card`, which cannot produce a session's own usage (Hermes'
 # /usage and omh_run_summary do). Seven cases and seven pairs net, five new
 # owners.
-EXPECTED_DEFERENCE_CASES = 349
-EXPECTED_DEFERENCE_PAIRS = 363
-EXPECTED_DEFERRING_OWNERS = 103
+# Seven memory and learning feature-surface skills do the same, three
+# statements each, every one naming a sibling: `memory-sync` adds
+# `memory-new`, `decision-recall`, and `external-connector-readiness`;
+# `external-connector-readiness` adds `executor-runtime-readiness`,
+# `toolbelt-readiness`, and `live-info-operator` with `connector-operator` in
+# one statement; `prompt-import-readiness` adds `external-connector-readiness`,
+# `toolbelt-readiness`, and `skill-scout`; `instinct-ledger` adds
+# `workflow-learning`, `rules-distill`, and `agent-debug`; `skill-scout` adds
+# `doctor`, `skill-health`, and `skill`; `skill-health` adds `doctor`,
+# `workflow-learning`, and `skill-scout`; `workflow-learning` adds
+# `memory-new`, `instinct-ledger`, and `agent-debug`. Twenty-one cases,
+# twenty-two pairs, seven new owners.
+EXPECTED_DEFERENCE_CASES = 370
+EXPECTED_DEFERENCE_PAIRS = 385
+EXPECTED_DEFERRING_OWNERS = 110
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.

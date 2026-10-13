@@ -16,13 +16,13 @@ This is a Hermes-native `workflow-learning` workflow skill.
 
 ## Why This Exists
 
-`workflow-learning` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+`workflow-learning` exists because a lesson from a run can land in the wrong store or in none, and Hermes' own background review can write skills and memory after a turn with no OMH review: it routes each lesson to memory, skill, wiki, failure-retrospective, or automation review as metadata-only records, and checks what Hermes wrote on its own against what was reviewed.
 
 ## Do Not Use When
 
-- The request is already handled by a narrower explicit skill with stronger evidence.
-- The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-- The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+- A lasting fact the user wants kept; capture it with `memory-new`.
+- Lessons seen across runs or projects to score and promote; use `instinct-ledger`.
+- A run that is stuck or looping right now; use `agent-debug`.
 
 ## Examples
 
@@ -40,9 +40,10 @@ Bad example:
 
 ## Completion Checklist
 
-- Confirm the workflow target, evidence boundary, and stop condition are named.
-- Report which outputs are prepared, observed, blocked, or missing.
-- Name the smallest next verification or handoff instead of claiming completion from narration.
+- Read Hermes' skill audit ledger read-only (`hermes curator ledger`, or `skills/.curator_ledger.jsonl` under the active profile's Hermes home) and report each entry whose `actor` is `agent` or `curator` (Hermes' curator or its background review) that no store-route record (`omh learning store-routes`) or approved `skill_update_candidate` accounts for as `unreviewed_native_write`. An empty ledger is unknown, not clean, because `skills.ledger: false` turns it off.
+- Mark an approved `skill_update_candidate` landed only from a `skill_manage` result for that skill that succeeded without `staged: true`, or a ledger entry for that skill dated after the approval; a staged result waits in `/skills pending` for the person and has not landed.
+- The ledger records skill writes only: a memory write by Hermes' background review is visible only when Hermes staged it under `pending/memory/` with `origin: background_review`, and is `not_observed` otherwise.
+- Point the user to `/journey` in the Hermes CLI for Hermes' own view of what it learned; reading the ledger or the journey changes nothing, and undoing an entry (`hermes curator rollback <id>`) is the person's own step, never OMH's.
 
 ## Recovery Notes
 

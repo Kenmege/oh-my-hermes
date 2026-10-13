@@ -3835,6 +3835,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Deduplicate against existing guidance and name conflicts or narrower scopes.
   - Use imperative, testable wording and include non-goals for each candidate.
   - Require review approval before any patch handoff or generated-skill update.
+  - On Hermes, read a curator run report (`logs/curator/<run>/REPORT.md` and `run.json` under the active profile's Hermes home) as a source like a review or a trace: it records which skills the curator consolidated, archived, or created in that run, and one report is one observation, never repeated evidence by itself.
 - Completion checklist:
   - The durable fact, source evidence, retrieval hint, and staleness risk are recorded.
   - Uncertain or conflicting knowledge is marked as review-needed rather than permanent truth.
@@ -3862,6 +3863,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Do not silently mutate skills, prompts, AGENTS.md, docs, memory, or catalog data from a distillation result.
   - Do not promote one-off preferences, weak anecdotes, or stale traces into global rules.
   - Keep observed sources, inferred principles, candidate wording, review state, and implementation patches separate.
+  - On Hermes, when the destination is the user's own Hermes skills, an approved candidate lands through `skill_manage`: report it landed only from a result that succeeded without `staged: true`, with the matching skill audit ledger entry as its record while the ledger is on, and report a staged write as waiting in `/skills pending` for the person's own `/skills approve <id>` under their `skills.write_approval` setting. OMH-managed `omh-*` skills are generated from OMH's catalog and are never the destination; a lesson about one goes to `workflow-learning`.
 
 ### codebase-onboarding
 
@@ -8642,12 +8644,12 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when the user asks to review stale, duplicate, conflicting, or unresolved (open) memory and skill context.
 - Handoff policy: Keep this as Hermes-facing orchestration guidance first. Prepare executor, connector, gateway, or host-runtime handoff only when the user accepts that next step and observed evidence can be recorded.
-- Why this exists: `memory-sync` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+- Why this exists: `memory-sync` exists because Hermes' memory files are small, capped, and written by more than one hand -- the model, Hermes' own background review, and the person -- so a stale or wrong entry rides in every prompt until someone checks it: this review walks the entries with the person one claim at a time, prepares one diff they approve, and reports only the write Hermes itself returns.
 - Use when: Use when existing Hermes USER.md, MEMORY.md, or accumulated skill memories need an English-canonical, claim-by-claim review. It prepares native write guidance only; no OMH surface invokes, applies, or observes a native write — a user-approved diff is applied by Hermes's own native memory tool. Do not use for new project or product candidates.
 - Do not use when:
-  - The request is already handled by a narrower explicit skill with stronger evidence.
-  - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-  - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+  - The user states a new fact to remember; capture it with `memory-new`.
+  - The user asks what was decided or rejected before; use `decision-recall`.
+  - The user wants a memory provider enabled, switched, paused, or removed; use `external-connector-readiness`, which owns the provider slot.
 - Strong routing signals: `memory-sync`, `memory curation`, `memory review`, `memory inspect`, `memory check`, `memory update`, `context cleanup`, `curate memory`, `stale memory`, `hermes remembers`, `conflicting memory`, `duplicate skill`, `MEMORY.md`, `USER.md`, `what you remember about me`, `your memory about me`, `your memories`, `memory interview`, `memories still true`, `기억하고 있는`, `기억하고 있는 프로젝트 맥락`, `기억하는 맥락`, `현재 hermes가 기억하는 맥락`, `현재 헤르메스가 기억하는 맥락`, `헤르메스가 기억하는 맥락`, `오래된 맥락`, `오래된 기억`, `기억 점검`, `기억 정리`, `메모리 업데이트`, `메모리 검사`, `메모리 점검`, `메모리 정리`, `맥락 점검`, `맥락 정리`, `맥락 피드백`, `등록된 맥락`, `헤르메스 기억`, `중복 스킬`, `나에 대해 잘못 알고`, `저장된 내 정보`, `너한테 저장된`, `저장된 프로필`, `기억 바로잡`, `메모리 인터뷰`, `기억 인터뷰`
 - Good example:
   - Prompt: memory-sync inspect stale MEMORY.md claims, prepare a native write diff, and ask which claims to keep, revise, or archive.
@@ -8687,6 +8689,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Keep English as the canonical protocol; Korean routing triggers and concise Korean help labels remain available.
   - Quote claims only when observed, do not invent provenance, and keep the prepared native diff separate from any native write.
   - A memory_provider_posture/v1 block arrives as not_omh_reviewed context and a next-action handoff; it imports no provider record into OMH review and authorizes no native-memory mutation.
+  - A write Hermes holds in `pending/memory/` is the person's to decide: OMH never approves, rejects, edits, or deletes one, and never proposes turning `memory.write_approval` on or off.
 
 ### gateway-intent-card
 
@@ -9278,12 +9281,12 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when users ask whether an external plugin, connector, API, multimodal route, or live-data tool is ready enough to adopt, route, or trial without claiming provider execution.
 - Handoff policy: Keep this as Hermes-facing orchestration guidance first. Prepare executor, connector, gateway, or host-runtime handoff only when the user accepts that next step and observed evidence can be recorded.
-- Why this exists: `external-connector-readiness` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+- Why this exists: `external-connector-readiness` exists because adopting a plugin, connector, API, or memory provider changes what the agent can reach, spend, and remember, and a host's install-time scan or a vendor's docs answer only part of that: it scores capability, auth, cost, freshness, safety, and fallback for each candidate, and reports a trial only from what was observed.
 - Use when: Use before adopting, enabling, or routing an external plugin/connector/API when Hermes must compare capability, auth, cost, modality, freshness, safety, fallback, and observable trial evidence. Use it for an optional memory provider too, where enabling, switching, pausing, or removing it also needs identity scope, automatic hooks, retention, deletion, export, and switching answered before adoption.
 - Do not use when:
-  - The request is already handled by a narrower explicit skill with stronger evidence.
-  - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-  - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+  - Choosing which coding owner runs a task; use `executor-runtime-readiness`.
+  - Finding which tool, credential, or install is missing for work already chosen; use `toolbelt-readiness`.
+  - A read-only live lookup or an external write through a connector already adopted; use `live-info-operator` or `connector-operator`.
 - Strong routing signals: `external-connector-readiness`, `external connector readiness`, `connector readiness matrix`, `plugin readiness matrix`, `provider readiness`, `api readiness`, `connector adoption`, `external plugin adoption`, `weather plugin readiness`, `weather connector readiness`, `wxtrain readiness`, `onequery read-only sql`, `read-only sql connector`, `sql connector readiness`, `nextcloud connector`, `microsoft workspace connector`, `microsoft graph connector`, `chainlink connector`, `solana connector`, `xmr gateway`, `private crypto transaction`, `private cryptocurrency connector`, `crypto transaction plugin`, `blockchain gateway`, `composio connector`, `composio universal cli`, `universal cli connector`, `universal cli skill adoption`, `skill connector adoption`, `connector auth risk`, `connector cost auth risk`, `agentchat connector`, `peer-to-peer agent messaging connector`, `websocket identity connector`, `websocket connector trial`, `clawsocial connector`, `social discovery connector`, `windy pairing`, `windymail mailbox connector`, `matrix chat identity`, `antigravity cli connector`, `agy cli bridge`, `agy bridge connector`, `macos keychain oauth connector`, `oracle oci connector`, `oracle genai connector`, `miniverse bridge`, `crustocean platform connector`, `cost-aware connector`, `multimodal connector`, `multimodal routing`, `screenshot connector`, `audio connector`, `video connector`, `video generation`, `generate a video`, `product demo video`, `text to video`, `home assistant connector`, `home assistant integration`, `home assistant device control`, `home assistant smart home`, `smart home connector`, `device control connector`, `plugin auto-routing`, `connector auto-routing`, `external tool trial`, `memory provider readiness`, `memory provider posture`, `memory provider lifecycle`, `memory provider adoption`, `memory provider retention`, `memory provider portability`, `memory provider sync failure`, `compare memory providers`, `memory provider comparison`, `memory provider`, `memory provider trial`, `memory provider benchmark`, `memory provider migration`, `memory provider rollback`, `switch memory provider`, `switching memory providers`, `disable memory provider`, `delete provider memory`, `export memory provider data`, `realtime voice connector`, `real-time voice connector`, `realtime voice readiness`, `realtime voice trial`, `realtime voice stack`, `voice connector readiness`, `voice connector trial`, `voice gateway readiness`, `voice gateway trial`, `voice agent connector readiness`, `voice trial receipt`, `voice turn integrity`, `voice turn receipt`, `barge-in behavior`, `barge-in handling`, `voice tool safety`, `spoken tool safety`, `커넥터 준비도`, `외부 커넥터 준비`, `외부 플러그인 채택`, `플러그인 준비도`, `커넥터 도입`, `플러그인 도입`, `비용 인증 리스크`, `인증 리스크`, `도입 비용`, `비용 기준 커넥터`, `자동 라우팅`, `멀티모달 커넥터`, `멀티모달 라우팅`, `영상 생성`, `제품 데모 영상`, `홈 어시스턴트 커넥터`, `홈 어시스턴트 연동`, `홈 어시스턴트 기기 제어`, `홈 어시스턴트 스마트홈`, `홈어시스턴트 커넥터`, `홈어시스턴트 연동`, `홈어시스턴트 기기 제어`, `홈어시스턴트 스마트홈`, `스마트홈 커넥터`
 - Good example:
   - Prompt: external-connector-readiness compare weather plugin and wxtrain candidates with cost, freshness, multimodal evidence, and fallback routes before adoption.
@@ -9306,6 +9309,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - For a memory provider, disabling it, removing its local cache, deleting its remote memory, deleting the account, and switching away are reported as distinct operations with distinct postconditions.
   - Unknown deletion, isolation, or write semantics block automatic writes and irreversible adoption instead of resolving to an OMH or Hermes default.
   - For a realtime voice connector, keep turn integrity, latency, fallback, interruption, and spoken tool safety separate; report unsupported or unobserved dimensions as hold or block rather than as a pass.
+  - On Hermes, record its install-time scans as observed evidence beside the card, never in place of it: `hermes plugins install` scans a plugin before installing it (`safe`, `caution`, or `dangerous`, and a `dangerous` verdict is refused even with `--force`), and an MCP server started through `npx` or `uvx` is checked against OSV malware advisories and refused with a `BLOCKED:` message on a match. A scan counts only when its output was seen: the plugin scan does not run with `plugins.scan_on_install` off, and the OSV check covers known malware only and lets the server start when its lookup fails, so a quiet install or launch is not a clean result.
 - Recovery notes:
   - If the candidate list is unknown, route to skill-scout or source-finder before readiness scoring.
   - If credentials, cost authority, or connector installation is missing, keep readiness blocked and route setup to toolbelt-readiness.
@@ -9347,7 +9351,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Do not claim connector, gateway, runtime, file generation, memory mutation, or host automation evidence from prepared guidance.
   - A hook registration or lifecycle callback is an observation point only; it never grants write or synchronization authority.
   - Documentation and open package code declare a contract; neither establishes a hosted service's storage, retention, cost, or deletion postcondition.
-  - A memory provider stays optional: an unknown or unavailable provider never becomes a required default and never makes OMH memory unusable.
+  - A memory provider stays optional: an unknown or unavailable provider never becomes a required default.
+  - On Hermes, the memory provider is one slot: Hermes runs its built-in memory and no more than one external provider, the one `memory.provider` names, so adopting another provider (honcho or mem0, for example) where that key reads `omh` displaces OMH's provider. OMH's per-turn recall and dreaming reminders then stop, and the `omh_memory` tool stays registered but refuses to recall or write records (`session_lens_unavailable`), because the session lens it reads comes from the provider. State that displacement in the posture before adoption, and keep the switch a proposed `memory.provider` diff the user applies.
   - A realtime voice verdict comes only from a supplied realtime_voice_trial_receipt/v1. OMH opens no microphone, call, room, socket, or provider session, installs no connector, downloads no voice model, and authorizes no tool from a receipt.
   - A synthetic voice fixture never proves the intended room, microphone, network, or telephony path, and a fallback path succeeding is never success for the requested voice stack, provider, or model.
   - Generic connector, voice-input, and media-input records are not realtime voice readiness; a turn that lost its onset, split, merged, dispatched twice, truncated, or replayed after audible output blocks the verdict rather than reporting latency.
@@ -9370,12 +9375,12 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when users ask whether external CLI-agent prompt files can be safely reviewed, normalized, and exposed as Hermes slash-command candidates without claiming prompt mutation.
 - Handoff policy: Keep this as Hermes-facing orchestration guidance first. Prepare executor, connector, gateway, or host-runtime handoff only when the user accepts that next step and observed evidence can be recorded.
-- Why this exists: `prompt-import-readiness` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+- Why this exists: `prompt-import-readiness` exists because a prompt library from another CLI agent does not become Hermes commands by copying files: Hermes' own importer skips Claude Code's slash-command prompts and never reads Codex prompt files, its quick commands hold no prompt, and a new name can collide with a built-in command, a quick command, or a skill. This card inventories the sources, maps arguments, and settles each name before anything is written.
 - Use when: Use before importing, normalizing, or exposing external prompt files as Hermes slash commands so source trust, formats, argument interpolation, name collisions, review status, and dry-run evidence stay explicit.
 - Do not use when:
-  - The request is already handled by a narrower explicit skill with stronger evidence.
-  - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-  - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+  - Adopting a plugin, connector, API, or memory provider; use `external-connector-readiness`.
+  - A runtime capability or CLI the work needs is missing; use `toolbelt-readiness`.
+  - Searching for an existing skill to reuse before writing one; use `skill-scout`.
 - Strong routing signals: `prompt-import-readiness`, `prompt import readiness`, `slash prompt import`, `slash prompts import`, `slash command prompt import`, `prompt library import`, `prompt folder import`, `prompt directory import`, `import CLI prompts`, `import agent prompts`, `CLI agent prompt files`, `OpenCode prompt import`, `Claude Code prompt import`, `Codex prompt import`, `codex prompt import`, `Gemini CLI prompt import`, `frontmatter prompt import`, `prompt compatibility audit`, `explicit prompt file audit`, `argument interpolation`, `$ARGUMENTS mapping`, `{{args}} mapping`, `$1-$9 prompt arguments`, `prompt slash command collision`, `Hermes slash prompts`, `슬래시 프롬프트 가져오기`, `프롬프트 가져오기`, `프롬프트 디렉터리 가져오기`, `프롬프트 폴더 가져오기`, `슬래시 명령 프롬프트`, `프롬프트 인자 매핑`
 - Good example:
   - Prompt: prompt-import-readiness review Codex and Claude Code prompt folders before exposing them as Hermes slash commands with $ARGUMENTS mapping.
@@ -9394,6 +9399,9 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Explicit-path audit reads and compatibility results are observed only in their audit output; source discovery, command registration, prompt mutation, slash-command activation, and dry-run execution remain marked not_observed.
   - Route broad candidate discovery to skill-scout, prompt/tool safety to security-safety-review, missing CLIs or directories to toolbelt-readiness, and approved implementation to a selected executor handoff.
   - Imported prompts, generated command files, registry updates, and dry-run results are reported only from observed prompt-import evidence.
+  - Seed `prompt_source_inventory/v1` from the user's `hermes import-agent claude-code --dry-run` (or `codex`) preview, which stops before importing anything: it lists Claude Code's `commands/*.md` as skipped with no direct Hermes equivalent, the list this card converts, and it reads no Codex prompt files at all, so those come from the files the user names. The preview is observed only when its output is seen.
+  - Make a skill the conversion target for a prompt the model should follow; a Hermes quick command (`quick_commands`) runs only a shell command (`exec`) or another slash command (`alias`) and cannot hold a prompt.
+  - In the Hermes CLI a slash name resolves to a built-in command first, then a quick command, a plugin command, a skill bundle, and a skill, so `slash_command_collision_report/v1` checks each candidate name against all five in that order.
 - Recovery notes:
   - If source prompt directories are unknown, route to workspace-audit or skill-scout before readiness scoring.
   - If source trust, prompt-injection risk, secrets, or destructive command content is unclear, route to security-safety-review before import.
@@ -10179,12 +10187,12 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when repeated lessons should become reviewed, confidence-scored project or global instinct candidates without automatic hook-based learning or mutation.
 - Handoff policy: Keep this as Hermes-facing orchestration guidance first. Prepare executor, connector, gateway, or host-runtime handoff only when the user accepts that next step and observed evidence can be recorded.
-- Why this exists: `instinct-ledger` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+- Why this exists: `instinct-ledger` exists because a lesson seen once is an anecdote and one seen across runs or projects is a candidate rule: it records each as one atomic instinct with its trigger, action, scope, confidence, and evidence, and promotes one only through a reviewed store route, never by writing a host's memory or skills on its own.
 - Use when: Use when Hermes should review repeated observations, user corrections, workflow lessons, or failure patterns as atomic project-scoped or global instinct candidates with confidence, evidence, promotion, import, or export decisions.
 - Do not use when:
-  - The request is already handled by a narrower explicit skill with stronger evidence.
-  - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-  - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+  - A single missed route or one run's trace; use `workflow-learning` first.
+  - Writing reviewed lessons into AGENTS guidance, prompts, or skills; use `rules-distill`.
+  - A run that is stuck right now; use `agent-debug` before drawing a lesson from it.
 - Strong routing signals: `instinct-ledger`, `instinct ledger`, `project instincts`, `project-scoped instincts`, `project scoped instincts`, `global instincts`, `instinct review`, `instinct candidate`, `instinct candidates`, `instinct promotion`, `promote instinct`, `promote learning`, `confidence scored learning`, `confidence-scored learning`, `project learning patterns`, `cross-project learning`, `export instincts`, `import instincts`, `학습 본능`, `프로젝트별 학습`, `프로젝트 스코프 학습`, `전역 학습 승격`, `학습 승격`, `학습 패턴 승격`
 - Good example:
   - Prompt: instinct-ledger turn these repeated OMH review lessons into project-scoped instincts and show which ones could be promoted globally.
@@ -10202,6 +10210,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Each instinct is atomic: one trigger, one action, one scope, confidence, evidence refs, and review state.
   - Project-specific conventions, global practices, project/global promotion candidates, imports, and exports are separated.
   - No hooks, memory writes, skill edits, global promotion, import/export, or behavior-change claims are made without observed approval and implementation evidence.
+  - A promoted instinct leaves as a store route, `memory_candidate` for `memory-new` or `skill_update_candidate` for `workflow-learning`, never as a parallel store of its own.
+  - On Hermes, the skill audit ledger (`skills/.curator_ledger.jsonl` under the active profile's Hermes home) is observed evidence of what the agent or its background review already wrote; an instinct that matches a ledger entry no store route accounts for is reported as `unreviewed_native_write`, never counted as repeated evidence for the instinct.
 - Recovery notes:
   - If the request is a single missed route or run trace, route to workflow-learning first.
   - If the request is to mutate durable rules, prompts, skills, or AGENTS guidance, route to rules-distill or implementation after review approval.
@@ -10242,12 +10252,12 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill before creating, forking, installing, or adapting a skill so operators can compare candidates and risks first.
 - Handoff policy: Keep this as Hermes-facing orchestration guidance first. Prepare executor, connector, gateway, or host-runtime handoff only when the user accepts that next step and observed evidence can be recorded.
-- Why this exists: `skill-scout` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+- Why this exists: `skill-scout` exists because writing a skill that already exists, or adopting a public one on its popularity, both cost more than a search: it compares installed, bundled, and public candidates first, keeps each source's trust level and any scan verdict beside it, and recommends using, extending, or creating one without installing, copying, or trusting anything.
 - Use when: Use before creating or adapting a skill so OMH can compare existing local, marketplace, GitHub, or web candidates without installing, copying, or trusting them by default.
 - Do not use when:
-  - The request is already handled by a narrower explicit skill with stronger evidence.
-  - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-  - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+  - Repairing an OMH install or a skill that does not load; use `doctor`.
+  - A health overview of the skills already installed; use `skill-health`.
+  - Writing or changing a skill once the scout decision is made; use `skill`.
 - Strong routing signals: `skill-scout`, `skill scout`, `skill candidate`, `skill candidate search`, `skill discovery`, `find a skill`, `find skills`, `top skills`, `popular skills`, `famous hermes skills`, `useful hermes skills`, `hermes skills/plugin`, `skills/plugin`, `agentskills.io top skills`, `is there a skill`, `existing skill`, `fork a skill`, `extend a skill`, `create skill after search`, `new skill search`, `skill adoption`, `스킬 스카우트`, `스킬 후보`, `스킬 찾기`, `스킬 검색`, `스킬 만들기 전`, `유명한 hermes skills`, `유명한 hermes skill`, `유용한 hermes skills`, `스킬 플러그인 후보`, `플러그인 찾아`, `플러그인 비교`, `없는 것 설치할지 비교`, `기존 스킬`
 - Good example:
   - Prompt: skill-scout find existing skill candidates before we create a release-note workflow skill.
@@ -10265,6 +10275,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Intent, keywords, source scope, and stop condition are explicit.
   - Local and external search evidence is separated from planned search.
   - No install, copy, write, credential, or trust claim is made without observed review or implementation.
+  - On Hermes, fill the external candidates from `hermes skills search <query>` and `hermes skills inspect <identifier>`, whose hub requests are Hermes' own, not OMH's. Keep the trust level each shows (`builtin`, `trusted`, or `community`, highest first) beside the candidate as its source's standing, never as a review of its content, and record a scan verdict (`safe`, `caution`, or `dangerous`) only from install or `hermes skills audit` output that was seen, so a candidate nobody installed has none.
 - Recovery notes:
   - If the request is about setup or installed skill repair, route to doctor.
   - If the request is a portfolio health dashboard, route to skill-health.
@@ -10306,12 +10317,12 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when operators need a portfolio health dashboard for skills, generated surfaces, failure-pattern signals, pending amendments, and safe improvement actions.
 - Handoff policy: Keep this as Hermes-facing orchestration guidance first. Prepare executor, connector, gateway, or host-runtime handoff only when the user accepts that next step and observed evidence can be recorded.
-- Why this exists: `skill-health` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+- Why this exists: `skill-health` exists because a skill portfolio drifts in ways no single run shows -- a managed skill changed in place, an authoring finding nobody fixed, an update waiting on its hub -- and use counts measure none of that: it gathers the observed signals into one card with an owner lane and a safe next action for each, and changes nothing itself.
 - Use when: Use when operators need portfolio-level skill health without treating it as install repair, live execution success, or automatic skill mutation.
 - Do not use when:
-  - The request is already handled by a narrower explicit skill with stronger evidence.
-  - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-  - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+  - OMH setup, install, or a skill that does not load; use `doctor`.
+  - One run that missed a route or went wrong; use `workflow-learning`.
+  - Finding a new skill to adopt; use `skill-scout`.
 - Strong routing signals: `skill-health`, `skill health`, `skill portfolio health`, `skill dashboard`, `skill health dashboard`, `skill failure pattern dashboard`, `skill failure patterns`, `pending skill amendments`, `skill amendments`, `스킬 헬스`, `스킬 상태`, `스킬 대시보드`, `스킬 실패 패턴`, `스킬 개선 후보`, `스킬 보류 수정`
 - Good example:
   - Prompt: skill-health show the OMH skill portfolio dashboard with stale surfaces, failure patterns, pending amendments, and top improvement actions.
@@ -10329,6 +10340,9 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Dashboard scope, source surfaces, stale/duplicate criteria, and stop condition are explicit.
   - Install/setup health is routed to doctor; catalog operations are routed to skill; failure retrospectives are routed to workflow-learning.
   - No skill, prompt, doc, memory, or model behavior is claimed changed until a reviewed implementation records evidence.
+  - Never present use, view, or load counts, `.usage.json` included, as a health, prune, archive, or retire signal: a rarely used skill is not an unhealthy one, and no health card recommends removing, archiving, or pruning a skill for being used little.
+  - On Hermes, read the skill audit ledger read-only (`hermes curator ledger --skill <name>`, or that skill's entries in `skills/.curator_ledger.jsonl` under the active profile's Hermes home): an entry against an `omh-*` skill means Hermes changed that managed copy outside OMH, so it may no longer match its generated body; report it as drift with the entry's `action` and `actor` (`agent`, `user`, or `curator`, which covers Hermes' curator and its background review). An empty ledger is unknown, not clean, because `skills.ledger: false` turns it off.
+  - On Hermes, record an authoring finding only from the `lint_warnings` a `skill_manage` write returned, which are advisory and never proof a skill works, and an available update for a hub-installed skill only from `hermes skills check` output that was seen; that hub request is Hermes' own, not OMH's.
 - Recovery notes:
   - If the request is about OMH setup, install, stale package paths, or command availability, route to doctor.
   - If the request is a missed-route or self-improvement trace, route to workflow-learning before adding health actions.
@@ -10363,12 +10377,12 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when the user wants to learn from a workflow run, review an improvement candidate, create a regression case, or export a redacted review bundle.
 - Handoff policy: Keep this as Hermes-facing orchestration guidance first. Prepare executor, connector, gateway, or host-runtime handoff only when the user accepts that next step and observed evidence can be recorded.
-- Why this exists: `workflow-learning` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+- Why this exists: `workflow-learning` exists because a lesson from a run can land in the wrong store or in none, and Hermes' own background review can write skills and memory after a turn with no OMH review: it routes each lesson to memory, skill, wiki, failure-retrospective, or automation review as metadata-only records, and checks what Hermes wrote on its own against what was reviewed.
 - Use when: Use after a Hermes/OMH workflow attempt should become inspectable, evaluable, routed to memory/skill/wiki/failure-retrospective/automation review, persisted as a metadata-only store-route decision, queued for review, audited, replayable as a regression, converted to a patch handoff, exported, repaired after index drift, or captured as a missed-route signal without raw prompts. Store-route records are an auxiliary review lane surfaced by `learning review` and `learning store-routes`; they are not canonical learning index/export records until a reviewed destination produces its own artifact.
 - Do not use when:
-  - The request is already handled by a narrower explicit skill with stronger evidence.
-  - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-  - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+  - A lasting fact the user wants kept; capture it with `memory-new`.
+  - Lessons seen across runs or projects to score and promote; use `instinct-ledger`.
+  - A run that is stuck or looping right now; use `agent-debug`.
 - Strong routing signals: `workflow-learning`, `workflow learning`, `route-signal`, `self-improvement store routing`, `store route review`, `memory skill wiki routing`, `learning trace`, `learning audit`, `self improvement store routing`, `store routing`, `where should this learning go`, `audit learning`, `learning review`, `review queue`, `review-route`, `store-routes`, `learning readiness`, `learning export`, `export bundle`, `learning index`, `index rebuild`, `execution trace`, `skill improvement`, `improvement candidate`, `regression corpus`, `GEPA`, `VPRM`, `process supervision`, `why did this route`, `missed route`, `missed workflow`, `did not use OMH`, `OMH was not used`, `learn from this run`, `이번 실행 학습`, `스킬 개선`, `회귀 케이스`, `실행 기록`, `학습 기록`, `학습 점검`, `학습 준비 상태`, `학습 내보내기`, `OMH 안 썼어`, `워크플로 누락`, `라우팅 누락`
 - Good example:
   - Prompt: workflow-learning route this self-improvement note before deciding whether it is memory, skill, wiki, failure-retrospective, or automation material.
@@ -10383,9 +10397,10 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Separate prepared guidance from observed platform, runtime, connector, file, memory, or delivery evidence.
   - Expose missing tools, credentials, targets, or observations as user-visible gaps.
 - Completion checklist:
-  - Confirm the workflow target, evidence boundary, and stop condition are named.
-  - Report which outputs are prepared, observed, blocked, or missing.
-  - Name the smallest next verification or handoff instead of claiming completion from narration.
+  - Read Hermes' skill audit ledger read-only (`hermes curator ledger`, or `skills/.curator_ledger.jsonl` under the active profile's Hermes home) and report each entry whose `actor` is `agent` or `curator` (Hermes' curator or its background review) that no store-route record (`omh learning store-routes`) or approved `skill_update_candidate` accounts for as `unreviewed_native_write`. An empty ledger is unknown, not clean, because `skills.ledger: false` turns it off.
+  - Mark an approved `skill_update_candidate` landed only from a `skill_manage` result for that skill that succeeded without `staged: true`, or a ledger entry for that skill dated after the approval; a staged result waits in `/skills pending` for the person and has not landed.
+  - The ledger records skill writes only: a memory write by Hermes' background review is visible only when Hermes staged it under `pending/memory/` with `origin: background_review`, and is `not_observed` otherwise.
+  - Point the user to `/journey` in the Hermes CLI for Hermes' own view of what it learned; reading the ledger or the journey changes nothing, and undoing an entry (`hermes curator rollback <id>`) is the person's own step, never OMH's.
 - Recovery notes:
   - If required context is missing, ask one blocking question or route back to the narrower workflow.
   - If runtime or wrapper evidence is unavailable, keep the status as not_observed and expose the next observable action.
