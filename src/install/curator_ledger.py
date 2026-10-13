@@ -4,9 +4,13 @@ Hermes appends one JSONL row to `<hermes_home>/skills/.curator_ledger.jsonl`
 for every skill mutation, whoever made it (`tools/skill_ledger.py`): `ts`,
 `actor` (`curator` for the background self-improvement review, `agent` for a
 model in a session, `user` for the CLI), `action`, the `skill` name the call
-used, and `before` / `after` lists of `{path, sha256}` for the files the
-mutation changed. Each bot profile is its own Hermes home with its own
-ledger.
+used, and `before` / `after` lists of `{path, sha256}`. From `v2026.9.21`
+(Hermes 0.21.4) those lists keep only the files the mutation changed
+(`_delta`); a row written by 0.21.1-0.21.3 lists every file of the skill,
+unchanged ones with the same hash on both sides, so this reader drops those
+itself. The content of each listed file is kept content-addressed under
+`<hermes_home>/.curator_backups/blobs/<sha256>`. Each bot profile is its own
+Hermes home with its own ledger.
 
 It is the record that tells a Hermes edit of an OMH-managed skill apart from a
 person's hand edit: the installer keeps the first and still refuses the
@@ -83,8 +87,11 @@ def _row_writes(line: str, ledger: str) -> list[LedgerWrite]:
         return []
     if not isinstance(row, dict) or str(row.get("action", "")) in _NOT_AN_EDIT:
         return []
-    after = _file_states(row.get("after"))
-    removed = [path for path in _file_states(row.get("before")) if path not in after]
+    before = _file_states(row.get("before"))
+    # Upstream `_delta`, for rows written before Hermes applied it: a file with
+    # the same hash on both sides was listed, not changed.
+    after = {path: sha for path, sha in _file_states(row.get("after")).items() if before.get(path) != sha}
+    removed = [path for path in before if path not in _file_states(row.get("after"))]
     fields = {
         "ts": str(row.get("ts", "") or ""),
         "actor": str(row.get("actor", "") or ""),
@@ -133,6 +140,29 @@ def write_still_on_disk(write: LedgerWrite) -> bool:
     if write.sha256:
         return path.is_file() and sha256_file(path) == write.sha256
     return not path.exists()
+
+
+def newest_write_to(path: Path, writes: list[LedgerWrite]) -> LedgerWrite | None:
+    """The newest write the ledgers record for exactly this file, compared as `writes_under` compares."""
+    spellings = {os.path.normpath(str(path)), os.path.realpath(str(path))}
+    matching = [write for write in writes if os.path.normpath(write.path) in spellings]
+    return matching[-1] if matching else None
+
+
+def ledger_holds_copy(write: LedgerWrite) -> bool:
+    """Whether the content this write left is still stored where Hermes keeps it.
+
+    A row's file content lives at `<hermes_home>/.curator_backups/blobs/<sha256>`
+    of the home whose ledger recorded it, and Hermes deletes a blob once no row
+    references it. A removal left no content to keep.
+    """
+    if not write.sha256:
+        return False
+    blob = Path(write.ledger).parent.parent / ".curator_backups" / "blobs" / write.sha256
+    try:
+        return blob.is_file()
+    except OSError:
+        return False
 
 
 def hermes_edit_still_on_disk(skill_dir: Path, writes: list[LedgerWrite]) -> LedgerWrite | None:

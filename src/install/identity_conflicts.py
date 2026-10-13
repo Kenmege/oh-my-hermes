@@ -20,15 +20,19 @@ guess would call it OMH's own.
 
 Precedence. A contested skill name is resolved from Hermes' documented tier
 order (`agent/skill_utils.py` `get_skill_search_roots`: trusted project >
-local profile > `skills.create_dir` > `skills.external_dirs`). OMH's managed
+local profile > `skills.create_dir` > `skills.external_dirs`), which Hermes
+applies from 0.21.6 (f525ecdb9c); an older host refuses a cross-tier
+duplicate as ambiguous instead, and the wording says so. OMH's managed
 directory is always an external one, so a same-name copy in a higher tier
 hides the OMH copy, and a copy in another external directory shares its tier,
-where Hermes refuses the bare name rather than guess. A foreign skill under
-only OMH's canonical name hides nothing: Hermes resolves the two names
-separately. Every managed name is covered, under both spellings, and every
-tier OMH can see from here is scanned except trusted project directories,
-which depend on a session's working directory. A contested tool name is still
-`unknown`: Hermes' plugin load order is not readable from here.
+where Hermes refuses the bare name rather than guess. A foreign skill matches
+by its directory name or by the `name` its frontmatter declares, the two
+aliases Hermes resolves a bare name by. A foreign skill under only OMH's
+canonical name hides nothing: Hermes resolves the two names separately.
+Every managed name is covered, under both spellings, and every tier OMH can
+see from here is scanned except trusted project directories, which depend on
+a session's working directory. A contested tool name is still `unknown`:
+Hermes' plugin load order is not readable from here.
 `uncontested` is reserved for a scan that actually enumerated every source and
 found no contest; an unreadable directory or a Hermes config that could not be
 read keeps the answer `unknown`, because "nothing was found" and "nothing was
@@ -50,7 +54,7 @@ from pathlib import Path
 from typing import Any
 
 from ..plugin_bundle.omh.metadata import PROVIDED_HOOKS, PROVIDED_TOOLS
-from ..plugin_bundle.omh.skill_ownership import skill_directories
+from ..plugin_bundle.omh.skill_ownership import declared_skill_name, skill_directories
 from .plugin_pack import PLUGIN_NAME, PLUGIN_SCHEMA_VERSION, read_plugin_manifest
 
 IDENTITY_CONFLICT_REPORT_SCHEMA_VERSION = "identity_conflict_report/v2"
@@ -115,9 +119,10 @@ IDENTITY_CONFLICT_CLAIM_BOUNDARY = (
     "This is a read-only scan of locally visible sources: the Hermes home's own skills directory, "
     "skills.create_dir, configured skill directories, installed Hermes plugin declarations, and OMH's "
     "own install manifests. Hermes runtime precedence is not observed. A contested skill name is resolved "
-    "from Hermes' documented tier order (project > local > create_dir > external_dirs); trusted project "
-    "directories depend on a session's working directory and are not scanned, and an older host refused "
-    "a cross-tier duplicate instead of hiding one copy. A contested tool name has no resolved winner here. "
+    "from Hermes' documented tier order (project > local > create_dir > external_dirs), which Hermes "
+    "applies from 0.21.6; older hosts refuse a cross-tier duplicate as ambiguous instead of hiding one "
+    "copy. Trusted project directories depend on a session's working directory and are not scanned. "
+    "A contested tool name has no resolved winner here. "
     "A shared lifecycle hook has no winner to resolve, since Hermes lets every plugin subscribe "
     "to the same event; the order the subscribers run in is not observed either. Nothing is "
     "renamed, rewritten, or removed by this diagnosis."
@@ -343,7 +348,8 @@ _NEXT_ACTION_BY_KIND = {
     "skill": (
         "Rename or unregister whichever competing skill directory you own, then rerun `omh doctor`; OMH does "
         "not rename or delete assets it did not install. A copy in the Hermes home's own skills directory, "
-        "such as one a hub install put there, outranks OMH's copy and never receives OMH's updates."
+        "such as one a hub install put there, never receives OMH's updates; on Hermes 0.21.6 and later it "
+        "outranks OMH's copy, and older hosts refuse the name as ambiguous."
     ),
     # No rename, no removal. A hook name is the lifecycle event itself, and the
     # other plugin subscribing to it is ordinary Hermes behaviour (#1902).
@@ -460,6 +466,7 @@ def _skill_conflicts(
     unreadable: list[str],
 ) -> list[dict[str, Any]]:
     managed = _managed_skill_locations(skills_dir, manifest)
+    managed_names = set(managed)
     claims: dict[str, list[tuple[str, str]]] = {}
     for tier, foreign_dir in foreign_dirs:
         if not foreign_dir.is_dir():
@@ -469,8 +476,8 @@ def _skill_conflicts(
         # finds a skill; symlinked directories are not followed, so an alias
         # of one already scanned does not report the same contest twice.
         for directory in skill_directories(foreign_dir, unreadable):
-            if directory.name in managed:
-                claims.setdefault(directory.name, []).append((str(directory), tier))
+            for alias in sorted({directory.name, declared_skill_name(directory)} & managed_names):
+                claims.setdefault(alias, []).append((str(directory), tier))
     conflicts: list[dict[str, Any]] = []
     for name in sorted(claims):
         location, is_label = managed[name]

@@ -2777,8 +2777,9 @@ def cmd_setup(args: argparse.Namespace) -> int:
         "normal_user_surface": "Hermes Agent chat and installed Hermes skills",
         "setup_scope": _setup_scope(args),
         # The tap only. A hub install lands in the Hermes home's own skills
-        # directory, which outranks OMH's managed one, so that copy would hide
-        # the managed skill for good and never receive an OMH update.
+        # directory, which outranks OMH's managed one: from Hermes 0.21.6 that
+        # copy hides the managed skill for good, older hosts refuse the shared
+        # name as ambiguous, and either way it never receives an OMH update.
         "equivalent_hermes_commands": [
             "hermes skills tap add rlaope/oh-my-hermes",
         ],
@@ -4846,10 +4847,24 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
     for item in hermes_edited if isinstance(hermes_edited, list) else []:
         if not isinstance(item, dict):
             continue
-        key = "hermes_edit_replaced_line" if item.get("disposition") == "replaced" else "hermes_edit_kept_line"
+        copies = item.get("ledger_copy") if isinstance(item.get("ledger_copy"), list) else []
+        if item.get("disposition") != "replaced":
+            key = "hermes_edit_kept_line"
+        else:
+            # Only a copy the ledger still stores is claimed recoverable; a row
+            # trimmed since the skill was kept takes its content with it.
+            key = "hermes_edit_replaced_line" if copies else "hermes_edit_replaced_unrecoverable_line"
         detail = " ".join(str(item[field]) for field in ("actor", "action", "ts") if item.get(field))
-        line = tr(language, key, name=item.get("name", ""), path=item.get("path", ""), detail=detail or "-")
+        line = tr(
+            language, key, name=item.get("name", ""), path=item.get("path", ""), detail=detail or "-",
+            files=", ".join(str(copy) for copy in copies),
+        )
         print(_color(f"  {line}", "1;33", use_color))
+    restored = payload.get("restored_skills")
+    for item in restored if isinstance(restored, list) else []:
+        if isinstance(item, dict):
+            key = "managed_skill_restored_line" if item.get("disposition") == "restored" else "managed_skill_not_restored_line"
+            print(_color(f"  {tr(language, key, name=item.get('name', ''), path=item.get('path', ''))}", "1;33", use_color))
     profile_state = payload.get("skill_profile_state")
     if isinstance(profile_state, dict) and profile_state.get("retained_exception"):
         retained = profile_state.get("full_only_installed_skills", [])

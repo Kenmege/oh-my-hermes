@@ -349,6 +349,23 @@ class TierResolutionTests(unittest.TestCase):
             f"OMH copy at {managed} shadowed by local copy at {local.resolve()}",
         )
         self.assertIn("hub install", str(report["next_action"]))
+        # Scoped: before 0.21.6 Hermes refused the duplicate instead of hiding one copy.
+        self.assertIn("on Hermes 0.21.6 and later it outranks OMH's copy", str(report["next_action"]))
+        self.assertIn("older hosts refuse a cross-tier duplicate as ambiguous", str(report["claim_boundary"]))
+
+    def test_a_skill_declaring_the_omh_label_in_its_frontmatter_shadows_it(self) -> None:
+        # Hermes resolves a bare name by directory name and by declared name.
+        with TemporaryDirectory() as tmp:
+            fixture = _Fixture(Path(tmp))
+            renamed = fixture.paths.hermes_home / "skills" / "my-own-routing"
+            renamed.mkdir(parents=True)
+            atomic_write_text(renamed / "SKILL.md", f"---\nname: '{self.LABEL}'\ndescription: x\n---\n")
+            report = fixture.report()
+            conflict = _conflict(report, "skill", self.LABEL)
+
+        self.assertEqual(validate_identity_conflict_report(report), [])
+        self.assertEqual(conflict["resolution"], "shadowed")
+        self.assertTrue(skill_conflict_outcome(conflict).endswith("my-own-routing"), skill_conflict_outcome(conflict))
 
     def test_a_copy_in_skills_create_dir_shadows_the_omh_copy(self) -> None:
         with TemporaryDirectory() as tmp:

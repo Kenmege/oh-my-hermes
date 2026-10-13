@@ -16,6 +16,7 @@ from omh.skin_pack import SKIN_NAME, is_omh_skin_name
 
 from ..core.errors import OmhError
 from ..plugin_bundle.omh import runtime_paths
+from ..plugin_bundle.omh.skill_ownership import yaml_scalar
 
 from ..system.local_store import atomic_replace_text, atomic_write_text
 
@@ -940,8 +941,10 @@ def skill_create_dir_selection(config_text: str) -> str:
 
     Hermes ranks that directory between the profile's own skills and
     `skills.external_dirs`, so a same-name skill there hides an OMH skill.
+    A YAML null (`~`, `null`) is unset, as it is to Hermes.
     """
-    return _section_scalar(config_text, "skills", "create_dir")
+    value = _section_scalar(config_text, "skills", "create_dir").strip()
+    return "" if value in {"~", "null", "Null", "NULL"} else value
 
 
 def display_skin_selection(config_text: str) -> str:
@@ -1880,10 +1883,13 @@ def _enclosing_section(lines: list[str], index: int) -> str:
 
 
 def _scalar_value(value: str) -> str:
-    stripped = value.split("#")[0].strip() if not value.strip().startswith(("'", '"')) else value.strip()
-    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {"'", '"'}:
-        return stripped[1:-1]
-    return stripped
+    """One scalar after `key:`; a quoted value runs to its close quote, so a trailing comment is not read.
+
+    The plugin's own reader is the one parser (`skill_ownership.yaml_scalar`).
+    A quote that never closes keeps the old answer, the text as written.
+    """
+    parsed = yaml_scalar(value)
+    return parsed if parsed is not None else value.strip()
 
 
 def external_dir_registered(dirs: list[str], skill_dir: str | Path) -> bool:

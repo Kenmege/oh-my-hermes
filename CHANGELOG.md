@@ -7,31 +7,42 @@ All notable changes will be documented here.
 - **A Hermes edit to an OMH-managed skill is redirected, kept, and reported
   instead of breaking the next update.** Hermes' background self-improvement
   review may patch, edit, or write files into any skill it loaded, OMH's
-  managed skills included. The OMH plugin's `pre_tool_call` now refuses a
-  `skill_manage` edit, patch, write_file, or remove_file whose target resolves
-  to a skill OMH's install manifest records (by installed directory name, never
-  by prefix; a same-name skill in the Hermes home's own skills directory or in
-  `skills.create_dir` takes the edit and passes, and a `config.yaml` the hook
-  cannot read lets the call through), and the refusal names where the lesson
-  goes: a separately named companion skill, or OMH's workflow-learning lane.
-  A skill OMH did not install passes untouched. When Hermes' curator ledger
-  (`<hermes_home>/skills/.curator_ledger.jsonl`) shows a managed skill still
-  holds a Hermes edit, `omh install` / `omh update` keep that skill as it is,
-  carry it into a new generation on a staged update, and list it with the
-  ledger's actor, action, and time; `--force` still replaces it and the
-  summary says so. A change with no ledger row still refuses the install as
-  before. `omh doctor` gains `hermes_skill_edits`, which reads the ledger
-  without writing it and reports writes under OMH-managed skills, and a kept
-  skill no longer fails `local_modifications` or `skill_freshness`. The
-  identity-conflict scan now covers every managed skill name, scans the Hermes
-  home's own skills directory and `skills.create_dir`, counts a directory only
-  when it holds a SKILL.md, and reports each contested skill name's outcome
-  from Hermes' documented tier order (`shadowed` by a higher-tier copy,
-  `ambiguous` with another external copy, or `separate` for OMH's canonical
-  name) instead of `unknown`; the report schema moves to
-  `identity_conflict_report/v2`. `omh setup` no longer lists a hub install
-  among its equivalent Hermes commands, since that copy would outrank and
-  hide the managed skill.
+  managed skills included, and a foreground `skill_manage` delete of one is
+  not guarded upstream. The OMH plugin's `pre_tool_call` now refuses a
+  `skill_manage` edit, patch, write_file, remove_file, or delete whose target
+  resolves to a skill OMH's install manifest records, by installed directory
+  name and never by prefix or canonical name, including an `operations` array
+  sent as a JSON string. A same-name skill in the Hermes home's own skills
+  directory or in `skills.create_dir` takes the edit and passes, and anything
+  the hook cannot read (manifest, `config.yaml`, a stat) lets the call
+  through. The refusal names where a lesson goes: a separately named companion
+  skill, created where `skill_manage` creates skills, or OMH's
+  workflow-learning lane. A skill OMH did not install passes untouched.
+  `omh install` / `omh update` keep a managed skill as it is when Hermes'
+  curator ledger (`<hermes_home>/skills/.curator_ledger.jsonl`) accounts for
+  what is on disk: a changed SKILL.md only when the newest ledger write to it
+  left its current content, an unchanged one when a ledger write to another
+  file of the skill still matches; a row's unchanged files are not counted.
+  A kept skill is carried into a new generation on a staged update (when the
+  install's skill profile carries it) and listed with the ledger's actor,
+  action, and time. `--force` replaces the whole skill directory, and the
+  summary says whether the ledger still holds a copy of the replaced files.
+  A change the ledger does not account for still refuses the install as
+  before; a managed skill whose SKILL.md is gone is rendered again and
+  reported instead of refusing. `omh doctor` gains `hermes_skill_edits`, which
+  reads the ledger without writing it and reports writes under OMH-managed
+  skills, and a kept skill no longer fails `local_modifications` or
+  `skill_freshness`. The identity-conflict scan now covers every managed skill
+  name, scans the Hermes home's own skills directory and `skills.create_dir`,
+  counts a directory only when it holds a SKILL.md, matches its directory name
+  or declared frontmatter `name`, and reports each contested skill name's
+  outcome from Hermes' documented tier order (`shadowed` by a higher-tier copy
+  on Hermes 0.21.6 and later, `ambiguous` with another external copy, or
+  `separate` for OMH's canonical name) instead of `unknown`; the report schema
+  moves to `identity_conflict_report/v2`. Config readers now end a quoted
+  value at its closing quote, so a trailing comment is no longer read as part
+  of it. `omh setup` no longer lists a hub install among its equivalent Hermes
+  commands, since that copy would outrank or collide with the managed skill.
 
 - **The document, image, visual QA, release, and meeting skills now read
   Hermes' own producers as evidence beside OMH's verdict, never in place of
