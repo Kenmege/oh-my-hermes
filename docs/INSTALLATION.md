@@ -313,19 +313,38 @@ run and approval decision stays Hermes'; the screen is OMH's.
   for you: Esc or Ctrl+C declines, and an approval offers `once`, `session`
   and `deny`, with Enter on an untouched approval denying. Approving a command
   permanently stays a choice for `hermes --tui`.
+- Images: drag an image file onto the terminal, press Ctrl+V for an image on
+  the clipboard, or type `/image <path>`. Each one shows as a chip on the row
+  above the input (`📎 shot.png 1280×720`) and goes with the next message you
+  send; Backspace on an empty composer removes the last one. Hermes reads and
+  queues the file; the OMH TUI keeps only its name. Dropping a file that is not
+  an image types Hermes' reference to it instead.
+- `/sessions` (also `/resume`, `/switch`, `/session`) lists your stored
+  sessions in the slot, newest first, with the current one marked; type to
+  filter, Up/Down or PageUp/PageDown to move, Enter to switch, Esc to close.
+  `/sessions <id or exact title>` switches directly. The screen is redrawn as
+  the session you picked, with its earlier turns; the one you left closes only
+  after the new one opened, so a session that cannot be opened (for example
+  one another process holds) leaves you where you were.
 
-Keys: Enter sends; Alt+Enter or Ctrl+J adds a line; Tab completes a slash
-command; Up/Down walk the input history at the edges of the composer; Ctrl+C
-clears the composer, interrupts a running turn, or (pressed twice when idle)
-exits; Ctrl+D on an empty composer exits.
+Keys: Enter sends; a backslash right before Enter, Alt+Enter or Ctrl+J adds a
+line; Tab completes a slash command, or the `@` file or folder reference you
+are typing (from the list Hermes offers above the composer); Up/Down walk the
+input history at the edges of the composer; Esc on an empty composer
+interrupts a running turn, and the activity row shows how long the turn has
+run; Ctrl+V attaches the clipboard image; Ctrl+O shows or hides thinking and
+tool detail; Ctrl+L redraws the screen; Ctrl+C clears the composer, interrupts
+a running turn, or (pressed twice when idle) exits; Ctrl+D on an empty
+composer exits.
 
-Slash commands the OMH TUI runs itself: `/help`, `/quit`, `/new`, `/redraw`,
-`/history` (an in-memory pager over this session), `/details` (show or hide
-thinking and tool detail on the live block), `/queue`, `/logs` (the gateway's
-recent stderr, kept in memory only), `/copy`, `/theme`, and `/omh-model`.
+Slash commands the OMH TUI runs itself: `/help`, `/quit`, `/new`,
+`/sessions`, `/redraw`, `/history` (an in-memory pager over this session),
+`/details` (show or hide thinking and tool detail on the live block),
+`/queue`, `/logs` (the gateway's recent stderr, kept in memory only), `/copy`,
+`/image`, `/paste` (the clipboard image), `/theme`, and `/omh-model`.
 Commands whose screen exists only in Hermes' own terminal (`/voice`, `/pet`,
-`/agents`, `/sessions`, the billing flows, `/save`, `/prompt`, ...) say so and
-name `hermes --tui`. Everything else goes to Hermes as it would from Hermes'
+`/agents`, the billing flows, `/save`, `/prompt`, ...) say so and name
+`hermes --tui`. Everything else goes to Hermes as it would from Hermes'
 terminal.
 
 When the OMH TUI cannot start — Windows, a terminal without `termios` or with
