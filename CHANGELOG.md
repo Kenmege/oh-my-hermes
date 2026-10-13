@@ -4,6 +4,47 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`ai-slop-cleaner` reaches OMC parity without a second keyword hook.** `AI
+  slop`, `deslop review`, and the request-shaped `anti-slop pass`, `anti-slop
+  review`, and `anti-slop sweep` reach the cleaner through the existing route
+  hint: AI slop in a code directory and a no-edit deslop review dispatch it,
+  and an anti-slop pass asks first, with the cleaner among the choices. `AI
+  slop` is phrase evidence only beside something the cleaner can clean -- a
+  path or file name, or a code, docs, or prose target such as a module, the
+  README, or an essay; beside anything else ("clean up the ai slop in my
+  inbox", "... in my photo library") it asks rather than dispatching the
+  cleaner. The bare word `anti-slop` is not a trigger, because as an adjective
+  it names a stance or a quality ("our anti-slop policy for pull requests",
+  "the README is anti-slop now") as often as a request; those stay quiet, and
+  so do bare imperatives such as "anti-slop the README", which ask as they did
+  before. `anti`, `anti-slop`, `slop`, `pass`, `review`, and `sweep` are held
+  back from trigger-token scoring (`slop` still counts as a description word,
+  and the lexical shortlist still reads the trigger text). A question about
+  the word, a subagent's quoted report, and a plain "review this PR" stay
+  where they were. `frontend` gains `slop ui` and the appearance phrases
+  "looks like ai slop", "look like ai slop", "feels like ai slop", and
+  "screams ai slop", which are phrase evidence only beside a UI surface (such
+  as a page, screen, site, form, dashboard, card, section, hero, component,
+  button, nav, layout, or onboarding flow): "this settings page feels like AI
+  slop" dispatches frontend, while "the song lyrics look like ai slop" or
+  "this tweet screams ai slop" asks instead. On code and prose the cleaner
+  therefore leads: "this README looks like ai slop" and "my essay looks like
+  ai slop, make it better" ask first with the cleaner leading, "this module
+  looks like ai slop, clean it up" dispatches it, and "this slack message
+  feels like ai slop, polish it" asks without dispatching either skill. Where
+  a UI word and a code unit (module, function, class, method, code) share a
+  sentence ("the layout code looks like ai slop"), the cleaner earns up to two
+  context words, so it leads instead of frontend dispatching. A no-edit review
+  mode inspects a drafted cleanup against the six taxonomy categories and
+  returns findings in the `code-review` shape, handing fixes to a separate
+  writer pass. A new `references/ui-review-checklist.md` lists six UI review
+  prompts as questions a stated rationale closes, and each run closes with an
+  `omh runtime record --skill ai-slop-cleaner` row. `loop` may run an optional
+  cleaner pass after the judge passes, scoped to the cycle's `changed_files`,
+  re-verified afterwards, and reported as skipped or reverted rather than
+  passed. Concepts adapt `Yeachan-Heo/oh-my-claudecode` (MIT), reconstructed
+  in OMH wording.
+
 - **Facts survive compaction, and a new session hears what memory did since
   your last session.** The compaction brief asked the model to extract durable
   material from messages that, by the time it was served, were gone. It now

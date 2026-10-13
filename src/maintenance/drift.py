@@ -426,7 +426,34 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The quoted/relay/URL masks (#2049) add five: a block-quoted
             # invocation, a relayed report, an arrow-relayed and a
             # sender-relayed invocation, and a workflow name in a URL path.
-            expected=439,
+            # The ai-slop-cleaner OMC parity work adds thirty-eight, none of
+            # which may dispatch: a question about what deslop means, a
+            # subagent's quoted report, a plain "review this PR", and
+            # anti-virus noise called slop (4); a code noun or cleanup verb with
+            # no slop word -- a module that fails to load, "clean it up later",
+            # "simplify this function" -- and a function that looks clean (4);
+            # docs that explain AI slop, a slop word beside a stack of code
+            # nouns, and layout code beside a list of code nouns, which the
+            # two-word cap keeps a clarify (3); twelve uses of `anti-slop` as a
+            # stance or a quality -- policies, rules, guidelines, and checks
+            # for README, docs, pull requests, changes, and code, "the README
+            # is anti-slop now", "update the anti-slop docs", "is the code
+            # anti-slop?", "the module is anti-slop now" -- several of which
+            # dispatched while the bare word was a trigger (12); a question
+            # whether an anti-slop sweep finished, which dispatched without
+            # `sweep` held back (1); five remarks about AI slop with a bare
+            # appearance word ("looks better", "looks interesting", "looks like
+            # this", "look the same"), which dispatched the cleaner while a
+            # token check opened its context words (5); AI slop to clean out
+            # of an inbox, video recommendations, a photo library, and blog
+            # comments, which dispatched while `ai slop` counted as phrase
+            # evidence whatever the target (4); and a Slack message, song
+            # lyrics, a tweet, and a profile bio called AI slop, which
+            # dispatched frontend while its appearance phrases counted on any
+            # target (4); and a report that AI slop on a settings page comes
+            # from a module, which dispatched the cleaner when its context
+            # credit did not need the appearance phrase said whole (1).
+            expected=477,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -517,7 +544,19 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # line before a Korean request, a leading link as the target
             # (four), punctuation ending a link (two), and a `>` that is not a
             # block-quote marker (two).
-            expected=656,
+            # The ai-slop-cleaner OMC parity work adds twenty-one. To the
+            # cleaner, each a dispatch: AI slop in a code directory, in a repo,
+            # and in a module that needs cleanup, a no-edit deslop review, a
+            # module that looks like AI slop with a cleanup verb, and a module
+            # called AI slop to simplify without changing behavior (6); each a
+            # clarify with the cleaner leading: an anti-slop pass, a function
+            # (moved here from the negative corpus), a README, an essay, a PR
+            # description, a layout module, and layout code (7). To
+            # `frontend`, each a dispatch: `ai slop ui`, generic AI slop on a
+            # landing page, a settings page that feels like AI slop, a pricing
+            # page and a hero section that scream it, a pricing card component
+            # file, an onboarding flow, and a nav menu that look like it (8).
+            expected=677,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

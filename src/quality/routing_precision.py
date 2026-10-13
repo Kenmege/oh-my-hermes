@@ -3566,6 +3566,346 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "ralplan",
     ),
+    # `ai-slop-cleaner` gained `ai slop`, `deslop review`, and the
+    # multi-word `anti-slop pass`, `anti-slop review`, and `anti-slop sweep`.
+    # These pin the senses of that vocabulary that ask for no cleanup: a
+    # question about the word, a subagent's quoted report, and a plain review
+    # request that belongs to `code-review`.
+    RoutingPrecisionCase(
+        "deslop-definition-question-stays-an-answer",
+        "Asking what deslop means is a question, not a cleanup request",
+        "what is deslop?",
+        "answer_directly",
+        "direct_answer",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "relayed-deslop-report-does-not-dispatch",
+        "A subagent's quoted report of a deslop pass is not a new request",
+        'subagent report: "ran the anti-slop pass on src/auth and cleaned up the AI slop" - is that right?',
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "plain-pr-review-does-not-reach-slop-cleaner",
+        "A plain review request does not credit the cleaner's review mode",
+        "review this PR",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "anti-virus-slop-log-does-not-name-slop-cleaner",
+        "Anti-virus noise called slop in a log is not a cleanup request",
+        "the anti-virus flagged slop in the logs",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    # The cleaner's code and prose nouns and cleanup verbs score only beside
+    # its own slop words (`_SLOP_CLEANER_CONTEXT_TOKENS`); without one these
+    # stay where they were and never name the cleaner.
+    # `anti-slop` alone is not a cleaner trigger: as an adjective it names a
+    # stance ("an anti-slop policy") or a quality ("the README is anti-slop
+    # now") at least as often as a request, and every attempt to anchor the
+    # bare word produced a new wrong dispatch. Only the request-shaped
+    # phrases score, and `anti-slop` itself is held back as a token. None of
+    # these may name the cleaner.
+    RoutingPrecisionCase(
+        "readme-anti-slop-policy-mention-does-not-name-slop-cleaner",
+        "A README that mentions an anti-slop policy is not a cleanup request",
+        "our README mentions an anti-slop policy",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "docs-anti-slop-policy-question-does-not-name-slop-cleaner",
+        "Asking whether an anti-slop policy is too strict is not a cleanup request",
+        "is our docs anti-slop policy too strict?",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    # Stance talk about pull requests, changes, and code dispatched the
+    # cleaner while the bare word was a trigger.
+    RoutingPrecisionCase(
+        "anti-slop-policy-for-pull-requests-does-not-name-slop-cleaner",
+        "An anti-slop policy for pull requests is a stance, not a cleanup request",
+        "our anti-slop policy for pull requests",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "anti-slop-policy-changes-does-not-name-slop-cleaner",
+        "An anti-slop policy that changes next week is news, not a cleanup request",
+        "the anti-slop policy changes next week",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "anti-slop-policy-for-code-does-not-name-slop-cleaner",
+        "An anti-slop policy for code is a stance, not a cleanup request",
+        "our anti-slop policy for code",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "anti-slop-pull-request-check-question-does-not-name-slop-cleaner",
+        "Asking whether an anti-slop pull request check is too strict is not a cleanup request",
+        "is the anti-slop pull request check too strict?",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "anti-slop-rule-in-pr-template-does-not-name-slop-cleaner",
+        "An anti-slop rule added to a template is a report, not a cleanup request",
+        "we added an anti-slop rule to the pull request template",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "anti-slop-guidelines-question-does-not-name-slop-cleaner",
+        "Anti-slop guidelines called too strict are a stance, not a cleanup request",
+        "our anti-slop guidelines for pull requests are too strict",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    # A report of a finished anti-slop sweep is not a new request: `sweep` is
+    # held back, so the phrase alone keeps it a question.
+    RoutingPrecisionCase(
+        "finished-anti-slop-sweep-report-stays-a-clarify",
+        "Asking whether an anti-slop sweep finished does not start one",
+        "did the anti-slop sweep finish?",
+        "answer_clarification",
+        "",
+    ),
+    # `anti-slop` as an adjective of quality or a topic, beside the README,
+    # the docs, code, or a module.
+    RoutingPrecisionCase(
+        "readme-is-anti-slop-now-does-not-name-slop-cleaner",
+        "A README described as anti-slop is a quality, not a cleanup request",
+        "the README is anti-slop now",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "update-anti-slop-docs-does-not-name-slop-cleaner",
+        "Updating the anti-slop docs edits documentation, not slop",
+        "update the anti-slop docs",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "is-the-code-anti-slop-does-not-name-slop-cleaner",
+        "Asking whether code is anti-slop is a question, not a cleanup request",
+        "is the code anti-slop?",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "module-is-anti-slop-now-does-not-name-slop-cleaner",
+        "A module described as anti-slop is a quality, not a cleanup request",
+        "the module is anti-slop now",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    # A mention of AI slop in the docs, and a slop word beside a stack of code
+    # nouns, ask rather than dispatch: the context words count only beside a
+    # whole appearance phrase, and at most two of them count. The cleaner may still
+    # lead the question, so neither names a forbidden candidate.
+    RoutingPrecisionCase(
+        "docs-explain-ai-slop-stays-a-clarify",
+        "Docs that explain AI slop are a mention, not a cleanup request",
+        "the docs explain what ai slop is",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "slop-beside-stacked-code-nouns-stays-a-clarify",
+        "A slop word beside a stack of code nouns does not run away into a dispatch",
+        "pig slop: clean the files, simplify the code, tidy the docs, prune the module, dedupe the classes",
+        "answer_clarification",
+        "",
+    ),
+    # The cap itself: the context words now count only where a UI surface and
+    # a code unit are both named, so frontend's phrase still competes; there a
+    # list of code nouns would otherwise buy a dispatch past it, and counting
+    # two keeps it a question.
+    RoutingPrecisionCase(
+        "layout-code-noun-list-stays-a-clarify",
+        "Stacked code nouns beside layout code that looks like AI slop do not buy a dispatch",
+        "the layout code looks like ai slop: the module, the files, the classes",
+        "answer_clarification",
+        "",
+    ),
+    # The context credit needs frontend's appearance phrase said whole, not
+    # only a UI word beside a code unit: this report names a page and a module
+    # but no appearance phrase, and it dispatched the cleaner (13) without
+    # that condition.
+    RoutingPrecisionCase(
+        "ai-slop-on-settings-page-from-module-stays-a-clarify",
+        "A report that AI slop on a page comes from a module is not a cleanup request",
+        "the ai slop on the settings page comes from this module",
+        "answer_clarification",
+        "",
+    ),
+    # Frontend's appearance phrase on a non-UI target is not a restyle: song
+    # lyrics, a tweet, and a profile bio called AI slop ask instead of
+    # dispatching frontend (each did while the phrase counted anywhere).
+    RoutingPrecisionCase(
+        "song-lyrics-look-like-ai-slop-stays-a-clarify",
+        "Song lyrics that look like AI slop are not a frontend restyle",
+        "the song lyrics look like ai slop",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "tweet-screams-ai-slop-stays-a-clarify",
+        "A tweet that screams AI slop is not a frontend restyle",
+        "this tweet screams ai slop",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "linkedin-bio-looks-like-ai-slop-stays-a-clarify",
+        "A profile bio that looks like AI slop is not a frontend restyle",
+        "my linkedin bio looks like ai slop",
+        "answer_clarification",
+        "",
+    ),
+    # A chat message called AI slop is prose, not a UI restyle: it must not
+    # dispatch frontend, and with no UI surface frontend's appearance phrase
+    # earns no phrase credit. Frontend still leads the question (`polish` is
+    # its word) and `message` is not a cleaner target, so the case claims
+    # only that neither skill dispatches.
+    RoutingPrecisionCase(
+        "slack-message-feels-like-ai-slop-does-not-dispatch",
+        "A Slack message that feels like AI slop asks rather than dispatching frontend",
+        "this slack message feels like ai slop, polish it",
+        "answer_clarification",
+        "",
+    ),
+    # `ai slop` beside a cleanup verb but no path, code, docs, or prose target
+    # is credited as the word `slop`, not as phrase evidence: these name the
+    # cleaner in a question and each dispatched it while the phrase counted
+    # whatever the target. `blog` is deliberately not a target (a feed someone
+    # reads as often as text they wrote).
+    RoutingPrecisionCase(
+        "ai-slop-in-inbox-stays-a-clarify",
+        "Cleaning AI slop out of an inbox names nothing the cleaner can clean",
+        "clean up the ai slop in my inbox",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "ai-slop-in-youtube-recommendations-stays-a-clarify",
+        "Cleaning AI slop out of video recommendations is not a code cleanup",
+        "clean up the ai slop in my youtube recommendations",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "ai-slop-in-photo-library-stays-a-clarify",
+        "Cleaning AI slop out of a photo library is not a code cleanup",
+        "cleanup the ai slop in my photo library",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "ai-slop-comments-on-blog-stays-a-clarify",
+        "Deleting AI slop comments on a blog is moderation, not a code cleanup",
+        "delete the ai slop comments on my blog",
+        "answer_clarification",
+        "",
+    ),
+    # A bare appearance word is not frontend's appearance phrase: "looks
+    # better", "looks interesting", "look the same" said about AI slop open no
+    # context words for the cleaner, so its own `ai slop` phrase asks rather
+    # than dispatching. Each of these dispatched while a token check opened
+    # the context credit. The cleaner still leads the question, so none names
+    # a forbidden candidate.
+    RoutingPrecisionCase(
+        "ai-slop-looks-better-now-stays-a-clarify",
+        "AI slop that looks better now is a remark, not a cleanup request",
+        "the ai slop looks better now",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "article-about-ai-slop-looks-interesting-stays-a-clarify",
+        "An article about AI slop that looks interesting is a remark, not a cleanup request",
+        "the article about ai slop looks interesting",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "ai-slop-looks-like-this-stays-a-clarify",
+        "Describing what AI slop looks like is not a cleanup request",
+        "ai slop looks like this: generic emails and blog posts",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "ai-slop-getting-better-question-stays-a-clarify",
+        "Asking whether AI slop is getting better is a question, not a cleanup request",
+        "is ai slop getting better? the posts all look the same",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "readme-about-ai-slop-looks-interesting-stays-a-clarify",
+        "A README about AI slop that looks interesting is a remark, not a cleanup request",
+        "the README about ai slop looks interesting",
+        "answer_clarification",
+        "",
+    ),
+    # An appearance word beside a code noun is not a slop request either:
+    # without a whole appearance phrase the cleaner's context words earn
+    # nothing.
+    RoutingPrecisionCase(
+        "function-looks-clean-does-not-name-slop-cleaner",
+        "A function that looks clean is praise, not a cleanup request",
+        "the new function looks clean",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "module-load-failure-does-not-name-slop-cleaner",
+        "A module that fails to load is not a cleanup request",
+        "the module failed to load",
+        "answer_directly",
+        "direct_answer",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "clean-it-up-later-does-not-name-slop-cleaner",
+        "A deferred tidy-up with no slop word does not reach the cleaner",
+        "clean it up later",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
+    RoutingPrecisionCase(
+        "simplify-function-alone-does-not-name-slop-cleaner",
+        "Simplifying a function without a slop word does not reach the cleaner",
+        "simplify this function",
+        "answer_clarification",
+        "",
+        "ai-slop-cleaner",
+    ),
 )
 
 
@@ -8671,6 +9011,219 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "ai-slop-cleaner",
         "present_plan",
         "plan",
+    ),
+    # The request-shaped `anti-slop pass` names the cleaner but, without a
+    # second signal, asks first (score 7, medium): the bare word no longer
+    # adds a token on top of the phrase.
+    RoutingInterventionCase(
+        "anti-slop-pass-names-slop-cleaner",
+        "An anti-slop pass on a named directory asks first with the cleaner leading",
+        "anti-slop pass on src/auth",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "ai-slop-cleaner",
+    ),
+    RoutingInterventionCase(
+        "ai-slop-in-module-needs-cleanup-reaches-slop-cleaner",
+        "AI slop in a module that needs cleanup reaches the slop cleaner",
+        "the ai slop in this module needs cleanup",
+        "dispatch",
+        "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    RoutingInterventionCase(
+        "ai-slop-in-repo-reaches-slop-cleaner",
+        "Cleaning AI slop out of a repo reaches the slop cleaner",
+        "clean up the ai slop in this repo",
+        "dispatch",
+        "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    RoutingInterventionCase(
+        "ai-slop-in-code-reaches-slop-cleaner",
+        "Cleaning up AI slop in a code directory reaches the slop cleaner",
+        "clean up the AI slop in src/auth",
+        "dispatch",
+        "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    RoutingInterventionCase(
+        "deslop-review-reaches-slop-cleaner",
+        "A no-edit deslop review reaches the slop cleaner's review mode",
+        "deslop review the diff, do not edit",
+        "dispatch",
+        "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    RoutingInterventionCase(
+        "ai-slop-ui-stays-with-frontend",
+        "AI slop named as a UI stays with frontend, not the code cleaner",
+        "this dashboard looks like ai slop ui, redesign it",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+    ),
+    RoutingInterventionCase(
+        "generic-ai-slop-landing-page-stays-with-frontend",
+        "Rejecting generic AI slop on a landing page stays with frontend",
+        "reject generic AI slop in this landing page UI",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+    ),
+    RoutingInterventionCase(
+        "settings-page-feels-like-ai-slop-reaches-frontend",
+        "A page that feels like AI slop is a restyle for frontend",
+        "this settings page feels like AI slop",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+    ),
+    # Frontend's appearance phrases are phrase evidence only beside a UI
+    # surface, so on code and prose they do not compete: the cleaner leads.
+    # A statement about a function, a README, an essay, or a PR description
+    # stays a clarify (its own `ai slop` phrase alone is a medium score); a
+    # module with a cleanup verb, or one to simplify without changing
+    # behavior, is a request and dispatches.
+    RoutingInterventionCase(
+        "function-feels-like-ai-slop-leads-with-slop-cleaner",
+        "A function that feels like AI slop asks first, with the cleaner leading",
+        "this function feels like ai slop",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "ai-slop-cleaner",
+    ),
+    RoutingInterventionCase(
+        "module-looks-like-ai-slop-clean-it-up-reaches-slop-cleaner",
+        "A module that looks like AI slop, with a cleanup verb, dispatches the cleaner",
+        "this module looks like ai slop, clean it up",
+        "dispatch",
+        "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    RoutingInterventionCase(
+        "readme-looks-like-ai-slop-leads-with-slop-cleaner",
+        "A README that looks like AI slop leads with the cleaner, not frontend",
+        "this README looks like ai slop",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "ai-slop-cleaner",
+    ),
+    RoutingInterventionCase(
+        "module-slop-simplify-preserving-behavior-reaches-slop-cleaner",
+        "A module called AI slop, to simplify without changing behavior, dispatches the cleaner",
+        "the auth module looks like ai slop, simplify it without changing behavior",
+        "dispatch",
+        "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    # A code unit beats a UI word: the UI word then says which code.
+    RoutingInterventionCase(
+        "layout-module-looks-like-ai-slop-leads-with-slop-cleaner",
+        "A layout module that looks like AI slop asks first with the cleaner leading",
+        "the layout module looks like ai slop, clean it up",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "ai-slop-cleaner",
+    ),
+    # Prose called AI slop is the cleaner's (its prose lexicon), not a
+    # restyle: an essay and a PR description are cleaner targets and name no
+    # UI surface, so frontend's appearance phrase no longer competes.
+    RoutingInterventionCase(
+        "essay-looks-like-ai-slop-leads-with-slop-cleaner",
+        "An essay that looks like AI slop asks first with the cleaner leading, not frontend",
+        "my essay looks like ai slop, make it better",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "ai-slop-cleaner",
+    ),
+    RoutingInterventionCase(
+        "pr-description-looks-like-ai-slop-leads-with-slop-cleaner",
+        "A PR description that looks like AI slop asks first with the cleaner leading",
+        "the PR description looks like ai slop, make it better",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "ai-slop-cleaner",
+    ),
+    RoutingInterventionCase(
+        "layout-code-looks-like-ai-slop-leads-with-slop-cleaner",
+        "Layout code that looks like AI slop asks first with the cleaner leading",
+        "the layout code looks like ai slop",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "ai-slop-cleaner",
+    ),
+    RoutingInterventionCase(
+        "ui-component-file-looks-like-ai-slop-stays-with-frontend",
+        "A UI component file that looks like AI slop stays a frontend restyle",
+        "the pricing card component file looks like ai slop, simplify it",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+    ),
+    # A UI surface called AI slop names nothing the cleaner can clean, so its
+    # `ai slop` is no longer phrase evidence and frontend's appearance phrase
+    # dispatches the restyle (it was a clarify led by frontend while the
+    # cleaner's phrase competed).
+    RoutingInterventionCase(
+        "hero-section-screams-ai-slop-reaches-frontend",
+        "A hero section that screams AI slop is a frontend restyle",
+        "our hero section screams ai slop, give it a distinctive look",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+    ),
+    RoutingInterventionCase(
+        "onboarding-flow-looks-like-ai-slop-reaches-frontend",
+        "An onboarding flow that looks like AI slop is a frontend restyle",
+        "our onboarding flow looks like ai slop",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+    ),
+    RoutingInterventionCase(
+        "nav-menu-looks-like-ai-slop-reaches-frontend",
+        "A nav menu that looks like AI slop is a frontend restyle",
+        "the nav menu looks like ai slop",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+    ),
+    RoutingInterventionCase(
+        "pricing-page-screams-ai-slop-reaches-frontend",
+        "A pricing page that screams AI slop is a frontend restyle",
+        "our pricing page screams ai slop",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
     ),
     RoutingInterventionCase(
         "gemini-second-opinion-reaches-ask",

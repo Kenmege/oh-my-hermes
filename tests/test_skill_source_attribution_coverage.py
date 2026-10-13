@@ -36,6 +36,10 @@ UPSTREAM_MARKERS = {
         r"\bECC\b|everything-claude-code|affaan-m"
     ),
     "github.com/code-yeongyu/oh-my-openagent": re.compile(r"oh-my-openagent|code-yeongyu"),
+    # The owner-qualified path only: a bare "oh-my-claudecode" also names the
+    # other product whose `.omc/` state root `plan` tells agents not to write
+    # into, which is a boundary, not a borrowing.
+    "github.com/yeachan-heo/oh-my-claudecode": re.compile(r"Yeachan-Heo/oh-my-claudecode", re.IGNORECASE),
 }
 
 _ECC_POSTURE = (

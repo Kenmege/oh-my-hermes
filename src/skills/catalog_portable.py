@@ -379,6 +379,7 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'frontend-refactor/references/refactor-passes.md',
     'frontend-refactor/references/state-discipline.md',
     'ai-slop-cleaner/references/cleanup-passes.md',
+    'ai-slop-cleaner/references/ui-review-checklist.md',
     'backend/references/service-contract.md',
     'backend/references/schema-migration.md',
     'backend/references/consumer-impact.md',
