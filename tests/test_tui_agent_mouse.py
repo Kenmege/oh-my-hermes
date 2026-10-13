@@ -36,7 +36,7 @@ from omh.tui.app import (
     App,
 )
 from omh.tui.frame import MODE_ACCEPT, MODE_PLAN
-from omh.tui.gateway import Event, ServerRequest
+from omh.tui.gateway import Event, GatewayExited, ServerRequest
 from omh.tui.keys import (
     BUTTON_LEFT,
     BUTTON_MIDDLE,
@@ -234,12 +234,23 @@ class MouseStateTests(unittest.TestCase):
         self.assertEqual(mouse_calls(app), [True, False, True])
 
     def test_shutdown_turns_them_off_before_the_screen_is_handed_back(self) -> None:
-        app, _client = running()
-        self.assertTrue(reporting(app))
-        app._shutdown()
-        self.assertFalse(app.terminal.mouse_reporting)  # type: ignore[attr-defined]
-        writes = app.terminal.writes  # type: ignore[attr-defined]
-        self.assertEqual("".join(writes).count(MOUSE_OFF), 1)
+        for paging in (False, True):
+            with self.subTest(paging=paging):
+                app, _client = running()
+                self.assertTrue(reporting(app))
+                if paging:
+                    app._open_pager("history", [])
+                writes = app.terminal.writes  # type: ignore[attr-defined]
+                start = len(writes)
+                app._shutdown()
+                self.assertFalse(app.terminal.mouse_reporting)  # type: ignore[attr-defined]
+                shutdown = writes[start:]
+                self.assertEqual(shutdown[0], MOUSE_OFF)  # the first thing written on the way out
+                self.assertEqual("".join(shutdown).count(MOUSE_OFF), 1)
+                # Then the alternate screen goes, and the live region is erased: the screen is the shell's again.
+                handed_back = [index for index, text in enumerate(shutdown) if ALT_SCREEN_OFF in text or "\x1b[J" in text]
+                self.assertTrue(handed_back)
+                self.assertGreater(min(handed_back), 0)
 
     def test_shutdown_from_an_open_log_leaves_them_off(self) -> None:
         app, _client = running()
@@ -813,12 +824,37 @@ class ExitDrainTests(unittest.TestCase):
         self.assertEqual(len(self.reads(terminal)), 2)
 
     def test_run_drains_on_its_way_out_however_the_loop_ended(self) -> None:
-        terminal = DrainTerminal([SystemExit, self.REPORT, self.ANSWER])  # SIGTERM arrives as SystemExit in a read
-        app, _client = self.leaving(terminal)
-        with self.assertRaises(SystemExit):
-            app.run()
-        self.assertEqual(len(self.reads(terminal)), 3)
-        self.assertFalse(terminal.mouse_reporting)
+        def poll_nothing() -> list[object]:
+            return []
+
+        def gateway_gone() -> list[object]:
+            return [GatewayExited(1)]
+
+        def gateway_broke() -> list[object]:
+            raise RuntimeError("a bug in a step")
+
+        endings: dict[str, tuple[list[bytes | type[BaseException]], object, type[BaseException] | None]] = {
+            "SIGTERM, as SystemExit in a read": ([SystemExit, self.REPORT, self.ANSWER], poll_nothing, SystemExit),
+            "Ctrl+D on an empty composer": ([b"\x04", self.REPORT, self.ANSWER], poll_nothing, None),
+            "the gateway exiting": ([b"", self.REPORT, self.ANSWER], gateway_gone, None),
+            "an exception out of a step": ([b"", self.REPORT, self.ANSWER], gateway_broke, RuntimeError),
+            "the terminal hanging up": ([EOFError, EOFError], poll_nothing, None),
+        }
+        for ending, (incoming, poll, raised) in endings.items():
+            with self.subTest(ending):
+                terminal = DrainTerminal(incoming)
+                app, client = self.leaving(terminal)
+                client.poll = poll  # type: ignore[attr-defined]
+                if raised is None:
+                    app.run()
+                else:
+                    with self.assertRaises(raised):
+                        app.run()
+                writes = self.writes(terminal)
+                self.assertEqual(writes[-1], CURSOR_POSITION_REQUEST)  # the drain ran, after the off
+                self.assertLess(writes.index(MOUSE_OFF), len(writes) - 1)
+                self.assertEqual(len(self.reads(terminal)), 2 if ending == "the terminal hanging up" else 3)
+                self.assertFalse(terminal.mouse_reporting)
 
 
 class DocumentedMouseTests(unittest.TestCase):
