@@ -575,7 +575,29 @@ class WidgetParityTests(unittest.TestCase):
         full = with_graph(with_agents(hud_payload(items, title="Parity plan"), rows), 3)
         full["graph"]["nodes"][2].update(state="failed", blocked_by=["unit0", "unit1"])
         small = with_agents(hud_payload(items[:3], title="Small plan"), rows[:2])
-        cases = [{"payload": payload, "cols": cols} for cols in (60, 80, 99, 100, 140, 200) for payload in (full, small)]
+        # Escape sequences and ordinary punctuation reaching the renderers: both drop the whole
+        # sequence (not only its ESC byte) and keep the apostrophe, comma and question mark. The
+        # todo record layer already drops ESC bytes, so the raw text is put into the payload the
+        # renderers read, after it was built.
+        raw = [
+            "Ship the \x1b[31mred\x1b[0m fix, it's ready?",
+            "Read \x1b]8;;https://example.test\x07the link\x1b]8;;\x07 then \x1b[2Jstop",
+            "cut \x1b[31",
+        ]
+        escaped = with_agents(
+            hud_payload([{"text": f"item {index}", "state": "active" if index == 0 else "pending"} for index in range(3)],
+                        title="placeholder"),
+            rows[:2],
+        )
+        escaped["todo"]["title"] = "Esc\x1b[1m plan, person's"
+        for key in ("items", "display_items"):
+            for item, text in zip(escaped["todo"][key], raw):
+                item["text"] = text
+        cases = [
+            {"payload": payload, "cols": cols}
+            for cols in (60, 80, 99, 100, 140, 200)
+            for payload in (full, small, escaped)
+        ]
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             widget = resources.files("omh.tui_widgets").joinpath("omh-status.mjs").read_text(encoding="utf-8")
