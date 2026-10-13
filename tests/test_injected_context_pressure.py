@@ -868,14 +868,32 @@ LOOP_WAKEUP_BODY = (
     "CURRENT state. If the task is now complete, say so and end your reply with LOOP_COMPLETE "
     "on its own line — that stops the loop."
 )
+# A `/goal` continuation (`CONTINUATION_PROMPT_*` in `hermes_cli/goals.py`, in
+# the floor release), plain and after a failed quality gate, and a goal-mode
+# kanban card's finalize nudge from the same file. Without their frames these
+# bodies draw a route hint; with them, a hint would send the model off the
+# goal Hermes is driving.
+GOAL_FRAME = "[Continuing toward your standing goal]\n"
+GOAL_GATE_FRAME = "[Continuing toward your standing goal — a quality gate failed]\n"
+GOAL_BODY = (
+    "Goal: ship the OMH loop docs, fix the failing CI on PR 42, and open a PR with the release notes\n\n"
+    "Continue working toward this goal. Take the next concrete step. If you believe the goal is "
+    "complete, state so explicitly and stop."
+)
+KANBAN_FINALIZE_FRAME = "[The work looks complete, but the task is still open]\n"
+KANBAN_FINALIZE_BODY = (
+    "Reason: the PR is open and CI is green\n\nIf the task is genuinely done, call kanban_complete now "
+    "with a short summary of what you did."
+)
 
 
 class NoRoutingOnHostCommandTurnsTest(_InjectionTestCase):
-    """`/plan` and `/loop` wakeup turns are host-written but carry no `display_kind`.
+    """Session-command turns are host-written but the CLI and TUI type them as nothing.
 
-    Hermes queues both as plain user-role turns, so the record field the class
-    above reads is absent and only the template's opening frame says who wrote
-    the turn. Each already carries the host's instruction for itself; a route
+    Those surfaces queue `/plan`, `/loop` wakeups, `/goal` continuations, and
+    the rest of `hermes_session_commands.HOST_COMMAND_TURN_FRAMES` as plain
+    user-role turns, so the record field the class above reads is absent and
+    only the template's opening frame says who wrote the turn. Each already carries the host's instruction for itself; a route
     hint beside it would argue with that instruction. Same pairing as above:
     the frame is the only difference between the turn that routes and the one
     that does not.
@@ -895,7 +913,13 @@ class NoRoutingOnHostCommandTurnsTest(_InjectionTestCase):
 
     def test_a_command_turn_gets_no_route_hint_and_its_body_alone_does(self):
         for index, (frame, body) in enumerate(
-            ((PLAN_MODE_FRAME, PLAN_MODE_BODY), (LOOP_WAKEUP_FRAME, LOOP_WAKEUP_BODY))
+            (
+                (PLAN_MODE_FRAME, PLAN_MODE_BODY),
+                (LOOP_WAKEUP_FRAME, LOOP_WAKEUP_BODY),
+                (GOAL_FRAME, GOAL_BODY),
+                (GOAL_GATE_FRAME, GOAL_BODY),
+                (KANBAN_FINALIZE_FRAME, KANBAN_FINALIZE_BODY),
+            )
         ):
             with self.subTest(frame=frame.strip()):
                 self.assertNotIn("[OMH Route Hint]", self._turn(frame + body, session=f"command-{index}"))

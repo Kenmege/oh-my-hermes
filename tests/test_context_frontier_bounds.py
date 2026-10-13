@@ -150,5 +150,50 @@ class ContextFrontierWrapperTests(unittest.TestCase):
         self.assertNotIn("exhaust_dependency_ready_frontier", flow)
 
 
+class ContextFrontierClarifyTests(unittest.TestCase):
+    """A frontier round goes through Hermes' `clarify` tool when it is present.
+
+    The tool takes options only in `choices` (recommended first) and its picker
+    adds the typed-answer row itself; a numbered batch written into the message
+    leaves the options as text the user cannot pick. Presence is the tool list
+    or tool search, never a Hermes version.
+    """
+
+    def _protocol(self) -> str:
+        from omh.skills.render import context_skill
+
+        body = context_skill().content
+        return " ".join(body[body.index("## Workflow Protocol"):body.index("## Runtime Evidence")].split())
+
+    def test_the_round_goes_through_clarify_choices_when_present(self) -> None:
+        protocol = self._protocol()
+        self.assertIn("When Hermes' `clarify` tool is present (in your tool list or tool search)", protocol)
+        self.assertIn("one `questions` entry per decision, named by its identifier", protocol)
+        self.assertIn("with the recommendation first in `choices` beside the real alternatives", protocol)
+        self.assertIn("no free-input row of your own, and no options in the question text", protocol)
+        self.assertIn("the round header and each decision's evidence and tradeoff stay in your message", protocol)
+
+    def test_only_independent_decisions_share_a_call(self) -> None:
+        protocol = self._protocol()
+        self.assertIn("Decisions in one frontier have no prerequisite between them, so they share the call", protocol)
+        self.assertIn("a dependent never joins its prerequisite", protocol)
+        self.assertIn("an unanswered entry leaves its decision open", protocol)
+        self.assertIn("continues in a second call in the same round", protocol)
+
+    def test_the_numbered_batch_is_the_fallback(self) -> None:
+        protocol = self._protocol()
+        self.assertIn("Without `clarify`, the numbered batch in your message is the fallback.", protocol)
+        self.assertLess(protocol.index("one numbered batch per round"), protocol.index("`clarify`"))
+
+    def test_the_shared_reference_stays_host_neutral(self) -> None:
+        # `references/decision-frontier.md` also ships to the Agent Skills
+        # projection, which has no Hermes `clarify`; the rule lives in the
+        # Hermes body only.
+        from omh.skills.render import context_reference_templates
+
+        reference = next(t for t in context_reference_templates() if t.relative_path.endswith("decision-frontier.md"))
+        self.assertNotIn("clarify", reference.content)
+
+
 if __name__ == "__main__":
     unittest.main()

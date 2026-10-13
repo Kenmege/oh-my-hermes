@@ -4,18 +4,37 @@ Read by the plugin's per-turn hook and by `omh.routing.policy` alike, so the
 TUI hint and the router cannot disagree; standalone, because the bundle may
 not import `omh`.
 
-Host command turns. Two of Hermes' session commands reach the model as an
-ordinary user-role turn whose text the host built from a fixed template:
-`/plan` (`build_plan_prompt` in `agent/plan_prompt.py`) and every `/loop`
-wakeup (`WAKEUP_PROMPT_TEMPLATE` in `hermes_cli/loops.py`), both in the floor
-release (`v2026.9.7`). The host stamps neither row with a `display_kind`, so
-`turn_authorship.host_synthesized_turn` cannot see them, and the template's
-own opening frame is the only record of who wrote the turn. Such a turn
-already carries the host's instruction for itself -- plan only and save the
-plan, or re-check the watched state and end with `LOOP_COMPLETE` -- so it is
-not a request for OMH to route. Read as one, the plan-mode rules (commit,
-push, external actions) and the wakeup text (recurring task, stop condition)
-scored ops, connector, memory, and loop skills at high confidence. Only the
+Host command turns. Hermes' session commands reach the model as an ordinary
+user-role turn whose text the host built from a fixed template. The CLI and
+the TUI write these rows with no `display_kind` (the messaging gateway marks
+its `/loop` wakeups and heartbeats internal, which
+`turn_authorship.host_synthesized_turn` already reads), so on those surfaces
+the template's own opening frame is the only record of who wrote the turn.
+Each frame below is
+verbatim from upstream, all present in the floor release (`v2026.9.7`) except
+`/initiate-setup`, which only newer hosts send (a frame match needs no version
+check: an older host never writes it):
+
+- `/plan` -- `build_plan_prompt`, `agent/plan_prompt.py`;
+- a `/loop` wakeup -- `WAKEUP_PROMPT_TEMPLATE`, `hermes_cli/loops.py`;
+- a `/goal` continuation, with or without a completion contract or `/subgoal`
+  criteria, or after a failed quality gate -- the `CONTINUATION_PROMPT_*`
+  templates, `hermes_cli/goals.py`;
+- the `/goal` kick that stands in for a goal the person just sent --
+  `GOAL_ALREADY_SEEN_KICK`, same file;
+- a goal-mode kanban card's continuation and finalize nudges --
+  `KANBAN_GOAL_*_TEMPLATE`, same file;
+- a `/heartbeat` firing -- `HEARTBEAT_PROMPT_TEMPLATE`, `hermes_cli/heartbeat.py`;
+- `/learn` -- `build_learn_prompt`, `agent/learn_prompt.py`;
+- `/initiate-setup` -- `HEADER`, `agent/initiate_setup_prompt.py`.
+
+Such a turn already carries the host's instruction for itself -- plan only,
+re-check the watched state, take the goal's next step, author the skill -- so
+it is not a request for OMH to route. Read as one, the plan-mode rules scored
+ops, connector, and memory skills; a goal continuation dispatched OMH's own
+goal loop into a permission-profile question; the kanban nudges dispatched the
+image-card skill; the heartbeat, `/learn`, and setup turns dispatched
+automation, memory, and toolbelt skills -- all at high confidence. Only the
 frame at the very start is read; the person's words inside the turn are never
 interpreted here.
 
@@ -36,11 +55,25 @@ import unicodedata
 
 
 # The opening frame of each host template, verbatim from upstream. A wakeup
-# continues with its tick number and cadence (`[/loop wakeup #3, every 5m]`).
+# continues with its tick number and cadence (`[/loop wakeup #3, every 5m]`),
+# a heartbeat with its interval.
 HOST_COMMAND_TURN_FRAMES = (
     "[/plan — plan mode]",
     "[/loop wakeup #",
+    "[Continuing toward your standing goal]",
+    "[Continuing toward your standing goal — a quality gate failed]",
+    "[Goal set] Continue with the goal you were just given",
+    "[Continuing toward this kanban task — judge says it is not done yet]",
+    "[The work looks complete, but the task is still open]",
+    "[Heartbeat — recurring instruction, fires every ",
+    "[/learn] The user wants you to learn a reusable skill",
+    "[/initiate-setup]",
 )
+
+# Set on the route hint payload when the hint table read the message as a
+# loop on a timer with no goal beside it, so the candidate line, which ranks
+# the catalog on its own, leaves the goal loop off on the same verdict.
+NATIVE_LOOP_CADENCE_HINT_KEY = "native_loop_cadence"
 
 _LOOP_CADENCE_UNITS = frozenset({"second", "seconds", "secs", "minute", "minutes", "mins", "hour", "hours"})
 _LOOP_CADENCE_PHRASES = ("초마다", "분마다", "시간마다", "매분", "매시간", "주기적으로")
@@ -56,7 +89,7 @@ _FOLDED_FRAMES = tuple(_fold(frame) for frame in HOST_COMMAND_TURN_FRAMES)
 
 
 def host_command_turn(message: object) -> bool:
-    """Whether Hermes opened this turn from its own `/plan` or `/loop` template."""
+    """Whether Hermes opened this turn from one of its own session-command templates."""
     if not isinstance(message, str):
         return False
     return _fold(message).lstrip().startswith(_FOLDED_FRAMES)

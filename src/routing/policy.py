@@ -7488,7 +7488,7 @@ def native_loop_cadence_request(message: str) -> bool:
 
 
 def host_owned_command_turn(message: str) -> bool:
-    """A turn Hermes wrote from its own `/plan` or `/loop` template; OMH routes nothing on it.
+    """A turn Hermes wrote from its own session-command template; OMH routes nothing on it.
 
     The predicate lives in the plugin bundle (`hermes_session_commands`) so the
     per-turn hook, which may not import `omh`, and this router read one copy.

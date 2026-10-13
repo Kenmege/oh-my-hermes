@@ -484,7 +484,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # the bare loop word (3); and the turns Hermes writes for its own
             # `/plan` and `/loop` wakeup, which dispatched the ops card and
             # fell back as a file lookup (2).
-            expected=495,
+            # The rest of Hermes' session-command turns add seven, each
+            # answered directly: a `/goal` continuation and one after a failed
+            # quality gate, which dispatched the goal loop (2); a goal-mode
+            # kanban card's continuation and finalize nudges, which dispatched
+            # the image-card skill (2); and the heartbeat, `/learn`, and
+            # `/initiate-setup` turns, which dispatched automation, memory, and
+            # toolbelt skills (3).
+            expected=502,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

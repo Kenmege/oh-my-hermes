@@ -4102,6 +4102,83 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "loop",
     ),
+    # The other turns Hermes writes for its own session commands, each opened
+    # by its template's frame. Before, a `/goal` continuation dispatched OMH's
+    # own goal loop into a permission-profile question (and, with a completion
+    # contract, the wrapper read it as a catalog question), the goal-mode
+    # kanban nudges dispatched the image-card skill, and the heartbeat,
+    # `/learn`, and setup turns dispatched automation, memory, and toolbelt
+    # skills.
+    RoutingPrecisionCase(
+        "hermes-goal-continuation-turn-is-host-owned",
+        "A Hermes /goal continuation turn is not routed",
+        "[Continuing toward your standing goal]\nGoal: ship the OMH loop docs, fix the failing CI on PR 42, "
+        "and open a PR with the release notes\n\nCompletion contract:\nOutcome: docs merged\nVerify: CI green\n\n"
+        "Continue working toward the outcome above. Take the next concrete step. Before claiming the goal is "
+        "done, satisfy the Verification criterion and show the concrete evidence (command output, file "
+        "contents, test result).",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "hermes-goal-gate-failed-turn-is-host-owned",
+        "A Hermes /goal turn after a failed quality gate is not routed",
+        "[Continuing toward your standing goal \u2014 a quality gate failed]\nGoal: ship the OMH loop docs, fix "
+        "the failing CI on PR 42, and open a PR with the release notes\n\nThe quality gate command below must "
+        "pass before this goal can be declared done, and it just failed (attempt 1/3):\n  $ pytest -q\nExit code: 1",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "hermes-kanban-goal-continuation-turn-is-host-owned",
+        "A goal-mode kanban continuation turn is not routed",
+        "[Continuing toward this kanban task \u2014 judge says it is not done yet]\nReason: tests still failing on "
+        "the login flow\n\nTake the next concrete step toward completing the task. When the work is genuinely "
+        "finished, call kanban_complete with a summary.",
+        "answer_directly",
+        "direct_answer",
+        "img-summary",
+    ),
+    RoutingPrecisionCase(
+        "hermes-kanban-goal-finalize-turn-is-host-owned",
+        "A goal-mode kanban finalize turn is not routed",
+        "[The work looks complete, but the task is still open]\nReason: the PR is open and CI is green\n\n"
+        "If the task is genuinely done, call kanban_complete now with a short summary of what you did.",
+        "answer_directly",
+        "direct_answer",
+        "img-summary",
+    ),
+    RoutingPrecisionCase(
+        "hermes-heartbeat-turn-is-host-owned",
+        "A Hermes /heartbeat turn is not routed",
+        "[Heartbeat \u2014 recurring instruction, fires every 10m]\ncheck whether CI is green and summarize "
+        "open PRs\n\nIf there is nothing meaningful to do or report for this instruction right now, reply "
+        "briefly that nothing has changed and stop.",
+        "answer_directly",
+        "direct_answer",
+        "automation-blueprint",
+    ),
+    RoutingPrecisionCase(
+        "hermes-learn-turn-is-host-owned",
+        "A Hermes /learn turn is not routed",
+        "[/learn] The user wants you to learn a reusable skill from the request below, and save it.\n\n"
+        "THE REQUEST:\nthe deploy workflow we just went through\n\nInventory every source the user named, "
+        "then save the skill.",
+        "answer_directly",
+        "direct_answer",
+        "memory-new",
+    ),
+    RoutingPrecisionCase(
+        "hermes-initiate-setup-turn-is-host-owned",
+        "A Hermes /initiate-setup turn is not routed",
+        "[/initiate-setup]\n\nGuide the user through first-run setup: pick a model provider, connect "
+        "accounts, and install plugins.",
+        "answer_directly",
+        "direct_answer",
+        "toolbelt-readiness",
+    ),
 )
 
 

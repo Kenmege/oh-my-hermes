@@ -5,27 +5,34 @@ All notable changes will be documented here.
 ## Unreleased
 
 - **OMH no longer steers the model against Hermes' own `clarify`, `/loop`,
-  and `/plan`.** `ulw-interview` sends each question's two to four candidate
-  answers through Hermes' native `clarify` tool when it is in the tool list
-  or reachable through tool search: the candidates go in `choices` with the
-  recommended one first, the round header stays in the message, OMH adds no
-  free-input row of its own (the picker supplies one), and a second question
-  joins the same call only when neither answer could change the other. Where
-  `clarify` is absent, the numbered list ending in a free-input entry stays
-  the fallback, and free text is still accepted either way. `ulw-loop` gains
+  `/goal`, and `/plan`.** `ulw-interview` sends each question's two to four
+  candidate answers through Hermes' native `clarify` tool when it is in the
+  tool list or reachable through tool search: the candidates go in `choices`
+  with the recommended one first, the round header stays in the message, OMH
+  adds no free-input row of its own (the picker supplies one), and a second
+  question joins the same call only when neither answer could change the
+  other. `ulw-context` asks each frontier round the same way, one `questions`
+  entry per dependency-ready decision with its recommendation first, since
+  decisions in one frontier have no prerequisite between them. Where `clarify`
+  is absent, the numbered list or batch in the message stays the fallback, and
+  free text is still accepted either way. `ulw-loop` gains
   Do-Not-Use lines that hand a check repeated on a timer to native `/loop`,
   an unattended schedule to a Hermes cron job, and a single objective with a
   done condition to native `/goal`. A loop asked for on a timer ("loop every
   5 minutes and check whether CI is green", `5분마다 … 루프 돌려줘`,
   `/loop 5m …`) no longer dispatches the goal loop or draws the `ulw-loop`
-  route hint: the router answers directly and names the `/loop` command, while
-  `./loop`, `$loop`, `omh loop`, and a timed request that carries a product
-  or star goal keep the goal loop. The turns Hermes writes for its own `/plan`
-  and `/loop` wakeups, which open with `[/plan — plan mode]` and
-  `[/loop wakeup #…]`, are no longer routed at all: the router answers them
-  directly and the plugin's per-turn hook renders no route hint, vocabulary
-  match, or candidate line on them, as it already did for rows Hermes stamps
-  with a `display_kind`.
+  route hint or candidate line: the router answers directly and names the
+  `/loop` command, while `./loop`, `$loop`, `omh loop`, and a timed request
+  that carries a product or star goal keep the goal loop. The turns Hermes
+  writes for its own session commands are no longer routed at all: `/plan`,
+  `/loop` wakeups, `/goal` continuations (with a completion contract or
+  `/subgoal` criteria, after a failed quality gate, and the kick that stands
+  in for a goal just sent), goal-mode kanban nudges, `/heartbeat` firings,
+  `/learn`, and `/initiate-setup`, each recognised by its template's opening
+  frame. The router and the chat wrapper answer them directly, and the
+  plugin's per-turn hook renders no route hint, vocabulary match, or candidate
+  line on them, as it already did for rows Hermes stamps with a
+  `display_kind`.
 
 
 - **The operator skills now record what Hermes' own approval, checkpoint,

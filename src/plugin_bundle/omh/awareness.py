@@ -13,7 +13,7 @@ from .executor_cues import (
     OMO_RUNTIME_CODING_AGENT_PHRASES as _OMO_RUNTIME_CODING_AGENT_PHRASES,
     SUBSTRING_NAMED_CODING_AGENT_PHRASES as _SUBSTRING_NAMED_CODING_AGENT_PHRASES,
 )
-from .hermes_session_commands import native_loop_cadence
+from .hermes_session_commands import NATIVE_LOOP_CADENCE_HINT_KEY, native_loop_cadence
 from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
 from .reference_regions import executable_routing_text
@@ -6255,6 +6255,8 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
             "tool invocation, generated output, verification, review, CI, merge, or proof that routing was correct."
         ),
     }
+    if _native_loop_cadence_only(routing_normalized):
+        payload[NATIVE_LOOP_CADENCE_HINT_KEY] = True
     degradation = degradation_payload(degraded)
     if degradation:
         payload["degradation"] = degradation

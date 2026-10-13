@@ -1,10 +1,12 @@
 """Hermes' own session commands are not OMH's to route over.
 
-`/plan` and `/loop` wakeup turns are host-written from fixed templates, and a
-loop asked for on a timer is Hermes' native `/loop`. One predicate module in
-the plugin bundle answers both for the per-turn hint and the router; these
-pin the predicates, the hint surface, and the router decision, each beside the
-counterexample that must keep routing.
+Turns Hermes writes for its own session commands (`/plan`, `/loop` wakeups,
+`/goal` continuations, `/heartbeat`, `/learn`, goal-mode kanban nudges,
+`/initiate-setup`) are host-written from fixed templates, and a loop asked for
+on a timer is Hermes' native `/loop`. One predicate module in the plugin
+bundle answers both for the per-turn hint and the router; these pin the
+predicates, the hint and candidate surfaces, and the router and wrapper
+decision, each beside the counterexample that must keep routing.
 """
 
 from __future__ import annotations
@@ -18,14 +20,70 @@ load_local_package()
 from omh.plugin_bundle.omh.awareness import awareness_route_hint
 from omh.plugin_bundle.omh.hermes_session_commands import (
     HOST_COMMAND_TURN_FRAMES,
+    NATIVE_LOOP_CADENCE_HINT_KEY,
     host_command_turn,
     native_loop_cadence,
 )
+from omh.plugin_bundle.omh.skill_shortlist import skill_candidates_for_turn
 from omh.routing.chat import (
     HOST_COMMAND_TURN_REASON,
     NATIVE_LOOP_CADENCE_REASON,
     route_chat_message,
 )
+from omh.wrapper.contract import build_chat_interaction_payload
+
+_GOAL = "ship the OMH loop docs, fix the failing CI on PR 42, and open a PR with the release notes"
+
+# Each host template's opening frame, verbatim from upstream, and a short body
+# standing in for the rest of the turn (the goal, the reason, the request). The
+# bodies keep enough of each turn's vocabulary that most of them route on
+# their own, which is what makes the frame the only difference below.
+HOST_TURNS = {
+    "plan": (
+        "[/plan — plan mode]\n\n",
+        "For this turn, you are in PLAN MODE — planning only.\n\n- Do not run mutating terminal commands, "
+        "commit, push, or perform external actions.\n\nTask to plan:\nadd a dark mode toggle to the settings page\n",
+    ),
+    "loop wakeup": (
+        "[/loop wakeup #3, every 5m]\n",
+        "Recurring task: check whether CI is green on PR 42\n\nPerform the task now against the CURRENT state.",
+    ),
+    "goal continuation": (
+        "[Continuing toward your standing goal]\n",
+        f"Goal: {_GOAL}\n\nCompletion contract:\nOutcome: docs merged\nVerify: CI green\n\n"
+        "Continue working toward the outcome above. Take the next concrete step. Before claiming the goal is "
+        "done, satisfy the Verification criterion and show the concrete evidence (command output, file "
+        "contents, test result).",
+    ),
+    "goal gate failed": (
+        "[Continuing toward your standing goal — a quality gate failed]\n",
+        f"Goal: {_GOAL}\n\nThe quality gate command below must pass before this goal can be declared done, "
+        "and it just failed (attempt 1/3):\n  $ pytest -q\nExit code: 1",
+    ),
+    "goal kick": ("[Goal set] Continue with the goal you were just given", "; there is no need to re-read it."),
+    "kanban continuation": (
+        "[Continuing toward this kanban task — judge says it is not done yet]\n",
+        "Reason: tests still failing on the login flow\n\nTake the next concrete step toward completing the task. "
+        "When the work is genuinely finished, call kanban_complete with a summary.",
+    ),
+    "kanban finalize": (
+        "[The work looks complete, but the task is still open]\n",
+        "Reason: the PR is open and CI is green\n\nIf the task is genuinely done, call kanban_complete now with "
+        "a short summary of what you did.",
+    ),
+    "heartbeat": (
+        "[Heartbeat — recurring instruction, fires every 10m]\n",
+        "check whether CI is green and summarize open PRs",
+    ),
+    "learn": (
+        "[/learn] The user wants you to learn a reusable skill from the request below, and save it.\n\n",
+        "THE REQUEST:\nthe deploy workflow we just went through",
+    ),
+    "initiate setup": (
+        "[/initiate-setup]\n\n",
+        "Guide the user through first-run setup: pick a model provider, connect accounts, and install plugins.",
+    ),
+}
 
 
 def _hint_workflows(message: str) -> list[str]:
@@ -34,10 +92,17 @@ def _hint_workflows(message: str) -> list[str]:
 
 class HostCommandTurnTest(unittest.TestCase):
     def test_each_host_frame_opens_a_command_turn(self):
-        self.assertEqual(HOST_COMMAND_TURN_FRAMES, ("[/plan — plan mode]", "[/loop wakeup #"))
+        # One fixture per frame: a frame added without a turn to prove it, or a
+        # fixture whose frame left the list, fails here.
+        self.assertEqual(len(HOST_COMMAND_TURN_FRAMES), len(HOST_TURNS))
+        for frame in HOST_COMMAND_TURN_FRAMES:
+            with self.subTest(frame=frame):
+                self.assertTrue(any(opening.startswith(frame) for opening, _ in HOST_TURNS.values()))
+        for name, (opening, body) in HOST_TURNS.items():
+            with self.subTest(turn=name):
+                self.assertTrue(host_command_turn(opening + body))
+                self.assertFalse(host_command_turn(body))
         for message in (
-            "[/plan — plan mode]\n\nFor this turn, you are in PLAN MODE",
-            "[/loop wakeup #3, every 5m]\nRecurring task: check CI",
             "[/loop wakeup #12, self-paced]\nRecurring task: watch the deploy",
             "  [/LOOP WAKEUP #1, every 1h]\nRecurring task: x",
         ):
@@ -88,6 +153,26 @@ class NativeLoopCadenceTest(unittest.TestCase):
 
 
 class RouteHintTest(unittest.TestCase):
+    def test_a_loop_on_a_timer_leaves_the_goal_loop_off_the_candidate_line(self):
+        # The candidate line ranks the catalog on its own words; before, the
+        # Korean timed loop listed the goal loop there after the hint dropped it.
+        message = "5분마다 CI가 초록색인지 확인하는 루프 돌려줘"
+        payload = awareness_route_hint(message)
+        self.assertIs(payload.get(NATIVE_LOOP_CADENCE_HINT_KEY), True)
+        self.assertNotIn("ulw-loop", [label for label, _ in skill_candidates_for_turn(message, route_hint_payload=payload)])
+        # The same message without the hint's verdict still lists it, so the
+        # verdict is what removes it.
+        self.assertIn("ulw-loop", [label for label, _ in skill_candidates_for_turn(message, route_hint_payload={})])
+
+    def test_the_goal_loop_payload_carries_no_timer_verdict(self):
+        for message in (
+            "./loop every 5 minutes check whether CI is green",
+            "run a loop every 30 minutes to improve first-run experience until install friction is lower",
+            "루프로 OMH 설치부터 첫 성공까지 계속 개선해줘",
+        ):
+            with self.subTest(message=message):
+                self.assertNotIn(NATIVE_LOOP_CADENCE_HINT_KEY, awareness_route_hint(message))
+
     def test_a_loop_on_a_timer_gets_no_loop_hint(self):
         for message in (
             "loop every 5 minutes and check whether CI is green",
@@ -114,15 +199,23 @@ class RouterTest(unittest.TestCase):
         return route_chat_message(message, source="discord")
 
     def test_host_command_turns_are_answered_directly(self):
-        for message in (
-            "[/plan — plan mode]\n\nFor this turn, you are in PLAN MODE — planning only.\n"
-            "- Do not run mutating terminal commands, commit, push, or perform external actions.\n",
-            "[/loop wakeup #3, every 5m]\nRecurring task: check whether CI is green on PR 42",
-        ):
-            with self.subTest(message=message[:30]):
-                route = self._route(message)
+        for name, (opening, body) in HOST_TURNS.items():
+            with self.subTest(turn=name):
+                route = self._route(opening + body)
                 self.assertEqual(route["action"], "fallback")
                 self.assertEqual(route["reason"], HOST_COMMAND_TURN_REASON)
+                # The wrapper keeps the router's answer: a goal contract's
+                # "Outcome:/Verify:" lines once read there as a catalog question
+                # and opened the workflow picker.
+                payload = build_chat_interaction_payload(opening + body, source="discord")
+                self.assertEqual((payload["route"]["action"], payload["next_action"]), ("fallback", "answer_directly"))
+
+    def test_the_same_bodies_without_their_frame_still_route(self):
+        # Measured on the bodies above: without the frame each of these
+        # dispatches a workflow, so the frame is what the router reads.
+        for name in ("plan", "goal continuation", "goal gate failed", "kanban continuation", "heartbeat", "initiate setup"):
+            with self.subTest(turn=name):
+                self.assertEqual(self._route(HOST_TURNS[name][1])["action"], "dispatch")
 
     def test_a_loop_on_a_timer_is_answered_with_the_native_command(self):
         route = self._route("loop every 5 minutes and check whether CI is green")

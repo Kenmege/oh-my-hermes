@@ -566,8 +566,9 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
     # role marker, the first-turn primer -- because a completion notice is
     # exactly the turn on which those matter.
     #
-    # `/plan` and `/loop` wakeup turns are host-written too, but carry no
-    # `display_kind`; their template's opening frame is the record
+    # Session-command turns (`/plan`, `/loop` wakeups, `/goal` continuations,
+    # `/heartbeat`, `/learn`, ...) are host-written too, but the CLI and TUI
+    # give them no `display_kind`; their template's opening frame is the record
     # (`hermes_session_commands`). Each already holds the host's instruction for the
     # turn, which a route hint would only contradict.
     request_message = (

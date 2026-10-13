@@ -121,8 +121,9 @@ DIRECT_ANSWER_REASON = (
 # Two turns Hermes owns, answered in chat without a workflow. Each reason keeps
 # the direct-answer wording the wrapper reads (`_is_direct_answer_fallback`).
 HOST_COMMAND_TURN_REASON = (
-    "Hermes wrote this turn from its own /plan or /loop command, and its text is the host's "
-    "instruction for the turn; answer directly by following it instead of opening an OMH workflow or picker."
+    "Hermes wrote this turn from its own session command (/plan, /loop, /goal, /heartbeat, /learn, or a "
+    "goal-mode kanban card), and its text is the host's instruction for the turn; answer directly by "
+    "following it instead of opening an OMH workflow or picker."
 )
 NATIVE_LOOP_CADENCE_REASON = (
     "A check repeated on a timer is Hermes' native /loop, which the user starts (for example "

@@ -34,7 +34,7 @@ from ..routing.localization import normalized_phrase
 from ..routing.route_plan import public_workflow_identifier, with_public_skill_names
 from ..routing.route_question import apply_route_question_mode
 from ..plugin_bundle.omh.route_question_mode import read_route_question_mode
-from ..routing.policy import POINT_IN_TIME_WEB_GUARD
+from ..routing.policy import POINT_IN_TIME_WEB_GUARD, host_owned_command_turn
 from ..workflows.realtime_voice_trial_receipts import build_prepared_realtime_voice_chat_state
 from ..workflows.temporal_source_receipts import (
     TEMPORAL_EVIDENCE_SURFACES_SCHEMA_VERSION,
@@ -9494,6 +9494,10 @@ def _workflow_explanation_reason_for_route(
 
 def _is_generic_skill_catalog_route(message: str, decision: dict[str, object]) -> bool:
     if _is_skill_picker_invocation(message) or _is_command_preview_invocation(message):
+        return False
+    # A turn Hermes wrote for its own session command is answered as the host
+    # instructs; its template text is never a question about OMH's catalog.
+    if host_owned_command_turn(message):
         return False
     if _contains_cue_phrase(message, ("omh-docs",)) and not _is_omh_docs_question(message):
         return False
