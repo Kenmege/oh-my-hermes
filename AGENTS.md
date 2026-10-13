@@ -177,7 +177,24 @@ PR without the chat history.
   command takes the arrows and then Enter, and a request the gateway
   withdraws (its own timeout, an interrupt) closes without an answer.
   Leaving a session (`/new`, a switch) declines that session's open requests
-  and says so in the new transcript. It
+  and says so in the new transcript. Shift+Tab is the one key that changes
+  what Hermes asks. It may turn on Hermes' per-session yolo, the switch
+  Shift+Tab sets in Hermes' own TUI, which stops Hermes from sending approval
+  requests for that session; the TUI still answers none, because Hermes then
+  sends none. It does this only on the person's keypress, with a `config.set`
+  that names the session and an explicit value and never a `scope`, so it
+  never writes the global `approvals.mode` and never sets the switch for the
+  gateway process. The mode is shown on the composer (both rules and the mode
+  row, or the status line on a short terminal) only once Hermes confirms it
+  for that session; when turning it on, an answer that confirms anything else
+  is a failure, followed by an explicit off; and every `session.info`
+  corrects what is shown, so yolo that Hermes reports for its own reasons is
+  shown too. Ctrl+T and `/effort` set that session's reasoning effort through
+  the same session-scoped call. Plan mode is the frontend's own flag, also
+  turned on with Shift+Tab: while it is on, a prompt the person types goes to
+  Hermes as `/plan <text>`. A steer (Ctrl+Enter, `/steer`) sends into the
+  running turn only text the person typed and sent that way; the TUI never
+  steers on its own, and a queued prompt is never turned into a steer. It
   never attaches to a session another runtime owns: when the launcher sets
   `HERMES_TUI_GATEWAY_URL`, it exits and names `hermes`. It writes no prompt
   text, transcript, attachment, secret or server-request frame to disk or to

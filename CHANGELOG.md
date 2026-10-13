@@ -25,7 +25,15 @@ All notable changes will be documented here.
   Ghostty, tmux, VS Code, Windows Terminal) it asks for the kitty keyboard
   protocol and xterm modifyOtherKeys, so Ctrl+Enter and Shift+Enter arrive as
   keys of their own while every other key decodes as before;
-  `OMH_TUI_KEYBOARD=legacy` keeps the plain bytes.
+  `OMH_TUI_KEYBOARD=legacy` keeps the plain bytes. Shift+Tab cycles normal,
+  accept all and plan: accept all turns off Hermes' approvals for that session
+  only (Hermes' per-session switch, never `approvals.mode`) and is shown on
+  the composer once Hermes confirms it, and plan sends each prompt as
+  `/plan <text>`. Ctrl+T or `/effort <level>` sets the session's reasoning
+  effort, Ctrl+Enter or `/steer <text>` adds typed text to the running turn,
+  queued prompts are listed above the composer and Up takes them back to
+  edit, `?` or `/keys` lists every key from the table the docs are held to,
+  and an approval rings the terminal bell once (`OMH_TUI_BELL=0` silences it).
 
 - **The OMH status widget and the Hermes Desktop pane keep ordinary
   punctuation and drop whole escape sequences.** Their character allowlists
