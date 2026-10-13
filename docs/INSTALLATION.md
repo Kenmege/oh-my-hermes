@@ -429,7 +429,9 @@ was and says so.
 A steer adds what you typed to the turn that is running, without interrupting
 it; Hermes reads it after its next tool call, and the transcript notes
 `↪ steered:` once Hermes took it. If the turn ended first, or Hermes cannot
-take a steer yet, the text goes as an ordinary prompt instead. The OMH TUI
+take a steer yet, the text goes as an ordinary prompt instead. If you left the
+session (`/new`, a switch) before Hermes answered, the text comes back to the
+composer and is not sent to the session you are in. The OMH TUI
 steers only with text you typed and sent this way: a queued prompt is never
 turned into a steer.
 

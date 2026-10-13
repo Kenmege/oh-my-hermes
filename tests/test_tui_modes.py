@@ -229,6 +229,55 @@ class SteerTests(unittest.TestCase):
             client.calls, [("prompt.submit", {"session_id": SID, "text": "wait for the turn", "queued": True})]
         )
 
+    def test_a_steer_answered_after_its_session_was_left_comes_back_to_the_composer(self) -> None:
+        answers = {
+            "rejected": ({"status": "rejected", "text": "keep this"}, None),
+            "refused": (None, {"code": 4010, "message": "agent does not support steer"}),
+            "taken": ({"status": "queued", "text": "keep this"}, None),
+        }
+        for name, (result, error) in answers.items():
+            for leave in ("new", "switch"):
+                with self.subTest(answer=name, leave=leave):
+                    app, client = make_app(busy=True)
+                    type_text(app, "keep this")
+                    app._on_input(CTRL_ENTER)
+                    steer = len(client.calls)
+                    if leave == "new":
+                        app._on_new_session({"session_id": "live-2", "stored_session_id": "stored-2"})
+                    else:
+                        app._on_session_resumed("stored-2", {"session_id": "live-2", "stored_session_id": "stored-2"})
+                    app._on_response(Response(steer, result, error))
+                    self.assertEqual([method for method, _params in client.calls[steer:]], ["session.close"])
+                    self.assertEqual(app.composer.text, "keep this")
+                    self.assertFalse(app.queued)
+                    self.assertIn(app_module.STEER_LEFT_NOTICE, notices(app, NOTICE_WARN))
+                    self.assertFalse(any("steered" in text for text in notices(app)))
+
+    def test_a_steer_that_comes_back_never_lands_in_an_answer_or_over_a_draft(self) -> None:
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        type_text(app, "keep this")
+        app._on_input(CTRL_ENTER)
+        steer = len(client.calls)
+        app._on_new_session({"session_id": "live-2", "stored_session_id": "stored-2"})
+        type_text(app, "a draft")
+        app._on_server_request(ServerRequest("srq-1", "sudo", {"command": "apt install x"}))
+        app._on_response(Response(steer, {"status": "rejected", "text": "keep this"}, None))
+        self.assertEqual(app.composer.text, "")  # the composer holds the answer to the question now
+        now[0] += SLOT_ARM_SECONDS
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.answers, [("srq-1", {"result": {"value": ""}})])
+        self.assertEqual(app.composer.text, "a draft\nkeep this")
+
+        app, client = make_app(busy=True)  # no question open: the text goes after the draft being typed
+        type_text(app, "keep this")
+        app._on_input(CTRL_ENTER)
+        steer = len(client.calls)
+        app._on_new_session({"session_id": "live-2", "stored_session_id": "stored-2"})
+        type_text(app, "a draft")
+        app._on_response(Response(steer, None, {"code": 4010, "message": "agent does not support steer"}))
+        self.assertEqual(app.composer.text, "a draft\nkeep this")
+
     def test_only_ctrl_enter_and_the_steer_command_can_steer(self) -> None:
         # Steer text is what the person typed and sent, so `session.steer` has one sender with two callers.
         tree = ast.parse(Path(app_module.__file__).read_text(encoding="utf-8"))

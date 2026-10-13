@@ -34,7 +34,9 @@ its prompts are listed above the composer's top rule, and Up on an empty
 composer takes all of them back into the composer.
 Ctrl+Enter and `/steer <text>` send what the person typed into the running
 turn (`session.steer`); the TUI steers nothing on its own, and text Hermes
-does not take as a steer goes as a prompt instead of being dropped.
+does not take as a steer goes as a prompt instead of being dropped. A steer
+answered after its session was left goes back to the composer instead: the
+session now live never receives it.
 
 Input modes: Shift+Tab cycles normal, accept and plan. Accept is Hermes'
 per-session yolo, so entering and leaving it are `config.set` calls that
@@ -247,6 +249,10 @@ QUEUE_HINT_GAP = 2
 STEERED_NOTICE = "↪ steered: {}"
 STEER_REJECTED = "rejected"  # `session.steer`'s status when the turn ended before the text arrived
 STEER_USAGE = "Usage: /steer <text to add to the running turn>"
+STEER_LEFT_NOTICE = (
+    "Hermes answered a steer after you left its session. "
+    "Its text is back in the composer and was not sent to this one."
+)
 
 # Subagents: the strip on the mode row, the list Down opens, and one agent's log in the pager.
 SUBAGENT_EVENT_PREFIX = "subagent."
@@ -1488,27 +1494,46 @@ class App:
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
+        sid = self.sid
         self._request(
             "session.steer",
-            {"session_id": self.sid, "text": text},
-            lambda result: self._on_steered(text, result),
-            lambda error: self._on_steer_refused(text, error),
+            {"session_id": sid, "text": text},
+            lambda result: self._on_steered(sid, text, result),
+            lambda error: self._on_steer_refused(sid, text, error),
         )
 
-    def _on_steered(self, text: str, result: dict[str, Any]) -> None:
-        if as_text(result.get("status")) == STEER_REJECTED:
+    def _on_steered(self, sid: str, text: str, result: dict[str, Any]) -> None:
+        if sid != self.sid:
+            self._steer_back(text)
+        elif as_text(result.get("status")) == STEER_REJECTED:
             self._send_typed(text)  # the turn ended before the text arrived: it is the next prompt
         else:
             self.transcript.add_notice(STEERED_NOTICE.format(first_line(text)))
 
-    def _on_steer_refused(self, text: str, error: dict[str, Any]) -> bool:
+    def _on_steer_refused(self, sid: str, text: str, error: dict[str, Any]) -> bool:
         """Hermes could not steer (an agent still starting, or one that takes no steer): the text goes as a prompt."""
+        if sid != self.sid:
+            self._steer_back(text)
+            return True
         message = as_text(error.get("message")) or "refused"
         self.transcript.add_notice(
             f"Hermes did not take the steer ({error.get('code')}): {message}. Sent as a prompt instead.", NOTICE_WARN
         )
         self._send_typed(text)
         return True
+
+    def _steer_back(self, text: str) -> None:
+        """A steer answered after its session was left: the text returns to the person, never to the live session.
+
+        It goes after whatever the composer holds; while a question has the
+        composer, after the draft the composer gets back when it closes, so it
+        never becomes part of an answer to Hermes.
+        """
+        if self.slot is not None and self.slot.wants_text:
+            self.slot_draft = "\n".join(part for part in (self.slot_draft, text) if part)
+        else:
+            self._set_composer("\n".join(part for part in (self.composer.text, text) if part))
+        self.transcript.add_notice(STEER_LEFT_NOTICE, NOTICE_WARN)
 
     # ── input modes ──
 
