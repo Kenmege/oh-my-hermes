@@ -39,7 +39,8 @@ the goal and `Agent.name`. A frame that shows life (`start`, `tool`, `thinking`,
 or which `clear` dropped while it was still running, comes back the next time
 it reports. `complete` never makes one: a verdict on an agent that was never
 shown has no row to land on. A finished agent is frozen, so a repeated
-`complete` or a late frame cannot change its verdict, its time or its log.
+`complete` or a late frame cannot change its verdict, its time or its log,
+and a late `subagent.tail` can only fill a log that is still empty.
 
 Bounds. The roster holds `ROSTER_CAP` agents; one more pushes out a finished
 agent, or the one seen longest ago when none has finished, and `evicted`
@@ -304,10 +305,12 @@ class Roster:
 
         A tail the gateway cut opens in the middle of a line, so that line is
         dropped and the log view says earlier output is missing. A tail with
-        no line in it, and an id the roster does not hold, change nothing.
+        no line in it, and an id the roster does not hold, change nothing. A
+        finished agent is frozen: a tail can only seed its log while the log
+        is empty, never replace the reply its `subagent.complete` put there.
         """
         agent = self.agents.get(subagent_id)
-        if agent is None or not isinstance(text, str):
+        if agent is None or not isinstance(text, str) or (agent.status in FINISHED_STATUSES and agent.log):
             return
         cut = truncated is True or len(text) > TAIL_CHARS
         tail = text[-TAIL_CHARS:]

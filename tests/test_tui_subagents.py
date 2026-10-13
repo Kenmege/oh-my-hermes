@@ -1002,6 +1002,24 @@ class IngestTailTests(unittest.TestCase):
                 roster.ingest_tail(FIRST, "half a line only", truncated=True)
                 self.assertEqual((log_rows(roster), roster.agents[FIRST].tail_cut), ([("thinking", "kept", "")], False))
 
+    def test_a_late_tail_never_replaces_a_finished_agents_log(self) -> None:
+        for status in ("completed", "failed", "interrupted"):
+            with self.subTest(status=status):
+                roster = started(FIRST)
+                feed(roster, "complete", 1.0, status=status, summary="the reply")
+                roster.ingest_tail(FIRST, self.TAIL)
+                self.assertEqual(log_rows(roster), [("text", "the reply", "")])
+                self.assertFalse(roster.agents[FIRST].tail_cut)
+
+    def test_a_finished_agent_with_an_empty_log_takes_a_tail(self) -> None:
+        roster = started(FIRST)
+        feed(roster, "complete", 1.0, summary="")
+        self.assertEqual(log_rows(roster), [])
+        roster.ingest_tail(FIRST, "only line")
+        self.assertEqual(log_rows(roster), [("text", "only line", "")])
+        roster.ingest_tail(FIRST, "a later tail")  # and once it holds that, it is frozen too
+        self.assertEqual(log_rows(roster), [("text", "only line", "")])
+
     def test_an_unknown_id_or_a_tail_that_is_not_text_changes_nothing(self) -> None:
         roster = started(FIRST)
         feed(roster, "thinking", text="kept")
