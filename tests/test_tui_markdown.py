@@ -1,0 +1,272 @@
+"""The OMH TUI's stream-safe markdown renderer (`omh.tui.markdown`).
+
+A reply is flushed to scrollback line by line while it streams, so the one
+property everything rests on is that rendering line by line (threading
+`MarkdownState`) gives exactly the rows a whole-document render gives. Every
+other expectation here is a literal row, never a call back into the module.
+"""
+
+from __future__ import annotations
+
+from dataclasses import replace
+import unicodedata
+import unittest
+
+from omh.tui.markdown import MarkdownState, render_line, render_lines, render_markdown
+from omh.tui.style import Line, Span
+from omh.tui.theme import DEFAULT_THEME as THEME
+from omh.tui.width import is_control, line_width
+
+FAMILY = "\U0001F468‍\U0001F469‍\U0001F467‍\U0001F466"
+
+DOCUMENT = "\n".join(
+    [
+        "# Release notes",
+        "",
+        "The **router** now reads *every* `cue` and links [the spec](https://example.com/spec).",
+        "- first bullet that is long enough to wrap onto a second row",
+        "  - nested bullet",
+        "    continuation under the nested item",
+        "12. numbered item with snake_case_name kept literal",
+        "> quoted line with **bold**",
+        ">> nested quote",
+        "---",
+        "| col a | **col b** |",
+        "```python",
+        "def f(x):",
+        "    return x * 2  # *not italic*",
+        "```",
+        "```diff",
+        "--- a/file.py",
+        "+++ b/file.py",
+        "@@ -1,2 +1,2 @@",
+        "-old line",
+        "+new line",
+        " context line",
+        "```",
+        "한글 문단도 줄바꿈이 셀 단위로 맞아야 합니다 " + FAMILY,
+        "~~~",
+        "unclosed fence keeps going",
+    ]
+)
+
+
+def texts(rows: list[Line]) -> list[str]:
+    return ["".join(span.text for span in row) for row in rows]
+
+
+def span_with(row: Line, text: str) -> Span:
+    return next(span for span in row if span.text == text)
+
+
+def render(text: str, width: int = 40) -> list[Line]:
+    return render_markdown(text, width, THEME)
+
+
+class BlockTests(unittest.TestCase):
+    def test_heading_drops_its_hashes_and_takes_the_heading_style(self) -> None:
+        rows = render("## Plan")
+        self.assertEqual(texts(rows), ["Plan"])
+        self.assertEqual(rows[0][0].style, THEME.heading)
+
+    def test_hashes_without_a_space_are_text(self) -> None:
+        rows = render("#hashtag")
+        self.assertEqual(texts(rows), ["#hashtag"])
+        self.assertEqual(rows[0][0].style, THEME.text)
+
+    def test_bullet_wraps_under_its_text(self) -> None:
+        rows = render("- alpha beta gamma delta epsilon", width=16)
+        self.assertEqual(texts(rows), ["• alpha beta", "  gamma delta", "  epsilon"])
+        self.assertEqual(span_with(rows[0], "• ").style, THEME.accent)
+
+    def test_numbered_item_wraps_under_its_text(self) -> None:
+        rows = render("10. one two three four five six", width=14)
+        self.assertEqual(texts(rows), ["10. one two", "    three four", "    five six"])
+
+    def test_nested_items_and_continuation_lines_hang_under_the_item_text(self) -> None:
+        rows = render("- top\n  - nested\n    more text\n1. item\n  lazy")
+        self.assertEqual(texts(rows), ["• top", "  • nested", "    more text", "1. item", "   lazy"])
+
+    def test_a_plain_paragraph_ends_the_list(self) -> None:
+        rows = render("- a\nplain\n  indented")
+        self.assertEqual(texts(rows), ["• a", "plain", "  indented"])
+
+    def test_blockquote_bars_every_row_and_nests(self) -> None:
+        rows = render("> quoted **bold**\n>> deep", width=40)
+        self.assertEqual(texts(rows), ["│ quoted bold", "│ │ deep"])
+        self.assertEqual(span_with(rows[0], "quoted ").style, THEME.quote)
+        self.assertEqual(span_with(rows[0], "bold").style, replace(THEME.quote, bold=True))
+
+    def test_horizontal_rules_fill_the_width(self) -> None:
+        for source in ("---", "***", "_ _ _"):
+            with self.subTest(source=source):
+                self.assertEqual(texts(render(source, width=12)), ["─" * 12])
+        self.assertEqual(texts(render("--", width=12)), ["--"])
+
+    def test_tables_pass_through_as_plain_text(self) -> None:
+        rows = render("| a | **b** |")
+        self.assertEqual(texts(rows), ["| a | **b** |"])
+        self.assertEqual(rows[0], (Span("| a | **b** |", THEME.text),))
+
+    def test_blank_lines_are_empty_rows(self) -> None:
+        self.assertEqual(render("a\n\nb"), [(Span("a", THEME.text),), (), (Span("b", THEME.text),)])
+
+
+class FenceTests(unittest.TestCase):
+    def test_code_is_verbatim_with_no_inline_markup(self) -> None:
+        rows = render("```python\nx = *a* `b` [c](d)\n```")
+        self.assertEqual(texts(rows), ["```python", "x = *a* `b` [c](d)", "```"])
+        self.assertEqual(rows[1], (Span("x = *a* `b` [c](d)", THEME.code),))
+        self.assertEqual(rows[0][0].style, THEME.dim)
+
+    def test_fence_state_opens_and_closes(self) -> None:
+        _, state = render_line("```Python extra", MarkdownState(), 40, THEME)
+        self.assertTrue(state.in_fence)
+        self.assertEqual(state.fence_lang, "python")
+        _, state = render_line("```", state, 40, THEME)
+        self.assertFalse(state.in_fence)
+
+    def test_a_shorter_or_different_run_does_not_close(self) -> None:
+        _, state = render_lines(["~~~~", "code", "~~~", "```"], MarkdownState(), 40, THEME)
+        self.assertTrue(state.in_fence)
+        _, state = render_line("~~~~~", state, 40, THEME)
+        self.assertFalse(state.in_fence)
+
+    def test_long_code_lines_hard_wrap_by_cells_keeping_every_space(self) -> None:
+        rows = render("```\nab  cd  ef\n```", width=4)
+        self.assertEqual(texts(rows)[1:-1], ["ab  ", "cd  ", "ef"])
+
+    def test_inline_triple_backticks_are_code_not_a_fence(self) -> None:
+        rows = render("```a``` after")
+        self.assertEqual(texts(rows), ["a after"])
+
+    def test_diff_lines_get_full_row_bands(self) -> None:
+        rows = render("```diff\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old\n+new\n ctx\n```", width=20)
+        self.assertEqual(rows[1], (Span("--- a/f", THEME.label),))
+        self.assertEqual(rows[2], (Span("+++ b/f", THEME.label),))
+        self.assertEqual(rows[3], (Span("@@ -1 +1 @@", THEME.accent),))
+        self.assertEqual(rows[4], (Span("-old" + " " * 16, THEME.diff_remove),))
+        self.assertEqual(rows[5], (Span("+new" + " " * 16, THEME.diff_add),))
+        self.assertEqual(rows[6], (Span(" ctx", THEME.code),))
+
+    def test_a_wrapped_diff_line_bands_every_row(self) -> None:
+        rows = render("```patch\n+" + "x" * 24 + "\n```", width=10)[1:-1]
+        self.assertEqual(
+            rows,
+            [
+                (Span("+xxxxxxxxx", THEME.diff_add),),
+                (Span("xxxxxxxxxx", THEME.diff_add),),
+                (Span("xxxxx     ", THEME.diff_add),),
+            ],
+        )
+
+    def test_a_diff_fence_inside_a_list_reads_markers_after_the_fence_indent(self) -> None:
+        rows = render("- change:\n  ```diff\n  +added\n  ```", width=12)
+        self.assertEqual(rows[2], (Span("  +added    ", THEME.diff_add),))
+
+
+class InlineTests(unittest.TestCase):
+    def test_inline_code(self) -> None:
+        rows = render("use `git status` now")
+        self.assertEqual(
+            rows[0], (Span("use ", THEME.text), Span("git status", THEME.code), Span(" now", THEME.text))
+        )
+
+    def test_bold_and_italic(self) -> None:
+        row = render("**b** *i* _u_")[0]
+        self.assertEqual(span_with(row, "b").style, replace(THEME.text, bold=True))
+        self.assertEqual(span_with(row, "i").style, replace(THEME.text, italic=True))
+        self.assertEqual(span_with(row, "u").style, replace(THEME.text, italic=True))
+
+    def test_emphasis_nests(self) -> None:
+        row = render("**a *b* c**")[0]
+        self.assertEqual(span_with(row, "b").style, replace(THEME.text, bold=True, italic=True))
+
+    def test_intraword_underscores_and_spaced_stars_stay_literal(self) -> None:
+        rows = render("snake_case_name and 2 * 3 * 4")
+        self.assertEqual(rows[0], (Span("snake_case_name and 2 * 3 * 4", THEME.text),))
+        rows = render("my_var and their_")
+        self.assertEqual(rows[0], (Span("my_var and their_", THEME.text),))
+
+    def test_links_show_text_then_url(self) -> None:
+        row = render("see [docs](https://example.com).")[0]
+        self.assertEqual(texts([row]), ["see docs (https://example.com)."])
+        self.assertEqual(span_with(row, "docs").style, THEME.link)
+        self.assertEqual(span_with(row, " (https://example.com)").style, THEME.dim)
+
+    def test_escapes_and_unclosed_markers_are_literal(self) -> None:
+        self.assertEqual(texts(render("\\*not\\* `open **bold [x](")), ["*not* `open **bold [x]("])
+
+
+class StreamingTests(unittest.TestCase):
+    def test_line_by_line_render_equals_whole_render(self) -> None:
+        for width in (12, 40, 80):
+            with self.subTest(width=width):
+                streamed: list[Line] = []
+                state = MarkdownState()
+                for source in DOCUMENT.split("\n"):
+                    rows, state = render_line(source, state, width, THEME)
+                    streamed.extend(rows)
+                self.assertEqual(streamed, render_markdown(DOCUMENT, width, THEME))
+                self.assertTrue(state.in_fence)
+
+    def test_hangul_and_emoji_wrap_by_cells_without_splitting_a_cluster(self) -> None:
+        rows = render("- 한글 문장이 아주 길게 이어집니다 " + FAMILY + " 가족", width=12)
+        self.assertEqual(texts(rows), ["• 한글", "  문장이", "  아주 길게", "  이어집니다", "  " + FAMILY + " 가족"])
+        self.assertTrue(all(line_width(row) <= 12 for row in rows))
+
+    def test_wide_code_wraps_on_glyph_boundaries_and_decomposed_hangul_is_composed(self) -> None:
+        decomposed = unicodedata.normalize("NFD", "가나다라마바사")
+        rows = render("```\n" + decomposed + "\n```", width=5)
+        self.assertEqual(texts(rows)[1:-1], ["가나", "다라", "마바", "사"])
+
+
+class MalformedInputTests(unittest.TestCase):
+    CASES = (
+        "```",
+        "```\n```\n```",
+        "#######",
+        "# ",
+        "**",
+        "*",
+        "_",
+        "`",
+        "``x`",
+        "[a](",
+        "[](u)",
+        "[a]()",
+        ">" * 60 + " deep",
+        "- " * 40,
+        "1.",
+        "1234567890. too many digits",
+        "*" * 501,
+        "**" * 2000 + "x" + "**" * 2000,
+        "_a_b_c_d_" * 50,
+        "\x1b[2J\x1b[31mred\x07",
+        "\tindented\twith\ttabs",
+        "\r\n\x00\x85",
+        "+" * 300,
+        "```diff\n+" + FAMILY * 30,
+        " " * 200 + "far",
+    )
+
+    def test_never_raises_and_never_paints_a_control_character(self) -> None:
+        for source in self.CASES:
+            for width in (1, 3, 20, 80):
+                with self.subTest(source=source[:30], width=width):
+                    rows = render(source, width=width)
+                    for row in rows:
+                        for span in row:
+                            self.assertFalse(any(is_control(ch) for ch in span.text), span.text)
+                    if width >= 20:
+                        self.assertTrue(all(line_width(row) <= width for row in rows))
+
+    def test_escape_sequences_lose_their_escape_character(self) -> None:
+        self.assertEqual(texts(render("\x1b[2J\x1b[31mred\x07")), ["[2J[31mred"])
+
+    def test_tabs_expand_to_spaces(self) -> None:
+        self.assertEqual(texts(render("\tx")), ["    x"])
+
+
+if __name__ == "__main__":
+    unittest.main()
