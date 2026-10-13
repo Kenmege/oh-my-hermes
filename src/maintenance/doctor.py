@@ -30,7 +30,15 @@ from ..install.guidance_projection import build_guidance_projection_status, cata
 from ..install.hook_integrity import HOOK_HOST_TARGET, VALID_HOOK_EVENTS, build_hook_integrity_status
 from ..install.curator_ledger import read_ledger_writes, writes_under
 from ..install.identity_conflicts import build_identity_conflict_report, skill_conflict_outcome
-from ..install.installer import hermes_edited_skills, installed_skill_directories, installed_skill_names
+from ..install.installer import (
+    DEFAULT_SKILL_PROFILE,
+    SKILL_PROFILES,
+    hermes_edited_skills,
+    installed_skill_directories,
+    installed_skill_names,
+    missing_managed_skills,
+    profile_skill_names,
+)
 from ..install.plugin_bundle_import_scan import describe_findings, scan_bundle_core_imports
 from ..install.plugin_load_deadline import (
     ABANDONED_LOADER_CAP,
@@ -193,12 +201,20 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
                 f"manifest skills_dir={manifest_skills_dir!r}; expected {paths.skills_dir}",
             )
         )
-        # A Hermes edit is not a refusal any more: the installer keeps it and
-        # `hermes_skill_edits` reports it, so it is left out of the blocking
-        # local-modification count and out of the freshness count.
+        # Neither a Hermes edit nor a removed skill refuses an install any
+        # more: the installer keeps the first (`hermes_skill_edits`) and
+        # renders the second again (`missing_managed_skills`), so both are
+        # left out of the blocking local-modification count, whose
+        # refuse-until-`--force` advice is for a hand edit.
         hermes_edits = hermes_edited_skills(manifest, paths)
         hermes_edited_paths = {str(item["path"]) for item in hermes_edits}
-        modified = [rel for rel in local_modifications(manifest, paths.skills_dir) if rel not in hermes_edited_paths]
+        missing = _missing_skills_on_next_install(paths, manifest)
+        missing_paths = {str(item["path"]) for item in missing}
+        modified = [
+            rel
+            for rel in local_modifications(manifest, paths.skills_dir)
+            if rel not in hermes_edited_paths and rel not in missing_paths
+        ]
         checks.append(
             Check(
                 "local_modifications",
@@ -207,6 +223,8 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
             )
         )
         checks.append(_skill_freshness_check(paths, manifest, exclude=hermes_edited_paths))
+        if missing:
+            checks.append(_missing_managed_skills_check(manifest, missing))
     checks.append(_hermes_skill_edits_check(paths, manifest))
     checks.append(Check("skills_dir", paths.skills_dir.exists(), f"{paths.skills_dir}"))
     checks.append(_route_hint_skills_check(paths))
@@ -2237,6 +2255,55 @@ def _hermes_skill_edits_check(paths: OmhPaths, manifest: dict | None) -> Check:
         else "Repair read access to the reported curator ledger, then rerun `omh doctor`."
     )
     return Check("hermes_skill_edits", True, message, severity="warning", remediation=action, next_action=action)
+
+
+def _missing_skills_on_next_install(paths: OmhPaths, manifest: dict) -> list[dict]:
+    """Missing managed skills, judged by the install a plain `omh install` would run.
+
+    The packaged catalog under the profile the manifest records -- the one a
+    run without `--core` or `--full` carries forward -- so the verdict here is
+    the installer's `restored_skills` verdict, read off the same function.
+    """
+    names = profile_skill_names(
+        paths.skills_dir, _recorded_skill_profile(manifest), [template.name for template in builtin_skill_templates()]
+    )
+    return missing_managed_skills(manifest, paths.skills_dir, names)
+
+
+def _recorded_skill_profile(manifest: dict) -> str:
+    """The profile a run without `--core` or `--full` carries forward (`_resolved_skill_profile` in setup)."""
+    profile = str(manifest.get("skill_profile") or "")
+    return profile if profile in SKILL_PROFILES else DEFAULT_SKILL_PROFILE
+
+
+def _missing_managed_skills_check(manifest: dict, missing: list[dict]) -> Check:
+    """Managed skills whose SKILL.md is gone, and what the next install does with each.
+
+    A warning, never a block, and never `--force` advice: nothing is refused.
+    One the next install includes is rendered again; one it does not include
+    (outside the recorded skill profile) is reported `not_restored` and stays
+    uninstalled.
+    """
+    profile = _recorded_skill_profile(manifest)
+    lines = [
+        f"{item['name']} at {item['path']}: "
+        + (
+            "the next install renders it again and reports it under restored_skills"
+            if item["disposition"] == "restored"
+            else f"the recorded {profile} profile does not include it, so the next install reports it "
+            "not_restored and leaves it uninstalled"
+        )
+        for item in missing
+    ]
+    action = "No --force is needed: the next install handles each missing skill as listed."
+    return Check(
+        "missing_managed_skills",
+        True,
+        f"{len(missing)} managed skill(s) are missing their SKILL.md: {'; '.join(lines)}",
+        severity="warning",
+        remediation=action,
+        next_action=action,
+    )
 
 
 def _hermes_edit_line(item: dict) -> str:

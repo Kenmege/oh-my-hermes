@@ -626,6 +626,60 @@ class DoctorLedgerTests(_Home):
         self.assertEqual(check.severity, "ok")
         self.assertIn("records no skill write under OMH-managed skills", check.message)
 
+    def remove_skill(self, name: str = SKILL) -> str:
+        skill_dir = self.skill_file(name=name).parent
+        for path in sorted(skill_dir.rglob("*"), reverse=True):
+            path.unlink() if path.is_file() else path.rmdir()
+        skill_dir.rmdir()
+        return f"{skill_install_relative_dir(name).as_posix()}/SKILL.md"
+
+    def test_a_missing_skill_the_next_install_restores_is_a_warning_without_force(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        rel = self.remove_skill()
+
+        checks = {check.name: check for check in run_doctor(self.paths)}
+
+        # Not a hand edit: no blocking local modification, no --force advice.
+        self.assertTrue(checks["local_modifications"].ok, checks["local_modifications"].message)
+        missing = checks["missing_managed_skills"]
+        self.assertTrue(missing.ok)
+        self.assertEqual(missing.severity, "warning")
+        self.assertIn(f"{SKILL} at {rel}: the next install renders it again", missing.message)
+        self.assertNotIn("omh install --force", missing.next_action)
+        # And the installer does what doctor said.
+        self.assertEqual(
+            [item["disposition"] for item in install_skill_pack(self.paths, profile="core")["restored_skills"]],
+            ["restored"],
+        )
+
+    def test_a_missing_skill_outside_the_recorded_profile_reads_not_restored(self) -> None:
+        full_only = "workflow-learning"
+        install_skill_pack(self.paths, profile="full")
+        # A core run keeps installed full-only skills and records `core`.
+        install_skill_pack(self.paths, profile="core")
+        rel = self.remove_skill(full_only)
+
+        check = next(check for check in run_doctor(self.paths) if check.name == "missing_managed_skills")
+
+        self.assertIn(f"{full_only} at {rel}: the recorded core profile does not include it", check.message)
+        self.assertIn("reports it not_restored and leaves it uninstalled", check.message)
+        self.assertEqual(
+            [item["disposition"] for item in install_skill_pack(self.paths, profile="core")["restored_skills"]],
+            ["not_restored"],
+        )
+
+    def test_a_hand_edit_keeps_its_force_advice(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        with self.skill_file().open("a", encoding="utf-8") as handle:
+            handle.write("\nmy own edit\n")
+
+        checks = {check.name: check for check in run_doctor(self.paths)}
+
+        self.assertFalse(checks["local_modifications"].ok)
+        self.assertEqual(checks["local_modifications"].severity, "blocking")
+        self.assertIn("omh install --force", checks["local_modifications"].next_action)
+        self.assertNotIn("missing_managed_skills", checks)
+
     def test_an_unreadable_ledger_is_named_not_read_as_empty(self) -> None:
         install_skill_pack(self.paths, profile="core")
         ledger = _append_ledger(self.paths.hermes_home)

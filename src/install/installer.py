@@ -188,7 +188,7 @@ def hermes_edited_skills(manifest: dict | None, paths: OmhPaths, *, overwritten:
     the evidence its manifest record carries. Read against the pack the
     manifest describes, which on a staged update is the previous generation.
     A skill whose SKILL.md is gone is not an edit; the install renders it
-    again (`_missing_managed_skills`).
+    again (`missing_managed_skills`).
 
     When `overwritten`, each entry also names, in `ledger_copy`, the files of
     the skill whose current content Hermes' ledger still holds a copy of, so
@@ -252,7 +252,38 @@ def _ledger_copies(skill_dir: Path, writes: list[LedgerWrite]) -> list[str]:
     return copies
 
 
-def _missing_managed_skills(
+def profile_skill_names(skills_dir: Path, profile: str, catalog_names: list[str]) -> set[str]:
+    """Canonical names an install of the packaged catalog renders into `skills_dir` under `profile`.
+
+    `full` renders the whole catalog. Otherwise the profile decides what gets
+    ADDED, never what gets REFRESHED. A skill already on disk is refreshed
+    whichever profile is recorded, because `omh update` promising "updated"
+    while leaving installed skills on an older render is the same as lying:
+    that is how an install ended up serving `name: ultrawork` long after the
+    catalog had moved to `ulw-ultrawork`. Shedding full-only skills stays an
+    explicit act - `omh skill-profile reconcile --to core`. `omh doctor` asks
+    the same question to say what the next install does with a missing skill.
+    """
+    if profile == "full":
+        return set(catalog_names)
+    installed = _installed_skill_names(skills_dir) | _active_generation_skill_names(skills_dir)
+    return {
+        name
+        for name in catalog_names
+        if name in CORE_PROFILE_SKILLS
+        or skill_directory_name(name) in installed
+        # A pre-relabel install has the CANONICAL directory on disk and the
+        # labelled one absent, so matching only the label dropped the skill
+        # from refresh entirely: the labelled replacement was never written,
+        # the relabel pruner then kept the old directory ("no replacement
+        # yet"), and the host kept serving the stale pre-label SKILL.md
+        # forever. The canonical name keeps it refreshable so one update
+        # writes the labelled directory and prunes the old one.
+        or name in installed
+    }
+
+
+def missing_managed_skills(
     manifest: dict | None, skills_dir: Path, install_names: set[str]
 ) -> list[dict]:
     """Managed skills the manifest records whose SKILL.md is gone from the pack it describes.
@@ -338,28 +369,7 @@ def install_skill_pack(
     if source_dir or profile == "full":
         templates = all_templates
     else:
-        # The profile decides what gets ADDED, never what gets REFRESHED. A skill
-        # already on disk is refreshed whichever profile is recorded, because
-        # `omh update` promising "updated" while leaving installed skills on an
-        # older render is the same as lying: that is how an install ended up
-        # serving `name: ultrawork` long after the catalog had moved to
-        # `ulw-ultrawork`. Shedding full-only skills stays an explicit act -
-        # `omh skill-profile reconcile --to core`.
-        installed = _installed_skill_names(paths.skills_dir) | _active_generation_skill_names(paths.skills_dir)
-        refreshable = {
-            template.name
-            for template in all_templates
-            if template.name in CORE_PROFILE_SKILLS
-            or skill_directory_name(template.name) in installed
-            # A pre-relabel install has the CANONICAL directory on disk and the
-            # labelled one absent, so matching only the label dropped the skill
-            # from refresh entirely: the labelled replacement was never
-            # written, the relabel pruner then kept the old directory ("no
-            # replacement yet"), and the host kept serving the stale pre-label
-            # SKILL.md forever. The canonical name keeps it refreshable so one
-            # update writes the labelled directory and prunes the old one.
-            or template.name in installed
-        }
+        refreshable = profile_skill_names(paths.skills_dir, profile, [template.name for template in all_templates])
         templates = [template for template in all_templates if template.name in refreshable]
         reference_templates = [
             template for template in reference_templates if template.skill_name in refreshable
@@ -386,7 +396,7 @@ def install_skill_pack(
     # post-activation re-entry, and rolled the whole update back.
     if not same_pack:
         manifest = None
-    missing = _missing_managed_skills(manifest, paths.skills_dir, install_names)
+    missing = missing_managed_skills(manifest, paths.skills_dir, install_names)
     missing_paths = {str(item["path"]) for item in missing}
     # A Hermes edit is kept and reported, and a removed skill is rendered
     # again; any other change to a managed file still refuses the whole

@@ -29,7 +29,10 @@ All notable changes will be documented here.
   summary says whether the ledger still holds a copy of the replaced files.
   A change the ledger does not account for still refuses the install as
   before; a managed skill whose SKILL.md is gone is rendered again and
-  reported instead of refusing. `omh doctor` gains `hermes_skill_edits`, which
+  reported instead of refusing, and `omh doctor` says so as a
+  `missing_managed_skills` warning (or that the recorded profile leaves it
+  `not_restored`) instead of a blocking local modification with `--force`
+  advice. `omh doctor` also gains `hermes_skill_edits`, which
   reads the ledger without writing it and reports writes under OMH-managed
   skills, and a kept skill no longer fails `local_modifications` or
   `skill_freshness`. The identity-conflict scan now covers every managed skill

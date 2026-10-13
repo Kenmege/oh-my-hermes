@@ -328,7 +328,9 @@ whether Hermes' ledger still holds a copy of the replaced files. A change the
 ledger does not account for, including a hand edit to `SKILL.md` beside a
 ledgered change to another file, still stops the update until you resolve it
 or pass `--force`. A managed skill whose `SKILL.md` is gone is rendered again
-and named in the summary. The OMH plugin refuses Hermes' edits and deletes of
+and named in the summary, unless the recorded skill profile leaves it out;
+`omh doctor` reports either case under `missing_managed_skills`, with no
+`--force` advice. The OMH plugin refuses Hermes' edits and deletes of
 managed skills in the first place and points the model at a separately named
 skill or the workflow-learning lane instead, and `omh doctor` reports what the
 ledger records under OMH-managed skills under `hermes_skill_edits`.
