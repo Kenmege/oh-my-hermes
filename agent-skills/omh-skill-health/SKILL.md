@@ -1,6 +1,7 @@
 ---
 name: "omh-skill-health"
 description: "[omh] OMH skill portfolio health overview: prepare a metadata-only OMH skill portfolio dashboard with stale surfaces, observed failure signals, pending amendments, and top actions. Use when the user says: skill-health, skill health, skill portfolio health, skill dashboard, skill health dashboard, skill failure pattern dashboard, skill failure patterns, pending skill amendments."
+license: MIT
 compatibility: "Requires the omh CLI on PATH (pip install oh-my-hermes)."
 metadata:
   hermes:
@@ -55,7 +56,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when operators need portfolio-level skill health without treating it as install repair, live execution success, or automatic skill mutation.
 

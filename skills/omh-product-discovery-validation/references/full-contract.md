@@ -47,7 +47,7 @@ Bad example:
 - If the target segment is unknown, synthetic-only, or non-recruitable, keep the discovery frame and customer discovery plan and report defining a recruitable or behaviorally observed audience as the next evidence task.
 - If a pivot changes the problem or segment, open a new decision frame and carry the falsified hypotheses forward as rejected paths.
 
-## Use When
+## When to Use
 
 Use when a founder or product owner brings an early idea and needs the problem, segment, value proposition, and business hypothesis framed, evidence-typed, and tested to an explicit discovery decision before a PRD, prototype, or delivery plan exists.
 

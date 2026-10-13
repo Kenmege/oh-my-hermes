@@ -1513,11 +1513,13 @@ class RouterContentTests(unittest.TestCase):
             HARNESS_DISCIPLINE_RULES,
             RUNTIME_MECHANISM_TRANSLATIONS,
             SHARED_RAIL_REFERENCE_PATH,
+            SHARED_RAIL_SKILL_VIEW,
             TARGET_TOPOLOGY_SKILL_CHANGE_CONTRACT,
             TARGET_TOPOLOGY_SKILL_CONTRACT,
         )
 
         rail_skill, _, rail_relative = SHARED_RAIL_REFERENCE_PATH.partition("/")
+        _SHARED_RAIL_FILE_NAME = rail_relative.rpartition("/")[2]
         rail = next(
             template
             for template in builtin_skill_reference_templates()
@@ -1556,7 +1558,13 @@ class RouterContentTests(unittest.TestCase):
             if template.name == rail.skill_name:
                 continue
             with self.subTest(skill=template.name):
-                self.assertIn(SHARED_RAIL_REFERENCE_PATH, template.content)
+                # Pointed at as the `skill_view` call that loads it, which
+                # names the rail's skill and its path inside that skill, and
+                # never as a bare path beside it.
+                self.assertIn(SHARED_RAIL_SKILL_VIEW, template.content)
+                self.assertEqual(
+                    template.content.count(_SHARED_RAIL_FILE_NAME), template.content.count(SHARED_RAIL_SKILL_VIEW)
+                )
                 # The moved bodies must not silently reappear in a skill body.
                 self.assertNotIn(HARNESS_DISCIPLINE_RULES[1], template.content)
                 self.assertNotIn(EXECUTION_RULES[0], template.content)
@@ -3175,7 +3183,7 @@ class RouterContentTests(unittest.TestCase):
         """An opening step must be reachable before the run it governs starts.
 
         `quality_bar` renders under `## Catalog Metadata`, which sits below
-        `Use When` in every workflow body and reads as machine-readable
+        `When to Use` in every workflow body and reads as machine-readable
         bookkeeping. A directive placed there is discovered, if at all, after
         the engine has already begun. This asserts the ordering in the rendered
         bytes for both the Hermes skills and the Agent Skills projection, and
@@ -3215,7 +3223,7 @@ class RouterContentTests(unittest.TestCase):
                     )
                     self.assertLess(
                         headings.index("## First Steps"),
-                        headings.index("## Use When"),
+                        headings.index("## When to Use"),
                     )
                     if renderer is builtin_skill_templates:
                         for step in definition.opening_steps:
@@ -3416,7 +3424,9 @@ class RouterContentTests(unittest.TestCase):
         # Harness discipline moved to the shared rail reference (issue #634); each skill
         # keeps the pointer instead of its own verbatim copy. The rail's own content is
         # gated by test_shared_common_rail_reference_carries_moved_policy below.
-        self.assertIn("omh-routing/references/skill-common-rail.md", skills["ultragoal"].content)
+        self.assertIn(
+            "skill_view(name='omh-routing', file_path='references/skill-common-rail.md')", skills["ultragoal"].content
+        )
         self.assertIn("Catalog Metadata", skills["ultragoal"].content)
         self.assertIn("Category: `execution`", skills["ultragoal"].content)
         self.assertIn("Phase: `durable-goals`", skills["ultragoal"].content)
@@ -3559,10 +3569,13 @@ class RouterContentTests(unittest.TestCase):
         for name in ("codebase-onboarding", "codegraph-refresh"):
             with self.subTest(skill=name):
                 self.assertIn("## Structural Code Search", skills[name].content)
-                self.assertIn("omh-routing/references/structural-code-search.md", skills[name].content)
+                self.assertIn(
+                    "skill_view(name='omh-routing', file_path='references/structural-code-search.md')",
+                    skills[name].content,
+                )
         ultragoal = workflow_skill("ultragoal")
         self.assertNotIn("## Structural Code Search", ultragoal.content)
-        self.assertNotIn("omh-routing/references/structural-code-search.md", ultragoal.content)
+        self.assertNotIn("references/structural-code-search.md", ultragoal.content)
 
     def test_project_bootstrap_reference_and_pointer(self) -> None:
         skills = {skill.name: skill for skill in builtin_skill_templates()}

@@ -1,6 +1,7 @@
 ---
 name: "omh-inference-serving"
 description: "[omh] Self-hosted LLM serving on GPUs: choose the serving engine and quantization from decision tables, prepare deployment as an idempotent runbook with observed-only verification, and measure the endpoint with the standard TTFT/TPOT/goodput protocol. Use when the user says: inference-serving, inference serving, serve this model, serve the model, model serving, serving endpoint, vllm, llama.cpp."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, operations]
@@ -54,7 +55,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when a model needs to be served - engine and quantization chosen, docker or Kubernetes deployment prepared as a gated runbook, or the endpoint measured with the TTFT/TPOT/ITL/goodput protocol - and the user wants the process, not an ad-hoc command guess.
 

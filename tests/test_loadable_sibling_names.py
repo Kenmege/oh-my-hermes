@@ -226,5 +226,47 @@ class BundledHermesDeferralTests(unittest.TestCase):
         self.assertEqual(len(wiki.do_not_use_when), 3)
 
 
+class ReferencePointerTests(unittest.TestCase):
+    def test_no_hermes_body_points_at_a_router_reference_by_a_bare_path(self) -> None:
+        # `skill_view` takes a skill name and a path inside it, so a pointer at
+        # a reference the router skill owns (the shared rail, the Jev rail,
+        # structural search, workflow artifacts) is written as that call.
+        # Authored catalog lines that point at a skill's own or a sibling's
+        # reference are not rendered through this rule.
+        from omh.skills.catalog_types import skill_view_call
+
+        self.assertEqual(
+            skill_view_call("omh-routing/references/skill-common-rail.md"),
+            "skill_view(name='omh-routing', file_path='references/skill-common-rail.md')",
+        )
+        hits = sorted(
+            template.name for template in builtin_skill_templates() if "omh-routing/references/" in template.content
+        )
+        self.assertEqual(hits, [])
+
+
+class FrontmatterProvenanceTests(unittest.TestCase):
+    def test_license_and_author_are_the_package_metadata(self) -> None:
+        import tomllib
+        from pathlib import Path
+
+        from omh.skills.render import SKILL_AUTHOR, SKILL_LICENSE
+
+        project = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())["project"]
+        self.assertEqual(SKILL_LICENSE, project["license"])
+        self.assertIn(SKILL_AUTHOR, [author["name"] for author in project["authors"]])
+
+    def test_hermes_bodies_carry_license_and_author_and_portable_bodies_license_only(self) -> None:
+        from omh.skills.render import agent_skill_templates
+
+        for template in builtin_skill_templates():
+            frontmatter = template.content.split("---", 2)[1]
+            self.assertIn("\nlicense: MIT\nauthor: \"oh-my-hermes maintainers\"\n", frontmatter, template.name)
+        for template in agent_skill_templates():
+            frontmatter = template.content.split("---", 2)[1]
+            self.assertIn("\nlicense: MIT\n", frontmatter, template.name)
+            self.assertNotIn("\nauthor:", frontmatter, template.name)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
 ---
 name: "ulw-interview"
 description: "[omh] Vague, underspecified request: one-question-at-a-time clarification. Use when the user says: deep-interview, interview me, clarify, feature shaping, ambiguous product request, one question, 要件を詰めて, 曖昧な要求."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, clarification]
@@ -53,7 +54,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use before planning or execution when requirements are materially ambiguous.
 

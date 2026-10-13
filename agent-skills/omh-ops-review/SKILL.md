@@ -1,6 +1,7 @@
 ---
 name: "omh-ops-review"
 description: "[omh] Recurring operating status and blockers: status, risks, blockers, priorities, and follow-ups. Use when the user says: ops-review, ops review, weekly ops review, status review, operating review, release risks, risks and blockers, priorities."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, operations]
@@ -50,7 +51,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should summarize observed status, risks, blockers, priorities, and follow-up actions for recurring operating work.
 

@@ -1,6 +1,7 @@
 ---
 name: "omh-sales-pipeline-review"
 description: "[omh] CRM pipeline or sales forecast to review: turn a supplied CRM export or pipeline snapshot into an evidence-bound pipeline health, forecast, and follow-up review. Aliases: pipeline-review, forecast-review, deal-review. Use when the user says: sales-pipeline-review, sales pipeline review, pipeline review, pipeline health, pipeline coverage, deal review, deal health, sales forecast review."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, operations]
@@ -55,7 +56,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when a sales leader or business owner supplies a bounded CRM export or pipeline snapshot and needs recurring portfolio review: evidence scope and freshness, stage and forecast definitions, movement and aging, stale or slipped deals, exit-criteria gaps, next-step quality, concentration, forecast scenarios and prior-forecast calibration, optional won/lost or renewal-risk learning, and an owned follow-up handoff.
 

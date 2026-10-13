@@ -44,13 +44,17 @@ the file and structure to edit.
   group off that directory, not off frontmatter, so a new role is a new banner
   line — `tests/test_skill_install_layout.py` asserts the category set, and a
   category name may never collide with a skill label.
-- Name a sibling in `do_not_use_when` by its canonical name in backticks
-  (`` use `research` ``). The renderer writes it as the label `skill_view`
-  loads (`` `ulw-research` ``) and lists it in the Hermes frontmatter's
-  `metadata.hermes.related_skills`; `tests/test_loadable_sibling_names.py`
-  holds both. When a skill Hermes bundles shares the new skill's job, add one
-  `HermesSkillLine` saying which request belongs to the bundled skill: the
-  Hermes body renders it, the Agent Skills projection drops it.
+- Name a sibling in `do_not_use_when` or `handoff_policy` by its canonical
+  name in backticks (`` use `research` ``). The renderer writes it as the
+  label `skill_view` loads (`` `ulw-research` ``), and the `do_not_use_when`
+  siblings fill the Hermes frontmatter's `metadata.hermes.related_skills`;
+  `tests/test_loadable_sibling_names.py` holds both. When a skill Hermes
+  bundles shares the new skill's job, add one `HermesSkillLine` to
+  `do_not_use_when` saying which request belongs to the bundled skill. It
+  renders wherever that skill's `## Do Not Use When` renders: the Hermes body,
+  or for a progressive-disclosure skill only `references/full-contract.md`,
+  since the compact body has no such section. The Agent Skills projection
+  drops it.
 
 ## 2. Hand-authored surfaces (curated order and UX copy)
 

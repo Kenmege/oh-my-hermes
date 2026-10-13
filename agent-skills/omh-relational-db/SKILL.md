@@ -1,6 +1,7 @@
 ---
 name: "omh-relational-db"
 description: "[omh] Database work on a relational store -- a slow query, an index to size, a migration on a big table, a lock taken during deploy, N+1 queries: plan it with the checks that prove it safe, and never call a migration ready without its lock behaviour and rollback. Use when the user says: relational-db, relational database, online migration, migration for a large table, lock-safe ddl, alter table, took a lock, table lock."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, planning]
@@ -59,7 +60,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when the work is the database itself on a relational engine such as Postgres or MySQL: a slow query and the index that fixes it, an online migration on a large table, DDL that took or would take a lock during deploy, N+1 queries from an endpoint, or when to partition or shard. The output is a plan plus the checks that prove it safe to run; OMH never connects to a database.
 

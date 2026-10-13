@@ -141,6 +141,17 @@ def omh_skill_display_name(name: str) -> str:
     return f"{prefix}{text}"
 
 
+def skill_view_call(installed_path: str) -> str:
+    """The `skill_view` call that loads `<label>/<path>` from an installed skill.
+
+    `skill_view` takes a skill name and a path inside that skill, so a body
+    that points at another skill's reference writes the call the model can
+    issue as written rather than a bare `<label>/references/...` path.
+    """
+    skill, _, path = installed_path.partition("/")
+    return f"skill_view(name='{skill}', file_path='{path}')"
+
+
 def historical_skill_display_names(name: str) -> tuple[str, ...]:
     """Return display labels earlier releases rendered for this canonical name.
 

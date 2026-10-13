@@ -1,6 +1,7 @@
 ---
 name: "omh-decide"
 description: "[omh] Team or business decision between options: tradeoffs, a recommendation, and a decision note you can act on. Use when the user says: strategy-brief, strategy brief, strategy memo, product strategy, strategic options, decision note, leadership strategy, next strategy."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, strategy]
@@ -51,7 +52,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should turn goals and evidence into options, tradeoffs, recommendations, and a decision-ready brief.
 

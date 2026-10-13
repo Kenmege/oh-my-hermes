@@ -4,6 +4,19 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Generated skills follow more of Hermes' own skill-authoring
+  conventions.** Every Hermes skill body now opens its trigger section with
+  `## When to Use`, the heading Hermes' skill linter looks for, and carries
+  `license: MIT` and `author` in its frontmatter (the Agent Skills projection
+  carries `license` only, the field that spec defines). Pointers to the
+  references the router skill owns (the shared rail, the Jev rail,
+  structural code search, workflow artifacts) are written as the call that
+  loads them, such as
+  `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`,
+  instead of a bare path the model had to translate. A test now holds every
+  shipped `SKILL.md` free of Hermes' inline-shell shape, which Hermes would
+  run as a command when `skills.inline_shell` is on.
+
 - **Three request shapes that belong to a skill Hermes bundles, or to a
   work board, stop dispatching an OMH skill.** An architecture diagram of
   cloud or infrastructure pieces described in words, with no codebase,

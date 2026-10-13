@@ -1,6 +1,7 @@
 ---
 name: "omh-accessibility-audit"
 description: "[omh] Screen-reader or keyboard accessibility gaps: prepare WCAG, keyboard, focus, screen-reader, target-size, and reflow evidence gates for UI surfaces. Use when the user says: accessibility-audit, accessibility audit, a11y audit, a11y architect, wcag audit, wcag 2.2, wcag 2.2 aa, accessibility pass."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, accessibility]
@@ -55,7 +56,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes must audit a UI or design system for WCAG 2.2 AA, keyboard reachability, focus flow, screen-reader semantics, target size, contrast, reflow, and accessibility evidence before claiming pass.
 

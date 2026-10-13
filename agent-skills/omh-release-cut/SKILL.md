@@ -1,6 +1,7 @@
 ---
 name: "omh-release-cut"
 description: "[omh] Shipping a versioned release -- tag it, stage it behind a canary, or roll back the last deploy: decide what goes in, the version, the rollout stages, and a rollback with its trigger and exact command before it is needed. Use when the user says: release-cut, release cut, cut a release, cut the release, cut a new release, tag a release, tag the release, release candidate."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, planning]
@@ -60,7 +61,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when a release is being decided or undone: what goes into it, its version, how it is tagged and published, how it rolls out in stages behind a canary, or rolling back a deploy that already shipped. The output is a release plan whose rollback has a named trigger and the exact command that performs it; OMH prepares, and the host or CI executes.
 

@@ -1,6 +1,7 @@
 ---
 name: "ulw-qa"
 description: "[omh] Hostile scenario testing: adversarial QA and fix loops. Use when the user says: ultraqa, adversarial qa, hostile scenarios, e2e qa, real-world qa, qa scenario, release qa, 敵対的QA."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, verification]
@@ -50,7 +51,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when the task needs adversarial test scenarios, verification, and fix loops.
 

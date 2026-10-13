@@ -1,6 +1,7 @@
 ---
 name: "omh-llm-app-dev"
 description: "[omh] LLM-powered feature to build: LLM app development: prepare a build handoff for an LLM-powered feature with a pinned provider boundary, schema-first outputs, versioned prompt files, grounded retrieval, and an eval suite as a shipped deliverable. Use when the user says: llm-app-dev, llm app development, llm application development, build an llm app, build an llm feature, llm feature development, build a rag pipeline, rag pipeline."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, delivery]
@@ -64,7 +65,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when the work is building or hardening an LLM-powered feature - provider calls, structured outputs, prompt files, retrieval grounding, a user-requested public-board communication path, or the eval suite that guards a prompt or model swap - and the request needs engineering discipline before a coding handoff.
 

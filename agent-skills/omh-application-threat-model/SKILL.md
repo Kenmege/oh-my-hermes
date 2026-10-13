@@ -1,6 +1,7 @@
 ---
 name: "omh-application-threat-model"
 description: "[omh] Attack paths into an operated system: turn a system's components and data flows into assets, trust boundaries, attack scenarios, controls, and the security test that proves each control holds. Use when the user says: application-threat-model, application threat model, threat model, threat modeling, threat modelling, threat modeling session, threat modeling workshop, security threat model."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, review]
@@ -57,7 +58,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes must model the security of an application, service, or deployed system the user operates: which assets are worth taking, where trust changes hands, how an attacker reaches each asset, which control stops them, and which security test fails when that control is removed. The subject is the modeled system, never the agent's own runtime.
 

@@ -1870,17 +1870,18 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # `## Runtime Evidence`. A new skill that joins an existing lane carries its
 # own copy and its author cannot avoid it: rendering a copy of every ordinary
 # catalog member (no artifact contracts, no progressive disclosure) with its
-# skill-specific sections made unique adds a median of about 1,450 repeated
-# chars and at most about 2,340. A zero-slack figure would have made every
-# new skill raise this constant, which is the churn the footprint ceiling
-# above removes. So it takes the same policy: the measurement plus
+# skill-specific sections made unique adds a median of about 1,370 repeated
+# chars and at most about 2,580 (re-read from the producer for the C2
+# loadable-names change). A zero-slack figure would have made every new skill
+# raise this constant, which is the churn the footprint ceiling above
+# removes. So it takes the same policy: the measurement plus
 # `FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT`, rounded UP to the next multiple
 # of `FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS` (10,000, about a
-# tenth of the measurement). The 10,952 chars of headroom (120,000 - 109,048)
-# hold about seven median lane members, while a renderer change that stamps
-# one more shared sentence longer than about 77 chars into every one of the
-# 142 bodies, or a few skills that copy other skills' own sections, still
-# fails.
+# tenth of the measurement). On that tree the producer reads 112,977, so the
+# 7,023 chars left under 120,000 hold about five median lane members, while a
+# renderer change that stamps one more shared sentence longer than about 49
+# chars into every one of the 142 bodies, or a few skills that copy other
+# skills' own sections, still fails.
 #
 # The measurement is also a floor: `tests/test_per_turn_budgets.py` fails when
 # the producer reads below `FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS`,

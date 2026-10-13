@@ -17,10 +17,11 @@ skills learned from are listed with their reviewed refs in
 
 from __future__ import annotations
 
-from .catalog_types import SkillDefinition, SkillExample
+from .catalog_types import SkillDefinition, SkillExample, skill_view_call
 
 JEV_REQUIRED_TOOL = "omh_jev_ask"
 JEV_RAIL_REFERENCE = "omh-routing/references/jev-rail.md"
+_SHARED_RAIL_REFERENCE = "omh-routing/references/skill-common-rail.md"
 JEV_PRESET_REFERENCE_PATH = "references/preset.md"
 
 _JEV_HANDOFF = (
@@ -443,7 +444,7 @@ def jev_skill_body(definition: SkillDefinition, name: str) -> str:
 
 {_COMPACT_CONTRACTS[name]}
 
-Read `{JEV_RAIL_REFERENCE}` before the first ask: consent, what leaves the machine, limits, and non-answer statuses. Prepared OMH routing is not execution or approval. Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+Read `{skill_view_call(JEV_RAIL_REFERENCE)}` before the first ask: consent, what leaves the machine, limits, and non-answer statuses. Prepared OMH routing is not execution or approval. Shared product, routing, compatibility, and evidence rules: `{skill_view_call(_SHARED_RAIL_REFERENCE)}`.
 
 Contract: `references/full-contract.md`.{preset_line}
 

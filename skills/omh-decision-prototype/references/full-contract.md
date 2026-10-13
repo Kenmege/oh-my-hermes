@@ -54,7 +54,7 @@ Bad example:
 - If cleanup fails, keep the artifact at its last observed cleanup state, name the residual scratch identity, and never report `discarded`.
 - If the user asks to ship the prototype, summarize the receipt and route to `ralplan`; promotion needs an accepted plan and its own implementation handoff.
 
-## Use When
+## When to Use
 
 Use when discussion cannot settle one interaction, API, performance, or integration choice and a cheap reversible experiment can answer it before planning; refuse unbounded or multi-feature experiments and ask for or derive one falsifiable decision question.
 

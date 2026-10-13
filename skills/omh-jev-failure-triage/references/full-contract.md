@@ -40,7 +40,7 @@ Bad example:
 - If the tool returns `consent_not_observed`, nothing was sent; offer the ask in one line naming what would be sent and wait for the user to reply `ask jev`.
 - If the tool refuses `credential_like_content`, remove the secret-looking text from `state` rather than redacting it silently, and tell the user what was removed.
 
-## Use When
+## When to Use
 
 Use when a command, test, or build failed or keeps failing, the user asked Jev, and a quick typed signal should pick the next move before the ordinary triage prepares a fix.
 

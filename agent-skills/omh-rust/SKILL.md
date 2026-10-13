@@ -1,6 +1,7 @@
 ---
 name: "omh-rust"
 description: "[omh] Rust ownership, lifetime, or unsafe trouble: prepare Rust changes with ownership, error, and API discipline, and escalate any unsafe, FFI, or lock-free change to the UB checklist. Use when the user says: rust, rust code, rust skill, rustlang, borrow checker, lifetime error, ownership error, trait bound."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, planning]
@@ -55,7 +56,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should prepare a Rust change: ownership and lifetime shape, error and API types, cargo/clippy gates, and the mandatory UB escalation when the change touches unsafe, raw pointers, FFI, MaybeUninit, or lock-free primitives.
 

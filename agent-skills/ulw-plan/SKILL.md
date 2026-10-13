@@ -1,6 +1,7 @@
 ---
 name: "ulw-plan"
 description: "[omh] High-stakes technical proposal needing approval: consensus planning with review gates. Use when the user says: ralplan, consensus plan, reviewed plan, issue to PR, acceptance criteria, verification command, reviewable PR, risky planning."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, planning]
@@ -65,7 +66,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when requirements are clear enough for planning but architecture, evidence, alternatives, risks, or tests need a reviewed plan before execution.
 

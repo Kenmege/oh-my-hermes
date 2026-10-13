@@ -1,6 +1,8 @@
 ---
 name: "omh-product-discovery-validation"
 description: "[omh] Unvalidated early product idea: test whether a customer problem, segment, and business hypothesis deserve product investment, ending in kill, pivot, persevere, or inconclusive before any PRD. Use when the user says: product-discovery-validation, product discovery validation, product discovery, customer discovery, customer discovery plan, zero to one validation, validate the problem before building, problem solution interview."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, planning]
@@ -17,9 +19,9 @@ Required: problem, segment/evidence, owner, learning budget, and criteria. Outpu
 
 **HOLD:** Missing inputs or failed contract gates. Prepared OMH routing is not execution or approval. **Completion:** Follow the full-contract checklist.
 
-Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-Agent/operator: `omh runtime workflow-artifact product-discovery-validation build --input <json-file-or->` builds bounded metadata only. Shared operator reference: `omh-routing/references/workflow-artifacts.md`.
+Agent/operator: `omh runtime workflow-artifact product-discovery-validation build --input <json-file-or->` builds bounded metadata only. Shared operator reference: `skill_view(name='omh-routing', file_path='references/workflow-artifacts.md')`.
 
 Contract: `references/full-contract.md`. Procedure: `references/procedure.md`.
 

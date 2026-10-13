@@ -1,6 +1,7 @@
 ---
 name: "omh-codebase-uml"
 description: "[omh] Architecture picture of a codebase: turn a repository into one readable, interface-level PlantUML architecture picture - packages or modules, the public symbols other units actually import, bounded import edges - and get it rendered to a single PNG a chat surface can show. Use when the user says: codebase-uml, codebase uml, uml, plantuml, uml diagram, class diagram, package diagram, module diagram."
+license: MIT
 compatibility: "Requires the omh CLI on PATH (pip install oh-my-hermes)."
 metadata:
   hermes:
@@ -54,7 +55,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when the user wants to see the shape of a codebase as one picture - a package, module, or focused-area diagram they can drop into Slack, Discord, a PR, or a doc - rather than a prose tour or a refreshed code index.
 

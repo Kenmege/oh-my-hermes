@@ -1,6 +1,7 @@
 ---
 name: "omh-terminal"
 description: "[omh] Shell command or test-suite execution: policy overlay for terminal commands - add cwd, environment, safety, and result-evidence gates after preferring native shell tools for ordinary CLI, package-manager, and test runs. Use when the user says: command-operator, command operator, terminal command, terminal task, shell command, shell task, cli command, command execution."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, command]
@@ -55,7 +56,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should prepare or supervise terminal/CLI command execution without claiming the command ran or succeeded.
 

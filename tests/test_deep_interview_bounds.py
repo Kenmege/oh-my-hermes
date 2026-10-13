@@ -39,7 +39,12 @@ SKILL_MD = REPO_ROOT / "skills" / "ulw-interview" / "SKILL.md"
 # Hermes' native `clarify` tool when it is present (recommended first, no own
 # free-input row, batching only independent questions) and keeps the numbered
 # list as the fallback; the body measures 11,185. Same headroom rule.
-DEEP_INTERVIEW_SKILL_CHAR_CEILING = 11_400
+# 11_400 -> 11_700: the body measures 11,410 once its Do Not Use When names
+# siblings by the labels `skill_view` loads, its frontmatter carries
+# `related_skills`, `license` and `author`, its trigger heading reads
+# `## When to Use`, and its two shared-rail pointers are the `skill_view`
+# call that loads the rail. Same headroom rule.
+DEEP_INTERVIEW_SKILL_CHAR_CEILING = 11_700
 
 
 def _skill_body() -> str:

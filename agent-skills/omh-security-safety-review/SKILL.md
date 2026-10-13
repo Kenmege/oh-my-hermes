@@ -1,6 +1,7 @@
 ---
 name: "omh-security-safety-review"
 description: "[omh] Agent or automation safety risks: review prompt, tool, secret, dependency, destructive-action, and explicit local plugin risks before agent or code execution. Use when the user says: security-safety-review, security safety review, ai coding safety, agent safety review, prompt injection review, tool permission review, secret exposure review, destructive action review."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, review]
@@ -53,7 +54,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should identify security, prompt-injection, tool-permission, secret, dependency, destructive-action, or explicit local plugin risks before execution or release.
 

@@ -1,6 +1,7 @@
 ---
 name: "ulw-work"
 description: "[omh] Accepted plan awaiting implementation: split it into disjoint parallel lanes with per-lane acceptance criteria, verification commands, and owners; prevents two lanes editing the same file. Aliases: ulw. Use when the user says: ultrawork, parallel work, parallel implementation, parallel then integrate, high throughput, coding team, coordinated workers, finish until done."
+license: MIT
 compatibility: "Requires the omh CLI on PATH (pip install oh-my-hermes)."
 metadata:
   hermes:
@@ -82,7 +83,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when an accepted implementation plan can be split into independent, reviewable work lanes.
 

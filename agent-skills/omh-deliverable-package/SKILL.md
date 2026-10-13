@@ -1,6 +1,7 @@
 ---
 name: "omh-deliverable-package"
 description: "[omh] Attachment and deliverable status tracking: track PPT, PDF, XLSX, DOCX, HWP, Markdown, and attachments through prepared, generated, QA, approved, and attached states. Use when the user says: deliverable-package, deliverable mode, file attachment, attach file, attachment status, file delivery, file deliverable status, generated file."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, deliverables]
@@ -50,7 +51,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should prepare, request generation, QA, and report attachment status for user-visible file deliverables.
 
