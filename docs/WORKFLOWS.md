@@ -787,6 +787,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Revise the search plan when new evidence exposes a gap or contradiction instead of stopping at the first pass.
   - Gate contested claims: require at least two independent source domains, one counter-search for disconfirming evidence, and a primary source, or move the claim to the unresolved annex.
   - Separate direct evidence, citation links, retrieval dates, inference, confidence, and residual uncertainty.
+  - When Hermes' bundled `grounded-citations` skill is in the skill index, load it and register every source in its ledger when it is retrieved (`scripts/sources.py add`). All lanes register into one ledger - the default one, or one path handed to every lane with `--ledger` - so an id names the same source in every lane's findings; the parent resets it once before the first wave and no lane resets it. When a human briefing is written, report the exit status of `sources.py verify <draft>` as the observed citation check - `0` is a pass and any other status is not, and `--evidence` also fails a draft whose cited source carries no verbatim quote - or report `not_observed` when no run happened. It is a citation check, not fact verification, and it never stands in for the contested-claim gate. Without the skill, keep sources in the dossier's own ledger and report the citation check as `not_observed`.
   - Name retrieval gaps when Hermes or the wrapper cannot access the web.
   - For AI or usability research, separate target-user/task assumptions, measured or reported usability dimensions, and generalizability limits from the evidence.
   - Decompose the question into orthogonal research axes and disambiguate named entities before any deep reading.
@@ -880,6 +881,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user wants recurring monitoring, a source inbox, or Scout/Analyst/Briefer operations; use `research-department`.
   - The user wants to configure or cheapen web search itself, such as a provider API key or a search or extract backend or tier; use `websearch-setup`.
   - The study target is this repository rather than the open web; use `codebase-onboarding`.
+  - The request is only citation bookkeeping on a draft that already exists - renumbering, rebuilding the Sources block, or checking cited ids against the ledger - with nothing new to retrieve, and Hermes' bundled `grounded-citations` skill is in the skill index; load that skill.
+  - The answer is an arXiv paper list or one paper's entry - a search by topic, author, category, or paper id - and Hermes' bundled `arxiv` skill is in the skill index; load that skill.
 - Strong routing signals: `web-research`, `web research`, `web search`, `search the web`, `internet search`, `look up`, `look up sources`, `latest sources`, `fresh sources`, `current sources`, `current web evidence`, `source-backed research`, `source search`, `find sources`, `find citations`, `citation check`, `evidence scan`, `source diversity`, `retrieval gap`, `best-practice-research`, `best practice`, `official docs`, `upstream guidance`, `what do the docs say`, `check the docs`, `웹서치`, `웹 서치`, `웹 검색`, `인터넷 검색`, `검색해줘`, `검색해서`, `최신 자료`, `최신 출처`, `자료 찾아`, `출처`
 - Good example:
   - Prompt: 이번 주 기준으로 그 API 요금제 어떻게 바뀌었는지 웹서치해서 알려줘.
@@ -894,6 +897,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Cite the source behind each claim and mark it official, practitioner, or unattributed.
   - Cross-check a contested claim against a second independent domain, or state that it stays unverified.
   - Keep historical-capture evidence and live-page evidence as two typed surfaces for a point-in-time or then-versus-now question; capture time, publication time, and retrieval time are independent clocks and none substitutes for another.
+  - When Hermes' bundled `grounded-citations` skill is in the skill index, load it and register each source in its ledger when it is retrieved (`scripts/sources.py add`), before any prose is written; cite a source only by the id the ledger gave it, and mark a claim that rests on model knowledge `[unverified]` instead of citing it. The ledger id sits beside the source class and the retrieval date and replaces neither. Without the skill, list each source when it is retrieved and cite it at the claim it supports.
+  - Report the citation check from a run, or as `not_observed`: the exit status of `sources.py verify <draft>` is the observed check - `0` is a pass and any other status is not - and `verify --evidence` also fails a draft whose cited source carries no verbatim quote. The run compares cited ids and the Sources block with the ledger; it does not test whether a claim is true, so a passing citation check is never reported as fact verification.
   - Stop at the answer: one retrieval round settles a lookup, and an expanding lead list means the request belongs to `research`.
   - Report what retrieval did not yield rather than closing the gap from recall.
 - Completion checklist:
@@ -901,6 +906,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Observed sources, inference, synthesis, and unresolved retrieval gaps are separated.
   - Follow-up planning or handoff uses the research summary without calling it execution evidence.
 - Recovery notes:
+  - If a source fails with HTTP 403, HTTP 429, a paywall, or a WAF or bot wall, load Hermes' `blocked-page-recovery` skill once for that source when it is available and never retry the same URL in a loop; cite an archive or cached copy it returns as a dated historical capture, never as the live page. If the skill is unavailable, recovery fails, or the source needs a login or payment, name the retrieval gap with that reason.
   - If the web is unreachable, name the retrieval gap and stop rather than substituting recalled facts.
   - If no archive access exists or the capture provider's paid authority is exhausted, record a temporal retrieval gap with no network action and keep the as-of claim in the annex; never substitute the current page for it.
   - If sources conflict, present both with their retrieval dates and say which one is primary.
@@ -1033,6 +1039,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Record acquisition state from: candidate_prepared, link_observed, download_link_prepared, download_observed, file_hash_recorded, text_extraction_observed, license_checked, verification_observed, downstream_selected.
   - Separate candidate preparation, observed link, observed download, file hash, text extraction, license check, verification, and downstream selection.
   - Attach observation provenance before treating any acquisition state as evidence.
+  - For `paper` candidates, when Hermes' bundled `arxiv` skill is in the skill index, search through it - by topic, author, category, or paper id - and record each entry it returns as `link_observed` with `hermes_tool` provenance. A search result is an observed link and nothing more: download, text extraction, and verification stay unclaimed until their own run is observed. Without the skill, a paper candidate stays `candidate_prepared` until a link is observed another way.
   - Vary search angles across official docs, academic work, implementations, datasets, and criticism until each requested source kind has candidates or another angle change adds nothing new.
   - Recommend the next downstream workflow without pretending that downstream work already ran.
 - Completion checklist:
@@ -1100,6 +1107,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Record each material claim as a compact evidence row: claim, source, source class (upstream official, practitioner heuristic, or unattributed), source date, confidence, and unresolved conflict.
   - Keep claims that lack corroboration in an explicit unresolved list instead of asserting or silently dropping them.
   - Separate observed sources, source quality, source diversity, inferred trends, and unresolved uncertainty.
+  - When Hermes' bundled `grounded-citations` skill is in the skill index, load it, register each source in its ledger when it is retrieved (`scripts/sources.py add`), and carry two more fields on every evidence row: the ledger id, and the verbatim quote attached with `sources.py quote <id> --text <quote> --from <page text file>`, which rejects wording that file does not contain. A row whose quote could not be attached says so, and a claim that rests on model knowledge is marked `[unverified]`. Report the exit status of `sources.py verify <draft> --evidence`, which fails a draft whose cited source carries no verbatim quote, as the observed citation check - `0` is a pass and any other status is not - or `not_observed` when no run happened; it is a citation check, not fact verification. Without the skill, keep the source and its quoted wording in the row and report the citation check as `not_observed`.
   - Use the brief to feed strategy or meeting work without calling it execution evidence.
 - Completion checklist:
   - The research question, source boundaries, recency assumptions, and confidence level are named.
@@ -1146,6 +1154,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user only needs a one-off business synthesis; use `research-brief`.
   - The request is pure scheduling with no source collection or synthesis; use `automation-blueprint`.
   - The user asks for coding implementation; prepare a selected executor/runtime handoff after the research plan is accepted.
+  - The request is one news watch over named companies, or a scheduled run of a watch that already exists, with no knowledge store, synthesis tool, or briefing lanes to set up, and Hermes' bundled `competitor-news-monitor` skill is in the skill index; load that skill.
+  - The user wants a one-off paper search by topic, author, category, or paper id rather than a recurring paper review, and Hermes' bundled `arxiv` skill is in the skill index; load that skill.
 - Strong routing signals: `research-department`, `research department`, `research ops department`, `research operations department`, `scout analyst briefer`, `scout analyst brief`, `daily research department`, `competitor research department`, `market research department`, `paper review`, `weekly paper review`, `research paper review`, `paper research`, `notebooklm research`, `obsidian research vault`, `knowledge store`, `knowledge storage`, `synthesis tool`, `knowledge summarizer`, `research inbox`, `source inbox`, `briefing status`, `리서치 부서`, `리서치 조직`, `리서치 운영`, `수집 합성 브리핑`, `지식 저장소`, `요약 도구`, `경쟁사 리서치 부서`
 - Good example:
   - Prompt: Set up a Scout, Analyst, and Briefer research flow for daily competitor and market changes.
@@ -1160,6 +1170,12 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Map Scout, Analyst, and Briefer lanes to concrete OMH skills and source inbox buckets.
   - Expose collected, synthesized, briefed, conflict, and verification counts as status, not execution proof.
   - List required evidence before claiming retrieval, synthesis, storage, delivery, or verification.
+  - Inside the Scout lane, when the watch area is a set of named companies and Hermes' bundled `competitor-news-monitor` skill is in the skill index, run the watch through that skill; when the user names no knowledge store and the bundled `llm-wiki` skill is in the skill index, offer it as the store.
+  - A schedule stays a prepared job description in the plan and OMH creates no job. In a Hermes session the job is created with the `cronjob_manage` tool, and it counts as created only from that tool's observed result or a cron listing.
+  - For a recurring watch, write the watchlist and the materiality threshold down once, before the first run, and reuse them unchanged: what is watched and what is worth reporting change only by a recorded edit, so one candidate is accepted or rejected the same way on every run.
+  - Report coverage source by source on every run. A source the run could not read is unknown coverage for that period and is named as a gap; it is never reported as a quiet period or as nothing new.
+  - Keep one cutoff per source and move it only for a source the run covered. A source that failed keeps its earlier cutoff, so the next run reads the missed window instead of skipping it.
+  - Count by the underlying event, not by article or URL: reprints, rewrites, and link variants of one announcement are one finding, and an independent second source stays attached to it as corroboration.
 - Completion checklist:
   - The research question, source boundaries, recency assumptions, and confidence level are named.
   - Observed sources, inference, synthesis, and unresolved retrieval gaps are separated.
@@ -1224,6 +1240,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Record source_state as one of: metadata_only, excerpt_text_observed, file_text_extraction_observed, full_text_observed, unknown_or_missing.
   - Preserve the coverage policy `coverage_preserving_not_lossy_summary` through a section-by-section ledger.
   - Explain by chunks when the source is long; keep each chunk linked to coverage_ledger status.
+  - Set source_state from how the paper was acquired, not from the request. An entry that Hermes' bundled `arxiv` skill returned (search or id lookup) is `metadata_only` until paper text is read. Text that the bundled `pdf` skill's `pdf_read.py <file> --text` run returned is `file_text_extraction_observed` for the pages that came back with text, and a page that came back empty is listed as missing. Without those skills, the state is whatever the supplied text supports.
+  - For a paper past one read budget, take the chunks from `long-document-reading`'s page ranges - its page-count probe and page-anchored extraction - instead of a second chunking scheme, and map each covered range onto the coverage ledger's sections.
   - List missing sections and not-observed claims before presenting the explanation as complete.
 - Completion checklist:
   - The selected explanation level is one of: very_easy, moderate, expert, choose.

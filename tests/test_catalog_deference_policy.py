@@ -94,6 +94,13 @@ NON_SKILL_BACKTICKS = frozenset(
         # A Rust language keyword, backticked as code in `backend` and
         # `native-debugging`'s do_not_use_when, never a skill name.
         "unsafe",
+        # Skills Hermes bundles, named by `web-research` and
+        # `research-department` for requests those skills own outright. They
+        # are not catalog siblings, so they add no deference pair and the
+        # router has no rank for them.
+        "grounded-citations",
+        "competitor-news-monitor",
+        "arxiv",
     }
 )
 

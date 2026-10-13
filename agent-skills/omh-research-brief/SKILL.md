@@ -70,6 +70,7 @@ Quality bar:
 - Record each material claim as a compact evidence row: claim, source, source class (upstream official, practitioner heuristic, or unattributed), source date, confidence, and unresolved conflict.
 - Keep claims that lack corroboration in an explicit unresolved list instead of asserting or silently dropping them.
 - Separate observed sources, source quality, source diversity, inferred trends, and unresolved uncertainty.
+- When Hermes' bundled `grounded-citations` skill is in the skill index, load it, register each source in its ledger when it is retrieved (`scripts/sources.py add`), and carry two more fields on every evidence row: the ledger id, and the verbatim quote attached with `sources.py quote <id> --text <quote> --from <page text file>`, which rejects wording that file does not contain. A row whose quote could not be attached says so, and a claim that rests on model knowledge is marked `[unverified]`. Report the exit status of `sources.py verify <draft> --evidence`, which fails a draft whose cited source carries no verbatim quote, as the observed citation check - `0` is a pass and any other status is not - or `not_observed` when no run happened; it is a citation check, not fact verification. Without the skill, keep the source and its quoted wording in the row and report the citation check as `not_observed`.
 - Use the brief to feed strategy or meeting work without calling it execution evidence.
 
 Required inputs:

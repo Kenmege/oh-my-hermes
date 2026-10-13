@@ -82,6 +82,8 @@ Quality bar:
 - Record source_state as one of: metadata_only, excerpt_text_observed, file_text_extraction_observed, full_text_observed, unknown_or_missing.
 - Preserve the coverage policy `coverage_preserving_not_lossy_summary` through a section-by-section ledger.
 - Explain by chunks when the source is long; keep each chunk linked to coverage_ledger status.
+- Set source_state from how the paper was acquired, not from the request. An entry that Hermes' bundled `arxiv` skill returned (search or id lookup) is `metadata_only` until paper text is read. Text that the bundled `pdf` skill's `pdf_read.py <file> --text` run returned is `file_text_extraction_observed` for the pages that came back with text, and a page that came back empty is listed as missing. Without those skills, the state is whatever the supplied text supports.
+- For a paper past one read budget, take the chunks from `long-document-reading`'s page ranges - its page-count probe and page-anchored extraction - instead of a second chunking scheme, and map each covered range onto the coverage ledger's sections.
 - List missing sections and not-observed claims before presenting the explanation as complete.
 
 Handoff policy:

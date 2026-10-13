@@ -452,6 +452,28 @@
       "reviewed_on": "2026-10-13",
       "rationale": "Adopted Hermes' bundled design-md as owner of DESIGN.md authoring, lint, diff, and export when available; only a lint run that executed counts as contract evidence, otherwise not_observed.",
       "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-13-web-research-hermes-grounded-citations",
+      "candidate_key": "web-research@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2104",
+      "reviewed_on": "2026-10-13",
+      "rationale": "Adopted Hermes' bundled grounded-citations ledger for source registration when available; its verify exit status is the observed citation check, never fact verification, and not_observed without a run.",
+      "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-13-research-department-hermes-competitor-news-monitor",
+      "candidate_key": "research-department@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2104",
+      "reviewed_on": "2026-10-13",
+      "rationale": "Adopted four recurring-watch rules in OMH wording: a fixed watchlist and threshold, a failed source as unknown coverage, a per-source cutoff, and counting by event; the bundled skill runs company watches.",
+      "supersedes": null
     }
   ]
 }
