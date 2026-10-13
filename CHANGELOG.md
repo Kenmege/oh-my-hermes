@@ -4,6 +4,43 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A plan has one checklist: Hermes' `todo_list` and `omh_todo` no longer
+  ask for the same list twice.** Hermes ships its own checklist tool,
+  `todo_list`, and OMH told the model to declare every plan with `omh_todo`
+  as well, so a session could declare the same plan in both tools, in
+  paraphrased items, and show two lists for one plan. Wherever `todo_list`
+  is present -- in the session's tool list, or found through `tool_search`,
+  never judged by a Hermes version -- it now holds the steps, and the
+  plugin's `post_tool_call` hook mirrors each successful `todo_list` write
+  into the session's own plan todo, so the HUD panel, the Desktop pane, the
+  plan-stage gate and the continuation and stall checks read one record
+  whichever tool wrote it. A native `completed` is still a declaration and
+  is judged against recorded commands exactly like an `omh_todo` done mark;
+  a `cancelled` item shows as skipped. `omh_todo` keeps what only it
+  records: `plan_stage`, the checkpoint/record/recall dossier, an item's
+  `blocked_reason` and the plan's `deferred_reason`. On a plan `todo_list`
+  holds, `todo_list` alone sets item states, and a recorded reason lasts
+  across later `todo_list` writes while the item stays where it was or is
+  paused back to pending; resuming, completing or reopening the item, or
+  cancelling it while open, ends it. A planning checklist awaiting
+  acceptance and an open `code-story` plan stay with `omh_todo` while they
+  are open, and an accepted plan (the one `omh_team` binds its lanes to)
+  until it goes stale; a `todo_list` write does not replace them, leaving
+  one for unrelated work is `omh_todo action=clear` (a recorded
+  `deferred_reason` only pauses it), and the session's next turn is told
+  once when a `todo_list` write was not mirrored and the plan is still held
+  and not deferred. Where `todo_list` is absent, `omh_todo` is the tracker exactly as before. The
+  `omh_todo` description, the route hint's checklist line, the plan nudge,
+  the `todo-checklist` skill and the `ulw-work` and `ulw-plan` opening steps
+  now say to use one tool for the steps, never both. Where Hermes draws its
+  own todo list -- the modern TUI and Hermes Desktop -- the OMH panel above
+  the prompt and the Desktop pane no longer draw a `todo_list`-held plan's
+  items a second time: they show a compact "in todo_list" plan summary only
+  for what Hermes does not show (an item waiting on a reason `omh_todo`
+  recorded, the stall finding, and in the TUI the parallel-shot badge), and
+  nothing otherwise.
+
+
 - **`websearch-setup` configures the web search settings Hermes actually
   reads, and OMH stops treating the removed auxiliary web-extract slot as
   configuration.** The guide's second step used to assign a model to the

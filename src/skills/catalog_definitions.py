@@ -22,6 +22,7 @@ from ..paper_learning import (
     PAPER_LEARNING_SOURCE_STATES,
 )
 from ..plugin_bundle.omh.domain_signals import SPECIALIST_DOMAIN_TRIGGERS
+from ..plugin_bundle.omh.native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
 from ..routing.materials_cues import (
     OFFICE_FILE_MATERIAL_CATALOG_TRIGGERS,
 )
@@ -1139,7 +1140,12 @@ _DEFINITIONS = [
             "ledger with checkpoints and a final gate)."
         ),
         opening_steps=(
-            "Initialize the phase todo before engine work: declare numbered phases in delivery order with `omh_todo` (todo init) — bootstrap, one implement/verify/deliver task per lane or work unit, independent review lanes, and an evidence-and-cleanup close, with one task per observable outcome — keep exactly one item active while working, and update states as lanes complete; the run walks a bounded, HUD-visible checklist instead of an open-ended reasoning loop. Phase names and task titles are written in English — short, operator-legible labels — even when the conversation runs in another language, since the HUD todo checklist is an operator surface under the repo's English-by-default output contract.",
+            # Byte-neutral on purpose: `ultrawork` ships at the per-skill body
+            # ceiling, so naming the one checklist tool was paid for by the
+            # rationale clauses around it rather than by raising the ceiling.
+            "Initialize the phase todo before engine work (todo init) in ONE tool, never both: "
+            f"`{NATIVE_TODO_TOOL}` when {native_tool_presence_clause(NATIVE_TODO_TOOL, code=True)} (OMH mirrors it), else `omh_todo`; an accepted plan stays in `omh_todo`. "
+            "Declare numbered phases in delivery order — bootstrap, one implement/verify/deliver task per lane or work unit, independent review lanes, and an evidence-and-cleanup close, one task per observable outcome — keep exactly one item active, and update states as lanes complete, so the run walks a bounded checklist. Phase names and task titles are written in English as short labels even when the conversation runs in another language, since the HUD checklist is an operator surface.",
         ),
         do_not_use_when=(
             "Avoid conflicting parallel writers; use single-owner or ordered execution.",
@@ -1272,7 +1278,7 @@ _DEFINITIONS = [
         portable_override_shadows={
             "quality_bar": "4da819b34e0cadefe525df0cb5bc43116e034cf54212574a59a2ad9f58468dff",
             "safety_rules": "f5a8f74812425af82829bc083dac62883a283ed8acfa5bc299a594c107ccd4f7",
-            "opening_steps": "2236c7c8fd525d9c02c60cf9e6429e0b663ac3748f46b5565e6d844b443a9bf7",
+            "opening_steps": "632f26cd6eeb333b99ad0312a3c568a456d6e36c66d510b6af201ae25f65abf0",
             "final_checklist": "aa86ffc317352fb5f4a3cfa3dac07f436232e87055edb9a6adc7bf8b70896366",
             "why_this_exists": "537b436c502275cd7aea748406d5018300d92d31fe670a4c3b48090058b4c0c6",
         },
@@ -6764,7 +6770,7 @@ _DEFINITIONS = [
         ),
         why_this_exists="`ralplan` exists to make planning reviewable before execution: Hermes should gather codebase/source facts, compare options, expose risks, define acceptance criteria, and prepare a handoff without pretending implementation already happened.",
         opening_steps=(
-            "Initialize the plan todo before the first planning step: declare the planning stages as `omh_todo` items (todo init) — repo facts and evidence check, options and tradeoffs, risk review, acceptance criteria and verification commands, plan record and acceptance — keep exactly one item active, and when the evidence check reveals a gap rewrite the list (`omh_todo` action=set) to insert the research stage; update the list as stages complete so the HUD todo panel shows plan progress as a bounded checklist, and treat items as declarations, never execution evidence. Phase names and task titles are written in English — short, operator-legible labels — even when the conversation runs in another language, since the HUD todo checklist is an operator surface under the repo's English-by-default output contract.",
+            "Initialize the plan todo before the first planning step: declare the planning stages as `omh_todo` items (todo init), never also in `todo_list` — repo facts and evidence check, options and tradeoffs, risk review, acceptance criteria and verification commands, plan record and acceptance — keep exactly one item active, and when the evidence check reveals a gap rewrite the list (`omh_todo` action=set) to insert the research stage; update the list as stages complete so the HUD todo panel shows plan progress as a bounded checklist, and treat items as declarations, never execution evidence. Phase names and task titles are written in English — short, operator-legible labels — even when the conversation runs in another language, since the HUD todo checklist is an operator surface under the repo's English-by-default output contract.",
         ),
         do_not_use_when=(
             "The request is still too ambiguous to name requirements, non-goals, or acceptance criteria; use `deep-interview` first.",
@@ -6843,7 +6849,7 @@ _DEFINITIONS = [
         portable_override_shadows={
             "artifact_expectations": "a8eb07c3491b92fb1f72dc0bbd8bd5da29398f9b8aa6cae9b64b2b2c5aa3bae6",
             "safety_rules": "72126c765975b034ab683d27aa0349dbe84c564e45f29832f2b8424a1b3d28cc",
-            "opening_steps": "d8ef54a1ea61e051cb069ffb43b846f0d28a88eda400436d13f357c5373d8f0c",
+            "opening_steps": "f839a5ee9ecaca2834a76d29b601f18e03ca292e0abc0b2af5c92274b5fa4c7e",
             "quality_bar": "fe43f8d9c720c840aae9ded32d5889414dcc799e58a9c74c928af36407e9f194",
             "why_this_exists": "7c8d4e7c04114ed3e5fa532095f54cbd4f36aa5333d34f873c40d516f27c29e1",
         },
@@ -8160,7 +8166,13 @@ _DEFINITIONS = [
         category="operator",
         phase="observability",
         hermes_role="retained-operator",
-        handoff_policy="Declare and update the checklist directly with `omh_todo`; a checklist item is a plan declaration and never dispatches, executes, or verifies anything.",
+        handoff_policy=(
+            "Keep the steps in ONE tool, never both: a planning run, an accepted plan or a code-story template keeps them in `omh_todo`; "
+            f"otherwise `{NATIVE_TODO_TOOL}` holds them when {native_tool_presence_clause(NATIVE_TODO_TOOL, code=True)}, "
+            "and OMH mirrors each write into this plan todo, else `omh_todo`. `omh_todo` alone holds `plan_stage`, "
+            "checkpoint/record/recall, `blocked_reason` and `deferred_reason`. A checklist item is a plan declaration "
+            "and never dispatches, executes, or verifies anything."
+        ),
         required_inputs=("the work to be tracked",),
         expected_outputs=("a declared checklist with exactly one active item", "explicit states as work completes"),
         artifact_expectations=("metadata-only `omh_todo/v1` plan todo owned by the declaring session",),
@@ -8170,6 +8182,7 @@ _DEFINITIONS = [
         ),
         quality_bar=(
             "A `done` item is a declaration, never observed evidence.",
+            "With `todo_list` holding the steps, mark states there and call `omh_todo` only for what it alone records; a native `completed` is judged against recorded commands exactly like `done`, and `cancelled` reads as skipped.",
             "For accepted multi-turn work, load `references/closing-a-story.md` before checkpoint, recall, explicit resume or recording verification/review/QA declarations. Preserve rejected ideas separately; templates remain optional.",
             "Current intent overrides old plans. Stop, analysis-only and topic changes take precedence; ask only when scope is ambiguous. Missing, stale or malformed evidence is not clean; waiting for a child remains open.",
             "Keep exactly one item active so the HUD names the current step.",
@@ -8203,6 +8216,7 @@ _DEFINITIONS = [
         ),
         final_checklist=(
             "Exactly one item is active, or the list is complete and every item is done.",
+            "The steps live in one tool; the same list is never written to both `todo_list` and `omh_todo`.",
             "Use `action=advance` or a complete `action=set` list; never drop an item by omission.",
             "Item states are described as declarations; observed results are cited separately or named as missing.",
             "Name whether work is blocked or human-deferred.",

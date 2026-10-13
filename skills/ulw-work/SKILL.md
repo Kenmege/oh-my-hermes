@@ -20,7 +20,7 @@ This is a Hermes-native `ultrawork` workflow skill.
 
 ## First Steps
 
-- Initialize the phase todo before engine work: declare numbered phases in delivery order with `omh_todo` (todo init) — bootstrap, one implement/verify/deliver task per lane or work unit, independent review lanes, and an evidence-and-cleanup close, with one task per observable outcome — keep exactly one item active while working, and update states as lanes complete; the run walks a bounded, HUD-visible checklist instead of an open-ended reasoning loop. Phase names and task titles are written in English — short, operator-legible labels — even when the conversation runs in another language, since the HUD todo checklist is an operator surface under the repo's English-by-default output contract.
+- Initialize the phase todo before engine work (todo init) in ONE tool, never both: `todo_list` when `todo_list` is in your tool list or tool_search finds it (OMH mirrors it), else `omh_todo`; an accepted plan stays in `omh_todo`. Declare numbered phases in delivery order — bootstrap, one implement/verify/deliver task per lane or work unit, independent review lanes, and an evidence-and-cleanup close, one task per observable outcome — keep exactly one item active, and update states as lanes complete, so the run walks a bounded checklist. Phase names and task titles are written in English as short labels even when the conversation runs in another language, since the HUD checklist is an operator surface.
 
 ## Do Not Use When
 

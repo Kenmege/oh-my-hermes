@@ -81,7 +81,7 @@ LINE_WITH_NO_INBOUND_MESSAGE = (
     "next item in this turn rather than ending on a status report. It "
     "stops only when every item is done or an item carries an omh_todo "
     "blocked_reason. Before claiming this work is finished, reconcile the "
-    "checklist with omh_todo: mark completed items done and keep exactly "
+    "checklist: mark completed items done and keep exactly "
     "one item active. Either finish the remaining items or say which stay "
     "open and why. A completion claim in chat while the HUD checklist "
     "shows open items is a visible contradiction. Todo updates are "
@@ -472,7 +472,7 @@ class PlanLineForceTest(_PlanHomeTest):
                 for line in self._turns(
                     todo_reconciliation.TODO_RECONCILIATION_FULL_TURNS + 3, **kwargs
                 ):
-                    self.assertIn("reconcile the checklist with omh_todo", line)
+                    self.assertIn("reconcile the checklist:", line)
                     self.assertIn("keep exactly one item active", line)
 
 

@@ -264,7 +264,19 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # capture, so it stays and the subject gloss was shortened instead. The
 # capture hints (`subject_held_by`, `similar_record_id`) add no schema text.
 # Re-derived from the producer.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64158
+# 64158 -> 64654: `omh_todo` says which ONE tool holds a plan's steps (496): a
+# planning run, an accepted plan or a code-story template keeps them in
+# omh_todo, and leaving one for unrelated work means clearing it first, since
+# until then todo_list writes are not mirrored over it (a deferred_reason only
+# pauses it); otherwise Hermes' native todo_list holds them wherever it is in the
+# tool list or tool_search finds it, OMH mirrors each write into this plan, and
+# omh_todo is called only for checkpoint/record/recall, blocked_reason,
+# deferred_reason or re-advancing a done item after its check. On the owner's
+# machine 8 of 17 todo-using sessions declared the same plan in both tools, in
+# paraphrased items. The sentence rides the schema the model reads when it
+# reaches for either list; the per-turn alternative would be paid on every
+# turn. Re-derived from the producer.
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # PRE_LLM_CALL_CONTEXT_CHAR_LIMIT, PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT: moved with
 # their history to src/plugin_bundle/omh/turn_budget.py; imported at the top of this file.
 # 340000 -> 349637: three capability-skill sections were added by the domain
@@ -593,7 +605,17 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64158
 # 487167 -> 487221: second review. The diagnosis output ends its list with
 # Hermes' default backend when nothing else resolves. Re-derived from the
 # producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 487221
+# 487221 -> 487704: one checklist per plan, all of it in `todo-checklist`'s
+# row. Its handoff policy, one quality-bar line and one final-checklist line
+# say which ONE tool holds the steps -- Hermes' todo_list where it is present
+# (OMH mirrors it), else omh_todo, with a planning run, an accepted plan and a
+# code-story template staying in omh_todo -- and what omh_todo alone still
+# records. The handoff policy named omh_todo alone, which is how a session
+# came to declare one plan in both tools. Re-derived from the producer.
+# Stacked on the three `websearch-setup` raises above: 487221 is that tree's
+# value, this change moves only the `todo-checklist` row, and 487704 is the
+# producer's reading of the combined tree.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 487704
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

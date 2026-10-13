@@ -502,6 +502,7 @@ class PreLlmCallScenarioTests(unittest.TestCase):
                     "active_workflow",
                     "running_work_board",
                     "done_unverified_plan",
+                    "held_native_write",
                     "all_surfaces",
                     "all_surfaces_without_section",
                 ]
@@ -510,6 +511,18 @@ class PreLlmCallScenarioTests(unittest.TestCase):
         for name, chars in scenarios.items():
             with self.subTest(scenario=name):
                 self.assertGreater(chars, 0, f"{name} injected nothing, so it measures nothing")
+
+    def test_the_held_write_scenario_measures_the_held_write_line(self) -> None:
+        # The scenario is only worth its name if the line is in what it
+        # measures: without the pending fact the same turn is exactly the
+        # line and its join shorter.
+        from omh.plugin_bundle.omh import native_todo
+
+        with_line = per_turn_context.pre_llm_call_context_scenario_chars()["held_native_write"]
+        with mock.patch.object(native_todo, "_note_held_write", lambda *args, **kwargs: None):
+            without_line = per_turn_context.pre_llm_call_context_scenario_chars()["held_native_write"]
+        line = native_todo.HELD_NATIVE_WRITE_NOTE.format(kind="accepted plan")
+        self.assertEqual(with_line - without_line, len(line) + len("\n\n"))
 
     def test_parts_add_so_all_surfaces_is_the_maximum(self) -> None:
         scenarios = per_turn_context.pre_llm_call_context_scenario_chars()

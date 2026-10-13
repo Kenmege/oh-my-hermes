@@ -73,6 +73,7 @@ from ..plugin_bundle.omh.awareness import (
     awareness_workflow_context_markdown,
     router_keyword_summary,
 )
+from ..plugin_bundle.omh.native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
 from ..plugin_bundle.omh.todo_store import (
     MAX_TODO_ITEMS,
     MAX_TODO_TEXT_CHARS,
@@ -3042,7 +3043,8 @@ def _todo_checklist_discipline_reference() -> str:
     every load of the skill body.
     """
 
-    return """# Plan Checklist Discipline
+    presence = native_tool_presence_clause(NATIVE_TODO_TOOL, code=True)
+    return f"""# Plan Checklist Discipline
 
 The shaping rules and the two stop reasons the workflow body points at. Open this while declaring or repairing a list; the body carries the rules that hold whether or not it is open.
 
@@ -3052,7 +3054,22 @@ It costs a tool call, a panel, and a write on every subsequent change. It buys o
 
 Do not declare one for work that is a single step, work already finished, or a question answerable in this turn. A checklist that is declared and never advanced is worse than none: the panel then asserts a plan nobody is walking, and a reader has to discover that by asking.
 
-## 2. Phases are numbered in delivery order
+## 2. One checklist, in one tool
+
+Hermes has a checklist tool of its own, `{NATIVE_TODO_TOOL}`. When {presence}, it holds the steps: write the list there and move its states there. OMH mirrors each of those writes into this plan todo, so the HUD and the plan's continuation and stall checks read it with no second copy. Writing the same list to `omh_todo` as well doubles every update and is never needed. Without `{NATIVE_TODO_TOOL}`, `omh_todo` holds the steps and everything below applies to it directly.
+
+Three kinds of plan keep their steps in `omh_todo` even when `{NATIVE_TODO_TOOL}` is there, because what they depend on exists only on `omh_todo`: a planning run, whose `plan_stage` the edit gate reads; an accepted plan, whose `plan_stage=accepted` and `check:` items `omh_team` binds its lanes to; and a `{CODE_STORY_TEMPLATE}` template, whose phases a native list cannot carry. A plan awaiting acceptance and a template hold while they are open, and an accepted plan until it goes stale, finished or not; while one holds, a `{NATIVE_TODO_TOOL}` write is not mirrored over it. To leave one for unrelated work, end it first with `omh_todo action=clear`; until then a `{NATIVE_TODO_TOOL}` write is not mirrored. Recording the person's redirect as `deferred_reason` instead keeps the plan, its stage and its gate, and pauses it: the plan line stops asking for its next item and the turn-end drive stops until the item list changes.
+
+With `{NATIVE_TODO_TOOL}` holding the steps, call `omh_todo` only for what it alone records:
+
+- an item's `blocked_reason` (`action=advance`, which on a plan `{NATIVE_TODO_TOOL}` holds keeps the state `{NATIVE_TODO_TOOL}` last set), kept across later `{NATIVE_TODO_TOOL}` writes while the item stays where it was or is paused from in_progress back to pending; resuming, completing or reopening it, or cancelling it while it is open, ends the reason;
+- the plan's `deferred_reason`, which lapses at the next change to the list;
+- the checkpoint/record/recall dossier (`references/closing-a-story.md`);
+- advancing a done item to done again after its check passes, which is what binds that command to it.
+
+The native states read as the record's: `in_progress` is `active`; `completed` is `done`, still a declaration and judged against recorded commands exactly as a `done` written with `omh_todo`; `cancelled` is `done` carrying a `blocked_reason`, the record's spelling of skipped.
+
+## 3. Phases are numbered in delivery order
 
 A phase groups items that finish together. Number them in the order they are delivered, so the label says where in the run the reader is:
 
@@ -3065,7 +3082,7 @@ Items sharing a `phase` render as one section, and the HUD shows the current pha
 
 Phase names and item text are written in English even when the conversation runs in another language. The HUD checklist is an operator surface under the repository's English-by-default output contract.
 
-## 3. One item per observable outcome
+## 4. One item per observable outcome
 
 An item is finishable by something a reader could check. "Implement the parser" is an outcome. "Think about the parser" is not, and it can never be honestly marked done.
 
@@ -3073,7 +3090,7 @@ The test: name what would make this item done. If the answer is a command that r
 
 Subtasks use `depth` 1-3 and render indented beneath the preceding shallower item. They continue their parent's section, so they may omit `phase`. Use them when one outcome genuinely decomposes; a flat list of six is easier to read than a nested list of three.
 
-## 4. The two reasons a plan stops, which are not interchangeable
+## 5. The two reasons a plan stops, which are not interchangeable
 
 This is the distinction that otherwise exists only inside the tool's JSON schema.
 
@@ -3087,7 +3104,7 @@ It clears itself. It is stored with a digest of the item list it was sent with, 
 
 **When both could apply, `blocked_reason` wins.** An item that genuinely cannot proceed carries it whatever the person is doing, because the two describe different facts: one is about the work, the other about the conversation.
 
-## 5. One item, or the whole list
+## 6. One item, or the whole list
 
 `action=advance` changes one item's state. It takes the item number (1 for the first), the start of that item's current text as a guard, and the new state; `blocked_reason` rides with it, and omitting that field clears one. A guard that no longer describes the text at that position is refused rather than applied, so a reference computed against a list that has since been re-set cannot change the wrong item. It is the same write as `action=set` by a narrower route: same validator, same stamp, same record.
 
@@ -3095,7 +3112,7 @@ It clears itself. It is stored with a digest of the item list it was sent with, 
 
 Read before re-declaring: `action=show` returns the current projection. Declaring over an existing list without reading it first is how a checklist someone else in this session was walking gets replaced.
 
-## 6. States
+## 7. States
 
 `pending`, `active`, `done`. Exactly one item is active while work is in progress. A finished list has every item `done` and none active.
 
@@ -3160,8 +3177,9 @@ accepted points, not every brainstormed idea. Stop or analysis-only instructions
 and intervening topic changes outrank an old plan. An unrelated story, modal or
 book is not a continuation request merely because the same words occur.
 
-For multi-turn work, declare just the accepted items with `omh_todo action=set`,
-then `action=checkpoint`, `accepted=true`, short `rejected` summaries and the
+For multi-turn work, declare just the accepted items in the plan's one
+checklist tool (`todo_list`, which OMH mirrors, or `omh_todo action=set`; never
+both; `omh_todo` when the plan carries `plan_stage`), then `omh_todo action=checkpoint`, `accepted=true`, short `rejected` summaries and the
 exact revision/worktree and environment fingerprints. This freezes scope; it
 does not approve an edit or change `plan_stage`. Read `action=show` before
 replacing an existing plan. The code-story template remains optional.
@@ -4546,7 +4564,7 @@ The loop does not create a root row for the goal and hang the iterations under i
 
 ## Todo and Closing
 
-One `omh_todo` item per open board row, its text the row title plus the last observed status, updated from the readback pass and from nothing else. A row that reaches `done` closes its item; a row that is `blocked` carries the block reason as the item's `blocked_reason`.
+One item per open board row in the plan's one checklist tool (`todo_list`, which OMH mirrors, or `omh_todo`; never both), its text the row title plus the last observed status, updated from the readback pass and from nothing else. A row that reaches `done` closes its item; a row that is `blocked` carries the block reason as the item's `blocked_reason`, recorded with `omh_todo`.
 
 The loop closes in the main session. A verifier `done` is `worker reported done` until this session re-runs the verification where the workspace is reachable, and the goal closes only through the loop's own completion gate. A board row is never goal completion evidence.
 
@@ -5128,7 +5146,7 @@ A row in `review` is a request (the observed fact is `review_requested`), and a 
 - One `kanban_list` per turn boundary scoped by `assignee` or `status`, one `kanban_show` per row that changed, no polling.
 - Each probe's `result` is the worker's report, bounded and labelled by the readback pass, and quoted as such in the closing brief: `probe <title> reported: <result>`. The main session never restates a probe result as its own observation.
 - Pass/fail evidence stays separate from proposed fixes, as the in-session QA discipline already requires; the fixer row is a proposed fix until it is re-verified.
-- One `omh_todo` item per open row, updated from the readback pass and from nothing else.
+- One item per open row in the plan's one checklist tool (`todo_list` or `omh_todo`, never both), updated from the readback pass and from nothing else.
 
 ## Cleanup
 
@@ -5449,7 +5467,7 @@ Then invoke the returned `native_action` through the ordinary Hermes tool loop. 
 
 - At most one `kanban_list` per turn boundary, scoped by `assignee` or `status`, never a polling loop.
 - One `kanban_show` per lane whose row changed state in that list.
-- One `omh_todo` item per board lane, updated from the readback pass and from nothing else; the item's text is the lane title plus the last observed status.
+- One item per board lane in the plan's one checklist tool (`todo_list` or `omh_todo`, never both), updated from the readback pass and from nothing else; the item's text is the lane title plus the last observed status.
 - Results arrive bounded and labelled by the readback pass. A `result` field is a worker's report, quoted as such; the parent never restates it as its own finding.
 
 The parent ends its turn after preparing lanes and re-enters on the next user turn or scheduled check. There is no wait, attach, retry, or amend verb for a board row: a row whose prompt was wrong is completed with a blocker summary and a new row is created with the corrected prompt.

@@ -188,6 +188,40 @@ def _seed_done_unverified_plan(omh_home: Path) -> None:
     write_todo(omh_home, build_todo_record("plan", items, source="omh_todo", session_ref=_SCENARIO_SESSION))
 
 
+def _seed_held_native_write(omh_home: Path) -> None:
+    """An open accepted plan, and a todo_list write its hold kept out.
+
+    The write goes through the projection itself, so the line measured is
+    the one a held write leaves for the next turn, beside the plan line the
+    open plan carries.
+    """
+    import json as _json
+
+    from ..plugin_bundle.omh.native_todo import project_native_todo
+    from ..plugin_bundle.omh.todo_store import PLAN_STAGE_ACCEPTED, build_todo_record, write_todo
+
+    items = [
+        {"text": "options and tradeoffs", "state": "done"},
+        {"text": "lane a check: `make test`", "state": "active"},
+    ]
+    write_todo(
+        omh_home,
+        build_todo_record(
+            "plan", items, source="omh_todo", session_ref=_SCENARIO_SESSION, plan_stage=PLAN_STAGE_ACCEPTED
+        ),
+    )
+    todos = [{"id": "1", "content": "unrelated work", "status": "in_progress"}]
+    project_native_todo(
+        tool_name="todo_list",
+        args={"todos": todos},
+        result=_json.dumps({"todos": todos}),
+        status="ok",
+        session_ref=_SCENARIO_SESSION,
+        omh_home=str(omh_home),
+        hermes_home=str(omh_home.parent / "hermes"),
+    )
+
+
 def _run_pre_llm_call(
     seeds: tuple[Callable[[Path], None], ...], *, section: bool = True, **kwargs: Any
 ) -> int:
@@ -260,9 +294,14 @@ def pre_llm_call_context_scenario_chars() -> dict[str, int]:
       `TODO_EVIDENCE_RULE`. The todo
       reminder is otherwise not seeded (see below); this measures the one
       part of it that grows a line.
+    - `held_native_write`: a later turn after a todo_list write that an open
+      accepted plan's hold kept out of the record, so the plan line and the
+      one-time held-write line ride together.
     - `all_surfaces_without_section`: `all_surfaces` on the fallback, primer
       included; the fallback's maximum.
-    - `all_surfaces`: all of the above in one first turn. The parts add, so
+    - `all_surfaces`: the route hint, candidate line, largest role, active
+      workflow and running board in one first turn (the two plan scenarios
+      above need a later turn and are not part of it). The parts add, so
       this is the largest of the seeded scenarios; it is not a bound on every
       turn, because the parts listed below are not seeded. The routed request
       also gets a candidate line, since the line stands down only for a
@@ -310,6 +349,9 @@ def pre_llm_call_context_scenario_chars() -> dict[str, int]:
                 {"role": "user", "content": _PROCESS_COMPLETE_NOTICE, "display_kind": "process_complete"}
             ],
             **later,
+        ),
+        "held_native_write": _run_pre_llm_call(
+            (_seed_held_native_write,), user_message="continue", **later
         ),
         "all_surfaces": _largest_role(
             _ROUTED_REQUEST,

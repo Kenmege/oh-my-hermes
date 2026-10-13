@@ -33,6 +33,7 @@ from typing import Any, Callable, Iterator
 # import omh core; a copy here would be the third, and the policy gate in
 # `tests/test_journal_lock_portability.py` exists to stop exactly that.
 from .awareness_delivery import _awareness_delivery_lock
+from .native_tools import NATIVE_CANCELLED_REASON, NATIVE_TODO_TOOL
 from .todo_evidence import EVIDENCE_KINDS, evidence_key, valid_evidence
 from .todo_templates import (
     TODO_TEMPLATES,
@@ -899,7 +900,12 @@ def advance_todo_item(
     session, deferral and template handling, the same ``validate_todo_items``,
     the same stamp. There is no second validator here and no second schema; a
     record this produces is byte-equal to the one `set` produces for the same
-    plan.
+    plan. ``source`` is the one field that is not the caller's: the stored
+    record's declaring tool is kept, and ``source`` names the writer only for
+    a record that names none. On a record `todo_list` holds, the item's
+    ``state`` is not the caller's either: the advance records its reasons and
+    keeps the state the last `todo_list` write set (`native_todo`), a
+    cancelled item's own reason included when the call sends none.
 
     The template name is read off the stored record and sent back through, so
     a single-item write neither drops it nor escapes it: the phase coverage
@@ -932,6 +938,8 @@ def advance_todo_item(
     clears one, which is what `set` does with a field left out of an item.
     Making it sticky instead would create a record state reachable by `set`
     and not by this, and the equivalence above is what the action is for.
+    The one exception is the reason OMH writes for a cancelled item on a plan
+    `todo_list` holds (above).
 
     The whole read-modify-write runs inside the record's lock, so a `set` from
     another turn or another process cannot land between the read and the
@@ -996,12 +1004,23 @@ def advance_todo_item(
             raise TodoValidationError(
                 f"todo item state must be one of {', '.join(TODO_ITEM_STATES)}"
             )
+        # On a plan Hermes' `todo_list` holds (`native_todo`), item states are
+        # todo_list's: an advance records its reasons and keeps the state the
+        # last todo_list write set. Otherwise the next todo_list write -- which
+        # still shows the native status -- would read the advance's state as a
+        # move and drop the reason it carried.
+        native_held = record.get("source") == NATIVE_TODO_TOOL
+        if native_held and current.get("state") in TODO_ITEM_STATES:
+            state = current["state"]
         updated = dict(current)
         updated["state"] = state
         safe_reason = strip_control_characters(blocked_reason)
         if safe_reason:
             updated["blocked_reason"] = blocked_reason
-        else:
+        elif not (native_held and current.get("blocked_reason") == NATIVE_CANCELLED_REASON):
+            # `cancelled` is a todo_list status the record spells as this
+            # reason, so an advance that sends none does not turn a cancelled
+            # item into a completed one.
             updated.pop("blocked_reason", None)
         prior_state = current.get("state")
         if state != "done":
@@ -1055,11 +1074,18 @@ def advance_todo_item(
         stored_plan_stage = record.get("plan_stage", "")
         if stored_plan_stage not in TODO_PLAN_STAGES:
             stored_plan_stage = ""
+        # The declaring tool stays, for the reason the stage does: an advance
+        # annotates the plan, it does not re-declare it. That is what keeps a
+        # plan Hermes' `todo_list` holds (`native_todo`) read as todo_list's
+        # after `omh_todo` records a reason on one of its items, so the
+        # surfaces that leave its items to Hermes' own panel keep doing so.
+        # ``source`` names the writer only for a record that names none.
+        stored_source = record.get("source", "")
         try:
             advanced = build_todo_record(
                 record.get("title", ""),
                 items,
-                source=source,
+                source=stored_source if isinstance(stored_source, str) and stored_source else source,
                 session_ref=session_ref,
                 deferred_reason=deferred_reason,
                 template=stored_template,

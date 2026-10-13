@@ -213,12 +213,14 @@ class FenceShapeTest(unittest.TestCase):
         # remaining items or say which stay open and why" onto the budgeted
         # side. Nothing was deleted to move it: the full rule below is within
         # one character of what it was, and the clause moved because it is
-        # the one the drive beside it already makes.
+        # the one the drive beside it already makes. 356 -> 342 when the first
+        # clause stopped naming omh_todo: the checklist may live in Hermes'
+        # todo_list, and naming one tool asked for the list in both.
         self.assertEqual(len(fence_omh_context(["X"])) - len("X"), 119)
         self.assertEqual(
             len(TODO_RECONCILIATION_RULE) - len(TODO_RECONCILIATION_RULE_FIRST_CLAUSE), 219
         )
-        self.assertEqual(len(TODO_RECONCILIATION_RULE), 356)
+        self.assertEqual(len(TODO_RECONCILIATION_RULE), 342)
 
 
 class FenceCannotBeClosedFromInsideTest(unittest.TestCase):
@@ -533,7 +535,7 @@ class ReconciliationTurnBudgetTest(_InjectionTestCase):
 
         context = self.context(user_message="")
 
-        self.assertIn("reconcile the checklist with omh_todo", context)
+        self.assertIn("reconcile the checklist:", context)
         self.assertIn("keep exactly one item active", context)
         self.assertNotIn("visible contradiction", context)
 

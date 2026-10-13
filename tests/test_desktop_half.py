@@ -433,6 +433,30 @@ SCENARIOS = {
             "display": {"line": "[omh] v2.0.5 | plugin:ready", "widget_lines": ["[OMH] idle"], "todo_lines": []},
         },
     },
+    # The plan above, held by Hermes' `todo_list` (`source: todo_list`): Hermes
+    # Desktop draws those items in its own composer status stack, so the pane
+    # keeps only the reason omh_todo recorded, or no PLAN section at all.
+    "native_held_waiting": {
+        "gateway": "open",
+        "stored": "20260924_101010_abc123",
+        "model": "openai/gpt-5.6",
+        "usage": None,
+        "data": {**ESTABLISHED_PAYLOAD, "todo": {**ESTABLISHED_PAYLOAD["todo"], "source": "todo_list"}},
+    },
+    "native_held_quiet": {
+        "gateway": "open",
+        "stored": "20260924_101010_abc123",
+        "model": "openai/gpt-5.6",
+        "usage": None,
+        "data": {
+            **ESTABLISHED_PAYLOAD,
+            "todo": {
+                **ESTABLISHED_PAYLOAD["todo"],
+                "source": "todo_list",
+                "items": [{key: value for key, value in item.items() if key != "blocked_reason"} for item in ESTABLISHED_PAYLOAD["todo"]["items"]],
+            },
+        },
+    },
     "reader_error": {
         "gateway": "open",
         "stored": None,
@@ -919,6 +943,21 @@ class DesktopPluginNodeTests(unittest.TestCase):
         # Nothing in the bar before the first answer, like the Kanban count.
         self.assertEqual(report["loading"]["byId"]["status"], [])
         self.assertEqual(report["gateway_closed"]["byId"]["status"], [])
+
+    def test_a_plan_todo_list_holds_keeps_only_its_recorded_reason(self) -> None:
+        pane = self._pane("native_held_waiting")
+        start = pane.index("PLAN")
+        end = pane.index("AGENTS")
+        self.assertEqual(pane[start:end], ["PLAN", "in todo_list", "1 waiting", "○", "Screenshot the result", "waiting: needs the app"])
+        self.assertNotIn("Draw the structured pane", pane)
+        # The same items under omh_todo still draw in full.
+        self.assertIn("Draw the structured pane", self._pane("open_with_payload"))
+
+    def test_a_plan_todo_list_holds_with_nothing_omh_only_has_no_plan_section(self) -> None:
+        pane = self._pane("native_held_quiet")
+        self.assertNotIn("PLAN", pane)
+        self.assertNotIn("Read the pane spec", pane)
+        self.assertIn("AGENTS", pane)
 
     def test_an_undeclared_todo_is_said_rather_than_invented(self) -> None:
         pane = self._pane("no_todo_declared")

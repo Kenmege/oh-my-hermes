@@ -682,14 +682,15 @@ class TuiWidgetPackTests(unittest.TestCase):
         # The Rule frame replaced the marginTop spacer: the docks carry the
         # classic composer frame, rules sitting tight against the input --
         # padding was tried at one and two rows and the owner picked none.
-        # Exactly five plain-rule renders: the dock-bottom opener plus the
+        # Exactly seven plain-rule renders: the dock-bottom opener plus the
         # four todo-panel closers (no plan, all done, the summary fallback a
-        # terminal too short for a checklist gets, and established). The
-        # badge that briefly dressed the top rule moved to the [Plan] header,
-        # so every rule is plain, byte-stable chrome again.
+        # terminal too short for a checklist gets, and established) and the
+        # two a todo_list-held plan closes with (nothing OMH-only, and its
+        # compact summary). The badge that briefly dressed the top rule moved
+        # to the [Plan] header, so every rule is plain, byte-stable chrome.
         self.assertIn("const Rule = ", widget)
         self.assertNotIn("Gap", widget)
-        self.assertEqual(widget.count("h(Rule, { columns, t })"), 5)
+        self.assertEqual(widget.count("h(Rule, { columns, t })"), 7)
         # Text, not chrome — changed on purpose a second time, by owner
         # direction after living with the bordered card: the OMH surface reads
         # like the host's own status line, dense text in the TUI's idiom. The
@@ -700,9 +701,11 @@ class TuiWidgetPackTests(unittest.TestCase):
         self.assertNotIn("borderStyle:", widget)
         self.assertNotIn("panelProps", widget)
         self.assertNotIn("color: '#", widget)
-        # The bracket tags are the shared grammar between the two docks.
+        # The bracket tags are the shared grammar between the two docks: the
+        # running and finished plan headers, and the compact one a
+        # todo_list-held plan gets.
         self.assertIn("'⚚ [OMH]'", widget)
-        self.assertEqual(widget.count("'[Plan]'"), 2)
+        self.assertEqual(widget.count("'[Plan]'"), 3)
         self.assertIn("const SEPARATOR = ' │ '", widget)
         self.assertNotIn("metricRow", widget)
         self.assertIn("...rows.map", widget)
@@ -1581,6 +1584,92 @@ class TodoPanelViewportBudgetTests(unittest.TestCase):
                 marked = [row for row in rows if "[•]" in row]
                 self.assertEqual(len(marked), 1, rows)
                 self.assertIn(f"Task number {active}", marked[0])
+
+
+@unittest.skipUnless(NODE, "node is not installed; the widget harness needs it")
+class TodoPanelNativeHeldPlanTests(unittest.TestCase):
+    """A plan Hermes' `todo_list` holds is not drawn a second time above the input.
+
+    The modern TUI mounts its own todo panel under the latest user message and
+    archives the list into the transcript at turn end (measured in the host's
+    `ui-tui` at v2026.9.7 and origin/main), so the dock keeps only what Hermes
+    cannot show: a reason omh_todo recorded on an open item, the stall
+    finding, the parallel-shot badge. Each case pairs with the same items
+    under `omh_todo`, which still draws in full, so the rule is the source and
+    not the items.
+    """
+
+    ITEMS = [
+        {"text": "land the fix", "state": "done"},
+        {"text": "open the PR", "state": "active"},
+        {"text": "watch CI", "state": "pending"},
+    ]
+
+    def _texts(self, items: list[dict], *, source: str, edit=None) -> list[str]:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            omh_home = root / "omh"
+            hermes_home = root / "hermes"
+            omh_home.mkdir()
+            hermes_home.mkdir()
+            write_todo(omh_home, build_todo_record("plan", items, source=source))
+            payload = read_omh_hud(omh_home, hermes_home)
+            if edit is not None:
+                edit(payload)
+            payload_file = root / "payload.json"
+            payload_file.write_text(json.dumps(payload), encoding="utf-8")
+            widget = root / "omh-status.mjs"
+            widget.write_bytes(widget_payload(Path(sys.executable)))
+            harness = root / "todo-harness.mjs"
+            harness.write_text(TODO_PANEL_HARNESS, encoding="utf-8")
+            completed = subprocess.run(
+                [NODE, str(harness), str(widget), str(payload_file), "120"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=120,
+                env={**os.environ, "HERMES_HOME": str(hermes_home), "HOME": str(root)},
+                cwd=str(root),
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertNotIn("error", result, result)
+            return [row["text"] for row in result["rows"]]
+
+    def test_with_nothing_omh_only_the_dock_is_the_frame_rule_alone(self) -> None:
+        native = self._texts(self.ITEMS, source="todo_list")
+        self.assertEqual(len(native), 1, native)
+        self.assertTrue(set(native[0]) == {"─"}, native)
+
+        declared = " ".join(self._texts(self.ITEMS, source="omh_todo"))
+        self.assertIn("open the PR", declared)
+        self.assertIn("[Plan] plan", declared)
+
+    def test_a_finished_native_plan_is_the_frame_rule_alone(self) -> None:
+        native = self._texts([dict(item, state="done") for item in self.ITEMS], source="todo_list")
+        self.assertEqual(len(native), 1, native)
+
+    def test_a_recorded_reason_stays_and_only_its_item_is_named(self) -> None:
+        items = [dict(item) for item in self.ITEMS]
+        items[2]["blocked_reason"] = "CI credentials"
+        native = self._texts(items, source="todo_list")
+
+        self.assertEqual(native[0], "[Plan] in todo_list │ 1 waiting")
+        self.assertEqual(native[1], "  [ ] watch CI (waiting: CI credentials)")
+        self.assertEqual(len(native), 3, native)
+        joined = " ".join(native)
+        self.assertNotIn("land the fix", joined)
+        self.assertNotIn("open the PR", joined)
+
+    def test_the_stall_finding_rides_the_compact_header(self) -> None:
+        def stalled(payload: dict) -> None:
+            payload["activity"] = {**payload["activity"], "post_tool_call_observed": True, "live": False}
+            payload["todo"]["stall"] = {**payload["todo"]["stall"], "status": "unchanged"}
+            payload["todo"]["updated_age_seconds"] = 900
+
+        native = self._texts(self.ITEMS, source="todo_list", edit=stalled)
+        self.assertEqual(native[0], "[Plan] in todo_list · unchanged 15m 0s")
+        self.assertNotIn("open the PR", " ".join(native))
 
 
 @unittest.skipUnless(NODE, "node is required to render the status dock")

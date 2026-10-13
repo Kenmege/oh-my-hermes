@@ -1541,6 +1541,29 @@ does not load TUI widget files, so this panel is a modern-TUI-only surface.
 merge evidence; an all-done list collapses to a single header line and a list
 untouched for 24 hours is hidden as stale.
 
+Hermes' own checklist tool, `todo_list`, reaches the same panel. Wherever it
+is present — in the session's tool list, or found through `tool_search` — it
+holds the steps, and the plugin's `post_tool_call` hook mirrors each
+successful `todo_list` write into the session's plan todo, so one plan shows
+whichever tool holds it and the model never writes the same list twice. A
+native `completed` is still a declaration, and a `cancelled` item shows as
+skipped. `omh_todo` then carries only what `todo_list` cannot: `plan_stage`
+on a planning run, the completion dossier, an item's `blocked_reason` and
+the plan's `deferred_reason`; on a plan `todo_list` holds, `todo_list`
+alone sets item states. A planning checklist awaiting acceptance and a
+`code-story` plan stay with `omh_todo` while open, and an accepted plan until
+it goes stale; a native write replaces none of them, `omh_todo action=clear`
+is how a session leaves one for unrelated work (a recorded `deferred_reason`
+only pauses it), and the session's next turn is told once when a `todo_list`
+write was not mirrored and the plan is still held and not deferred. Hermes draws a `todo_list` itself in the modern TUI
+(under the latest message, then archived into the transcript) and in Hermes
+Desktop (the composer's status stack), so for a plan `todo_list` holds the
+OMH panel above the prompt and the Desktop pane do not repeat its items: they
+show a compact "in todo_list" plan summary only when OMH knows something
+Hermes does not show — an item waiting on a recorded reason, a checklist
+unchanged past the stall threshold, or, in the TUI panel, a parallel-shot
+badge — and otherwise nothing beyond the TUI's frame rule.
+
 A plan may be declared from a named phase template instead of from phases the
 model writes out itself. `omh_todo` with `action=set` and
 `template: code-story` declares the ten phases of a code story — `I. Story`,

@@ -50,7 +50,7 @@ Then invoke the returned `native_action` through the ordinary Hermes tool loop. 
 
 - At most one `kanban_list` per turn boundary, scoped by `assignee` or `status`, never a polling loop.
 - One `kanban_show` per lane whose row changed state in that list.
-- One `omh_todo` item per board lane, updated from the readback pass and from nothing else; the item's text is the lane title plus the last observed status.
+- One item per board lane in the plan's one checklist tool (`todo_list` or `omh_todo`, never both), updated from the readback pass and from nothing else; the item's text is the lane title plus the last observed status.
 - Results arrive bounded and labelled by the readback pass. A `result` field is a worker's report, quoted as such; the parent never restates it as its own finding.
 
 The parent ends its turn after preparing lanes and re-enters on the next user turn or scheduled check. There is no wait, attach, retry, or amend verb for a board row: a row whose prompt was wrong is completed with a blocker summary and a new row is created with the corrected prompt.

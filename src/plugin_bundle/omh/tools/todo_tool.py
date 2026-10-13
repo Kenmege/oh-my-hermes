@@ -3,6 +3,7 @@ from __future__ import annotations
 from .. import runtime_paths
 
 import json
+from pathlib import Path
 from typing import Any
 
 from ..host_observation import (
@@ -12,6 +13,7 @@ from ..host_observation import (
     observe_plugin_tool_call,
 )
 from ..dispatch_outcomes import _parse_timestamp
+from ..native_tools import NATIVE_CANCELLED_REASON, NATIVE_TODO_TOOL, native_tool_presence_clause
 from ..orchestration_say import todo_say, with_say
 from ..runtime_reader import default_omh_home, read_omh_todo
 from ..todo_evidence import observed_calls
@@ -71,12 +73,25 @@ _COMPLETION_FIELDS = {
 # record, recall). This schema is sent with every request that carries the
 # tool, so it keeps the rules a model needs to drive the list to its stop
 # without that skill loaded, and not the reasons behind them.
+#
+# The second sentence is the one-checklist rule (`native_todo`): steps live in
+# exactly one tool. Hermes' native todo_list holds them wherever the presence
+# rule finds it, and OMH mirrors it into this record, so this tool is then
+# called only for what todo_list cannot say. A planning run, an accepted plan
+# (whose stage and `check:` items `omh_team` binds lanes to) and a code-story
+# template keep their steps here, because `plan_stage` and the template exist
+# only on this tool.
 OMH_TODO_SCHEMA = {
     "name": "omh_todo",
     "description": (
         "Declare, advance, clear, or read this session's metadata-only plan todo list, which the OMH HUD "
         "renders above the prompt; other sessions neither see nor overwrite it. "
-        "Declare it BEFORE starting engine work (todo init): numbered phases in delivery order covering setup, "
+        "Keep steps in ONE tool, never both: a planning run, an accepted plan or a code-story template keeps them here "
+        "(to leave one for unrelated work, clear it first; a deferred_reason only pauses it); "
+        f"otherwise, when {native_tool_presence_clause(NATIVE_TODO_TOOL)}, keep them in {NATIVE_TODO_TOOL} "
+        "(OMH mirrors each write into this plan) and call this tool only for checkpoint/record/recall, "
+        "blocked_reason, deferred_reason, or advancing a done item again after its check passes. "
+        "When steps live here, declare them BEFORE starting engine work (todo init): numbered phases in delivery order covering setup, "
         "implement/verify/deliver per work unit, independent review, and an evidence-and-cleanup close, "
         "one item per observable outcome. Keep exactly one item active and advance it as work completes. "
         "Items are plan declarations, never execution evidence. "
@@ -250,38 +265,8 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
             items = args.get("items")
             dropped: list[dict[str, str]] = []
             if isinstance(items, list):
-                # OMH binds items itself and ignores any binding the writer
-                # sent (`bind_done_items`). Each item is judged over its own
-                # window; a new item's opens at this write.
                 prior = read_todo_record(default_omh_home(), session_ref) or {}
-                now = todo_timestamp()
-                prior_stamp = prior.get("updated_at")
-                fallback_start = (
-                    prior_stamp
-                    if isinstance(prior_stamp, str) and _parse_timestamp(prior_stamp)
-                    else now
-                )
-                calls = (
-                    _calls_since(session_ref, _earliest_window(prior.get("items"), fallback_start), set(), now)
-                    if _declares_done(items)
-                    else []
-                )
-                # A binding no item of the new list continues is kept on the
-                # plan (`dropped_bindings`): a rename or a split must not carry
-                # work past the check that failed under its old name.
-                dropped = dropped_bindings(
-                    items,
-                    prior_items=prior.get("items"),
-                    prior_dropped=prior.get("dropped_bindings"),
-                    now=now,
-                )
-                items = bind_done_items(
-                    items,
-                    prior_items=prior.get("items"),
-                    calls=calls,
-                    fallback_start=fallback_start,
-                    now=now,
-                )
+                items, dropped = bind_declared_items(items, prior, session_ref)
             record = build_todo_record(
                 args.get("title", ""),
                 items,
@@ -310,7 +295,7 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
         # single-item path is a narrower way to reach one write, never a
         # second way to write a record.
         try:
-            _ = advance_todo_item(
+            advanced = advance_todo_item(
                 default_omh_home(),
                 item=args.get("item"),
                 item_text=args.get("item_text", ""),
@@ -324,6 +309,12 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
                 ),
             )
             payload["status"] = "written"
+            # On a plan todo_list holds the store keeps todo_list's state
+            # (`advance_todo_item`); a writer that asked for another one is
+            # told, rather than left to read "written" as the move it wanted.
+            kept = _state_kept(advanced, args.get("item"), args.get("state"))
+            if kept:
+                payload["state_kept"] = kept
         except TodoContendedError as error:
             payload["status"] = "contended"
             payload["error"] = str(error)
@@ -357,6 +348,85 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
     return json.dumps(attach_public_observation(payload, observation), sort_keys=True)
 
 
+def bind_declared_items(
+    items: list[Any],
+    prior: dict[str, Any],
+    session_ref: str,
+    *,
+    hermes_home: Path | None = None,
+) -> tuple[Any, list[dict[str, str]]]:
+    """``items`` bound the way a whole-list write binds them, and the plan's dropped bindings.
+
+    OMH binds items itself and ignores any binding the writer sent
+    (`bind_done_items`). Each item is judged over its own window; a new
+    item's opens at this write. A binding no item of the new list continues
+    is kept on the plan (`dropped_bindings`): a rename or a split must not
+    carry work past the check that failed under its old name.
+
+    Shared by `omh_todo action=set` and the native `todo_list` projection
+    (`native_todo`), so a done mark is judged the same way whichever tool
+    wrote it. ``prior`` is the stored record (``{}`` when none);
+    ``hermes_home`` is the host home whose session records name the calls,
+    resolved from the plugin binding when omitted.
+    """
+    now = todo_timestamp()
+    prior_stamp = prior.get("updated_at")
+    fallback_start = (
+        prior_stamp if isinstance(prior_stamp, str) and _parse_timestamp(prior_stamp) else now
+    )
+    calls = (
+        _calls_since(
+            session_ref,
+            _earliest_window(prior.get("items"), fallback_start),
+            set(),
+            now,
+            hermes_home=hermes_home,
+        )
+        if _declares_done(items)
+        else []
+    )
+    dropped = dropped_bindings(
+        items,
+        prior_items=prior.get("items"),
+        prior_dropped=prior.get("dropped_bindings"),
+        now=now,
+    )
+    bound = bind_done_items(
+        items,
+        prior_items=prior.get("items"),
+        calls=calls,
+        fallback_start=fallback_start,
+        now=now,
+    )
+    return bound, dropped
+
+
+# The record's states in the words todo_list uses, which are the ones the
+# model sees on a plan todo_list holds.
+_NATIVE_STATUS_OF_STATE = {"pending": "pending", "active": "in_progress", "done": "completed"}
+
+
+def _state_kept(record: object, item: object, requested: object) -> str:
+    """The note for an advance whose state todo_list kept, or ``""``."""
+    if not isinstance(record, dict) or record.get("source") != NATIVE_TODO_TOOL:
+        return ""
+    items = record.get("items")
+    if not isinstance(items, list) or isinstance(item, bool) or not isinstance(item, int):
+        return ""
+    if not 1 <= item <= len(items) or not isinstance(items[item - 1], dict):
+        return ""
+    entry = items[item - 1]
+    stored = entry.get("state")
+    if stored not in _NATIVE_STATUS_OF_STATE or stored == requested:
+        return ""
+    status = (
+        "cancelled"
+        if entry.get("blocked_reason") == NATIVE_CANCELLED_REASON
+        else _NATIVE_STATUS_OF_STATE[stored]
+    )
+    return f"todo_list sets item states on this plan; item {item} stays {status}"
+
+
 def _declares_done(items: object) -> bool:
     return isinstance(items, list) and any(
         isinstance(item, dict) and item.get("state") == "done" for item in items
@@ -364,7 +434,7 @@ def _declares_done(items: object) -> bool:
 
 
 def _calls_since(
-    session_ref: str, stamp: object, held: set[str], until: str
+    session_ref: str, stamp: object, held: set[str], until: str, *, hermes_home: Path | None = None
 ) -> list[dict[str, Any]]:
     """The calls this session recorded in ``(stamp, until]`` that ``held`` does not hold.
 
@@ -378,10 +448,11 @@ def _calls_since(
     end = _parse_timestamp(until)
     if start is None or end is None:
         return []
-    try:
-        hermes_home = runtime_paths.plugin_home(None, hermes=True)
-    except (runtime_paths.RuntimeBindingError, OSError, RuntimeError):
-        return []
+    if hermes_home is None:
+        try:
+            hermes_home = runtime_paths.plugin_home(None, hermes=True)
+        except (runtime_paths.RuntimeBindingError, OSError, RuntimeError):
+            return []
     return observed_calls(
         hermes_home,
         session_ref,

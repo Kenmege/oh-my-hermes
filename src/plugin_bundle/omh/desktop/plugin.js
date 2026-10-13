@@ -601,6 +601,39 @@ function PlanItem({ item, live, unchanged }) {
   )
 }
 
+// A plan whose steps Hermes' own `todo_list` holds (`native_todo`, the
+// reader's `source`; `NATIVE_TODO_SOURCE` in native_tools.py). Hermes Desktop
+// already draws that list in the composer's status stack -- a live Todos
+// group while the turn runs, and on origin/main a "previous todos" disclosure
+// after it (apps/desktop/src/app/chat/composer/status-stack/index.tsx, at
+// v2026.9.7 and origin/main). Drawing the same items in this pane was the
+// second checklist, so the section keeps only what Hermes cannot show: the
+// open items carrying a reason omh_todo recorded, and the reader's stall
+// finding. With neither, there is no PLAN section at all.
+export const NATIVE_TODO_SOURCE = 'todo_list'
+
+function NativeHeldPlanSection({ payload, todo }) {
+  const items = Array.isArray(todo.items) ? todo.items : []
+  const waiting = items.filter(item => item.state !== 'done' && reasonOf(item))
+  const unchanged =
+    todo.status === 'established' && todo.stall && todo.stall.status === 'unchanged' && Number.isFinite(todo.updated_age_seconds)
+      ? elapsedText(Math.max(0, todo.updated_age_seconds))
+      : ''
+  if (!waiting.length && !unchanged) return []
+  const activity = payload.activity || {}
+  const live = activity.post_tool_call_observed ? !!activity.live : true
+  const rows = waiting.map((item, index) => jsx(PlanItem, { item, live, unchanged }, `native-${index}`))
+  if (unchanged && !waiting.some(item => item.state === 'active')) rows.push(div('omh-pane-fold', `unchanged ${unchanged}`, 'native-unchanged'))
+  return [
+    jsx(
+      SectionHeader,
+      { label: 'PLAN', title: 'in todo_list', count: waiting.length ? `${waiting.length} waiting` : '', countClass: 'omh-pane-warn', column: 'plan' },
+      'plan-head'
+    ),
+    div('omh-pane-plan', rows, 'plan-body')
+  ]
+}
+
 function PlanSection({ payload }) {
   const todo = payload.todo || {}
   const declared = todo.status === 'established' || todo.status === 'all_done'
@@ -610,6 +643,7 @@ function PlanSection({ payload }) {
       jsx(PanelEmpty, { icon: 'checklist', title: 'No plan for this session', description: 'omh_todo declares one when a workflow starts.' }, 'plan-empty')
     ]
   }
+  if (todo.source === NATIVE_TODO_SOURCE) return NativeHeldPlanSection({ payload, todo })
   const counts = todo.counts || {}
   const total = Number(counts.total) || 0
   const done = Number(counts.done) || 0
