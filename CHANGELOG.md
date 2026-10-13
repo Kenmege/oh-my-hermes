@@ -22,13 +22,14 @@ All notable changes will be documented here.
   section, or component called AI slop keeps frontend first: it dispatches
   frontend or asks with frontend leading, unless a code unit (module,
   function, class, method, code) is named too, which puts the cleaner first.
-  Beside a slop word and one of those appearance words, the cleaner earns up
-  to two code and prose nouns (module, function, class, method, file, code,
-  codebase, README, docs, essay, post, letter, message, email, description) or
-  cleanup verbs (clean, simplify, dedupe, prune, better) back, so "this README
-  looks like ai slop" and "my essay looks like ai slop, make it better" ask
-  first with the cleaner leading, and prose that frontend's own words still
-  favor ("this slack message feels like ai slop, polish it") asks with
+  Where one of those appearance phrases is said whole (a bare "looks" or
+  "feels" does not count), the cleaner earns up to two code and prose nouns
+  (module, function, class, method, file, code, codebase, README, docs,
+  article, blog, copy, description, email, essay, letter, message, poem, post)
+  or cleanup verbs (clean, simplify, dedupe, prune, better) back, so "this
+  README looks like ai slop" and "my essay looks like ai slop, make it better"
+  ask first with the cleaner leading, and prose that frontend's own words
+  still favor ("this slack message feels like ai slop, polish it") asks with
   frontend leading instead of dispatching it; both skills still appear in that
   question, and the words alone earn the cleaner nothing. A no-edit review
   mode inspects a drafted cleanup against the six taxonomy categories and

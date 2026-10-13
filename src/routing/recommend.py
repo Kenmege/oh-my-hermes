@@ -4259,21 +4259,19 @@ def _score_definition(
         trigger_token_matches -= _ECOSYSTEM_IDENTITY_CONNECTOR_TRIGGER_NOISE
     # The cleaner's code and prose nouns and cleanup verbs
     # (`_SLOP_CLEANER_CONTEXT_TOKENS`) exist to answer frontend's appearance
-    # phrases, so they count only where one can compete: a slop word, an
-    # appearance word (`_SLOP_CLEANER_APPEARANCE_TOKENS`), and no UI surface
-    # unless a code unit is named beside it.
-    # "this module looks like ai slop" then leads with the cleaner, while
-    # "this pricing card looks like ai slop" and "the pricing card component
-    # file looks like ai slop" stay with frontend. Without an appearance word
-    # they earn nothing either, which keeps a mention from reaching dispatch
-    # strength ("the docs explain what ai slop is" is a clarify, not a
-    # dispatch), and without a slop word "the module failed to load" names no
-    # cleanup. `routing_tokens` splits `anti-slop` into `slop` too, so the
-    # gate needs no separate entry for it.
-    if (
-        definition.name == "ai-slop-cleaner"
-        and query_tokens & {"slop", "deslop"}
-        and query_tokens & _SLOP_CLEANER_APPEARANCE_TOKENS
+    # phrases, so they count only where one of those phrases is said whole
+    # (`_SLOP_CLEANER_APPEARANCE_PHRASES`) and no UI surface is named unless a
+    # code unit is named beside it. "this module looks like ai slop" then
+    # leads with the cleaner, while "this pricing card looks like ai slop" and
+    # "the pricing card component file looks like ai slop" stay with frontend.
+    # A bare appearance word does not open it: "the article about ai slop
+    # looks interesting" and "the ai slop looks better now" earn the cleaner
+    # no context words, so where the cleaner's own `ai slop` phrase is the
+    # only claim the sentence asks rather than dispatching. Without the
+    # phrase, a noun beside a slop word ("the docs explain what ai slop is")
+    # or alone ("the module failed to load") earns nothing either.
+    if definition.name == "ai-slop-cleaner" and contains_cue_phrase(
+        normalized_query, _SLOP_CLEANER_APPEARANCE_PHRASES
     ):
         if query_tokens & _SLOP_CLEANER_CODE_UNIT_TOKENS:
             context = query_tokens & (_SLOP_CLEANER_CONTEXT_TOKENS | _SLOP_CLEANER_UI_SURFACE_TOKENS)
@@ -4493,10 +4491,10 @@ _SLOP_CLEANER_CONTEXT_CAP = 2
 _SLOP_CLEANER_CODE_UNIT_TOKENS = frozenset(
     {"module", "modules", "function", "functions", "class", "classes", "method", "methods", "code", "codebase"}
 )
-# The words of frontend's appearance phrases that say how something seems
-# ("looks like ai slop"); `like` is left out because it is a preposition in
-# far more sentences than it is half of an appearance phrase.
-_SLOP_CLEANER_APPEARANCE_TOKENS = frozenset({"look", "looks", "feels", "screams"})
+# Frontend's appearance phrases (its own triggers), matched whole. Their words
+# alone are everyday ("looks better", "looks interesting"), so a token check
+# opened the context credit on sentences that only mention AI slop.
+_SLOP_CLEANER_APPEARANCE_PHRASES = ("looks like ai slop", "look like ai slop", "feels like ai slop", "screams ai slop")
 _PRODUCTION_AUDIT_CONTEXT_TOKENS = frozenset(
     {"audit", "readiness", "ready", "launch", "preflight", "checklist", "go-live", "rollback"}
 )

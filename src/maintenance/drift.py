@@ -426,7 +426,7 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The quoted/relay/URL masks (#2049) add five: a block-quoted
             # invocation, a relayed report, an arrow-relayed and a
             # sender-relayed invocation, and a workflow name in a URL path.
-            # The ai-slop-cleaner OMC parity work adds twenty-five, none of
+            # The ai-slop-cleaner OMC parity work adds thirty, none of
             # which may dispatch the cleaner: a question about what deslop
             # means, a subagent's quoted report, a plain "review this PR", and
             # anti-virus noise called slop (4); a code noun or cleanup verb with
@@ -443,8 +443,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # whether an anti-slop sweep finished, which dispatched without
             # `sweep` held back (1); and a Slack message that feels like AI
             # slop, which dispatched frontend before prose nouns joined the
-            # cleaner's context words (1).
-            expected=464,
+            # cleaner's context words (1); and five remarks about AI slop with
+            # a bare appearance word ("looks better", "looks interesting",
+            # "looks like this", "look the same"), which dispatched the cleaner
+            # while a token check opened its context words (5).
+            expected=469,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

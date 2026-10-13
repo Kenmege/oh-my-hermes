@@ -3722,8 +3722,8 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "ai-slop-cleaner",
     ),
     # A mention of AI slop in the docs, and a slop word beside a stack of code
-    # nouns, ask rather than dispatch: the context words count only beside an
-    # appearance word, and at most two of them count. The cleaner may still
+    # nouns, ask rather than dispatch: the context words count only beside a
+    # whole appearance phrase, and at most two of them count. The cleaner may still
     # lead the question, so neither names a forbidden candidate.
     RoutingPrecisionCase(
         "docs-explain-ai-slop-stays-a-clarify",
@@ -3760,8 +3760,50 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
     ),
+    # A bare appearance word is not frontend's appearance phrase: "looks
+    # better", "looks interesting", "look the same" said about AI slop open no
+    # context words for the cleaner, so its own `ai slop` phrase asks rather
+    # than dispatching. Each of these dispatched while a token check opened
+    # the context credit. The cleaner still leads the question, so none names
+    # a forbidden candidate.
+    RoutingPrecisionCase(
+        "ai-slop-looks-better-now-stays-a-clarify",
+        "AI slop that looks better now is a remark, not a cleanup request",
+        "the ai slop looks better now",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "article-about-ai-slop-looks-interesting-stays-a-clarify",
+        "An article about AI slop that looks interesting is a remark, not a cleanup request",
+        "the article about ai slop looks interesting",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "ai-slop-looks-like-this-stays-a-clarify",
+        "Describing what AI slop looks like is not a cleanup request",
+        "ai slop looks like this: generic emails and blog posts",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "ai-slop-getting-better-question-stays-a-clarify",
+        "Asking whether AI slop is getting better is a question, not a cleanup request",
+        "is ai slop getting better? the posts all look the same",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "readme-about-ai-slop-looks-interesting-stays-a-clarify",
+        "A README about AI slop that looks interesting is a remark, not a cleanup request",
+        "the README about ai slop looks interesting",
+        "answer_clarification",
+        "",
+    ),
     # An appearance word beside a code noun is not a slop request either:
-    # without a slop word the cleaner's context words earn nothing.
+    # without a whole appearance phrase the cleaner's context words earn
+    # nothing.
     RoutingPrecisionCase(
         "function-looks-clean-does-not-name-slop-cleaner",
         "A function that looks clean is praise, not a cleanup request",
@@ -8958,7 +9000,7 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_frontend_handoff",
         "frontend_handoff",
     ),
-    # Code and prose nouns beside a slop word and an appearance word put the
+    # Code and prose nouns beside a whole appearance phrase put the
     # cleaner back in the lead over frontend's appearance phrases (owner
     # decision, 2026-10-12). Where both skills say one phrase each, the first
     # three stay a clarify with the cleaner first: a code noun alone does not
