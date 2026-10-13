@@ -156,6 +156,25 @@ def _manifest_describes(manifest: dict | None, skills_dir: Path) -> bool:
 # travels with the record instead.
 HERMES_EDIT_RECORD_KEY = "hermes_edit"
 HERMES_EDIT_EVIDENCE_KEYS = ("actor", "ts", "action", "ledger")
+# The render mark: the manifest record of a SKILL.md an install itself wrote
+# carries the hash it wrote, and the manifest says that its records carry such
+# marks. The manifest records every SKILL.md under the pack, so a record alone
+# never proved OMH rendered a directory; the mark does, and only a marked
+# record whose SKILL.md still has that hash may be pruned. A manifest written
+# before marks existed has no flag and is pruned by the rule it was written
+# under, once, after which the rewritten manifest carries marks.
+RENDER_MARK_KEY = "rendered_sha256"
+RENDER_MARKS_FLAG = "render_marks"
+# Every reason a pruner leaves a candidate directory in place. Each has its own
+# summary line; the install result carries the reason itself.
+PRUNE_SKIP_REASONS = (
+    "not_rendered_by_omh",
+    "changed_since_rendered",
+    "not_an_omh_layout",
+    "outside_the_skills_directory",
+    "category_directory",
+    "same_directory_as_a_rendered_skill",
+)
 
 
 def hermes_edited_skills(
@@ -248,7 +267,7 @@ def hermes_edited_skills(
         evidence = record.get(HERMES_EDIT_RECORD_KEY)
         if not (isinstance(evidence, dict) and not skill_file_changed):
             if skill_file_changed:
-                write = newest_write_to(skill_file, pack_writes)
+                write = newest_write_to(skill_file.parent, "SKILL.md", pack_writes)
                 if write is None or not write_still_on_disk(write):
                     continue
             else:
@@ -592,6 +611,7 @@ def install_skill_pack(
             template for template in reference_templates if template.skill_name in refreshable
         ]
     manifest = read_manifest(paths.manifest_path)
+    recorded_manifest = manifest
     # Read against the pack the manifest describes, before the check below
     # drops a manifest that describes another generation: that pack is where
     # a Hermes edit sits on a staged update, and it would otherwise be left
@@ -684,9 +704,18 @@ def install_skill_pack(
         _write_skill_reference(paths.skills_dir, template, force=force, managed=managed)
     _carry_kept_skills(paths.skills_dir, kept.values())
     # The pruners act only on what the prior manifest records, so leaving a
-    # kept skill out of the copy they read is what keeps them off it.
+    # kept skill, and an edit reported as left behind, out of the copy they
+    # read is what keeps them off both: "stays" has to be true, with or
+    # without `--force`.
     prune_manifest = (
-        {**manifest, "skills": [record for record in manifest.get("skills", []) if record.get("path") not in kept]}
+        {
+            **manifest,
+            "skills": [
+                record
+                for record in manifest.get("skills", [])
+                if record.get("path") not in kept and record.get("path") not in left_behind
+            ],
+        }
         if manifest
         else None
     )
@@ -702,12 +731,18 @@ def install_skill_pack(
         {template.name for template in all_templates},
         force=force,
     )
+    prune_skipped = prune_skipped + flat_layout["skipped"]
     _remove_empty_category_directories(paths.skills_dir)
     records = skill_records(paths.skills_dir, source)
     manifest_data = new_manifest(source, paths.skills_dir, records)
     for record in manifest_data["skills"]:
         if record["path"] in kept:
             record[HERMES_EDIT_RECORD_KEY] = {key: kept[record["path"]][key] for key in HERMES_EDIT_EVIDENCE_KEYS}
+    _write_render_marks(
+        manifest_data,
+        recorded_manifest,
+        rendered_paths={f"{skill_install_relative_dir(template.name).as_posix()}/SKILL.md" for template in templates},
+    )
     if hermes_edited:
         manifest_data["hermes_edited_skills"] = hermes_edited
     if missing:
@@ -724,6 +759,83 @@ def install_skill_pack(
     manifest_data = _carry_installed_at_when_nothing_moved(manifest, manifest_data)
     write_manifest(paths.manifest_path, manifest_data)
     return manifest_data
+
+
+def _write_render_marks(manifest_data: dict, previous: dict | None, *, rendered_paths: set[str]) -> None:
+    """Mark the records this install rendered, carry the marks it did not touch, and flag the manifest.
+
+    A record this install wrote carries the hash now on disk, which is the
+    hash it wrote. Any other record keeps the mark the previous manifest held
+    for that path -- a kept skill, a skill the profile did not refresh, a
+    retired skill not yet pruned -- so its mark still names what OMH last
+    wrote there, not what the directory holds today. A record with neither is
+    a directory OMH did not render and gets no mark.
+    """
+    carried = _render_marks(previous)
+    for record in manifest_data["skills"]:
+        path = str(record.get("path", ""))
+        if path in rendered_paths:
+            record[RENDER_MARK_KEY] = record["sha256"]
+        elif path in carried:
+            record[RENDER_MARK_KEY] = carried[path]
+    manifest_data[RENDER_MARKS_FLAG] = True
+
+
+def _carry_record_provenance(manifest_data: dict, previous: dict) -> None:
+    """Carry render marks and kept-edit evidence into a manifest rewritten without rendering."""
+    carried = _render_marks(previous)
+    evidence = {
+        str(record.get("path", "")): record
+        for record in previous.get("skills", [])
+        if isinstance(record, dict) and isinstance(record.get(HERMES_EDIT_RECORD_KEY), dict)
+    }
+    for record in manifest_data["skills"]:
+        path = str(record.get("path", ""))
+        if path in carried:
+            record[RENDER_MARK_KEY] = carried[path]
+        kept = evidence.get(path)
+        if kept is not None and kept.get("sha256") == record.get("sha256"):
+            record[HERMES_EDIT_RECORD_KEY] = dict(kept[HERMES_EDIT_RECORD_KEY])
+    if previous.get(RENDER_MARKS_FLAG):
+        manifest_data[RENDER_MARKS_FLAG] = True
+
+
+def _render_marks(manifest: dict | None) -> dict[str, str]:
+    return {
+        str(record.get("path", "")): str(record[RENDER_MARK_KEY])
+        for record in (manifest or {}).get("skills", [])
+        if isinstance(record, dict) and isinstance(record.get(RENDER_MARK_KEY), str) and record[RENDER_MARK_KEY]
+    }
+
+
+def _render_mark_refusal(record: dict, skill_file: Path) -> str:
+    """Why a record of a marked manifest may not be pruned, or "" when it may.
+
+    Only a record carrying the render mark whose SKILL.md still has the hash
+    OMH wrote is OMH's to delete.
+    """
+    mark = record.get(RENDER_MARK_KEY)
+    if not isinstance(mark, str) or not mark:
+        return "not_rendered_by_omh"
+    try:
+        unchanged = skill_file.is_file() and sha256_file(skill_file) == mark
+    except OSError:
+        unchanged = False
+    return "" if unchanged else "changed_since_rendered"
+
+
+def _holds_other_skills(directory: Path, category_dirs: list[Path]) -> bool:
+    """Whether removing `directory` would take skills other than its own with it.
+
+    A category directory of this catalog, under any spelling, or any directory
+    with a SKILL.md somewhere below its own.
+    """
+    if any(same_directory(directory, category_dir) for category_dir in category_dirs):
+        return True
+    try:
+        return any(skill_file.parent != directory for skill_file in directory.rglob("SKILL.md"))
+    except OSError:
+        return True
 
 
 def _carry_installed_at_when_nothing_moved(previous: dict | None, current: dict) -> dict:
@@ -787,15 +899,22 @@ def _prune_flat_layout_skill_directories(
     The safety rules match `_prune_orphaned_skills`: remove only a directory that
     is (a) named after a catalog skill under either spelling, (b) recorded in the
     prior manifest at its flat path, (c) already replaced by a categorized
-    directory holding a SKILL.md, and (d) byte-identical to what the manifest
-    recorded. Anything a user edited is kept and reported instead, unless
-    ``force``.
+    directory holding a SKILL.md, and (d) OMH's to delete. Under a manifest
+    that carries render marks, (d) means the record carries the mark and the
+    SKILL.md still has the hash OMH wrote; anything else is returned in
+    `skipped` with the reason, `--force` or not. Under a manifest written
+    before marks existed, (d) is the rule it was written under: byte-identical
+    to what the manifest recorded, with anything a user edited kept and
+    reported in `retained` unless ``force``.
     """
     if not manifest:
-        return {"removed": [], "retained": []}
+        return {"removed": [], "retained": [], "skipped": []}
     modified = set(local_modifications(manifest, skills_dir))
-    recorded_paths = {
-        str(record.get("path", "")) for record in manifest.get("skills", []) if record.get("path")
+    marked = bool(manifest.get(RENDER_MARKS_FLAG))
+    records_by_path = {
+        str(record.get("path", "")): record
+        for record in manifest.get("skills", [])
+        if isinstance(record, dict) and record.get("path")
     }
     canonical_by_directory: dict[str, str] = {}
     for name in sorted(catalog_names):
@@ -804,6 +923,7 @@ def _prune_flat_layout_skill_directories(
     categories = {skill_install_relative_dir(name).parts[0] for name in catalog_names}
     removed: list[str] = []
     retained: list[str] = []
+    skipped: list[dict] = []
     for entry in sorted(skills_dir.iterdir(), key=lambda item: item.name):
         if not entry.is_dir() or entry.is_symlink():
             continue
@@ -815,19 +935,25 @@ def _prune_flat_layout_skill_directories(
             # Not a catalog skill; `_prune_orphaned_skills` owns that decision.
             continue
         rel = f"{entry.name}/SKILL.md"
-        if rel not in recorded_paths:
+        record = records_by_path.get(rel)
+        if record is None:
             # Nothing in the manifest explains this file, so OMH did not install it.
             continue
         if not (skills_dir / skill_install_relative_dir(canonical) / "SKILL.md").is_file():
             # Nothing to fall back on yet; never leave the skill uninstalled.
             retained.append(canonical)
             continue
-        if rel in modified and not force:
+        if marked:
+            reason = _render_mark_refusal(record, entry / "SKILL.md")
+            if reason:
+                skipped.append({"name": canonical, "path": rel, "reason": reason})
+                continue
+        elif rel in modified and not force:
             retained.append(canonical)
             continue
         _remove_flat_skill_payload(entry, is_category_dir=entry.name in categories)
         removed.append(canonical)
-    return {"removed": sorted(removed), "retained": sorted(retained)}
+    return {"removed": sorted(removed), "retained": sorted(retained), "skipped": skipped}
 
 
 def _remove_flat_skill_payload(entry: Path, *, is_category_dir: bool) -> None:
@@ -925,52 +1051,77 @@ def _prune_orphaned_skills(
 
     ``catalog_names`` must be the FULL ``builtin_skill_templates()`` catalog, never the
     profile-filtered install set, so a full->core reinstall does not shed full-only skills.
-    A dir is pruned only when it is (a) recorded in the prior manifest, (b) absent from the
-    full catalog, and (c) sha-unmodified vs. the manifest; user-modified dirs are kept unless
-    ``force``. Removed directory names are returned so the caller can surface them.
+    Removed directory names are returned first; every candidate left in place is returned
+    second with the reason.
 
-    The manifest records every SKILL.md under the pack, not only what OMH rendered, so a
-    record alone does not make a directory OMH's to delete. Two more conditions hold, and a
-    record failing either is returned in the second list instead of pruned: (d) the directory
-    sits where an OMH release renders skills (`omh_layout_dir`), which a person's renamed copy
-    in a folder of their own does not; (e) it resolves inside the skills directory, so a
-    recorded path that climbs out, or a link that leads out, is never followed; and (f) it is
-    not, under another spelling, a directory this catalog renders a skill into. On a
-    case-insensitive filesystem a render directory renamed to another letter case was
-    recorded under a name the catalog does not ship, and pruning it deleted the skill the
-    same install had just rendered there.
+    The rule is provenance. The manifest records every SKILL.md under the pack, not only
+    what OMH rendered, so a record alone never made a directory OMH's to delete.
+
+    - Under a manifest that carries render marks (`RENDER_MARKS_FLAG`): a directory is
+      pruned only when its record (a) names a skill absent from the full catalog, (b)
+      carries the render mark, and (c) its SKILL.md still has the hash OMH wrote. A record
+      without the mark is a directory an install merely found (`not_rendered_by_omh`); a
+      marked one whose SKILL.md changed is someone's work now (`changed_since_rendered`).
+      ``force`` does not change either.
+    - Under a manifest written before marks existed: the rule it was written under. (a),
+      plus sha-unmodified vs. the manifest record unless ``force``. This is what lets a
+      retired skill be cleaned up once; the manifest this install writes carries marks.
+
+    Whichever rule admitted the record, these still hold, as defence in depth: the
+    directory sits where an OMH release renders skills (`omh_layout_dir`); it resolves
+    strictly inside the skills directory; it is not a category directory or any directory
+    holding other skills below it (a stray `guide/SKILL.md` must never take the category
+    with it); and it is not, under another spelling, a directory this catalog renders a
+    skill into (a case-insensitive filesystem).
     """
     if not manifest:
         return [], []
     modified = set(local_modifications(manifest, skills_dir))
+    marked = bool(manifest.get(RENDER_MARKS_FLAG))
     categories = render_categories(catalog_names)
     real_skills_dir = os.path.realpath(skills_dir)
+    category_dirs = [skills_dir / category for category in sorted(categories)]
     render_dirs = [skills_dir / skill_install_relative_dir(catalog_name) for catalog_name in sorted(catalog_names)]
     removed: list[str] = []
     skipped: list[dict] = []
+
+    def skip(record_name: object, record_path: object, reason: str) -> None:
+        skipped.append({"name": str(record_name), "path": str(record_path), "reason": reason})
+
     for record in manifest.get("skills", []):
         name = record.get("name")
         rel = record.get("path")
         if not name or not rel or name in catalog_names:
             continue
-        if str(rel) in modified and not force:
+        if marked and not isinstance(record.get(RENDER_MARK_KEY), str):
+            skip(name, rel, "not_rendered_by_omh")
+            continue
+        if not marked and str(rel) in modified and not force:
             continue
         # The manifest-recorded path, not the catalog name: the two differ under
         # both the display-label and the category layout, and only the recorded
         # path names the directory that actually exists.
         relative = omh_layout_dir(str(rel), categories)
         if relative is None:
-            skipped.append({"name": str(name), "path": str(rel), "reason": "not_an_omh_layout"})
+            skip(name, rel, "not_an_omh_layout")
             continue
         target_dir = skills_dir / relative
-        if not target_dir.is_dir() or target_dir.is_symlink() or target_dir == skills_dir:
+        if not target_dir.is_dir() or target_dir.is_symlink() or same_directory(target_dir, skills_dir):
             continue
         if not _strictly_inside(os.path.realpath(target_dir), real_skills_dir):
-            skipped.append({"name": str(name), "path": str(rel), "reason": "outside_the_skills_directory"})
+            skip(name, rel, "outside_the_skills_directory")
+            continue
+        if _holds_other_skills(target_dir, category_dirs):
+            skip(name, rel, "category_directory")
             continue
         if any(same_directory(target_dir, render_dir) for render_dir in render_dirs):
-            skipped.append({"name": str(name), "path": str(rel), "reason": "same_directory_as_a_rendered_skill"})
+            skip(name, rel, "same_directory_as_a_rendered_skill")
             continue
+        if marked:
+            reason = _render_mark_refusal(record, target_dir / "SKILL.md")
+            if reason:
+                skip(name, rel, reason)
+                continue
         shutil.rmtree(target_dir)
         removed.append(name)
     return removed, skipped
@@ -1302,6 +1453,9 @@ def reconcile_skill_profile(
     source = str(manifest.get("source") or "builtin")
     records = skill_records(paths.skills_dir, source)
     manifest_data = new_manifest(source, paths.skills_dir, records)
+    # Reconcile renders nothing, so every mark and every kept-edit record it
+    # writes is one the manifest it replaces already held.
+    _carry_record_provenance(manifest_data, manifest)
     manifest_data["skill_profile"] = target_profile
     manifest_data["reconciled_skills"] = removed
     manifest_data["skill_profile_state"] = skill_profile_state(paths.skills_dir, manifest_data)

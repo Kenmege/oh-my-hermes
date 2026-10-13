@@ -94,7 +94,7 @@ from ..installer import (
     uninstall_skill_pack,
 )
 from ..local_store import atomic_write_text
-from ..install.installer import DEFAULT_SKILL_PROFILE, SKILL_PROFILES
+from ..install.installer import DEFAULT_SKILL_PROFILE, PRUNE_SKIP_REASONS, SKILL_PROFILES
 from ..manifest import read_manifest
 from .update_change_note import record_update_change_note, update_change_note_lines
 from ..menubar_app import is_managed_menubar_install, setup_menubar_app, uninstall_menubar_app
@@ -4875,7 +4875,11 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
     prune_skipped = payload.get("prune_skipped_skills")
     for item in prune_skipped if isinstance(prune_skipped, list) else []:
         if isinstance(item, dict):
-            line = tr(language, "prune_skipped_line", name=item.get("name", ""), path=item.get("path", ""))
+            # One line per reason: a directory left because it is not OMH's and
+            # one left because it IS the render directory are opposite facts.
+            reason = str(item.get("reason", ""))
+            key = f"prune_skipped_{reason}_line" if reason in PRUNE_SKIP_REASONS else "prune_skipped_line"
+            line = tr(language, key, name=item.get("name", ""), path=item.get("path", ""), reason=reason)
             print(_color(f"  {line}", "1;33", use_color))
     profile_state = payload.get("skill_profile_state")
     if isinstance(profile_state, dict) and profile_state.get("retained_exception"):

@@ -337,18 +337,32 @@ beside a ledgered change to another file, still stops the update until you
 resolve it or pass `--force`. A managed skill whose `SKILL.md` is gone is
 rendered again and named in the summary, unless the recorded skill profile
 leaves it out; `omh doctor` reports either case under
-`missing_managed_skills`, with no `--force` advice. A directory recorded under
-a name the catalog no longer ships is removed, when unchanged, only where OMH
-renders skills (the top level of the skills directory or one of its category
-directories), only when it resolves inside the skills directory, and never
+`missing_managed_skills`, with no `--force` advice. The OMH plugin refuses
+Hermes' edits and deletes of managed skills in the first place and points the
+model at a separately named skill or the workflow-learning lane instead, and
+`omh doctor` reports what the ledger records under OMH-managed skills under
+`hermes_skill_edits`.
+
+OMH removes a skill directory only when it can show that it rendered it. Each
+install marks the manifest record of every `SKILL.md` it wrote with the hash
+it wrote, and flags the manifest as carrying such marks. Under a flagged
+manifest, a directory is removed (a skill the catalog no longer ships, or a
+leftover top-level copy from the pre-category layout) only when its record
+carries the mark and its `SKILL.md` still has that hash; `--force` does not
+change this. Everything else is left in place and listed under
+`prune_skipped_skills` with a reason: `not_rendered_by_omh` for a directory an
+install merely found, such as your own skill in a category directory or a
+renamed copy beside a managed skill, and `changed_since_rendered` for one that
+was edited after OMH wrote it. A manifest written before marks existed is
+handled once more by the earlier rule (an unchanged record at the top level or
+in a category directory, inside the skills directory; `--force` also removes a
+changed one), and the manifest that install writes carries marks from then on.
+Under either rule a directory is never removed when it resolves outside the
+skills directory, when it is a category directory or holds other skills, or
 when it is, under another spelling, a directory OMH renders a skill into (a
 render directory renamed to another letter case on a case-insensitive
-filesystem); anywhere else, such as a renamed copy in a folder of your own, it
-is left in place and listed under `prune_skipped_skills`. The OMH plugin refuses Hermes' edits and
-deletes of managed skills in the first place and points the model at a
-separately named skill or the workflow-learning lane instead, and `omh doctor`
-reports what the ledger records under OMH-managed skills under
-`hermes_skill_edits`.
+filesystem). An edit reported as left behind is likewise never removed, with
+or without `--force`.
 
 Plugin reinstalls protect local additions as well as edits to managed files.
 If `$HERMES_HOME/plugins/omh/` contains entries absent from its installed OMH

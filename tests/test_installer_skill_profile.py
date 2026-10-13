@@ -15,6 +15,7 @@ from omh.core.errors import OmhError
 from omh.hashutil import sha256_file
 from omh.install.guidance_projection import catalog_revision
 from omh.installer import (
+    RENDER_MARK_KEY,
     install_skill_pack,
     installed_skill_names,
     reconcile_skill_profile,
@@ -300,7 +301,10 @@ class InstallerSkillProfileTests(unittest.TestCase):
             install_skill_pack(paths)
 
             # Simulate a managed skill that the catalog no longer ships: write a
-            # dir + record it in the manifest with a matching (unmodified) sha.
+            # dir + record it in the manifest with a matching (unmodified) sha
+            # and the render mark an install puts on what it wrote. Without the
+            # mark the record is a directory OMH merely found, never pruned
+            # (tests/test_managed_skill_ownership.py, RenderMarkPruneTests).
             orphan_dir = paths.skills_dir / "legacy-orphan-skill"
             orphan_file = orphan_dir / "SKILL.md"
             orphan_dir.mkdir(parents=True, exist_ok=True)
@@ -314,6 +318,7 @@ class InstallerSkillProfileTests(unittest.TestCase):
                     "path": "legacy-orphan-skill/SKILL.md",
                     "sha256": sha256_file(orphan_file),
                     "source": "builtin",
+                    RENDER_MARK_KEY: sha256_file(orphan_file),
                 }
             )
             write_manifest(paths.manifest_path, manifest)

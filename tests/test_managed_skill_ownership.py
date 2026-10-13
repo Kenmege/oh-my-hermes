@@ -51,13 +51,22 @@ from _local_package import load_local_package
 load_local_package()
 
 from omh.commands import setup as setup_commands
+from omh.commands.language import MESSAGES
 from omh.core.errors import OmhError
 from omh.hashutil import sha256_file
 from omh.install import installer
 from omh.install import manifest as manifest_module
 from omh.install.config_adapter import memory_provider_selection, skill_create_dir_selection
 from omh.install.curator_ledger import CURATOR_LEDGER_RELATIVE_PATH, read_ledger_writes
-from omh.install.installer import HERMES_EDIT_RECORD_KEY, install_skill_pack, skill_install_relative_dir
+from omh.install.installer import (
+    HERMES_EDIT_RECORD_KEY,
+    PRUNE_SKIP_REASONS,
+    RENDER_MARK_KEY,
+    RENDER_MARKS_FLAG,
+    install_skill_pack,
+    reconcile_skill_profile,
+    skill_install_relative_dir,
+)
 from omh.maintenance import doctor as doctor_module
 from omh.maintenance.doctor import run_doctor
 from omh.manifest import read_manifest, same_directory
@@ -130,6 +139,25 @@ class _Home(unittest.TestCase):
         with skill_file.open("a", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
         _append_ledger(self.paths.hermes_home, _ledger_row(skill_file, before=before, **row))
+
+    def edit_manifest(self, edit=None, *, legacy: bool = False) -> dict:
+        """Rewrite the manifest; `legacy` makes it one written before render marks existed."""
+        manifest = read_manifest(self.paths.manifest_path)
+        if edit is not None:
+            edit(manifest)
+        if legacy:
+            manifest.pop(RENDER_MARKS_FLAG, None)
+            for record in manifest["skills"]:
+                record.pop(RENDER_MARK_KEY, None)
+        self.paths.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        return manifest
+
+    def own_skill(self, relative: str, *, content: str = "---\nname: mine\n---\nmy own skill\n") -> Path:
+        directory = self.paths.skills_dir / relative
+        directory.mkdir(parents=True)
+        (directory / "SKILL.md").write_text(content, encoding="utf-8")
+        (directory / "notes.md").write_text("my notes\n", encoding="utf-8")
+        return directory
 
     def store_blob(self, path: Path) -> None:
         """Keep a file's content where Hermes keeps it: `.curator_backups/blobs/<sha256>`."""
@@ -695,9 +723,18 @@ class InstallerKeepsHermesEditTests(_Home):
         self.assertEqual(result["pruned_skills"], [])
         self.assertEqual(
             result["prune_skipped_skills"],
-            [{"name": "omh-routing-old", "path": "my-backups/omh-routing-old/SKILL.md", "reason": "not_an_omh_layout"}],
+            [{"name": "omh-routing-old", "path": "my-backups/omh-routing-old/SKILL.md", "reason": "not_rendered_by_omh"}],
         )
-        self.assertIn("Left omh-routing-old at my-backups/omh-routing-old/SKILL.md in place", self._summary(result))
+        self.assertIn(
+            "Left omh-routing-old at my-backups/omh-routing-old/SKILL.md in place: OMH did not render it",
+            self._summary(result),
+        )
+        # A manifest written before render marks existed still spares it, by
+        # where it sits.
+        self.edit_manifest(legacy=True)
+        legacy = install_skill_pack(self.paths, profile="core")
+        self.assertTrue((copy / "personal.md").is_file())
+        self.assertEqual([item["reason"] for item in legacy["prune_skipped_skills"]], ["not_an_omh_layout"])
 
     def test_a_plain_install_never_prunes_through_a_record_path_that_leaves_the_pack(self) -> None:
         install_skill_pack(self.paths, profile="core")
@@ -705,22 +742,26 @@ class InstallerKeepsHermesEditTests(_Home):
         outside.mkdir(parents=True)
         (outside / "SKILL.md").write_text("victim\n", encoding="utf-8")
         (outside / "precious.txt").write_text("precious\n", encoding="utf-8")
-        manifest = read_manifest(self.paths.manifest_path)
-        manifest["skills"].append(
-            {
-                "name": "victim",
-                "path": os.path.relpath(outside / "SKILL.md", self.paths.skills_dir).replace(os.sep, "/"),
-                "sha256": sha256_file(outside / "SKILL.md"),
-                "source": "builtin",
-            }
-        )
-        self.paths.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        record = {
+            "name": "victim",
+            "path": os.path.relpath(outside / "SKILL.md", self.paths.skills_dir).replace(os.sep, "/"),
+            "sha256": sha256_file(outside / "SKILL.md"),
+            "source": "builtin",
+            # Even a record that claims OMH rendered it.
+            RENDER_MARK_KEY: sha256_file(outside / "SKILL.md"),
+        }
+        for legacy in (False, True):
+            with self.subTest(legacy=legacy):
+                self.edit_manifest(lambda manifest: manifest["skills"].append(dict(record)), legacy=legacy)
 
-        result = install_skill_pack(self.paths, profile="core")
+                result = install_skill_pack(self.paths, profile="core")
 
-        self.assertTrue((outside / "precious.txt").is_file())
-        self.assertEqual(result["pruned_skills"], [])
-        self.assertEqual([item["name"] for item in result["prune_skipped_skills"]], ["victim"])
+                self.assertTrue((outside / "precious.txt").is_file())
+                self.assertEqual(result["pruned_skills"], [])
+                self.assertEqual(
+                    [(item["name"], item["reason"]) for item in result["prune_skipped_skills"]],
+                    [("victim", "not_an_omh_layout")],
+                )
 
     def test_the_pruner_never_follows_a_category_link_out_of_the_pack(self) -> None:
         install_skill_pack(self.paths, profile="core")
@@ -732,16 +773,17 @@ class InstallerKeepsHermesEditTests(_Home):
         orphan = outside / "legacy-orphan-skill"
         orphan.mkdir()
         (orphan / "SKILL.md").write_text("# someone else's\n", encoding="utf-8")
-        manifest = read_manifest(self.paths.manifest_path)
-        manifest["skills"].append(
-            {
-                "name": "legacy-orphan-skill",
-                "path": f"{category.name}/legacy-orphan-skill/SKILL.md",
-                "sha256": sha256_file(orphan / "SKILL.md"),
-                "source": "builtin",
-            }
+        self.edit_manifest(
+            lambda manifest: manifest["skills"].append(
+                {
+                    "name": "legacy-orphan-skill",
+                    "path": f"{category.name}/legacy-orphan-skill/SKILL.md",
+                    "sha256": sha256_file(orphan / "SKILL.md"),
+                    "source": "builtin",
+                    RENDER_MARK_KEY: sha256_file(orphan / "SKILL.md"),
+                }
+            )
         )
-        self.paths.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
         result = install_skill_pack(self.paths, profile="core")
 
@@ -828,6 +870,55 @@ class InstallerKeepsHermesEditTests(_Home):
         self.assertIn("kept edit", (moved / "SKILL.md").read_text(encoding="utf-8"))
         self.assertFalse((second.skills_dir / "former-category").exists())
 
+    def flat_position(self) -> Path:
+        """Move the skill to the top-level position an earlier release rendered it at, record included."""
+        install_skill_pack(self.paths, profile="core")
+        render = self.skill_file().parent
+        flat = self.paths.skills_dir / render.name
+        render.rename(flat)
+        current = f"{skill_install_relative_dir(SKILL).as_posix()}/SKILL.md"
+
+        def move_record(manifest: dict) -> None:
+            for record in manifest["skills"]:
+                if record["path"] == current:
+                    record["path"] = f"{flat.name}/SKILL.md"
+
+        self.edit_manifest(move_record)
+        return flat
+
+    def test_a_left_behind_edit_at_the_top_level_really_stays(self) -> None:
+        # R4-2 / probe Q6a: reported as staying, then deleted by the
+        # flat-layout pruner in the same install.
+        flat = self.flat_position()
+        added = flat / "references" / "lessons.md"
+        added.write_text("lesson\n", encoding="utf-8")
+        _append_ledger(self.paths.hermes_home, _ledger_row(added, action="write_file"))
+
+        for force in (False, True):
+            with self.subTest(force=force):
+                result = install_skill_pack(self.paths, profile="core", force=force)
+                self.assertEqual(
+                    [(item["disposition"], item["path"]) for item in result["hermes_edited_skills"]],
+                    [("left_behind", f"{flat.name}/SKILL.md")],
+                )
+                self.assertTrue(added.is_file())
+                self.assertEqual(result["flat_layout_skills_removed"], [])
+                # The skill itself renders where this release renders it.
+                self.assertTrue(self.skill_file().is_file())
+                self.assertIn(f"stays at {flat.name}/SKILL.md", self._summary(result))
+
+    def test_a_left_behind_edit_to_skill_md_does_not_refuse_the_install(self) -> None:
+        # Probe Q6b: the edited SKILL.md differs from its record, and the
+        # ledger explains it, so it is reported rather than refused.
+        flat = self.flat_position()
+        self.hermes_patch(flat / "SKILL.md")
+        edited = (flat / "SKILL.md").read_bytes()
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertEqual([item["disposition"] for item in result["hermes_edited_skills"]], ["left_behind"])
+        self.assertEqual((flat / "SKILL.md").read_bytes(), edited)
+
     def test_force_names_the_files_it_removes_for_good(self) -> None:
         # Probe N9: a person's own file beside a Hermes-added one.
         install_skill_pack(self.paths, profile="core")
@@ -894,6 +985,260 @@ class InstallerKeepsHermesEditTests(_Home):
 
         self.assertEqual([item["disposition"] for item in result["hermes_edited_skills"]], ["kept"])
         self.assertEqual(self.paths.manifest_path.read_bytes(), before)
+
+
+class RenderMarkPruneTests(_Home):
+    """The pruners delete only what an install itself rendered and nobody changed since.
+
+    The manifest records every SKILL.md under the pack, so a record never
+    proved OMH rendered a directory. An install now marks the records it
+    wrote with the hash it wrote (`rendered_sha256`) and flags the manifest
+    (`render_marks`); a pruner deletes only a marked record whose SKILL.md
+    still has that hash. A manifest without the flag was written before marks
+    existed and is pruned by the rule it was written under, once.
+    """
+
+    def records(self) -> dict[str, dict]:
+        return {record["path"]: record for record in read_manifest(self.paths.manifest_path)["skills"]}
+
+    def drop_from_catalog(self, name: str):
+        templates = [template for template in builtin_skill_templates() if template.name != name]
+        references = [template for template in builtin_skill_reference_templates() if template.skill_name != name]
+        return (
+            mock.patch.object(installer, "builtin_skill_templates", return_value=templates),
+            mock.patch.object(installer, "builtin_skill_reference_templates", return_value=references),
+        )
+
+    def test_an_install_marks_what_it_rendered_and_nothing_else(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        self.own_skill("guide/my-own-skill")
+        install_skill_pack(self.paths, profile="core")
+
+        manifest = read_manifest(self.paths.manifest_path)
+        self.assertIs(manifest[RENDER_MARKS_FLAG], True)
+        records = self.records()
+        own = records.pop("guide/my-own-skill/SKILL.md")
+        self.assertNotIn(RENDER_MARK_KEY, own)
+        self.assertTrue(records)
+        for path, record in records.items():
+            with self.subTest(path=path):
+                self.assertEqual(record[RENDER_MARK_KEY], record["sha256"])
+
+    def test_a_kept_skill_keeps_the_mark_of_what_omh_wrote(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        rendered_sha = sha256_file(self.skill_file())
+        self.hermes_patch(self.skill_file())
+        install_skill_pack(self.paths, profile="core")
+
+        record = self.records()[f"{skill_install_relative_dir(SKILL).as_posix()}/SKILL.md"]
+        self.assertEqual(record[RENDER_MARK_KEY], rendered_sha)
+        self.assertNotEqual(record["sha256"], rendered_sha)
+
+    def test_a_persons_own_skill_at_an_omh_position_is_never_pruned(self) -> None:
+        # Probes Q1-Q3: in a category directory, at the top level, and a
+        # renamed copy beside the skill it was copied from.
+        install_skill_pack(self.paths, profile="core")
+        render = self.skill_file().parent
+        own = [self.own_skill("guide/my-own-skill"), self.own_skill("my-own-top-level-skill")]
+        sibling = render.parent / "omh-routing-old"
+        shutil.copytree(render, sibling)
+        (sibling / "personal.md").write_text("mine\n", encoding="utf-8")
+        install_skill_pack(self.paths, profile="core")
+
+        for force in (False, False, True):
+            with self.subTest(force=force):
+                result = install_skill_pack(self.paths, profile="core", force=force)
+                self.assertEqual(result["pruned_skills"], [])
+                self.assertEqual(result["flat_layout_skills_removed"], [])
+                self.assertTrue(all((directory / "notes.md").is_file() for directory in own))
+                self.assertTrue((sibling / "personal.md").is_file())
+                self.assertEqual(
+                    sorted((item["name"], item["reason"]) for item in result["prune_skipped_skills"]),
+                    [
+                        ("my-own-skill", "not_rendered_by_omh"),
+                        ("my-own-top-level-skill", "not_rendered_by_omh"),
+                        ("omh-routing-old", "not_rendered_by_omh"),
+                    ],
+                )
+
+    def test_a_retired_skill_omh_rendered_is_pruned_while_unchanged(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        retired = self.skill_file(name="doctor").parent
+        first, second = self.drop_from_catalog("doctor")
+
+        with first, second:
+            result = install_skill_pack(self.paths, profile="core")
+
+        self.assertEqual(result["pruned_skills"], ["doctor"])
+        self.assertFalse(retired.exists())
+
+    def test_a_retired_skill_changed_since_omh_rendered_it_is_left_even_with_force(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        retired = self.skill_file(name="doctor")
+        with retired.open("a", encoding="utf-8") as handle:
+            handle.write("\nsomeone kept working on it\n")
+        first, second = self.drop_from_catalog("doctor")
+
+        with first, second:
+            result = install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertTrue(retired.is_file())
+        self.assertEqual(result["pruned_skills"], [])
+        self.assertEqual(
+            [(item["name"], item["reason"]) for item in result["prune_skipped_skills"]],
+            [("doctor", "changed_since_rendered")],
+        )
+
+    def test_a_manifest_from_before_marks_is_pruned_by_its_own_rule_once(self) -> None:
+        # An unmarked record of a skill the catalog does not ship, unchanged,
+        # at an OMH position: the cleanup a retired skill has always had.
+        install_skill_pack(self.paths, profile="core")
+        orphan = self.own_skill("legacy-orphan-skill", content="# legacy orphan skill\n")
+        install_skill_pack(self.paths, profile="core")
+        self.edit_manifest(legacy=True)
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertEqual(result["pruned_skills"], ["legacy-orphan-skill"])
+        self.assertFalse(orphan.exists())
+        # The manifest that install wrote carries marks: from here on, only
+        # what OMH rendered.
+        self.assertIs(read_manifest(self.paths.manifest_path)[RENDER_MARKS_FLAG], True)
+        again = self.own_skill("legacy-orphan-skill", content="# legacy orphan skill\n")
+        install_skill_pack(self.paths, profile="core")
+        install_skill_pack(self.paths, profile="core")
+        self.assertTrue(again.exists())
+
+    def test_a_stray_skill_file_in_a_category_never_takes_the_category(self) -> None:
+        # R4-1 / probe Q4: `guide/SKILL.md` reads as a one-part skill path.
+        install_skill_pack(self.paths, profile="core")
+        category = self.skill_file().parent.parent
+        (category / "SKILL.md").write_text("stray\n", encoding="utf-8")
+        install_skill_pack(self.paths, profile="core")
+        members = sorted(child.name for child in category.iterdir())
+
+        def claim_rendered(manifest: dict) -> None:
+            for record in manifest["skills"]:
+                if record["path"] == f"{category.name}/SKILL.md":
+                    record[RENDER_MARK_KEY] = record["sha256"]
+
+        for legacy, force in ((True, False), (False, True)):
+            with self.subTest(legacy=legacy, force=force):
+                # Under the old rule, and under the mark rule with a record
+                # that claims the mark: the guard is what stands either way.
+                self.edit_manifest(claim_rendered, legacy=legacy)
+                result = install_skill_pack(self.paths, profile="core", force=force)
+                self.assertEqual(sorted(child.name for child in category.iterdir()), members)
+                self.assertEqual(result["pruned_skills"], [])
+                self.assertIn(
+                    {"name": category.name, "path": f"{category.name}/SKILL.md", "reason": "category_directory"},
+                    result["prune_skipped_skills"],
+                )
+
+    def test_a_top_level_copy_named_like_a_skill_is_not_a_flat_leftover(self) -> None:
+        # Probe Q6c without a Hermes write: the flat-layout pruner took any
+        # recorded top-level directory named after a catalog skill for a
+        # leftover of the pre-category layout.
+        install_skill_pack(self.paths, profile="core")
+        render = self.skill_file().parent
+        copy = self.paths.skills_dir / render.name
+        shutil.copytree(render, copy)
+        (copy / "personal.md").write_text("mine\n", encoding="utf-8")
+        install_skill_pack(self.paths, profile="core")
+
+        for force in (False, True):
+            with self.subTest(force=force):
+                result = install_skill_pack(self.paths, profile="core", force=force)
+                self.assertTrue((copy / "personal.md").is_file())
+                self.assertEqual(result["flat_layout_skills_removed"], [])
+                self.assertIn(
+                    {"name": SKILL, "path": f"{copy.name}/SKILL.md", "reason": "not_rendered_by_omh"},
+                    result["prune_skipped_skills"],
+                )
+
+    def test_a_directory_holding_other_skills_is_never_pruned(self) -> None:
+        # Not a category of this catalog, and still not a leaf: under the
+        # pre-mark rule an unchanged `oldcat/SKILL.md` would take `oldcat/kept/`.
+        install_skill_pack(self.paths, profile="core")
+        self.own_skill("oldcat", content="stale\n")
+        inner = self.own_skill("oldcat/kept")
+        install_skill_pack(self.paths, profile="core")
+        self.edit_manifest(legacy=True)
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue((inner / "notes.md").is_file())
+        self.assertIn(
+            {"name": "oldcat", "path": "oldcat/SKILL.md", "reason": "category_directory"},
+            result["prune_skipped_skills"],
+        )
+
+    def test_a_category_is_never_pruned_when_the_catalog_lacks_its_namesake(self) -> None:
+        # `ultrawork` is a skill name and the category the ULW skills render
+        # under; a catalog without the skill must not remove the category.
+        install_skill_pack(self.paths, profile="full")
+        category = self.paths.skills_dir / "ultrawork"
+        (category / "SKILL.md").write_text("stale flat render\n", encoding="utf-8")
+        members = sorted(child.name for child in category.iterdir() if child.is_dir())
+        self.assertGreater(len(members), 1)
+        manifest = manifest_module.new_manifest(
+            "builtin", self.paths.skills_dir, manifest_module.skill_records(self.paths.skills_dir, "builtin")
+        )
+        catalog = {template.name for template in builtin_skill_templates()} - {"ultrawork"}
+
+        _removed, skipped = installer._prune_orphaned_skills(self.paths.skills_dir, manifest, catalog, force=True)
+
+        # The retired skill's own render directory goes, as it always did; the
+        # category and every other skill in it stay.
+        retired = installer.skill_directory_name("ultrawork")
+        self.assertEqual(
+            sorted(child.name for child in category.iterdir() if child.is_dir()),
+            [member for member in members if member != retired],
+        )
+        self.assertEqual(
+            skipped, [{"name": "ultrawork", "path": "ultrawork/SKILL.md", "reason": "category_directory"}]
+        )
+
+    def test_reconcile_carries_marks_and_kept_evidence(self) -> None:
+        install_skill_pack(self.paths, profile="full")
+        self.hermes_patch(self.skill_file())
+        install_skill_pack(self.paths, profile="core")
+        before = self.records()[f"{skill_install_relative_dir(SKILL).as_posix()}/SKILL.md"]
+
+        reconcile_skill_profile(self.paths)
+
+        manifest = read_manifest(self.paths.manifest_path)
+        self.assertIs(manifest[RENDER_MARKS_FLAG], True)
+        after = self.records()[f"{skill_install_relative_dir(SKILL).as_posix()}/SKILL.md"]
+        self.assertEqual(after[RENDER_MARK_KEY], before[RENDER_MARK_KEY])
+        self.assertEqual(after[HERMES_EDIT_RECORD_KEY], before[HERMES_EDIT_RECORD_KEY])
+        self.assertTrue(all(RENDER_MARK_KEY in record for record in manifest["skills"]))
+
+    def test_every_skip_reason_has_its_own_line_in_every_language(self) -> None:
+        # R4-3: one line for every reason printed two false clauses for the
+        # case where the directory IS the one OMH renders into.
+        english = {}
+        for reason in PRUNE_SKIP_REASONS:
+            key = f"prune_skipped_{reason}_line"
+            for language, messages in MESSAGES.items():
+                with self.subTest(reason=reason, language=language):
+                    self.assertIn(key, messages)
+                    self.assertIn("{name}", messages[key])
+                    self.assertIn("{path}", messages[key])
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                setup_commands._print_install_summary(
+                    {"skills": [], "prune_skipped_skills": [{"name": "n", "path": "p/SKILL.md", "reason": reason}]},
+                    command="install",
+                )
+            english[reason] = next(line.strip() for line in out.getvalue().splitlines() if "Left n at" in line)
+        self.assertEqual(len(set(english.values())), len(PRUNE_SKIP_REASONS))
+        same = english["same_directory_as_a_rendered_skill"]
+        self.assertIn("it is the directory OMH renders a skill into", same)
+        self.assertNotIn("does not ship", same)
+        self.assertNotIn("not where OMH renders", same)
+        self.assertIn("OMH did not render it", english["not_rendered_by_omh"])
+        self.assertIn("holds other skills", english["category_directory"])
 
 
 class CaseVariantRenderDirectoryTests(_Home):
@@ -970,6 +1315,28 @@ class CaseVariantRenderDirectoryTests(_Home):
         )
         # Reported once: this install recorded the skill properly.
         self.assertNotIn("prune_skipped_skills", install_skill_pack(self.paths, profile="core"))
+
+    def test_a_hermes_edit_spelled_by_the_on_disk_case_is_recognised(self) -> None:
+        # SF3 / probe Q7a: the ledger row spells the directory as it is on
+        # disk, the record spells it as the install renders it.
+        variant = self.rename_render_dir()
+        install_skill_pack(self.paths, profile="core")
+        self.hermes_patch(variant / "SKILL.md")
+        self.store_blob(variant / "SKILL.md")
+        edited = (variant / "SKILL.md").read_bytes()
+
+        kept = install_skill_pack(self.paths, profile="core")
+
+        self.assertEqual([(item["name"], item["disposition"]) for item in kept["hermes_edited_skills"]], [(SKILL, "kept")])
+        self.assertEqual(self.skill_file().read_bytes(), edited)
+
+        forced = install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertEqual(
+            [(item["disposition"], item["ledger_copy"]) for item in forced["hermes_edited_skills"]],
+            [("replaced", ["SKILL.md"])],
+        )
+        self.assertNotEqual(self.skill_file().read_bytes(), edited)
 
     def test_a_folded_name_match_alone_does_not_rename_a_record(self) -> None:
         # Where the filesystem tells the spellings apart, the other-case

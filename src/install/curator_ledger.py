@@ -29,6 +29,7 @@ import os
 from pathlib import Path
 
 from ..hashutil import sha256_file
+from .manifest import same_directory
 from .skill_registration import hermes_profile_dirs
 
 CURATOR_LEDGER_RELATIVE_PATH = Path("skills") / ".curator_ledger.jsonl"
@@ -166,10 +167,40 @@ def write_still_on_disk(write: LedgerWrite) -> bool:
     return not path.exists()
 
 
-def newest_write_to(path: Path, writes: list[LedgerWrite]) -> LedgerWrite | None:
-    """The newest write the ledgers record for exactly this file, compared as `writes_under` compares."""
-    spellings = {os.path.normpath(str(path)), os.path.realpath(str(path))}
-    matching = [write for write in writes if os.path.normpath(write.path) in spellings]
+def writes_in_skill_dir(skill_dir: Path, writes: list[LedgerWrite]) -> list[tuple[LedgerWrite, str]]:
+    """Each write to a file of `skill_dir`, oldest first, with the file's skill-relative POSIX path.
+
+    A row spells a path the way the directory was spelled on disk when Hermes
+    wrote it. On a case-insensitive filesystem a skill directory renamed to
+    another letter case is still the same directory, so a path that does not
+    match as text is matched by asking the filesystem whether one of its
+    ancestors IS `skill_dir`.
+    """
+    bases = (os.path.normpath(str(skill_dir)), os.path.realpath(str(skill_dir)))
+    folded_name = skill_dir.name.casefold()
+    same_as_skill_dir: dict[str, bool] = {}
+    found: list[tuple[LedgerWrite, str]] = []
+    for write in writes:
+        normalized = os.path.normpath(write.path)
+        base = next((candidate for candidate in bases if _within(normalized, candidate)), None)
+        if base is None:
+            for ancestor in Path(normalized).parents:
+                if ancestor.name.casefold() != folded_name:
+                    continue
+                key = str(ancestor)
+                if key not in same_as_skill_dir:
+                    same_as_skill_dir[key] = same_directory(ancestor, skill_dir)
+                if same_as_skill_dir[key]:
+                    base = key
+                    break
+        if base is not None and normalized != base:
+            found.append((write, Path(os.path.relpath(normalized, base)).as_posix()))
+    return found
+
+
+def newest_write_to(skill_dir: Path, relative: str, writes: list[LedgerWrite]) -> LedgerWrite | None:
+    """The newest write the ledgers record for one file of the skill, named by its skill-relative path."""
+    matching = [write for write, written in writes_in_skill_dir(skill_dir, writes) if written == relative]
     return matching[-1] if matching else None
 
 
@@ -204,17 +235,9 @@ def hermes_edit_still_on_disk(skill_dir: Path, writes: list[LedgerWrite], render
     `write_file` followed by a `remove_file` leaves exactly OMH's render -- so
     counting that absence would keep the skill forever.
     """
-    for write in reversed(writes_under(writes, skill_dir)):
-        if not write.sha256 and _skill_relative(write.path, skill_dir) not in rendered:
+    for write, relative in reversed(writes_in_skill_dir(skill_dir, writes)):
+        if not write.sha256 and relative not in rendered:
             continue
         if write_still_on_disk(write):
             return write
     return None
-
-
-def _skill_relative(path: str, skill_dir: Path) -> str:
-    normalized = os.path.normpath(path)
-    for base in (os.path.normpath(str(skill_dir)), os.path.realpath(str(skill_dir))):
-        if _within(normalized, base):
-            return Path(os.path.relpath(normalized, base)).as_posix()
-    return ""
