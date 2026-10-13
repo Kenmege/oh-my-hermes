@@ -793,6 +793,29 @@ class EscapeWaitTests(unittest.TestCase):
         paused.feed(b"[A")
         self.assertEqual(paused.events, [Key("up")])
 
+    def test_an_ss3_key_split_after_its_escape_goes_on_with_the_sequence(self) -> None:
+        cases = {b"OP": Key("unknown"), b"OQ": Key("unknown"), b"OR": Key("unknown"), b"OS": Key("unknown"),
+                 b"OA": Key("up"), b"OH": Key("home")}  # F1 to F4 (no key the TUI names), application-mode keys
+        for reporting, off_at in ((True, None), (False, 0.0)):
+            for rest, key in cases.items():
+                with self.subTest(reporting=reporting, rest=rest):
+                    paused = PausedInput(reporting, off_at)
+                    paused.feed(b"\x1b")
+                    paused.pause(0.2)
+                    paused.feed(rest)
+                    paused.pause(1.0)
+                    self.assertEqual(paused.events, [key])
+
+    def test_a_capital_o_typed_after_a_waiting_escape_is_esc_then_the_o(self) -> None:
+        # A read that is a lone `O`, or `O` and a byte no SS3 key ends with, is typed: Esc, then its characters.
+        for rest in (b"O", b"Ok", b"n"):
+            with self.subTest(rest=rest):
+                paused = PausedInput(reporting=True)
+                paused.feed(b"\x1b")
+                paused.pause(0.2)
+                paused.feed(rest)
+                self.assertEqual(paused.events, [Key("escape"), *(char(c) for c in rest.decode())])
+
     def test_without_a_silence_an_escape_split_from_its_key_is_still_the_alt_chord(self) -> None:
         # The wait ends early only after it began: a read that follows before any silence goes on as before.
         decoder = KeyDecoder()

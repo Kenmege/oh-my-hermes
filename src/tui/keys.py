@@ -45,9 +45,11 @@ across reads (over SSH, jitter can stall one mid-way):
   `MOUSE_REPORT_SECONDS` of silence, and is then dropped as one unknown key
   (this one holds whenever the input started);
 - `ESC` and `ESC[` wait `REPORTING_ESCAPE_SECONDS`, and then settle as Esc and
-  as one unknown key; a later read that does not start with `[` ends an ESC's
-  wait at once: the ESC is Esc and the new bytes are keys of their own (an ESC
-  and a key in one read stay an Alt chord);
+  as one unknown key; a later read ends an ESC's wait at once unless it starts
+  with `[` or with an SS3 key's `O` and final byte (F1 to F4, an arrow, Home or
+  End): the ESC is Esc and the new bytes are keys of their own, so a capital O
+  typed after Esc is Esc and `O` (an ESC and a key in one read stay an Alt
+  chord);
 - for `MOUSE_REPORT_SECONDS` after either settled, the bytes that would finish
   the report it began are dropped as they arrive, up to its `M` or `m`.
 
@@ -99,6 +101,9 @@ _MAX_CSI_LENGTH = 32
 
 _CSI_LETTER_KEYS = {"A": UP, "B": DOWN, "C": RIGHT, "D": LEFT, "H": HOME, "F": END}
 _SS3_KEYS = _CSI_LETTER_KEYS
+# The final bytes of the SS3 keys terminals send: F1 to F4 (`ESC O P` to `ESC O S`, no key `Key` names), and the
+# arrows, Home and End in application cursor mode.
+_SS3_FINALS = b"PQRS" + "".join(_SS3_KEYS).encode("ascii")
 _CSI_TILDE_KEYS = {
     "1": HOME,
     "2": INSERT,
@@ -515,6 +520,16 @@ def _report_length(data: bytes) -> int:
     return end + 1 if end < len(data) and data[end] in _SGR_FINAL_BYTES else 0
 
 
+def _continues_escape(data: bytes) -> bool:
+    """Whether a read after a lone ESC that waited goes on with its sequence: a CSI's `[`, or an SS3 key's `O` and final.
+
+    A read that is a lone `O`, or `O` and a byte no SS3 key ends with, is a
+    capital O typed after Esc. An SS3 key split again right after its `O` is
+    read that way too: Esc, then its letters.
+    """
+    return data.startswith(bytes((CSI_BYTE,))) or (len(data) > 1 and data[0] == SS3_BYTE and data[1] in _SS3_FINALS)
+
+
 def _paste_text(raw: bytes) -> str:
     return raw.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
 
@@ -526,7 +541,7 @@ class KeyDecoder:
         self._paste: bytearray | None = None
         self._fed_at = 0.0  # when the last byte arrived
         self._held_at = 0.0  # when the first byte of what is held arrived
-        self._escape_waited = False  # a lone ESC held through a silence, waiting to see whether `[` follows
+        self._escape_waited = False  # a lone ESC held through a silence, waiting to see whether a sequence follows
         # The start of a report `flush` settled, and until when the bytes that would finish it are dropped.
         self._settled_start = b""
         self._drop_until = 0.0
@@ -538,8 +553,9 @@ class KeyDecoder:
         now = self._clock()
         if self._settled_start and now >= self._drop_until:
             self._close_drop_window()
-        # An ESC that waited through a silence for a report's `[`: anything else ends the wait. It was Esc.
-        escape = self._escape_waited and self._pending == bytes((ESC_BYTE,)) and not data.startswith(b"[")
+        # An ESC that waited through a silence for a report's `[`: a read that does not go on with a sequence
+        # ends the wait. It was Esc.
+        escape = self._escape_waited and self._pending == bytes((ESC_BYTE,)) and not _continues_escape(data)
         self._escape_waited = False
         events: list[Key | Paste | Mouse] = [Key(ESCAPE, arrived_at=self._held_at)] if escape else []
         if escape:
@@ -577,7 +593,7 @@ class KeyDecoder:
         `MOUSE_REPORT_SECONDS` and then is one unknown key; while a report may
         still arrive, `ESC` and `ESC[` wait for `REPORTING_ESCAPE_SECONDS` and
         then are Esc and one unknown key (a lone ESC's wait also ends at the
-        next read that does not start with `[`: see `feed`). Anything else
+        next read that does not go on with a sequence: see `feed`). Anything else
         held settles now: a lone ESC becomes `Key("escape")`.
         """
         now = self._clock()
