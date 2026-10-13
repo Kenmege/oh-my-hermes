@@ -45,8 +45,9 @@ work is `omh_todo action=clear`. A recorded ``deferred_reason`` does not
 release it -- the hold never reads it -- so the plan keeps its stage, its
 gate and its team binding and is paused: the plan line stops asking for its
 next item and the turn-end drive stops until the item list changes. The
-session's next turn is told once when a write was held
-(``held_native_write_note``). Every other plan is replaced, as an
+session's next turn is told once when a write was held and the plan is still
+held and not deferred (``held_native_write_note``). Every other plan is
+replaced, as an
 `omh_todo action=set` replaces it: the native write is a new declaration, so
 it carries no template and no ``deferred_reason`` (which lapses on any item
 change by design). A native list identical to an `omh_todo`-written one is
@@ -175,9 +176,12 @@ def held_native_write_note(session_ref: str, omh_home: str | Path) -> str:
     What the line says is decided now, off the record as it stands, never off
     the moment of the write. A plan cleared, re-declared as a plain one, or
     gone stale since is no longer held and gets no line. Nor does a plan whose
-    deferral is live: the person paused it, the plan line already says so and
-    asks for nothing, and telling the model to clear a plan they only paused
-    would be the wrong instruction.
+    deferral is live: the person paused it, and telling the model to clear a
+    plan they only paused would be the wrong instruction. The plan line says
+    the plan is deferred and asks for nothing, except where the next item also
+    carries a `blocked_reason`: the block takes the plan line there
+    (`todo_reconciliation._open_plan_line`), and that plan still gets no
+    held-write line.
 
     The caller keeps a background-review fork out (`pre_llm_call`): it runs
     under the parent's session id and would spend the parent's line.

@@ -444,6 +444,21 @@ class OmhTodoOnlyFieldsTest(_NativeTodoHomeTest):
             self.assertEqual(kept["state_kept"], f"todo_list sets item states on this plan; item {item} stays {status}")
         # An advance that sends no reason does not turn the cancelled item into a completed one.
         self.assertEqual(self.todo()["items"][1]["blocked_reason"], NATIVE_CANCELLED_REASON)
+        # Any other reason on a todo_list-held plan still clears when the call sends none.
+        _ = self.omh_todo({"action": "advance", "item": 3, "item_text": "c", "state": "pending", "blocked_reason": "owner review"})
+        self.assertEqual(self.todo()["items"][2]["blocked_reason"], "owner review")
+        _ = self.omh_todo({"action": "advance", "item": 3, "item_text": "c", "state": "pending"})
+        self.assertNotIn("blocked_reason", self.todo()["items"][2])
+        # And on an omh_todo plan the same string is an ordinary reason: sending none clears it.
+        _ = self.omh_todo(
+            {
+                "action": "set",
+                "items": [{"text": "x", "state": "done", "blocked_reason": NATIVE_CANCELLED_REASON}, {"text": "y", "state": "active"}],
+            },
+            session=OTHER_SESSION,
+        )
+        _ = self.omh_todo({"action": "advance", "item": 1, "item_text": "x", "state": "done"}, session=OTHER_SESSION)
+        self.assertNotIn("blocked_reason", self.todo(OTHER_SESSION)["items"][0])
         # The sentence is about todo_list-held plans and is never said of another record.
         from omh.plugin_bundle.omh.tools.todo_tool import _state_kept
 

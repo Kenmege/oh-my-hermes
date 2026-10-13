@@ -938,6 +938,8 @@ def advance_todo_item(
     clears one, which is what `set` does with a field left out of an item.
     Making it sticky instead would create a record state reachable by `set`
     and not by this, and the equivalence above is what the action is for.
+    The one exception is the reason OMH writes for a cancelled item on a plan
+    `todo_list` holds (above).
 
     The whole read-modify-write runs inside the record's lock, so a `set` from
     another turn or another process cannot land between the read and the
