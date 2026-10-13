@@ -1672,7 +1672,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The review is about code, secrets, permissions, prompt injection, dependencies, or unsafe tool behavior; use `security-safety-review`.
   - The request is a plain-language rewrite without a legal-risk review objective; use `content-operator`.
   - The user asks to sign, accept, submit, file, publish, or change a policy or contract in an external system; use `connector-operator` only after explicit authority.
-  - Strip the PII from the file itself and scan it before sending it, once sharing it is cleared; use `data-share-review`.
+  - Redact the PII in the file itself and scan it before sending it, once sharing it is cleared; use `data-share-review`.
 - Strong routing signals: `contract review`, `contract liability clause`, `regulatory analysis`, `compliance review`, `contract redline`, `redline the contract`, `negotiation preparation`, `negotiation strategy`, `clause language`, `counterparty position`, `계약서 검토`, `규제 분석`, `컴플라이언스 검토`
 - Good example:
   - Prompt: Review this vendor DPA for data-processing obligations, risky clauses, and questions for counsel.

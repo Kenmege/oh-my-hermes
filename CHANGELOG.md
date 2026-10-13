@@ -6,36 +6,32 @@ All notable changes will be documented here.
 
 - **A new `data-share-review` skill prepares a dataset, log, ticket export, or
   transcript excerpt to leave the team, and calls it redacted only after the
-  file that leaves was scanned.** Asking Hermes to strip PII from an export
-  for a vendor, redact personal data from logs before a public GitHub issue,
-  pseudonymize ids in a dataset before a fine-tune corpus, or de-identify a
-  CSV before a model provider sees it now opens this review; requests like
-  these used to dispatch GitHub event ops, the connector operator, the media
-  operator, or model-finetuning, or got a clarifying question. It opens only
-  for a request that leads with a data-protection verb -- redact, strip,
-  scrub, remove, mask, pseudonymize, anonymize, de-identify, sanitize,
-  minimize, "take ... out", or a scan or check for PII -- about a file-shaped
-  carrier (an export, dataset, CSV, file, logs, records, an extract or a
-  transcript excerpt) leaving the team (a vendor, contractor, agency,
-  researcher, public issue, model provider, training corpus, or a verb that
-  sends it). A sentence that only mentions the work routes as before: a pull
-  request or issue, a message, a blog post, a reminder, code, a Hermes
-  setting, a GDPR or contract question, or a storage-wide scan. It asks where
-  the file goes and what that destination needs, classifies every field as a
-  direct identifier, quasi-identifier, secret, free text, or not personal,
-  reads a row only when per-column shape counts leave a field unclear, drops
-  what is not needed before masking anything, and keeps any pseudonym mapping
-  at a local path outside the shipped file. The verdict is `redacted` only
-  after an observed residual scan of the exact file that leaves counts every
-  class, free text included; without one it is `not_observed`. Counts come
-  from Hermes' `search_files` in its `count` mode or a detector script run
-  through `execute_code` that prints counts only; that script's stderr and any
+  file that leaves was scanned.** It asks where the file goes and what that
+  destination needs, classifies every field as a direct identifier,
+  quasi-identifier, secret, free text, or not personal, reads a row only when
+  per-column shape counts leave a field unclear, drops what is not needed
+  before masking anything, and keeps any pseudonym mapping at a local path
+  outside the shipped file. The verdict is `redacted` only after an observed
+  residual scan of the exact file that leaves counts every class, free text
+  included; without one it is `not_observed`. Counts come from Hermes'
+  `search_files` in its `count` mode or a detector script run through
+  `execute_code` that prints counts only; that script's stderr and any
   traceback return too, so it catches its own errors without echoing a value.
   The skill says plainly that Hermes' `privacy.redact_pii` and
   `security.redact_secrets` cover gateway chat identifiers and tool output,
   never a file that leaves. What left is recorded as metadata only:
   destination, date, fields, row count, and digest. OMH uploads nothing, keeps
-  no raw value, and leaves the lawful basis to `legal-compliance-review`.
+  no raw value, and leaves the lawful basis to `legal-compliance-review`. Chat
+  routing to it is deliberately conservative: the words it lives on (redact,
+  PII, pseudonymize, strip, export, vendor) also name code, Hermes settings,
+  legal questions, issue triage, messages and posts, so it takes nothing
+  another skill holds. It has no routing boost, no other skill's guard stands
+  down for it, and it is scored only when a sentence leads with redact,
+  pseudonymize, anonymize, or de-identify on a file leaving the team, such as
+  "de-identify this export for the researcher". Logs for a GitHub issue, a
+  transcript excerpt, or a dataset for a contractor stay with the skill that
+  holds them, while Hermes' own skill index, or naming the skill, can still
+  select it.
 
 - **The coding lane works with Hermes' own delegation, board, and debugging
   skills instead of beside them.** `ulw-work` loads a Hermes-only

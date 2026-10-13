@@ -9,7 +9,7 @@ load_local_package()
 from omh.plugin_bundle.omh.awareness import awareness_route_hint
 from omh.plugin_bundle.omh.data_share_cues import DATA_SHARE_REVIEW_PHRASES
 from omh.routing.localization import normalized_phrase, routing_tokens
-from omh.routing.policy import data_share_review_offers_itself, data_share_review_spoken
+from omh.routing.policy import data_share_review_offers_itself
 from omh.routing.recommend import recommend_skills
 from omh.skills.catalog import builtin_definitions
 from omh.skills.packaging import builtin_skill_reference_templates, builtin_skill_templates
@@ -162,14 +162,16 @@ class DataShareReviewCatalogTests(unittest.TestCase):
         self.assertEqual(
             back,
             [
-                "Strip the PII from the file itself and scan it before sending it, once sharing it is cleared; use "
+                "Redact the PII in the file itself and scan it before sending it, once sharing it is cleared; use "
                 "`data-share-review`."
             ],
         )
 
 
 class DataShareReviewRoutingTests(unittest.TestCase):
-    def test_a_file_leaving_with_personal_data_dispatches_here(self) -> None:
+    """Conservative by design: the skill takes nothing another skill holds."""
+
+    def test_a_protective_lead_on_a_file_leaving_dispatches_here(self) -> None:
         for message in INTERVENTIONS:
             with self.subTest(message=message):
                 route = _route(message)
@@ -183,63 +185,56 @@ class DataShareReviewRoutingTests(unittest.TestCase):
                 self.assertNotEqual(route["action"], "dispatch")
                 self.assertNotEqual(route.get("candidate_skill"), SKILL)
 
-    def test_the_owners_keep_requests_whose_object_is_not_a_file_leaving(self) -> None:
+    def test_a_request_another_skill_holds_stays_there(self) -> None:
         for message, owner in OWNERS:
             with self.subTest(message=message):
                 route = _route(message)
                 self.assertEqual(route["action"], "dispatch")
                 self.assertEqual(route["selected_skill"], owner)
 
-    def test_a_phrase_counts_as_its_own_words_and_not_as_a_finished_state(self) -> None:
-        for message, spoken in (
-            ("pseudonymize the user ids before the export", True),
-            ("run churn analysis on the pseudonymized dataset", False),
-            ("de-identify these records first", True),
-            ("analyze the de-identified extract", False),
-            ("set privacy.redact_pii true in hermes", False),
-            ("what does pii stand for", False),
-        ):
-            with self.subTest(message=message):
-                self.assertIs(data_share_review_spoken(normalized_phrase(message)), spoken)
+    def test_two_owners_with_a_phrase_each_ask_instead_of_dispatching(self) -> None:
+        route = _route("pseudonymize the customer ids in this dataset before it goes into the fine-tune corpus")
+        self.assertEqual(route["action"], "clarify")
+        self.assertEqual(route["candidate_skill"], SKILL)
 
-    def test_only_a_request_led_by_a_protection_verb_is_admitted(self) -> None:
+    def test_only_an_inherently_protective_lead_admits_the_skill(self) -> None:
         for message, offered in (
+            ("redact pii from this csv before sending to the vendor", True),
             ("pseudonymize the customer ids before the vendor gets the export", True),
-            ("de-identify this export for the researcher", True),
-            ("review the export for residual pii before we send it to the vendor", True),
-            # The sentence only mentions the work; its request is something else.
-            ("send the customer details out to the vendor in the export file", False),
-            ("write a blog post on how to strip pii from a dataset before sharing it with vendors", False),
-            ("tell the data team on slack that we will strip the pii from the export before the vendor gets it", False),
-            ("after we strip the pii, email the export to the vendor", False),
-            ("upload this file to the vendor after we pseudonymize it", False),
-            # A lead verb with no phrase of the skill: nothing personal is named.
-            ("remove the old rows from this export before we send it to the vendor", False),
-            ("review the export before we send it to the vendor", False),
+            ("anonymize the dataset before we upload it to the provider", True),
+            ("hey, redact personal data from the spreadsheet before it goes to the contractor", True),
+            ("can you de-identify this export for the researcher", True),
+            # An everyday verb, a later clause, or another job leads.
+            ("strip the pii from this dataset before we send it to an external contractor", False),
+            ("take the customer names out of the export before sending it to the vendor", False),
+            ("we need to share a ticket export with a vendor, redact the pii first", False),
+            ("review the export before we share it with the vendor and redact the pii", False),
+            ("scan the export for pii before sharing it with the vendor", False),
+            ("write a blog post about the export, then redact the pii before we share the file with the vendor", False),
+            # A sentence that opens in Hangul has no Latin lead.
+            ("깃허브 이슈 라벨 달아줘, 제목: redact the pii from the export before sending to the vendor", False),
         ):
             with self.subTest(message=message):
                 self.assertIs(_offered(message), offered)
 
-    def test_filler_is_skipped_and_a_later_clause_can_lead(self) -> None:
-        for message in (
-            "hey, redact the pii from this export before we send it to the vendor",
-            "can you strip the pii from this csv before we share it with the agency",
-            "go ahead and pseudonymize the user ids in this dataset before it goes to the vendor",
-            "we need to share a ticket export with a vendor, strip the pii first",
-            "the analytics vendor wants last month's ticket export, take the customer details out first",
-            "i need you to strip the pii from the logs, then upload them to the vendor",
+    def test_the_lead_verbs_object_must_be_data(self) -> None:
+        for message, offered in (
+            ("redact the customer names in the export before sending it to the vendor", True),
+            ("redact the pii redaction label from the export before sending it to the vendor", False),
+            ("pseudonymize the export script before we share the file with the vendor", False),
+            ("redact the header row from the csv before we send it to the vendor", False),
         ):
             with self.subTest(message=message):
-                self.assertTrue(_offered(message))
+                self.assertIs(_offered(message), offered)
 
     def test_a_carrier_and_a_recipient_must_both_be_present(self) -> None:
         for message, offered in (
-            ("strip the pii from the export and hand it over to the vendor", True),
-            ("mask personal data in this spreadsheet before I give it to the contractor", True),
+            ("redact the pii in the export and hand it over to the vendor", True),
+            ("redact the pii in this spreadsheet before I give it to the contractor", True),
             # No carrier: a sample is as often a sample message.
             ("redact the pii from the sample before we send it to the vendor", False),
             # No recipient: by hand, back to me, or to me.
-            ("strip the pii from the export by hand", False),
+            ("redact the pii in the export by hand", False),
             ("pseudonymize the user ids in this file and give it back to me", False),
             ("redact pii from this file and give me a summary", False),
             ("redact pii from this csv", False),
@@ -251,18 +246,20 @@ class DataShareReviewRoutingTests(unittest.TestCase):
         for message in (
             "pseudonymize this export for the vendor as gdpr requires",
             "redact pii in the export before hermes uploads it to the vendor",
-            "scan for pii in the files we share with vendors on s3",
-            "scan for pii across our shared files before the vendor audit",
+            "redact the pii in the files we share with vendors on s3",
+            "redact pii across our shared files before the vendor audit",
+            "redact pii in the export before sending it to the vendor, then turn on the gateway hashing",
         ):
             with self.subTest(message=message):
                 self.assertFalse(_offered(message))
 
     def test_held_back_words_score_nothing_for_the_skill(self) -> None:
-        # The request is admitted, so only the hold-back keeps "strip", "pii",
-        # "data", "export" and "share" from crediting the skill one by one.
+        # The sentence is admitted, so only the hold-back keeps "redact",
+        # "pii", "data", "export" and "share" from crediting the skill one by
+        # one; a finished state ("pseudonymized") is not its trigger either.
         recommendation = next(
             item
-            for item in recommend_skills("strip the pii from the data export before we share it with the vendor")
+            for item in recommend_skills("redact the pii from the pseudonymized data export before we share it with the vendor")
             if item["skill"] == SKILL
         )
         single_word_credits = [
@@ -282,20 +279,20 @@ class DataShareReviewRoutingTests(unittest.TestCase):
             },
         )
 
-    def test_the_route_hint_needs_the_same_request(self) -> None:
+    def test_the_route_hint_needs_the_same_lead(self) -> None:
         def hinted(message: str) -> bool:
             return any(hint.get("workflow") == SKILL for hint in awareness_route_hint(message).get("hints", []))
 
         self.assertTrue(hinted("redact pii from this csv before sending to the vendor"))
         self.assertTrue(hinted("pseudonymize the emails in customers.csv before I share it with the agency"))
         for message in (
-            # A finished state: "pseudonymize" is a whole token.
-            "pseudonymized exports go to the vendor, redact the logs too",
+            # Admitted, but "pseudonymized" is a finished state, not the token cue.
+            "redact the names in the pseudonymized export before sending it to the vendor",
+            "strip the pii from this dataset before we send it to an external contractor",
             "run churn analysis on the pseudonymized dataset",
             "does gdpr require us to pseudonymize customer data",
             "close the github issue titled redact pii from logs",
             "how do I enable redact pii in hermes",
-            "write a blog post on how to strip pii from a dataset before sharing it with vendors",
             "send a slack message saying the export file is ready to share once we redact pii",
         ):
             with self.subTest(message=message):
@@ -303,16 +300,8 @@ class DataShareReviewRoutingTests(unittest.TestCase):
 
 
 INTERVENTIONS = (
-    "redact the pii in this crash log before attaching it to the public github issue",
-    "we need to share a ticket export with a vendor, strip the pii first",
-    "pseudonymize the customer ids in this dataset before it goes into the fine-tune corpus",
-    "redact personal data from these server logs before I attach them to a public github issue",
-    "redact the pii in this support transcript excerpt before we post it in the public tracker",
-    "strip the pii from this dataset before we send it to an external contractor",
     "de-identify this csv of patient records before the model provider sees it",
-    "scan the masked export for residual pii before we hand it over",
-    "the analytics vendor wants last month's ticket export, take the customer details out first",
-    "redact pii from this csv before sending to the vendor",
+    "de-identify this export for the researcher",
 )
 NEGATIVES = (
     "what does pii stand for",
@@ -343,6 +332,12 @@ NEGATIVES = (
     "watch this video about how to redact pii from log files before sharing them",
     "which vendor is best for pseudonymization of datasets shared with third party processors",
     "give me a sample message to tell the vendor we redact pii",
+    "take the vendor names out of the export before sending it to the researcher",
+    "remove pseudonymization from the export before sending it to the researcher, they need the real ids",
+    "strip the de-identify flag from the csv before uploading it to the vendor",
+    "review the pii redaction pull request before we send the export to the vendor",
+    "check the log file for pii redaction bugs before sending it to the vendor",
+    "merge the pr, then redact the pii in the export before sending it to the vendor",
 )
 OWNERS = (
     ("attach the crash log to the github issue", "github-event-ops"),
@@ -355,6 +350,14 @@ OWNERS = (
     ("hey, triage the github issues about pii redaction in the public log files", "github-event-ops"),
     ("i need you to triage the issues about pii redaction in log files we post publicly", "connector-operator"),
     ("send a slack message saying the export file is ready to share once we redact pii", "gateway-intent-card"),
+    ("redact personal data from these server logs before I attach them to a public github issue", "github-event-ops"),
+    ("redact the pii in this support transcript excerpt before we post it in the public tracker", "media-input-operator"),
+    ("strip the pii from this dataset before we send it to an external contractor", "connector-operator"),
+    ("redact the pii in this crash log before attaching it to the public github issue", "github-event-ops"),
+    ("remove the pii redaction label from the github issue about the export we sent the vendor", "github-event-ops"),
+    ("transcribe this call, then redact the pii in the transcript excerpt before posting it publicly", "media-input-operator"),
+    ("깃허브 이슈 라벨 달아줘, 제목: redact the pii from the export before sending to the vendor", "github-event-ops"),
+    ("redact pii 하고 vendor한테 export 파일 보내줘", "gateway-intent-card"),
 )
 
 

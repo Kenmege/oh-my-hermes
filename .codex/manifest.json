@@ -106,7 +106,7 @@
     "omh-internal-audit/SKILL.md": "051c456a52701c903316dc533d9b5d3649ec63202a1edb32254e8a60b0dbe07d",
     "omh-internal-audit/references/control-audit-method.md": "2b651418c2a5bdfbd659ebbff7c08e3670443e198e76ddd9d215d5cee821deaa",
     "omh-jit-learn/SKILL.md": "7035649d154c483c5bac4dcc1eb23984e948b5d9f10371fbb6b78b3c1406ef39",
-    "omh-legal-compliance-review/SKILL.md": "38fae464783d84a108129c034cb6936f9471393cf376c2410f5124027e722ee6",
+    "omh-legal-compliance-review/SKILL.md": "3bc1b79215839869ec247545103130c47618de5675b9331b5e51a7aeebc2e047",
     "omh-legal-compliance-review/references/negotiation-preparation.md": "a0952b301dc12976606e979590da1f01c9b71d4cd5892f6b2f453536b2e4b4c1",
     "omh-legal-compliance-review/references/procedure.md": "670f501f3136c0f5456b82149ca24153f1b38d5151f539a9b1ab0df30e2f0b58",
     "omh-lifecycle-growth/SKILL.md": "ec3ddfea888dccf56ebe2497b938305a2f652f0de933b92532facf8ac92fe8c8",
@@ -321,7 +321,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "b43cb988b3879283c9b3a48a3163383010ab9c2c80c79c1a7c9fa9efc25a9287",
+  "source_digest": "49bc4d3b7b9a37d94e7970d6d65ba374ac439d9981ecec2fd560206909956263",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

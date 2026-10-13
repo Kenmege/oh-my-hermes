@@ -31,7 +31,7 @@ from .reference_regions import executable_routing_text
 from .jev_addressing import jev_addressed_skill
 from .localization import normalized_phrase, phrase_is_spoken, routing_terms, routing_tokens
 from .materials_cues import OFFICE_FILE_MATERIAL_PHRASES
-from ..plugin_bundle.omh.data_share_cues import data_share_phrase_spoken, data_share_request_admitted
+from ..plugin_bundle.omh.data_share_cues import data_share_request_admitted
 from .missed_route import has_normalized_missed_omh_workflow_context
 from .omh_help import is_omh_docs_question
 from .visual_qa_cues import BROWSER_VISUAL_QA_PHRASES, CUSTOMER_SYMPTOM_REPORT_PHRASES
@@ -2972,27 +2972,15 @@ _SECURITY_EVENT_OVER_GITHUB_EVENT_PHRASES = (
     "leaked credential",
     "committed a secret",
 )
-# Taking personal data out of a file before it leaves the team is owned by
-# `data-share-review`, even when the file is headed for a GitHub issue, a
-# contractor, or a transcript tool: the destination is the carrier, and what
-# has to come out first decides the work. The same phrases also name code,
-# Hermes settings, legal questions, issue triage, messages and posts about the
-# topic, so the skill is admitted only for a REQUEST that leads with a
-# data-protection verb, about a file-shaped carrier leaving the team, with one
-# of its phrases spoken (`data_share_cues`, which the awareness route hint
-# reads too). Everything else routes as if the skill did not exist.
-
-
-def data_share_review_spoken(normalized_query: str) -> bool:
-    return data_share_phrase_spoken(normalized_query)
+# `data-share-review` is scored only for a sentence that leads with redact,
+# pseudonymize, anonymize or de-identify on a file leaving the team
+# (`data_share_cues`, which the awareness route hint reads too). It has no
+# boost and no guard stands down for it: a request another skill holds stays
+# with that skill.
 
 
 def data_share_review_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
-    """A request led by a data-protection verb to clean a file before it leaves the team."""
-    return data_share_request_admitted(normalized_query)
-
-
-def _data_share_review_claims(normalized_query: str, query_tokens: set[str]) -> bool:
+    """A sentence that leads with a protective verb on a file leaving the team."""
     return data_share_request_admitted(normalized_query)
 
 
@@ -7288,10 +7276,6 @@ def _research_brief_guard_applies(normalized_query: str, query_tokens: set[str])
     business_subject = bool({"vendor", "vendors", "market", "competitor", "analytics"} & query_tokens)
     if phrase:
         return True
-    # A vendor that receives a file is its destination, not a subject to
-    # research: beside a `data-share-review` claim the vendor guard stands down.
-    if _data_share_review_claims(normalized_query, query_tokens):
-        return False
     if _research_department_guard_applies(normalized_query, query_tokens):
         return False
     return (compare and research_subject and evidence) or (compare and business_subject)
@@ -8746,8 +8730,6 @@ def _github_event_ops_guard_applies(normalized_query: str, query_tokens: set[str
         return False
     if _contains_phrase(normalized_query, _MOBILE_RELEASE_OVER_GITHUB_EVENT_PHRASES):
         return False
-    if _data_share_review_claims(normalized_query, query_tokens):
-        return False
     if _contains_phrase(normalized_query, _GITHUB_EVENT_OPS_PHRASES):
         return True
     github_context = _contains_phrase(normalized_query, ("github", "깃허브"))
@@ -9946,8 +9928,6 @@ def _command_operator_guard_applies(normalized_query: str, query_tokens: set[str
 def _connector_operator_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     if _contains_phrase(normalized_query, _CONNECTOR_OPERATOR_BLOCKERS):
         return False
-    if _data_share_review_claims(normalized_query, query_tokens):
-        return False
     # A digest on a cadence is a scheduled job, and a deploy command is a
     # release, not an action in a connected app.
     if has_cadence(normalized_query, query_tokens):
@@ -10016,8 +9996,6 @@ def _live_info_operator_guard_applies(normalized_query: str, query_tokens: set[s
 
 def _media_input_operator_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     if _contains_phrase(normalized_query, _MEDIA_INPUT_OPERATOR_BLOCKERS):
-        return False
-    if _data_share_review_claims(normalized_query, query_tokens):
         return False
     if _connector_operator_guard_applies(normalized_query, query_tokens):
         return False

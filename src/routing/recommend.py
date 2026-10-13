@@ -4422,9 +4422,6 @@ def _score_definition(
     if definition.name == "internal-audit" and _internal_audit_explicit_match(normalized_query):
         score += 30
         matched.add("direct:internal_audit")
-    if definition.name == "data-share-review" and data_share_review_offers_itself(normalized_query, query_tokens):
-        score += 30
-        matched.add("direct:data_share_review")
     if definition.name == "mobile-release" and _mobile_release_explicit_match(normalized_query):
         score += 30
         matched.add("direct:mobile_release")

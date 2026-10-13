@@ -536,7 +536,13 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # reviewing a pull request, a Slack message, a post, a blog post, a
             # translation, a reminder, a video, a vendor comparison, a sample
             # message -- none of which leads with a data-protection verb (12).
-            expected=580,
+            # Its third review adds twenty-three: requests whose lead verb
+            # removes something that is not personal data (vendor, product,
+            # file or column names, pricing details, a flag, a header row,
+            # markers), that remove the protection itself, that review a pull
+            # request, notebook or slides, or that lead with another job
+            # before a later clause (23).
+            expected=603,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -715,8 +721,18 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # second review adds four: a crash log redacted before a public
             # GitHub issue, which must dispatch it, and three requests that
             # only mention redaction, which stay with GitHub event ops, the
-            # connector operator, and the gateway intent card (4).
-            expected=749,
+            # connector operator, and the gateway intent card (4). Its third
+            # review removes the skill's boost and guard stand-downs, so it
+            # drops the three interventions only the boost dispatched (a vendor
+            # ticket export with the PII to strip, one with the customer
+            # details to take out, and a CSV redacted before a vendor gets
+            # it), re-pins five to what ordinary scoring now does (four stay
+            # with the guard that holds the issue, transcript or send, and the
+            # fine-tune corpus one asks between the two owners), replaces the
+            # residual-scan one with an export de-identified for a researcher,
+            # and adds six requests other skills hold, three of them opening in
+            # Hangul (+6, -3).
+            expected=752,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
