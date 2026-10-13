@@ -1541,7 +1541,7 @@ class App:
         self.transcript.add_user(shown or text)
         self.sticky = shown or text
         self.flushed_since_prompt = 0
-        self.roster.clear()  # the agents shown were the last turn's
+        self._clear_roster()  # the agents shown were the last turn's
         self.turn_pending = True
         self.busy_since = self.clock()
         self.attachments.clear()  # the gateway sends its queued images with this turn
@@ -2014,7 +2014,7 @@ class App:
         self.flushed_since_prompt = 0  # rows printed above the region since the last prompt was sent
         self.attachments.clear()  # the gateway queued them for the session being left
         self.hud = None
-        self.roster.clear()
+        self._clear_roster()
         self._adopt_session(result, fallback_stored)
         return declined
 
@@ -2557,6 +2557,7 @@ class App:
             since = now - self.tail_asked_at
             if since < TAIL_POLL_SECONDS or (self.tail_open and since < TAIL_ANSWER_SECONDS):
                 return
+        self._forget_tail_calls()  # a call still out timed out; its answer would be dropped by `seq`
         self.tail_seq += 1
         self.tail_asked_at, self.tail_open = now, True
         seq, sid, subagent_id = self.tail_seq, self.sid, agent.subagent_id
@@ -2566,6 +2567,19 @@ class App:
             lambda result: self._on_tail(seq, sid, subagent_id, result),
             lambda error: self._on_tail(seq, sid, subagent_id, {}),  # the log keeps what the events gave it
         )
+
+    def _clear_roster(self) -> None:
+        """Drop the agents and every piece of tail bookkeeping that names them."""
+        self.roster.clear()
+        self.tail_misses.clear()
+        self._forget_tail_calls()
+        self.tail_seq += 1  # an answer still on its way is for an agent no longer listed
+        self.tail_asked_at, self.tail_open = None, False
+
+    def _forget_tail_calls(self) -> None:
+        """Drop the `subagent.tail` calls still waiting for an answer, so a gateway that never answers cannot grow `pending`."""
+        for request_id in [rid for rid, call in self.pending.items() if call.method == "subagent.tail"]:
+            del self.pending[request_id]
 
     def _on_tail(self, seq: int, sid: str, subagent_id: str, result: Mapping[str, Any]) -> bool:
         """A `subagent.tail` answer: read only when Hermes has a tail, for an agent still running in this session.
