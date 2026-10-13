@@ -22,20 +22,19 @@ All notable changes will be documented here.
   and the lexical shortlist still reads the trigger text). A question about
   the word, a subagent's quoted report, and a plain "review this PR" stay
   where they were. `frontend` gains `slop ui` and the appearance phrases
-  "looks like ai slop", "feels like ai slop", and "screams ai slop", so a
-  page, card, section, or component called AI slop keeps frontend first: it
-  dispatches frontend or asks with frontend leading, unless a code unit
-  (module, function, class, method, code) is named too, which puts the cleaner
-  first. Where one of those appearance phrases is said whole (a bare "looks"
-  or "feels" does not count), the cleaner earns up to two code and prose nouns
-  (module, function, class, method, file, code, codebase, README, docs,
-  article, blog, copy, description, email, essay, letter, message, poem, post)
-  or cleanup verbs (clean, simplify, dedupe, prune, better) back, so "this
-  README looks like ai slop" and "my essay looks like ai slop, make it better"
-  ask first with the cleaner leading, and prose that frontend's own words
-  still favor ("this slack message feels like ai slop, polish it") asks with
-  frontend leading instead of dispatching it; both skills still appear in that
-  question, and the words alone earn the cleaner nothing. A no-edit review
+  "looks like ai slop", "look like ai slop", "feels like ai slop", and
+  "screams ai slop", which are phrase evidence only beside a UI surface (such
+  as a page, screen, site, form, dashboard, card, section, hero, component,
+  button, nav, layout, or onboarding flow): "this settings page feels like AI
+  slop" dispatches frontend, while "the song lyrics look like ai slop" or
+  "this tweet screams ai slop" asks instead. On code and prose the cleaner
+  therefore leads: "this README looks like ai slop" and "my essay looks like
+  ai slop, make it better" ask first with the cleaner leading, "this module
+  looks like ai slop, clean it up" dispatches it, and "this slack message
+  feels like ai slop, polish it" asks without dispatching either skill. Where
+  a UI word and a code unit (module, function, class, method, code) share a
+  sentence ("the layout code looks like ai slop"), the cleaner earns up to two
+  context words, so it leads instead of frontend dispatching. A no-edit review
   mode inspects a drafted cleanup against the six taxonomy categories and
   returns findings in the `code-review` shape, handing fixes to a separate
   writer pass. A new `references/ui-review-checklist.md` lists six UI review

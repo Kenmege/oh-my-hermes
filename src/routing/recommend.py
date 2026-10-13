@@ -4257,50 +4257,52 @@ def _score_definition(
         trigger_token_matches -= {"index", "refresh", "stale", "갱신"}
     if definition.name == "external-connector-readiness" and not ecosystem_identity_connector_match:
         trigger_token_matches -= _ECOSYSTEM_IDENTITY_CONNECTOR_TRIGGER_NOISE
-    # The cleaner's code and prose nouns and cleanup verbs
-    # (`_SLOP_CLEANER_CONTEXT_TOKENS`) exist to answer frontend's appearance
-    # phrases, so they count only where one of those phrases is said whole
-    # (`_SLOP_CLEANER_APPEARANCE_PHRASES`) and no UI surface is named unless a
-    # code unit is named beside it. "this module looks like ai slop" then
-    # leads with the cleaner, while "this pricing card looks like ai slop" and
-    # "the pricing card component file looks like ai slop" stay with frontend.
-    # A bare appearance word does not open it: "the article about ai slop
-    # looks interesting" and "the ai slop looks better now" earn the cleaner
-    # no context words, so where the cleaner's own `ai slop` phrase is the
-    # only claim the sentence asks rather than dispatching. Without the
-    # phrase, a noun beside a slop word ("the docs explain what ai slop is")
-    # or alone ("the module failed to load") earns nothing either.
-    if definition.name == "ai-slop-cleaner" and contains_cue_phrase(
-        normalized_query, _SLOP_CLEANER_APPEARANCE_PHRASES
-    ):
-        if query_tokens & _SLOP_CLEANER_CODE_UNIT_TOKENS:
-            context = query_tokens & (_SLOP_CLEANER_CONTEXT_TOKENS | _SLOP_CLEANER_UI_SURFACE_TOKENS)
-        elif query_tokens & _SLOP_CLEANER_UI_SURFACE_TOKENS:
-            context = set()
-        else:
-            context = query_tokens & _SLOP_CLEANER_CONTEXT_TOKENS
-        # Alphabetical, so the two counted words are reproducible; each
-        # counted word is also a `trigger:` label, which is what dispatch
-        # evidence reads, so the labels themselves are what gets capped.
-        trigger_token_matches |= set(sorted(context)[:_SLOP_CLEANER_CONTEXT_CAP])
-    # `ai slop` is the cleaner's phrase only beside something it can clean: a
-    # path or file name, a code, docs, or prose target
-    # (`_SLOP_CLEANER_TARGET_TOKENS`), or a context word the appearance phrase
-    # above just credited ("this slack message feels like ai slop"). Without
-    # one -- "clean up the ai slop in my inbox", "... in my photo library" --
-    # the phrase is credited as the single word `slop`, so it names the
-    # cleaner in a question but is no longer phrase evidence that can
-    # dispatch it.
+    # Two mirrored rules decide whose phrase a slop sentence is.
+    #
+    # Frontend's appearance phrases (`_SLOP_CLEANER_APPEARANCE_PHRASES`) are a
+    # restyle only beside a UI surface (`_SLOP_CLEANER_UI_SURFACE_TOKENS`):
+    # "this settings page feels like AI slop" is frontend's, "the song lyrics
+    # look like ai slop" is not. Without one the phrase earns no phrase
+    # credit; the word `slop` is still frontend's own token, so frontend can
+    # lead a question but the phrase cannot dispatch it.
+    if definition.name == "frontend" and not query_tokens & _SLOP_CLEANER_UI_SURFACE_TOKENS:
+        for phrase in _SLOP_CLEANER_APPEARANCE_PHRASES:
+            if f"trigger:{phrase}" in matched:
+                matched.discard(f"trigger:{phrase}")
+                score -= 6
+    # The cleaner's `ai slop` is its phrase only beside something it can
+    # clean: a path or file name, or a code, docs, or prose target
+    # (`_SLOP_CLEANER_TARGET_TOKENS`). Without one -- "clean up the ai slop in
+    # my inbox", "... in my photo library" -- it is credited as the single
+    # word `slop`, so it names the cleaner in a question but is no longer
+    # phrase evidence that can dispatch it.
     if (
         definition.name == "ai-slop-cleaner"
         and "trigger:ai slop" in matched
         and not query_tokens & _SLOP_CLEANER_TARGET_TOKENS
-        and not trigger_token_matches & _SLOP_CLEANER_CONTEXT_TOKENS
         and not path_mentions(normalized_phrase(original_query))
     ):
         matched.discard("trigger:ai slop")
         matched.add("trigger:slop")
         score -= 3
+    # Where both rules let a phrase stand -- a UI surface and a code unit in
+    # one sentence ("the layout module looks like ai slop") -- the cleaner
+    # earns up to two context words (`_SLOP_CLEANER_CONTEXT_TOKENS`, plus the
+    # UI word, which then says which code), so the code unit leads the
+    # question instead of frontend's phrase dispatching. The appearance
+    # phrase must be said whole: a bare "looks" ("the ai slop looks better
+    # now") opens nothing.
+    if (
+        definition.name == "ai-slop-cleaner"
+        and contains_cue_phrase(normalized_query, _SLOP_CLEANER_APPEARANCE_PHRASES)
+        and query_tokens & _SLOP_CLEANER_CODE_UNIT_TOKENS
+        and query_tokens & _SLOP_CLEANER_UI_SURFACE_TOKENS
+    ):
+        context = query_tokens & (_SLOP_CLEANER_CONTEXT_TOKENS | _SLOP_CLEANER_UI_SURFACE_TOKENS)
+        # Alphabetical, so the two counted words are reproducible; each
+        # counted word is also a `trigger:` label, which is what dispatch
+        # evidence reads, so the labels themselves are what gets capped.
+        trigger_token_matches |= set(sorted(context)[:_SLOP_CLEANER_CONTEXT_CAP])
     # `production` is held back for production-audit (see
     # `_WHOLE_PHRASE_ONLY_TRIGGER_TOKENS`) and credited again only beside a
     # readiness or audit word ("production readiness audit").
@@ -4472,18 +4474,15 @@ def _score_definition(
     )
 
 
-# Code, prose, and cleanup words. Prose is here because prose called AI slop is
-# the cleaner's (its prose lexicon), not frontend's: "my essay looks like ai
-# slop, make it better" dispatched frontend on its appearance phrase. `better`
-# is the one prose verb: `polish` is also a frontend token, so it only ties
-# frontend and lets ordering pick the leader, and `rewrite` decided nothing.
+# Code, prose, and cleanup words: the nouns are what the cleaner can clean
+# (prose too -- its prose lexicon), and the context credit counts any of them.
 _SLOP_CLEANER_CONTEXT_TOKENS = frozenset(
     {
         "module", "modules", "function", "functions", "class", "classes", "method", "methods",
         "file", "files", "code", "codebase", "readme", "docs", "docstring", "docstrings",
         "article", "articles", "blog", "copy", "description", "email", "emails", "essay",
         "essays", "letter", "letters", "message", "messages", "poem", "poems", "post", "posts",
-        "better", "clean", "dedupe", "deduplicate", "prune", "simplify", "tidy",
+        "clean", "dedupe", "deduplicate", "prune", "simplify", "tidy",
     }
 )
 # What `ai slop` must sit beside to be the cleaner's request: the code, docs,
@@ -4494,35 +4493,39 @@ _SLOP_CLEANER_CONTEXT_TOKENS = frozenset(
 # dispatched the cleaner with them in.
 _SLOP_CLEANER_TARGET_TOKENS = (
     _SLOP_CLEANER_CONTEXT_TOKENS
-    - {"better", "clean", "dedupe", "deduplicate", "prune", "simplify", "tidy"}
+    - {"clean", "dedupe", "deduplicate", "prune", "simplify", "tidy"}
     - {"article", "articles", "blog", "email", "emails", "message", "messages", "post", "posts"}
 ) | {"repo", "repository", "diff", "branch"}
-# A UI surface named beside the slop word makes it frontend's restyle, so the
-# code nouns above earn nothing there ("the pricing card component file looks
-# like ai slop") -- unless a code unit (`_SLOP_CLEANER_CODE_UNIT_TOKENS`) is
-# named too: then the UI word only says which code ("the layout module", "the
-# layout code") and counts as one of the cleaner's context words. `file` is
-# not a code unit here, because a UI component lives in a file. The page and
-# screen nouns are the coding-edit guard's own `_UI_BUILD_SURFACES`; the rest
-# are the component-level nouns frontend requests name. `component`,
+# What frontend's appearance phrases must sit beside to be a restyle. Where a
+# code unit (`_SLOP_CLEANER_CODE_UNIT_TOKENS`) is named too, the UI word only
+# says which code ("the layout module", "the layout code") and counts as one
+# of the cleaner's context words. `file` is not a code unit, because a UI
+# component lives in a file ("the pricing card component file looks like ai
+# slop" stays frontend's). The page and screen nouns are the coding-edit
+# guard's own `_UI_BUILD_SURFACES`; the rest are the component-level nouns
+# frontend requests name, plus `nav` and `onboarding` (a nav menu and an
+# onboarding flow dispatched nothing without them). `logo`, `menu`, and
+# `flow` are left out: a restaurant menu and a data flow are not UI. `component`,
 # `button`, and `navbar` are code objects in policy.py's
 # `_CODE_OBJECT_TOKENS`, a code-edit guard; here they are deliberately UI,
 # since this set only decides which skill's restyle a slop sentence is.
 # Two-letter `ui` is absent: routing tokens are three letters or longer.
 _SLOP_CLEANER_UI_SURFACE_TOKENS = _UI_BUILD_SURFACES | frozenset(
-    {"component", "components", "card", "cards", "section", "sections", "hero", "button", "buttons", "navbar", "layout"}
+    {
+        "component", "components", "card", "cards", "section", "sections", "hero", "button", "buttons",
+        "navbar", "nav", "layout", "onboarding",
+    }
 )
-# At most this many context words count, so a slop word beside a stack of
-# nouns ("clean the files, simplify the code, tidy the docs ...") cannot run
-# away: two are enough to lead an appearance phrase, and a dispatch still
-# needs the cleaner's own phrase.
+# At most this many context words count, so layout code beside a stack of
+# code nouns ("the layout code looks like ai slop: the module, the files, the
+# classes") cannot buy a dispatch past frontend's phrase: two are enough to
+# lead it.
 _SLOP_CLEANER_CONTEXT_CAP = 2
 _SLOP_CLEANER_CODE_UNIT_TOKENS = frozenset(
     {"module", "modules", "function", "functions", "class", "classes", "method", "methods", "code", "codebase"}
 )
 # Frontend's appearance phrases (its own triggers), matched whole. Their words
-# alone are everyday ("looks better", "looks interesting"), so a token check
-# opened the context credit on sentences that only mention AI slop.
+# alone are everyday ("looks better", "looks interesting").
 _SLOP_CLEANER_APPEARANCE_PHRASES = ("looks like ai slop", "look like ai slop", "feels like ai slop", "screams ai slop")
 _PRODUCTION_AUDIT_CONTEXT_TOKENS = frozenset(
     {"audit", "readiness", "ready", "launch", "preflight", "checklist", "go-live", "rollback"}

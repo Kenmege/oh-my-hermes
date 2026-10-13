@@ -3739,20 +3739,46 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
     ),
-    # The cap itself: beside an appearance phrase, a list of five code nouns
-    # with no cleanup verb would otherwise buy a dispatch past frontend's
-    # phrase (23 uncapped); counting two keeps it a question.
+    # The cap itself: the context words now count only where a UI surface and
+    # a code unit are both named, so frontend's phrase still competes; there a
+    # list of code nouns would otherwise buy a dispatch past it, and counting
+    # two keeps it a question.
     RoutingPrecisionCase(
-        "code-noun-list-beside-appearance-phrase-stays-a-clarify",
-        "Stacked code nouns beside an appearance phrase do not buy a dispatch",
-        "this looks like ai slop: the files, the code, the docs, the module, the classes",
+        "layout-code-noun-list-stays-a-clarify",
+        "Stacked code nouns beside layout code that looks like AI slop do not buy a dispatch",
+        "the layout code looks like ai slop: the module, the files, the classes",
+        "answer_clarification",
+        "",
+    ),
+    # Frontend's appearance phrase on a non-UI target is not a restyle: song
+    # lyrics, a tweet, and a profile bio called AI slop ask instead of
+    # dispatching frontend (each did while the phrase counted anywhere).
+    RoutingPrecisionCase(
+        "song-lyrics-look-like-ai-slop-stays-a-clarify",
+        "Song lyrics that look like AI slop are not a frontend restyle",
+        "the song lyrics look like ai slop",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "tweet-screams-ai-slop-stays-a-clarify",
+        "A tweet that screams AI slop is not a frontend restyle",
+        "this tweet screams ai slop",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "linkedin-bio-looks-like-ai-slop-stays-a-clarify",
+        "A profile bio that looks like AI slop is not a frontend restyle",
+        "my linkedin bio looks like ai slop",
         "answer_clarification",
         "",
     ),
     # A chat message called AI slop is prose, not a UI restyle: it must not
-    # dispatch frontend. Frontend still leads the question here (13 vs 10,
-    # since `polish` is its word), so the case claims only that neither
-    # dispatches; the prose noun is what keeps it from dispatching.
+    # dispatch frontend, and with no UI surface frontend's appearance phrase
+    # earns no phrase credit. Frontend still leads the question (`polish` is
+    # its word) and `message` is not a cleaner target, so the case claims
+    # only that neither skill dispatches.
     RoutingPrecisionCase(
         "slack-message-feels-like-ai-slop-does-not-dispatch",
         "A Slack message that feels like AI slop asks rather than dispatching frontend",
@@ -9051,13 +9077,12 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_frontend_handoff",
         "frontend_handoff",
     ),
-    # Code and prose nouns beside a whole appearance phrase put the
-    # cleaner back in the lead over frontend's appearance phrases (owner
-    # decision, 2026-10-12). Where both skills say one phrase each, the first
-    # three stay a clarify with the cleaner first: a code noun alone does not
-    # settle that a restyle was not meant. The fourth names the cleanup and
-    # behavior preservation as well, which is enough to dispatch. A UI surface
-    # beside the code noun keeps frontend's dispatch (the last case).
+    # Frontend's appearance phrases are phrase evidence only beside a UI
+    # surface, so on code and prose they do not compete: the cleaner leads.
+    # A statement about a function, a README, an essay, or a PR description
+    # stays a clarify (its own `ai slop` phrase alone is a medium score); a
+    # module with a cleanup verb, or one to simplify without changing
+    # behavior, is a request and dispatches.
     RoutingInterventionCase(
         "function-feels-like-ai-slop-leads-with-slop-cleaner",
         "A function that feels like AI slop asks first, with the cleaner leading",
@@ -9069,14 +9094,13 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "ai-slop-cleaner",
     ),
     RoutingInterventionCase(
-        "module-looks-like-ai-slop-leads-with-slop-cleaner",
-        "A module that looks like AI slop, with a cleanup verb, leads with the cleaner",
+        "module-looks-like-ai-slop-clean-it-up-reaches-slop-cleaner",
+        "A module that looks like AI slop, with a cleanup verb, dispatches the cleaner",
         "this module looks like ai slop, clean it up",
-        "clarify",
-        "oh-my-hermes",
-        "answer_clarification",
-        "clarification",
+        "dispatch",
         "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
     ),
     RoutingInterventionCase(
         "readme-looks-like-ai-slop-leads-with-slop-cleaner",
@@ -9109,9 +9133,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "ai-slop-cleaner",
     ),
     # Prose called AI slop is the cleaner's (its prose lexicon), not a
-    # restyle: prose nouns and the verb `better` count as its context words,
-    # so frontend's appearance phrase no longer buys a dispatch on an essay
-    # or a PR description.
+    # restyle: an essay and a PR description are cleaner targets and name no
+    # UI surface, so frontend's appearance phrase no longer competes.
     RoutingInterventionCase(
         "essay-looks-like-ai-slop-leads-with-slop-cleaner",
         "An essay that looks like AI slop asks first with the cleaner leading, not frontend",
@@ -9159,6 +9182,24 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "hero-section-screams-ai-slop-reaches-frontend",
         "A hero section that screams AI slop is a frontend restyle",
         "our hero section screams ai slop, give it a distinctive look",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+    ),
+    RoutingInterventionCase(
+        "onboarding-flow-looks-like-ai-slop-reaches-frontend",
+        "An onboarding flow that looks like AI slop is a frontend restyle",
+        "our onboarding flow looks like ai slop",
+        "dispatch",
+        "frontend",
+        "prepare_frontend_handoff",
+        "frontend_handoff",
+    ),
+    RoutingInterventionCase(
+        "nav-menu-looks-like-ai-slop-reaches-frontend",
+        "A nav menu that looks like AI slop is a frontend restyle",
+        "the nav menu looks like ai slop",
         "dispatch",
         "frontend",
         "prepare_frontend_handoff",
