@@ -187,8 +187,17 @@ class PortfolioTests(unittest.TestCase):
             "gpt-5.6-sol": ("gpt-6-sol", "2026-09-23"),
             "gpt-5.6-terra": ("gpt-6-sol", "2026-09-23"),
             "gpt-6-sol": ("gpt-6.1-sol", "2026-10-01"),
+            "claude-haiku-4-5": ("claude-haiku-5-5", "2026-10-13"),
+            # No Qwen-line successor: the row carries an empty successor, and
+            # its reason names the model that now holds Qwen3-Coder's slot.
+            "qwen3-coder": ("", "2026-10-13"),
         }
         rows = rows_for(*successors)
+        self.assertIn("is now held by claude-sonnet-5-5", rows["qwen3-coder"]["decision"]["reason"])
+        self.assertIn("no same-line successor", rows["qwen3-coder"]["decision"]["reason"])
+        # An empty successor offers no advisory link; a generated row does.
+        self.assertIsNone(rows["qwen3-coder"]["superseded_by"])
+        self.assertEqual(rows["claude-haiku-4-5"]["superseded_by"]["successor"], "claude-haiku-5-5")
         for model, (successor, decision_date) in successors.items():
             self.assertEqual(rows[model]["disposition"], "excluded_superseded")
             self.assertEqual(rows[model]["decision"]["successor"], successor)

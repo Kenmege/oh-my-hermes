@@ -83,7 +83,17 @@ class ParityTests(unittest.TestCase):
         "grok-code-fast": ("xai", "openrouter"),
         # Retired 2026-10-01 when GPT-6.1 Sol took every GPT-6 Sol slot.
         "gpt-6-sol": ("openai-codex", "openai"),
+        # Retired 2026-10-13: Claude Haiku 4.5 behind Haiku 5.5, and the 2025
+        # Qwen3-Coder with no Qwen successor.
+        "claude-haiku-4-5": ("ccapi", "anthropic", "openrouter"),
+        "qwen3-coder": ("qwen-oauth", "openrouter", "opencode"),
     }
+    # Provider families whose last catalog member retired, kept in the
+    # vocabulary by name. The entitlement parser is strict and atomic, so
+    # dropping a kind would invalidate as a whole every providers.json that
+    # recorded it; `qwen-oauth` lost its only member (qwen3-coder) on
+    # 2026-10-13 and is still named by that recognition-only row.
+    _RETAINED_PROVIDER_FAMILIES: frozenset[str] = frozenset({"qwen-oauth"})
 
     def _catalog_families(self) -> dict[str, tuple[str, ...]]:
         families: dict[str, tuple[str, ...]] = {}
@@ -106,12 +116,16 @@ class ParityTests(unittest.TestCase):
         )
 
     def test_family_vocabulary_is_the_catalog_union(self) -> None:
-        union = sorted({family for families in self._catalog_families().values() for family in families})
-        self.assertEqual(list(PROVIDER_FAMILY_VOCABULARY), union)
-        # A recognition-only alias may only name families the catalog already
-        # describes; it never widens the vocabulary the setup interview knows.
+        union = {family for families in self._catalog_families().values() for family in families}
+        # A retained family is one the catalog no longer names; once a chain
+        # names it again the exception is moot and must be removed.
+        self.assertEqual(sorted(self._RETAINED_PROVIDER_FAMILIES & union), [])
+        self.assertEqual(list(PROVIDER_FAMILY_VOCABULARY), sorted(union | self._RETAINED_PROVIDER_FAMILIES))
+        # A recognition-only alias may only name families the vocabulary
+        # already holds; it never widens what the setup interview knows.
+        vocabulary = union | self._RETAINED_PROVIDER_FAMILIES
         for alias, families in self._RECOGNITION_ONLY_ALIAS_FAMILIES.items():
-            self.assertEqual(sorted(set(families) - set(union)), [], alias)
+            self.assertEqual(sorted(set(families) - vocabulary), [], alias)
 
 
 class ParseTests(unittest.TestCase):
@@ -257,16 +271,20 @@ class ChainSurfaceConsistencyTests(unittest.TestCase):
             self.assertTrue(architect["entitlement_shaped"])
             # The one GPT entry is served by the confirmed openai-codex
             # provider and leads; the Claude and Kimi entries follow as
-            # unserved in shipped order.
+            # unserved in shipped order (Opus 5.5 before Fable 5.1).
             self.assertEqual(architect["chain"][0]["model"], "gpt-6-astra")
-            self.assertEqual(architect["chain"][1]["model"], "claude-fable-5-1")
+            self.assertEqual(architect["chain"][1]["model"], "claude-opus-5-5")
+            self.assertEqual(architect["chain"][2]["model"], "claude-fable-5-1")
             self.assertTrue(architect["chain"][0]["served"])
-            self.assertFalse(architect["chain"][1]["served"])
-            self.assertFalse(architect["chain"][2]["served"])
+            for entry in architect["chain"][1:]:
+                self.assertFalse(entry["served"], entry)
             out = io.StringIO()
             with redirect_stdout(out):
                 _print_state(state)
-            self.assertIn("architect: gpt-6-astra:xhigh, claude-fable-5-1:xhigh, kimi-k3:xhigh", out.getvalue())
+            self.assertIn(
+                "architect: gpt-6-astra:xhigh, claude-opus-5-5:xhigh, claude-fable-5-1:xhigh, kimi-k3:xhigh",
+                out.getvalue(),
+            )
             self.assertIn("(reordered by this machine's providers)", out.getvalue())
             self.assertIn("Linked Hermes providers: none found", out.getvalue())
             self.assertIn(f"Provider entitlements: {provider_entitlements_path(home)} [applied]", out.getvalue())
@@ -283,10 +301,11 @@ class ChainSurfaceConsistencyTests(unittest.TestCase):
             routed = json.loads(omh_delegate_route_handler({"action": "set", "category": "architect", **common}))
             self.assertEqual(routed["status"], "routed", routed)
             self.assertEqual(routed["applied"]["alias"], "gpt-6-astra")
-            fallback = json.loads(omh_delegate_route_handler({"action": "fallback", "category": "architect", **common}))
-            self.assertEqual(fallback["applied"]["alias"], "claude-fable-5-1")
-            fallback = json.loads(omh_delegate_route_handler({"action": "fallback", "category": "architect", **common}))
-            self.assertEqual(fallback["applied"]["alias"], "kimi-k3")
+            for expected in ("claude-opus-5-5", "claude-fable-5-1", "kimi-k3"):
+                fallback = json.loads(
+                    omh_delegate_route_handler({"action": "fallback", "category": "architect", **common})
+                )
+                self.assertEqual(fallback["applied"]["alias"], expected)
             status = json.loads(omh_delegate_route_handler({"action": "status", **common}))
             self.assertEqual(status["categories"]["architect"][0]["alias"], "gpt-6-astra")
 

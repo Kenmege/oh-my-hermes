@@ -341,6 +341,10 @@ What the numbers say, and no more:
      {"model": "kimi-k3", "reasoning_effort": "medium"}]}}
   ```
 
+  Since the 2026-10-13 shipped table this is the default shape: GPT-6.1
+  Sol heads `unspecified-high`, ahead of Claude Opus 5.5 and Kimi K3.
+  GPT-6.1 Sol itself has not been run on this corpus.
+
 - Effort routing did nothing for Astra here: `low` and `xhigh` produced the
   same passes, tokens, and wall clock, so no claim is made for it.
 - No arm passes a read or lsp task; 18 / 30 is this corpus's ceiling for
@@ -678,7 +682,8 @@ every real fanout unit carries pay for itself?
 
 Setup:
 - Corpus: the same pinned 30-instance evaluation corpus as above.
-- Route: `claude-fable-5-1` at `xhigh`, the `architect` chain head, through
+- Route: `claude-fable-5-1` at `xhigh`, then the `architect` chain head
+  (third behind Opus 5.5 and GPT-6 Astra since 2026-10-13), through
   Hermes' `anthropic` provider on the Claude Code OAuth subscription.
 - Builds: omh `4ab239b10` for A1–A3 and the `omh/bench-unit-head` branch for
   U1–U3; Hermes Agent 0.21.5+4533.

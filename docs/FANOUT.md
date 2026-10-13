@@ -746,7 +746,13 @@ Rules, all applied at freeze time:
   to Opus 4.6 on Microsoft Foundry (official,
   code.claude.com/docs/en/model-config, read 2026-09-23). An account on an
   older Claude Code or on Foundry therefore runs a different Opus under the
-  same entry; name `claude-opus-5-5` to pin it. `codex` has no
+  same entry; name `claude-opus-5-5` to pin it. The interactive `omh setup`
+  writes this entry only after the operator confirms a Claude Code
+  subscription and only when none is set, and it writes the head of the
+  Maestro lane's Claude chain: the pinned `claude-opus-5-5` since 2026-10-13
+  (the chain is `claude-opus-5-5`, then `claude-fable-5-1`, then `opus`). The
+  preference has no fallback walk, so an account that does not serve the
+  pinned id changes the entry to `opus`. `codex` has no
   recommended value either (no local `codex` CLI in this repo to confirm its
   `--model` value space against). An operator profile entry, including an
   explicit empty string, always overrides an unset default.

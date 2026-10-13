@@ -697,10 +697,14 @@ _CLAUDE_SONNET_5_5: Final[dict[str, object]] = {
         "thinking blocks are tied to the model and conversation that produced them",
     ),
     # Anthropic list price (platform.claude.com pricing, read 2026-10-01).
-    # Cache reads are the standard tenth of input.
+    # Anthropic lowered the cache-read rate on 2026-10-07: the Haiku 5.5
+    # launch post says "Cache reads now cost 50% less: $0.10 per million
+    # tokens rather than $0.20", and the pricing page now prices cache hits on
+    # Opus 5.5 and Sonnet 5.5 at 0.05x input (both read 2026-10-13). The
+    # 0.20 recorded on 2026-10-01 was the rate then, not a misreading.
     "pricing_usd_per_mtok": {
         "input": 2.0,
-        "cached_input": 0.20,
+        "cached_input": 0.10,
         "cache_write_5m": 2.50,
         "cache_write_1h": 4.0,
         "output": 10.0,
@@ -716,8 +720,132 @@ _CLAUDE_SONNET_5_5: Final[dict[str, object]] = {
         "https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5",
         "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5",
         "https://code.claude.com/docs/en/model-config",
+        # The 2026-10-07 cache-read price cut (read 2026-10-13).
+        "https://www.anthropic.com/claude-haiku-5-5",
     ),
     "sources_read": "2026-10-01",
+    "claim_boundary": MODEL_CONTRACT_CLAIM_BOUNDARY,
+}
+
+# Claude Haiku 5.5, Claude Haiku 4.5's successor and the first Haiku-class
+# model with an effort ladder. Unlike Opus 5.5 and Sonnet 5.5 it accepts
+# `thinking.type=disabled`, but only at effort `high` or below, so `off` is
+# neither raised nor listed as unsupported: a disable carries no effort rung,
+# and the route passes it through on record. `minimal` is not a rung and is
+# raised to `low`. Two prices, chosen by prompt length: the approximation
+# table carries the up-to-100K card, the Gemini 3.1 Pro / Grok Build 0.1 shape
+# for a tiered price; the higher card is recorded here and not flattened.
+_CLAUDE_HAIKU_5_5: Final[dict[str, object]] = {
+    "schema_version": MODEL_CONTRACT_SCHEMA_VERSION,
+    "model_id": "claude-haiku-5-5",
+    "reasoning_mode": "thinking",
+    "service_tier": "standard",
+    "family": "claude",
+    "generation": "claude-haiku-5.5",
+    # The launch post and the system card are dated October 7, 2026.
+    "released": "2026-10-07",
+    "rollout": (
+        "available on the Claude API, Amazon Bedrock, Google Cloud, Microsoft Foundry, and Claude "
+        "Platform on AWS; a released id is not account-level readiness evidence"
+    ),
+    # A fixed id with no date suffix: the dateless id is the pinned snapshot.
+    "served_ids": {
+        "first_party": "claude-haiku-5-5",
+        "bedrock": "anthropic.claude-haiku-5-5",
+    },
+    "retirement": "not sooner than 2027-10-07",
+    "knowledge_cutoff": "2026-06",
+    "context_window_tokens": 1_000_000,
+    "max_input_tokens": 1_000_000,
+    "max_output_tokens": 128_000,
+    "limits_note": (
+        "1M context and 128K max output are documented; Message Batches allow up to 300K output "
+        "with the `output-300k-2026-03-24` beta header; no separate max-input figure is published, "
+        "and a prompt over 100,000 tokens is billed on the higher price card"
+    ),
+    "reasoning_efforts": ("low", "medium", "high", "xhigh", "max"),
+    "effort_floor": "low",
+    # The API default when a request omits effort, as on Opus 5.5.
+    "effort_default": "medium",
+    "unsupported_efforts": {
+        "minimal": "not in the documented ladder",
+    },
+    "tool_calling": {
+        "api": "messages",
+        "note": (
+            "forced `tool_choice` of type `any` or `tool` is accepted, but the response then starts "
+            "with the tool call and carries no `thinking` block; use `auto` and say in the prompt "
+            "when a tool applies to keep thinking before the call"
+        ),
+    },
+    "unsupported_parameters": ("thinking.budget_tokens", "top_k"),
+    "unsupported_parameters_note": (
+        "`temperature` must be 1 and `top_p` must be 0.99 when sent, and sending both is rejected; "
+        "every `top_k` value, a manual thinking budget, and an assistant prefill return HTTP 400; "
+        "`thinking.type=disabled` returns HTTP 400 at `xhigh` and `max`, and `between_tools` is "
+        "documented for Sonnet 5.5 only"
+    ),
+    "runtime_mechanisms": {
+        "preserved_thinking_blocks": "documented_not_observed",
+        "per_message_effort": "documented_not_observed",
+    },
+    "surface_notes": {
+        "claude_code": (
+            "the `haiku` alias resolves to Haiku 5.5 on the Anthropic API from Claude Code v2.1.293 "
+            "and to Haiku 4.5 on Claude Platform on AWS, Bedrock, Google Cloud, and Foundry; the "
+            "client runs it at `medium` effort with adaptive reasoning and offers no thinking-off "
+            "setting"
+        ),
+        "hermes": (
+            "on Hermes' Anthropic route, builds through v0.21.6 (2026-10-08), the 0.21.1 floor "
+            "included, treat every `haiku` id as pre-thinking and send neither thinking nor effort, "
+            "so a requested rung is not on the wire and the API default `medium` runs; v0.21.7 "
+            "(2026-10-12; fix 8ed7d31b20 of 2026-10-11 UTC) and origin/main 63d0b941200 exempt only "
+            "Haiku below 5.5 and send adaptive "
+            "thinking plus `output_config.effort`; neither has a price row for this id, and context "
+            "resolves through the 200K `claude` catch-all row; observed in the Hermes source, not a "
+            "vendor statement"
+        ),
+    },
+    "documented_traits": (
+        "adaptive thinking is on by default; `thinking.type=disabled` is accepted at `high` or "
+        "below and returns HTTP 400 at `xhigh` and `max`",
+        "the first Haiku-class model with effort levels; `medium` is the API default",
+        "a prompt asking it to answer directly does not stop it thinking; lowering effort does",
+        "at `low`, in a long agent prompt, it sometimes stops early and hands the task back",
+        "at `low` and `medium` it sometimes reports a code change as done without running a check",
+        "at `xhigh` in multi-turn chats it sometimes writes its whole answer in thinking and ends "
+        "the turn with no visible text",
+        "the same text counts as about 30% more tokens than on Claude Haiku 4.5",
+        "thinking blocks are tied to the account and conversation that produced them",
+    ),
+    # Anthropic list price (platform.claude.com pricing, read 2026-10-13).
+    # Cache reads are the standard tenth of input on both cards.
+    "pricing_usd_per_mtok": {
+        "input": 0.10,
+        "cached_input": 0.01,
+        "cache_write_5m": 0.125,
+        "cache_write_1h": 0.20,
+        "output": 0.50,
+        "long_context_over_100k_prompt": (
+            "input 0.50, cached input 0.05, cache write 0.625 (5m) and 1.00 (1h), output 2.50 for a "
+            "request whose prompt, counting cache reads and writes, exceeds 100,000 tokens"
+        ),
+        "batch": "input 0.05, output 0.25 up to 100K; input 0.25, output 1.25 above",
+    },
+    "data_handling": _DATA_HANDLING_NOT_READ,
+    "sources": (
+        "https://platform.claude.com/docs/en/about-claude/models/overview.md",
+        "https://platform.claude.com/docs/en/about-claude/pricing.md",
+        "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+        "https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide",
+        "https://platform.claude.com/docs/en/models/haiku-5-5/whats-new-haiku-5-5",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-haiku-5-5",
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://www.anthropic.com/claude-haiku-5-5",
+        "https://code.claude.com/docs/en/model-config",
+    ),
+    "sources_read": "2026-10-13",
     "claim_boundary": MODEL_CONTRACT_CLAIM_BOUNDARY,
 }
 
@@ -967,6 +1095,7 @@ MODEL_CONTRACTS: Final[dict[str, Mapping[str, object]]] = {
     "gpt-6-luna": _GPT_6_LUNA,
     "claude-opus-5-5": _CLAUDE_OPUS_5_5,
     "claude-sonnet-5-5": _CLAUDE_SONNET_5_5,
+    "claude-haiku-5-5": _CLAUDE_HAIKU_5_5,
     "deepseek-v4.1-flash": _DEEPSEEK_V41_FLASH,
     "jev-1.13.0": _JEV_1_13,
 }
@@ -1047,6 +1176,21 @@ DECLARED_MODEL_CONTRACT_PROJECTIONS: Final[dict[str, Mapping[str, str]]] = {
     },
     "claude-sonnet-5.5": {
         "contract_model_id": "claude-sonnet-5-5",
+        "reasoning_mode": "thinking",
+        "service_tier": "standard",
+    },
+    # Claude Haiku 5.5's second spellings, on the same terms: the Bedrock id is
+    # the contract's own `served_ids.bedrock` (platform.claude.com models
+    # overview, read 2026-10-13); the dotted form is OpenRouter's
+    # (`anthropic/claude-haiku-5.5`, listed in the Hermes static model catalog
+    # at origin/main 63d0b941200, read 2026-10-13).
+    "anthropic.claude-haiku-5-5": {
+        "contract_model_id": "claude-haiku-5-5",
+        "reasoning_mode": "thinking",
+        "service_tier": "standard",
+    },
+    "claude-haiku-5.5": {
+        "contract_model_id": "claude-haiku-5-5",
         "reasoning_mode": "thinking",
         "service_tier": "standard",
     },

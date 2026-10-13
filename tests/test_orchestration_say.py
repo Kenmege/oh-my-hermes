@@ -193,7 +193,7 @@ class RouteHandlerTests(unittest.TestCase):
         self.assertEqual(routed["say"], "This part will run on GLM 5.3 Flash for short tasks.")
         fell_back = self.call(action="fallback", category="quick")
         self.assertEqual(fell_back["status"], "fell_back")
-        self.assertEqual(fell_back["say"], "This part moves to the next model in line: Kimi K3 for short tasks.")
+        self.assertEqual(fell_back["say"], "This part moves to the next model in line: GPT-6 Luna for short tasks.")
         statuses = []
         for _ in range(3):
             statuses.append(self.call(action="fallback", category="quick"))
@@ -213,7 +213,7 @@ class RouteHandlerTests(unittest.TestCase):
         self.call(action="clear")
         with mock.patch("omh.plugin_bundle.omh.tools.delegate_route_tool.route_say", return_value=None):
             without = self.call(action="set", category="architect")
-        self.assertEqual(with_say.pop("say"), "This part will run on Claude Fable 5.1 for architecture and system design.")
+        self.assertEqual(with_say.pop("say"), "This part will run on Claude Opus 5.5 for architecture and system design.")
         for payload in (with_say, without):
             payload.pop("route_provenance", None)
             payload.pop("observation", None)

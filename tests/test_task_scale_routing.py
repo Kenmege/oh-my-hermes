@@ -112,12 +112,13 @@ class TaskScaleResolutionTests(unittest.TestCase):
             "haiku",
         )
         large = resolve_model_route("claude-code", role="implementation", requested_scale="large")
-        self.assertEqual(large["selected_model"], "claude-fable-5-1")
-        # The built-in Claude chain runs Fable 5.1 -> opus, so the
-        # next-candidate advice after the head still ends on the alias.
+        self.assertEqual(large["selected_model"], "claude-opus-5-5")
+        # The built-in Claude chain runs Opus 5.5 -> Fable 5.1 -> opus (owner
+        # decision, 2026-10-13, reversing Fable -> opus): the pinned Opus id
+        # heads it, and the next-candidate advice still ends on the alias.
         self.assertEqual(
-            [entry["model_id"] for entry in large["chain"]][:2],
-            ["claude-fable-5-1", "opus"],
+            [entry["model_id"] for entry in large["chain"]][:3],
+            ["claude-opus-5-5", "claude-fable-5-1", "opus"],
         )
         self.assertEqual(large["selected_reasoning_effort"], "xhigh")
 

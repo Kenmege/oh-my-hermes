@@ -335,17 +335,17 @@ OMH에는 다음과 같이 편집 가능한 순서형 recommendation chain이 �
 | 카테고리 alias | 용도 | 편집 가능한 recommendation 순서 |
 | --- | --- | --- |
 | `ultrabrain` | 가장 깊은 추론 | GPT-6 Astra (xhigh) |
-| `deep` | 강력한 기본 티어 | GPT-6.1 Sol, 다음 DeepSeek Flash (V4.1) (high) |
-| `architect` | 아키텍처·시스템 설계 | Claude Fable 5.1, 다음 GPT-6 Astra, 다음 Kimi K3 (xhigh) |
-| `unspecified-high` | 기본 작업 모델 | Kimi K3, 다음 Claude Opus 5.5 (medium) |
-| `unspecified-low` | 저비용 폴백 | GLM 5.3, 다음 DeepSeek Flash (V4.1), 다음 Claude Opus 5.5 (low) |
-| `quick` | 짧은 작업 | GLM 5.3 Flash, 다음 Kimi K3, 다음 GPT-6 Luna, 다음 Claude Fable 5.1 (low) |
-| `writing` | 문서·산문 | Kimi K3, 다음 Qwen3-Coder, 다음 Gemini 3.1 Pro (medium) |
-| `visual-engineering` | 프론트엔드·비주얼 | Claude Fable 5.1, 다음 Kimi K3 (high) |
-| `artistry` | 비정형 창작 | Gemini 3.1 Pro, 다음 Claude Fable 5.1, 다음 Kimi K3 (high) |
-| `capable` | 범용 고성능 작업 | Claude Fable 5.1, 다음 Claude Opus 5.5, 다음 Kimi K3, 다음 GLM 5.3 (medium) |
-| `simple-work` | 간단한 일상 작업 | GPT-6 Luna, 다음 DeepSeek Flash (V4.1), 다음 Claude Haiku 4.5 (low) |
-| `deep-work` | 최상위 깊이의 긴 작업 | GPT-6 Astra (high) |
+| `deep` | 강력한 기본 티어 | Claude Opus 5.5, 다음 GPT-6.1 Sol, 다음 Kimi K3 (high) |
+| `architect` | 아키텍처·시스템 설계 | Claude Opus 5.5, 다음 GPT-6 Astra, 다음 Claude Fable 5.1, 다음 Kimi K3 (xhigh) |
+| `unspecified-high` | 기본 작업 모델 | GPT-6.1 Sol, 다음 Claude Opus 5.5, 다음 Kimi K3 (medium) |
+| `unspecified-low` | 저비용 폴백 | GLM 5.3, 다음 DeepSeek V4.1 Flash, 다음 GPT-6.1 Sol, 다음 Claude Sonnet 5.5 (low) |
+| `quick` | 짧은 작업 | GLM 5.3 Flash, 다음 GPT-6 Luna, 다음 Claude Haiku 5.5, 다음 Kimi K3 (low) |
+| `writing` | 문서·산문 | Claude Opus 5.5, 다음 Claude Sonnet 5.5, 다음 Kimi K3, 다음 Gemini 3.1 Pro (medium) |
+| `visual-engineering` | 프론트엔드·비주얼 | Claude Opus 5.5, 다음 Claude Fable 5.1, 다음 Gemini 3.1 Pro, 다음 Kimi K3 (high) |
+| `artistry` | 비정형 창작 | Gemini 3.1 Pro, 다음 Claude Opus 5.5, 다음 Claude Fable 5.1, 다음 Kimi K3 (high) |
+| `capable` | 범용 고성능 작업 | Claude Opus 5.5, 다음 GPT-6.1 Sol, 다음 Claude Fable 5.1, 다음 Kimi K3 (medium) |
+| `simple-work` | 간단한 일상 작업 | GPT-6 Luna, 다음 Claude Haiku 5.5, 다음 DeepSeek V4.1 Flash (low) |
+| `deep-work` | 최상위 깊이의 긴 작업 | Claude Opus 5.5, 다음 GPT-6.1 Sol (max) |
 
 Ultrafast 티어가 궁금하다면 — Kimi K3 Ultrafast(300 TPS), GLM 5.3 Ultrafast — [OpenGateway](https://opengateway.ai/)에서 만나볼 수 있습니다.
 
@@ -392,7 +392,7 @@ $ omh coding category-maestro interview   # 안내형 워크, Enter로 각 체�
 $ omh coding run --owner codex --category ultrabrain --goal ...
 ```
 
-이는 `~/.omh/routing/category-maestro.json`(`omh_category_maestro/v1`)을 편집합니다. `omh coding category-maestro show`는 유효 표를 operator 오버라이드와 함께 출력하고, 대화형 `omh setup`도 같은 워크를 제공합니다. 실행의 명시적 `--model`은 항상 이기고, `~/.omh/routing/dispatch-models.json`은 어떤 라우트도 해석되지 않을 때만 쓰이는 owner별 기본값으로 남습니다(Claude Code에서 가장 강한 티어를 쓰려면 그곳에 `"claude-code": "opus"`를 설정). 스키마와 전체 우선순위는 `docs/FANOUT.md`(Category-maestro와 Dispatch-model preference)를 참조하세요.
+이는 `~/.omh/routing/category-maestro.json`(`omh_category_maestro/v1`)을 편집합니다. `omh coding category-maestro show`는 유효 표를 operator 오버라이드와 함께 출력하고, 대화형 `omh setup`도 같은 워크를 제공합니다. 실행의 명시적 `--model`은 항상 이기고, `~/.omh/routing/dispatch-models.json`은 어떤 라우트도 해석되지 않을 때만 쓰이는 owner별 기본값으로 남습니다(대화형 `omh setup`은 Claude Code 구독을 확인했고 항목이 없을 때 그곳에 `"claude-code": "claude-opus-5-5"`를 기록합니다. 계정이 이 고정 id를 제공하지 않거나 클라이언트가 추천하는 Opus를 따르려면 `opus` 별칭으로 바꾸세요). 스키마와 전체 우선순위는 `docs/FANOUT.md`(Category-maestro와 Dispatch-model preference)를 참조하세요.
 
 <details>
 <summary><strong>또는 아래 내용을 Hermes나 다른 coding agent에 붙여 넣으세요</strong></summary>

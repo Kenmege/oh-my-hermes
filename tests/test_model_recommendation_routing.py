@@ -33,15 +33,18 @@ _OPUS = _active("claude-opus-5-5", "ccapi", "claude")
 _GROK = _active("grok-build-0.1", "xai", "grok")
 _GEMINI = _active("gemini-3.1-pro", "google", "gemini")
 # Shipped chain members (the superseded GLM 5.2 Ultrafast and Fable 5
-# entries left the chains on 2026-09-11): the quick head and the Claude
-# head of visual-engineering.
+# entries left the chains on 2026-09-11): the quick head, and the entries
+# right behind Opus 5.5 in writing and visual-engineering. Opus 5.5 heads
+# both since 2026-10-13, so each category is exercised on a model that only
+# its own chain ranks above Kimi K3, the companion every chain ends on.
 _GLM_FLASH = _active("glm-5.3-flash", "zai", "glm")
 _FABLE = _active("claude-fable-5-1", "ccapi", "claude")
+_SONNET = _active("claude-sonnet-5-5", "ccapi", "claude")
 
 
 _CATEGORY_ACTIVE = {
     "quick": _GLM_FLASH,
-    "writing": _KIMI,
+    "writing": _SONNET,
     "artistry": _GEMINI,
     "visual-engineering": _FABLE,
 }
@@ -71,7 +74,7 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
                     "hermes",
                     role="implementation",
                     requested_category=requested,
-                    active_models=[active, _OPUS],
+                    active_models=[active, _KIMI],
                 )
                 self.assertEqual(route["category"], canonical)
                 self.assertEqual(route["role"], "implementation")
@@ -118,7 +121,8 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
             ["ccapi/claude-opus-5-5"],
         )
         recommendation = route["recommendation"]
-        self.assertEqual(recommendation["inactive_candidates"][0], "kimi-k3")
+        # The default working chain heads on GPT-6.1 Sol since 2026-10-13.
+        self.assertEqual(recommendation["inactive_candidates"][0], "gpt-6.1-sol")
 
     def test_dated_snapshot_counts_as_its_base_and_routes_as_served(self) -> None:
         from omh.coding.model_recommendations import resolve_model_recommendation
@@ -127,8 +131,9 @@ class HermesRecommendationRoutingTests(unittest.TestCase):
         # 2026-09-11 for gpt-5.6-terra / gpt-5.6-luna): the snapshot satisfies
         # the chain entry naming its base, and the route carries the id as
         # served rather than the catalog spelling. Both 5.6 ids left the
-        # shipped chains on 2026-09-23, so the rule is held on the id that
-        # now heads `deep`; the date is a shape, not a published snapshot.
+        # shipped chains on 2026-09-23, so the rule is held on an id `deep`
+        # names (second behind Opus 5.5 since 2026-10-13); the date is a
+        # shape, not a published snapshot.
         dated = _active("gpt-6.1-sol-2026-09-29", "openai", "gpt")
         recommendation = resolve_model_recommendation(owner="hermes", active_models=[dated], category="deep")
         self.assertEqual(recommendation["status"], "resolved")

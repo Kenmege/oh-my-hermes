@@ -266,9 +266,30 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
             "unspecified-low",
         )
 
+    def test_every_head_labels_its_own_category_except_the_accepted_collisions(self):
+        # A head shared by two categories labels only the earlier one in
+        # canonical order. The owner accepted exactly two such collisions on
+        # 2026-10-13 -- (claude-opus-5-5, high) heads deep and
+        # visual-engineering, (claude-opus-5-5, medium) heads writing and
+        # capable -- and chose `max` for deep-work so its label survives.
+        # Routing is unaffected; a third collision fails here by name.
+        accepted = {"visual-engineering": "deep", "capable": "writing"}
+        for category, chain in HERMES_MIXTURE_CATEGORY_CHAINS.items():
+            alias, effort = chain[0]
+            with self.subTest(category=category):
+                self.assertEqual(
+                    mixture_category_for(alias, effort, parent_model=""),
+                    accepted.get(category, category),
+                )
+
     def test_a_membership_only_model_falls_back_to_its_first_chain(self):
+        # Kimi K3 at medium heads no chain and sits third in both
+        # unspecified-high and writing (fourth in capable); the equal-position
+        # tie goes to the first chain in canonical order. The earlier pin,
+        # (claude-opus-5-5, medium), heads writing since 2026-10-13, so it is
+        # no longer a membership-only model.
         self.assertEqual(
-            mixture_category_for("claude-opus-5-5", "medium", parent_model="kimi-k3"),
+            mixture_category_for("kimi-k3", "medium", parent_model="gpt-6-astra"),
             "unspecified-high",
         )
 
@@ -390,19 +411,23 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
         # The DeepSeek chains name the declared pointer (`deepseek-flash`),
         # so the exact id labels its category through the reverse
         # projection and the pointer through a direct chain match.
+        # Since 2026-10-13: DeepSeek sits only at `low` (it left `deep`), and
+        # (claude-opus-5-5, medium) heads writing -- capable shares that head
+        # and loses the label to the earlier category (accepted collision).
         contracts = {
             "gpt-6-astra": ("openai", "xhigh", "ultrabrain", "openai", "anthropic"),
             "gpt-6.1-sol": ("openai", "high", "deep", "openai", "anthropic"),
-            "deepseek-v4.1-flash": ("deepseek", "high", "deep", "deepseek", "anthropic"),
-            "claude-opus-5-5": ("anthropic", "medium", "unspecified-high", "anthropic", "openai"),
+            "deepseek-v4.1-flash": ("deepseek", "low", "unspecified-low", "deepseek", "anthropic"),
+            "claude-opus-5-5": ("anthropic", "medium", "writing", "anthropic", "openai"),
+            "claude-sonnet-5-5": ("anthropic", "medium", "writing", "anthropic", "openai"),
+            "claude-haiku-5-5": ("anthropic", "low", "simple-work", "anthropic", "openai"),
         }
         # A contract in no shipped chain, named by no provider-family row,
         # has nothing for its aliases to inherit. Jev is that case by
         # decision -- a non-generative model is never a chain member -- so it
         # is listed here rather than given invented chain metadata. Sonnet
-        # 5.5 is the generative case (owner decision, 2026-10-01: contract,
-        # floor, and price only; no pinned Sonnet id sits in a shipped chain).
-        unchained = {"jev-1.13.0", "claude-sonnet-5-5"}
+        # 5.5 left this set on 2026-10-13, when the owner's table placed it.
+        unchained = {"jev-1.13.0"}
         for model_id in (*contracts, *expected):
             contract_id = expected.get(model_id, (model_id,))[0]
             if contract_id in unchained:
@@ -493,7 +518,7 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
                 )
 
     def test_dated_snapshot_labels_its_base_category_price_and_provider(self) -> None:
-        # GPT-6.1 Sol heads the shipped deep chain; a provider that serves only
+        # GPT-6.1 Sol sits in the shipped deep chain; a provider that serves only
         # a dated id (a shape reported for GPT-5.6 Terra on 2026-09-11; Terra
         # left the shipped chains on 2026-09-23) must label the same category,
         # price, and provider family as the base, while an unknown base with a
@@ -513,7 +538,8 @@ class MixtureCategoryProjectionTest(unittest.TestCase):
                 self.assertIs(provider_serves_alias(spelling, "anthropic"), False)
         # A snapshot of the exact id reaches the served pointer the chain names.
         self.assertEqual(
-            mixture_category_for("deepseek/deepseek-v4.1-flash-2026-09-01", "high", parent_model="kimi-k3"), "deep"
+            mixture_category_for("deepseek/deepseek-v4.1-flash-2026-09-01", "low", parent_model="kimi-k3"),
+            "unspecified-low",
         )
         # The exact-contract label follows the snapshot too.
         self.assertEqual(
@@ -1989,8 +2015,9 @@ class HudMergeTest(unittest.TestCase):
             rows = payload["subagents"]["rows"]
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["role"], "hermes-native")
-            # gpt-6.1-sol:high is the deep chain head and differs from the
-            # parent model, so the routed category is visible in the HUD row.
+            # gpt-6.1-sol:high sits second in the deep chain (behind Opus 5.5
+            # since 2026-10-13), heads no chain, and differs from the parent
+            # model, so the projected category is visible in the HUD row.
             self.assertEqual(rows[0]["category"], "deep")
             # Nothing was dropped, so the disclosed hidden-row count is zero.
             self.assertEqual(payload["subagents"]["hidden_rows"], 0)

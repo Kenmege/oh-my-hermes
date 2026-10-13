@@ -99,12 +99,12 @@ class CoverageMatrixTests(unittest.TestCase):
         self.assertEqual(pointer["dimensions"]["effort"]["floor"], "low")
         self.assertEqual(pointer["dimensions"]["effort"]["unsupported_efforts"], {})
         self.assertEqual(pointer["dimensions"]["calibration"]["high_effort"], "model_specific")
-        # simple-work joined deep and unspecified-low on 2026-09-11: the
-        # projection lists every category whose chain names the alias, so a
-        # third chain naming deepseek-flash belongs here.
+        # The projection lists every category whose chain names the alias:
+        # simple-work joined on 2026-09-11, and deep dropped it on 2026-10-13
+        # (a Flash budget model does not fit the strong tier).
         self.assertEqual(
             pointer["dimensions"]["category_projection"]["categories"],
-            ["deep", "simple-work", "unspecified-low"],
+            ["simple-work", "unspecified-low"],
         )
         self.assertEqual(
             pointer["dimensions"]["provider_eligibility"]["families"],
@@ -221,11 +221,12 @@ class CoverageMatrixTests(unittest.TestCase):
                     row["dimensions"]["provider_eligibility"]["families"],
                     ["openai-codex", "openai"],
                 )
-                # deep-work joined architect and ultrabrain on 2026-09-11:
-                # it is the third shipped chain that names gpt-6-astra.
+                # deep-work joined architect and ultrabrain on 2026-09-11 and
+                # moved to Opus 5.5 and GPT-6.1 Sol on 2026-10-13, so two
+                # shipped chains name gpt-6-astra again.
                 self.assertEqual(
                     row["dimensions"]["category_projection"]["categories"],
-                    ["architect", "deep-work", "ultrabrain"],
+                    ["architect", "ultrabrain"],
                 )
                 self.assertEqual(row["dimensions"]["price"]["status"], "documented_list")
                 self.assertEqual(row["dimensions"]["docs"]["status"], "covered")

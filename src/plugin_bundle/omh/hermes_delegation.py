@@ -47,66 +47,98 @@ from typing import Any, Iterable
 # touching code by writing the mixture_chain_overrides/v1 document at
 # ~/.omh/routing/model-chains.json (see effective_mixture_category_chains).
 HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
-    # GPT-6 Astra heads the GPT frontier slots (2026-09-03). Superseded
-    # generations left every shipped chain on 2026-09-11 (owner decision):
-    # Sol behind Astra, Fable 5 behind Fable 5.1, GLM 5.2 and its Ultrafast
-    # tier behind the 5.3 generation, DeepSeek V3.2 behind V4.1 Flash. A
-    # machine whose provider still serves only the older id keeps it through
-    # ~/.omh/routing/model-chains.json, not through the public table.
-    "ultrabrain": (("gpt-6-astra", "xhigh"),),
-    # DeepSeek closes deep's single-ecosystem exposure (the owner rule below
-    # applied to a chain that sat entirely on GPT) with a reasoning-capable
-    # budget candidate from a fourth provider ecosystem. V4.1 Flash's
-    # documented ladder is low/high/max (high default), so `high` here is a
-    # documented rung, not a nearest-match guess. The alias is the vendor's
-    # served pointer id (`deepseek-flash`); the first-party API rejects the
-    # versioned spelling, and the versioned contract sits behind the pointer
-    # as a declared projection. GPT-6.1 Sol heads it at the effort GPT-6 Sol
-    # held there (owner decision, 2026-10-01; editorial, unmeasured).
-    "deep": (("gpt-6.1-sol", "high"), ("deepseek-flash", "high")),
-    # Architecture/system-design lanes: full-depth effort across three
-    # provider ecosystems. Fable and Kimi appear in other chains only at
-    # low/high, so at xhigh `mixture_category_for` labels them architect;
-    # Astra at xhigh stays labeled ultrabrain (its canonical head), which is
-    # the honest projection when the chain falls through to it.
-    # Claude vendor order (owner decision, 2026-09-06): Fable 5.1 -> Opus;
-    # Opus 5.5 holds Opus 5's former slots since 2026-09-23 (editorial,
-    # unmeasured), and GPT-6 Luna holds GPT-5.6 Luna's.
+    # The 2026-10-13 table (owner decision), editorial and unmeasured except
+    # where a comment cites a measurement. Superseded generations leave every
+    # shipped chain (owner decision, 2026-09-11): on 2026-10-13 Claude Haiku
+    # 4.5 left behind Haiku 5.5, and the 2025 Qwen3-Coder left with no Qwen
+    # successor. A machine whose provider still serves only an older id keeps
+    # it through ~/.omh/routing/model-chains.json, not through the public
+    # table.
+    #
+    # Claude vendor order (owner decision, 2026-10-13): Opus 5.5 before Fable
+    # 5.1 inside any chain, reversing the 2026-09-06 Fable -> Opus rule.
     # Claude Mythos 5.1 is Fable 5.1 under Project Glasswing access, so no
     # shipped chain names it; it stays recognized, priced, and routable for a
     # user who asks for it by name.
+    #
+    # Two heads collide in `mixture_category_for`, which labels a child by the
+    # first category in canonical order whose head matches (model, effort).
+    # The owner accepted both (2026-10-13):
+    #   (claude-opus-5-5, high)   heads deep and visual-engineering -> "deep"
+    #   (claude-opus-5-5, medium) heads writing and capable         -> "writing"
+    # Routing is unaffected, and so is a lane routed through
+    # `omh_delegate_route`: its route-provenance record overrides the
+    # projection (see the reader below), so that row keeps the lane's own
+    # category. Only a child with no matching record is labelled by
+    # projection.
+    # Non-head entries move the same way: (claude-opus-5-5, medium) projects
+    # to writing, which covers unspecified-high's second entry and the
+    # last_resort head; (kimi-k3, high) projects to deep from
+    # visual-engineering and artistry; (gpt-6-luna, low) and
+    # (claude-haiku-5-5, low) reached through quick project to simple-work.
+    "ultrabrain": (("gpt-6-astra", "xhigh"),),
+    # DeepSeek V4.1 Flash left `deep`: a Flash budget model does not fit the
+    # strong tier, and Opus 5.5 and Kimi K3 now carry its cross-ecosystem
+    # fallback. visual-engineering children are labelled "deep" (above).
+    "deep": (("claude-opus-5-5", "high"), ("gpt-6.1-sol", "high"), ("kimi-k3", "high")),
+    # Architecture/system-design lanes: full-depth effort across three
+    # provider ecosystems. Astra at xhigh stays labeled ultrabrain (its
+    # canonical head), which is the honest projection when the chain falls
+    # through to it.
     "architect": (
-        ("claude-fable-5-1", "xhigh"),
+        ("claude-opus-5-5", "xhigh"),
         ("gpt-6-astra", "xhigh"),
+        ("claude-fable-5-1", "xhigh"),
         ("kimi-k3", "xhigh"),
     ),
-    "unspecified-high": (("kimi-k3", "medium"), ("claude-opus-5-5", "medium")),
+    # The one placement here backed by a measurement, of its predecessor: on
+    # benchmarks/live-model-tools/v1 (30 evaluation tasks, 2026-09-05) OMH
+    # routing passed 18/30 with gpt-5.6-sol at this head and 12/30 with
+    # kimi-k3-ultrafast here (the other 24 tasks routed to the quick head in
+    # both arms); Kimi passed 0/6 of the six search tasks `exhaustive_search`
+    # lifts here. GPT-6.1 Sol carries the GPT slot by the superseded-generation
+    # rule and is itself unmeasured on that corpus.
+    "unspecified-high": (
+        ("gpt-6.1-sol", "medium"),
+        ("claude-opus-5-5", "medium"),
+        ("kimi-k3", "medium"),
+    ),
     # A chain that would otherwise sit in one provider ecosystem ends with a
     # comparable-tier candidate from another (owner rule, 2026-08-19), so one
-    # rejected ecosystem cannot exhaust the whole chain.
-    # GLM 5.3 leads (owner decision, 2026-08-31).
+    # rejected ecosystem cannot exhaust the whole chain. Opus 5.5 left the
+    # tail: a frontier model at the end of a cheap lane inverts cost order.
     "unspecified-low": (
         ("glm-5.3", "low"),
         ("deepseek-flash", "low"),
-        ("claude-opus-5-5", "low"),
+        ("gpt-6.1-sol", "low"),
+        ("claude-sonnet-5-5", "low"),
     ),
+    # Fable 5.1 left the tail for the same cost-order reason; Haiku 5.5 is
+    # the Claude entry at this tier.
     "quick": (
         ("glm-5.3-flash", "low"),
-        ("kimi-k3", "low"),
         ("gpt-6-luna", "low"),
-        ("claude-fable-5-1", "low"),
+        ("claude-haiku-5-5", "low"),
+        ("kimi-k3", "low"),
     ),
+    # Writing keeps the (claude-opus-5-5, medium) label: it is earlier in
+    # canonical order than capable, whose head is the same pair.
     "writing": (
+        ("claude-opus-5-5", "medium"),
+        ("claude-sonnet-5-5", "medium"),
         ("kimi-k3", "medium"),
-        ("qwen3-coder", "medium"),
         ("gemini-3.1-pro", "medium"),
     ),
+    # Labelled "deep" by projection: its head is deep's (accepted collision).
     "visual-engineering": (
+        ("claude-opus-5-5", "high"),
         ("claude-fable-5-1", "high"),
+        ("gemini-3.1-pro", "high"),
         ("kimi-k3", "high"),
     ),
     "artistry": (
         ("gemini-3.1-pro", "high"),
+        ("claude-opus-5-5", "high"),
         ("claude-fable-5-1", "high"),
         ("kimi-k3", "high"),
     ),
@@ -116,44 +148,33 @@ HERMES_MIXTURE_CATEGORY_CHAINS: dict[str, tuple[tuple[str, str], ...]] = {
     # inserting a name earlier would silently move an existing model's label.
     #
     # capable: strong general work one rung under the frontier categories,
-    # crossing four provider ecosystems so the owner rule above holds. Effort
-    # is medium because that is how claude-opus-5-5 and kimi-k3 are already used
-    # in unspecified-high, the closest existing lane. High was rejected:
-    # ("claude-fable-5-1", "high") is visual-engineering's head, and a capable
-    # chain at high would have taken that category's projection label.
+    # crossing three provider ecosystems so the owner rule above holds.
+    # Labelled "writing" by projection: its head is writing's (accepted
+    # collision).
     "capable": (
-        ("claude-fable-5-1", "medium"),
         ("claude-opus-5-5", "medium"),
+        ("gpt-6.1-sol", "medium"),
+        ("claude-fable-5-1", "medium"),
         ("kimi-k3", "medium"),
-        ("glm-5.3", "medium"),
     ),
     # simple-work: small tasks rather than fast ones. It leads with the GPT
     # small model where quick leads with the cheapest GLM tier, so a user who
     # wants GPT behavior on a trivial task can ask for it by category. Low
-    # throughout, matching quick. Note this moves one existing label:
-    # ("gpt-5.6-luna", "low") projected to quick by chain position and then
-    # head-matched simple-work; ("gpt-6-luna", "low") inherits that label.
+    # throughout, matching quick. Note this moves two labels: ("gpt-6-luna",
+    # "low") sits second in quick but head-matches simple-work (the label
+    # ("gpt-5.6-luna", "low") carried before it), and ("claude-haiku-5-5",
+    # "low") sits third in quick but second here, the shallower slot.
     "simple-work": (
         ("gpt-6-luna", "low"),
+        ("claude-haiku-5-5", "low"),
         ("deepseek-flash", "low"),
-        ("claude-haiku-4-5", "low"),
     ),
-    # deep-work: the GPT frontier model held on a long task. Effort is high and
-    # deliberately NOT xhigh -- at xhigh this chain's head would be
-    # ("gpt-6-astra", "xhigh"), which is ultrabrain's head, and because a head
-    # match resolves in canonical order the earlier category wins every
-    # projection; deep-work would be a label nothing could ever carry. High
-    # also mirrors `deep`, the same shape one price rung down.
-    #
-    # The original request named GPT-5.6 Sol behind Astra here. The owner
-    # dropped it (decision 2026-09-11, taken after that request) for
-    # consistency with the same-day retirement of superseded generations from
-    # the shipped chains: a chain naming Sol behind Astra is the exact case
-    # that rule cites, so keeping it would have made a rule printed in the
-    # shipped model-setup text false. Single-entry is therefore deliberate,
-    # not an omission -- like ultrabrain and architect, which the same decision
-    # shortened.
-    "deep-work": (("gpt-6-astra", "high"),),
+    # deep-work: a long task at frontier depth. Effort is `max` so that its
+    # label survives (owner choice, 2026-10-13): at `high` the head would be
+    # deep's, and because a head match resolves in canonical order deep-work
+    # would be a label nothing could ever carry. `max` is a documented rung of
+    # both entries' ladders.
+    "deep-work": (("claude-opus-5-5", "max"), ("gpt-6.1-sol", "max")),
 }
 
 # User-editable chain overrides. The document replaces only the chains of the
@@ -303,7 +324,14 @@ PROVIDER_KIND_UNKNOWN = "unknown"
 # Mirrors the union of `preferred_provider_families` across
 # SHIPPED_MODEL_RECOMMENDATIONS in src/coding/model_recommendations.py (the
 # plugin bundle cannot import src/coding); the parity gate lives in
-# tests/test_provider_entitlements.py (ParityTests).
+# tests/test_provider_entitlements.py (ParityTests). One family is retained
+# past its last catalog member: `qwen-oauth`, whose only member qwen3-coder
+# left every shipped chain on 2026-10-13. The entitlement parser is strict and
+# atomic, so dropping the kind would invalidate as a whole every
+# providers.json that recorded it, and recognition-only qwen3-coder still
+# names it; the parity gate lists the exception by name. A side effect: the
+# setup interview offers every vocabulary family, so `qwen-oauth` stays
+# selectable there although no shipped chain uses it.
 PROVIDER_FAMILY_VOCABULARY: tuple[str, ...] = (
     "anthropic",
     "apitopia",
@@ -340,7 +368,8 @@ HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
     "kimi-k3": ("apitopia", "kimi-coding", "openrouter", "opencode"),
     "claude-opus-5-5": ("ccapi", "anthropic", "openrouter"),
     "claude-fable-5-1": ("ccapi", "anthropic", "openrouter"),
-    "claude-haiku-4-5": ("ccapi", "anthropic", "openrouter"),
+    "claude-sonnet-5-5": ("ccapi", "anthropic", "openrouter"),
+    "claude-haiku-5-5": ("ccapi", "anthropic", "openrouter"),
     # Recognition-only: no shipped chain names Claude Mythos 5.1, but a user
     # who asks for it still deserves "which of my providers serves this"
     # answered rather than unknown. The parity gate lists it explicitly.
@@ -374,6 +403,9 @@ HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
     # Retired on 2026-10-01 under the same rule (superseded by gpt-6.1-sol).
     "gpt-6-sol": ("openai-codex", "openai"),
     "gemini-3.1-pro": ("google", "gemini", "openrouter"),
+    # Retired on 2026-10-13 under the same rule: Claude Haiku 4.5 behind
+    # claude-haiku-5-5, and the 2025 Qwen3-Coder with no Qwen successor.
+    "claude-haiku-4-5": ("ccapi", "anthropic", "openrouter"),
     "qwen3-coder": ("qwen-oauth", "openrouter", "opencode"),
 }
 
@@ -383,7 +415,7 @@ HERMES_MIXTURE_ALIAS_PROVIDER_FAMILIES: dict[str, tuple[str, ...]] = {
 EXACT_MODEL_CONTRACT_ALIASES: frozenset[str] = frozenset(
     {
         "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna", "claude-opus-5-5", "claude-sonnet-5-5",
-        "deepseek-v4.1-flash", "jev-1.13.0",
+        "claude-haiku-5-5", "deepseek-v4.1-flash", "jev-1.13.0",
     }
 )
 
@@ -411,6 +443,8 @@ DECLARED_MODEL_ALIAS_PROJECTIONS: dict[str, tuple[str, str, str]] = {
     "claude-opus-5.5": ("claude-opus-5-5", "thinking", "standard"),
     "anthropic.claude-sonnet-5-5": ("claude-sonnet-5-5", "thinking", "standard"),
     "claude-sonnet-5.5": ("claude-sonnet-5-5", "thinking", "standard"),
+    "anthropic.claude-haiku-5-5": ("claude-haiku-5-5", "thinking", "standard"),
+    "claude-haiku-5.5": ("claude-haiku-5-5", "thinking", "standard"),
     # TypeSafe publishes two aliases for Jev (docs.typesafe.ai/models,
     # 2026-09-21); both point at `jev-1.13.0` today and both move on the next
     # release, so each is a declared projection with a read date.
@@ -1292,10 +1326,23 @@ APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
     "claude-mythos-5-1": (10.0, 50.0),
     "claude-sonnet-5": (2.0, 10.0),
     # Anthropic list price (platform.claude.com pricing, read 2026-10-01):
-    # Sonnet 5.5 2/10, cache read 0.20 (the default tenth). The same page
-    # says Sonnet 5's 2/10 launch price is now its standard price and the
-    # scheduled move to 3/15 will not occur, so the row above stands.
+    # Sonnet 5.5 2/10. The same page says Sonnet 5's 2/10 launch price is now
+    # its standard price and the scheduled move to 3/15 will not occur, so the
+    # row above stands. Cache read is 0.10, 0.05x input rather than the default
+    # tenth (APPROX_CACHE_READ_RATIO): Anthropic lowered it from 0.20 on
+    # 2026-10-07 (the Haiku 5.5 launch post and the pricing page, read
+    # 2026-10-13).
     "claude-sonnet-5-5": (2.0, 10.0),
+    # Anthropic list price (platform.claude.com pricing, read 2026-10-13):
+    # Haiku 5.5 0.10/0.50 for a prompt up to 100,000 tokens, cache read 0.01
+    # (the default tenth). A longer prompt is billed 0.50/2.50 on its own
+    # card; like the Gemini 3.1 Pro and Grok Build 0.1 rows, this table
+    # carries the lower card, so a run with prompts over 100K is
+    # under-reported fivefold. The higher card stays in `model_contracts.py`.
+    "claude-haiku-5-5": (0.10, 0.50),
+    # Anthropic list price (platform.claude.com pricing, read 2026-10-13):
+    # 1/5 at any prompt length. The id left the shipped chains on 2026-10-13
+    # and stays priced for overrides.
     "claude-haiku-4-5": (1.0, 5.0),
     # Moonshot AI list price (platform.kimi.ai/docs/pricing/chat, read
     # 2026-10-01): 3/15, cache-hit input 0.30 (the default tenth). The earlier
@@ -1356,7 +1403,9 @@ APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
     # 2026-10-01): Gemini 3.1 Pro Preview 2/12 up to 200K prompt tokens, 4/18
     # above. The earlier 1.25/10 was Gemini 2.5 Pro's rate on the same page.
     "gemini-3.1-pro": (2.0, 12.0),
-    # Alibaba Cloud Model Studio list price (alibabacloud.com pricing, 2026-08):
+    # Alibaba Cloud Model Studio list price (alibabacloud.com pricing, 2026-08).
+    # The id left the shipped chains on 2026-10-13 and stays priced for
+    # overrides.
     "qwen3-coder": (0.4, 1.6),
     # Upstage list price (upstage.ai pricing, 2026-08):
     "solar-pro2": (0.15, 0.60),
@@ -1386,8 +1435,11 @@ APPROX_PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
 # launch, so its entry is the Fable figure, still an approximation.
 APPROX_CACHE_READ_RATIO: dict[str, float] = {
     # Opus 5.5 cache read is "0.05x the base input price" (platform.claude.com
-    # pricing, 2026-09).
+    # pricing, 2026-09). Sonnet 5.5 joined it on 2026-10-07, when Anthropic
+    # lowered its cache reads from $0.20 to $0.10 (the Haiku 5.5 launch post
+    # and the pricing page, read 2026-10-13).
     "claude-opus-5-5": 0.05,
+    "claude-sonnet-5-5": 0.05,
     "claude-fable-5-1": 0.025,
     "claude-mythos-5-1": 0.025,
     # DeepSeek V4.1 Flash cache hit 0.006 vs cache miss 0.30 per MTok input

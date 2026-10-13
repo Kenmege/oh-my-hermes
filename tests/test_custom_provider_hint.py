@@ -224,9 +224,13 @@ class ShowNamesTheInertCaseTests(unittest.TestCase):
         self.assertEqual(payload["unplaced_providers"], [])
 
     def test_a_vendor_family_reorders_and_is_not_told_anything(self) -> None:
+        # Kimi K3 sits behind other ecosystems in most shipped chains, so a
+        # linked Kimi provider moves it forward. (Z.ai was the pin until
+        # 2026-10-13, when capable dropped GLM 5.3; both GLM entries left are
+        # chain heads, so a linked Z.ai provider now reorders nothing.)
         with TemporaryDirectory() as tmp, patch.dict(os.environ, {}, clear=True):
             root = Path(tmp)
-            _config(root, "providers:\n  zai:\n    base_url: https://api.z.ai/v1\n")
+            _config(root, "providers:\n  kimi-coding:\n    base_url: https://api.moonshot.ai/v1\n")
             text = _show(root)
         self.assertIn("(reordered by this machine's providers)", text)
         self.assertNotIn(HINT, text)

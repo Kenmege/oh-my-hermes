@@ -368,7 +368,11 @@ Rules that have held across every onboarding so far:
   on 2026-09-23 to Claude Opus 5 behind Opus 5.5 and GPT-5.6 Luna behind
   GPT-6 Luna, and the same day to GPT-5.6 Sol and GPT-5.6 Terra behind GPT-6
   Sol; applied again on 2026-10-01 to GPT-6 Sol behind GPT-6.1 Sol and Grok
-  Code Fast behind Grok Build 0.1). Record each retirement as a `RETIREMENT_DECISIONS` row with its
+  Code Fast behind Grok Build 0.1; and on 2026-10-13 to Claude Haiku 4.5
+  behind Haiku 5.5 and to the 2025 Qwen3-Coder, the first retiree with no
+  same-line successor: its row is written out with an empty `successor` and
+  a reason naming the model that now holds its only slot).
+  Record each retirement as a `RETIREMENT_DECISIONS` row with its
   own `decision_date`. The table is keyed by model id, so a second
   retirement of the same id rewrites its row rather than adding one: GPT-5.6
   Sol's 2026-09-11 row (scope `frontier_slots`, successor `gpt-6-astra`) was
@@ -408,21 +412,30 @@ Rules that have held across every onboarding so far:
   Glasswing) stays out of every shipped chain: naming a model most accounts
   cannot reach reads as a second model in the public tables. Keep it
   recognized, priced, and routable for a user who asks for it by name.
-- The Claude vendor order inside any chain is Fable 5.1 → Opus 5.5 (owner
-  decision, 2026-09-06, which named Opus 5; Opus 5.5 took its place on
-  2026-09-23). The Hermes lane and the Maestro lane are different surfaces
-  and both follow it.
+- The Claude vendor order inside any chain is Opus 5.5 → Fable 5.1 (owner
+  decision, 2026-10-13), which reverses the 2026-09-06 Fable → Opus order.
+  The Hermes lane and the Maestro lane are different surfaces and both
+  follow it. The Maestro lane's Claude Code frontier chain is
+  `claude-opus-5-5` → `claude-fable-5-1` → `opus` (owner decision,
+  2026-10-13): the pinned Opus 5.5 id heads it, Fable 5.1 is the
+  fall-through, and the `opus` alias is the always-resolving tail. The setup
+  interview seeds the Claude Code `--model` preference with that head.
 - Know whether a slot names a pinned id or a vendor-tracking alias before
   deciding it needs an edit. The Hermes lane names pinned ids
-  (`claude-opus-5-5`), so a generation bump is a repo change. The Maestro
-  lane's Claude Code rows name the `opus` alias, which moves without an OMH
-  edit — but on the client's terms, not OMH's: Claude Code resolves `opus`
-  to Opus 5.5 only from v2.1.280, and to Opus 4.6 on Microsoft Foundry
+  (`claude-opus-5-5`), so a generation bump is a repo change, and since
+  2026-10-13 so do the first two entries of the Maestro lane's Claude Code
+  frontier chain. That chain's tail names the `opus` alias, which moves
+  without an OMH edit — but on the client's terms, not OMH's: Claude Code
+  resolves `opus` to Opus 5.5 only from v2.1.280, and to Opus 4.6 on
+  Microsoft Foundry
   (official, code.claude.com/docs/en/model-config). The `sonnet` rows
   (`unspecified-low`, `artistry`) work the same way: Claude Code resolves
   `sonnet` to Sonnet 5.5 on the Anthropic API from v2.1.284, to Sonnet 4.6 on
   Claude Platform on AWS, and to Sonnet 4.5 on Bedrock, Google Cloud, and
-  Foundry (official, same page, read 2026-10-01). An alias slot therefore
+  Foundry (official, same page, read 2026-10-01). The `haiku` rows (`quick`,
+  `writing`, `simple-work`) resolve to Haiku 5.5 on the Anthropic API from
+  v2.1.293 and to Haiku 4.5 on Claude Platform on AWS, Bedrock, Google Cloud,
+  and Foundry (official, same page, read 2026-10-13). An alias slot therefore
   needs a docs caveat rather than an id change, and the same entry can run
   different generations on different machines.
 - Shipped defaults change only with explicit owner approval; the operator's
@@ -434,7 +447,8 @@ Rules that have held across every onboarding so far:
   `exhaustive_search` signal lifted six search tasks to `unspecified-high`,
   whose shipped head (Kimi K3 ultrafast) scored 0 / 6 on them, GLM 2 / 6,
   Sol and Astra 6 / 6. The signal was right and the head was wrong; the
-  README documents the one-line chain override that makes the number real.
+  2026-10-13 table moved GPT-6.1 Sol to the head of `unspecified-high` on
+  that measurement (the measured GPT head was `gpt-5.6-sol`).
 
 Files that move together (grep the old id to find every site):
 
