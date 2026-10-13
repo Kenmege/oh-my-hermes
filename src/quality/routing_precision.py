@@ -4049,6 +4049,216 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "ai-slop-cleaner",
     ),
+    # A loop on a timer is Hermes' native `/loop`, and a turn Hermes wrote from
+    # its own `/plan` or `/loop` template carries the host's instruction for
+    # itself; neither is OMH's to route. Before, the cadence sentences
+    # dispatched the goal loop through the bare word "loop" (or "루프"), the
+    # plan-mode turn dispatched the ops-observability card on its own rules,
+    # and the wakeup fell back as a file lookup. The goal-shaped and
+    # `./loop` forms beside these stay with the loop (intervention corpus).
+    RoutingPrecisionCase(
+        "loop-on-a-timer-is-native-loop",
+        "A loop on a timer is Hermes' /loop, not the goal loop",
+        "loop every 5 minutes and check whether CI is green",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "korean-loop-on-a-timer-is-native-loop",
+        "A Korean loop on a timer is Hermes' /loop, not the goal loop",
+        "5분마다 CI가 초록색인지 확인하는 루프 돌려줘",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "native-loop-command-syntax-is-not-the-goal-loop",
+        "The native /loop interval syntax is not an OMH loop invocation",
+        "/loop 5m check whether CI is green",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "hermes-plan-mode-turn-is-host-owned",
+        "Hermes' own /plan turn is not routed",
+        "[/plan \u2014 plan mode]\n\nFor this turn, you are in PLAN MODE \u2014 planning only.\n\n"
+        "- Do not implement code.\n- Do not edit project files except the plan markdown file itself.\n"
+        "- Do not run mutating terminal commands, commit, push, or perform external\n  actions.\n\n"
+        "Task to plan:\nadd a dark mode toggle to the settings page\n",
+        "answer_directly",
+        "direct_answer",
+        "ops-observability-card",
+    ),
+    RoutingPrecisionCase(
+        "hermes-loop-wakeup-turn-is-host-owned",
+        "A Hermes /loop wakeup turn is not routed",
+        "[/loop wakeup #3, every 5m]\nRecurring task: check whether CI is green on PR 42\n\n"
+        "This is an automatic wakeup from the /loop the user set. Perform the task now against the "
+        "CURRENT state. If the task is now complete, say so and end your reply with LOOP_COMPLETE "
+        "on its own line \u2014 that stops the loop.",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    # The other turns Hermes writes for its own session commands, each opened
+    # by its template's frame. Before, a `/goal` continuation dispatched OMH's
+    # own goal loop into a permission-profile question (and, with a completion
+    # contract, the wrapper read it as a catalog question), the goal-mode
+    # kanban nudges dispatched the image-card skill, and the heartbeat,
+    # `/learn`, and setup turns dispatched automation, memory, and toolbelt
+    # skills.
+    RoutingPrecisionCase(
+        "hermes-goal-continuation-turn-is-host-owned",
+        "A Hermes /goal continuation turn is not routed",
+        "[Continuing toward your standing goal]\nGoal: ship the OMH loop docs, fix the failing CI on PR 42, "
+        "and open a PR with the release notes\n\nCompletion contract:\nOutcome: docs merged\nVerify: CI green\n\n"
+        "Continue working toward the outcome above. Take the next concrete step. Before claiming the goal is "
+        "done, satisfy the Verification criterion and show the concrete evidence (command output, file "
+        "contents, test result).",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "hermes-goal-gate-failed-turn-is-host-owned",
+        "A Hermes /goal turn after a failed quality gate is not routed",
+        "[Continuing toward your standing goal \u2014 a quality gate failed]\nGoal: ship the OMH loop docs, fix "
+        "the failing CI on PR 42, and open a PR with the release notes\n\nThe quality gate command below must "
+        "pass before this goal can be declared done, and it just failed (attempt 1/3):\n  $ pytest -q\nExit code: 1",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "hermes-kanban-goal-continuation-turn-is-host-owned",
+        "A goal-mode kanban continuation turn is not routed",
+        "[Continuing toward this kanban task \u2014 judge says it is not done yet]\nReason: tests still failing on "
+        "the login flow\n\nTake the next concrete step toward completing the task. When the work is genuinely "
+        "finished, call kanban_complete with a summary.",
+        "answer_directly",
+        "direct_answer",
+        "img-summary",
+    ),
+    RoutingPrecisionCase(
+        "hermes-kanban-goal-finalize-turn-is-host-owned",
+        "A goal-mode kanban finalize turn is not routed",
+        "[The work looks complete, but the task is still open]\nReason: the PR is open and CI is green\n\n"
+        "If the task is genuinely done, call kanban_complete now with a short summary of what you did.",
+        "answer_directly",
+        "direct_answer",
+        "img-summary",
+    ),
+    RoutingPrecisionCase(
+        "hermes-heartbeat-turn-is-host-owned",
+        "A Hermes /heartbeat turn is not routed",
+        "[Heartbeat \u2014 recurring instruction, fires every 10m]\ncheck whether CI is green and summarize "
+        "open PRs\n\nIf there is nothing meaningful to do or report for this instruction right now, reply "
+        "briefly that nothing has changed and stop.",
+        "answer_directly",
+        "direct_answer",
+        "automation-blueprint",
+    ),
+    RoutingPrecisionCase(
+        "hermes-learn-turn-is-host-owned",
+        "A Hermes /learn turn is not routed",
+        "[/learn] The user wants you to learn a reusable skill from the request below, and save it.\n\n"
+        "THE REQUEST:\nthe deploy workflow we just went through\n\nInventory every source the user named, "
+        "then save the skill.",
+        "answer_directly",
+        "direct_answer",
+        "memory-new",
+    ),
+    RoutingPrecisionCase(
+        "hermes-initiate-setup-turn-is-host-owned",
+        "A Hermes /initiate-setup turn is not routed",
+        "[/initiate-setup]\n\n---\nname: initiate-setup\ndescription: Run the first-run setup chat.\n---\n\n"
+        "Guide the user through first-run setup: pick a model provider, connect accounts, and install plugins.",
+        "answer_directly",
+        "direct_answer",
+        "toolbelt-readiness",
+    ),
+    # A messaging gateway puts its own material before the frame: a shared
+    # session's sender prefix, a Discord trigger note, a reply pointer. Before,
+    # each of these still routed (ultrawork for the plan, github-event-ops for
+    # the goal). The native `/loop` interval syntax with hours and minutes is a
+    # timer too, which the single-unit check missed.
+    RoutingPrecisionCase(
+        "hermes-plan-turn-behind-a-sender-prefix-is-host-owned",
+        "A shared-session /plan turn behind its sender prefix is not routed",
+        "[alice] [/plan \u2014 plan mode]\n\nFor this turn, you are in PLAN MODE \u2014 planning only.\n\n"
+        "Task to plan:\nadd a dark mode toggle to the settings page\n",
+        "answer_directly",
+        "direct_answer",
+        "ultrawork",
+    ),
+    RoutingPrecisionCase(
+        "hermes-goal-turn-behind-a-discord-note-is-host-owned",
+        "A /goal turn behind a Discord trigger note and sender prefix is not routed",
+        "[Triggering message id: `1234` \u2014 use as `message_id` for reply/react/pin via the discord tools.]\n\n"
+        "[alice] [Continuing toward your standing goal]\nGoal: ship the OMH loop docs, fix the failing CI on PR 42\n\n"
+        "Continue working toward this goal. Take the next concrete step.",
+        "answer_directly",
+        "direct_answer",
+        "github-event-ops",
+    ),
+    RoutingPrecisionCase(
+        "hermes-plan-turn-behind-a-reply-pointer-is-host-owned",
+        "A /plan turn behind a reply pointer is not routed",
+        "[Replying to bob: \"can you plan it\"]\n\n[/plan \u2014 plan mode]\n\nFor this turn, you are in PLAN MODE "
+        "\u2014 planning only.\n\nTask to plan:\nadd a dark mode toggle\n",
+        "answer_directly",
+        "direct_answer",
+        "ultrawork",
+    ),
+    RoutingPrecisionCase(
+        "native-loop-compound-interval-is-not-the-goal-loop",
+        "The native /loop syntax with a compound interval is not the goal loop",
+        "/loop 1h30m check whether the nightly build passed",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    # A timer spelled with a short unit is a timer, and a code loop on a timer
+    # is a question about that loop; both were the goal loop before.
+    RoutingPrecisionCase(
+        "loop-every-5-min-is-native-loop",
+        "A loop on a timer written with a short unit is Hermes' /loop",
+        "loop every 5 min check CI",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "bash-while-loop-on-a-timer-is-not-the-goal-loop",
+        "A bash while loop on a timer is a code question, not the goal loop",
+        "write a while loop in bash that checks a URL every 10 seconds",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    # A check asked of a loop on a timer is Hermes' `/loop` even when the thing
+    # checked is itself a code loop; before, it dispatched the goal loop, and
+    # for one review round it was answered as a question about that code.
+    RoutingPrecisionCase(
+        "timed-loop-checking-a-code-loop-is-native-loop",
+        "A timed loop that checks an event loop is Hermes' /loop",
+        "loop every 5 minutes and check whether the event loop lag is under 100ms",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    # Typed with its cadence, `/loop` is Hermes' command whatever its prompt
+    # mentions; before, OMH's skill name in the prompt dispatched the goal loop.
+    RoutingPrecisionCase(
+        "typed-native-loop-naming-ulw-loop-is-native-loop",
+        "A typed /loop with a cadence stays Hermes' command when its prompt names ulw-loop",
+        "/loop 5m check whether ulw-loop finished",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
 )
 
 
@@ -10861,6 +11071,210 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "clarification",
         "code-review",
         expected_route_question=ROUTE_QUESTION_ASKED,
+    ),
+    # The other side of the native-loop cases in the negative corpus: a timer
+    # does not take the goal loop away from OMH's own invocation forms or from
+    # a request that carries a product goal, and a plain `./loop` goal still
+    # opens it.
+    RoutingInterventionCase(
+        "omh-loop-goal-invocation-opens-loop",
+        "An OMH ./loop goal still opens the goal loop",
+        "./loop make OMH a credible Hermes workflow pack with install, docs, QA, and feedback cycles.",
+        "dispatch",
+        "loop",
+        "choose_permission_profile",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "omh-loop-invocation-on-a-timer-keeps-loop",
+        "OMH's own ./loop form keeps the goal loop even with a timer",
+        "./loop every 5 minutes check whether CI is green",
+        "dispatch",
+        "loop",
+        "start_loop_cycle",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "product-goal-loop-on-a-timer-keeps-loop",
+        "A timed loop that carries a product goal stays the goal loop",
+        "run a loop every 30 minutes to improve first-run experience until install friction is lower",
+        "dispatch",
+        "loop",
+        "choose_permission_profile",
+        "loop",
+    ),
+    # A timer does not take the goal loop away from a request that names it --
+    # by a goal-loop phrase or by the skill's own name -- however the timer is
+    # written.
+    RoutingInterventionCase(
+        "goal-loop-on-a-timer-keeps-loop",
+        "A named goal loop on a timer stays the goal loop",
+        "start a goal loop that iterates every 2 hours until the onboarding drop-off is under 20%",
+        "dispatch",
+        "loop",
+        "choose_permission_profile",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "korean-keep-improving-loop-on-a-timer-keeps-loop",
+        "A Korean keep-improving loop on a timer stays the goal loop",
+        "1시간마다 온보딩을 계속 개선하는 루프 돌려줘, 첫 실행 성공률 90% 될 때까지",
+        "dispatch",
+        "loop",
+        "choose_permission_profile",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "ulw-loop-skill-on-a-timer-keeps-loop",
+        "The ulw-loop skill named on a timer stays the goal loop",
+        "use the ulw-loop skill every 2 hours to check whether CI is green",
+        "dispatch",
+        "loop",
+        "ask_goal_boundary",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "run-ulw-loop-on-a-timer-keeps-loop",
+        "Running ulw-loop on a timer stays the goal loop",
+        "run ulw-loop every hour on the onboarding docs",
+        "dispatch",
+        "loop",
+        "prepare_scheduled_ops_blueprint",
+        "loop",
+    ),
+    # The sentence that invokes the skill keeps it on a timer, and so do OMH's
+    # own forms behind a shared session's sender prefix.
+    RoutingInterventionCase(
+        "invoked-ulw-loop-skill-on-a-timer-keeps-loop",
+        "Invoking the ulw-loop skill on a timer stays the goal loop",
+        "use the ulw-loop skill every 2 hours to improve the README",
+        "dispatch",
+        "loop",
+        "choose_permission_profile",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "invoked-loop-skill-on-a-timer-keeps-loop",
+        "Invoking the loop skill by its catalog name on a timer stays the goal loop",
+        "use the loop skill every 2 hours to improve the README",
+        "dispatch",
+        "loop",
+        "choose_permission_profile",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "korean-invoked-ulw-loop-skill-on-a-timer-keeps-loop",
+        "Invoking ulw-loop in Korean on a timer stays the goal loop",
+        "ulw-loop 스킬로 1시간마다 README 개선해줘",
+        "dispatch",
+        "loop",
+        "choose_permission_profile",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "dollar-loop-behind-a-sender-prefix-keeps-loop",
+        "OMH's $loop form behind a shared session's sender prefix stays the goal loop",
+        "[alice] $loop every hour check CI",
+        "dispatch",
+        "loop",
+        "prepare_scheduled_ops_blueprint",
+        "loop",
+    ),
+    # One verdict now decides every timed loop for the router and the hint.
+    # These three sat on its edges: an OMH form behind a reply pointer and a
+    # sender prefix, whose block end the scorer's collapsed text no longer
+    # shows; a loop asked to make something better; and another skill whose
+    # name merely ends in "loop".
+    RoutingInterventionCase(
+        "omh-loop-behind-a-reply-pointer-and-sender-keeps-loop",
+        "OMH's loop form behind a reply pointer and a sender prefix stays the goal loop",
+        "[Replying to: \"is CI green?\"]\n\n[alice] omh loop every 30 minutes check CI",
+        "dispatch",
+        "loop",
+        "ask_goal_boundary",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "improving-loop-on-a-timer-keeps-loop",
+        "A timed loop asked to improve something stays the goal loop",
+        "loop every hour and improve the docs",
+        "dispatch",
+        "loop",
+        "prepare_scheduled_ops_blueprint",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "cto-loop-on-a-timer-keeps-cto-loop",
+        "Another skill whose name ends in loop keeps its own route on a timer",
+        "run omh-cto-loop every 30 minutes on the roadmap",
+        "dispatch",
+        "cto-loop",
+        "run_cto_loop",
+        "cto_loop",
+    ),
+    # Only a request that opens with a loop command and its cadence is Hermes'
+    # `/loop`; a skill the person invokes beside one still gets the turn, and a
+    # loop word anywhere else routes as it did before. The spaced `cto loop`
+    # is that skill's trigger, never the loop command.
+    RoutingInterventionCase(
+        "another-skill-invoked-beside-a-timed-loop-keeps-it",
+        "A skill invoked by name beside a timed loop keeps the turn",
+        "loop every 5 minutes and run the code-review skill on new PRs",
+        "dispatch",
+        "code-review",
+        "choose_executor",
+        "handoff",
+    ),
+    RoutingInterventionCase(
+        "invoked-plan-over-a-timed-polling-loop-keeps-plan",
+        "An invoked plan about a polling loop on a timer keeps the plan",
+        "ulw-plan: replace the polling loop that hits the API every 5 minutes with webhooks",
+        "dispatch",
+        "ralplan",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    RoutingInterventionCase(
+        "spaced-cto-loop-on-a-timer-keeps-cto-loop",
+        "The spaced cto loop trigger on a timer keeps cto-loop",
+        "cto loop every hour check the roadmap",
+        "dispatch",
+        "cto-loop",
+        "run_cto_loop",
+        "cto_loop",
+    ),
+    # A timed loop asked to move a product or star measure stays the goal loop,
+    # as it was before.
+    RoutingInterventionCase(
+        "outcome-goal-loop-on-a-timer-keeps-loop",
+        "A timed loop asked to lower install friction stays the goal loop",
+        "loop every 30 minutes to lower install friction",
+        "dispatch",
+        "loop",
+        "start_loop_cycle",
+        "loop",
+    ),
+    # The skill's own name in the loop command's place, after a cadence, opens
+    # the goal loop. Before, the name folded to the bare word and lost to the
+    # rest of the sentence: app-debugging took the flaky list and
+    # build-failure-triage the build failures. The person named the skill.
+    RoutingInterventionCase(
+        "named-ulw-loop-after-a-cadence-opens-loop",
+        "ulw-loop named after a cadence opens the goal loop",
+        "every 2 hours ulw-loop the flaky test list",
+        "dispatch",
+        "loop",
+        "ask_goal_boundary",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "named-ulw-loop-on-build-failures-after-a-cadence-opens-loop",
+        "ulw-loop named after a cadence on build failures opens the goal loop",
+        "every hour ulw-loop the build failures on main",
+        "dispatch",
+        "loop",
+        "prepare_scheduled_ops_blueprint",
+        "loop",
     ),
 )
 

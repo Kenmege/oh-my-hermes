@@ -41,6 +41,7 @@ import re
 import threading
 import unicodedata
 
+from .hermes_session_commands import NATIVE_LOOP_CADENCE_HINT_KEY
 from .reference_regions import executable_routing_text
 
 SIDECAR_PATH = Path(__file__).resolve().parent / "tools" / "skill_shortlist.json"
@@ -133,6 +134,9 @@ _NEVER_LISTED = frozenset({"maestro"})
 # The route hint's id for a message that names its workflow. The person chose;
 # a list of alternatives would argue with them.
 _DIRECT_INVOCATION_HINT_ID = "direct_workflow_invocation"
+# The goal loop's canonical name. A loop on a timer is Hermes' native `/loop`,
+# so the line leaves it off where the route hint already did.
+_GOAL_LOOP_SKILL = "loop"
 
 
 @dataclass(frozen=True)
@@ -485,7 +489,9 @@ def skill_candidates_for_turn(
     then read for Korean (`hangul_skill_candidates`). The conversational
     check reads ASCII words only, so it does not filter Korean: everyday
     Korean is kept out by the Hangul score and anchor floor alone, with no
-    kind-based check for a Korean joke or venting request.
+    kind-based check for a Korean joke or venting request. When the route
+    hint read the message as a loop on a timer (`NATIVE_LOOP_CADENCE_HINT_KEY`),
+    the goal loop stays off the line, as it stays out of the hint.
     """
     if not message.strip():
         return ()
@@ -495,11 +501,14 @@ def skill_candidates_for_turn(
     ):
         return ()
     text = executable_routing_text(message)
-    if not _conversational(text):
-        candidates = skill_candidates(text, installed=installed)
-        if candidates:
-            return candidates
-    return hangul_skill_candidates(text, installed=installed)
+    candidates = () if _conversational(text) else skill_candidates(text, installed=installed)
+    if not candidates:
+        candidates = hangul_skill_candidates(text, installed=installed)
+    if (route_hint_payload or {}).get(NATIVE_LOOP_CADENCE_HINT_KEY) is True:
+        index = _index()
+        loop_labels = {skill.label for skill in index.skills if skill.name == _GOAL_LOOP_SKILL} if index else set()
+        candidates = tuple(candidate for candidate in candidates if candidate[0] not in loop_labels)
+    return candidates
 
 
 # The last candidate set each session was shown, so a run of work turns that

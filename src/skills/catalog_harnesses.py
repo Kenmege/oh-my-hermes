@@ -2181,7 +2181,7 @@ _HARNESSES = [
         quality_bar=(
             "Name the missing decision, why it matters, and the smallest answer that would unblock the next step.",
             "Ask one blocking question tied to a missing decision.",
-            "Offer two to four candidate answers plus a free-input entry with every question, and accept free text over the list.",
+            "Offer two to four candidate answers with every question, recommended first: as `clarify` choices when that tool is present (its picker supplies the typed-answer row), otherwise a numbered list ending in a free-input entry; accept free text over the list.",
             "Use discovered facts before asking the user for information already available locally.",
             "Produce a clarified brief with non-goals, acceptance criteria, and remaining unknowns before planning or handoff.",
         ),

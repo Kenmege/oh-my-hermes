@@ -96,24 +96,31 @@ mid-interview check now and continue from Round 4.
 
 **Answer options — every question ships with candidates.**
 
-After the question sentence, offer the likely answers as a short numbered list: two to four
-real candidates, then one final free-input entry. Each candidate is an answer the user could
-actually pick — drawn from the request, repo evidence, or the tradeoff the question is really
-about, never filler to reach a count, and never a candidate whose text is itself a bare number
-(it would collide with reply-by-number). The last entry is always the open door, in the user's
-language — for example English `N) Something else — type your answer`, Korean `N) 기타 — 직접 입력`.
+Give every question two to four real candidates, the one you recommend first: answers the user
+could actually pick, drawn from the request, repo evidence, or the tradeoff the question is
+really about, never filler to reach a count, and never a candidate whose text is itself a bare
+number (a reply by number would collide with it, in the list below and in a messaging picker).
 
+- **With Hermes' `clarify` tool** (in your tool list or tool search): keep the header in your
+  message and ask through `clarify` — one `questions` entry, the sentence as `question`, the
+  candidates as `choices`. Add no free-input row of your own and keep the candidates out of the
+  question sentence: the picker marks the recommendation and adds its own typed-answer row.
+- **Without it**: after the question sentence, a short numbered list of the candidates, then one
+  final free-input entry in the user's language — for example English
+  `N) Something else — type your answer`, Korean `N) 기타 — 직접 입력`.
 - A number, an option's own words, or a completely different free-text answer are all valid;
   free text is always accepted, even when it matches no option. Never re-ask because the reply
   was not a listed option.
 - Options mirror the user's language, like the header and the question.
 - The list is an answer palette, not extra questions; it does not break the one-question rule.
+  Put a second question in the same `clarify` call only when neither answer could change the
+  other, which an interview rarely has.
 
 **Mid-interview check — this is not a stop rule.**
 
 Before asking the question that would be Round 4, offer the choice instead: say where
 things stand and ask whether to keep going or plan now — your own words, the user's language,
-one short sentence, with the same option shape: keep going / plan now / free input.
+one short sentence, with the same option shape: keep going / plan now.
 The check is not a round: emit it without a header. If the user chooses to continue, the next
 question is Round 4; if they choose to plan, stop rule 2 applies.
 

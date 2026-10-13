@@ -846,6 +846,121 @@ class NoRoutingOnHostWrittenRowsTest(_InjectionTestCase):
         self.assertFalse(path.exists())
 
 
+# What Hermes' own `/plan` and `/loop` commands send the model, opening frame
+# verbatim (`agent/plan_prompt.py`, `hermes_cli/loops.py`, both in the floor
+# release) and enough of each body to carry the vocabulary that routed: the
+# plan-mode rules scored command and delivery lanes, the wakeup scored the
+# goal loop. The bodies are host text, kept here so the counterexample below
+# keeps meaning something -- without its frame the same body DOES route.
+PLAN_MODE_FRAME = "[/plan — plan mode]\n\n"
+PLAN_MODE_BODY = (
+    "For this turn, you are in PLAN MODE — planning only.\n\n"
+    "- Do not implement code.\n"
+    "- Do not edit project files except the plan markdown file itself.\n"
+    "- Do not run mutating terminal commands, commit, push, or perform external\n"
+    "  actions.\n\n"
+    "Task to plan:\nadd a dark mode toggle to the settings page and open a PR for it\n"
+)
+LOOP_WAKEUP_FRAME = "[/loop wakeup #3, every 5m]\n"
+LOOP_WAKEUP_BODY = (
+    "Recurring task: ./loop keep improving the install docs until first-run friction is gone\n\n"
+    "This is an automatic wakeup from the /loop the user set. Perform the task now against the "
+    "CURRENT state. If the task is now complete, say so and end your reply with LOOP_COMPLETE "
+    "on its own line — that stops the loop."
+)
+# A `/goal` continuation (`CONTINUATION_PROMPT_*` in `hermes_cli/goals.py`, in
+# the floor release), plain and after a failed quality gate, and a goal-mode
+# kanban card's finalize nudge from the same file. Without their frames these
+# bodies draw a route hint; with them, a hint would send the model off the
+# goal Hermes is driving.
+GOAL_FRAME = "[Continuing toward your standing goal]\n"
+GOAL_GATE_FRAME = "[Continuing toward your standing goal — a quality gate failed]\n"
+GOAL_BODY = (
+    "Goal: ship the OMH loop docs, fix the failing CI on PR 42, and open a PR with the release notes\n\n"
+    "Continue working toward this goal. Take the next concrete step. If you believe the goal is "
+    "complete, state so explicitly and stop."
+)
+KANBAN_FINALIZE_FRAME = "[The work looks complete, but the task is still open]\n"
+KANBAN_FINALIZE_BODY = (
+    "Reason: the PR is open and CI is green\n\nIf the task is genuinely done, call kanban_complete now "
+    "with a short summary of what you did."
+)
+
+
+class NoRoutingOnHostCommandTurnsTest(_InjectionTestCase):
+    """Session-command turns are host-written but the CLI and TUI type them as nothing.
+
+    Those surfaces queue `/plan`, `/loop` wakeups, `/goal` continuations, and
+    the rest of `hermes_session_commands.HOST_COMMAND_TURN_FRAMES` as plain
+    user-role turns, so the record field the class above reads is absent and
+    only the template's opening frame says who wrote the turn. Each already carries the host's instruction for itself; a route
+    hint beside it would argue with that instruction. Same pairing as above:
+    the frame is the only difference between the turn that routes and the one
+    that does not.
+    """
+
+    def _turn(self, text, *, session, **kwargs):
+        nudge_budget.reset_nudge_budget()
+        payload = pre_llm_call(
+            omh_home=str(self.home),
+            hermes_home=str(self.hermes),
+            session_id=session,
+            user_message=text,
+            conversation_history=[{"role": "user", "content": text}],
+            **kwargs,
+        )
+        return str((payload or {}).get("context", ""))
+
+    def test_a_command_turn_gets_no_route_hint_and_its_body_alone_does(self):
+        for index, (frame, body) in enumerate(
+            (
+                (PLAN_MODE_FRAME, PLAN_MODE_BODY),
+                (LOOP_WAKEUP_FRAME, LOOP_WAKEUP_BODY),
+                (GOAL_FRAME, GOAL_BODY),
+                (GOAL_GATE_FRAME, GOAL_BODY),
+                (KANBAN_FINALIZE_FRAME, KANBAN_FINALIZE_BODY),
+            )
+        ):
+            with self.subTest(frame=frame.strip()):
+                self.assertNotIn("[OMH Route Hint]", self._turn(frame + body, session=f"command-{index}"))
+                self.assertIn("[OMH Route Hint]", self._turn(body, session=f"typed-{index}"))
+
+    def test_a_gateway_prefix_before_the_frame_does_not_reopen_routing(self):
+        # A messaging gateway puts a shared session's `[<name>] ` sender
+        # prefix, or a Discord trigger note, before the turn text.
+        for index, prefix in enumerate(
+            (
+                "[alice] ",
+                "[Triggering message id: `1234` — use as `message_id` for reply/react/pin via the discord tools.]\n\n",
+            )
+        ):
+            with self.subTest(prefix=prefix[:12]):
+                self.assertNotIn(
+                    "[OMH Route Hint]",
+                    self._turn(prefix + PLAN_MODE_FRAME + PLAN_MODE_BODY, session=f"prefixed-{index}"),
+                )
+                self.assertIn(
+                    "[OMH Route Hint]", self._turn(prefix + PLAN_MODE_BODY, session=f"prefixed-typed-{index}")
+                )
+
+    def test_a_first_command_turn_keeps_the_primer_and_claims_no_route(self):
+        context = self._turn(PLAN_MODE_FRAME + PLAN_MODE_BODY, session="first", is_first_turn=True)
+
+        self.assertIn("[OMH Awareness]", context)
+        self.assertNotIn("[OMH Route Hint]", context)
+        self.assertEqual(
+            read_awareness_delivery(str(self.home)).get("session_route_fingerprints", {}), {}
+        )
+
+    def test_the_hook_reads_the_bundle_predicate_the_router_reads(self):
+        from omh.plugin_bundle.omh import hermes_session_commands
+        from omh.plugin_bundle.omh.hooks import llm_hooks
+        from omh.routing import policy
+
+        self.assertIs(llm_hooks.host_command_turn, hermes_session_commands.host_command_turn)
+        self.assertIs(policy.host_command_turn, hermes_session_commands.host_command_turn)
+
+
 class TurnAuthorshipHasOneHomeTest(unittest.TestCase):
     """The predicate moved out of the plan module; it did not get copied.
 

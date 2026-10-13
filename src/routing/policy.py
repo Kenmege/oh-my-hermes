@@ -8,6 +8,17 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
+from ..plugin_bundle.omh.hermes_session_commands import (
+    LOOP_NORTH_STAR_PHRASES,
+    LOOP_NORTH_STAR_TOKENS,
+    LOOP_PRODUCT_GOAL_PHRASES,
+    LOOP_PRODUCT_GOAL_TOKENS,
+    LOOP_REPEATED_IMPROVEMENT_PHRASES,
+    LOOP_REPEATED_IMPROVEMENT_TOKENS,
+    LOOP_TIMER_NONE,
+    LOOP_TIMERS_ANSWERED_DIRECTLY,
+    host_command_turn,
+)
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES,
     CODING_DELIVERY_REQUEST_TOKENS,
@@ -6363,16 +6374,20 @@ def active_routing_guard_rules(
     query_tokens: set[str],
     *,
     explicit_skill: str | None = None,
+    loop_timer: str = LOOP_TIMER_NONE,
 ) -> tuple[RoutingGuardRule, ...]:
+    """`loop_timer` is the query's `RoutingQuery.loop_timer`; a caller that has
+    no query leaves the loop guard as it reads without a timer."""
     if explicit_skill:
         return ()
-    return _active_routing_guard_rules_cached(normalized_query, frozenset(query_tokens))
+    return _active_routing_guard_rules_cached(normalized_query, frozenset(query_tokens), loop_timer)
 
 
 @lru_cache(maxsize=512)
 def _active_routing_guard_rules_cached(
     normalized_query: str,
     query_tokens: frozenset[str],
+    loop_timer: str = LOOP_TIMER_NONE,
 ) -> tuple[RoutingGuardRule, ...]:
     rules: list[RoutingGuardRule] = []
     if _risky_refactor_guard_applies(normalized_query, query_tokens):
@@ -6422,7 +6437,7 @@ def _active_routing_guard_rules_cached(
         rules.append(DURABLE_RESEARCH_GUARD)
     if _ops_observability_guard_applies(normalized_query, query_tokens):
         rules.append(OPS_OBSERVABILITY_GUARD)
-    loop_goal_applies = _loop_goal_guard_applies(normalized_query, query_tokens)
+    loop_goal_applies = _loop_goal_guard_applies(normalized_query, query_tokens, loop_timer)
     if loop_goal_applies:
         rules.append(LOOP_GOAL_GUARD)
     workflow_learning_applies = (
@@ -7465,50 +7480,39 @@ def _durable_research_goal_guard_applies(normalized_query: str, query_tokens: se
     return durable and research and stop_condition
 
 
-def _loop_goal_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
+def host_owned_command_turn(message: str) -> bool:
+    """A turn Hermes wrote from its own session-command template; OMH routes nothing on it.
+
+    The predicate lives in the plugin bundle (`hermes_session_commands`) so the
+    per-turn hook, which may not import `omh`, and this router read one copy.
+    """
+    return host_command_turn(message)
+
+
+def _loop_goal_guard_applies(
+    normalized_query: str, query_tokens: set[str], loop_timer: str = LOOP_TIMER_NONE
+) -> bool:
+    # A loop on a timer is Hermes' native `/loop`, and a code or media loop on
+    # one is a question about it; neither is the goal loop, whatever goal words
+    # the prompt carries ("/loop 30m keep improving the docs until the repo
+    # hits 10k stars" is the command the person typed). The verdict
+    # (`hermes_session_commands.loop_timer_verdict`) is read once on the
+    # query's executable text and handed in, never re-derived from this
+    # collapsed spelling, where a gateway's block ends are single spaces.
+    if loop_timer in LOOP_TIMERS_ANSWERED_DIRECTLY:
+        return False
     explicit_loop = "loop" in query_tokens or _contains_phrase(
         normalized_query,
         ("loopable", "loop engineering", "goal loop", "루프", "반복해서", "계속 개선", "계속해서 개선"),
     )
-    repeated_improvement = bool({"repeatedly", "iteratively", "iterate", "until"} & query_tokens) or _contains_phrase(
-        normalized_query,
-        (
-            "keep improving",
-            "reduce friction",
-            "reducing friction",
-            "until first success",
-            "until first value",
-            "improve until first value",
-            "반복 개선",
-            "계속 개선",
-            "계속해서 개선",
-            "줄여가며 개선",
-            "줄이면서 개선",
-            "막히는 부분을 계속 개선",
-        ),
+    repeated_improvement = bool(LOOP_REPEATED_IMPROVEMENT_TOKENS & query_tokens) or _contains_phrase(
+        normalized_query, LOOP_REPEATED_IMPROVEMENT_PHRASES
     )
-    product_or_oss_goal = bool({"oss", "repo", "repository", "install", "first-run", "friction", "product"} & query_tokens) or _contains_phrase(
-        normalized_query,
-        (
-            "first run",
-            "first-run",
-            "first run experience",
-            "first successful value",
-            "install to first value",
-            "why users do not feel value",
-            "스타급 oss",
-            "star-worthy oss",
-            "설치 후",
-            "설치부터 첫 성공",
-            "10분 안에 가치",
-            "가치 못 느끼는",
-            "첫 성공",
-            "첫 성공까지",
-        ),
+    product_or_oss_goal = bool(LOOP_PRODUCT_GOAL_TOKENS & query_tokens) or _contains_phrase(
+        normalized_query, LOOP_PRODUCT_GOAL_PHRASES
     )
-    north_star = bool({"star", "stars", "star-worthy", "starworthy", "10k-star", "100k-star", "adoption"} & query_tokens) or _contains_phrase(
-        normalized_query,
-        ("star worthy", "star-worthy", "first-run friction", "10k star", "10k-star", "100k star", "100k-star"),
+    north_star = bool(LOOP_NORTH_STAR_TOKENS & query_tokens) or _contains_phrase(
+        normalized_query, LOOP_NORTH_STAR_PHRASES
     )
     observability_context = bool(
         {

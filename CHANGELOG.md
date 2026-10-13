@@ -4,6 +4,82 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **OMH no longer steers the model against Hermes' own `clarify`, `/loop`,
+  `/goal`, and `/plan`.** `ulw-interview` sends each question's two to four
+  candidate answers through Hermes' native `clarify` tool when it is in the
+  tool list or reachable through tool search: the candidates go in `choices`
+  with the recommended one first, the round header stays in the message, OMH
+  adds no free-input row of its own (the picker supplies one), and a second
+  question joins the same call only when neither answer could change the
+  other. `ulw-context` asks each frontier round the same way, one `questions`
+  entry per dependency-ready decision, its identifier opening the question and
+  at most four choices with the recommendation first, since decisions in one
+  frontier have no prerequisite between them. Where `clarify`
+  is absent, the numbered list or batch in the message stays the fallback, and
+  free text is still accepted either way. `ulw-loop` gains
+  Do-Not-Use lines that hand a check repeated on a timer to native `/loop`,
+  an unattended schedule to a Hermes cron job, and a single objective with a
+  done condition to native `/goal`. A request in one of three shapes no
+  longer dispatches the goal loop or draws the `ulw-loop` route hint or
+  candidate line: `loop` or `/loop` as the first word followed by its
+  cadence ("loop every 5 minutes and check whether CI is green", `/loop 5m
+  …`, compound intervals such as `/loop 1h30m` and short or glued units such
+  as `5 min` and `5mins` included); a cadence followed directly by `loop` as
+  the verb, before its object, a preposition or conjunction, or nothing
+  ("every 10 minutes loop over the inbox"), in a first sentence that neither
+  ends in a question mark nor asks why or how, and not after a count of two
+  or more with a spelled singular unit ("every 5 minute loop …"); or a
+  Korean cadence whose first clause closes on running the loop, with no
+  connective such as `-는데` in it (`5분마다 … 루프 돌려줘`). The router answers it directly and names the `/loop` command; a
+  request that opens by asking to write or explain a for, while, event, or
+  media loop that runs on a timer is answered directly without that advice.
+  Only the opening of the person's current message is read, after a
+  messaging gateway's sender prefix, trigger note, reply pointer, or channel
+  backfill and a courtesy opener. Everything else decides nothing and routes
+  as before: a loop word elsewhere ("the retry loop fires every 5 seconds",
+  the spaced `cto loop` trigger), and a loop word as an adverbial ("every 5
+  minutes check CI in a loop", `5분마다 반복해서 …`, `루프 돌면서 …`, `루프
+  돌려서 …`), because those words describe a fault as often as they ask for
+  a loop ("every 5 minutes my pod restarts in a loop", `5분마다 반복해서 에러
+  나는데 원인 찾아줘`). A skill the router reads as explicitly invoked ("loop
+  every 5 minutes and run the code-review skill on new PRs") still gets the
+  turn. One function decides this for the router, its loop guard, the route
+  hint, and the candidate line, and the router and the hint are pinned to
+  agree on every probe sentence. Such a request stays OMH's goal loop when it
+  puts OMH's own form in the loop command's place (`./loop`, `$loop`, `omh
+  loop`, `ulw-loop`, `ulw loop`), names the skill anywhere in an untyped
+  command, names the goal loop beside the command ("goal loop", "the loop
+  skill"), asks the loop to improve or enhance something, or pairs a product
+  or star word with an outcome verb (lower, reduce, raise, "get us to", 줄여,
+  높여, and the like) or a repeat cue (until, iteratively, keep improving), or
+  a star word with a product word. A typed `/loop` with its cadence is
+  Hermes' command whatever its prompt mentions, OMH's name and goal words
+  included; where the prompt would otherwise have been the goal loop, the
+  route reason tells the model that `/loop` repeats it as written and that
+  `./loop <goal>` starts OMH's goal loop, while the visible reply keeps the
+  shared direct-answer copy. `ulw-loop` named after a cadence ("every 2
+  hours ulw-loop the flaky test list", "every hour ulw-loop the build
+  failures on main") now opens the goal loop, where app-debugging and
+  build-failure-triage took those sentences before. The turns Hermes
+  writes for its own session commands are no longer routed at all: `/plan`,
+  `/loop` wakeups, `/goal` continuations (with a completion contract or
+  `/subgoal` criteria, after a failed quality gate, and the kick that stands
+  in for a goal just sent), goal-mode kanban nudges, `/heartbeat` firings,
+  `/learn`, and `/initiate-setup`, each recognised by its template's opening
+  line and the fixed text that follows it, also behind the sender prefix,
+  Discord trigger note, reply pointer, or channel backfill a messaging gateway
+  puts before it. A frame followed by the person's own words on the same
+  line, or by anything other than the text its template writes next, is still
+  read as a person; a heartbeat's next line is the person's own recurring
+  instruction, so typing under a pasted heartbeat frame cannot be told apart.
+  The CLI and the TUI give none of these turns a `display_kind`,
+  and the gateway stamps only its `/loop` wakeups and, since 0.21.4, its
+  heartbeats. The router and the chat wrapper answer them directly, and the
+  plugin's per-turn hook renders no route hint, vocabulary match, or candidate
+  line on them, as it already did for rows Hermes stamps with a
+  `display_kind`.
+
+
 - **The operator skills now record what Hermes' own approval, checkpoint,
   vault, and connection surfaces answered, beside the confirmations they keep,
   and use those surfaces where they exist.** `command-operator` still

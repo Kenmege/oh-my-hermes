@@ -13,6 +13,11 @@ from .executor_cues import (
     OMO_RUNTIME_CODING_AGENT_PHRASES as _OMO_RUNTIME_CODING_AGENT_PHRASES,
     SUBSTRING_NAMED_CODING_AGENT_PHRASES as _SUBSTRING_NAMED_CODING_AGENT_PHRASES,
 )
+from .hermes_session_commands import (
+    LOOP_TIMERS_ANSWERED_DIRECTLY,
+    NATIVE_LOOP_CADENCE_HINT_KEY,
+    loop_timer_verdict,
+)
 from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
 from .reference_regions import executable_routing_text
@@ -6024,6 +6029,12 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
         else _without_diagnostic_status_lines(localized_normalized)
     )
     tokens = set(re.findall(r"[a-z0-9][a-z0-9_-]*", routing_normalized))
+    # A loop on a timer that is Hermes' `/loop`, or a code or media loop: the
+    # same function on the same executable text the chat router reads, so the
+    # hint and the router reach one verdict. With the goal-loop hint withheld,
+    # the slots go to what the rest of the message asks for, exactly as for
+    # the same check said without a timer.
+    timed_native_loop = loop_timer_verdict(matching_message) in LOOP_TIMERS_ANSWERED_DIRECTLY
     fixed_or_pass_verification_context = (
         _fixed_or_pass_verification_context(routing_normalized)
         and not _fixed_or_pass_status_question_context(routing_normalized)
@@ -6041,7 +6052,9 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
     if normalized.strip() and hint_limit:
         if omh_quality_intent.applies and not diagnostic_learning_first:
             hints.append(_omh_quality_improvement_hint(omh_quality_intent))
-        direct_hint = _direct_workflow_invocation_hint(intent, routing_normalized, matching_message, degraded)
+        direct_hint = _direct_workflow_invocation_hint(
+            intent, routing_normalized, matching_message, degraded, timed_native_loop=timed_native_loop
+        )
         if len(hints) < hint_limit and direct_hint and not any(
             isinstance(hint, dict) and hint.get("workflow") == direct_hint.get("workflow") for hint in hints
         ):
@@ -6103,6 +6116,8 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
             if _rule_suppressed_by_reference_intent(rule, intent):
                 continue
             if _rule_suppressed_by_context(rule, routing_normalized):
+                continue
+            if rule["id"] == "loopability_goal" and timed_native_loop:
                 continue
             if rule["id"] == "build_failure_triage" and fixed_or_pass_verification_context:
                 continue
@@ -6254,6 +6269,8 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
             "tool invocation, generated output, verification, review, CI, merge, or proof that routing was correct."
         ),
     }
+    if timed_native_loop:
+        payload[NATIVE_LOOP_CADENCE_HINT_KEY] = True
     degradation = degradation_payload(degraded)
     if degradation:
         payload["degradation"] = degradation
@@ -7466,6 +7483,8 @@ def _direct_workflow_invocation_hint(
     routing_normalized: str,
     message: str,
     degraded: list[tuple[str, str]],
+    *,
+    timed_native_loop: bool = False,
 ) -> dict[str, object]:
     mentioned = [str(item) for item in getattr(intent, "mentioned_workflows", ()) if str(item)]
     direct_prefix_workflow = _direct_workflow_prefix(routing_normalized)
@@ -7476,6 +7495,8 @@ def _direct_workflow_invocation_hint(
     if not direct_prefix_workflow and "workflow_marker" not in structural and not direct_omh_form:
         return {}
     workflow = direct_prefix_workflow or mentioned[0]
+    if workflow == "loop" and timed_native_loop:
+        return {}
     next_action = _DIRECT_WORKFLOW_NEXT_ACTIONS.get(workflow, "route_to_downstream_workflow")
     if workflow == "loop":
         next_action = _loop_route_hint_next_action(message, next_action, degraded)

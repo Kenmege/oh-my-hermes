@@ -195,6 +195,9 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The goal is too vague to name an observable problem, next artifact, verification signal, or stop condition.
   - The goal depends mainly on external waiting, adoption, revenue, or community response without observable local next actions.
   - The permission profile does not allow repeated research, handoff, queue, or feedback cycles.
+  - The request is a check repeated on a timer inside this session, such as polling CI, a deploy, or a queue every few minutes until it changes; that is Hermes' native `/loop` (an interval plus `--until` or `--times`), which only the user can start, so name the command instead of opening a goal loop.
+  - The work must run unattended on a schedule that outlives this session, such as hourly or nightly; schedule it as a Hermes cron job through `cronjob_manage` (in the tool list or tool search).
+  - The request is one objective with a stated done condition that needs no interviewer, planner, researcher, or reviewer cycles; native `/goal` keeps the session on it (`/goal draft` writes its completion contract), and this skill keeps the long-horizon loop engineering.
 - Strong routing signals: `loop`, `./loop`, `$loop`, `goal loop`, `long horizon goal`, `never stop`, `research plan goal feedback`, `token exhaustion resume`, `permission profile`, `star 10k`, `10k star`, `loop engineering`, `keep running until done`, `루프`, `목표 루프`, `장기 목표`, `끝까지`, `토큰 고갈`, `피드백 루프`, `끝날 때까지 계속`, `계속 돌려줘`
 - Good example:
   - Prompt: ./loop make OMH a credible Hermes workflow pack with install, docs, QA, and feedback cycles.
@@ -12882,7 +12885,7 @@ Clarify intent and boundaries one question at a time before planning or executio
 - Quality bar:
   - Name the missing decision, why it matters, and the smallest answer that would unblock the next step.
   - Ask one blocking question tied to a missing decision.
-  - Offer two to four candidate answers plus a free-input entry with every question, and accept free text over the list.
+  - Offer two to four candidate answers with every question, recommended first: as `clarify` choices when that tool is present (its picker supplies the typed-answer row), otherwise a numbered list ending in a free-input entry; accept free text over the list.
   - Use discovered facts before asking the user for information already available locally.
   - Produce a clarified brief with non-goals, acceptance criteria, and remaining unknowns before planning or handoff.
 - Inputs:

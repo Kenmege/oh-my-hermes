@@ -478,7 +478,36 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The kanban review-lane hand-off adds one: the literal prompt
             # Hermes' dispatcher opens every kanban worker with, a clarify that
             # must never offer code-review as its workflow (1).
-            expected=490,
+            # The native Hermes command work adds five, each answered
+            # directly: a loop on a timer in English, in Korean, and in the
+            # native `/loop 5m` syntax, which dispatched the goal loop through
+            # the bare loop word (3); and the turns Hermes writes for its own
+            # `/plan` and `/loop` wakeup, which dispatched the ops card and
+            # fell back as a file lookup (2).
+            # The rest of Hermes' session-command turns add seven, each
+            # answered directly: a `/goal` continuation and one after a failed
+            # quality gate, which dispatched the goal loop (2); a goal-mode
+            # kanban card's continuation and finalize nudges, which dispatched
+            # the image-card skill (2); and the heartbeat, `/learn`, and
+            # `/initiate-setup` turns, which dispatched automation, memory, and
+            # toolbelt skills (3).
+            # The review of that work adds four, each answered directly: a
+            # `/plan` turn behind a shared session's sender prefix and one
+            # behind a reply pointer, and a `/goal` turn behind a Discord
+            # trigger note, which still dispatched ultrawork and
+            # github-event-ops (3); and the native `/loop 1h30m` syntax, which
+            # the single-unit interval check missed (1).
+            # Its second review adds two, each answered directly: a loop on a
+            # timer written with a short unit (`5 min`), and a bash while loop
+            # on a timer, a code question that no longer gets `/loop` advice;
+            # both dispatched the goal loop before.
+            # The third review adds one, answered directly: a timed loop that
+            # checks an event loop, which dispatched the goal loop before and
+            # for one round read as a question about that code.
+            # The fourth review adds one, answered directly: a typed `/loop`
+            # with its cadence whose prompt names `ulw-loop`, which dispatched
+            # the goal loop before.
+            expected=510,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -609,7 +638,28 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The kanban review-lane hand-off adds one: a bug hunt over the
             # diff attached to a kanban task, which stays a code-review
             # dispatch (1).
-            expected=694,
+            # The native Hermes command work adds three loop dispatches that a
+            # timer must not take away: an OMH `./loop` goal, the `./loop`
+            # form on a timer, and a timed loop carrying a first-run goal.
+            # Its review adds four more the timer had taken away: a named goal
+            # loop and a Korean keep-improving loop on a timer, and the
+            # `ulw-loop` skill named or run on a timer.
+            # The second review adds four the timer still took: the sentence
+            # that invokes the skill on a timer, by `ulw-loop`, by the catalog
+            # name `loop`, and in Korean, and OMH's `$loop` behind a shared
+            # session's sender prefix.
+            # The third review adds three on the edges of the one verdict: an
+            # OMH form behind a reply pointer and a sender prefix, a timed
+            # loop asked to improve something, and `cto-loop` on a timer,
+            # which keeps its own route.
+            # The fourth review, which reads only a request's opening, adds
+            # six: a skill invoked beside a timed loop and an invoked plan
+            # about a polling loop on a timer, each keeping its skill; the
+            # spaced `cto loop` trigger on a timer; a timed loop asked to lower
+            # install friction; and `ulw-loop` named after a cadence on a flaky
+            # list and on build failures, which now open the goal loop where
+            # app-debugging and build-failure-triage took them before.
+            expected=714,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
