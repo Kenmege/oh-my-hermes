@@ -410,15 +410,16 @@ class MalformedPayloadTests(unittest.TestCase):
     def test_a_mistyped_field_is_skipped_and_the_rest_of_the_frame_is_kept(self) -> None:
         roster = started(FIRST)
         feed(roster, "tool", tool_count=2, tool_name="read_file", tool_preview="a.py")
-        for bad_count in ("3", True, -1, 2.0, None, [3], 10**400, 1_000_000):
+        for bad_count in ("3", True, -1, 7.5, 5.0, None, [3], 10**400, 1_000_000):
             feed(roster, "tool", goal=5, model=["m"], tool_count=bad_count, tool_name={"n": 1}, tool_preview=9, text=4)
         agent = roster.agents[FIRST]
         self.assertEqual(agent.goal, "find usages of old_api in src/ and list every call site")
         self.assertEqual((agent.model, agent.tool_count, agent.last_tool), ("deepseek-v4.1-flash", 2, "tool"))
-        self.assertEqual(log_rows(roster), [("tool", "read_file", "a.py")] + [("tool", "tool", "")] * 8)
+        self.assertIs(type(agent.tool_count), int)
+        self.assertEqual(log_rows(roster), [("tool", "read_file", "a.py")] + [("tool", "tool", "")] * 9)
         feed(roster, "thinking", text=["not", "text"])
         feed(roster, "complete", 3.0, status=["failed"], summary={"s": 1}, text=None)
-        self.assertEqual((agent.status, len(agent.log)), ("completed", 9))
+        self.assertEqual((agent.status, len(agent.log)), ("completed", 10))
 
     def test_the_largest_tool_count_accepted_is_999999(self) -> None:
         roster = started(FIRST)
@@ -823,6 +824,8 @@ class ListTests(unittest.TestCase):
         roster = Roster()
         feed(roster, "start", goal="")
         self.assertEqual(line_text(roster.list_lines(40, THEME, MAIN_ID, 0, 6, 0.0)[0][1])[:9], "  ⠋ agent")
+        self.assertEqual(line_text(roster.strip_line(40, THEME, 0)[0]), "● main  ⠋ agent  ↓")
+        self.assertEqual(lines_text(roster.log_lines(FIRST, 40, THEME, 0.0))[0], "agent")
 
 
 class LogViewTests(unittest.TestCase):
@@ -955,6 +958,24 @@ class IngestTailTests(unittest.TestCase):
         self.assertEqual(lines_text(roster.log_lines(FIRST, 80, THEME, 0.0))[3], "… 12 earlier rows dropped")
         feed(roster, "tool", tool_name="terminal")
         self.assertEqual((len(agent.log), agent.dropped, agent.log[0].text), (400, 13, "line 13"))
+
+    def test_a_cut_tail_longer_than_the_log_says_only_that_earlier_output_is_missing(self) -> None:
+        # The gateway cut it first, so the rows the cap dropped are not all that is missing: no number.
+        roster = started(FIRST)
+        roster.ingest_tail(FIRST, "\n".join(f"line {index}" for index in range(LOG_ROW_CAP + 12)), truncated=True)
+        agent = roster.agents[FIRST]
+        self.assertEqual((len(agent.log), agent.dropped, agent.tail_cut), (400, 11, True))
+        view = lines_text(roster.log_lines(FIRST, 80, THEME, 0.0))
+        self.assertEqual(view[3:5], ["… earlier output not shown", "line 12"])
+        self.assertEqual(len(view), 3 + 1 + 400)
+
+    def test_only_the_last_characters_of_an_oversized_tail_are_read(self) -> None:
+        # 300 lines of 199 characters: the last 32768 characters open inside line 136, so 137 is the first whole one.
+        roster = started(FIRST)
+        roster.ingest_tail(FIRST, "\n".join(f"{index:04d}" + "z" * 195 for index in range(300)))
+        agent = roster.agents[FIRST]
+        self.assertEqual((len(agent.log), agent.dropped, agent.tail_cut), (163, 0, True))
+        self.assertEqual((agent.log[0].text[:4], agent.log[-1].text[:4]), ("0137", "0299"))
 
     def test_a_tail_past_the_character_bound_keeps_its_end_and_counts_as_cut(self) -> None:
         self.assertEqual(TAIL_CHARS, 32768)

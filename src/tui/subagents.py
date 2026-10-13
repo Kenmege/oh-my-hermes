@@ -469,7 +469,6 @@ class Roster:
         agent = self.agents.get(subagent_id)
         if agent is None:
             return []
-        width = max(1, width)
         facts = [elapsed_text(agent.elapsed(now)), _tools_text(agent.tool_count), agent.model]
         status = Span(agent.status, _mark(agent, theme, 0).style)
         rest = Span("".join(f"{FACT_SEPARATOR}{fact}" for fact in facts if fact), theme.muted)
