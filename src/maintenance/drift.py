@@ -475,7 +475,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # request to check a draft's citation ids against the ledger, an
             # arXiv category search, one scheduled run of an existing
             # competitor watch, and a news alert on one named company (5).
-            expected=489,
+            # The kanban review-lane hand-off adds one: the literal prompt
+            # Hermes' dispatcher opens every kanban worker with, a clarify that
+            # must never offer code-review as its workflow (1).
+            expected=490,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -603,7 +606,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # of Hermes' web search and a check whether it is down, which
             # became clarifies while "hermes web search" counted without a
             # setup verb (3).
-            expected=693,
+            # The kanban review-lane hand-off adds one: a bug hunt over the
+            # diff attached to a kanban task, which stays a code-review
+            # dispatch (1).
+            expected=694,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

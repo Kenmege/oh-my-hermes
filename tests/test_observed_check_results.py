@@ -17,6 +17,7 @@ from __future__ import annotations
 import unittest
 
 from omh.evidence.observed_check_results import (
+    FAILURE_ORIGINS,
     OBSERVED_CHECK_RESULT_FIELDS,
     OBSERVED_CHECK_RESULTS_TOKEN,
     observed_check_result_field_names,
@@ -153,6 +154,28 @@ class ObservedCheckResultsDeclarationTests(unittest.TestCase):
                 f"`{name}` is declared with no meaning; it renders as a bare word "
                 "and a consumer cannot tell what to put in it",
             )
+
+    def test_a_failing_check_says_where_its_failure_came_from(self) -> None:
+        """`origin` is on the row, and its gloss is its own vocabulary.
+
+        A red check on the changed tree does not say the change made it red.
+        Without the field a gate has two options and both are wrong: block a
+        change over breakage it did not cause, or assume the breakage was
+        already there. The gloss is built from `FAILURE_ORIGINS`, so a value
+        added there reaches every surface that renders the row; checked here
+        because a hand-typed gloss would keep passing while it named two.
+        """
+        meanings = {field.name: field.meaning for field in OBSERVED_CHECK_RESULT_FIELDS}
+        self.assertIn("origin", meanings, "`origin` left the observed_check_results/v1 row")
+        self.assertEqual(FAILURE_ORIGINS, ("introduced", "pre_existing", "unknown"))
+        for value in FAILURE_ORIGINS:
+            self.assertIn(value, meanings["origin"], f"the `origin` gloss no longer names `{value}`")
+        self.assertIn(
+            "failing check",
+            meanings["origin"],
+            "the `origin` gloss no longer says it applies to a failing check; on a "
+            "passing row the field has nothing to record",
+        )
 
     def test_no_rendered_surface_restates_the_field_list(self) -> None:
         """A surface that names this row names all of its fields, or none.

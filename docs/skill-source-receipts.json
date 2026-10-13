@@ -474,6 +474,50 @@
       "reviewed_on": "2026-10-13",
       "rationale": "Adopted four recurring-watch rules in OMH wording: a fixed watchlist and threshold, a failed source as unknown coverage, a per-source cutoff, and counting by event; the bundled skill runs company watches.",
       "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-13-code-review-hermes-review-contracts",
+      "candidate_key": "code-review@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2105",
+      "reviewed_on": "2026-10-13",
+      "rationale": "Adopted a host-validated findings schema, pasted material marked as data, and sdlc-review as owner of a kanban review card's transition; a return that fails the schema is not_observed, never a pass.",
+      "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-13-verification-gate-hermes-failure-origin",
+      "candidate_key": "verification-gate@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2105",
+      "reviewed_on": "2026-10-13",
+      "rationale": "Adopted the new-versus-existing failure split as an origin on each failing check; the stash-and-pop baseline was rejected for an observed merge-base run in a clean detached worktree.",
+      "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-13-build-failure-triage-hermes-failure-origin",
+      "candidate_key": "build-failure-triage@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2105",
+      "reviewed_on": "2026-10-13",
+      "rationale": "Adopted the same failure split per cluster: a fix handoff only for introduced clusters, a pre-existing one handed off on its own, an unproven one returned for the merge-base run; no verdict added.",
+      "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-13-commit-pr-authoring-hermes-commit-step",
+      "candidate_key": "commit-pr-authoring@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "rejected",
+      "decision_ref": "#2105",
+      "reviewed_on": "2026-10-13",
+      "rationale": "Rejected the upstream commit step's stage-everything command and default verified prefix; OMH states the opposite rules: paths staged by name, and a prefix only from an observed ledger row.",
+      "supersedes": null
     }
   ]
 }

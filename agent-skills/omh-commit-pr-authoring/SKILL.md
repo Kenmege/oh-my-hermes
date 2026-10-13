@@ -49,6 +49,7 @@ Bad example:
 - The convention read names the template and log sample it drew from.
 - Every `Tested:` entry maps to an observed ledger row with its exit status.
 - Every prepared, skipped, or unobserved command is under `Not-tested:` with its reason.
+- The draft lists the paths to stage, and any state-claiming subject prefix maps to an observed ledger row.
 - Nothing was committed, pushed, or opened by OMH.
 
 ## Recovery Notes
@@ -99,11 +100,14 @@ Artifact expectations:
 - repo_convention_read/v1 names the template path, the subject shape and trailers seen in the recent log, and the sign-off rule, or says which of them was not found
 - evidence_ledger/v1 lists every command with observed or not_observed; observed carries the exit status and where it was seen
 - commit_message_draft/v1 and pr_body_draft/v1 take `Tested:` and the validation section only from observed ledger rows
+- commit_message_draft/v1 lists the paths the commit covers, so whoever records it stages those paths and nothing else
 
 Safety rules:
 
 - List a command under `Tested:` only when the evidence ledger records it as observed; a command that was prepared, planned, or described as passing without a run record goes under `Not-tested:`, whatever the wording says.
 - Never commit, amend, push, or open the PR; OMH prepares the text and the user or the executor records it.
+- Name the paths a commit covers and have them staged by path; never write or recommend `git add -A` or `git add .`, which sweeps unrelated dirty files into the commit.
+- A subject prefix that claims a state, such as `[verified]`, `[reviewed]`, or `[tested]`, is a projection of the evidence ledger: write it only when the repository's log uses that prefix and the ledger holds the observed row it claims, never as a default.
 - Read the repository's own template and recent log before drafting; impose no convention the repository does not use.
 - Do not claim CI, review, or merge state in the text unless it was observed, and name what was not.
 - Never put credentials, tokens, private URLs, or raw transcripts into a commit message or PR body.

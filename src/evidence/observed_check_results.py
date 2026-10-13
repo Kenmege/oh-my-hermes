@@ -32,6 +32,15 @@ dropped a field somebody meant to require:
 `meaning` is empty where the name defines itself. A gloss on `exit status`
 would be filler in a body every load pays for, and this repository's skill
 bodies are budgeted.
+
+`origin` joined the row later, for a failing check only. A failure on the
+changed tree says the check is red; it does not say the change made it red, and
+a gate that cannot tell the two apart either blocks a change over breakage it
+did not cause or passes one by assuming the breakage was already there. The
+three values are the whole vocabulary: `introduced`, `pre_existing`, and
+`unknown`. What proves each one is a rule the gate states beside the row
+(`verification-gate`, and `build-failure-triage` for a failure cluster), not a
+property of the field, so it is not repeated here.
 """
 
 from __future__ import annotations
@@ -40,6 +49,11 @@ from dataclasses import dataclass
 from typing import Final
 
 OBSERVED_CHECK_RESULTS_TOKEN: Final[str] = "observed_check_results/v1"
+
+# The values `origin` takes. Declared once so the field's own gloss, the skills
+# that state the proof rule, and the test that holds them to it name one
+# vocabulary.
+FAILURE_ORIGINS: Final[tuple[str, ...]] = ("introduced", "pre_existing", "unknown")
 
 
 @dataclass(frozen=True)
@@ -63,6 +77,10 @@ OBSERVED_CHECK_RESULT_FIELDS: Final[tuple[ObservedCheckResultField, ...]] = (
     ObservedCheckResultField("summary", "what the output said"),
     ObservedCheckResultField("scope", "what that run covered, since a narrower run proves less"),
     ObservedCheckResultField("freshness", "when it ran, and whether the tree has moved since"),
+    ObservedCheckResultField(
+        "origin",
+        f"for a failing check: {', '.join(FAILURE_ORIGINS[:-1])}, or {FAILURE_ORIGINS[-1]}",
+    ),
 )
 
 

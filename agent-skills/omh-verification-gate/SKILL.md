@@ -71,7 +71,8 @@ Quality bar:
 - Record every field the `observed_check_results/v1` artifact expectation below names, for each observed result; a field left out is a gap in the record, not a shorter record.
 - For native `omh_todo` checkpoints, load the todo-checklist closing recipe; `record` then `recall` this verification declaration. Stored declarations are not proof.
 - When the change answers to a written spec, plan, or issue, load `references/requirement-coverage-map.md` and map requirement to task to evidence under stable ids before claiming coverage.
-- Return PASS only when required checks pass and stale or missing evidence is resolved.
+- Give each failing check an `origin`: `introduced` when the same command passes at the merge-base or the failure points at a line the diff added or changed; `pre_existing` only when an observed run of the same command fails the same way at the merge-base in a clean detached worktree (`git worktree add --detach <dir> <merge-base>`, removed afterwards), never by stashing or checking out the tree the user is working in; otherwise `unknown`.
+- Return PASS only when every required check passes or its failure is proven `pre_existing`, and stale or missing evidence is resolved; never over an `unknown` origin. A `pre_existing` failure is named in the verdict with its merge-base run and stays open for its owner; CI or merge-readiness that requires that check stays unmet.
 - Keep fixes, reruns, review, CI, and merge as separate observed states.
 
 Required inputs:
@@ -94,8 +95,8 @@ Expected outputs:
 Artifact expectations:
 
 - verification_matrix/v1 covering build, lint, typecheck, unit/integration/e2e tests, generated docs, static/security checks, diff hygiene, and CI/DCO when applicable
-- observed_check_results/v1 with command (verbatim, not a description of it), source (this checkout, a CI job, or an operator report), exit status, summary (what the output said), scope (what that run covered, since a narrower run proves less), and freshness (when it ran, and whether the tree has moved since)
-- claim_verdict/v1 with PASS, HOLD, or BLOCK and exact missing or failed checks
+- observed_check_results/v1 with command (verbatim, not a description of it), source (this checkout, a CI job, or an operator report), exit status, summary (what the output said), scope (what that run covered, since a narrower run proves less), freshness (when it ran, and whether the tree has moved since), and origin (for a failing check: introduced, pre_existing, or unknown)
+- claim_verdict/v1 with PASS, HOLD, or BLOCK and exact missing or failed checks, each failed one with its origin
 - generated_artifact_provenance/v1 with one row per touched generated path: the source of truth that produces it, the regeneration command, and the drift gate that catches it, or the single state `map_not_declared` when the repository declares no generated-artifact map
 
 Safety rules:
@@ -103,7 +104,7 @@ Safety rules:
 - Do not treat a planned command, stale output, green local check, or prepared handoff as fresh verification evidence.
 - Read generated paths from a map the repository declares; where none exists report `map_not_declared` and never infer one from filename patterns, directory names, or a generated-file header, because a false positive redirects correct work while the miss it prevents only costs a rerun.
 - Do not collapse build, lint, tests, security, generated docs, review, CI, DCO, merge-readiness, or merge into one claim.
-- Failed or unavailable checks must produce HOLD/BLOCK with a rerun or remediation path.
+- Failed or unavailable checks must produce HOLD/BLOCK with a rerun or remediation path; the one exception is a failure proven `pre_existing`, which the verdict names instead of charging to the change.
 - A change touching an authentication, secrets/config, schema/migration, or payment/crypto path escalates to the thorough verification lane regardless of diff size.
 - Refuse completion, do not merely report it, when the claim carries an unlinked TODO/FIXME/stub marker in changed code, a suppressed test with no linked reason, placeholder or self-referential evidence ('TBD', 'works as expected'), or a proof word ('fixed', 'verified', 'passing') with no observed evidence naming a command; each refusal names its category, the offending excerpt, and the remedy.
 - Before a diff deletes a validation/refusal/sanitization/permission/allowlist check at a trust boundary, or a negative test named for it ('refuses', 'rejects', 'denies', 'blocks', 'invalid'), require a named adversarial or regression case proving the boundary still refuses what it should; a guard that only moves elsewhere in the same diff is not a deletion, but a deletion with no negative case behind it -- in the diff or named in evidence -- earns no completion claim.
