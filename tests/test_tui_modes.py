@@ -380,9 +380,22 @@ class DocumentedSteerTests(unittest.TestCase):
         self.assertIn("joins the OMH TUI's own queue (`⧗`) and goes when the turn ends, whatever "
                       "`display.busy_input_mode` says, so it never interrupts the turn", installation)
         self.assertNotIn("`↪ steered:`", installation)
-        self.assertIn("A steer Hermes does not take waits in the TUI's own queue while the turn runs, whatever the "
-                      "busy mode, so it never interrupts the turn; only an idle session gets it as a prompt at once.",
-                      self.prose("AGENTS.md"))
+        self.assertIn("A steer Hermes does not take waits in the TUI's own queue for the running turn to end, whatever "
+                      "the busy mode, so it never interrupts that turn.", self.prose("AGENTS.md"))
+
+
+class DocumentedApprovalsToggleTests(unittest.TestCase):
+    """CONTEXT.md's OMH TUI entry names the one switch the TUI sets in Hermes, and how far it reaches."""
+
+    def test_the_glossary_entry_names_the_per_session_toggle(self) -> None:
+        text = " ".join((Path(__file__).resolve().parents[1] / "CONTEXT.md").read_text(encoding="utf-8").split())
+        entry = text[text.index("**OMH TUI**:") : text.index("**Hermes gateway protocol**:")]
+        self.assertIn(
+            "Shift+Tab may turn on Hermes' per-session yolo, so Hermes stops asking for approvals in that one session "
+            "(a `config.set` naming the session, never `approvals.mode`), and the TUI turns it off again before it "
+            "leaves the session.",
+            entry,
+        )
 
 
 class SteerReplayTests(AppTestCase):

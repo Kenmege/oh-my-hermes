@@ -203,10 +203,9 @@ PR without the chat history.
   steer (Ctrl+Enter, `/steer`) sends into the running turn only text the
   person typed and sent that way; the TUI never steers on its own, and a
   queued prompt is never turned into a steer. A steer Hermes does not take
-  waits in the TUI's own queue while the turn runs, whatever the busy mode,
-  so it never interrupts the turn; only an idle session gets it as a prompt
-  at once. The
-  subagent views (the strip, the list, one agent's log) are read-only:
+  waits in the TUI's own queue for the running turn to end, whatever the busy
+  mode, so it never interrupts that turn. The subagent views (the strip, the
+  list, one agent's log) are read-only:
   `subagent.tail` is the only subagent call the TUI makes, it reads the tail
   of the log the person opened, and the TUI never steers, interrupts or
   answers for a subagent. Mouse reporting is on in two states only, a turn
