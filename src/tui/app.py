@@ -194,6 +194,11 @@ EXIT_CONFIRM_SECONDS = 2.0
 # cannot answer it (an approval, a clarify, a value prompt), however late the
 # decoder decides the key.
 SLOT_ARM_SECONDS = 0.4
+# The delay instead, counted from the slot's opening, when reports were on as it
+# opened or went off less than `keys.MOUSE_REPORT_SECONDS` before: a report sent
+# before the off can start arriving that long after it, and its ESC, stalled
+# past the decoder's wait, is read as Esc.
+REPORTING_SLOT_ARM_SECONDS = max(SLOT_ARM_SECONDS, MOUSE_REPORT_SECONDS)
 STARTUP_TAIL_LINES = 10
 INTERRUPTED_EXIT = 130
 # Closing the gateway on exit: stdin EOF, then terminate, then kill. The live
@@ -810,6 +815,7 @@ class App:
         self.catalog: list[tuple[str, str]] = []
         self.slot: PromptSlot | None = None
         self.slot_opened_at = 0.0
+        self.slot_arm_seconds = SLOT_ARM_SECONDS  # the open slot's arm delay, fixed as it opened
         self.slot_draft = ""
         self.waiting_requests: deque[ServerRequest] = deque()
         # (text sent, text shown, text typed); "" shown or typed means the text sent.
@@ -1269,6 +1275,7 @@ class App:
             return
         self.slot = opened
         self.slot_opened_at = self.clock()
+        self.slot_arm_seconds = REPORTING_SLOT_ARM_SECONDS if self._reports_may_arrive() else SLOT_ARM_SECONDS
         self._settle_list()  # a question has the keys now: the agent list gives them up
         if opened.method == "approval" and self.environ.get(BELL_ENV) != BELL_OFF:
             self.terminal.write(BELL)  # once per approval, as its slot opens; the wait is on the person
@@ -1358,12 +1365,14 @@ class App:
         report's `[` after the question turned reports off, and an Esc pressed
         for the composer must not answer the question it then meets. A key
         that arrived before the slot opened is early too. A key the decoder
-        did not make carries no arrival and is timed from now.
+        did not make carries no arrival and is timed from now. A slot that
+        opened while a report could still arrive waits
+        `REPORTING_SLOT_ARM_SECONDS` instead.
         """
         if self.slot is None:
             return False
         arrived_at = event.arrived_at if isinstance(event, Key) else None
-        return (self.clock() if arrived_at is None else arrived_at) - self.slot_opened_at < SLOT_ARM_SECONDS
+        return (self.clock() if arrived_at is None else arrived_at) - self.slot_opened_at < self.slot_arm_seconds
 
     def _on_composer(self, action: ComposerAction, event: Key | Paste, steer: bool = False) -> None:
         """Act on what the composer made of `event`; `steer` says the key was Ctrl+Enter."""

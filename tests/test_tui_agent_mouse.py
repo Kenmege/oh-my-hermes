@@ -34,6 +34,7 @@ from omh.tui.app import (
     EXIT_DRAIN_SECONDS,
     READ_TIMEOUT_SECONDS,
     RESIZE_SETTLE_SECONDS,
+    REPORTING_SLOT_ARM_SECONDS,
     SLOT_ARM_SECONDS,
     App,
 )
@@ -136,7 +137,7 @@ class MouseStateTests(unittest.TestCase):
         note("a turn running, agents on the strip")
         app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
         note("an approval open")
-        now[0] += SLOT_ARM_SECONDS
+        now[0] += REPORTING_SLOT_ARM_SECONDS  # reports were on as it opened
         app._on_input(Key(CHAR, "d"))
         note("the approval denied, the turn still running")
         app._on_input(Key(DOWN))
@@ -825,7 +826,10 @@ class SlotArmFromArrivalTests(unittest.TestCase):
 
     The arm delay counts from when a key's first byte arrived, not from when
     the decoder decided it: an Esc pressed 0.1 s after an approval opened is
-    decided 0.4 s after, and must still answer nothing.
+    decided 0.4 s after, and must still answer nothing. Reports were on as
+    these questions opened, so the delay is `REPORTING_SLOT_ARM_SECONDS`: a
+    report's ESC arriving 0.45 s after the off is held for its `[` and then
+    read as Esc, and must not answer either.
     """
 
     APPROVAL = ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"})
@@ -833,6 +837,8 @@ class SlotArmFromArrivalTests(unittest.TestCase):
     DENY = ("srq-1", {"result": {"choice": "deny"}})
     ONCE = ("srq-1", {"result": {"choice": "once"}})
     QUIET = [(READ_TIMEOUT_SECONDS, b"")]
+    INSIDE = (0.10, 0.30, 0.39, 0.45)  # first bytes inside the delay; the ESC at 0.45 is held as a report's
+    PAST = REPORTING_SLOT_ARM_SECONDS + 0.05
 
     def press(self, request: ServerRequest, at: float, first: bytes, rest: bytes = b"", then: bytes = b"") -> list:
         """`first` `at` s after `request` opened, `rest` 0.2 s later when given, `then` 2 s after that; the answers sent."""
@@ -852,26 +858,49 @@ class SlotArmFromArrivalTests(unittest.TestCase):
         return client.answers
 
     def test_an_esc_whose_first_byte_came_inside_the_delay_answers_nothing(self) -> None:
-        for at in (0.10, 0.30, 0.39):
+        for at in self.INSIDE:
             with self.subTest(at=at):
                 self.assertEqual(self.press(self.APPROVAL, at, b"\x1b"), [])
-        self.assertEqual(self.press(self.APPROVAL, 0.45, b"\x1b"), [self.DENY])
+        self.assertEqual(self.press(self.APPROVAL, self.PAST, b"\x1b"), [self.DENY])
 
     def test_an_enter_split_after_its_escape_is_timed_from_the_escape(self) -> None:
-        for at in (0.10, 0.30, 0.39):
+        for at in self.INSIDE:
             with self.subTest(at=at):
                 self.assertEqual(self.press(self.APPROVAL, at, b"\x1b", b"[13u"), [])
-        self.assertEqual(self.press(self.APPROVAL, 0.45, b"\x1b", b"[13u"), [self.DENY])
+        self.assertEqual(self.press(self.APPROVAL, self.PAST, b"\x1b[13u"), [self.DENY])
 
     def test_a_right_arrow_split_after_its_escape_is_timed_from_the_escape(self) -> None:
-        for at in (0.10, 0.30, 0.39):
+        for at in self.INSIDE:
             with self.subTest(at=at):
                 self.assertEqual(self.press(self.APPROVAL, at, b"\x1b", b"[C", then=b"\r"), [self.DENY])
-        self.assertEqual(self.press(self.APPROVAL, 0.45, b"\x1b", b"[C", then=b"\r"), [self.ONCE])
+        self.assertEqual(self.press(self.APPROVAL, self.PAST, b"\x1b[C", then=b"\r"), [self.ONCE])
 
     def test_the_composers_enter_on_a_question_answered_with_text_is_timed_the_same_way(self) -> None:
-        self.assertEqual(self.press(self.SUDO, 0.39, b"\x1b", b"[13u"), [])
-        self.assertEqual(self.press(self.SUDO, 0.45, b"\x1b", b"[13u"), [("srq-1", {"result": {"value": ""}})])
+        self.assertEqual(self.press(self.SUDO, 0.45, b"\x1b", b"[13u"), [])
+        self.assertEqual(self.press(self.SUDO, self.PAST, b"\x1b[13u"), [("srq-1", {"result": {"value": ""}})])
+
+    def esc_after_an_off(self, off_before: float | None, at: float) -> list:
+        """An Esc `at` s after an approval opened, reports having gone off `off_before` s before it (None: never on)."""
+        now = [100.0]
+        app, client = make_app(clock=lambda: now[0])
+        settled(app)
+        if off_before is not None:
+            app._set_mouse(True)
+            app._set_mouse(False)
+            now[0] += off_before
+        app._on_server_request(self.APPROVAL)
+        step_through(app, now, [(at, b"\x1b"), *self.QUIET * 20])
+        return client.answers
+
+    def test_a_slot_that_opens_within_the_grace_after_an_off_takes_the_longer_delay(self) -> None:
+        self.assertEqual(self.esc_after_an_off(0.2, 0.45), [])
+        self.assertEqual(self.esc_after_an_off(0.2, self.PAST), [self.DENY])
+
+    def test_a_slot_that_opens_with_no_report_on_its_way_keeps_the_shorter_delay(self) -> None:
+        for off_before in (None, MOUSE_REPORT_SECONDS + 0.1):
+            with self.subTest(off_before=off_before):
+                self.assertEqual(self.esc_after_an_off(off_before, SLOT_ARM_SECONDS - 0.01), [])
+                self.assertEqual(self.esc_after_an_off(off_before, SLOT_ARM_SECONDS + 0.05), [self.DENY])
 
 
 class ResizeTests(unittest.TestCase):
