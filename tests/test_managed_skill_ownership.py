@@ -287,7 +287,9 @@ class HookRedirectTests(_Home):
         create_dir = self.root / "fleet-skills"
         (create_dir / "someone-elses-skill").mkdir(parents=True)
         (create_dir / "someone-elses-skill" / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
-        self.write_config(f'skills:\n  create_dir: "{create_dir}"\n')
+        # `as_posix()`: in YAML double quotes a Windows path's backslashes are
+        # escapes, which Hermes' loader rejects or mangles and this reader refuses.
+        self.write_config(f'skills:\n  create_dir: "{create_dir.as_posix()}"\n')
         self.assertEqual(self.patch_call(f"{SESSION}-create-dir-other")["action"], "block")
         # A deeper `create_dir` key is some other setting, not the tier.
         copy = self.root / "nested" / self.label
@@ -341,7 +343,7 @@ class HookRedirectTests(_Home):
         copy = self.root / "fleet-skills" / self.label
         copy.mkdir(parents=True)
         (copy / "SKILL.md").write_text(f"---\nname: {self.label}\n---\n", encoding="utf-8")
-        text = f'skills:\n  create_dir: "{self.root / "fleet-skills"}"  # shared\n'
+        text = f'skills:\n  create_dir: "{(self.root / "fleet-skills").as_posix()}"  # shared\n'
         self.write_config(b"\xef\xbb\xbf" + text.encode("utf-8"))
         self.assertIsNone(self.patch_call(f"{SESSION}-quoted"))
 
