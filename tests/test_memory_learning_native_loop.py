@@ -84,15 +84,17 @@ PROVIDER_SLOT = (
     "proposed `memory.provider` diff the user applies."
 )
 INSTALL_SCANS = (
-    "A scan counts only when its output was seen: the plugin scan does not run with `plugins.scan_on_install` off, "
-    "and the OSV check covers known malware only and lets the server start when its lookup fails, so a quiet install "
-    "or launch is not a clean result."
+    "an MCP server started through `npx`, `uvx`, or `pipx` is checked against OSV malware advisories and refused on a "
+    "match with an error that reads `MCP server '<name>': BLOCKED: ...`. A scan counts only when its output was seen: "
+    "the plugin scan does not run with `plugins.scan_on_install` off, and the OSV check covers known malware only and "
+    "lets the server start when its lookup fails, so a quiet install or launch is not a clean result."
 )
 IMPORT_PREVIEW = (
     "Seed `prompt_source_inventory/v1` from the user's `hermes import-agent claude-code --dry-run` (or `codex`) "
-    "preview, which stops before importing anything: it lists Claude Code's `commands/*.md` as skipped with no direct "
-    "Hermes equivalent, the list this card converts, and it reads no Codex prompt files at all, so those come from the "
-    "files the user names."
+    "preview, which imports nothing (it only writes a default `config.yaml` when the Hermes home has none): it reports "
+    "Claude Code's `commands/` directory as one skipped item with no direct Hermes equivalent, so this card enumerates "
+    "the `*.md` files in it itself, and it reads no Codex prompt files at all, so those come from the files the user "
+    "names."
 )
 SLASH_PRECEDENCE = (
     "In the Hermes CLI a slash name resolves to a built-in command first, then a quick command, a plugin command, a "
@@ -100,10 +102,10 @@ SLASH_PRECEDENCE = (
     "that order."
 )
 SCOUT_TRUST = (
-    "Keep the trust level each shows (`builtin`, `trusted`, or `community`, highest first) beside the candidate as its "
-    "source's standing, never as a review of its content, and record a scan verdict (`safe`, `caution`, or "
-    "`dangerous`) only from install or `hermes skills audit` output that was seen, so a candidate nobody installed has "
-    "none."
+    "Keep the trust each shows (`official` for an official-source row, otherwise `builtin`, `trusted`, or "
+    "`community`, highest first) beside the candidate as its source's standing, never as a review of its content, and "
+    "record a scan verdict (`safe`, `caution`, or `dangerous`) only from install or `hermes skills audit` output that "
+    "was seen, so a candidate nobody installed has none."
 )
 # Owner directive: skill breadth is the product; usage never decides removal.
 HEALTH_NO_USAGE_PRUNE = (
@@ -114,24 +116,37 @@ HEALTH_NO_USAGE_PRUNE = (
 HEALTH_LEDGER = (
     "An empty ledger is unknown, not clean, because `skills.ledger: false` turns it off."
 )
-LEARNING_UNREVIEWED = (
-    "Read Hermes' skill audit ledger read-only (`hermes curator ledger`, or `skills/.curator_ledger.jsonl` under the "
-    "active profile's Hermes home) and report each entry whose `actor` is `agent` or `curator` (Hermes' curator or its "
-    "background review) that no store-route record (`omh learning store-routes`) or approved `skill_update_candidate` "
-    "accounts for as `unreviewed_native_write`."
+HEALTH_LINT = (
+    "On Hermes, record an authoring finding only from the `lint_warnings` a `skill_manage` write returned, which are "
+    "advisory and never proof a skill works; only some writes return them (an `edit` never does), so a write without "
+    "them is not a clean lint."
 )
+LEARNING_UNREVIEWED = (
+    "Read Hermes' skill audit ledger read-only (`skills/.curator_ledger.jsonl` under the active profile's Hermes home, "
+    "or `hermes curator ledger --limit <n>`, which lists only the 20 newest entries by default) and report each entry "
+    "whose `actor` is `agent` or `curator` (Hermes' curator or its background review) that no store-route record "
+    "(`omh learning store-routes`) or approved `skill_update_candidate` accounts for as `unreviewed_native_write`, "
+    "which means OMH holds no record of that write, not that nobody reviewed it."
+)
+# A ledger entry decides "landed" only when it is the approved write itself:
+# never a curator archive or consolidation, an unrelated patch, or a rollback.
 LEARNING_LANDED = (
     "Mark an approved `skill_update_candidate` landed only from a `skill_manage` result for that skill that succeeded "
-    "without `staged: true`, or a ledger entry for that skill dated after the approval; a staged result waits in "
-    "`/skills pending` for the person and has not landed."
+    "without `staged: true`, or from a ledger entry that is dated after the approval, has `actor` `agent` or `user` and "
+    "`action` `create`, `edit`, `patch`, or `write_file`, and lists the approved target file in its `after` manifest."
+)
+LEARNING_LANDED_NEVER = (
+    "An entry by `curator`, or one that deletes, archives, rolls back, or purges, never marks it landed, and a staged "
+    "result waits in `/skills pending` for the person and has not landed."
 )
 LEARNING_MEMORY_GAP = (
     "The ledger records skill writes only: a memory write by Hermes' background review is visible only when Hermes "
     "staged it under `pending/memory/` with `origin: background_review`, and is `not_observed` otherwise."
 )
 INSTINCT_LEDGER = (
-    "an instinct that matches a ledger entry no store route accounts for is reported as `unreviewed_native_write`, "
-    "never counted as repeated evidence for the instinct."
+    "an instinct that matches a ledger entry no store route accounts for is reported as `unreviewed_native_write` "
+    "(OMH holds no record of that write, which is not to say nobody reviewed it), never counted as repeated evidence "
+    "for the instinct."
 )
 DISTILL_LANDING = (
     "On Hermes, when the destination is the user's own Hermes skills, an approved candidate lands through "
@@ -155,37 +170,112 @@ NATIVE_LOOP_CLAUSES = {
     "external-connector-readiness": (PROVIDER_SLOT, INSTALL_SCANS),
     "prompt-import-readiness": (IMPORT_PREVIEW, SLASH_PRECEDENCE),
     "skill-scout": (SCOUT_TRUST,),
-    "skill-health": (HEALTH_NO_USAGE_PRUNE, HEALTH_LEDGER),
-    "workflow-learning": (LEARNING_UNREVIEWED, LEARNING_LANDED, LEARNING_MEMORY_GAP),
+    "skill-health": (HEALTH_NO_USAGE_PRUNE, HEALTH_LEDGER, HEALTH_LINT),
+    "workflow-learning": (LEARNING_UNREVIEWED, LEARNING_LANDED, LEARNING_LANDED_NEVER, LEARNING_MEMORY_GAP),
     "instinct-ledger": (INSTINCT_LEDGER,),
     "rules-distill": (DISTILL_LANDING, DISTILL_CURATOR_REPORT),
 }
 
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
-_NEGATED = re.compile(r"\b(?:never|not|no)\b", re.IGNORECASE)
-# One clause of a sentence; a negation elsewhere in the sentence does not
-# govern it ("OMH never approves one, and proposes turning it on").
-_CLAUSE_END = re.compile(r"[;,]|: ")
-# A clause that would turn Hermes' approval gate on.
-# The span may cross a dot: the gate's own key is `memory.write_approval`.
-_ENABLES_GATE = re.compile(
-    r"\b(?:enables?|enabling|turn(?:s|ing)?\b.*?\bon|switch(?:es|ing)?\b.*?\bon)\b", re.IGNORECASE
+_NEGATION = r"(?:never|not|no|nothing|without)"
+_NEGATED = re.compile(rf"\b{_NEGATION}\b", re.IGNORECASE)
+_CODE_SPAN = re.compile(r"`[^`]*`")
+# A clause: a negation in another clause of the sentence does not govern this
+# one ("OMH never approves one, and proposes turning it on").
+_CLAUSE_END = re.compile(r"[;,]|:\s")
+# A boundary a negation does not reach across even when commas only list
+# items ("never present use, view, or load counts as a prune signal" stays one
+# reach; "... low load counts, so archive it" is two).
+_REACH_END = re.compile(r";|:\s|,\s+(?:so|then)\b")
+# Setting Hermes' approval gate: enabling it, turning or switching the gate
+# itself on (the verb with the gate as its object, so the noun in "the
+# person's own switch on Hermes' writes" is not one), proposing a change to it,
+# or writing a value into it.
+_SETS_GATE = re.compile(
+    r"\b(?:enables?|enabled|enabling)\b"
+    r"|\b(?:turn|switch)(?:s|es|ed|ing)?\s+(?:it|the gate|`[^`]*write_approval`)\s+on\b"
+    r"|\b(?:turn|switch)(?:s|es|ed|ing)?\s+on\s+(?:the gate|`[^`]*write_approval`)"
+    r"|\bpropos(?:e|es|ed|ing)\b.*?write_approval"
+    r"|write_approval`?\s*(?::|=|\bto\b)\s*`?(?:true|on|yes|1)\b",
+    re.IGNORECASE,
 )
-# A sentence that ties a use or load count to removing a skill.
+# A use or load count beside a word that removes a skill.
 _USAGE_COUNT = re.compile(r"\.usage\.json|\b(?:use|usage|view|load)\s+counts?\b", re.IGNORECASE)
-_REMOVAL = re.compile(r"\b(?:prune|pruning|retire|retiring|archive|archiving|remove|removing)\b", re.IGNORECASE)
-# The operator verb that approves an OMH memory candidate by hand.
-_HUMAN_CAPTURE_APPROVAL = "omh memory approve"
+_REMOVAL = re.compile(
+    r"\b(?:prune|pruning|retire|retiring|archive|archiving|remove|removing|delete|deleting)\b", re.IGNORECASE
+)
+# A staged write reported as done.
+_STAGED = "`staged: true`"
+_LANDED = re.compile(r"\b(?:landed|saved|applied|committed)\b", re.IGNORECASE)
+_STAGED_NEGATED = re.compile(rf"\b{_NEGATION}\s+(?:\w+\s+){{0,2}}`staged: true`", re.IGNORECASE)
+# A person's approval step beside an OMH capture.
+_CAPTURE = re.compile(r"\bcaptur(?:e|es|ed|ing)\b", re.IGNORECASE)
+_PERSON_APPROVAL = re.compile(r"/memory approve|/memory pending|omh memory approve|omh memory review")
 
 
 def _sentences(content: str) -> list[str]:
     return [sentence for line in content.splitlines() for sentence in _SENTENCE_END.split(line)]
 
 
-def _negated_before(text: str, pattern: re.Pattern[str]) -> bool:
-    """A negation comes before the first match: "never present X as Y", not "present X as Y, not Z"."""
-    match = pattern.search(text)
-    return match is not None and _NEGATED.search(text[: match.start()]) is not None
+def _segments(text: str, boundary: re.Pattern[str]) -> list[str]:
+    """Split on `boundary` outside code spans, so `staged: true` stays one token."""
+    masked = _CODE_SPAN.sub(lambda match: "`" + "x" * (len(match.group(0)) - 2) + "`", text)
+    pieces, start = [], 0
+    for match in boundary.finditer(masked):
+        pieces.append(text[start : match.start()])
+        start = match.end()
+    pieces.append(text[start:])
+    return pieces
+
+
+def _governed(segment: str, position: int) -> bool:
+    return _NEGATED.search(segment[:position]) is not None
+
+
+def _gate_settings_ungoverned(sentence: str) -> list[str]:
+    """Clauses that set Hermes' write approval with no negation before the setting."""
+    found = []
+    for clause in _segments(sentence, _CLAUSE_END):
+        match = _SETS_GATE.search(clause) if "write_approval" in clause else None
+        if match is not None and not _governed(clause, match.start()):
+            found.append(clause.strip())
+    return found
+
+
+def _removals_ungoverned(sentence: str) -> list[str]:
+    """Removal words beside a use or load count that no negation within reach governs."""
+    if not _USAGE_COUNT.search(sentence):
+        return []
+    return [
+        match.group(0)
+        for segment in _segments(sentence, _REACH_END)
+        for match in _REMOVAL.finditer(segment)
+        if not _governed(segment, match.start())
+    ]
+
+
+def _staged_landings_ungoverned(sentence: str) -> list[str]:
+    """Clauses that call a write landed in a sentence naming `staged: true`, unless the clause negates either."""
+    if _STAGED not in sentence:
+        return []
+    found = []
+    for clause in _segments(sentence, _CLAUSE_END):
+        if _STAGED_NEGATED.search(clause):
+            continue
+        if any(not _governed(clause, match.start()) for match in _LANDED.finditer(clause)):
+            found.append(clause.strip())
+    return found
+
+
+def _capture_held_for_a_person(sentence: str) -> bool:
+    """A capture sentence that names a person's approval step outside a negation."""
+    if not _CAPTURE.search(sentence):
+        return False
+    return any(
+        not _governed(clause, match.start())
+        for clause in _segments(sentence, _CLAUSE_END)
+        for match in _PERSON_APPROVAL.finditer(clause)
+    )
 
 
 def _bodies() -> list[tuple[str, str, str]]:
@@ -261,31 +351,33 @@ class MemoryCapsTests(unittest.TestCase):
 
 
 class OwnerDirectiveTests(unittest.TestCase):
-    def test_no_body_proposes_turning_hermes_write_approval_on(self) -> None:
-        mentions = [
-            (projection, name, sentence)
+    def test_no_body_sets_hermes_write_approval(self) -> None:
+        clauses = [
+            (projection, name, clause)
             for projection, name, content in _bodies()
             for sentence in _sentences(content)
             if "write_approval" in sentence
+            for clause in _segments(sentence, _CLAUSE_END)
+            if "write_approval" in clause and _SETS_GATE.search(clause)
         ]
-        self.assertTrue(mentions, "no body names write_approval; the check below would be vacuous")
-        gate_clauses = [
-            (projection, name, clause)
-            for projection, name, sentence in mentions
-            for clause in _CLAUSE_END.split(sentence)
-            if "write_approval" in clause and _ENABLES_GATE.search(clause)
-        ]
-        self.assertTrue(gate_clauses, "no clause turns the gate on or off; the check below would be vacuous")
-        for projection, name, clause in gate_clauses:
+        self.assertTrue(clauses, "no clause names setting the gate; the check below would be vacuous")
+        for projection, name, clause in clauses:
             with self.subTest(body=f"{projection}:{name}", clause=clause[:80]):
-                self.assertTrue(_negated_before(clause, _ENABLES_GATE), clause)
+                self.assertEqual(_gate_settings_ungoverned(clause), [])
 
-    def test_no_native_loop_body_routes_a_capture_through_a_person(self) -> None:
+    def test_no_body_holds_a_capture_for_a_person(self) -> None:
+        for projection, name, content in _bodies():
+            for sentence in _sentences(content):
+                if _capture_held_for_a_person(sentence):
+                    with self.subTest(body=f"{projection}:{name}", sentence=sentence[:80]):
+                        self.fail(f"holds an OMH capture for a person's approval: {sentence}")
+
+    def test_no_native_loop_body_names_the_operator_approve_verb(self) -> None:
         names = {omh_skill_display_name(name) for name in NATIVE_LOOP_SKILLS}
         for projection, name, content in _bodies():
             if name in names:
                 with self.subTest(body=f"{projection}:{name}"):
-                    self.assertNotIn(_HUMAN_CAPTURE_APPROVAL, content)
+                    self.assertNotIn("omh memory approve", content)
 
     def test_no_body_offers_a_use_count_as_a_reason_to_remove_a_skill(self) -> None:
         mentions = [
@@ -297,19 +389,58 @@ class OwnerDirectiveTests(unittest.TestCase):
         self.assertTrue(mentions, "no body ties a count to removal; the check below would be vacuous")
         for projection, name, sentence in mentions:
             with self.subTest(body=f"{projection}:{name}", sentence=sentence[:80]):
-                self.assertTrue(_negated_before(sentence, _USAGE_COUNT), sentence)
+                self.assertEqual(_removals_ungoverned(sentence), [])
 
     def test_a_staged_write_is_never_reported_as_landed(self) -> None:
         mentions = [
             (projection, name, sentence)
             for projection, name, content in _bodies()
             for sentence in _sentences(content)
-            if "`staged: true`" in sentence
+            if _STAGED in sentence
         ]
         self.assertTrue(mentions, "no body names a staged result; the check below would be vacuous")
         for projection, name, sentence in mentions:
             with self.subTest(body=f"{projection}:{name}", sentence=sentence[:80]):
-                self.assertRegex(sentence, re.compile(r"\b(?:never|not|nothing was saved|without)\b"))
+                self.assertEqual(_staged_landings_ungoverned(sentence), [])
+
+
+class GuardPrecisionTests(unittest.TestCase):
+    """Each guard flags the sentence it exists for and passes a neutral one."""
+
+    def test_the_gate_check_flags_a_proposal_and_a_switch_on(self) -> None:
+        for sentence in (
+            "Propose `skills.write_approval: true` as a config diff the user applies.",
+            "Set `memory.write_approval` to true before the review.",
+            "Turn `memory.write_approval` on for this user.",
+            "OMH never approves a pending write, and proposes turning `memory.write_approval` on.",
+        ):
+            with self.subTest(sentence=sentence):
+                self.assertNotEqual(_gate_settings_ungoverned(sentence), [])
+
+    def test_the_gate_check_reads_a_neutral_mention_as_neutral(self) -> None:
+        for sentence in (
+            "`memory.write_approval` is the person's own switch on Hermes' memory writes.",
+            "Read the directory whatever `memory.write_approval` says now.",
+            "OMH never approves, rejects, edits, or deletes one, and never proposes turning `memory.write_approval` on or off.",
+        ):
+            with self.subTest(sentence=sentence):
+                self.assertEqual(_gate_settings_ungoverned(sentence), [])
+
+    def test_the_count_check_needs_the_negation_to_reach_the_removal(self) -> None:
+        self.assertNotEqual(_removals_ungoverned("A skill that is not loaded often has low load counts, so archive it."), [])
+        self.assertNotEqual(_removals_ungoverned("Archive a skill whose `.usage.json` use count stayed at zero."), [])
+        self.assertEqual(_removals_ungoverned(HEALTH_NO_USAGE_PRUNE), [])
+
+    def test_the_staged_check_needs_the_negation_in_the_landing_clause(self) -> None:
+        self.assertNotEqual(_staged_landings_ungoverned("A result carrying `staged: true` counts as landed, not as waiting."), [])
+        self.assertNotEqual(_staged_landings_ungoverned("A result carrying `staged: true` is a saved write."), [])
+        self.assertEqual(_staged_landings_ungoverned(MEMORY_SYNC_STAGED), [])
+        self.assertEqual(_staged_landings_ungoverned(LEARNING_LANDED), [])
+
+    def test_the_capture_check_flags_any_person_approval_step(self) -> None:
+        self.assertTrue(_capture_held_for_a_person("Hold every `omh_memory` capture until the person runs `/memory approve <id>`."))
+        self.assertTrue(_capture_held_for_a_person("A capture waits until the operator runs `omh memory review`."))
+        self.assertFalse(_capture_held_for_a_person(MEMORY_SYNC_CAPTURE_NOT_GATED))
 
 
 if __name__ == "__main__":

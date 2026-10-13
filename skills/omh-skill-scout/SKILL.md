@@ -43,7 +43,7 @@ Bad example:
 - Intent, keywords, source scope, and stop condition are explicit.
 - Local and external search evidence is separated from planned search.
 - No install, copy, write, credential, or trust claim is made without observed review or implementation.
-- On Hermes, fill the external candidates from `hermes skills search <query>` and `hermes skills inspect <identifier>`, whose hub requests are Hermes' own, not OMH's. Keep the trust level each shows (`builtin`, `trusted`, or `community`, highest first) beside the candidate as its source's standing, never as a review of its content, and record a scan verdict (`safe`, `caution`, or `dangerous`) only from install or `hermes skills audit` output that was seen, so a candidate nobody installed has none.
+- On Hermes, fill the external candidates from `hermes skills search <query>` and `hermes skills inspect <identifier>`, whose hub requests are Hermes' own, not OMH's. Keep the trust each shows (`official` for an official-source row, otherwise `builtin`, `trusted`, or `community`, highest first) beside the candidate as its source's standing, never as a review of its content, and record a scan verdict (`safe`, `caution`, or `dangerous`) only from install or `hermes skills audit` output that was seen, so a candidate nobody installed has none.
 
 ## Recovery Notes
 

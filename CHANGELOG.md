@@ -22,10 +22,14 @@ All notable changes will be documented here.
   stops OMH's per-turn recall and dreaming reminders and leaves `omh_memory`
   refusing to recall or write records; the switch stays a proposed diff the
   user applies. It also records the plugin install scan and the OSV malware
-  check for `npx`/`uvx` MCP servers only from output that was seen, since a
-  quiet install or launch is not a clean result. `workflow-learning` reads
-  the skill audit ledger and reports agent or background-review skill writes
-  that no store route accounts for as `unreviewed_native_write`;
+  check for `npx`, `uvx`, and `pipx` MCP servers only from output that was
+  seen, since a quiet install or launch is not a clean result.
+  `workflow-learning` reads the skill audit ledger and reports agent or
+  background-review skill writes that no store route accounts for as
+  `unreviewed_native_write` (no OMH record of the write, not proof nobody
+  reviewed it), and counts an approved update as landed from the ledger only
+  when an `agent` or `user` entry creates, edits, patches, or writes the
+  approved file after the approval;
   `instinct-ledger` keeps such a write out of an instinct's evidence and
   promotes through store routes; `rules-distill` lands an approved candidate
   in the user's own Hermes skills through `skill_manage`, never an OMH-managed
