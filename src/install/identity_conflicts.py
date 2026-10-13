@@ -18,8 +18,17 @@ inferred from what a path looks like. A directory named `omh` that OMH did not
 install is precisely the case the attribution exists to catch, and a path-shaped
 guess would call it OMH's own.
 
-Precedence. OMH cannot read Hermes' resolution order from here, so a contested
-tool or skill name is reported as `unknown` and never as a resolved winner.
+Precedence. A contested skill name is resolved from Hermes' documented tier
+order (`agent/skill_utils.py` `get_skill_search_roots`: trusted project >
+local profile > `skills.create_dir` > `skills.external_dirs`). OMH's managed
+directory is always an external one, so a same-name copy in a higher tier
+hides the OMH copy, and a copy in another external directory shares its tier,
+where Hermes refuses the bare name rather than guess. A foreign skill under
+only OMH's canonical name hides nothing: Hermes resolves the two names
+separately. Every managed name is covered, under both spellings, and every
+tier OMH can see from here is scanned except trusted project directories,
+which depend on a session's working directory. A contested tool name is still
+`unknown`: Hermes' plugin load order is not readable from here.
 `uncontested` is reserved for a scan that actually enumerated every source and
 found no contest; an unreadable directory or a Hermes config that could not be
 read keeps the answer `unknown`, because "nothing was found" and "nothing was
@@ -41,10 +50,10 @@ from pathlib import Path
 from typing import Any
 
 from ..plugin_bundle.omh.metadata import PROVIDED_HOOKS, PROVIDED_TOOLS
-from ..skills.catalog import CORE_SKILLS
+from ..plugin_bundle.omh.skill_ownership import skill_directories
 from .plugin_pack import PLUGIN_NAME, PLUGIN_SCHEMA_VERSION, read_plugin_manifest
 
-IDENTITY_CONFLICT_REPORT_SCHEMA_VERSION = "identity_conflict_report/v1"
+IDENTITY_CONFLICT_REPORT_SCHEMA_VERSION = "identity_conflict_report/v2"
 
 # The three local surfaces that carry a user-visible OMH name. `command` is the
 # tool name Hermes exposes to the model; the issue's vocabulary calls it a
@@ -55,7 +64,22 @@ SOURCE_KINDS = ("command", "hook", "skill")
 # manifest record" as unknown would let an unattributed source quietly borrow
 # OMH's side of a contest.
 OWNERSHIPS = ("omh_managed", "user_owned")
-PRECEDENCE_STATES = ("uncontested", "unknown")
+# `resolved`: every contest found is a skill name, and each one's outcome
+# follows from the tier order. `unknown`: a tool or hook contest, or a scan
+# that did not finish.
+PRECEDENCE_STATES = ("resolved", "uncontested", "unknown")
+# Hermes' skill tiers, highest precedence first. `plugin` is not a tier; it
+# marks the source of a tool or hook name.
+SKILL_TIERS = ("project", "local", "create_dir", "external")
+SOURCE_TIERS = (*SKILL_TIERS, "plugin")
+# What Hermes does with a contested skill name, per the tier order:
+#   shadowed  -- a copy in a higher tier answers the name; the OMH copy is hidden.
+#   ambiguous -- a copy in another external directory shares OMH's tier, and
+#                Hermes refuses the bare name rather than guess.
+#   separate  -- the other skill holds only OMH's canonical name, which Hermes
+#                resolves apart from the installed one; nothing is hidden.
+#   unknown   -- a tool or hook name, whose resolution is not read here.
+RESOLUTIONS = ("ambiguous", "separate", "shadowed", "unknown")
 CONFLICT_SEVERITIES = ("blocking", "warning")
 REPORT_SEVERITIES = ("blocking", "ok", "warning")
 
@@ -69,16 +93,18 @@ REPORT_SEVERITIES = ("blocking", "ok", "warning")
 #     a capability that is installed and absent at the same time; no phrasing in
 #     chat recovers it, and every other doctor check still reports green.
 #
-#   warning -- `skill` and `hook`. Both sides stay installed and reachable. A
-#     shadowed skill directory still resolves to whichever source wins and the
-#     other workflow can be asked for by name, and Hermes' hook names are
-#     lifecycle events that every plugin subscribes to, so an overlap there is a
-#     second subscriber rather than a stolen slot. Worth reporting -- it is the
-#     honest answer to "why did that trigger the wrong workflow" -- and not
-#     worth failing an install over. The repair differs by kind too, which is
-#     why `_next_action` composes one sentence per kind present: a skill
-#     directory can be renamed, but a hook name is the event itself, and the
-#     other subscriber is usually working as intended.
+#   warning -- `skill` and `hook`. A contested skill name still answers: a
+#     higher-tier copy serves it, or within one tier each copy stays loadable
+#     by its path, and the report names which outcome applies. A shadowed OMH
+#     copy is out of reach by name until the other copy moves, which is the
+#     repair the warning names, but a skill still answers the request. Hermes'
+#     hook names are lifecycle events that every plugin subscribes to, so an
+#     overlap there is a second subscriber rather than a stolen slot. Worth
+#     reporting -- it is the honest answer to "why did that trigger the wrong
+#     workflow" -- and not worth failing an install over. The repair differs by
+#     kind too, which is why `_next_action` composes one sentence per kind
+#     present: a skill directory can be renamed, but a hook name is the event
+#     itself, and the other subscriber is usually working as intended.
 #
 # Ownership deliberately does not decide this. AC3 forbids OMH from touching a
 # user-owned asset, so keying severity to ownership would paint the ordinary
@@ -86,9 +112,12 @@ REPORT_SEVERITIES = ("blocking", "ok", "warning")
 EXCLUSIVE_NAME_KINDS = frozenset({"command"})
 
 IDENTITY_CONFLICT_CLAIM_BOUNDARY = (
-    "This is a read-only scan of locally visible sources: configured skill directories, "
-    "installed Hermes plugin declarations, and OMH's own install manifests. Hermes runtime "
-    "precedence is not observed, so a contested tool or skill name has no resolved winner here. "
+    "This is a read-only scan of locally visible sources: the Hermes home's own skills directory, "
+    "skills.create_dir, configured skill directories, installed Hermes plugin declarations, and OMH's "
+    "own install manifests. Hermes runtime precedence is not observed. A contested skill name is resolved "
+    "from Hermes' documented tier order (project > local > create_dir > external_dirs); trusted project "
+    "directories depend on a session's working directory and are not scanned, and an older host refused "
+    "a cross-tier duplicate instead of hiding one copy. A contested tool name has no resolved winner here. "
     "A shared lifecycle hook has no winner to resolve, since Hermes lets every plugin subscribe "
     "to the same event; the order the subscribers run in is not observed either. Nothing is "
     "renamed, rewritten, or removed by this diagnosis."
@@ -104,8 +133,8 @@ IDENTITY_CONFLICT_REPORT_KEYS = (
     "severity",
     "unreadable",
 )
-IDENTITY_CONFLICT_KEYS = ("kind", "name", "severity", "sources")
-IDENTITY_CONFLICT_SOURCE_KEYS = ("location", "ownership")
+IDENTITY_CONFLICT_KEYS = ("kind", "name", "resolution", "severity", "sources")
+IDENTITY_CONFLICT_SOURCE_KEYS = ("location", "ownership", "tier")
 IDENTITY_CONFLICT_SCANNED_KEYS = ("plugin_dirs", "skill_dirs")
 
 _OMH_PLUGIN_MANIFEST_PACKAGE = "oh-my-hermes"
@@ -117,6 +146,8 @@ def build_identity_conflict_report(
     manifest: dict[str, Any] | None,
     plugins_dir: Path,
     configured_skill_dirs: list[str] | None,
+    local_skills_dir: Path | None = None,
+    create_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Report every contested OMH-facing name with all of its visible sources.
 
@@ -124,14 +155,18 @@ def build_identity_conflict_report(
     at all. That is not the same as an empty list: an empty list means Hermes
     was asked and registers no foreign directory, while `None` means the
     question went unanswered, and only the first of those may end in
-    `uncontested`.
+    `uncontested`. `local_skills_dir` is the Hermes home's own `skills`
+    directory and `create_dir` its `skills.create_dir`; either one may be
+    absent, which is an ordinary home rather than a source left unread.
     """
     unreadable: list[str] = []
     if configured_skill_dirs is None:
         unreadable.append(
             "Hermes config was not read, so configured skill directories could not be enumerated"
         )
-    foreign_dirs = _foreign_skill_dirs(skills_dir, configured_skill_dirs or [], unreadable)
+    foreign_dirs = _foreign_skill_dirs(
+        skills_dir, configured_skill_dirs or [], unreadable, local_skills_dir=local_skills_dir, create_dir=create_dir
+    )
     conflicts = _skill_conflicts(skills_dir, manifest, foreign_dirs, unreadable)
     plugin_sources = _plugin_sources(plugins_dir, unreadable)
     conflicts.extend(_plugin_conflicts(plugin_sources))
@@ -140,7 +175,7 @@ def build_identity_conflict_report(
     severity = _severity(conflicts, unreadable)
     return {
         "schema_version": IDENTITY_CONFLICT_REPORT_SCHEMA_VERSION,
-        "precedence": "uncontested" if severity == "ok" else "unknown",
+        "precedence": _precedence(conflicts, unreadable),
         "severity": severity,
         "conflicts": conflicts,
         "unreadable": unreadable,
@@ -216,6 +251,11 @@ def _validate_conflicts(conflicts: Any) -> list[str]:
             errors.append(f"identity_conflict_report conflict kind must be one of {list(SOURCE_KINDS)}")
         if not isinstance(conflict.get("name"), str) or not conflict.get("name"):
             errors.append("identity_conflict_report conflict name must be a non-empty string")
+        resolution = conflict.get("resolution")
+        if resolution not in RESOLUTIONS:
+            errors.append(f"identity_conflict_report conflict resolution must be one of {list(RESOLUTIONS)}")
+        elif (resolution == "unknown") != (kind != "skill"):
+            errors.append(f"identity_conflict_report conflict resolution {resolution!r} does not fit kind {kind!r}")
         if conflict.get("severity") not in CONFLICT_SEVERITIES:
             errors.append(
                 f"identity_conflict_report conflict severity must be one of {list(CONFLICT_SEVERITIES)}"
@@ -243,6 +283,8 @@ def _validate_sources(sources: Any) -> list[str]:
             continue
         if source.get("ownership") not in OWNERSHIPS:
             errors.append(f"identity_conflict_report source ownership must be one of {list(OWNERSHIPS)}")
+        if source.get("tier") not in SOURCE_TIERS:
+            errors.append(f"identity_conflict_report source tier must be one of {list(SOURCE_TIERS)}")
         if not isinstance(source.get("location"), str) or not source.get("location"):
             errors.append("identity_conflict_report source location must be a non-empty string")
         ownerships.add(str(source.get("ownership")))
@@ -270,9 +312,19 @@ def _validate_consistency(payload: dict[str, Any]) -> list[str]:
     )
     if payload.get("severity") != expected_severity:
         errors.append(f"identity_conflict_report severity must be {expected_severity} for these conflicts")
-    if payload.get("precedence") != ("uncontested" if expected_severity == "ok" else "unknown"):
-        errors.append("identity_conflict_report precedence must be unknown unless the scan was complete and clean")
+    expected_precedence = _precedence(
+        [conflict for conflict in conflicts if isinstance(conflict, dict)],
+        [str(item) for item in unreadable],
+    )
+    if payload.get("precedence") != expected_precedence:
+        errors.append(f"identity_conflict_report precedence must be {expected_precedence} for these conflicts")
     return errors
+
+
+def _precedence(conflicts: list[dict[str, Any]], unreadable: list[str]) -> str:
+    if unreadable or any(conflict.get("resolution") == "unknown" for conflict in conflicts):
+        return "unknown"
+    return "resolved" if conflicts else "uncontested"
 
 
 def _severity(conflicts: list[dict[str, Any]], unreadable: list[str]) -> str:
@@ -290,7 +342,8 @@ _NEXT_ACTION_BY_KIND = {
     ),
     "skill": (
         "Rename or unregister whichever competing skill directory you own, then rerun `omh doctor`; OMH does "
-        "not rename or delete assets it did not install."
+        "not rename or delete assets it did not install. A copy in the Hermes home's own skills directory, "
+        "such as one a hub install put there, outranks OMH's copy and never receives OMH's updates."
     ),
     # No rename, no removal. A hook name is the lifecycle event itself, and the
     # other plugin subscribing to it is ordinary Hermes behaviour (#1902).
@@ -319,16 +372,35 @@ def _next_action(conflicts: list[dict[str, Any]], unreadable: list[str]) -> str:
     )
 
 
-def _foreign_skill_dirs(skills_dir: Path, configured_dirs: list[str], unreadable: list[str]) -> list[Path]:
-    """Configured skill directories that are not OMH's own managed directory."""
+def _foreign_skill_dirs(
+    skills_dir: Path,
+    configured_dirs: list[str],
+    unreadable: list[str],
+    *,
+    local_skills_dir: Path | None = None,
+    create_dir: Path | None = None,
+) -> list[tuple[str, Path]]:
+    """`(tier, directory)` for every skill root other than OMH's own, highest tier first.
+
+    A directory named by two tiers counts once, in the higher one, the way
+    Hermes de-duplicates its roots. The local and create_dir roots are optional
+    on an ordinary home, so a missing one is skipped; a configured external
+    directory that is missing stays reported, as it always was.
+    """
     try:
         managed = skills_dir.expanduser().resolve(strict=False)
     except (OSError, RuntimeError) as error:
         managed = None
         unreadable.append(f"managed skill directory {skills_dir}: {error}")
+    candidates: list[tuple[str, str, bool]] = []
+    if local_skills_dir is not None:
+        candidates.append(("local", str(local_skills_dir), False))
+    if create_dir is not None:
+        candidates.append(("create_dir", str(create_dir), False))
+    candidates.extend(("external", raw_dir, True) for raw_dir in configured_dirs)
     seen: set[Path] = set()
-    foreign: list[Path] = []
-    for raw_dir in configured_dirs:
+    foreign: list[tuple[str, Path]] = []
+    for tier, raw_dir, required in candidates:
         try:
             candidate = Path(raw_dir).expanduser().resolve(strict=False)
         except (OSError, RuntimeError) as error:
@@ -336,67 +408,94 @@ def _foreign_skill_dirs(skills_dir: Path, configured_dirs: list[str], unreadable
             continue
         if candidate == managed or candidate in seen:
             continue
+        if not required and not candidate.is_dir():
+            continue
         seen.add(candidate)
-        foreign.append(candidate)
+        foreign.append((tier, candidate))
     return foreign
 
 
-def _managed_skill_locations(skills_dir: Path, manifest: dict[str, Any] | None) -> dict[str, str]:
-    """Contested skill name -> the installed location OMH owns, per the manifest.
+def _managed_skill_locations(skills_dir: Path, manifest: dict[str, Any] | None) -> dict[str, tuple[str, bool]]:
+    """Contested skill name -> (the installed location OMH owns, whether the name is its label).
 
-    Keyed by both the canonical catalog name and the installed directory name,
-    because those diverged when installs moved to display-labelled directories:
-    Hermes discovers `omh-doctor` on disk while the router and the operator both
-    say `doctor`, and a foreign directory under either spelling is a contest.
+    Every skill the manifest records is covered, under both its installed
+    directory name -- the name Hermes resolves, which is also the skill's
+    frontmatter `name` -- and its canonical catalog name, which the router and
+    the operator say. The label is recorded first so a canonical name that
+    happens to equal another skill's label never displaces it.
 
     A managed location is recorded only when the manifest accounts for it. A
     file sitting under `skills_dir` that no record explains is not something OMH
     installed, and letting it stand in for OMH's side would fabricate a
     competitor.
     """
-    core = frozenset(CORE_SKILLS)
-    locations: dict[str, str] = {}
-    for record in (manifest or {}).get("skills", []):
-        if not isinstance(record, dict):
-            continue
-        name = str(record.get("name", ""))
-        rel = str(record.get("path", ""))
-        if name not in core or not rel:
-            continue
-        directory = Path(rel).parent
-        location = str(skills_dir / directory)
-        locations[name] = location
+    records = [
+        (str(record.get("name", "")), Path(str(record.get("path", ""))).parent)
+        for record in (manifest or {}).get("skills", [])
+        if isinstance(record, dict) and record.get("path")
+    ]
+    locations: dict[str, tuple[str, bool]] = {}
+    for _name, directory in records:
         if directory.name:
-            locations[directory.name] = location
+            locations.setdefault(directory.name, (str(skills_dir / directory), True))
+    for name, directory in records:
+        if name:
+            locations.setdefault(name, (str(skills_dir / directory), False))
     return locations
 
 
 def _skill_conflicts(
     skills_dir: Path,
     manifest: dict[str, Any] | None,
-    foreign_dirs: list[Path],
+    foreign_dirs: list[tuple[str, Path]],
     unreadable: list[str],
 ) -> list[dict[str, Any]]:
     managed = _managed_skill_locations(skills_dir, manifest)
+    claims: dict[str, list[tuple[str, str]]] = {}
+    for tier, foreign_dir in foreign_dirs:
+        if not foreign_dir.is_dir():
+            unreadable.append(f"{foreign_dir}: not a readable directory")
+            continue
+        # A directory counts only when it holds a SKILL.md, the way Hermes
+        # finds a skill; symlinked directories are not followed, so an alias
+        # of one already scanned does not report the same contest twice.
+        for directory in skill_directories(foreign_dir, unreadable):
+            if directory.name in managed:
+                claims.setdefault(directory.name, []).append((str(directory), tier))
     conflicts: list[dict[str, Any]] = []
-    for foreign_dir in foreign_dirs:
-        try:
-            children = list(foreign_dir.iterdir())
-        except OSError as error:
-            unreadable.append(f"{foreign_dir}: {error}")
-            continue
-        if not managed:
-            continue
-        for child in sorted(children, key=lambda item: item.name):
-            # Symlinks are skipped rather than followed: an alias of a directory
-            # already scanned would report the same contest twice.
-            if child.is_symlink() or not child.is_dir():
-                continue
-            location = managed.get(child.name)
-            if location is None:
-                continue
-            conflicts.append(_conflict("skill", child.name, [(location, "omh_managed"), (str(child), "user_owned")]))
+    for name in sorted(claims):
+        location, is_label = managed[name]
+        tiers = [tier for _location, tier in claims[name]]
+        if not is_label:
+            resolution = "separate"
+        elif any(tier != "external" for tier in tiers):
+            resolution = "shadowed"
+        else:
+            resolution = "ambiguous"
+        sources = [(location, "omh_managed", "external")]
+        sources.extend((foreign, "user_owned", tier) for foreign, tier in claims[name])
+        conflicts.append(_conflict("skill", name, sources, resolution))
     return conflicts
+
+
+def skill_conflict_outcome(conflict: dict[str, Any]) -> str:
+    """One sentence for what Hermes does with a contested skill name, from the tier order."""
+    sources = conflict["sources"]
+    omh = next(source for source in sources if source["ownership"] == "omh_managed")
+    others = [source for source in sources if source["ownership"] != "omh_managed"]
+    if conflict["resolution"] == "shadowed":
+        top = min(SKILL_TIERS.index(source["tier"]) for source in others)
+        winners = [source for source in others if SKILL_TIERS.index(source["tier"]) == top]
+        copies = "copy" if len(winners) == 1 else "copies"
+        listed = ", ".join(source["location"] for source in winners)
+        return f"OMH copy at {omh['location']} shadowed by {SKILL_TIERS[top]} {copies} at {listed}"
+    listed = ", ".join(f"{source['tier']} copy at {source['location']}" for source in others)
+    if conflict["resolution"] == "ambiguous":
+        return f"OMH copy at {omh['location']} shares the external tier with the {listed}, so Hermes refuses the bare name"
+    return (
+        f"OMH's catalog name for the skill at {omh['location']} also names the {listed}; "
+        "Hermes resolves the two names separately"
+    )
 
 
 def _plugin_sources(plugins_dir: Path, unreadable: list[str]) -> list[dict[str, Any]]:
@@ -466,17 +565,26 @@ def _plugin_conflicts(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if ownerships != set(OWNERSHIPS):
                 continue
             conflicts.append(
-                _conflict(kind, name, [(str(source["location"]), str(source["ownership"])) for source in claiming])
+                _conflict(
+                    kind,
+                    name,
+                    [(str(source["location"]), str(source["ownership"]), "plugin") for source in claiming],
+                    "unknown",
+                )
             )
     return conflicts
 
 
-def _conflict(kind: str, name: str, sources: list[tuple[str, str]]) -> dict[str, Any]:
+def _conflict(kind: str, name: str, sources: list[tuple[str, str, str]], resolution: str) -> dict[str, Any]:
     return {
         "kind": kind,
         "name": name,
+        "resolution": resolution,
         "severity": "blocking" if kind in EXCLUSIVE_NAME_KINDS else "warning",
-        "sources": [{"location": location, "ownership": ownership} for location, ownership in sorted(sources)],
+        "sources": [
+            {"location": location, "ownership": ownership, "tier": tier}
+            for location, ownership, tier in sorted(sources)
+        ],
     }
 
 

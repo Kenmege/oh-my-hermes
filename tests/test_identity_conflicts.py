@@ -12,6 +12,10 @@ AC2 -- unknown precedence becomes a warning or a blocker. The rule lives in
 against the same unknown precedence, so the split is the stated rule and not the
 kind of conflict that happened to be built first.
 
+A contested skill name is not unknown any more: its outcome follows Hermes'
+documented tier order (project > local > create_dir > external_dirs), and
+`TierResolutionTests` pins each outcome against the tier the other copy sits in.
+
 AC3 -- no user-owned asset is rewritten or removed. `NoWriteTests` snapshots
 every byte and mtime under a tree holding a user-owned colliding asset, runs the
 diagnosis, and compares.
@@ -36,6 +40,7 @@ from omh.install.identity_conflicts import (
     PRECEDENCE_STATES,
     SOURCE_KINDS,
     build_identity_conflict_report,
+    skill_conflict_outcome,
     validate_identity_conflict_report,
 )
 from omh.local_store import atomic_write_text
@@ -73,6 +78,13 @@ def _install_managed_skills(skills_dir: Path) -> dict[str, object]:
     return new_manifest("builtin", skills_dir, skill_records(skills_dir, "builtin"))
 
 
+def _write_foreign_skill(directory: Path) -> Path:
+    """A skill OMH did not install: a directory holding a SKILL.md, the way Hermes finds one."""
+    directory.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(directory / "SKILL.md", f"---\nname: {directory.name}\n---\n# a skill the user wrote\n")
+    return directory
+
+
 def _write_foreign_plugin(plugins_dir: Path, name: str, *, tools: tuple[str, ...] = (), hooks: tuple[str, ...] = ()) -> Path:
     """A local Hermes plugin OMH did not install, declaring the given names."""
     directory = plugins_dir / name
@@ -107,7 +119,12 @@ class _Fixture:
         )
         self.configured_dirs.append(directory.as_posix())
 
-    def report(self, *, configured_skill_dirs: list[str] | None | object = _DEFAULT_DIRS) -> dict[str, object]:
+    def report(
+        self,
+        *,
+        configured_skill_dirs: list[str] | None | object = _DEFAULT_DIRS,
+        create_dir: Path | None = None,
+    ) -> dict[str, object]:
         # A sentinel default, because `None` is a meaningful argument here: it
         # is how a caller says the Hermes config could not be read at all.
         dirs = self.configured_dirs if configured_skill_dirs is _DEFAULT_DIRS else configured_skill_dirs
@@ -116,6 +133,8 @@ class _Fixture:
             manifest=self.manifest,
             plugins_dir=self.paths.hermes_plugins_dir,
             configured_skill_dirs=dirs,  # type: ignore[arg-type]
+            local_skills_dir=self.paths.hermes_home / "skills",
+            create_dir=create_dir,
         )
 
 
@@ -158,9 +177,9 @@ class ContractShapeTests(unittest.TestCase):
             "identity_conflict_report has unsupported keys: ['resolved_winner']",
             validate_identity_conflict_report(extra),
         )
-        # A resolved order is not in the vocabulary at all: OMH cannot observe
-        # Hermes precedence, so there is no value for it to report.
-        self.assertNotIn("resolved", PRECEDENCE_STATES)
+        # `resolved` names an outcome read off Hermes' documented tier order,
+        # never a winner OMH chose: there is still no value for "OMH wins".
+        self.assertIn("resolved", PRECEDENCE_STATES)
         decided = {**report, "precedence": "omh_wins"}
         self.assertTrue(
             any("precedence must be one of" in error for error in validate_identity_conflict_report(decided))
@@ -191,7 +210,7 @@ class ContractShapeTests(unittest.TestCase):
                 hooks=(CONTESTED_REQUIRED_HOOK,),
             )
             foreign = Path(tmp) / "foreign-skills"
-            (foreign / CONTESTED_SKILL).mkdir(parents=True)
+            _write_foreign_skill(foreign / CONTESTED_SKILL)
             fixture.register_skill_dir(foreign)
 
             first = fixture.report()
@@ -207,8 +226,7 @@ class VisibleCompetingSourceTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             fixture = _Fixture(Path(tmp))
             foreign = Path(tmp) / "foreign-skills"
-            user_owned = foreign / CONTESTED_SKILL
-            user_owned.mkdir(parents=True)
+            user_owned = _write_foreign_skill(foreign / CONTESTED_SKILL)
             fixture.register_skill_dir(foreign)
 
             report = fixture.report()
@@ -222,7 +240,10 @@ class VisibleCompetingSourceTests(unittest.TestCase):
             _ownership_map(conflict),
             {str(managed): "omh_managed", str(user_owned.resolve()): "user_owned"},
         )
-        self.assertEqual(report["precedence"], "unknown")
+        # `doctor` is the canonical name; the installed skill is `omh-doctor`, so
+        # Hermes resolves the two names apart and nothing is hidden.
+        self.assertEqual(conflict["resolution"], "separate")
+        self.assertEqual(report["precedence"], "resolved")
 
     def test_a_contested_command_name_names_both_declaring_plugins(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -288,13 +309,148 @@ class VisibleCompetingSourceTests(unittest.TestCase):
                 hooks=(CONTESTED_REQUIRED_HOOK,),
             )
             foreign = Path(tmp) / "foreign-skills"
-            (foreign / CONTESTED_SKILL).mkdir(parents=True)
+            _write_foreign_skill(foreign / CONTESTED_SKILL)
             fixture.register_skill_dir(foreign)
 
             report = fixture.report()
 
         self.assertEqual(validate_identity_conflict_report(report), [])
         self.assertEqual({item["kind"] for item in report["conflicts"]}, set(SOURCE_KINDS))  # type: ignore[index]
+
+
+class TierResolutionTests(unittest.TestCase):
+    """A contested skill name resolves by Hermes' tier order, never to `unknown`.
+
+    OMH's managed directory is always an external one, so where the other copy
+    sits decides the outcome: a higher tier hides the OMH copy, another external
+    directory shares its tier and Hermes refuses the bare name, and a copy under
+    only the canonical name hides nothing. The label used throughout is the
+    installed directory name, which is also the skill's frontmatter name -- the
+    name Hermes resolves.
+    """
+
+    LABEL = omh_skill_display_name(CONTESTED_SKILL)
+
+    def test_a_hub_style_copy_in_the_hermes_home_shadows_the_omh_copy(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fixture = _Fixture(Path(tmp))
+            # A hub install lands under a category in the home's own skills dir.
+            local = _write_foreign_skill(fixture.paths.hermes_home / "skills" / "workflow" / self.LABEL)
+            report = fixture.report()
+            conflict = _conflict(report, "skill", self.LABEL)
+            managed = fixture.paths.skills_dir / omh_skill_display_name(CONTESTED_SKILL)
+
+        self.assertEqual(validate_identity_conflict_report(report), [])
+        self.assertEqual(conflict["resolution"], "shadowed")
+        self.assertEqual(report["precedence"], "resolved")
+        self.assertEqual(report["severity"], "warning")
+        self.assertEqual(
+            skill_conflict_outcome(conflict),
+            f"OMH copy at {managed} shadowed by local copy at {local.resolve()}",
+        )
+        self.assertIn("hub install", str(report["next_action"]))
+
+    def test_a_copy_in_skills_create_dir_shadows_the_omh_copy(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fixture = _Fixture(Path(tmp))
+            create_dir = Path(tmp) / "fleet-skills"
+            _write_foreign_skill(create_dir / self.LABEL)
+            conflict = _conflict(fixture.report(create_dir=create_dir), "skill", self.LABEL)
+
+        self.assertEqual(conflict["resolution"], "shadowed")
+        self.assertIn("shadowed by create_dir copy at", skill_conflict_outcome(conflict))
+
+    def test_the_highest_tier_names_the_winner_when_several_tiers_hold_the_name(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fixture = _Fixture(Path(tmp))
+            create_dir = Path(tmp) / "fleet-skills"
+            _write_foreign_skill(create_dir / self.LABEL)
+            local = _write_foreign_skill(fixture.paths.hermes_home / "skills" / self.LABEL)
+            foreign = Path(tmp) / "foreign-skills"
+            _write_foreign_skill(foreign / self.LABEL)
+            fixture.register_skill_dir(foreign)
+            report = fixture.report(create_dir=create_dir)
+            conflict = _conflict(report, "skill", self.LABEL)
+
+        self.assertEqual(validate_identity_conflict_report(report), [])
+        self.assertEqual(
+            {source["tier"] for source in conflict["sources"]},  # type: ignore[index]
+            {"local", "create_dir", "external"},
+        )
+        self.assertTrue(
+            skill_conflict_outcome(conflict).endswith(f"shadowed by local copy at {local.resolve()}"),
+            skill_conflict_outcome(conflict),
+        )
+
+    def test_a_copy_in_another_external_directory_is_ambiguous(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fixture = _Fixture(Path(tmp))
+            foreign = Path(tmp) / "foreign-skills"
+            _write_foreign_skill(foreign / self.LABEL)
+            fixture.register_skill_dir(foreign)
+            report = fixture.report()
+            conflict = _conflict(report, "skill", self.LABEL)
+
+        self.assertEqual(conflict["resolution"], "ambiguous")
+        self.assertEqual(report["precedence"], "resolved")
+        self.assertIn("so Hermes refuses the bare name", skill_conflict_outcome(conflict))
+
+    def test_every_managed_name_is_covered_not_only_the_core_ones(self) -> None:
+        non_core = next(template for template in builtin_skill_templates() if template.name not in CORE_SKILLS)
+        label = omh_skill_display_name(non_core.name)
+        with TemporaryDirectory() as tmp:
+            fixture = _Fixture(Path(tmp))
+            path = fixture.paths.skills_dir / label / "SKILL.md"
+            path.parent.mkdir(parents=True)
+            atomic_write_text(path, non_core.content)
+            fixture.manifest = new_manifest(
+                "builtin", fixture.paths.skills_dir, skill_records(fixture.paths.skills_dir, "builtin")
+            )
+            _write_foreign_skill(fixture.paths.hermes_home / "skills" / label)
+            conflict = _conflict(fixture.report(), "skill", label)
+
+        self.assertEqual(conflict["resolution"], "shadowed")
+
+    def test_a_directory_without_a_skill_file_is_not_a_contest(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fixture = _Fixture(Path(tmp))
+            (fixture.paths.hermes_home / "skills" / self.LABEL / "references").mkdir(parents=True)
+            report = fixture.report()
+
+        self.assertEqual(report["conflicts"], [])
+        self.assertEqual(report["precedence"], "uncontested")
+
+    def test_a_missing_home_skills_directory_is_an_ordinary_home(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fixture = _Fixture(Path(tmp))
+            report = fixture.report(create_dir=Path(tmp) / "never-created")
+
+        self.assertEqual(report["unreadable"], [])
+        self.assertEqual(report["precedence"], "uncontested")
+
+    def test_a_tool_contest_beside_a_skill_one_keeps_the_report_unknown(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fixture = _Fixture(Path(tmp))
+            _write_foreign_skill(fixture.paths.hermes_home / "skills" / self.LABEL)
+            _write_foreign_plugin(fixture.paths.hermes_plugins_dir, "notes", tools=(CONTESTED_COMMAND,))
+            report = fixture.report()
+
+        self.assertEqual(validate_identity_conflict_report(report), [])
+        self.assertEqual(_conflict(report, "skill", self.LABEL)["resolution"], "shadowed")
+        self.assertEqual(_conflict(report, "command", CONTESTED_COMMAND)["resolution"], "unknown")
+        self.assertEqual(report["precedence"], "unknown")
+
+    def test_the_validator_rejects_an_outcome_that_does_not_fit_the_kind(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fixture = _Fixture(Path(tmp))
+            _write_foreign_plugin(fixture.paths.hermes_plugins_dir, "notes", tools=(CONTESTED_COMMAND,))
+            report = fixture.report()
+
+        conflict = _conflict(report, "command", CONTESTED_COMMAND)
+        claimed = {**report, "conflicts": [{**conflict, "resolution": "shadowed"}]}
+        self.assertTrue(
+            any("does not fit kind" in error for error in validate_identity_conflict_report(claimed))
+        )
 
 
 class PrecedenceSeverityTests(unittest.TestCase):
@@ -371,7 +527,7 @@ class NextActionByKindTests(unittest.TestCase):
                 _write_foreign_plugin(fixture.paths.hermes_plugins_dir, "notes", tools=tools, hooks=hooks)
             if skill:
                 foreign = Path(tmp) / "foreign-skills"
-                (foreign / CONTESTED_SKILL).mkdir(parents=True)
+                _write_foreign_skill(foreign / CONTESTED_SKILL)
                 fixture.register_skill_dir(foreign)
             report = fixture.report()
         self.assertEqual(validate_identity_conflict_report(report), [])
@@ -629,6 +785,19 @@ class DoctorSurfaceTests(unittest.TestCase):
         self.assertNotIn("claimed by", check.message)
         self.assertIn("A shared lifecycle hook has no winner to resolve", check.message)
         self.assertNotIn("rename", check.next_action.lower())
+
+    def test_a_hub_style_copy_reads_as_shadowed_on_the_doctor_line(self) -> None:
+        label = omh_skill_display_name(CONTESTED_SKILL)
+        with TemporaryDirectory() as tmp:
+            fixture = _Fixture(Path(tmp))
+            _write_foreign_skill(fixture.paths.hermes_home / "skills" / label)
+            check = self._check(fixture.paths, "identity_conflicts")
+
+        self.assertTrue(check.ok)
+        self.assertEqual(check.severity, "warning")
+        self.assertIn("precedence=resolved", check.message)
+        self.assertIn(f"skill name {label} (warning): OMH copy at", check.message)
+        self.assertIn("shadowed by local copy at", check.message)
 
     def test_a_clean_installed_home_reports_uncontested(self) -> None:
         with TemporaryDirectory() as tmp:

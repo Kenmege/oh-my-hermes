@@ -935,6 +935,15 @@ def memory_provider_selection(config_text: str) -> str:
     return _section_scalar(config_text, "memory", "provider")
 
 
+def skill_create_dir_selection(config_text: str) -> str:
+    """The path in `skills.create_dir`, or "" when Hermes creates skills in its own skills directory.
+
+    Hermes ranks that directory between the profile's own skills and
+    `skills.external_dirs`, so a same-name skill there hides an OMH skill.
+    """
+    return _section_scalar(config_text, "skills", "create_dir")
+
+
 def display_skin_selection(config_text: str) -> str:
     """The name in `display.skin`, or "" when Hermes resolves its built-in default.
 

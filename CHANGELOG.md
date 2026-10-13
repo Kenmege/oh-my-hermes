@@ -4,6 +4,34 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A Hermes edit to an OMH-managed skill is redirected, kept, and reported
+  instead of breaking the next update.** Hermes' background self-improvement
+  review may patch, edit, or write files into any skill it loaded, OMH's
+  managed skills included. The OMH plugin's `pre_tool_call` now refuses a
+  `skill_manage` edit, patch, write_file, or remove_file whose target resolves
+  to a skill OMH's install manifest records (by installed directory name, never
+  by prefix; a same-name skill in the Hermes home's own skills directory takes
+  the edit and passes), and the refusal names where the lesson goes: a
+  separately named companion skill, or OMH's workflow-learning lane. A skill
+  OMH did not install passes untouched. When Hermes' curator ledger
+  (`<hermes_home>/skills/.curator_ledger.jsonl`) shows a managed skill still
+  holds a Hermes edit, `omh install` / `omh update` keep that skill as it is,
+  carry it into a new generation on a staged update, and list it with the
+  ledger's actor, action, and time; `--force` still replaces it and the
+  summary says so. A change with no ledger row still refuses the install as
+  before. `omh doctor` gains `hermes_skill_edits`, which reads the ledger
+  without writing it and reports writes under OMH-managed skills, and a kept
+  skill no longer fails `local_modifications` or `skill_freshness`. The
+  identity-conflict scan now covers every managed skill name, scans the Hermes
+  home's own skills directory and `skills.create_dir`, counts a directory only
+  when it holds a SKILL.md, and reports each contested skill name's outcome
+  from Hermes' documented tier order (`shadowed` by a higher-tier copy,
+  `ambiguous` with another external copy, or `separate` for OMH's canonical
+  name) instead of `unknown`; the report schema moves to
+  `identity_conflict_report/v2`. `omh setup` no longer lists a hub install
+  among its equivalent Hermes commands, since that copy would outrank and
+  hide the managed skill.
+
 - **The document, image, visual QA, release, and meeting skills now read
   Hermes' own producers as evidence beside OMH's verdict, never in place of
   it.** `materials-package` and `deliverable-package` map each file format's

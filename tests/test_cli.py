@@ -1843,6 +1843,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
 
             collision_name = installable_skill_names()[0]
             (foreign_skills / collision_name).mkdir(parents=True)
+            # A SKILL.md is what makes a directory a skill to Hermes, and so a contest.
+            (foreign_skills / collision_name / "SKILL.md").write_text(f"---\nname: {collision_name}\n---\n", encoding="utf-8")
             (foreign_skills / f"{collision_name}.txt").write_text("not a skill directory", encoding="utf-8")
             (foreign_skills / f"{collision_name}-different-case").mkdir()
             (foreign_skills / "nested" / collision_name).mkdir(parents=True)
@@ -1873,7 +1875,10 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             # sibling, the nested copy, the symlink alias, and the second
             # spelling of the same configured directory must not each mint one.
             self.assertIn("conflicts=1", collision["message"])
-            self.assertIn(f"skill name {collision_name} (warning) claimed by", collision["message"])
+            # The canonical name, not the installed label: Hermes resolves the
+            # two names apart, and the line says so rather than naming a winner.
+            self.assertIn(f"skill name {collision_name} (warning): ", collision["message"])
+            self.assertIn("Hermes resolves the two names separately", collision["message"])
             self.assertIn("Hermes runtime precedence is not observed", collision["message"])
             groups = {group["name"]: group for group in payload["summary"]["groups"]}
             self.assertEqual(groups["hermes_registration"]["status"], "warning")
@@ -12707,9 +12712,10 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertTrue(payload["hermes_native"]["requires_hermes_reload"])
             self.assertIn("Hermes Agent chat", payload["hermes_native"]["normal_user_surface"])
             self.assertIn("hermes skills tap add rlaope/oh-my-hermes", payload["hermes_native"]["equivalent_hermes_commands"])
-            self.assertIn(
-                "hermes skills install rlaope/oh-my-hermes/skills/omh-routing --yes",
-                payload["hermes_native"]["equivalent_hermes_commands"],
+            # No hub install: it would land in the Hermes home's own skills
+            # directory, outrank the managed copy, and never be updated by OMH.
+            self.assertFalse(
+                any("hermes skills install" in command for command in payload["hermes_native"]["equivalent_hermes_commands"])
             )
             self.assertEqual(payload["hermes_native"]["hermes_config_key"], "skills.external_dirs")
             self.assertIn("not the normal chat UX", payload["hermes_native"]["wrapper_backend_surface"])

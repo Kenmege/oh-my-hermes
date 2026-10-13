@@ -314,6 +314,19 @@ machine state. One deliberate opt-out is honored: after
 update never re-registers a machine whose owner removed the registration on
 purpose.
 
+Managed skills follow Hermes' own rule for a skill Hermes edited. Hermes
+records every skill edit in its curator ledger
+(`<hermes_home>/skills/.curator_ledger.jsonl`), including the ones its
+background self-improvement review makes unprompted. When that ledger shows a
+managed skill still holds a Hermes edit, `omh update` keeps the skill as it is,
+carries it into the new install, and names it in the summary; that skill then
+receives no OMH update until a run with `--force` replaces it. A change with no
+such ledger row still stops the update until you resolve it or pass `--force`.
+The OMH plugin refuses those edits in the first place and points the model at a
+separately named skill or the workflow-learning lane instead, and `omh doctor`
+reports what the ledger records under OMH-managed skills under
+`hermes_skill_edits`.
+
 Plugin reinstalls protect local additions as well as edits to managed files.
 If `$HERMES_HOME/plugins/omh/` contains entries absent from its installed OMH
 manifest, `omh setup` refuses replacement and names those entries. `omh update`
@@ -1936,6 +1949,12 @@ hermes skills install rlaope/oh-my-hermes/skills/omh-routing --yes
 Use the full identifier for first install. It avoids short-name resolver
 ambiguity in current Hermes CLI releases while installing the same
 `oh-my-hermes` skill.
+
+Path A is an alternative to `omh setup`, not an addition to it. A tap install
+lands in the Hermes home's own skills directory, which Hermes ranks above the
+`skills.external_dirs` entry OMH manages, so on a machine that also runs
+`omh setup` the tap copy hides the managed skill and never receives an OMH
+update. `omh doctor` names such a copy under `identity_conflicts`.
 
 Install additional workflow skills when you want direct Hermes skill surfaces:
 

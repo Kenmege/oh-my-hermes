@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 import os
 import shutil
 import sys
@@ -7,6 +8,8 @@ from pathlib import Path
 
 from ..core.errors import OmhError
 from ..converter import convert_from_dir, convert_references_from_dir
+from ..hashutil import sha256_file
+from .curator_ledger import hermes_edit_still_on_disk, read_ledger_writes, writes_under
 from .plugin_pack import host_managed_plugin
 from ..local_store import atomic_write_text, discard_path, is_directory_link, read_json_object_result
 from ..manifest import local_modifications, new_manifest, read_manifest, skill_records, write_manifest
@@ -132,6 +135,89 @@ def _manifest_describes(manifest: dict | None, skills_dir: Path) -> bool:
     return os.path.realpath(str(recorded)) == os.path.realpath(str(skills_dir))
 
 
+# The manifest record key that keeps a Hermes-edited skill kept on the next
+# install. The ledger row that first proved the edit can be trimmed, and after
+# a staged update it names a generation OMH has moved off, so the evidence
+# travels with the record instead.
+HERMES_EDIT_RECORD_KEY = "hermes_edit"
+HERMES_EDIT_EVIDENCE_KEYS = ("actor", "ts", "action", "ledger")
+
+
+def hermes_edited_skills(manifest: dict | None, paths: OmhPaths, *, overwritten: bool = False) -> list[dict]:
+    """Managed skills whose files on disk are what a Hermes skill edit left there.
+
+    Hermes may edit a skill in `skills.external_dirs` in place -- its
+    background self-improvement review does so unprompted -- and records every
+    such write in its curator ledger (`install.curator_ledger`). Upstream's
+    rule for the skills it installs itself is that an edited skill counts as
+    locally modified and updates stop overwriting it. OMH holds its managed
+    skills to the same rule: a skill a Hermes write still accounts for is kept
+    as it is and reported, rather than refusing the whole install the way an
+    unexplained change does, or being stranded in the generation the edit
+    happened in. `--force` keeps its meaning and replaces it, and the report
+    says that it did.
+
+    A skill kept once stays kept while its SKILL.md is unchanged since, through
+    the evidence its manifest record carries. Read against the pack the
+    manifest describes, which on a staged update is the previous generation.
+    """
+    if not manifest:
+        return []
+    recorded = manifest.get("skills_dir")
+    pack = Path(str(recorded)) if recorded else paths.skills_dir
+    pack_writes = None
+    found: list[dict] = []
+    for record in manifest.get("skills", []):
+        if not isinstance(record, dict):
+            continue
+        name, rel = str(record.get("name", "")), str(record.get("path", ""))
+        skill_file = pack / rel
+        if not name or not rel or not skill_file.parent.is_dir():
+            continue
+        evidence = record.get(HERMES_EDIT_RECORD_KEY)
+        carried = (
+            isinstance(evidence, dict)
+            and skill_file.is_file()
+            and sha256_file(skill_file) == record.get("sha256")
+        )
+        if not carried:
+            if pack_writes is None:
+                # One ledger read per install, cut to this pack once.
+                pack_writes = writes_under(read_ledger_writes(paths.hermes_home)[0], pack)
+            write = hermes_edit_still_on_disk(skill_file.parent, pack_writes)
+            if write is None:
+                continue
+            evidence = {"actor": write.actor, "ts": write.ts, "action": write.action, "ledger": write.ledger}
+        found.append(
+            {
+                "name": name,
+                "path": rel,
+                "skill_dir": str(skill_file.parent),
+                "disposition": "replaced" if overwritten else "kept",
+                **{key: str(evidence.get(key, "")) for key in HERMES_EDIT_EVIDENCE_KEYS},
+            }
+        )
+    return found
+
+
+def _carry_kept_skills(skills_dir: Path, kept: Iterable[dict]) -> None:
+    """Put each kept skill into the pack being written when it lives in another one.
+
+    A staged update renders into a fresh generation, so a skill kept in place
+    would stay behind in the old one; copying it whole is what carries the
+    edit forward. In the pack the manifest already describes, it is already
+    where it belongs.
+    """
+    for item in kept:
+        source = Path(str(item["skill_dir"]))
+        target = skills_dir / Path(str(item["path"])).parent
+        if os.path.realpath(source) == os.path.realpath(target):
+            continue
+        discard_path(target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source, target, symlinks=True)
+
+
 def _overwrite_allowed(force: bool) -> bool:
     """The DECISION for every installer overwrite/removal guard in this module.
 
@@ -202,6 +288,13 @@ def install_skill_pack(
             template for template in reference_templates if template.skill_name in refreshable
         ]
     manifest = read_manifest(paths.manifest_path)
+    # Read against the pack the manifest describes, before the check below
+    # drops a manifest that describes another generation: that pack is where
+    # a Hermes edit sits on a staged update, and it would otherwise be left
+    # behind in a generation Hermes no longer loads.
+    overwrite_allowed = _overwrite_allowed(force)
+    hermes_edited = hermes_edited_skills(manifest, paths, overwritten=overwrite_allowed)
+    kept = {} if overwrite_allowed else {str(item["path"]): item for item in hermes_edited}
     # A staged self-update renders the candidate pack into its own generation
     # directory while the home manifest still describes the generation that is
     # active. That manifest cannot witness local edits in a directory it never
@@ -210,9 +303,14 @@ def install_skill_pack(
     # post-activation re-entry, and rolled the whole update back.
     if not _manifest_describes(manifest, paths.skills_dir):
         manifest = None
-    modified = local_modifications(manifest, paths.skills_dir)
-    if modified and not _overwrite_allowed(force):
+    # A Hermes edit is kept and reported; any other change to a managed file
+    # still refuses the whole install until `--force` says to replace it.
+    modified = [rel for rel in local_modifications(manifest, paths.skills_dir) if rel not in kept]
+    if modified and not overwrite_allowed:
         raise OmhError("local modifications detected; rerun with --force or resolve: " + ", ".join(modified))
+    kept_names = {str(item["name"]) for item in kept.values()}
+    templates = [template for template in templates if template.name not in kept_names]
+    reference_templates = [template for template in reference_templates if template.skill_name not in kept_names]
     context_cost_warning = (
         _context_cost_warning(core_count=len(CORE_PROFILE_SKILLS), full_count=len(builtin_skill_templates()))
         if profile == "full"
@@ -228,6 +326,8 @@ def install_skill_pack(
         }
         if context_cost_warning is not None:
             result["context_cost_warning"] = context_cost_warning
+        if hermes_edited:
+            result["hermes_edited_skills"] = hermes_edited
         return result
     paths.skills_dir.mkdir(parents=True, exist_ok=True)
     managed = manifest is not None
@@ -235,21 +335,34 @@ def install_skill_pack(
         _write_skill(paths.skills_dir, template, force=force, managed=managed)
     for template in reference_templates:
         _write_skill_reference(paths.skills_dir, template, force=force, managed=managed)
+    _carry_kept_skills(paths.skills_dir, kept.values())
+    # The pruners act only on what the prior manifest records, so leaving a
+    # kept skill out of the copy they read is what keeps them off it.
+    prune_manifest = (
+        {**manifest, "skills": [record for record in manifest.get("skills", []) if record.get("path") not in kept]}
+        if manifest
+        else None
+    )
     pruned_skills = _prune_orphaned_skills(
         paths.skills_dir,
-        manifest,
+        prune_manifest,
         {template.name for template in all_templates},
         force=force,
     )
     flat_layout = _prune_flat_layout_skill_directories(
         paths.skills_dir,
-        manifest,
+        prune_manifest,
         {template.name for template in all_templates},
         force=force,
     )
     _remove_empty_category_directories(paths.skills_dir)
     records = skill_records(paths.skills_dir, source)
     manifest_data = new_manifest(source, paths.skills_dir, records)
+    for record in manifest_data["skills"]:
+        if record["path"] in kept:
+            record[HERMES_EDIT_RECORD_KEY] = {key: kept[record["path"]][key] for key in HERMES_EDIT_EVIDENCE_KEYS}
+    if hermes_edited:
+        manifest_data["hermes_edited_skills"] = hermes_edited
     manifest_data["skill_profile"] = profile
     if context_cost_warning is not None:
         manifest_data["context_cost_warning"] = context_cost_warning

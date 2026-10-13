@@ -1868,7 +1868,7 @@ def _doctor_operator_summary(checks: list[object]) -> dict[str, object]:
         "warnings": warnings,
         "groups": [
             _doctor_group("command", check_dicts, ("command_path",)),
-            _doctor_group("managed_skills", check_dicts, ("manifest", "manifest_skills_dir", "local_modifications", "skill_freshness", "skills_dir", "skill:", "route_hint_skills", "guidance_projection")),
+            _doctor_group("managed_skills", check_dicts, ("manifest", "manifest_skills_dir", "local_modifications", "skill_freshness", "skills_dir", "skill:", "route_hint_skills", "guidance_projection", "hermes_skill_edits")),
             _doctor_group("runtime", check_dicts, ("runtime_artifacts", "workflow_state", "runtime_state")),
             _doctor_group("hermes_registration", check_dicts, ("hermes_config", "external_dir", "identity_conflicts", "runtime_context")),
             _doctor_group("targets", check_dicts, ("target_registry", "target_topology")),
@@ -2776,9 +2776,11 @@ def cmd_setup(args: argparse.Namespace) -> int:
         "requires_hermes_reload": not args.skip_apply,
         "normal_user_surface": "Hermes Agent chat and installed Hermes skills",
         "setup_scope": _setup_scope(args),
+        # The tap only. A hub install lands in the Hermes home's own skills
+        # directory, which outranks OMH's managed one, so that copy would hide
+        # the managed skill for good and never receive an OMH update.
         "equivalent_hermes_commands": [
             "hermes skills tap add rlaope/oh-my-hermes",
-            "hermes skills install rlaope/oh-my-hermes/skills/omh-routing --yes",
         ],
         "bootstrap_final_state": bootstrap_final_state,
         "skills_dir": str(paths.skills_dir),
@@ -4840,6 +4842,14 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
     state_key = str(payload.get("runtime_state_key", "")).strip()
     if state_path and state_key:
         print(f"  {tr(language, 'state_log', path=state_path, entry=state_key)}")
+    hermes_edited = payload.get("hermes_edited_skills")
+    for item in hermes_edited if isinstance(hermes_edited, list) else []:
+        if not isinstance(item, dict):
+            continue
+        key = "hermes_edit_replaced_line" if item.get("disposition") == "replaced" else "hermes_edit_kept_line"
+        detail = " ".join(str(item[field]) for field in ("actor", "action", "ts") if item.get(field))
+        line = tr(language, key, name=item.get("name", ""), path=item.get("path", ""), detail=detail or "-")
+        print(_color(f"  {line}", "1;33", use_color))
     profile_state = payload.get("skill_profile_state")
     if isinstance(profile_state, dict) and profile_state.get("retained_exception"):
         retained = profile_state.get("full_only_installed_skills", [])
