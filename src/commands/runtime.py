@@ -42,8 +42,9 @@ from ..workflows.approval_receipts import (
     read_approval_receipts,
     validate_approval_receipt_store,
 )
-from ..goal_ledger import RUNTIME_COMPLETION_ACTIONS
+from ..goal_ledger import RUNTIME_COMPLETION_ACTIONS, read_goal_ledger
 from ..installer import OmhError
+from ..runtime.records import CLEANUP_OUTCOMES
 from ..runtime.artifacts import (
     append_journal_observation,
     CI_STATUSES,
@@ -233,8 +234,16 @@ def cmd_runtime_delegation_status(args: argparse.Namespace) -> int:
 
 def cmd_runtime_record(args: argparse.Namespace) -> int:
     _validate_runtime_names(args.skill, args.harness)
+    paths = _paths(args)
+    if args.goal_id:
+        # A goal link that names no ledger would never satisfy anything; refuse
+        # it here, where the typo is still in front of the caller.
+        try:
+            read_goal_ledger(paths, args.goal_id)
+        except (FileNotFoundError, ValueError) as exc:
+            raise OmhError(f"--goal does not name a readable goal ledger: {exc}") from exc
     run = create_run(
-        _paths(args),
+        paths,
         {
             "skill": args.skill,
             "harness": args.harness,
@@ -244,6 +253,8 @@ def cmd_runtime_record(args: argparse.Namespace) -> int:
             "inputs_summary": args.inputs_summary or "",
             "outputs_summary": args.outputs_summary or "",
             "verification_summary": args.verification_summary or "",
+            "goal_id": args.goal_id or "",
+            "cleanup_outcome": args.cleanup_outcome or "",
         },
     )
     _print_json({"run": run})
@@ -1444,6 +1455,15 @@ def _add_runtime_commands(sub) -> None:
     runtime_record.add_argument("--inputs-summary", default="")
     runtime_record.add_argument("--outputs-summary", default="")
     runtime_record.add_argument("--verification-summary", default="")
+    runtime_record.add_argument(
+        "--goal", dest="goal_id", default="", help="Goal ledger id this run reports for (an existing ledger)."
+    )
+    runtime_record.add_argument(
+        "--cleanup-outcome",
+        choices=CLEANUP_OUTCOMES,
+        default="",
+        help="What an ai-slop-cleaner pass concluded; a goal carrying AC-SLOP reads this field, never the summaries.",
+    )
     runtime_record.set_defaults(func=cmd_runtime_record)
 
     runtime_delegate = runtime_sub.add_parser("delegate")

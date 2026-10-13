@@ -26,6 +26,7 @@ GOAL_JOURNEY_GATE_KINDS = (
     "acceptance_criterion",
     "active_blocker",
     "linked_runtime_run",
+    "slop_cleanup_record",
     "goal_status",
 )
 
@@ -449,6 +450,17 @@ def _required_gates(
         }
         for check in gate["linked_runtime_checks"]
     )
+    cleanup = gate.get("slop_cleanup_check")
+    if isinstance(cleanup, dict):
+        gates.append(
+            {
+                "gate_id": f"slop_cleanup:{cleanup['criterion_id']}",
+                "kind": "slop_cleanup_record",
+                "summary": cleanup["summary"],
+                "evidence_accepted": bool(cleanup["satisfied"]),
+                "evidence_refs": [f"run:{cleanup['run_id']}"] if cleanup["run_id"] else [],
+            }
+        )
     status = str(goal["status"])
     if status in _GOAL_STATUS_GATE_STATUSES:
         gates.append(

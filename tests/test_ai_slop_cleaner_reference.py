@@ -146,8 +146,9 @@ class LoopCleanerPassTests(unittest.TestCase):
                 self.assertIn("`changed_files`", line)
                 self.assertIn("never wider", line)
                 self.assertIn("must not regress", line)
-                self.assertIn("reported as skipped, and a reverted pass as reverted, never as passed", line)
-                self.assertIn("`omh runtime record`", line)
+                self.assertIn("is an explicit `skipped`, and a reverted pass is `reverted`, never `passed`", line)
+                self.assertIn("`omh runtime record --skill ai-slop-cleaner", line)
+                self.assertIn("--cleanup-outcome passed|skipped|reverted", line)
 
 
 if __name__ == "__main__":

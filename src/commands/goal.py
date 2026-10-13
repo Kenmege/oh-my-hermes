@@ -5,6 +5,7 @@ import argparse
 from ..goal_ledger import (
     CHECKPOINT_STATUSES,
     GOAL_FAILURE_REASON_CODES,
+    SLOP_CLEANUP_OBLIGATIONS,
     build_goal_completion_gate,
     build_goal_continuation,
     build_goal_status_card,
@@ -17,6 +18,7 @@ from ..goal_ledger import (
     render_goal_status_text,
     record_goal_blocker,
     record_goal_checkpoint,
+    slop_cleanup_obligation_criterion,
 )
 from ..installer import OmhError
 from ..quality.working_tree_fingerprint import working_tree_content_fingerprint
@@ -32,11 +34,14 @@ from .common import _paths, _print_json, _wants_json, add_revision_guard_argumen
 
 def cmd_goal_create(args: argparse.Namespace) -> int:
     paths = _paths(args)
+    criteria: list = list(args.criterion or [])
+    if args.obligation:
+        criteria.append(slop_cleanup_obligation_criterion(args.obligation))
     try:
         goal = create_goal_ledger(
             paths,
             args.objective,
-            args.criterion or [],
+            criteria,
             source=args.source,
             goal_id=args.goal_id or None,
             objective_summary=args.summary or None,
@@ -285,6 +290,12 @@ def _add_goal_commands(sub) -> None:
     goal_create.add_argument("--criterion", action="append", required=True)
     goal_create.add_argument("--source", default="omh")
     goal_create.add_argument("--linked-runtime-run", action="append")
+    goal_create.add_argument(
+        "--obligation",
+        choices=SLOP_CLEANUP_OBLIGATIONS,
+        default="",
+        help="Arm a required obligation; slop-cleanup adds AC-SLOP, which an ai-slop-cleaner outcome record satisfies.",
+    )
     goal_create.set_defaults(func=cmd_goal_create)
 
     goal_checkpoint = goal_sub.add_parser("checkpoint")

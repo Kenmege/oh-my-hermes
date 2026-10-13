@@ -4,6 +4,45 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A code-changing goal cannot complete until an `ai-slop-cleaner` outcome
+  is recorded for it.** A goal can carry a new required acceptance criterion,
+  `AC-SLOP`, and `omh goal complete` refuses such a goal (exit 1) until a done
+  checkpoint cites a cleaner run record as `run:<run_id>`. The completion
+  gate reads that one record and accepts it only when it names
+  `ai-slop-cleaner` as its skill, names this goal, has status `completed`,
+  carries a typed `cleanup_outcome`, and has evidence the
+  completion-integrity classifier accepts (an empty or `TBD` summary is
+  refused). `passed`, `skipped`, and `reverted` each satisfy the criterion
+  and are reported as recorded; a missing record, a record for another goal,
+  a started, prepared, failed, blocked, cancelled, or unknown-status run, or
+  a summary that only says "skipped" without the typed field does not. One
+  accepted record satisfies the criterion for the whole goal; later loop
+  cycles do not need a new one. The refused payload's
+  `completion_gate.slop_cleanup_check` names the record and checkpoint
+  commands, and `omh goal journey` lists the record as a
+  `slop_cleanup_record` gate. `omh runtime record` gains `--goal <goal_id>`
+  (an existing ledger) and `--cleanup-outcome passed|skipped|reverted`,
+  stored as fields beside the run's status; run statuses are unchanged.
+  The criterion is armed two ways and no others. Code arms it on a goal
+  linked to a loop whose authority envelope allows `repo_edit`: at
+  `omh loop start`, or on an `omh loop permit` that requests `repo_edit`.
+  Arming is idempotent, so re-requesting `repo_edit` also repairs an arm
+  that failed after the loop was written. A goal already terminal refuses
+  that start or grant, and a coding-delegation merge goal is never armed.
+  Declaration arms it with
+  `omh goal create --obligation slop-cleanup`, which the ultrawork skill now
+  names for a code-changing goal. The remaining gap: an ultrawork goal
+  created without that flag, and a loop without `repo_edit` or without a
+  linked goal, carry no obligation and are not gated. The `loop` and
+  `ai-slop-cleaner` skill text now name the exact record and checkpoint
+  commands, and loop's cleaner pass is no longer described as optional: when
+  the linked goal carries `AC-SLOP`, a skip is recorded as an explicit
+  `skipped` from a completed run. Arming appends a criterion to an
+  existing ledger, so a goal that was ready before a `repo_edit` loop bound
+  it is not ready afterwards. The citing checkpoint is an ordinary goal
+  checkpoint, so like any other it counts as progress for the loop stop
+  ladder's no-progress rung; the stop ladder itself is unchanged.
+
 - **Recall ranks by query-term coverage, capture hints at similar records,
   and a declared subject keeps only the newest value.** Relevance used to count shared
   tokens, so every shared word weighed alike. A message sharing "the plan

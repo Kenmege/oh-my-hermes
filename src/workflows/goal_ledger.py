@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any, Final, Iterable
 
 from ..hashutil import sha256_text
-from ..local_store import ensure_dir, read_json_object, utc_now
+from ..local_store import ensure_dir, read_json_object, read_json_object_result, utc_now
+from ..plugin_bundle.omh.run_records import RUN_FILE
 from ..quality.completion_integrity import classify_completion_integrity
 from ..system.record_revision import (
     DuplicateMutationReplay,
@@ -18,6 +19,7 @@ from ..system.record_revision import (
 )
 from ..paths import OmhPaths
 from ..runtime.artifacts import summarize_delegated_coding_status
+from ..runtime.records import CLEANUP_OUTCOMES
 from ..wrapper.message_gate import (
     RENDER_PROFILE_LIMITED_MARKDOWN,
     build_message_gate,
@@ -82,6 +84,53 @@ def merge_obligation_criterion(obligation: str, ref: str = "") -> dict[str, Any]
         "summary": (
             f"{obligation}{scope} observed via an external-effect {obligation} receipt "
             "(a delegated subtask completing is not this obligation being met)"
+        ),
+        "required": True,
+    }
+
+
+# The cleanup obligation a code-changing goal carries. Two callers arm it: code,
+# when a loop linked to the goal is allowed `repo_edit` at start or by a permit
+# that requests it (`arm_slop_cleanup_obligation`, called from `goal_loop`), and
+# a declaration, `omh goal create --obligation slop-cleanup`, for an ultrawork
+# goal that has no loop. A goal neither caller armed carries no obligation and
+# is not gated. One accepted cleaner record satisfies it for the whole goal.
+SLOP_CLEANUP_OBLIGATIONS = ("slop-cleanup",)
+SLOP_CLEANUP_CRITERION_ID = "AC-SLOP"
+SLOP_CLEANUP_SKILL = "ai-slop-cleaner"
+SLOP_CLEANUP_RUN_REF_PREFIX = "run:"
+GOAL_SLOP_CLEANUP_CHECK_SCHEMA = "goal_slop_cleanup_check/v1"
+# Why one cited run record does not satisfy AC-SLOP. The first that applies is
+# reported; every one reads a typed field, never the record's summary wording.
+SLOP_CLEANUP_REFUSAL_REASONS = (
+    "no_cleanup_record_cited",
+    "run_record_not_found",
+    "run_record_unreadable",
+    "skill_mismatch",
+    "goal_mismatch",
+    "run_status_not_completed",
+    "cleanup_outcome_missing",
+    "evidence_empty",
+    "evidence_refused",
+)
+
+
+def slop_cleanup_obligation_criterion(obligation: str = "slop-cleanup") -> dict[str, Any]:
+    """A REQUIRED acceptance criterion: an ai-slop-cleaner outcome recorded for this goal.
+
+    Like `merge_obligation_criterion` it carries no evidence, so the goal stays
+    not-ready until a done checkpoint cites the cleaner's run record as
+    `run:<run_id>`. The completion gate then reads that record's typed
+    `cleanup_outcome` and `goal_id`; `skipped` and `reverted` satisfy the
+    obligation and are reported as themselves, and a missing record does not.
+    """
+    if obligation not in SLOP_CLEANUP_OBLIGATIONS:
+        raise ValueError(f"goal obligation must be one of {SLOP_CLEANUP_OBLIGATIONS}")
+    return {
+        "id": SLOP_CLEANUP_CRITERION_ID,
+        "summary": (
+            "ai-slop-cleaner outcome (passed, skipped, or reverted) recorded for this goal and cited as "
+            "run:<run_id>; an explicit skip satisfies it, a missing record does not"
         ),
         "required": True,
     }
@@ -635,6 +684,60 @@ def record_goal_quality_gate(
     return goal
 
 
+def slop_cleanup_arm_needed(goal: dict[str, Any]) -> bool:
+    """True when arming the cleanup obligation must append AC-SLOP to this goal.
+
+    False for a coding-delegation goal (its only obligation is the observed
+    merge/deploy) and for a goal that already carries AC-SLOP, which is what
+    makes arming idempotent. Checked in that order, before the terminal check,
+    so re-arming a goal that already closed with the obligation is a no-op
+    rather than a refusal. A terminal goal that lacks it raises: nothing can
+    satisfy a criterion added after the goal closed.
+    """
+    if str(goal.get("source", "")) == "coding_delegation":
+        return False
+    criteria = goal.get("acceptance_criteria")
+    if isinstance(criteria, list) and any(
+        isinstance(item, dict) and str(item.get("id", "")) == SLOP_CLEANUP_CRITERION_ID for item in criteria
+    ):
+        return False
+    require_not_terminal(goal, "status", GOAL_TERMINAL_STATUSES, "arm the slop-cleanup obligation on this goal")
+    return True
+
+
+def arm_slop_cleanup_obligation(
+    paths: OmhPaths,
+    goal_id: str,
+    *,
+    mutation_id: str | None = None,
+) -> dict[str, Any]:
+    """Append the required AC-SLOP criterion to a goal ledger once.
+
+    The decision runs inside the locked transaction, so two loops binding the
+    same goal at once still append one criterion. Returns whether the goal now
+    carries the obligation and whether this call is the one that added it.
+    """
+    added = {"value": False}
+
+    def mutate(goal: dict[str, Any]) -> dict[str, Any] | None:
+        if not slop_cleanup_arm_needed(goal):
+            return None
+        goal["acceptance_criteria"].extend(_criteria_objects([slop_cleanup_obligation_criterion()]))
+        added["value"] = True
+        return goal
+
+    goal, replayed = _guarded_goal_update(
+        paths,
+        goal_id,
+        mutate,
+        operation="arm_slop_cleanup_obligation",
+        mutation_id=mutation_id,
+        mutation_digest=_mutation_digest("arm_slop_cleanup_obligation"),
+    )
+    armed = any(str(item.get("id", "")) == SLOP_CLEANUP_CRITERION_ID for item in goal["acceptance_criteria"])
+    return {"goal_id": goal_id, "armed": armed, "added": added["value"], "replayed": replayed}
+
+
 def cancel_goal_ledger(
     paths: OmhPaths,
     goal_id: str,
@@ -794,12 +897,15 @@ def build_goal_completion_gate(paths: OmhPaths, goal_id: str) -> dict[str, Any]:
     if goal["status"] == "cancelled":
         status_gaps.append("goal status is cancelled")
     integrity_refusals = _completion_integrity_refusals(goal)
+    slop_cleanup_check = _slop_cleanup_check(paths, goal)
+    slop_cleanup_gap = slop_cleanup_check is not None and not slop_cleanup_check["satisfied"]
     ready = (
         not missing_required
         and not active_blockers
         and not runtime_gaps
         and not status_gaps
         and not integrity_refusals
+        and not slop_cleanup_gap
     )
     next_action = _completion_next_action(
         missing_required=missing_required,
@@ -807,6 +913,7 @@ def build_goal_completion_gate(paths: OmhPaths, goal_id: str) -> dict[str, Any]:
         runtime_gaps=runtime_gaps,
         status_gaps=status_gaps,
         integrity_refusals=integrity_refusals,
+        slop_cleanup_gap=slop_cleanup_gap,
     )
     if goal["status"] in ("cancelled", "failed"):
         # Both are terminal: recording blockers or checkpoints on either is
@@ -815,7 +922,7 @@ def build_goal_completion_gate(paths: OmhPaths, goal_id: str) -> dict[str, Any]:
         # `_completion_next_action`'s `status_gaps` branch and suggested
         # `record_blocker`, which the goal would then refuse.
         next_action = "show_status"
-    return {
+    gate = {
         "schema_version": GOAL_COMPLETION_GATE_SCHEMA,
         "goal_id": goal_id,
         "goal_status": goal["status"],
@@ -826,6 +933,7 @@ def build_goal_completion_gate(paths: OmhPaths, goal_id: str) -> dict[str, Any]:
             runtime_gaps=runtime_gaps,
             status_gaps=status_gaps,
             integrity_refusals=integrity_refusals,
+            slop_cleanup_gap=slop_cleanup_gap,
         ),
         "missing_required_criteria": missing_required,
         "active_blockers": active_blockers,
@@ -833,6 +941,122 @@ def build_goal_completion_gate(paths: OmhPaths, goal_id: str) -> dict[str, Any]:
         "integrity_refusals": integrity_refusals,
         "next_action": next_action,
     }
+    # Additive, and only on a goal that carries AC-SLOP: a goal without the
+    # obligation keeps the payload it always had.
+    if slop_cleanup_check is not None:
+        gate["slop_cleanup_check"] = slop_cleanup_check
+    return gate
+
+
+def _slop_cleanup_check(paths: OmhPaths, goal: dict[str, Any]) -> dict[str, Any] | None:
+    """Whether a cited ai-slop-cleaner run record satisfies this goal's AC-SLOP.
+
+    None when the goal carries no AC-SLOP. Otherwise only run records cited as
+    `run:<run_id>` by a done checkpoint that names AC-SLOP are read -- one file
+    per citation, never a scan of every run -- in checkpoint order, so the
+    reported outcome is the latest accepted record's. A criterion marked
+    satisfied with any other evidence ref still leaves this check unsatisfied.
+    """
+    if not any(criterion["id"] == SLOP_CLEANUP_CRITERION_ID for criterion in goal["acceptance_criteria"]):
+        return None
+    goal_id = str(goal["goal_id"])
+    run_ids = list(
+        dict.fromkeys(
+            str(ref)[len(SLOP_CLEANUP_RUN_REF_PREFIX):].strip()
+            for checkpoint in goal["checkpoints"]
+            if checkpoint.get("status") == "done" and SLOP_CLEANUP_CRITERION_ID in checkpoint.get("criteria_refs", [])
+            for ref in checkpoint.get("evidence_refs", [])
+            if str(ref).startswith(SLOP_CLEANUP_RUN_REF_PREFIX)
+        )
+    )
+    records = [_slop_cleanup_record_check(paths, goal_id, run_id) for run_id in run_ids]
+    accepted = [record for record in records if not record["refusal"]]
+    latest = accepted[-1] if accepted else None
+    record_command = (
+        f"omh runtime record --skill {SLOP_CLEANUP_SKILL} --harness coding-handling --status completed "
+        f"--goal {goal_id} --cleanup-outcome passed|skipped|reverted --outputs-summary \"<result>\""
+    )
+    cite_command = (
+        f"omh goal checkpoint --goal {goal_id} --summary \"<cleanup outcome>\" "
+        f"--criterion {SLOP_CLEANUP_CRITERION_ID} --evidence-ref {SLOP_CLEANUP_RUN_REF_PREFIX}<run_id>"
+    )
+    if latest is not None:
+        summary = (
+            f"{SLOP_CLEANUP_CRITERION_ID} is met by ai-slop-cleaner run {latest['run_id']} "
+            f"with cleanup outcome {latest['cleanup_outcome']}."
+        )
+        next_step = ""
+    else:
+        reasons = ", ".join(sorted({record["refusal"] for record in records})) or "no_cleanup_record_cited"
+        summary = (
+            f"{SLOP_CLEANUP_CRITERION_ID} has no accepted ai-slop-cleaner outcome record for this goal ({reasons})."
+        )
+        next_step = (
+            "Run ai-slop-cleaner on this goal's changed files, or decide to skip it, and record the outcome "
+            f"with `{record_command}`; then cite that run with `{cite_command}`."
+        )
+    return {
+        "schema_version": GOAL_SLOP_CLEANUP_CHECK_SCHEMA,
+        "criterion_id": SLOP_CLEANUP_CRITERION_ID,
+        "satisfied": latest is not None,
+        "cleanup_outcome": latest["cleanup_outcome"] if latest else "",
+        "run_id": latest["run_id"] if latest else "",
+        "records": records,
+        "summary": summary,
+        "next_step": next_step,
+        "record_command": record_command,
+        "cite_command": cite_command,
+    }
+
+
+def _slop_cleanup_record_check(paths: OmhPaths, goal_id: str, run_id: str) -> dict[str, str]:
+    """One cited run record against the typed conditions AC-SLOP needs.
+
+    The run must be `completed`: a started, prepared, failed, blocked, or
+    cancelled run did not conclude anything, and a decided skip is recorded as
+    a completed run whose outcome is `skipped`, never as a failed one.
+    """
+    result = {"run_id": run_id, "cleanup_outcome": "", "refusal": ""}
+    if not _is_storage_id(run_id):
+        result["refusal"] = "run_record_not_found"
+        return result
+    run, error = read_json_object_result(paths.runtime_runs_dir / run_id / RUN_FILE)
+    if error is not None:
+        result["refusal"] = "run_record_unreadable"
+    elif run is None:
+        result["refusal"] = "run_record_not_found"
+    elif run.get("skill") != SLOP_CLEANUP_SKILL:
+        result["refusal"] = "skill_mismatch"
+    elif run.get("goal_id") != goal_id:
+        result["refusal"] = "goal_mismatch"
+    elif run.get("status") != "completed":
+        result["refusal"] = "run_status_not_completed"
+    elif run.get("cleanup_outcome") not in CLEANUP_OUTCOMES:
+        result["refusal"] = "cleanup_outcome_missing"
+    else:
+        result["refusal"] = _slop_cleanup_evidence_refusal(run)
+        result["cleanup_outcome"] = str(run["cleanup_outcome"]) if not result["refusal"] else ""
+    return result
+
+
+def _slop_cleanup_evidence_refusal(run: dict[str, Any]) -> str:
+    """'' when the record's summaries are evidence; a refusal code otherwise.
+
+    A record with no summary at all is empty; one whose summaries are a
+    placeholder ("TBD") or an assertion about the work rather than what was
+    done is refused by the same completion-integrity classifier the goal's own
+    evidence passes through.
+    """
+    evidence = [
+        str(run.get(key, ""))
+        for key in ("outputs_summary", "verification_summary")
+        if isinstance(run.get(key), str) and run[key].strip()
+    ]
+    if not evidence:
+        return "evidence_empty"
+    if classify_completion_integrity(evidence=evidence)["refused"]:
+        return "evidence_refused"
+    return ""
 
 
 def _completion_integrity_refusals(goal: dict[str, Any]) -> list[dict[str, str]]:
@@ -1136,6 +1360,7 @@ def _completion_gate_summary(
     runtime_gaps: list[dict[str, Any]],
     status_gaps: list[str],
     integrity_refusals: list[dict[str, str]],
+    slop_cleanup_gap: bool = False,
 ) -> str:
     if (
         not missing_required
@@ -1143,6 +1368,7 @@ def _completion_gate_summary(
         and not runtime_gaps
         and not status_gaps
         and not integrity_refusals
+        and not slop_cleanup_gap
     ):
         return "Goal is ready for completion."
     parts = []
@@ -1155,6 +1381,11 @@ def _completion_gate_summary(
     if integrity_refusals:
         categories = ", ".join(sorted({item["category"] for item in integrity_refusals}))
         parts.append(f"{len(integrity_refusals)} completion-integrity refusals remain ({categories})")
+    if slop_cleanup_gap:
+        parts.append(
+            f"{SLOP_CLEANUP_CRITERION_ID} needs an ai-slop-cleaner outcome record for this goal "
+            "(run the cleaner, or record an explicit skipped outcome)"
+        )
     if status_gaps:
         parts.append("; ".join(status_gaps))
     return "; ".join(parts) + "."
@@ -1167,6 +1398,7 @@ def _completion_next_action(
     runtime_gaps: list[dict[str, Any]],
     status_gaps: list[str],
     integrity_refusals: list[dict[str, str]],
+    slop_cleanup_gap: bool = False,
 ) -> str:
     if active_blockers or status_gaps:
         return "record_blocker"
@@ -1175,6 +1407,10 @@ def _completion_next_action(
     if integrity_refusals:
         # The claim itself is the gap: a new checkpoint carrying a real command
         # and a summary that does not outrun it is what clears this.
+        return "record_checkpoint"
+    if slop_cleanup_gap:
+        # A checkpoint citing an accepted cleaner run record clears this; the
+        # gate's `slop_cleanup_check.next_step` names both commands.
         return "record_checkpoint"
     if runtime_gaps:
         return "show_status"
@@ -1228,6 +1464,8 @@ def _goal_safe_copy(goal: dict[str, Any], gate: dict[str, Any], progress: dict[s
     elif gate["missing_required_criteria"]:
         ids = ", ".join(item["id"] for item in gate["missing_required_criteria"])
         next_step = f"Record a checkpoint for the missing acceptance criteria: {ids}."
+    elif isinstance(gate.get("slop_cleanup_check"), dict) and not gate["slop_cleanup_check"]["satisfied"]:
+        next_step = gate["slop_cleanup_check"]["next_step"]
     elif gate["linked_runtime_checks"]:
         next_step = "Observe the explicitly linked runtime run before claiming completion."
     else:
