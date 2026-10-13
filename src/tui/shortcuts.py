@@ -53,7 +53,7 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("↑ / ↓, Enter, Esc", "In the agent list, move, open the highlighted agent's log (on main, only leave), "
                           "or go back; typing leaves it too"),
     ("Click", "On an agent on the mode row's strip while a turn runs, or on a row of the agent list, "
-              "opens that agent's log"),
+              "opens that agent's log (on main, only leaves the list)"),
     ("← / →, q or Esc", "In an agent's log, show the agent before or after, or go back; the pager's keys scroll it"),
     ("j / k, Space / b, g / G, q or Esc", "In a pager (/history, /logs, long command output, an agent's log, "
                                           "this list), move a line, a page, or to either end, or leave"),

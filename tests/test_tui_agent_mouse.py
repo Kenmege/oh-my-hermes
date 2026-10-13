@@ -15,6 +15,7 @@ and from there the row is known. `UnknownRowTests` covers the launch itself.
 
 from __future__ import annotations
 
+from pathlib import Path
 import unittest
 
 from _tui_gateway_replay import Scenario
@@ -23,6 +24,7 @@ from test_tui_agent_strip import STARTS, agent_app, relay
 from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, FakePoller, ScriptedTerminal, Step, status_index
 from test_tui_modes import SID, RecordingClient, drawn, make_app, show_mode, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND
+from omh.tui import keys as keys_module
 from omh.tui import terminal as terminal_module
 from omh.tui.app import (
     AGENT_LIST_HINT,
@@ -817,6 +819,35 @@ class ExitDrainTests(unittest.TestCase):
             app.run()
         self.assertEqual(len(self.reads(terminal)), 3)
         self.assertFalse(terminal.mouse_reporting)
+
+
+class DocumentedMouseTests(unittest.TestCase):
+    """What INSTALLATION and the AGENTS.md boundary say about the mouse, held to the code they describe."""
+
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def prose(self, name: str) -> str:
+        return " ".join((self.ROOT / name).read_text(encoding="utf-8").split())
+
+    def test_the_escape_time_the_docs_name_is_the_decoders(self) -> None:
+        seconds = keys_module.REPORTING_ESCAPE_SECONDS
+        self.assertIn(f"Esc acts after {seconds:g} s", self.prose("docs/INSTALLATION.md"))
+        self.assertIn(f"more than {round(seconds * 1000)} ms before the rest is read as Esc", self.prose("AGENTS.md"))
+
+    def test_the_way_to_select_anyway_is_named_for_each_terminal_no_more_surely_than_it_is_known(self) -> None:
+        text = self.prose("docs/INSTALLATION.md")
+        self.assertIn(
+            "hold Fn while dragging in Terminal.app (or turn off View → Allow Mouse Reporting), Option in iTerm2, "
+            "Shift in most other terminals",
+            text,
+        )
+        self.assertNotIn("Option-drag in Terminal.app", text)
+
+    def test_the_boundary_says_what_each_click_does(self) -> None:
+        text = self.prose("AGENTS.md")
+        self.assertIn("No report ever types. A plain left click on an agent opens its log, one on the list's `main` row "
+                      "leaves the list, and every other report does nothing", text)
+        self.assertNotIn("a report can open an agent's log and nothing else", text)
 
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
