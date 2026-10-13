@@ -68,6 +68,8 @@ class TerminalSupportedTests(unittest.TestCase):
     @unittest.skipIf(terminal_module.termios is None, "no termios on this platform")
     def test_an_empty_opt_out_does_not_opt_out(self) -> None:
         self.assertTrue(terminal_supported(_Stream(), _Stream(), {"OMH_NO_TUI": ""}))
+        # Only "1" turns it off, as for the theme and setup pickers.
+        self.assertTrue(terminal_supported(_Stream(), _Stream(), {"OMH_NO_TUI": "0"}))
 
     def test_each_reason_to_fall_back(self) -> None:
         cases = {

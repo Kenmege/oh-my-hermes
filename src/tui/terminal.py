@@ -59,7 +59,7 @@ def terminal_supported(stdin: _TtyProbe | None, stdout: _TtyProbe | None, enviro
     """True only when the OMH TUI can own this terminal; False means take the fallback."""
     if termios is None:
         return False
-    if environ.get("TERM", "") == "dumb" or environ.get("OMH_NO_TUI", ""):
+    if environ.get("TERM", "") == "dumb" or environ.get("OMH_NO_TUI", "") == "1":
         return False
     for stream in (stdin, stdout):
         if stream is None:

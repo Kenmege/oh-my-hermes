@@ -858,6 +858,21 @@ class SlashCommandTests(AppTestCase):
         (dispatch,) = run.calls("command.dispatch")
         self.assertEqual(dispatch["params"], {"name": "xyz", "arg": "", "session_id": LIVE_ID})
 
+    def test_a_drift_reply_mid_session_ends_it_with_the_line_that_reopens_it_in_hermes(self) -> None:
+        # 4000 (a key this Hermes does not know) or -32601 (a method it does not have) during a
+        # session means the gateway no longer speaks the declared contract: leave, name hermes.
+        for code, message in ((4000, "extra fields not permitted"), (-32601, "unknown method: slash.exec")):
+            with self.subTest(code=code):
+                answers = (*startup_answers(), ("slash.exec", {"error": {"code": code, "message": message}}))
+                run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+                run.terminal.script(self.submit(run, "/xyz"))
+                self.run_main(run)
+                self.assertEqual(run.terminal.stalled, "")
+                self.assertEqual(run.code, 1)
+                self.assertIn(f"hermes --tui --resume {STORED_ID}", run.stderr.getvalue())
+                self.assertEqual(run.calls("command.dispatch"), [])
+                self.assertEqual((run.terminal.entered, run.terminal.exited), (1, 1))
+
     def test_tab_completes_a_local_command_and_history_pages_on_the_alternate_screen(self) -> None:
         run = self.prepare(
             Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers())

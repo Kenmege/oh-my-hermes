@@ -224,7 +224,7 @@ def widget_render_blockers(preflight: dict[str, Any]) -> list[str]:
         )
     elif not interface.get("explicit") and interface.get("settable"):
         blockers.append(
-            "display.interface is unset, so bare `omh` and `hermes` open the classic REPL where the HUD cannot render; "
+            "display.interface is unset, so bare `hermes` opens the classic REPL where the HUD widget cannot render; "
             "run `omh setup` or interactive `omh update` and accept the branded TUI, or use `hermes --tui` for one session."
         )
     if not widget.get("installed"):
