@@ -351,7 +351,10 @@ class TierResolutionTests(unittest.TestCase):
         self.assertIn("hub install", str(report["next_action"]))
         # Scoped: before 0.21.6 Hermes refused the duplicate instead of hiding one copy.
         self.assertIn("on Hermes 0.21.6 and later it outranks OMH's copy", str(report["next_action"]))
-        self.assertIn("older hosts refuse a cross-tier duplicate as ambiguous", str(report["claim_boundary"]))
+        self.assertIn(
+            "older hosts list only the higher-tier copy and refuse to load the name as ambiguous",
+            str(report["claim_boundary"]),
+        )
 
     def test_a_skill_declaring_the_omh_label_in_its_frontmatter_shadows_it(self) -> None:
         # Hermes resolves a bare name by directory name and by declared name.

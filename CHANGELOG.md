@@ -22,13 +22,19 @@ All notable changes will be documented here.
   curator ledger (`<hermes_home>/skills/.curator_ledger.jsonl`) accounts for
   what is on disk: a changed SKILL.md only when the newest ledger write to it
   left its current content, an unchanged one when a ledger write to another
-  file of the skill still matches; a row's unchanged files are not counted.
-  A kept skill is carried into a new generation on a staged update (when the
-  install's skill profile carries it) and listed with the ledger's actor,
-  action, and time. `--force` replaces the whole skill directory, and the
-  summary says whether the ledger still holds a copy of the replaced files.
+  file of the skill still matches or a file OMH renders for it that Hermes
+  removed is still absent; a row's unchanged files are not counted. Only the
+  directory OMH renders for the skill counts: a copy of a managed skill
+  elsewhere in the skills directory, or a recorded path that leaves it, is
+  never kept, carried, or cleared. A kept skill is carried into a new
+  generation on a staged update (when the install's skill profile carries
+  it) and listed with the ledger's actor, action, and time. `--force` clears
+  the render directory of every skill it renders again that holds a Hermes
+  write, and the summary says whether the ledger still holds a copy of the
+  replaced files.
   A change the ledger does not account for still refuses the install as
-  before; a managed skill whose SKILL.md is gone is rendered again and
+  before; a managed skill whose SKILL.md is gone (in the pack the manifest
+  describes, so a staged update reports it too) is rendered again and
   reported instead of refusing, and `omh doctor` says so as a
   `missing_managed_skills` warning (or that the recorded profile leaves it
   `not_restored`) instead of a blocking local modification with `--force`

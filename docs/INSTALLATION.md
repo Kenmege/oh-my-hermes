@@ -314,26 +314,30 @@ machine state. One deliberate opt-out is honored: after
 update never re-registers a machine whose owner removed the registration on
 purpose.
 
-Managed skills follow Hermes' own rule for a skill Hermes edited. Hermes
-records every skill edit in its curator ledger
+`omh update` keeps a Hermes edit, under a narrower rule than `hermes update`
+applies to bundled skills. Hermes records every skill edit in its curator ledger
 (`<hermes_home>/skills/.curator_ledger.jsonl`), including the ones its
 background self-improvement review makes unprompted. `omh update` keeps a
 managed skill as it is when the ledger accounts for what is on disk: a changed
 `SKILL.md` counts only when the newest ledger write to that file left exactly
 its current content, and an unchanged `SKILL.md` counts when a ledger write to
-one of the skill's other files still matches. A kept skill is carried into the
-new install and named in the summary, and it receives no OMH update until a run
-with `--force` replaces the whole skill directory; the summary then says
-whether Hermes' ledger still holds a copy of the replaced files. A change the
-ledger does not account for, including a hand edit to `SKILL.md` beside a
-ledgered change to another file, still stops the update until you resolve it
-or pass `--force`. A managed skill whose `SKILL.md` is gone is rendered again
-and named in the summary, unless the recorded skill profile leaves it out;
-`omh doctor` reports either case under `missing_managed_skills`, with no
-`--force` advice. The OMH plugin refuses Hermes' edits and deletes of
-managed skills in the first place and points the model at a separately named
-skill or the workflow-learning lane instead, and `omh doctor` reports what the
-ledger records under OMH-managed skills under `hermes_skill_edits`.
+another file of the skill still matches, or a file OMH renders for it that
+Hermes removed is still absent. Only the directory OMH renders for the skill
+counts; a copy of a managed skill elsewhere in the skills directory is never
+kept, carried, or cleared. A kept skill is carried into the new install (when
+the install's skill profile includes it) and named in the summary, and it
+receives no OMH update until a run with `--force` clears that directory and
+renders it again; the summary then says whether Hermes' ledger still holds a
+copy of the replaced files. A change the ledger does not account for,
+including a hand edit to `SKILL.md` beside a ledgered change to another file,
+still stops the update until you resolve it or pass `--force`. A managed skill
+whose `SKILL.md` is gone is rendered again and named in the summary, unless
+the recorded skill profile leaves it out; `omh doctor` reports either case
+under `missing_managed_skills`, with no `--force` advice. The OMH plugin
+refuses Hermes' edits and deletes of managed skills in the first place and
+points the model at a separately named skill or the workflow-learning lane
+instead, and `omh doctor` reports what the ledger records under OMH-managed
+skills under `hermes_skill_edits`.
 
 Plugin reinstalls protect local additions as well as edits to managed files.
 If `$HERMES_HOME/plugins/omh/` contains entries absent from its installed OMH

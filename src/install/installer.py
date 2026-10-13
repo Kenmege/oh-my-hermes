@@ -4,7 +4,7 @@ from collections.abc import Iterable
 import os
 import shutil
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from ..core.errors import OmhError
 from ..converter import convert_from_dir, convert_references_from_dir
@@ -151,7 +151,14 @@ HERMES_EDIT_RECORD_KEY = "hermes_edit"
 HERMES_EDIT_EVIDENCE_KEYS = ("actor", "ts", "action", "ledger")
 
 
-def hermes_edited_skills(manifest: dict | None, paths: OmhPaths, *, overwritten: bool = False) -> list[dict]:
+def hermes_edited_skills(
+    manifest: dict | None,
+    paths: OmhPaths,
+    *,
+    overwritten: bool = False,
+    writes: list[LedgerWrite] | None = None,
+    reference_templates: list[SkillReferenceTemplate] | None = None,
+) -> list[dict]:
     """Managed skills whose files on disk are what a Hermes skill edit left there.
 
     Hermes may edit a skill in `skills.external_dirs` in place -- its
@@ -174,7 +181,12 @@ def hermes_edited_skills(manifest: dict | None, paths: OmhPaths, *, overwritten:
         (refuse the install until `--force`).
       - SKILL.md matches its record: kept when a ledger write to any file of
         the skill (a supporting file, which the manifest never hashed) left
-        what that file holds now, or removed a file that is still absent.
+        what that file holds now, or removed a file OMH renders for the skill
+        that is still absent. An absent file OMH never renders is not counted:
+        a `write_file` undone by a `remove_file` leaves exactly OMH's render.
+    Only a record at the directory an install renders for its name counts
+    (`render_record_dir`): the manifest also records a person's copy of a
+    managed skill elsewhere in the pack under the same name.
     A row counts only the files whose hash it changed, so a row that lists a
     whole skill (Hermes before 0.21.4 did) does not make OMH's own files read
     as edits, and a row whose result was since replaced, by `--force` or a
@@ -196,22 +208,22 @@ def hermes_edited_skills(manifest: dict | None, paths: OmhPaths, *, overwritten:
     """
     if not manifest:
         return []
-    recorded = manifest.get("skills_dir")
-    pack = Path(str(recorded)) if recorded else paths.skills_dir
-    all_writes: list[LedgerWrite] | None = None
-    pack_writes: list[LedgerWrite] = []
+    pack = manifest_pack(manifest, paths)
+    if writes is None:
+        writes = read_ledger_writes(paths.hermes_home, within=[pack])[0]
+    pack_writes = writes_under(writes, pack)
+    rendered = rendered_skill_files(reference_templates)
+    stored_writes: list[LedgerWrite] | None = None
     found: list[dict] = []
     for record in manifest.get("skills", []):
         if not isinstance(record, dict):
             continue
         name, rel = str(record.get("name", "")), str(record.get("path", ""))
-        skill_file = pack / rel
-        if not name or not rel or not skill_file.is_file():
+        if not name or render_record_dir(name, rel) is None:
             continue
-        if all_writes is None:
-            # One ledger read per install, cut to this pack once.
-            all_writes = read_ledger_writes(paths.hermes_home)[0]
-            pack_writes = writes_under(all_writes, pack)
+        skill_file = pack / rel
+        if not skill_file.is_file():
+            continue
         skill_file_changed = sha256_file(skill_file) != record.get("sha256")
         evidence = record.get(HERMES_EDIT_RECORD_KEY)
         if not (isinstance(evidence, dict) and not skill_file_changed):
@@ -220,21 +232,115 @@ def hermes_edited_skills(manifest: dict | None, paths: OmhPaths, *, overwritten:
                 if write is None or not write_still_on_disk(write):
                     continue
             else:
-                write = hermes_edit_still_on_disk(skill_file.parent, pack_writes)
+                write = hermes_edit_still_on_disk(skill_file.parent, pack_writes, rendered.get(name, _SKILL_FILE_ONLY))
                 if write is None:
                     continue
-            evidence = {"actor": write.actor, "ts": write.ts, "action": write.action, "ledger": write.ledger}
-        item = {
-            "name": name,
-            "path": rel,
-            "skill_dir": str(skill_file.parent),
-            "disposition": "replaced" if overwritten else "kept",
-            **{key: str(evidence.get(key, "")) for key in HERMES_EDIT_EVIDENCE_KEYS},
-        }
-        if overwritten:
-            item["ledger_copy"] = _ledger_copies(skill_file.parent, all_writes)
-        found.append(item)
+            evidence = _write_evidence(write)
+        if overwritten and stored_writes is None:
+            # By content across every generation, so read without the pack cut.
+            stored_writes = read_ledger_writes(paths.hermes_home)[0]
+        found.append(_hermes_edit_item(name, rel, skill_file.parent, evidence, overwritten, stored_writes))
     return found
+
+
+_SKILL_FILE_ONLY: frozenset[str] = frozenset({"SKILL.md"})
+
+
+def manifest_pack(manifest: dict, paths: OmhPaths) -> Path:
+    """The pack directory a manifest describes; one without a recorded directory predates generations."""
+    recorded = manifest.get("skills_dir")
+    return Path(str(recorded)) if recorded else paths.skills_dir
+
+
+def render_record_dir(name: str, rel: str) -> Path | None:
+    """The record's skill directory when it is the one an install renders for `name`, else None.
+
+    The manifest records every SKILL.md it finds under the pack, so a person's
+    copy of a managed skill (`my-backups/omh-routing/SKILL.md`) carries the
+    same canonical name as the skill itself. Nothing an install keeps, carries,
+    replaces, or restores may follow such a record, and a recorded path that is
+    absolute or climbs out with `..` is never followed at all.
+    """
+    path = PurePosixPath(rel)
+    if path.is_absolute() or ".." in path.parts or path.name != "SKILL.md":
+        return None
+    expected = PurePosixPath(skill_install_relative_dir(name).as_posix())
+    return Path(*expected.parts) if path.parent == expected else None
+
+
+def rendered_skill_files(reference_templates: list[SkillReferenceTemplate] | None = None) -> dict[str, frozenset[str]]:
+    """Skill name -> the skill-relative files an install renders for it: SKILL.md and its references."""
+    templates = builtin_skill_reference_templates() if reference_templates is None else reference_templates
+    rendered: dict[str, set[str]] = {}
+    for template in templates:
+        rendered.setdefault(template.skill_name, {"SKILL.md"}).add(PurePosixPath(str(template.relative_path)).as_posix())
+    return {name: frozenset(files) for name, files in rendered.items()}
+
+
+def _write_evidence(write: LedgerWrite) -> dict[str, str]:
+    return {"actor": write.actor, "ts": write.ts, "action": write.action, "ledger": write.ledger}
+
+
+def _hermes_edit_item(
+    name: str,
+    rel: str,
+    skill_dir: Path,
+    evidence: dict,
+    overwritten: bool,
+    stored_writes: list[LedgerWrite] | None,
+) -> dict:
+    item = {
+        "name": name,
+        "path": rel,
+        "skill_dir": str(skill_dir),
+        "disposition": "replaced" if overwritten else "kept",
+        **{key: str(evidence.get(key, "")) for key in HERMES_EDIT_EVIDENCE_KEYS},
+    }
+    if overwritten:
+        item["ledger_copy"] = _ledger_copies(skill_dir, stored_writes or [])
+    return item
+
+
+def _force_replacements(
+    hermes_edited: list[dict],
+    paths: OmhPaths,
+    install_names: set[str],
+    writes: list[LedgerWrite],
+    rendered: dict[str, frozenset[str]],
+) -> tuple[list[dict], list[Path]]:
+    """What `--force` replaces in the pack being written, and the skill directories it clears first.
+
+    Every skill this install renders again whose render directory holds a
+    Hermes write still on disk is cleared, including one a hand edit to its
+    SKILL.md kept out of `hermes_edited` -- otherwise a file Hermes added
+    would outlive `--force` and keep the skill on the next plain install. The
+    directory cleared is always the render directory under this pack, never
+    a path a manifest record names.
+    """
+    by_name = {str(item["name"]): item for item in hermes_edited}
+    pack_writes = writes_under(writes, paths.skills_dir)
+    stored_writes: list[LedgerWrite] | None = None
+    replaced = list(hermes_edited)
+    targets: list[Path] = []
+    for name in sorted(install_names):
+        relative = skill_install_relative_dir(name)
+        target = paths.skills_dir / relative
+        item = by_name.get(name)
+        if item is None:
+            write = hermes_edit_still_on_disk(target, pack_writes, rendered.get(name, _SKILL_FILE_ONLY))
+            if write is None:
+                continue
+            if stored_writes is None:
+                stored_writes = read_ledger_writes(paths.hermes_home)[0]
+            replaced.append(
+                _hermes_edit_item(
+                    name, f"{relative.as_posix()}/SKILL.md", target, _write_evidence(write), True, stored_writes
+                )
+            )
+        elif os.path.realpath(str(item["skill_dir"])) != os.path.realpath(target):
+            continue
+        targets.append(target)
+    return replaced, targets
 
 
 def _ledger_copies(skill_dir: Path, writes: list[LedgerWrite]) -> list[str]:
@@ -300,7 +406,7 @@ def missing_managed_skills(
         if not isinstance(record, dict):
             continue
         name, rel = str(record.get("name", "")), str(record.get("path", ""))
-        if not name or not rel or (skills_dir / rel).is_file():
+        if not name or render_record_dir(name, rel) is None or (skills_dir / rel).is_file():
             continue
         missing.append(
             {"name": name, "path": rel, "disposition": "restored" if name in install_names else "not_restored"}
@@ -317,8 +423,11 @@ def _carry_kept_skills(skills_dir: Path, kept: Iterable[dict]) -> None:
     where it belongs.
     """
     for item in kept:
+        relative = render_record_dir(str(item["name"]), str(item["path"]))
+        if relative is None:
+            continue
         source = Path(str(item["skill_dir"]))
-        target = skills_dir / Path(str(item["path"])).parent
+        target = skills_dir / relative
         if os.path.realpath(source) == os.path.realpath(target):
             continue
         discard_path(target)
@@ -353,6 +462,10 @@ def install_skill_pack(
         raise OmhError(f"unknown skill profile {profile!r}; choose one of {', '.join(SKILL_PROFILES)}")
     all_templates = convert_from_dir(source_dir) if source_dir else builtin_skill_templates()
     reference_templates = convert_references_from_dir(source_dir) if source_dir else builtin_skill_reference_templates()
+    # Taken before any filtering: which files OMH renders for a skill does not
+    # depend on whether this install renders that skill.
+    rendered = rendered_skill_files(reference_templates)
+    all_reference_templates = reference_templates
     if source_dir:
         # A retired ULW engine copied from a stale tap or checkout fails with
         # the explicit migration error, never a silent install of a contract
@@ -381,7 +494,16 @@ def install_skill_pack(
     # behind in a generation Hermes no longer loads.
     overwrite_allowed = _overwrite_allowed(force)
     install_names = {template.name for template in templates}
-    hermes_edited = hermes_edited_skills(manifest, paths, overwritten=overwrite_allowed)
+    pack = manifest_pack(manifest, paths) if manifest else paths.skills_dir
+    # One ledger read per install, cut to the two packs it can concern.
+    ledger_writes = read_ledger_writes(paths.hermes_home, within=[pack, paths.skills_dir])[0] if manifest else []
+    hermes_edited = hermes_edited_skills(
+        manifest,
+        paths,
+        overwritten=overwrite_allowed,
+        writes=ledger_writes,
+        reference_templates=all_reference_templates,
+    )
     same_pack = _manifest_describes(manifest, paths.skills_dir)
     if not same_pack:
         # Carried into a new generation only when this install carries the
@@ -394,10 +516,13 @@ def install_skill_pack(
     # recorded, so judging the candidate by it flagged every skill the catalog
     # had changed since the last install as a "local modification", refused the
     # post-activation re-entry, and rolled the whole update back.
+    # Judged in the pack the manifest describes, before it is dropped: on a
+    # staged update a skill removed from the active generation is rendered
+    # into the new one, and that is still a restore worth reporting.
+    missing = missing_managed_skills(manifest, pack, install_names)
+    missing_paths = {str(item["path"]) for item in missing}
     if not same_pack:
         manifest = None
-    missing = missing_managed_skills(manifest, paths.skills_dir, install_names)
-    missing_paths = {str(item["path"]) for item in missing}
     # A Hermes edit is kept and reported, and a removed skill is rendered
     # again; any other change to a managed file still refuses the whole
     # install until `--force` says to replace it.
@@ -407,6 +532,11 @@ def install_skill_pack(
     if modified and not overwrite_allowed:
         raise OmhError("local modifications detected; rerun with --force or resolve: " + ", ".join(modified))
     install_skill_list = [template.name for template in templates]
+    force_targets: list[Path] = []
+    if overwrite_allowed and same_pack:
+        hermes_edited, force_targets = _force_replacements(
+            hermes_edited, paths, install_names, ledger_writes, rendered
+        )
     kept_names = {str(item["name"]) for item in kept.values()}
     templates = [template for template in templates if template.name not in kept_names]
     reference_templates = [template for template in reference_templates if template.skill_name not in kept_names]
@@ -431,15 +561,13 @@ def install_skill_pack(
             result["restored_skills"] = missing
         return result
     paths.skills_dir.mkdir(parents=True, exist_ok=True)
-    if overwrite_allowed and same_pack:
-        # `--force` replaces the whole skill, not just the files OMH renders:
-        # a file Hermes added with `write_file` would otherwise survive the
-        # render and read as a live edit on the next install. Only a skill
-        # this install renders again is cleared, and only in the pack being
-        # written; an older generation stays the rollback target it is.
-        for item in hermes_edited:
-            if item["name"] in install_names:
-                discard_path(Path(str(item["skill_dir"])))
+    # `--force` replaces the whole skill, not just the files OMH renders: a
+    # file Hermes added with `write_file` would otherwise survive the render
+    # and read as a live edit on the next install. Only a skill this install
+    # renders again is cleared, only its render directory, and only in the
+    # pack being written; an older generation stays the rollback target it is.
+    for target in force_targets:
+        discard_path(target)
     managed = manifest is not None
     for template in templates:
         _write_skill(paths.skills_dir, template, force=force, managed=managed)

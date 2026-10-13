@@ -21,8 +21,8 @@ guess would call it OMH's own.
 Precedence. A contested skill name is resolved from Hermes' documented tier
 order (`agent/skill_utils.py` `get_skill_search_roots`: trusted project >
 local profile > `skills.create_dir` > `skills.external_dirs`), which Hermes
-applies from 0.21.6 (f525ecdb9c); an older host refuses a cross-tier
-duplicate as ambiguous instead, and the wording says so. OMH's managed
+applies from 0.21.6 (f525ecdb9c); an older host lists only the higher-tier
+copy and refuses to load the name as ambiguous, and the wording says so. OMH's managed
 directory is always an external one, so a same-name copy in a higher tier
 hides the OMH copy, and a copy in another external directory shares its tier,
 where Hermes refuses the bare name rather than guess. A foreign skill matches
@@ -120,8 +120,8 @@ IDENTITY_CONFLICT_CLAIM_BOUNDARY = (
     "skills.create_dir, configured skill directories, installed Hermes plugin declarations, and OMH's "
     "own install manifests. Hermes runtime precedence is not observed. A contested skill name is resolved "
     "from Hermes' documented tier order (project > local > create_dir > external_dirs), which Hermes "
-    "applies from 0.21.6; older hosts refuse a cross-tier duplicate as ambiguous instead of hiding one "
-    "copy. Trusted project directories depend on a session's working directory and are not scanned. "
+    "applies from 0.21.6; older hosts list only the higher-tier copy and refuse to load the name as "
+    "ambiguous. Trusted project directories depend on a session's working directory and are not scanned. "
     "A contested tool name has no resolved winner here. "
     "A shared lifecycle hook has no winner to resolve, since Hermes lets every plugin subscribe "
     "to the same event; the order the subscribers run in is not observed either. Nothing is "

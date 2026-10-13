@@ -6,9 +6,10 @@ guards a delete or archive only inside that review fork
 (`tools/skill_manager_guards.py::_background_review_delete_guard`); a
 foreground `skill_manage` delete is not guarded at all. An OMH skill is
 rendered by the installer and recorded in `<omh_home>/manifest.json`, so a
-change made in place either holds that skill back from every later OMH update,
-stays behind in a retired generation Hermes no longer loads, or (a delete) is
-undone by the next install.
+change made in place either holds that skill back from every later OMH update
+or stays behind in a retired generation Hermes no longer loads, and a delete
+lasts only until the next update renders the skill again or reports it
+missing.
 
 `pre_tool_call` therefore blocks `skill_manage` edit, patch, write_file,
 remove_file and delete when the named skill resolves to one the manifest
@@ -122,12 +123,16 @@ def skill_directories(root: Path, errors: list[str] | None = None) -> list[Path]
 
 
 def yaml_scalar(value: str) -> str | None:
-    """The text of one YAML scalar written after `key:`, or None when a quote never closes.
+    """The text of one YAML scalar written after `key:`, or None when this reader cannot say.
 
     A quoted value runs to its matching close quote, so a comment after it is
     not part of it (`"/x"  # shared` is `/x`); `''` inside single quotes is one
-    quote and a backslash escapes the next character inside double quotes. An
-    unquoted value stops at `#`. Null spellings are returned as written.
+    quote. Inside double quotes only `\\\\` and `\\"` are read; any other escape
+    (`\\n`, `\\u00e9`, a Windows path written with single backslashes) answers
+    None rather than a mangled string, as does a quote that never closes or
+    one followed by anything but a comment. An
+    unquoted value stops at `#`. Null spellings are returned as written; see
+    `yaml_null` for whether they mean null.
     """
     stripped = value.strip()
     if stripped[:1] not in {"'", '"'}:
@@ -137,8 +142,11 @@ def yaml_scalar(value: str) -> str | None:
     index = 1
     while index < len(stripped):
         char = stripped[index]
-        if quote == '"' and char == "\\" and index + 1 < len(stripped):
-            chars.append(stripped[index + 1])
+        if quote == '"' and char == "\\":
+            escaped = stripped[index + 1 : index + 2]
+            if escaped not in {"\\", '"'}:
+                return None
+            chars.append(escaped)
             index += 2
             continue
         if char == quote:
@@ -146,10 +154,23 @@ def yaml_scalar(value: str) -> str | None:
                 chars.append("'")
                 index += 2
                 continue
+            # Only a comment may follow the closing quote.
+            trailing = stripped[index + 1 :]
+            if trailing.strip() and not (trailing[:1].isspace() and trailing.lstrip().startswith("#")):
+                return None
             return "".join(chars)
         chars.append(char)
         index += 1
     return None
+
+
+def yaml_null(value: str) -> bool:
+    """Whether the text after `key:` is a YAML null: an unquoted `~`, `null`, or nothing.
+
+    A quoted `"~"` is a string, not a null.
+    """
+    stripped = value.strip()
+    return stripped[:1] not in {"'", '"'} and stripped.split("#", 1)[0].strip() in _YAML_NULLS
 
 
 def configured_create_dir(hermes_home: Path) -> tuple[Path | None, bool]:
@@ -170,7 +191,7 @@ def configured_create_dir(hermes_home: Path) -> tuple[Path | None, bool]:
         return None, True
     except (OSError, UnicodeDecodeError):
         return None, False
-    raw: str | None = ""
+    raw: str | None = None
     in_skills = False
     child_indent: int | None = None
     for line in text.splitlines():
@@ -181,7 +202,7 @@ def configured_create_dir(hermes_home: Path) -> tuple[Path | None, bool]:
             key, _separator, rest = stripped.partition(":")
             in_skills = key.strip() == "skills"
             child_indent = None
-            if in_skills and yaml_scalar(rest) not in _YAML_NULLS | {"{}"}:
+            if in_skills and not (yaml_null(rest) or rest.split("#", 1)[0].strip() == "{}"):
                 return None, False
             continue
         if not in_skills:
@@ -191,12 +212,15 @@ def configured_create_dir(hermes_home: Path) -> tuple[Path | None, bool]:
             child_indent = indent
         key, separator, rest = stripped.partition(":")
         if indent == child_indent and separator and key.strip() == "create_dir":
-            raw = yaml_scalar(rest)
-    if raw is None:
-        return None, False
-    if raw.strip() in _YAML_NULLS:
+            raw = rest
+    if raw is None or yaml_null(raw):
         return None, True
-    path = Path(os.path.expanduser(os.path.expandvars(raw.strip())))
+    value = yaml_scalar(raw)
+    if value is None:
+        return None, False
+    if not value.strip():
+        return None, True
+    path = Path(os.path.expanduser(os.path.expandvars(value.strip())))
     return (path if path.is_absolute() else hermes_home / path), True
 
 
@@ -343,7 +367,7 @@ def managed_skill_edit_message(
     if workflow_learning:
         lane += f" (skill_view name='{workflow_learning}')"
     if action == "delete":
-        consequence = "so deleting it here does not last: the next update renders it again"
+        consequence = "so deleting it here does not last: the next update renders it again or reports it missing"
     else:
         consequence = f"so a {action} here would hold it back from later updates or be left behind in a retired install"
     return (
@@ -365,5 +389,6 @@ __all__ = [
     "managed_skill_files",
     "skill_directories",
     "skill_manage_targets",
+    "yaml_null",
     "yaml_scalar",
 ]

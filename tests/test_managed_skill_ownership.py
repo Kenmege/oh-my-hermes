@@ -56,6 +56,7 @@ from omh.install import installer
 from omh.install.config_adapter import memory_provider_selection, skill_create_dir_selection
 from omh.install.curator_ledger import CURATOR_LEDGER_RELATIVE_PATH, read_ledger_writes
 from omh.install.installer import HERMES_EDIT_RECORD_KEY, install_skill_pack, skill_install_relative_dir
+from omh.maintenance import doctor as doctor_module
 from omh.maintenance.doctor import run_doctor
 from omh.manifest import read_manifest
 from omh.paths import OmhPaths
@@ -85,6 +86,18 @@ def _ledger_row(path: Path, *, actor: str = "curator", action: str = "patch", be
             "evidence": {},
             "before": before_items,
             "after": after,
+        }
+    )
+
+
+def _change_row(path: Path, *, before_sha: str = "", after_sha: str = "", action: str, ts: str) -> str:
+    """A row that changed one file from `before_sha` to `after_sha` ("" on either side: absent)."""
+    real = os.path.realpath(path)
+    return json.dumps(
+        {
+            "id": "c0ffee", "ts": ts, "actor": "curator", "action": action, "skill": path.parent.name, "evidence": {},
+            "before": [{"path": real, "sha256": before_sha}] if before_sha else [],
+            "after": [{"path": real, "sha256": after_sha}] if after_sha else [],
         }
     )
 
@@ -269,7 +282,10 @@ class HookRedirectTests(_Home):
         # Upstream guards a delete only inside the background-review fork.
         directive = self.call({"operations": [{"action": "delete", "name": self.label}]}, session=f"{SESSION}-del")
         self.assertEqual(directive["action"], "block")
-        self.assertIn("deleting it here does not last: the next update renders it again", directive["message"])
+        self.assertIn(
+            "deleting it here does not last: the next update renders it again or reports it missing",
+            directive["message"],
+        )
 
     def test_operations_sent_as_a_json_string_are_read(self) -> None:
         # The hook sees the arguments before Hermes coerces them to the schema.
@@ -282,6 +298,12 @@ class HookRedirectTests(_Home):
         create_dir = self.root / "fleet-skills"
         self.write_config(f"skills:\n  create_dir: {create_dir}\n")
         self.assertIn(f"(it lands in {create_dir})", self.patch_call(f"{SESSION}-lands-fleet")["message"])
+
+    def test_a_create_dir_this_reader_cannot_decode_fails_open(self) -> None:
+        # `\n` inside double quotes is an escape this reader does not decode;
+        # guessing would resolve a directory Hermes does not use.
+        self.write_config('skills:\n  create_dir: "C:\\new\\skills"\n')
+        self.assertIsNone(self.patch_call(f"{SESSION}-escape"))
 
     def test_a_quoted_create_dir_with_a_comment_and_a_bom_still_resolves(self) -> None:
         copy = self.root / "fleet-skills" / self.label
@@ -506,6 +528,144 @@ class InstallerKeepsHermesEditTests(_Home):
         self.assertFalse(self.skill_file(second, full_only).exists())
         self.assertEqual([item["name"] for item in result["hermes_edited_skills"]], [SKILL])
 
+    def test_a_file_added_then_removed_is_not_an_edit(self) -> None:
+        # Probe P1: a write_file undone by a remove_file leaves OMH's render.
+        install_skill_pack(self.paths, profile="core")
+        added = self.skill_file().parent / "references" / "lessons.md"
+        added.write_text("lesson\n", encoding="utf-8")
+        sha = sha256_file(added)
+        _append_ledger(self.paths.hermes_home, _change_row(added, after_sha=sha, action="write_file", ts="2026-10-13T01:00:00+00:00"))
+        added.unlink()
+        _append_ledger(self.paths.hermes_home, _change_row(added, before_sha=sha, action="remove_file", ts="2026-10-13T02:00:00+00:00"))
+
+        self.assertNotIn("hermes_edited_skills", install_skill_pack(self.paths, profile="core"))
+        install_skill_pack(self.paths, profile="core", force=True)
+        self.assertNotIn("hermes_edited_skills", install_skill_pack(self.paths, profile="core"))
+
+    def test_removing_a_file_omh_renders_is_an_edit_that_is_kept(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        reference = next(template for template in builtin_skill_reference_templates() if template.skill_name == SKILL)
+        target = self.skill_file().parent / reference.relative_path
+        sha = sha256_file(target)
+        target.unlink()
+        _append_ledger(self.paths.hermes_home, _change_row(target, before_sha=sha, action="remove_file", ts="2026-10-13T02:00:00+00:00"))
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertEqual([(item["name"], item["action"]) for item in result["hermes_edited_skills"]], [(SKILL, "remove_file")])
+        self.assertFalse(target.exists())
+
+    def test_force_replaces_a_hand_edited_skill_holding_a_hermes_file(self) -> None:
+        # Probe P2: the hand edit refuses, and --force must clear the file
+        # Hermes added, or the next plain install keeps the skill for it.
+        install_skill_pack(self.paths, profile="core")
+        added = self.skill_file().parent / "references" / "lessons.md"
+        added.write_text("lesson\n", encoding="utf-8")
+        _append_ledger(self.paths.hermes_home, _ledger_row(added, action="write_file"))
+        with self.skill_file().open("a", encoding="utf-8") as handle:
+            handle.write("\nmy own hand edit\n")
+        with self.assertRaisesRegex(OmhError, "local modifications detected"):
+            install_skill_pack(self.paths, profile="core")
+
+        forced = install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertEqual([(item["name"], item["disposition"]) for item in forced["hermes_edited_skills"]], [(SKILL, "replaced")])
+        self.assertFalse(added.exists())
+        self.assertNotIn("hermes_edited_skills", install_skill_pack(self.paths, profile="core"))
+
+    def test_force_never_clears_a_copy_of_a_managed_skill_elsewhere_in_the_pack(self) -> None:
+        # Probe P3: the manifest records a person's copy under the skill's name.
+        install_skill_pack(self.paths, profile="core")
+        backup = self.paths.skills_dir / "my-backups" / self.skill_file().parent.name
+        backup.mkdir(parents=True)
+        (backup / "SKILL.md").write_bytes(self.skill_file().read_bytes())
+        (backup / "personal.md").write_text("mine\n", encoding="utf-8")
+        install_skill_pack(self.paths, profile="core")
+        _append_ledger(self.paths.hermes_home, _ledger_row(backup / "personal.md", action="write_file"))
+
+        self.assertNotIn("hermes_edited_skills", install_skill_pack(self.paths, profile="core"))
+        install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertTrue((backup / "personal.md").is_file())
+        self.assertTrue(self.skill_file().is_file())
+
+    def test_a_record_path_that_leaves_the_pack_is_never_followed(self) -> None:
+        # Probe P4: a record climbing out of the pack, with kept evidence.
+        install_skill_pack(self.paths, profile="core")
+        outside = self.root / "outside" / "victim"
+        outside.mkdir(parents=True)
+        (outside / "SKILL.md").write_text("victim\n", encoding="utf-8")
+        manifest = read_manifest(self.paths.manifest_path)
+        manifest["skills"].append(
+            {
+                "name": SKILL,
+                "path": os.path.relpath(outside / "SKILL.md", self.paths.skills_dir).replace(os.sep, "/"),
+                "sha256": sha256_file(outside / "SKILL.md"),
+                "source": "builtin",
+                HERMES_EDIT_RECORD_KEY: {"actor": "curator", "ts": "t", "action": "patch", "ledger": "l"},
+            }
+        )
+        self.paths.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        result = install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertTrue((outside / "SKILL.md").is_file())
+        self.assertNotIn("hermes_edited_skills", result)
+
+    def test_force_on_a_staged_update_leaves_the_older_generation_alone(self) -> None:
+        first = OmhPaths(omh_home=self.paths.omh_home, hermes_home=self.paths.hermes_home, managed_skills_dir=self.root / "gen-1" / "skills")
+        second = OmhPaths(omh_home=self.paths.omh_home, hermes_home=self.paths.hermes_home, managed_skills_dir=self.root / "gen-2" / "skills")
+        install_skill_pack(first, profile="core")
+        self.hermes_patch(self.skill_file(first))
+        edited = self.skill_file(first).read_bytes()
+
+        result = install_skill_pack(second, profile="core", force=True)
+
+        # The rollback target keeps exactly what it held.
+        self.assertEqual(self.skill_file(first).read_bytes(), edited)
+        self.assertEqual([item["disposition"] for item in result["hermes_edited_skills"]], ["replaced"])
+        self.assertNotEqual(self.skill_file(second).read_bytes(), edited)
+
+    def test_force_clears_only_skills_this_install_renders_again(self) -> None:
+        # Clearing is for a skill the render below writes back; a skill no
+        # template renders is the pruner's to judge, never the force clear's.
+        install_skill_pack(self.paths, profile="core")
+        self.hermes_patch(self.skill_file())
+        item = installer.hermes_edited_skills(read_manifest(self.paths.manifest_path), self.paths, overwritten=True)[0]
+        writes = read_ledger_writes(self.paths.hermes_home)[0]
+        rendered = installer.rendered_skill_files()
+
+        _replaced, without = installer._force_replacements([item], self.paths, {"doctor"}, writes, rendered)
+        _replaced, with_skill = installer._force_replacements([item], self.paths, {"doctor", SKILL}, writes, rendered)
+
+        self.assertEqual(without, [])
+        self.assertEqual(with_skill, [self.skill_file().parent])
+
+    def test_a_skill_removed_from_the_active_generation_is_reported_restored(self) -> None:
+        # Probe R1: judged in the pack the manifest describes, not the new one.
+        first = OmhPaths(omh_home=self.paths.omh_home, hermes_home=self.paths.hermes_home, managed_skills_dir=self.root / "gen-1" / "skills")
+        second = OmhPaths(omh_home=self.paths.omh_home, hermes_home=self.paths.hermes_home, managed_skills_dir=self.root / "gen-2" / "skills")
+        install_skill_pack(first, profile="core")
+        for path in sorted(self.skill_file(first).parent.rglob("*"), reverse=True):
+            path.unlink() if path.is_file() else path.rmdir()
+        self.skill_file(first).parent.rmdir()
+
+        result = install_skill_pack(second, profile="core")
+
+        self.assertTrue(self.skill_file(second).is_file())
+        self.assertEqual([(item["name"], item["disposition"]) for item in result["restored_skills"]], [(SKILL, "restored")])
+
+    def test_a_dry_run_reports_a_restore_without_writing(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        for path in sorted(self.skill_file().parent.rglob("*"), reverse=True):
+            path.unlink() if path.is_file() else path.rmdir()
+        self.skill_file().parent.rmdir()
+
+        result = install_skill_pack(self.paths, profile="core", dry_run=True)
+
+        self.assertEqual([item["disposition"] for item in result["restored_skills"]], ["restored"])
+        self.assertFalse(self.skill_file().exists())
+
     def test_a_supporting_file_patch_keeps_the_whole_skill(self) -> None:
         install_skill_pack(self.paths, profile="core")
         reference = next(template for template in builtin_skill_reference_templates() if template.skill_name == SKILL)
@@ -567,6 +727,21 @@ class ConfigScalarTests(unittest.TestCase):
         # Unchanged: an unquoted value still stops at `#`, an unclosed quote is kept as written.
         self.assertEqual(memory_provider_selection("memory:\n  provider: omh # mine\n"), "omh")
         self.assertEqual(memory_provider_selection('memory:\n  provider: "omh\n'), '"omh')
+
+    def test_an_escape_this_reader_does_not_decode_is_not_guessed(self) -> None:
+        self.assertIsNone(skill_ownership.yaml_scalar(' "a\\nb"'))
+        self.assertIsNone(skill_ownership.yaml_scalar(' "\\u00e9"'))
+        self.assertEqual(skill_ownership.yaml_scalar(' "C:\\\\x\\"y"'), 'C:\\x"y')
+        # Only a comment may follow a closing quote.
+        self.assertIsNone(skill_ownership.yaml_scalar(' "a"b'))
+        self.assertEqual(skill_ownership.yaml_scalar(' "a" # note'), "a")
+        # Core keeps its answer from before the shared parser for what it cannot read.
+        self.assertEqual(memory_provider_selection('memory:\n  provider: "a\\nb"\n'), "a\\nb")
+
+    def test_a_quoted_tilde_is_a_string_not_a_null(self) -> None:
+        self.assertEqual(skill_create_dir_selection('skills:\n  create_dir: "~"\n'), "~")
+        self.assertFalse(skill_ownership.yaml_null(' "~"'))
+        self.assertTrue(skill_ownership.yaml_null(" ~  # unset"))
 
     def test_a_null_create_dir_is_unset(self) -> None:
         for text in ("skills:\n  create_dir: ~\n", "skills:\n  create_dir: null\n", "skills:\n  create_dir:\n"):
@@ -679,6 +854,33 @@ class DoctorLedgerTests(_Home):
         self.assertEqual(checks["local_modifications"].severity, "blocking")
         self.assertIn("omh install --force", checks["local_modifications"].next_action)
         self.assertNotIn("missing_managed_skills", checks)
+
+    def test_doctor_reads_the_ledger_once_and_only_rows_under_omh_paths(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        self.hermes_patch(self.skill_file())
+        own = self.paths.hermes_home / "skills" / "my-notes" / "SKILL.md"
+        own.parent.mkdir(parents=True)
+        own.write_text("x\n", encoding="utf-8")
+        _append_ledger(self.paths.hermes_home, _ledger_row(own, action="create"), "{not json")
+
+        within = read_ledger_writes(self.paths.hermes_home, within=[self.paths.skills_dir])[0]
+        self.assertEqual([Path(write.path).name for write in within], ["SKILL.md"])
+        self.assertTrue(all("my-notes" not in write.path for write in within))
+        calls: list[object] = []
+        real = doctor_module.read_ledger_writes
+
+        def counting(*args, **kwargs):
+            calls.append(kwargs.get("within"))
+            return real(*args, **kwargs)
+
+        with (
+            mock.patch.object(doctor_module, "read_ledger_writes", side_effect=counting),
+            mock.patch.object(installer, "read_ledger_writes", side_effect=counting),
+        ):
+            check = next(check for check in run_doctor(self.paths) if check.name == "hermes_skill_edits")
+        self.assertEqual(len(calls), 1)
+        self.assertIsNotNone(calls[0])
+        self.assertEqual(check.severity, "warning")
 
     def test_an_unreadable_ledger_is_named_not_read_as_empty(self) -> None:
         install_skill_pack(self.paths, profile="core")

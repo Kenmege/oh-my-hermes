@@ -28,7 +28,7 @@ from ..hashutil import sha256_file, sha256_text
 from ..local_store import can_write_dir, read_json_object
 from ..install.guidance_projection import build_guidance_projection_status, catalog_revision
 from ..install.hook_integrity import HOOK_HOST_TARGET, VALID_HOOK_EVENTS, build_hook_integrity_status
-from ..install.curator_ledger import read_ledger_writes, writes_under
+from ..install.curator_ledger import LedgerWrite, read_ledger_writes
 from ..install.identity_conflicts import build_identity_conflict_report, skill_conflict_outcome
 from ..install.installer import (
     DEFAULT_SKILL_PROFILE,
@@ -189,6 +189,9 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
         )
     )
     manifest = read_manifest(paths.manifest_path)
+    # Hermes' curator ledger, read once for every check below and cut to the
+    # directories an OMH install may serve skills from.
+    ledger_writes, ledger_unread = read_ledger_writes(paths.hermes_home, within=_managed_skill_roots(paths, manifest))
     state_error = read_state_error(paths)
     state = None if state_error else read_state(paths)
     checks.append(Check("manifest", manifest is not None, f"{paths.manifest_path}"))
@@ -206,7 +209,7 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
         # renders the second again (`missing_managed_skills`), so both are
         # left out of the blocking local-modification count, whose
         # refuse-until-`--force` advice is for a hand edit.
-        hermes_edits = hermes_edited_skills(manifest, paths)
+        hermes_edits = hermes_edited_skills(manifest, paths, writes=ledger_writes)
         hermes_edited_paths = {str(item["path"]) for item in hermes_edits}
         missing = _missing_skills_on_next_install(paths, manifest)
         missing_paths = {str(item["path"]) for item in missing}
@@ -225,7 +228,7 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
         checks.append(_skill_freshness_check(paths, manifest, exclude=hermes_edited_paths))
         if missing:
             checks.append(_missing_managed_skills_check(manifest, missing))
-    checks.append(_hermes_skill_edits_check(paths, manifest))
+    checks.append(_hermes_skill_edits_check(paths, manifest, ledger_writes, ledger_unread))
     checks.append(Check("skills_dir", paths.skills_dir.exists(), f"{paths.skills_dir}"))
     checks.append(_route_hint_skills_check(paths))
     runtime_writable = can_write_dir(paths.runtime_dir, probe_name=".doctor-write-test")
@@ -2205,7 +2208,21 @@ def _skill_create_dir(paths: OmhPaths, config_text: str) -> Path | None:
 _HERMES_EDITS_NAMED_LIMIT = 5
 
 
-def _hermes_skill_edits_check(paths: OmhPaths, manifest: dict | None) -> Check:
+def _managed_skill_roots(paths: OmhPaths, manifest: dict | None) -> list[Path]:
+    """Every directory an OMH install may serve skills from: the pack, the pre-pointer copy, every generation."""
+    roots = managed_skill_dir_candidates(paths, current=managed_current_workflow_pack_dir())
+    generations = managed_command_generations_dir()
+    if generations is not None:
+        roots.append(generations)
+    recorded = (manifest or {}).get("skills_dir")
+    if recorded:
+        roots.append(Path(str(recorded)))
+    return roots
+
+
+def _hermes_skill_edits_check(
+    paths: OmhPaths, manifest: dict | None, writes: list[LedgerWrite], unread: list[str]
+) -> Check:
     """OMH-managed skills holding an edit Hermes made, read from Hermes' curator ledger.
 
     Hermes may edit a skill in `skills.external_dirs` in place, and its
@@ -2220,16 +2237,9 @@ def _hermes_skill_edits_check(paths: OmhPaths, manifest: dict | None) -> Check:
     because an edit left in a generation OMH has moved off is the one nobody
     sees otherwise. A warning, not a block: a kept edit is a working skill.
     """
-    writes, unread = read_ledger_writes(paths.hermes_home)
-    roots = managed_skill_dir_candidates(paths, current=managed_current_workflow_pack_dir())
-    generations = managed_command_generations_dir()
-    if generations is not None:
-        roots.append(generations)
-    recorded = (manifest or {}).get("skills_dir")
-    if recorded:
-        roots.append(Path(str(recorded)))
-    under_managed = {(write.ledger, write.ts, write.path) for root in roots for write in writes_under(writes, root)}
-    edited = hermes_edited_skills(manifest, paths)
+    # `writes` is already cut to the managed roots (`_managed_skill_roots`).
+    under_managed = {(write.ledger, write.ts, write.path) for write in writes}
+    edited = hermes_edited_skills(manifest, paths, writes=writes)
     named = [_hermes_edit_line(item) for item in edited[:_HERMES_EDITS_NAMED_LIMIT]]
     if len(edited) > _HERMES_EDITS_NAMED_LIMIT:
         named.append(f"and {len(edited) - _HERMES_EDITS_NAMED_LIMIT} more")

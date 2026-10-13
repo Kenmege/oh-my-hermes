@@ -22,6 +22,7 @@ named as unread rather than read as empty.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 import json
 import os
@@ -58,8 +59,17 @@ def curator_ledger_paths(hermes_home: Path) -> list[Path]:
     return paths
 
 
-def read_ledger_writes(hermes_home: Path) -> tuple[list[LedgerWrite], list[str]]:
-    """Every file write the home's ledgers record, oldest first, and the ledgers that could not be read."""
+def read_ledger_writes(
+    hermes_home: Path, within: Iterable[Path] | None = None
+) -> tuple[list[LedgerWrite], list[str]]:
+    """Every file write the home's ledgers record, oldest first, and the ledgers that could not be read.
+
+    With `within`, only writes under one of those directories are kept, and a
+    line that names none of them is skipped before it is parsed: a ledger
+    written before Hermes 0.21.4 recorded every file of a skill on every row
+    and could grow to hundreds of megabytes.
+    """
+    needles = _path_needles(within) if within is not None else None
     writes: list[LedgerWrite] = []
     unread: list[str] = []
     for ledger in curator_ledger_paths(hermes_home):
@@ -71,11 +81,25 @@ def read_ledger_writes(hermes_home: Path) -> tuple[list[LedgerWrite], list[str]]
             unread.append(f"{ledger}: {error}")
             continue
         for line in text.splitlines():
+            if needles is not None and not any(needle in line for needle in needles):
+                continue
             writes.extend(_row_writes(line, str(ledger)))
+    if within is not None:
+        roots = list(within)
+        writes = [write for write in writes if any(writes_under([write], root) for root in roots)]
     # ISO-8601 UTC stamps from one writer sort as text. Stable, so rows of one
     # ledger that share a stamp keep the order they were appended in.
     writes.sort(key=lambda write: write.ts)
     return writes, unread
+
+
+def _path_needles(roots: Iterable[Path]) -> set[str]:
+    """Each root as it appears inside a JSON string, both as given and resolved."""
+    needles: set[str] = set()
+    for root in roots:
+        for spelling in {os.path.normpath(str(root)), os.path.realpath(str(root))}:
+            needles.add(json.dumps(spelling, ensure_ascii=False)[1:-1])
+    return needles
 
 
 def _row_writes(line: str, ledger: str) -> list[LedgerWrite]:
@@ -153,8 +177,10 @@ def ledger_holds_copy(write: LedgerWrite) -> bool:
     """Whether the content this write left is still stored where Hermes keeps it.
 
     A row's file content lives at `<hermes_home>/.curator_backups/blobs/<sha256>`
-    of the home whose ledger recorded it, and Hermes deletes a blob once no row
-    references it. A removal left no content to keep.
+    of the home whose ledger recorded it. Hermes 0.21.1-0.21.3 never delete a
+    blob; 0.21.4 deletes one no row references when `hermes curator` compacts
+    the ledger, and 0.21.5 also when the ledger outgrows its size limit, after
+    a grace period. A removal left no content to keep.
     """
     if not write.sha256:
         return False
@@ -165,14 +191,30 @@ def ledger_holds_copy(write: LedgerWrite) -> bool:
         return False
 
 
-def hermes_edit_still_on_disk(skill_dir: Path, writes: list[LedgerWrite]) -> LedgerWrite | None:
+def hermes_edit_still_on_disk(skill_dir: Path, writes: list[LedgerWrite], rendered: set[str]) -> LedgerWrite | None:
     """The newest write under `skill_dir` whose result is still what the disk holds.
 
     "Still on disk" is the test, not "the ledger names this skill": after a
     `--force` install or a rollback has put OMH's render back, the old row is
     history, and treating it as a live edit would hold the skill back forever.
+
+    A removal counts only for a file OMH renders for the skill (`rendered`,
+    skill-relative POSIX paths). A file that is absent and that OMH never
+    renders reads the same whether Hermes removed it or never added it -- a
+    `write_file` followed by a `remove_file` leaves exactly OMH's render -- so
+    counting that absence would keep the skill forever.
     """
     for write in reversed(writes_under(writes, skill_dir)):
+        if not write.sha256 and _skill_relative(write.path, skill_dir) not in rendered:
+            continue
         if write_still_on_disk(write):
             return write
     return None
+
+
+def _skill_relative(path: str, skill_dir: Path) -> str:
+    normalized = os.path.normpath(path)
+    for base in (os.path.normpath(str(skill_dir)), os.path.realpath(str(skill_dir))):
+        if _within(normalized, base):
+            return Path(os.path.relpath(normalized, base)).as_posix()
+    return ""
