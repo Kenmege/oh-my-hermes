@@ -9848,7 +9848,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - hermes_achievements_observation/v1 metadata-only payload from `omh achievements` when recorded
   - supplied `session_activity_receipt/v1` when available; unavailable metrics stay unavailable, never zero
 - Safety rules:
-  - An achievements card reflects only locally observed hermes-achievements plugin artifacts; it is not a session-history rescan, badge recomputation, unlock proof beyond those artifacts, or productivity evidence.
+  - An achievements card reflects only the hermes-achievements plugin's local files, read from `plugin-data/hermes-achievements/` under the active profile's Hermes home first and the legacy `plugins/hermes-achievements/` second, as of the snapshot's `generated_at` and stale once older than the plugin's rescan window; it is not a session-history rescan, badge recomputation, unlock proof beyond those files, or productivity evidence.
   - Do not claim connector, gateway, runtime, file generation, memory mutation, or host automation evidence from prepared guidance.
 
 ### agent-ops-review

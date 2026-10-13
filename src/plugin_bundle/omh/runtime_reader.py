@@ -1837,10 +1837,15 @@ def _executor_summary(profile: dict[str, Any]) -> dict[str, Any]:
 
 def _achievements_summary(hermes_home: Path) -> dict[str, Any]:
     # The plugin bundle stays standalone, so this mirrors the tolerant reading
-    # in workflows/hermes_achievements.py at HUD granularity: counts only.
-    plugin_dir = hermes_home / "plugins" / "hermes-achievements"
-    snapshot = _read_hud_json(plugin_dir / "scan_snapshot.json", root=hermes_home)
-    state = _read_hud_json(plugin_dir / "state.json", root=hermes_home)
+    # in workflows/hermes_achievements.py at HUD granularity: counts only. Per
+    # file, the plugin's plugin-data copy wins whenever it exists; the legacy
+    # install-dir copy is read only when plugin-data has none.
+    data_dir = hermes_home / "plugin-data" / "hermes-achievements"
+    legacy_dir = hermes_home / "plugins" / "hermes-achievements"
+    snapshot, state = (
+        _read_hud_json(data_dir / name if os.path.exists(data_dir / name) else legacy_dir / name, root=hermes_home)
+        for name in ("scan_snapshot.json", "state.json")
+    )
     total = 0
     unlocked_flags = 0
     for key in ("achievements", "badges", "catalog", "items"):

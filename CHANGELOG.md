@@ -4,6 +4,28 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Achievements are read from where the bundled Hermes plugin keeps them
+  now.** The hermes-achievements plugin stores `scan_snapshot.json` and
+  `state.json` under `plugin-data/hermes-achievements/` in the active
+  profile's Hermes home, copies an old install-directory file forward once,
+  and never writes the old location again, so `omh achievements`, the
+  context brief profile, and the full HUD preset reported nothing or a frozen
+  copy on supported Hermes. Each file is now read from `plugin-data/` first
+  and from the legacy `plugins/hermes-achievements/` only when `plugin-data/`
+  has no copy, and the payload's `source` names the directory each file came
+  from. A new `snapshot_freshness` block reports the snapshot's
+  `generated_at`, its age, and whether it is stale by the plugin's own
+  rescan rule; OMH applies the rule to the file and never calls the
+  dashboard. Badge progress now comes from the plugin's `progress_pct`;
+  its `progress` is a raw count, and any nonzero count read as complete. An
+  unlock in `state.json` still marks a badge unlocked, as the plugin's own
+  sticky-unlock floor does, but now fills a missing tier from the unlock's
+  `first_tier`, never lowers a tier, and keeps the snapshot's next-tier
+  progress instead of overwriting it with 100%. `agent_summary.json` is no
+  longer read: the plugin has no writer for it, and the profile is derived
+  from the observed badges.
+
+
 - **The `frontend` design contract now uses Google's DESIGN.md format, so it
   no longer contradicts Hermes' bundled `design-md` skill.** Both install by
   default and both describe a project-root `DESIGN.md`, but OMH's contract

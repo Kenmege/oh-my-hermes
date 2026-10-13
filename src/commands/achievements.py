@@ -12,6 +12,7 @@ from ..workflows.hermes_achievements import (
     find_badge,
     observe_achievements,
     render_achievements_markdown,
+    snapshot_freshness_text,
 )
 from .common import _paths, _print_json, _wants_json
 
@@ -25,7 +26,7 @@ def cmd_achievements_summary(args: argparse.Namespace) -> int:
     print("Hermes achievements (OMH observation)")
     if not payload["observed"]:
         print("No local hermes-achievements plugin artifacts were observed.")
-        print(f"Looked in: {payload['source']['plugin_dir']}")
+        print(f"Looked in: {payload['source']['data_dir']}, then {payload['source']['legacy_dir']}")
         print("Open the Hermes dashboard achievements tab once so the plugin writes its scan snapshot.")
     else:
         print(f"Unlocked: {summary['unlocked_count']} / {summary['total_count']}")
@@ -33,6 +34,9 @@ def cmd_achievements_summary(args: argparse.Namespace) -> int:
             print(f"Top tier: {summary['top_tier']}")
         if summary["last_scan_at"]:
             print(f"Last plugin scan: {summary['last_scan_at']}")
+        freshness_line = snapshot_freshness_text(payload)
+        if freshness_line:
+            print(freshness_line)
         if payload["recent_unlocks"]:
             print("Recent unlocks:")
         for badge in payload["recent_unlocks"]:
