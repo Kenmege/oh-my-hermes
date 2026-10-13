@@ -295,6 +295,8 @@ YOLO_NOTE = (
 )
 # The keys themselves are `shortcuts.SHORTCUTS`, drawn by `?` and /keys; /help only points there.
 HELP_KEYS = "Keys: ? on an empty composer, or /keys, lists every key."
+# A command's long output that arrives while a view has the alternate screen; the output follows it.
+VIEW_OPEN_NOTICE = "/{name}: {lines} lines arrived while a view was open, so they are here instead of in the pager."
 GUIDE_KEY = "?"
 
 
@@ -1760,10 +1762,20 @@ class App:
                 self._show_output(invocation.name, other)
 
     def _show_output(self, name: str, text: str) -> None:
-        """A command's output as a notice, or in the pager when it is longer than half the screen."""
+        """A command's output as a notice, or in the pager when it is longer than half the screen.
+
+        Output that arrives while a view already has the alternate screen (an
+        agent's log, the key list, another command's output) does not replace
+        it: it goes to the transcript after `VIEW_OPEN_NOTICE`, and shows there
+        once the person leaves the view.
+        """
         cols, rows = self.size
         source = text.split("\n")
         if len(source) <= max(rows // 2, 3):
+            self.transcript.add_notice(text)
+            return
+        if self.pager is not None:
+            self.transcript.add_notice(VIEW_OPEN_NOTICE.format(name=name, lines=len(source)))
             self.transcript.add_notice(text)
             return
         lines = [wrapped for line in source for wrapped in (wrap_line((Span(line),), cols) or [()])]
@@ -2079,8 +2091,16 @@ class App:
     # ── pager ──
 
     def _open_pager(self, title: str, lines: list[Line]) -> None:
+        """`lines` on the alternate screen; a pager already open is replaced without switching to that screen again.
+
+        A second `ALT_SCREEN_ON` would save the main screen's cursor over the
+        one saved on the way in. It is no agent's log: `_open_agent_log` names
+        the agent once this returns.
+        """
+        if self.pager is None:
+            self.terminal.write(ALT_SCREEN_ON)
         self.pager = Pager(title, lines)
-        self.terminal.write(ALT_SCREEN_ON)
+        self.log_agent = ""
 
     def _leave_pager(self) -> None:
         self.pager = None

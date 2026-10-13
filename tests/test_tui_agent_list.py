@@ -21,12 +21,13 @@ from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, Step, startup_answers
 from test_tui_modes import SID, RecordingClient, answer, composer_index, drawn, make_app, notices, queue, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND
 from omh.tui import gateway_contract as contract
-from omh.tui.app import AGENT_LIST_HINT, AGENT_LIST_ROWS, SLOT_ARM_SECONDS, TAIL_POLL_SECONDS, App
+from omh.tui.app import AGENT_LIST_HINT, AGENT_LIST_ROWS, SLOT_ARM_SECONDS, TAIL_POLL_SECONDS, VIEW_OPEN_NOTICE, App
 from omh.tui.frame import MODE_NORMAL
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, Paste
 from omh.tui.pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from omh.tui.session_picker import SessionPicker, SessionRow
+from omh.tui.style import Span
 from omh.tui.subagents import MAIN_ID
 from omh.tui.theme import DEFAULT_THEME
 
@@ -448,6 +449,66 @@ class AgentLogTests(unittest.TestCase):
         app, _client = agent_app()
         app._open_agent_log("sa-nobody")
         self.assertEqual((app.pager, app.log_agent), (None, ""))
+
+
+class OutputWhileAViewIsOpenTests(unittest.TestCase):
+    """A command's long output answered while a view has the alternate screen: the view stays, the output waits."""
+
+    LONG = "\n".join(f"usage row {number}" for number in range(40))
+
+    def sent(self, app: App, command: str) -> None:
+        type_text(app, command)
+        app._on_input(Key(ENTER))
+
+    def check_waited(self, app: App, view: list[str]) -> None:
+        self.assertEqual(drawn(app), view)  # the view is still the one drawn
+        self.assertEqual(notices(app)[-2:], [VIEW_OPEN_NOTICE.format(name="usage", lines=40), self.LONG])
+        self.assertIn("arrived while a view was open", notices(app)[-2])
+        self.assertEqual("".join(app.terminal.writes).count(ALT_SCREEN_ON), 1)  # type: ignore[attr-defined]
+
+    def test_behind_an_agents_log(self) -> None:
+        app, client = agent_app()
+        self.sent(app, "/usage")
+        app._on_input(Key(DOWN))
+        app._on_input(Key(ENTER))
+        view = drawn(app)
+        answer(app, client, {"output": self.LONG})
+        self.assertEqual(app.log_agent, FIRST)
+        self.check_waited(app, view)
+        self.assertIn("find usages of · ←/→ agents", view[-1])
+        app._on_input(Key(CHAR, "q"))
+        app._on_input(Key(ESCAPE))
+        drawn(app)
+        history = app.terminal.screen.history() + app.terminal.screen.lines()  # type: ignore[attr-defined]
+        self.assertIn("  usage row 39", history)  # in the transcript once the view is left
+
+    def test_behind_the_key_list(self) -> None:
+        app, client = agent_app()
+        self.sent(app, "/usage")
+        app._on_input(Key(CHAR, "?"))
+        view = drawn(app)
+        answer(app, client, {"output": self.LONG})
+        self.check_waited(app, view)
+        self.assertIn(" keys · ", view[-1])
+
+    def test_behind_another_commands_output(self) -> None:
+        app, client = agent_app()
+        self.sent(app, "/insights")
+        self.sent(app, "/usage")
+        app._on_response(Response(1, {"output": "\n".join(f"insight {n}" for n in range(30))}, None))
+        view = drawn(app)
+        self.assertIn(" /insights · ", view[-1])
+        answer(app, client, {"output": self.LONG})
+        self.check_waited(app, view)
+
+    def test_a_pager_that_is_not_the_log_view_is_never_drawn_as_an_agents_log(self) -> None:
+        app, _client = log_open()
+        app._open_pager("history", [(Span("an earlier turn"),)])
+        self.assertEqual(app.log_agent, "")
+        screen = drawn(app)
+        self.assertEqual(screen[0], "an earlier turn")
+        self.assertIn(" history · ", screen[-1])
+        self.assertEqual("".join(app.terminal.writes).count(ALT_SCREEN_ON), 1)  # type: ignore[attr-defined]
 
 
 class TailPollTests(unittest.TestCase):
