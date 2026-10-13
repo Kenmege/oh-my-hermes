@@ -614,6 +614,17 @@ class TailPollTests(unittest.TestCase):
         drawn(app)
         self.assertEqual(paged(app)[3:], ["three call sites"])
 
+    def test_a_tail_answered_after_the_agent_finished_is_dropped_even_with_nothing_in_its_log(self) -> None:
+        # The roster would let a tail seed a finished agent's empty log; the app reads tails of running agents only.
+        app, client, _now = self.open()
+        app._ask_tail_when_due()
+        agent_event(app, "complete", status="completed", summary="", duration_seconds=5.0)
+        self.assertEqual(len(app.roster.agents[FIRST].log), 0)
+        answer(app, client, TAIL)
+        self.assertEqual(len(app.roster.agents[FIRST].log), 0)
+        drawn(app)
+        self.assertEqual(paged(app)[3:], ["no output yet"])
+
     def test_a_tail_answered_after_the_session_was_left_is_dropped(self) -> None:
         app, client, now = self.open()
         app._ask_tail_when_due()
