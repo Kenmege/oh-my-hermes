@@ -187,10 +187,12 @@ PR without the chat history.
   gateway process. The mode is shown on the composer (both rules and the mode
   row, or the status line on a short terminal) only once Hermes confirms it
   for that session; when turning it on, an answer that confirms anything else
-  is a failure, followed by an explicit off; and every `session.info`
-  corrects what is shown, so yolo that Hermes reports for its own reasons is
-  shown too. Ctrl+T and `/effort` set that session's reasoning effort through
-  the same session-scoped call. Plan mode is the frontend's own flag, also
+  is a failure, followed by an explicit off; and `session.info` corrects
+  what is shown, so yolo that Hermes reports for its own reasons is shown
+  too, except that one saying approvals are on within 2 seconds of a
+  confirmed on is held until the next, keeping accept shown. Ctrl+T and
+  `/effort` set that session's reasoning effort through the same
+  session-scoped call. Plan mode is the frontend's own flag, also
   turned on with Shift+Tab: while it is on, a prompt the person types goes to
   Hermes as `/plan <text>`. While Hermes has approvals off on its own (an off
   it confirmed did not end them, or they were off without the TUI turning

@@ -553,6 +553,62 @@ class HermesOwnApprovalsTests(unittest.TestCase):
         self.assertTrue(status_row_of(drawn(short)).rstrip().endswith("⏵⏵ accept │ ⏸ plan │ idle"))
 
 
+class StaleSessionInfoTests(unittest.TestCase):
+    """A session.info Hermes built before a confirmed on, written after its answer, cannot show normal by itself."""
+
+    def confirmed_on(self) -> tuple[App, RecordingClient, list[float]]:
+        now = [100.0]
+        app, client = make_app(clock=lambda: now[0])
+        app._on_input(SHIFT_TAB)
+        session_info(app, yolo=True)  # the one Hermes emits inside the call, before it answers
+        answer(app, client, YOLO_IS_ON)
+        return app, client, now
+
+    def test_one_saying_on_within_two_seconds_waits_for_the_next_and_asks_nothing(self) -> None:
+        self.assertEqual(app_module.YOLO_SETTLE_SECONDS, 2.0)
+        app, client, now = self.confirmed_on()
+        now[0] += 1.9
+        session_info(app, yolo=False)
+        self.assertEqual(app.mode, MODE_ACCEPT)
+        self.assertEqual(client.calls, [YOLO_ON_CALL])  # Hermes has no per-session read to ask
+        session_info(app, yolo=False)  # the next one decides
+        self.assertEqual(app.mode, MODE_NORMAL)
+        app._on_input(SHIFT_TAB)  # and nothing is left on: the next press turns approvals off again
+        self.assertEqual(client.calls[-1], YOLO_ON_CALL)
+
+    def test_a_snapshot_agreeing_with_the_switch_does_not_use_the_hold_up(self) -> None:
+        app, _client, now = self.confirmed_on()
+        now[0] += 0.5
+        session_info(app, yolo=True)
+        session_info(app, yolo=False)
+        self.assertEqual(app.mode, MODE_ACCEPT)
+
+    def test_from_two_seconds_on_a_session_info_decides_at_once(self) -> None:
+        app, _client, now = self.confirmed_on()
+        now[0] += 2.0
+        session_info(app, yolo=False)
+        self.assertEqual(app.mode, MODE_NORMAL)
+
+    def test_after_a_confirmed_off_approvals_off_is_shown_at_once(self) -> None:
+        app, client, now = self.confirmed_on()
+        now[0] += 3
+        app._on_input(SHIFT_TAB)
+        answer(app, client, YOLO_IS_OFF)
+        self.assertEqual(app.mode, MODE_PLAN)
+        now[0] += 0.5
+        session_info(app, yolo=True)  # in doubt the composer shows accept
+        self.assertEqual(app.mode, MODE_ACCEPT_PLAN)
+
+    def test_the_off_a_press_sends_is_not_held_against_the_on_before_it(self) -> None:
+        app, client, now = self.confirmed_on()
+        now[0] += 0.5
+        app._on_input(SHIFT_TAB)
+        session_info(app, yolo=False)  # the off's own session.info, before its answer
+        self.assertEqual(app.mode, MODE_NORMAL)
+        answer(app, client, YOLO_IS_OFF)
+        self.assertEqual(app.mode, MODE_PLAN)
+
+
 class ModeFollowsHermesTests(unittest.TestCase):
     def test_session_info_decides_whether_accept_is_shown(self) -> None:
         app, _client = make_app()

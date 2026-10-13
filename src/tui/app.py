@@ -41,7 +41,9 @@ per-session yolo, so entering and leaving it are `config.set` calls that
 always name this session and an explicit value and never a `scope`; the mode
 shown changes only once Hermes confirms it for this session, an answer that
 confirms anything else is treated as a failure and followed by an explicit
-off, and every `session.info` corrects what is shown. With approvals off
+off, and `session.info` corrects what is shown (one saying approvals are on
+within `YOLO_SETTLE_SECONDS` of a confirmed on waits for the next: it may be a
+snapshot Hermes took before the switch). With approvals off
 Hermes sends no approval request, so the TUI still answers none. Plan is the
 TUI's own flag, apart from what accept shows: a prompt typed while it is on
 goes as `/plan <text>`. When Hermes has approvals off on its own (an off it
@@ -215,6 +217,10 @@ STATE_WAITING = "waiting on you"
 YOLO_ON = "on"
 YOLO_OFF = "off"
 YOLO_ANSWERS = {True: "1", False: "0"}
+# Hermes builds `session.info` on other threads too, reading yolo before its slow probes, so one snapshot
+# taken before a confirmed on can arrive after it. For this long after a confirmed on, a `session.info`
+# saying approvals are on does not take accept off the composer by itself.
+YOLO_SETTLE_SECONDS = 2.0
 ACCEPT_REFUSED_NOTICE = (
     "Hermes did not turn approvals off for this session alone ({}). "
     "Accept all stays off, and the OMH TUI asked Hermes to switch it back off."
@@ -742,6 +748,7 @@ class App:
         self.effort = ""  # the reasoning effort the mode row shows; "" shows none
         self.mode_request_open = False  # a yolo call is out: Shift+Tab waits for its answer
         self.yolo_reported: bool | None = None  # `session.info`'s yolo since the last yolo call went out
+        self.yolo_confirmed_at: float | None = None  # when Hermes confirmed the TUI's on; None once one session.info was held
         self.effort_asked = ""  # the newest effort still waiting for Hermes' answer; the next Ctrl+T steps on from it
         self.busy_mode = BUSY_QUEUE
         self.catalog: list[tuple[str, str]] = []
@@ -1086,12 +1093,26 @@ class App:
         flag is the TUI's and stays as it is. Hermes reports yolo on for its
         own reasons too (`approvals.mode` off, `--yolo`, a `/yolo` typed to
         it), and then the composer says so as well.
+
+        One `session.info` saying approvals are on, within
+        `YOLO_SETTLE_SECONDS` of the TUI's confirmed on, is held instead: it
+        may be a snapshot Hermes took before the switch and wrote after its
+        answer. Hermes 6c61c3e27d has no per-session read to settle it with
+        (`config.get` reads `approvals.mode`, the global setting, and nothing
+        reads the session switch), so accept stays shown and the next
+        `session.info` decides. The other way round needs no hold: approvals
+        off is shown at once, since in doubt the composer shows accept.
         """
         effort = info.get("reasoning_effort")
         if isinstance(effort, str):
             self.effort = effort
         yolo = info.get("yolo")
         if not isinstance(yolo, bool):
+            return
+        confirmed_at = self.yolo_confirmed_at
+        settling = confirmed_at is not None and self.clock() - confirmed_at < YOLO_SETTLE_SECONDS
+        if not yolo and self.yolo_by_tui and settling:
+            self.yolo_confirmed_at = None  # held once: the next session.info decides
             return
         self.yolo_reported = self.approvals_off = yolo
         if not yolo:
@@ -1528,7 +1549,7 @@ class App:
             return
         sid = self.sid
         self.mode_request_open = True
-        self.yolo_reported = None
+        self.yolo_reported = self.yolo_confirmed_at = None
         self._request(
             "config.set",
             {"key": "yolo", "session_id": sid, "value": YOLO_ON if on else YOLO_OFF},
@@ -1560,6 +1581,7 @@ class App:
             self.transcript.add_notice(ACCEPT_STUCK_NOTICE.format(problem), NOTICE_ERROR)  # accept stays shown
         elif on:
             self.approvals_off = self.yolo_by_tui = True
+            self.yolo_confirmed_at = self.clock()
         else:
             self.yolo_by_tui, self.plan_mode, self.approvals_off = False, True, bool(self.yolo_reported)
             if self.approvals_off:
