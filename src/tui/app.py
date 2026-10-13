@@ -444,10 +444,20 @@ def mode_row_line(
 
 
 def yolo_answer_problem(result: Mapping[str, Any], on: bool) -> str:
-    """Why a `config.set yolo` answer does not confirm the session switch that was asked for; "" when it does.
+    """Why a `config.set yolo` answer does not confirm the switch that was asked for; "" when it does.
 
-    Hermes answers `{value: "1" | "0", scope: "session"}` for the per-session
-    flag. Any other scope means it changed something wider than this session.
+    The answer must carry the value asked for ("1" on, "0" off) and
+    `scope: "session"`. Any other scope means Hermes wrote something wider
+    (`scope: "global"` is the permanent `approvals.mode`), so it is a failure.
+    The scope proves less than it reads, though: Hermes 6c61c3e27d answers
+    `scope: "session"` from its sessionless branch too, the one that sets
+    `HERMES_YOLO_MODE` for the whole gateway process (`_set_yolo` in
+    `tui_gateway/methods_config_set.py`), so the answer cannot say which
+    branch ran. What keeps the switch on one session is settled before the
+    answer: every yolo call names this session, `gateway_contract.call_problem`
+    refuses to send a `config.set` without a session id, and Hermes answers a
+    session id it does not hold with 4001 instead of falling back to the
+    process switch (`_SESSION_SCOPED_KEYS` in the same file).
     """
     scope, value = result.get("scope"), result.get("value")
     if scope != contract.CONFIG_SET_SESSION_SCOPE:

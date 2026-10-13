@@ -344,6 +344,16 @@ class ModeCycleTests(unittest.TestCase):
         self.assertEqual(app.mode, MODE_NORMAL)
         self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])
 
+    def test_the_answer_cannot_show_the_switch_stayed_on_one_session_so_the_call_must(self) -> None:
+        # Hermes 6c61c3e27d's sessionless branch sets HERMES_YOLO_MODE for the gateway process and answers
+        # exactly what the session branch answers, so the answer check passes it; the guards are on the call.
+        sessionless_answer = {"key": "yolo", "value": "1", "scope": "session"}
+        self.assertEqual(app_module.yolo_answer_problem(sessionless_answer, True), "")
+        self.assertIn("session id", contract.call_problem("config.set", {"key": "yolo", "value": "on"}))
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [("config.set", {"key": "yolo", "session_id": SID, "value": "on"})])
+
     def test_an_error_answer_to_accept_is_a_failure_too(self) -> None:
         # 5001 can follow a switch that was already flipped, so the explicit off still goes out.
         app, client = make_app()
