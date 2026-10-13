@@ -879,6 +879,23 @@ class SlotArmFromArrivalTests(unittest.TestCase):
         self.assertEqual(self.press(self.SUDO, 0.45, b"\x1b", b"[13u"), [])
         self.assertEqual(self.press(self.SUDO, self.PAST, b"\x1b[13u"), [("srq-1", {"result": {"value": ""}})])
 
+    def test_a_key_whose_first_byte_came_before_the_slot_opened_is_early_however_late_it_is_decided(self) -> None:
+        # A Right arrow split twice by jitter around the opening: its ESC 10 ms before, its `[` and its `C` each
+        # 0.27 to 0.29 s later, inside the 0.3 s wait. It is decided 0.55 s after the opening, past the delay,
+        # and still answers nothing; the untouched approval then denies.
+        now = [100.0]
+        app, client = running(clock=lambda: now[0])
+        self.assertTrue(reporting(app))
+        step_through(app, now, [(0.0, b"\x1b")])
+        now[0] += 0.01
+        app._on_server_request(self.APPROVAL)
+        reads = [(0.04, b""), *self.QUIET * 3, (0.07, b"["), *self.QUIET * 5, (0.04, b"C")]
+        step_through(app, now, reads)
+        self.assertAlmostEqual(now[0] - app.slot_opened_at, 0.55)
+        self.assertEqual(client.answers, [])
+        step_through(app, now, [*self.QUIET * 40, (0.0, b"\r"), *self.QUIET])
+        self.assertEqual(client.answers, [self.DENY])
+
     def esc_after_an_off(self, off_before: float | None, at: float) -> list:
         """An Esc `at` s after an approval opened, reports having gone off `off_before` s before it (None: never on)."""
         now = [100.0]

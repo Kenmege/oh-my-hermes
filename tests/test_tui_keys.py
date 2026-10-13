@@ -807,8 +807,10 @@ class EscapeWaitTests(unittest.TestCase):
         self.assertEqual(paused.events, [Key("up")])
 
     def test_an_ss3_key_split_after_its_escape_goes_on_with_the_sequence(self) -> None:
+        # F1 to F4 (no key the TUI names), then the arrows, Home and End in application cursor mode: every final.
         cases = {b"OP": Key("unknown"), b"OQ": Key("unknown"), b"OR": Key("unknown"), b"OS": Key("unknown"),
-                 b"OA": Key("up"), b"OH": Key("home")}  # F1 to F4 (no key the TUI names), application-mode keys
+                 b"OA": Key("up"), b"OB": Key("down"), b"OC": Key("right"), b"OD": Key("left"),
+                 b"OH": Key("home"), b"OF": Key("end")}
         for reporting, off_at in ((True, None), (False, 0.0)):
             for rest, key in cases.items():
                 with self.subTest(reporting=reporting, rest=rest):
