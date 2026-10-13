@@ -606,7 +606,8 @@ class Transcript:
 
     def _relative(self, path: str) -> str:
         """`path` relative to the session's working directory when it lies inside it."""
-        prefix = self.cwd.rstrip("/") + "/" if self.cwd else ""
+        root = self.cwd.rstrip("/")
+        prefix = root + "/" if root else ""  # "/" itself is no prefix: every absolute path stays absolute
         return path[len(prefix):] if prefix and path.startswith(prefix) and len(path) > len(prefix) else path
 
     def _display_args(self, summary: str) -> str:

@@ -1401,7 +1401,9 @@ class App:
 
         The main screen (scrollback and the live region) stays untouched underneath
         and comes back as it was, so the picker leaves no frame behind; only a resize
-        while it was open needs the full redraw.
+        while it was open needs the full redraw. Gateway events wait while it is open: a
+        new approval shows once the picker closes, and Hermes may withdraw a request on its
+        own timeout meanwhile. Nothing is answered for the person either way.
         """
         before = self.size
         self.terminal.write(ALT_SCREEN_ON + CURSOR_HOME + HIDE_CURSOR)
@@ -1621,7 +1623,8 @@ class App:
 
 
 def _say(stream: TextIO, text: str) -> None:
-    stream.write(text + "\n")
+    """One line to the shell, after the terminal is restored; gateway text in it is cleaned of escapes and controls."""
+    stream.write(clean_text(text) + "\n")
     stream.flush()
 
 

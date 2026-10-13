@@ -7,7 +7,9 @@ for its own terminal, and runs `frontend/dist/entry.js` in place of its Ink
 app. That file is a small Node shim that hands the terminal to
 `omh.tui.app.main` on the interpreter named in `OMH_TUI_PYTHON`, started with
 `-E -P` so neither the launcher's `PYTHONPATH` nor the working directory is
-on its import path.
+on its import path. `-E` also ignores `PYTHONUSERBASE`: an OMH installed under
+a custom user base cannot import itself there, and the shim exits 75 so `omh`
+falls back.
 
 When the TUI cannot start it exits with `FALLBACK_EXIT`, and `omh` opens
 Hermes' own terminal instead, so a failure costs the person the OMH surface,

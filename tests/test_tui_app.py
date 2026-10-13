@@ -1021,6 +1021,17 @@ class SlotArmingTests(unittest.TestCase):
         self.assertEqual(sent, [("srq-1", {"result": {"answers": {"q0": "blue"}}})])
 
 
+
+class ShellLineTests(unittest.TestCase):
+    def test_a_line_printed_after_the_terminal_is_restored_carries_no_escape_sequence(self) -> None:
+        import io
+
+        from omh.tui.app import _say
+
+        stream = io.StringIO()
+        _say(stream, "gateway said: \x1b[31mboom\x1b[0m \x1b]8;;http://x\x07link\x1b]8;;\x07")
+        self.assertEqual(stream.getvalue(), "gateway said: boom link\n")
+
 class StickyPromptTests(unittest.TestCase):
     """The sent prompt is echoed above the composer only once it has scrolled off the screen."""
 

@@ -108,7 +108,7 @@ class ShimTests(unittest.TestCase):
         recorded = json.loads(record.read_text(encoding="utf-8")) if record.exists() else None
         return result, recorded
 
-    def test_the_shim_starts_omh_tui_without_the_launcher_path_and_keeps_user_site(self) -> None:
+    def test_the_shim_starts_python_with_dash_e_dash_p_and_moves_the_launcher_path_aside(self) -> None:
         with TemporaryDirectory() as tmp:
             result, recorded = self._run_shim(Path(tmp))
         self.assertEqual(result.returncode, 0, result.stderr)

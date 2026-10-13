@@ -143,6 +143,12 @@ class SessionRelativePathTests(LoopTestCase):
         self.assertIn("  ✓ patch  src/app.py", "\n".join(live))
         self.assertIn("    src/app.py", live)
 
+    def test_a_cwd_of_root_leaves_absolute_paths_absolute(self) -> None:
+        self.transcript.cwd = "/"
+        self.step(ev("message.start"))
+        self.step(ev("tool.start", tool_id="t1", name="read_file", context="/etc/hosts"))
+        self.assertIn("read_file  /etc/hosts", "\n".join(self.live()))
+
     def test_paths_outside_the_cwd_and_prose_stay_as_they_are(self) -> None:
         self.transcript.cwd = "/work/project"
         self.step(ev("message.start"))
