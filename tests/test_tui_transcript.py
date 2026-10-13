@@ -571,5 +571,122 @@ class EscapeHygieneTests(LoopTestCase):
         )
 
 
+# A `patch` completion shaped like Hermes 6c61c3e27d's: the parsed PatchResult dict, and
+# `inline_diff` as `render_edit_diff_with_delta` writes it (review header, SGR on every line).
+PATCH_DIFF = "--- a/src/app.py\n+++ b/src/app.py\n@@ -1,2 +1,2 @@\n import os\n-print('hello')\n+print('안녕 🌏')\n"
+PATCH_ARGS = {"mode": "replace", "path": "src/app.py", "old_string": "print('hello')", "new_string": "print('안녕 🌏')"}
+PATCH_INLINE_DIFF = "\n".join(
+    [
+        "  ┊ review diff",
+        "\x1b[38;2;180;160;255ma/src/app.py → b/src/app.py\x1b[0m",
+        "\x1b[38;2;120;120;140m@@ -1,2 +1,2 @@\x1b[0m",
+        "\x1b[38;2;150;150;150m import os\x1b[0m",
+        "\x1b[38;2;255;255;255;48;2;120;20;20m-print('hello')\x1b[0m",
+        "\x1b[38;2;255;255;255;48;2;20;90;20m+print('안녕 🌏')\x1b[0m",
+    ]
+)
+
+
+def big_inline_diff(added: int) -> str:
+    rows = ["  ┊ review diff", "\x1b[38;2;180;160;255ma/big.py → b/big.py\x1b[0m", "\x1b[38;2;120;120;140m@@ -0,0 +1 @@\x1b[0m"]
+    rows.extend(f"\x1b[38;2;255;255;255;48;2;20;90;20m+row {number}\x1b[0m" for number in range(1, added + 1))
+    return "\n".join(rows)
+
+
+class InlineDiffTests(LoopTestCase):
+    def edit(self, inline_diff: str | None, result: object, tool_id: str = "call_patch") -> None:
+        self.step(ev("tool.generating", name="patch"))
+        self.step(ev("tool.start", tool_id=tool_id, name="patch", context="src/app.py", args=PATCH_ARGS))
+        payload: dict[str, object] = {"tool_id": tool_id, "name": "patch", "args": PATCH_ARGS, "duration_s": 0.31,
+                                      "result": result}
+        if inline_diff is not None:
+            payload["inline_diff"] = inline_diff
+        self.step(ev("tool.complete", **payload))
+
+    def test_an_edit_shows_its_diff_under_its_row_through_the_whole_turn(self) -> None:
+        self.user("Say hello in Korean in src/app.py")
+        self.step(ev("message.start"))
+        self.step(ev("message.delta", text="Editing the greeting.\n"))
+        self.step(ev("message.interim", text="Editing the greeting.", already_streamed=True))
+        self.edit(PATCH_INLINE_DIFF, {"success": True, "diff": PATCH_DIFF, "files_modified": ["src/app.py"]})
+        live = self.live()
+        self.assertEqual(live[live.index("  ✓ patch  src/app.py  0.3s") + 1], "    a/src/app.py → b/src/app.py")
+        flushed = self.step(ev("message.delta", text="\n\nDone — it prints 안녕 now."))
+        diff = self.taken[-5:]
+        self.step(ev("message.complete", text="Done — it prints 안녕 now.", status="complete"))
+        self.assertEqual(
+            flushed,
+            [
+                "",
+                "⏺ Tool calls (1)",
+                "  ✓ patch  src/app.py  0.3s",
+                "    a/src/app.py → b/src/app.py",
+                "    @@ -1,2 +1,2 @@",
+                "     import os",
+                "    -print('hello')" + " " * 41,
+                "    +print('안녕 🌏')" + " " * 39,
+            ],
+        )
+        self.assertEqual([row[-1].style for row in diff],
+                         [THEME.label, THEME.accent, THEME.code, THEME.diff_remove, THEME.diff_add])
+        self.assertEqual([line_width(row) for row in diff[-2:]], [WIDTH, WIDTH])
+        self.assertFalse(any(is_control(ch) for row in self.taken for span in row for ch in span.text))
+        self.assertEqual(self.history(details=False), texts(self.taken))
+        self.assertEqual(self.history()[-1], "Done — it prints 안녕 now.")
+
+    def test_a_long_diff_is_capped_until_history_shows_it_all(self) -> None:
+        self.step(ev("message.start"))
+        self.edit(big_inline_diff(40), {"success": True})
+        flushed = self.step(ev("message.complete", text="", status="complete"))
+        self.assertEqual(len(flushed), 2 + 24 + 1)
+        self.assertEqual(flushed[-2].rstrip(), "    +row 22")
+        self.assertEqual(flushed[-1], "    … +18 lines (/history shows all)")
+        self.assertEqual(self.taken[-1][-1].style, THEME.dim)
+        full = self.history(details=True)
+        self.assertEqual(len(full), 2 + 42)
+        self.assertEqual(full[-1].rstrip(), "    +row 40")
+        self.assertNotIn("    … +18 lines (/history shows all)", full)
+
+    def test_toggled_details_show_the_whole_live_diff_and_never_reach_a_taken_one(self) -> None:
+        self.step(ev("message.start"))
+        self.edit(big_inline_diff(30), {"success": True})
+        self.assertEqual(self.live()[-1], "    … +8 lines (/history shows all)")
+        self.transcript.toggle_details()
+        self.assertEqual(self.live()[-1].rstrip(), "    +row 30")
+        self.transcript.toggle_details()
+        self.step(ev("message.complete", text="", status="complete"))
+        self.transcript.toggle_details()
+        self.assertEqual(texts(self.taken)[-1], "    … +8 lines (/history shows all)")
+        self.assertEqual(self.live(), [])
+
+    def test_a_denied_or_failed_edit_without_a_diff_shows_nothing_extra(self) -> None:
+        self.step(ev("message.start"))
+        self.edit(None, {"approved": False, "user_consent": False}, tool_id="a")
+        self.edit("", {"success": False, "error": "old_string not found in src/app.py"}, tool_id="b")
+        self.edit("  ┊ review diff", {"success": False, "error": "no change"}, tool_id="c")
+        flushed = self.step(ev("message.complete", text="", status="complete"))
+        self.assertEqual(
+            flushed,
+            [
+                "⏺ Tool calls (3)",
+                "  ⊘ patch  src/app.py  0.3s",
+                "  ✗ patch  src/app.py  0.3s",
+                "  ✗ patch  src/app.py  0.3s",
+            ],
+        )
+
+    def test_a_diff_takes_the_width_of_the_frame_that_flushes_it_and_retake_rewraps_it(self) -> None:
+        self.step(ev("message.start"))
+        self.edit(PATCH_INLINE_DIFF, {"success": True}, tool_id="w")
+        self.assertTrue(all(line_width(row) == 30 for row in self.transcript.live_lines(30, THEME)[-2:]))
+        self.step(ev("message.complete", text="", status="complete"), width=44)
+        self.assertTrue(all(line_width(row) == 44 for row in self.taken[-2:]))
+        self.assertEqual(self.transcript.take_stable_lines(30, THEME), [])
+        self.transcript.retake()
+        again = self.transcript.take_stable_lines(30, THEME)
+        self.assertEqual(again, self.transcript.history_lines(30, THEME, details=False))
+        self.assertTrue(all(line_width(row) == 30 for row in again[-2:]))
+
+
 if __name__ == "__main__":
     unittest.main()

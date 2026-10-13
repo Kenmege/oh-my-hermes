@@ -1,0 +1,162 @@
+"""Hermes inline edit diffs as transcript rows (`omh.tui.diff_view`).
+
+The sample payloads are built the way Hermes 6c61c3e27d builds
+`tool.complete.payload.inline_diff` (`agent/display.py`): `_emit_inline_diff`
+writes its "  ┊ review diff" header, `_render_inline_unified_diff` folds the
+`---`/`+++` pair into one `a/x → b/x` line and wraps every other line in the
+24-bit SGR colour `_diff_ansi` resolves (the dark-terminal fallbacks below),
+and `_summarize_rendered_diff_sections` appends its omitted-lines summary.
+Every expectation is a literal row, never a call back into the module.
+"""
+
+from __future__ import annotations
+
+import random
+import unicodedata
+import unittest
+
+from omh.tui.diff_view import (
+    DIFF_ADDED,
+    DIFF_CONTEXT,
+    DIFF_FILE,
+    DIFF_HUNK,
+    DIFF_NOTE,
+    DIFF_REMOVED,
+    DiffLine,
+    diff_rows,
+    parse_inline_diff,
+)
+from omh.tui.style import Line, Span
+from omh.tui.theme import DEFAULT_THEME as THEME
+from omh.tui.width import is_control, line_width
+
+RESET = "\x1b[0m"
+FILE = "\x1b[38;2;180;160;255m"
+HUNK = "\x1b[38;2;120;120;140m"
+MINUS = "\x1b[38;2;255;255;255;48;2;120;20;20m"
+PLUS = "\x1b[38;2;255;255;255;48;2;20;90;20m"
+DIM = "\x1b[38;2;150;150;150m"
+REVIEW_HEADER = "  ┊ review diff"
+EARTH = "\U0001F30F"
+
+SAMPLE = "\n".join(
+    [
+        REVIEW_HEADER,
+        f"{FILE}a/src/app.py → b/src/app.py{RESET}",
+        f"{HUNK}@@ -1,3 +1,3 @@{RESET}",
+        f"{DIM} import os{RESET}",
+        f"{MINUS}-print('hello'){RESET}",
+        f"{PLUS}+print('안녕 {EARTH}'){RESET}",
+        "\\ No newline at end of file",
+        f"{HUNK}… omitted 12 diff line(s) across 1 additional file(s)/section(s){RESET}",
+    ]
+)
+
+
+def long_diff(changed: int) -> str:
+    """A one-file payload with a hunk header and `changed` added lines (2 + changed diff lines)."""
+    lines = [REVIEW_HEADER, f"{FILE}a/big.py → b/big.py{RESET}", f"{HUNK}@@ -0,0 +1,{changed} @@{RESET}"]
+    lines.extend(f"{PLUS}+line {number}{RESET}" for number in range(1, changed + 1))
+    return "\n".join(lines)
+
+
+def texts(rows: list[Line]) -> list[str]:
+    return ["".join(span.text for span in row) for row in rows]
+
+
+class ParseTests(unittest.TestCase):
+    def test_colour_and_the_review_header_go_and_each_line_is_classified(self) -> None:
+        self.assertEqual(
+            parse_inline_diff(SAMPLE),
+            (
+                DiffLine(DIFF_FILE, "a/src/app.py → b/src/app.py"),
+                DiffLine(DIFF_HUNK, "@@ -1,3 +1,3 @@"),
+                DiffLine(DIFF_CONTEXT, " import os"),
+                DiffLine(DIFF_REMOVED, "-print('hello')"),
+                DiffLine(DIFF_ADDED, f"+print('안녕 {EARTH}')"),
+                DiffLine(DIFF_NOTE, "\\ No newline at end of file"),
+                DiffLine(DIFF_NOTE, "… omitted 12 diff line(s) across 1 additional file(s)/section(s)"),
+            ),
+        )
+
+    def test_an_empty_payload_or_a_bare_header_is_no_diff(self) -> None:
+        for payload in ("", "\n\n", REVIEW_HEADER, f"\n{REVIEW_HEADER}\n\n", f"{DIM}{RESET}"):
+            with self.subTest(payload=payload):
+                self.assertEqual(parse_inline_diff(payload), ())
+
+    def test_a_payload_without_the_header_keeps_its_first_line(self) -> None:
+        self.assertEqual(
+            parse_inline_diff(f"{FILE}/dev/null → b/new.py{RESET}\r\n{PLUS}+x = 1{RESET}\r\n"),
+            (DiffLine(DIFF_FILE, "/dev/null → b/new.py"), DiffLine(DIFF_ADDED, "+x = 1")),
+        )
+
+    def test_tabs_expand_and_decomposed_hangul_is_kept_for_the_renderer_to_compose(self) -> None:
+        decomposed = unicodedata.normalize("NFD", "한글")
+        lines = parse_inline_diff(f"{PLUS}+\t{decomposed}{RESET}")
+        self.assertEqual(lines, (DiffLine(DIFF_ADDED, "+   " + decomposed),))
+        self.assertEqual(texts(diff_rows(lines, 12, THEME)), ["    +   한글"])
+
+
+class RowTests(unittest.TestCase):
+    def test_rows_hang_under_the_tool_and_take_their_roles(self) -> None:
+        rows = diff_rows(parse_inline_diff(SAMPLE), 40, THEME)
+        indent = Span("    ")
+        self.assertEqual(
+            rows,
+            [
+                (indent, Span("a/src/app.py → b/src/app.py", THEME.label)),
+                (indent, Span("@@ -1,3 +1,3 @@", THEME.accent)),
+                (indent, Span(" import os", THEME.code)),
+                (indent, Span("-print('hello')" + " " * 21, THEME.diff_remove)),
+                (indent, Span(f"+print('안녕 {EARTH}')" + " " * 19, THEME.diff_add)),  # 17 cells of text
+                (indent, Span("\\ No newline at end of file", THEME.dim)),
+                (indent, Span("… omitted 12 diff line(s) across 1", THEME.dim)),
+                (indent, Span("additional file(s)/section(s)", THEME.dim)),
+            ],
+        )
+
+    def test_bands_fill_the_width_with_wide_glyphs_and_wrapped_rows(self) -> None:
+        line = DiffLine(DIFF_ADDED, "+" + "한글" * 6 + EARTH * 3 + "x")
+        for width in (9, 13, 20, 41, 80):
+            with self.subTest(width=width):
+                rows = diff_rows((line, DiffLine(DIFF_REMOVED, "-")), width, THEME)
+                self.assertTrue(all(line_width(row) == width for row in rows), texts(rows))
+                self.assertEqual("".join(row[-1].text for row in rows[:-1]).replace(" ", ""), line.text)
+                self.assertEqual({row[-1].style for row in rows[:-1]}, {THEME.diff_add})
+                self.assertEqual(rows[-1][-1].style, THEME.diff_remove)
+
+    def test_a_terminal_too_narrow_for_the_indent_drops_it(self) -> None:
+        rows = diff_rows((DiffLine(DIFF_ADDED, "+abc"), DiffLine(DIFF_HUNK, "@@ -1 +1 @@")), 8, THEME)
+        self.assertEqual(texts(rows), ["+abc    ", "@@ -1 +1", " @@"])
+
+    def test_the_preview_shows_24_lines_and_counts_the_rest(self) -> None:
+        lines = parse_inline_diff(long_diff(28))
+        self.assertEqual(len(lines), 30)
+        rows = diff_rows(lines, 60, THEME)
+        self.assertEqual(len(rows), 25)
+        self.assertEqual(texts(rows)[23].rstrip(), "    +line 22")
+        self.assertEqual(rows[-1], (Span("    "), Span("… +6 lines (/history shows all)", THEME.dim)))
+        full = diff_rows(lines, 60, THEME, full=True)
+        self.assertEqual(len(full), 30)
+        self.assertEqual(texts(full)[-1].rstrip(), "    +line 28")
+        self.assertEqual(texts(diff_rows(parse_inline_diff(long_diff(23)), 60, THEME))[-1], "    … +1 line (/history shows all)")
+        self.assertEqual(len(diff_rows(parse_inline_diff(long_diff(22)), 60, THEME)), 24)
+
+    def test_random_payloads_never_raise_or_paint_a_control_character(self) -> None:
+        generator = random.Random(2085)
+        alphabet = ["\x1b", "[", "]", "38;2;1;2;3", "m", "\x07", "\\", "+", "-", "@@", " ", "→", "┊", "\n", "\t",
+                    "\r", "한", EARTH, "\x9b", "\x9d", "a", "0", ";", "\x00"]
+        for _ in range(300):
+            payload = "".join(generator.choice(alphabet) for _ in range(generator.randrange(0, 60)))
+            for width in (1, 5, 9, 40):
+                with self.subTest(payload=payload, width=width):
+                    rows = diff_rows(parse_inline_diff(payload), width, THEME, full=generator.random() < 0.5)
+                    for row in rows:
+                        for span in row:
+                            self.assertFalse(any(is_control(ch) for ch in span.text), span.text)
+                    if width >= 9:
+                        self.assertTrue(all(line_width(row) <= width for row in rows))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -302,7 +302,7 @@ def _quote_rows(body: str, width: int, theme: Theme) -> list[Line]:
 # ── fenced code ───────────────────────────────────────────────────────────
 
 
-def _hard_wrap(text: str, cells: int) -> list[str]:
+def hard_wrap(text: str, cells: int) -> list[str]:
     """`text` cut into rows of at most `cells`, keeping every space and never splitting a cluster."""
     rows: list[str] = []
     row = ""
@@ -319,13 +319,13 @@ def _hard_wrap(text: str, cells: int) -> list[str]:
 
 
 def _verbatim_rows(text: str, width: int, style: Style) -> list[Line]:
-    return [(Span(row, style),) if row else () for row in _hard_wrap(text, width)]
+    return [(Span(row, style),) if row else () for row in hard_wrap(text, width)]
 
 
 def _band_rows(text: str, width: int, band: Style) -> list[Line]:
     """Verbatim rows padded to the full width in the band style (the TUI paints the whole row)."""
     rows: list[Line] = []
-    for row in _hard_wrap(text, width):
+    for row in hard_wrap(text, width):
         padded = row + " " * max(0, width - cell_width(row))
         rows.append((Span(padded, band),))
     return rows

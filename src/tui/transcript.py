@@ -23,8 +23,11 @@ so a reply that ends there leaves nothing to take back) and fully at
 flush boundary; thinking flushes as ONE collapsed row ("▸ thought for 4.2s");
 a tool group flushes when the next block arrives (message text, thinking) or
 at `message.complete`, as "⏺ Tool calls (N)" (plus "parallel ×K" when K tools
-ran at once) and one line per tool. Lines rendered at one width stay as they
-were taken; a resize changes only what has not been taken yet.
+ran at once) and one line per tool. An edit tool whose `tool.complete` carries
+an `inline_diff` shows that diff under its row (`diff_view.py`): the first
+`PREVIEW_LINES` diff lines and a count of the rest, which `history_lines` with
+details shows in full. Lines rendered at one width stay as they were taken; a
+resize changes only what has not been taken yet.
 
 Two events do not mean what their names suggest, measured against Hermes
 6c61c3e27d (the recorded fixtures and the gateway source):
@@ -46,6 +49,7 @@ from dataclasses import dataclass, field
 import time
 from typing import Any
 
+from .diff_view import DiffLine, diff_rows, parse_inline_diff
 from .gateway import Event
 from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
 from .style import Line, Span, Style
@@ -112,6 +116,7 @@ class ToolRow:
     started_at: float | None = None
     duration_s: float | None = None
     summary: str = ""
+    diff: tuple[DiffLine, ...] = ()  # an edit's inline diff, colour stripped and classified
 
 
 @dataclass
@@ -354,11 +359,13 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool) -> li
         rows.append(_tool_row(tool, width, theme))
         if expanded and tool.summary:
             rows.extend(wrap_prefixed((Span(tool.summary, theme.dim),), summary_first, summary_rest, width))
+        if tool.diff:
+            rows.extend(diff_rows(tool.diff, width, theme, full=expanded))
     return rows
 
 
 def block_rows(block: Block, width: int, theme: Theme, expanded: bool = False) -> list[Line]:
-    """The rows one block shows at `width`; `expanded` adds thinking text and tool result summaries."""
+    """The rows one block shows at `width`; `expanded` adds thinking text, tool result summaries, whole diffs."""
     width = max(1, width)
     if isinstance(block, UserBlock):
         return _user_rows(block, width, theme)
@@ -578,6 +585,7 @@ class Transcript:
         row.status = tool_result_status(payload.get("result"))
         row.duration_s = _duration(payload, row, self._clock())
         row.summary = _result_summary(payload)
+        row.diff = parse_inline_diff(_str(payload.get("inline_diff")))
 
     def _on_status_update(self, payload: dict[str, Any]) -> None:
         text = _first_line(_str(payload.get("text")))
@@ -652,7 +660,7 @@ class Transcript:
         return rows
 
     def history_lines(self, width: int, theme: Theme, details: bool = True) -> list[Line]:
-        """The whole transcript at `width`; `details` adds full thinking text and tool result summaries."""
+        """The whole transcript at `width`; `details` adds full thinking text, tool result summaries, whole diffs."""
         rows: list[Line] = []
         for block in self.blocks:
             block_lines = block_rows(block, width, theme, expanded=details)
