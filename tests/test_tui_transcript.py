@@ -85,6 +85,28 @@ class LoopTestCase(unittest.TestCase):
         return texts(self.transcript.history_lines(WIDTH, THEME, details=details))
 
 
+class SpacingTests(LoopTestCase):
+    def test_one_blank_row_separates_blocks_and_none_opens_the_transcript(self) -> None:
+        self.user("first")
+        self.step(ev("message.start"))
+        self.step(ev("reasoning.delta", text="thinking it over"))
+        self.step(ev("tool.start", tool_id="t1", name="terminal", context="ls"))
+        self.step(ev("tool.complete", tool_id="t1", name="terminal", result={"exit_code": 0}, duration_s=0.5))
+        self.step(ev("message.delta", text="done\n"))
+        self.step(ev("message.complete", text="done", status="complete"))
+        self.user("second")
+        expected = ["› first", "", "▸ thought for 0.0s", "", "⏺ Tool calls (1)", "  ✓ terminal  ls  0.5s", "", "done", "", "› second"]
+        self.assertEqual(texts(self.taken), expected)
+        self.assertEqual(self.history(details=False), expected)
+
+    def test_a_resumed_reply_renders_like_a_streamed_one(self) -> None:
+        self.user("hi")
+        self.transcript.add_assistant("**hello** there\n\n```sh\nls\n```")
+        self.transcript.add_assistant("   ")
+        self.assertEqual(self.step(), ["", "hello there", "", "sh", "ls"])
+        self.assertEqual(len(self.transcript.blocks), 2)
+
+
 class PlainTurnTests(LoopTestCase):
     def test_plain_turn_flushes_per_completed_line_and_fully_at_complete(self) -> None:
         self.assertEqual(self.user("Reply with exactly the word: ok"), ["› Reply with exactly the word: ok"])

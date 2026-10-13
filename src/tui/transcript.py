@@ -417,6 +417,11 @@ class Transcript:
     def add_notice(self, text: str, level: str = NOTICE_INFO) -> None:
         self._append(NoticeBlock(text, level))
 
+    def add_assistant(self, text: str) -> None:
+        """A finished reply (a resumed session's history), rendered like a streamed one."""
+        if text.strip():
+            self._append(AssistantBlock(text, done=True))
+
     def toggle_details(self) -> bool:
         """Expand or collapse the live block's details; blocks already taken never repaint."""
         self.details_expanded = not self.details_expanded

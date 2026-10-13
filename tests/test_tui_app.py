@@ -17,6 +17,7 @@ EOF after a deadline and is reported by its label.
 
 from __future__ import annotations
 
+import base64
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -31,6 +32,7 @@ import unittest
 from _test_temp_root import make_test_tempdir
 from _tui_gateway_replay import (
     EXIT,
+    HANG,
     Scenario,
     client_frames,
     load_fixture,
@@ -41,9 +43,12 @@ from _tui_gateway_replay import (
 )
 from _vt_screen import VTScreen
 from omh.tui import terminal as terminal_module
-from omh.tui.app import EXIT_HINT, App, main
+from omh.skin_pack import hex_to_rgb
+from omh.tui.app import BANNER_HINT, EXIT_HINT, App, initial_theme, main
 from omh.tui.gateway import GatewayClient, gateway_spawn
 from omh.tui.launch import FALLBACK_EXIT
+from omh.tui.theme import theme_named
+from omh.version import __version__
 
 FAST_GRACE = 0.3
 STORED_ID = "20261013_115656_e709ea"
@@ -94,6 +99,8 @@ class ScriptedTerminal:
         self.writes: list[str] = []
         self.entered = 0
         self.exited = 0
+        self.fired: dict[str, float] = {}  # label -> when that step fired
+        self.exited_at = 0.0
         self._resized = False
         self._quiet = False
 
@@ -108,6 +115,7 @@ class ScriptedTerminal:
 
     def __exit__(self, *exc: object) -> None:
         self.exited += 1
+        self.exited_at = time.monotonic()
 
     def size(self) -> tuple[int, int]:
         return (self.screen.cols, self.screen.rows)
@@ -138,6 +146,8 @@ class ScriptedTerminal:
             return self._wait(step.label or f"step {step!r}")
         self.steps.popleft()
         self._quiet = True
+        if step.label:
+            self.fired[step.label] = time.monotonic()
         if step.capture:
             self.captures[step.capture] = self.screen.lines()
         if step.resize is not None:
@@ -158,6 +168,12 @@ class ScriptedTerminal:
 
     def shows(self, needle: str) -> Callable[[], bool]:
         return lambda: needle in "\n".join(self.screen.lines())
+
+    def status_background(self) -> tuple[int, ...]:
+        row = next(index for index, line in enumerate(self.screen.lines()) if STATUS_MARK in line)
+        attrs = self.screen.attrs_at(row, self.screen.cols - 1)  # a filler cell: background only
+        start = attrs.index(48)
+        return tuple(attrs[start + 2 : start + 5])
 
 
 class FakePoller:
@@ -516,7 +532,7 @@ class PromptSlotTests(AppTestCase):
         (resume,) = run.calls("session.resume")
         self.assertEqual(resume["params"], {"session_id": APPROVAL_STORED_ID, "cols": 80})
         self.assertEqual(run.calls("session.create"), [])
-        self.assertIn(f"Resumed session {APPROVAL_STORED_ID}", run.terminal.history())
+        self.assertTrue(run.terminal.history().startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {APPROVAL_STORED_ID}"))
         self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": APPROVAL_STORED_ID})
 
     def assert_withdrawal_closes_the_slot(self, kind: str, payload: dict) -> None:
@@ -646,6 +662,288 @@ class SlashCommandTests(AppTestCase):
         self.assertEqual(seen, [(1, 1)])
         self.assertEqual((terminal.entered, terminal.exited), (2, 2))
 
+
+FRESH_LIVE_ID = "fresh01"
+FRESH_STORED_ID = "20261013_140000_fresh"
+
+
+def turn_rows(fixture: str, index: int) -> dict:
+    return load_fixture(fixture)[1][index]["frame"]
+
+
+def busy_mode_answers(mode: str) -> tuple[tuple[str, dict], ...]:
+    return (
+        ("config.get", {"result": {"config": {"display": {"busy_input_mode": mode}}}}),
+        ("commands.catalog", recorded_answer("session", "commands_catalog")),
+    )
+
+
+class InitialThemeTests(unittest.TestCase):
+    def test_an_omh_skin_name_picks_that_theme_and_anything_else_is_sky(self) -> None:
+        cases = {
+            "omh-amber": "amber",
+            "omh-crimson": "crimson",
+            "omh": "sky",
+            "default": "sky",  # Hermes' own default skin
+            "amber": "sky",  # a foreign skin that only shares a short name
+            "": "sky",
+        }
+        for skin, theme in cases.items():
+            with self.subTest(skin=skin):
+                self.assertEqual(initial_theme({"skin": {"name": skin}}).name, theme)
+        self.assertEqual(initial_theme({}).name, "sky")
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class OpeningTests(AppTestCase):
+    def test_a_fresh_session_opens_with_the_banner_in_scrollback(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers()),
+            cols=100,
+            env={"HOME": "/fixture"},
+        )
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="the first frame"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        history = run.terminal.screen.history()
+        self.assertEqual(
+            history[:2], [f"⚚ OH-MY-HERMES v{__version__} · deepseek/deepseek-v4.1-flash-ultrafast · ~/project", BANNER_HINT]
+        )
+
+    def test_the_recorded_default_skin_paints_sky_and_an_omh_skin_paints_its_theme(self) -> None:
+        ready = turn_rows("session", 0)
+        crimson = {**ready, "params": {**ready["params"], "payload": {"skin": {"name": "omh-crimson"}}}}
+        for name, inject in (("sky", ()), ("crimson", ((0, json.dumps(crimson)),))):
+            with self.subTest(theme=name):
+                run = self.prepare(
+                    Scenario("session", spans("session", "startup", "create"), inject=inject, answers=startup_answers())
+                )
+                seen: list[tuple[int, ...]] = []
+                run.terminal.script(
+                    Step(b"\x04", when=lambda run=run, seen=seen: run.terminal.idle() and not seen.append(
+                        run.terminal.status_background()), label="the first frame")
+                )
+                self.run_main(run)
+                self.assert_clean_run(run)
+                self.assertEqual(seen[-1], hex_to_rgb(theme_named(name).status.bg))
+
+    def test_a_resumed_session_draws_its_earlier_turns_before_the_first_frame(self) -> None:
+        messages = [
+            {"role": "user", "text": "What is in this repo?", "row_id": 1},
+            {"role": "assistant", "text": "Let me look.", "row_id": 2},
+            {"role": "tool", "name": "terminal", "context": "ls -la", "tool_call_id": "c1"},
+            {"role": "tool", "name": "read_file", "context": "README.md", "tool_call_id": "c2"},
+            {"role": "assistant", "text": "It is **oh-my-hermes**.", "reasoning": "private chain of thought"},
+            {"role": "system", "text": "[System: model switched]"},
+            {"role": "user", "text": "Thanks"},
+        ]
+        resumed = {
+            "result": {
+                "session_id": LIVE_ID,
+                "stored_session_id": STORED_ID,
+                "message_count": len(messages),
+                "messages": messages,
+                "info": {"model": "deepseek/deepseek-v4.1-flash-ultrafast", "cwd": "/fixture/project"},
+            }
+        }
+        run = self.prepare(
+            Scenario("session", spans("session", "startup"), answers=(*startup_answers(), ("session.resume", resumed))),
+            cols=160,
+            env={"HERMES_TUI_RESUME": STORED_ID},
+        )
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="the first frame"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        history = run.terminal.screen.history()
+        self.assertTrue(history[0].startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {STORED_ID}"))
+        self.assertEqual(
+            history[3:13],
+            [
+                "› What is in this repo?",
+                "",
+                "Let me look.",
+                "",
+                "· terminal  ls -la",
+                "  read_file  README.md",
+                "",
+                "It is oh-my-hermes.",
+                "",
+                "› Thanks",
+            ],
+        )
+        text = "\n".join(history)
+        self.assertNotIn("private chain of thought", text)
+        self.assertNotIn("[System", text)
+
+    def test_exit_settles_the_screen_at_once_and_reaps_a_slow_gateway_quickly(self) -> None:
+        # The fake keeps running past stdin EOF, as the real gateway often does for 10 s and more.
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers(), after=HANG)
+        )
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="exit"))
+        self.run_main(run)
+        returned = time.monotonic()
+        self.assert_clean_run(run)
+        pressed = run.terminal.fired["exit"]
+        self.assertLess(run.terminal.exited_at - pressed, 0.5)
+        self.assertLess(returned - pressed, 1.5)
+        self.assertNotIn(STATUS_MARK, run.terminal.history())
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class LocalCommandTests(AppTestCase):
+    def plain_run(self, **scenario: object) -> Run:
+        return self.prepare(
+            Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers(), **scenario)
+        )
+
+    def after_reply(self, run: Run) -> Callable[[], bool]:
+        return lambda: "later." in run.terminal.history() and run.terminal.idle()
+
+    def test_new_declines_open_requests_and_opens_a_fresh_session(self) -> None:
+        create = recorded_answer("approval", "create")
+        fresh = {
+            "result": {
+                "session_id": FRESH_LIVE_ID,
+                "stored_session_id": FRESH_STORED_ID,
+                "message_count": 0,
+                "messages": [],
+                "info": {"model": "deepseek/deepseek-v4.1-flash-ultrafast"},
+            }
+        }
+        answers = (
+            *startup_answers(),
+            ("session.create", create),
+            ("session.create", fresh),
+            ("session.close", {"result": {"closed": True}}),
+            # An alias answered while the approval is open: the one way /new runs with a request pending.
+            ("slash.exec", {"result": {"type": "alias", "target": "new"}}),
+        )
+        startup, turn = spans("approval", "startup", "approval_turn")
+        run = self.prepare(Scenario("approval", (startup, turn), answers=answers))
+        run.terminal.script(
+            Step(b"Run rm -rf ./omh-m0-probe-dir\r/fresh\r", when=run.terminal.idle, label="idle"),
+            Step(b"\x04", when=run.terminal.shows(f"New session {FRESH_STORED_ID}."), label="the new session"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        denied = [frame for frame in run.frames if frame.get("id") == "srq-52e9720342b6"]
+        self.assertEqual(denied, [{"jsonrpc": "2.0", "id": "srq-52e9720342b6", "result": {"choice": "deny"}}])
+        (closed,) = run.calls("session.close")
+        self.assertEqual(closed["params"], {"session_id": "f05e2691"})
+        self.assertEqual(len(run.calls("session.create")), 2)
+        self.assertEqual(run.calls("slash.exec")[0]["params"], {"command": "fresh", "session_id": "f05e2691"})
+        # The closed session's remaining events never reach the fresh transcript.
+        self.assertNotIn("It was blocked", run.terminal.history())
+        self.assertEqual(run.poller.sessions, [APPROVAL_STORED_ID, FRESH_STORED_ID])
+        self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": FRESH_STORED_ID})
+
+    def test_copy_sends_the_last_reply_as_an_osc_52_frame(self) -> None:
+        run = self.plain_run()
+        run.terminal.script(
+            self.submit(run, "Reply with exactly the word: ok"),
+            Step(b"/copy\r", when=self.after_reply(run), label="reply"),
+            Step(b"\x04", when=run.terminal.shows("Copied the last reply"), label="the copy notice"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        reply = turn_rows("session", 44)["params"]["payload"]["text"].strip()
+        self.assertEqual(run.terminal.screen.osc, ["52;c;" + base64.b64encode(reply.encode("utf-8")).decode("ascii")])
+        self.assertNotIn("52;c;", run.terminal.history())
+
+    def test_logs_pages_the_gateway_stderr_and_q_leaves(self) -> None:
+        run = self.plain_run(stderr=("gateway warming up", "model list prefetched"))
+        terminal = run.terminal
+        terminal.script(
+            Step(b"/logs\r", when=terminal.idle, label="idle"),
+            Step(b"q", when=lambda: terminal.screen.alternate, capture="pager", label="the pager"),
+            Step(b"\x04", when=lambda: not terminal.screen.alternate and terminal.idle(), label="back"),
+        )
+        self.run_main(run)
+        self.assertEqual(terminal.stalled, "")
+        self.assertEqual(run.code, 0)
+        pager = "\n".join(terminal.captures["pager"])
+        self.assertIn("gateway warming up", pager)
+        self.assertIn("model list prefetched", pager)
+        self.assertIn("gateway stderr (memory only)", pager)
+        self.assertEqual(run.calls("slash.exec"), [])
+
+    def test_theme_switches_for_a_known_name_and_names_the_choices_for_an_unknown_one(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        terminal = run.terminal
+        seen: list[tuple[int, ...]] = []
+        terminal.script(
+            self.submit(run, "/theme crimson"),
+            Step(b"/theme nope\r", when=lambda: terminal.idle() and "applies to this session" in terminal.history()
+                 and not seen.append(terminal.status_background()), label="the switch notice"),
+            Step(b"\x04", when=terminal.shows("No theme named nope"), label="the unknown-theme notice"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual(seen[-1], hex_to_rgb(theme_named("crimson").status.bg))
+        history = terminal.history()
+        self.assertIn("Theme crimson applies to this session", history)
+        self.assertIn("No theme named nope. Available: sky, amber, crimson, mono.", history)
+
+    def test_help_lists_local_commands_the_hermes_catalog_and_keys(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), cols=200)
+        run.terminal.script(
+            self.submit(run, "/help"),
+            Step(b"\x04", when=lambda: "Keys:" in run.terminal.history(), label="the help notice"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        history = run.terminal.history()
+        self.assertIn("/omh-model  Pick OMH model chains", history)
+        self.assertIn("Hermes commands (8): /new /clear /redraw /history /save /retry /prompt /undo", history)
+        self.assertIn("Ctrl+D on empty input exits", history)
+        self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
+
+    def test_queue_lists_what_waits_for_the_running_turn(self) -> None:
+        run = self.prepare(
+            Scenario(
+                "session",
+                spans("session", "startup", "create", "plain_turn", "smart_approved_turn"),
+                answers=startup_answers(),
+            )
+        )
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "/queue"),
+            Step(b"first prompt\rsecond prompt\r/queue\r", when=terminal.shows("Nothing is queued."), label="empty"),
+            Step(b"\x04", when=lambda: "cleanly)." in terminal.history() and terminal.idle(), label="turn 2"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        history = terminal.screen.history()
+        listed = history.index("· Queued (sent one at a time as each turn ends):")
+        self.assertEqual(history[listed + 1], "  1. second prompt")
+        self.assertIn("› second prompt", history[listed:])
+        self.assertLess(history.index("› first prompt"), listed)
+
+    def test_steer_and_interrupt_modes_send_input_during_a_turn_at_once(self) -> None:
+        for mode in ("steer", "interrupt"):
+            with self.subTest(mode=mode):
+                run = self.prepare(
+                    Scenario(
+                        "session",
+                        spans("session", "startup", "create", "plain_turn", "smart_approved_turn"),
+                        answers=busy_mode_answers(mode),
+                    )
+                )
+                terminal = run.terminal
+                terminal.script(
+                    Step(b"first prompt\rsecond prompt\r", when=terminal.idle, label="idle"),
+                    Step(b"\x04", when=lambda terminal=terminal: "cleanly)." in terminal.history() and terminal.idle(),
+                         label="turn 2"),
+                )
+                self.run_main(run)
+                self.assert_clean_run(run)
+                first, second = run.calls("prompt.submit")
+                self.assertEqual(first["params"], {"session_id": LIVE_ID, "text": "first prompt"})
+                # Sent while the first turn was pending, with no `queued`: Hermes applies its own mode.
+                self.assertEqual(second["params"], {"session_id": LIVE_ID, "text": "second prompt"})
+                self.assertNotIn("queued", terminal.history())
 
 if __name__ == "__main__":
     unittest.main()

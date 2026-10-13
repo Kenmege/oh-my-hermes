@@ -4,9 +4,10 @@ It interprets the subset of terminal output the TUI's screen layer emits:
 printable text, CR, LF (scrolling the top row into `scrollback` at the
 bottom), cursor up/down/forward/back, CUP, erase in line 0/1/2, erase in
 display 0/1/2, SGR (recorded per cell), cursor show/hide, the autowrap and
-bracketed-paste mode switches (recorded, never acted on), and the alternate
+bracketed-paste mode switches (recorded, never acted on), the alternate
 screen (1049: the main screen and cursor are saved on entry and restored on
-exit). Any other CSI or two-byte escape is ignored. `resize` changes the size
+exit), and OSC strings (consumed, never painted, their bodies kept in `osc`).
+Any other CSI or two-byte escape is ignored. `resize` changes the size
 the way xterm does without reflow.
 
 Text never wraps. Writing past the right margin raises `VTOverflow` instead,
@@ -30,6 +31,9 @@ BLANK = " "
 CONTINUATION = ""  # the right half of a 2-cell glyph
 
 ESC = "\x1b"
+OSC_INTRODUCER = "\x1b]"
+BEL = "\x07"
+STRING_TERMINATOR = "\x1b\\"
 _CSI = re.compile(r"\x1b\[([0-?]*)([ -/]*)([@-~])")
 _CSI_PREFIX = re.compile(r"\x1b\[[0-?]*[ -/]*\Z")
 _EXTENDED_COLOUR = (38, 48)
@@ -55,6 +59,7 @@ class VTScreen:
         self.cursor_visible = True
         self.autowrap = True
         self.bracketed_paste = False
+        self.osc: list[str] = []
         self._saved_main: tuple[list[list[str]], list[list[tuple[int, ...]]], int, int] | None = None
 
     @property
@@ -145,6 +150,13 @@ class VTScreen:
             index = end
 
     def _escape(self, data: str, index: int) -> int:
+        if data.startswith(OSC_INTRODUCER, index):
+            ends = [end for end in (data.find(BEL, index), data.find(STRING_TERMINATOR, index)) if end >= 0]
+            if not ends:
+                return 0  # incomplete; wait for the terminator
+            end = min(ends)
+            self.osc.append(data[index + len(OSC_INTRODUCER) : end])
+            return end - index + (len(BEL) if data.startswith(BEL, end) else len(STRING_TERMINATOR))
         match = _CSI.match(data, index)
         if match is not None:
             self._csi(match.group(1), match.group(2), match.group(3))

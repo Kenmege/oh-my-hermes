@@ -298,11 +298,12 @@ class GatewayClient:
         with self._stderr_lock:
             return list(self._stderr)
 
-    def close(self, grace: float = 3.0) -> int | None:
-        """Close stdin, wait `grace`, terminate, wait `grace`, kill. Never raises; returns the exit code seen.
+    def close(self, grace: float = 3.0, terminate_grace: float | None = None) -> int | None:
+        """Close stdin, wait `grace`, terminate, wait `terminate_grace` (default `grace`), kill.
 
-        The gateway can take more than 10 s to exit after stdin closes, so the
-        escalation is required, not defensive.
+        Never raises; returns the exit code seen. The gateway can take more
+        than 10 s to exit after stdin closes, so the escalation is required,
+        not defensive.
         """
         process = self._process
         if process is None:
@@ -314,7 +315,7 @@ class GatewayClient:
         code = _wait(process, grace)
         if code is None:
             _signal(process.terminate)
-            code = _wait(process, grace)
+            code = _wait(process, grace if terminate_grace is None else terminate_grace)
         if code is None:
             _signal(process.kill)
             code = _wait(process, REAP_WAIT_SECONDS)

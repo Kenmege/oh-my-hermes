@@ -64,7 +64,7 @@ from .launch import FALLBACK_EXIT
 from .layout import slot_cap
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
-from .prompts import Answer, ImmediateAnswer, PromptSlot, open_request
+from .prompts import CHOICE_DIGITS, Answer, ImmediateAnswer, PromptSlot, open_request
 from .screen import SHOW_CURSOR, LiveRegion
 from .slash import (
     COMMANDS,
@@ -81,14 +81,22 @@ from .slash import (
 )
 from .style import Line, Span
 from .terminal import Terminal, terminal_supported
-from .theme import DEFAULT_THEME, Theme, theme_named
+from .theme import DEFAULT_THEME, Theme, build_theme, theme_named
 from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript
 from .width import line_width, truncate_line, wrap_line
+from ..version import __version__
 
 READ_TIMEOUT_SECONDS = 0.05
 TICK_SECONDS = 0.1
 EXIT_CONFIRM_SECONDS = 2.0
 STARTUP_TAIL_LINES = 10
+# Closing the gateway on exit: stdin EOF, then terminate, then kill. The live
+# region is already cleared and the terminal restored before this wait starts.
+CLOSE_GRACE_SECONDS = 0.5
+TERMINATE_GRACE_SECONDS = 2.0
+
+BANNER_BRAND = "⚚ OH-MY-HERMES"
+BANNER_HINT = "/help for commands · Ctrl+C twice to exit · bare hermes opens Hermes' own terminal"
 
 BUSY_QUEUE = "queue"
 BUSY_MODES = frozenset({"queue", "steer", "interrupt"})
@@ -177,6 +185,42 @@ def context_text(usage: object) -> str:
     return text
 
 
+def initial_theme(ready_payload: Mapping[str, Any]) -> Theme:
+    """The theme for `gateway.ready`'s skin name (Hermes' `display.skin`); sky unless it names an OMH skin.
+
+    Skin names only: a foreign skin that happens to be called `amber` is not OMH's amber.
+    """
+    skin = ready_payload.get("skin")
+    name = _text(skin.get("name")) if isinstance(skin, dict) else ""
+    return build_theme(theme_for_skin_name(name) or default_theme())
+
+
+def short_path(path: str, home: str) -> str:
+    """`path` with the home directory written as `~`."""
+    home = home.rstrip("/")
+    if home and path == home:
+        return "~"
+    if home and path.startswith(home + "/"):
+        return "~" + path[len(home) :]
+    return path
+
+
+def banner_lines(*, model: str, cwd: str, resumed: str, theme: Theme) -> list[Line]:
+    """The header flushed to scrollback once, before the first frame, and the hint under it."""
+    facts = [f"resumed {resumed}"] if resumed else []
+    facts += [text for text in (model, cwd) if text]
+    header: Line = (
+        Span(BANNER_BRAND, replace(theme.heading, bold=True)),
+        Span(f" v{__version__}", theme.dim),
+        *(span for fact in facts for span in (Span(" · ", theme.dim), Span(fact, theme.text))),
+    )
+    return [header, (Span(BANNER_HINT, theme.dim),), ()]
+
+
+def _tool_summary(message: Mapping[str, Any]) -> str:
+    return f"{_text(message.get('name')) or 'tool'}  {_text(message.get('context'))}".strip()
+
+
 def resume_command(stored_id: str) -> str:
     return f"hermes --tui --resume {stored_id}" if stored_id else "hermes --tui"
 
@@ -229,7 +273,7 @@ def _slot_owns(slot: PromptSlot, event: Key | Paste, composer_text: str) -> bool
         return False
     if event.ctrl:
         return event.char == "c"
-    return slot.method == "clarify" and not event.alt and event.char.isascii() and event.char.isdigit()
+    return slot.method == "clarify" and not event.alt and len(event.char) == 1 and event.char in CHOICE_DIGITS
 
 
 def _menu_lines(entries: list[Completion], index: int, width: int, max_rows: int, theme: Theme) -> list[Line]:
@@ -349,6 +393,7 @@ class App:
         self.exit_armed_at: float | None = None
         self.exit_code: int | None = None
         self.farewell = ""
+        self.banner: list[Line] = []  # flushed above the first frame, then cleared
         self.anchor = True  # the next frame re-anchors the region (first frame, resize, redraw)
         self.dirty = True
         self.last_render = 0.0
@@ -370,12 +415,45 @@ class App:
         else:
             result = self.client.call("session.create", self._create_params())
         self._adopt_session(result, fallback_stored=resume)
+        info = result.get("info")
+        cwd = (_text(info.get("cwd")) if isinstance(info, dict) else "") or self._create_params().get("cwd", "")
+        self.banner = banner_lines(
+            model=self.model,
+            cwd=short_path(cwd, self.environ.get("HOME", "")),
+            resumed=self.stored_id if resume else "",
+            theme=self.theme,
+        )
         if resume:
-            self.transcript.add_notice(f"Resumed session {self.stored_id}.")
+            self._draw_history(result.get("messages"))
         for entry in result.get("open_requests") or []:
             if isinstance(entry, dict) and isinstance(entry.get("id"), str) and isinstance(entry.get("method"), str):
                 params = entry.get("params")
                 self._on_server_request(ServerRequest(entry["id"], entry["method"], params if isinstance(params, dict) else {}))
+
+    def _draw_history(self, messages: object) -> None:
+        """A resumed session's earlier turns as transcript blocks: text only, each tool call one dim row."""
+        if not isinstance(messages, list):
+            return
+        tools: list[str] = []
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            role = message.get("role")
+            if role == "tool":
+                tools.append(_tool_summary(message))
+                continue
+            if role not in ("user", "assistant"):
+                continue
+            if tools:
+                self.transcript.add_notice("\n".join(tools))
+                tools = []
+            text = _text(message.get("text"))
+            if role == "user" and text.strip():
+                self.transcript.add_user(text)
+            elif role == "assistant":
+                self.transcript.add_assistant(text)
+        if tools:
+            self.transcript.add_notice("\n".join(tools))
 
     def _optional_call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """A startup call the TUI can do without, except when the answer is drift."""
@@ -410,7 +488,11 @@ class App:
     # ── loop ──
 
     def run(self) -> int:
-        """Run until the person quits or the gateway is gone; the exit code."""
+        """Run until the person quits or the gateway is gone; the exit code.
+
+        The live region is cleared before this returns; closing the gateway is
+        the caller's, after it has handed the terminal back.
+        """
         self.poller.start()
         try:
             while self.exit_code is None:
@@ -448,7 +530,6 @@ class App:
         if stable:
             self.region.flush_above(stable, cols)
         self.region.clear()
-        self.client.close()
 
     def _busy(self) -> bool:
         return self.transcript.running or self.turn_pending
@@ -811,7 +892,7 @@ class App:
 
     def _help(self, arg: str) -> None:
         rows = ["OMH TUI commands:"]
-        rows += [f"  /{command.name:<10} {command.summary}" for command in COMMANDS if command.route == LOCAL]
+        rows += [f"/{command.name:<10} {command.summary}" for command in COMMANDS if command.route == LOCAL]
         names = " ".join(name for name, _summary in self.catalog)
         rows.append(f"Hermes commands ({len(self.catalog)}): {names}" if names else "Hermes commands: none listed.")
         rows.append(HELP_KEYS)
@@ -863,7 +944,7 @@ class App:
             self.transcript.add_notice("Nothing is queued.")
             return
         rows = ["Queued (sent one at a time as each turn ends):"]
-        rows += [f"  {number}. {shown or text}" for number, (text, shown) in enumerate(self.queued, start=1)]
+        rows += [f"{number}. {shown or text}" for number, (text, shown) in enumerate(self.queued, start=1)]
         self.transcript.add_notice("\n".join(rows))
 
     def _logs(self, arg: str) -> None:
@@ -949,6 +1030,9 @@ class App:
             self.terminal.write(self.pager.frame(cols, rows, self.theme))
             return
         stable = self.transcript.take_stable_lines(cols, self.theme)
+        if self.banner:
+            stable = [row for line in self.banner for row in (wrap_line(line, cols) if line else [()])] + stable
+            self.banner = []
         if stable:
             self.region.flush_above(stable, cols)
         previous = 0 if self.anchor else self.region.height
@@ -1070,14 +1154,13 @@ def main(
     if started is None:
         return FALLBACK_EXIT
     client, ready = started
-    skin = ready.payload.get("skin")
     terminal = open_terminal()
     app = App(
         terminal,
         client,
         environ,
         poller=make_poller(environ.get("OMH_HOME") or None, environ.get("HERMES_HOME") or None),
-        theme=theme_named(_text(skin.get("name")) if isinstance(skin, dict) else ""),
+        theme=initial_theme(ready.payload),
     )
     try:
         app.startup()
@@ -1085,8 +1168,12 @@ def main(
         client.close()
         _say(stderr, f"omh: the OMH TUI could not open a Hermes session: {error}")
         return FALLBACK_EXIT
-    with terminal:
-        code = app.run()
-    if app.farewell:
-        _say(stderr, app.farewell)
+    try:
+        with terminal:
+            code = app.run()
+        if app.farewell:
+            _say(stderr, app.farewell)
+    finally:
+        # The screen has settled and the terminal is the shell's again; only now wait on the child.
+        client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
     return code

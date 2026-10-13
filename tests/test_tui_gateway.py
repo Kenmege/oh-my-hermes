@@ -367,6 +367,16 @@ class GatewayCloseTests(ReplayTestCase):
         self.assertEqual(client.close(grace=FAST_GRACE), -signal.SIGKILL)
         self.assertLess(time.monotonic() - started, 5.0)
 
+    @unittest.skipIf(os.name == "nt", "TerminateProcess cannot be ignored, so the kill step is unreachable")
+    def test_the_wait_after_terminate_has_its_own_grace(self) -> None:
+        scenario = Scenario("session", spans("session", "startup"), after=HANG, ignore_sigterm=True)
+        client = self.started(scenario)
+        started = time.monotonic()
+        self.assertEqual(client.close(grace=0.1, terminate_grace=1.0), -signal.SIGKILL)
+        elapsed = time.monotonic() - started
+        self.assertGreaterEqual(elapsed, 1.0)
+        self.assertLess(elapsed, 5.0)
+
     def test_close_is_idempotent_and_a_closed_client_refuses_to_send(self) -> None:
         client = self.started(Scenario("session", spans("session", "startup")))
         self.assertEqual(client.close(grace=5.0), 0)

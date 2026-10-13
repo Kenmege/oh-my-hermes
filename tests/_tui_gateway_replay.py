@@ -18,7 +18,8 @@ a `GatewayExited` whose reason is in `stderr_tail()`.
 Answer table (`Scenario.answers`): a call whose method the table names is
 answered from the table, re-addressed to its id, whenever it arrives -- in
 place of a recorded client frame, or after the recorded frames -- and does not
-advance the recording. It lets a client whose startup calls differ from the
+advance the recording. A method listed more than once is answered with its
+entries in order, the last one repeating. It lets a client whose startup calls differ from the
 recording's (say, `config.get` and `commands.catalog` before `session.create`)
 replay the recorded turns unchanged; `recorded_answer` builds an entry from a
 recorded answer. Every client line the fake reads is appended, as received, to
@@ -101,6 +102,13 @@ def played_rows(scenario: Scenario) -> list[dict[str, Any]]:
     return [row for start, stop in scenario.spans for row in rows[start:stop]]
 
 
+def _answer_table(answers: tuple[tuple[str, dict[str, Any]], ...]) -> dict[str, list[dict[str, Any]]]:
+    table: dict[str, list[dict[str, Any]]] = {}
+    for method, frame in answers:
+        table.setdefault(method, []).append(frame)
+    return table
+
+
 def materialize(root: Path, scenario: Scenario) -> None:
     """Write a fake `tui_gateway` package into `root` that plays `scenario`."""
     package = root / "tui_gateway"
@@ -114,7 +122,7 @@ def materialize(root: Path, scenario: Scenario) -> None:
         "after": scenario.after,
         "ignore_sigterm": scenario.ignore_sigterm,
         "exit_code": scenario.exit_code,
-        "answers": {method: frame for method, frame in scenario.answers},
+        "answers": _answer_table(scenario.answers),
     }
     (package / SCENARIO_FILE).write_text(json.dumps(plan), encoding="utf-8")
 
@@ -166,7 +174,9 @@ def _answered_from_table(frame: dict[str, Any], answers: dict[str, Any]) -> bool
     method = frame.get("method")
     if not isinstance(method, str) or method not in answers or type(frame.get("id")) is not int:
         return False
-    _emit_line(json.dumps({"jsonrpc": "2.0", "id": frame["id"], **answers[method]}))
+    entries = answers[method]
+    answer = entries.pop(0) if len(entries) > 1 else entries[0]
+    _emit_line(json.dumps({"jsonrpc": "2.0", "id": frame["id"], **answer}))
     return True
 
 
