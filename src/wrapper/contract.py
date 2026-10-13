@@ -28,7 +28,13 @@ from ..ingress import CHAT_SOURCES, compact_source_metadata, extract_event_attac
 from ..system.platform_envelope import build_platform_envelope, platform_thread_key_scope
 from ..system.tracker_content import normalize_tracker_content
 from ..routing.catalog_questions import is_skill_catalog_question as _is_skill_catalog_question
-from ..routing.chat import public_chat_route_payload, route_explanation_payload, route_question_observation
+from ..routing.chat import (
+    LOOP_CONSTRUCT_REASON,
+    NATIVE_LOOP_CADENCE_REASON,
+    public_chat_route_payload,
+    route_explanation_payload,
+    route_question_observation,
+)
 from ..routing.coding_route_actions import coding_route_decision_payload, resolve_coding_route_decision
 from ..routing.localization import normalized_phrase
 from ..routing.route_plan import public_workflow_identifier, with_public_skill_names
@@ -5499,7 +5505,8 @@ def _build_chat_interaction_payload_uncached(
     if goal_quality_coaching_card:
         base["goal_quality_coaching_card"] = goal_quality_coaching_card
 
-    if _is_omh_intro_question(message) and resolved_mode in {"route", "plan", "clarify"}:
+    loop_timer_answer = _is_loop_timer_answer(route_payload)
+    if _is_omh_intro_question(message) and not loop_timer_answer and resolved_mode in {"route", "plan", "clarify"}:
         base["mode"] = "route"
         base["route"] = _omh_intro_route_payload(route_payload)
         base["chat_response"] = build_chat_response_from_omh_context_brief(
@@ -5510,7 +5517,7 @@ def _build_chat_interaction_payload_uncached(
         base["next_action"] = str(_nested(base["chat_response"], "state").get("next_action", "show_context_brief"))
         return _finish_interaction(base, target_notice)
 
-    if _is_omh_quickstart_question(message) and resolved_mode in {"route", "plan", "clarify"}:
+    if _is_omh_quickstart_question(message) and not loop_timer_answer and resolved_mode in {"route", "plan", "clarify"}:
         base["mode"] = "status"
         base["route"] = _omh_quickstart_route_payload(route_payload)
         base["chat_response"] = build_chat_response_from_omh_quickstart(
@@ -5524,6 +5531,7 @@ def _build_chat_interaction_payload_uncached(
     if (
         _is_omh_status_question(message)
         and str(route_payload.get("selected_skill", "")) == _ROUTER_SKILL
+        and not loop_timer_answer
         and resolved_mode in {"route", "plan", "clarify"}
     ):
         base["mode"] = "status"
@@ -9492,12 +9500,22 @@ def _workflow_explanation_reason_for_route(
     return ""
 
 
+def _is_loop_timer_answer(decision: dict[str, object]) -> bool:
+    """Whether the router answered a loop on a timer as Hermes' own (`/loop 5m ask omh for status`).
+
+    The request is that loop, whatever its prompt asks about OMH, so the
+    router skill here is not a question for the catalog picker or the intro,
+    quickstart, or status card.
+    """
+    return str(decision.get("reason", "")) in (NATIVE_LOOP_CADENCE_REASON, LOOP_CONSTRUCT_REASON)
+
+
 def _is_generic_skill_catalog_route(message: str, decision: dict[str, object]) -> bool:
     if _is_skill_picker_invocation(message) or _is_command_preview_invocation(message):
         return False
     # A turn Hermes wrote for its own session command is answered as the host
     # instructs; its template text is never a question about OMH's catalog.
-    if host_owned_command_turn(message):
+    if host_owned_command_turn(message) or _is_loop_timer_answer(decision):
         return False
     if _contains_cue_phrase(message, ("omh-docs",)) and not _is_omh_docs_question(message):
         return False

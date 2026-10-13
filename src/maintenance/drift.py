@@ -504,7 +504,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The third review adds one, answered directly: a timed loop that
             # checks an event loop, which dispatched the goal loop before and
             # for one round read as a question about that code.
-            expected=509,
+            # The fourth review adds one, answered directly: a typed `/loop`
+            # with its cadence whose prompt names `ulw-loop`, which dispatched
+            # the goal loop before.
+            expected=510,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -649,7 +652,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # OMH form behind a reply pointer and a sender prefix, a timed
             # loop asked to improve something, and `cto-loop` on a timer,
             # which keeps its own route.
-            expected=708,
+            # The fourth review, which reads only a request's opening, adds
+            # six: a skill invoked beside a timed loop and an invoked plan
+            # about a polling loop on a timer, each keeping its skill; the
+            # spaced `cto loop` trigger on a timer; a timed loop asked to lower
+            # install friction; and `ulw-loop` named after a cadence on a flaky
+            # list and on build failures, which now open the goal loop where
+            # app-debugging and build-failure-triage took them before.
+            expected=714,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

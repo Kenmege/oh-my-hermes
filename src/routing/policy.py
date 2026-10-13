@@ -7492,17 +7492,19 @@ def host_owned_command_turn(message: str) -> bool:
 def _loop_goal_guard_applies(
     normalized_query: str, query_tokens: set[str], loop_timer: str = LOOP_TIMER_NONE
 ) -> bool:
-    explicit_loop = "loop" in query_tokens or _contains_phrase(
-        normalized_query,
-        ("loopable", "loop engineering", "goal loop", "루프", "반복해서", "계속 개선", "계속해서 개선"),
-    )
     # A loop on a timer is Hermes' native `/loop`, and a code or media loop on
-    # one is a question about it; neither is an explicit goal loop. The verdict
+    # one is a question about it; neither is the goal loop, whatever goal words
+    # the prompt carries ("/loop 30m keep improving the docs until the repo
+    # hits 10k stars" is the command the person typed). The verdict
     # (`hermes_session_commands.loop_timer_verdict`) is read once on the
     # query's executable text and handed in, never re-derived from this
     # collapsed spelling, where a gateway's block ends are single spaces.
     if loop_timer in LOOP_TIMERS_ANSWERED_DIRECTLY:
-        explicit_loop = False
+        return False
+    explicit_loop = "loop" in query_tokens or _contains_phrase(
+        normalized_query,
+        ("loopable", "loop engineering", "goal loop", "루프", "반복해서", "계속 개선", "계속해서 개선"),
+    )
     repeated_improvement = bool(LOOP_REPEATED_IMPROVEMENT_TOKENS & query_tokens) or _contains_phrase(
         normalized_query, LOOP_REPEATED_IMPROVEMENT_PHRASES
     )

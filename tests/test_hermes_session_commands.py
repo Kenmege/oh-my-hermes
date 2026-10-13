@@ -113,6 +113,10 @@ _GOAL_TURN = "".join(HOST_TURNS["goal continuation"])
 _NOTE = "[Triggering message id: `1234` — use as `message_id` for reply/react/pin via the discord tools.]\n\n"
 _REPLY = '[Replying to: "is CI green?"]\n\n'
 _BACKFILL = "[bob] hi\n[carol] ok\n\n[New message]\n"
+# Backfill is earlier messages, never the request: a loop on a timer or OMH's
+# own name there decides nothing about the person's current message.
+_LOOP_BACKFILL = "[bob] loop every 5 minutes and check CI\n[carol] ok\n\n[New message]\n"
+_GOAL_LOOP_BACKFILL = "[bob] I use ulw-loop every hour\n\n[New message]\n"
 _SENDER = "[alice] "
 GATEWAY_PREFIXES = {
     "none": "",
@@ -123,80 +127,130 @@ GATEWAY_PREFIXES = {
     "reply+sender": _REPLY + _SENDER,
     "backfill+sender": _BACKFILL + _SENDER,
     "note+backfill+sender": _NOTE + _BACKFILL + _SENDER,
+    "loop backfill+sender": _LOOP_BACKFILL + _SENDER,
+    "goal loop backfill+sender": _GOAL_LOOP_BACKFILL + _SENDER,
     "reply+note+sender": _REPLY + _NOTE + _SENDER,
     "slack sender": "[alice | Slack user <@U123ABC>] ",
 }
 
-# One row per way of putting a loop on a timer, with the verdict it has behind
-# every gateway prefix above.
+# One row per way a request can open, with the verdict it has behind every
+# gateway prefix above.
 TIMED_LOOP_FORMS = {
+    # OMH's own forms where the loop command would be: the goal loop.
     "omh loop every 30 minutes check CI": LOOP_TIMER_GOAL,
     "$loop every hour check CI": LOOP_TIMER_GOAL,
     "./loop every 5 minutes check CI": LOOP_TIMER_GOAL,
-    "omh 루프 30분마다 문서 개선": LOOP_TIMER_GOAL,
+    "/ulw-loop every 5m check CI": LOOP_TIMER_GOAL,
     "omh loop every 2 hours improve the docs": LOOP_TIMER_GOAL,
-    "$loop every hour improve docs": LOOP_TIMER_GOAL,
-    "run ulw-loop every hour on the onboarding docs": LOOP_TIMER_GOAL,
-    "use the loop skill every 2 hours to improve the README": LOOP_TIMER_GOAL,
-    "start the goal loop every 30 minutes": LOOP_TIMER_GOAL,
+    # The loop command with a goal: the goal loop.
+    "loop every hour and improve the docs": LOOP_TIMER_GOAL,
+    # The loop command and its cadence: Hermes' `/loop`.
     "/loop 5m check CI": LOOP_TIMER_NATIVE,
     "loop every 5 minutes and check whether CI is green": LOOP_TIMER_NATIVE,
+    "every 10 minutes loop over the inbox and triage new issues": LOOP_TIMER_NATIVE,
+    "5분마다 CI가 초록색인지 확인하는 루프 돌려줘": LOOP_TIMER_NATIVE,
+    # Asked to write one that runs on a timer: a construct.
+    "write a bash loop that pings the server every 10 seconds": LOOP_TIMER_CONSTRUCT,
+    # OMH's name away from the opening, or a loop the request talks about:
+    # nothing to decide, so the turn routes as it did before.
+    "run ulw-loop every hour on the onboarding docs": LOOP_TIMER_NONE,
+    "the retry loop fires every 5 seconds, is the backoff right?": LOOP_TIMER_NONE,
 }
 
 # Everything else the verdict has to tell apart, one sentence per reason.
 VERDICTS = {
-    # A bare loop word on a timer: Hermes' `/loop`.
+    # The loop command first, then its cadence, typed or bare, after a
+    # courtesy opener or not.
     "loop every 5m and tell me when the deploy is live": LOOP_TIMER_NATIVE,
-    "every hour, loop over the queue": LOOP_TIMER_NATIVE,
     "/loop 1h30m check whether the nightly build passed": LOOP_TIMER_NATIVE,
     "loop 30s ping the health endpoint": LOOP_TIMER_NATIVE,
     "loop every 5 min check CI": LOOP_TIMER_NATIVE,
     "loop every 2 hrs check CI": LOOP_TIMER_NATIVE,
     "loop every 30 sec check the queue": LOOP_TIMER_NATIVE,
     "loop every 5mins check CI": LOOP_TIMER_NATIVE,
-    "loop every 2hrs check the queue": LOOP_TIMER_NATIVE,
-    "5분마다 CI가 초록색인지 확인하는 루프 돌려줘": LOOP_TIMER_NATIVE,
-    "매시간 루프로 큐 상태 봐줘": LOOP_TIMER_NATIVE,
+    "loop: every 5 minutes check CI": LOOP_TIMER_NATIVE,
+    "loop each hour and fix one flaky test until none are left": LOOP_TIMER_NATIVE,
     "loop every 10 minutes and keep fixing failing tests until the suite is green": LOOP_TIMER_NATIVE,
-    # A check that mentions a star or adoption figure is still a check.
+    "please loop every 5 minutes and check CI": LOOP_TIMER_NATIVE,
+    "hey, can you loop every hour and check the queue?": LOOP_TIMER_NATIVE,
+    # The cadence first, then the loop as the request's verb or adverbial.
+    "every hour, loop over the queue": LOOP_TIMER_NATIVE,
+    "every 2 hours loop and make the test suite faster": LOOP_TIMER_NATIVE,
+    "every 5 minutes check CI in a loop": LOOP_TIMER_NATIVE,
+    # Korean: the cadence opens, and the loop is what it runs.
+    "5분마다 반복해서 CI 확인해줘": LOOP_TIMER_NATIVE,
+    "10분마다 loop 돌려서 빌드 상태 체크해줘": LOOP_TIMER_NATIVE,
+    "루프 돌면서 5분마다 CI 확인해줘": LOOP_TIMER_NATIVE,
+    # A check that mentions a star, adoption, product, or friction figure is
+    # still a check, and so is a measure moved with no product or star in it.
     "loop every hour: check the adoption dashboard": LOOP_TIMER_NATIVE,
     "loop every hour and tell me the stars count": LOOP_TIMER_NATIVE,
-    # Typed out, the native command is the native command, whatever it is asked.
+    "loop every 5 minutes and check whether the friction log has new entries": LOOP_TIMER_NATIVE,
+    "loop every 5 minutes and check whether install got faster": LOOP_TIMER_NATIVE,
+    "loop every 5 minutes: run the benchmark and make p95 latency lower until it is under 100ms": LOOP_TIMER_NATIVE,
+    "loop every hour and cut a release branch": LOOP_TIMER_NATIVE,
+    "loop every 10 minutes and get to the bottom of the flaky test": LOOP_TIMER_NATIVE,
+    "1시간마다 루프 돌려서 테스트 커버리지 올려줘": LOOP_TIMER_NATIVE,
+    # Typed with its cadence, `/loop` is Hermes' command whatever its prompt mentions.
     "/loop 5m check whether the stars badge updated": LOOP_TIMER_NATIVE,
     "/loop 10m improve nothing, just check CI": LOOP_TIMER_NATIVE,
-    # A check that names a construct is still asked of a loop.
+    "/loop 10m check whether the improve button renders": LOOP_TIMER_NATIVE,
+    "/loop 30m keep improving the docs until the repo hits 10k stars": LOOP_TIMER_NATIVE,
+    "/loop 5m check whether ulw-loop finished": LOOP_TIMER_NATIVE,
+    "/loop 5m run ulw-loop on the docs": LOOP_TIMER_NATIVE,
+    "/loop 10m ask omh loop for status": LOOP_TIMER_NATIVE,
+    # A construct named inside the check is still asked of the loop command.
     "loop every 5 minutes and check whether the event loop lag is under 100ms": LOOP_TIMER_NATIVE,
-    "check the game loop fps every 10 minutes in a loop": LOOP_TIMER_NATIVE,
-    "반복문 말고 5분마다 CI 확인하는 루프 돌려줘": LOOP_TIMER_NATIVE,
-    # "loop skill" names the skill only as those two words.
-    "the loop skillet timer every 5 minutes": LOOP_TIMER_NATIVE,
-    "ask in the loop skills channel every 5 minutes": LOOP_TIMER_NATIVE,
-    # The only loop is a construct.
+    # "loop skill" names the goal loop only as those two whole words.
+    "loop every 5 minutes and post in the loop skills channel": LOOP_TIMER_NATIVE,
+    "loop every 5 minutes and check the loop skillet timer": LOOP_TIMER_NATIVE,
+    # Asked to write or explain a code or media loop that runs on a timer.
     "write a for loop in python that prints a timestamp every 5 seconds": LOOP_TIMER_CONSTRUCT,
-    "the music loop restarts every 30 seconds in my game, how do I fix it?": LOOP_TIMER_CONSTRUCT,
-    "파이썬 for 루프로 5초마다 로그 출력하는 코드 짜줘": LOOP_TIMER_CONSTRUCT,
-    "the event loop skill check every 5 minutes": LOOP_TIMER_CONSTRUCT,
-    # ... unless a goal rides along (the goal loop on 8616ce7d0 too).
-    "event loop every 5 minutes improve the onboarding docs until signups rise": LOOP_TIMER_GOAL,
-    # The skill's own name, hyphenated, spaced, behind a Korean particle, with
-    # a non-breaking hyphen, or in brackets.
-    "use the ulw-loop skill every 2 hours to check whether CI is green": LOOP_TIMER_GOAL,
-    "run omh-loop every hour on the docs": LOOP_TIMER_GOAL,
-    "/ulw-loop every 5m check CI": LOOP_TIMER_GOAL,
+    "How do I write a bash loop that pings a server every 30s?": LOOP_TIMER_CONSTRUCT,
+    "explain the event loop that ticks every 5 seconds": LOOP_TIMER_CONSTRUCT,
+    # ... unless a goal rides along; with no timer it is no question here.
+    "write a for loop every 5 minutes that keeps improving the onboarding docs": LOOP_TIMER_GOAL,
+    "write a for loop in python that prints a timestamp": LOOP_TIMER_NONE,
+    "explain how the event loop works": LOOP_TIMER_NONE,
+    # The skill's own name in the command's place: spaced, after a colon,
+    # after a cadence, or with a non-breaking hyphen.
     "ulw loop every 5 minutes check CI": LOOP_TIMER_GOAL,
-    "1시간마다 ulw-loop로 README 개선해줘": LOOP_TIMER_GOAL,
+    "ulw-loop: every 5 minutes check CI": LOOP_TIMER_GOAL,
+    "every 2 hours ulw-loop the flaky test list": LOOP_TIMER_GOAL,
     "ulw‑loop every 5 minutes check CI": LOOP_TIMER_GOAL,
-    "[ulw-loop] every 5 minutes check CI": LOOP_TIMER_GOAL,
-    # A name for the goal loop.
-    "goal loop every hour until onboarding drop-off is under 20%": LOOP_TIMER_GOAL,
-    "use the loop skill every 2 hours to check whether CI is green": LOOP_TIMER_GOAL,
-    "매시간 목표 루프로 온보딩 봐줘": LOOP_TIMER_GOAL,
-    # A goal beside the loop: making something better, or a product or star target.
-    "loop every hour and improve the docs": LOOP_TIMER_GOAL,
+    # OMH's name anywhere in a loop command that is not typed out.
+    "loop every 5 minutes and check whether ulw-loop finished": LOOP_TIMER_GOAL,
+    # A name for the goal loop beside the command.
+    "loop every 2 hours with the loop skill and check CI": LOOP_TIMER_GOAL,
+    "loop every hour, use the goal loop on onboarding": LOOP_TIMER_GOAL,
+    # A goal: making something better, or moving a product or star measure.
+    "loop every hour and enhance the docs": LOOP_TIMER_GOAL,
     "loop every 5 minutes improve the onboarding docs until signups rise": LOOP_TIMER_GOAL,
-    "1시간마다 온보딩을 계속 개선하는 루프 돌려줘, 첫 실행 성공률 90% 될 때까지": LOOP_TIMER_GOAL,
+    "loop every 30 minutes to lower install friction": LOOP_TIMER_GOAL,
+    "loop every hour to get us to 10k stars": LOOP_TIMER_GOAL,
+    "loop every hour to raise adoption": LOOP_TIMER_GOAL,
     "loop every hour until the repo hits 10k stars, improving first-run friction": LOOP_TIMER_GOAL,
-    # No timer, no loop word, or a different skill's name: nothing to decide.
+    "1시간마다 온보딩을 계속 개선하는 루프 돌려줘, 첫 실행 성공률 90% 될 때까지": LOOP_TIMER_GOAL,
+    "2시간마다 루프 돌려서 설치 후 첫 성공까지 걸리는 시간을 줄여줘": LOOP_TIMER_GOAL,
+    # A loop word that is a thing the request talks about, not its command.
+    "check CI every 5 min in a loop": LOOP_TIMER_NONE,
+    "the music loop restarts every 30 seconds in my game, how do I fix it?": LOOP_TIMER_NONE,
+    "my polling loop fires every 2 seconds and leaks memory": LOOP_TIMER_NONE,
+    "keep me in the loop every 30 minutes about the incident": LOOP_TIMER_NONE,
+    "every 10 minutes loop detection kills my agent": LOOP_TIMER_NONE,
+    "every engineer spends 30 minutes in the review loop; draft a proposal to cut it": LOOP_TIMER_NONE,
+    "every 30 minutes run a loop that reduces friction in the product onboarding": LOOP_TIMER_NONE,
+    "event loop every 5 minutes improve the onboarding docs until signups rise": LOOP_TIMER_NONE,
+    "매시간 루프로 큐 상태 봐줘": LOOP_TIMER_NONE,
+    "반복문 말고 5분마다 CI 확인하는 루프 돌려줘": LOOP_TIMER_NONE,
+    # A Korean request to write a code loop is not read as a construct; it
+    # routes as it did before.
+    "파이썬 for 루프로 5초마다 로그 출력하는 코드 짜줘": LOOP_TIMER_NONE,
+    # OMH's names and goal-loop names away from the opening decide nothing either.
+    "use the ulw-loop skill every 2 hours to check whether CI is green": LOOP_TIMER_NONE,
+    "start the goal loop every 30 minutes": LOOP_TIMER_NONE,
+    "omh 루프 30분마다 문서 개선": LOOP_TIMER_NONE,
+    # No timer, no loop command, or a different skill's name: nothing to decide.
     "loop until the tests pass": LOOP_TIMER_NONE,
     "/loop fix the flaky site-two integration test": LOOP_TIMER_NONE,
     "check the deploy every 5 minutes until it finishes": LOOP_TIMER_NONE,
@@ -204,14 +258,33 @@ VERDICTS = {
     "every user sees the loop": LOOP_TIMER_NONE,
     "run omh-cto-loop every 30 minutes on the roadmap": LOOP_TIMER_NONE,
     "my-ulw-loop every 5 minutes check CI": LOOP_TIMER_NONE,
+    "cto loop every hour check the roadmap": LOOP_TIMER_NONE,
+    "run the cto loop every 2 hours on the roadmap": LOOP_TIMER_NONE,
     # `/loop` takes hours, minutes, then seconds; `5ms` and `0m` are neither.
     "loop 5ms check the queue": LOOP_TIMER_NONE,
     "loop 0m check the queue": LOOP_TIMER_NONE,
-    # A turn Hermes wrote is no request at all.
+    # A turn Hermes wrote is no request at all, and a host block that never
+    # closes still holds what follows it.
     "[/loop wakeup #3, every 5m]\nRecurring task: check whether CI is green": LOOP_TIMER_NONE,
+    '[Replying to: "is CI green?"\n\nloop every 5 minutes and check CI': LOOP_TIMER_NONE,
+}
+
+# Each names another skill, so that skill keeps the turn; the last two open
+# with a loop command, which the router's explicit-invocation gate decides.
+INVOKED_BESIDE_A_TIMED_LOOP = {
+    "$code-review check the loop that retries every 5 seconds": "code-review",
+    "ulw-plan: replace the polling loop that hits the API every 5 minutes with webhooks": "ralplan",
+    "use the app-debugging skill: my polling loop fires every 2 seconds and leaks memory": "app-debugging",
+    "ulw-qa: the carousel loop advances every 3 seconds, verify it on mobile": "ultraqa",
+    "/code-review my for loop sleeps every 2 seconds, is that a race?": "code-review",
+    "cto loop every hour check the roadmap": "cto-loop",
+    "run the cto loop every 2 hours on the roadmap": "cto-loop",
+    "loop every 5 minutes and run the code-review skill on new PRs": "code-review",
+    "loop every hour and run the cto-loop skill on the roadmap": "cto-loop",
 }
 
 _DIRECT = "Answer directly in the current chat; do not open an OMH workflow unless the user asks for one."
+_EXPLICIT_INVOCATION = "Explicit workflow invocation wins over heuristic routing."
 
 
 def _hint_workflows(message: str) -> list[str]:
@@ -311,10 +384,14 @@ class LoopTimerVerdictTest(unittest.TestCase):
                 with self.subTest(prefix=prefix_name, form=form):
                     self.assertEqual(loop_timer_verdict(prefix + form), verdict)
 
-    def test_every_construct_phrase_is_a_construct_alone_and_a_check_beside_a_loop(self):
+    def test_every_construct_phrase_is_a_construct_only_when_asked_for(self):
         for phrase in LOOP_CONSTRUCT_PHRASES:
             with self.subTest(phrase=phrase):
-                self.assertEqual(loop_timer_verdict(f"my {phrase} stalls every 5 seconds, why?"), LOOP_TIMER_CONSTRUCT)
+                self.assertEqual(
+                    loop_timer_verdict(f"write a {phrase} that runs every 5 seconds"), LOOP_TIMER_CONSTRUCT
+                )
+                # Talked about, it is a thing, and nothing here decides the turn.
+                self.assertEqual(loop_timer_verdict(f"my {phrase} stalls every 5 seconds, why?"), LOOP_TIMER_NONE)
                 self.assertEqual(
                     loop_timer_verdict(f"loop every 5 minutes and check the {phrase}"), LOOP_TIMER_NATIVE
                 )
@@ -327,20 +404,27 @@ class OneVerdictOnEverySurfaceTest(unittest.TestCase):
     """The chat router, the loop guard, the hint and the candidate line say what the function says."""
 
     def test_the_router_and_the_hint_agree_with_the_verdict_on_the_whole_probe_corpus(self):
-        # Every sentence three review rounds probed this change with. The
+        # Every sentence four review rounds probed this change with. The
         # verdict is read on the turn's executable text; the router answers
-        # directly exactly on its two direct verdicts, and the hint withholds
-        # the goal loop exactly then.
+        # directly exactly on its two direct verdicts -- or dispatches the
+        # other skill the person invoked beside the loop command -- and the
+        # hint withholds the goal loop exactly then.
         sentences = json.loads(PROBE_SENTENCES.read_text(encoding="utf-8"))
-        self.assertGreaterEqual(len(sentences), 250)
+        self.assertGreaterEqual(len(sentences), 500)
         disagreements = []
         for sentence in sentences:
             verdict = loop_timer_verdict(executable_routing_text(sentence))
             direct = verdict if verdict in LOOP_TIMERS_ANSWERED_DIRECTLY else ""
+            route = route_chat_message(sentence, source="discord")
             router = _router_answer(sentence)
+            invoked_other = (
+                bool(direct)
+                and route["reason"] == _EXPLICIT_INVOCATION
+                and route["selected_skill"] != "loop"
+            )
             hint = awareness_route_hint(sentence).get(NATIVE_LOOP_CADENCE_HINT_KEY) is True
-            if router != direct or hint != bool(direct):
-                disagreements.append((sentence, verdict, router, hint))
+            if (router != direct and not invoked_other) or hint != bool(direct):
+                disagreements.append((sentence, verdict, router, route["selected_skill"], hint))
         self.assertEqual(disagreements, [])
 
     def test_the_loop_guard_reads_the_querys_verdict_behind_every_gateway_prefix(self):
@@ -356,7 +440,7 @@ class OneVerdictOnEverySurfaceTest(unittest.TestCase):
                     guards = active_routing_guard_rules(
                         query.normalized, set(query.tokens), loop_timer=query.loop_timer
                     )
-                    if verdict == LOOP_TIMER_NATIVE:
+                    if verdict in LOOP_TIMERS_ANSWERED_DIRECTLY:
                         self.assertNotIn(LOOP_GOAL_GUARD, guards)
                         if form.startswith("loop "):
                             # The bare word alone would have raised the guard
@@ -371,9 +455,10 @@ class OneVerdictOnEverySurfaceTest(unittest.TestCase):
         for prefix_name, prefix in GATEWAY_PREFIXES.items():
             for form, verdict in TIMED_LOOP_FORMS.items():
                 with self.subTest(prefix=prefix_name, form=form):
-                    self.assertEqual(_router_answer(prefix + form), verdict if verdict == LOOP_TIMER_NATIVE else "")
+                    direct = verdict in LOOP_TIMERS_ANSWERED_DIRECTLY
+                    self.assertEqual(_router_answer(prefix + form), verdict if direct else "")
                     hint = awareness_route_hint(prefix + form)
-                    self.assertEqual(hint.get(NATIVE_LOOP_CADENCE_HINT_KEY) is True, verdict == LOOP_TIMER_NATIVE)
+                    self.assertEqual(hint.get(NATIVE_LOOP_CADENCE_HINT_KEY) is True, direct)
 
     def test_a_native_loop_is_answered_with_the_native_command(self):
         for sentence, verdict in {**TIMED_LOOP_FORMS, **VERDICTS}.items():
@@ -385,6 +470,24 @@ class OneVerdictOnEverySurfaceTest(unittest.TestCase):
                 self.assertEqual(route["clarification"], _DIRECT)
                 self.assertNotIn("ulw-loop", _hint_workflows(sentence))
         self.assertIn("/loop 5m", NATIVE_LOOP_CADENCE_REASON)
+
+    def test_the_wrapper_keeps_a_native_loop_answer_over_its_omh_cards(self):
+        # The prompt asks about OMH, but the request is the loop: before, the
+        # chat wrapper replaced the router's answer with OMH's intro,
+        # quickstart, status card, or the workflow picker. One sentence per card.
+        for sentence in (
+            "5분마다 반복해서 omh 소개해줘",
+            "/loop 5m omh quickstart",
+            "/loop 10m ask omh loop for status",
+            "/loop 5m what omh skills are there",
+        ):
+            with self.subTest(sentence=sentence):
+                self.assertEqual(loop_timer_verdict(sentence), LOOP_TIMER_NATIVE)
+                payload = build_chat_interaction_payload(sentence, source="discord")
+                self.assertEqual(
+                    (payload["route"]["action"], payload["route"]["reason"], payload["next_action"]),
+                    ("fallback", NATIVE_LOOP_CADENCE_REASON, "answer_directly"),
+                )
 
     def test_a_loop_construct_is_answered_without_loop_advice(self):
         for sentence, verdict in VERDICTS.items():
@@ -399,7 +502,8 @@ class OneVerdictOnEverySurfaceTest(unittest.TestCase):
     def test_the_goal_loop_on_a_timer_still_opens(self):
         # Measured to dispatch the goal loop on 8616ce7d0; a timer beside OMH's
         # own forms, the skill's name, a goal-loop name, or a goal must not
-        # take that away.
+        # take that away, whether the verdict reads them as the goal loop or
+        # finds no loop command at the opening at all.
         for sentence in (
             "start a goal loop that iterates every 2 hours until the onboarding drop-off is under 20%",
             "goal loop every hour until onboarding drop-off is under 20%",
@@ -428,11 +532,47 @@ class OneVerdictOnEverySurfaceTest(unittest.TestCase):
             _REPLY + "[alice] omh loop every 30 minutes check CI",
             _BACKFILL + "[alice] omh loop every 2 hours improve the docs",
             _NOTE + "[alice] omh 루프 30분마다 문서 개선",
+            # An outcome goal on a product or star measure.
+            "loop every 30 minutes to lower install friction",
+            "loop every hour to get us to 10k stars",
+            "loop every hour and enhance the docs",
+            "2시간마다 루프 돌려서 설치 후 첫 성공까지 걸리는 시간을 줄여줘",
+            "every 30 minutes run a loop that reduces friction in the product onboarding",
         ):
             with self.subTest(sentence=sentence):
-                self.assertEqual(loop_timer_verdict(executable_routing_text(sentence)), LOOP_TIMER_GOAL)
+                self.assertIn(
+                    loop_timer_verdict(executable_routing_text(sentence)), (LOOP_TIMER_GOAL, LOOP_TIMER_NONE)
+                )
                 route = route_chat_message(sentence, source="discord")
                 self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "loop"))
+
+    def test_the_skills_name_after_a_cadence_opens_the_goal_loop(self):
+        # A declared change from 8616ce7d0, where the name folded to the bare
+        # word and the rest of the sentence won (app-debugging,
+        # build-failure-triage). The person named the skill.
+        for sentence in (
+            "every 2 hours ulw-loop the flaky test list",
+            "every hour ulw-loop the build failures on main",
+            "every 2 hours omh-loop the flaky test list",
+            "every hour ulw loop the build failures on main",
+        ):
+            with self.subTest(sentence=sentence):
+                self.assertEqual(loop_timer_verdict(sentence), LOOP_TIMER_GOAL)
+                route = route_chat_message(sentence, source="discord")
+                self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "loop"))
+
+    def test_a_skill_invoked_beside_a_timed_loop_keeps_the_turn(self):
+        for sentence, skill in INVOKED_BESIDE_A_TIMED_LOOP.items():
+            with self.subTest(sentence=sentence):
+                route = route_chat_message(sentence, source="discord")
+                self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", skill))
+        # The last two open with the loop command, so the hint still withholds
+        # the goal loop; the router's gate is what hands the turn on.
+        for sentence in list(INVOKED_BESIDE_A_TIMED_LOOP)[-2:]:
+            with self.subTest(sentence=sentence):
+                self.assertEqual(loop_timer_verdict(sentence), LOOP_TIMER_NATIVE)
+                self.assertEqual(route_chat_message(sentence, source="discord")["reason"], _EXPLICIT_INVOCATION)
+                self.assertIs(awareness_route_hint(sentence).get(NATIVE_LOOP_CADENCE_HINT_KEY), True)
 
     def test_the_scorer_ranks_a_native_loop_without_the_goal_loop_guard(self):
         # `omh recommend` and every other reader of the ranking: the guard's
@@ -445,6 +585,11 @@ class OneVerdictOnEverySurfaceTest(unittest.TestCase):
             )
 
         self.assertNotIn("guard:loop_goal", loop_evidence("loop every 5 minutes and check whether CI is green"))
+        # The guard's own goal words do not bring it back under a typed `/loop`:
+        # the person typed Hermes' command.
+        self.assertNotIn(
+            "guard:loop_goal", loop_evidence("[alice] /loop 30m keep improving the docs until the repo hits 10k stars")
+        )
         self.assertIn("guard:loop_goal", loop_evidence("loop every hour and improve the docs"))
         self.assertIn("guard:loop_goal", loop_evidence("loop until the tests pass"))
 

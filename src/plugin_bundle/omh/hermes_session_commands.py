@@ -46,17 +46,35 @@ including a reply pointer whose quoted text itself holds `]` and a blank line,
 which is cut there -- leaves the turn a person's, which routes as it did
 before this module existed.
 
-`loop_timer_verdict` -- what is a loop on a timer? "loop every 5 minutes and
-check CI", "5분마다 ... 루프 돌려줘", or `/loop 5m ...` asks for a check repeated
-on a cadence, which is Hermes' native `/loop` inside the session (or a cron
-job when it must run unattended), not OMH's long-horizon goal loop. The same
-words name OMH's goal loop when the person uses one of its own forms, names
-it, or sets it a goal, and name neither when the only loop is a `for` loop or
-a music loop. The verdict is one of four, and every surface that has to
-decide -- the chat router's early answer, the loop guard in the scorer, the
-route hint and the candidate line -- takes it from this one function, read on
-the turn's executable routing text (`reference_regions`), so none of them
-keeps word lists of its own for it.
+`loop_timer_verdict` -- is this request a loop on a timer? "loop every 5
+minutes and check CI", `/loop 5m ...`, "every 10 minutes loop over the inbox"
+or "5분마다 ... 루프 돌려줘" asks for a check repeated on a cadence, which is
+Hermes' native `/loop` inside the session (or a cron job when it must run
+unattended), not OMH's long-horizon goal loop. Only the opening of the
+person's current message is read -- after the gateway material above and a
+courtesy opener, never the backfill before `[New message]`:
+
+- the loop command and its cadence come first (`loop 5m ...`, `/loop 5m ...`,
+  `loop every 5 minutes ...`, `루프 돌면서 5분마다 ...`); or
+- the cadence comes first and the loop is the verb of the request or its
+  trailing adverbial (`every 5 minutes loop over ...`, `every 5 minutes check
+  CI in a loop`, `5분마다 루프 돌려서 ...`, `5분마다 반복해서 ...`, `5분마다
+  ... 루프 돌려줘`).
+
+A loop word anywhere else -- a thing the request talks about ("the retry
+loop fires every 5 seconds"), or a loop the cadence does not open ("check CI
+every 5 minutes in a loop") -- leaves the verdict `none`: the turn routes as
+it did before this module existed. A request that opens by asking to write
+or explain a `for` loop or a music loop that runs on a timer is
+`construct_loop`. Either shape is OMH's goal loop instead
+(`goal_loop`) when the person uses one of OMH's own forms, names the goal
+loop, or sets it a goal (`_carries_goal` is the whole rule) -- with one
+exception: a typed `/loop` with its cadence is Hermes' command whatever its
+prompt mentions. Every surface that has to decide -- the chat router's early
+answer, the loop guard in the scorer, the route hint and the candidate line --
+takes the verdict from this one function, read on the turn's executable
+routing text (`reference_regions`), so none of them keeps word lists of its
+own for it.
 
 Text is folded with NFKC and a case fold, as the router's `normalized_phrase`
 does, with the Unicode hyphens folded to `-`.
@@ -118,25 +136,54 @@ LOOP_TIMERS_ANSWERED_DIRECTLY = frozenset({LOOP_TIMER_NATIVE, LOOP_TIMER_CONSTRU
 # candidate line, which ranks the catalog on its own, leaves the goal loop off.
 NATIVE_LOOP_CADENCE_HINT_KEY = "native_loop_cadence"
 
-# -- the timer ---------------------------------------------------------------
+# -- the cadence -------------------------------------------------------------
 _TIMER_UNITS = frozenset(
     {"second", "seconds", "sec", "secs", "minute", "minutes", "min", "mins", "hour", "hours", "hr", "hrs"}
 )
-_TIMER_PHRASES = ("초마다", "분마다", "시간마다", "매분", "매시간", "주기적으로")
 # `_INTERVAL_TOKEN_RE` in `hermes_cli/loops.py`: hours, then minutes, then
 # seconds, at least one, digits first (`30s`, `5m`, `1h30m`).
 _INTERVAL_TERM = re.compile(r"^(?=\d)(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$")
 # A count glued to a spelled unit: `5mins`, `2hrs`.
 _GLUED_UNIT_TERM = re.compile(r"^[1-9]\d*(?:seconds?|secs?|minutes?|mins?|hours?|hrs?)$")
+# `5분마다`, `2시간마다`, `매분`, `매시간`, where the request starts.
+_KOREAN_CADENCE = r"(?:[1-9]\d*\s?(?:초|분|시간)\s?마다|매(?:초|분|시간))"
+_KOREAN_CADENCE_LEAD = re.compile(rf"{_KOREAN_CADENCE}(?=\s)")
+
+# -- the request's opening ---------------------------------------------------
+# Words a request may put before its command, each with optional punctuation.
+_COURTESY_LEAD = re.compile(
+    r"(?:(?:please|pls|plz|kindly|hey|hi|hello|ok|okay|hermes|(?:can|could|would|will) you)[,.!]?\s+)+"
+)
+# What may follow `loop` when it is the verb after a cadence ("every 5 minutes
+# loop over the inbox"). A noun does not ("every 10 minutes loop detection
+# kills my agent").
+_LOOP_VERB_CONTINUATIONS = frozenset(
+    {"and", "then", "over", "through", "on", "to", "until", "back", "it", "them"}
+    | {"the", "this", "that", "these", "those", "my", "our", "a", "an"}
+)
+_KOREAN_LOOP = r"(?:루프|loop)(?:를|을)?\s?"
+# `5분마다 루프 돌려서 ...`, `5분마다 loop 돌면서 ...`, `5분마다 반복해서 ...`:
+# the loop is what the cadence runs.
+_KOREAN_LOOP_PREDICATE = re.compile(
+    rf"(?:반복해서(?=\s)|{_KOREAN_LOOP}(?:돌려줘|돌려 줘|돌려주세요|돌려서|돌면서|돌리면서))"
+)
+# `5분마다 ... 확인하는 루프 돌려줘`: the clause closes on running the loop.
+_KOREAN_LOOP_CLOSE = re.compile(rf"{_KOREAN_LOOP}(?:돌려줘|돌려 줘|돌려주세요)(?=[\s.,!~]|$)")
+# `every 5 minutes check CI in a loop`: the loop as the request's adverbial.
+_IN_A_LOOP = "in a loop"
+# `루프 돌면서 5분마다 ...`: the loop first, then its cadence.
+_KOREAN_LOOP_FIRST = re.compile(rf"{_KOREAN_LOOP}(?:돌면서|돌려서|돌리면서)\s?{_KOREAN_CADENCE}(?=\s)")
+_SENTENCE_END = re.compile(r"(?<=[.?!;])\s|\n")
 
 # -- OMH's own forms ---------------------------------------------------------
 # The skill's name and its older `omh-` label, hyphenated or spaced, wherever
-# they appear ("use the ulw-loop skill every 2 hours", "/ulw-loop ...", "omh
-# loop every hour", "ulw-loop로"). The boundary is Latin only, so a Korean
-# particle after the name keeps it.
+# they appear in the current message ("/ulw-loop every 5m ...", "omh loop
+# every hour ...", "every 2 hours ulw-loop the flaky list"). The boundary is
+# Latin only, so a Korean particle after the name keeps it.
 _OMH_LOOP_NAME = re.compile(r"(?<![0-9a-z_-])(?:ulw|omh)[- ]loop(?![0-9a-z_-])")
 # Leading forms, read where the person's own words start.
 _OMH_LOOP_LEADS = ("./loop", "$loop", "omh 루프")
+_OMH_LOOP_LEAD_SIGIL = re.compile(r"^(?:\./|\$)(?=loop(?:\s|$))")
 
 # -- a name for the goal loop ------------------------------------------------
 _GOAL_LOOP_NAME = re.compile(
@@ -198,8 +245,16 @@ LOOP_NORTH_STAR_PHRASES = (
     "100k-star",
 )
 # Asking the loop to make something better is a goal on its own; a check is not.
-_IMPROVEMENT_TOKENS = frozenset({"improve", "improving"})
-_IMPROVEMENT_PHRASES = ("개선",)
+_IMPROVEMENT_TOKENS = frozenset({"improve", "improving", "enhance", "enhancing"})
+_IMPROVEMENT_PHRASES = ("개선", "향상", "더 좋게")
+# Moving a product or star measure is a goal too: "to lower install friction",
+# "to get us to 10k stars", "설치 후 ... 시간을 줄여줘".
+_OUTCOME_TOKENS = frozenset(
+    {"lower", "lowering", "reduce", "reduces", "reducing", "cut", "cutting", "shrink", "shrinking"}
+    | {"raise", "raising", "increase", "increasing", "grow", "growing", "boost", "boosting"}
+)
+_OUTCOME_REACH = re.compile(r"(?<![0-9a-z_-])get (?:us )?to(?![0-9a-z_-])")
+_OUTCOME_PHRASES = ("줄여", "줄이", "낮춰", "낮추", "높여", "높이", "늘려", "늘리", "올려", "올리")
 
 # -- a loop that is a thing, not a request -----------------------------------
 LOOP_CONSTRUCT_PHRASES = (
@@ -214,10 +269,22 @@ LOOP_CONSTRUCT_PHRASES = (
     "audio loop",
     "video loop",
     "game loop",
-    "for 루프",
-    "while 루프",
-    "루프문",
 )
+# How a request to write or explain one opens.
+_CONSTRUCT_ASKS = (
+    "write ",
+    "explain ",
+    "show me ",
+    "implement ",
+    "how do i ",
+    "how do you ",
+    "how to ",
+    "how would i ",
+    "how can i ",
+    "how should i ",
+)
+# The construct is named within this many words of that opening.
+_CONSTRUCT_ASK_REACH = 8
 
 _TOKEN = re.compile(r"[0-9a-z][0-9a-z_-]*")
 
@@ -284,24 +351,87 @@ def _interval_term(term: str) -> bool:
     return bool(_GLUED_UNIT_TERM.match(term))
 
 
+def _bare(word: str) -> str:
+    return word.rstrip(",.:;!?")
+
+
 def _tokens(folded: str) -> set[str]:
     """Whole tokens, hyphenated ones kept whole: `cto-loop` is not the word `loop`."""
     return set(_TOKEN.findall(folded))
 
 
-def _on_a_timer(folded: str, lead: str) -> bool:
-    leading = lead.split(maxsplit=2)
-    # The native command's own syntax: `/loop [interval] <prompt>`.
-    if len(leading) > 1 and leading[0] in ("loop", "/loop") and _interval_term(leading[1]):
-        return True
-    tokens = _tokens(folded)
-    if "every" in tokens and (tokens & _TIMER_UNITS or any(_interval_term(token) for token in tokens)):
-        return True
-    return any(phrase in folded for phrase in _TIMER_PHRASES)
+def _past_cadence(words: list[str], at: int) -> int:
+    """The index after an `every <N> <unit>` cadence that starts at `words[at]`, or 0.
+
+    The unit sits within two words of `every`: "every 5 minutes", "every
+    hour", "every 5m", never "every engineer spends 30 minutes".
+    """
+    if len(words) <= at or words[at] not in ("every", "each"):
+        return 0
+    for reach in (1, 2):
+        if len(words) > at + reach:
+            word = _bare(words[at + reach])
+            if word in _TIMER_UNITS or _interval_term(word):
+                return at + reach + 1
+    return 0
 
 
-def _says_loop(folded: str) -> bool:
-    return "loop" in _tokens(folded) or "루프" in folded or "반복해서" in folded
+def _after_courtesy(text: str) -> str:
+    courtesy = _COURTESY_LEAD.match(text)
+    return text[courtesy.end():] if courtesy else text
+
+
+def _first_sentence(text: str) -> str:
+    return _SENTENCE_END.split(text, maxsplit=1)[0].strip()
+
+
+def _loop_is_the_request(lead: str) -> bool:
+    """Whether `lead` opens with a loop command and its cadence, in either order."""
+    words = lead.split()
+    if not words:
+        return False
+    # The native command's own syntax, `/loop [interval] <prompt>`, or the
+    # cadence spelled out after it.
+    if _bare(words[0]) in ("loop", "/loop") and (
+        (len(words) > 1 and _interval_term(_bare(words[1]))) or _past_cadence(words, 1)
+    ):
+        return True
+    if _KOREAN_LOOP_FIRST.match(lead):
+        return True
+    korean = _KOREAN_CADENCE_LEAD.match(lead)
+    past = _past_cadence(words, 0)
+    if korean:
+        rest = lead[korean.end():].lstrip()
+    elif past:
+        rest = " ".join(words[past:])
+    else:
+        return False
+    # The cadence came first; the loop has to be what it runs.
+    rest = _after_courtesy(rest)
+    after = rest.split(maxsplit=2)
+    if after and _bare(after[0]) == "loop":
+        # "loop." or "loop:" closes the clause; otherwise the next word tells
+        # a verb from a noun.
+        if len(after) == 1 or after[0] != "loop" or _bare(after[1]) in _LOOP_VERB_CONTINUATIONS:
+            return True
+    if _KOREAN_LOOP_PREDICATE.match(rest):
+        return True
+    clause = _bare(_first_sentence(rest))
+    if clause.startswith(_IN_A_LOOP) or clause.endswith(f" {_IN_A_LOOP}"):
+        return True
+    return bool(_KOREAN_LOOP_CLOSE.search(_first_sentence(lead)))
+
+
+def _asks_for_a_construct_on_a_timer(lead: str) -> bool:
+    """Whether `lead` opens by asking to write or explain a code or media loop that runs on a timer."""
+    sentence = _first_sentence(lead)
+    if not sentence.startswith(_CONSTRUCT_ASKS):
+        return False
+    words = sentence.split()
+    opening = f" {' '.join(_bare(word) for word in words[:_CONSTRUCT_ASK_REACH])} "
+    if not any(f" {phrase} " in opening for phrase in LOOP_CONSTRUCT_PHRASES):
+        return False
+    return any(_past_cadence(words, at) for at in range(len(words)))
 
 
 def _names_goal_loop(folded: str) -> bool:
@@ -309,20 +439,31 @@ def _names_goal_loop(folded: str) -> bool:
 
 
 def _carries_goal(folded: str) -> bool:
+    """Whether the request sets the loop a goal rather than a check.
+
+    It does when it asks to improve or enhance something; or pairs a product
+    or star word with a repeat cue or an outcome verb; or pairs a star word
+    with a product word.
+    """
     tokens = _tokens(folded)
     if tokens & _IMPROVEMENT_TOKENS or any(phrase in folded for phrase in _IMPROVEMENT_PHRASES):
         return True
     repeated = bool(tokens & LOOP_REPEATED_IMPROVEMENT_TOKENS) or any(
         phrase in folded for phrase in LOOP_REPEATED_IMPROVEMENT_PHRASES
     )
+    outcome = (
+        bool(tokens & _OUTCOME_TOKENS)
+        or bool(_OUTCOME_REACH.search(folded))
+        or any(phrase in folded for phrase in _OUTCOME_PHRASES)
+    )
     product = bool(tokens & LOOP_PRODUCT_GOAL_TOKENS) or any(phrase in folded for phrase in LOOP_PRODUCT_GOAL_PHRASES)
     north_star = bool(tokens & LOOP_NORTH_STAR_TOKENS) or any(phrase in folded for phrase in LOOP_NORTH_STAR_PHRASES)
-    return (repeated and (product or north_star)) or (north_star and product)
+    return ((repeated or outcome) and (product or north_star)) or (north_star and product)
 
 
 @lru_cache(maxsize=1024)
 def loop_timer_verdict(text: str) -> str:
-    """What a loop on a timer in `text` is: one of the four `LOOP_TIMER_*` verdicts.
+    """Whether `text` opens with a loop on a timer: one of the four `LOOP_TIMER_*` verdicts.
 
     `text` is the turn's executable routing text, before any display-name fold.
     `goal_loop` and `none` both leave the turn to its ordinary route.
@@ -331,28 +472,30 @@ def loop_timer_verdict(text: str) -> str:
     # A turn Hermes wrote is no request at all, whatever its template says.
     if _host_command_turn(folded):
         return LOOP_TIMER_NONE
-    # The leading forms are read where the person's own words start.
-    lead = _after_gateway_material(folded)
-    sender = _SENDER_PREFIX.match(lead)
-    if sender:
-        lead = lead[sender.end():]
-    if not _on_a_timer(folded, lead):
+    # Only the person's current message is read: not the backfill, and not a
+    # host block that never closed, which still holds whatever follows it.
+    message = _after_gateway_material(folded)
+    if message.startswith(_FOLDED_HOST_BLOCK_OPENERS):
         return LOOP_TIMER_NONE
-    # The name is read on the whole text, so a bracketed `[ulw-loop]` that the
-    # sender-prefix strip took for a display name still counts.
-    if _OMH_LOOP_NAME.search(folded) or lead.startswith(_OMH_LOOP_LEADS):
+    sender = _SENDER_PREFIX.match(message)
+    lead = _after_courtesy(message[sender.end():] if sender else message)
+    # OMH's names stand where the loop word would: "/ulw-loop every 5m ..." has
+    # the same shape as "/loop every 5m ...", and is OMH's.
+    plain = _OMH_LOOP_NAME.sub("loop", _OMH_LOOP_LEAD_SIGIL.sub("", lead, count=1))
+    if _loop_is_the_request(plain):
+        shape = LOOP_TIMER_NATIVE
+    elif _asks_for_a_construct_on_a_timer(plain):
+        shape = LOOP_TIMER_CONSTRUCT
+    else:
+        return LOOP_TIMER_NONE
+    # Typed out with its cadence, the native command is the native command,
+    # whatever its prompt mentions.
+    if lead.startswith("/loop ") and shape == LOOP_TIMER_NATIVE:
+        return LOOP_TIMER_NATIVE
+    # The name is read on the whole message, so a bracketed `[ulw-loop]` that
+    # the sender-prefix strip took for a display name still counts.
+    if _OMH_LOOP_NAME.search(message) or lead.startswith(_OMH_LOOP_LEADS):
         return LOOP_TIMER_GOAL
-    # Typed out, the native command is the native command, whatever its prompt says.
-    if lead.startswith("/loop "):
-        return LOOP_TIMER_NATIVE
-    beyond_constructs = folded
-    for phrase in LOOP_CONSTRUCT_PHRASES:
-        beyond_constructs = beyond_constructs.replace(phrase, " ")
-    if _says_loop(beyond_constructs):
-        if _names_goal_loop(beyond_constructs) or _carries_goal(folded):
-            return LOOP_TIMER_GOAL
-        return LOOP_TIMER_NATIVE
-    if not _says_loop(folded):
-        return LOOP_TIMER_NONE
-    # The only loop is a construct: a question about it, unless a goal rides along.
-    return LOOP_TIMER_GOAL if _carries_goal(folded) else LOOP_TIMER_CONSTRUCT
+    if _names_goal_loop(lead) or _carries_goal(lead):
+        return LOOP_TIMER_GOAL
+    return shape

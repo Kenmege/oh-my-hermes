@@ -4249,6 +4249,16 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "loop",
     ),
+    # Typed with its cadence, `/loop` is Hermes' command whatever its prompt
+    # mentions; before, OMH's skill name in the prompt dispatched the goal loop.
+    RoutingPrecisionCase(
+        "typed-native-loop-naming-ulw-loop-is-native-loop",
+        "A typed /loop with a cadence stays Hermes' command when its prompt names ulw-loop",
+        "/loop 5m check whether ulw-loop finished",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
 )
 
 
@@ -11201,6 +11211,70 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "cto-loop",
         "run_cto_loop",
         "cto_loop",
+    ),
+    # Only a request that opens with a loop command and its cadence is Hermes'
+    # `/loop`; a skill the person invokes beside one still gets the turn, and a
+    # loop word anywhere else routes as it did before. The spaced `cto loop`
+    # is that skill's trigger, never the loop command.
+    RoutingInterventionCase(
+        "another-skill-invoked-beside-a-timed-loop-keeps-it",
+        "A skill invoked by name beside a timed loop keeps the turn",
+        "loop every 5 minutes and run the code-review skill on new PRs",
+        "dispatch",
+        "code-review",
+        "choose_executor",
+        "handoff",
+    ),
+    RoutingInterventionCase(
+        "invoked-plan-over-a-timed-polling-loop-keeps-plan",
+        "An invoked plan about a polling loop on a timer keeps the plan",
+        "ulw-plan: replace the polling loop that hits the API every 5 minutes with webhooks",
+        "dispatch",
+        "ralplan",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    RoutingInterventionCase(
+        "spaced-cto-loop-on-a-timer-keeps-cto-loop",
+        "The spaced cto loop trigger on a timer keeps cto-loop",
+        "cto loop every hour check the roadmap",
+        "dispatch",
+        "cto-loop",
+        "run_cto_loop",
+        "cto_loop",
+    ),
+    # A timed loop asked to move a product or star measure stays the goal loop,
+    # as it was before.
+    RoutingInterventionCase(
+        "outcome-goal-loop-on-a-timer-keeps-loop",
+        "A timed loop asked to lower install friction stays the goal loop",
+        "loop every 30 minutes to lower install friction",
+        "dispatch",
+        "loop",
+        "start_loop_cycle",
+        "loop",
+    ),
+    # The skill's own name in the loop command's place, after a cadence, opens
+    # the goal loop. Before, the name folded to the bare word and lost to the
+    # rest of the sentence: app-debugging took the flaky list and
+    # build-failure-triage the build failures. The person named the skill.
+    RoutingInterventionCase(
+        "named-ulw-loop-after-a-cadence-opens-loop",
+        "ulw-loop named after a cadence opens the goal loop",
+        "every 2 hours ulw-loop the flaky test list",
+        "dispatch",
+        "loop",
+        "ask_goal_boundary",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "named-ulw-loop-on-build-failures-after-a-cadence-opens-loop",
+        "ulw-loop named after a cadence on build failures opens the goal loop",
+        "every hour ulw-loop the build failures on main",
+        "dispatch",
+        "loop",
+        "prepare_scheduled_ops_blueprint",
+        "loop",
     ),
 )
 

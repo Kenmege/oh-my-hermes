@@ -19,22 +19,37 @@ All notable changes will be documented here.
   free text is still accepted either way. `ulw-loop` gains
   Do-Not-Use lines that hand a check repeated on a timer to native `/loop`,
   an unattended schedule to a Hermes cron job, and a single objective with a
-  done condition to native `/goal`. A loop asked for on a timer ("loop every
-  5 minutes and check whether CI is green", `5분마다 … 루프 돌려줘`,
-  `/loop 5m …`) no longer dispatches the goal loop or draws the `ulw-loop`
-  route hint or candidate line: the router answers directly and names the
-  `/loop` command (compound intervals such as `/loop 1h30m` and short or
-  glued units such as `5 min` and `5mins` included); a timed loop that is only
-  a for, while, event, or media loop is answered directly without that advice.
-  One function decides this for the router, its loop guard, the route hint,
-  and the candidate line, and the router and the hint are pinned to agree on
-  every probe sentence. A timed loop stays OMH's
-  goal loop, routed as before, when it uses OMH's own forms (`./loop`,
-  `$loop`, `omh loop`, also behind a messaging gateway's sender prefix,
-  trigger note, reply pointer, or backfill), names the skill (`ulw-loop`, "the
-  loop skill") or the goal loop ("goal loop", "목표 루프"), asks the loop to
-  improve something, or carries a product or star goal; a typed-out `/loop`
-  on a timer is the native command whatever its prompt asks. The turns Hermes
+  done condition to native `/goal`. A request that opens with a loop
+  command and its cadence ("loop every 5 minutes and check whether CI is
+  green", `/loop 5m …`, "every 10 minutes loop over the inbox", "every 5
+  minutes check CI in a loop", `5분마다 … 루프 돌려줘`) no longer dispatches
+  the goal loop or draws the `ulw-loop` route hint or candidate line: the
+  router answers directly and names the `/loop` command (compound intervals
+  such as `/loop 1h30m` and short or glued units such as `5 min` and `5mins`
+  included); a request that opens by asking to write or explain a for, while,
+  event, or media loop that runs on a timer is answered directly without that
+  advice. Only the opening of the person's current message is read, after a
+  messaging gateway's sender prefix, trigger note, reply pointer, or channel
+  backfill and a courtesy opener: a loop word anywhere else ("the retry loop
+  fires every 5 seconds", "check CI every 5 min in a loop", the spaced
+  `cto loop` trigger) decides nothing, and the turn routes as before. A skill
+  the router reads as explicitly invoked ("loop every 5 minutes and run the
+  code-review skill on new PRs") still gets the turn. One
+  function decides this for the router, its loop guard, the route hint, and
+  the candidate line, and the router and the hint are pinned to agree on
+  every probe sentence. Such a request stays OMH's goal loop when it puts
+  OMH's own form in the loop command's place (`./loop`, `$loop`, `omh loop`,
+  `ulw-loop`, `ulw loop`), names the skill anywhere in an untyped command,
+  names the goal loop beside the command ("goal loop", "the loop skill"),
+  asks the loop to improve or enhance something, or pairs a product or star
+  word with an outcome verb (lower, reduce, raise, "get us to", 줄여, 높여, and
+  the like) or a repeat cue (until, iteratively, keep improving), or a star
+  word with a product word. A typed `/loop`
+  with its cadence is Hermes' command whatever its prompt mentions, OMH's
+  name and goal words included. `ulw-loop` named after a cadence ("every 2
+  hours ulw-loop the flaky test list", "every hour ulw-loop the build
+  failures on main") now opens the goal loop, where app-debugging and
+  build-failure-triage took those sentences before. The turns Hermes
   writes for its own session commands are no longer routed at all: `/plan`,
   `/loop` wakeups, `/goal` continuations (with a completion contract or
   `/subgoal` criteria, after a failed quality gate, and the kick that stands

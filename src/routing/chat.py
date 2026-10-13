@@ -41,7 +41,6 @@ from .domain_signals import (
 from .display_names import canonical_display_mentions
 from .input_language import routing_input_language
 from ..plugin_bundle.omh.hermes_session_commands import (
-    LOOP_TIMER_CONSTRUCT,
     LOOP_TIMER_GOAL,
     LOOP_TIMER_NATIVE,
     LOOP_TIMERS_ANSWERED_DIRECTLY,
@@ -2025,10 +2024,10 @@ def _with_canonical_display_names(routing_message: str) -> str:
     # labels, which are hyphenated.
     routing_message = _joined_ulw_invocation(routing_message)
     canonical = canonical_display_mentions(routing_message, _canonical_skill_by_display_name())
-    # The fold must not turn OMH's goal loop into Hermes' timer: "run ulw-loop
-    # every hour" folded to "run loop every hour" would read as native `/loop`
-    # to every later reader of this text. There the name folds to `loop
-    # engineering`, a phrase that names the goal loop. A sentence that already
+    # The fold must not turn OMH's goal loop into Hermes' timer: "every 2 hours
+    # ulw-loop the flaky list" folded to "every 2 hours loop the flaky list"
+    # would read as native `/loop` to every later reader of this text. There
+    # the name folds to `loop engineering`, a phrase that names the goal loop. A sentence that already
     # invokes the skill ("ulw-loop: every 5 minutes check CI") keeps the
     # catalog key, which that invocation needs to resolve.
     if (
@@ -2058,15 +2057,16 @@ def _route_chat_message_cached(
     if not routing_message.strip():
         return _direct_answer_decision(message, source=source, min_confidence=min_confidence).to_dict()
     # The same text and the same function the route hint reads, so the two
-    # surfaces reach one verdict on a loop beside a timer.
+    # surfaces reach one verdict on a loop beside a timer. A skill the person
+    # invoked by name still gets the turn: "loop every 5 minutes and check CI,
+    # use ulw-plan" is a request for that skill.
     loop_timer = loop_timer_verdict(executable_message)
-    if loop_timer == LOOP_TIMER_NATIVE:
+    if loop_timer in LOOP_TIMERS_ANSWERED_DIRECTLY and explicit_skill_invocation(routing_message) in (None, "loop"):
         return _direct_answer_decision(
-            message, source=source, min_confidence=min_confidence, reason=NATIVE_LOOP_CADENCE_REASON
-        ).to_dict()
-    if loop_timer == LOOP_TIMER_CONSTRUCT:
-        return _direct_answer_decision(
-            message, source=source, min_confidence=min_confidence, reason=LOOP_CONSTRUCT_REASON
+            message,
+            source=source,
+            min_confidence=min_confidence,
+            reason=NATIVE_LOOP_CADENCE_REASON if loop_timer == LOOP_TIMER_NATIVE else LOOP_CONSTRUCT_REASON,
         ).to_dict()
     # Built once: the fast paths and the scorer below read its stages instead
     # of each re-deriving the prep chain from `routing_message`.
