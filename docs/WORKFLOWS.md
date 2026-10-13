@@ -4086,7 +4086,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Why this exists: `context-budget-review` ports ECC's context-budget and token-budget instincts into OMH as a compactness gate that protects long-running work without redefining success around a smaller task.
 - Use when: Use before long-running research, coding, review, or multi-agent work when context, token, cost, or summary drift could break quality.
 - Do not use when:
-  - The user asks only what this Hermes session has used or cost so far; Hermes' /usage shows this session's tokens and /status its context, /insights estimates cost across recent sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost.
+  - The user asks only what this Hermes session has used or cost so far; Hermes' /usage shows this session's tokens and context, /insights estimates cost across recent sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost.
   - The user asks to continue a loopable goal; use `loop` unless budget planning is the explicit blocker.
   - The task is a short one-step answer with no meaningful context risk.
 - Strong routing signals: `context-budget-review`, `context budget review`, `context budget`, `token budget review`, `token budget`, `prompt budget`, `prompt caching`, `prompt cache`, `cache hygiene`, `context compaction`, `compact context`, `too much context`, `context window`, `running out of context`, `hand off to a new session`, `summarization checkpoint`, `budget this task`, `컨텍스트 예산`, `토큰 예산`, `컨텍스트 압축`, `요약 체크포인트`
@@ -4106,7 +4106,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Count the must-keep pack by item class, so a replaced pack reports which class lost entries instead of only that a digest moved; a pack that recorded no classes reports the comparison unavailable and never reports zero items.
   - Keep prompt-prefix placement cache-stable: fixed section order, volatile bytes never above the fold, mid-run changes as appended messages never system-prompt mutations — load `references/cache-placement.md` for the placement rules.
   - On Hermes, bind the summarization checkpoint to Hermes' own compaction: render the must-keep classes as one short focus topic and hand the person `/compress <focus>` to run when the checkpoint is due. OMH never compresses, and a compaction is observed only from Hermes' own reply to that command.
-  - On Hermes, offer `/compress --preview <focus>` only in the classic CLI or on a messaging platform, never when the surface is unknown, and count it as a preview only when the reply says `Preview — no changes made.`: a modern TUI whose `/compress` does not parse the flag compresses for real with the flag in its focus. Context occupancy is the person's `/status` reading when shared, otherwise an estimate.
+  - On Hermes, offer `/compress --preview <focus>` only in the classic CLI or on a messaging platform, never when the surface is unknown, and count it as a preview only when the reply says `Preview — no changes made.`: a modern TUI whose `/compress` does not parse the flag compresses for real with the flag in its focus. Context occupancy is the person's `/usage` reading when shared, otherwise an estimate.
 - Completion checklist:
   - The run or workflow scope, metric window, failure modes, and cost/latency boundary are named.
   - Local telemetry, provider truth, billing truth, and completion evidence are separate states.
@@ -5648,7 +5648,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Quality bar:
   - Read skills with Hermes' own tools: `skills_list` to list them and `skill_view` to read a skill or one of its files.
   - Create, edit, or delete a skill of the person's own with `skill_manage` when `skill_manage` is in your tool list or tool_search finds it; otherwise hand the person the exact change.
-  - Registry search, install, removal of a hub-installed skill, and per-platform hiding are the person's own `hermes skills search`, `install`, `uninstall`, and `config` in a terminal, with `/skills search` and `/skills install` inside the classic CLI.
+  - Registry search, install, removal of a hub-installed skill, and per-platform hiding are the person's own `hermes skills search`, `install`, `uninstall`, and `config` in a terminal, with `/skills search` and `/skills install` in a CLI or TUI session.
   - Never edit or delete an OMH-managed skill (an `omh-*` or `ulw-*` name) with `skill_manage`: OMH generates its body from its catalog, so the change does not carry into the next generation; put the lesson in a separately named skill instead.
 - Completion checklist:
   - Every listed or read skill came from `skills_list` or `skill_view`, not a guessed path.
@@ -9847,7 +9847,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Why this exists: `ops-observability-card` exists so service, loop, and automation operations get one board where each cost, latency, token, failure-mode, and metric-provider figure is marked observed or prepared, instead of an improvised dashboard.
 - Use when: Use when automation, loops, gateway work, executor handoffs, or service operations need a safe command-board for cost, latency, token, history, failure-mode, supplied metric-provider, and service-quality visibility.
 - Do not use when:
-  - The user asks what their own Hermes conversation has used or cost; Hermes' /usage shows this session's tokens and /status its context, /insights estimates cost across recent sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost.
+  - The user asks what their own Hermes conversation has used or cost; Hermes' /usage shows this session's tokens and context, /insights estimates cost across recent sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost.
   - The user wants one run's timing and context-budget report; use `run-efficiency`.
   - The user asks OMH to sign in to a metric provider, billing console, or dashboard and pull live figures; the card reads only supplied payloads and Hermes' own records.
 - Strong routing signals: `ops-observability-card`, `observability card`, `operations command board`, `ops command board`, `service quality board`, `service quality`, `external metric provider`, `metric provider`, `prometheus metrics`, `grafana metrics`, `cost telemetry`, `latency telemetry`, `token telemetry`, `run history`, `loop telemetry`, `failure mode`, `monitor tokens`, `service health`, `slo dashboard`, `비용`, `토큰`, `지연시간`, `관측성`, `운영 지휘판`, `서비스 품질`, `메트릭`, `프로메테우스`, `그라파나`
@@ -10482,7 +10482,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Why this exists: `run-efficiency` exists so a question about how a run spent its time, tools, and context gets the supplied timings and context budget, plus what Hermes itself recorded for a named session's tokens and cost, instead of figures a model guesses.
 - Use when: Use for a bounded local efficiency report from supplied metadata with provider gaps explicit.
 - Do not use when:
-  - The user asks only what this Hermes conversation has used or cost so far; Hermes' /usage shows this session's tokens and /status its context, /insights estimates cost across recent sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost.
+  - The user asks only what this Hermes conversation has used or cost so far; Hermes' /usage shows this session's tokens and context, /insights estimates cost across recent sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost.
   - The user wants service latency, uptime, error rates, or supplied metric-provider figures; use `ops-observability-card`.
   - The user wants a provider invoice or quota truth; no OMH report observes either, so name the provider's own console as the source.
 - Strong routing signals: `run-efficiency`, `run efficiency report`, `local run efficiency`, `context utilization`, `tool duration report`, `실행 효율 리포트`, `컨텍스트 사용량`, `도구 지연 시간`

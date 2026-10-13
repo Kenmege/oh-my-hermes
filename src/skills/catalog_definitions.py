@@ -6180,7 +6180,7 @@ _DEFINITIONS = [
             "On Hermes, offer `/compress --preview <focus>` only in the classic CLI or on a messaging platform, never "
             "when the surface is unknown, and count it as a preview only when the reply says `Preview — no changes "
             "made.`: a modern TUI whose `/compress` does not parse the flag compresses for real with the flag in its "
-            "focus. Context occupancy is the person's `/status` reading when shared, otherwise an estimate.",
+            "focus. Context occupancy is the person's `/usage` reading when shared, otherwise an estimate.",
         ),
         why_this_exists=(
             "`context-budget-review` ports ECC's context-budget and token-budget instincts into OMH as a compactness gate "
@@ -8221,7 +8221,7 @@ _DEFINITIONS = [
             f"{native_tool_presence_clause('skill_manage', code=True)}; otherwise hand the person the exact change.",
             "Registry search, install, removal of a hub-installed skill, and per-platform hiding are the person's "
             "own `hermes skills search`, `install`, `uninstall`, and `config` in a terminal, with `/skills search` "
-            "and `/skills install` inside the classic CLI.",
+            "and `/skills install` in a CLI or TUI session.",
             "Never edit or delete an OMH-managed skill (an `omh-*` or `ulw-*` name) with `skill_manage`: OMH generates its "
             "body from its catalog, so the change does not carry into the next generation; put the lesson in a "
             "separately named skill instead.",

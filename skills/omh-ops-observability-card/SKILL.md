@@ -20,7 +20,7 @@ This is a Hermes-native `ops-observability-card` workflow skill.
 
 ## Do Not Use When
 
-- The user asks what their own Hermes conversation has used or cost; Hermes' /usage shows this session's tokens and /status its context, /insights estimates cost across recent sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost.
+- The user asks what their own Hermes conversation has used or cost; Hermes' /usage shows this session's tokens and context, /insights estimates cost across recent sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost.
 - The user wants one run's timing and context-budget report; use `run-efficiency`.
 - The user asks OMH to sign in to a metric provider, billing console, or dashboard and pull live figures; the card reads only supplied payloads and Hermes' own records.
 

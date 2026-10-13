@@ -19,9 +19,9 @@ All notable changes will be documented here.
   receipt now names which of its reads hit a bound (`truncated_sources`).
   `run-efficiency`, `ops-observability-card`, and `context-budget-review`
   answer "what has this conversation used or cost" by what each Hermes
-  surface shows: `/usage` this session's tokens and `/status` its context,
-  `/insights` an estimated cost across recent sessions, and `omh_run_summary`
-  this conversation's recorded tokens and cost; `context-budget-review` stops
+  surface shows: `/usage` this session's tokens and context, `/insights` an
+  estimated cost across recent sessions, and `omh_run_summary` this
+  conversation's recorded tokens and cost; `context-budget-review` stops
   sending the question to the ops card, which cannot answer it.
   `context-budget-review` turns its summarization checkpoint into a
   `/compress <focus>` the person runs, offers `--preview` only in the classic

@@ -222,7 +222,7 @@ class EfficiencyContractTests(unittest.TestCase):
         # is the person's own host command; Hermes' skill tools and no in-place
         # edit of an OMH-managed skill -- in place of the operator defaults, and
         # `ops-observability-card` (also core) states its own Do-Not-Use and
-        # where Hermes' recorded usage comes from. Measured 79,440; the ceiling
+        # where Hermes' recorded usage comes from. Measured 79,429; the ceiling
         # restores the ~1.6k headroom this gate carried.
         self.assertLess(core["skill_body"]["bytes"], 81_000)
         # 815,000 -> 825,000: one new installable body (`web-research`) plus the

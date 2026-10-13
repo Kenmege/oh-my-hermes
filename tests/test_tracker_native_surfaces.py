@@ -57,13 +57,15 @@ COMPRESS_PREVIEW = (
     "TUI whose `/compress` does not parse the flag compresses for real with the flag in its focus."
 )
 PREVIEW_RESTRICTION = "only in the classic CLI or on a messaging platform, never when the surface is unknown"
-# What each Hermes surface shows, read at both supported revisions: `/usage` and
-# `/status` show tokens and context and no cost; `/insights` sums an estimated
-# cost over recent days; only the cost receipt is per conversation.
+# What each Hermes surface shows, read at both supported revisions: `/usage`
+# shows tokens and context and no cost on the classic CLI, the gateway, and the
+# modern TUI (whose `/status` shows no context at all); `/insights` sums an
+# estimated cost over recent days; only the cost receipt is per conversation.
 USAGE_CLAUSE = (
-    "Hermes' /usage shows this session's tokens and /status its context, /insights estimates cost across recent "
-    "sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost."
+    "Hermes' /usage shows this session's tokens and context, /insights estimates cost across recent sessions, and "
+    "the omh_run_summary tool relays this conversation's recorded tokens and cost."
 )
+CONTEXT_OCCUPANCY = "Context occupancy is the person's `/usage` reading when shared, otherwise an estimate."
 USAGE_CLAUSE_SKILLS = ("run-efficiency", "ops-observability-card", "context-budget-review")
 CANCEL_NO_HOST_KILL = (
     "Never end, kill, or signal a host process, background job, or delegation from this workflow, through the "
@@ -87,7 +89,7 @@ CANCEL_REPORTING = (
 SKILL_HERMES_COMMANDS = (
     "Registry search, install, removal of a hub-installed skill, and per-platform hiding are the person's own "
     "`hermes skills search`, `install`, `uninstall`, and `config` in a terminal, with `/skills search` and "
-    "`/skills install` inside the classic CLI."
+    "`/skills install` in a CLI or TUI session."
 )
 SKILL_MANAGED_EDIT = (
     "Never edit or delete an OMH-managed skill (an `omh-*` or `ulw-*` name) with `skill_manage`: OMH generates its "
@@ -110,7 +112,7 @@ CLAUSES = {
         "and the person's `/insights` gives Hermes' estimated cost across recent sessions. A conversation with no "
         "recorded tokens is not_observed, never zero, and provider billing stays not_observed.",
     ),
-    "context-budget-review": (COMPRESS_CHECKPOINT, COMPRESS_PREVIEW),
+    "context-budget-review": (COMPRESS_CHECKPOINT, COMPRESS_PREVIEW, CONTEXT_OCCUPANCY),
     "toolbelt-readiness": (
         f"On Hermes, count a native tool as present when {native_tool_presence_clause('it')}: a tool deferred behind "
         "tool_search is reached through `tool_call` and is never listed as missing, and a Hermes version number never "

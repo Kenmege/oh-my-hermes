@@ -683,7 +683,11 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # recorded tokens and cost -- since neither `/usage` nor `/status` shows a
 # cost; `cancel`'s `/stop` line says what it ends on each surface, and
 # `skill` names the in-chat `/skills` commands. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 492768
+# 492768 -> 492733: second review. The shared usage clause credits `/status`
+# with nothing (the modern TUI's shows no context) and says `/usage` shows
+# tokens and context; `skill`'s in-chat `/skills` line covers the TUI too.
+# Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 492733
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

@@ -47,7 +47,7 @@
     "omh-commit-pr-authoring/SKILL.md": "9cce2cf3444906a252a4c02a8d87da1d1f2d54cc732facc589649cf8eee0ab2d",
     "omh-commit-pr-authoring/references/commit-and-pr-conventions.md": "6b5a93c64771ade87705a0efef89cd6a951cc3c509de99e7c10984f672657d27",
     "omh-content-operator/SKILL.md": "09746bcd5a63c491c6a57d12a70198456d8d18036d00110472fee0827fc74539",
-    "omh-context-budget-review/SKILL.md": "247f69e06f67b5de19462e2ef662c72481b57a4308fbad5e92798b1d658de8ea",
+    "omh-context-budget-review/SKILL.md": "9a345b4a45f894797f5a3e975a9ad8596894da46f0f6603d55d298360f783ebd",
     "omh-context-budget-review/references/cache-placement.md": "bdac27120964aa692bd9b47f107fc9f19105d87f362e787e41c217d7a38d7590",
     "omh-cto-loop/SKILL.md": "6093861aebb853d8ce53f475689e5636b6d43cdb2718a33b756201e162e906d8",
     "omh-curriculum-design/SKILL.md": "2162885d7ea6609874c61aea5528a410335b7237bc816bb69202b73b67efce7e",
@@ -129,7 +129,7 @@
     "omh-native-debugging/SKILL.md": "9653ffeaf097915fcb3c93b9d73ff17fa4676842cab02248190fcb2aa278432d",
     "omh-native-debugging/references/native-debug-loop.md": "3ce0f29395b8a1c71074ce2808d6d2497bef1ccbecbba179b74950055435430d",
     "omh-operating-rhythm/SKILL.md": "5fbdb74bc1edc335c3bdd63b5f6816711b27b30492bbf49f672b597319fe1ef3",
-    "omh-ops-observability-card/SKILL.md": "263af17104687eff7e7f60498fd92ad3f9cefdd6e402d6d9e9739c14d04dc5d2",
+    "omh-ops-observability-card/SKILL.md": "495c48436e61637084e336a4b3a4a9c37e283b04d8ac5329bb9d2a1c4a846f30",
     "omh-ops-review/SKILL.md": "0476e9471cf84d4360591eb8730e9b3d2b3fc78df73b02acce969a53eabf229d",
     "omh-paper-learning/SKILL.md": "916a112888dbd6e761a9950ac64a84f33da29a95de536514fbbcabfc0e33af4a",
     "omh-people-ops/SKILL.md": "f7eb49c19e0ed7ce96aaebfb423f1b9e5ed1a6ee2e592644a2d418d5f076e140",
@@ -152,7 +152,7 @@
     "omh-report-package/SKILL.md": "a22e4a32942bfff1ce2f3d22763db123ad7f7a6e0f5ba7bc1caa59930591c2ce",
     "omh-research-brief/SKILL.md": "bd2c664c3cdbcfd6ccebe8a408517f7f71215f3eb4d5a7358bff4eb055dfff63",
     "omh-rules-distill/SKILL.md": "55a6b64d85db685a531eb53df7f60284ac452a297651fa4dff5a8b068c9bc8e1",
-    "omh-run-efficiency/SKILL.md": "1ab48e7992a14f6dcab84834dca5e423a50ce0cedfb70ffeff5c6409e17b7557",
+    "omh-run-efficiency/SKILL.md": "3486d171ae8624152db856f26322c66267a03d1ebc0129fce1b34c727c835413",
     "omh-running-work-board/SKILL.md": "a4e0d0db251bcad1eaae812fc9946507922f89c96ad969b30835564ba1a68670",
     "omh-rust/SKILL.md": "6bcaf4508ea2b1e7c57c027b5bf1591cbef2d9877c3c2d08ee6946f8987e75c4",
     "omh-rust/references/rust-discipline.md": "7d9b5005213715f4712dac2371fa63699b8ba963e843f360d75789d576c12844",
@@ -318,7 +318,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "866f5d53438f517e46b38eb8a935b0b22bf3783d6477352c4595a5c38f937b93",
+  "source_digest": "4e674f9f1ba4099dd7f115f62d73ec93b74fbf7dab7312e92f90562d707dfbaa",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"
