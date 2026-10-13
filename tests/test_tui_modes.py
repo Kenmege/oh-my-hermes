@@ -411,6 +411,7 @@ class DocumentedApprovalsToggleTests(unittest.TestCase):
         self.assertIn("(a steer Hermes does not take waits in the queue for the turn to end)", changelog)
 
 
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
 class SteerReplayTests(AppTestCase):
     def steer_run(self, status: str, *segments: str) -> object:
         answers = (*startup_answers(), ("session.steer", {"result": {"status": status, "text": "second prompt"}}))
