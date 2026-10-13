@@ -27,7 +27,7 @@ This is a Hermes-native `legal-compliance-review` workflow skill.
 - The review is about code, secrets, permissions, prompt injection, dependencies, or unsafe tool behavior; use `omh-security-safety-review`.
 - The request is a plain-language rewrite without a legal-risk review objective; use `omh-content-operator`.
 - The user asks to sign, accept, submit, file, publish, or change a policy or contract in an external system; use `omh-apps` only after explicit authority.
-- The file itself is about to leave and needs its PII redaction and a residual PII scan first; use `omh-data-share-review` once sharing it is cleared.
+- Strip the PII from the file itself and scan it before sending it, once sharing it is cleared; use `omh-data-share-review`.
 
 ## Examples
 

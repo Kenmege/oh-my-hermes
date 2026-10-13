@@ -1672,7 +1672,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The review is about code, secrets, permissions, prompt injection, dependencies, or unsafe tool behavior; use `security-safety-review`.
   - The request is a plain-language rewrite without a legal-risk review objective; use `content-operator`.
   - The user asks to sign, accept, submit, file, publish, or change a policy or contract in an external system; use `connector-operator` only after explicit authority.
-  - The file itself is about to leave and needs its PII redaction and a residual PII scan first; use `data-share-review` once sharing it is cleared.
+  - Strip the PII from the file itself and scan it before sending it, once sharing it is cleared; use `data-share-review`.
 - Strong routing signals: `contract review`, `contract liability clause`, `regulatory analysis`, `compliance review`, `contract redline`, `redline the contract`, `negotiation preparation`, `negotiation strategy`, `clause language`, `counterparty position`, `계약서 검토`, `규제 분석`, `컴플라이언스 검토`
 - Good example:
   - Prompt: Review this vendor DPA for data-processing obligations, risky clauses, and questions for counsel.
@@ -7502,7 +7502,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Filing the issue once its attachment is clean -- the title, labels, and reproduction steps; use `github-issue-intake`.
   - Building the training set or deciding whether to train once the corpus is clean; use `model-finetuning`.
   - Working the support queue -- triaging or answering tickets rather than exporting them; use `support-operations`.
-- Strong routing signals: `data-share-review`, `data share review`, `pii redaction`, `redact pii`, `pseudonymize`, `de-identify`, `anonymize the dataset`, `residual pii`, `redact the pii`, `redact personal data`, `strip pii`, `strip the pii`, `remove pii`, `remove the pii`, `scrub pii`, `scrub the pii`, `mask pii`, `mask personal data`, `remove personal data`, `scan for pii`, `pseudonymise`, `pseudonymizing`, `pseudonymization`, `pseudonymisation`, `de-identifying`, `deidentify`, `quasi-identifier`, `quasi-identifiers`, `direct identifiers`, `anonymize this dataset`, `anonymize the data`, `anonymize the logs`, `redact the logs`, `redact these logs`, `customer details out`, `personal details out`
+- Strong routing signals: `data-share-review`, `data share review`, `pii redaction`, `redact pii`, `pseudonymize`, `de-identify`, `anonymize the dataset`, `residual pii`, `redact the pii`, `redact personal data`, `strip pii`, `strip the pii`, `remove pii`, `remove the pii`, `scrub pii`, `scrub the pii`, `mask pii`, `mask personal data`, `remove personal data`, `scan for pii`, `pseudonymise`, `pseudonymizing`, `pseudonymization`, `pseudonymisation`, `de-identifying`, `deidentify`, `quasi-identifier`, `quasi-identifiers`, `direct identifiers`, `anonymize this dataset`, `anonymize the data`, `anonymize the logs`, `redact the logs`, `redact these logs`
 - Good example:
   - Prompt: the analytics vendor wants last month's ticket export, take the customer details out first
   - Expected behavior: Ask what the vendor needs, inventory the columns from the header and per-column shape counts, drop the ones it does not need, pseudonymize the customer id with the mapping kept in a local folder, count emails, phone numbers, names, and secrets in the output with a scan that prints counts only, and write the share record.

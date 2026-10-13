@@ -7,14 +7,7 @@ import re
 import unicodedata
 
 from .boundary_phrase import contains_boundary_phrase as _contains_boundary_phrase
-from .data_share_cues import (
-    DATA_SHARE_CARRIER_TOKENS,
-    DATA_SHARE_MESSAGE_COMMAND_WORDS,
-    DATA_SHARE_OUTBOUND_PHRASES,
-    DATA_SHARE_OUTBOUND_TOKENS,
-    DATA_SHARE_WITHDRAWAL_PHRASES,
-    DATA_SHARE_WITHDRAWAL_TOKENS,
-)
+from .data_share_cues import data_share_request_admitted
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES as _CODING_DELIVERY_REQUEST_PHRASES,
     CODING_DELIVERY_REQUEST_TOKENS as _CODING_DELIVERY_REQUEST_TOKENS,
@@ -2002,7 +1995,7 @@ _ROUTE_HINT_RULES = (
         # "pii", "redact", "mask" or "share" is absent: an acronym question, a
         # censored film, a photo mask, and a shared doc all say them. The
         # phrases also name code, settings, legal questions and issue triage,
-        # so the hint stands only beside the target shape (`data_share_cues`).
+        # so the hint stands only for the request `data_share_cues` admits.
         "phrases": (
             "data-share-review",
             "data share review",
@@ -2017,7 +2010,7 @@ _ROUTE_HINT_RULES = (
             "quasi-identifier",
         ),
         # Whole tokens, so "the pseudonymized dataset" is not a cue. Every cue
-        # also needs the skill's target shape (`_rule_suppressed_by_context`).
+        # also needs an admitted request (`_rule_suppressed_by_context`).
         "tokens": ("pseudonymize", "pseudonymise", "pseudonymization", "pseudonymisation", "deidentify"),
         "adjacent_workflows": (
             "legal-compliance-review",
@@ -8246,23 +8239,10 @@ def _long_document_page_count_signal(text: str) -> bool:
     )
 
 
-def _data_share_target_absent(text: str) -> bool:
-    """No file-shaped carrier leaving the team, or a word naming another job beside it."""
-    tokens = set(re.findall(r"[a-z0-9][a-z0-9_-]*", text))
-    if tokens & DATA_SHARE_WITHDRAWAL_TOKENS or _contains_boundary_phrase(text, DATA_SHARE_WITHDRAWAL_PHRASES):
-        return True
-    first_word = re.findall(r"[a-z0-9#][a-z0-9#+.-]*", text)[:1]
-    if first_word and first_word[0] in DATA_SHARE_MESSAGE_COMMAND_WORDS:
-        return True
-    if not tokens & DATA_SHARE_CARRIER_TOKENS:
-        return True
-    return not (tokens & DATA_SHARE_OUTBOUND_TOKENS or _contains_boundary_phrase(text, DATA_SHARE_OUTBOUND_PHRASES))
-
-
 def _rule_suppressed_by_context(rule: dict[str, object], text: str) -> bool:
     rule_id = str(rule.get("id", ""))
     if rule_id == "data_share_review":
-        return _data_share_target_absent(text)
+        return not data_share_request_admitted(text)
     visual_markers = (
         "image card",
         "summary card",

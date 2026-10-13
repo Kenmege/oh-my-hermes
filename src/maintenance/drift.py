@@ -530,8 +530,13 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # phrase counted anywhere -- messages, tickets and PR comments,
             # code and libraries, Hermes settings, storage-wide scans, a vendor
             # contract, a definition, a personal account, and a screenshot --
-            # and two that pin the held-back word "pii" (32).
-            expected=568,
+            # and two that pin the held-back word "pii" (32). Its second
+            # review adds twelve: requests that only mention redaction and a
+            # file leaving -- delivering "customer details out", merging or
+            # reviewing a pull request, a Slack message, a post, a blog post, a
+            # translation, a reminder, a video, a vendor comparison, a sample
+            # message -- none of which leads with a data-protection verb (12).
+            expected=580,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -706,8 +711,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # redacted before a vendor gets it, which must dispatch it; and
             # seven its phrases reached while counted anywhere, which stay
             # with GitHub event ops (labeling, closing, reviewing, triaging,
-            # a workflow, a rerun) and web research (a blog post) (9).
-            expected=745,
+            # a workflow, a rerun) and web research (a blog post) (9). Its
+            # second review adds four: a crash log redacted before a public
+            # GitHub issue, which must dispatch it, and three requests that
+            # only mention redaction, which stay with GitHub event ops, the
+            # connector operator, and the gateway intent card (4).
+            expected=749,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

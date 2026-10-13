@@ -162,8 +162,8 @@ class DataShareReviewCatalogTests(unittest.TestCase):
         self.assertEqual(
             back,
             [
-                "The file itself is about to leave and needs its PII redaction and a residual PII scan first; use "
-                "`data-share-review` once sharing it is cleared."
+                "Strip the PII from the file itself and scan it before sending it, once sharing it is cleared; use "
+                "`data-share-review`."
             ],
         )
 
@@ -202,66 +202,108 @@ class DataShareReviewRoutingTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertIs(data_share_review_spoken(normalized_phrase(message)), spoken)
 
-    def test_only_a_carrier_leaving_the_team_offers_the_skill(self) -> None:
+    def test_only_a_request_led_by_a_protection_verb_is_admitted(self) -> None:
         for message, offered in (
             ("pseudonymize the customer ids before the vendor gets the export", True),
-            ("upload this file to google drive after we pseudonymize it", True),
-            ("scrub the pii from these chat logs before they go into our fine-tune set", True),
-            # No carrier, or no outbound cue.
-            ("pseudonymize the user ids before the vendor gets them", False),
-            ("redact pii from this csv", False),
-            ("close the github issue titled redact pii from logs", False),
+            ("de-identify this export for the researcher", True),
+            ("review the export for residual pii before we send it to the vendor", True),
+            # The sentence only mentions the work; its request is something else.
+            ("send the customer details out to the vendor in the export file", False),
+            ("write a blog post on how to strip pii from a dataset before sharing it with vendors", False),
+            ("tell the data team on slack that we will strip the pii from the export before the vendor gets it", False),
+            ("after we strip the pii, email the export to the vendor", False),
+            ("upload this file to the vendor after we pseudonymize it", False),
+            # A lead verb with no phrase of the skill: nothing personal is named.
+            ("remove the old rows from this export before we send it to the vendor", False),
+            ("review the export before we send it to the vendor", False),
         ):
             with self.subTest(message=message):
                 self.assertIs(_offered(message), offered)
 
-    def test_a_word_naming_another_job_withdraws_the_skill(self) -> None:
+    def test_filler_is_skipped_and_a_later_clause_can_lead(self) -> None:
         for message in (
-            # legal
-            "does gdpr require us to pseudonymize this export for the vendor",
-            "does our contract let us share this export with the vendor",
-            # Hermes settings
-            "configure hermes to redact pii in the export it sends to the vendor",
-            "turn on pii redaction for the file we send to the vendor",
-            # code
-            "write a function that strips pii from the export before we upload it",
-            "strip pii from our logging pipeline before the logs reach the vendor",
-            # a personal account
-            "remove personal data from my account export before sending it",
-            # an object that is a message or an issue
-            "email the vendor that we will de-identify the dataset by friday",
-            "close the public issue about the redacted export",
+            "hey, redact the pii from this export before we send it to the vendor",
+            "can you strip the pii from this csv before we share it with the agency",
+            "go ahead and pseudonymize the user ids in this dataset before it goes to the vendor",
+            "we need to share a ticket export with a vendor, strip the pii first",
+            "the analytics vendor wants last month's ticket export, take the customer details out first",
+            "i need you to strip the pii from the logs, then upload them to the vendor",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(_offered(message))
+
+    def test_a_carrier_and_a_recipient_must_both_be_present(self) -> None:
+        for message, offered in (
+            ("strip the pii from the export and hand it over to the vendor", True),
+            ("mask personal data in this spreadsheet before I give it to the contractor", True),
+            # No carrier: a sample is as often a sample message.
+            ("redact the pii from the sample before we send it to the vendor", False),
+            # No recipient: by hand, back to me, or to me.
+            ("strip the pii from the export by hand", False),
+            ("pseudonymize the user ids in this file and give it back to me", False),
+            ("redact pii from this file and give me a summary", False),
+            ("redact pii from this csv", False),
+        ):
+            with self.subTest(message=message):
+                self.assertIs(_offered(message), offered)
+
+    def test_a_legal_question_a_setting_or_a_storage_scan_withdraws_it(self) -> None:
+        for message in (
+            "pseudonymize this export for the vendor as gdpr requires",
+            "redact pii in the export before hermes uploads it to the vendor",
+            "scan for pii in the files we share with vendors on s3",
+            "scan for pii across our shared files before the vendor audit",
         ):
             with self.subTest(message=message):
                 self.assertFalse(_offered(message))
 
     def test_held_back_words_score_nothing_for_the_skill(self) -> None:
-        # A carrier and an outbound cue offer the skill, so only the hold-back
-        # keeps "share", "data", "export" and "review" from crediting it.
+        # The request is admitted, so only the hold-back keeps "strip", "pii",
+        # "data", "export" and "share" from crediting the skill one by one.
         recommendation = next(
-            item for item in recommend_skills("share the data export review with the vendor") if item["skill"] == SKILL
+            item
+            for item in recommend_skills("strip the pii from the data export before we share it with the vendor")
+            if item["skill"] == SKILL
         )
-        self.assertEqual([label for label in recommendation["matched"] if label.startswith("trigger:")], [])
+        single_word_credits = [
+            label for label in recommendation["matched"] if label.startswith("trigger:") and " " not in label
+        ]
+        self.assertEqual(single_word_credits, [])
 
-    def test_the_route_hint_needs_the_same_target(self) -> None:
+    def test_only_words_that_mean_nothing_else_stay_creditable(self) -> None:
+        from omh.routing.recommend import _tokens, held_back_trigger_tokens
+
+        creditable = _tokens(" ".join(_definition(SKILL).triggers)) - held_back_trigger_tokens(SKILL)
+        self.assertEqual(
+            creditable,
+            {
+                "de-identify", "de-identifying", "deidentify", "pseudonymisation", "pseudonymise", "pseudonymization",
+                "pseudonymize", "pseudonymizing", "quasi-identifier", "quasi-identifiers",
+            },
+        )
+
+    def test_the_route_hint_needs_the_same_request(self) -> None:
         def hinted(message: str) -> bool:
             return any(hint.get("workflow") == SKILL for hint in awareness_route_hint(message).get("hints", []))
 
         self.assertTrue(hinted("redact pii from this csv before sending to the vendor"))
         self.assertTrue(hinted("pseudonymize the emails in customers.csv before I share it with the agency"))
         for message in (
-            # A finished state in the target shape: "pseudonymize" is a whole token.
-            "send the pseudonymized export to the vendor",
+            # A finished state: "pseudonymize" is a whole token.
+            "pseudonymized exports go to the vendor, redact the logs too",
             "run churn analysis on the pseudonymized dataset",
             "does gdpr require us to pseudonymize customer data",
             "close the github issue titled redact pii from logs",
             "how do I enable redact pii in hermes",
+            "write a blog post on how to strip pii from a dataset before sharing it with vendors",
+            "send a slack message saying the export file is ready to share once we redact pii",
         ):
             with self.subTest(message=message):
                 self.assertFalse(hinted(message))
 
 
 INTERVENTIONS = (
+    "redact the pii in this crash log before attaching it to the public github issue",
     "we need to share a ticket export with a vendor, strip the pii first",
     "pseudonymize the customer ids in this dataset before it goes into the fine-tune corpus",
     "redact personal data from these server logs before I attach them to a public github issue",
@@ -289,6 +331,18 @@ NEGATIVES = (
     "explain de-identify versus anonymize",
     "is an ip address pii",
     "pii",
+    "send the customer details out to the vendor in the export file",
+    "get the personal details out to the contractor in the spreadsheet",
+    "go ahead and merge the pr that adds pii redaction to the export file before sending to the vendor",
+    "review the pull request that adds pii redaction to the files we send vendors",
+    "tell the data team on slack that we will strip the pii from the export before the vendor gets it",
+    "post a message in #privacy that we pseudonymize the csv before sharing with researchers",
+    "write a blog post on how to strip pii from a dataset before sharing it with vendors",
+    "translate this paragraph about how to redact pii from export files sent to vendors into korean",
+    "schedule a calendar reminder to redact pii from the monthly export before it goes to the vendor",
+    "watch this video about how to redact pii from log files before sharing them",
+    "which vendor is best for pseudonymization of datasets shared with third party processors",
+    "give me a sample message to tell the vendor we redact pii",
 )
 OWNERS = (
     ("attach the crash log to the github issue", "github-event-ops"),
@@ -298,6 +352,9 @@ OWNERS = (
     ("close the github issue titled redact pii from logs", "github-event-ops"),
     ("rerun the failing github action for the pseudonymize job", "github-event-ops"),
     ("write a blog post about pii redaction best practices", "web-research"),
+    ("hey, triage the github issues about pii redaction in the public log files", "github-event-ops"),
+    ("i need you to triage the issues about pii redaction in log files we post publicly", "connector-operator"),
+    ("send a slack message saying the export file is ready to share once we redact pii", "gateway-intent-card"),
 )
 
 

@@ -4721,6 +4721,96 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "data-share-review",
     ),
+    # Review round two: each of these dispatched the skill while a phrase
+    # and a file leaving counted anywhere in the sentence. The request is a
+    # delivery, a pull request, a message, a post, a translation, a reminder,
+    # a video, or a vendor comparison; none leads with a data-protection verb.
+    RoutingPrecisionCase(
+        "send-the-customer-details-out-to-the-vendor-in-the-export-file-is-not-a-data-share-review",
+        "Sending customer details out to a vendor delivers them; nothing is taken out",
+        "send the customer details out to the vendor in the export file",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "get-the-personal-details-out-to-the-contractor-in-the-spreadsheet-is-not-a-data-share-review",
+        "Getting personal details out to a contractor delivers them; nothing is taken out",
+        "get the personal details out to the contractor in the spreadsheet",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "go-ahead-and-merge-the-pr-that-adds-pii-redaction-to-the-export-file-b-is-not-a-data-share-review",
+        "Merging a redaction pull request acts on the PR, not on a file leaving",
+        "go ahead and merge the pr that adds pii redaction to the export file before sending to the vendor",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "review-the-pull-request-that-adds-pii-redaction-to-the-files-we-send-v-is-not-a-data-share-review",
+        "Reviewing a redaction pull request acts on the PR, not on a file leaving",
+        "review the pull request that adds pii redaction to the files we send vendors",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "tell-the-data-team-on-slack-that-we-will-strip-the-pii-from-the-export-is-not-a-data-share-review",
+        "Telling the team on Slack about a redaction is a message, not the request",
+        "tell the data team on slack that we will strip the pii from the export before the vendor gets it",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "post-a-message-in-privacy-that-we-pseudonymize-the-csv-before-sharing-is-not-a-data-share-review",
+        "Posting about pseudonymization is a message, not the request",
+        "post a message in #privacy that we pseudonymize the csv before sharing with researchers",
+        "answer_clarification",
+        "",
+        "data-share-review",
+    ),
+    RoutingPrecisionCase(
+        "write-a-blog-post-on-how-to-strip-pii-from-a-dataset-before-sharing-it-is-not-a-data-share-review",
+        "A blog post about redacting before sharing is writing, not the request",
+        "write a blog post on how to strip pii from a dataset before sharing it with vendors",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "translate-this-paragraph-about-how-to-redact-pii-from-export-files-sen-is-not-a-data-share-review",
+        "Translating a paragraph about redaction is translation, not the request",
+        "translate this paragraph about how to redact pii from export files sent to vendors into korean",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "schedule-a-calendar-reminder-to-redact-pii-from-the-monthly-export-bef-is-not-a-data-share-review",
+        "A reminder to redact later is scheduling, not the request",
+        "schedule a calendar reminder to redact pii from the monthly export before it goes to the vendor",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "watch-this-video-about-how-to-redact-pii-from-log-files-before-sharing-is-not-a-data-share-review",
+        "Watching a video about redaction is not the request",
+        "watch this video about how to redact pii from log files before sharing them",
+        "answer_clarification",
+        "",
+        "data-share-review",
+    ),
+    RoutingPrecisionCase(
+        "which-vendor-is-best-for-pseudonymization-of-datasets-shared-with-thir-is-not-a-data-share-review",
+        "Choosing a pseudonymization vendor is a comparison, not the request",
+        "which vendor is best for pseudonymization of datasets shared with third party processors",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "give-me-a-sample-message-to-tell-the-vendor-we-redact-pii-is-not-a-data-share-review",
+        "A sample message about redaction is writing, not the request",
+        "give me a sample message to tell the vendor we redact pii",
+        "answer_clarification",
+        "",
+    ),
 )
 
 
@@ -12028,6 +12118,45 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "web-research",
         "run_hermes_research",
         "web_research",
+    ),
+    # Review round two: a request led by a data-protection verb about a crash
+    # log for a public issue reaches the skill; "crash" no longer withdraws it.
+    RoutingInterventionCase(
+        "crash-log-for-a-public-github-issue-reaches-data-share-review",
+        "Redacting a crash log before a public GitHub issue reaches the data share review",
+        "redact the pii in this crash log before attaching it to the public github issue",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    # Review round two: a request that only mentions redaction keeps its owner.
+    RoutingInterventionCase(
+        "hey-triage-the-github-issues-about-pii-redaction-in-the-public-log-fil-stays-off-data-share-review",
+        "Triaging issues about redaction in public logs stays on GitHub event ops",
+        "hey, triage the github issues about pii redaction in the public log files",
+        "dispatch",
+        "github-event-ops",
+        "prepare_github_event_ops_card",
+        "github_event_ops",
+    ),
+    RoutingInterventionCase(
+        "i-need-you-to-triage-the-issues-about-pii-redaction-in-log-files-we-po-stays-off-data-share-review",
+        "Triaging issues about redaction in published logs stays on the connector operator",
+        "i need you to triage the issues about pii redaction in log files we post publicly",
+        "dispatch",
+        "connector-operator",
+        "prepare_connector_operator_card",
+        "connector_operator",
+    ),
+    RoutingInterventionCase(
+        "send-a-slack-message-saying-the-export-file-is-ready-to-share-once-we-stays-off-data-share-review",
+        "A Slack message about a redacted export stays on the gateway intent card",
+        "send a slack message saying the export file is ready to share once we redact pii",
+        "dispatch",
+        "gateway-intent-card",
+        "prepare_gateway_intent_card",
+        "gateway_intent",
     ),
 )
 

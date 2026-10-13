@@ -31,15 +31,7 @@ from .reference_regions import executable_routing_text
 from .jev_addressing import jev_addressed_skill
 from .localization import normalized_phrase, phrase_is_spoken, routing_terms, routing_tokens
 from .materials_cues import OFFICE_FILE_MATERIAL_PHRASES
-from ..plugin_bundle.omh.data_share_cues import (
-    DATA_SHARE_CARRIER_TOKENS,
-    DATA_SHARE_MESSAGE_COMMAND_WORDS,
-    DATA_SHARE_OUTBOUND_PHRASES as _DATA_SHARE_OUTBOUND_PHRASE_SOURCE,
-    DATA_SHARE_OUTBOUND_TOKENS,
-    DATA_SHARE_REVIEW_PHRASES as _DATA_SHARE_REVIEW_PHRASES,
-    DATA_SHARE_WITHDRAWAL_PHRASES as _DATA_SHARE_WITHDRAWAL_PHRASE_SOURCE,
-    DATA_SHARE_WITHDRAWAL_TOKENS,
-)
+from ..plugin_bundle.omh.data_share_cues import data_share_phrase_spoken, data_share_request_admitted
 from .missed_route import has_normalized_missed_omh_workflow_context
 from .omh_help import is_omh_docs_question
 from .visual_qa_cues import BROWSER_VISUAL_QA_PHRASES, CUSTOMER_SYMPTOM_REPORT_PHRASES
@@ -2983,39 +2975,25 @@ _SECURITY_EVENT_OVER_GITHUB_EVENT_PHRASES = (
 # Taking personal data out of a file before it leaves the team is owned by
 # `data-share-review`, even when the file is headed for a GitHub issue, a
 # contractor, or a transcript tool: the destination is the carrier, and what
-# has to come out first decides the work. The same phrases name code, Hermes
-# settings, legal questions, scanners, issue triage and messages, so a phrase
-# counts only beside the skill's target shape -- a file-shaped carrier and an
-# outbound cue -- and never beside a word naming one of those other jobs. The
-# vocabulary lives in the plugin bundle (`data_share_cues`), which the
-# awareness route hint reads too. Each phrase counts only as its own words, so
-# a finished state ("the pseudonymized dataset") claims nothing.
-DATA_SHARE_REVIEW_PHRASES = tuple(normalized_phrase(phrase) for phrase in _DATA_SHARE_REVIEW_PHRASES)
-_DATA_SHARE_OUTBOUND_PHRASES = tuple(normalized_phrase(phrase) for phrase in _DATA_SHARE_OUTBOUND_PHRASE_SOURCE)
-_DATA_SHARE_WITHDRAWAL_PHRASES = tuple(normalized_phrase(phrase) for phrase in _DATA_SHARE_WITHDRAWAL_PHRASE_SOURCE)
+# has to come out first decides the work. The same phrases also name code,
+# Hermes settings, legal questions, issue triage, messages and posts about the
+# topic, so the skill is admitted only for a REQUEST that leads with a
+# data-protection verb, about a file-shaped carrier leaving the team, with one
+# of its phrases spoken (`data_share_cues`, which the awareness route hint
+# reads too). Everything else routes as if the skill did not exist.
 
 
 def data_share_review_spoken(normalized_query: str) -> bool:
-    return any(phrase_is_spoken(normalized_query, phrase) for phrase in DATA_SHARE_REVIEW_PHRASES)
+    return data_share_phrase_spoken(normalized_query)
 
 
 def data_share_review_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
-    """A file-shaped carrier leaving the team, and no word of another job beside it."""
-    if query_tokens & DATA_SHARE_WITHDRAWAL_TOKENS:
-        return False
-    if any(phrase_is_spoken(normalized_query, phrase) for phrase in _DATA_SHARE_WITHDRAWAL_PHRASES):
-        return False
-    if _command_words(normalized_query)[:1] and _command_words(normalized_query)[0] in DATA_SHARE_MESSAGE_COMMAND_WORDS:
-        return False
-    if not query_tokens & DATA_SHARE_CARRIER_TOKENS:
-        return False
-    return bool(query_tokens & DATA_SHARE_OUTBOUND_TOKENS) or any(
-        phrase_is_spoken(normalized_query, phrase) for phrase in _DATA_SHARE_OUTBOUND_PHRASES
-    )
+    """A request led by a data-protection verb to clean a file before it leaves the team."""
+    return data_share_request_admitted(normalized_query)
 
 
 def _data_share_review_claims(normalized_query: str, query_tokens: set[str]) -> bool:
-    return data_share_review_spoken(normalized_query) and data_share_review_offers_itself(normalized_query, query_tokens)
+    return data_share_request_admitted(normalized_query)
 
 
 # A build waiting in TestFlight or a store's review is a store release owned by

@@ -36,7 +36,6 @@ from ..plugin_bundle.omh.hermes_session_commands import LOOP_TIMER_NONE
 from .policy import (
     appearance_edit_request,
     data_share_review_offers_itself,
-    data_share_review_spoken,
     everyday_sense_phrase_unanchored,
     KOREAN_NOUN_PARTICLES,
     PUBLIC_PLUGIN_CONNECTOR_ALIAS_PHRASES,
@@ -3120,8 +3119,8 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # photo", "share this doc with my team", "how do I anonymize my browsing"
     # and "my personal data was in a breach" all scored it as bare tokens.
     # Only the complete phrases score. Tokens that mean nothing else stay
-    # creditable: `pseudonymize` and its spellings, `deidentify`,
-    # `de-identify`, `quasi-identifier(s)`.
+    # creditable: `pseudonymize` and its spellings and -ing form, `deidentify`,
+    # `de-identify`, `de-identifying`, `quasi-identifier(s)`.
     "data-share-review": frozenset(
         {
             "anonymize",
@@ -3132,6 +3131,7 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "identifier",
             "identifiers",
             "identify",
+            "identifying",
             "logs",
             "mask",
             "personal",
@@ -4422,7 +4422,7 @@ def _score_definition(
     if definition.name == "internal-audit" and _internal_audit_explicit_match(normalized_query):
         score += 30
         matched.add("direct:internal_audit")
-    if definition.name == "data-share-review" and data_share_review_spoken(normalized_query):
+    if definition.name == "data-share-review" and data_share_review_offers_itself(normalized_query, query_tokens):
         score += 30
         matched.add("direct:data_share_review")
     if definition.name == "mobile-release" and _mobile_release_explicit_match(normalized_query):

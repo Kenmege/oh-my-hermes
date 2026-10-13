@@ -12,21 +12,24 @@ All notable changes will be documented here.
   CSV before a model provider sees it now opens this review; requests like
   these used to dispatch GitHub event ops, the connector operator, the media
   operator, or model-finetuning, or got a clarifying question. It opens only
-  when a file-shaped carrier (an export, dataset, CSV, file, logs, records, an
-  extract or a transcript excerpt) is leaving the team (a vendor, contractor,
-  agency, researcher, public issue, model provider, training corpus, or a verb
-  that sends it). The same words about code, Hermes settings, a GDPR or
-  contract question, storage-wide scans, messages and tickets, a pull request
-  or issue, or a personal account do not open it. It asks where the file goes
-  and what that destination needs, classifies every field as a direct
-  identifier, quasi-identifier, secret, free text, or not personal, reads a
-  row only when per-column shape counts leave a field unclear, drops what is
-  not needed before masking anything, and keeps any pseudonym mapping at a
-  local path outside the shipped file. The verdict is `redacted` only after an
-  observed residual scan of the exact file that leaves counts every class,
-  free text included; without one it is `not_observed`. Counts come from
-  Hermes' `search_files` in its `count` mode or a detector script run through
-  `execute_code` that prints counts only; that script's stderr and any
+  for a request that leads with a data-protection verb -- redact, strip,
+  scrub, remove, mask, pseudonymize, anonymize, de-identify, sanitize,
+  minimize, "take ... out", or a scan or check for PII -- about a file-shaped
+  carrier (an export, dataset, CSV, file, logs, records, an extract or a
+  transcript excerpt) leaving the team (a vendor, contractor, agency,
+  researcher, public issue, model provider, training corpus, or a verb that
+  sends it). A sentence that only mentions the work routes as before: a pull
+  request or issue, a message, a blog post, a reminder, code, a Hermes
+  setting, a GDPR or contract question, or a storage-wide scan. It asks where
+  the file goes and what that destination needs, classifies every field as a
+  direct identifier, quasi-identifier, secret, free text, or not personal,
+  reads a row only when per-column shape counts leave a field unclear, drops
+  what is not needed before masking anything, and keeps any pseudonym mapping
+  at a local path outside the shipped file. The verdict is `redacted` only
+  after an observed residual scan of the exact file that leaves counts every
+  class, free text included; without one it is `not_observed`. Counts come
+  from Hermes' `search_files` in its `count` mode or a detector script run
+  through `execute_code` that prints counts only; that script's stderr and any
   traceback return too, so it catches its own errors without echoing a value.
   The skill says plainly that Hermes' `privacy.redact_pii` and
   `security.redact_secrets` cover gateway chat identifiers and tool output,
