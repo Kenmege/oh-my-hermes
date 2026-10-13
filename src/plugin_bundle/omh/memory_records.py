@@ -170,8 +170,9 @@ def prefetch_scope_allowlist(
     session_id: str = "",
     principal_ref: str = "",
     include_legacy_personal: bool = True,
+    channel_ref: str = "",
 ) -> list[dict[str, str]]:
-    """Explicit user-global, current project and current thread labels.
+    """Explicit user-global, current project, principal, channel and current thread labels.
 
     Nothing is inferred from a stored record, and nothing ever widens to a
     wildcard. A blank project identity drops the project label rather than
@@ -183,17 +184,22 @@ def prefetch_scope_allowlist(
     none resolved, no project record is admitted at all, and what remains is
     a subset of the allowlist the same session would get inside any
     repository. A shared surface reads no user-global record, so its
-    allowlist stays empty and fails closed as before.
+    allowlist stays empty and fails closed as before, unless it names a
+    principal or a messenger channel (`channel_ref`): those labels admit
+    only records bound to that principal or scoped to that channel, so they
+    need no repository either.
     `prefetch_required_scope_kinds` is the matching requirement.
     """
     identity = str(project_identity or "").strip()
-    if not identity and not include_legacy_personal:
+    if not identity and not include_legacy_personal and not principal_ref and not channel_ref:
         return []
     scopes = ([{"kind": "user-global", "ref": "default"}] if include_legacy_personal else [])
     if identity:
         scopes.append({"kind": "project", "ref": identity})
     if principal_ref:
         scopes.append({"kind": "user", "ref": principal_ref})
+    if channel_ref:
+        scopes.append({"kind": "channel", "ref": channel_ref})
     thread = str(session_id or "").strip()
     if thread:
         scopes.append({"kind": "thread", "ref": thread})

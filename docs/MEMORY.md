@@ -65,16 +65,19 @@ Legacy records are never assigned to the next active user automatically.
 
 ### Surface classes
 
-Which surfaces are shared is decided once per session, in the provider's
-`initialize`, from the `platform` and `agent_context` Hermes passes
-(`agent/agent_init.py`, `_memory_provider_init_kwargs`). Anything unknown fails
-closed:
+Which surfaces are shared is decided in the provider's `initialize`, from the
+`platform` and `agent_context` Hermes passes (`agent/agent_init.py`,
+`_memory_provider_init_kwargs`), and for a messenger conversation from the
+chat's ids, which each turn start re-checks. Anything unknown fails closed:
 
 | Class | Hermes inputs | Reads | Writes (`capture`, `demote`) | Pack extras |
 | --- | --- | --- | --- | --- |
 | `operator_console` | `platform` is `cli`, `tui` or `desktop`, primary context | nonshared: reviewed v2 records, user-global, blocks (`omh_memory` `blocks` and `read` too) | yes | system blocks, reference index, the `omh reminder:` line, the consolidation brief |
 | `shared` | every gateway (`telegram`, `discord`, `slack`, `whatsapp`, ...), `api_server`, `webhook`, `relay`, `acp`, an empty platform, anything else | principal-bound only, as above; `blocks` and `read` refused (`shared_surface_reads_refused`) | refused (`shared_surface_writes_refused`) | none |
 | `background` | any `agent_context` other than `primary` (Hermes passes `cron` for the scheduler) | as `shared`, with the same block refusal | refused (`writes_disabled`) | none |
+| `owner_direct` | a gateway session whose ids prove a 1:1 DM with the only user Hermes authorizes on the platform (see [Messenger conversations](#messenger-conversations); never on Discord) | as `operator_console` | as `operator_console` | as `operator_console` |
+| `direct` | a proven 1:1 DM with anyone else | only records bound to that person's principal; `blocks` and `read` refused | `capture` bound to that person (v3, `user` scope); `demote` refused (`demote_owner_only`) | none |
+| `channel` | a proven group conversation, or any Discord conversation | only that channel's records (`channel` scope); `blocks` and `read` refused | `capture` into that channel's scope; `demote` refused | none |
 
 An operator console is not a multi-party chat. The CLI REPL, the TUI and the
 Desktop chat panel reach the agent through an OS login, a dashboard login or a
@@ -143,18 +146,154 @@ another instance's, so it is never widened, and only the session's own console
 provider withdraws it; while an earlier-release provider is still running, it
 can lose its lens that way and the tool then fails closed for that session.
 
-A shared surface does not capture yet: nothing tells OMH which participant of a
-group chat stated a fact. Memory for a messenger's owner DM, per person and per
-channel, is a separate change.
+A shared surface does not capture: nothing tells OMH which participant of a
+group chat stated a fact.
+
+### Messenger conversations
+
+A gateway session is shared unless the chat's own ids prove what it is (owner
+decision 2026-10-13, `memory_messenger.py`). Hermes passes `chat_type`,
+`chat_id`, `chat_name`, `user_id` and `thread_id` to `initialize`, each only
+when set, and `author_id` and `author_is_bot` to every `on_turn_start`
+(`agent/turn_context.py`). `chat_type` alone proves nothing:
+`SessionSource.chat_type` defaults to `"dm"`, the relay transport turns a
+missing value into `"dm"` (`gateway/relay/ws_transport.py`), a handoff into a
+home channel that opened no thread is labelled `"dm"` with
+`user_id="system:handoff"` (`gateway/run_startup.py`), and Slack labels a
+group DM (mpim) `"dm"`. Each covered platform has its own check on the ids,
+from its adapter:
+
+| Platform | 1:1 DM | Group conversation |
+| --- | --- | --- |
+| `telegram` | `chat_id == user_id`, a positive id (a private chat's id is the user's own; a channel post's author is the negative channel id) | `group` or `channel`, a negative id |
+| `slack` | a `D...` IM channel (an mpim's id is not), a `U...`/`W...` author, and a named chat | `group`, a `C...` or `G...` channel |
+| `discord` | none: every conversation is a channel | any conversation, by its snowflake id |
+| `whatsapp` | a person's JID (`@s.whatsapp.net` or `@lid`) for both chat and author, one person by Hermes' own alias rule and lid-mapping files | `group`, an `@g.us` JID |
+| `whatsapp_cloud` | `chat_id == user_id`, digits | none (the Cloud API delivers no groups) |
+| `signal` | `chat_id == user_id`, a phone number or UUID | `group`, `group:<id>` |
+
+Slack's message path always names the chat, falling back to its id
+(`_resolve_channel_name`); a slash command never does
+(`_handle_slash_command`), and one can be run in a DM between two people,
+whose id starts with `D` too. An unnamed `D...` chat is therefore shared. A
+relay connector that forwards a slash command with a name is beyond this
+check.
+
+Discord has no DM check. The relay transport keeps the platform `discord`
+when it turns a missing type into `"dm"`, and the relay adapter labels every
+guild-less interaction `"dm"`, user-installed app commands in group DMs
+included (`gateway/relay/adapter.py`). Relayed events are authorized upstream
+(`gateway/authz_mixin.py`), and nothing in the provider's kwargs says an
+event was relayed. So every Discord conversation, a DM included, is a
+`channel` with memory per `chat_id`, and Discord has no `owner_direct` or
+`direct` session.
+
+Every other platform (Matrix, Mattermost, email, SMS, Feishu, DingTalk, WeCom,
+Weixin, QQ, LINE, Google Chat, Teams, IRC, BlueBubbles, SimpleX, ntfy, A2A,
+Buzz, Photon, Raft, Home Assistant, `api_server`, `webhook`, `relay`) has no
+check and stays shared: Matrix decides DM-ness from a member count it does not
+pass on, several adapters default a missing type to `"dm"`, and email, ntfy
+and IRC put many people behind `chat_id == user_id`.
+
+A proven DM is the owner's when its partner is the only person Hermes
+authorizes on the platform: `<PLATFORM>_ALLOWED_USERS` and
+`GATEWAY_ALLOWED_USERS` (the process environment and the profile's `.env`)
+together with the pairing store's approved users
+(`platforms/pairing/<platform>-approved.json`, and the legacy `pairing/`).
+A `GATEWAY_ALLOWED_USERS` entry counts for a platform only when it has that
+platform's id shape, so one global list can name the owner on two platforms:
+a `U...`/`W...` id for Slack, positive digits for Telegram, a number (after
+dropping `+`, a device suffix and a JID domain) for either WhatsApp API, and a
+`+` phone number or a UUID for Signal. No platform's user can carry another's
+shape, so the filter drops nobody Hermes admits there; bare digits fit Telegram
+and WhatsApp alike and count for both. OMH reads those files and never writes
+them. Anything that could admit someone OMH cannot list leaves no owner: an
+allow-all flag or a `*` entry, an empty set, an unreadable pairing file, an
+allowlist entry that is not a user id (a username), or an authorization key in
+`config.yaml` (`allow_from`, `allowed_users`, `allow_all_users`,
+`allowed_roles`, or a `dm_policy` other than `pairing` or `disabled`), because
+Hermes consults those when no env allowlist exists and their members cannot be
+listed without a YAML parser. Without an owner every proven DM is that
+person's own.
+
+"One authorized user is the owner" is the owner decision, and it has a
+consequence: whoever that one person is reads the operator's memory in their
+DM. A Hermes run for someone else -- a bot an operator sets up for one client
+or one family member, with only that person allowed -- hands that person the
+operator's user-global records, blocks and brief. To keep the DM per-person
+there, authorize a second id (the operator's own id beside theirs, in the
+allowlist or by pairing), or set any `dm_policy` other than `pairing` or
+`disabled` in `config.yaml`; either one leaves no owner, and every DM is then
+its partner's own.
+
+The owner's DM reads and writes like the CLI, user-global records included,
+and gets the console's pack extras: blocks, the reference index, the
+`omh reminder:` line, the digest and the consolidation brief, whose demote rows
+quote the owner's own USER.md and MEMORY.md to the owner. Anyone else's DM gets
+a principal derived like any other (`principal:v1:<hmac>` over profile,
+platform and the partner's id with the profile-local key; for WhatsApp, the
+shortest of the partner's aliases, as Hermes keys the DM, so a phone/LID flip
+keeps the person's memory), captures there are v3 records bound to it, and
+recall there returns only records that principal may read; the console never
+recalls them, and no one sees the owner's identity-unbound memory or another
+person's records. `confirm`, `correct` and `retire` reach a person's own v3
+records: `user` scope with a `subject_only` audience. A v3 record shared with
+an explicit audience stays out of the model's lifecycle actions.
+
+A group conversation's memory is its own: a capture there is stored under a
+`channel` scope whose ref is `channel:v1:<hmac>` over profile, platform and
+`chat_id` (keyed, because a group's id can carry a phone number), and the
+principal gate admits an identity-unbound record on a shared surface only when
+its scope is exactly a channel the caller's allowlist names. `thread` already
+means one Hermes conversation, keyed by a session id that rotates at `/new`,
+at a compression and per participant, and `target` has its own meaning, so a
+channel got a kind of its own. Threads share their channel's scope: Slack's
+default `reply_in_thread` makes every top-level channel message its own thread
+session, and a Slack thread or a Telegram topic is visible to everyone in its
+channel, so a narrower scope protects nobody and would give each message an
+empty memory. Discord delivers a thread under its own channel id, so a Discord
+thread, private threads included, already has a scope of its own. A group gets
+no blocks, reminder, brief, digest or demote.
+
+Each turn is bound again at `on_turn_start`. A turn whose author is a bot, or
+whose author is not the DM partner, is shared for that turn: nothing
+identity-unbound, no writes. An absent author is the partner, since a proven
+1:1 DM has two parties and the bot's own messages start no turn. The turn's
+author is kept, so a session id that rotates inside the turn (a compression,
+a turn-lease reload) is bound by the same author. The authorized set is
+re-read at every turn start, and every file it comes from (`.env`,
+`config.yaml`, the pairing files, WhatsApp's lid-mapping files) only when its
+stat changes, so a second person paired mid-session turns the owner's DM into
+that person's own DM at the next turn. A digest pending in the owner's DM
+stays pending through a shared turn.
+
+The lens carries the class and its binding: a `direct` lens without a human
+principal context, or a `channel` lens without a `channel:v1:` scope, is not a
+lens, and the tool reads the session as unbound. The nonce rules above hold:
+`owner_direct` ranks between `operator_console` and `direct`, and `direct` and
+`channel` withhold different things, so where they meet only `shared` holds.
+A provider under another instance's `direct` or `channel` lens holds no
+binding of its own and is `shared`; a guest -- a hygiene or `/compress` agent,
+whatever its own class -- is never attended.
 
 A coding handoff built for a chat (a wrapper session, a chat interaction, a
-lifecycle start) uses the shared allowlist: no user-global record, and nothing
-outside a repository. It still carries the repository's identity-unbound
-project and thread records, unlike the live shared pack, which admits only
-principal-bound records. Applying the shared lens itself to those handoffs
-(`shared_surface=True` with a principal) is left to the messenger change.
-`omh_memory` stores a project-scoped capture in the user store (`OMH_HOME`),
-not in `<repo>/.omh`; a handoff reads the store its caller resolved.
+lifecycle start, `omh coding delegate` away from a terminal) carries only what
+that chat may see, by the lens of the Hermes session it names. In process --
+the `omh_interact` tool -- that is the tool's own `session_id`, which Hermes
+passes every plugin tool; `HERMES_SESSION_ID` is never read there, because in
+a gateway it is process-wide and belongs to whichever agent was built or
+compressed last. Only a command Hermes starts (`omh coding delegate`,
+`omh coding lifecycle start`, `omh chat interact`, `omh chat session start`
+and `prepare-handoff`) reads `HERMES_SESSION_ID`, because Hermes builds
+each command's environment from that command's own session
+(`tools/environments/local.py`). The owner's DM uses the console allowlist;
+another person's DM reads only records bound to that person's principal; a
+group reads only its channel's scope; any other session, or none, is shared
+(`shared_surface=True`, no principal), which admits no identity-unbound
+record, so a repository's project records no longer travel to a chat nothing
+verified. `omh_memory` stores a project-scoped capture in the user store
+(`OMH_HOME`), not in `<repo>/.omh`; a handoff reads the store its caller
+resolved.
 
 ## Optional Project Terms Source
 

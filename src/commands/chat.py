@@ -66,6 +66,7 @@ from ..evidence import confidence_label
 from .common import (
     _chat_input_and_metadata,
     _chat_message,
+    _command_hermes_session_id,
     _explicit_source_metadata,
     _paths,
     _print_json,
@@ -287,6 +288,7 @@ def cmd_chat_interact(args: argparse.Namespace) -> int:
                 paths=_paths(args),
                 skill_policy=_chat_route_skill_policy(args),
                 platform_context=_platform_context(args),
+                hermes_session_id=_command_hermes_session_id(),
                 _host_project_binding_factory=lambda: bind_cli_project(invocation_cwd),
             )
     except FileNotFoundError as exc:
@@ -316,6 +318,7 @@ def cmd_chat_session_start(args: argparse.Namespace) -> int:
             executor_target=_resolved_executor(args, default="choose"),
             target_notice=_target_notice(args, source_metadata),
             platform_context=_platform_context(args),
+            hermes_session_id=_command_hermes_session_id(),
             _host_project_binding_factory=lambda: bind_cli_project(invocation_cwd),
         )
     except (OSError, json.JSONDecodeError, ValueError, WrapperSessionError) as exc:
@@ -363,6 +366,7 @@ def cmd_chat_session_prepare_handoff(args: argparse.Namespace) -> int:
             executor_target=args.executor,
             context_pack=_context_pack(args),
             retarget=bool(getattr(args, "retarget", False)),
+            hermes_session_id=_command_hermes_session_id(),
             **_revision_guard(args),
         )
     except FileNotFoundError as exc:

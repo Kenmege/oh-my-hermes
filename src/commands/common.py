@@ -19,6 +19,18 @@ def _paths(args: argparse.Namespace):
     return resolve_paths(args.omh_home, args.hermes_home, scope=getattr(args, "scope", None))
 
 
+def _command_hermes_session_id() -> str:
+    """The Hermes session this command was started for, which names the memory lens its handoff reads.
+
+    For a command only, never in process: Hermes builds a command's
+    environment from the session's own context (`tools/environments/local.py`,
+    `_inject_session_context_env`), so a command sees its own session's
+    `HERMES_SESSION_ID`, while inside a gateway process the variable belongs
+    to whichever agent was built or compressed last.
+    """
+    return os.environ.get("HERMES_SESSION_ID", "").strip()
+
+
 def add_revision_guard_arguments(parser: argparse.ArgumentParser) -> None:
     """Add the two optional stale-mutation guard flags to one mutation parser.
 

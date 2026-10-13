@@ -73,7 +73,7 @@ from ..wrapper.lifecycle import (
     report_codex_delegation_lifecycle,
     start_codex_delegation_lifecycle,
 )
-from .common import _chat_input_and_metadata, _explicit_source_metadata, _paths, _print_json, _resolved_executor, _wants_json
+from .common import _chat_input_and_metadata, _command_hermes_session_id, _explicit_source_metadata, _paths, _print_json, _resolved_executor, _wants_json
 from .dynamic_workflow import _add_dynamic_workflow_command, cmd_coding_dynamic_workflow
 from .fanout_environment_parser import add_fanout_environment_arguments, child_environment_policy_from_args
 from .hermes_child import add_hermes_child_command
@@ -264,7 +264,11 @@ def cmd_coding_delegate(args: argparse.Namespace) -> int:
         )
         transformation = _transformation(args)
         memory_recall_pack = memory_recall_pack_for_handoff(
-            paths, message, executor_target=executor_target, surface_class=_delegate_memory_surface(args)
+            paths,
+            message,
+            executor_target=executor_target,
+            surface_class=_delegate_memory_surface(args),
+            hermes_session_id=_command_hermes_session_id(),
         )
         payload = build_coding_delegation_payload(
             message,
@@ -837,6 +841,7 @@ def cmd_coding_lifecycle_start(args: argparse.Namespace) -> int:
             include_message=args.include_message,
             context_pack=_context_pack(args),
             handoff_contract=_handoff_contract_declaration(args),
+            hermes_session_id=_command_hermes_session_id(),
         )
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         raise OmhError(str(exc)) from exc

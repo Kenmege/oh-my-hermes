@@ -461,8 +461,11 @@ def select_memory_recall(
     # Every lens-admitted record that declares a subject, whatever its tier or
     # eligibility: the subject collapse decides "current" over all of them.
     subject_pool: list[dict[str, Any]] = []
+    # A channel named in the allowlist admits its own identity-unbound records
+    # on a shared surface; no other scope does (`principal_recall_decision`).
+    channel_scopes = tuple(scope for scope in scopes if scope["kind"] == "channel")
     for record in records:
-        identity_decision = principal_recall_decision(record, parsed_principal, shared_surface=shared_surface)
+        identity_decision = principal_recall_decision(record, parsed_principal, shared_surface=shared_surface, channel_scopes=channel_scopes)
         reason_code = str(identity_decision["reason_code"])
         principal_counts[reason_code] += 1
         if not bool(identity_decision["allowed"]):

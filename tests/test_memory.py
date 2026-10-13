@@ -19,6 +19,7 @@ load_local_package()
 from omh.coding_delegation import build_coding_delegation_payload
 from omh.coding_lifecycle import start_codex_delegation_lifecycle
 from omh.plugin_bundle.omh import memory_governance
+from omh.plugin_bundle.omh.memory_session_lens import SURFACE_OPERATOR_CONSOLE
 from omh.workflows import memory as memory_workflow
 from omh.memory import (
     StaleMemoryReviewError,
@@ -1173,14 +1174,18 @@ class MemoryContractTests(unittest.TestCase):
             approve_project_memory_candidate(paths, captured["candidate"]["candidate_id"])
 
             message = "diagnose installation health in src/commands/setup.py"
-            recall = memory_recall_pack_for_handoff(paths, message, executor_target="codex")
+            # A pack a chat builds carries only what that chat may see (#2088):
+            # an unstated or unverified chat surface admits no identity-unbound
+            # record. This record travels from the operator console.
+            self.assertIsNone(memory_recall_pack_for_handoff(paths, message, executor_target="codex"))
+            recall = memory_recall_pack_for_handoff(paths, message, executor_target="codex", surface_class=SURFACE_OPERATOR_CONSOLE)
             payload = build_coding_delegation_payload(
                 message,
                 source="discord",
                 executor_target="codex",
                 memory_recall_pack=recall,
             )
-            lifecycle = start_codex_delegation_lifecycle(paths, message, source="discord")
+            lifecycle = start_codex_delegation_lifecycle(paths, message, source="discord", memory_recall_pack=recall)
 
             self.assertIn("memory_recall_pack", payload["executor_handoff"])
             self.assertEqual(payload["executor_handoff"]["memory_recall_pack"]["record_count"], 1)

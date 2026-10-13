@@ -112,7 +112,7 @@ PROJECT_MEMORY_CAPTURE_SCHEMA_VERSION = "project_memory_capture/v1"
 PROJECT_MEMORY_CANDIDATE_SCHEMA_VERSION = "project_memory_candidate/v1"
 PROJECT_MEMORY_REVIEW_CARD_SCHEMA_VERSION = "project_memory_review_card/v1"
 MEMORY_ATTENTION_SCHEMA_VERSION = "omh_memory_attention/v1"
-ALLOWED_SCOPE_KINDS = {"user-global", "user", "project", "target", "thread", "run"}
+ALLOWED_SCOPE_KINDS = {"user-global", "user", "project", "target", "thread", "run", "channel"}
 PROJECT_MEMORY_MODES = ("off", "review-first", "auto-safe")
 # The mode a profile gets when nobody chose one. Auto-safe because the model
 # captures through `omh_memory(action="capture")` with no operator in the loop;

@@ -23,6 +23,7 @@ from _cli_harness import run_cli
 from _local_package import load_local_package
 
 load_local_package()
+from omh.plugin_bundle.omh.memory_session_lens import SURFACE_OPERATOR_CONSOLE  # noqa: E402
 from omh.memory import (
     apply_memory_attention_change,
     apply_memory_retirement,
@@ -301,7 +302,7 @@ class ArchiveTierTests(unittest.TestCase):
             paths = resolve_paths(Path(tmp) / ".omh", Path(tmp) / ".hermes")
             stale_policy = _approve(paths, "Deploys go through a shared runner", tags=["deploy"])
             current = _approve(paths, "Deploys use canary batches", tags=["deploy"])
-            before = memory_recall_pack_for_handoff(paths, "deploys", executor_target="codex")
+            before = memory_recall_pack_for_handoff(paths, "deploys", executor_target="codex", surface_class=SURFACE_OPERATOR_CONSOLE)
             self.assertEqual(
                 {str(item["record_id"]) for item in before["included_records"]},
                 {stale_policy["record_id"], current["record_id"]},
@@ -309,7 +310,7 @@ class ArchiveTierTests(unittest.TestCase):
 
             apply_memory_attention_change(paths, stale_policy["record_id"], tier="archive", now=_NOW)
 
-            after = memory_recall_pack_for_handoff(paths, "deploys", executor_target="codex")
+            after = memory_recall_pack_for_handoff(paths, "deploys", executor_target="codex", surface_class=SURFACE_OPERATOR_CONSOLE)
             self.assertEqual(_included_ids(after), [current["record_id"]])
             self.assertEqual(after["attention"]["archived_excluded"], 1)
 

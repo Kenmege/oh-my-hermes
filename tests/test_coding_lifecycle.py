@@ -16,7 +16,8 @@ from omh.coding_lifecycle import (
     report_codex_delegation_lifecycle,
     start_codex_delegation_lifecycle,
 )
-from omh.memory import capture_project_memory_candidate
+from omh.memory import capture_project_memory_candidate, memory_recall_pack_for_handoff
+from omh.plugin_bundle.omh.memory_session_lens import SURFACE_OPERATOR_CONSOLE
 from project_identity_fixture import memory_paths as resolve_paths
 from omh.profiles.setup import write_setup_profile
 from omh.coding.executor_capability_snapshots import (
@@ -157,7 +158,12 @@ class CodingLifecycleTests(unittest.TestCase):
                 tags=["diagnose", "installation"],
             )
 
-            lifecycle = start_codex_delegation_lifecycle(paths, "diagnose installation health")
+            # A lifecycle a chat starts carries only what that chat may see
+            # (#2088), and an identity-unbound record travels from the
+            # operator console, so the console builds the pack it persists.
+            message = "diagnose installation health"
+            console_pack = memory_recall_pack_for_handoff(paths, message, executor_target="codex", surface_class=SURFACE_OPERATOR_CONSOLE)
+            lifecycle = start_codex_delegation_lifecycle(paths, message, memory_recall_pack=console_pack)
             pack = lifecycle["coding_delegation"]["executor_handoff"]["memory_recall_pack"]
             item = pack["included_records"][0]
             evaluation = item["replay_evaluation"]

@@ -3,10 +3,12 @@ from __future__ import annotations
 from copy import deepcopy
 import json
 import hashlib
+import os
 import shutil
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from _local_package import load_local_package
 from _platform_support import requires_domain_intelligence_store
@@ -57,6 +59,7 @@ from omh.wrapper_sessions import (
     write_wrapper_session,
 )
 from omh.wrapper_contract import build_chat_interaction_payload
+from omh.plugin_bundle.omh.memory_provider import OmhMemoryProvider
 
 
 class DomainContextSessionBindingTests(unittest.TestCase):
@@ -704,6 +707,13 @@ class WrapperSessionTests(unittest.TestCase):
             )
 
     def test_prompt_briefing_keeps_bounded_replay_evidence_prepared_only(self) -> None:
+        # Re-pinned with messenger memory (#2088): a chat-built handoff
+        # carries only what its chat may see. A Discord session nothing
+        # verified is a shared surface, which admits no identity-unbound
+        # record, so the reviewed project record no longer travels from it.
+        # The replay-evidence contract is pinned on the owner's own Slack DM,
+        # whose handoff reads like a console's; the caller names that chat
+        # session, as the `omh_interact` tool does with its `session_id`.
         with TemporaryDirectory() as tmp:
             paths = resolve_paths(Path(tmp) / ".omh", Path(tmp) / ".hermes")
             write_setup_profile(paths, memory_mode="auto-safe")
@@ -714,13 +724,17 @@ class WrapperSessionTests(unittest.TestCase):
                 tags=["risky", "refactor"],
             )
             message = "risky refactor"
-            started = create_or_resume_wrapper_session(paths, message, source="discord")
-            session_id = str(started["session"]["session_id"])
-            record_plan_decision(paths, session_id, "accept")
-            select_wrapper_session_executor(paths, session_id, "claude-code")
 
-            prepared = prepare_wrapper_session_handoff(paths, session_id, message)
-            replay_evidence = prepared["status"]["coding_briefing"]["work_summary"]["handoff_contract"]["memory_recall_pack"]["replay_evidence"]
+            def handoff_contract(source: str, hermes_session_id: str = "") -> dict:
+                started = create_or_resume_wrapper_session(paths, f"{message} from {source}", source=source, hermes_session_id=hermes_session_id)
+                session_id = str(started["session"]["session_id"])
+                record_plan_decision(paths, session_id, "accept")
+                select_wrapper_session_executor(paths, session_id, "claude-code")
+                prepared = prepare_wrapper_session_handoff(paths, session_id, f"{message} from {source}", hermes_session_id=hermes_session_id)
+                return prepared["status"]["coding_briefing"]["work_summary"]["handoff_contract"]
+
+            self.assertFalse(handoff_contract("discord").get("memory_recall_pack"), "no pack travels from an unverified chat")
+            replay_evidence = handoff_contract("slack", self._owner_slack_dm(paths))["memory_recall_pack"]["replay_evidence"]
 
             self.assertTrue(replay_evidence["prepared_not_observed"])
             self.assertEqual(replay_evidence["included"][0]["reason_code"], "eligible")
@@ -768,18 +782,31 @@ class WrapperSessionTests(unittest.TestCase):
             self.assertNotIn(message, session_path.read_text(encoding="utf-8"))
 
     @staticmethod
+    def _owner_slack_dm(paths) -> str:
+        """Start the owner's own Slack DM, whose handoffs read like a console's (#2088); its session id."""
+        with patch.dict(os.environ, {"SLACK_ALLOWED_USERS": "U01OWNER"}):
+            for name in ("GATEWAY_ALLOWED_USERS", "GATEWAY_ALLOW_ALL_USERS", "SLACK_ALLOW_ALL_USERS"):
+                os.environ.pop(name, None)
+            owner_dm = OmhMemoryProvider(paths.omh_home)
+            owner_dm.initialize(
+                "slack-owner-dm", platform="slack", hermes_home=str(paths.hermes_home), agent_context="primary",
+                chat_type="dm", chat_id="D0OWNERDM", user_id="U01OWNER", chat_name="Owner",
+            )
+        return "slack-owner-dm"
+
+    @staticmethod
     def _session_events(paths, session_id: str) -> list[dict]:
         events_path = paths.runtime_wrapper_sessions_dir / session_id / "events.jsonl"
         if not events_path.exists():
             return []
         return [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
-    def _prompt_only_prepared_session(self, paths, message: str) -> str:
-        started = create_or_resume_wrapper_session(paths, message, source="discord")
+    def _prompt_only_prepared_session(self, paths, message: str, hermes_session_id: str = "") -> str:
+        started = create_or_resume_wrapper_session(paths, message, source="discord", hermes_session_id=hermes_session_id)
         session_id = str(started["session"]["session_id"])
         record_plan_decision(paths, session_id, "accept")
         select_wrapper_session_executor(paths, session_id, "claude-code")
-        prepare_wrapper_session_handoff(paths, session_id, message)
+        prepare_wrapper_session_handoff(paths, session_id, message, hermes_session_id=hermes_session_id)
         return session_id
 
     def test_same_message_retry_and_empty_message_reserve_without_new_events(self) -> None:
@@ -824,10 +851,13 @@ class WrapperSessionTests(unittest.TestCase):
                 paths, "Regression tests run before merge", record_type="procedure", tags=["tests"]
             )
             first_message = "risky refactor of the observer summary"
-            session_id = self._prompt_only_prepared_session(paths, first_message)
+            # The pack this pins travels only from a chat that may see the
+            # record: the owner's own DM (#2088), named by the caller.
+            owner_dm = self._owner_slack_dm(paths)
+            session_id = self._prompt_only_prepared_session(paths, first_message, hermes_session_id=owner_dm)
 
             follow_up = "follow-up: add regression tests too"
-            prepared = prepare_wrapper_session_handoff(paths, session_id, follow_up)
+            prepared = prepare_wrapper_session_handoff(paths, session_id, follow_up, hermes_session_id=owner_dm)
 
             self.assertEqual(prepared["session"]["status"], "prompt_handoff_prepared")
             follow_up_sha = hashlib.sha256(follow_up.encode("utf-8")).hexdigest()

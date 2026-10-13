@@ -4677,6 +4677,7 @@ def build_chat_interaction_payload(
     routing_observation: Mapping[str, object] | None = None,
     tracker_host_context: Mapping[str, object] | None = None,
     design_direction_iteration_context: Mapping[str, object] | None = None,
+    hermes_session_id: str = "",
     _host_project_binding_factory: HostProjectBindingFactory | None = None,
     _route_question_sink: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
@@ -4750,6 +4751,7 @@ def build_chat_interaction_payload(
         platform_envelope=platform_envelope,
         host_project_binding_factory=_host_project_binding_factory,
         design_direction_iteration_context=design_direction_iteration_context,
+        hermes_session_id=hermes_session_id,
     )
     if paths is not None:
         _record_accepted_owner_choice(payload, paths)
@@ -5419,6 +5421,7 @@ def _build_chat_interaction_payload_uncached(
     platform_envelope: dict[str, Any] | None = None,
     host_project_binding_factory: HostProjectBindingFactory | None,
     design_direction_iteration_context: Mapping[str, object] | None = None,
+    hermes_session_id: str = "",
 ) -> dict[str, object]:
     message = extract_message_text(event_or_message)
     metadata = _source_metadata(event_or_message, source_metadata)
@@ -5558,6 +5561,7 @@ def _build_chat_interaction_payload_uncached(
                 message,
                 executor_target=resolved_executor_target,
                 surface_class=memory_surface_for_source(source),
+                hermes_session_id=hermes_session_id,
             )
             if paths
             else None,
@@ -5635,6 +5639,7 @@ def _build_chat_interaction_payload_uncached(
                     route_payload=route_payload,
                     paths=paths,
                     input_representation=input_representation,
+                    hermes_session_id=hermes_session_id,
                 ),
                 target_notice,
             )
@@ -5744,6 +5749,7 @@ def _attach_coding_owner_handoff(
     route_payload: dict[str, object],
     paths: OmhPaths | None,
     input_representation: object = "text_only",
+    hermes_session_id: str = "",
 ) -> dict[str, object]:
     delegation = build_coding_delegation_payload(
         message,
@@ -5769,6 +5775,7 @@ def _attach_coding_owner_handoff(
             message,
             executor_target=resolved_executor_target,
             surface_class=memory_surface_for_source(source),
+            hermes_session_id=hermes_session_id,
         )
         if paths
         else None,

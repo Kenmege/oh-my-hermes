@@ -10,7 +10,7 @@ from typing import Any
 from ..awareness import awareness_route_hint
 from ..degradation import safe_error_type as _safe_error_type
 from ..host_context import active_main_agent_model
-from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, observe_plugin_tool_call
+from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, host_session_id, observe_plugin_tool_call
 from ..route_answerers import answerer_ladder
 
 OMH_INTERACT_SCHEMA = {
@@ -249,6 +249,10 @@ def _package_interaction(
     platform_context = _platform_context(args)
     main_agent_model = active_main_agent_model()
     host_values = host_kwargs or {}
+    # The chat this call serves, from the dispatch keyword only: a handoff
+    # carries what that chat's memory lens admits, and in a gateway process
+    # `HERMES_SESSION_ID` belongs to whichever agent was built last.
+    hermes_session_id = host_session_id(host_values)
     if bool(args.get("record_session", True)):
         try:
             result = create_or_resume_wrapper_session(
@@ -267,6 +271,7 @@ def _package_interaction(
                     "producer_detail": "omh_interact plugin tool",
                     "observed_by_host": bool(observation and observation.get("status") == "observed"),
                 },
+                hermes_session_id=hermes_session_id,
                 _host_project_binding_factory=lambda: bind_plugin_project(host_values),
             )
         except PlatformContextError as exc:
@@ -300,6 +305,7 @@ def _package_interaction(
             paths=paths,
             platform_context=platform_context,
             main_agent_model=main_agent_model,
+            hermes_session_id=hermes_session_id,
             _host_project_binding_factory=lambda: bind_plugin_project(host_values),
         )
     except PlatformContextError as exc:

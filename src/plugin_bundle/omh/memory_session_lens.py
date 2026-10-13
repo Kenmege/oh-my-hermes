@@ -3,9 +3,13 @@
 The provider decides what a session may recall when Hermes initializes it,
 as one surface class (`memory_surface_class`): an operator console reads and
 writes, a shared surface reads only principal-bound memory and does not
-capture, a background run writes nothing. The principal context narrows
-principal-bound records. A tool call carries none of that -- Hermes
-hands plugin tools ``task_id``, ``session_id`` and ``user_task`` only -- and
+capture, a background run writes nothing. A verified messenger conversation
+(`memory_messenger`) is the owner's DM, which reads like a console, another
+person's DM, bound to that person's principal, or a group conversation, bound
+to its channel scope; the provider re-derives that class at every turn start.
+The principal context narrows principal-bound records. A tool call carries
+none of that -- Hermes hands plugin tools ``task_id``, ``session_id`` and
+``user_task`` only -- and
 the session context Hermes binds per task disagrees with the provider's
 ``platform`` for cron, the TUI and subagents. So the tool does not re-derive
 the decision; the provider writes it here and the tool reads it back by the
@@ -52,6 +56,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from .memory_principals import CHANNEL_REF_PATTERN, parse_principal_context
 from .memory_state_files import state_file_lock, write_text_atomic
 
 SESSION_LENS_SCHEMA_VERSION = "omh_memory_session_lens/v1"
@@ -86,41 +91,87 @@ _SAFE_REF = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
 SURFACE_OPERATOR_CONSOLE = "operator_console"
 SURFACE_SHARED = "shared"
 SURFACE_BACKGROUND = "background"
-SURFACE_CLASSES = (SURFACE_OPERATOR_CONSOLE, SURFACE_SHARED, SURFACE_BACKGROUND)
+# Messenger conversations (owner decision 2026-10-13, `memory_messenger`): a
+# gateway session whose ids prove a 1:1 DM or a group conversation. The
+# owner's DM -- the DM partner is the only user Hermes authorizes on the
+# platform -- reads and writes like an operator console. Anyone else's DM
+# reads and writes only memory bound to that person's principal, and a group
+# conversation only the memory scoped to it. Both of those carry a binding
+# (the principal context, or `channel_scope`) the lens must hold.
+SURFACE_OWNER_DIRECT = "owner_direct"
+SURFACE_DIRECT = "direct"
+SURFACE_CHANNEL = "channel"
+SURFACE_CLASSES = (
+    SURFACE_OPERATOR_CONSOLE,
+    SURFACE_SHARED,
+    SURFACE_BACKGROUND,
+    SURFACE_OWNER_DIRECT,
+    SURFACE_DIRECT,
+    SURFACE_CHANNEL,
+)
+# The classes that read and write the operator's own memory, blocks included.
+OWNER_SURFACE_CLASSES = frozenset({SURFACE_OPERATOR_CONSOLE, SURFACE_OWNER_DIRECT})
+# The classes whose reads and writes are confined to a binding.
+BOUND_SURFACE_CLASSES = frozenset({SURFACE_DIRECT, SURFACE_CHANNEL})
 OPERATOR_CONSOLE_PLATFORMS = frozenset({"cli", "tui", "desktop"})
 PRIMARY_AGENT_CONTEXTS = frozenset({"", "primary"})
 # What each class means for the two flags every consumer already reads:
 # (shared_surface, writes_enabled). A background run reads like a shared
-# surface, as cron and subagent sessions always have.
+# surface, as cron and subagent sessions always have. A direct or channel
+# session is a shared surface whose writes stay inside its binding.
 _SURFACE_FLAGS = {
     SURFACE_OPERATOR_CONSOLE: (False, True),
     SURFACE_SHARED: (True, True),
     SURFACE_BACKGROUND: (True, False),
+    SURFACE_OWNER_DIRECT: (False, True),
+    SURFACE_DIRECT: (True, True),
+    SURFACE_CHANNEL: (True, True),
 }
 
 
-def memory_surface_class(*, platform: object, agent_context: object, shared_surface: object = False) -> str:
+def memory_surface_class(
+    *, platform: object, agent_context: object, shared_surface: object = False, messenger_class: object = ""
+) -> str:
     """The class of the surface Hermes initialized a provider for.
 
     ``shared_surface`` is a caller's request to treat the session as shared:
     it can turn a console into a shared surface, never the reverse, and it
-    never lifts a background run's write ban.
+    never lifts a background run's write ban. ``messenger_class`` is what
+    `memory_messenger` verified for a gateway session (owner DM, DM or
+    channel); it never applies to a console platform, and an unverified
+    gateway session passes none and stays shared.
     """
     if str(agent_context or "") not in PRIMARY_AGENT_CONTEXTS:
         return SURFACE_BACKGROUND
-    if shared_surface or str(platform or "") not in OPERATOR_CONSOLE_PLATFORMS:
+    if shared_surface:
         return SURFACE_SHARED
-    return SURFACE_OPERATOR_CONSOLE
+    if str(platform or "") in OPERATOR_CONSOLE_PLATFORMS:
+        return SURFACE_OPERATOR_CONSOLE
+    if messenger_class in (SURFACE_OWNER_DIRECT, SURFACE_DIRECT, SURFACE_CHANNEL):
+        return str(messenger_class)
+    return SURFACE_SHARED
 
 
 # How much each class withholds; a lens may move only up this order while
-# another instance's lens is live.
-_TIGHTNESS = {SURFACE_OPERATOR_CONSOLE: 0, SURFACE_SHARED: 1, SURFACE_BACKGROUND: 2}
+# another instance's lens is live. The owner's DM reads what a console reads
+# and ranks just above it, so a console guest under a DM session takes its
+# class. A direct and a channel session withhold different things, so
+# neither is tighter than the other: where they meet, only `shared` holds.
+_TIGHTNESS = {
+    SURFACE_OPERATOR_CONSOLE: 0,
+    SURFACE_OWNER_DIRECT: 1,
+    SURFACE_DIRECT: 2,
+    SURFACE_CHANNEL: 2,
+    SURFACE_SHARED: 3,
+    SURFACE_BACKGROUND: 4,
+}
 
 
 def tighter_surface_class(first: str, second: str) -> str:
     """The class that withholds more; an unknown class counts as background."""
     rank = {name: _TIGHTNESS.get(name, _TIGHTNESS[SURFACE_BACKGROUND]) for name in (first, second)}
+    if rank[first] == rank[second] and first != second:
+        return SURFACE_SHARED if rank[first] < _TIGHTNESS[SURFACE_SHARED] else SURFACE_BACKGROUND
     return first if rank[first] >= rank[second] else second
 
 
@@ -279,6 +330,11 @@ def _read(path: Path, session_id: str) -> dict[str, Any] | None:
     ):
         # A class its own flags contradict was not written by the provider.
         return None
+    if data.get("surface_class") == SURFACE_DIRECT and not _human_principal(data.get("principal_context")):
+        # A DM bound to nobody would read as one bound to everybody's records.
+        return None
+    if data.get("surface_class") == SURFACE_CHANNEL and not _channel_scope(data.get("channel_scope")):
+        return None
     homes = data.get("homes")
     if not isinstance(homes, list) or not homes or not all(isinstance(home, str) and Path(home).is_absolute() for home in homes):
         return None
@@ -286,6 +342,29 @@ def _read(path: Path, session_id: str) -> dict[str, Any] | None:
         if not isinstance(data.get(key), list):
             return None
     return data
+
+
+def _human_principal(value: object) -> bool:
+    parsed = parse_principal_context(value)
+    return parsed is not None and parsed["actor_kind"] == "human"
+
+
+def _channel_scope(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and set(value) == {"kind", "ref"}
+        and value["kind"] == "channel"
+        and isinstance(value["ref"], str)
+        and CHANNEL_REF_PATTERN.fullmatch(value["ref"]) is not None
+    )
+
+
+def lens_channel_scope(lens: dict[str, Any]) -> dict[str, str] | None:
+    """The channel scope a channel lens is bound to; None for every other lens."""
+    scope = lens.get("channel_scope")
+    if lens_surface_class(lens) != SURFACE_CHANNEL or not _channel_scope(scope):
+        return None
+    return {"kind": "channel", "ref": str(scope["ref"])}
 
 
 def _prune_stale(directory: Path, *, keep: Path) -> None:
@@ -300,14 +379,20 @@ def _prune_stale(directory: Path, *, keep: Path) -> None:
 
 
 __all__ = [
+    "BOUND_SURFACE_CLASSES",
     "OPERATOR_CONSOLE_PLATFORMS",
+    "OWNER_SURFACE_CLASSES",
     "PRIMARY_AGENT_CONTEXTS",
     "SESSION_LENS_SCHEMA_VERSION",
     "SESSION_LENS_STALE_HOURS",
     "SURFACE_BACKGROUND",
+    "SURFACE_CHANNEL",
     "SURFACE_CLASSES",
+    "SURFACE_DIRECT",
     "SURFACE_OPERATOR_CONSOLE",
+    "SURFACE_OWNER_DIRECT",
     "SURFACE_SHARED",
+    "lens_channel_scope",
     "lens_surface_class",
     "memory_surface_class",
     "note_session_records",

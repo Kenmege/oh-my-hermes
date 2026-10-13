@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,9 @@ from ._memory_principal_validation import (
     safe_ref as _safe,
     valid_review_ref as _valid_review_ref,
 )
+
+
+CHANNEL_REF_PATTERN = re.compile(r"^channel:v1:[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +49,23 @@ def derive_principal_ref(
     identity = str(host_identity)
     if not identity or len(identity.encode("utf-8")) > 1024:
         raise PrincipalContractError("host_identity must be nonempty and bounded")
+    message = f"{profile}\0{surface}\0{identity}".encode("utf-8")
+    return "principal:v1:" + hmac.new(_principal_key(omh_home), message, hashlib.sha256).hexdigest()
+
+
+def derive_channel_ref(omh_home: str | Path, *, profile_ref: str, surface_ref: str, channel_identity: str) -> str:
+    """An opaque channel scope ref, keyed like a principal: a group's id can carry a phone number."""
+    profile = _safe_ref(profile_ref, "profile_ref")
+    surface = _safe_ref(surface_ref, "surface_ref")
+    identity = str(channel_identity)
+    if not identity or len(identity.encode("utf-8")) > 1024:
+        raise PrincipalContractError("channel_identity must be nonempty and bounded")
+    message = f"channel\0{profile}\0{surface}\0{identity}".encode("utf-8")
+    return "channel:v1:" + hmac.new(_principal_key(omh_home), message, hashlib.sha256).hexdigest()
+
+
+def _principal_key(omh_home: str | Path) -> bytes:
+    """The profile-local HMAC key, created on first use."""
     key_path = Path(omh_home).expanduser() / "memory" / "principal.key"
     key_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     try:
@@ -58,8 +79,7 @@ def derive_principal_ref(
     key = key_path.read_bytes()
     if len(key) != 32:
         raise PrincipalContractError("principal key is invalid")
-    message = f"{profile}\0{surface}\0{identity}".encode("utf-8")
-    return "principal:v1:" + hmac.new(key, message, hashlib.sha256).hexdigest()
+    return key
 
 
 def build_principal_context(
@@ -187,10 +207,19 @@ def principal_recall_decision(
     context: dict[str, Any] | None,
     *,
     shared_surface: bool,
+    channel_scopes: list[dict[str, str]] | tuple[dict[str, str], ...] = (),
 ) -> dict[str, Any]:
-    """Return a metadata-only allow/deny before scope, ranking, or rendering."""
+    """Return a metadata-only allow/deny before scope, ranking, or rendering.
+
+    ``channel_scopes`` are the messenger channels the caller's allowlist names
+    (`prefetch_scope_allowlist`). A record scoped to exactly one of them is the
+    channel's own memory, captured there with no single author, so a shared
+    surface admits it identity-unbound: its audience is that channel.
+    """
     schema = str(record.get("schema_version", ""))
     if schema != "project_memory_record/v3":
+        if shared_surface and record.get("scope") in [scope for scope in channel_scopes if scope.get("kind") == "channel"]:
+            return {"allowed": True, "reason_code": "channel_audience"}
         return {"allowed": not shared_surface, "reason_code": "legacy_nonshared" if not shared_surface else "identity_unbound_shared"}
     identity = record.get("identity")
     if not isinstance(identity, dict) or memory_identity_errors(identity):
