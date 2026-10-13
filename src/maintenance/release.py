@@ -1785,9 +1785,9 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # above removes. So it takes the same policy: the measurement plus
 # `FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT`, rounded UP to the next multiple
 # of `FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS` (10,000, about a
-# tenth of the measurement). The 12,537 chars of headroom (130,000 - 117,463)
-# hold about eight median lane members, while a renderer change that stamps
-# one more shared sentence longer than about 86 chars into every one of the
+# tenth of the measurement). The 13,458 chars of headroom (130,000 - 116,542)
+# hold about nine median lane members, while a renderer change that stamps
+# one more shared sentence longer than about 94 chars into every one of the
 # 142 bodies, or a few skills that copy other skills' own sections, still
 # fails.
 #
@@ -1813,7 +1813,12 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # its own completion checklist (the planning default plus a `Review Focus`
 # line, #2049), so that section is no longer byte-identical to another
 # skill's. 117,463 plus 10%, rounded up to the next 10,000, is still 130,000.
-FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 117463
+# 130,000 -> 130,000 (measurement 117,463 -> 116,542): `web-research`,
+# `research-brief`, and `research` now carry their own completion checklists
+# (the research default plus a line naming the citation check), so that
+# section is no longer byte-identical to another skill's in those three
+# bodies. 116,542 plus 10%, rounded up to the next 10,000, is still 130,000.
+FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 116542
 FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS = 10000
 FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT = 130000
 

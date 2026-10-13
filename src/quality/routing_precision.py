@@ -394,6 +394,58 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_file_lookup",
         "file_or_text",
     ),
+    # Five sentences a skill Hermes bundles owns, pinned as non-dispatch.
+    # `web-research` and `research-department` now name `grounded-citations`,
+    # `competitor-news-monitor`, and `arxiv` in their do-not-use boundaries.
+    # These cases pin these five sentences and nothing wider. The router
+    # still dispatches `web-research` for a ledger check phrased with its own
+    # `citation check` trigger or with the Korean `출처` trigger, and for an
+    # arXiv lookup phrased with `look up`; those dispatches predate the
+    # boundary lines and are left to the trigger-collision work.
+    #
+    # No `forbidden_candidate` on the three clarify cases: that field reads the
+    # clarify's candidate and its shortlist, which record what scoring found
+    # and stay set through a clarify (`web-research` leads the ledger and
+    # arXiv sentences, and `research-department` is on the watch run's
+    # shortlist). The claim is that the action is not a dispatch, which each
+    # case already fails on.
+    RoutingPrecisionCase(
+        "citation-ledger-bookkeeping-stays-out-of-web-research",
+        "Rebuilding the Sources block of a draft from the ledger is not a web lookup",
+        "rebuild the Sources block in draft.md from the citation ledger",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "korean-citation-id-check-stays-out-of-web-research",
+        "A Korean request to check a draft's citation ids against the ledger is not a web lookup",
+        "초안의 인용 번호가 원장과 맞는지 검증해줘",
+        "answer_clarification",
+        "",
+        forbidden_candidate="web-research",
+    ),
+    RoutingPrecisionCase(
+        "arxiv-search-stays-out-of-web-research",
+        "An arXiv category search is not a cited web lookup",
+        "search arxiv for cs.AI papers from this week",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "competitor-watch-run-stays-out-of-research-department",
+        "One scheduled run of an existing competitor watch is not a research department plan",
+        "run the scheduled tick for the acme competitor watch",
+        "answer_clarification",
+        "",
+    ),
+    RoutingPrecisionCase(
+        "named-company-news-alert-stays-direct",
+        "A news alert on one named company is not a research department plan",
+        "tell me when Acme raises its prices or ships something new",
+        "answer_directly",
+        "direct_answer",
+        forbidden_candidate="research-department",
+    ),
     RoutingPrecisionCase(
         "repo-file-list",
         "Repo file lookup stays direct",

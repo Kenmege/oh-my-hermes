@@ -26,6 +26,8 @@ This is an OMH `web-research` workflow skill, projected for Agent Skills hosts (
 - The user wants recurring monitoring, a source inbox, or Scout/Analyst/Briefer operations; use `research-department`.
 - The user wants to configure or cheapen web search itself, such as a provider API key or a search or extract backend or tier; use `websearch-setup`.
 - The study target is this repository rather than the open web; use `codebase-onboarding`.
+- The request is only citation bookkeeping on a draft that already exists - renumbering, rebuilding the Sources block, or checking cited ids against the ledger - with nothing new to retrieve, and Hermes' bundled `grounded-citations` skill is available; load that skill.
+- The answer is an arXiv paper list or one paper's entry - a search by topic, author, category, or paper id - and Hermes' bundled `arxiv` skill is available; load that skill.
 
 ## Examples
 
@@ -46,9 +48,11 @@ Bad example:
 - The research question, source boundaries, recency assumptions, and confidence level are named.
 - Observed sources, inference, synthesis, and unresolved retrieval gaps are separated.
 - Follow-up planning or handoff uses the research summary without calling it execution evidence.
+- The citation check is reported from an observed ledger verify run that cited at least one source, or as `not_observed`; it is never reported as fact verification.
 
 ## Recovery Notes
 
+- If a source fails with HTTP 403, HTTP 429, a paywall, or a WAF or bot wall, use the host's blocked-page recovery capability once for that source when it offers one and never retry the same URL in a loop; cite an archive or cached copy it returns as a dated historical capture, never as the live page. If no such capability exists, recovery fails, or the source needs a login or payment, name the retrieval gap with that reason.
 - If the web is unreachable, name the retrieval gap and stop rather than substituting recalled facts.
 - If no archive access exists or the capture provider's paid authority is exhausted, record a temporal retrieval gap with no network action and keep the as-of claim in the annex; never substitute the current page for it.
 - If sources conflict, present both with their retrieval dates and say which one is primary.
@@ -75,6 +79,8 @@ Quality bar:
 - Cite the source behind each claim and mark it official, practitioner, or unattributed.
 - Cross-check a contested claim against a second independent domain, or state that it stays unverified.
 - Keep historical-capture evidence and live-page evidence as two typed surfaces for a point-in-time or then-versus-now question; capture time, publication time, and retrieval time are independent clocks and none substitutes for another.
+- When Hermes' bundled `grounded-citations` skill is available, load it and register each source in its ledger when it is retrieved (`scripts/sources.py add`), before any prose is written; cite a source only by the id the ledger gave it, written `[n]`. Keep the run's ledger in a file of its own, passed as `--ledger <path>` before the subcommand on every call: the default ledger is shared by the whole profile, and another run's reset rebinds its ids. Mark background that rests on model knowledge `[unverified]` instead of citing it: the marker is for background the answer does not rest on and never carries the answer, and a contested claim with a single source keeps its citation and is stated as uncorroborated. The ledger id sits beside the source class and the retrieval date and replaces neither. Without the skill, list each source when it is retrieved and cite it at the claim it supports.
+- When that ledger is in use, report the citation check from a run, or as `not_observed`: the exit status of `sources.py verify <draft>` is the observed check - `0` is a pass and any other status is not - and `verify --evidence` also fails a draft whose cited source carries no verbatim quote. An exit `0` whose `info: stats:` line reads `0 distinct source(s) cited` checked nothing and is reported as `not_observed`, and so is an answer given only in chat: `verify` reads a draft file and exits `2` without one, so write the answer to a file first when the check matters. The run compares cited ids and the Sources block with the ledger; it does not test whether a claim is true, so a passing citation check is never reported as fact verification. Without the ledger the citation check is `not_observed`.
 - Stop at the answer: one retrieval round settles a lookup, and an expanding lead list means the request belongs to `research`.
 - Report what retrieval did not yield rather than closing the gap from recall.
 

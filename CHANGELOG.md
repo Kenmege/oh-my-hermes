@@ -4,6 +4,57 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The research skills register and check their sources through Hermes'
+  bundled citation ledger, and a citation check is reported only from a run
+  that checked something.** "Cite the source behind each claim" used to be a
+  prose rule in `web-research`, `research-brief`, and `research`, so nothing
+  recorded which source a number in a draft pointed at or whether the draft
+  still matched it. When Hermes' bundled `grounded-citations` skill is
+  available, the three skills now load it, register each source in its ledger
+  at retrieval time, and cite a source only by the id the ledger gave it. They
+  keep the run's ledger in a file of its own (`--ledger <path>`, ahead of the
+  subcommand), because the default ledger is shared by the whole profile and
+  another run's reset rebinds its ids. The exit status of `sources.py verify`
+  on the draft is reported as the observed citation check, and with
+  `--evidence` the run also fails a draft whose cited source carries no
+  verbatim quote. An exit `0` that cited no source checked nothing and is
+  reported as `not_observed`, as is a `web-research` answer given only in
+  chat, since `verify` needs a draft file. The check compares citations with
+  the ledger and is never reported as fact verification; with no run it is
+  `not_observed`, and without the bundled skill the skills list and cite
+  sources in prose and report the check as `not_observed`. `research-brief`
+  evidence rows carry the ledger id as `[n]` and its quote, and `research`
+  sets one ledger up for every lane in its first steps. `[unverified]` marks
+  background the answer does not rest on and never carries the answer. Each of
+  the three skills' completion checklists now names the citation check. What
+  OMH adds is unchanged: the freshness window, source class, temporal
+  receipts, the contested-claim gate, and the one-round stop. `web-research`
+  now tries Hermes' `blocked-page-recovery` skill once for a source that
+  returns 403 or 429 or sits behind a paywall or bot wall, as `research`
+  already did. `research-department` gains four rules for a recurring watch: a
+  watchlist and materiality threshold written once and reused, a source that
+  could not be read reported as unknown coverage rather than as nothing new, a
+  cutoff kept per source that moves only for a source the run covered, and
+  findings counted by underlying event rather than by article. Its Scout lane
+  hands a watch over named companies to the bundled `competitor-news-monitor`
+  skill, it offers the bundled `llm-wiki` skill when no knowledge store is
+  named, and a schedule stays a prepared job description: OMH creates no job,
+  and one counts as created only from an observed `cronjob_manage` result or a
+  cron listing. `source-finder` finds paper candidates through the bundled
+  `arxiv` skill and records them as `link_observed`, and `paper-learning` sets
+  `source_state` from how the paper was acquired: an arXiv entry is
+  `metadata_only`, page text that the bundled `pdf` skill's
+  `pdf_read.py --text` returned is `file_text_extraction_observed`, and a
+  paper past one read budget is read in `long-document-reading`'s page ranges
+  when that skill is available. `web-research` and `research-department`
+  decline, to the bundled skill, a request that skill owns outright: citation
+  bookkeeping on an existing draft, an arXiv search, or one news watch over
+  named companies. Routing is unchanged, so a request phrased with one of
+  their own triggers, such as a "citation check" on a draft, still opens the
+  OMH skill first, which then hands it over.
+
+
+
 - **The shipped model chains move to the 2026-10-13 table, and Claude Haiku
   5.5 is onboarded.** Every category chain, the `main` role suggestion, the
   public tables (`docs/INSTALLATION.md` regenerated, the four READMEs and two
