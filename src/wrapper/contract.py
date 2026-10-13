@@ -63,7 +63,7 @@ from ..executors import executor_label
 from ..goal_loop import build_loop_start_card
 from ..hermes_planning import build_hermes_plan_payload, is_coding_shaped_task
 from ..learning_candidate import build_learning_candidate_card
-from ..memory import memory_recall_pack_for_handoff, record_attached_recall_usage
+from ..memory import memory_recall_pack_for_handoff, memory_surface_for_source, record_attached_recall_usage
 from ..operator_productivity import build_agent_operator_productivity_card
 from ..system.paths import OmhPaths, resolve_paths
 from ..plugin_bundle.omh.awareness import workflow_context_card_for_workflow, workflow_context_cards
@@ -5557,6 +5557,7 @@ def _build_chat_interaction_payload_uncached(
                 paths,
                 message,
                 executor_target=resolved_executor_target,
+                surface_class=memory_surface_for_source(source),
             )
             if paths
             else None,
@@ -5767,6 +5768,7 @@ def _attach_coding_owner_handoff(
             paths,
             message,
             executor_target=resolved_executor_target,
+            surface_class=memory_surface_for_source(source),
         )
         if paths
         else None,

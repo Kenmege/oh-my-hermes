@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from .memory_records import PreparedPrefetch, RECORD_SUMMARY_LIMIT_CHARS
+from .memory_session_lens import SURFACE_CLASSES
 from .project_identity import DIAGNOSTICS, RESOLVER_VERSION, ProjectIdentityResolution
 
 LEGACY_MEMORY_PREFETCH_RECEIPT_SCHEMA_VERSION = "omh_memory_prefetch_receipt/v1"
@@ -55,6 +56,9 @@ def build_prefetch_receipt(
     reminder: dict[str, object] | None = None,
     unreadable: tuple[str, ...] | list[str] = (),
     store_read_error: bool = False,
+    pack_chars: int | None = None,
+    surface_class: str | None = None,
+    tightened_by_foreign_lens: bool = False,
 ) -> dict[str, Any]:
     """Bind one selection and its rendering to configuration, lens, session and store.
 
@@ -144,8 +148,16 @@ def build_prefetch_receipt(
             ],
             "omission_counts": {str(key): int(value) for key, value in section.omissions.items()},
             "rendered_block_count": max(int(rendered_block_count), 0),
+            # The length of the whole text the provider returns, every section
+            # included; None when the receipt describes a record section alone.
+            "pack_chars": max(int(pack_chars), 0) if pack_chars is not None else None,
         },
         "reminder": _reminder_projection(reminder),
+        # The class the pack was rendered under, and whether another
+        # provider's tighter lens for this session id narrowed it, so a
+        # downgrade never passes unseen. None for a record section alone.
+        "surface_class": surface_class if surface_class in SURFACE_CLASSES else None,
+        "tightened_by_foreign_lens": bool(tightened_by_foreign_lens),
         "write_failures_count": 0,
         "last_write_failure": None,
         "delivery_observed": None,
@@ -235,6 +247,9 @@ def validate_prefetch_receipt(value: object) -> list[str]:
         rendered = rendering["rendered_records"]
         if rendering.get("rendered_count") != len(rendered):
             errors.append("rendering.rendered_count")
+        # Absent on a receipt an earlier bundle wrote.
+        if rendering.get("pack_chars") is not None and not _non_negative_int(rendering["pack_chars"]):
+            errors.append("rendering.pack_chars")
         if not all(isinstance(item, dict) and isinstance(item.get("record_id"), str) and _hex64(item.get("content_digest")) for item in rendered):
             errors.append("rendering.rendered_records")
         if isinstance(selection, dict) and isinstance(selection.get("selected_record_ids"), list):
@@ -243,6 +258,11 @@ def validate_prefetch_receipt(value: object) -> list[str]:
                 errors.append("rendering.selected_prefix")
     if value.get("delivery_observed") is not None or value.get("model_use_observed") is not None:
         errors.append("observation_claims")
+    # Absent on a receipt an earlier bundle wrote.
+    if value.get("surface_class") is not None and value.get("surface_class") not in SURFACE_CLASSES:
+        errors.append("surface_class")
+    if "tightened_by_foreign_lens" in value and not isinstance(value["tightened_by_foreign_lens"], bool):
+        errors.append("tightened_by_foreign_lens")
     reminder = value.get("reminder")
     if reminder is not None and (
         not isinstance(reminder, dict)

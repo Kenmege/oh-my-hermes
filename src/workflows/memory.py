@@ -34,10 +34,13 @@ from ..plugin_bundle.omh.memory_governance import (
     contains_credential_like_material,
 )
 from ..plugin_bundle.omh.memory_recall_support import normalized_summary_key
+from ..plugin_bundle.omh.memory_records import prefetch_required_scope_kinds, prefetch_scope_allowlist
+from ..plugin_bundle.omh.memory_session_lens import OPERATOR_CONSOLE_PLATFORMS, SURFACE_OPERATOR_CONSOLE, SURFACE_SHARED
 from ..plugin_bundle.omh.memory_records import read_served_counts as _read_served_counts
 from ..plugin_bundle.omh.memory_recall_selector import (
     _evaluate_memory_artifact as _shared_evaluate_memory_artifact,
     effective_recall_configuration as effective_recall_configuration,
+    resolve_scope_allowlist,
     select_memory_recall,
 )
 from ..plugin_bundle.omh.memory_recall_support import (
@@ -241,6 +244,9 @@ _PROJECT_MEMORY_RECALL_PACK_KEYS = {
     "task_ref",
     "policy",
     "scope",
+    # Present only when the included records span more than `scope`
+    # (`memory_recall_pack_for_handoff`).
+    "scope_allowlist",
     "perspective",
     "query_intent",
     "query_fallback",
@@ -944,6 +950,8 @@ def last_prefetch_status(paths: OmhPaths, *, now: datetime) -> dict[str, object]
             "session_id": None,
             "rendered_record_count": None,
             "rendered_block_count": None,
+            "surface_class": None,
+            "tightened_by_foreign_lens": None,
             "receipt_path": str(receipt_path),
             "claim_boundary": (
                 "A receipt file exists but does not validate; a pack was served and the record of it cannot be read."
@@ -967,6 +975,10 @@ def last_prefetch_status(paths: OmhPaths, *, now: datetime) -> dict[str, object]
         "session_id": str(receipt.get("session_id", "") or "") or None,
         "rendered_record_count": int(rendering.get("rendered_count", 0) or 0),
         "rendered_block_count": int(rendering.get("rendered_block_count", 0) or 0),
+        # Which surface class the served pack was rendered under, and whether
+        # another provider's tighter lens for that session narrowed it.
+        "surface_class": receipt.get("surface_class"),
+        "tightened_by_foreign_lens": bool(receipt.get("tightened_by_foreign_lens", False)),
         "receipt_path": str(receipt_path),
         "claim_boundary": "A receipt records what the provider handed the host; it is not evidence that the model read or used it.",
     }
@@ -1249,6 +1261,16 @@ def build_project_memory_recall_pack(
     ).pack
 
 
+def memory_surface_for_source(source: str) -> str:
+    """The surface class a handoff's source maps to: a console only for `cli`, `tui` or `desktop`.
+
+    Every chat source a wrapper names (`CHAT_SOURCES`: generic, discord,
+    slack, telegram, hermes, github) and anything unknown is shared, which
+    fails closed.
+    """
+    return SURFACE_OPERATOR_CONSOLE if str(source or "") in OPERATOR_CONSOLE_PLATFORMS else SURFACE_SHARED
+
+
 def memory_recall_pack_for_handoff(
     paths: OmhPaths,
     query: str,
@@ -1257,21 +1279,28 @@ def memory_recall_pack_for_handoff(
     session_id: str = "",
     limit: int = 5,
     query_intent: str | None = None,
+    surface_class: str = SURFACE_SHARED,
 ) -> dict[str, object] | None:
     # The executor target is the handoff's perspective lens: unscoped records
     # pass as always, and records observed for this executor join them --
     # while a record about any other executor stays out of this pack.
     pack_scope = _handoff_pack_scope(paths, scope_kind=None, scope_ref=None)
-    allowed_scopes = [{"kind": "user-global", "ref": "default"}, pack_scope]
-    if session_id:
-        allowed_scopes.append({"kind": "thread", "ref": session_id})
+    # The live prefetch's allowlist rule for the surface the request came
+    # from. A handoff a chat built can travel back to that chat, so it reads
+    # no user-global record and, with no project resolved, nothing at all; an
+    # operator console's handoff reads user-global and the thread there too.
+    # The caller states the surface; an unstated one is shared.
+    project_identity = pack_scope["ref"] if pack_scope["kind"] == "project" else ""
+    console = surface_class == SURFACE_OPERATOR_CONSOLE
+    allowed_scopes = prefetch_scope_allowlist(project_identity=project_identity, session_id=session_id, include_legacy_personal=console)
+    required_scope_kinds = prefetch_required_scope_kinds(project_identity) if console else ("project",)
     pack = build_project_memory_recall_pack(
         paths,
         query,
         executor_target=executor_target,
         session_id=session_id,
         allowed_scopes=allowed_scopes,
-        required_scope_kinds=("project",),
+        required_scope_kinds=required_scope_kinds,
         inspection=False,
         limit=limit,
         observed=_handoff_perspective_lens(executor_target),
@@ -1285,10 +1314,31 @@ def memory_recall_pack_for_handoff(
     # memory and no statement that a stale record had been held back, so the
     # operator never got the chance to confirm, replace, or retire it.
     if pack_scope["kind"] == "unresolved":
-        return {**pack, "scope": pack_scope}
+        return _declare_scope_allowlist({**pack, "scope": pack_scope}, allowed_scopes, required_scope_kinds)
     if not pack.get("enabled") or not (pack.get("included_records") or pack.get("freshness_warnings")):
         return None
-    return pack
+    return _declare_scope_allowlist(pack, allowed_scopes, required_scope_kinds)
+
+
+def _declare_scope_allowlist(
+    pack: dict[str, object], allowed_scopes: list[dict[str, str]], required_scope_kinds: tuple[str, ...]
+) -> dict[str, object]:
+    """Name the allowlist the records were selected under, when they span more than the pack's scope.
+
+    A console handoff reads user-global, a project and its thread together, so
+    its records carry more than one scope while the pack carries one. The role
+    context pack built from it accepts exactly the scopes declared here
+    (`role_context_packs._pack_scope`). A pack whose records all share its
+    scope stays as it was.
+    """
+    scope = pack.get("scope")
+    included = pack.get("included_records") if isinstance(pack.get("included_records"), list) else []
+    if all(isinstance(item, dict) and item.get("scope") == scope for item in included):
+        return pack
+    scopes, status = resolve_scope_allowlist(allowed_scopes, required_scope_kinds=required_scope_kinds)
+    if status != "resolved":
+        return pack
+    return {**pack, "scope_allowlist": [dict(item) for item in scopes]}
 
 
 def record_attached_recall_usage(paths: OmhPaths, payload: dict[str, object]) -> dict[str, object]:
@@ -2936,6 +2986,53 @@ def validate_handoff_context_blocked(value: Any, *, label: str = "context_pack_b
     return errors
 
 
+# The kinds `prefetch_scope_allowlist` builds an allowlist from.
+_SCOPE_ALLOWLIST_KINDS = ("user-global", "project", "user", "thread")
+
+
+def scope_allowlist_errors(allowlist: Any, scope: Any, label: str) -> list[str]:
+    """Errors unless `allowlist` is one `prefetch_scope_allowlist` could have built for a pack scoped `scope`.
+
+    The recall pack and the role context pack both hold their declared
+    allowlist to this, so neither accepts an audience no selector read
+    under: one scope per kind at most, user-global only as
+    `user-global:default`, a project only when it is the pack's own scope
+    (none when the scope is unresolved), and a resolved scope inside the list.
+    """
+    if not isinstance(allowlist, list) or not allowlist:
+        return [f"{label} must be a non-empty list"]
+    errors: list[str] = []
+    for index, item in enumerate(allowlist):
+        _validate_context_scope(item, errors, f"{label}[{index}]")
+    if errors:
+        return errors
+    kinds = [item["kind"] for item in allowlist]
+    if any(kind not in _SCOPE_ALLOWLIST_KINDS for kind in kinds):
+        errors.append(f"{label} must name only {', '.join(_SCOPE_ALLOWLIST_KINDS)} scopes")
+    for kind in _SCOPE_ALLOWLIST_KINDS:
+        if kinds.count(kind) > 1:
+            errors.append(f"{label} must name at most one {kind} scope")
+    if any(item["kind"] == "user-global" and item["ref"] != "default" for item in allowlist):
+        errors.append(f"{label} must name user-global only as user-global:default")
+    if any(item["kind"] == "project" and item != scope for item in allowlist):
+        errors.append(f"{label} must name no project but the pack's own scope")
+    if isinstance(scope, dict) and scope.get("kind") != "unresolved" and scope not in allowlist:
+        errors.append(f"{label} must contain the pack's scope")
+    return errors
+
+
+def _validate_recall_scope_allowlist(value: dict[str, Any], errors: list[str], label: str) -> None:
+    """A declared allowlist the selector could have built, holding every included record's scope."""
+    allowlist = value.get("scope_allowlist")
+    allowlist_errors = scope_allowlist_errors(allowlist, value.get("scope"), f"{label}.scope_allowlist")
+    if allowlist_errors:
+        errors.extend(allowlist_errors)
+        return
+    for index, item in enumerate(value.get("included_records") or []):
+        if isinstance(item, dict) and item.get("scope") not in allowlist:
+            errors.append(f"{label}.included_records[{index}].scope must be inside scope_allowlist")
+
+
 def validate_project_memory_recall_pack(value: Any, *, label: str = "memory_recall_pack") -> list[str]:
     errors: list[str] = []
     if not isinstance(value, dict):
@@ -2955,6 +3052,8 @@ def validate_project_memory_recall_pack(value: Any, *, label: str = "memory_reca
     if value.get("query_intent", "default") not in {"default", "temporal"}:
         errors.append(f"{label}.query_intent must be default or temporal")
     _validate_context_list(value.get("included_records"), _PROJECT_MEMORY_RECALL_ITEM_KEYS, errors, f"{label}.included_records", scope_key="scope")
+    if "scope_allowlist" in value:
+        _validate_recall_scope_allowlist(value, errors, label)
     _validate_context_list(value.get("excluded_records"), _PROJECT_MEMORY_EXCLUDED_KEYS, errors, f"{label}.excluded_records")
     # Optional so a wrapper-supplied pack written before freshness warnings
     # existed still validates; present warnings are held to the full shape.

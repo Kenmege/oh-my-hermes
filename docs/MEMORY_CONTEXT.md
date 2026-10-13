@@ -161,6 +161,23 @@ What the pack contains, and what it deliberately does not:
 Record order is part of the identity. The recall builder's ordering carries
 precedence, so the same records in a different order are a different pack.
 
+A pack has one `scope`, and its records share it, with one exception. An
+operator console's handoff reads user-global records, the project's and its
+own thread's together (see [Surface classes](MEMORY.md#surface-classes)). When
+its records span more than the recall pack's scope, the recall pack declares
+the allowlist it selected them under (`scope_allowlist`). The role context
+pack then carries that same `scope_allowlist` and accepts a recall record
+inside it; a context-pack record still has to match the pack's scope. Both
+packs accept only an allowlist the selector could have built for that scope:
+one scope per kind at most (user-global, project, user, thread),
+user-global only as `user-global:default`, no project but the pack's own (none
+when the scope is unresolved), and the pack's own scope in the list when it
+resolved. A record outside both the pack's scope and its declared allowlist
+-- another project, another thread -- still fails, and a pack whose records
+all share its scope carries no `scope_allowlist` and hashes as before. Before this, a repository store
+holding a project record and a user-global record could not become a coding
+delegation at all.
+
 Packs are immutable by construction rather than by convention. The store lives
 at `.omh/memory/role-context-packs/<pack-hash>.json`, the writer derives that
 path from the content, and no update, patch, or delete entry point exists.

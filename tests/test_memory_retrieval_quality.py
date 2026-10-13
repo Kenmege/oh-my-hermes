@@ -983,7 +983,8 @@ class HintLensTests(_Home):
         recall = self.call("recall", session_id="discord-session", query="therapist appointment")
         self.assertNotIn(owner, [row["record_id"] for row in recall.get("records", [])])
         result = self.call("capture", session_id="discord-session", summary="The owner has a therapist appointment on thursdays at 17:00")
-        self.assertEqual(result["status"], "remembered", result)
+        # A shared surface does not capture (#2092); the refusal carries no hint either.
+        self.assertEqual((result["status"], result["reason"]), ("refused", "shared_surface_writes_refused"), result)
         for key in ("similar_record_id", "similar_summary", "similar_wording_pct", "subject_held_by", "recalls_now"):
             self.assertNotIn(key, result)
         self.assertNotIn(owner, json.dumps(result))

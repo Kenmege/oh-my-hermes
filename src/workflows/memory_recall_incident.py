@@ -18,6 +18,7 @@ from ..plugin_bundle.omh.memory_prefetch_receipt import (
     MAX_PREFETCH_RECEIPT_BYTES, prefetch_receipt_path, validate_prefetch_receipt,
 )
 from ..plugin_bundle.omh.memory_recall_selector import select_memory_recall
+from ..plugin_bundle.omh.memory_records import prefetch_required_scope_kinds
 from ..plugin_bundle.omh.project_identity import LEGACY_BASENAME_STATE, legacy_project_scope, project_identity_root, resolve_project_identity
 from ..system.local_store import atomic_write_json, read_json_object_result
 from ..system.paths import OmhPaths
@@ -80,8 +81,11 @@ def _read_live_receipt(paths: OmhPaths, request: RecallIncidentRequest, *, invoc
         # The canonical selector recomputes the configuration identity for the
         # receipt's own lens under this profile's policy and the requested
         # budget; no record is evaluated and no hash logic is duplicated.
+        # The receipt's own requirement: a project scope only when its
+        # project identity resolved (`prefetch_scope_allowlist`).
         selection = select_memory_recall(
             [], allowed_scopes=allowlist, inspection=False,
+            required_scope_kinds=prefetch_required_scope_kinds(str(receipt.get('project_identity', '') or '')),
             policy=memory.read_project_memory_policy(paths),
             observer=str(perspective.get('observer', '') or '') or None,
             observed=str(perspective.get('observed', '') or '') or None,
