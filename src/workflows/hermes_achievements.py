@@ -200,8 +200,8 @@ def display_timestamp(value: Any) -> str:
     """A plugin timestamp for people to read; the JSON payload keeps it raw.
 
     The plugin writes epoch seconds, shown here as UTC ISO-8601 to the second.
-    A value that is not a positive epoch number, such as an ISO string from an
-    older artifact, is shown as written.
+    A value that is not a positive epoch number, such as an ISO string, is
+    shown as written.
     """
     text = _clean_text(value)
     try:
@@ -273,9 +273,10 @@ def _entry_progress_percent(entry: dict[str, Any]) -> float | None:
     # badge (the averaged percent for a multi-condition one), so a count of 1
     # or 450 must not be read as a fraction or a percent. Its `progress_pct` is
     # the percent toward the next tier, or toward completion, for both kinds.
-    percent = _finite_float(entry.get("progress_pct"))
-    if percent is not None:
-        return round(min(max(percent, 0.0), 100.0), 1)
+    # When `progress_pct` is there but unusable, `progress` is no substitute.
+    if "progress_pct" in entry:
+        percent = _finite_float(entry["progress_pct"])
+        return round(min(max(percent, 0.0), 100.0), 1) if percent is not None else None
     return _progress_percent(entry.get("progress"))
 
 
@@ -371,7 +372,8 @@ def _apply_state_unlocks(badges: dict[str, dict[str, Any]], state: dict[str, Any
         badge["state"] = "unlocked"
         if badge["progress_percent"] is None:
             badge["progress_percent"] = 100.0
-        # A `tier` key (older artifact shapes) may only raise the tier.
+        # A `tier` key may only raise the tier. No bundled plugin version writes
+        # one; it is kept from the original generic reader.
         tier = _normalize_tier(meta.get("tier"))
         if tier and (not badge["tier"] or TIER_ORDER.index(tier) > TIER_ORDER.index(badge["tier"])):
             badge["tier"] = tier

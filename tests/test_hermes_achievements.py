@@ -345,6 +345,8 @@ class PluginDataLayoutTests(HermesAchievementsTestCase):
                     {"id": "pct", "state": "discovered", "progress": 3, "progress_pct": huge},
                     {"id": "raw", "state": "discovered", "progress": huge},
                     {"id": "ratio", "state": "discovered", "progress": {"current": huge, "target": 10}},
+                    {"id": "dict_percent", "state": "discovered", "progress": {"percent": huge}},
+                    {"id": "dict_target", "state": "discovered", "progress": {"current": 1, "target": huge}},
                 ],
             },
             directory=self.data_dir,
@@ -355,12 +357,35 @@ class PluginDataLayoutTests(HermesAchievementsTestCase):
         self.assertEqual(payload["status"], "observed")
         self.assertIsNone(payload["snapshot_freshness"]["generated_at"])
         self.assertTrue(payload["snapshot_freshness"]["stale"])
-        self.assertEqual(find_badge(payload["badges"], "pct")["progress_percent"], 3.0)
-        self.assertIsNone(find_badge(payload["badges"], "raw")["progress_percent"])
-        self.assertIsNone(find_badge(payload["badges"], "ratio")["progress_percent"])
+        # An unusable `progress_pct` does not fall back to the raw count.
+        self.assertIsNone(find_badge(payload["badges"], "pct")["progress_percent"])
+        for badge_id in ("raw", "ratio", "dict_percent", "dict_target"):
+            self.assertIsNone(find_badge(payload["badges"], badge_id)["progress_percent"], badge_id)
         status, stdout, stderr = run_cli([*self._base_args(), "context", "brief", "--json"])
         self.assertEqual(status, 0, stderr)
         status, stdout, stderr = run_cli([*self._base_args(), "achievements", "summary"], output_json=False)
+        self.assertEqual(status, 0, stderr)
+
+    def test_nan_and_infinity_degrade_instead_of_raising(self) -> None:
+        # Python's JSON reader accepts these literals, so write them as raw text.
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        (self.data_dir / "scan_snapshot.json").write_text(
+            '{"generated_at": Infinity, "achievements": ['
+            '{"id": "pct", "state": "discovered", "progress": 3, "progress_pct": NaN},'
+            '{"id": "dict_percent", "state": "discovered", "progress": {"percent": Infinity}},'
+            '{"id": "raw", "state": "discovered", "progress": -Infinity}]}',
+            encoding="utf-8",
+        )
+
+        payload = observe_achievements(self.paths, now=1_760_000_000)
+
+        self.assertIsNone(payload["snapshot_freshness"]["generated_at"])
+        self.assertTrue(payload["snapshot_freshness"]["stale"])
+        for badge_id in ("pct", "dict_percent", "raw"):
+            self.assertIsNone(find_badge(payload["badges"], badge_id)["progress_percent"], badge_id)
+        status, _, stderr = run_cli([*self._base_args(), "achievements", "summary"], output_json=False)
+        self.assertEqual(status, 0, stderr)
+        status, _, stderr = run_cli([*self._base_args(), "context", "brief", "--json"])
         self.assertEqual(status, 0, stderr)
 
     def test_state_tier_key_raises_a_tier_and_never_lowers_one(self) -> None:
@@ -823,6 +848,18 @@ class AchievementsHudTests(HermesAchievementsTestCase):
         path.write_text(json.dumps({"achievements": [{"id": "a", "reasoning": "hidden"}]}), encoding="utf-8")
 
         members = runtime_reader._read_hud_json_leading_members(path, root=self.hermes_home)
+
+        self.assertEqual(members, {})
+
+    def test_leading_member_reader_survives_recursion_in_the_hidden_content_filter(self) -> None:
+        # The filter recurses in Python, so a list the C decoder accepts can
+        # still be too deep for it; how deep depends on the interpreter.
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        path = self.data_dir / "scan_snapshot.json"
+        path.write_text(json.dumps({"achievements": [{"id": "a"}]}), encoding="utf-8")
+
+        with mock.patch.object(runtime_reader, "_has_raw_or_hidden_content", side_effect=RecursionError):
+            members = runtime_reader._read_hud_json_leading_members(path, root=self.hermes_home)
 
         self.assertEqual(members, {})
 
