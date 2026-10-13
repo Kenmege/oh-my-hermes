@@ -29,6 +29,7 @@ from omh.tui.app import (
     CURSOR_POSITION_REQUEST,
     EXIT_DRAIN_SECONDS,
     READ_TIMEOUT_SECONDS,
+    RESIZE_SETTLE_SECONDS,
     SLOT_ARM_SECONDS,
     App,
 )
@@ -631,6 +632,39 @@ class SplitReportLoopTests(unittest.TestCase):
         self.assertFalse(reporting(app))
         step_through(app, now, [(0.0, b"\x1b"), (READ_TIMEOUT_SECONDS, b"")])
         self.assertEqual(client.named("session.interrupt"), [{"session_id": SID}])
+
+
+class ResizeTests(unittest.TestCase):
+    def test_reports_go_off_as_the_size_changes_and_come_back_with_the_settled_redraw(self) -> None:
+        now = [100.0]
+        app, _client = running(clock=lambda: now[0])
+        self.assertTrue(reporting(app))
+        app.terminal.screen.resize(24, 100)  # type: ignore[attr-defined]
+        app._on_resize()
+        self.assertFalse(app.terminal.mouse_reporting)  # type: ignore[attr-defined]  # before any frame
+        now[0] += RESIZE_SETTLE_SECONDS / 2
+        app._render_when_due()
+        self.assertFalse(app.terminal.mouse_reporting)  # type: ignore[attr-defined]  # still settling
+        now[0] += RESIZE_SETTLE_SECONDS
+        app._render_when_due()
+        self.assertTrue(app.terminal.mouse_reporting)  # type: ignore[attr-defined]
+        self.assertEqual(mouse_calls(app), [True, False, True])
+
+    def test_a_click_read_in_the_step_that_sees_the_size_change_is_dropped(self) -> None:
+        for paging in (False, True):
+            with self.subTest(paging=paging):
+                now = [100.0]
+                app, client = running(clock=lambda: now[0])
+                y, x = row_of(app, "● main  "), column_of(app, "read the diff")
+                data = f"\x1b[<0;{x};{y}M".encode("ascii")
+                if paging:
+                    app._on_input(Key(CHAR, "?"))
+                    data = b"q" + data  # the key list left and the click, in one read
+                else:
+                    app.terminal.screen.resize(24, 100)  # type: ignore[attr-defined]  # the VT model resizes the main screen only
+                app.terminal._resized = True  # type: ignore[attr-defined]
+                step_through(app, now, [(0.0, data)])
+                self.assertEqual((app.pager, app.log_agent, client.calls), (None, "", []))
 
 
 class DrainTerminal(ScriptedTerminal):

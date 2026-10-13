@@ -2148,7 +2148,11 @@ class App:
         region's relative bookkeeping no longer matches the screen and any
         in-place repaint leaves the old frame behind in scrollback. The only
         clean answer is a full redraw from the transcript kept in memory.
+        Mouse reports go off at once, since what is on screen until then is
+        the old layout reflowed; the settled redraw's frame turns them back
+        on if it still has an agent to click.
         """
+        self.terminal.set_mouse(False)
         self.size = self.terminal.size()
         self.dirty = True
         if self.pager is not None:
