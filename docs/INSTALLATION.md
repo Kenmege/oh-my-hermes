@@ -268,8 +268,8 @@ omh setup
 
 ### Open the terminal, and come back to a session
 
-Bare `omh` opens the same OH-MY-HERMES terminal that bare `hermes` does, and
-three Hermes session flags pass straight through on that bare launch:
+Bare `omh` opens the OMH TUI (described below), and three Hermes session flags
+pass straight through on that bare launch:
 
 ```sh
 omh --resume <session-id>    # reopen one session by id (short form: -r)
@@ -288,6 +288,57 @@ you launched with a profile, since a profile has its own `state.db`. OMH
 reads only the session id, from the Hermes state database it launched
 against, and prints nothing whenever more than one session could be the one
 that closed.
+
+### The OMH TUI
+
+The OMH TUI is OMH's own terminal over your Hermes install. Bare `omh` runs
+your `hermes --tui` with `HERMES_TUI_DIR` pointing at a small frontend OMH
+ships, so Hermes' launcher still resolves the profile, the session to resume,
+the working directory and whether the session is already open somewhere else,
+and then starts the OMH frontend in place of its own. Every model call, tool
+run and approval decision stays Hermes'; the screen is OMH's.
+
+- Finished replies, tool summaries and notices go to your terminal's own
+  scrollback, so selecting, copying and scrolling back work as they do in any
+  shell. Only the bottom of the screen repaints.
+- The bottom region holds, from the top: the prompt you just sent (while the
+  turn runs), the tail of the reply that is still streaming, one slot for the
+  OMH plan and agents panel (or a question Hermes asked, or the slash-command
+  menu), the composer, and a status line with the OMH version, the model,
+  context use and what the session is doing.
+- The composer does not move when the panel grows or shrinks; only its own
+  lines move it.
+- When Hermes asks something (an approval, a clarify question, a sudo
+  password), the question takes the slot until you answer. Nothing is answered
+  for you: Esc or Ctrl+C declines, and an approval offers `once`, `session`
+  and `deny`, with Enter on an untouched approval denying. Approving a command
+  permanently stays a choice for `hermes --tui`.
+
+Keys: Enter sends; Alt+Enter or Ctrl+J adds a line; Tab completes a slash
+command; Up/Down walk the input history at the edges of the composer; Ctrl+C
+clears the composer, interrupts a running turn, or (pressed twice when idle)
+exits; Ctrl+D on an empty composer exits.
+
+Slash commands the OMH TUI runs itself: `/help`, `/quit`, `/new`, `/redraw`,
+`/history` (an in-memory pager over this session), `/details` (show or hide
+thinking and tool detail on the live block), `/queue`, `/logs` (the gateway's
+recent stderr, kept in memory only), `/copy`, `/theme`, and `/omh-model`.
+Commands whose screen exists only in Hermes' own terminal (`/voice`, `/pet`,
+`/agents`, `/sessions`, the billing flows, `/save`, `/prompt`, ...) say so and
+name `hermes --tui`. Everything else goes to Hermes as it would from Hermes'
+terminal.
+
+When the OMH TUI cannot start — Windows, a terminal without `termios` or with
+`TERM=dumb`, `OMH_NO_TUI=1`, no Node for Hermes' launcher, or a Hermes whose
+gateway no longer speaks what the TUI was built for — it says why and `omh`
+opens Hermes' own terminal instead, so you lose the OMH screen, never the
+session. If the gateway changes mid-session, the TUI leaves with the command
+that reopens the same session in `hermes`. The OMH TUI writes no prompt text,
+transcript or Hermes question to disk; the one file it writes is the
+launcher's active-session file, which holds the session id.
+
+Bare `hermes` is unchanged: it opens Hermes' own terminal, which still shows
+the OMH skin and status widget when the branded-TUI choice below is active.
 
 ### Keep every installed layer current
 
@@ -1251,6 +1302,7 @@ exist to make a safety claim that Windows cannot back:
 | Cross-harness benchmark sandbox | Linux `bwrap` process confinement | Reports `unsupported`; no real runs |
 | `0600` / `0700` artifact permissions | POSIX mode bits | `chmod` is close to a no-op on NTFS; private artifacts are not enforced private |
 | macOS menu bar helper | Darwin + `swiftc` | Skipped, and says so |
+| OMH TUI (bare `omh`) | `termios` raw mode | Not attempted; bare `omh` opens Hermes' own terminal |
 
 Generic record locking is **not** on that list: `local_store` uses
 `msvcrt.locking` on Windows, so shared-record updates get a real OS lock with
@@ -1277,9 +1329,10 @@ OMH's setup footprint is intentionally bounded:
 - Interactive `omh setup` and `omh update` offer a default-Yes branded-TUI
   choice when the canonical config is not already
   `display.interface: tui` plus `display.skin: omh`. Accepting it (or passing
-  `--yes`) sets those two and a collapsed `display.sections`, so bare `omh`
-  and `hermes` open the same OH-MY-HERMES TUI and a long run does not bury
-  the conversation. An already-active install does not ask, so an install
+  `--yes`) sets those two and a collapsed `display.sections`, so bare `hermes`
+  opens Hermes' Modern TUI wearing the OMH skin and status widget and a long
+  run does not bury the conversation. (Bare `omh` opens the OMH TUI; it lands
+  on that same Hermes terminal only when the OMH TUI cannot start.) An already-active install does not ask, so an install
   branded before `display.sections` joined the bundle keeps its current
   sections until it runs with `--yes`. No or `--no-omh-tui` preserves the
   current values. JSON suppresses
@@ -3119,7 +3172,7 @@ Live Windows behavior under real file locking remains **Not-tested**.
 By default, `omh`/`hermes` never checks for updates on launch -- OMH's core
 promise is no network calls without an explicit opt-in. `omh update-check`
 turns on a bounded, best-effort comparison against `origin/main` that runs
-right before bare `omh` opens the TUI. This is `omh`'s own launch door
+right before bare `omh` opens the OMH TUI. This is `omh`'s own launch door
 (`commands/main.py`); bare `hermes` execs your Hermes install directly and
 never passes through this process, so it never runs this check.
 

@@ -262,7 +262,10 @@ OMH 的编码面有三步：按模型调整提示（03），把工作拆成并�
 
 ## OH-MY-HERMES 终端
 
-只需输入 `omh`,即可从与 `hermes` 相同的入口,打开带有 OMH 标识的 Hermes:
+只需输入 `omh`,即可打开 OMH TUI:运行在已安装 Hermes 之上的 OMH 专属终端。模型调用、
+工具执行和审批仍由 Hermes 完成,画面由 OMH 绘制:已完成的回复进入终端自身的滚动缓冲区,
+plan 与 agent 面板紧贴在提示符上方,面板伸缩时提示符的位置不会移动。`hermes` 仍然打开
+Hermes 自己的终端:
 
 ```sh
 omh

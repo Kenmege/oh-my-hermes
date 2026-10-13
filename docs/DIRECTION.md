@@ -123,6 +123,9 @@ OMH is:
 - a Hermes-facing planning artifact generator
 - a metadata-only evidence ledger for prepared and observed handoffs
 - a delegation-first bridge from Hermes requests to selected coding executors
+- a terminal frontend over Hermes' own gateway (the OMH TUI bare `omh` opens),
+  owning layout, input and the OMH panels while Hermes owns every model call,
+  tool run and approval decision
 
 OMH is not:
 
@@ -136,6 +139,8 @@ OMH is not:
   opposite of hidden; paired-run dispatch may compose the latter for
   digest-bound Hermes evaluation cells without adding a third process bridge)
 - a claim that Hermes executed work that only a handoff prepared
+- a replacement for Hermes' gateway, agent loop, or approval policy (the OMH
+  TUI relays what the person types and answers no request on their behalf)
 
 ## Routing Language Policy
 

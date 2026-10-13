@@ -325,8 +325,11 @@ through: `🧠 OMH — recalled 2 memories`.
 
 ## The OH-MY-HERMES terminal
 
-Bare `omh` opens Hermes — the same door as `hermes` — wearing the OMH
-identity:
+Bare `omh` opens the OMH TUI: OMH's own terminal over your Hermes install.
+Hermes still runs every model call, tool and approval; OMH owns the screen —
+finished replies go to your terminal's scrollback, the plan and agents panel
+sits right above the prompt, and the prompt never moves when that panel grows
+or shrinks. Bare `hermes` keeps opening Hermes' own terminal:
 
 ```sh
 omh

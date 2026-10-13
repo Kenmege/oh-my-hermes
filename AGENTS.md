@@ -31,7 +31,8 @@ surface is the explicit opt-in fanout dispatch bridge described under
 Implementation Boundaries — operator-invoked, local-only, fully observed,
 never hidden and never a default. The one sanctioned network call is the
 `omh_jev_ask` tool, also described there — user-requested per turn, never a
-default.
+default. The OMH TUI that bare `omh` opens is a terminal frontend over Hermes'
+own gateway, not an execution surface; its boundary is stated there too.
 
 ## Command Audience
 
@@ -164,6 +165,25 @@ PR without the chat history.
   client in `src/` and only `tools/jev_ask_tool.py` may import it. Third-party
   Jev plugins are still never called, and `omh doctor` still reads no
   credential value.
+- The OMH TUI is the frontend bare `omh` opens. `omh` runs the user's own
+  `hermes --tui` with `HERMES_TUI_DIR` pointing at OMH's packaged frontend, so
+  Hermes' launcher still resolves the profile, resume target, working
+  directory and session ownership, then starts OMH's frontend in place of its
+  own. That frontend spawns exactly one child, Hermes' `tui_gateway`, with the
+  interpreter and import path the launcher handed it, and speaks the
+  gateway's stdio JSON-RPC. It relays only what the person types. It never
+  answers an approval, clarify, sudo, or secret request on its own; a timeout,
+  Esc or Ctrl+C is a decline, and an approval decline is an explicit deny. It
+  never attaches to a session another runtime owns: when the launcher sets
+  `HERMES_TUI_GATEWAY_URL`, it exits and names `hermes`. It writes no prompt
+  text, transcript, or server-request frame to disk or to a log (the one file
+  it writes is the launcher's active-session file, holding the session id),
+  keeping the metadata-only rule. The frontend opens no socket and makes no
+  network call, strips the sidecar and attach URLs from the gateway's
+  environment, and reaps the gateway when it exits. OMH itself still makes no
+  LLM call; every model call, and every other network call the gateway makes,
+  is Hermes'. This is a foreground terminal the person launched, not a
+  background runtime, a transport bot, or a third process bridge.
 - No Hermes core patching.
 - Runtime artifacts are local, deterministic, schema-versioned, and
   metadata-only by default.

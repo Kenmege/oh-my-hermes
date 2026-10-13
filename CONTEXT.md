@@ -262,8 +262,11 @@ work
 OMH's one sanctioned execution surface — the explicit, operator-invoked
 `omh coding fanout dispatch` (multi-unit) or its `omh coding run` single-run
 entry (one unit, same engine, one call) that spawns local agent CLIs as
-subprocesses. Nothing else in OMH executes anything.
-_Avoid_: implicit execution, background dispatch
+subprocesses. Nothing else in OMH executes work: the OMH TUI below starts
+Hermes' own gateway for a terminal the person opened, and every model call and
+tool run there is Hermes'.
+_Avoid_: implicit execution, background dispatch, counting the OMH TUI as an
+execution surface
 
 **Programmatic tool calling (`execute_code`)**:
 Hermes Agent's own tool: the model writes a Python script that calls a
@@ -335,8 +338,45 @@ _Avoid_: treating it as the surface OMH widgets render in
 Hermes Agent's TypeScript terminal UI — what `hermes --tui` runs, and what
 bare `hermes` runs when `display.interface: tui` is set. Loads user widget
 apps from `$HERMES_HOME/tui-widgets/*.mjs`. The only Hermes surface that
-renders OMH's widgets.
-_Avoid_: ui-tui (internal directory name), dashboard TUI
+renders OMH's widgets. Its launcher runs `<HERMES_TUI_DIR>/dist/entry.js`
+instead of the Ink app when that variable is set, which is how the OMH TUI
+takes its place.
+_Avoid_: ui-tui (internal directory name), dashboard TUI, OMH TUI
+
+**OMH TUI**:
+The terminal frontend bare `omh` opens (`src/tui/`, installed as `omh.tui`).
+`omh` runs the person's own `hermes --tui` with `HERMES_TUI_DIR` pointing at
+the packaged shim `omh/tui/frontend/dist/entry.js`, so Hermes' launcher still
+resolves the profile, the resume target, the working directory and session
+ownership, then starts the shim in place of its Ink app. The shim hands the
+terminal to `python -I -m omh.tui`, which spawns Hermes' `tui_gateway` with the
+interpreter and import path the launcher provided and speaks its stdio
+JSON-RPC. Layout, input, rendering and the OMH panels are OMH's; every model
+call, tool run and approval decision is the gateway's. Finished transcript
+lines go to the terminal's own scrollback; only a bottom region (the streaming
+tail, one slot for the plan and agents panels or a prompt Hermes asked, the
+composer, and the status line) repaints, and the composer's row does not move
+when the slot grows or shrinks. When it cannot start (unsupported terminal,
+Windows, no Node for the launcher, gateway unavailable, protocol drift at
+startup) it exits 75 and `omh` opens Hermes' own terminal instead. Bare
+`hermes` is unaffected.
+_Avoid_: Modern TUI (Hermes' Ink app), OMH status widget (an extension of
+Hermes' TUI), a Hermes patch or fork, an execution surface
+
+**Hermes gateway protocol**:
+Hermes' `tui_gateway` newline JSON-RPC over stdio, which the OMH TUI speaks as
+a client. The slice the TUI relies on (methods and the only keys it sends,
+events it renders, how it answers each server-to-client request) is declared
+once in `src/tui/gateway_contract.py`, against a named Hermes commit. The
+gateway rejects unknown keys (code 4000) and unknown methods (-32601); the TUI
+reads either as drift, falls back at startup, and leaves mid-session with the
+command to reopen the session in `hermes`. This is a read and write coupling to
+a Hermes-private shape, the same class as the lease registry below, and
+testing OMH against a new Hermes release includes it; `requires_hermes` stays
+a floor for the plugin and is not raised for the TUI, whose compatibility is
+judged at launch.
+_Avoid_: reading the generated OpenRPC file at runtime (Hermes' wheel does not
+ship it), a published API
 
 **Widget zone**:
 A named slot in the Modern TUI layout where an ambient widget app renders.
@@ -567,8 +607,10 @@ skin (`skins/omh.yaml`), managed skills, and the config keys OMH inserted.
 The branded-TUI consent is the narrow exception for existing canonical config:
 accepting the interactive default or passing `--yes` may set
 `display.interface: tui`, `display.skin: omh`, and a collapsed
-`display.sections` so bare `omh` and `hermes` open the same surface and a long
-run does not bury the conversation. Installs already carrying the first two
+`display.sections` so bare `hermes` opens Hermes' Modern TUI wearing the OMH
+skin and status widget and a long run does not bury the conversation (bare
+`omh` opens the OMH TUI, and lands on that same Hermes terminal when the OMH
+TUI cannot start). Installs already carrying the first two
 are not prompted, and take the third through `--yes`. Declining,
 passing `--no-omh-tui`, or using a noncanonical YAML shape leaves the display
 configuration untouched. Everything else under a host root is user-owned and

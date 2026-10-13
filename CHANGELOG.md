@@ -4,6 +4,28 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Bare `omh` opens the OMH TUI, OMH's own terminal over Hermes' gateway.**
+  `omh` runs `hermes --tui` with `HERMES_TUI_DIR` pointing at a small Node
+  shim shipped in `omh.tui`, so Hermes' launcher still resolves the profile,
+  the resume target, the working directory and session ownership, then starts
+  the OMH frontend in place of its Ink app. The frontend spawns Hermes'
+  `tui_gateway` and speaks its stdio JSON-RPC; every model call, tool run and
+  approval decision stays Hermes'. Finished transcript lines go to the
+  terminal's own scrollback and only a bottom region repaints: the streaming
+  tail, one slot for the plan and agents panels or a question Hermes asked,
+  the composer, and a status line. The composer's row does not move when the
+  slot grows or shrinks, which retires the "prompt pushed up" layout of the
+  Hermes-hosted HUD, and the HUD is read in-process instead of spawning a
+  Python reader every two seconds. Hermes' questions are never answered on the
+  person's behalf: Esc and Ctrl+C decline, an approval decline is an explicit
+  deny, and `always` stays a `hermes --tui` decision. `/omh-model` resolves
+  exactly instead of completing to `/omh-model-optimization`. When the TUI
+  cannot start (Windows, no `termios`, no Node, gateway drift) it exits 75
+  and `omh` opens Hermes' own terminal; bare `hermes` is unchanged and still
+  shows the OMH skin and status widget when the branded-TUI choice is active.
+  The gateway slice the TUI relies on is declared in
+  `src/tui/gateway_contract.py` against Hermes 6c61c3e27d.
+
 - **A new `spend-gate` skill shows what a spend will cost before the agent
   moves any money, and calls it done only on a receipt.** It covers every
   rail: a card checkout in a page, an HTTP 402 or pay-per-request call, a
