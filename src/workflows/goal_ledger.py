@@ -90,10 +90,11 @@ def merge_obligation_criterion(obligation: str, ref: str = "") -> dict[str, Any]
 
 
 # The cleanup obligation a code-changing goal carries. Two callers arm it: code,
-# when a loop whose authority envelope allows `repo_edit` binds the goal
-# (`arm_slop_cleanup_obligation`, called from `goal_loop`), and a declaration,
-# `omh goal create --obligation slop-cleanup`, for an ultrawork goal that has no
-# loop. A goal neither caller armed carries no obligation and is not gated.
+# when a loop linked to the goal is allowed `repo_edit` at start or by a permit
+# that requests it (`arm_slop_cleanup_obligation`, called from `goal_loop`), and
+# a declaration, `omh goal create --obligation slop-cleanup`, for an ultrawork
+# goal that has no loop. A goal neither caller armed carries no obligation and
+# is not gated. One accepted cleaner record satisfies it for the whole goal.
 SLOP_CLEANUP_OBLIGATIONS = ("slop-cleanup",)
 SLOP_CLEANUP_CRITERION_ID = "AC-SLOP"
 SLOP_CLEANUP_SKILL = "ai-slop-cleaner"
@@ -107,6 +108,7 @@ SLOP_CLEANUP_REFUSAL_REASONS = (
     "run_record_unreadable",
     "skill_mismatch",
     "goal_mismatch",
+    "run_status_not_completed",
     "cleanup_outcome_missing",
     "evidence_empty",
     "evidence_refused",
@@ -1008,7 +1010,12 @@ def _slop_cleanup_check(paths: OmhPaths, goal: dict[str, Any]) -> dict[str, Any]
 
 
 def _slop_cleanup_record_check(paths: OmhPaths, goal_id: str, run_id: str) -> dict[str, str]:
-    """One cited run record against the four typed conditions AC-SLOP needs."""
+    """One cited run record against the typed conditions AC-SLOP needs.
+
+    The run must be `completed`: a started, prepared, failed, blocked, or
+    cancelled run did not conclude anything, and a decided skip is recorded as
+    a completed run whose outcome is `skipped`, never as a failed one.
+    """
     result = {"run_id": run_id, "cleanup_outcome": "", "refusal": ""}
     if not _is_storage_id(run_id):
         result["refusal"] = "run_record_not_found"
@@ -1022,6 +1029,8 @@ def _slop_cleanup_record_check(paths: OmhPaths, goal_id: str, run_id: str) -> di
         result["refusal"] = "skill_mismatch"
     elif run.get("goal_id") != goal_id:
         result["refusal"] = "goal_mismatch"
+    elif run.get("status") != "completed":
+        result["refusal"] = "run_status_not_completed"
     elif run.get("cleanup_outcome") not in CLEANUP_OUTCOMES:
         result["refusal"] = "cleanup_outcome_missing"
     else:

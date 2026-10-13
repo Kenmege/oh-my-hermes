@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from _cli_harness import run_cli
 from _local_package import load_local_package
@@ -246,6 +247,36 @@ class LoopArmingTests(unittest.TestCase):
             self.assertEqual(_criterion_ids(paths, "goal-code"), ["AC001"])
 
 
+    def test_a_permit_requesting_a_forbidden_repo_edit_does_not_arm(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths = _paths(tmp)
+            _goal(paths)
+            _loop(paths, permission_profile="handoff_only", forbid_actions=["repo_edit"], linked_goal_id="goal-code")
+            update_loop_permission(paths, "loop-code", allow_actions=["repo_edit"])
+
+            self.assertNotIn("repo_edit", read_loop_cycle(paths, "loop-code")["authority_envelope"]["allowed_actions"])
+            self.assertEqual(_criterion_ids(paths, "goal-code"), ["AC001"])
+
+    def test_an_arm_that_fails_after_loop_start_is_repaired_by_requesting_repo_edit(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths = _paths(tmp)
+            _goal(paths)
+            with patch(
+                "omh.workflows.goal_loop.arm_slop_cleanup_obligation",
+                side_effect=TimeoutError("goal.json lock timed out"),
+            ):
+                with self.assertRaises(TimeoutError):
+                    _loop(paths, permission_profile="execute_with_gates", linked_goal_id="goal-code")
+
+            # The loop was written with repo_edit and its goal was not armed.
+            self.assertIn("repo_edit", read_loop_cycle(paths, "loop-code")["authority_envelope"]["allowed_actions"])
+            self.assertEqual(_criterion_ids(paths, "goal-code"), ["AC001"])
+
+            update_loop_permission(paths, "loop-code", allow_actions=["repo_edit"])
+
+            self.assertEqual(_criterion_ids(paths, "goal-code"), ["AC001", _SLOP])
+
+
 class DeclaredObligationTests(unittest.TestCase):
     def _create(self, tmp: str, *extra: str) -> dict:
         status, stdout, stderr = run_cli(
@@ -429,6 +460,37 @@ class CleanupRecordCheckTests(unittest.TestCase):
             self.assertIn("--cleanup-outcome passed|skipped|reverted", card["safe_copy"]["next_step"])
 
 
+    def test_a_run_that_did_not_complete_refuses_whatever_its_outcome(self) -> None:
+        for status in RUN_STATUSES:
+            if status == "completed":
+                continue
+            with self.subTest(status=status), TemporaryDirectory() as tmp:
+                paths = _paths(tmp)
+                _armed_goal(paths)
+                run_id = _cleaner_run(paths, "goal-code", status=status, cleanup_outcome="passed")
+                _cite(paths, "goal-code", f"run:{run_id}")
+
+                self.assertEqual(self._refusal(paths), ["run_status_not_completed"])
+                self.assertFalse(build_goal_completion_gate(paths, "goal-code")["ready"])
+
+    def test_a_run_cited_by_a_checkpoint_that_is_not_done_does_not_count(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths = _paths(tmp)
+            _armed_goal(paths)
+            run_id = _cleaner_run(paths, "goal-code")
+            record_goal_checkpoint(
+                paths, "goal-code", "cleaner blocked", status="blocked",
+                criteria_refs=[_SLOP], evidence_refs=[f"run:{run_id}"],
+            )
+            _cite(paths, "goal-code", "observed: cleaner outcome noted outside the run record")
+
+            gate = build_goal_completion_gate(paths, "goal-code")
+
+            self.assertEqual(gate["missing_required_criteria"], [])
+            self.assertEqual(gate["slop_cleanup_check"]["records"], [])
+            self.assertFalse(gate["ready"])
+
+
 class RunRecordFieldTests(unittest.TestCase):
     def _base(self, tmp: str) -> list[str]:
         return ["--omh-home", str(Path(tmp) / ".omh"), "--hermes-home", str(Path(tmp) / ".hermes")]
@@ -545,9 +607,14 @@ class SkillTextTests(unittest.TestCase):
         for name in ("ai-slop-cleaner", "loop", "ultrawork"):
             with self.subTest(skill=name):
                 self.assertIn("--cleanup-outcome passed|skipped|reverted", bodies[name])
+        for name in ("ai-slop-cleaner", "loop"):
+            with self.subTest(skill=name):
                 self.assertIn(cite, bodies[name])
+        # ultrawork defers the exact commands to the cleaner's closing line,
+        # which keeps its shipped body under the byte ceiling.
         self.assertIn("omh goal create --obligation slop-cleanup", bodies["ultrawork"])
-        self.assertIn("A goal created without the flag is not gated.", bodies["ultrawork"])
+        self.assertIn("recorded and cited with the commands that skill closes on", bodies["ultrawork"])
+        self.assertIn("Without the flag the goal is not gated.", bodies["ultrawork"])
         self.assertIn("--goal <linked goal id> --outputs-summary", bodies["loop"])
         self.assertNotIn("an optional `ai-slop-cleaner` pass", bodies["loop"])
 

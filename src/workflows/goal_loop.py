@@ -618,9 +618,12 @@ def create_loop_cycle(
     validation = validate_loop_cycle(cycle)
     if not validation["ok"]:
         raise ValueError("; ".join(validation["errors"]))
-    # Decided (and a terminal goal refused) before the cycle is written, and the
-    # criterion appended only after it is: a refused or failed create then
-    # leaves neither a loop without its obligation nor a stray AC-SLOP.
+    # Decided before the cycle is written, so a goal already terminal refuses
+    # the start, and appended only after the write, so a refused or failed
+    # create leaves no stray AC-SLOP. The append can still fail once the cycle
+    # exists (a lock timeout, or a goal that turned terminal in between); the
+    # loop then has `repo_edit` and no armed goal, and a permit that requests
+    # `repo_edit` again is the repair path (see `update_loop_permission`).
     arm_goal = (
         linked_goal is not None
         and _loop_allows_repo_edit(cycle["authority_envelope"])
@@ -1055,13 +1058,19 @@ def update_loop_permission(
             allow_actions=allowed,
             forbid_actions=forbidden,
         )
-        # A grant that newly lets this loop edit the repo arms AC-SLOP on its
-        # linked goal, decided here so a terminal goal refuses the whole grant,
-        # and appended after this write so a refused write leaves no criterion.
+        # A permit that requests `repo_edit` arms AC-SLOP on the linked goal
+        # when the resulting envelope allows it, whether or not the loop
+        # already had it: arming is idempotent, so re-requesting `repo_edit`
+        # is also the repair for an arm that failed after loop start. A grant
+        # that does not request `repo_edit` never arms. The decision reads the
+        # goal here, unlocked, so a goal already terminal at this read refuses
+        # the grant; one that turns terminal after it makes the append below
+        # raise after the grant is written. The append runs after this write,
+        # so a refused write leaves no criterion.
         linked_goal_id = str(cycle.get("linked_goal_id", ""))
         if (
             linked_goal_id
-            and "repo_edit" not in existing_allowed
+            and "repo_edit" in requested_allow
             and _loop_allows_repo_edit(cycle["authority_envelope"])
             and slop_cleanup_arm_needed(read_goal_ledger(paths, linked_goal_id))
         ):
@@ -1090,8 +1099,8 @@ def goal_ledger_entry_count(goal: Mapping[str, Any] | None) -> int:
     """Records written into one goal ledger: checkpoints, blockers, quality gates.
 
     The three lists a loop can actually append to. Acceptance criteria are
-    declared at creation (AC-SLOP may be appended once, when a `repo_edit` loop
-    binds the goal) and otherwise only change status, so counting them would
+    declared at creation (AC-SLOP may be appended once, by a loop allowed
+    `repo_edit`) and otherwise only change status, so counting them would
     make a loop that writes nothing look like a loop that started well.
     """
     if not isinstance(goal, Mapping):
