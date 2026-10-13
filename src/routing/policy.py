@@ -8284,9 +8284,10 @@ _HERMES_SETUP_GUIDE_PHRASES = (
     "web search cheaper",
     "web search backend",
     "web extract backend",
-    "configure web search",
+    "hermes web search",
+    "web search in hermes",
     "web search costs too much",
-    "free web search tier",
+    "keyless free web search",
     "웹 검색 설정",
     "웹 검색 싸게",
     "웹 검색 비용",
@@ -8301,8 +8302,18 @@ _HERMES_SETUP_GUIDE_PHRASES = (
 )
 
 
+# Said alone, these name Hermes' own setting; with an object ("configure web
+# search for the store's product catalog", "... in our nextjs app") they name
+# the user's app, where the setup guide dispatched. They count only as the
+# whole request.
+_HERMES_SETUP_GUIDE_WHOLE_REQUESTS = ("configure web search",)
+
+
 def _hermes_setup_guide_requested(normalized_query: str) -> bool:
-    return _contains_phrase(normalized_query, _HERMES_SETUP_GUIDE_PHRASES)
+    if _contains_phrase(normalized_query, _HERMES_SETUP_GUIDE_PHRASES):
+        return True
+    terms = routing_terms(normalized_query)
+    return any(terms == routing_terms(request) for request in _HERMES_SETUP_GUIDE_WHOLE_REQUESTS)
 
 
 def _web_research_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:

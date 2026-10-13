@@ -8427,6 +8427,7 @@ _DEFINITIONS = [
             "reduce web search cost",
             "connect scraper api key",
             "web search backend",
+            "hermes web search",
             "web search costs too much",
             "free web search tier",
         ),
@@ -8449,7 +8450,7 @@ _DEFINITIONS = [
             "provider API key availability; value through secure entry or user-side setup only",
         ),
         expected_outputs=(
-            "read-only diagnosis of which backend serves search and which serves extract, and why: its own per-capability key, a shared `web.backend` or managed-gateway selection, credential detection, or the keyless free tier; on some releases any per-capability key counts as a selection, so the other capability skips detection and lands on Hermes' default backend, which verify reads rather than infers",
+            "read-only diagnosis of which backend serves search and which serves extract, and why: its own per-capability key, a shared `web.backend` or managed-gateway selection, credential detection, the keyless free tier, or, when nothing else resolves, Hermes' default backend; on some releases any per-capability key counts as a selection, so the other capability skips detection and lands on Hermes' default backend, which verify reads rather than infers",
             "a diff-approved `.env` write adding the provider API key, approved on its own, or the user's own key entry in `hermes tools`",
             "a diff-approved `web` backend or tier change (`web.search_backend`, `web.extract_backend`, `web.provider_tier.<name>: free|paid`, `web.keyless_fallback`), approved separately from the key write",
             "verification checklist reading back each written `web` key from the merged `web` section and the provider key name's presence",
@@ -8467,7 +8468,7 @@ _DEFINITIONS = [
             "Check the cost levers that need no key first: when no backend is selected or detectable and `web.keyless_fallback` is not false, Hermes falls back to keyless vendor free tiers, and a per-capability split can keep search free while only extract uses a paid account.",
             "A new `.env` key alone does not change which backend serves a capability once a selection covers it; diagnose that before proposing a key as the fix.",
             "When the diff sets only one of `web.search_backend` and `web.extract_backend`, name the other capability's backend in the same diff or confirm its resolution in verify, because Hermes releases differ in how an unset sibling resolves.",
-            "Before proposing `web.keyless_fallback: false`, say that it also turns off the one-shot keyless rescue for a failing backend, and that web search and extract stop working while no other backend is selected or detectable.",
+            "Before proposing `web.keyless_fallback: false`, say that it also turns off the one-shot keyless rescue for a failing backend, and that web search and extract stop working while no other backend is selected or detectable, unless a vendor's tier is pinned free.",
         ),
         why_this_exists="`websearch-setup` exists to make web search cost and backend choice configurable through two clearly separated, diff-approved steps against the `web` keys Hermes reads, instead of one opaque edit.",
         do_not_use_when=(

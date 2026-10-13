@@ -5992,7 +5992,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user wants Hermes to run a web search now, not configure how web search is set up.
   - No provider key, backend, or tier intent has been named yet.
   - The request needs a repository code change rather than a local `.env` or Hermes config edit.
-- Strong routing signals: `websearch-setup`, `web search setup`, `make web search cheaper`, `set up web search`, `configure web search`, `reduce web search cost`, `connect scraper api key`, `web search backend`, `web search costs too much`, `free web search tier`, `웹 검색 싸게 만들어줘`, `웹 검색 설정`, `웹서치 설정`, `웹 검색 비용 줄이기`
+- Strong routing signals: `websearch-setup`, `web search setup`, `make web search cheaper`, `set up web search`, `configure web search`, `reduce web search cost`, `connect scraper api key`, `web search backend`, `hermes web search`, `web search costs too much`, `free web search tier`, `웹 검색 싸게 만들어줘`, `웹 검색 설정`, `웹서치 설정`, `웹 검색 비용 줄이기`
 - Good example:
   - Prompt: make web search cheaper — I have a scraper account I want to use for reading pages, and search can stay free.
   - Expected behavior: Read the `web` section and `.env` key names, guide the provider API key setup as one diff approval, then set `web.extract_backend` to that provider and `web.search_backend` to a free backend the user picks from `hermes tools` as a second, separate diff approval, and read both keys back.
@@ -6011,7 +6011,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Check the cost levers that need no key first: when no backend is selected or detectable and `web.keyless_fallback` is not false, Hermes falls back to keyless vendor free tiers, and a per-capability split can keep search free while only extract uses a paid account.
   - A new `.env` key alone does not change which backend serves a capability once a selection covers it; diagnose that before proposing a key as the fix.
   - When the diff sets only one of `web.search_backend` and `web.extract_backend`, name the other capability's backend in the same diff or confirm its resolution in verify, because Hermes releases differ in how an unset sibling resolves.
-  - Before proposing `web.keyless_fallback: false`, say that it also turns off the one-shot keyless rescue for a failing backend, and that web search and extract stop working while no other backend is selected or detectable.
+  - Before proposing `web.keyless_fallback: false`, say that it also turns off the one-shot keyless rescue for a failing backend, and that web search and extract stop working while no other backend is selected or detectable, unless a vendor's tier is pinned free.
 - Completion checklist:
   - If a prerequisite is unmet, mark that item "not applicable" and continue with the rest of the guide instead of blocking or guessing.
   - Success is applicable-only: verification passes when every applicable item is confirmed complete, not when every possible item exists.
@@ -6026,7 +6026,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - the backend names `hermes tools` lists under Web Search & Extract
   - provider API key availability; value through secure entry or user-side setup only
 - Expected outputs:
-  - read-only diagnosis of which backend serves search and which serves extract, and why: its own per-capability key, a shared `web.backend` or managed-gateway selection, credential detection, or the keyless free tier; on some releases any per-capability key counts as a selection, so the other capability skips detection and lands on Hermes' default backend, which verify reads rather than infers
+  - read-only diagnosis of which backend serves search and which serves extract, and why: its own per-capability key, a shared `web.backend` or managed-gateway selection, credential detection, the keyless free tier, or, when nothing else resolves, Hermes' default backend; on some releases any per-capability key counts as a selection, so the other capability skips detection and lands on Hermes' default backend, which verify reads rather than infers
   - a diff-approved `.env` write adding the provider API key, approved on its own, or the user's own key entry in `hermes tools`
   - a diff-approved `web` backend or tier change (`web.search_backend`, `web.extract_backend`, `web.provider_tier.<name>: free|paid`, `web.keyless_fallback`), approved separately from the key write
   - verification checklist reading back each written `web` key from the merged `web` section and the provider key name's presence

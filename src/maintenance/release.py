@@ -590,7 +590,10 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64158
 # Hermes' default backend, and the safety rule says a key absent from
 # `config.yaml` is at its default rather than unsupported and where to read
 # support instead. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 487167
+# 487167 -> 487221: second review. The diagnosis output ends its list with
+# Hermes' default backend when nothing else resolves. Re-derived from the
+# producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 487221
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

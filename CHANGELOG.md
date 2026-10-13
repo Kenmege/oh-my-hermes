@@ -23,15 +23,17 @@ All notable changes will be documented here.
   ignored. A `web` key missing from `config.yaml` is read as its default, and
   support is read from the merged config, never inferred from a Hermes
   version. Setup and cost phrasing now reaches the guide instead of a live
-  web lookup: "configure web search" opens it, and "web search backend",
-  "web search costs too much", "the keyless free web search tier", and
-  setting the web extract backend ask with it leading. Lookups about costs
-  or free tiers stay lookups, and pricing words alone ("how much does it
-  cost", a vendor's free tier, "deploy the backend") do not name it. The
-  `omh menubar status` Models card lists the auxiliary slots every supported
-  Hermes reads, without `web_extract`; the doctor advisory for unpinned
-  auxiliary slots names the same slots without a fixed count and no longer
-  counts a leftover `web_extract` pin as routing.
+  web lookup: "configure web search" said on its own opens it, and naming
+  Hermes' web search, "web search backend", "web search costs too much",
+  "the keyless free web search tier", and setting the web extract backend
+  ask with it leading. "Configure web search" with an object, such as a
+  store's catalog or a Next.js app, routes as before. Cited lookups about
+  costs or vendors' free tiers stay lookups, and pricing words alone ("how
+  much does it cost", a vendor's free tier, "deploy the backend") do not
+  name the guide. The `omh menubar status` Models card lists the auxiliary
+  slots every supported Hermes reads, without `web_extract`; the doctor
+  advisory for unpinned auxiliary slots names the same slots without a fixed
+  count and no longer counts a leftover `web_extract` pin as routing.
 
 
 - **Achievements are read from where the bundled Hermes plugin keeps them

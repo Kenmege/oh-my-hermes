@@ -580,8 +580,16 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # and two lookups about costs and free tiers that stay on
             # `web-research` (5). Its review adds one: setting the web extract
             # backend, a clarify with the setup guide leading, which led with
-            # the lookup lane before (1).
-            expected=684,
+            # the lookup lane before (1). The second review adds six:
+            # configuring Hermes' web search, switching it to the free tier,
+            # and asking how to configure web search in Hermes, each a clarify
+            # with the setup guide leading that dispatched a live web lookup
+            # before; and three that must not reach the guide -- configuring
+            # search for a store's catalog and in a Next.js app, which the
+            # guide took while "configure web search" matched anywhere, and a
+            # cited free-tier comparison, which it took while "free web search
+            # tier" was a setup-guide phrase (6).
+            expected=690,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
