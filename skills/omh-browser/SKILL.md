@@ -20,7 +20,7 @@ This is a Hermes-native `browser-operator` workflow skill.
 
 ## Do Not Use When
 
-- An ordinary read of a public page with no sign-in, form, or purchase; use the native browser tools directly.
+- An ordinary read of a public page with no sign-in, form, or purchase; use the native browser tools directly unless OMH's browser adapter bridge is enabled, which blocks them.
 - The question is whether a page looks right at each viewport; use `visual-qa`.
 - A web lookup or a cited answer rather than an interaction with a page; use `web-research`.
 
@@ -44,7 +44,7 @@ Bad example:
 - Gate credentials/login/payment/purchase/destruction/scraping/export; observed traces only.
 - Host request admission (not enablement/adapter presence) gates schemas/context/callbacks/writes. Refuse foreign/stale/expired/released/ambiguous targets; no index fallback.
 - omh_browser blocks native browser_*; inert by default. Opted-in effects need exact approval: docs/BROWSER-EFFECTS.md.
-- Sign-ins, one-time codes, and saved cards go through `browser_vault` when `browser_vault` is in your tool list or tool_search finds it (`list`, then `fill`; Hermes asks the user before it fills a card and refuses that in a headless run): no password, card number, card security code, or one-time code is asked for, typed, or echoed in chat; record only its `success` and `filled_fields`, and never retry a `payment_declined`. Without it, the sign-in is the user's own step and a named gap.
+- Sign-ins, one-time codes, and saved cards go through `browser_vault` when `browser_vault` is in your tool list or tool_search finds it (`list` first; `fill` for a saved login, card, or address; `enter_code` for a one-time code after the password; `save_login` when nothing is saved for the site, so the user types it into Hermes' masked prompt; Hermes asks the user before it fills a card and refuses that in a headless run): no password, card number, card security code, or one-time code is asked for, typed, or echoed in chat; record only its `success` and `filled_fields`, and never retry a `payment_declined`. Without it, the sign-in is the user's own step and a named gap.
 
 ## Recovery Notes
 
@@ -53,7 +53,7 @@ Bad example:
 - Host receipt BLOCK: production click/submit, retry after auth/4xx/assertion/mutation failure, or over two transient read-only retries.
 - POSIX native agent-browser collector: cold-desktop anonymous read-only Chromium only; other engine/profile/fixture/locale/timezone: named blocker (unsupported_browser_engine_webkit), never substitution.
 - Trace drift: `promotion status` unlinks only managed SKILL.md, keeps generations/receipts; no autoheal/watch/global fallback.
-- With OMH's browser adapter bridge enabled (`browser_adapter.enabled`), OMH's own hook blocks every native `browser_*` tool, `browser_vault` included: report the vault as blocked by the bound `omh_browser` lifecycle and never fall back to credentials in chat.
+- With OMH's browser adapter bridge enabled (`browser_adapter.enabled`), OMH's own hook blocks every native `browser_*` tool, the credential vault included: report the vault as blocked by the bound `omh_browser` lifecycle and never fall back to credentials in chat.
 
 ## Workflow Lane
 

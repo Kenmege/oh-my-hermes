@@ -16,7 +16,7 @@ This is a Hermes-native `command-operator` workflow skill.
 
 ## Why This Exists
 
-`command-operator` exists because a host's own approval gate answers only for the commands it flags: it fixes the working directory, environment, timeout, and stop condition, keeps that native approval answer as the gate's evidence instead of asking a second time, and reports results only from what the run returned.
+`command-operator` exists because a host's own approval gate flags only some commands and can approve one with nobody asked: it fixes the working directory, environment, timeout, and stop condition, confirms every irreversible or externally visible command in chat whether or not the host flags it, records the host's own approval answer beside that confirmation, and reports results only from what the run returned.
 
 ## Do Not Use When
 
@@ -41,13 +41,14 @@ Bad example:
 ## Completion Checklist
 
 - Command text, working directory, environment assumptions, timeout, safety level, and stop condition are explicit.
-- Destructive, credential, network, filesystem mutation, install, deploy, and production commands are gated by the recorded native approval answer, by a chat confirmation where no native prompt decides, or marked missing.
+- Destructive, credential, network, filesystem mutation, install, deploy, and production commands are confirmed in chat before the run or marked missing; a native approval note is recorded beside that confirmation, never in place of it.
 - Exit codes, stdout/stderr, test results, package-manager effects, and filesystem mutations are reported only from observed command evidence.
 
 ## Recovery Notes
 
 - If command text or working directory is missing, ask for the smallest missing scope needed before preparing the command task.
-- If the command is destructive, credentialed, networked, install/deploy-oriented, or production-affecting, require an explicit confirmation gate. On Hermes, its approval prompt is that gate for a command it flags, so record its answer and do not ask a second time; confirm in chat before the run only for an install, deploy, production change, or external send, or when approvals are off (`approvals.mode: off` or yolo).
+- If the command is irreversible or externally visible, require an explicit confirmation gate in chat before the run, whether or not the host flags it: deleting or overwriting user data, discarding history or force-pushing, deleting a remote branch, dropping, deleting from, truncating, or flushing a database, a credentialed or networked mutation, device actuation, an install, a deploy, a production change, or an external send.
+- On Hermes, record the terminal result's `approval` note beside that confirmation as additional evidence, never in place of it: a note that the command "was approved by the user" is the person's answer to Hermes' own prompt for that command, while "auto-approved by smart approval" or no note at all is not a person's consent, and a `pending_approval` status means the command has not run yet and waits for the person's `/approve` or `/deny`, so it is never re-run or reworded.
 - On Hermes, a cron job, a one-shot `-q` run, or a webhook run denies a flagged command by default (`approvals.cron_mode`, `approvals.single_query_mode`, `approvals.unattended_mode`): record the block as the gate's outcome and hand the command to a person's turn, never rephrase it to get past the gate.
 - If the user supplied failed command output and asks for root cause, route to build-failure-triage or agent-debug instead of preparing a fresh command.
 
@@ -102,7 +103,7 @@ Artifact expectations:
 
 - command_task_card/v1 metadata-only wrapper card when prepared
 - command_scope/v1 with command text, working directory, environment assumptions, timeout, and stop condition
-- command_safety_gate/v1 separating read-only, write/mutation, network, credential, and destructive-risk commands, with the native approval answer as its observed evidence: on Hermes, the terminal result's `approval` note (approved by the user, or auto-approved by smart approval) or its `blocked` status and message
+- command_safety_gate/v1 separating read-only, write/mutation, network, credential, and destructive-risk commands, holding the chat confirmation for each irreversible or externally visible command and, on Hermes, the terminal result's `approval` note or its `blocked` or `pending_approval` status as additional observed evidence
 - command_result_manifest/v1 only when exit code, stdout/stderr, logs, or terminal transcript are observed
 
 Safety rules:

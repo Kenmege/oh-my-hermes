@@ -16,7 +16,7 @@ This is a Hermes-native `workspace-file-operator` workflow skill.
 
 ## Why This Exists
 
-`workspace-file-operator` exists because a delete, overwrite, or bulk move often has no undo point: it scopes the path, records before any destructive step whether a checkpoint can undo it (Hermes takes none unless checkpoints are on), and reports only what file evidence shows.
+`workspace-file-operator` exists because a delete, overwrite, or bulk move often has no undo point: it scopes the path, confirms each destructive step, records beforehand whether a checkpoint covers the target (Hermes takes none unless checkpoints are on), and reports only what file evidence shows.
 
 ## Do Not Use When
 
@@ -41,7 +41,7 @@ Bad example:
 
 - The path root, allowed file operations, excluded paths, destructive-operation policy, and stop condition are explicit.
 - Delete, overwrite, move, rename, permission change, archive mutation, upload, and download are gated or marked missing.
-- Checkpoint availability is recorded before any destructive step; without an observed checkpoint, a reversible copy or a move to trash comes first, or the user confirms the irreversible step.
+- Checkpoint availability is recorded before any destructive step, and the confirmation gate holds either way; without an observed checkpoint covering the target, a reversible copy or a move to trash comes first.
 - Directory listings, file contents, hashes, diffs, and operation results are reported only from observed file evidence.
 
 ## Recovery Notes
@@ -104,7 +104,7 @@ Artifact expectations:
 - file_operation_scope/v1 with path root, allowed operations, excluded paths, and stop condition
 - file_observation_manifest/v1 only when directory listings, file stats, hashes, diffs, or operation output are observed
 - session_file_activity/v1 (`omh quality-evidence file-activity --hermes-session <id> --json`) cited in that manifest for which workspace files a Hermes session's read_file, write_file, and patch calls named and the outcome Hermes recorded; never as file-content, hash, diff, test, review, CI, or merge evidence
-- file_confirmation_gate/v1 for delete, overwrite, move, rename, chmod, archive mutation, or irreversible cleanup, with checkpoint availability recorded before the step: on Hermes, checkpoints are off unless the user turned them on (`checkpoints.enabled`), and the user's `/rollback` says whether this session takes them, so record `available` only from that answer, `not_available` when it reports them off, and `not_observed` until then
+- file_confirmation_gate/v1 for delete, overwrite, move, rename, chmod, archive mutation, or irreversible cleanup, recording checkpoint availability before the step and keeping the confirmation either way: on Hermes, checkpoints are off unless the user turned them on (`checkpoints.enabled`, or a session started with the `--checkpoints` flag), and one covers only the directory Hermes snapshots for the step (for a terminal command, its working directory), minus its excludes (among them archives, media, logs, `.env` files, and dependency and build folders) and its limits (a file over the size cap, 10 MB by default, or a directory with more than 50,000 entries), so record `available` only when the user's `/rollback` lists checkpoints for a directory that holds the target and the target is not excluded or over a limit, `not_available` otherwise, and `not_observed` until then
 
 Safety rules:
 

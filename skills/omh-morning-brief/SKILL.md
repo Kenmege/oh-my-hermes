@@ -103,7 +103,7 @@ Safety rules:
 - Configure mail and calendar MCP access as read and draft only; never enable Send permission, even if the user asks — drafts stay for the user to send themselves.
 - Use Hermes-native secure entry or user-side OAuth/app-password setup, never chat; disclose authorized storage without exposing secrets.
 - Do not treat a prepared connection as an observed brief; only report a brief after the connection is verified.
-- The bundled `google-workspace` OAuth setup requests `gmail.send` and `gmail.modify` on every run, and its setup script accepts no `--services` flag to narrow that, though that skill's own instructions show one: a connection made through it cannot meet read-and-draft-only, so never apply it as this skill's connection, and when the user connects it themselves, report the send scope as granted, never as read-and-draft-only.
+- The bundled `google-workspace` OAuth setup requests `gmail.send` and `gmail.modify` on every run, and its setup script accepts no `--services` flag to narrow the request, though that skill's own instructions show one; Google's consent screen lets the user untick a permission and the script then keeps only what was granted. Never apply that path as this skill's connection, and when the user connects it themselves, report `gmail.send` and `gmail.modify` as granted unless the setup script's `--check` lists them among the missing scopes, never as read-and-draft-only on the strength of the request.
 
 ## Runtime Evidence
 

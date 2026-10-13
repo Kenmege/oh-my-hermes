@@ -4,37 +4,49 @@ All notable changes will be documented here.
 
 ## Unreleased
 
-- **The operator skills now take Hermes' own approval, checkpoint, vault, and
-  connection answers as their gate evidence instead of asking the user a
-  second time.** `command-operator` records the terminal result's `approval`
-  note or `blocked` status as the safety gate and confirms in chat only for an
-  install, deploy, production change, or external send, or when approvals are
-  off; it also says that a cron, one-shot, or webhook run denies a flagged
-  command by default, so the command goes to a person's turn instead of being
-  rephrased. `workspace-file-operator` records whether a checkpoint can undo a
-  destructive step before taking it -- Hermes' checkpoints are off unless the
-  user turned them on, and the user's `/rollback` answer is the only reading
-  that marks one available -- and its harness gains that ladder step.
-  `browser-operator` sends sign-ins, one-time codes, and saved cards to
-  `browser_vault` when the session has it, and names OMH's own browser adapter
-  bridge as a blocker for the vault rather than falling back to credentials in
-  chat. `connector-operator` and `morning-brief` take a missing connection to
+- **The operator skills now record what Hermes' own approval, checkpoint,
+  vault, and connection surfaces answered, beside the confirmations they keep,
+  and use those surfaces where they exist.** `command-operator` still
+  confirms every irreversible or externally visible command in chat before it
+  runs, whether or not Hermes flags it -- deleting or overwriting user data,
+  discarding history or force-pushing, deleting a remote branch, dropping or
+  flushing a database, a credentialed or networked mutation, device
+  actuation, an install, a deploy, a production change, or an external send
+  -- because Hermes' default smart approval can approve a command with nobody
+  asked and its detector misses many such commands. The terminal result's
+  `approval` note is recorded as additional evidence: "approved by the user"
+  is the person's answer to Hermes' prompt, while a smart auto-approval or no
+  note is not consent, and a `pending_approval` command has not run. A cron,
+  one-shot, or webhook run denies a flagged command by default, so the
+  command goes to a person's turn instead of being rephrased.
+  `workspace-file-operator` keeps its confirmation and records beforehand
+  whether a checkpoint covers the target: Hermes' checkpoints are off unless
+  the user turned them on, and one covers only the directory Hermes snapshots,
+  minus its excludes and size limits, so only the user's `/rollback` answer for
+  a directory holding the target marks one available. Its harness gains that
+  ladder step. `browser-operator` sends sign-ins, one-time codes, saved
+  cards, and first-time logins to `browser_vault` (`fill`, `enter_code`,
+  `save_login`) when the session has it, and names OMH's own browser adapter
+  bridge as a blocker for the vault and for the native browser tools.
+  `connector-operator` and `morning-brief` take a missing connection to
   `manage_connections` when the session has it and treat a `skipped` app as
-  the user's answer. `morning-brief` reports that the bundled
-  `google-workspace` OAuth setup always requests `gmail.send` (its setup
-  script takes no `--services` flag), so that connection is never reported as
-  read-and-draft-only. `security-safety-review` and
-  `physical-device-readiness` emit a proposed `approvals.deny` list for
-  blocked terminal commands that the user applies; OMH writes no Hermes
-  config. `github-event-ops` takes its intake from a Hermes webhook route,
-  treats the payload as untrusted, and reports a PR comment only after
-  reading it back. `parallel-tools` proposes one change,
+  the user's answer; `connector-operator` still confirms an irreversible
+  provider action in chat, since Hermes prompts before such a call only in
+  some configurations. `morning-brief` reports that the bundled
+  `google-workspace` OAuth setup requests `gmail.send` and `gmail.modify` on
+  every run (its setup script takes no `--services` flag), so those scopes are
+  reported as granted unless the setup script's own check lists them as
+  missing. `security-safety-review` and `physical-device-readiness` emit a
+  proposed `approvals.deny` list for blocked terminal commands that the user
+  applies; OMH writes no Hermes config. `github-event-ops` takes its intake
+  from a Hermes webhook route, treats the payload as untrusted, and reports a
+  PR comment only after reading it back. `parallel-tools` proposes one change,
   `mcp_servers.<name>.supports_parallel_tool_calls: true` per named MCP
   server, instead of an update. A tool that is not in every supported Hermes
-  release is named only behind the "in your tool list or tool_search finds
-  it" rule, never a version. The feature-surface skills among these state
-  their own Why and Do-Not-Use instead of the shape's shared lines, through a
-  per-skill override that later skills can reuse.
+  release is named only in a sentence carrying the "in your tool list or
+  tool_search finds it" rule, never a version. The feature-surface skills
+  among these state their own Why and Do-Not-Use instead of the shape's
+  shared lines, through a per-skill override that later skills can reuse.
 
 
 - **Review and verification skills use the contracts Hermes already enforces,

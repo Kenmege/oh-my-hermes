@@ -633,7 +633,13 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # update command. The `security-safety-review` and `morning-brief` additions
 # sit past the row's bounds and move nothing here. The `parallel-tools` rows
 # were tightened before raising. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 488154
+# 488154 -> 488220: review of that change. `browser-operator`'s first
+# Do-Not-Use line, the one its row carries, now says the native browser tools
+# are the route only while OMH's browser adapter bridge is off, since the
+# bridge blocks them. The restored chat confirmations in `command-operator`
+# and `connector-operator` sit past the row's bounds. Re-derived from the
+# producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 488220
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
