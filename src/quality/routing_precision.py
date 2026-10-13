@@ -2534,6 +2534,12 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     # with this literal prompt and loads its own `sdlc-review` for a review
     # card. The words name a board task and no diff, so the route asks and
     # never offers `code-review` as the workflow.
+    #
+    # `answer_clarification` is what the router does with this prompt today,
+    # not the goal. The prompt is host-written, and a change that teaches the
+    # router to leave host-written turns alone may route nothing here and move
+    # the expected action. The forbidden candidate is the half that must
+    # survive that move.
     RoutingPrecisionCase(
         "kanban-worker-prompt-is-not-a-code-review",
         "The dispatcher's kanban worker prompt asks for no code review",

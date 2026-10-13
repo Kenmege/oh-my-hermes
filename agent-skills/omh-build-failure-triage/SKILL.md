@@ -76,8 +76,8 @@ Quality bar:
 - Recommend the smallest safe fix path and name when no fix is justified without more logs.
 - Prefer targeted reruns before broad expensive checks, then broaden only when the changed surface requires it.
 - Preserve exact observed failure snippets or file references without treating them as current PASS evidence.
-- Give each cluster an origin: `introduced` when the same command passes at the merge-base or the failure points at a line the diff added or changed; `pre_existing` only when an observed run of the same command fails the same way at the merge-base in a clean detached worktree (`git worktree add --detach <dir> <merge-base>`, removed afterwards), never by stashing or checking out the tree the user is working in; otherwise `unknown`.
-- Return FIX_READY only for `introduced` clusters. A `pre_existing` cluster gets its own follow-up handoff outside this change's fix; an `unknown` one returns NEEDS_MORE_LOGS naming the merge-base run as the missing evidence; when every cluster is `pre_existing`, return ROUTE_TO_VERIFICATION_GATE.
+- Give each cluster an origin: `introduced` when the same command passes at the merge-base or the failure points at a line the diff added or changed; `pre_existing` only when an observed run of the same command fails the same way at the merge-base in a clean detached worktree (`git worktree add --detach <dir> <merge-base>`, removed afterwards), never by stashing or checking out the tree the user is working in; otherwise `unknown`. Name the proof beside the origin: a merge-base run is an observation, a diff-line reading is an inference.
+- Return FIX_READY only for `introduced` clusters; a `pre_existing` cluster gets its own follow-up handoff outside this change's fix. Clusters of different origins still share one verdict: NEEDS_MORE_LOGS while any cluster is `unknown`, naming the merge-base run as the missing evidence, even beside `introduced` ones; otherwise FIX_READY when at least one is `introduced`; otherwise, with every cluster `pre_existing`, ROUTE_TO_VERIFICATION_GATE.
 
 Required inputs:
 

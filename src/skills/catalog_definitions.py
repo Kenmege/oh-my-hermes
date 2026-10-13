@@ -14,6 +14,7 @@ from ..evidence.observed_check_results import (
     FAILURE_ORIGINS,
     OBSERVED_CHECK_RESULTS_TOKEN,
     observed_check_results_expectation,
+    observed_check_results_failing_only_note,
 )
 from ..paper_learning import (
     PAPER_LEARNING_CARD_SCHEMA_VERSION,
@@ -128,6 +129,13 @@ FAILURE_ORIGIN_PROOF_RULE = (
     f"`{_PRE_EXISTING}` only when an observed run of the same command fails the same way at the merge-base in a clean detached "
     "worktree (`git worktree add --detach <dir> <merge-base>`, removed afterwards), never by stashing or checking out the tree "
     f"the user is working in; otherwise `{_UNKNOWN_ORIGIN}`"
+)
+# `introduced` has two admissible proofs, and the two are different kinds of
+# evidence: a merge-base run was observed, a diff-line reading was inferred from
+# where the failure points. The origin sits inside an observed row, so the row
+# says which one it rests on and a reader does not take an inference for a run.
+FAILURE_ORIGIN_PROOF_NAMING = (
+    "Name the proof beside the origin: a merge-base run is an observation, a diff-line reading is an inference"
 )
 
 
@@ -5227,8 +5235,8 @@ _DEFINITIONS = [
             "Recommend the smallest safe fix path and name when no fix is justified without more logs.",
             "Prefer targeted reruns before broad expensive checks, then broaden only when the changed surface requires it.",
             "Preserve exact observed failure snippets or file references without treating them as current PASS evidence.",
-            f"Give each cluster an origin: {FAILURE_ORIGIN_PROOF_RULE}.",
-            f"Return FIX_READY only for `{_INTRODUCED}` clusters. A `{_PRE_EXISTING}` cluster gets its own follow-up handoff outside this change's fix; an `{_UNKNOWN_ORIGIN}` one returns NEEDS_MORE_LOGS naming the merge-base run as the missing evidence; when every cluster is `{_PRE_EXISTING}`, return ROUTE_TO_VERIFICATION_GATE.",
+            f"Give each cluster an origin: {FAILURE_ORIGIN_PROOF_RULE}. {FAILURE_ORIGIN_PROOF_NAMING}.",
+            f"Return FIX_READY only for `{_INTRODUCED}` clusters; a `{_PRE_EXISTING}` cluster gets its own follow-up handoff outside this change's fix. Clusters of different origins still share one verdict: NEEDS_MORE_LOGS while any cluster is `{_UNKNOWN_ORIGIN}`, naming the merge-base run as the missing evidence, even beside `{_INTRODUCED}` ones; otherwise FIX_READY when at least one is `{_INTRODUCED}`; otherwise, with every cluster `{_PRE_EXISTING}`, ROUTE_TO_VERIFICATION_GATE.",
         ),
         why_this_exists=(
             "`build-failure-triage` adapts ECC's build-fix and PR-test-analysis posture into an OMH-native workflow so failed checks "
@@ -5501,7 +5509,7 @@ _DEFINITIONS = [
             "Do not treat a planned command, stale output, green local check, or prepared handoff as fresh verification evidence.",
             "Read generated paths from a map the repository declares; where none exists report `map_not_declared` and never infer one from filename patterns, directory names, or a generated-file header, because a false positive redirects correct work while the miss it prevents only costs a rerun.",
             "Do not collapse build, lint, tests, security, generated docs, review, CI, DCO, merge-readiness, or merge into one claim.",
-            f"Failed or unavailable checks must produce HOLD/BLOCK with a rerun or remediation path; the one exception is a failure proven `{_PRE_EXISTING}`, which the verdict names instead of charging to the change.",
+            "Failed or unavailable checks must produce HOLD/BLOCK with a rerun or remediation path.",
             "A change touching an authentication, secrets/config, schema/migration, or payment/crypto path escalates to the thorough verification lane regardless of diff size.",
             "Refuse completion, do not merely report it, when the claim carries an unlinked TODO/FIXME/stub marker in changed code, a suppressed test with no linked reason, placeholder or self-referential evidence ('TBD', 'works as expected'), or a proof word ('fixed', 'verified', 'passing') with no observed evidence naming a command; each refusal names its category, the offending excerpt, and the remedy.",
             "Before a diff deletes a validation/refusal/sanitization/permission/allowlist check at a trust boundary, or a negative test named for it ('refuses', 'rejects', 'denies', 'blocks', 'invalid'), require a named adversarial or regression case proving the boundary still refuses what it should; a guard that only moves elsewhere in the same diff is not a deletion, but a deletion with no negative case behind it -- in the diff or named in evidence -- earns no completion claim.",
@@ -5511,11 +5519,12 @@ _DEFINITIONS = [
             "Tie every completion claim to the smallest check that proves it, then broaden for shared surfaces.",
             "When a diff touches a declared generated path, name its source of truth and regeneration command before the edit rather than after a byte gate rejects it; a diff touching a generator and its output together is the correct shape, not a violation — load `references/generated-artifact-provenance.md` for the declaration and reporting rules.",
             f"Record every field the `{OBSERVED_CHECK_RESULTS_TOKEN}` artifact expectation below names, "
-            "for each observed result; a field left out is a gap in the record, not a shorter record.",
+            f"for each observed result ({observed_check_results_failing_only_note()}); "
+            "a field left out is a gap in the record, not a shorter record.",
             "For native `omh_todo` checkpoints, load the todo-checklist closing recipe; `record` then `recall` this verification declaration. Stored declarations are not proof.",
             "When the change answers to a written spec, plan, or issue, load `references/requirement-coverage-map.md` and map requirement to task to evidence under stable ids before claiming coverage.",
-            f"Give each failing check an `origin`: {FAILURE_ORIGIN_PROOF_RULE}.",
-            f"Return PASS only when every required check passes or its failure is proven `{_PRE_EXISTING}`, and stale or missing evidence is resolved; never over an `{_UNKNOWN_ORIGIN}` origin. A `{_PRE_EXISTING}` failure is named in the verdict with its merge-base run and stays open for its owner; CI or merge-readiness that requires that check stays unmet.",
+            f"Give each failing check an `origin`: {FAILURE_ORIGIN_PROOF_RULE}. {FAILURE_ORIGIN_PROOF_NAMING}.",
+            f"Return PASS only when required checks pass and stale or missing evidence is resolved; PASS never stands beside a failing required check, whatever its origin. A required check that fails `{_PRE_EXISTING}` is HOLD worded as not charged to the change, naming the merge-base run that proves it, and only when the failing run's scope still covered the change: a failure that stopped the check before it exercised the change, such as a collection or import error, leaves that check as missing evidence. `{_UNKNOWN_ORIGIN}` is HOLD with the merge-base run named as the missing evidence.",
             "Keep fixes, reruns, review, CI, and merge as separate observed states.",
         ),
         why_this_exists=(
@@ -7107,7 +7116,7 @@ _DEFINITIONS = [
             "Judge maintainability findings against the named baseline in `omh-code-review/references/smell-baseline.md`: a baseline smell is a judgement call to argue from evidence, never an automatic finding, and the reviewed repository's own standards override the baseline wherever they conflict.",
             "Close with two lists beside the verdict: what was checked and found clean, and what could not be assessed with the reason. An absent finding is evidence only when the closing says the surface was actually checked.",
             HermesReferenceLine(
-                "Hermes handles two parts of a review itself; load `omh-code-review/references/native-review-contract.md` for both. When `delegate_task` is in your tool list or tool_search finds it, pass the findings schema as the reviewer task's `output_schema`: a return whose `schema_valid` is false after the host's one correction turn is `not_observed`, never a pass, whatever the task's status says. Inside a kanban review worker, `no_ship` becomes the request-changes transition that `sdlc-review` makes.",
+                "Hermes handles two parts of a review itself; load `omh-code-review/references/native-review-contract.md` for both. When `delegate_task` is in your tool list or tool_search finds it, pass the findings schema as the reviewer task's `output_schema`. The host validates the return, but its `schema_valid` record reaches you only when the call returns its results in the same turn; a result that arrives later as a completion message carries none, so check that summary against the schema yourself and never read `completed` as validated. A return that fails the contract is `not_observed`, never a pass. Inside a kanban review worker, `no_ship` becomes the request-changes transition that `sdlc-review` makes.",
                 "references/native-review-contract.md",
             ),
             "When the reviewed work ran in a Hermes session, cite `session_file_activity/v1` (`omh quality-evidence file-activity --hermes-session <id> --json`) to scope which workspace files its read_file, write_file, and patch calls touched, with the outcome Hermes recorded; it is file lineage, never file-content, diff, test, review, CI, or merge evidence.",

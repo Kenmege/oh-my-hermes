@@ -66,6 +66,7 @@ from ..coding.wait_strategy import (
 )
 from ..evidence.observed_check_results import (
     OBSERVED_CHECK_RESULTS_TOKEN,
+    observed_check_results_failing_only_note,
     observed_check_results_field_phrase,
 )
 from ..plugin_bundle.omh.awareness import (
@@ -1942,9 +1943,13 @@ HANDOVER_RECORD_SOURCES = (
         # the whole shape, which is how a reader of this table came to record a
         # result with no freshness on it. Names only: the meanings are on the
         # gate's own artifact expectation, and a table cell is not where a
-        # reader should meet them for the first time.
+        # reader should meet them for the first time. One limit does travel
+        # with the names: "for each check that ran" would otherwise ask a
+        # passing row for an origin, so the cell says which field is the
+        # failing row's alone, from the same declaration.
         supplies=(
-            f"{observed_check_results_field_phrase()} for each check that ran, "
+            f"{observed_check_results_field_phrase()} for each check that ran "
+            f"({observed_check_results_failing_only_note()}), "
             "plus which checks are missing or failed"
         ),
         held_in=HANDOVER_NATIVE_DECLARATION,
@@ -7605,7 +7610,22 @@ def _code_review_reference_templates_cached() -> tuple[SkillReferenceTemplate, .
 # else stays optional and extra keys are allowed: Hermes spends one correction
 # turn on a mismatch and no more, so a contract that rejects a good review over
 # a field nobody reads turns that review into `not_observed`.
-_REVIEW_CONFIDENCE_SCHEMA: dict[str, object] = {"enum": ["low", "medium", "high"]}
+#
+# One field is conditional. A `ship` with no finding and nothing named as
+# checked is the emptiest answer a reviewer can give, and it would validate
+# without the `if`/`then` below. The skill already says an absent finding is
+# evidence only when the closing names the surface that was checked, so a
+# `ship` has to carry a non-empty `checked_clean`. `no_ship` is left alone: it
+# can rest on the spec axis with no finding at all.
+#
+# The values `confidence` takes are declared once here. The schema's enum and
+# the sentence in the dispatch reference are both built from this tuple, so the
+# page cannot name a vocabulary the schema does not enforce.
+REVIEW_CONFIDENCE_VALUES: tuple[str, ...] = ("low", "medium", "high")
+_REVIEW_CONFIDENCE_SCHEMA: dict[str, object] = {"enum": list(REVIEW_CONFIDENCE_VALUES)}
+_REVIEW_CONFIDENCE_PHRASE = (
+    ", ".join(f"`{value}`" for value in REVIEW_CONFIDENCE_VALUES[:-1]) + f", or `{REVIEW_CONFIDENCE_VALUES[-1]}`"
+)
 _REVIEW_TEXT_LIST_SCHEMA: dict[str, object] = {"type": "array", "items": {"type": "string"}}
 REVIEW_FINDINGS_OUTPUT_SCHEMA: dict[str, object] = {
     "type": "object",
@@ -7631,6 +7651,11 @@ REVIEW_FINDINGS_OUTPUT_SCHEMA: dict[str, object] = {
         "open_questions": _REVIEW_TEXT_LIST_SCHEMA,
         "checked_clean": _REVIEW_TEXT_LIST_SCHEMA,
         "could_not_assess": _REVIEW_TEXT_LIST_SCHEMA,
+    },
+    "if": {"properties": {"verdict": {"const": "ship"}}, "required": ["verdict"]},
+    "then": {
+        "required": ["checked_clean"],
+        "properties": {"checked_clean": {"minItems": 1, "items": {"minLength": 1}}},
     },
 }
 
@@ -7746,8 +7771,10 @@ verdicts are the ones `code-review` already names.
 
 - A finding with no `path` and `line_range` does not validate as a finding. It
   goes under `open_questions`, which is where `code-review` already puts it.
-- `confidence` is `low`, `medium`, or `high`, on each finding and on the verdict.
+- `confidence` is {_REVIEW_CONFIDENCE_PHRASE}, on each finding and on the verdict.
   The skill leaves those values open; the schema is where they are fixed.
+- A `ship` names what it checked. `checked_clean` is required and non-empty on a
+  `ship`, so a verdict with no finding and nothing checked does not validate.
 - A return that does not match the schema is not a review. Ask once for a
   corrected return, naming what failed. If the second return still does not
   match, the review is `not_observed`: never a pass, and a verdict lifted out of
@@ -7862,7 +7889,9 @@ def _native_review_contract_reference() -> str:
     `review-dispatch.md`, which both targets ship.
     """
 
-    return """# Review Contracts on Hermes
+    required = ", ".join(f"`{key}`" for key in REVIEW_FINDINGS_OUTPUT_SCHEMA["required"])
+    ship_requires = ", ".join(f"`{key}`" for key in REVIEW_FINDINGS_OUTPUT_SCHEMA["then"]["required"])
+    return f"""# Review Contracts on Hermes
 
 Hermes handles two parts of a review itself when its tools are present: it
 validates a delegated reviewer's return against a schema, and its review lane
@@ -7884,32 +7913,58 @@ What the host then does, so you do not do it a second time:
 - On a mismatch it asks the reviewer once more, quoting what failed validation,
   and validates that second answer. There is no third.
 
-What comes back on the task's result:
+The host's record of that validation reaches you in one of two shapes, and
+what the `delegate_task` call itself returns tells you which.
+
+### The call returns the results, as JSON
+
+The call's own result carries a `results` list in the same turn. A delegated
+subagent gets this, and so does a session that cannot be handed a result later:
+a kanban worker, a scheduled job, a one-shot run, a stateless request, or any
+session while the background pool is full. Each entry is the host's record of
+one reviewer:
 
 | Field | Meaning | What you do |
 | --- | --- | --- |
 | `schema_valid: true` | The final answer parsed and matched | Read the findings under the report rules in `review-dispatch.md` |
-| `schema_valid: false` | It did not match; `schema_retries` set means the correction turn was already spent | The review is `not_observed`; `schema_errors` says what failed |
-| no `schema_valid` field | No schema reached the task | The return was never checked; treat it as an unstructured report |
+| `schema_valid: false` | It did not match; `schema_retries` set means the second ask was already spent | The review is `not_observed`; `schema_errors` says what failed |
+| no `schema_valid` field | No validation record: no schema was passed, or the reviewer timed out or errored before validation | Nothing was checked. A timeout or an error is `not_observed`; with no schema passed, check the return against the schema yourself |
 
-Three readings that go wrong:
+In this shape read `schema_valid` and never `status`. A contract failure is a
+failed task on some host builds and a completed one carrying the raw text on
+others, and `schema_valid` means the same thing on both.
 
-- **Reading `status`.** A contract failure arrives as a failed task on some host
-  builds and as a completed one carrying the raw, unvalidated text on others.
-  `schema_valid` means the same thing on both, so it is the only field that
-  answers whether the reviewer returned the contract.
-- **Mining the raw text for a verdict.** When `schema_valid` is false the
-  summary may still hold leads, and each is a lead you check yourself. No
-  verdict was observed. Do not add a correction turn of your own: the host
-  already spent the one the contract allows. Re-dispatch with something changed,
-  or write the findings yourself, and say which you did.
-- **Reading `schema_valid: true` as a verdict on the code.** It is a shape
-  check. A host that cannot load its JSON Schema validator accepts any answer
-  that parses as JSON, so confirm `verdict` and each finding's fields are there
-  before you use them.
+### The call returns a handle, and the result arrives later as a message
 
-A schema the host rejects as malformed fails the whole call before any reviewer
-starts. Nothing was reviewed: fix the schema and dispatch again.
+An interactive session's own call gets this: `status: "dispatched"` now, and
+afterwards a completion message that prints each task's status, its summary,
+and any error. It prints no `schema_valid`, `schema_errors`, or
+`schema_retries`. The message is not a validation record, whether the return
+passed or failed, so the status and the summary are all you have:
+
+- A failed status whose error names the output contract is a contract failure.
+  The review is `not_observed`.
+- `completed` is not validation. On some host builds a return that failed the
+  contract arrives as completed, with the raw text and no marker. Before you
+  read its verdict, check the summary against the schema yourself: one JSON
+  value carrying {required},
+  each finding's required fields, and {ship_requires} on a `ship`. A summary
+  that does not match is `not_observed`.
+
+Two readings go wrong in either shape:
+
+- **Mining the raw text for a verdict.** A return that failed the contract may
+  still hold leads, and each is a lead you check yourself. No verdict was
+  observed. Do not ask the same reviewer again: the host already spent the one
+  extra ask the contract allows. Re-dispatch with something changed, or write
+  the findings yourself, and say which you did.
+- **Reading a matched shape as a verdict on the code.** `schema_valid: true`, or
+  a summary you matched yourself, is a shape check. A host that cannot load its
+  JSON Schema validator accepts any answer that parses as JSON, so confirm the
+  fields are there before you use them.
+
+If the host refuses the schema itself as malformed, the call ends there and no
+reviewer runs. Nothing was reviewed: fix the schema and dispatch again.
 
 ## 2. Inside a kanban review worker
 
@@ -7920,14 +7975,20 @@ decides nothing about the card.
 
 | `code-review` result | What happens to the card | Tool |
 | --- | --- | --- |
-| `no_ship` | Changes are requested: the `P0`/`P1` findings go in the comment, each with its `path`, `line_range`, and how it reproduces | `kanban_comment`, then `kanban_request_changes` |
+| `no_ship` | Changes are requested: the blocking findings go in the comment, each with its `path`, `line_range`, and how it reproduces. A `no_ship` that rests on the spec axis has no such finding and cites the requirement the work misses | `kanban_comment`, then `kanban_request_changes` |
 | `ship` | Nothing yet: it is one input to an approval `sdlc-review` decides against what the card asked for | `kanban_complete`, when that approval is reached |
 | `not_observed` | Nothing: the review is not done. Finish it, or escalate only when what is missing is a person's decision or an outside prerequisite | `kanban_block`, for the escalation only |
 
 - Call a transition only when it is in your tool list or tool_search finds it.
   Outside a kanban review worker `code-review` never moves a card.
+- Request changes only for what the implementer can correct. A blocker that
+  turns on a decision only a person can make is an escalation, `kanban_block`
+  with the decision named, and not a change request.
 - `ship` alone never completes a card, and a review that did not finish never
   becomes `kanban_complete`.
+- After `kanban_request_changes` the card has left your hands. Some host builds
+  still prompt a worker that ends without completing or blocking; leave that
+  prompt unanswered, because the card is the implementer's again.
 - `sdlc-review` sets the lead lens by review round: the artifact read cold, then
   the work run for real, then the original contract audited. Lead with that
   lens. `review-lenses.md` adds passes under it and never replaces it.
@@ -7936,9 +7997,9 @@ decides nothing about the card.
 
 ## Boundary
 
-A schema-valid return is a checked shape, not a verified claim. A kanban
-transition is the host's record that a decision was made, not evidence that the
-decision was right.
+A matched shape is a checked shape, not a verified claim. A kanban transition
+is the host's record that a decision was made, not evidence that the decision
+was right.
 """
 
 

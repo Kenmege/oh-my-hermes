@@ -18,6 +18,7 @@ from .observed_check_results import (
     ObservedCheckResultField,
     observed_check_result_field_names,
     observed_check_results_expectation,
+    observed_check_results_failing_only_note,
     observed_check_results_field_phrase,
 )
 
@@ -34,6 +35,7 @@ __all__ = [
     "confidence_label",
     "observed_check_result_field_names",
     "observed_check_results_expectation",
+    "observed_check_results_failing_only_note",
     "observed_check_results_field_phrase",
     "phase_label",
     "status_label",

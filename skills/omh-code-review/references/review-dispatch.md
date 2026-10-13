@@ -135,6 +135,29 @@ verdicts are the ones `code-review` already names.
         "type": "string"
       }
     }
+  },
+  "if": {
+    "properties": {
+      "verdict": {
+        "const": "ship"
+      }
+    },
+    "required": [
+      "verdict"
+    ]
+  },
+  "then": {
+    "required": [
+      "checked_clean"
+    ],
+    "properties": {
+      "checked_clean": {
+        "minItems": 1,
+        "items": {
+          "minLength": 1
+        }
+      }
+    }
   }
 }
 ```
@@ -143,6 +166,8 @@ verdicts are the ones `code-review` already names.
   goes under `open_questions`, which is where `code-review` already puts it.
 - `confidence` is `low`, `medium`, or `high`, on each finding and on the verdict.
   The skill leaves those values open; the schema is where they are fixed.
+- A `ship` names what it checked. `checked_clean` is required and non-empty on a
+  `ship`, so a verdict with no finding and nothing checked does not validate.
 - A return that does not match the schema is not a review. Ask once for a
   corrected return, naming what failed. If the second return still does not
   match, the review is `not_observed`: never a pass, and a verdict lifted out of

@@ -41,6 +41,12 @@ three values are the whole vocabulary: `introduced`, `pre_existing`, and
 `unknown`. What proves each one is a rule the gate states beside the row
 (`verification-gate`, and `build-failure-triage` for a failure cluster), not a
 property of the field, so it is not repeated here.
+
+`failing_only` is how that limit reaches the surfaces that name the fields
+without their meanings. The gate tells a reader that a field left out of a row
+is a gap in the record, and the handover table says the fields are supplied for
+each check that ran; read beside either sentence, a bare `origin` asks for an
+origin on a check that passed. Both now render the limit from the flag.
 """
 
 from __future__ import annotations
@@ -64,10 +70,16 @@ class ObservedCheckResultField:
     declaration appears, so a reader of any surface can tell whether they are
     recording the field or only naming it. Empty means the name is its own
     definition.
+
+    ``failing_only`` marks a field a row carries only when its check failed.
+    The full declaration says so inside the parenthetical, and
+    `observed_check_results_failing_only_note` says so for a surface that
+    prints the names alone.
     """
 
     name: str
     meaning: str = ""
+    failing_only: bool = False
 
 
 OBSERVED_CHECK_RESULT_FIELDS: Final[tuple[ObservedCheckResultField, ...]] = (
@@ -79,7 +91,8 @@ OBSERVED_CHECK_RESULT_FIELDS: Final[tuple[ObservedCheckResultField, ...]] = (
     ObservedCheckResultField("freshness", "when it ran, and whether the tree has moved since"),
     ObservedCheckResultField(
         "origin",
-        f"for a failing check: {', '.join(FAILURE_ORIGINS[:-1])}, or {FAILURE_ORIGINS[-1]}",
+        f"{', '.join(FAILURE_ORIGINS[:-1])}, or {FAILURE_ORIGINS[-1]}",
+        failing_only=True,
     ),
 )
 
@@ -100,10 +113,20 @@ def observed_check_results_field_phrase() -> str:
     return _serial_phrase(observed_check_result_field_names())
 
 
+def observed_check_results_failing_only_note() -> str:
+    """Which fields a passing row leaves out, for a surface that names fields without meanings."""
+    names = tuple(f"`{field.name}`" for field in OBSERVED_CHECK_RESULT_FIELDS if field.failing_only)
+    return f"{_serial_phrase(names)} on a failing check only"
+
+
+def _field_gloss(field: ObservedCheckResultField) -> str:
+    return f"for a failing check: {field.meaning}" if field.failing_only else field.meaning
+
+
 def observed_check_results_expectation() -> str:
     """The full declaration: the row's token, its fields, and what each is for."""
     rendered = tuple(
-        f"{field.name} ({field.meaning})" if field.meaning else field.name
+        f"{field.name} ({_field_gloss(field)})" if field.meaning else field.name
         for field in OBSERVED_CHECK_RESULT_FIELDS
     )
     return f"{OBSERVED_CHECK_RESULTS_TOKEN} with {_serial_phrase(rendered)}"

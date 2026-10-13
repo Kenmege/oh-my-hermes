@@ -615,7 +615,14 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # Stacked on the three `websearch-setup` raises above: 487221 is that tree's
 # value, this change moves only the `todo-checklist` row, and 487704 is the
 # producer's reading of the combined tree.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 487704
+# 487704 -> 487739: `observed_check_results/v1` gained `origin`, a field only
+# a failing check carries. `verification-gate`'s quality bar tells a reader
+# that a field left out of a row is a gap in the record, which read alone
+# asks a passing row for an origin, so that line now says which field is the
+# failing row's. It is the third quality-bar line and the capability row
+# carries the first four. The rest of the origin rules sit below that window
+# and do not reach this section. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 487739
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

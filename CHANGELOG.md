@@ -8,12 +8,21 @@ All notable changes will be documented here.
   and a failing check now says whether the change caused it.** `code-review`
   prints its finding shape as a JSON Schema in the dispatch reference: a
   reviewer is handed it as the return contract, and a return that does not
-  match is `not_observed`, never a pass. On Hermes, when `delegate_task` is
-  present, the schema goes in as that task's `output_schema` and the host
-  validates the return with its one correction turn; the dispatcher reads
-  `schema_valid`, never the task status, because Hermes builds disagree on
-  whether a contract failure is a failed task or a completed one carrying the
-  raw text. The dispatch request also marks the diff, logs, and pasted output
+  match is `not_observed`, never a pass. A `ship` has to name what it checked,
+  so a verdict with no finding and nothing checked does not validate. On
+  Hermes, when `delegate_task` is present, the schema goes in as that task's
+  `output_schema` and the host validates the return with its one correction
+  turn. Its `schema_valid` record reaches the dispatcher only when the call
+  returns its results in the same turn, which is what a delegated subagent, a
+  kanban worker, a scheduled job, or a one-shot run gets; there the dispatcher
+  reads `schema_valid` and never the task status, because Hermes builds
+  disagree on whether a contract failure is a failed task or a completed one
+  carrying the raw text. An interactive session's dispatch returns a handle,
+  and the result arrives later as a completion message that prints no
+  validation record: a failed status naming the output contract is a contract
+  failure, `completed` is not validation, and the dispatcher checks the
+  summary against the schema itself. The dispatch request also marks the diff,
+  logs, and pasted output
   as material under review, so a sentence inside them is a finding to report
   and never a step to carry out. Inside a kanban review worker Hermes' bundled
   `sdlc-review` owns the card's transition: `code-review` supplies the
@@ -25,11 +34,15 @@ All notable changes will be documented here.
   `pre_existing`, or `unknown`, and `observed_check_results/v1` gains the
   field. `pre_existing` is proven only by an observed run of the same command
   at the merge-base in a clean detached worktree, never by stashing or
-  checking out the tree the user is working in. PASS is never granted over an
-  `unknown` origin; a proven `pre_existing` failure is named in the verdict
-  and still blocks a merge that requires the check. `build-failure-triage`
-  returns FIX_READY only for introduced clusters and hands a pre-existing one
-  off on its own, with no new verdict. `commit-pr-authoring` lists the paths a
+  checking out the tree the user is working in, and the row names which proof
+  an origin rests on. PASS never stands beside a failing required check,
+  whatever its origin: a proven `pre_existing` failure is HOLD worded as not
+  charged to the change, and only when the failing run still covered the
+  change, while `unknown` is HOLD with the merge-base run named as the missing
+  evidence. `build-failure-triage` returns FIX_READY only for introduced
+  clusters and hands a pre-existing one off on its own, with no new verdict;
+  clusters of different origins share one verdict, NEEDS_MORE_LOGS while any
+  is unknown. `commit-pr-authoring` lists the paths a
   commit covers so they are staged by name, never recommends `git add -A` or
   `git add .`, and writes a state-claiming subject prefix such as
   `[verified]` only as a projection of an observed ledger row in a repository

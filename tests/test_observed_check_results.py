@@ -22,6 +22,7 @@ from omh.evidence.observed_check_results import (
     OBSERVED_CHECK_RESULTS_TOKEN,
     observed_check_result_field_names,
     observed_check_results_expectation,
+    observed_check_results_failing_only_note,
     observed_check_results_field_phrase,
 )
 from omh.skills.packaging import (
@@ -165,17 +166,44 @@ class ObservedCheckResultsDeclarationTests(unittest.TestCase):
         added there reaches every surface that renders the row; checked here
         because a hand-typed gloss would keep passing while it named two.
         """
-        meanings = {field.name: field.meaning for field in OBSERVED_CHECK_RESULT_FIELDS}
-        self.assertIn("origin", meanings, "`origin` left the observed_check_results/v1 row")
+        fields = {field.name: field for field in OBSERVED_CHECK_RESULT_FIELDS}
+        self.assertIn("origin", fields, "`origin` left the observed_check_results/v1 row")
         self.assertEqual(FAILURE_ORIGINS, ("introduced", "pre_existing", "unknown"))
         for value in FAILURE_ORIGINS:
-            self.assertIn(value, meanings["origin"], f"the `origin` gloss no longer names `{value}`")
+            self.assertIn(value, fields["origin"].meaning, f"the `origin` gloss no longer names `{value}`")
         self.assertIn(
-            "failing check",
-            meanings["origin"],
-            "the `origin` gloss no longer says it applies to a failing check; on a "
-            "passing row the field has nothing to record",
+            "origin (for a failing check: introduced, pre_existing, or unknown)",
+            observed_check_results_expectation(),
+            "the rendered declaration no longer says `origin` applies to a failing check; "
+            "on a passing row the field has nothing to record",
         )
+
+    def test_a_passing_row_is_never_asked_for_an_origin(self) -> None:
+        """Every surface that names the fields without meanings says which one is conditional.
+
+        The gate tells a reader that a field left out of a row is a gap, and
+        the handover table says the fields are supplied for each check that
+        ran. Beside either sentence a bare `origin` asks for an origin on a
+        check that passed. The limit is a flag on the field, and both
+        sentences render it, so a second conditional field would reach them
+        without anyone retyping the sentence.
+        """
+        conditional = [field.name for field in OBSERVED_CHECK_RESULT_FIELDS if field.failing_only]
+        self.assertEqual(conditional, ["origin"])
+        note = observed_check_results_failing_only_note()
+        self.assertEqual(note, "`origin` on a failing check only")
+        gate = next(t.content for t in builtin_skill_templates() if t.name == "verification-gate")
+        record_line = next(line for line in gate.splitlines() if "a field left out is a gap in the record" in line)
+        self.assertIn(f"({note})", record_line)
+        cells = [
+            line
+            for _label, text in _rendered_surfaces()
+            for line in text.splitlines()
+            if f"{observed_check_results_field_phrase()} for each check that ran" in line
+        ]
+        self.assertGreaterEqual(len(cells), 2, "the handover table no longer renders the field list for each check that ran")
+        for cell in cells:
+            self.assertIn(f"for each check that ran ({note})", cell)
 
     def test_no_rendered_surface_restates_the_field_list(self) -> None:
         """A surface that names this row names all of its fields, or none.
