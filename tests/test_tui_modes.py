@@ -392,8 +392,8 @@ class DocumentedApprovalsToggleTests(unittest.TestCase):
         entry = text[text.index("**OMH TUI**:") : text.index("**Hermes gateway protocol**:")]
         self.assertIn(
             "Shift+Tab may turn on Hermes' per-session yolo, so Hermes stops asking for approvals in that one session "
-            "(a `config.set` naming the session, never `approvals.mode`), and the TUI turns it off again before it "
-            "leaves the session.",
+            "(a `config.set` naming the session, never `approvals.mode`), and the TUI sends that session an explicit "
+            "off before it leaves it.",
             entry,
         )
 

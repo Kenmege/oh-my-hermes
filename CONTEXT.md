@@ -356,8 +356,8 @@ launcher provided and speaks its stdio JSON-RPC. Layout, input, rendering and
 the OMH panels are OMH's; every model call, tool run and approval decision is
 the gateway's. Shift+Tab may turn on Hermes' per-session yolo, so Hermes stops
 asking for approvals in that one session (a `config.set` naming the session,
-never `approvals.mode`), and the TUI turns it off again before it leaves the
-session. It writes no prompt text, transcript or server-request frame;
+never `approvals.mode`), and the TUI sends that session an explicit off before
+it leaves it. It writes no prompt text, transcript or server-request frame;
 its only writes are metadata (the launcher's active-session file, and what
 OMH's HUD reader and model-chain picker write under the OMH home). Finished
 transcript lines go to the terminal's own scrollback; only a bottom region
