@@ -47,16 +47,16 @@ from _vt_screen import VTScreen
 from omh.tui import terminal as terminal_module
 from omh.skin_pack import hex_to_rgb
 from omh.tui.app import (
-    APPROVAL_ARM_SECONDS,
     BANNER_HINT,
     EXIT_HINT,
+    SLOT_ARM_SECONDS,
     App,
     initial_theme,
     main,
     picker_key,
     run_model_chain_picker,
 )
-from omh.tui.gateway import GatewayClient, GatewayUnavailable, gateway_spawn
+from omh.tui.gateway import GatewayClient, GatewayUnavailable, ServerRequest, gateway_spawn
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Paste
 from omh.tui.launch import FALLBACK_EXIT
 from omh.tui.prompts import open_request
@@ -670,8 +670,8 @@ class PromptSlotTests(AppTestCase):
         self.assertIn("It was blocked", run.terminal.history())
 
     def armed(self, run: Run, label: str) -> Callable[[], bool]:
-        """Ready once the approval that step `label` saw has been open past the arm delay."""
-        return lambda: time.monotonic() - run.terminal.fired[label] > APPROVAL_ARM_SECONDS + 0.05
+        """Ready once the slot that step `label` saw has been open past the arm delay."""
+        return lambda: time.monotonic() - run.terminal.fired[label] > SLOT_ARM_SECONDS + 0.05
 
     def test_an_approval_opens_a_slot_and_d_sends_the_explicit_deny(self) -> None:
         run = self.approval_run()
@@ -699,8 +699,21 @@ class PromptSlotTests(AppTestCase):
         self.run_main(run)
         self.assert_denied(run)
 
+    def test_up_then_enter_on_an_armed_approval_still_denies(self) -> None:
+        # Up then Enter is the composer's recall-and-resend. On an approval Up moves nothing,
+        # so the Enter answers the default deny; the replay accepts only the deny.
+        run = self.approval_run()
+        run.terminal.script(
+            self.submit(run, "Run rm -rf ./omh-m0-probe-dir"),
+            Step(when=run.terminal.shows("Hermes asks to run"), label="the approval slot"),
+            Step(b"\x1b[A\r", when=self.armed(run, "the approval slot"), label="armed"),
+            Step(b"\x04", when=lambda: "proceed." in run.terminal.history() and run.terminal.idle(), label="end"),
+        )
+        self.run_main(run)
+        self.assert_denied(run)
+
     def test_keys_that_arrive_as_an_approval_opens_are_ignored(self) -> None:
-        # Left, Left, Enter would allow once. Typed for the composer as the request lands, they
+        # Right, Enter would allow once. Typed for the composer as the request lands, they
         # reach the slot inside the arm delay and do nothing; the replay accepts only the deny.
         run = self.approval_run()
         terminal = run.terminal
@@ -711,10 +724,10 @@ class PromptSlotTests(AppTestCase):
         app.startup()
         terminal.script(
             self.submit(run, "Run rm -rf ./omh-m0-probe-dir"),
-            Step(b"\x1b[D\x1b[D\r", when=terminal.shows("Hermes asks to run"), label="the approval slot"),
-            Step(when=lambda: not now.__setitem__(0, 100.0 + APPROVAL_ARM_SECONDS / 2), label="half the delay"),
+            Step(b"\x1b[C\r", when=terminal.shows("Hermes asks to run"), label="the approval slot"),
+            Step(when=lambda: not now.__setitem__(0, 100.0 + SLOT_ARM_SECONDS / 2), label="half the delay"),
             Step(b"\r", when=terminal.shows("Hermes asks to run"), label="still arming"),
-            Step(when=lambda: not now.__setitem__(0, 100.0 + APPROVAL_ARM_SECONDS), label="the delay passed"),
+            Step(when=lambda: not now.__setitem__(0, 100.0 + SLOT_ARM_SECONDS), label="the delay passed"),
             Step(b"d", when=terminal.shows("Hermes asks to run"), label="armed"),
             Step(b"\x04", when=lambda: "proceed." in terminal.history() and terminal.idle(), label="end"),
         )
@@ -801,10 +814,39 @@ class PromptSlotTests(AppTestCase):
         )
         run.terminal.script(
             self.submit(run, "Ask me red or blue."),
-            Step(b"2", when=run.terminal.shows("Which color do you prefer?"), label="the clarify slot"),
+            Step(when=run.terminal.shows("Which color do you prefer?"), label="the clarify slot"),
+            Step(b"2", when=self.armed(run, "the clarify slot"), label="armed"),
             Step(b"\x04", when=run.terminal.idle, label="the end of the turn"),
         )
         self.run_main(run)
+        self.assert_clean_run(run)
+        answers = [frame for frame in run.frames if frame.get("id") == "srq-c7e7e10e23ab"]
+        self.assertEqual(answers, [{"jsonrpc": "2.0", "id": "srq-c7e7e10e23ab", "result": {"answers": {"q0": "blue"}}}])
+
+    def test_keys_and_an_enter_that_arrive_as_a_clarify_opens_answer_nothing(self) -> None:
+        # Enter would pick the highlighted `red`, and so would `1`. Typed for the composer as the
+        # question lands, they reach it inside the arm delay and do nothing; the replay records `blue`.
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "clarify_turn"), answers=startup_answers())
+        )
+        terminal = run.terminal
+        now = [100.0]
+        client = self.make_client(run)(gateway_spawn(run.environ))
+        client.start(ready_timeout=10.0)
+        app = App(terminal, client, run.environ, poller=run.poller, clock=lambda: now[0])
+        app.startup()
+        question = terminal.shows("Which color do you prefer?")
+        terminal.script(
+            self.submit(run, "Ask me red or blue."),
+            Step(b"\r", when=question, label="the clarify slot"),
+            Step(when=lambda: not now.__setitem__(0, 100.0 + SLOT_ARM_SECONDS / 2), label="half the delay"),
+            Step(b"1", when=question, label="still arming"),
+            Step(when=lambda: not now.__setitem__(0, 100.0 + SLOT_ARM_SECONDS), label="the delay passed"),
+            Step(b"2", when=question, label="armed"),
+            Step(b"\x04", when=terminal.idle, label="the end of the turn"),
+        )
+        with terminal:
+            run.code = app.run()
         self.assert_clean_run(run)
         answers = [frame for frame in run.frames if frame.get("id") == "srq-c7e7e10e23ab"]
         self.assertEqual(answers, [{"jsonrpc": "2.0", "id": "srq-c7e7e10e23ab", "result": {"answers": {"q0": "blue"}}}])
@@ -816,7 +858,8 @@ class PromptSlotTests(AppTestCase):
         terminal = run.terminal
         terminal.script(
             self.submit(run, "Ask me red or blue."),
-            Step(b"blue\r", when=terminal.shows("Which color do you prefer?"), label="the clarify slot"),
+            Step(when=terminal.shows("Which color do you prefer?"), label="the clarify slot"),
+            Step(b"blue\r", when=self.armed(run, "the clarify slot"), label="armed"),
             Step(b"\x1b[A", when=lambda: terminal.idle() and not terminal.shows("1. red")(), label="idle"),
             Step(b"\x03\x04", when=lambda: composer_row(terminal.screen.lines()) == "› Ask me red or blue.",
                  label="the recalled prompt"),
@@ -940,6 +983,42 @@ class StatusLineTests(unittest.TestCase):
         self.assertTrue(line_text(line).endswith(" │ waiting on you"), line_text(line))
         self.assertEqual(line_width(line), 24)
 
+
+
+class SlotArmingTests(unittest.TestCase):
+    """Every slot, not only an approval, ignores its keys and the composer's Enter while it arms."""
+
+    def open_slot(self, method: str, params: dict) -> tuple[App, list[float], list[tuple[str, dict]]]:
+        from types import SimpleNamespace
+
+        now = [100.0]
+        sent: list[tuple[str, dict]] = []
+        client = SimpleNamespace(respond=lambda request_id, frame: sent.append((request_id, frame)))
+        app = App(ScriptedTerminal(), client, {}, poller=FakePoller(), clock=lambda: now[0])  # type: ignore[arg-type]
+        app._on_server_request(ServerRequest("srq-1", method, params))
+        return app, now, sent
+
+    def test_an_enter_inside_the_delay_sends_no_value(self) -> None:
+        for method, params in (("sudo", {"command": "apt install x"}), ("secret", {"env_var": "TOKEN_X"}),
+                               ("vault.code", {})):
+            with self.subTest(method=method):
+                app, now, sent = self.open_slot(method, params)
+                app._on_input(Key(ENTER))
+                self.assertEqual(sent, [])
+                self.assertIsNotNone(app.slot)
+                now[0] += SLOT_ARM_SECONDS
+                app._on_input(Key(ENTER))
+                self.assertEqual(sent, [("srq-1", {"result": {"value": ""}})])
+
+    def test_a_clarify_ignores_digits_escape_and_enter_inside_the_delay(self) -> None:
+        params = {"questions": [{"qid": "q0", "question": "Which?", "choices": ["red", "blue"]}]}
+        app, now, sent = self.open_slot("clarify", params)
+        for key in (Key(CHAR, "1"), Key(ESCAPE), Key(DOWN), Key(ENTER)):
+            app._on_input(key)
+        self.assertEqual(sent, [])
+        now[0] += SLOT_ARM_SECONDS
+        app._on_input(Key(CHAR, "2"))
+        self.assertEqual(sent, [("srq-1", {"result": {"answers": {"q0": "blue"}}})])
 
 
 class StickyPromptTests(unittest.TestCase):

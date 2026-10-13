@@ -7,8 +7,10 @@ or withdrawn by the gateway. Three rules shape this module:
 - Nothing is answered on the person's behalf. Every answer comes from a key
   they pressed or text they submitted; Esc or Ctrl+C sends the contract's
   decline frame (an explicit deny for approvals). Allowing a command takes
-  the arrows and then Enter: a letter can only deny, and the app ignores
-  every key for a moment after an approval opens. A request the gateway
+  the arrows and then Enter: deny comes first and is selected, the narrowest
+  allow sits next to it, the selection does not wrap, Up and Down do nothing,
+  and a letter can only deny. The app ignores every key, and the composer's
+  Enter, for a moment after any slot opens. A request the gateway
   withdraws itself (its own timeout, an interrupt) arrives as
   `request.cancel`, and the app closes the slot without answering.
 - Nothing is left unanswered. A request the TUI cannot show is answered at
@@ -31,9 +33,12 @@ from .width import line_width, truncate_line, wrap_line
 
 # `always` writes a permanent allow rule into the person's Hermes config. The
 # OMH TUI offers the choices that end with this session; `always` stays a
-# decision for Hermes' own terminal.
-APPROVAL_CHOICES = ("once", "session", "deny")
+# decision for Hermes' own terminal. The order is the distance from safe:
+# deny first (and selected), then the narrowest allow, then the broadest.
+APPROVAL_CHOICES = ("deny", "once", "session")
 _APPROVAL_LABELS = {"once": "allow once", "session": "allow this session", "deny": "deny"}
+# The narrowest form: short words, never single letters, which would read as shortcuts.
+_APPROVAL_NARROW_LABELS = {"once": "once", "session": "sess", "deny": "deny"}
 # A letter can only deny. Allowing takes the arrows and Enter, so a key typed
 # for the composer as the slot opens can never run a command.
 _DENY_KEYS = frozenset("dn")
@@ -140,11 +145,16 @@ class PromptSlot:
         return None
 
     def _approval_key(self, key: Key) -> Answer | None:
+        """Left and Right move and stop at either end; Up and Down do nothing.
+
+        Up then Enter is the composer's recall-and-resend, so neither key may
+        carry the selection off the default deny.
+        """
         choices = self.approval_choices()
-        if key.name in (LEFT, UP):
-            self.selected = (self.selected - 1) % len(choices)
-        elif key.name in (RIGHT, DOWN):
-            self.selected = (self.selected + 1) % len(choices)
+        if key.name == LEFT:
+            self.selected = max(self.selected - 1, 0)
+        elif key.name == RIGHT:
+            self.selected = min(self.selected + 1, len(choices) - 1)
         elif key.name == ENTER:
             return Answer(self.request_id, {"result": {"choice": choices[self.selected]}})
         elif key.name == CHAR and not key.ctrl and not key.alt and key.char.lower() in _DENY_KEYS:
@@ -216,9 +226,9 @@ class PromptSlot:
         return [header, *command_rows, choices]
 
     def _approval_choice_row(self, width: int, theme: Theme) -> Line:
-        """The choices on one row; short labels when the long ones would cut `deny` off the edge."""
+        """The choices on one row, deny first; shorter labels when the long ones would not all fit."""
         keys = "  ←→ then Enter · d or Esc denies"
-        for form, hint in (("long", keys), ("short", keys), ("short", ""), ("letter", "")):
+        for form, hint in (("long", keys), ("short", keys), ("short", ""), ("narrow", "")):
             spans: list[Span] = [Span("  ", theme.text)]
             for index, choice in enumerate(self.approval_choices()):
                 style = theme.menu_current if index == self.selected else theme.dim
@@ -266,8 +276,7 @@ def _approval_label(choice: str, form: str) -> str:
         return f" {_APPROVAL_LABELS[choice]} "
     if form == "short":
         return f" {choice} "
-    # The narrowest form still spells out the safe choice.
-    return " deny " if choice == "deny" else f" {choice[0]} "
+    return f" {_APPROVAL_NARROW_LABELS[choice]} "
 
 
 def open_request(request_id: str, method: str, params: dict[str, Any]) -> PromptSlot | ImmediateAnswer:

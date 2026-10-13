@@ -310,12 +310,13 @@ run and approval decision stays Hermes'; the screen is OMH's.
   lines move it.
 - When Hermes asks something (an approval, a clarify question, a sudo
   password), the question takes the slot until you answer. Nothing is answered
-  for you: Esc or Ctrl+C declines. An approval offers allow once, allow this
-  session and deny; allowing takes the arrows and then Enter, `d` or `n`
-  denies, and Enter on an untouched approval denies. Keys pressed in the first
-  moment after an approval appears are ignored, so typing that was meant for
-  the composer cannot answer it. Approving a command permanently stays a
-  choice for `hermes --tui`.
+  for you: Esc or Ctrl+C declines. An approval offers deny, allow once and
+  allow this session, in that order, with deny selected; allowing takes the
+  Right arrow and then Enter (Left and Right stop at either end, Up and Down
+  do nothing), `d` or `n` denies, and Enter on an untouched approval denies.
+  Keys pressed in the first moment after any question appears are ignored,
+  Enter included, so typing that was meant for the composer cannot answer it.
+  Approving a command permanently stays a choice for `hermes --tui`.
 - Images: drag an image file onto the terminal, press Ctrl+V for an image on
   the clipboard, or type `/image <path>`. Each one shows as a chip on the row
   above the input (`📎 shot.png 1280×720`) and goes with the next message you

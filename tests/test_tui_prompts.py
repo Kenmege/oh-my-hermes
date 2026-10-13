@@ -6,7 +6,7 @@ import unittest
 
 from _tui_lines import line_text, lines_text
 from omh.tui import prompts
-from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, Key, Paste
+from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Paste
 from omh.tui.theme import DEFAULT_THEME
 from omh.tui.width import line_width
 
@@ -38,18 +38,40 @@ def slot(method: str, params: dict) -> prompts.PromptSlot:
 
 
 class ApprovalTests(unittest.TestCase):
-    def test_always_is_never_offered(self) -> None:
-        self.assertEqual(slot("approval", APPROVAL).approval_choices(), ("once", "session", "deny"))
+    def test_always_is_never_offered_and_deny_comes_first(self) -> None:
+        self.assertEqual(slot("approval", APPROVAL).approval_choices(), ("deny", "once", "session"))
 
     def test_enter_on_an_untouched_approval_denies(self) -> None:
         answer = slot("approval", APPROVAL).handle_key(Key(ENTER))
         self.assertEqual(answer.frame, {"result": {"choice": "deny"}})
 
-    def test_moving_then_enter_allows_once(self) -> None:
+    def test_one_arrow_from_deny_reaches_allow_once_never_the_session(self) -> None:
+        approval = slot("approval", APPROVAL)
+        approval.handle_key(Key(RIGHT))
+        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "once"}})
+
+    def test_the_selection_stops_at_either_end_instead_of_wrapping(self) -> None:
+        # Left from the default deny must not wrap round to the broadest allow.
         approval = slot("approval", APPROVAL)
         approval.handle_key(Key(LEFT))
-        approval.handle_key(Key(LEFT))
-        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "once"}})
+        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "deny"}})
+        approval = slot("approval", APPROVAL)
+        for _ in range(5):
+            approval.handle_key(Key(RIGHT))
+        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "session"}})
+
+    def test_up_and_down_do_not_move_an_approval(self) -> None:
+        # Up then Enter is the composer's recall-and-resend; on an approval it must still deny.
+        for key in (UP, DOWN):
+            with self.subTest(key=key, start="deny"):
+                approval = slot("approval", APPROVAL)
+                self.assertIsNone(approval.handle_key(Key(key)))
+                self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "deny"}})
+            with self.subTest(key=key, start="once"):
+                approval = slot("approval", APPROVAL)
+                approval.handle_key(Key(RIGHT))
+                approval.handle_key(Key(key))
+                self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "once"}})
 
     def test_a_letter_can_only_deny(self) -> None:
         # A key typed for the composer must never allow a command: o, s, y and the rest do nothing.
@@ -74,7 +96,7 @@ class ApprovalTests(unittest.TestCase):
 
     def test_a_session_choice_hermes_did_not_offer_is_not_shown(self) -> None:
         approval = slot("approval", {**APPROVAL, "choices": ["once", "deny"]})
-        self.assertEqual(approval.approval_choices(), ("once", "deny"))
+        self.assertEqual(approval.approval_choices(), ("deny", "once"))
 
     def test_submitted_text_does_not_answer_an_approval(self) -> None:
         approval = slot("approval", APPROVAL)
@@ -127,8 +149,18 @@ class ApprovalTests(unittest.TestCase):
         for width in range(18, 120):
             with self.subTest(width=width):
                 row = approval.lines(width, DEFAULT_THEME, max_rows=4)[-1]
-                self.assertIn("deny", line_text(row))
+                self.assertTrue(line_text(row).lstrip().startswith("deny"), line_text(row))
                 self.assertLessEqual(line_width(row), width)
+
+    def test_the_narrowest_choice_row_spells_short_words_not_letters(self) -> None:
+        # A lone `o` or `s` reads as a shortcut, and no letter allows anything.
+        approval = slot("approval", APPROVAL)
+        self.assertEqual(line_text(approval.lines(23, DEFAULT_THEME, max_rows=4)[-1]).split(), ["deny", "once", "sess"])
+        for width in range(18, 120):
+            with self.subTest(width=width):
+                # The labels only: the hint after them names `d`, which does deny.
+                labels = line_text(approval.lines(width, DEFAULT_THEME, max_rows=4)[-1]).split("←→")[0].split()
+                self.assertFalse([word for word in labels if len(word) == 1 and word.isalpha()], labels)
 
 class ClarifyTests(unittest.TestCase):
     def test_a_number_picks_that_choice(self) -> None:

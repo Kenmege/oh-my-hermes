@@ -110,9 +110,10 @@ TICK_SECONDS = 0.1
 # A window drag sends a burst of SIGWINCH; redraw once the size has held this long.
 RESIZE_SETTLE_SECONDS = 0.15
 EXIT_CONFIRM_SECONDS = 2.0
-# Every key is ignored this long after an approval opens, so Enter or an arrow
-# typed for the composer as the request arrives cannot answer it.
-APPROVAL_ARM_SECONDS = 0.4
+# Every key a prompt slot takes, and the composer's Enter, is ignored this long
+# after the slot opens, so Enter, an arrow or a digit typed for the composer as
+# the request arrives cannot answer it (an approval, a clarify, a value prompt).
+SLOT_ARM_SECONDS = 0.4
 STARTUP_TAIL_LINES = 10
 INTERRUPTED_EXIT = 130
 # Closing the gateway on exit: stdin EOF, then terminate, then kill. The live
@@ -865,7 +866,7 @@ class App:
         if self._display_key(event):
             return
         if self.slot is not None and _slot_owns(self.slot, event, self.composer.text):
-            if self._approval_arming():
+            if self._slot_arming():
                 return
             answer = self.slot.handle_key(event)
             if answer is not None:
@@ -884,15 +885,15 @@ class App:
             self.menu_index = 0
         self._on_composer(action)
 
-    def _approval_arming(self) -> bool:
-        """Whether an approval opened too recently to take a key (`APPROVAL_ARM_SECONDS`)."""
-        if self.slot is None or self.slot.method != "approval":
-            return False
-        return self.clock() - self.slot_opened_at < APPROVAL_ARM_SECONDS
+    def _slot_arming(self) -> bool:
+        """Whether the open slot opened too recently to take a key or a submit (`SLOT_ARM_SECONDS`)."""
+        return self.slot is not None and self.clock() - self.slot_opened_at < SLOT_ARM_SECONDS
 
     def _on_composer(self, action: ComposerAction) -> None:
         if action.kind == SUBMIT:
             if self.slot is not None:
+                if self._slot_arming():
+                    return  # an Enter meant for something else answers nothing, not the highlighted choice
                 answer = self.slot.submit_text(action.text)
                 if answer is not None:
                     self._answer(answer)
