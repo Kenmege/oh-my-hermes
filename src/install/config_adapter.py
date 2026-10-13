@@ -16,6 +16,7 @@ from omh.skin_pack import SKIN_NAME, is_omh_skin_name
 
 from ..core.errors import OmhError
 from ..plugin_bundle.omh import runtime_paths
+from ..plugin_bundle.omh.skill_ownership import yaml_null, yaml_scalar
 
 from ..system.local_store import atomic_replace_text, atomic_write_text
 
@@ -935,6 +936,21 @@ def memory_provider_selection(config_text: str) -> str:
     return _section_scalar(config_text, "memory", "provider")
 
 
+def skill_create_dir_selection(config_text: str) -> str:
+    """The path in `skills.create_dir`, or "" when Hermes creates skills in its own skills directory.
+
+    Hermes ranks that directory between the profile's own skills and
+    `skills.external_dirs`, so a same-name skill there hides an OMH skill.
+    An unquoted YAML null (`~`, `null`) is unset, as it is to Hermes; a quoted
+    `"~"` is a string.
+    """
+    return _section_scalar(config_text, "skills", "create_dir", parse=_non_null_scalar).strip()
+
+
+def _non_null_scalar(value: str) -> str:
+    return "" if yaml_null(value) else _scalar_value(value)
+
+
 def display_skin_selection(config_text: str) -> str:
     """The name in `display.skin`, or "" when Hermes resolves its built-in default.
 
@@ -1847,18 +1863,21 @@ def _joined(lines: list[str]) -> str:
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def _section_scalar(config_text: str, section: str, key: str) -> str:
+def _section_scalar(
+    config_text: str, section: str, key: str, *, parse: Callable[[str], str] | None = None
+) -> str:
+    read = parse or _scalar_value
     dotted = f"{section}.{key}:"
     for index, line in enumerate(config_text.splitlines()):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
         if stripped.startswith(dotted) and not line.startswith(" "):
-            return _scalar_value(stripped[len(dotted) :])
+            return read(stripped[len(dotted) :])
         if line.startswith("  ") and not line.startswith("    "):
             candidate, separator, rest = stripped.partition(":")
             if separator and candidate.strip() == key and _enclosing_section(config_text.splitlines(), index) == section:
-                return _scalar_value(rest)
+                return read(rest)
     return ""
 
 
@@ -1871,7 +1890,18 @@ def _enclosing_section(lines: list[str], index: int) -> str:
 
 
 def _scalar_value(value: str) -> str:
-    stripped = value.split("#")[0].strip() if not value.strip().startswith(("'", '"')) else value.strip()
+    """One scalar after `key:`; a quoted value runs to its close quote, so a trailing comment is not read.
+
+    The plugin's own reader is the one parser (`skill_ownership.yaml_scalar`).
+    Where it cannot say -- a quote that never closes, another double-quoted
+    escape -- this keeps the answer it gave before that parser existed, so a
+    quoted value followed by a comment, and a `''`, `\\\\` or `\\"` escape inside
+    quotes, now read as YAML reads them; everything else reads as before.
+    """
+    parsed = yaml_scalar(value)
+    if parsed is not None:
+        return parsed
+    stripped = value.strip()
     if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {"'", '"'}:
         return stripped[1:-1]
     return stripped

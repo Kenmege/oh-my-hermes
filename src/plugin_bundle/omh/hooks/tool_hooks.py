@@ -16,6 +16,7 @@ from ..jev_consent import disarm_tool_call as disarm_jev_tool_call
 from ..native_todo import project_native_todo
 from ..omh_roles import extract_role_marker, resolve_role_name, role_aliases, role_names
 from ..plan_stage_gate import plan_stage_edit_directive
+from ..skill_ownership import managed_skill_edit_directive
 from ..team_gate import team_start_directive
 from ..tool_bursts import (
     record_repeat_refusal,
@@ -229,6 +230,19 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
         # parallel-shot burst ledger (its claim boundary is "the host
         # dispatched the calls as one batch").
         return dict(rule_directive)
+    # An edit to a skill OMH installed is refused with a pointer to where the
+    # lesson goes (`skill_ownership`). After the person's own rules, before
+    # anything that records a dispatch, for the same reason as the guards
+    # below; it reads only `skill_manage`, and the background-review fork
+    # reaches this hook too.
+    ownership_directive = managed_skill_edit_directive(
+        tool_name=kwargs.get("tool_name"),
+        tool_input=tool_input,
+        omh_home=omh_home,
+        hermes_home=hermes_home,
+    )
+    if ownership_directive is not None:
+        return dict(ownership_directive)
     # The repeat guard runs after the user's own rules and before anything
     # that observes a dispatch, for the same reason: it intervenes on a
     # call, so nothing downstream may record that call as having happened.

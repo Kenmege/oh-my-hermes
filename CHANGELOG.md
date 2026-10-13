@@ -4,6 +4,110 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A Hermes edit to an OMH-managed skill is redirected, kept, and reported
+  instead of breaking the next update.** Hermes' background self-improvement
+  review may patch, edit, or write files into any skill it loaded, OMH's
+  managed skills included, and a foreground `skill_manage` delete of one is
+  not guarded upstream. The OMH plugin's `pre_tool_call` now refuses a
+  `skill_manage` edit, patch, write_file, remove_file, or delete whose target
+  resolves to a skill OMH's install manifest records, by installed directory
+  name and never by prefix or canonical name, including an `operations` array
+  sent as a JSON string. A same-name skill in the Hermes home's own skills
+  directory or in `skills.create_dir` takes the edit and passes, and anything
+  the hook cannot read (manifest, `config.yaml`, a stat) lets the call
+  through. The refusal names where a lesson goes: a separately named companion
+  skill, created where `skill_manage` creates skills, or OMH's
+  workflow-learning lane. A skill OMH did not install passes untouched.
+  `omh install` / `omh update` keep a managed skill as it is when Hermes'
+  curator ledger (`<hermes_home>/skills/.curator_ledger.jsonl`) accounts for
+  what is on disk: a changed SKILL.md only when the newest ledger write to it
+  left its current content, an unchanged one when a ledger write to another
+  file of the skill still matches or a file OMH renders for it that Hermes
+  removed is still absent; a row's unchanged files are not counted. Only the
+  directory OMH renders for the skill counts: a same-name copy of a managed
+  skill elsewhere in the skills directory is never kept, carried, or cleared
+  as a Hermes edit, and an edit in a directory an earlier release rendered the
+  skill into, after a release moved it, is reported as `left_behind`: not
+  carried, and, while the catalog ships the skill, left exactly where it is by
+  every pruner, with or without `--force`; the summary says to delete that
+  directory by hand once it is no longer needed. A kept skill is carried into
+  a new generation on a staged update (when the install's skill profile
+  carries it) and listed with the ledger's actor, action, and time. `--force`
+  clears the render directory of every skill it renders again that holds a
+  Hermes write, never through a category directory that links out of the
+  skills directory, and the summary says whether the ledger still holds a copy
+  of the replaced files and names any file it removed that OMH does not render
+  and the ledger has no copy of. Pruning now follows provenance. An install
+  marks every manifest record whose SKILL.md it wrote with the hash it wrote
+  (`rendered_sha256`) and flags the manifest (`render_marks`). Under a flagged
+  manifest, the orphan pruner and the flat-layout pruner remove a marked
+  directory only when its SKILL.md still has that hash, its record carries no
+  kept Hermes-edit evidence, and Hermes' ledger records no write under it (a
+  recorded write counts whether or not it is still on disk, and whether it
+  came before or after OMH last rendered there, which OMH cannot tell, since a
+  removal is final); every other file in that directory goes with it (for a
+  directory that is also a category, only its own SKILL.md and a real
+  `references/` directory, and the summary names only what went), and the
+  summary names each directory removed by its path
+  (`removed_skill_directories` in the result) and says only what was checked.
+  An unmarked record (`not_rendered_by_omh`) is never removed, with or without
+  `--force`: your own skill in a category directory or beside a managed one
+  stays. A marked directory whose SKILL.md changed or under which a Hermes
+  write is recorded (`changed_since_rendered`) is left by a plain install in
+  the skills directory it writes (a staged update starts its new generation
+  without it, as it does without any other local change that is not a kept
+  Hermes edit) and removed by `--force`, except under `OMH_SECURITY=strict`,
+  where `--force` overrides no local change; `--force` lists it under
+  `force_pruned_skills` with the files the ledger still holds a copy of and
+  the files that are gone for good. A ledger that exists but cannot be read, a
+  line in it that names a path in the skills directory and is not a ledger
+  row, an unterminated last line (an append may be in progress), or a profile
+  list under `<hermes_home>/profiles` that cannot be listed (or an entry in it
+  that cannot be read) may hide such a write, so a marked directory with
+  nothing else against it is left in place as `ledger_unreadable`, naming what
+  could not be read and its error (`unreadable_ledgers` in the result); a
+  missing ledger records nothing, and `--force` removes it on the same terms
+  without claiming what the ledger holds. Ledger rows are split on a newline
+  alone, as Hermes writes and trims them, so a row holding a raw U+2028,
+  U+2029, or U+0085 stays one row for every reader. Every directory left in
+  place is listed under `prune_skipped_skills` on every install, and the
+  manifest stays byte-identical across installs over an unchanged disk; the
+  summary names a `not_rendered_by_omh` directory once, on the install that
+  first records it, and the other reasons each time. The first install over a
+  manifest written before marks existed still applies the earlier rule once:
+  it removes an unchanged directory at an OMH position inside the skills
+  directory -- including one of your own, as earlier releases did -- and
+  `--force` also removes a changed one; the summary names each directory it
+  removed by its path and says OMH cannot tell whether it rendered it, and the
+  manifest it writes carries marks. Whichever rule applies,
+  a pruner never follows a recorded path out of the skills directory or a
+  link that leads out, never removes a category directory or any directory
+  holding other skills (a stray `guide/SKILL.md` used to take the whole
+  category), and never removes, under another spelling, a directory it
+  renders a skill into: on a case-insensitive filesystem, a render directory
+  renamed to another letter case is recorded as the skill it holds, and a
+  Hermes edit written under that spelling is recognised.
+  A change the ledger does not account for still refuses the install as
+  before; a managed skill whose SKILL.md is gone (in the pack the manifest
+  describes, so a staged update reports it too) is rendered again and
+  reported instead of refusing, and `omh doctor` says so as a
+  `missing_managed_skills` warning (or that the recorded profile leaves it
+  `not_restored`) instead of a blocking local modification with `--force`
+  advice. `omh doctor` also gains `hermes_skill_edits`, which
+  reads the ledger without writing it and reports writes under OMH-managed
+  skills, and a kept skill no longer fails `local_modifications` or
+  `skill_freshness`. The identity-conflict scan now covers every managed skill
+  name, scans the Hermes home's own skills directory and `skills.create_dir`,
+  counts a directory only when it holds a SKILL.md, matches its directory name
+  or declared frontmatter `name`, and reports each contested skill name's
+  outcome from Hermes' documented tier order (`shadowed` by a higher-tier copy
+  on Hermes 0.21.6 and later, `ambiguous` with another external copy, or
+  `separate` for OMH's canonical name) instead of `unknown`; the report schema
+  moves to `identity_conflict_report/v2`. Config readers now end a quoted
+  value at its closing quote, so a trailing comment is no longer read as part
+  of it. `omh setup` no longer lists a hub install among its equivalent Hermes
+  commands, since that copy would outrank or collide with the managed skill.
+
 - **The document, image, visual QA, release, and meeting skills now read
   Hermes' own producers as evidence beside OMH's verdict, never in place of
   it.** `materials-package` and `deliverable-package` map each file format's

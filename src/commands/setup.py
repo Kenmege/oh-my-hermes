@@ -94,7 +94,7 @@ from ..installer import (
     uninstall_skill_pack,
 )
 from ..local_store import atomic_write_text
-from ..install.installer import DEFAULT_SKILL_PROFILE, SKILL_PROFILES
+from ..install.installer import DEFAULT_SKILL_PROFILE, PRUNE_SKIP_REASONS, SKILL_PROFILES
 from ..manifest import read_manifest
 from .update_change_note import record_update_change_note, update_change_note_lines
 from ..menubar_app import is_managed_menubar_install, setup_menubar_app, uninstall_menubar_app
@@ -1868,7 +1868,7 @@ def _doctor_operator_summary(checks: list[object]) -> dict[str, object]:
         "warnings": warnings,
         "groups": [
             _doctor_group("command", check_dicts, ("command_path",)),
-            _doctor_group("managed_skills", check_dicts, ("manifest", "manifest_skills_dir", "local_modifications", "skill_freshness", "skills_dir", "skill:", "route_hint_skills", "guidance_projection")),
+            _doctor_group("managed_skills", check_dicts, ("manifest", "manifest_skills_dir", "local_modifications", "skill_freshness", "skills_dir", "skill:", "route_hint_skills", "guidance_projection", "hermes_skill_edits", "missing_managed_skills")),
             _doctor_group("runtime", check_dicts, ("runtime_artifacts", "workflow_state", "runtime_state")),
             _doctor_group("hermes_registration", check_dicts, ("hermes_config", "external_dir", "identity_conflicts", "runtime_context")),
             _doctor_group("targets", check_dicts, ("target_registry", "target_topology")),
@@ -2776,9 +2776,12 @@ def cmd_setup(args: argparse.Namespace) -> int:
         "requires_hermes_reload": not args.skip_apply,
         "normal_user_surface": "Hermes Agent chat and installed Hermes skills",
         "setup_scope": _setup_scope(args),
+        # The tap only. A hub install lands in the Hermes home's own skills
+        # directory, which outranks OMH's managed one: from Hermes 0.21.6 that
+        # copy hides the managed skill for good, older hosts refuse the shared
+        # name as ambiguous, and either way it never receives an OMH update.
         "equivalent_hermes_commands": [
             "hermes skills tap add rlaope/oh-my-hermes",
-            "hermes skills install rlaope/oh-my-hermes/skills/omh-routing --yes",
         ],
         "bootstrap_final_state": bootstrap_final_state,
         "skills_dir": str(paths.skills_dir),
@@ -4840,6 +4843,93 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
     state_key = str(payload.get("runtime_state_key", "")).strip()
     if state_path and state_key:
         print(f"  {tr(language, 'state_log', path=state_path, entry=state_key)}")
+    hermes_edited = payload.get("hermes_edited_skills")
+    for item in hermes_edited if isinstance(hermes_edited, list) else []:
+        if not isinstance(item, dict):
+            continue
+        copies = item.get("ledger_copy") if isinstance(item.get("ledger_copy"), list) else []
+        disposition = item.get("disposition")
+        if disposition == "left_behind":
+            key = "hermes_edit_left_behind_line"
+        elif disposition != "replaced":
+            key = "hermes_edit_kept_line"
+        else:
+            # Only a copy the ledger still stores is claimed recoverable; a row
+            # trimmed since the skill was kept takes its content with it.
+            key = "hermes_edit_replaced_line" if copies else "hermes_edit_replaced_unrecoverable_line"
+        detail = " ".join(str(item[field]) for field in ("actor", "action", "ts") if item.get(field))
+        line = tr(
+            language, key, name=item.get("name", ""), path=item.get("path", ""), detail=detail or "-",
+            files=", ".join(str(copy) for copy in copies),
+        )
+        print(_color(f"  {line}", "1;33", use_color))
+        discarded = item.get("discarded") if isinstance(item.get("discarded"), list) else []
+        if discarded:
+            line = tr(language, "hermes_edit_discarded_line", name=item.get("name", ""), files=", ".join(map(str, discarded)))
+            print(_color(f"  {line}", "1;33", use_color))
+    restored = payload.get("restored_skills")
+    for item in restored if isinstance(restored, list) else []:
+        if isinstance(item, dict):
+            key = "managed_skill_restored_line" if item.get("disposition") == "restored" else "managed_skill_not_restored_line"
+            print(_color(f"  {tr(language, key, name=item.get('name', ''), path=item.get('path', ''))}", "1;33", use_color))
+    prune_skipped = payload.get("prune_skipped_skills")
+    unreadable = payload.get("unreadable_ledgers")
+    ledger = "; ".join(map(str, unreadable)) if isinstance(unreadable, list) and unreadable else "-"
+    for item in prune_skipped if isinstance(prune_skipped, list) else []:
+        if isinstance(item, dict):
+            # One line per reason: a directory left because it is not OMH's and
+            # one left because it IS the render directory are opposite facts.
+            reason = str(item.get("reason", ""))
+            if reason == "not_rendered_by_omh" and item.get("newly_seen") is False:
+                # Said once, when the directory was first seen. The result
+                # still lists it; a person who keeps their own skills in the
+                # pack should not read the same line on every install.
+                continue
+            key = f"prune_skipped_{reason}_line" if reason in PRUNE_SKIP_REASONS else "prune_skipped_line"
+            line = tr(language, key, name=item.get("name", ""), path=item.get("path", ""), reason=reason, ledger=ledger)
+            print(_color(f"  {line}", "1;33", use_color))
+    force_pruned = payload.get("force_pruned_skills")
+    forced_paths = {
+        str(item.get("path", "")) for item in (force_pruned if isinstance(force_pruned, list) else []) if isinstance(item, dict)
+    }
+    # Every directory an install removes is named here, by its path: one
+    # retired name can sit in two directories, and a `--force` removal of
+    # either has its own lines below, with what it lost.
+    removed = payload.get("removed_skill_directories")
+    for item in removed if isinstance(removed, list) else []:
+        if not isinstance(item, dict) or str(item.get("path", "")) in forced_paths:
+            continue
+        kind = str(item.get("kind", ""))
+        key = {"flat_copy": "flat_layout_removed_line", "flat_copy_in_category": "flat_layout_payload_removed_line"}.get(
+            kind, "pruned_skill_line"
+        )
+        # What the rule that admitted the removal checked, and nothing more:
+        # a manifest from before marks cannot say who rendered the directory.
+        note = "removal_render_mark_note" if item.get("rule") == "render_mark" else "removal_earlier_manifest_note"
+        directory = str(item.get("path", "")).rsplit("/", 1)[0]
+        # Only what went: a category directory may have had no references/ to remove.
+        entries = item.get("removed_entries") if isinstance(item.get("removed_entries"), list) else ["SKILL.md"]
+        files = ", ".join(f"{directory}/{entry}" for entry in entries)
+        line = f"{tr(language, key, name=item.get('name', ''), directory=directory, files=files)} {tr(language, note)}"
+        print(_color(f"  {line}", "1;33", use_color))
+    for item in force_pruned if isinstance(force_pruned, list) else []:
+        if not isinstance(item, dict):
+            continue
+        copies = item.get("ledger_copy") if isinstance(item.get("ledger_copy"), list) else []
+        if item.get("reason") == "ledger_unreadable":
+            # Nothing is known about what the ledger holds, so nothing is claimed.
+            key = "retired_skill_force_removed_ledger_unreadable_line"
+        else:
+            key = "retired_skill_force_removed_line" if copies else "retired_skill_force_removed_unrecoverable_line"
+        line = tr(
+            language, key, name=item.get("name", ""), path=item.get("path", ""),
+            files=", ".join(str(copy) for copy in copies),
+        )
+        print(_color(f"  {line}", "1;33", use_color))
+        discarded = item.get("discarded") if isinstance(item.get("discarded"), list) else []
+        if discarded:
+            line = tr(language, "retired_skill_discarded_line", name=item.get("name", ""), files=", ".join(map(str, discarded)))
+            print(_color(f"  {line}", "1;33", use_color))
     profile_state = payload.get("skill_profile_state")
     if isinstance(profile_state, dict) and profile_state.get("retained_exception"):
         retained = profile_state.get("full_only_installed_skills", [])

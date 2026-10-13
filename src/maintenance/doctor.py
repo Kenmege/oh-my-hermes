@@ -15,6 +15,7 @@ from ..config_adapter import (
     external_dir_registered,
     external_dirs,
     memory_provider_selection,
+    skill_create_dir_selection,
     plugin_enablement,
     plugin_enablement_is_readable,
     plugin_enablement_shape_error,
@@ -27,8 +28,18 @@ from ..hashutil import sha256_file, sha256_text
 from ..local_store import can_write_dir, read_json_object
 from ..install.guidance_projection import build_guidance_projection_status, catalog_revision
 from ..install.hook_integrity import HOOK_HOST_TARGET, VALID_HOOK_EVENTS, build_hook_integrity_status
-from ..install.identity_conflicts import build_identity_conflict_report
-from ..install.installer import installed_skill_directories, installed_skill_names
+from ..install.curator_ledger import LedgerWrite, read_ledger_writes
+from ..install.identity_conflicts import build_identity_conflict_report, skill_conflict_outcome
+from ..install.installer import (
+    DEFAULT_SKILL_PROFILE,
+    SKILL_PROFILES,
+    hermes_edited_skills,
+    installed_skill_directories,
+    installed_skill_names,
+    manifest_pack,
+    missing_managed_skills,
+    profile_skill_names,
+)
 from ..install.plugin_bundle_import_scan import describe_findings, scan_bundle_core_imports
 from ..install.plugin_load_deadline import (
     ABANDONED_LOADER_CAP,
@@ -179,6 +190,9 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
         )
     )
     manifest = read_manifest(paths.manifest_path)
+    # Hermes' curator ledger, read once for every check below and cut to the
+    # directories an OMH install may serve skills from.
+    ledger_writes, ledger_unread = read_ledger_writes(paths.hermes_home, within=_managed_skill_roots(paths, manifest))
     state_error = read_state_error(paths)
     state = None if state_error else read_state(paths)
     checks.append(Check("manifest", manifest is not None, f"{paths.manifest_path}"))
@@ -191,7 +205,20 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
                 f"manifest skills_dir={manifest_skills_dir!r}; expected {paths.skills_dir}",
             )
         )
-        modified = local_modifications(manifest, paths.skills_dir)
+        # Neither a Hermes edit nor a removed skill refuses an install any
+        # more: the installer keeps the first (`hermes_skill_edits`) and
+        # renders the second again (`missing_managed_skills`), so both are
+        # left out of the blocking local-modification count, whose
+        # refuse-until-`--force` advice is for a hand edit.
+        hermes_edits = hermes_edited_skills(manifest, paths, writes=ledger_writes)
+        hermes_edited_paths = {str(item["path"]) for item in hermes_edits}
+        missing = _missing_skills_on_next_install(paths, manifest)
+        missing_paths = {str(item["path"]) for item in missing}
+        modified = [
+            rel
+            for rel in local_modifications(manifest, paths.skills_dir)
+            if rel not in hermes_edited_paths and rel not in missing_paths
+        ]
         checks.append(
             Check(
                 "local_modifications",
@@ -199,7 +226,10 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
                 "managed files match manifest" if not modified else f"changed managed files: {', '.join(modified)}",
             )
         )
-        checks.append(_skill_freshness_check(paths, manifest))
+        checks.append(_skill_freshness_check(paths, manifest, exclude=hermes_edited_paths))
+        if missing:
+            checks.append(_missing_managed_skills_check(manifest, missing))
+    checks.append(_hermes_skill_edits_check(paths, manifest, ledger_writes, ledger_unread))
     checks.append(Check("skills_dir", paths.skills_dir.exists(), f"{paths.skills_dir}"))
     checks.append(_route_hint_skills_check(paths))
     runtime_writable = can_write_dir(paths.runtime_dir, probe_name=".doctor-write-test")
@@ -250,7 +280,9 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
     # `None`, not `dirs`, when the config is absent: `read_config` returns "" for
     # a missing file, so an empty list there would read as "Hermes registers no
     # foreign directory" when the truth is that Hermes was never asked.
-    checks.append(_identity_conflicts_check(paths, dirs if hermes_config_present else None, manifest))
+    checks.append(
+        _identity_conflicts_check(paths, dirs if hermes_config_present else None, manifest, config_text=config_text)
+    )
     checks.append(_memory_provider_check(config_text))
     checks.append(_memory_consolidation_check(paths))
     checks.append(_memory_record_readability_check(paths))
@@ -2099,6 +2131,8 @@ def _identity_conflicts_check(
     paths: OmhPaths,
     configured_dirs: list[str] | None,
     manifest: dict | None,
+    *,
+    config_text: str = "",
 ) -> Check:
     """Name every local source that also claims an OMH-facing skill, command, or hook.
 
@@ -2109,10 +2143,12 @@ def _identity_conflicts_check(
     than reporting that a foreign directory exists and leaving the operator to
     work out whose it is.
 
-    It never resolves the contest. `build_identity_conflict_report` reads local
-    declarations and OMH's install manifests; Hermes' load order is not among
-    them, so precedence stays `unknown` and this check never rewrites, renames,
-    or removes anything it found. A shared lifecycle hook is reported as a
+    It never resolves the contest. A contested skill name's outcome is read
+    off Hermes' documented tier order, which is why the Hermes home's own
+    skills directory and `skills.create_dir` are scanned beside the external
+    directories; a contested tool name stays `unknown`, since Hermes' plugin
+    load order is not readable here. This check never rewrites, renames, or
+    removes anything it found. A shared lifecycle hook is reported as a
     second subscriber, not as a contest with a missing winner.
     """
     report = build_identity_conflict_report(
@@ -2120,6 +2156,8 @@ def _identity_conflicts_check(
         manifest=manifest,
         plugins_dir=paths.hermes_plugins_dir,
         configured_skill_dirs=configured_dirs,
+        local_skills_dir=paths.hermes_home / "skills",
+        create_dir=_skill_create_dir(paths, config_text),
     )
     severity = str(report["severity"])
     summary = _identity_conflict_summary(report)
@@ -2142,9 +2180,12 @@ def _identity_conflict_summary(report: dict) -> str:
         f"scanned skill_dirs={scanned['skill_dirs']} plugin_dirs={scanned['plugin_dirs']}"
     )
     # A hook is shared, not claimed: every subscriber receives the event, so the
-    # line must not read as a contest one side lost (#1902).
+    # line must not read as a contest one side lost (#1902). A skill's line says
+    # what Hermes does with the name, from the tier order.
     details = [
-        f"{conflict['kind']} name {conflict['name']} ({conflict['severity']}) "
+        f"{conflict['kind']} name {conflict['name']} ({conflict['severity']}): {skill_conflict_outcome(conflict)}"
+        if conflict["kind"] == "skill"
+        else f"{conflict['kind']} name {conflict['name']} ({conflict['severity']}) "
         + ("subscribed to by " if conflict["kind"] == "hook" else "claimed by ")
         + ", ".join(f"{source['ownership']} at {source['location']}" for source in conflict["sources"])
         for conflict in report["conflicts"]
@@ -2153,6 +2194,145 @@ def _identity_conflict_summary(report: dict) -> str:
     if details:
         return f"{header}: {'; '.join(details)}. {report['claim_boundary']}"
     return f"{header}. {report['claim_boundary']}"
+
+
+def _skill_create_dir(paths: OmhPaths, config_text: str) -> Path | None:
+    """`skills.create_dir` the way Hermes reads it: `~` and `${VAR}` expanded, relative to the Hermes home."""
+    raw = skill_create_dir_selection(config_text)
+    if not raw:
+        return None
+    path = Path(os.path.expanduser(os.path.expandvars(raw)))
+    return path if path.is_absolute() else paths.hermes_home / path
+
+
+# How many Hermes-edited skills the doctor line names before it counts the rest.
+_HERMES_EDITS_NAMED_LIMIT = 5
+
+
+def _managed_skill_roots(paths: OmhPaths, manifest: dict | None) -> list[Path]:
+    """Every directory an OMH install may serve skills from: the pack, the pre-pointer copy, every generation."""
+    roots = managed_skill_dir_candidates(paths, current=managed_current_workflow_pack_dir())
+    generations = managed_command_generations_dir()
+    if generations is not None:
+        roots.append(generations)
+    recorded = (manifest or {}).get("skills_dir")
+    if recorded:
+        roots.append(Path(str(recorded)))
+    return roots
+
+
+def _hermes_skill_edits_check(
+    paths: OmhPaths, manifest: dict | None, writes: list[LedgerWrite], unread: list[str]
+) -> Check:
+    """OMH-managed skills holding an edit Hermes made, read from Hermes' curator ledger.
+
+    Hermes may edit a skill in `skills.external_dirs` in place, and its
+    background self-improvement review does so without being asked; every
+    write lands in the home's curator ledger (`install.curator_ledger`). The
+    installer keeps such a skill rather than refusing the update, so the skill
+    stops receiving OMH updates, and this is where that is visible. Read only:
+    the ledger is Hermes' own, and nothing here trims it or rolls anything back.
+
+    The ledger count covers every directory an OMH install may serve skills
+    from -- the managed pack, the pre-pointer copy, and every generation --
+    because an edit left in a generation OMH has moved off is the one nobody
+    sees otherwise. A warning, not a block: a kept edit is a working skill.
+    """
+    # `writes` is already cut to the managed roots (`_managed_skill_roots`).
+    under_managed = {(write.ledger, write.ts, write.path) for write in writes}
+    edited = hermes_edited_skills(manifest, paths, writes=writes)
+    # Two different outcomes: a kept skill stays as it is on every install; an
+    # edit in a directory this release does not render the skill into goes nowhere.
+    kept = [item for item in edited if item["disposition"] != "left_behind"]
+    left_behind = [item for item in edited if item["disposition"] == "left_behind"]
+    parts: list[str] = []
+    if kept:
+        parts.append(
+            f"{len(kept)} OMH-managed skill(s) hold a Hermes edit that installs keep, so they receive no OMH "
+            f"update: {_hermes_edit_lines(kept)}"
+        )
+    if left_behind:
+        parts.append(
+            f"{len(left_behind)} Hermes edit(s) sit in a directory this release does not render the skill into, "
+            f"so installs neither keep nor carry them: {_hermes_edit_lines(left_behind)}"
+        )
+    parts.append(
+        f"Hermes' curator ledger records {len(under_managed)} skill write(s) under OMH-managed skills"
+        if under_managed
+        else "Hermes' curator ledger records no skill write under OMH-managed skills"
+    )
+    parts.extend(f"ledger unreadable: {item}" for item in unread)
+    message = "; ".join(parts)
+    if not edited and not unread:
+        return Check("hermes_skill_edits", True, message)
+    action = (
+        "Move each lesson into a separately named skill you own; `omh install --force` then replaces the edited "
+        "OMH skill with the current render."
+        if edited
+        else "Repair read access to the reported curator ledger, then rerun `omh doctor`."
+    )
+    return Check("hermes_skill_edits", True, message, severity="warning", remediation=action, next_action=action)
+
+
+def _missing_skills_on_next_install(paths: OmhPaths, manifest: dict) -> list[dict]:
+    """Missing managed skills, judged by the install a plain `omh install` would run.
+
+    The packaged catalog under the profile the manifest records -- the one a
+    run without `--core` or `--full` carries forward -- so the verdict here is
+    the installer's `restored_skills` verdict, read off the same function.
+    """
+    names = profile_skill_names(
+        paths.skills_dir, _recorded_skill_profile(manifest), [template.name for template in builtin_skill_templates()]
+    )
+    return missing_managed_skills(manifest, manifest_pack(manifest, paths), names)
+
+
+def _recorded_skill_profile(manifest: dict) -> str:
+    """The profile a run without `--core` or `--full` carries forward (`_resolved_skill_profile` in setup)."""
+    profile = str(manifest.get("skill_profile") or "")
+    return profile if profile in SKILL_PROFILES else DEFAULT_SKILL_PROFILE
+
+
+def _missing_managed_skills_check(manifest: dict, missing: list[dict]) -> Check:
+    """Managed skills whose SKILL.md is gone, and what the next install does with each.
+
+    A warning, never a block, and never `--force` advice: nothing is refused.
+    One the next install includes is rendered again; one it does not include
+    (outside the recorded skill profile) is reported `not_restored` and stays
+    uninstalled.
+    """
+    profile = _recorded_skill_profile(manifest)
+    lines = [
+        f"{item['name']} at {item['path']}: "
+        + (
+            "the next install renders it again and reports it under restored_skills"
+            if item["disposition"] == "restored"
+            else f"the recorded {profile} profile does not include it, so the next install reports it "
+            "not_restored and leaves it uninstalled"
+        )
+        for item in missing
+    ]
+    action = "No --force is needed: the next install handles each missing skill as listed."
+    return Check(
+        "missing_managed_skills",
+        True,
+        f"{len(missing)} managed skill(s) are missing their SKILL.md: {'; '.join(lines)}",
+        severity="warning",
+        remediation=action,
+        next_action=action,
+    )
+
+
+def _hermes_edit_lines(items: list[dict]) -> str:
+    named = [_hermes_edit_line(item) for item in items[:_HERMES_EDITS_NAMED_LIMIT]]
+    if len(items) > _HERMES_EDITS_NAMED_LIMIT:
+        named.append(f"and {len(items) - _HERMES_EDITS_NAMED_LIMIT} more")
+    return "; ".join(named)
+
+
+def _hermes_edit_line(item: dict) -> str:
+    detail = " ".join(str(item[key]) for key in ("actor", "action", "ts") if item.get(key))
+    return f"{item['name']} at {item['path']}" + (f" ({detail})" if detail else "")
 
 
 def run_doctor_advisories(paths: OmhPaths) -> AdvisoryReport:
@@ -2610,7 +2790,7 @@ def _plugin_bridge_message(plugin: dict) -> str:
     return "managed plugin bridge is installed but did not pass local import/register smoke"
 
 
-def _skill_freshness_check(paths: OmhPaths, manifest: dict) -> Check:
+def _skill_freshness_check(paths: OmhPaths, manifest: dict, *, exclude: set[str] | None = None) -> Check:
     """Detect installed skills whose content an older OMH release wrote.
 
     `local_modifications` compares the skills directory against the manifest
@@ -2619,7 +2799,9 @@ def _skill_freshness_check(paths: OmhPaths, manifest: dict) -> Check:
     text from a version the operator no longer runs. This check compares the
     untouched installed files against what the running package would render
     today and points a mismatch at `omh update`. Locally edited files are
-    excluded here because `local_modifications` already owns that report.
+    excluded here because `local_modifications` already owns that report, and
+    so are the paths in `exclude`: a skill the installer keeps for a Hermes
+    edit is held back on purpose, and `hermes_skill_edits` reports it.
 
     The message reports catalog revisions, not a package version pair, because
     the revision is what the finding was derived from. Catalog content moves
@@ -2650,7 +2832,7 @@ def _skill_freshness_check(paths: OmhPaths, manifest: dict) -> Check:
     stale: list[str] = []
     for template in builtin_skill_templates():
         rel = f"{omh_skill_install_path(template.name)}/SKILL.md"
-        if rel not in manifest_sha_by_rel:
+        if rel not in manifest_sha_by_rel or rel in (exclude or set()):
             continue
         path = paths.skills_dir / rel
         if not path.is_file():
