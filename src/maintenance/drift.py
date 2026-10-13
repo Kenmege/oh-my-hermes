@@ -585,11 +585,17 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # and asking how to configure web search in Hermes, each a clarify
             # with the setup guide leading that dispatched a live web lookup
             # before; and three that must not reach the guide -- configuring
-            # search for a store's catalog and in a Next.js app, which the
-            # guide took while "configure web search" matched anywhere, and a
-            # cited free-tier comparison, which it took while "free web search
-            # tier" was a setup-guide phrase (6).
-            expected=690,
+            # search for a store's catalog, which dispatched the guide, and in
+            # a Next.js app, which asked with it leading, while "configure web
+            # search" matched anywhere, and a cited free-tier comparison, which
+            # became a clarify while "free web search tier" was a setup-guide
+            # phrase (6). The third review adds three: a courteous "please
+            # configure web search", a clarify with the setup guide leading
+            # that dispatched a live web lookup before; and a cited comparison
+            # of Hermes' web search and a check whether it is down, which
+            # became clarifies while "hermes web search" counted without a
+            # setup verb (3).
+            expected=693,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

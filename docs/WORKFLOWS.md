@@ -6011,7 +6011,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Check the cost levers that need no key first: when no backend is selected or detectable and `web.keyless_fallback` is not false, Hermes falls back to keyless vendor free tiers, and a per-capability split can keep search free while only extract uses a paid account.
   - A new `.env` key alone does not change which backend serves a capability once a selection covers it; diagnose that before proposing a key as the fix.
   - When the diff sets only one of `web.search_backend` and `web.extract_backend`, name the other capability's backend in the same diff or confirm its resolution in verify, because Hermes releases differ in how an unset sibling resolves.
-  - Before proposing `web.keyless_fallback: false`, say that it also turns off the one-shot keyless rescue for a failing backend, and that web search and extract stop working while no other backend is selected or detectable, unless a vendor's tier is pinned free.
+  - Before proposing `web.keyless_fallback: false`, say that it also turns off the one-shot keyless rescue for a failing backend, and that web search and extract stop working while no other backend is selected or detectable, unless the backend that serves them (the selected one, or Hermes' default when nothing else resolves) is pinned free.
 - Completion checklist:
   - If a prerequisite is unmet, mark that item "not applicable" and continue with the rest of the guide instead of blocking or guessing.
   - Success is applicable-only: verification passes when every applicable item is confirmed complete, not when every possible item exists.

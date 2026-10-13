@@ -6447,9 +6447,10 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     ),
     # Setup and cost phrasing reaches the setup guide; before these phrases
     # joined the setup-guide list each one dispatched a live web lookup.
-    # `configure web search` is a complete trigger and dispatches, but only
-    # as the whole request; the cost and free-tier phrases are built from
-    # held-back pricing words, so they ask with the setup guide leading.
+    # `configure web search` counts only as the whole request: said bare it
+    # dispatches, and with a courtesy word or trailing punctuation around it
+    # the route asks with the setup guide leading. The cost and free-tier
+    # phrases are built from held-back pricing words, so they ask too.
     RoutingInterventionCase(
         "configure-web-search-opens-the-setup-guide",
         "Configuring web search opens the web search setup guide instead of a lookup",
@@ -6459,7 +6460,19 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "run_setup_guide",
         "setup_guide",
     ),
-    # Naming Hermes makes the target Hermes' own setting.
+    RoutingInterventionCase(
+        "courteous-configure-web-search-leads-with-the-setup-guide",
+        "A courteous request to configure web search leads with websearch-setup rather than running a lookup",
+        "please configure web search",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "websearch-setup",
+    ),
+    # Naming Hermes makes the target Hermes' own setting, but only beside a
+    # setup verb: a lookup or a fault report about Hermes' web search names
+    # it too, and stays on its own lane.
     RoutingInterventionCase(
         "configure-hermes-web-search-leads-with-the-setup-guide",
         "Configuring Hermes' web search leads with websearch-setup rather than running a lookup",
@@ -6496,7 +6509,7 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     # the pin is that the setup guide is not the destination.
     RoutingInterventionCase(
         "app-catalog-search-configuration-stays-off-the-setup-guide",
-        "Configuring search for a store's catalog never dispatches the web search setup guide",
+        "Configuring search for a store's catalog stays on the lookup lane, not the web search setup guide",
         "configure web search for the store's product catalog",
         "dispatch",
         "web-research",
@@ -6505,7 +6518,7 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     ),
     RoutingInterventionCase(
         "nextjs-search-configuration-stays-off-the-setup-guide",
-        "Configuring search in a Next.js app never leads with the web search setup guide",
+        "Configuring search in a Next.js app stays on the lookup lane, not the web search setup guide",
         "configure web search in our nextjs app",
         "dispatch",
         "web-research",
@@ -6560,6 +6573,27 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "web-research",
         "run_hermes_research",
         "web_research",
+    ),
+    # "hermes web search" without a setup verb is a lookup or a report.
+    # Measured with the phrase standing down the lookup guard on its own,
+    # these became clarifies.
+    RoutingInterventionCase(
+        "hermes-web-search-comparison-stays-on-web-research",
+        "A cited comparison of Hermes' web search stays on the web lookup lane",
+        "compare hermes web search with openai web search, cite sources",
+        "dispatch",
+        "web-research",
+        "run_hermes_research",
+        "web_research",
+    ),
+    RoutingInterventionCase(
+        "hermes-web-search-outage-check-stays-on-browser-operator",
+        "Checking whether Hermes' web search is down stays on the browser operator",
+        "is hermes web search down right now? check the status page",
+        "dispatch",
+        "browser-operator",
+        "prepare_browser_operator_card",
+        "browser_operator",
     ),
     RoutingInterventionCase(
         "free-tier-comparison-lookup-stays-on-web-research",

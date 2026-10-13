@@ -8284,8 +8284,6 @@ _HERMES_SETUP_GUIDE_PHRASES = (
     "web search cheaper",
     "web search backend",
     "web extract backend",
-    "hermes web search",
-    "web search in hermes",
     "web search costs too much",
     "keyless free web search",
     "웹 검색 설정",
@@ -8305,14 +8303,30 @@ _HERMES_SETUP_GUIDE_PHRASES = (
 # Said alone, these name Hermes' own setting; with an object ("configure web
 # search for the store's product catalog", "... in our nextjs app") they name
 # the user's app, where the setup guide dispatched. They count only as the
-# whole request.
+# whole request, after a courtesy opener (`_COURTESY_OPENERS`) and before a
+# closing "please" or "thanks".
 _HERMES_SETUP_GUIDE_WHOLE_REQUESTS = ("configure web search",)
+_COURTESY_CLOSERS = frozenset({"please", "pls", "thanks", "thx", "thank", "you"})
+
+# These name Hermes' own web search, and so does a lookup or a code change
+# about it ("compare hermes web search with openai web search, cite
+# sources", "fix the hermes web search tool bug in tools/web_tools.py"),
+# which they took from its own lane. They count only beside a setup verb.
+_HERMES_SETUP_GUIDE_VERB_PHRASES = ("hermes web search", "web search in hermes")
+_HERMES_SETUP_VERBS = frozenset({"configure", "set", "setup", "switch", "change"})
 
 
 def _hermes_setup_guide_requested(normalized_query: str) -> bool:
     if _contains_phrase(normalized_query, _HERMES_SETUP_GUIDE_PHRASES):
         return True
-    terms = routing_terms(normalized_query)
+    if _contains_phrase(normalized_query, _HERMES_SETUP_GUIDE_VERB_PHRASES) and (
+        _HERMES_SETUP_VERBS & routing_tokens(normalized_query)
+    ):
+        return True
+    words = _command_words(normalized_query)
+    while words and words[-1].strip(".,!?") in _COURTESY_CLOSERS:
+        words.pop()
+    terms = routing_terms(" ".join(words))
     return any(terms == routing_terms(request) for request in _HERMES_SETUP_GUIDE_WHOLE_REQUESTS)
 
 
