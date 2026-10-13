@@ -34,16 +34,17 @@ from __future__ import annotations
 from collections.abc import Sequence
 import unittest
 
+from _tui_lines import line_text
 from _vt_screen import VTScreen
 
 from omh.tui.composer import PROMPT, SUBMIT, Composer
-from omh.tui.frame import build_frame, status_line, sticky_line
+from omh.tui.frame import build_frame, sticky_line
 from omh.tui.keys import BACKSPACE, CHAR, ENTER, ESCAPE, Key, Paste
 from omh.tui.layout import composer_cap, slot_cap
 from omh.tui.screen import LiveRegion
 from omh.tui.style import Line, Span
 from omh.tui.theme import DEFAULT_THEME
-from omh.tui.width import cell_width
+from omh.tui.width import cell_width, truncate_line
 
 HEIGHTS = (10, 11, 12, 13, 16, 20, 24, 31, 40, 57, 80)
 WIDTHS = (40, 80, 120)
@@ -52,7 +53,7 @@ STATUS_PREFIX = "⚚ OMH v"
 
 
 def text_of(line: Line) -> str:
-    return "".join(span.text for span in line).rstrip(" ")
+    return line_text(line).rstrip(" ")
 
 
 def plain(text: str) -> Line:
@@ -80,7 +81,7 @@ class Session:
         self.lines: tuple[Line, ...] = ()
         self.view: tuple[list[Line], tuple[int, int]] = ([], (0, 0))  # the composer as last drawn
         self.last: tuple[int, int, int] | None = None  # status row, composer top, composer rows
-        self.status = status_line(version="9.9.9", model="test-model", context="ctx 12%", state="idle", width=cols)
+        self.status = truncate_line((Span(f"{STATUS_PREFIX}9.9.9 │ test-model │ ctx 12% │ idle", DEFAULT_THEME.status),), cols)
         self.pinned = True  # the bottom sits on the screen's last row
         self.bottom_moves = 0
         self.label = ""

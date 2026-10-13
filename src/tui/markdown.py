@@ -1,7 +1,7 @@
 """Render the markdown subset model replies use, one complete source line at a time.
 
 A reply streams in token by token, and a line that has left the live region is
-in the terminal's scrollback for good (plan §4.2). So the renderer never looks
+in the terminal's scrollback for good. So the renderer never looks
 ahead: `render_line` turns ONE complete source line into rows, and the only
 thing a line can learn from the lines before it is `MarkdownState` (an open
 fence and its language, the multi-line string or comment a highlighted fence
@@ -23,10 +23,10 @@ indented code) are left out on purpose.
 Every row is plain `Line`s for `screen.py` to paint. `clean_text` runs first:
 whole escape sequences (CSI, OSC, the other control strings, two-byte escapes)
 are dropped, then tabs are expanded and every remaining control character is
-dropped, so text from the model can never smuggle an escape sequence onto the
-terminal, nor leave the `[38;2;…m` debris that dropping only the ESC byte
-would. Malformed markdown renders as literal text; nothing here raises on any
-input.
+dropped, so rows are measured on what will show and carry none of the
+`[38;2;…m` debris that dropping only the ESC byte would leave
+(`screen.paint_line` strips any sequence again before a row is written).
+Malformed markdown renders as literal text; nothing here raises on any input.
 """
 
 from __future__ import annotations
@@ -39,9 +39,8 @@ from .escapes import strip_escapes
 from .highlight import highlight_line, highlights
 from .style import Line, Span, Style
 from .theme import Theme
-from .width import cell_width, cluster_width, clusters, is_control, line_width, wrap_line
+from .width import TAB_CELLS, cell_width, cluster_width, clusters, is_control, line_width, wrap_line
 
-TAB_CELLS = 4
 BULLET = "•"
 RULE = "─"
 QUOTE_BAR = "│ "
@@ -77,10 +76,12 @@ class MarkdownState:
 
 
 def clean_text(text: str) -> str:
-    """One source line made safe to paint: escape sequences dropped whole, tabs expanded, controls dropped.
+    """One source line made safe to measure: escape sequences dropped whole, tabs expanded, controls dropped.
 
-    Every piece of gateway text that becomes a `Line` (assistant text, tool
-    names and summaries, inline diffs, notices) passes through here.
+    The transcript runs model and tool text through it so widths and wraps are
+    computed on what will show. The guarantee that no escape sequence reaches
+    the terminal is not this function's: `screen.paint_line` strips every row,
+    whatever produced it.
     """
     return "".join(ch for ch in strip_escapes(text).expandtabs(TAB_CELLS) if not is_control(ch))
 
@@ -235,36 +236,7 @@ def _quote_rows(body: str, width: int, theme: Theme) -> list[Line]:
 # ── fenced code ───────────────────────────────────────────────────────────
 
 
-def hard_wrap(text: str, cells: int) -> list[str]:
-    """`text` cut into rows of at most `cells`, keeping every space and never splitting a cluster."""
-    rows: list[str] = []
-    row = ""
-    used = 0
-    for cluster in clusters(text):
-        cluster_cells = cluster_width(cluster)
-        if row and used + cluster_cells > cells:
-            rows.append(row)
-            row, used = "", 0
-        row += cluster
-        used += cluster_cells
-    rows.append(row)
-    return rows
-
-
-def _verbatim_rows(text: str, width: int, style: Style) -> list[Line]:
-    return [(Span(row, style),) if row else () for row in hard_wrap(text, width)]
-
-
-def _band_rows(text: str, width: int, band: Style) -> list[Line]:
-    """Verbatim rows padded to the full width in the band style (the TUI paints the whole row)."""
-    rows: list[Line] = []
-    for row in hard_wrap(text, width):
-        padded = row + " " * max(0, width - cell_width(row))
-        rows.append((Span(padded, band),))
-    return rows
-
-
-def _span_rows(spans: Sequence[Span], width: int) -> list[Line]:
+def hard_wrap(spans: Sequence[Span], width: int) -> list[Line]:
     """Styled spans cut into rows of at most `width` cells, keeping every space and never splitting a cluster."""
     rows: list[Line] = []
     row: list[Span] = []
@@ -287,13 +259,26 @@ def _span_rows(spans: Sequence[Span], width: int) -> list[Line]:
     return rows
 
 
+def band_rows(text: str, width: int, band: Style) -> list[Line]:
+    """`text` hard-wrapped, each row padded to `width` in the band style (the TUI paints the whole row)."""
+    rows: list[Line] = []
+    for row in hard_wrap((Span(text, band),), width):
+        filled = "".join(span.text for span in row)
+        rows.append((Span(filled + " " * max(0, width - line_width(row)), band),))
+    return rows
+
+
+def _verbatim_rows(text: str, width: int, style: Style) -> list[Line]:
+    return hard_wrap((Span(text, style),), width)
+
+
 def _code_rows(text: str, state: MarkdownState, width: int, theme: Theme) -> tuple[list[Line], MarkdownState]:
     if state.fence_lang in DIFF_LANGUAGES:
         return _diff_fence_rows(text, state, width, theme), state
     if not highlights(state.fence_lang):
         return _verbatim_rows(text, width, theme.code), state
     spans, carry = highlight_line(unicodedata.normalize("NFC", text), state.fence_lang, state.code_carry, theme)
-    return _span_rows(spans, width), replace(state, code_carry=carry)
+    return hard_wrap(spans, width), replace(state, code_carry=carry)
 
 
 def _diff_fence_rows(text: str, state: MarkdownState, width: int, theme: Theme) -> list[Line]:
@@ -303,9 +288,9 @@ def _diff_fence_rows(text: str, state: MarkdownState, width: int, theme: Theme) 
     if body.startswith("@@"):
         return _verbatim_rows(text, width, theme.accent)
     if body.startswith("+"):
-        return _band_rows(text, width, theme.diff_add)
+        return band_rows(text, width, theme.diff_add)
     if body.startswith("-"):
-        return _band_rows(text, width, theme.diff_remove)
+        return band_rows(text, width, theme.diff_remove)
     return _verbatim_rows(text, width, theme.code)
 
 

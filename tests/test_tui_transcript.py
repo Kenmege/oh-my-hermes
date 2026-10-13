@@ -1,7 +1,7 @@
 """The OMH TUI transcript model and its flush policy (`omh.tui.transcript`).
 
 Event payloads are copied from real Hermes 6c61c3e27d `tui_gateway` recordings
-(the M0 session and manual-approval fixtures), trimmed to the fields the
+(`tests/fixtures/tui_gateway/`, session and approval), trimmed to the fields the
 transcript reads. Every step of every sequence runs through `LoopTestCase.step`,
 which plays the app loop (apply, take stable lines, read live lines) and holds
 the inline-scrollback invariant: the lines taken so far followed by the live
@@ -14,6 +14,7 @@ from __future__ import annotations
 import unicodedata
 import unittest
 
+from _tui_lines import lines_text
 from omh.tui.gateway import Event
 from omh.tui.style import Line, Span
 from omh.tui.theme import DEFAULT_THEME as THEME
@@ -21,7 +22,6 @@ from omh.tui.transcript import (
     AssistantBlock,
     ThinkingBlock,
     Transcript,
-    TurnStatus,
     tool_result_status,
 )
 from omh.tui.width import is_control, line_width
@@ -41,10 +41,6 @@ DENIED_RESULT = {
 
 def ev(event_type: str, /, **payload: object) -> Event:
     return Event(type=event_type, session_id=SID, payload=dict(payload))
-
-
-def texts(rows: list[Line]) -> list[str]:
-    return ["".join(span.text for span in row) for row in rows]
 
 
 class FakeClock:
@@ -72,17 +68,17 @@ class LoopTestCase(unittest.TestCase):
         self.taken.extend(fresh)
         live = self.transcript.live_lines(width, THEME)
         self.assertEqual(self.taken + live, self.transcript.history_lines(width, THEME, details=False))
-        return texts(fresh)
+        return lines_text(fresh)
 
     def user(self, text: str) -> list[str]:
         self.transcript.add_user(text)
         return self.step()
 
     def live(self, width: int = WIDTH) -> list[str]:
-        return texts(self.transcript.live_lines(width, THEME))
+        return lines_text(self.transcript.live_lines(width, THEME))
 
     def history(self, details: bool = True) -> list[str]:
-        return texts(self.transcript.history_lines(WIDTH, THEME, details=details))
+        return lines_text(self.transcript.history_lines(WIDTH, THEME, details=details))
 
 
 class SpacingTests(LoopTestCase):
@@ -96,7 +92,7 @@ class SpacingTests(LoopTestCase):
         self.step(ev("message.complete", text="done", status="complete"))
         self.user("second")
         expected = ["› first", "", "▸ thought for 0.0s", "", "⏺ Tool calls (1)", "  ✓ terminal  ls  0.5s", "", "done", "", "› second"]
-        self.assertEqual(texts(self.taken), expected)
+        self.assertEqual(lines_text(self.taken), expected)
         self.assertEqual(self.history(details=False), expected)
 
     def test_a_resumed_reply_renders_like_a_streamed_one(self) -> None:
@@ -105,7 +101,6 @@ class SpacingTests(LoopTestCase):
         self.transcript.add_assistant("   ")
         self.assertEqual(self.step(), ["", "hello there", "", "sh", "ls"])
         self.assertEqual(len(self.transcript.blocks), 2)
-
 
 
 class RetakeTests(LoopTestCase):
@@ -118,7 +113,7 @@ class RetakeTests(LoopTestCase):
         live = self.transcript.live_lines(30, THEME)
         self.assertEqual(narrow + live, self.transcript.history_lines(30, THEME, details=False))
         self.assertEqual(self.transcript.take_stable_lines(30, THEME), [], "a retaken line was offered twice")
-        self.assertIn("line two is still streaming", "".join(texts(live)))
+        self.assertIn("line two is still streaming", "".join(lines_text(live)))
 
 
 class ToolPathArgumentTests(LoopTestCase):
@@ -192,8 +187,8 @@ class PlainTurnTests(LoopTestCase):
                     self.step(ev("message.delta", text=answer[start : start + size]))
                 self.step(ev("message.complete", text=answer, status="complete"))
                 self.assertEqual(self.live(), [])
-                expected = expected or texts(self.taken)
-                self.assertEqual(texts(self.taken), expected)
+                expected = expected or lines_text(self.taken)
+                self.assertEqual(lines_text(self.taken), expected)
         self.assertEqual(
             expected,
             ["Plan", "", "• step one", "• step two", "", "python", "x = 1", "Done, see docs (https://x.y)."],
@@ -239,7 +234,7 @@ class PlainTurnTests(LoopTestCase):
         self.assertEqual(narrow, ["alpha beta gamma", "delta epsilon zeta", "eta theta"])
         self.transcript.apply(ev("message.complete", text="", status="complete"))
         fresh = self.transcript.take_stable_lines(20, THEME)
-        self.assertEqual(texts(fresh), narrow)
+        self.assertEqual(lines_text(fresh), narrow)
         self.assertEqual(self.transcript.take_stable_lines(80, THEME), [])
 
     def test_authoritative_text_replaces_the_stream_only_where_nothing_was_taken(self) -> None:
@@ -261,7 +256,7 @@ class PlainTurnTests(LoopTestCase):
         self.step(ev("message.start"))
         self.step(ev("message.delta", text="\x1b[2Jboom\x07\n"))
         self.step(ev("message.complete", text="", status="complete"))
-        self.assertEqual(texts(self.taken), ["boom"])
+        self.assertEqual(lines_text(self.taken), ["boom"])
         self.assertFalse(any(is_control(ch) for row in self.taken for span in row for ch in span.text))
 
     def test_user_text_is_plain_wrapped_and_composed(self) -> None:
@@ -327,7 +322,7 @@ class ReasoningAndToolTests(LoopTestCase):
             ev("message.complete", text="Ran it — exit code 0.", status="complete", reasoning="The user asks ...")
         )
         self.assertEqual(flushed, ["", "Ran it — exit code 0."])
-        self.assertEqual(self.history(details=False), texts(self.taken))
+        self.assertEqual(self.history(details=False), lines_text(self.taken))
         self.assertEqual(
             self.history(),
             [
@@ -350,7 +345,7 @@ class ReasoningAndToolTests(LoopTestCase):
         self.step(ev("reasoning.delta", text="weighing options"), at=100.0)
         self.step(ev("message.delta", text="Answer."), at=101.0)
         self.transcript.toggle_details()
-        self.assertEqual(texts(self.taken), ["▸ thought for 1.0s"])
+        self.assertEqual(lines_text(self.taken), ["▸ thought for 1.0s"])
         self.assertEqual(self.live(), ["", "Answer."])
 
     def test_overlapping_tools_get_a_parallel_badge(self) -> None:
@@ -440,7 +435,7 @@ class ReasoningAndToolTests(LoopTestCase):
         self.step(ev("tool.start", tool_id="a", name="terminal", context="x" * 200))
         self.step(ev("tool.complete", tool_id="a", name="terminal", duration_s=12.0, result={"exit_code": 0}))
         self.step(ev("message.complete", text="", status="complete"), width=40)
-        row = texts(self.taken)[1]
+        row = lines_text(self.taken)[1]
         self.assertEqual(row, "  ✓ terminal  " + "x" * 18 + "…  12.0s")
         self.assertEqual(line_width(self.taken[1]), 40)
 
@@ -516,11 +511,11 @@ class TurnEndTests(LoopTestCase):
     def test_status_updates_are_transient(self) -> None:
         self.step(ev("message.start"))
         self.step(ev("status.update", kind="compacting", text="Compacting context…"))
-        self.assertEqual(self.transcript.status, TurnStatus("compacting", "Compacting context…"))
+        self.assertEqual(self.transcript.status, "Compacting context…")
         self.step(ev("status.update", kind="status"))
-        self.assertEqual(self.transcript.status, TurnStatus("compacting", "Compacting context…"))
+        self.assertEqual(self.transcript.status, "Compacting context…")
         self.step(ev("message.complete", text="done", status="complete", warning="Context is 90% full."))
-        self.assertIsNone(self.transcript.status)
+        self.assertEqual(self.transcript.status, "")
         self.assertEqual(self.history(), ["done", "", "⚠ Context is 90% full."])
 
     def test_notices_flush_at_once_in_their_level_style(self) -> None:
@@ -565,7 +560,7 @@ class EscapeHygieneTests(LoopTestCase):
         self.step(ev("thinking.delta", text=painted("spinner text")))
         self.assertEqual(self.transcript.activity, "spinner text")
         self.step(ev("status.update", kind="status", text=painted("Compacting…")))
-        self.assertEqual(self.transcript.status, TurnStatus("status", "Compacting…"))
+        self.assertEqual(self.transcript.status, "Compacting…")
         self.step(ev("reasoning.delta", text=painted("weighing it")))
         self.assertEqual(self.live(), ["", "▸ thinking… weighing it"])
         self.step(ev("tool.generating", name=painted("terminal")))
@@ -668,7 +663,7 @@ class InlineDiffTests(LoopTestCase):
                          [THEME.label, THEME.accent, THEME.code, THEME.diff_remove, THEME.diff_add])
         self.assertEqual([line_width(row) for row in diff[-2:]], [WIDTH, WIDTH])
         self.assertFalse(any(is_control(ch) for row in self.taken for span in row for ch in span.text))
-        self.assertEqual(self.history(details=False), texts(self.taken))
+        self.assertEqual(self.history(details=False), lines_text(self.taken))
         self.assertEqual(self.history()[-1], "Done — it prints 안녕 now.")
 
     def test_a_long_diff_is_capped_until_history_shows_it_all(self) -> None:
@@ -693,7 +688,7 @@ class InlineDiffTests(LoopTestCase):
         self.transcript.toggle_details()
         self.step(ev("message.complete", text="", status="complete"))
         self.transcript.toggle_details()
-        self.assertEqual(texts(self.taken)[-1], "    … +8 lines (/history shows all)")
+        self.assertEqual(lines_text(self.taken)[-1], "    … +8 lines (/history shows all)")
         self.assertEqual(self.live(), [])
 
     def test_a_denied_or_failed_edit_without_a_diff_shows_nothing_extra(self) -> None:

@@ -692,12 +692,13 @@ def _launch_hermes_tui(args: argparse.Namespace) -> int | None:
     """Open the OH-MY-HERMES terminal: bare `omh` opens the OMH TUI.
 
     The oh-my-zsh contract, applied here: the wrapper's bare name IS the
-    styled experience. This runs the user's own `hermes` binary carrying
-    nothing but the three session flags the bare launch passes through
+    styled experience. This runs the user's own `hermes` binary with the
+    three session flags the bare launch passes through
     (`_hermes_passthrough_argv`) -- a user-invoked local launch, not
     background dispatch. When the OMH TUI can run here (`_run_terminal`), the
-    launch adds `--tui` and `HERMES_TUI_DIR`, so Hermes' launcher starts the
-    OMH frontend in place of its own; when it cannot, or it exits with
+    launch adds `--tui` to those flags and `HERMES_TUI_DIR` to the
+    environment, so Hermes' launcher starts the OMH frontend in place of its
+    own; when it cannot, or it exits with
     `FALLBACK_EXIT`, the launch walks through Hermes' own door exactly as it
     did before the OMH TUI existed. No terminal or no Hermes install means
     there is nothing to launch, and the caller falls back to the welcome text.

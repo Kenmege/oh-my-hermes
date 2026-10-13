@@ -801,8 +801,6 @@ def _omh_tui_check(paths: OmhPaths) -> Check:
     the severity says whether the OMH TUI is reachable. Whether the gateway
     still speaks the declared protocol is judged at launch, not here.
     """
-    import os
-
     from ..system.hermes_install import hermes_install_dir, read_bounded_text
     from ..tui.launch import FRONTEND_ENTRY, node_available
 

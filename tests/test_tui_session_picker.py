@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 
+from _tui_lines import line_text
 from omh.tui.keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
 from omh.tui.session_picker import CLOSE, PICK, PickerAction, SessionPicker, age_text, session_rows
 from omh.tui.theme import DEFAULT_THEME
@@ -24,10 +25,6 @@ LISTED = {
         "not a row",
     ]
 }
-
-
-def text(line: tuple) -> str:
-    return "".join(span.text for span in line)
 
 
 def picker(**kwargs: object) -> SessionPicker:
@@ -82,9 +79,9 @@ class KeyTests(unittest.TestCase):
 class LinesTests(unittest.TestCase):
     def test_a_header_then_one_row_per_session_with_the_current_one_marked(self) -> None:
         lines = picker().lines(60, DEFAULT_THEME, 8, NOW)
-        self.assertTrue(text(lines[0]).startswith(" Sessions (3)"))
+        self.assertTrue(line_text(lines[0]).startswith(" Sessions (3)"))
         self.assertEqual(len(lines), 4)
-        current, other, old = (text(line) for line in lines[1:])
+        current, other, old = (line_text(line) for line in lines[1:])
         self.assertTrue(current.startswith(" ● Reply with ok"))
         self.assertTrue(current.rstrip().endswith("just now · 14 messages"))
         self.assertTrue(other.startswith("   Refactor the router"))
@@ -98,13 +95,13 @@ class LinesTests(unittest.TestCase):
         chooser = picker(index=2)
         lines = chooser.lines(60, DEFAULT_THEME, 3, NOW)
         self.assertEqual(len(lines), 3)
-        self.assertIn("Release notes", text(lines[-1]))
+        self.assertIn("Release notes", line_text(lines[-1]))
         self.assertEqual(chooser.page, 2)
 
     def test_a_filter_that_matches_nothing_says_so(self) -> None:
         lines = picker(query="zzz").lines(60, DEFAULT_THEME, 5, NOW)
-        self.assertIn("Sessions (0/3)", text(lines[0]))
-        self.assertIn("no session matches", text(lines[1]))
+        self.assertIn("Sessions (0/3)", line_text(lines[0]))
+        self.assertIn("no session matches", line_text(lines[1]))
 
 
 if __name__ == "__main__":

@@ -28,7 +28,6 @@ from dataclasses import dataclass
 LOCAL = "local"
 HERMES = "hermes"
 DROPPED = "dropped"
-PASSTHROUGH = "passthrough"
 
 HERMES_DOOR = "hermes --tui"
 
@@ -108,10 +107,6 @@ class SlashInvocation:
     command: SlashCommand | None
 
     @property
-    def route(self) -> str:
-        return self.command.route if self.command else PASSTHROUGH
-
-    @property
     def text(self) -> str:
         """The command as `slash.exec` takes it: no leading slash."""
         return f"{self.name} {self.arg}".rstrip()
@@ -145,7 +140,6 @@ def dropped_notice(command: SlashCommand) -> str:
 class Completion:
     name: str
     summary: str
-    local: bool
 
 
 def completions(prefix: str, catalog_pairs: Iterable[tuple[str, str]] = ()) -> list[Completion]:
@@ -155,7 +149,7 @@ def completions(prefix: str, catalog_pairs: Iterable[tuple[str, str]] = ()) -> l
     only offers what will run here.
     """
     local = [
-        Completion(command.name, command.summary, True)
+        Completion(command.name, command.summary)
         for command in COMMANDS
         if command.route == LOCAL and command.name.startswith(prefix)
     ]
@@ -167,7 +161,7 @@ def completions(prefix: str, catalog_pairs: Iterable[tuple[str, str]] = ()) -> l
         if name in seen or not name.startswith(prefix) or routed is not None:
             continue
         seen.add(name)
-        gateway.append(Completion(name, summary, False))
+        gateway.append(Completion(name, summary))
     return local + gateway
 
 

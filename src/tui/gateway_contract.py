@@ -3,10 +3,12 @@
 The gateway's own contract (`tui_gateway/contracts/`, generated into an OpenRPC
 file under `apps/`) is not packaged in a Hermes wheel, so it cannot be read at
 runtime. What this module declares instead is the subset the TUI uses: the
-methods it calls and the keys it sends, the events it renders, and how it
-answers each server-to-client request. A drift in any of these surfaces at
-runtime as a param rejection (4000) or an unknown method (-32601), which the
-client treats as "this Hermes no longer speaks what the TUI was built for".
+methods it calls and the keys it sends, and how it answers each
+server-to-client request. A drift in either surfaces at runtime as a param
+rejection (4000) or an unknown method (-32601), which the client treats as
+"this Hermes no longer speaks what the TUI was built for". Events need no
+declaration: the TUI ignores a type it does not handle, and the gateway adds
+event types more often than it changes the ones the TUI reads.
 
 Declared against Hermes 6c61c3e27d (2026-10-07).
 """
@@ -21,7 +23,6 @@ DECLARED_AGAINST_HERMES = "6c61c3e27d"
 PARAM_REJECTED = 4000  # Pydantic `extra="forbid"`: a key this Hermes does not know
 METHOD_NOT_FOUND = -32601  # also the client's own answer to a request it does not support
 NOT_MINE = 4018  # `slash.exec` refusing a command that `command.dispatch` owns
-LEASE_HELD_ELSEWHERE = 4090  # `prompt.submit` when another process owns the session
 
 DRIFT_ERROR_CODES = frozenset({PARAM_REJECTED, METHOD_NOT_FOUND})
 
@@ -47,31 +48,6 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "command.dispatch": frozenset({"name", "arg", "session_id"}),
 }
 
-# Events the TUI renders. Anything else is ignored, never an error: the gateway
-# adds event types more often than it changes the ones below.
-RENDERED_EVENTS = frozenset(
-    {
-        "gateway.ready",
-        "session.info",
-        "session.title",
-        "session.usage",
-        "status.update",
-        "message.start",
-        "message.delta",
-        "message.interim",
-        "message.complete",
-        "thinking.delta",
-        "reasoning.delta",
-        "reasoning.available",
-        "tool.generating",
-        "tool.start",
-        "tool.complete",
-        "request.cancel",
-        "approval.cancelled",
-        "error",
-    }
-)
-
 # Events whose envelope `session_id` is not the live session are dropped, except
 # these: they belong to the gateway, not to a session.
 GATEWAY_SCOPED_EVENT_PREFIX = "gateway."
@@ -87,15 +63,17 @@ ATTACH_ENV = "HERMES_TUI_GATEWAY_URL"
 class ServerRequestTreatment:
     """How the TUI answers one server-to-client request.
 
-    `prompt` is the kind of slot the TUI shows (`None` = it shows a notice and
-    answers at once). `decline` is the frame it sends when the person declines,
-    the request times out, or the TUI does not support it. An ignored request is
-    never an option: over stdio the gateway waits out its full deadline.
+    `shown` says whether the TUI opens a slot for it (False: a notice, and the
+    decline goes at once). `decline` is the frame it sends when the person
+    declines or the TUI does not support the request. An ignored request is
+    never an option: over stdio the gateway waits out its full deadline. When
+    the gateway gives up first (its own timeout), it withdraws the request with
+    `request.cancel` and nothing is sent.
     """
 
     method: str
-    prompt: str | None
-    decline: dict[str, object] | None
+    shown: bool
+    decline: dict[str, object]
     masked: bool = False
 
 
@@ -106,27 +84,27 @@ SERVER_REQUESTS: dict[str, ServerRequestTreatment] = {
     treatment.method: treatment
     for treatment in (
         # A result without `answers` is cancel-all.
-        ServerRequestTreatment("clarify", prompt="clarify", decline={"result": {}}),
+        ServerRequestTreatment("clarify", shown=True, decline={"result": {}}),
         # `-32601` on an approval WITHDRAWS it instead of denying it; the deny is explicit.
-        ServerRequestTreatment("approval", prompt="approval", decline={"result": {"choice": "deny"}}),
-        ServerRequestTreatment("sudo", prompt="value", decline=_EMPTY_VALUE, masked=True),
-        ServerRequestTreatment("secret", prompt="value", decline=_EMPTY_VALUE, masked=True),
-        ServerRequestTreatment("vault.code", prompt="value", decline=_EMPTY_VALUE),
-        ServerRequestTreatment("vault.unlock_prompt", prompt=None, decline=_EMPTY_VALUE),
-        ServerRequestTreatment("vault.save_login", prompt=None, decline=_EMPTY_VALUE),
-        ServerRequestTreatment("terminal.read", prompt=None, decline=_UNSUPPORTED),
-        ServerRequestTreatment("preview.read", prompt=None, decline=_UNSUPPORTED),
-        ServerRequestTreatment("preview.act", prompt=None, decline=_UNSUPPORTED),
-        ServerRequestTreatment("window.read", prompt=None, decline=_UNSUPPORTED),
-        ServerRequestTreatment("tour", prompt=None, decline=_UNSUPPORTED),
-        ServerRequestTreatment("display.install.sudo", prompt=None, decline=_UNSUPPORTED),
+        ServerRequestTreatment("approval", shown=True, decline={"result": {"choice": "deny"}}),
+        ServerRequestTreatment("sudo", shown=True, decline=_EMPTY_VALUE, masked=True),
+        ServerRequestTreatment("secret", shown=True, decline=_EMPTY_VALUE, masked=True),
+        ServerRequestTreatment("vault.code", shown=True, decline=_EMPTY_VALUE),
+        ServerRequestTreatment("vault.unlock_prompt", shown=False, decline=_EMPTY_VALUE),
+        ServerRequestTreatment("vault.save_login", shown=False, decline=_EMPTY_VALUE),
+        ServerRequestTreatment("terminal.read", shown=False, decline=_UNSUPPORTED),
+        ServerRequestTreatment("preview.read", shown=False, decline=_UNSUPPORTED),
+        ServerRequestTreatment("preview.act", shown=False, decline=_UNSUPPORTED),
+        ServerRequestTreatment("window.read", shown=False, decline=_UNSUPPORTED),
+        ServerRequestTreatment("tour", shown=False, decline=_UNSUPPORTED),
+        ServerRequestTreatment("display.install.sudo", shown=False, decline=_UNSUPPORTED),
     )
 }
 
 
 def server_request_treatment(method: str) -> ServerRequestTreatment:
     """The treatment for `method`; a request the table does not know is unsupported."""
-    return SERVER_REQUESTS.get(method, ServerRequestTreatment(method, prompt=None, decline=_UNSUPPORTED))
+    return SERVER_REQUESTS.get(method, ServerRequestTreatment(method, shown=False, decline=_UNSUPPORTED))
 
 
 def is_drift_error(error: object) -> bool:

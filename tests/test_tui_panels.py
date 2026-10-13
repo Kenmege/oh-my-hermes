@@ -26,6 +26,7 @@ import time
 import unicodedata
 import unittest
 
+from _tui_lines import line_text, lines_text
 from omh.plugin_bundle.omh.runtime_reader import read_omh_hud
 from omh.plugin_bundle.omh.todo_store import build_todo_record, write_todo
 from omh.tui.panels import (
@@ -43,14 +44,6 @@ from omh.version import __version__
 
 NODE = shutil.which("node")
 THEME = DEFAULT_THEME
-
-
-def text(line) -> str:
-    return "".join(span.text for span in line)
-
-
-def texts(lines) -> list[str]:
-    return [text(line) for line in lines]
 
 
 def hud_payload(items: list[dict] | None = None, *, title: str = "Plan") -> dict:
@@ -157,7 +150,7 @@ class PanelEmptyAndErrorTests(unittest.TestCase):
 
     def test_a_reader_failure_is_one_dim_notice(self) -> None:
         lines = panel_lines({"error": "OperationalError"}, 80, 5, THEME, 0.0)
-        self.assertEqual(texts(lines), ["⚚ OMH HUD unavailable: OperationalError"])
+        self.assertEqual(lines_text(lines), ["⚚ OMH HUD unavailable: OperationalError"])
         self.assertEqual(lines[0][0].style, THEME.dim)
         self.assertEqual(panel_lines({"error": "OperationalError"}, 80, 0, THEME, 0.0), [])
 
@@ -165,14 +158,14 @@ class PanelEmptyAndErrorTests(unittest.TestCase):
 class PlanBlockTests(unittest.TestCase):
     def test_a_phased_plan_keeps_the_active_item_and_accounts_for_every_item(self) -> None:
         payload = hud_payload(phased_plan(12, phases=8, active=5), title="Release")
-        roomy = texts(panel_lines(payload, 120, 40, THEME, 0.0))
+        roomy = lines_text(panel_lines(payload, 120, 40, THEME, 0.0))
         self.assertTrue(roomy[0].startswith("[Plan] Release │ 5/12 · 8 phases"), roomy[0])
         # The widget's cap: eight items, anchored just before the first open one.
         self.assertEqual(len(item_rows(roomy)), 8)
         self.assertEqual(folded(roomy), (4, 0))
         for budget in range(3, 16):
             with self.subTest(budget=budget):
-                rows = texts(panel_lines(payload, 120, budget, THEME, 0.0))
+                rows = lines_text(panel_lines(payload, 120, budget, THEME, 0.0))
                 self.assertLessEqual(len(rows), budget)
                 self.assertTrue(rows[0].startswith("[Plan] Release"))
                 if len(rows) > 1:
@@ -188,7 +181,7 @@ class PlanBlockTests(unittest.TestCase):
         # One item needs its phase header and both folds: four rows under the header.
         for budget in (1, 2, 3, 4):
             with self.subTest(budget=budget):
-                rows = texts(panel_lines(payload, 120, budget, THEME, 0.0))
+                rows = lines_text(panel_lines(payload, 120, budget, THEME, 0.0))
                 self.assertEqual(len(rows), 1, rows)
                 self.assertTrue(rows[0].startswith("[Plan] Release │ 5/12"))
         self.assertEqual(len(panel_lines(payload, 120, 5, THEME, 0.0)), 5)
@@ -201,14 +194,14 @@ class PlanBlockTests(unittest.TestCase):
         ]
         payload = hud_payload(items, title="Done plan")
         self.assertEqual(payload["todo"]["status"], "all_done")
-        rows = texts(panel_lines(payload, 80, 10, THEME, 0.0))
+        rows = lines_text(panel_lines(payload, 80, 10, THEME, 0.0))
         self.assertEqual(rows, ["[Plan] Done plan │ ✓ 2/3 (1 skipped)"])
 
     def test_the_parallel_shot_badge_rides_the_plan_header(self) -> None:
         payload = hud_payload(phased_plan(3, phases=1, active=1))
         live = copy.deepcopy(payload)
         live["parallel_shot"] = {"status": "observed", "open_count": 3, "peak_open_count": 5}
-        header = texts(panel_lines(live, 120, 10, THEME, 0.0))[0]
+        header = lines_text(panel_lines(live, 120, 10, THEME, 0.0))[0]
         self.assertIn(" · parallel shot ×3", header)
         # Once every member closed: the measured peak, dimmed, with its age.
         history = copy.deepcopy(payload)
@@ -220,7 +213,7 @@ class PlanBlockTests(unittest.TestCase):
         }
         now = datetime(2026, 10, 13, 0, 0, 5, tzinfo=timezone.utc).timestamp()
         lines = panel_lines(history, 120, 10, THEME, now)
-        self.assertIn(" · parallel shot ×2 (5s ago)", text(lines[0]))
+        self.assertIn(" · parallel shot ×2 (5s ago)", line_text(lines[0]))
         badge = next(span for span in lines[0] if "parallel shot" in span.text)
         self.assertEqual(badge.style, THEME.dim)
 
@@ -228,7 +221,7 @@ class PlanBlockTests(unittest.TestCase):
         payload = hud_payload(phased_plan(3, phases=1, active=1))
         # This install never saw post_tool_call: liveness is unanswerable, so
         # the item keeps the always-live shape -- green, with the colour wave.
-        live_row = next(line for line in panel_lines(payload, 120, 10, THEME, 0.0) if "[•]" in text(line))
+        live_row = next(line for line in panel_lines(payload, 120, 10, THEME, 0.0) if "[•]" in line_text(line))
         self.assertGreater(len(live_row), 2, "the wave splits the item text into spans")
         self.assertIn(THEME.ok.fg, {span.style.fg for span in live_row})
         stalled = copy.deepcopy(payload)
@@ -236,10 +229,10 @@ class PlanBlockTests(unittest.TestCase):
         stalled["todo"]["stall"]["status"] = "unchanged"
         stalled["todo"]["updated_age_seconds"] = 1200
         lines = panel_lines(stalled, 120, 10, THEME, 0.0)
-        row = next(line for line in lines if "[•]" in text(line))
+        row = next(line for line in lines if "[•]" in line_text(line))
         self.assertEqual(row[0].style.fg, THEME.warn.fg)
-        self.assertTrue(text(row).endswith("(unchanged 20m 0s)"), text(row))
-        self.assertNotIn(" .", text(lines[0]), "no walking ellipsis on a plan that is not moving")
+        self.assertTrue(line_text(row).endswith("(unchanged 20m 0s)"), line_text(row))
+        self.assertNotIn(" .", line_text(lines[0]), "no walking ellipsis on a plan that is not moving")
 
     def test_hangul_titles_and_items_cut_on_whole_syllables(self) -> None:
         title = "패널 계획을 한국어로 길게 적은 제목입니다"
@@ -261,11 +254,11 @@ class PlanBlockTests(unittest.TestCase):
                 lines = panel_lines(payload, width, 10, THEME, 0.0)
                 self.assertTrue(lines)
                 for line in lines:
-                    self.assertLessEqual(line_width(line), width, text(line))
-                    for ch in text(line):
-                        self.assertFalse(0x1100 <= ord(ch) <= 0x11FF, f"loose jamo in {text(line)!r}")
-                self.assertTrue(text(lines[0]).endswith("…"), text(lines[0]))
-                self.assertIn("패널", text(lines[0]))
+                    self.assertLessEqual(line_width(line), width, line_text(line))
+                    for ch in line_text(line):
+                        self.assertFalse(0x1100 <= ord(ch) <= 0x11FF, f"loose jamo in {line_text(line)!r}")
+                self.assertTrue(line_text(lines[0]).endswith("…"), line_text(lines[0]))
+                self.assertIn("패널", line_text(lines[0]))
 
 
 class AgentsBlockTests(unittest.TestCase):
@@ -282,7 +275,7 @@ class AgentsBlockTests(unittest.TestCase):
                 agent_row(4, category="inherit", model="glm-5.3", effort=""),
             ],
         )
-        rows = texts(panel_lines(payload, 160, 20, THEME, 0.0))
+        rows = lines_text(panel_lines(payload, 160, 20, THEME, 0.0))
         # The reader marks OMH-side rows global, so the header carries the one marker.
         self.assertTrue(rows[0].startswith("[Agents] │ [global] 5 agents · 3 running"), rows[0])
         body = "\n".join(rows)
@@ -296,42 +289,42 @@ class AgentsBlockTests(unittest.TestCase):
         token_columns = {row.index("tokens") for row in rows[1:] if "tokens" in row}
         self.assertEqual(len(token_columns), 1, rows)
         # A running row's marker turns with the clock; a settled row's does not.
-        later = texts(panel_lines(payload, 160, 20, THEME, 0.09))
+        later = lines_text(panel_lines(payload, 160, 20, THEME, 0.09))
         self.assertNotEqual(rows[1][0], later[1][0])
         self.assertEqual(rows[2][0], "✓")
         self.assertEqual(later[2][0], "✓")
 
     def test_a_running_rows_elapsed_ticks_between_polls(self) -> None:
         payload = with_agents(hud_payload(), [agent_row(0, elapsed_seconds=42)])
-        fresh = texts(panel_lines(payload, 120, 5, THEME, 100.0, received_at=100.0))[1]
-        later = texts(panel_lines(payload, 120, 5, THEME, 110.0, received_at=100.0))[1]
+        fresh = lines_text(panel_lines(payload, 120, 5, THEME, 100.0, received_at=100.0))[1]
+        later = lines_text(panel_lines(payload, 120, 5, THEME, 110.0, received_at=100.0))[1]
         self.assertIn("42s", fresh)
         self.assertIn("52s", later)
 
     def test_agents_over_budget_disclose_the_rest_on_a_more_row(self) -> None:
         rows = [agent_row(index) for index in range(8)]
         payload = with_agents(hud_payload(), rows, hidden=2)
-        roomy = texts(panel_lines(payload, 120, 40, THEME, 0.0))
+        roomy = lines_text(panel_lines(payload, 120, 40, THEME, 0.0))
         # Five by default, but never fewer than are running: all eight run.
         self.assertEqual(len(roomy), 1 + 8 + 1)
         self.assertEqual(roomy[-1], "  +2 more")
         for budget in range(3, 10):
             with self.subTest(budget=budget):
-                lines = texts(panel_lines(payload, 120, budget, THEME, 0.0))
+                lines = lines_text(panel_lines(payload, 120, budget, THEME, 0.0))
                 self.assertEqual(len(lines), budget)
                 shown = len(lines) - 2
                 self.assertEqual(lines[-1], f"  +{8 - shown + 2} more")
         # Too small for a row and its disclosure: the header's counts say it.
-        self.assertEqual(texts(panel_lines(payload, 120, 2, THEME, 0.0)), [roomy[0]])
+        self.assertEqual(lines_text(panel_lines(payload, 120, 2, THEME, 0.0)), [roomy[0]])
 
     def test_the_graph_goes_first_then_agent_rows_then_plan_items(self) -> None:
         plan = hud_payload(phased_plan(3, phases=1, active=1))
         payload = with_graph(with_agents(plan, [agent_row(index) for index in range(3)]), 3)
-        full = texts(panel_lines(payload, 120, 40, THEME, 0.0))
+        full = lines_text(panel_lines(payload, 120, 40, THEME, 0.0))
         self.assertEqual(len(full), 4 + 4 + 5)  # graph header+3 nodes, header+3 rows, plan header+phase+3 items
         for budget in range(len(full), -1, -1):
             with self.subTest(budget=budget):
-                rows = texts(panel_lines(payload, 120, budget, THEME, 0.0))
+                rows = lines_text(panel_lines(payload, 120, budget, THEME, 0.0))
                 self.assertLessEqual(len(rows), budget)
                 graph = [row for row in rows if "DAG ·" in row or " unit" in row]
                 agents = [row for row in rows if "[sub]" in row]
@@ -350,7 +343,7 @@ class AgentsBlockTests(unittest.TestCase):
         )
         payload["graph"]["hidden_nodes"] = 3
         lines = panel_lines(payload, 120, 20, THEME, 0.0)
-        rows = texts(lines)
+        rows = lines_text(lines)
         self.assertEqual(rows[1], "  [global] DAG · 1 ready · 1 edges · +3 more")
         self.assertEqual(rows[3], "  [~] unit1 · stuck (same error, 6m 40s since new output)")
         self.assertEqual(lines[3][0].style, THEME.warn)
@@ -376,32 +369,32 @@ class BudgetInvariantTests(unittest.TestCase):
                         if budget:
                             self.assertTrue(lines)
                         for line in lines:
-                            self.assertLessEqual(line_width(line), width, text(line))
+                            self.assertLessEqual(line_width(line), width, line_text(line))
                             self.assertTrue(all(span.text for span in line))
 
 
 class StatusSegmentsTests(unittest.TestCase):
     def test_version_and_session_wide_chips(self) -> None:
         payload = hud_payload()
-        self.assertEqual(text(status_segments(payload, THEME)), "⚚ OMH v3.0.2")
+        self.assertEqual(line_text(status_segments(payload, THEME)), "⚚ OMH v3.0.2")
         payload["repeat"] = {"status": "observed", "consecutive": 4, "period": 2, "intercepted": 1, "stage": "blocking"}
         payload["activity"].update(
             live=True, post_tool_call_observed=True, open_call_count=2, oldest_open_elapsed_seconds=12
         )
         payload["yolo"] = {"status": "observed", "enabled": True}
         line = status_segments(payload, THEME)
-        self.assertEqual(text(line), "⚚ OMH v3.0.2 · repeat x4 cycle-of-2 blocked • 2 tools · 12s • yolo mode: on")
+        self.assertEqual(line_text(line), "⚚ OMH v3.0.2 · repeat x4 cycle-of-2 blocked • 2 tools · 12s • yolo mode: on")
         chip = next(span for span in line if span.text.startswith("repeat"))
         self.assertEqual(chip.style.fg, THEME.warn.fg)
 
     def test_liveness_is_not_claimed_where_it_cannot_be_read(self) -> None:
         payload = hud_payload()
         payload["activity"].update(live=True, post_tool_call_observed=False, open_call_count=2)
-        self.assertNotIn("tools", text(status_segments(payload, THEME)))
+        self.assertNotIn("tools", line_text(status_segments(payload, THEME)))
 
     def test_without_a_payload_the_line_still_names_omh(self) -> None:
-        self.assertEqual(text(status_segments(None, THEME)), f"⚚ OMH v{__version__}")
-        self.assertEqual(text(status_segments({"error": "OSError"}, THEME)), f"⚚ OMH v{__version__}")
+        self.assertEqual(line_text(status_segments(None, THEME)), f"⚚ OMH v{__version__}")
+        self.assertEqual(line_text(status_segments({"error": "OSError"}, THEME)), f"⚚ OMH v{__version__}")
 
 
 class FakeReader:
@@ -491,7 +484,7 @@ class HudPollerTests(unittest.TestCase):
         snapshot = poller.take()
         self.assertEqual(snapshot.payload, {"error": "OperationalError"})
         self.assertEqual(
-            texts(panel_lines(snapshot.payload, 80, 4, THEME, 0.0)), ["⚚ OMH HUD unavailable: OperationalError"]
+            lines_text(panel_lines(snapshot.payload, 80, 4, THEME, 0.0)), ["⚚ OMH HUD unavailable: OperationalError"]
         )
         self.assertEqual(poller.poll_once(), 4.0)
 
@@ -604,7 +597,7 @@ class WidgetParityTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         for case, widget_rows in zip(cases, json.loads(completed.stdout), strict=True):
             with self.subTest(cols=case["cols"], plan=case["payload"]["todo"]["title"]):
-                mine = [text(line).rstrip() for line in panel_lines(case["payload"], case["cols"], 100, THEME, 0.0)]
+                mine = [line_text(line).rstrip() for line in panel_lines(case["payload"], case["cols"], 100, THEME, 0.0)]
                 plan_at = next(index for index, row in enumerate(mine) if row.startswith("[Plan]"))
                 # The widget's dock-top ends with the composer rule, and its
                 # dock-bottom opens with a rule and the branded header, which

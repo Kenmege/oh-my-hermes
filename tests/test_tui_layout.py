@@ -13,8 +13,9 @@ from __future__ import annotations
 import itertools
 import unittest
 
+from _tui_lines import lines_text
 from omh.tui.composer import Composer
-from omh.tui.frame import build_frame, rule_line, status_line, sticky_line
+from omh.tui.frame import build_frame, rule_line, sticky_line
 from omh.tui.layout import (
     BLANK,
     MIN_COLS,
@@ -28,7 +29,6 @@ from omh.tui.layout import (
 )
 from omh.tui.style import Line, Span
 from omh.tui.theme import DEFAULT_THEME
-from omh.tui.width import line_width
 
 ROWS = range(1, 86)
 COLS = (5, MIN_COLS - 1, MIN_COLS, 40, 120)
@@ -39,10 +39,6 @@ COMPOSER_ROWS = (0, 1, 3, 12, 50)
 
 def plain(*texts: str) -> list[Line]:
     return [(Span(text),) for text in texts]
-
-
-def texts(lines: list[Line]) -> list[str]:
-    return ["".join(span.text for span in line) for line in lines]
 
 
 class AllocateGridTests(unittest.TestCase):
@@ -169,7 +165,7 @@ class ComposeTests(unittest.TestCase):
             status=self.status,
         )
         self.assertEqual(
-            texts(region), ["", "", "↳ you: hi", "t3", "t4", "s1", "s2", "──", "› a", "  b", "status"]
+            lines_text(region), ["", "", "↳ you: hi", "t3", "t4", "s1", "s2", "──", "› a", "  b", "status"]
         )
         self.assertEqual(len(region), budget.total)
 
@@ -184,7 +180,7 @@ class ComposeTests(unittest.TestCase):
             composer=plain("› a"),
             status=self.status,
         )
-        self.assertEqual(texts(region), ["", "", "", "t1", "", "s1", "──", "› a", "", "status"])
+        self.assertEqual(lines_text(region), ["", "", "", "t1", "", "s1", "──", "› a", "", "status"])
         self.assertEqual(region[0], BLANK)
 
     def test_nothing_budgeted_draws_nothing(self) -> None:
@@ -198,7 +194,7 @@ class ComposeTests(unittest.TestCase):
             composer=plain("› a"),
             status=self.status,
         )
-        self.assertEqual(texts(region), ["› a", "status"])
+        self.assertEqual(lines_text(region), ["› a", "status"])
 
     def test_caret_row_counts_everything_above_the_composer(self) -> None:
         budget = Budget(pad=2, sticky=1, tail=2, slot=2, rule=1, composer=3, status=1)
@@ -213,7 +209,7 @@ class FrameTests(unittest.TestCase):
         composer = Composer(text="hi", caret=2)
         frame = build_frame(cols=40, rows=10, composer=composer, status=self.status, previous_height=0)
         self.assertEqual((frame.height, frame.pad), (9, 6))
-        self.assertEqual(texts(list(frame.lines))[-3:], ["─" * 40, "› hi", "status"])
+        self.assertEqual(lines_text(list(frame.lines))[-3:], ["─" * 40, "› hi", "status"])
         self.assertEqual(frame.cursor, (7, 4))
 
     def test_later_frames_keep_the_previous_height_and_grow_past_it(self) -> None:
@@ -224,13 +220,13 @@ class FrameTests(unittest.TestCase):
             cols=40, rows=24, composer=composer, status=self.status, previous_height=5, tail=plain("a", "b", "c")
         )
         self.assertEqual((grown.height, grown.pad), (6, 0))
-        self.assertEqual(texts(list(grown.lines))[:3], ["a", "b", "c"])
+        self.assertEqual(lines_text(list(grown.lines))[:3], ["a", "b", "c"])
 
     def test_the_composer_is_rendered_within_its_cap(self) -> None:
         composer = Composer(text="1\n2\n3\n4\n5", caret=9)
         frame = build_frame(cols=40, rows=12, composer=composer, status=self.status, previous_height=11)
         self.assertEqual(frame.budget.composer, 3)
-        self.assertEqual(texts(list(frame.lines))[-4:], ["  3", "  4", "  5", "status"])
+        self.assertEqual(lines_text(list(frame.lines))[-4:], ["  3", "  4", "  5", "status"])
         self.assertEqual(frame.cursor, (9, 3))
 
     def test_the_attachment_row_tops_the_composer_and_the_input_row_stays_put(self) -> None:
@@ -245,23 +241,23 @@ class FrameTests(unittest.TestCase):
                 self.assertEqual(with_chips.height, plain_frame.height)
                 self.assertEqual(with_chips.cursor, plain_frame.cursor)
                 above_status = with_chips.height - 2
-                self.assertEqual(texts([with_chips.lines[above_status]]), texts([plain_frame.lines[above_status]]))
+                self.assertEqual(lines_text([with_chips.lines[above_status]]), lines_text([plain_frame.lines[above_status]]))
                 self.assertLessEqual(with_chips.budget.composer, composer_cap(12))
                 top = with_chips.budget.composer_top
-                self.assertEqual(texts([with_chips.lines[top]]), ["📎 shot.png 1280×720"])
-                self.assertEqual(texts([with_chips.lines[top - 1]]), ["─" * 40])
+                self.assertEqual(lines_text([with_chips.lines[top]]), ["📎 shot.png 1280×720"])
+                self.assertEqual(lines_text([with_chips.lines[top - 1]]), ["─" * 40])
 
     def test_a_terminal_too_short_for_two_composer_rows_drops_the_attachment_row(self) -> None:
         frame = build_frame(
             cols=40, rows=7, composer=Composer(), status=self.status, previous_height=6, attachments=(Span("📎 x"),)
         )
-        self.assertNotIn("📎 x", texts(list(frame.lines)))
+        self.assertNotIn("📎 x", lines_text(list(frame.lines)))
 
     def test_a_tiny_terminal_frame_is_composer_and_status(self) -> None:
         frame = build_frame(
             cols=12, rows=4, composer=Composer(), status=self.status, previous_height=2, slot=plain("menu")
         )
-        self.assertEqual(texts(list(frame.lines)), ["› ", "status"])
+        self.assertEqual(lines_text(list(frame.lines)), ["› ", "status"])
         self.assertEqual(frame.cursor, (0, 2))
 
     def test_the_rule_spans_the_width_in_the_rule_colour(self) -> None:
@@ -269,21 +265,8 @@ class FrameTests(unittest.TestCase):
 
     def test_the_sticky_line_shows_the_first_line_of_the_prompt(self) -> None:
         line = sticky_line("  fix the 한글 bug\nand more", 40, DEFAULT_THEME)
-        self.assertEqual(texts([line]), ["↳ you: fix the 한글 bug"])
-        self.assertEqual(texts([sticky_line("abcdefghij", 12, DEFAULT_THEME)]), ["↳ you: abcd…"])
-
-    def test_the_status_line_fills_the_width(self) -> None:
-        theme = DEFAULT_THEME
-        line = status_line(version="1.2.3", model="m", context="ctx 4%", state="idle", width=40, theme=theme)
-        self.assertEqual(texts([line]), ["⚚ OMH v1.2.3 │ m │ ctx 4% │ idle" + " " * 8])
-        self.assertEqual(line_width(line), 40)
-        self.assertEqual([span.style for span in line[:3]], [theme.status, theme.status_dim, theme.status])
-
-    def test_the_status_line_skips_empty_fields_and_cuts_to_the_width(self) -> None:
-        line = status_line(version="1.2.3", model="", context="", state="running", width=24)
-        self.assertEqual(texts([line]), ["⚚ OMH v1.2.3 │ running  "])
-        cut = status_line(version="1.2.3", model="a-very-long-model-name", context="", state="idle", width=20)
-        self.assertEqual(texts([cut]), ["⚚ OMH v1.2.3 │ a-ve…"])
+        self.assertEqual(lines_text([line]), ["↳ you: fix the 한글 bug"])
+        self.assertEqual(lines_text([sticky_line("abcdefghij", 12, DEFAULT_THEME)]), ["↳ you: abcd…"])
 
 
 if __name__ == "__main__":

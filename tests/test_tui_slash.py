@@ -10,13 +10,11 @@ from omh.tui import slash
 class ParseSlashTests(unittest.TestCase):
     def test_a_known_command_resolves_through_its_alias(self) -> None:
         invocation = slash.parse_slash("/exit")
-        self.assertEqual(invocation.command.name, "quit")
-        self.assertEqual(invocation.route, slash.LOCAL)
+        self.assertEqual((invocation.command.name, invocation.command.route), ("quit", slash.LOCAL))
 
     def test_an_unknown_command_passes_through_with_its_argument(self) -> None:
         invocation = slash.parse_slash("/model  gpt-x --global ")
         self.assertIsNone(invocation.command)
-        self.assertEqual(invocation.route, slash.PASSTHROUGH)
         self.assertEqual(invocation.text, "model gpt-x --global")
 
     def test_text_that_only_looks_like_a_command_is_not_one(self) -> None:
@@ -41,7 +39,7 @@ class RouteTableTests(unittest.TestCase):
     def test_commands_that_would_persist_raw_prompts_go_to_hermes(self) -> None:
         for name in ("save", "prompt", "compose"):
             with self.subTest(name=name):
-                self.assertEqual(slash.parse_slash(f"/{name}").route, slash.HERMES)
+                self.assertEqual(slash.parse_slash(f"/{name}").command.route, slash.HERMES)
 
     def test_attachments_and_session_switching_run_in_the_tui(self) -> None:
         for name, command in (
@@ -54,12 +52,12 @@ class RouteTableTests(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 invocation = slash.parse_slash(f"/{name} x")
-                self.assertEqual((invocation.command.name, invocation.route), (command, slash.LOCAL))
+                self.assertEqual((invocation.command.name, invocation.command.route), (command, slash.LOCAL))
         names = [c.name for c in slash.completions("", [])]
         self.assertTrue({"image", "paste", "sessions"} <= set(names))
 
     def test_the_network_widget_is_dropped(self) -> None:
-        self.assertEqual(slash.parse_slash("/weather").route, slash.DROPPED)
+        self.assertEqual(slash.parse_slash("/weather").command.route, slash.DROPPED)
 
     def test_hermes_notice_names_the_hermes_door(self) -> None:
         notice = slash.hermes_notice(slash.parse_slash("/voice").command)
@@ -87,7 +85,7 @@ class CompletionTests(unittest.TestCase):
     def test_omh_model_is_exact_and_ranks_ahead_of_a_longer_catalog_name(self) -> None:
         # In Hermes' TUI, Enter on `/omh-model` picked the `/omh-model-optimization` completion.
         catalog = [("/omh-model-optimization", "Model optimization skill")]
-        self.assertEqual(slash.parse_slash("/omh-model").route, slash.LOCAL)
+        self.assertEqual(slash.parse_slash("/omh-model").command.route, slash.LOCAL)
         names = [c.name for c in slash.completions("omh-model", catalog)]
         self.assertEqual(names, ["omh-model", "omh-model-optimization"])
 

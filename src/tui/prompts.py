@@ -63,8 +63,7 @@ class ImmediateAnswer:
 
 
 def _decline(request_id: str, method: str) -> Answer:
-    treatment = contract.server_request_treatment(method)
-    return Answer(request_id, dict(treatment.decline or {}))
+    return Answer(request_id, dict(contract.server_request_treatment(method).decline))
 
 
 @dataclass
@@ -273,8 +272,7 @@ def _approval_label(choice: str, form: str) -> str:
 
 def open_request(request_id: str, method: str, params: dict[str, Any]) -> PromptSlot | ImmediateAnswer:
     """A slot for a request the TUI shows, or the immediate answer for one it cannot."""
-    treatment = contract.server_request_treatment(method)
-    if treatment.prompt is None:
+    if not contract.server_request_treatment(method).shown:
         notice = _DECLINE_NOTICES.get(
             method, f"Hermes asked for `{method}`, which only Hermes' Desktop app answers; declined."
         )

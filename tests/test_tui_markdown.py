@@ -13,6 +13,7 @@ import random
 import unicodedata
 import unittest
 
+from _tui_lines import lines_text
 from omh.tui.markdown import MarkdownState, clean_text, render_line, render_lines, render_markdown, strip_escapes
 from omh.tui.style import Line, Span
 from omh.tui.theme import DEFAULT_THEME as THEME
@@ -52,10 +53,6 @@ DOCUMENT = "\n".join(
 )
 
 
-def texts(rows: list[Line]) -> list[str]:
-    return ["".join(span.text for span in row) for row in rows]
-
-
 def span_with(row: Line, text: str) -> Span:
     return next(span for span in row if span.text == text)
 
@@ -67,46 +64,46 @@ def render(text: str, width: int = 40) -> list[Line]:
 class BlockTests(unittest.TestCase):
     def test_heading_drops_its_hashes_and_takes_the_heading_style(self) -> None:
         rows = render("## Plan")
-        self.assertEqual(texts(rows), ["Plan"])
+        self.assertEqual(lines_text(rows), ["Plan"])
         self.assertEqual(rows[0][0].style, THEME.heading)
 
     def test_hashes_without_a_space_are_text(self) -> None:
         rows = render("#hashtag")
-        self.assertEqual(texts(rows), ["#hashtag"])
+        self.assertEqual(lines_text(rows), ["#hashtag"])
         self.assertEqual(rows[0][0].style, THEME.text)
 
     def test_bullet_wraps_under_its_text(self) -> None:
         rows = render("- alpha beta gamma delta epsilon", width=16)
-        self.assertEqual(texts(rows), ["• alpha beta", "  gamma delta", "  epsilon"])
+        self.assertEqual(lines_text(rows), ["• alpha beta", "  gamma delta", "  epsilon"])
         self.assertEqual(span_with(rows[0], "• ").style, THEME.accent)
 
     def test_numbered_item_wraps_under_its_text(self) -> None:
         rows = render("10. one two three four five six", width=14)
-        self.assertEqual(texts(rows), ["10. one two", "    three four", "    five six"])
+        self.assertEqual(lines_text(rows), ["10. one two", "    three four", "    five six"])
 
     def test_nested_items_and_continuation_lines_hang_under_the_item_text(self) -> None:
         rows = render("- top\n  - nested\n    more text\n1. item\n  lazy")
-        self.assertEqual(texts(rows), ["• top", "  • nested", "    more text", "1. item", "   lazy"])
+        self.assertEqual(lines_text(rows), ["• top", "  • nested", "    more text", "1. item", "   lazy"])
 
     def test_a_plain_paragraph_ends_the_list(self) -> None:
         rows = render("- a\nplain\n  indented")
-        self.assertEqual(texts(rows), ["• a", "plain", "  indented"])
+        self.assertEqual(lines_text(rows), ["• a", "plain", "  indented"])
 
     def test_blockquote_bars_every_row_and_nests(self) -> None:
         rows = render("> quoted **bold**\n>> deep", width=40)
-        self.assertEqual(texts(rows), ["│ quoted bold", "│ │ deep"])
+        self.assertEqual(lines_text(rows), ["│ quoted bold", "│ │ deep"])
         self.assertEqual(span_with(rows[0], "quoted ").style, THEME.quote)
         self.assertEqual(span_with(rows[0], "bold").style, replace(THEME.quote, bold=True))
 
     def test_horizontal_rules_fill_the_width(self) -> None:
         for source in ("---", "***", "_ _ _"):
             with self.subTest(source=source):
-                self.assertEqual(texts(render(source, width=12)), ["─" * 12])
-        self.assertEqual(texts(render("--", width=12)), ["--"])
+                self.assertEqual(lines_text(render(source, width=12)), ["─" * 12])
+        self.assertEqual(lines_text(render("--", width=12)), ["--"])
 
     def test_tables_pass_through_as_plain_text(self) -> None:
         rows = render("| a | **b** |")
-        self.assertEqual(texts(rows), ["| a | **b** |"])
+        self.assertEqual(lines_text(rows), ["| a | **b** |"])
         self.assertEqual(rows[0], (Span("| a | **b** |", THEME.text),))
 
     def test_blank_lines_are_empty_rows(self) -> None:
@@ -116,18 +113,18 @@ class BlockTests(unittest.TestCase):
 class FenceTests(unittest.TestCase):
     def test_code_is_verbatim_with_no_inline_markup(self) -> None:
         rows = render("```python\nx = *a* `b` [c](d)\n```")
-        self.assertEqual(texts(rows), ["python", "x = *a* `b` [c](d)"])
+        self.assertEqual(lines_text(rows), ["python", "x = *a* `b` [c](d)"])
         self.assertEqual(rows[1], (Span("x = *a* `b` [c](d)", THEME.text),))
         self.assertEqual(rows[0], (Span("python", THEME.dim),))
         self.assertEqual(render("```\nx = *a*\n```"), [(Span("x = *a*", THEME.code),)])
 
     def test_fence_markers_are_never_painted(self) -> None:
         rows = render("before\n```\ncode\n~~~~ruby extra\n```\n~~~~ruby extra\nputs 1\n~~~~\nafter")
-        self.assertEqual(texts(rows), ["before", "code", "~~~~ruby extra", "ruby", "puts 1", "after"])
+        self.assertEqual(lines_text(rows), ["before", "code", "~~~~ruby extra", "ruby", "puts 1", "after"])
 
     def test_an_indented_fence_labels_at_its_indent(self) -> None:
         rows = render("- step:\n  ```sh\n  ls\n  ```")
-        self.assertEqual(texts(rows), ["• step:", "  sh", "  ls"])
+        self.assertEqual(lines_text(rows), ["• step:", "  sh", "  ls"])
 
     def test_fence_state_opens_and_closes(self) -> None:
         _, state = render_line("```Python extra", MarkdownState(), 40, THEME)
@@ -144,11 +141,11 @@ class FenceTests(unittest.TestCase):
 
     def test_long_code_lines_hard_wrap_by_cells_keeping_every_space(self) -> None:
         rows = render("```\nab  cd  ef\n```", width=4)
-        self.assertEqual(texts(rows), ["ab  ", "cd  ", "ef"])
+        self.assertEqual(lines_text(rows), ["ab  ", "cd  ", "ef"])
 
     def test_inline_triple_backticks_are_code_not_a_fence(self) -> None:
         rows = render("```a``` after")
-        self.assertEqual(texts(rows), ["a after"])
+        self.assertEqual(lines_text(rows), ["a after"])
 
     def test_diff_lines_get_full_row_bands(self) -> None:
         rows = render("```diff\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old\n+new\n ctx\n```", width=20)
@@ -202,12 +199,12 @@ class InlineTests(unittest.TestCase):
 
     def test_links_show_text_then_url(self) -> None:
         row = render("see [docs](https://example.com).")[0]
-        self.assertEqual(texts([row]), ["see docs (https://example.com)."])
+        self.assertEqual(lines_text([row]), ["see docs (https://example.com)."])
         self.assertEqual(span_with(row, "docs").style, THEME.link)
         self.assertEqual(span_with(row, " (https://example.com)").style, THEME.dim)
 
     def test_escapes_and_unclosed_markers_are_literal(self) -> None:
-        self.assertEqual(texts(render("\\*not\\* `open **bold [x](")), ["*not* `open **bold [x]("])
+        self.assertEqual(lines_text(render("\\*not\\* `open **bold [x](")), ["*not* `open **bold [x]("])
 
 
 class StreamingTests(unittest.TestCase):
@@ -224,13 +221,13 @@ class StreamingTests(unittest.TestCase):
 
     def test_hangul_and_emoji_wrap_by_cells_without_splitting_a_cluster(self) -> None:
         rows = render("- 한글 문장이 아주 길게 이어집니다 " + FAMILY + " 가족", width=12)
-        self.assertEqual(texts(rows), ["• 한글", "  문장이", "  아주 길게", "  이어집니다", "  " + FAMILY + " 가족"])
+        self.assertEqual(lines_text(rows), ["• 한글", "  문장이", "  아주 길게", "  이어집니다", "  " + FAMILY + " 가족"])
         self.assertTrue(all(line_width(row) <= 12 for row in rows))
 
     def test_wide_code_wraps_on_glyph_boundaries_and_decomposed_hangul_is_composed(self) -> None:
         decomposed = unicodedata.normalize("NFD", "가나다라마바사")
         rows = render("```\n" + decomposed + "\n```", width=5)
-        self.assertEqual(texts(rows), ["가나", "다라", "마바", "사"])
+        self.assertEqual(lines_text(rows), ["가나", "다라", "마바", "사"])
 
 
 class MalformedInputTests(unittest.TestCase):
@@ -274,10 +271,10 @@ class MalformedInputTests(unittest.TestCase):
                         self.assertTrue(all(line_width(row) <= width for row in rows))
 
     def test_escape_sequences_are_dropped_whole(self) -> None:
-        self.assertEqual(texts(render("\x1b[2J\x1b[31mred\x07")), ["red"])
+        self.assertEqual(lines_text(render("\x1b[2J\x1b[31mred\x07")), ["red"])
 
     def test_tabs_expand_to_spaces(self) -> None:
-        self.assertEqual(texts(render("\tx")), ["    x"])
+        self.assertEqual(lines_text(render("\tx")), ["    x"])
 
 
 class EscapeSequenceTests(unittest.TestCase):
@@ -325,7 +322,7 @@ class EscapeSequenceTests(unittest.TestCase):
         )
         rows = render(document, width=40)
         self.assertEqual(
-            texts(rows),
+            lines_text(rows),
             ["Title", "• item", "│ quote", "code and link (https://x.y)", "python", "x = 'red'", "diff",
              "+added" + " " * 34],
         )
@@ -386,7 +383,7 @@ class HighlightTests(unittest.TestCase):
         self.assertEqual(rows, [(Span("    # inside", THEME.syntax_string),)])
         rows, state = render_line("```", state, 40, THEME)
         self.assertEqual((rows, state), ([], MarkdownState()))
-        self.assertEqual(texts(render("```python\ns = '''open\n```\nafter *it*")), ["python", "s = '''open", "after it"])
+        self.assertEqual(lines_text(render("```python\ns = '''open\n```\nafter *it*")), ["python", "s = '''open", "after it"])
 
     def test_a_wrapped_highlighted_line_keeps_its_styles_and_never_splits_a_glyph(self) -> None:
         rows = render('```js\nlet s = "한글한글" // 끝\n```', width=9)[1:]

@@ -1,7 +1,7 @@
 """Syntax colour for fenced code, one source line at a time.
 
 A fence streams in line by line and a line that left the live region is never
-repainted (plan §4.2), so highlighting cannot look ahead either. Each line is
+repainted, so highlighting cannot look ahead either. Each line is
 tokenized on its own; the one thing it inherits is `carry`, the multi-line
 construct the line before ended inside: a Python triple-quoted string, a
 `/* block comment */`, a JavaScript template literal or a Go raw string. The

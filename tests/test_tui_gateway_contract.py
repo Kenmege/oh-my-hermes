@@ -10,16 +10,13 @@ from omh.tui import gateway_contract as contract
 
 
 class ServerRequestTreatmentTests(unittest.TestCase):
-    def test_every_server_request_hermes_advertises_has_a_decline(self) -> None:
+    def test_every_server_request_hermes_advertises_has_a_treatment(self) -> None:
         # The 13 names `client.capabilities` returned from Hermes 6c61c3e27d.
         advertised = {
             "approval", "clarify", "display.install.sudo", "preview.act", "preview.read", "secret", "sudo",
             "terminal.read", "tour", "vault.code", "vault.save_login", "vault.unlock_prompt", "window.read",
         }
         self.assertEqual(set(contract.SERVER_REQUESTS), advertised)
-        for method in advertised:
-            with self.subTest(method=method):
-                self.assertIsNotNone(contract.server_request_treatment(method).decline)
 
     def test_approval_is_declined_with_an_explicit_deny(self) -> None:
         # An error answer withdraws an approval instead of denying it.
@@ -37,7 +34,7 @@ class ServerRequestTreatmentTests(unittest.TestCase):
 
     def test_an_unknown_request_is_answered_unsupported_not_ignored(self) -> None:
         treatment = contract.server_request_treatment("future.request")
-        self.assertIsNone(treatment.prompt)
+        self.assertFalse(treatment.shown)
         self.assertEqual(treatment.decline["error"]["code"], contract.METHOD_NOT_FOUND)
 
 
@@ -65,12 +62,6 @@ class ClientMethodTests(unittest.TestCase):
         self.assertTrue(contract.is_drift_error({"code": -32601, "message": "unknown method"}))
         self.assertFalse(contract.is_drift_error({"code": 4090, "message": "lease"}))
         self.assertFalse(contract.is_drift_error("unknown method"))
-
-
-class GatewayEnvironmentTests(unittest.TestCase):
-    def test_attach_url_is_both_refused_and_stripped(self) -> None:
-        self.assertIn(contract.ATTACH_ENV, contract.STRIPPED_GATEWAY_ENV)
-        self.assertIn("HERMES_TUI_SIDECAR_URL", contract.STRIPPED_GATEWAY_ENV)
 
 
 if __name__ == "__main__":

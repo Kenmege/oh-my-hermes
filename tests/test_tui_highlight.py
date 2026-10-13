@@ -12,6 +12,7 @@ from dataclasses import replace
 import random
 import unittest
 
+from _tui_lines import line_text
 from omh.tui.highlight import LANGUAGES, highlight_line, highlights
 from omh.tui.style import Span, Style
 from omh.tui.theme import DEFAULT_THEME
@@ -188,7 +189,7 @@ class RobustnessTests(unittest.TestCase):
             carry = generator.choice(sorted(OPENERS))
             with self.subTest(text=text, lang=lang, carry=carry):
                 spans, after = highlight_line(text, lang, carry, THEME)
-                self.assertEqual("".join(span.text for span in spans), text)
+                self.assertEqual(line_text(spans), text)
                 self.assertTrue(all(span.text for span in spans))
                 self.assertIn(after, OPENERS)
 

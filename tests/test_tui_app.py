@@ -42,6 +42,7 @@ from _tui_gateway_replay import (
     replay_env,
     spans,
 )
+from _tui_lines import line_text
 from _vt_screen import VTScreen
 from omh.tui import terminal as terminal_module
 from omh.skin_pack import hex_to_rgb
@@ -58,7 +59,9 @@ from omh.tui.app import (
 from omh.tui.gateway import GatewayClient, GatewayUnavailable, gateway_spawn
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Paste
 from omh.tui.launch import FALLBACK_EXIT
+from omh.tui.prompts import open_request
 from omh.tui.theme import DEFAULT_THEME, theme_named
+from omh.tui.width import line_width
 from omh.version import __version__
 
 FAST_GRACE = 0.3
@@ -909,6 +912,17 @@ class SlashCommandTests(AppTestCase):
         self.assertIn("picker frame\r\nsecond row\r\n", "".join(terminal.writes))
 
 
+class StatusLineTests(unittest.TestCase):
+    def test_the_state_is_the_last_thing_cut(self) -> None:
+        app = App(ScriptedTerminal(rows=24, cols=24), None, {}, poller=FakePoller())  # type: ignore[arg-type]
+        app.model, app.context = "a-model", "ctx 4%"
+        app.slot = open_request("srq-1", "approval", {"command": "ls"})  # type: ignore[assignment]
+        line = app._status_line(24)
+        self.assertTrue(line_text(line).startswith("⚚"), line_text(line))
+        self.assertTrue(line_text(line).endswith(" │ waiting on you"), line_text(line))
+        self.assertEqual(line_width(line), 24)
+
+
 class ModelChainPickerTests(unittest.TestCase):
     def test_tui_keys_map_to_picker_tokens_and_ctrl_c_ctrl_d_esc_cancel(self) -> None:
         cases = {
@@ -998,24 +1012,21 @@ class OpeningTests(AppTestCase):
 
     def test_the_banner_stays_one_row_and_keeps_the_end_of_a_long_path(self) -> None:
         from omh.tui.app import banner_lines
-        from omh.tui.theme import DEFAULT_THEME
-        from omh.tui.width import line_width
 
         cwd = "/private/tmp/claude-501/a-very-long-scratch-directory-name/session/scratchpad/m9/project"
         for width in (40, 60, 80, 110, 200):
             with self.subTest(width=width):
                 header, hint, _blank = banner_lines(model="deepseek/deepseek-v4.1-flash-ultrafast", cwd=cwd,
                                                     resumed="", theme=DEFAULT_THEME, width=width)
-                text = "".join(span.text for span in header)
+                text = line_text(header)
                 self.assertLessEqual(line_width(header), width)
                 self.assertLessEqual(line_width(hint), width)
                 if "…" in text and "m9/project" not in text and width >= 110:
                     self.fail(f"the path lost its end at width {width}: {text}")
-        wide = "".join(span.text for span in banner_lines(model="m", cwd=cwd, resumed="", theme=DEFAULT_THEME,
-                                                           width=110)[0])
+        wide = line_text(banner_lines(model="m", cwd=cwd, resumed="", theme=DEFAULT_THEME, width=110)[0])
         self.assertTrue(wide.endswith("m9/project"), wide)
-        narrow = "".join(span.text for span in banner_lines(model="a-long-model-name-that-fills-the-row", cwd=cwd,
-                                                             resumed="", theme=DEFAULT_THEME, width=60)[0])
+        narrow = line_text(banner_lines(model="a-long-model-name-that-fills-the-row", cwd=cwd,
+                                        resumed="", theme=DEFAULT_THEME, width=60)[0])
         self.assertNotIn("/private", narrow)
 
     def test_the_recorded_default_skin_paints_sky_and_an_omh_skin_paints_its_theme(self) -> None:

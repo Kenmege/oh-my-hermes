@@ -6,7 +6,6 @@ from dataclasses import fields
 import unittest
 
 from omh.skin_pack import SKIN_THEMES, skin_colors
-from omh.tui.style import Style
 from omh.tui.theme import DEFAULT_THEME, build_theme, theme_named
 
 
@@ -19,7 +18,6 @@ class ThemeTests(unittest.TestCase):
                     continue
                 with self.subTest(theme=skin.short_name, role=field.name):
                     style = getattr(theme, field.name)
-                    self.assertIsInstance(style, Style)
                     self.assertTrue(style.fg or style.bg, "a role without any colour paints as plain text")
 
     def test_roles_follow_the_palette(self) -> None:

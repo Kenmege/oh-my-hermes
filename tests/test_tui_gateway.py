@@ -92,7 +92,7 @@ class GatewaySpawnTests(unittest.TestCase):
             "OMH_TUI_GATEWAY_PYTHONPATH": "/runtime/site-packages",
         }
         child = gateway_spawn(env).env
-        for name in (*contract.STRIPPED_GATEWAY_ENV, "OMH_TUI_PYTHON", "OMH_TUI_GATEWAY_PYTHONPATH"):
+        for name in ("HERMES_TUI_GATEWAY_URL", "HERMES_TUI_SIDECAR_URL", "OMH_TUI_PYTHON", "OMH_TUI_GATEWAY_PYTHONPATH"):
             with self.subTest(name=name):
                 self.assertNotIn(name, child)
         for name in ("HERMES_HOME", "PATH", "OMH_HOME", "HERMES_PYTHON"):

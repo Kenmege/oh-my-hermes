@@ -1,6 +1,6 @@
 """The transcript of one OMH TUI session, and the rule for when its lines may leave the live region.
 
-Inline scrollback (plan §4.2): a line printed above the live region lives in
+Inline scrollback: a line printed above the live region lives in
 the terminal's own scrollback and is never repainted; only the live region
 repaints. So the model answers three questions for the app loop:
 
@@ -129,16 +129,11 @@ class ToolGroup:
 Block = UserBlock | AssistantBlock | ThinkingBlock | ToolGroup | NoticeBlock
 
 
-@dataclass(frozen=True)
-class TurnStatus:
-    kind: str
-    text: str
-
-
 # ── payload reading ───────────────────────────────────────────────────────
 
 
-def _str(value: object) -> str:
+def as_text(value: object) -> str:
+    """`value` when it is a string, else "": how every gateway payload field is read."""
     return value if isinstance(value, str) else ""
 
 
@@ -212,27 +207,27 @@ def tool_result_status(result: object) -> str:
 
 
 def _result_summary(payload: dict[str, Any]) -> str:
-    summary = _first_line(_str(payload.get("summary")))
+    summary = _first_line(as_text(payload.get("summary")))
     if summary:
         return summary
     result = payload.get("result")
     if isinstance(result, dict):
         for key in ("user_summary", "error", "output"):
-            line = _first_line(_str(result.get(key)))
+            line = _first_line(as_text(result.get(key)))
             if line:
                 return line
         return ""
-    return _first_line(_str(result))
+    return _first_line(as_text(result))
 
 
 def _args_summary(payload: dict[str, Any]) -> str:
-    context = _first_line(_str(payload.get("context")))
+    context = _first_line(as_text(payload.get("context")))
     if context:
         return context
     args = payload.get("args")
     if isinstance(args, dict):
         for value in args.values():
-            line = _first_line(_str(value))
+            line = _first_line(as_text(value))
             if line:
                 return line
     return ""
@@ -393,7 +388,7 @@ class Transcript:
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self.blocks: list[Block] = []
         self.activity = ""  # spinner / wait text from thinking.delta; "" when none
-        self.status: TurnStatus | None = None  # the last status.update of the running turn
+        self.status = ""  # the last status.update text of the running turn; "" when none
         self.running = False
         self.details_expanded = False
         self._clock = clock
@@ -445,7 +440,7 @@ class Transcript:
         self._append(NoticeBlock(message, NOTICE_ERROR))
         self.running = False
         self.activity = ""
-        self.status = None
+        self.status = ""
 
     def toggle_details(self) -> bool:
         """Expand or collapse the live block's details; blocks already taken never repaint."""
@@ -512,7 +507,7 @@ class Transcript:
         self.running = True
 
     def _on_message_delta(self, payload: dict[str, Any]) -> None:
-        text = _str(payload.get("text"))
+        text = as_text(payload.get("text"))
         if not text:
             return
         block = self._live(AssistantBlock)
@@ -523,7 +518,7 @@ class Transcript:
 
     def _on_message_interim(self, payload: dict[str, Any]) -> None:
         """Commentary the model wrote alongside tool calls: seal it as its own block."""
-        text = _str(payload.get("text"))
+        text = as_text(payload.get("text"))
         block = self._live(AssistantBlock)
         if block is not None:
             if not payload.get("already_streamed"):
@@ -534,9 +529,9 @@ class Transcript:
             self._append(AssistantBlock(text, done=True))
 
     def _on_message_complete(self, payload: dict[str, Any]) -> None:
-        text = _str(payload.get("text"))
-        status = _str(payload.get("status")) or "complete"
-        error = _str(payload.get("error"))
+        text = as_text(payload.get("text"))
+        status = as_text(payload.get("status")) or "complete"
+        error = as_text(payload.get("error"))
         bare_error = status == "error" and _is_bare_error(text, error)
         block = self._live(AssistantBlock)
         if block is not None and not bare_error:
@@ -548,18 +543,18 @@ class Transcript:
             self._append(NoticeBlock(INTERRUPTED_NOTICE, NOTICE_WARN))
         if status == "error":
             self._append(NoticeBlock(error.strip() or FAILED_NOTICE, NOTICE_ERROR))
-        warning = _str(payload.get("warning")).strip()
+        warning = as_text(payload.get("warning")).strip()
         if warning:
             self._append(NoticeBlock(warning, NOTICE_WARN))
         self.running = False
         self.activity = ""
-        self.status = None
+        self.status = ""
 
     def _on_thinking_delta(self, payload: dict[str, Any]) -> None:
-        self.activity = _first_line(_str(payload.get("text")))
+        self.activity = _first_line(as_text(payload.get("text")))
 
     def _on_reasoning_delta(self, payload: dict[str, Any]) -> None:
-        text = _str(payload.get("text"))
+        text = as_text(payload.get("text"))
         if not text:
             return
         block = self._live(ThinkingBlock)
@@ -572,13 +567,13 @@ class Transcript:
         """Ignored: it relays the assistant's own content, so it would repeat the answer as thought."""
 
     def _on_tool_generating(self, payload: dict[str, Any]) -> None:
-        name = _first_line(_str(payload.get("name")))
+        name = _first_line(as_text(payload.get("name")))
         if name:
             self._tool_group().tools.append(ToolRow(tool_id="", name=name))
 
     def _on_tool_start(self, payload: dict[str, Any]) -> None:
-        tool_id = _str(payload.get("tool_id"))
-        name = _first_line(_str(payload.get("name"))) or "tool"
+        tool_id = as_text(payload.get("tool_id"))
+        name = _first_line(as_text(payload.get("name"))) or "tool"
         group = self._tool_group()
         row = _find_row(group, tool_id) or _drafted_row(group, name)
         if row is None:
@@ -593,22 +588,22 @@ class Transcript:
         group.parallel = max(group.parallel, running)
 
     def _on_tool_complete(self, payload: dict[str, Any]) -> None:
-        tool_id = _str(payload.get("tool_id"))
+        tool_id = as_text(payload.get("tool_id"))
         group = self._tool_group()
         row = _find_row(group, tool_id)
         if row is None:
-            name = _first_line(_str(payload.get("name"))) or "tool"
+            name = _first_line(as_text(payload.get("name"))) or "tool"
             row = ToolRow(tool_id=tool_id, name=name, args_summary=_args_summary(payload))
             group.tools.append(row)
         row.status = tool_result_status(payload.get("result"))
         row.duration_s = _duration(payload, row, self._clock())
         row.summary = _result_summary(payload)
-        row.diff = parse_inline_diff(_str(payload.get("inline_diff")))
+        row.diff = parse_inline_diff(as_text(payload.get("inline_diff")))
 
     def _on_status_update(self, payload: dict[str, Any]) -> None:
-        text = _first_line(_str(payload.get("text")))
+        text = _first_line(as_text(payload.get("text")))
         if text:
-            self.status = TurnStatus(_str(payload.get("kind")) or "status", text)
+            self.status = text
 
     # ── output ──
 

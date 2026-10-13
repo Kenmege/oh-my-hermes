@@ -134,7 +134,6 @@ def gateway_spawn(env: Mapping[str, str]) -> GatewaySpawn:
     }
     launcher_path = env.get(GATEWAY_PYTHONPATH_ENV, "")
     child["PYTHONPATH"] = src_root + os.pathsep + launcher_path if launcher_path else src_root
-    child["HERMES_PYTHON_SRC_ROOT"] = src_root
     return GatewaySpawn(
         argv=(python, "-m", GATEWAY_MODULE),
         cwd=env.get("HERMES_CWD") or src_root,

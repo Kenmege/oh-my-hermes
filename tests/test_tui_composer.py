@@ -12,6 +12,7 @@ from __future__ import annotations
 import unicodedata
 import unittest
 
+from _tui_lines import lines_text
 from omh.tui.composer import (
     CANCEL,
     COMPLETE,
@@ -41,7 +42,7 @@ from omh.tui.keys import (
     Key,
     Paste,
 )
-from omh.tui.style import Line, Style
+from omh.tui.style import Style
 
 HANGUL = "한글"
 HANGUL_NFD = unicodedata.normalize("NFD", HANGUL)
@@ -65,10 +66,6 @@ def press(composer: Composer, *keys: Key) -> ComposerAction:
     for key in keys:
         action = composer.handle(key)
     return action
-
-
-def texts(lines: list[Line]) -> list[str]:
-    return ["".join(span.text for span in line) for line in lines]
 
 
 def at(text: str, caret: int) -> Composer:
@@ -361,7 +358,7 @@ class PasteTests(unittest.TestCase):
     def test_a_tab_draws_as_four_cells(self) -> None:
         composer = at("\tx", 2)
         lines, caret = composer.render(40, 3)
-        self.assertEqual(texts(lines), ["›     x"])
+        self.assertEqual(lines_text(lines), ["›     x"])
         self.assertEqual(caret, (0, 7))
 
 
@@ -370,7 +367,7 @@ class MaskedTests(unittest.TestCase):
         composer = Composer(masked=True)
         composer.handle(Paste("p" + HANGUL_NFD + FAMILY))
         lines, caret = composer.render(40, 3)
-        self.assertEqual(texts(lines), ["› ••••"])
+        self.assertEqual(lines_text(lines), ["› ••••"])
         self.assertEqual(caret, (0, 6))
         press(composer, Key(LEFT), Key(LEFT))
         self.assertEqual(composer.render(40, 3)[1], (0, 4))
@@ -379,7 +376,7 @@ class MaskedTests(unittest.TestCase):
         composer = Composer(masked=True)
         typed(composer, "한글한글한글")  # 12 cells of Hangul, 6 bullets
         lines, caret = composer.render(6, 5)
-        self.assertEqual(texts(lines), ["› ••••", "  ••"])
+        self.assertEqual(lines_text(lines), ["› ••••", "  ••"])
         self.assertEqual(caret, (1, 4))
 
     def test_masked_input_never_enters_or_browses_history(self) -> None:
@@ -415,26 +412,26 @@ class MaskedTests(unittest.TestCase):
 class RenderTests(unittest.TestCase):
     def test_empty_input_draws_the_prompt_with_the_caret_after_it(self) -> None:
         lines, caret = Composer().render(40, 3)
-        self.assertEqual(texts(lines), ["› "])
+        self.assertEqual(lines_text(lines), ["› "])
         self.assertEqual(caret, (0, 2))
 
     def test_the_prompt_is_styled_and_continuation_rows_are_indented(self) -> None:
         style = Style(fg="#ff0000", bold=True)
         lines, _ = at("ab\ncd", 0).render(40, 3, prompt="> ", prompt_style=style)
-        self.assertEqual(texts(lines), ["> ab", "  cd"])
+        self.assertEqual(lines_text(lines), ["> ab", "  cd"])
         self.assertEqual(lines[0][0].style, style)
         self.assertEqual(lines[1][0].style, Style())
 
     def test_wrapping_is_by_cells_and_never_splits_a_wide_glyph(self) -> None:
         composer = at("ab한글cd", 6)
         lines, caret = composer.render(7, 5)  # 5 cells per row
-        self.assertEqual(texts(lines), ["› ab한", "  글cd"])
+        self.assertEqual(lines_text(lines), ["› ab한", "  글cd"])
         self.assertEqual(caret, (1, 6))
 
     def test_the_caret_after_a_full_row_starts_a_new_row(self) -> None:
         composer = at("abcd", 4)
         lines, caret = composer.render(6, 5)  # exactly 4 cells per row
-        self.assertEqual(texts(lines), ["› abcd", "  "])
+        self.assertEqual(lines_text(lines), ["› abcd", "  "])
         self.assertEqual(caret, (1, 2))
         composer.caret = 3
         self.assertEqual(composer.render(6, 5)[1], (0, 5))
@@ -442,7 +439,7 @@ class RenderTests(unittest.TestCase):
     def test_the_caret_at_a_soft_wrap_sits_at_the_next_row_start(self) -> None:
         composer = at("abcdef", 4)
         lines, caret = composer.render(6, 5)
-        self.assertEqual(texts(lines), ["› abcd", "  ef"])
+        self.assertEqual(lines_text(lines), ["› abcd", "  ef"])
         self.assertEqual(caret, (1, 2))
 
     def test_the_caret_col_counts_wide_glyphs_and_emoji(self) -> None:
@@ -453,17 +450,17 @@ class RenderTests(unittest.TestCase):
         composer = Composer()
         composer.handle(Paste("1\n2\n3\n4\n5\n6"))
         lines, caret = composer.render(40, 3)
-        self.assertEqual(texts(lines), ["  4", "  5", "  6"])
+        self.assertEqual(lines_text(lines), ["  4", "  5", "  6"])
         self.assertEqual(caret, (2, 3))
         press(composer, Key(UP), Key(UP))  # still inside the window: no scroll
-        self.assertEqual(texts(composer.render(40, 3)[0]), ["  4", "  5", "  6"])
+        self.assertEqual(lines_text(composer.render(40, 3)[0]), ["  4", "  5", "  6"])
         press(composer, Key(UP))
         lines, caret = composer.render(40, 3)
-        self.assertEqual(texts(lines), ["  3", "  4", "  5"])
+        self.assertEqual(lines_text(lines), ["  3", "  4", "  5"])
         self.assertEqual(caret, (0, 3))
         press(composer, Key(UP), Key(UP))
         lines, caret = composer.render(40, 3)
-        self.assertEqual(texts(lines), ["› 1", "  2", "  3"])
+        self.assertEqual(lines_text(lines), ["› 1", "  2", "  3"])
         self.assertEqual(caret, (0, 3))
 
     def test_the_window_refills_when_rows_go_away(self) -> None:
@@ -472,7 +469,7 @@ class RenderTests(unittest.TestCase):
         composer.render(40, 3)
         press(composer, Key(BACKSPACE), Key(BACKSPACE))  # drop "\n6"
         lines, caret = composer.render(40, 3)
-        self.assertEqual(texts(lines), ["  3", "  4", "  5"])
+        self.assertEqual(lines_text(lines), ["  3", "  4", "  5"])
         self.assertEqual(caret, (2, 3))
 
 

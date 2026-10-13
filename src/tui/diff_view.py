@@ -24,10 +24,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from .markdown import clean_text, hard_wrap, wrap_prefixed
+from .markdown import band_rows, clean_text, hard_wrap, wrap_prefixed
 from .style import Line, Span, Style
 from .theme import Theme
-from .width import cell_width, line_width, truncate_left
+from .width import line_width, truncate_left
 
 DIFF_FILE = "file"
 DIFF_HUNK = "hunk"
@@ -129,12 +129,8 @@ def _code_rows(text: str, style: Style, width: int, band: bool) -> list[Line]:
     """A diff line hard-wrapped like fenced code under the indent; a band row is padded to the right edge."""
     indent = _indent(width)
     cells = width - line_width(indent)
-    rows: list[Line] = []
-    for row in hard_wrap(text, cells):
-        if band:
-            row += " " * max(0, cells - cell_width(row))
-        rows.append((*indent, Span(row, style)) if row else ())
-    return rows
+    rows = band_rows(text, cells, style) if band else hard_wrap((Span(text, style),), cells)
+    return [(*indent, *row) if row else () for row in rows]
 
 
 def _note_rows(text: str, style: Style, width: int) -> list[Line]:

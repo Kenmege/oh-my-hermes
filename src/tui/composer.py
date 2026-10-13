@@ -61,11 +61,10 @@ from .keys import (
     Paste,
 )
 from .style import DEFAULT_STYLE, Line, Span, Style
-from .width import cell_width, cluster_width, clusters, is_control
+from .width import TAB_CELLS, cell_width, cluster_width, clusters, is_control
 
 PROMPT = "› "
 MASK = "•"
-TAB_CELLS = 4
 NEWLINE = "\n"
 TAB_CHAR = "\t"
 

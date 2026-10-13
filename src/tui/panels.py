@@ -182,11 +182,6 @@ class HudPoller:
         self._last_structural = ""
         self._interval = HUD_POLL_MIN_SECONDS
 
-    @property
-    def session_id(self) -> str:
-        with self._lock:
-            return self._session
-
     def start(self) -> None:
         if self._thread is not None:
             return
@@ -407,7 +402,7 @@ def status_segments(payload: Any, theme: Theme) -> Line:
     valid = _valid(payload)
     data = payload if valid else {}
     version = _safe_text(data.get("version")) or __version__
-    spans: list[Span] = [Span("⚚ OMH", _bold(theme.heading)), Span(f" v{version}", theme.dim)]
+    spans: list[Span] = [Span("⚚ OMH", theme.heading), Span(f" v{version}", theme.dim)]
     if not valid:
         return _line(*spans)
     chip, stage = _repeat_chip(_mapping(data.get("repeat")))
@@ -541,7 +536,7 @@ def _plan_header(plan: _Plan, now: float, theme: Theme) -> Line:
     if plan.status == "all_done":
         worked = max(0, _count(counts.get("done")) - _count(counts.get("skipped")))
         return _line(
-            Span("[Plan]", _bold(theme.heading)),
+            Span("[Plan]", theme.heading),
             title,
             Span(SEPARATOR, theme.rule),
             Span(f"✓ {worked}/{total}", theme.ok),
@@ -552,7 +547,7 @@ def _plan_header(plan: _Plan, now: float, theme: Theme) -> Line:
     has_active = any(item.get("state") == "active" for item in plan.items)
     pulse = f" {'.' * (1 + (_frame(now) // 3) % 3)}" if has_active and plan.live else ""
     return _line(
-        Span("[Plan]", _bold(theme.heading)),
+        Span("[Plan]", theme.heading),
         title,
         Span(SEPARATOR, theme.rule),
         Span(f"{_count(counts.get('done'))}/{total}", theme.warn),
@@ -724,7 +719,7 @@ def _agents_header(payload: Mapping[str, Any], columns: int, theme: Theme) -> Li
         else ""
     )
     return _line(
-        Span("[Agents]", _bold(theme.heading)),
+        Span("[Agents]", theme.heading),
         Span(SEPARATOR, theme.rule),
         Span(f"{'[global] ' if outside else ''}{_state_label(active, agents)}", theme.warn if active else theme.ok),
         Span(board_tally, theme.dim),
@@ -818,11 +813,8 @@ def _row_marker(state: Any, board: bool, spinner: str, theme: Theme) -> tuple[st
 
 
 def _segment_style(kind: str, theme: Theme) -> Style:
-    if kind == "route":
-        return theme.label
-    # Fallback routes, Maestro identities and the cache figure are the facts
-    # the owner reads in amber.
-    return theme.warn if kind in ("route-fallback", "maestro", "cache") else theme.dim
+    # The cache figure is the one row segment the owner reads in amber.
+    return theme.warn if kind == "cache" else theme.dim
 
 
 def _activity_row(

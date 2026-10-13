@@ -10,21 +10,22 @@ line naming `hermes --tui --resume <id>` (0 would make `omh` print a resume
 hint for a session this TUI never opened).
 
 `App` is the loop. One thread owns the terminal and every model: it reads
-input with a short timeout, routes keys (an open prompt slot first, then the
-session picker, the attachment keys, the completion menu, then the
-composer), takes everything the gateway sent since
-the last step, takes the newest HUD snapshot, and repaints when something
-changed or a spinner is due. Calls made from the loop go out with
-`GatewayClient.request` and their answers come back through `poll`, so a
-slow slash command never freezes the screen.
+input with a short timeout, routes keys (the pager while it is open, then
+Ctrl+O and Ctrl+L, an open prompt slot, the session picker, the attachment
+keys and Esc, the completion menu, then the composer), takes everything the
+gateway sent since the last step, takes the newest HUD snapshot, and
+repaints when something changed or a spinner is due. Calls made from the
+loop go out with `GatewayClient.request` and their answers come back through
+`poll`, so a slow slash command never freezes the screen.
 
-Protocol rules from the M0 measurement, all enforced here: every server
-request is answered (a slot, or an immediate decline with a notice); events
+Protocol rules, measured against Hermes' gateway and enforced here: every
+server request is answered (a slot, or an immediate decline with a notice),
+because over stdio the gateway otherwise waits out its whole deadline; events
 whose envelope `session_id` is not the live session are dropped, except
-`gateway.*`; the stored session id is tracked from every `session.info` and
-written (id only, mode 0600) to `HERMES_TUI_ACTIVE_SESSION_FILE`; input sent
-while a turn runs is queued in memory unless Hermes' config explicitly asks
-for `interrupt` or `steer`.
+`gateway.*` and withdrawals, which match by request id; the stored session id
+is tracked from every `session.info` and written (id only, mode 0600) to
+`HERMES_TUI_ACTIVE_SESSION_FILE`; input sent while a turn runs is queued in
+memory unless Hermes' config explicitly asks for `interrupt` or `steer`.
 
 Prompt text, the transcript, attachments, secrets, server-request frames and
 the gateway's stderr stay in memory and on the person's own terminal; nothing
@@ -100,7 +101,7 @@ from .slash import (
 from .style import Line, Span
 from .terminal import Terminal, terminal_supported
 from .theme import DEFAULT_THEME, Theme, build_theme, theme_named
-from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript
+from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, as_text
 from .width import line_width, truncate_left, truncate_line, wrap_line
 from ..version import __version__
 
@@ -205,10 +206,6 @@ class PathItem:
 # ── small pure helpers ────────────────────────────────────────────────────
 
 
-def _text(value: object) -> str:
-    return value if isinstance(value, str) else ""
-
-
 def busy_mode(config_result: Mapping[str, Any]) -> str:
     """`display.busy_input_mode` from a `config.get {key: "full"}` answer; queue unless it says otherwise.
 
@@ -251,7 +248,7 @@ def initial_theme(ready_payload: Mapping[str, Any]) -> Theme:
     Skin names only: a foreign skin that happens to be called `amber` is not OMH's amber.
     """
     skin = ready_payload.get("skin")
-    name = _text(skin.get("name")) if isinstance(skin, dict) else ""
+    name = as_text(skin.get("name")) if isinstance(skin, dict) else ""
     return build_theme(theme_for_skin_name(name) or default_theme())
 
 
@@ -282,7 +279,7 @@ def banner_lines(*, model: str, cwd: str, resumed: str, theme: Theme, width: int
     def header(path: str) -> Line:
         shown = [*facts, path] if path else facts
         return (
-            Span(BANNER_BRAND, replace(theme.heading, bold=True)),
+            Span(BANNER_BRAND, theme.heading),
             Span(f" v{__version__}", theme.dim),
             *(span for fact in shown for span in (Span(" · ", theme.dim), Span(fact, theme.text))),
         )
@@ -294,12 +291,12 @@ def banner_lines(*, model: str, cwd: str, resumed: str, theme: Theme, width: int
 
 def attachment_from(result: Mapping[str, Any]) -> Attachment | None:
     """The chip for an image the gateway queued (`image.attach`, `clipboard.paste`, an image drop); None without a path."""
-    path = _text(result.get("path"))
+    path = as_text(result.get("path"))
     if not path:
         return None
     width, height = result.get("width"), result.get("height")
     sized = all(isinstance(value, int) and not isinstance(value, bool) and value > 0 for value in (width, height))
-    return Attachment(path, _text(result.get("name")) or os.path.basename(path) or path, f"{width}×{height}" if sized else "")
+    return Attachment(path, as_text(result.get("name")) or os.path.basename(path) or path, f"{width}×{height}" if sized else "")
 
 
 def attachment_line(attachments: Sequence[Attachment], width: int, theme: Theme) -> Line:
@@ -314,9 +311,9 @@ def path_items(result: Mapping[str, Any]) -> list[PathItem]:
     if not isinstance(items, list):
         return []
     return [
-        PathItem(_text(item.get("text")), _text(item.get("display")), _text(item.get("meta")))
+        PathItem(as_text(item.get("text")), as_text(item.get("display")), as_text(item.get("meta")))
         for item in items
-        if isinstance(item, dict) and _text(item.get("text"))
+        if isinstance(item, dict) and as_text(item.get("text"))
     ]
 
 
@@ -330,7 +327,7 @@ def at_token(text: str, caret: int) -> tuple[int, str]:
 
 
 def _tool_summary(message: Mapping[str, Any]) -> str:
-    return f"{_text(message.get('name')) or 'tool'}  {_text(message.get('context'))}".strip()
+    return f"{as_text(message.get('name')) or 'tool'}  {as_text(message.get('context'))}".strip()
 
 
 def resume_command(stored_id: str) -> str:
@@ -364,7 +361,7 @@ def write_active_session(path: str, stored_id: str) -> None:
 
 def _matches(request_id: str, params: Mapping[str, Any], ids: set[str]) -> bool:
     """Whether a withdrawal naming `ids` covers this request (its JSON-RPC id or an approval's own id)."""
-    return request_id in ids or _text(params.get("request_id")) in ids
+    return request_id in ids or as_text(params.get("request_id")) in ids
 
 
 def _slot_owns(slot: PromptSlot, event: Key | Paste, composer_text: str) -> bool:
@@ -557,7 +554,7 @@ class App:
 
     def _banner_record(self, result: Mapping[str, Any], resumed: str) -> dict[str, str]:
         info = result.get("info")
-        cwd = (_text(info.get("cwd")) if isinstance(info, dict) else "") or self._create_params().get("cwd", "")
+        cwd = (as_text(info.get("cwd")) if isinstance(info, dict) else "") or self._create_params().get("cwd", "")
         return {"model": self.model, "cwd": short_path(cwd, self.environ.get("HOME", "")), "resumed": resumed}
 
     def _redeliver(self, open_requests: object) -> None:
@@ -584,7 +581,7 @@ class App:
             if tools:
                 self.transcript.add_notice("\n".join(tools))
                 tools = []
-            text = _text(message.get("text"))
+            text = as_text(message.get("text"))
             if role == "user" and text.strip():
                 self.transcript.add_user(text)
             elif role == "assistant":
@@ -609,13 +606,13 @@ class App:
         return params
 
     def _adopt_session(self, result: Mapping[str, Any], fallback_stored: str = "") -> None:
-        self.sid = _text(result.get("session_id"))
+        self.sid = as_text(result.get("session_id"))
         info = result.get("info")
-        self.model = _text(info.get("model")) if isinstance(info, dict) else ""
+        self.model = as_text(info.get("model")) if isinstance(info, dict) else ""
         self.context = ""  # the next session.usage says how full this session is
         self.turn_pending = bool(result.get("running"))
         self.busy_since = self.clock()
-        self._adopt_stored(_text(result.get("stored_session_id")) or fallback_stored)
+        self._adopt_stored(as_text(result.get("stored_session_id")) or fallback_stored)
 
     def _adopt_stored(self, stored: str) -> None:
         if not stored or stored == self.stored_id:
@@ -735,7 +732,7 @@ class App:
         if pending.on_error is not None and pending.on_error(error):
             return
         self.transcript.add_notice(
-            f"{pending.method} failed ({error.get('code')}): {_text(error.get('message'))}", NOTICE_ERROR
+            f"{pending.method} failed ({error.get('code')}): {as_text(error.get('message'))}", NOTICE_ERROR
         )
 
     def _on_event(self, event: Event) -> None:
@@ -754,7 +751,7 @@ class App:
         elif event.type == "connection.request":
             self._on_connection_request(payload)
         elif event.type == "error":
-            self._on_error_event(_text(payload.get("message")) or "The gateway reported an error.")
+            self._on_error_event(as_text(payload.get("message")) or "The gateway reported an error.")
         else:
             self.transcript.apply(event)
             if event.type == "message.start":
@@ -781,21 +778,21 @@ class App:
 
     def _on_connection_request(self, payload: Mapping[str, Any]) -> None:
         """Hermes waits on an app connection the TUI cannot complete; say so once per operation."""
-        operation = _text(payload.get("op_id"))
+        operation = as_text(payload.get("op_id"))
         if operation in self.connection_ops:
             return
         self.connection_ops.add(operation)
         self.transcript.add_notice(CONNECTION_NOTICE, NOTICE_WARN)
 
     def _on_session_info(self, payload: Mapping[str, Any]) -> None:
-        self.model = _text(payload.get("model")) or self.model
+        self.model = as_text(payload.get("model")) or self.model
         self.context = context_text(payload.get("usage")) or self.context
         # `running` is not read: the previous turn's closing `running: false` arrives after
         # `message.complete`, by which time a queued prompt may already be pending.
-        self._adopt_stored(_text(payload.get("stored_session_id")))
+        self._adopt_stored(as_text(payload.get("stored_session_id")))
 
     def _on_withdrawn(self, payload: Mapping[str, Any]) -> None:
-        ids = {_text(payload.get("id"))} - {""}
+        ids = {as_text(payload.get("id"))} - {""}
         request_ids = payload.get("request_ids")
         if isinstance(request_ids, list):
             ids.update(value for value in request_ids if isinstance(value, str) and value)
@@ -805,7 +802,7 @@ class App:
         slot = self.slot
         if slot is not None and _matches(slot.request_id, slot.params, ids):
             self._close_slot()
-            reason = _text(payload.get("reason")) or "withdrawn"
+            reason = as_text(payload.get("reason")) or "withdrawn"
             self.transcript.add_notice(f"Hermes withdrew its {slot.method} request ({reason}).", NOTICE_WARN)
 
     # ── server requests and the prompt slot ──
@@ -855,10 +852,7 @@ class App:
     # ── input ──
 
     def _set_composer(self, text: str) -> None:
-        self.composer.text = ""
-        self.composer.caret = 0
-        if text:
-            self.composer.handle(Paste(text))
+        self.composer.replace(0, len(self.composer.text), text)
 
     def _on_input(self, event: Key | Paste) -> None:
         if self.pager is not None:
@@ -913,10 +907,9 @@ class App:
         if not isinstance(event, Key) or event.name != CHAR or not event.ctrl or event.alt:
             return False
         if event.char == "o":
-            # No notice: a new block would close the live one, the only block the toggle changes.
-            self.transcript.toggle_details()
+            self._details("")
         elif event.char == "l":
-            self._full_redraw()
+            self._redraw("")
         else:
             return False
         return True
@@ -1055,7 +1048,7 @@ class App:
 
     def _send_prompt(self, text: str, shown: str = "") -> None:
         if not self.sid:
-            self.transcript.add_notice("No session is open yet; try again in a moment.", NOTICE_WARN)
+            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
         if self._busy() and self.busy_mode == BUSY_QUEUE:
             self.queued.append((text, shown))
@@ -1095,7 +1088,7 @@ class App:
         elif command is not None and command.route == DROPPED:
             self.transcript.add_notice(dropped_notice(command))
         elif not self.sid:
-            self.transcript.add_notice("No session is open yet; try again in a moment.", NOTICE_WARN)
+            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
         else:
             self._request(
                 "slash.exec",
@@ -1119,37 +1112,37 @@ class App:
         if result.get("type"):
             self._on_dispatch(invocation, result, depth)
             return
-        body = _text(result.get("output")) or f"/{invocation.name}: no output"
-        warning = _text(result.get("warning"))
+        body = as_text(result.get("output")) or f"/{invocation.name}: no output"
+        warning = as_text(result.get("warning"))
         self._show_output(invocation.name, f"warning: {warning}\n{body}" if warning else body)
 
     def _on_dispatch(self, invocation: SlashInvocation, result: dict[str, Any], depth: int) -> None:
-        kind = _text(result.get("type"))
+        kind = as_text(result.get("type"))
         if kind in ("exec", "plugin"):
-            self._show_output(invocation.name, _text(result.get("output")) or "(no output)")
+            self._show_output(invocation.name, as_text(result.get("output")) or "(no output)")
             return
         if kind == "alias":
-            target = _text(result.get("target")).lstrip("/")
+            target = as_text(result.get("target")).lstrip("/")
             aliased = parse_slash(f"/{target} {invocation.arg}") if target and depth == 0 else None
             if aliased is not None:
                 self._run_slash(aliased, depth + 1)
             else:
                 self.transcript.add_notice(f"/{invocation.name}: the alias did not resolve.", NOTICE_WARN)
             return
-        notice = _text(result.get("notice")).strip()
+        notice = as_text(result.get("notice")).strip()
         if notice:
             self.transcript.add_notice(notice)
-        message = _text(result.get("message"))
+        message = as_text(result.get("message"))
         if kind in ("send", "skill"):
             if message.strip():
-                self._send_prompt(message, _text(result.get("display")).strip())
+                self._send_prompt(message, as_text(result.get("display")).strip())
             else:
                 self.transcript.add_notice(f"/{invocation.name}: empty message", NOTICE_WARN)
         elif kind == "prefill":
             if message:
                 self._set_composer(message)
         else:
-            other = _text(result.get("output")) or _text(result.get("display"))
+            other = as_text(result.get("output")) or as_text(result.get("display"))
             if other:
                 self._show_output(invocation.name, other)
 
@@ -1209,7 +1202,7 @@ class App:
         self.transcript.add_notice(f"New session {self.stored_id}.")
 
     def _on_create_refused(self, error: dict[str, Any]) -> bool:
-        message = _text(error.get("message")) or "refused"
+        message = as_text(error.get("message")) or "refused"
         self.transcript.add_notice(
             f"Could not start a new session ({error.get('code')}): {message}. Still in {self.stored_id}.", NOTICE_WARN
         )
@@ -1224,7 +1217,7 @@ class App:
         """
         old = self.sid
         self._decline_all_requests()
-        if old and old != _text(result.get("session_id")):
+        if old and old != as_text(result.get("session_id")):
             self._request("session.close", {"session_id": old}, lambda result: None, lambda error: True)
         self.transcript = Transcript(self.clock)
         self.queued.clear()
@@ -1281,7 +1274,7 @@ class App:
         self._redeliver(result.get("open_requests"))
 
     def _on_resume_refused(self, target: str, error: dict[str, Any]) -> bool:
-        message = _text(error.get("message")) or "refused"
+        message = as_text(error.get("message")) or "refused"
         self.transcript.add_notice(
             f"Could not switch to {target} ({error.get('code')}): {message}. Still in {self.stored_id}.", NOTICE_WARN
         )
@@ -1319,19 +1312,19 @@ class App:
             self.transcript.add_notice("/image: Hermes did not attach the file.", NOTICE_WARN)
             return
         self.attachments.append(attachment)
-        remainder = _text(result.get("remainder")).strip()
+        remainder = as_text(result.get("remainder")).strip()
         if remainder:  # `/image shot.png what is this?` keeps the question for the person to send
             self.composer.handle(Paste(remainder))
 
     def _on_clipboard_pasted(self, result: dict[str, Any]) -> None:
         attachment = attachment_from(result) if result.get("attached") is True else None
         if attachment is None:
-            self.transcript.add_notice(_text(result.get("message")) or "No image found in the clipboard.")
+            self.transcript.add_notice(as_text(result.get("message")) or "No image found in the clipboard.")
         else:
             self.attachments.append(attachment)
 
     def _attach_failed(self, command: str, error: dict[str, Any]) -> bool:
-        message = _text(error.get("message")) or "not attached"
+        message = as_text(error.get("message")) or "not attached"
         self.transcript.add_notice(f"{command}: {message} ({error.get('code')}).", NOTICE_WARN)
         return True
 
@@ -1342,8 +1335,8 @@ class App:
             if attachment is not None:
                 self.attachments.append(attachment)
             return
-        if result.get("matched") is True and _text(result.get("text")):
-            text = _text(result.get("text"))
+        if result.get("matched") is True and as_text(result.get("text")):
+            text = as_text(result.get("text"))
         self.composer.handle(Paste(text))
 
     def _on_drop_refused(self, text: str) -> bool:
@@ -1539,8 +1532,7 @@ class App:
     def _tail(self, cols: int) -> list[Line]:
         lines = list(self.transcript.live_lines(cols, self.theme))
         if self._busy():
-            status = self.transcript.status
-            text = self.transcript.activity or (status.text if status is not None else "") or "working…"
+            text = self.transcript.activity or self.transcript.status or "working…"
             now = self.clock()
             spinner = SPINNER_FRAMES[int(now / TICK_SECONDS) % len(SPINNER_FRAMES)]
             elapsed = elapsed_text(now - (self.busy_since or now))
@@ -1576,23 +1568,24 @@ class App:
     def _status_line(self, cols: int) -> Line:
         """OMH's segments, then model, context and state, on the status bar's background.
 
-        When it does not fit, the context goes first and the model next, so the
-        state (idle / running / waiting on you) is the last thing cut.
+        When it does not fit, the context goes first and the model next; then
+        OMH's segments are cut from their right, so the state (idle / running /
+        waiting on you) is the last thing cut.
         """
         bar = self.theme.status
         payload = self.hud.payload if self.hud is not None else None
-        head = [Span(span.text, replace(span.style, bg=bar.bg)) for span in status_segments(payload, self.theme)]
+        head: Line = tuple(
+            Span(span.text, replace(span.style, bg=bar.bg)) for span in status_segments(payload, self.theme)
+        )
         state = self._state_text()
-        line: Line = ()
+        tail: Line = ()
         for fields in ((self.model, self.context, state), (self.model, state), (state,)):
-            spans = list(head)
-            for text in fields:
-                if text:
-                    spans += [Span(STATUS_SEPARATOR, self.theme.status_dim), Span(text, bar)]
-            line = tuple(spans)
-            if line_width(line) <= cols:
+            tail = tuple(
+                span for text in fields if text for span in (Span(STATUS_SEPARATOR, self.theme.status_dim), Span(text, bar))
+            )
+            if line_width(head) + line_width(tail) <= cols:
                 break
-        line = truncate_line(line, cols)
+        line = truncate_line(truncate_line(head, max(cols - line_width(tail), 0)) + tail, cols)
         filler = cols - line_width(line)
         return line + ((Span(" " * filler, bar),) if filler > 0 else ())
 

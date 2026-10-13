@@ -34,11 +34,10 @@ from .composer import PROMPT, Composer
 from .layout import Budget, allocate, caret_row, compose, composer_cap, max_height
 from .style import Line, Span
 from .theme import DEFAULT_THEME, Theme
-from .width import line_width, truncate_line
+from .width import truncate_line
 
 RULE_GLYPH = "─"
 STICKY_PREFIX = "↳ you: "
-STATUS_GLYPH = "⚚"
 STATUS_SEPARATOR = " │ "
 
 
@@ -113,26 +112,3 @@ def sticky_line(prompt_text: str, width: int, theme: Theme = DEFAULT_THEME) -> L
     first = prompt_text.strip().split("\n", 1)[0]
     line = (Span(STICKY_PREFIX, theme.dim), Span(first, theme.user))
     return truncate_line(line, width)
-
-
-def status_line(
-    *,
-    version: str,
-    model: str,
-    context: str,
-    state: str,
-    width: int,
-    theme: Theme = DEFAULT_THEME,
-) -> Line:
-    """`⚚ OMH vX │ model │ ctx │ state` cut to `width` and filled to it with the bar colour.
-
-    Empty fields are left out, separators included.
-    """
-    spans = [Span(f"{STATUS_GLYPH} OMH v{version}", theme.status)]
-    for field in (model, context, state):
-        if field:
-            spans.append(Span(STATUS_SEPARATOR, theme.status_dim))
-            spans.append(Span(field, theme.status))
-    line = truncate_line(tuple(spans), width)
-    filler = max(width - line_width(line), 0)
-    return line + ((Span(" " * filler, theme.status),) if filler else ())

@@ -15,6 +15,7 @@ import random
 import unicodedata
 import unittest
 
+from _tui_lines import line_text, lines_text
 from omh.tui.diff_view import (
     DIFF_ADDED,
     DIFF_CONTEXT,
@@ -26,7 +27,7 @@ from omh.tui.diff_view import (
     diff_rows,
     parse_inline_diff,
 )
-from omh.tui.style import Line, Span
+from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.width import is_control, line_width
 
@@ -60,10 +61,6 @@ def long_diff(changed: int) -> str:
     return "\n".join(lines)
 
 
-def texts(rows: list[Line]) -> list[str]:
-    return ["".join(span.text for span in row) for row in rows]
-
-
 class ParseTests(unittest.TestCase):
     def test_colour_and_the_review_header_go_and_each_line_is_classified(self) -> None:
         self.assertEqual(
@@ -94,7 +91,7 @@ class ParseTests(unittest.TestCase):
         decomposed = unicodedata.normalize("NFD", "한글")
         lines = parse_inline_diff(f"{PLUS}+\t{decomposed}{RESET}")
         self.assertEqual(lines, (DiffLine(DIFF_ADDED, "+   " + decomposed),))
-        self.assertEqual(texts(diff_rows(lines, 12, THEME)), ["    +   한글"])
+        self.assertEqual(lines_text(diff_rows(lines, 12, THEME)), ["    +   한글"])
 
 
 class RowTests(unittest.TestCase):
@@ -120,26 +117,26 @@ class RowTests(unittest.TestCase):
         for width in (9, 13, 20, 41, 80):
             with self.subTest(width=width):
                 rows = diff_rows((line, DiffLine(DIFF_REMOVED, "-")), width, THEME)
-                self.assertTrue(all(line_width(row) == width for row in rows), texts(rows))
+                self.assertTrue(all(line_width(row) == width for row in rows), lines_text(rows))
                 self.assertEqual("".join(row[-1].text for row in rows[:-1]).replace(" ", ""), line.text)
                 self.assertEqual({row[-1].style for row in rows[:-1]}, {THEME.diff_add})
                 self.assertEqual(rows[-1][-1].style, THEME.diff_remove)
 
     def test_a_terminal_too_narrow_for_the_indent_drops_it(self) -> None:
         rows = diff_rows((DiffLine(DIFF_ADDED, "+abc"), DiffLine(DIFF_HUNK, "@@ -1 +1 @@")), 8, THEME)
-        self.assertEqual(texts(rows), ["+abc    ", "@@ -1 +1", " @@"])
+        self.assertEqual(lines_text(rows), ["+abc    ", "@@ -1 +1", " @@"])
 
     def test_the_preview_shows_24_lines_and_counts_the_rest(self) -> None:
         lines = parse_inline_diff(long_diff(28))
         self.assertEqual(len(lines), 30)
         rows = diff_rows(lines, 60, THEME)
         self.assertEqual(len(rows), 25)
-        self.assertEqual(texts(rows)[23].rstrip(), "    +line 22")
+        self.assertEqual(lines_text(rows)[23].rstrip(), "    +line 22")
         self.assertEqual(rows[-1], (Span("    "), Span("… +6 lines (/history shows all)", THEME.dim)))
         full = diff_rows(lines, 60, THEME, full=True)
         self.assertEqual(len(full), 30)
-        self.assertEqual(texts(full)[-1].rstrip(), "    +line 28")
-        self.assertEqual(texts(diff_rows(parse_inline_diff(long_diff(23)), 60, THEME))[-1], "    … +1 line (/history shows all)")
+        self.assertEqual(lines_text(full)[-1].rstrip(), "    +line 28")
+        self.assertEqual(lines_text(diff_rows(parse_inline_diff(long_diff(23)), 60, THEME))[-1], "    … +1 line (/history shows all)")
         self.assertEqual(len(diff_rows(parse_inline_diff(long_diff(22)), 60, THEME)), 24)
 
     def test_random_payloads_never_raise_or_paint_a_control_character(self) -> None:
@@ -173,7 +170,7 @@ class FileHeaderTests(unittest.TestCase):
         long = "/private/tmp/claude-501/" + "x" * 80 + "/scratchpad/m9/project/hello.py"
         lines = parse_inline_diff(f"a/{long} → b/{long}\n@@ -1 +1 @@\n-a\n+b")
         rows = diff_rows(lines, 60, DEFAULT_THEME, full=True)
-        header = "".join(span.text for span in rows[0])
+        header = line_text(rows[0])
         self.assertTrue(header.rstrip().endswith("project/hello.py"), header)
         self.assertIn("…", header)
         self.assertNotIn("→", header)

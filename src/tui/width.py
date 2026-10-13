@@ -25,6 +25,7 @@ import unicodedata
 
 from .style import Line, Span, Style
 
+TAB_CELLS = 4  # a tab is drawn as this many spaces, in the composer and in rendered text
 ZWJ = "‍"
 VS16 = "️"
 NEWLINE = "\n"
@@ -256,6 +257,7 @@ def line_width(line: Line) -> int:
 
 def truncate_left(text: str, cells: int, ellipsis: str = "…") -> str:
     """`text` cut from the LEFT to `cells`, keeping its end: for paths, whose end says what they name."""
+    text = unicodedata.normalize("NFC", text)
     if cell_width(text) <= cells:
         return text
     if cells <= cell_width(ellipsis):

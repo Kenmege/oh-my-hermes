@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 
+from _tui_lines import line_text, lines_text
 from omh.tui import prompts
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, Key, Paste
 from omh.tui.theme import DEFAULT_THEME
@@ -60,7 +61,7 @@ class ApprovalTests(unittest.TestCase):
                 self.assertEqual(slot("approval", APPROVAL).handle_key(Key(CHAR, char)).frame, {"result": {"choice": "deny"}})
 
     def test_the_choice_row_names_arrows_and_enter_and_no_letter_shortcut(self) -> None:
-        row = "".join(span.text for span in slot("approval", APPROVAL).lines(80, DEFAULT_THEME, max_rows=4)[-1])
+        row = line_text(slot("approval", APPROVAL).lines(80, DEFAULT_THEME, max_rows=4)[-1])
         self.assertIn("allow once", row)
         self.assertIn("←→ then Enter · d or Esc denies", row)
         self.assertNotIn("o:", row)
@@ -82,14 +83,14 @@ class ApprovalTests(unittest.TestCase):
 
     def test_lines_show_command_and_choices_within_budget(self) -> None:
         rows = slot("approval", APPROVAL).lines(60, DEFAULT_THEME, max_rows=6)
-        text = ["".join(span.text for span in row) for row in rows]
+        text = lines_text(rows)
         self.assertIn("rm -rf ./omh-m0-probe-dir", "\n".join(text))
         self.assertIn("deny", text[-1])
         self.assertTrue(all(line_width(row) <= 60 for row in rows))
 
     def test_a_tight_budget_keeps_header_and_choices(self) -> None:
         rows = slot("approval", {**APPROVAL, "command": "x " * 200}).lines(40, DEFAULT_THEME, max_rows=2)
-        text = ["".join(span.text for span in row) for row in rows]
+        text = lines_text(rows)
         self.assertEqual(len(rows), 2)
         self.assertIn("Hermes asks", text[0])
         self.assertIn("deny", text[1])
@@ -99,7 +100,7 @@ class ApprovalTests(unittest.TestCase):
         command = 'python3 -c "\ndef is_prime(n):\n    if n < 2:\n        return False\n' + "    pass\n" * 8 + '"'
         approval = slot("approval", {**APPROVAL, "command": command, "description": "script execution via -e/-c flag"})
         rows = approval.lines(60, DEFAULT_THEME, max_rows=6)
-        text = ["".join(span.text for span in row) for row in rows]
+        text = lines_text(rows)
         total = command.count("\n") + 1
         self.assertEqual(len(rows), 6)
         self.assertIn("script execution", text[0])
@@ -110,13 +111,13 @@ class ApprovalTests(unittest.TestCase):
 
     def test_one_spare_row_shows_the_commands_first_row(self) -> None:
         approval = slot("approval", {**APPROVAL, "command": "first line\nsecond line\nthird line"})
-        text = ["".join(span.text for span in row) for row in approval.lines(60, DEFAULT_THEME, max_rows=3)]
+        text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=3))
         self.assertEqual(text[1], "  first line")
         self.assertIn("deny", text[2])
 
     def test_a_command_that_fits_is_shown_whole_with_no_marker(self) -> None:
         approval = slot("approval", {**APPROVAL, "command": "one\ntwo"})
-        text = ["".join(span.text for span in row) for row in approval.lines(60, DEFAULT_THEME, max_rows=6)]
+        text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=6))
         self.assertEqual(text[1:3], ["  one", "two"])
         self.assertEqual(len(text), 4)
         self.assertFalse(any("more line" in row for row in text))
@@ -126,7 +127,7 @@ class ApprovalTests(unittest.TestCase):
         for width in range(18, 120):
             with self.subTest(width=width):
                 row = approval.lines(width, DEFAULT_THEME, max_rows=4)[-1]
-                self.assertIn("deny", "".join(span.text for span in row))
+                self.assertIn("deny", line_text(row))
                 self.assertLessEqual(line_width(row), width)
 
 class ClarifyTests(unittest.TestCase):
@@ -152,7 +153,7 @@ class ClarifyTests(unittest.TestCase):
         self.assertEqual(slot("clarify", CLARIFY).handle_key(Key(ESCAPE)).frame, {"result": {}})
 
     def test_the_hint_says_esc_cancels_because_it_cancels_every_question(self) -> None:
-        text = "\n".join("".join(span.text for span in row) for row in slot("clarify", CLARIFY).lines(80, DEFAULT_THEME, 6))
+        text = "\n".join(line_text(row) for row in slot("clarify", CLARIFY).lines(80, DEFAULT_THEME, 6))
         self.assertIn("Esc cancels", text)
         self.assertNotIn("skips", text)
 
