@@ -419,8 +419,9 @@ reports for it, and when Hermes reports approvals off for its own reasons
 (`approvals.mode` is off, it was started with `--yolo`, or `/yolo` turned them
 off) the composer shows accept all as well. Those approvals are not the OMH
 TUI's to turn back on: Shift+Tab then sends nothing and turns plan mode on and
-off beside accept all, and the transcript says so once per session. In plan mode each prompt you send goes to Hermes as
-`/plan <text>`, its prompt for a written plan instead of the work; that is an
+off beside accept all, and the transcript says so once per session. In plan
+mode each prompt you send goes to Hermes as `/plan <text>`, its prompt for a
+written plan instead of the work; that is an
 instruction to the model, not a restriction on its tools. An answer to a
 question Hermes asked is sent as typed in every mode.
 
