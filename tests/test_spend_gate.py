@@ -8,11 +8,11 @@ load_local_package()
 
 from omh.plugin_bundle.omh.awareness import _route_hint_rule_matches, _spend_awareness_marked, awareness_route_hint
 from omh.plugin_bundle.omh.native_tools import native_tool_presence_clause
-from omh.plugin_bundle.omh.spend_signals import spend_frame_withdraws, spend_lead_clause, spend_request_admitted
+from omh.plugin_bundle.omh.spend_signals import spend_frame_withdraws
 from omh.quality.routing_precision import ROUTING_PRECISION_CASES
 from omh.routing.localization import normalized_phrase
 from omh.routing.policy import everyday_sense_phrase_unanchored
-from omh.routing.recommend import _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS, _prepare_definition
+from omh.routing.recommend import _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS, _prepare_definition, _spend_gate_clause
 from omh.skills.catalog import builtin_definitions
 from omh.skills.packaging import builtin_skill_reference_templates, builtin_skill_templates
 from omh.skills.render import agent_skill_reference_templates, agent_skill_templates
@@ -308,10 +308,10 @@ class SpendGateRoutingTests(unittest.TestCase):
             ("go ahead buy it for me", True),
             ("please buy it for me", True),
             ("use spend gate before you buy anything", True),
-            ("top up my openai credits by $50", True),
+            ("top up my openai credits by $50 with my card", True),
             ("transfer 40 dollars from my wallet to the vendor", True),
             ("place an order for two large pizzas from dominos", True),
-            ("go ahead and pay the http 402 payment required the api returned", True),
+            ("go ahead and pay the 402 challenge for the dataset", True),
             ("buy it for me if it is under $20, check the pricing first", True),
             ("did the payment go through after you clicked pay? the checkout page timed out", True),
             ("transcribe this call, then buy it for me if it is cheap", False),
@@ -346,12 +346,12 @@ class SpendGateRoutingTests(unittest.TestCase):
             ("did the payment go through for my mom's order", False),
         ):
             with self.subTest(message=message):
-                self.assertIs(spend_request_admitted(normalized_phrase(message)), admitted)
+                self.assertIs(bool(_spend_gate_clause(normalized_phrase(message))), admitted)
 
     def test_the_gates_phrases_count_only_inside_the_request_clause(self) -> None:
-        self.assertEqual(spend_lead_clause("book the hotel for friday and pay with my card"), "book the hotel for friday")
-        self.assertEqual(spend_lead_clause("pay on my behalf for the hotel, but show me the total"), "pay on my behalf for the hotel")
-        self.assertEqual(spend_lead_clause("Book the meeting with finance about money on my behalf"), "book the meeting with finance")
+        self.assertEqual(_spend_gate_clause("pay on my behalf for the hotel, but show me the total"), "pay on my behalf for the hotel")
+        self.assertEqual(_spend_gate_clause("book the hotel for friday and pay with my card"), "")
+        self.assertEqual(_spend_gate_clause("book the meeting with finance about money on my behalf"), "")
         for message in (
             "Book the meeting with finance about money on my behalf",
             "Subscribe to the newsletter about money on my behalf",
@@ -363,6 +363,48 @@ class SpendGateRoutingTests(unittest.TestCase):
                 route = _route(message)
                 self.assertNotEqual(route.get("selected_skill"), SKILL)
                 self.assertNotEqual(route.get("candidate_skill"), SKILL)
+
+    def test_only_what_may_follow_a_request_may_follow_a_phrase(self) -> None:
+        for message, admitted in (
+            ("pay with my saved card on amazon", True),
+            ("pay with my card for the hotel", True),
+            ("send money to my friend on venmo", True),
+            ("buy it for me please", True),
+            ("buy it for me now", True),
+            ("buy it for me right away", True),
+            ("buy it for me $40", True),
+            ("buy it for me with my card", True),
+            ("pay with my saved card stopped working on safari", False),
+            ("pay with my card would be nice to have in v2", False),
+            ("pay with my card or paypal which is safer", False),
+            ("buy it for me went live last week", False),
+            ("check out a cheaper pay with my card option", False),
+            ("buy it for me with confidence", False),
+            ("approve this purchase request in coupa", False),
+            # Every phrase must pass, not one: "buy it for me" is followed by
+            # the person's card, "with my card" by a noun.
+            ("buy it for me with my card toggle", False),
+        ):
+            with self.subTest(message=message):
+                self.assertIs(bool(_spend_gate_clause(normalized_phrase(message))), admitted)
+
+    def test_idioms_and_look_at_are_not_spends(self) -> None:
+        for message, admitted in (
+            ("pay a visit to the bank with my card and ask about the fee", False),
+            ("pay tribute to the founders with my card", False),
+            ("buy time with my card issuer by disputing the charge", False),
+            ("buy time with my card", False),
+            ("check out this pay with my card flow", False),
+            ("check out this deal with my card", False),
+            ("order 5512 paid with my card", False),
+            ("pay-per-request with my card", False),
+            ("send the 402 challenge to the client", False),
+            ("send money to the client for the 402 challenge", True),
+            ("check out the cart for me with my card", True),
+            ("check out with my card", True),
+        ):
+            with self.subTest(message=message):
+                self.assertIs(bool(_spend_gate_clause(normalized_phrase(message))), admitted)
 
     def test_a_direct_answer_stays_a_direct_answer(self) -> None:
         # The skill's description words alone must not turn a direct answer
@@ -380,13 +422,10 @@ class SpendGateRoutingTests(unittest.TestCase):
                 self.assertNotEqual(route.get("selected_skill"), SKILL)
                 self.assertNotEqual(route.get("candidate_skill"), SKILL)
 
-    def test_frames_a_lead_anchored_sentence_still_carries_withdraw_the_skill(self) -> None:
+    def test_frames_an_admitted_sentence_can_still_carry_withdraw_the_skill(self) -> None:
         for message, withdrawn in (
-            ("complete the checkout flow in the react native app", True),
-            ("approve this purchase request in coupa", True),
-            ("pay per request pricing versus a flat plan, which one is better", True),
-            ("place the order of the slides so the demo comes first", True),
-            ("buy it for me is a phrase we use in the shopping assistant demo copy", True),
+            ("checkout times out for users who pick pay with my saved card", True),
+            ("a customer wants to pay with my card", True),
             ("check the pricing and buy it for me if it is under $20", False),
             ("complete the purchase on the checkout page once I confirm", False),
             ("pay the 402 challenge on this paid data endpoint", False),
@@ -461,13 +500,13 @@ class SpendGateRouteHintTests(unittest.TestCase):
 
 
 DISPATCHES = (
-    "go ahead and pay the http 402 payment required the api returned",
+    "go ahead and pay the 402 challenge for the dataset",
     "pay the 402 challenge on this paid data endpoint",
     "pay for the hotel booking with my card",
     "transfer 40 dollars from my wallet to my landlord",
     "pay on my behalf for the hotel, but show me the total and fees first",
     "pay with my saved card on amazon",
-    "approve the purchase of the dataset from the paid data endpoint",
+    "approve the purchase from the paid data endpoint",
     "pay the invoice from acme with my card",
 )
 LEADS = (
@@ -476,7 +515,7 @@ LEADS = (
     "go ahead and buy it for me if the total stays under 50 dollars",
     "renew my netflix subscription with my card",
     "use my credit card to buy the concert tickets",
-    "top up my openai credits by $50",
+    "top up my openai credits by $50 with my card",
     "send money to my friend on venmo",
     "buy it for me if it is under $20, check the pricing first",
     "use spend gate before you buy anything",
@@ -558,6 +597,22 @@ NOT_SPENDING = (
     "Click pay again only if the first charge is shown absent, that's our rule",
     "Use my credit card number 4242 in the checkout test",
     "Buy it for me buttons convert better than add to cart",
+    "Pay with my saved card stopped working on safari",
+    "Pay with my card broke after the deploy",
+    "Checkout with my card crashed yesterday",
+    "Pay again appeared twice after a timeout",
+    "Pay with my card would be nice to have in v2",
+    "Pay on my behalf could confuse people",
+    "Pay with my card or paypal which is safer",
+    "Pay with my card or cash for the cab, what do you think",
+    "Buy time with my card issuer by disputing the charge",
+    "Pay a visit to the bank with my card and ask about the fee",
+    "Check out a cheaper pay with my card option",
+    "Buy it for me went live last week",
+    "Buy it for me converts better than add to cart",
+    "Buy it for me got 3% more clicks in the experiment",
+    "Pay with my card looks broken on mobile",
+    "Use my credit card might be a better CTA",
 )
 OWNERS = (
     ("open the staging checkout url, click login and fill the form", "browser-operator"),

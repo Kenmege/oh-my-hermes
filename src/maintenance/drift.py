@@ -575,8 +575,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # stubs", "pay-per-request", "buy-side"), a phrase after the request
             # clause, a question, a statement about a feature ("pay with my
             # saved card returns a 500 error"), a UI label ("buy it for me
-            # buttons", "my card toggle"), and test or seed data (31).
-            expected=695,
+            # buttons", "my card toggle"), and test or seed data (31). Its
+            # third review adds sixteen that a list of forbidden verbs missed,
+            # each a phrase followed by something no request has after it: a
+            # verb of another tense ("stopped working", "broke", "went live"),
+            # a modal ("would be nice", "could confuse", "might be"), "or" (a
+            # comparison), a noun ("card issuer", "option"), or an idiom ("buy
+            # time", "pay a visit") (16).
+            expected=711,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

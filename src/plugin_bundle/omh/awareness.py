@@ -21,7 +21,7 @@ from .hermes_session_commands import (
 )
 from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
-from .spend_signals import spend_frame_withdraws, spend_lead_clause
+from .spend_signals import spend_frame_withdraws, spend_request_phrases
 from .reference_regions import executable_routing_text
 from .degradation import (
     COMPONENT_LOCALIZED_ROUTING_TEXT,
@@ -4133,8 +4133,8 @@ _ROUTE_HINT_RULES = (
         ),
         # Only the skill's own names and phrases that make the person the
         # payer, matched as whole words inside the request clause the router
-        # admits too (`_route_hint_phrase_matches`, `spend_lead_clause`), and
-        # withdrawn by the same frames (`_rule_suppressed_by_context`). The other trigger phrases are absent:
+        # admits too (`_route_hint_phrase_matches`, `spend_request_phrases`),
+        # and withdrawn by the same frames (`_rule_suppressed_by_context`). The other trigger phrases are absent:
         # this table has no anchor, and "complete the checkout", "wallet
         # transfer", "did the payment go through", "spending cap" and "http 402"
         # also name a checkout screen, a question about wallets, a customer's
@@ -6025,15 +6025,14 @@ def _awareness_context_matches_message_cached(message: str) -> tuple[bool, str]:
 
 
 # Spending the person's money arms awareness only through the request clause
-# the router admits (`spend_lead_clause`), as whole words: "consumer spending
+# the router admits (`spend_request_phrases`), as whole words: "consumer spending
 # capacity is falling" and "check out this thread about agents that buy it for
 # me" are not spends.
 _SPEND_AWARENESS_MARKERS = ("spend-gate", "spend gate", "money on my behalf", "pay with my card", "buy it for me")
 
 
 def _spend_awareness_marked(text: str) -> bool:
-    clause = spend_lead_clause(text)
-    return bool(clause) and _contains_boundary_phrase(clause, _SPEND_AWARENESS_MARKERS)
+    return bool(spend_request_phrases(text, _SPEND_AWARENESS_MARKERS))
 
 
 def awareness_route_hint(message: str, *, max_hints: int = 2) -> dict[str, object]:
@@ -6479,10 +6478,10 @@ def _route_hint_phrase_matches(rule: dict[str, object], routing_normalized: str)
     phrases = [str(phrase) for phrase in rule["phrases"]]
     if rule["id"] not in _WHOLE_WORD_ROUTE_HINT_RULES:
         return [phrase for phrase in phrases if phrase in routing_normalized]
-    # `spend_gate`: whole words, and only inside the request clause the router
-    # admits too (`spend_lead_clause`); a phrase used as a topic is not a hint.
-    clause = spend_lead_clause(routing_normalized)
-    return [phrase for phrase in phrases if clause and _contains_boundary_phrase(clause, (phrase,))]
+    # `spend_gate`: whole words inside the request clause the router admits
+    # too, each followed only by what may follow a request
+    # (`spend_request_phrases`).
+    return spend_request_phrases(routing_normalized, phrases)
 
 
 def _route_hint_rule_by_id(rule_id: str) -> dict[str, object] | None:
@@ -8315,7 +8314,7 @@ def _rule_suppressed_by_context(rule: dict[str, object], text: str) -> bool:
     if rule_id == "data_share_review":
         return not data_share_request_admitted(text)
     if rule_id == "spend_gate":
-        # The phrases are read inside `spend_lead_clause` already
+        # The phrases are read inside `spend_request_phrases` already
         # (`_route_hint_phrase_matches`); this adds the router's frames.
         return spend_frame_withdraws(text)
     visual_markers = (

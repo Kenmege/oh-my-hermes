@@ -1,64 +1,66 @@
 """Whether a message asks the agent to spend the person's own money: one rule for the router and the route hint.
 
 `spend-gate` phrases also name the TOPIC of a sentence that asks for something
-else: payment software ("pay with my saved card returns a 500 error",
-"checkout with my card breaks when the cart has 0 items"), a question ("pay
-with my card or paypal, which is safer?"), an article or a book ("check out
-this article on why you should never pay with my card abroad"), a ticket
-("order 5512: did the payment go through?"), a reminder, someone else's
-payment, and the person's own story. Each of those dispatched the skill, or
-produced its route hint, while a phrase anywhere in the sentence counted.
+else: payment software ("pay with my saved card stopped working on safari"),
+a question or a comparison ("pay with my card or paypal, which is safer"), an
+article ("check out this article on why you should never pay with my card
+abroad"), a ticket ("order 5512: did the payment go through?"), a product idea
+("pay with my card would be nice to have in v2"), an idiom ("pay a visit to
+the bank", "buy time with my card issuer"), someone else's payment, and the
+person's own story. Each of those dispatched the skill, or produced its route
+hint, while a phrase anywhere in the sentence counted, and every deny list of
+verbs or nouns written against them was outrun by the next tense or noun.
 
-So the gate is deliberately conservative: it reads the REQUEST, and only the
-part of the sentence that is the request. `spend_lead_clause` returns that part
--- the sentence's first words after filler and courtesy ("hey", "please", "go
-ahead and", "can you", ...), up to the first comma, colon, question mark,
-"and", "or", "if", "when", "which", "about", "on why" and the like -- when it
-is a spend addressed to the agent, and "" otherwise. A later clause never
-counts ("transcribe this call, then pay the vendor" belongs to whoever owns
-transcription), and the gate's phrases count only inside the returned clause.
-Words are read Unicode-aware with hyphens kept, so a sentence that opens in
-Hangul has no English lead and "pay-per-request" or "buy-side" is not "pay"
-or "buy".
+So the rule is closed-world and deliberately conservative.
+`spend_request_clause(text, phrases)` returns the request clause -- the
+sentence's first words after filler and courtesy ("hey", "please", "go ahead
+and", "can you", ...), read Unicode-aware with hyphens kept, up to the first
+comma, colon, question mark, "and", "or", "if", "when", "which", "about", "on
+why" and the like -- only when all of this holds, and "" otherwise:
+- the sentence does not end in "?";
+- the clause opens with a spend addressed to the agent ("buy", "pay", "order",
+  "book", "renew", "place the order", "complete the checkout", "use my card",
+  ...), not with an idiom ("pay attention", "pay a visit", "pay tribute",
+  "buy time"), a noun ("order 5512", "pay-per-request"), or "check out"
+  followed by a determiner ("check out this article") unless "for me" or an
+  amount follows; "send" and "transfer" also
+  need money, an amount, or the person's own card, wallet or account, and a
+  reconcile question ("did the payment go through") needs the agent to be the
+  one who paid ("after you clicked pay"); naming the gate as a command
+  ("spend-gate: ...", "use spend gate") counts;
+- one of the given phrases occurs in the clause, and every occurrence is
+  followed only by what may follow a request: the end of the clause (but not
+  "or", which makes a comparison); "for",
+  "on", "at", "from", "to" or "in" (the item, the payee, the place); "with"
+  followed by the person's own card, wallet or account or by an amount; an
+  amount; "please", "now", or "right away". Anything else right after the
+  phrase -- a verb of any tense, a modal, "or", a noun that extends the
+  phrase ("issuer", "option", "button", "flow") -- means the phrase is the
+  subject or a label, not the request.
 
-The clause is a spend when it opens with:
-- a spend lead ("buy", "pay", "order", "book", "top up", "renew", "place the
-  order", "complete the checkout", "use my card", ...) whose object -- the
-  words up to the next "for", "with", "to" and the like -- does not end in a
-  thing being built or filed ("complete the checkout flow", "pay again
-  button", "order the slides");
-- "send" or "transfer" with the same object rule and a money cue in the
-  sentence: money, an amount with its currency, or the person's own card,
-  wallet or account;
-- a reconcile question ("did the payment go through") in a sentence that says
-  the agent paid ("after you clicked pay");
-- or the gate's own name as a command ("spend-gate: ...", "use spend gate").
+Everything else returns to the router's base behaviour: the router withdraws
+the skill (so no phrase or word of it counts) and the route hint and the
+awareness markers stay silent. Nothing here lets the gate take a request
+another skill's guard holds; an admitted clause only lets the skill's own
+phrases score as usual.
 
-Noun, subject and question shapes are not requests and return "": a sentence
-ending in "?"; a one-word lead followed by "of", a colon, or a number that is
-not an amount ("order of events", "order 5512:"); "check out this / that /
-the new ..."; "pay attention", "pay close attention", "pay off", "pay stubs";
-and a clause in which a finite verb follows the lead ("pay with my saved
-card returns a 500 error", "buy it for me is the copy marketing wants") --
-that is a statement about a feature, not a command.
+`spend_frame_withdraws` keeps the one frame an admitted clause can still
+carry: someone else's payment (a user, a customer).
 
-`spend_frame_withdraws` keeps the few frames an admitted clause can still
-carry: an app or component being built, procurement, a comparison, a quoted
-phrase, and "the order of" things.
-
-The router (`omh.routing.recommend`) and the awareness route hint and markers
-(`awareness.py`) all read this module, so the surfaces cannot disagree.
-Nothing here lets the gate take a request another skill's guard holds: an
-admitted clause only lets the skill's own phrases score as usual. Stdlib only.
+The router (`omh.routing.recommend`) passes the skill's triggers to
+`spend_request_clause`; the awareness route hint (`awareness.py`) passes its
+own phrase table and its markers to `spend_request_phrases`. Stdlib only.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 
-_SYMBOL_AMOUNT = re.compile(r"[$€£¥₩]\s?\d")
-# Unicode-aware words with hyphens and apostrophes kept, plus clause punctuation.
-_TOKEN = re.compile(r"\w+(?:[-']\w+)*|[,;:.!?]")
+_CURRENCY_SYMBOLS = "$€£¥₩"
+# Unicode-aware words with hyphens and apostrophes kept, amounts with their
+# currency symbol, and clause punctuation.
+_TOKEN = re.compile(rf"[{_CURRENCY_SYMBOLS}]\d[\d.,]*|\w+(?:[-']\w+)*|[,;:.!?]")
 _WORD = re.compile(r"\w+(?:'\w+)?")
 
 # Stripped, repeatedly and longest first, from the start of the sentence.
@@ -96,42 +98,34 @@ _CLAUSE_BOUNDARIES = frozenset(
         "when", "which", "while",
     }
 )
-# A finite verb after the lead makes the clause a statement about a feature.
-SPEND_STATEMENT_VERBS = frozenset(
-    {
-        "are", "breaks", "can", "crashes", "does", "doesn't", "failed", "fails", "hangs", "has", "is", "isn't",
-        "keeps", "loads", "need", "needs", "returns", "seems", "should", "shows", "stops", "throws", "times", "was",
-        "were", "will", "works",
-    }
-)
-# (lead words, how many of them are the verb): the object starts after the verb.
+# Leads that ask the agent to spend.
 SPEND_LEADS = (
-    (("buy",), 1),
-    (("pay",), 1),
-    (("purchase",), 1),
-    (("order",), 1),
-    (("book",), 1),
-    (("top", "up"), 2),
-    (("renew",), 1),
-    (("subscribe",), 1),
-    (("tip",), 1),
-    (("donate",), 1),
-    (("check", "out"), 2),
-    (("checkout",), 1),
-    (("place", "the", "order"), 1),
-    (("place", "an", "order"), 1),
-    (("complete", "the", "purchase"), 1),
-    (("complete", "the", "checkout"), 1),
-    (("approve", "the", "spend"), 1),
-    (("approve", "the", "purchase"), 1),
-    (("approve", "this", "purchase"), 1),
-    (("use", "my", "card"), 1),
-    (("use", "my", "credit", "card"), 1),
-    (("use", "my", "debit", "card"), 1),
-    (("click", "pay"), 2),
+    ("buy",),
+    ("pay",),
+    ("purchase",),
+    ("order",),
+    ("book",),
+    ("top", "up"),
+    ("renew",),
+    ("subscribe",),
+    ("tip",),
+    ("donate",),
+    ("check", "out"),
+    ("checkout",),
+    ("place", "the", "order"),
+    ("place", "an", "order"),
+    ("complete", "the", "purchase"),
+    ("complete", "the", "checkout"),
+    ("approve", "the", "spend"),
+    ("approve", "the", "purchase"),
+    ("approve", "this", "purchase"),
+    ("use", "my", "card"),
+    ("use", "my", "credit", "card"),
+    ("use", "my", "debit", "card"),
+    ("click", "pay"),
 )
 # Leads whose object is often not money; they also need a money cue.
-SPEND_MONEY_CUED_LEADS = ((("send",), 1), (("transfer",), 1))
+SPEND_MONEY_CUED_LEADS = (("send",), ("transfer",))
 _MONEY_CUES = (
     "money",
     "my card",
@@ -167,81 +161,46 @@ SPEND_GATE_NAME_LEADS = (
     ("run", "spend-gate"),
     ("run", "spend", "gate"),
 )
-# A lead used as a noun or an idiom, not a request.
-_NOT_A_REQUEST_AFTER_LEAD = {
-    ("check", "out"): (("this",), ("that",), ("the", "new")),
-    ("pay",): (("attention",), ("close", "attention"), ("off",), ("stubs",), ("stub",)),
+# A lead used as an idiom, not a request.
+_IDIOMS_AFTER_LEAD = {
+    ("pay",): (
+        ("attention",),
+        ("close", "attention"),
+        ("a", "visit"),
+        ("tribute",),
+        ("heed",),
+        ("respects",),
+        ("my", "respects"),
+        ("your", "respects"),
+        ("homage",),
+        ("off",),
+        ("stubs",),
+        ("stub",),
+    ),
+    ("buy",): (("time",),),
 }
+# "check out" followed by one of these is "look at", unless "for me" or an amount follows.
+_DETERMINERS = frozenset({"a", "an", "that", "the", "these", "this", "those", "our", "my"})
 
-# Where a spend verb's object ends.
-_OBJECT_BOUNDARIES = frozenset(
-    {
-        ",", ";", ":", ".", "!", "?",
-        "after", "and", "as", "at", "before", "but", "by", "for", "from", "if", "in", "into", "on", "once", "or",
-        "so", "then", "to", "until", "under", "using", "via", "when", "with",
-    }
-    | SPEND_STATEMENT_VERBS
-)
-_OBJECT_PREPOSITIONS = frozenset({"for", "from", "on", "to", "with"})
-# An object ending in one of these is a thing being built or filed, not a purchase.
-SPEND_NON_SPEND_OBJECT_NOUNS = frozenset(
-    {
-        "button", "buttons", "component", "components", "docs", "endpoint", "endpoints", "flag", "flags", "flow",
-        "flows", "form", "forms", "function", "functions", "issue", "issues", "label", "labels", "page", "pages",
-        "policies", "policy", "pr", "prs", "screen", "screens", "slides", "spec", "specs", "stories", "story",
-        "string", "strings", "template", "templates", "test", "tests", "toggle", "workflow", "workflows",
-    }
+# What may follow a gate phrase inside the request clause.
+_ALLOWED_PREPOSITIONS = frozenset({"at", "for", "from", "in", "on", "to"})
+_ALLOWED_ADVERBS = (("please",), ("now",), ("right", "away"))
+_OWN_MONEY_AFTER_WITH = (
+    ("my", "card"),
+    ("my", "saved", "card"),
+    ("my", "credit", "card"),
+    ("my", "debit", "card"),
+    ("my", "wallet"),
+    ("my", "account"),
 )
 
-# A label word right after one of these is the name of a UI element ("buy it for
-# me buttons", "my card toggle", "pay again button", "the checkout flow"), not
-# the thing bought. "page" is left out: "the checkout page" is where a real
-# purchase is completed.
-_LABEL_HEADS = frozenset({"account", "again", "behalf", "card", "cards", "checkout", "me", "order", "purchase", "wallet"})
+# Someone else's payment can still sit in an admitted clause ("checkout times
+# out for users who pick pay with my saved card"); it withdraws the skill.
+SPEND_FRAME_TOKENS = frozenset({"customer", "customers", "user", "users"})
 
-# Frames an admitted clause can still carry; each withdraws the skill.
-SPEND_FRAME_TOKENS = frozenset(
-    {
-        "android",
-        "coupa",
-        "customer",
-        "customers",
-        "figma",
-        "fixture",
-        "fixtures",
-        "flutter",
-        "ios",
-        "mockup",
-        "phrase",
-        "procurement",
-        "react",
-        "redesign",
-        "requisition",
-        "sandbox",
-        "seed",
-        "staging",
-        "user",
-        "users",
-        "versus",
-        "vs",
-        "wireframe",
-    }
-)
-SPEND_FRAME_PHRASES = (
-    "our api",
-    "my own api",
-    "our app",
-    "our store",
-    "our checkout",
-    "purchase order",
-    "purchase request",
-    "purchase requests",
-    "the order of",
-    "which is better",
-    "which one is better",
-    "as the default",
-    "our rule",
-)
+
+def _tokens(text: str) -> list[str]:
+    return _TOKEN.findall(text.casefold())
 
 
 def _spoken(text: str, phrase: str) -> bool:
@@ -274,96 +233,95 @@ def _clause(tokens: list[str]) -> list[str]:
     return clause
 
 
-def _object_words(rest: list[str]) -> list[str]:
-    words: list[str] = []
-    for token in rest:
-        if token in _OBJECT_BOUNDARIES:
-            break
-        words.append(token)
-    return words
+def _starts_with(tokens: list[str], words: tuple[str, ...]) -> bool:
+    return tuple(tokens[: len(words)]) == words
 
 
-def _names_a_label(clause: list[str]) -> bool:
-    return any(
-        token in SPEND_NON_SPEND_OBJECT_NOUNS and token not in {"page", "pages"} and clause[index - 1] in _LABEL_HEADS
-        for index, token in enumerate(clause)
-        if index
-    )
-
-
-def _object_is_a_spend(after_verb: list[str]) -> bool:
-    words = _object_words(after_verb)
-    if not words and after_verb and after_verb[0] in _OBJECT_PREPOSITIONS:
-        # "pay with my saved card toggle", "pay for the booking": the object follows the preposition.
-        words = _object_words(after_verb[1:])
-    if not words:
-        return True
-    if words[-2:] == ["pull", "request"]:
+def _is_amount(tokens: list[str]) -> bool:
+    if not tokens:
         return False
-    return words[-1] not in SPEND_NON_SPEND_OBJECT_NOUNS
-
-
-def _names_money(text: str) -> bool:
-    if _SYMBOL_AMOUNT.search(text) or any(_spoken(text, cue) for cue in _MONEY_CUES):
+    if tokens[0][0] in _CURRENCY_SYMBOLS:
         return True
-    words = _WORD.findall(text)
-    return bool(_CURRENCY_WORDS.intersection(words)) and any(word[0].isdigit() for word in words)
+    return tokens[0][0].isdigit() and len(tokens) > 1 and tokens[1] in _CURRENCY_WORDS
 
 
-def _leads_with(tokens: list[str], lead: tuple[str, ...]) -> bool:
-    return tuple(tokens[: len(lead)]) == lead
+def _names_money(text: str, tokens: list[str]) -> bool:
+    if any(_spoken(text, cue) for cue in _MONEY_CUES):
+        return True
+    return any(_is_amount(tokens[index:]) for index in range(len(tokens)))
 
 
-def _lead_used_as_a_noun(tokens: list[str], lead: tuple[str, ...]) -> bool:
+def _lead_used_as_a_noun(tokens: list[str], clause: list[str], lead: tuple[str, ...]) -> bool:
     after = tokens[len(lead):]
-    for idiom in _NOT_A_REQUEST_AFTER_LEAD.get(lead, ()):
-        if tuple(after[: len(idiom)]) == idiom:
-            return True
-    if len(lead) != 1 or not after:
-        return False
-    if after[0] in {"of", ":"}:
+    if any(_starts_with(after, idiom) for idiom in _IDIOMS_AFTER_LEAD.get(lead, ())):
         return True
-    # "order 5512:" names an order; "transfer 40 dollars" names an amount.
-    return after[0][0].isdigit() and not (len(after) > 1 and after[1] in _CURRENCY_WORDS)
+    if lead == ("check", "out") and after and after[0] in _DETERMINERS:
+        return not (_spoken(" ".join(clause), "for me") or _names_money("", clause))
+    # "order 5512 paid with my card" names an order; "transfer 40 dollars"
+    # names an amount.
+    return len(lead) == 1 and bool(after) and after[0][0].isdigit() and not _is_amount(after)
 
 
-def _spend_clause(tokens: list[str], clause: list[str], folded: str) -> bool:
-    for lead, verb_words in (*SPEND_LEADS, *SPEND_MONEY_CUED_LEADS):
-        if _leads_with(tokens, lead):
-            if (
-                _lead_used_as_a_noun(tokens, lead)
-                or not _object_is_a_spend(tokens[verb_words:])
-                or _names_a_label(clause)
-            ):
+def _spend_lead(tokens: list[str], clause: list[str], folded: str) -> bool:
+    for lead in (*SPEND_LEADS, *SPEND_MONEY_CUED_LEADS):
+        if _starts_with(tokens, lead):
+            if _lead_used_as_a_noun(tokens, clause, lead):
                 return False
-            if (lead, verb_words) in SPEND_MONEY_CUED_LEADS:
-                return _names_money(folded)
+            if lead in SPEND_MONEY_CUED_LEADS:
+                return _names_money(folded, tokens)
             return True
-    if any(_leads_with(tokens, lead) for lead in SPEND_RECONCILE_LEADS):
+    if any(_starts_with(tokens, lead) for lead in SPEND_RECONCILE_LEADS):
         return any(_spoken(folded, cue) for cue in _AGENT_PAID_CUES)
-    return any(_leads_with(tokens, lead) for lead in SPEND_GATE_NAME_LEADS)
+    return any(_starts_with(tokens, lead) for lead in SPEND_GATE_NAME_LEADS)
 
 
-def spend_lead_clause(text: str) -> str:
-    """The request clause when the sentence asks the agent to spend the person's money, else ""."""
+def _continuation_allowed(rest: list[str]) -> bool:
+    if not rest:
+        return True
+    # "pay with my card or paypal": a comparison, not a request.
+    if rest[0] == "or":
+        return False
+    if rest[0] in _CLAUSE_BOUNDARIES or rest[0] in _ALLOWED_PREPOSITIONS or _is_amount(rest):
+        return True
+    if rest[0] == "with":
+        return _is_amount(rest[1:]) or any(_starts_with(rest[1:], own) for own in _OWN_MONEY_AFTER_WITH)
+    return any(_starts_with(rest, adverb) for adverb in _ALLOWED_ADVERBS)
+
+
+def _phrase_ends(clause: list[str], phrase: tuple[str, ...]) -> list[int]:
+    return [
+        index + len(phrase)
+        for index in range(len(clause) - len(phrase) + 1)
+        if tuple(clause[index : index + len(phrase)]) == phrase
+    ]
+
+
+def _request(text: str, phrases: Iterable[str]) -> tuple[str, list[str]]:
     folded = text.casefold().strip()
     if folded.endswith("?"):
-        return ""
-    tokens = _without_filler(_TOKEN.findall(folded))
+        return "", []
+    tokens = _without_filler(_tokens(folded))
     clause = _clause(tokens)
-    if SPEND_STATEMENT_VERBS.intersection(clause[1:]) or not _spend_clause(tokens, clause, folded):
-        return ""
-    return " ".join(clause)
+    if not _spend_lead(tokens, clause, folded):
+        return "", []
+    # Phrases are found in the clause; what follows each is read past the
+    # clause's end, so "or" right after a phrase is still seen.
+    found = [(phrase, end) for phrase in phrases for end in _phrase_ends(clause, tuple(_tokens(phrase)))]
+    if not found or not all(_continuation_allowed(tokens[end:]) for _phrase, end in found):
+        return "", []
+    return " ".join(clause), list(dict.fromkeys(phrase for phrase, _end in found))
 
 
-def spend_request_admitted(text: str) -> bool:
-    """The sentence's request clause asks the agent to spend the person's money."""
-    return bool(spend_lead_clause(text))
+def spend_request_clause(text: str, phrases: Iterable[str]) -> str:
+    """The request clause when it asks the agent to spend the person's money through one of `phrases`, else ""."""
+    return _request(text, phrases)[0]
+
+
+def spend_request_phrases(text: str, phrases: Iterable[str]) -> list[str]:
+    """Which of `phrases` the admitted request clause says, as whole words; [] when it is not admitted."""
+    return _request(text, phrases)[1]
 
 
 def spend_frame_withdraws(text: str) -> bool:
-    """An admitted sentence that is still about building, procurement, a comparison, or an ordering."""
-    folded = text.casefold()
-    if SPEND_FRAME_TOKENS.intersection(_WORD.findall(folded)):
-        return True
-    return any(_spoken(folded, phrase) for phrase in SPEND_FRAME_PHRASES)
+    """An admitted sentence about someone else's payment: a user or a customer."""
+    return bool(SPEND_FRAME_TOKENS.intersection(_WORD.findall(text.casefold())))

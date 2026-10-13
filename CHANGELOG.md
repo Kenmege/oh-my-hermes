@@ -33,33 +33,38 @@ All notable changes will be documented here.
   one into a page. OMH moves no money and holds no credential. The skill is
   guidance only: no hook holds a payment tool call.
 
-  Routing is deliberately conservative, because the gate's phrases are
-  everyday words that also name payment features, articles, tickets and
-  questions. The gate reads only the request: the sentence's first words,
-  after filler such as "hey", "please", "go ahead and" or "can you", read
-  Unicode-aware with hyphens kept, up to the first comma, colon, question
-  mark, "and", "or", "if", "when", "which" or "about". That clause must be a
-  spend addressed to the agent -- "buy", "pay", "order", "book", "top up",
-  "renew", "place the order", "complete the checkout", "use my card", and
-  the like -- whose object is not a thing being built or filed ("complete
-  the checkout flow", "pay again button", "my card toggle"). "send" and
-  "transfer" also need money, an amount, or the person's own card, wallet or
-  account; "did the payment go through" counts only when the agent paid; and
-  naming the gate as a command counts. A sentence ending in "?", a lead used
-  as a noun or idiom ("check out this article", "pay attention", "tip:",
-  "order 5512:", "order of events", "pay-per-request"), and a clause where a
-  verb such as "is", "returns" or "fails" follows the lead ("pay with my
-  saved card returns a 500 error") are not requests. The gate's phrases
-  count only inside that clause, there is no boost, and nothing stands down
-  another skill's guard: a spend dispatches only when its clause scores high
-  on the gate's own phrases, otherwise the gate leads a clarify, and every
-  other sentence routes as before the skill existed. The route hint and the awareness markers read the same
-  clause, as whole words. The bare words `spend`, `pay`, `checkout`, `wallet`
-  and their siblings score only inside a complete phrase, and `budget` is
-  not one of the skill's words at all. Budget variances, payment failure and
-  checkout failure reports, browser logins, spend-approval research, checkout
-  test failures and issue triage, purchase acceptance criteria and a
-  saved-card settings toggle keep their owners.
+  Routing is deliberately conservative and closed-world, because the gate's
+  phrases are everyday words that also name payment features, articles,
+  tickets, product ideas and questions. The gate reads only the request:
+  the sentence's first words, after filler such as "hey", "please", "go
+  ahead and" or "can you", read Unicode-aware with hyphens kept, up to the
+  first comma, colon, question mark, "and", "or", "if", "when", "which" or
+  "about". That clause must open with a spend addressed to the agent --
+  "buy", "pay", "order", "book", "renew", "place the order", "complete the
+  checkout", "use my card", and the like, not an idiom ("pay attention",
+  "pay a visit", "buy time"), a noun ("tip:", "order 5512", "pay-per-request")
+  or "check out" a thing -- and one of the gate's phrases must be in it,
+  each followed only by what may follow a request: the end of the clause, a
+  preposition naming the item, payee or place, "with" the person's own card
+  or an amount, an amount, "please", "now" or "right away". A verb of any
+  tense, a modal, "or", or a noun after the phrase ("pay with my card
+  stopped working", "would be nice to have", "or paypal", "pay with my card
+  option") means the phrase is a subject or a label, not the request, and a
+  sentence ending in "?" is not a request either. "send" and "transfer" also
+  need money, an amount, or the person's own card, wallet or account; "did
+  the payment go through" counts only when the agent paid; and naming the
+  gate as a command counts. The skill scores only on that clause, there is
+  no boost, and nothing stands down another skill's guard: a spend
+  dispatches only when its clause scores high on the gate's own phrases,
+  otherwise the gate leads a clarify, and every other sentence routes as
+  before the skill existed. The route hint and the awareness markers read
+  the same clause, as whole words. The bare words `spend`, `pay`,
+  `checkout`, `wallet` and their siblings score only inside a complete
+  phrase, and `budget` is not one of the skill's words at all. Budget
+  variances, payment failure and checkout failure reports, browser logins,
+  spend-approval research, checkout test failures and issue triage,
+  purchase acceptance criteria and a saved-card settings toggle keep their
+  owners.
 
 - **A new `data-share-review` skill prepares a dataset, log, ticket export, or
   transcript excerpt to leave the team, and calls it redacted only after the

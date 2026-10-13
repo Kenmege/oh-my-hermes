@@ -11517,7 +11517,6 @@ _DEFINITIONS.append(
             "with my credit card",
             "use my card",
             "use my credit card",
-            "top up my",
             "send money",
             "pay again",
             "click pay again",

@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 import re
 
-from ..plugin_bundle.omh.spend_signals import spend_frame_withdraws, spend_lead_clause
+from ..plugin_bundle.omh.spend_signals import spend_frame_withdraws, spend_request_clause
 from ..skills.catalog import SkillDefinition, builtin_definitions, routable_definitions
 from .domain_signals import (
     DomainOperatorOverride,
@@ -3166,7 +3166,7 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     ),
     # `spend-gate` is built from "spend", "pay", "paid", "payment", "buy",
     # "purchase", "order", "checkout", "card", "wallet", "transfer", "money",
-    # "cap", "limit", "retry", "use", "top", "send" and "again" -- time is
+    # "cap", "limit", "retry", "use", "send" and "again" -- time is
     # spent, attention is paid, a branch is checked out, imports are put in
     # order, a wallet is lost and a repo is transferred, and none of those
     # moves money. Only the complete phrases
@@ -3213,9 +3213,7 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "spend",
             "spending",
             "through",
-            "top",
             "transfer",
-            "up",
             "use",
             "wallet",
         }
@@ -4366,7 +4364,7 @@ def _score_definition(
     # request either.
     trigger_text = normalized_query
     if definition.name == "spend-gate":
-        trigger_text = spend_lead_clause(normalized_query)
+        trigger_text = _spend_gate_clause(normalized_query)
         query_tokens = routing_tokens(trigger_text)
     for trigger_phrase in prepared.plain_trigger_phrases:
         if trigger_phrase == self_name:
@@ -5773,23 +5771,25 @@ def _spend_gate_trigger_phrases() -> tuple[str, ...]:
     return tuple(normalized_phrase(trigger) for trigger in definition.triggers)
 
 
+def _spend_gate_clause(normalized_query: str) -> str:
+    return spend_request_clause(normalized_query, _spend_gate_trigger_phrases())
+
+
 def _spend_gate_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
-    """Offer the gate only when the request clause asks the agent to spend and says one of its phrases.
+    """Offer the gate only when its request clause asks the agent to spend through one of its phrases.
 
     Routing is deliberately conservative. The gate competes only in ordinary
-    scoring, through phrases held to whole-phrase matches, and only when
-    `spend_lead_clause` (the bundle's `spend_signals`, which the awareness
-    route hint reads too) admits the sentence's request clause and one of the
-    gate's own phrases is inside that clause. Every other sentence -- a
-    phrase used as a topic, a feature's name, a question, a later clause --
-    routes exactly as before this skill existed, and nothing here stands down
-    another skill's guard.
+    scoring, through phrases held to whole-phrase matches, on the request
+    clause `spend_request_clause` returns (the bundle's `spend_signals`,
+    which the awareness route hint and markers read too): a clause that opens
+    with a spend addressed to the agent, where every one of the gate's
+    phrases is followed only by what may follow a request. Every other
+    sentence -- a phrase used as a topic, a subject, a label, a question, a
+    later clause -- routes exactly as before this skill existed, and nothing
+    here stands down another skill's guard.
     """
     del query_tokens
-    clause = spend_lead_clause(normalized_query)
-    if not clause or spend_frame_withdraws(normalized_query):
-        return False
-    return any(phrase_is_spoken(clause, phrase) for phrase in _spend_gate_trigger_phrases())
+    return bool(_spend_gate_clause(normalized_query)) and not spend_frame_withdraws(normalized_query)
 
 
 # Skills that withdraw from the shortlist unless their own precondition holds,
