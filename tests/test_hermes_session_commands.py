@@ -178,6 +178,7 @@ VERDICTS = {
     # The cadence first, then `loop` as the very next word and the request's verb.
     "every hour, loop over the queue": LOOP_TIMER_NATIVE,
     "every 2 hours loop and make the test suite faster": LOOP_TIMER_NATIVE,
+    "every 1 hour loop and check CI": LOOP_TIMER_NATIVE,
     # Korean: the cadence opens, and running the loop closes the first clause.
     "5분마다 루프 돌려줘": LOOP_TIMER_NATIVE,
     "매시간 큐 상태 보는 루프 돌려주세요": LOOP_TIMER_NATIVE,
@@ -253,6 +254,11 @@ VERDICTS = {
     # Korean request needs a Korean cadence.
     "5분마다 에러 나는데 루프 돌려줘": LOOP_TIMER_NONE,
     "every hour 루프 돌려줘": LOOP_TIMER_NONE,
+    # After a cadence, `loop` has to be the very next word: no courtesy word
+    # between them.
+    "every 5 minutes, please loop over the inbox": LOOP_TIMER_NONE,
+    # A count of two or more before a spelled singular unit is no cadence.
+    "every 2 hour loop and check CI": LOOP_TIMER_NONE,
     # The request has to close the first clause.
     "5분마다 에러가 나요, 루프 돌려줘": LOOP_TIMER_NONE,
     "5분마다 루프 돌려줘서 고마워요": LOOP_TIMER_NONE,
@@ -297,7 +303,7 @@ VERDICTS = {
 # "in a loop" after its subject, a Korean adverbial (반복해서, 루프 돌면서) before
 # a statement or a connective, and `loop` as a noun. Each must route as it did
 # before. The first twelve are the fifth review's, the next 22 were written for
-# that round's fix, and the rest are the sixth review's.
+# that round's fix, then the sixth review's, then the seventh's.
 FAULT_STATEMENTS = (
     "Every few minutes the agent gets stuck in a loop.",
     "every few minutes my agent gets stuck in a loop. how do I fix it?",
@@ -376,6 +382,17 @@ FAULT_STATEMENTS = (
     "5분마다 반복해서 확인해 달라고 했는데 아무 반응이 없어요",
     "every 5 minutes 반복해서 에러가 나요",
     "5분마다 my pod restarts in a loop",
+    # The seventh review's: a singular unit after a count, a question about a
+    # cadence-first loop, and a word between the cadence and `loop`.
+    "every 5 minute loop that runs the backup fails",
+    "every 30 second loop the cache is rebuilt",
+    "every 5 min loop back to login, why?",
+    "[alice] every 5 min loop back to login, why?",
+    "every 5 minutes loop back to the login page, why?",
+    "every 5 minutes loop until it times out, how do I fix this",
+    "every 5m loop the agent re-reads the whole repo, can I stop that?",
+    "5분마다 loop back to login, 왜 그래요?",
+    "every few minutes Hermes loop back to the start",
 )
 
 # A typed `/loop` whose prompt would otherwise be OMH's goal loop: still Hermes'

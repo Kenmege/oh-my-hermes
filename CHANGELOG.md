@@ -24,11 +24,13 @@ All notable changes will be documented here.
   candidate line: `loop` or `/loop` as the first word followed by its
   cadence ("loop every 5 minutes and check whether CI is green", `/loop 5m
   …`, compound intervals such as `/loop 1h30m` and short or glued units such
-  as `5 min` and `5mins` included); a cadence followed by `loop` as the next
-  word (a courtesy word may sit between) and the verb, before its object, a
-  preposition or conjunction, or nothing ("every 10 minutes loop over the
-  inbox"); or a Korean cadence whose first clause closes on running the
-  loop, with no connective such as `-는데` in it (`5분마다 … 루프 돌려줘`). The router answers it directly and names the `/loop` command; a
+  as `5 min` and `5mins` included); a cadence followed directly by `loop` as
+  the verb, before its object, a preposition or conjunction, or nothing
+  ("every 10 minutes loop over the inbox"), in a first sentence that neither
+  ends in a question mark nor asks why or how, and not after a count of two
+  or more with a spelled singular unit ("every 5 minute loop …"); or a
+  Korean cadence whose first clause closes on running the loop, with no
+  connective such as `-는데` in it (`5분마다 … 루프 돌려줘`). The router answers it directly and names the `/loop` command; a
   request that opens by asking to write or explain a for, while, event, or
   media loop that runs on a timer is answered directly without that advice.
   Only the opening of the person's current message is read, after a

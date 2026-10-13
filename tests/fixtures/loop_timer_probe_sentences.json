@@ -754,5 +754,17 @@
  "5분마다 에러 나는데 루프 돌려줘",
  "5분마다 omh 소개하는 루프 돌려줘",
  "5분마다 에러가 나요, 루프 돌려줘",
- "5분마다 루프 돌려줘서 고마워요"
+ "5분마다 루프 돌려줘서 고마워요",
+ "every 5 minute loop that runs the backup fails",
+ "every 30 second loop the cache is rebuilt",
+ "every 5 min loop back to login, why?",
+ "[alice] every 5 min loop back to login, why?",
+ "every 5 minutes loop back to the login page, why?",
+ "every 5 minutes loop until it times out, how do I fix this",
+ "every 5m loop the agent re-reads the whole repo, can I stop that?",
+ "5분마다 loop back to login, 왜 그래요?",
+ "every few minutes Hermes loop back to the start",
+ "every 5 minutes, please loop over the inbox",
+ "every 2 hour loop and check CI",
+ "every 1 hour loop and check CI"
 ]

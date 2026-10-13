@@ -57,11 +57,13 @@ shapes are a loop on a timer:
 
 - `loop` or `/loop` is the first word and its cadence follows (`loop 5m ...`,
   `/loop 5m ...`, `loop every 5 minutes ...`, `loop each hour ...`);
-- the cadence opens the message and `loop` is the next word (a courtesy
-  word may sit between), followed by its object, a preposition or
-  conjunction (`_LOOP_VERB_CONTINUATIONS`), or nothing (`every 10 minutes
-  loop over the inbox`, `every 2 hours loop and ...`), never by a noun
-  (`every hour loop counters reset`);
+- the cadence opens the message and `loop` is the very next word, followed
+  by its object, a preposition or conjunction (`_LOOP_VERB_CONTINUATIONS`),
+  or nothing (`every 10 minutes loop over the inbox`, `every 2 hours loop
+  and ...`), never by a noun (`every hour loop counters reset`); a count of
+  two or more before a spelled singular unit is no cadence here (`every 5
+  minute loop ...`), and a first sentence that ends in `?` or says why or
+  how is a question about a fault (`every 5 min loop back to login, why?`);
 - a Korean cadence opens the message and its first clause closes on
   running the loop (`5분마다 루프 돌려줘`, `5분마다 CI 확인하는 루프 돌려주세요`),
   with no connective such as `-는데` or `-지만` in that clause.
@@ -164,6 +166,12 @@ _COURTESY_LEAD = re.compile(
 # What may follow `loop` when it is the verb after a cadence ("every 5 minutes
 # loop over the inbox"). A noun does not ("every 10 minutes loop detection
 # kills my agent").
+# A count of two or more before a spelled singular unit is an adjective, not a
+# cadence: "every 5 minute loop that runs the backup fails" is a noun phrase.
+_SINGULAR_UNITS = frozenset({"second", "minute", "hour"})
+# A question about a cadence-first loop asks about a fault, not for a loop:
+# "every 5 min loop back to login, why?".
+_QUESTION_WORDS = frozenset({"why", "how"})
 _LOOP_VERB_CONTINUATIONS = frozenset(
     {"and", "then", "over", "through", "to", "until", "back", "it", "them"}
     | {"the", "this", "that", "these", "those", "my", "our", "a", "an"}
@@ -406,15 +414,24 @@ def _loop_is_the_request(lead: str) -> bool:
         return True
     korean = _KOREAN_CADENCE_LEAD.match(lead)
     past = _past_cadence(words, 0)
+    if past > 2 and _bare(words[past - 1]) in _SINGULAR_UNITS and words[past - 2].isdigit() and int(words[past - 2]) > 1:
+        past = 0
     if korean:
         rest = lead[korean.end():].lstrip()
     elif past:
         rest = " ".join(words[past:])
     else:
         return False
-    # The cadence came first; `loop` has to be the next word and its verb.
-    after = _after_courtesy(rest).split(maxsplit=2)
-    if after and _bare(after[0]) == "loop":
+    # The cadence came first; `loop` has to be the very next word and its verb,
+    # in a sentence that does not ask why or how.
+    after = rest.split(maxsplit=2)
+    sentence = _first_sentence(lead)
+    if (
+        after
+        and _bare(after[0]) == "loop"
+        and not sentence.endswith("?")
+        and not _tokens(sentence) & _QUESTION_WORDS
+    ):
         # "loop." or "loop:" closes the clause; otherwise the next word tells
         # a verb from a noun.
         if len(after) == 1 or after[0] != "loop" or _bare(after[1]) in _LOOP_VERB_CONTINUATIONS:
