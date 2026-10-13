@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from .catalog_types import HERMES_USAGE_SURFACES_CLAUSE
+
 
 def native_capability_skill_definitions(feature_surface_skill: Callable[..., object]) -> tuple[object, ...]:
     return (
@@ -84,8 +86,8 @@ def native_capability_skill_definitions(feature_surface_skill: Callable[..., obj
                 "and cost, instead of figures a model guesses."
             ),
             do_not_use_when=(
-                "The user asks only what this Hermes conversation has used or cost so far; Hermes' own /usage "
-                "answers that, and the omh_run_summary tool relays this conversation's recorded usage.",
+                "The user asks only what this Hermes conversation has used or cost so far; "
+                f"{HERMES_USAGE_SURFACES_CLAUSE}.",
                 "The user wants service latency, uptime, error rates, or supplied metric-provider figures; use "
                 "`ops-observability-card`.",
                 "The user wants a provider invoice or quota truth; no OMH report observes either, so name the "

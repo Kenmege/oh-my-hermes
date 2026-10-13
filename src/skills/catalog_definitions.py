@@ -67,6 +67,7 @@ from .catalog_types import (
     ENGINE_FOLLOW_UP_AUTHORITY_RULE,
     ENGINE_INTERJECTION_RESUME_RULE,
     EXECUTION_WAIT_DISCIPLINE_RULE,
+    HERMES_USAGE_SURFACES_CLAUSE,
     LLM_APP_DEV_EVAL_DELIVERABLES,
     LLM_APP_DEV_PUBLIC_BOARD_ACTIONS,
     LLM_APP_DEV_RAILS,
@@ -6176,18 +6177,17 @@ _DEFINITIONS = [
             "On Hermes, bind the summarization checkpoint to Hermes' own compaction: render the must-keep classes as "
             "one short focus topic and hand the person `/compress <focus>` to run when the checkpoint is due. OMH "
             "never compresses, and a compaction is observed only from Hermes' own reply to that command.",
-            "On Hermes, offer `/compress --preview <focus>` only in the classic CLI or on a messaging platform, and count it as a "
-            "preview only when the reply says `Preview — no changes made.`: a modern TUI whose `/compress` does not "
-            "parse the flag compresses for real with the flag in its focus. Context occupancy is the person's "
-            "`/status` reading when shared, otherwise an estimate.",
+            "On Hermes, offer `/compress --preview <focus>` only in the classic CLI or on a messaging platform, never "
+            "when the surface is unknown, and count it as a preview only when the reply says `Preview — no changes "
+            "made.`: a modern TUI whose `/compress` does not parse the flag compresses for real with the flag in its "
+            "focus. Context occupancy is the person's `/status` reading when shared, otherwise an estimate.",
         ),
         why_this_exists=(
             "`context-budget-review` ports ECC's context-budget and token-budget instincts into OMH as a compactness gate "
             "that protects long-running work without redefining success around a smaller task."
         ),
         do_not_use_when=(
-            "The user asks only what this Hermes session has used or cost so far; Hermes' own /usage and /status "
-            "show it, and the omh_run_summary tool relays this conversation's recorded usage.",
+            f"The user asks only what this Hermes session has used or cost so far; {HERMES_USAGE_SURFACES_CLAUSE}.",
             "The user asks to continue a loopable goal; use `loop` unless budget planning is the explicit blocker.",
             "The task is a short one-step answer with no meaningful context risk.",
         ),
@@ -8141,11 +8141,12 @@ _DEFINITIONS = [
             "Name each thing to stop and its owner: OMH state (workflow lifecycle, plan checklist, OMH goal) or host "
             "work (the running turn, background processes, delegations, a Hermes /loop or /goal).",
             "Clear OMH state with its own commands: `omh state clear --workflow <name>` (`--session-ref` when "
-            "session-bound), `omh_todo action=clear`, `omh goal cancel --goal <id>`; an OMH loop stops through its "
-            "linked goal, and one without a goal has no cancel record.",
-            "Hand host work to the person's own stop command; on Hermes `/stop` (background processes, plus background "
-            "delegations in the classic CLI; the running turn on a messaging platform), `/loop stop`, `/goal pause` or "
-            "`/goal clear`, `/heartbeat clear`, `/pause` (all new work on a gateway).",
+            "session-bound), on Hermes `omh_todo action=clear`, and `omh goal cancel --goal <id>`; an OMH loop stops "
+            "through its linked goal, and one without a goal has no cancel record.",
+            "Hand host work to the person's own stop command; on Hermes `/stop` (in a CLI or TUI session it ends "
+            "every background process, and the classic CLI its background delegations too; on a messaging platform "
+            "it interrupts the running turn rather than ending every background process), `/loop stop`, "
+            "`/goal pause` or `/goal clear`, `/heartbeat clear`, `/pause` (all new work on a gateway).",
             "Report an OMH clear as done only from its command result, and a host stop as requested until the "
             "host's own reply to it is seen.",
         ),
@@ -8219,7 +8220,8 @@ _DEFINITIONS = [
             f"Create, edit, or delete a skill of the person's own with `skill_manage` when "
             f"{native_tool_presence_clause('skill_manage', code=True)}; otherwise hand the person the exact change.",
             "Registry search, install, removal of a hub-installed skill, and per-platform hiding are the person's "
-            "own `hermes skills search`, `install`, `uninstall`, and `config` in a terminal.",
+            "own `hermes skills search`, `install`, `uninstall`, and `config` in a terminal, with `/skills search` "
+            "and `/skills install` inside the classic CLI.",
             "Never edit or delete an OMH-managed skill (an `omh-*` or `ulw-*` name) with `skill_manage`: OMH generates its "
             "body from its catalog, so the change does not carry into the next generation; put the lesson in a "
             "separately named skill instead.",
@@ -8423,7 +8425,7 @@ _DEFINITIONS = [
         expected_outputs=(
             "per-unit runtime and model",
             "observed tokens and elapsed",
-            "Hermes delegate children and kanban workers, labelled by source",
+            "on Hermes, delegate children and kanban workers, labelled by source",
             "explicit unknowns",
         ),
         artifact_expectations=("metadata-only status board projection from local artifacts",),

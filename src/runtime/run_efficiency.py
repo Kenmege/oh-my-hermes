@@ -22,7 +22,8 @@ _RUN_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
 # The cost receipt's sources Hermes itself accounts for in state.db. Its
 # `fanout_units` carry what each executor reported, which is not host usage.
 _HOST_USAGE_SOURCES = ("session", "delegated_children", "kanban_workers")
-_HOST_USAGE_BUCKET_KEYS = ("count", "cost_usd", "priced_tokens", "unpriced_tokens")
+# `cost_bases` says what each amount is (a Hermes estimate is not a charge).
+_HOST_USAGE_BUCKET_KEYS = ("count", "cost_usd", "priced_tokens", "unpriced_tokens", "cost_bases", "unpriced_models")
 HOST_USAGE_CLAIM_BOUNDARY = (
     "Hermes' own state.db accounting for the named session's conversation, its delegated children, and its kanban "
     "workers, read through the cost receipt; fanout units an executor reported are left out. Tokens with no recorded "
@@ -145,7 +146,7 @@ def _host_usage(receipt: Mapping[str, object] | None) -> dict[str, object]:
         "priced_tokens": priced,
         "unpriced_tokens": unpriced,
         "missing": missing,
-        "truncated": bool(receipt.get("truncated")),
+        "truncated": any(source in _HOST_USAGE_SOURCES for source in receipt.get("truncated_sources") or ()),
         "claim_boundary": HOST_USAGE_CLAIM_BOUNDARY,
     }
 

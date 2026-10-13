@@ -91,7 +91,7 @@ Expected outputs:
 
 - per-unit runtime and model
 - observed tokens and elapsed
-- Hermes delegate children and kanban workers, labelled by source
+- on Hermes, delegate children and kanban workers, labelled by source
 - explicit unknowns
 
 Artifact expectations:

@@ -234,9 +234,20 @@ class RunEfficiencyHostUsageTests(unittest.TestCase):
         self.assertEqual(host_usage["priced_tokens"], 1500)
         self.assertEqual(host_usage["unpriced_tokens"], 0)
         self.assertEqual(host_usage["observed_cost_usd"], 0.05)
+        # The basis travels with the amount: this figure is Hermes' estimate,
+        # not a billed charge.
         self.assertEqual(
-            host_usage["sources"]["session"], {"count": 1, "cost_usd": 0.05, "priced_tokens": 1500, "unpriced_tokens": 0}
+            host_usage["sources"]["session"],
+            {
+                "count": 1,
+                "cost_usd": 0.05,
+                "priced_tokens": 1500,
+                "unpriced_tokens": 0,
+                "cost_bases": ["Hermes estimated"],
+                "unpriced_models": [],
+            },
         )
+        self.assertFalse(host_usage["truncated"])
         self.assertIn(
             "fanout units an executor reported are left out. Tokens with no recorded price are not in the cost, and "
             "none of it is a provider invoice.",
@@ -262,6 +273,33 @@ class RunEfficiencyHostUsageTests(unittest.TestCase):
                 "reason": "Hermes recorded no token usage for this session",
                 "missing": [],
             },
+        )
+        self.assertEqual(report["not_observed"]["host"], {"status": "not_observed"})
+
+    def test_a_hermes_home_without_state_db_says_so(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_path = root / "input.json"
+            atomic_write_json(input_path, _input_payload())
+            status, stdout, stderr = run_cli(
+                [
+                    "--omh-home",
+                    str(root / ".omh"),
+                    "--hermes-home",
+                    str(root / ".hermes"),
+                    "runtime",
+                    "efficiency-report",
+                    "--input",
+                    str(input_path),
+                    "--hermes-session",
+                    MAIN,
+                ]
+            )
+        self.assertEqual(status, 0, stderr)
+        report = json.loads(stdout)
+        self.assertEqual(
+            report["host_usage"],
+            {"status": "not_observed", "session_id": MAIN, "reason": "Hermes state.db not found"},
         )
         self.assertEqual(report["not_observed"]["host"], {"status": "not_observed"})
 
@@ -330,6 +368,21 @@ class RunEfficiencyHostUsageTests(unittest.TestCase):
         self.assertEqual(
             host_usage["missing"], [{"source": "delegated_children", "id": "child", "reason": "no usage recorded"}]
         )
+
+    def test_truncation_counts_only_when_an_included_source_hit_its_bound(self) -> None:
+        base = {
+            "schema_version": "omh_cost_receipt/v1",
+            "status": "observed",
+            "session_id": MAIN,
+            "sources": {"session": {"count": 1, "cost_usd": None, "priced_tokens": 0, "unpriced_tokens": 900}},
+            "missing": [],
+            "truncated": True,
+        }
+        for truncated_sources, expected in ((["fanout_units"], False), (["kanban_workers"], True), ([], False)):
+            with self.subTest(truncated_sources=truncated_sources):
+                receipt = {**base, "truncated_sources": truncated_sources}
+                report = build_run_efficiency_report(parse_run_efficiency_input(_input_payload()), cost_receipt=receipt)
+                self.assertEqual(report["host_usage"]["truncated"], expected)
 
     def test_a_receipt_whose_only_tokens_are_fanout_units_is_not_host_usage(self) -> None:
         receipt = {

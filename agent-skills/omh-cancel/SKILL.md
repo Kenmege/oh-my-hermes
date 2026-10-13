@@ -68,8 +68,8 @@ Reasoning demand: `light`
 Quality bar:
 
 - Name each thing to stop and its owner: OMH state (workflow lifecycle, plan checklist, OMH goal) or host work (the running turn, background processes, delegations, a Hermes /loop or /goal).
-- Clear OMH state with its own commands: `omh state clear --workflow <name>` (`--session-ref` when session-bound), `omh_todo action=clear`, `omh goal cancel --goal <id>`; an OMH loop stops through its linked goal, and one without a goal has no cancel record.
-- Hand host work to the person's own stop command; on Hermes `/stop` (background processes, plus background delegations in the classic CLI; the running turn on a messaging platform), `/loop stop`, `/goal pause` or `/goal clear`, `/heartbeat clear`, `/pause` (all new work on a gateway).
+- Clear OMH state with its own commands: `omh state clear --workflow <name>` (`--session-ref` when session-bound), on Hermes `omh_todo action=clear`, and `omh goal cancel --goal <id>`; an OMH loop stops through its linked goal, and one without a goal has no cancel record.
+- Hand host work to the person's own stop command; on Hermes `/stop` (in a CLI or TUI session it ends every background process, and the classic CLI its background delegations too; on a messaging platform it interrupts the running turn rather than ending every background process), `/loop stop`, `/goal pause` or `/goal clear`, `/heartbeat clear`, `/pause` (all new work on a gateway).
 - Report an OMH clear as done only from its command result, and a host stop as requested until the host's own reply to it is seen.
 
 Required inputs:

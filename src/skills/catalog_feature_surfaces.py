@@ -14,6 +14,7 @@ from .catalog_types import (
     DOCUMENT_PRODUCER_QA_RULE,
     DOCUMENT_PRODUCER_RUNGS_RULE,
     EXECUTION_WAIT_DISCIPLINE_RULE,
+    HERMES_USAGE_SURFACES_CLAUSE,
     HermesReferenceLine,
     _GENERAL_RECOVERY_NOTES,
     _feature_surface_skill,
@@ -1656,10 +1657,11 @@ _FEATURE_SURFACE_SKILLS = (
             "budget threshold each level checks against before recommending any optimization signal.",
             "Never recommend logging raw prompts, responses, or secret values into telemetry; counts, lengths, "
             "hashes, and key-set booleans carry the signal without the leak.",
-            "On Hermes, token and cost figures come from recorded usage -- the cost receipt `omh_run_summary` "
-            "returns for this conversation, which keeps Hermes' own accounting apart from executor-reported fanout "
-            "units, or the person's `/insights` across sessions -- labeled observed: a conversation with no "
-            "recorded tokens is not_observed, never zero, and provider billing stays not_observed.",
+            "On Hermes, a conversation's token and cost figures come from the cost receipt `omh_run_summary` "
+            "returns, which keeps Hermes' own accounting apart from executor-reported fanout units and names each "
+            "cost's basis, and the person's `/insights` gives Hermes' estimated cost across recent sessions. A "
+            "conversation with no recorded tokens is not_observed, never zero, and provider billing stays "
+            "not_observed.",
         ),
         why_this_exists=(
             "`ops-observability-card` exists so service, loop, and automation operations get one board where each "
@@ -1667,8 +1669,7 @@ _FEATURE_SURFACE_SKILLS = (
             "of an improvised dashboard."
         ),
         do_not_use_when=(
-            "The user asks what their own Hermes conversation has used or cost; Hermes' own /usage and /insights "
-            "answer that, and the omh_run_summary tool relays this conversation's recorded usage.",
+            f"The user asks what their own Hermes conversation has used or cost; {HERMES_USAGE_SURFACES_CLAUSE}.",
             "The user wants one run's timing and context-budget report; use `run-efficiency`.",
             "The user asks OMH to sign in to a metric provider, billing console, or dashboard and pull live "
             "figures; the card reads only supplied payloads and Hermes' own records.",

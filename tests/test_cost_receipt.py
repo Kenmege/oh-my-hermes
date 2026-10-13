@@ -351,6 +351,30 @@ class CostReceiptTest(unittest.TestCase):
         self.assertNotIn("observed_cost_usd", receipt)
         self.assertIn("No cost receipt", receipt["text"])
 
+    def test_a_missing_or_unreadable_state_db_is_named_not_read_as_no_session(self) -> None:
+        missing = build_cost_receipt(
+            hermes_home=self.hermes_home.parent / "no-hermes", omh_home=self.omh_home, session_id=MAIN
+        )
+        self.assertEqual((missing["status"], missing["reason"]), ("not_observed", "Hermes state.db not found"))
+        corrupt_home = self.hermes_home.parent / "corrupt-hermes"
+        corrupt_home.mkdir()
+        (corrupt_home / "state.db").write_bytes(b"this is not a sqlite database" * 64)
+        corrupt = build_cost_receipt(hermes_home=corrupt_home, omh_home=self.omh_home, session_id=MAIN)
+        self.assertEqual((corrupt["status"], corrupt["reason"]), ("not_observed", "state.db could not be read"))
+        nobody = self._receipt("20260926_120000_nobody")
+        self.assertEqual(nobody["reason"], "no Hermes session row for this session id")
+
+    def test_truncated_sources_name_which_bound_was_hit(self) -> None:
+        self.assertEqual(self._receipt()["truncated_sources"], [])
+        with mock.patch("omh.plugin_bundle.omh.cost_receipt._MAX_FANOUT_SUMMARIES", 0):
+            receipt = self._receipt()
+        self.assertTrue(receipt["truncated"])
+        self.assertEqual(receipt["truncated_sources"], ["fanout_units"])
+        with mock.patch("omh.plugin_bundle.omh.cost_receipt._MAX_SESSIONS", 1):
+            receipt = self._receipt()
+        self.assertTrue(receipt["truncated"])
+        self.assertEqual(receipt["truncated_sources"], ["delegated_children"])
+
     def test_a_conversation_with_only_unpriced_usage_reports_no_cost(self) -> None:
         connection = sqlite3.connect(self.hermes_home / "state.db")
         connection.execute("UPDATE session_model_usage SET cost_status = 'unknown', cost_source = 'none'")

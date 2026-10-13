@@ -11,17 +11,23 @@ All notable changes will be documented here.
   receipt `omh_run_summary` returns that Hermes itself accounts for in
   `state.db` (the session, its delegated children, and its kanban workers;
   executor-reported fanout units are left out), read-only: observed only when
-  that usage recorded tokens, while a session Hermes has no row for, or one
-  with no recorded tokens, stays `not_observed` instead of reading as zero,
-  and provider billing stays `not_observed` either way. `run-efficiency` and
-  `ops-observability-card` send "what has this conversation cost" to Hermes'
-  own `/usage` and `/insights` or `omh_run_summary`, and `context-budget-review`
-  stops sending it to the ops card, which cannot answer it.
+  that usage recorded tokens, with each amount's basis kept beside it (a
+  Hermes estimate is not a charge), while a session Hermes has no row for, one
+  with no recorded tokens, or a Hermes home whose `state.db` is missing or
+  unreadable stays `not_observed` with that reason instead of reading as
+  zero, and provider billing stays `not_observed` either way. The cost
+  receipt now names which of its reads hit a bound (`truncated_sources`).
+  `run-efficiency`, `ops-observability-card`, and `context-budget-review`
+  answer "what has this conversation used or cost" by what each Hermes
+  surface shows: `/usage` this session's tokens and `/status` its context,
+  `/insights` an estimated cost across recent sessions, and `omh_run_summary`
+  this conversation's recorded tokens and cost; `context-budget-review` stops
+  sending the question to the ops card, which cannot answer it.
   `context-budget-review` turns its summarization checkpoint into a
   `/compress <focus>` the person runs, offers `--preview` only in the classic
-  CLI or on a messaging platform because a modern TUI that does not parse the
-  flag compresses for real, and counts a preview only from Hermes' own
-  "no changes made" reply. `toolbelt-readiness` counts a tool deferred behind
+  CLI or on a messaging platform and never when the surface is unknown,
+  because a modern TUI that does not parse the flag compresses for real, and
+  counts a preview only from Hermes' own "no changes made" reply. `toolbelt-readiness` counts a tool deferred behind
   tool_search as present, never missing. `running-work-board` adds this
   conversation's Hermes delegate children and kanban workers from `omh_hud`.
   `cancel` clears OMH state with OMH's own commands and hands host work to the

@@ -52,22 +52,42 @@ COMPRESS_CHECKPOINT = (
     "compresses, and a compaction is observed only from Hermes' own reply to that command."
 )
 COMPRESS_PREVIEW = (
-    "On Hermes, offer `/compress --preview <focus>` only in the classic CLI or on a messaging platform, and count it "
-    "as a preview only when the reply says `Preview — no changes made.`: a modern TUI whose `/compress` does not "
-    "parse the flag compresses for real with the flag in its focus."
+    "On Hermes, offer `/compress --preview <focus>` only in the classic CLI or on a messaging platform, never when the "
+    "surface is unknown, and count it as a preview only when the reply says `Preview — no changes made.`: a modern "
+    "TUI whose `/compress` does not parse the flag compresses for real with the flag in its focus."
 )
+PREVIEW_RESTRICTION = "only in the classic CLI or on a messaging platform, never when the surface is unknown"
+# What each Hermes surface shows, read at both supported revisions: `/usage` and
+# `/status` show tokens and context and no cost; `/insights` sums an estimated
+# cost over recent days; only the cost receipt is per conversation.
+USAGE_CLAUSE = (
+    "Hermes' /usage shows this session's tokens and /status its context, /insights estimates cost across recent "
+    "sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost."
+)
+USAGE_CLAUSE_SKILLS = ("run-efficiency", "ops-observability-card", "context-budget-review")
 CANCEL_NO_HOST_KILL = (
     "Never end, kill, or signal a host process, background job, or delegation from this workflow, through the "
     "terminal or any other tool (on Hermes, `process_manage` included); that stop is the person's own host command."
 )
 CANCEL_HOST_STOPS = (
-    "Hand host work to the person's own stop command; on Hermes `/stop` (background processes, plus background "
-    "delegations in the classic CLI; the running turn on a messaging platform), `/loop stop`, `/goal pause` or "
-    "`/goal clear`, `/heartbeat clear`, `/pause` (all new work on a gateway)."
+    "Hand host work to the person's own stop command; on Hermes `/stop` (in a CLI or TUI session it ends every "
+    "background process, and the classic CLI its background delegations too; on a messaging platform it interrupts "
+    "the running turn rather than ending every background process), `/loop stop`, `/goal pause` or `/goal clear`, "
+    "`/heartbeat clear`, `/pause` (all new work on a gateway)."
+)
+CANCEL_OMH_CLEARS = (
+    "Clear OMH state with its own commands: `omh state clear --workflow <name>` (`--session-ref` when "
+    "session-bound), on Hermes `omh_todo action=clear`, and `omh goal cancel --goal <id>`; an OMH loop stops through "
+    "its linked goal, and one without a goal has no cancel record."
 )
 CANCEL_REPORTING = (
     "Report an OMH clear as done only from its command result, and a host stop as requested until the host's own "
     "reply to it is seen."
+)
+SKILL_HERMES_COMMANDS = (
+    "Registry search, install, removal of a hub-installed skill, and per-platform hiding are the person's own "
+    "`hermes skills search`, `install`, `uninstall`, and `config` in a terminal, with `/skills search` and "
+    "`/skills install` inside the classic CLI."
 )
 SKILL_MANAGED_EDIT = (
     "Never edit or delete an OMH-managed skill (an `omh-*` or `ulw-*` name) with `skill_manage`: OMH generates its "
@@ -85,8 +105,10 @@ CLAUSES = {
         "provider billing and cron stay not_observed.",
     ),
     "ops-observability-card": (
-        "labeled observed: a conversation with no recorded tokens is not_observed, never zero, and provider billing "
-        "stays not_observed.",
+        "On Hermes, a conversation's token and cost figures come from the cost receipt `omh_run_summary` returns, "
+        "which keeps Hermes' own accounting apart from executor-reported fanout units and names each cost's basis, "
+        "and the person's `/insights` gives Hermes' estimated cost across recent sessions. A conversation with no "
+        "recorded tokens is not_observed, never zero, and provider billing stays not_observed.",
     ),
     "context-budget-review": (COMPRESS_CHECKPOINT, COMPRESS_PREVIEW),
     "toolbelt-readiness": (
@@ -101,8 +123,8 @@ CLAUSES = {
         "If `omh_hud` is not available, say delegate children and kanban workers were not read rather than implying "
         "none are running.",
     ),
-    "cancel": (CANCEL_NO_HOST_KILL, CANCEL_HOST_STOPS, CANCEL_REPORTING),
-    "skill": (SKILL_MANAGED_EDIT,),
+    "cancel": (CANCEL_NO_HOST_KILL, CANCEL_OMH_CLEARS, CANCEL_HOST_STOPS, CANCEL_REPORTING),
+    "skill": (SKILL_HERMES_COMMANDS, SKILL_MANAGED_EDIT),
     "capability-toggle": (
         "The user wants one skill hidden on one messaging platform or everywhere; that is Hermes' own hermes skills "
         "config, an interactive command the person runs in a terminal, and OMH writes no Hermes config.",
@@ -154,6 +176,47 @@ class TrackerClauseTests(unittest.TestCase):
         self.assertEqual(set(_projections("capability-toggle")), {"hermes"})
 
 
+class HermesUsageSurfaceTests(unittest.TestCase):
+    def test_each_usage_question_names_what_each_hermes_surface_shows(self) -> None:
+        for name in USAGE_CLAUSE_SKILLS:
+            for projection, content in _projections(name).items():
+                with self.subTest(skill=name, projection=projection):
+                    self.assertIn(USAGE_CLAUSE, content)
+
+    def test_no_clause_says_usage_or_status_shows_a_cost(self) -> None:
+        # Neither command shows a cost at either supported revision; a clause
+        # that names one of them beside "cost" credits it with a figure it
+        # does not have.
+        surface = re.compile(r"/usage\b|/status\b")
+        for name in USAGE_CLAUSE_SKILLS:
+            for projection, content in _projections(name).items():
+                clauses = [
+                    clause
+                    for sentence in _sentences(content)
+                    for clause in re.split(r"[,;]", sentence)
+                    if surface.search(clause)
+                ]
+                self.assertTrue(clauses, "no clause names /usage or /status; the check below would be vacuous")
+                for clause in clauses:
+                    with self.subTest(skill=name, projection=projection, clause=clause[:80]):
+                        self.assertNotIn("cost", clause.lower())
+
+
+class PortableScopeTests(unittest.TestCase):
+    def test_hermes_only_surfaces_are_scoped_in_every_projection(self) -> None:
+        # `omh_todo` and Hermes' delegate and kanban rows exist only on Hermes;
+        # a non-Hermes host loads the portable body, so each line naming them
+        # says "on Hermes" or says what happens when they are absent.
+        scoped = re.compile(r"\bon Hermes\b|not available", re.IGNORECASE)
+        for name, marker in (("cancel", "`omh_todo"), ("running-work-board", "kanban")):
+            for projection, content in _projections(name).items():
+                lines = [line for line in content.splitlines() if marker in line]
+                self.assertTrue(lines, f"no line in {name} names {marker}; the check below would be vacuous")
+                for line in lines:
+                    with self.subTest(skill=name, projection=projection, line=line[:80]):
+                        self.assertRegex(line, scoped)
+
+
 class HostActionTests(unittest.TestCase):
     def test_every_compress_preview_sentence_carries_the_surface_restriction(self) -> None:
         # A preview the modern TUI does not parse compresses for real, so the
@@ -163,7 +226,7 @@ class HostActionTests(unittest.TestCase):
             self.assertTrue(naming, "no sentence names --preview; the check below would be vacuous")
             for sentence in naming:
                 with self.subTest(projection=projection, sentence=sentence[:80]):
-                    self.assertIn("only in the classic CLI or on a messaging platform", sentence)
+                    self.assertIn(PREVIEW_RESTRICTION, sentence)
 
     def test_no_cancel_sentence_has_omh_end_a_host_process(self) -> None:
         # Every instruction that names ending or killing a process says OMH

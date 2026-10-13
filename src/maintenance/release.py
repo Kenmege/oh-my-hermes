@@ -676,7 +676,14 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # policy, `run-efficiency` names `host_usage` in its outputs and boundary, and
 # six rows carry a new first Do-Not-Use line. The rows were tightened before
 # raising. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 492322
+# 492322 -> 492768: review of that change. The first Do-Not-Use line of
+# `run-efficiency`, `ops-observability-card`, and `context-budget-review` now
+# says what each Hermes surface shows -- `/usage` tokens, `/status` context,
+# `/insights` an estimated cost, `omh_run_summary` this conversation's
+# recorded tokens and cost -- since neither `/usage` nor `/status` shows a
+# cost; `cancel`'s `/stop` line says what it ends on each surface, and
+# `skill` names the in-chat `/skills` commands. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 492768
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
