@@ -49,7 +49,7 @@ from dataclasses import dataclass, field
 import time
 from typing import Any
 
-from .diff_view import DiffLine, diff_rows, parse_inline_diff
+from .diff_view import DIFF_FILE, FILE_ARROW, DiffLine, diff_rows, parse_inline_diff
 from .gateway import Event
 from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
 from .style import Line, Span, Style
@@ -386,6 +386,7 @@ class Transcript:
     """Blocks in order, the turn's transient state, and how far the terminal has been handed lines."""
 
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self.cwd = ""  # the session's working directory; paths inside it are shown relative to it
         self.blocks: list[Block] = []
         self.activity = ""  # spinner / wait text from thinking.delta; "" when none
         self.status = ""  # the last status.update text of the running turn; "" when none
@@ -583,7 +584,7 @@ class Transcript:
         row.name = name
         row.status = TOOL_RUNNING
         row.started_at = self._clock()
-        row.args_summary = _args_summary(payload)
+        row.args_summary = self._display_args(_args_summary(payload))
         running = sum(1 for tool in group.tools if tool.status == TOOL_RUNNING)
         group.parallel = max(group.parallel, running)
 
@@ -593,12 +594,26 @@ class Transcript:
         row = _find_row(group, tool_id)
         if row is None:
             name = _first_line(as_text(payload.get("name"))) or "tool"
-            row = ToolRow(tool_id=tool_id, name=name, args_summary=_args_summary(payload))
+            row = ToolRow(tool_id=tool_id, name=name, args_summary=self._display_args(_args_summary(payload)))
             group.tools.append(row)
         row.status = tool_result_status(payload.get("result"))
         row.duration_s = _duration(payload, row, self._clock())
         row.summary = _result_summary(payload)
-        row.diff = parse_inline_diff(as_text(payload.get("inline_diff")))
+        row.diff = tuple(
+            DiffLine(line.kind, self._display_header(line.text)) if line.kind == DIFF_FILE else line
+            for line in parse_inline_diff(as_text(payload.get("inline_diff")))
+        )
+
+    def _relative(self, path: str) -> str:
+        """`path` relative to the session's working directory when it lies inside it."""
+        prefix = self.cwd.rstrip("/") + "/" if self.cwd else ""
+        return path[len(prefix):] if prefix and path.startswith(prefix) and len(path) > len(prefix) else path
+
+    def _display_args(self, summary: str) -> str:
+        return self._relative(summary) if _is_path(summary) else summary
+
+    def _display_header(self, text: str) -> str:
+        return FILE_ARROW.join(self._relative(side) for side in text.split(FILE_ARROW))
 
     def _on_status_update(self, payload: dict[str, Any]) -> None:
         text = _first_line(as_text(payload.get("text")))

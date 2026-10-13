@@ -610,6 +610,8 @@ class App:
         info = result.get("info")
         self.model = as_text(info.get("model")) if isinstance(info, dict) else ""
         self.context = ""  # the next session.usage says how full this session is
+        cwd = as_text(info.get("cwd")) if isinstance(info, dict) else ""
+        self.transcript.cwd = cwd or str(self._create_params().get("cwd", ""))
         self.turn_pending = bool(result.get("running"))
         self.busy_since = self.clock()
         self._adopt_stored(as_text(result.get("stored_session_id")) or fallback_stored)

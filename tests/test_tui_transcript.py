@@ -131,6 +131,27 @@ class ToolPathArgumentTests(LoopTestCase):
         row = [line for line in self.live(width=50) if "terminal" in line][0]
         self.assertIn("echo", row)
 
+
+class SessionRelativePathTests(LoopTestCase):
+    def test_paths_inside_the_session_cwd_show_relative_to_it(self) -> None:
+        self.transcript.cwd = "/work/project"
+        self.step(ev("message.start"))
+        self.step(ev("tool.start", tool_id="t1", name="patch", context="/work/project/src/app.py"))
+        diff = "\x1b[1ma//work/project/src/app.py → b//work/project/src/app.py\x1b[0m\n@@ -1 +1 @@\n-a\n+b"
+        self.step(ev("tool.complete", tool_id="t1", name="patch", result={"exit_code": 0}, inline_diff=diff))
+        live = self.live()
+        self.assertIn("  ✓ patch  src/app.py", "\n".join(live))
+        self.assertIn("    src/app.py", live)
+
+    def test_paths_outside_the_cwd_and_prose_stay_as_they_are(self) -> None:
+        self.transcript.cwd = "/work/project"
+        self.step(ev("message.start"))
+        self.step(ev("tool.start", tool_id="t1", name="read_file", context="/etc/hosts"))
+        self.step(ev("tool.start", tool_id="t2", name="terminal", context="ls /work/project/src"))
+        joined = "\n".join(self.live())
+        self.assertIn("read_file  /etc/hosts", joined)
+        self.assertIn("terminal  ls /work/project/src", joined)
+
 class PlainTurnTests(LoopTestCase):
     def test_plain_turn_flushes_per_completed_line_and_fully_at_complete(self) -> None:
         self.assertEqual(self.user("Reply with exactly the word: ok"), ["› Reply with exactly the word: ok"])
