@@ -52,36 +52,36 @@ or "5분마다 ... 루프 돌려줘" asks for a check repeated on a cadence, whi
 Hermes' native `/loop` inside the session (or a cron job when it must run
 unattended), not OMH's long-horizon goal loop. Only the opening of the
 person's current message is read -- after the gateway material above and a
-courtesy opener, never the backfill before `[New message]`:
+courtesy opener, never the backfill before `[New message]` -- and only these
+shapes are a loop on a timer:
 
-- the loop command and its cadence come first (`loop 5m ...`, `/loop 5m ...`,
-  `loop every 5 minutes ...`, `루프 돌면서 5분마다 ...`); or
-- the cadence comes first and the loop is the verb of the request or its
-  trailing adverbial (`every 5 minutes loop over ...`, `every 5 minutes check
-  CI in a loop`, `5분마다 루프 돌려서 ...`, `5분마다 반복해서 ...`, `5분마다
-  ... 루프 돌려줘`).
+- `loop` or `/loop` is the first word and its cadence follows (`loop 5m ...`,
+  `/loop 5m ...`, `loop every 5 minutes ...`, `loop each hour ...`);
+- the cadence opens the message and `loop` is the next word (a courtesy
+  word may sit between), followed by its object, a preposition or
+  conjunction (`_LOOP_VERB_CONTINUATIONS`), or nothing (`every 10 minutes
+  loop over the inbox`, `every 2 hours loop and ...`), never by a noun
+  (`every hour loop counters reset`);
+- a Korean cadence opens the message and its first clause closes on
+  running the loop (`5분마다 루프 돌려줘`, `5분마다 CI 확인하는 루프 돌려주세요`),
+  with no connective such as `-는데` or `-지만` in that clause.
 
-The same openings describe faults ("every 5 minutes my pod restarts in a
-loop", "5분마다 반복해서 에러가 나요"), so the trailing `in a loop` counts only
-after a verb that asks for a check, `loop` after a cadence only when the next
-word reads as its object or a conjunction, and a Korean form only when its
-first clause closes on a request ending.
-
-A loop word anywhere else -- a thing the request talks about ("the retry
-loop fires every 5 seconds"), or a loop the cadence does not open ("check CI
-every 5 minutes in a loop") -- leaves the verdict `none`: the turn routes as
-it did before this module existed. A request that opens by asking to write
-or explain a `for` loop or a music loop that runs on a timer is
-`construct_loop`. Either shape is OMH's goal loop instead
+A loop word anywhere else, or used as an adverbial (`... in a loop`,
+`반복해서`, `루프 돌면서`, `루프 돌려서`), leaves the verdict `none`, because
+the same words describe a fault as often as they ask for a loop ("every 5
+minutes my pod restarts in a loop", "5분마다 반복해서 에러 나는데 원인
+찾아줘"); the turn routes as it did before this module existed. A request
+that opens by asking to write or explain a `for` loop or a music loop that
+runs on a timer is `construct_loop`. Either shape is OMH's goal loop instead
 (`goal_loop`) when the person uses one of OMH's own forms, names the goal
 loop, or sets it a goal (`_carries_goal` is the whole rule) -- with one
 exception: a typed `/loop` with its cadence is Hermes' command whatever its
 prompt mentions (`typed_loop_sets_goal` says when its prompt would otherwise
-have been the goal loop). Every surface that has to decide -- the chat router's early
-answer, the loop guard in the scorer, the route hint and the candidate line --
-takes the verdict from this one function, read on the turn's executable
-routing text (`reference_regions`), so none of them keeps word lists of its
-own for it.
+have been the goal loop). Every surface that has to decide -- the chat
+router's early answer, the loop guard in the scorer, the route hint and the
+candidate line -- takes the verdict from this one function, read on the
+turn's executable routing text (`reference_regions`), so none of them keeps
+word lists of its own for it.
 
 Text is folded with NFKC and a case fold, as the router's `normalized_phrase`
 does, with the Unicode hyphens folded to `-`.
@@ -168,33 +168,13 @@ _LOOP_VERB_CONTINUATIONS = frozenset(
     {"and", "then", "over", "through", "to", "until", "back", "it", "them"}
     | {"the", "this", "that", "these", "those", "my", "our", "a", "an"}
 )
-_KOREAN_LOOP = r"(?:루프|loop)(?:를|을)?\s?"
-# `5분마다 루프 돌려서 ...`, `5분마다 loop 돌면서 ...`, `5분마다 반복해서 ...`:
-# the loop is what the cadence runs.
-_KOREAN_LOOP_PREDICATE = re.compile(
-    rf"(?:반복해서(?=\s)|{_KOREAN_LOOP}(?:돌려줘|돌려 줘|돌려주세요|돌려서|돌면서|돌리면서))"
-)
-# `5분마다 ... 확인하는 루프 돌려줘`: the clause closes on running the loop.
-_KOREAN_LOOP_CLOSE = re.compile(rf"{_KOREAN_LOOP}(?:돌려줘|돌려 줘|돌려주세요)(?=[\s.,!~]|$)")
-# `every 5 minutes check CI in a loop`: the loop as the request's adverbial.
-_IN_A_LOOP = "in a loop"
-# The same shape describes a fault ("every 5 minutes CI fails in a loop",
-# "every few minutes my agent gets stuck in a loop"), so the adverbial counts
-# only after a verb that opens a request for a repeated check. The list is
-# closed and leaves out verbs that are as often a sentence's subject (build,
-# test, update, deploy, restart, sync, log, report): a request it misses
-# routes as it did before.
-_IN_A_LOOP_VERBS = frozenset(
-    {"check", "run", "rerun", "ping", "poll", "watch", "monitor", "scan", "fetch", "pull", "refresh", "review"}
-    | {"summarize", "post", "send", "look", "tell", "triage", "retry", "compare", "measure", "print", "query"}
-    | {"hit", "curl", "read", "show", "notify", "remind", "verify", "inspect", "collect", "sweep", "probe"}
-)
-# A Korean clause asks for something when it closes on a request ending; the
-# same words close on a statement otherwise ("5분마다 반복해서 에러가 나요").
-_KOREAN_REQUEST_ENDINGS = ("줘", "줘요", "주세요", "주십시오", "하세요", "하십시오", "해라", "하라")
+# `5분마다 루프 돌려줘`, `5분마다 ... 확인하는 루프 돌려주세요`: running the loop is
+# the request, and it closes the clause.
+_KOREAN_LOOP_REQUEST = re.compile(r"(?:루프|loop)(?:를|을)?\s?돌려\s?(?:줘|줘요|주세요|주십시오)$")
+# A clause joined by one of these reports something before it asks
+# ("5분마다 에러 나는데 루프 돌려줘").
+_KOREAN_CONNECTIVES = ("는데", "은데", "던데", "인데", "지만", "니까", "길래")
 _CLAUSE_END = re.compile(r"[,.!?;\n，。]")
-# `루프 돌면서 5분마다 ...`: the loop first, then its cadence.
-_KOREAN_LOOP_FIRST = re.compile(rf"{_KOREAN_LOOP}(?:돌면서|돌려서|돌리면서)\s?{_KOREAN_CADENCE}(?=\s)")
 _SENTENCE_END = re.compile(r"(?<=[.?!;])\s|\n")
 
 # -- OMH's own forms ---------------------------------------------------------
@@ -407,23 +387,14 @@ def _first_sentence(text: str) -> str:
     return _SENTENCE_END.split(text, maxsplit=1)[0].strip()
 
 
-def _korean_request(text: str) -> bool:
-    """Whether the first clause of `text` closes on a Korean request ending."""
-    return _CLAUSE_END.split(text, maxsplit=1)[0].strip().rstrip("~ ").endswith(_KOREAN_REQUEST_ENDINGS)
-
-
-def _in_a_loop_request(clause: str) -> bool:
-    """Whether `clause`, read after its cadence, asks for a check repeated in a loop."""
-    if clause.startswith(_IN_A_LOOP):
-        clause = clause[len(_IN_A_LOOP):].lstrip(" ,")
-    elif not clause.endswith(f" {_IN_A_LOOP}"):
-        return False
-    words = clause.split(maxsplit=1)
-    return bool(words) and _bare(words[0]) in _IN_A_LOOP_VERBS
+def _korean_loop_request(text: str) -> bool:
+    """Whether the first clause of `text` closes on running the loop, with no connective before it."""
+    clause = _CLAUSE_END.split(text, maxsplit=1)[0].strip().rstrip("~ ")
+    return bool(_KOREAN_LOOP_REQUEST.search(clause)) and not any(word in clause for word in _KOREAN_CONNECTIVES)
 
 
 def _loop_is_the_request(lead: str) -> bool:
-    """Whether `lead` opens with a loop command and its cadence, in either order."""
+    """Whether `lead` opens with a loop command and its cadence (see the module docstring)."""
     words = lead.split()
     if not words:
         return False
@@ -433,8 +404,6 @@ def _loop_is_the_request(lead: str) -> bool:
         (len(words) > 1 and _interval_term(_bare(words[1]))) or _past_cadence(words, 1)
     ):
         return True
-    if _KOREAN_LOOP_FIRST.match(lead):
-        return _korean_request(lead)
     korean = _KOREAN_CADENCE_LEAD.match(lead)
     past = _past_cadence(words, 0)
     if korean:
@@ -443,19 +412,15 @@ def _loop_is_the_request(lead: str) -> bool:
         rest = " ".join(words[past:])
     else:
         return False
-    # The cadence came first; the loop has to be what it runs.
-    rest = _after_courtesy(rest)
-    after = rest.split(maxsplit=2)
+    # The cadence came first; `loop` has to be the next word and its verb.
+    after = _after_courtesy(rest).split(maxsplit=2)
     if after and _bare(after[0]) == "loop":
         # "loop." or "loop:" closes the clause; otherwise the next word tells
         # a verb from a noun.
         if len(after) == 1 or after[0] != "loop" or _bare(after[1]) in _LOOP_VERB_CONTINUATIONS:
             return True
-    if _KOREAN_LOOP_PREDICATE.match(rest) and _korean_request(rest):
-        return True
-    if _in_a_loop_request(_bare(_first_sentence(rest))):
-        return True
-    return bool(_KOREAN_LOOP_CLOSE.search(_first_sentence(lead)))
+    # A Korean cadence, and running the loop closes its first clause.
+    return bool(korean) and _korean_loop_request(rest)
 
 
 def _asks_for_a_construct_on_a_timer(lead: str) -> bool:

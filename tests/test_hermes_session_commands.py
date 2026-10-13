@@ -175,15 +175,13 @@ VERDICTS = {
     "loop every 10 minutes and keep fixing failing tests until the suite is green": LOOP_TIMER_NATIVE,
     "please loop every 5 minutes and check CI": LOOP_TIMER_NATIVE,
     "hey, can you loop every hour and check the queue?": LOOP_TIMER_NATIVE,
-    # The cadence first, then the loop as the request's verb or adverbial.
+    # The cadence first, then `loop` as the very next word and the request's verb.
     "every hour, loop over the queue": LOOP_TIMER_NATIVE,
     "every 2 hours loop and make the test suite faster": LOOP_TIMER_NATIVE,
-    "every 5 minutes check CI in a loop": LOOP_TIMER_NATIVE,
-    "every 5 minutes, in a loop, check CI": LOOP_TIMER_NATIVE,
-    # Korean: the cadence opens, and the loop is what it runs.
-    "5분마다 반복해서 CI 확인해줘": LOOP_TIMER_NATIVE,
-    "10분마다 loop 돌려서 빌드 상태 체크해줘": LOOP_TIMER_NATIVE,
-    "루프 돌면서 5분마다 CI 확인해줘": LOOP_TIMER_NATIVE,
+    # Korean: the cadence opens, and running the loop closes the first clause.
+    "5분마다 루프 돌려줘": LOOP_TIMER_NATIVE,
+    "매시간 큐 상태 보는 루프 돌려주세요": LOOP_TIMER_NATIVE,
+    "5분마다 CI 확인하는 루프를 돌려 주세요": LOOP_TIMER_NATIVE,
     # A check that mentions a star, adoption, product, or friction figure is
     # still a check, and so is a measure moved with no product or star in it.
     "loop every hour: check the adoption dashboard": LOOP_TIMER_NATIVE,
@@ -193,7 +191,7 @@ VERDICTS = {
     "loop every 5 minutes: run the benchmark and make p95 latency lower until it is under 100ms": LOOP_TIMER_NATIVE,
     "loop every hour and cut a release branch": LOOP_TIMER_NATIVE,
     "loop every 10 minutes and get to the bottom of the flaky test": LOOP_TIMER_NATIVE,
-    "1시간마다 루프 돌려서 테스트 커버리지 올려줘": LOOP_TIMER_NATIVE,
+    "1시간마다 테스트 커버리지 올리는 루프 돌려줘": LOOP_TIMER_NATIVE,
     # Typed with its cadence, `/loop` is Hermes' command whatever its prompt mentions.
     "/loop 5m check whether the stars badge updated": LOOP_TIMER_NATIVE,
     "/loop 10m improve nothing, just check CI": LOOP_TIMER_NATIVE,
@@ -234,7 +232,30 @@ VERDICTS = {
     "loop every hour to raise adoption": LOOP_TIMER_GOAL,
     "loop every hour until the repo hits 10k stars, improving first-run friction": LOOP_TIMER_GOAL,
     "1시간마다 온보딩을 계속 개선하는 루프 돌려줘, 첫 실행 성공률 90% 될 때까지": LOOP_TIMER_GOAL,
-    "2시간마다 루프 돌려서 설치 후 첫 성공까지 걸리는 시간을 줄여줘": LOOP_TIMER_GOAL,
+    "2시간마다 설치 후 첫 성공까지 걸리는 시간을 줄이는 루프 돌려줘": LOOP_TIMER_GOAL,
+    # A loop word as an adverbial is not the command, even in a request: the
+    # same words describe a fault as often (FAULT_STATEMENTS), so these route
+    # as they did before. An earlier round of this change answered each as
+    # Hermes' `/loop`.
+    "every 5 minutes check CI in a loop": LOOP_TIMER_NONE,
+    "every 5 minutes, in a loop, check CI": LOOP_TIMER_NONE,
+    "every 5 minutes check the deploy status in a loop": LOOP_TIMER_NONE,
+    "every 10 minutes poll the queue in a loop": LOOP_TIMER_NONE,
+    "5분마다 반복해서 CI 확인해줘": LOOP_TIMER_NONE,
+    "5분마다 반복해서 CI 확인해줘요": LOOP_TIMER_NONE,
+    "30초마다 반복해서 health check 해줘": LOOP_TIMER_NONE,
+    "10분마다 loop 돌려서 빌드 상태 체크해줘": LOOP_TIMER_NONE,
+    "루프 돌면서 5분마다 CI 확인해줘": LOOP_TIMER_NONE,
+    "1시간마다 루프 돌려서 테스트 커버리지 올려줘": LOOP_TIMER_NONE,
+    "2시간마다 루프 돌려서 설치 후 첫 성공까지 걸리는 시간을 줄여줘": LOOP_TIMER_NONE,
+    "every hour 루프 돌려서 배포 확인해줘": LOOP_TIMER_NONE,
+    # A connective in the clause reports something before the request, and the
+    # Korean request needs a Korean cadence.
+    "5분마다 에러 나는데 루프 돌려줘": LOOP_TIMER_NONE,
+    "every hour 루프 돌려줘": LOOP_TIMER_NONE,
+    # The request has to close the first clause.
+    "5분마다 에러가 나요, 루프 돌려줘": LOOP_TIMER_NONE,
+    "5분마다 루프 돌려줘서 고마워요": LOOP_TIMER_NONE,
     # A loop word that is a thing the request talks about, not its command.
     "check CI every 5 min in a loop": LOOP_TIMER_NONE,
     "the music loop restarts every 30 seconds in my game, how do I fix it?": LOOP_TIMER_NONE,
@@ -273,9 +294,10 @@ VERDICTS = {
 }
 
 # The same shapes describing a fault, not asking for a loop: a cadence first and
-# "in a loop" after a subject, a Korean clause that closes on a statement, and
-# `loop` as a noun. Each must route as it did before. The first twelve are the
-# fifth review's; the rest were written for the fix.
+# "in a loop" after its subject, a Korean adverbial (반복해서, 루프 돌면서) before
+# a statement or a connective, and `loop` as a noun. Each must route as it did
+# before. The first twelve are the fifth review's, the next 22 were written for
+# that round's fix, and the rest are the sixth review's.
 FAULT_STATEMENTS = (
     "Every few minutes the agent gets stuck in a loop.",
     "every few minutes my agent gets stuck in a loop. how do I fix it?",
@@ -312,6 +334,48 @@ FAULT_STATEMENTS = (
     "5분마다 루프 돌면서 같은 메시지를 보내요, 고쳐줘",
     "30초마다 반복해서 알림이 울려서 짜증나",
     "매시간 반복해서 동기화가 꼬여요",
+    "every hour monitor alerts fire in a loop",
+    "every minute pull requests pile up in a loop",
+    "every 5 minutes post requests fail in a loop",
+    "Every 5 minutes POST requests fail in a loop. Why?",
+    "every hour scan jobs hang in a loop",
+    "every 10 minutes check runs fail in a loop",
+    "every hour read replicas fall behind in a loop",
+    "every 5 minutes print jobs get stuck in a loop",
+    "every 10 minutes probe failures restart my pod in a loop.",
+    "every 2 minutes ping spikes hit my game in a loop",
+    "every 30 seconds watch events fire in a loop",
+    "every 5 minutes review comments get posted in a loop",
+    "every minute query timeouts happen in a loop",
+    "every minute retry storms hit the API in a loop",
+    "every 5 minutes send errors show up in a loop",
+    "every hour fetch failures pile up in a loop",
+    "every 5 minutes refresh tokens expire in a loop",
+    "every 10 minutes run logs fill the disk in a loop",
+    "every 5 minutes verify emails get sent in a loop",
+    "every hour sweep jobs crash in a loop",
+    "[alice] every 5 minutes POST requests fail in a loop",
+    "every 5 minutes, in a loop, check runs fail",
+    "5분마다 반복해서 에러 나는데 원인 찾아줘",
+    "10초마다 반복해서 앱이 꺼지는데 왜 그런지 알려줘",
+    "루프 돌면서 5분마다 앱이 죽는데 고쳐줘",
+    "1시간마다 루프 돌면서 서버가 재시작되는데 이유 알려줘",
+    "5분마다 반복해서 알림이 오는데 끄는 법 알려줘",
+    "5분마다 반복해서 같은 답변을 하는데 이거 고쳐 주세요",
+    "매분 반복해서 로그가 찍히는데 원인 분석해 주세요",
+    "[alice] 5분마다 반복해서 에러 나는데 원인 찾아줘",
+    "every 5 minutes 반복해서 에러 나는데 고쳐줘",
+    "5분마다 check runs fail in a loop",
+    "every 5 minutes the check runs in a loop",
+    "every night scan jobs hang in a loop",
+    "every few minutes health check pings fail in a loop",
+    "'5분마다 반복해서 확인해줘'라고 했더니 에러가 나요",
+    "\"5분마다 반복해서 확인해줘\"라고 했더니 에러가 나요",
+    "5분마다 반복해서 확인해줘라고 했더니 에러가 나요",
+    "5분마다 루프 돌려서 확인하라고 했는데 안 돼요",
+    "5분마다 반복해서 확인해 달라고 했는데 아무 반응이 없어요",
+    "every 5 minutes 반복해서 에러가 나요",
+    "5분마다 my pod restarts in a loop",
 )
 
 # A typed `/loop` whose prompt would otherwise be OMH's goal loop: still Hermes'
@@ -569,7 +633,7 @@ class OneVerdictOnEverySurfaceTest(unittest.TestCase):
         # chat wrapper replaced the router's answer with OMH's intro,
         # quickstart, status card, or the workflow picker. One sentence per card.
         for sentence in (
-            "5분마다 반복해서 omh 소개해줘",
+            "5분마다 omh 소개하는 루프 돌려줘",
             "/loop 5m omh quickstart",
             "/loop 10m ask omh loop for status",
             "/loop 5m what omh skills are there",
