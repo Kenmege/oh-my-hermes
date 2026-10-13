@@ -214,6 +214,58 @@ class ListFocusTests(unittest.TestCase):
         self.assertEqual((composer_index(after), status_index(after)), (resting, status))
         self.assertEqual(composer_index(drawn(app)), resting)  # and it stays there on the next repaint
 
+    def test_after_ctrl_l_with_two_pad_rows_left_the_list_takes_them_and_the_composer_comes_back(self) -> None:
+        # The review's case: the redraw leaves the region's last row one above the screen's, and the list
+        # used to push it down, so the composer came back one row lower than it left.
+        app, _client = agent_app()
+        app._on_input(Key(CHAR, "l", ctrl=True))
+        for number in range(8):
+            app.transcript.add_notice(f"notice {number}")
+            drawn(app)
+        before = drawn(app)
+        self.assertEqual((app.region.pad, app.region.last_row(24), composer_index(before)), (2, 22, 19))
+        app._on_input(Key(DOWN))
+        during = drawn(app)
+        self.assertEqual((app.region.last_row(24), status_index(during)), (22, 22))
+        self.assertEqual(under_the_frame(app), [text.rstrip() for text in lines_text(
+            app.roster.list_lines(80, DEFAULT_THEME, FIRST, 0, 3, 0.0)[0])] + [AGENT_LIST_HINT])
+        self.assertEqual(during[:12], before[:12])  # the transcript did not move
+        app._on_input(Key(ESCAPE))
+        self.assertEqual(drawn(app), before)
+
+    def test_with_the_pad_used_up_the_list_scrolls_nothing_and_leaves_no_blank_rows(self) -> None:
+        app, _client = agent_app()
+        app.transcript.add_notice("\n".join(f"line {number}" for number in range(40)))
+        before = drawn(app)
+        self.assertEqual((app.region.pad, app.region.last_row(24)), (0, 23))
+        app._on_input(Key(DOWN))
+        during = drawn(app)
+        top = 24 - app.region.height
+        self.assertEqual(during[:top], before[:top])  # nothing above the region scrolled
+        rows = under_the_frame(app)
+        self.assertEqual(len(rows), 2)  # the mode row's and the busy row's: the selected agent and the hint
+        self.assertTrue(rows[0].startswith("▸ ⠋ find usages of"), rows)
+        app._on_input(Key(DOWN))
+        self.assertTrue(under_the_frame(app)[0].startswith("▸ ⠋ read the diff"))  # it scrolls to the highlight
+        app._on_input(Key(ESCAPE))
+        self.assertEqual(drawn(app), before)
+
+    def test_with_one_row_to_spare_the_list_is_the_highlighted_agent_alone(self) -> None:
+        app, _client = agent_app(busy=False)  # idle: nothing is drawn above the composer
+        app.transcript.add_notice("\n".join(f"line {number}" for number in range(40)))
+        before = drawn(app)
+        app._on_input(Key(DOWN))
+        rows = under_the_frame(app)
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0].startswith("▸ ⠋ find usages of"), rows)
+        app._on_input(Key(DOWN))
+        self.assertTrue(under_the_frame(app)[0].startswith("▸ ⠋ read the diff"))
+        app._on_input(Key(UP))
+        app._on_input(Key(UP))
+        self.assertEqual(under_the_frame(app), ["▸ ● main"])
+        app._on_input(Key(ESCAPE))
+        self.assertEqual(drawn(app), before)
+
     def test_the_caret_stays_on_the_composer_while_the_list_has_the_keys(self) -> None:
         app, _client = focused()
         screen = drawn(app)

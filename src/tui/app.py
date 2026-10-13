@@ -140,7 +140,7 @@ from .keys import (
     Paste,
 )
 from .launch import FALLBACK_EXIT
-from .layout import Budget, agent_list_cap, slot_cap, under_composer
+from .layout import Budget, slot_cap, under_composer
 from .markdown import clean_text
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
@@ -2191,7 +2191,13 @@ class App:
         previous = 0 if anchoring else self.region.height
         self.anchor = False
         strip, hits = self._agent_strip(cols)
-        agent_list, listed = self._agent_list(cols, rows)
+        listed: tuple[str, ...] = ()
+
+        def agent_list(room: int) -> list[Line]:
+            nonlocal listed
+            lines, listed = self._agent_list(cols, room)
+            return lines
+
         frame = build_frame(
             cols=cols,
             rows=rows,
@@ -2217,7 +2223,7 @@ class App:
                 strip=strip,
             ),
             placeholder=PLACEHOLDER if self.slot is None and self.picker is None else "",
-            agent_list=agent_list,
+            agent_list=agent_list if self.list_selected is not None else None,
         )
         self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad)
         if stable and anchoring:
@@ -2245,13 +2251,17 @@ class App:
         line, hits = self.roster.strip_line(cols - start, self.theme, self._spinner_frame())
         return line, tuple(Hit(hit.start + start, hit.end + start, hit.subagent_id) for hit in hits)
 
-    def _agent_list(self, cols: int, rows: int) -> tuple[list[Line], tuple[str, ...]]:
-        """The focused agent list (its rows, then the hint row) and the id of each row; nothing while it has no focus."""
+    def _agent_list(self, cols: int, room: int) -> tuple[list[Line], tuple[str, ...]]:
+        """The focused agent list for `room` rows, and the id of each agent row; nothing while it has no focus.
+
+        Its agent rows, scrolled to the highlight, then the hint row; where
+        `room` is a single row the frame keeps the first, the highlight's.
+        """
         if self.list_selected is None:
             return [], ()
-        room = min(AGENT_LIST_ROWS, agent_list_cap(rows, cols) - 1)  # the last row is the hint's
+        shown = min(AGENT_LIST_ROWS, max(room - 1, 1))
         lines, listed = self.roster.list_lines(
-            cols, self.theme, self.list_selected, self._spinner_frame(), room, self.clock()
+            cols, self.theme, self.list_selected, self._spinner_frame(), shown, self.clock()
         )
         return [*lines, truncate_line((Span(AGENT_LIST_HINT, self.theme.hint),), cols)], listed
 

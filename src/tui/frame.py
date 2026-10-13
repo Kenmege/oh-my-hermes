@@ -30,11 +30,14 @@ menu, tail or mode do. A shorter terminal drops the mode row, then the bottom
 rule, by its height alone, so the offset is still fixed for each size.
 
 One exception, and only one: while the agent list is focused (`agent_list`
-has rows) it is drawn where the mode row was and is as tall as it needs to
-be, up to `layout.agent_list_cap`, so the composer rises by the rows the list
-adds. That lasts exactly as long as the focus does. The frame after it has
-one mode row again and the same height, so the composer is back on the row
-it left, and no frame without the list ever moves it.
+is given) it is drawn where the mode row was and is as tall as it needs to
+be within `layout.agent_list_room`, so the composer rises by the rows the
+list adds. The list never makes the region taller: the rows it adds come out
+of the pad first, then out of the tail, the sticky prompt and the slot, and a
+list that has fewer rows than agents scrolls. So the region's last row stays
+where it is, the boundary below included, and the frame after the focus has
+one mode row again and the same height: the composer is back on the row it
+left, and no frame without the list ever moves it.
 
 An empty composer shows `placeholder` after the prompt glyph in the hint
 colour while the app asks for it (no slot open). It is drawn, never typed:
@@ -47,16 +50,17 @@ input rows keep their place and only the block's top moves.
 Boundary: when the region starts on the screen's top row (the launch cursor
 on row 0), the first frame's bottom is one row above the screen's last row.
 The first time the region grows after that it reaches the last row, so the
-composer moves down once, by one row, and never moves up.
+composer moves down once, by one row, and never moves up. The agent list is
+never that growth.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from .composer import PROMPT, Composer
-from .layout import Budget, allocate, caret_row, compose, composer_cap, max_height
+from .layout import Budget, agent_list_room, allocate, caret_row, compose, composer_cap, max_height
 from .style import Line, Span
 from .theme import DEFAULT_THEME, Theme
 from .width import truncate_line
@@ -97,15 +101,18 @@ def build_frame(
     mode: str = MODE_NORMAL,
     mode_row: Line = (),
     placeholder: str = "",
-    agent_list: Sequence[Line] = (),
+    agent_list: Callable[[int], Sequence[Line]] | None = None,
 ) -> Frame:
     """The region for one repaint; `previous_height` is `LiveRegion.height` right now.
 
     `attachments` is drawn as the composer's first row when the composer may
     have two rows; a terminal too short for that shows the input alone.
     `mode` picks both rules' glyph and colour; `mode_row` is drawn under the
-    bottom rule where the terminal has room for it. `agent_list`, the focused
-    agent list's rows, takes that row's place and its own height.
+    bottom rule where the terminal has room for it. `agent_list`, while the
+    agent list is focused, is called with the rows the list may take
+    (`layout.agent_list_room`, its hint row included) and returns the list's
+    rows, which take the mode row's place; it is not called where there is no
+    mode row.
     """
     cap = composer_cap(rows)
     chips = [attachments] if attachments is not None and cap >= 2 else []
@@ -115,6 +122,18 @@ def build_frame(
     composer_lines = chips + input_lines
     caret_line += len(chips)
     min_height = previous_height if previous_height > 0 else max_height(rows)
+    room = 0
+    if agent_list is not None:
+        room = agent_list_room(
+            rows,
+            cols,
+            sticky=sticky is not None,
+            tail_rows=len(tail),
+            slot_rows=len(slot),
+            composer_rows=len(composer_lines),
+            min_height=min_height,
+        )
+    listed = [truncate_line(row, cols) for row in agent_list(room)] if agent_list is not None and room else []
     budget = allocate(
         rows,
         cols,
@@ -123,7 +142,7 @@ def build_frame(
         slot_rows=len(slot),
         composer_rows=len(composer_lines),
         min_height=min_height,
-        agent_list_rows=len(agent_list),
+        agent_list_rows=len(listed),
     )
     rule = rule_line(cols, theme, mode)
     lines = compose(
@@ -136,7 +155,7 @@ def build_frame(
         bottom_rule=rule,
         mode=truncate_line(mode_row, cols),
         status=status,
-        agent_list=[truncate_line(row, cols) for row in agent_list],
+        agent_list=listed,
     )
     return Frame(
         lines=tuple(lines),

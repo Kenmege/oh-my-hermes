@@ -20,7 +20,8 @@ every flush before the next frame, it reads the VT screen back and asserts:
     terminal size. The one exception is the focused agent list: while it is
     drawn the composer sits higher by the rows the list adds to the mode
     row's one, and the frame after it leaves has the composer back on the
-    row it was on before;
+    row it was on before. The list never makes the region taller, so the
+    bottom does not move for it, not even from the launch row 0;
 (b) the hardware cursor sits on the composer caret;
 (c) the status line is the region's last row and sits on the screen's last
     row, with the region's rows exactly the frame's rows above it;
@@ -30,8 +31,8 @@ every flush before the next frame, it reads the VT screen back and asserts:
     the mode's glyph) and the mode row, where the height has room for them:
     both from 10 rows, the bottom rule alone from 7, neither below that.
     While the agent list is focused its rows are there instead of the mode
-    row, as many as it has up to what the height leaves, and only where the
-    mode row would be;
+    row, as many as it has up to what the region's height leaves under the
+    composer and the cap, and only where the mode row would be;
 (f) whenever the live region says which screen row it ends on
     (`LiveRegion.last_row`), that is the row the status line is on, and by
     the end of every scenario it does say.
@@ -76,7 +77,7 @@ def rows_under_composer(rows: int) -> int:
     return (rows >= 7) + (rows >= 10)
 
 
-def agent_list_room(rows: int) -> int:
+def agent_list_cap(rows: int) -> int:
     """The spec, written out: the focused agent list gets what a region of `rows - 1` rows has left
     after the top rule, a composer at its cap (a quarter of the height), the bottom rule and the
     status line; nothing below 10 rows, where there is no mode row for it to replace."""
@@ -167,17 +168,28 @@ class Session:
             slot=self.slot,
             mode=self.mode,
             mode_row=mode_row,
-            agent_list=self.agent_list,
+            agent_list=(lambda room: self.agent_list) if self.agent_list else None,
         )
         self.region.render(frame.lines, frame.cursor, self.cols, pad=frame.pad)
         self.lines = frame.lines
-        self.drawn_list = list(self.agent_list)
         self.view = self.composer.render(self.cols, composer_cap(self.rows), PROMPT, DEFAULT_THEME.prompt)
+        self.drawn_list = self.agent_list[: self.list_rows(len(self.view[0]))]
         self.check(frame.lines, self.view, self.drawn_list)
         # the caret claim itself, counted without the composer: one row of text, caret at its end
         text = self.composer.text
         if text and "\n" not in text and self.composer.caret == len(text) and cell_width(PROMPT + text) < self.cols:
             self.case.assertEqual(self.screen.cursor[1], cell_width(PROMPT + text), f"{label}: cursor column")
+
+    def list_rows(self, composer_rows: int) -> int:
+        """The spec, written out: the rows of the list a region this tall shows under its composer.
+
+        Everything the region holds but its top rule, composer, bottom rule
+        and status line, up to the cap; the region is the height it would be
+        without the list, which the list phases assert apart.
+        """
+        if not self.agent_list:
+            return 0
+        return min(len(self.agent_list), agent_list_cap(self.rows), self.region.height - composer_rows - 3)
 
     def keys(self, label: str, events: Sequence[Key | Paste]) -> None:
         for event in events:
@@ -219,7 +231,7 @@ class Session:
         # the focused agent list stands where the mode row would
         lines, (caret_row, caret_col) = view
         under = rows_under_composer(self.rows)
-        listed = min(len(agent_list), agent_list_room(self.rows))
+        listed = len(agent_list)
         if listed:
             under += listed - 1
             t.assertEqual(
@@ -303,16 +315,18 @@ def run_scenario(session: Session) -> None:
 
     # the agent list takes the keys, gains agents past its cap, loses some, and gives the keys back:
     # the composer rises by the rows the list adds and is back on its row the moment the list is gone
-    resting = session.last
+    resting, resting_height = session.last, session.region.height
     for size in (3, 2, 8, rows + 4, 5):
         session.agent_list = [plain(f"agent row {n}") for n in range(size - 1)] + [plain("↑↓ select")]
         session.paint("the agent list is focused")
         assert session.last is not None and resting is not None
-        lifted = min(size, agent_list_room(rows))
+        session.case.assertEqual(session.region.height, resting_height, f"{rows} rows: the list grew the region")
+        lifted = len(session.drawn_list)
         session.case.assertEqual(session.last[1], resting[1] - max(lifted - 1, 0), f"{rows} rows, list of {size}")
     session.agent_list = []
     session.paint("the agent list gives the keys back")
     session.case.assertEqual(session.last, resting, f"{rows} rows: the composer did not come back to its row")
+    session.case.assertEqual(session.region.height, resting_height, f"{rows} rows: rows left behind by the list")
 
     # a completion menu under a slash
     session.keys("slash typed", typed("/"))
@@ -438,13 +452,66 @@ class ComposerStaysPutTests(unittest.TestCase):
                     session.agent_list = [plain(f"agent row {n}") for n in range(size)]
                     session.paint("the agent list is focused")
                     assert session.last is not None
-                    drawn = min(size, agent_list_room(rows))
+                    drawn = min(size, agent_list_cap(rows))
                     self.assertEqual(session.last[1], resting[1] - (drawn - 1))
                     self.assertEqual(session.last[0], resting[0])  # the status line never moved
                     session.agent_list = []
                     session.paint("the agent list gives the keys back")
                     self.assertEqual(session.last, resting)
-        self.assertEqual([agent_list_room(rows) for rows in (9, 10, 11, 13, 16, 24)], [0, 4, 5, 6, 8, 14])
+        self.assertEqual([agent_list_cap(rows) for rows in (9, 10, 11, 13, 16, 24)], [0, 4, 5, 6, 8, 14])
+
+    def focus_and_leave(self, session: Session, size: int) -> tuple[list[str], list[str], int]:
+        """Focus a list of `size` rows, then leave it; the screen while it was shown and after, and its rows drawn."""
+        resting, height, before = session.last, session.region.height, session.screen.lines()
+        session.agent_list = [plain(f"agent row {n}") for n in range(size - 1)] + [plain("↑↓ select")]
+        session.paint("the agent list is focused")
+        during, drawn = session.screen.lines(), len(session.drawn_list)
+        self.assertEqual(session.region.height, height)  # the list never grew the region
+        assert session.last is not None and resting is not None
+        self.assertEqual(session.last[0], resting[0])  # so the status line, the region's last row, stayed
+        session.agent_list = []
+        session.paint("the agent list gives the keys back")
+        self.assertEqual(session.last, resting)
+        self.assertEqual(session.screen.lines(), before)  # nothing scrolled, and no blank row was left behind
+        return during, before, drawn
+
+    def test_with_the_pad_used_up_the_list_takes_the_tails_rows_and_scrolls_nothing(self) -> None:
+        session = Session(self, 24, 80, history=27)
+        session.paint("first frame")
+        session.paint("the pad used up", flush=[f"history line {n}" for n in range(30)])
+        self.assertEqual(session.region.pad, 0)
+        session.sticky = sticky_line("a prompt", 80)
+        session.tail = [plain(f"stream {n}") for n in range(6)]
+        session.paint("a turn streaming")
+        during, before, drawn = self.focus_and_leave(session, 5)
+        top = 24 - session.region.height
+        self.assertEqual(during[:top], before[:top])  # the transcript above the region did not move
+        self.assertEqual(drawn, 5)
+        self.assertNotIn("stream 3", during)  # the tail's oldest rows gave the list its four; the newest stay
+        self.assertEqual(during[top : top + 3], ["↳ you: a prompt", "stream 4", "stream 5"])
+        _during, _before, drawn = self.focus_and_leave(session, 12)
+        self.assertEqual(drawn, 8)  # the sticky prompt and the whole tail give their rows, and no more are taken
+
+    def test_with_no_pad_and_nothing_above_the_rule_the_list_scrolls_in_the_mode_rows_place(self) -> None:
+        session = Session(self, 24, 80, history=27)
+        session.paint("first frame")
+        session.paint("the pad used up", flush=[f"history line {n}" for n in range(30)])
+        self.assertEqual(session.region.pad, 0)
+        during, _before, drawn = self.focus_and_leave(session, 8)
+        self.assertEqual(drawn, 1)  # the region holds one row under the composer
+        self.assertIn("agent row 0", during)
+
+    def test_from_the_launch_row_0_the_list_does_not_move_the_regions_last_row(self) -> None:
+        # What Ctrl+L leaves: the region ends one row above the screen's last, and the list must not push it down.
+        session = Session(self, 24, 80, history=0, at_top=True)
+        session.pinned = False
+        session.paint("first frame")
+        session.paint("a few notices", flush=[f"notice {n}" for n in range(16)])
+        self.assertEqual((session.region.pad, session.region.last_row(24)), (2, 22))
+        _during, _before, drawn = self.focus_and_leave(session, 4)
+        self.assertEqual(session.region.last_row(24), 22)
+        self.assertEqual(session.bottom_moves, 0)
+        self.assertEqual(drawn, 3)  # the two pad rows and the mode row's
 
 
 if __name__ == "__main__":

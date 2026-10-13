@@ -321,7 +321,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   subagents, each named by the first words of its goal
   (`● main  ⠹ find usages of  ○ read the diff  ↓`); Down on an empty composer
   opens them as a list under the composer, which sits higher while the list is
-  open and returns to its row when it closes. Enter, or a click, opens that
+  open and returns to its row when it closes. The list never pushes the screen
+  up: it takes the blank rows above the composer first, then rows of what is
+  drawn above it (the streaming reply, the prompt being answered, the panel),
+  and with fewer rows than agents it scrolls. Enter, or a click, opens that
   agent's log on the alternate screen (its thinking lines, tool calls and
   reply, read-only, refreshed while it runs); Left and Right move between
   agents and q or Esc goes back.

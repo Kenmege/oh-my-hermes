@@ -8,8 +8,9 @@ height alone (the mode row goes before the bottom rule), the caps hold, and
 `min_height` is honoured with pad rows. `compose` is checked for row order,
 the tail keeping its last rows, and the exact row count. The focused agent
 list is the one content size that changes the rows under the composer; it is
-checked over the same sizes for the bound that matters, that the region still
-fits and nothing above the composer is lost that the list did not need.
+checked over the same sizes for the bounds that matter: the region is exactly
+as tall as it would be without the list, and nothing above the composer is
+lost that the list did not need.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from omh.tui.layout import (
     MODE_ROW_MIN_ROWS,
     Budget,
     agent_list_cap,
+    agent_list_room,
     allocate,
     caret_row,
     compose,
@@ -231,6 +233,7 @@ class AgentListBudgetTests(unittest.TestCase):
             )
             where = f"{rows}x{cols} composer {composer_rows} list {asked}"
             self.assertLessEqual(got.total, max(rows - 1, 0), where)
+            self.assertEqual(got.total, without.total, where)
             self.assertEqual(got.mode, min(asked, agent_list_cap(rows, cols)), where)
             # the composer, its two rules and the status line are what they were without the list
             self.assertEqual(
@@ -240,6 +243,35 @@ class AgentListBudgetTests(unittest.TestCase):
             )
             if not without.mode:
                 self.assertEqual(got, without, where)  # no mode row to replace: the list is not drawn
+
+    def test_the_list_never_makes_the_region_taller_and_takes_the_pad_before_the_rows_above_the_rule(self) -> None:
+        sizes = itertools.product(ROWS, COLS, COMPOSER_ROWS, (0, 1, 3, 9), (0, 2, 40), (0, 2, 7, 40), (1, 2, 4, 8, 30))
+        for rows, cols, composer_rows, slot_rows, tail_rows, min_height, asked in sizes:
+            parts = dict(sticky=True, tail_rows=tail_rows, slot_rows=slot_rows, composer_rows=composer_rows, min_height=min_height)
+            without = allocate(rows, cols, **parts)  # type: ignore[arg-type]
+            got = allocate(rows, cols, **parts, agent_list_rows=asked)  # type: ignore[arg-type]
+            room = agent_list_room(rows, cols, **parts)  # type: ignore[arg-type]
+            where = f"{rows}x{cols} composer {composer_rows} slot {slot_rows} tail {tail_rows} min {min_height} list {asked}"
+            self.assertEqual(got.total, without.total, where)
+            if not without.mode:
+                self.assertEqual((got, room), (without, 0), where)
+                continue
+            # The room is all of the region but the top rule, the composer, the bottom rule and the status line.
+            self.assertEqual(room, min(agent_list_cap(rows, cols), without.total - without.composer - 3), where)
+            self.assertEqual(got.mode, min(asked, room), where)
+            # Its extra rows come out of the pad first; what the pad cannot give, the slot, sticky and tail give.
+            taken_above = (without.slot + without.sticky + without.tail) - (got.slot + got.sticky + got.tail)
+            self.assertEqual(without.pad - got.pad, min(got.mode - 1, without.pad), where)
+            self.assertEqual(taken_above, got.mode - 1 - min(got.mode - 1, without.pad), where)
+            self.assertEqual((got.rule, got.composer, got.bottom_rule, got.status), (1, without.composer, 1, 1), where)
+
+    def test_the_lists_room_by_example(self) -> None:
+        rest = dict(sticky=False, tail_rows=0, slot_rows=0, composer_rows=1)
+        self.assertEqual(agent_list_room(24, 80, **rest, min_height=23), 14)  # type: ignore[arg-type]  # the cap
+        self.assertEqual(agent_list_room(24, 80, **rest, min_height=7), 3)  # type: ignore[arg-type]  # two pad rows
+        self.assertEqual(agent_list_room(24, 80, **rest, min_height=0), 1)  # type: ignore[arg-type]  # the mode row alone
+        self.assertEqual(agent_list_room(24, 80, sticky=True, tail_rows=4, slot_rows=0, composer_rows=1, min_height=0), 6)
+        self.assertEqual(agent_list_room(9, 80, **rest, min_height=8), 0)  # type: ignore[arg-type]  # no mode row
 
     def test_compose_draws_the_list_where_the_mode_row_was_and_keeps_its_first_rows(self) -> None:
         parts = budget(rule=1, composer=1, bottom_rule=1, mode=3, status=1)
@@ -262,10 +294,17 @@ class AgentListBudgetTests(unittest.TestCase):
         composer = Composer(text="hi", caret=2)
         status = (Span("status"),)
         resting = build_frame(cols=40, rows=24, composer=composer, status=status, previous_height=23, mode_row=(Span("mode"),))
+        offered: list[int] = []
+
+        def agent_list(room: int) -> list[Line]:
+            offered.append(room)
+            return plain("main", "agent 1", "x" * 60)
+
         listed = build_frame(
             cols=40, rows=24, composer=composer, status=status, previous_height=23, mode_row=(Span("mode"),),
-            agent_list=plain("main", "agent 1", "x" * 60),
+            agent_list=agent_list,
         )
+        self.assertEqual(offered, [14])
         self.assertEqual(lines_text(list(resting.lines))[-4:], ["› hi", "─" * 40, "mode", "status"])
         self.assertEqual(
             lines_text(list(listed.lines))[-6:], ["› hi", "─" * 40, "main", "agent 1", "x" * 39 + "…", "status"]

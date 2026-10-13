@@ -38,9 +38,12 @@ The budget is a pure function of the terminal size and the content sizes:
   composer's own row count, which is the invariant the composer row stands on.
 - The one exception: while the agent list is focused (`agent_list_rows` above
   zero) it takes the mode row's place and as many rows as it has, up to
-  `agent_list_cap`, so the composer sits that much higher. The moment focus
-  leaves, the mode row is one row again and the pad takes the difference, so
-  the composer is back on the row it left.
+  `agent_list_room`, so the composer sits that much higher. It never makes the
+  region taller than it would be without it: the rows it adds come out of the
+  pad first, then out of the tail, the sticky prompt and the slot, so the
+  region keeps its height and its last row. The moment focus leaves, the mode
+  row is one row again and those rows go back where they came from, so the
+  composer is back on the row it left.
 """
 
 from __future__ import annotations
@@ -133,6 +136,28 @@ def agent_list_cap(rows: int, cols: int) -> int:
     return max_height(rows) - composer_cap(rows) - 3
 
 
+def _list_room(without: Budget, rows: int, cols: int) -> int:
+    """The agent list's rows in a region of `without`'s height: all but the top rule, the composer, the bottom rule and the status line."""
+    return min(agent_list_cap(rows, cols), without.total - without.rule - without.composer - without.bottom_rule - without.status)
+
+
+def agent_list_room(
+    rows: int, cols: int, *, sticky: bool, tail_rows: int, slot_rows: int, composer_rows: int, min_height: int
+) -> int:
+    """The most rows the focused agent list may take in this frame, its hint row included; 0 where there is no mode row.
+
+    Never more than the region the same frame would be without the list
+    leaves under the composer, so the list never makes the region taller:
+    at least the mode row it replaces, at most `agent_list_cap`.
+    """
+    if not under_composer(rows, cols)[1]:
+        return 0
+    without = allocate(
+        rows, cols, sticky=sticky, tail_rows=tail_rows, slot_rows=slot_rows, composer_rows=composer_rows, min_height=min_height
+    )
+    return _list_room(without, rows, cols)
+
+
 def allocate(
     rows: int,
     cols: int,
@@ -149,8 +174,14 @@ def allocate(
     composer = min(max(composer_rows, 1), composer_cap(rows))
     status = min(1, room - composer)
     bottom_rule, mode = under_composer(rows, cols)
-    if agent_list_rows > 0:
-        mode = min(agent_list_rows, agent_list_cap(rows, cols))
+    if agent_list_rows > 0 and mode:
+        # The list never grows the region: it is held to the height the frame has without it, so the
+        # rows it adds come out of the pad, then out of the tail, the sticky prompt and the slot below.
+        without = allocate(
+            rows, cols, sticky=sticky, tail_rows=tail_rows, slot_rows=slot_rows, composer_rows=composer_rows, min_height=min_height
+        )
+        room = without.total
+        mode = min(agent_list_rows, _list_room(without, rows, cols))
     left = room - composer - status - bottom_rule - mode
     rule = slot = sticky_rows = tail = 0
     if not is_tiny(rows, cols):
