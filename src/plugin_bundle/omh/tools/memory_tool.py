@@ -47,6 +47,12 @@ workflow holds, and only when an approved, intact, durable user-global copy
 exists tells the model to remove the original with Hermes' own `memory` tool.
 Token similarity never authorizes that removal.
 
+Both writes read the lens below first: they run on an operator console only.
+A shared surface (a gateway chat) refuses them, because nothing says which
+of its participants stated the fact; a background run and a session with no
+published lens refuse every write. ``blocks`` and ``read`` read the lens too:
+blocks are the operator's own notes, listed and read on a console only.
+
 ``recall``, ``confirm``, ``correct`` and ``retire`` are the rest of the loop,
 which used to exist only as operator verbs (`omh memory recall|confirm|correct|
 retire`) in a package this process cannot import. They act on OMH's own store
@@ -99,7 +105,15 @@ from ..memory_admission import (
     read_project_memory_policy,
 )
 from ..memory_principals import principal_recall_decision
-from ..memory_session_lens import note_session_records, read_session_lens
+from ..memory_session_lens import (
+    SURFACE_BACKGROUND,
+    SURFACE_OPERATOR_CONSOLE,
+    SURFACE_SHARED,
+    lens_surface_class,
+    note_session_records,
+    read_session_lens,
+    surface_flags,
+)
 from ..memory_recall_selector import resolve_scope_allowlist
 from ..memory_recall_support import (
     PROJECT_MEMORY_RECORD_SCHEMA_VERSION,
@@ -116,6 +130,7 @@ from ..memory_recall_support import (
 from ..memory_records import (
     DEFAULT_RECORD_LIMIT,
     PREFETCH_EXECUTOR_TARGET,
+    prefetch_required_scope_kinds,
     prefetch_scope_allowlist,
     read_record_store_snapshot,
     record_used,
@@ -243,15 +258,15 @@ def omh_memory_handler(args: dict, **kwargs) -> str:
     if action not in MEMORY_ACTIONS:
         payload, backend = _unknown_action(action), "bundle_memory"
     elif action == "blocks":
-        payload, backend = _blocks(), "bundle_memory"
+        payload, backend = _blocks(kwargs), "bundle_memory"
     elif action == "read":
-        payload, backend = _read_block(str((args or {}).get("label", "") or "")), "bundle_memory"
+        payload, backend = _read_block(str((args or {}).get("label", "") or ""), kwargs), "bundle_memory"
     elif action == "consolidation":
         payload, backend = _consolidation()
     elif action == "capture":
         payload, backend = _capture(args or {}, kwargs), "bundle_memory"
     elif action == "demote":
-        payload, backend = _demote(args or {}), "bundle_memory"
+        payload, backend = _demote(args or {}, kwargs), "bundle_memory"
     elif action in LIFECYCLE_ACTIONS:
         payload, backend = _lifecycle(action, args or {}, kwargs), "bundle_memory"
     else:
@@ -284,9 +299,13 @@ def _memory_bridge() -> tuple[dict[str, object], str]:
         return _unavailable(_safe_error_type(type(exc).__name__)), "bundle_memory_error"
 
 
-def _blocks() -> dict[str, object]:
-    """Review-readable block status, never values or ineligible descriptions."""
-    home = _home("OMH_HOME", "~/.omh")
+def _blocks(kwargs: dict) -> dict[str, object]:
+    """Review-readable block status, never values or ineligible descriptions. Operator consoles only."""
+    lens = _session_lens(kwargs)
+    refusal = _surface_read_refusal(lens)
+    if refusal:
+        return _block_refusal("omh_memory_block_listing/v2", refusal)
+    home = lens.lens_home
     blocks = read_memory_blocks(home)
     selection = select_memory_blocks(blocks, omh_home=home)
     rows = []
@@ -303,12 +322,16 @@ def _blocks() -> dict[str, object]:
     }
 
 
-def _read_block(label: str) -> dict[str, object]:
-    """One block's value, or a stated miss.
+def _read_block(label: str, kwargs: dict) -> dict[str, object]:
+    """One block's value, or a stated miss. Operator consoles only.
 
     A missing block returns ``found: false`` rather than an empty value, so an
     absent block is never mistaken for a block that has nothing to say.
     """
+    lens = _session_lens(kwargs)
+    refusal = _surface_read_refusal(lens)
+    if refusal:
+        return _block_refusal("omh_memory_block_read/v2", refusal)
     if not label:
         return {
             "schema_version": "omh_memory_block_read/v1",
@@ -316,7 +339,7 @@ def _read_block(label: str) -> dict[str, object]:
             "reason": "label_required",
             "next_action": "Call action='blocks' to list available labels.",
         }
-    home = _home("OMH_HOME", "~/.omh")
+    home = lens.lens_home
     blocks = read_memory_blocks(home)
     selection = select_memory_blocks(blocks, omh_home=home)
     for block in blocks:
@@ -345,6 +368,33 @@ def _read_block(label: str) -> dict[str, object]:
         "reason": "unknown_label",
         "label": label,
         "next_action": "Call action='blocks' to list available labels.",
+    }
+
+
+def _surface_read_refusal(lens: "_SessionLens") -> tuple[str, str] | None:
+    """Why ``blocks`` and ``read`` may not run in this session, as (reason, next_action); None when they may.
+
+    Blocks are the operator's own always-on notes, rendered into the pack on
+    an operator console only, so the tool lists and reads them there only. A
+    background run reads like a shared surface and gets the same refusal.
+    """
+    if not lens.bound:
+        return "session_lens_unavailable", "The OMH memory provider has not described this session; nothing was listed or read."
+    if lens.surface_class != SURFACE_OPERATOR_CONSOLE:
+        return (
+            "shared_surface_reads_refused",
+            "Memory blocks are the operator's own notes and are listed and read on the Hermes CLI, TUI or Desktop only; nothing was listed or read here.",
+        )
+    return None
+
+
+def _block_refusal(schema_version: str, refusal: tuple[str, str]) -> dict[str, object]:
+    return {
+        "schema_version": schema_version,
+        "status": "refused",
+        "reason": refusal[0],
+        "next_action": refusal[1],
+        "claim_boundary": "No block was listed or read. This is not evidence about which blocks exist.",
     }
 
 
@@ -392,6 +442,13 @@ def _capture(args: dict, kwargs: dict) -> dict[str, object]:
     subject = args.get("subject")
     if not _subject_ok(subject):
         return _capture_result("refused", reason="invalid_subject", next_action=SUBJECT_NEXT_ACTION)
+    try:
+        lens = _session_lens(kwargs)
+    except ValueError as exc:  # RuntimeBindingError is a ValueError
+        return _capture_result("error", reason=_safe_error_type(type(exc).__name__), next_action="Nothing was saved; this session's OMH home could not be resolved.")
+    refusal = _surface_write_refusal(lens)
+    if refusal:
+        return _capture_result("refused", reason=refusal[0], next_action="Nothing was saved. " + refusal[1])
     cwd = _session_cwd(kwargs)
     identity = resolve_project_identity(cwd) if cwd is not None else None
     in_project = identity is not None and identity.state == "resolved"
@@ -405,13 +462,8 @@ def _capture(args: dict, kwargs: dict) -> dict[str, object]:
             next_action="This session is not inside a repository OMH can identify; retry with scope='user'.",
         )
     try:
-        omh_home = Path(_home("OMH_HOME", "~/.omh"))
-    except ValueError as exc:  # RuntimeBindingError is a ValueError
-        return _capture_result("error", reason=_safe_error_type(type(exc).__name__), next_action="Nothing was saved; this session's OMH home could not be resolved.")
-    try:
-        lens = _session_lens(kwargs)
         payload = capture_project_memory_candidate(
-            omh_home,
+            lens.lens_home,
             summary,
             record_type=record_type,
             retention_class=retention,
@@ -482,6 +534,7 @@ def _recallable_ids(lens: "_SessionLens") -> set[str]:
         limit=max(len(snapshot.records), 1),
         principal_context=lens.principal_context,
         shared_surface=lens.shared_surface,
+        required_scope_kinds=lens.required_scope_kinds,
     )
     pack = selection.pack
     served = {str(item.get("record_id", "")) for item in pack.get("included_records", [])}
@@ -621,7 +674,7 @@ def _capture_result(status: str, **fields: object) -> dict[str, object]:
     }
 
 
-def _demote(args: dict) -> dict[str, object]:
+def _demote(args: dict, kwargs: dict) -> dict[str, object]:
     """Move one Hermes entry into OMH; say whether its original may now go."""
     wanted = str(args.get("entry_sha256", "") or "").strip().lower()
     if not DEMOTE_SHA_PREFIX_MIN_CHARS <= len(wanted) <= 64 or any(c not in "0123456789abcdef" for c in wanted):
@@ -631,7 +684,11 @@ def _demote(args: dict) -> dict[str, object]:
             next_action=f"Pass the entry's sha256 or a prefix of at least {DEMOTE_SHA_PREFIX_MIN_CHARS} hex characters.",
         )
     try:
-        return _demote_entry(wanted, Path(_home("OMH_HOME", "~/.omh")), Path(_home("HERMES_HOME", "~/.hermes")))
+        lens = _session_lens(kwargs)
+        refusal = _surface_write_refusal(lens)
+        if refusal:
+            return _demote_result("refused", reason=refusal[0], next_action="Keep the Hermes entry; nothing was moved. " + refusal[1])
+        return _demote_entry(wanted, lens.lens_home, Path(_home("HERMES_HOME", "~/.hermes")))
     except Exception as exc:
         # In-process inside Hermes' tool dispatch: a fault is an error result,
         # never `demoted`, so the model is never told to remove the original.
@@ -860,6 +917,8 @@ class _SessionLens:
     principal_context: dict | None
     executor_target: str
     lens_home: Path
+    surface_class: str
+    required_scope_kinds: tuple[str, ...]
 
 
 def _lifecycle(action: str, args: dict, kwargs: dict) -> dict[str, object]:
@@ -918,9 +977,9 @@ def _lifecycle(action: str, args: dict, kwargs: dict) -> dict[str, object]:
 def _session_lens(kwargs: dict) -> _SessionLens:
     """Read the confinement the memory provider published for this session.
 
-    The provider owns the decision: a platform other than the CLI is a shared
-    surface, cron and subagent contexts may not write, and the principal
-    context narrows principal-bound records (`memory_session_lens`). The tool
+    The provider owns the decision: its surface class (an operator console, a
+    shared surface, or a background run that may not write) and the principal
+    context that narrows principal-bound records (`memory_session_lens`). The tool
     finds it by the ``session_id`` Hermes passes every tool call. No session
     id, no published lens, or an unreadable one: a shared surface with no
     principal and no writes, which reaches no identity-unbound record.
@@ -929,11 +988,15 @@ def _session_lens(kwargs: dict) -> _SessionLens:
     omh_home = Path(_home("OMH_HOME", "~/.omh"))
     published = read_session_lens(omh_home, session_id)
     if published is None:
-        return _SessionLens(False, (omh_home,), [], session_id, True, False, None, PREFETCH_EXECUTOR_TARGET, omh_home)
-    shared = bool(published["shared_surface"])
+        return _SessionLens(False, (omh_home,), [], session_id, True, False, None, PREFETCH_EXECUTOR_TARGET, omh_home, SURFACE_BACKGROUND, ("project",))
+    # Both flags follow the class (`memory_session_lens`), for a lens an
+    # earlier provider wrote too.
+    surface_class = lens_surface_class(published)
+    shared, writes = surface_flags(surface_class)
     principal = published.get("principal_context") if isinstance(published.get("principal_context"), dict) else None
+    project_identity = str(published.get("project_identity", "") or "")
     scopes = prefetch_scope_allowlist(
-        project_identity=str(published.get("project_identity", "") or ""),
+        project_identity=project_identity,
         session_id=session_id,
         principal_ref=str((principal or {}).get("principal", "") or ""),
         include_legacy_personal=not shared,
@@ -944,11 +1007,32 @@ def _session_lens(kwargs: dict) -> _SessionLens:
         scopes,
         session_id,
         shared,
-        bool(published["writes_enabled"]),
+        writes,
         principal,
         str(published.get("executor_target", "") or PREFETCH_EXECUTOR_TARGET),
         omh_home,
+        surface_class,
+        prefetch_required_scope_kinds(project_identity),
     )
+
+
+def _surface_write_refusal(lens: _SessionLens) -> tuple[str, str] | None:
+    """Why ``capture`` or ``demote`` may not write in this session, as (reason, next_action); None when it may.
+
+    The provider's surface class decides (`memory_session_lens`). A shared
+    surface does not capture: it is a chat several people write in, and
+    nothing tells OMH which of them stated a fact.
+    """
+    if not lens.bound:
+        return "session_lens_unavailable", "The OMH memory provider has not described this session, so it cannot write OMH memory; tell the user it was not remembered."
+    if lens.surface_class == SURFACE_BACKGROUND:
+        return "writes_disabled", "This is a background run, such as a cron job, which does not write OMH memory."
+    if lens.surface_class == SURFACE_SHARED:
+        return (
+            "shared_surface_writes_refused",
+            "OMH does not write memory from a shared chat surface; tell the user it was not remembered here. It can be saved from the Hermes CLI, TUI or Desktop.",
+        )
+    return None
 
 
 def _recall(args: dict, lens: _SessionLens) -> dict[str, object]:
@@ -975,6 +1059,7 @@ def _recall(args: dict, lens: _SessionLens) -> dict[str, object]:
         limit=limit,
         principal_context=lens.principal_context,
         shared_surface=lens.shared_surface,
+        required_scope_kinds=lens.required_scope_kinds,
     )
     rows = []
     for item in selection.pack.get("included_records", [])[:limit]:
@@ -1030,7 +1115,7 @@ def _in_session_scope(record: dict, lens: _SessionLens) -> bool:
     Lifecycle state (expired, stale, superseded) is not a lens gate: each
     action refuses what it cannot act on, as the operator verb does.
     """
-    scopes, status = resolve_scope_allowlist(lens.scopes, required_scope_kinds=("project",))
+    scopes, status = resolve_scope_allowlist(lens.scopes, required_scope_kinds=lens.required_scope_kinds)
     if status != "resolved":
         return False
     if not principal_recall_decision(record, lens.principal_context, shared_surface=lens.shared_surface)["allowed"]:

@@ -325,7 +325,7 @@ class StandingConditionSuppressionTests(unittest.TestCase):
             root = Path(tmp)
             _write_hermes_memory(root / ".hermes", "x" * 2100)
             provider = OmhMemoryProvider(root / ".omh")
-            provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+            provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
             journal = root / ".omh" / "memory" / "consolidation.jsonl"
 
             for turn in range(1, DEFAULT_TURN_INTERVAL):
@@ -490,7 +490,7 @@ class ProviderLifecycleTests(unittest.TestCase):
     def _provider(self, root: Path, *, agent_context: str = "primary") -> OmhMemoryProvider:
         provider = OmhMemoryProvider(root / ".omh")
         # `cwd=root`: the fixture is its own project, never the checkout the tests run from.
-        provider.initialize("session-1", hermes_home=str(root / ".hermes"), agent_context=agent_context, cwd=str(root))
+        provider.initialize("session-1", platform="cli", hermes_home=str(root / ".hermes"), agent_context=agent_context, cwd=str(root))
         return provider
 
     def test_availability_is_a_local_check_with_no_network(self) -> None:
@@ -655,7 +655,7 @@ class LossPreventionTests(unittest.TestCase):
 
     def _provider(self, root: Path, session: str = "s1") -> OmhMemoryProvider:
         provider = OmhMemoryProvider(root / ".omh")
-        provider.initialize(session, hermes_home=str(root / ".hermes"), agent_context="primary", cwd=str(root))
+        provider.initialize(session, platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary", cwd=str(root))
         return provider
 
     def _briefs(self, root: Path) -> list[dict]:
@@ -794,9 +794,9 @@ class CompactionCaptureTests(unittest.TestCase):
     decisions under fixed headings; the brief now points at those.
     """
 
-    def _provider(self, root: Path, *, platform: str = "cli", agent_context: str = "primary") -> OmhMemoryProvider:
+    def _provider(self, root: Path, *, platform: str = "cli", agent_context: str = "primary", session_id: str = "s1") -> OmhMemoryProvider:
         provider = OmhMemoryProvider(root / ".omh")
-        provider.initialize("s1", hermes_home=str(root / ".hermes"), platform=platform, agent_context=agent_context, cwd=str(root))
+        provider.initialize(session_id, hermes_home=str(root / ".hermes"), platform=platform, agent_context=agent_context, cwd=str(root))
         return provider
 
     def _latest(self, root: Path) -> dict | None:
@@ -863,26 +863,61 @@ class CompactionCaptureTests(unittest.TestCase):
             self.assertNotIn(COMPACTION_CAPTURE_INSTRUCTION, requested)
 
     def test_cron_and_subagent_contexts_raise_no_pointer(self) -> None:
-        # Hermes says only a primary agent writes; neither gets a brief to act on.
-        for platform, agent_context in (("cron", "cron"), ("cli", "subagent")):
-            with self.subTest(agent_context=agent_context), TemporaryDirectory() as tmp:
+        # Hermes says only a primary agent writes; neither gets a brief to act
+        # on. Both are background runs on whatever platform, so the operator's
+        # blocks are not handed to their summaries either.
+        for platform, agent_context in (("cron", "cron"), ("subagent", "subagent"), ("cli", "subagent")):
+            with self.subTest(platform=platform, agent_context=agent_context), TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 write_memory_block(root / ".omh", approve_memory_block(build_memory_block("facts", "kept")))
                 preserved = self._provider(root, platform=platform, agent_context=agent_context).on_pre_compress([{"role": "user"}])
                 self.assertIsNone(self._latest(root))
-                # A summary is not a write: blocks still survive where they are rendered at all.
-                self.assertEqual("kept" in preserved, platform == "cli")
+                self.assertNotIn("kept", preserved)
 
-    def test_a_shared_primary_surface_keeps_the_pointer(self) -> None:
-        # Capture is accepted on a shared surface, and every non-CLI platform
-        # -- the TUI included -- is one, so withholding the pointer there would
-        # withhold it from most sessions. Blocks stay withheld as before.
+    def test_a_shared_surface_raises_no_brief_and_moves_no_counter(self) -> None:
+        # The brief is home-wide and served only on a console, so one raised by
+        # a group chat's compaction would reach the next TUI turn saying "this
+        # conversation" lost 40 messages it never had. A gateway turn neither
+        # raises a brief nor moves the counters that decide when one is due.
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             write_memory_block(root / ".omh", approve_memory_block(build_memory_block("facts", "operator only")))
-            preserved = self._provider(root, platform="discord").on_pre_compress([{"role": "user"}])
-            self.assertEqual(preserved, "")
-            self.assertIn(COMPACTION_CAPTURE_INSTRUCTION, self._latest(root)["requested_of_executor"])
+            # A standing reason is present, so a start or session end that
+            # evaluated would raise one.
+            _write_hermes_memory(root / ".hermes", "x" * 2100)
+            shared = self._provider(root, platform="discord", session_id="discord-1")
+            self.assertIsNone(self._latest(root), "a gateway start raises nothing")
+            before = read_dreaming_state(root / ".omh")
+            for turn in range(1, DEFAULT_TURN_INTERVAL + 2):
+                shared.on_turn_start(turn, "hello")
+            self.assertEqual(shared.on_pre_compress([{"role": "user"}] * 40), "")
+            shared.on_memory_write("add", "memory", "A gateway fact.")
+            shared.on_session_end([])
+            shared.shutdown()
+            self.assertIsNone(self._latest(root))
+            self.assertEqual(read_dreaming_state(root / ".omh"), before)
+            # Nor does it close the operator's digest window.
+            self.assertFalse((root / ".omh" / "memory" / "session_close.json").exists())
+            console = self._provider(root, platform="tui", session_id="tui-1")
+            console.on_turn_start(1, "hello")
+            pack = console.prefetch("hello")
+            self.assertNotIn("40 message(s)", pack)
+            self.assertNotIn(COMPACTION_CAPTURE_INSTRUCTION, pack)
+
+    def test_a_gateway_memory_write_never_retires_the_operator_brief(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_hermes_memory(root / ".hermes", "x" * 2100)
+            self._provider(root, session_id="tui-1", platform="tui")
+            self.assertTrue(self._latest(root)["due"])
+            # The headroom is back, so a consolidation-shaped write leaves no standing reason.
+            _write_hermes_memory(root / ".hermes", "one short fact")
+            gateway = self._provider(root, platform="discord", session_id="discord-1")
+            gateway.on_memory_write("remove", "memory", "x" * 2100)
+            self.assertTrue(self._latest(root)["due"], "a group chat's write does not settle the operator's brief")
+            console = self._provider(root, platform="tui", session_id="tui-2")
+            console.on_memory_write("remove", "memory", "x" * 2100)
+            self.assertFalse(self._latest(root)["due"])
 
     def test_omh_stays_a_best_effort_pre_compress_provider(self) -> None:
         # Hermes' checkpoint contract (`agent/memory_manager.py`): a provider
@@ -903,9 +938,9 @@ class CompactionCaptureTests(unittest.TestCase):
 
 
 class MemoryToolActionTests(unittest.TestCase):
-    def _call(self, root: Path, **args) -> dict:
+    def _call(self, root: Path, session_id: str = "", **args) -> dict:
         with patch.dict(os.environ, {"OMH_HOME": str(root / ".omh"), "HERMES_HOME": str(root / ".hermes")}):
-            return json.loads(omh_memory_handler(args))
+            return json.loads(omh_memory_handler(args, session_id=session_id))
 
     def test_consolidation_status_preserves_pending_state_and_the_next_brief(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -985,19 +1020,21 @@ class MemoryToolActionTests(unittest.TestCase):
             root = Path(tmp).resolve()
             write_memory_block(root / ".omh", approve_memory_block(build_memory_block("runbook", "deploy steps", tier="reference")))
 
-            listing = self._call(root, action="blocks")
+            session = _console_session(root)
+            listing = self._call(root, session, action="blocks")
             self.assertEqual(listing["block_count"], 1)
             self.assertNotIn("deploy steps", json.dumps(listing))
 
-            read = self._call(root, action="read", label="runbook")
+            read = self._call(root, session, action="read", label="runbook")
             self.assertTrue(read["found"])
             self.assertEqual(read["block"]["value"], "deploy steps")
 
     def test_a_missing_block_is_a_stated_miss_not_an_empty_value(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
-            self.assertEqual(self._call(root, action="read", label="absent")["reason"], "unknown_label")
-            self.assertEqual(self._call(root, action="read")["reason"], "label_required")
+            session = _console_session(root)
+            self.assertEqual(self._call(root, session, action="read", label="absent")["reason"], "unknown_label")
+            self.assertEqual(self._call(root, session, action="read")["reason"], "label_required")
 
     def test_an_unknown_action_names_what_is_supported(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -1379,14 +1416,14 @@ class DoctorSurfacesTheBriefTests(unittest.TestCase):
         """A full pack with one entry: over the floor, nothing reclaimable."""
         _write_hermes_memory(root / ".hermes", "x" * 2100)
         provider = OmhMemoryProvider(root / ".omh")
-        provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+        provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
 
     def _fire_a_reclaimable_brief(self, root: Path) -> None:
         """A full pack whose two entries restate each other: a cluster to shed."""
         entry = "the owner prefers short commits and signed-off trailers on every change " * 15
         _write_hermes_memory(root / ".hermes", entry, entry + "always")
         provider = OmhMemoryProvider(root / ".omh")
-        provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+        provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
 
     def test_a_reclaimable_brief_keeps_todays_wording_and_severity(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -1416,7 +1453,7 @@ class DoctorSurfacesTheBriefTests(unittest.TestCase):
             _write_hermes_memory(root / ".hermes", "short")
             (root / ".hermes" / "memories" / "USER.md").write_text("y" * 1300, encoding="utf-8")
             provider = OmhMemoryProvider(root / ".omh")
-            provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+            provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
             check = self._checks(root)["memory_consolidation"]
             self.assertIn("headroom_below_floor:USER.md:", check["message"])
             self.assertEqual(check["severity"], "warning")
@@ -1430,7 +1467,7 @@ class DoctorSurfacesTheBriefTests(unittest.TestCase):
 
             _write_hermes_memory(root / ".hermes", *(entry(i) for i in range(len(_TOPICS))))
             provider = OmhMemoryProvider(root / ".omh")
-            provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+            provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
             brief = json.loads((root / ".omh" / "memory" / "consolidation.json").read_text(encoding="utf-8"))
             self.assertTrue(brief["demotion_rows"], brief["reasons"])
             self.assertEqual(brief["eviction_plan"]["reclaimable_chars"], 0)
@@ -1525,7 +1562,7 @@ class DoctorSurfacesTheBriefTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             provider = OmhMemoryProvider(root / ".omh")
-            provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+            provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
             # Nothing fired, so no brief was written at all.
             self.assertEqual(self._checks(root)["memory_consolidation"]["severity"], "ok")
 
@@ -1563,7 +1600,7 @@ class ChatNoticeOnEveryMessengerTests(unittest.TestCase):
         memories.mkdir(parents=True, exist_ok=True)
         (memories / "MEMORY.md").write_text("x" * 2100, encoding="utf-8")
         provider = OmhMemoryProvider(root / ".omh")
-        provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+        provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
         return provider, resolve_paths(root / ".omh", root / ".hermes")
 
     def _payload(self, paths, source: str, message: str | None = None) -> dict:
@@ -1734,7 +1771,7 @@ class ChatNoticeOnEveryMessengerTests(unittest.TestCase):
             memories.mkdir(parents=True, exist_ok=True)
             (memories / "MEMORY.md").write_text("plenty of headroom", encoding="utf-8")
             provider = OmhMemoryProvider(root / ".omh")
-            provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+            provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
             for turn in range(1, DEFAULT_TURN_INTERVAL + 2):
                 provider.on_turn_start(turn, "hi")
             paths = resolve_paths(root / ".omh", root / ".hermes")
@@ -1801,7 +1838,7 @@ class RetirementSignalTests(unittest.TestCase):
         memories.mkdir(parents=True, exist_ok=True)
         (memories / "MEMORY.md").write_text("plenty of headroom", encoding="utf-8")
         provider = OmhMemoryProvider(root / ".omh")
-        provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+        provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
         for turn in range(1, DEFAULT_TURN_INTERVAL + 1):
             provider.on_turn_start(turn, "hi")
         return provider
@@ -1838,7 +1875,7 @@ class RetirementSignalTests(unittest.TestCase):
             memories.mkdir(parents=True, exist_ok=True)
             (memories / "MEMORY.md").write_text("x" * 2100, encoding="utf-8")
             provider = OmhMemoryProvider(root / ".omh")
-            provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+            provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
             provider.on_memory_write("replace", "memory", "still full afterwards")
             self.assertTrue(self._due(root))
 
@@ -1853,7 +1890,7 @@ class RetirementSignalTests(unittest.TestCase):
             memories.mkdir(parents=True, exist_ok=True)
             (memories / "MEMORY.md").write_text("x" * 2100, encoding="utf-8")
             provider = OmhMemoryProvider(root / ".omh")
-            provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+            provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
             for turn in range(1, 4):
                 provider.on_turn_start(turn, "hi")
             journal = root / ".omh" / "memory" / "consolidation.jsonl"
@@ -1873,7 +1910,7 @@ class RetirementSignalTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             provider = OmhMemoryProvider(root / ".omh")
-            provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+            provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
             handoff = provider.consolidation_due()
             self.assertFalse(handoff["due"])
             self.assertEqual(handoff["raised_at"], "")
@@ -1895,7 +1932,7 @@ class ConsolidationResetsTheClockTests(unittest.TestCase):
         memories.mkdir(parents=True, exist_ok=True)
         (memories / "MEMORY.md").write_text("x" * 2100, encoding="utf-8")
         provider = OmhMemoryProvider(root / ".omh")
-        provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+        provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
         provider.on_turn_start(1, "기억 정리해줘")
         (memories / "MEMORY.md").write_text("consolidated" * 20, encoding="utf-8")
         for _ in range(3):
@@ -1929,7 +1966,7 @@ class ConsolidationResetsTheClockTests(unittest.TestCase):
             (root / ".hermes" / "memories").mkdir(parents=True)
             (root / ".hermes" / "memories" / "MEMORY.md").write_text("small", encoding="utf-8")
             provider = OmhMemoryProvider(root / ".omh")
-            provider.initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+            provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
             provider.on_turn_start(1, "hi")
             provider.on_memory_write("add", "memory", "a new fact")
             provider.on_session_end([])
@@ -1992,7 +2029,7 @@ class NoticeLocaleCoverageTests(unittest.TestCase):
             memories = root / ".hermes" / "memories"
             memories.mkdir(parents=True, exist_ok=True)
             (memories / "MEMORY.md").write_text("x" * 2100, encoding="utf-8")
-            OmhMemoryProvider(root / ".omh").initialize("s", hermes_home=str(root / ".hermes"), agent_context="primary")
+            OmhMemoryProvider(root / ".omh").initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
             paths = resolve_paths(root / ".omh", root / ".hermes")
             for message, marker in cases:
                 with self.subTest(message=message[:24]):
@@ -2110,7 +2147,7 @@ class ExpiryClassifierTests(unittest.TestCase):
 class RecordExpiryWiringTests(unittest.TestCase):
     def _provider(self, root: Path) -> OmhMemoryProvider:
         provider = OmhMemoryProvider(root / ".omh")
-        provider.initialize("session-1", hermes_home=str(root / ".hermes"), agent_context="primary")
+        provider.initialize("session-1", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
         return provider
 
     @staticmethod
@@ -2266,7 +2303,7 @@ class BundleReplayAdmissionTests(unittest.TestCase):
             value = "UNREVIEWED_SYSTEM_VALUE"
             path = write_memory_block(root / ".omh", build_memory_block("pending", value))
             provider = OmhMemoryProvider(root / ".omh")
-            provider.initialize("session", hermes_home=root / ".hermes", agent_context="primary")
+            provider.initialize("session", platform="cli", hermes_home=root / ".hermes", agent_context="primary")
 
             self.assertIn("block_candidates", str(path))
             pack = provider.prefetch("")
@@ -2285,10 +2322,11 @@ class BundleReplayAdmissionTests(unittest.TestCase):
                 build_memory_block("pending-ref", value, description="UNREVIEWED_REFERENCE_DESCRIPTION", tier="reference"),
             )
 
-            listing = self._call_tool(root, action="blocks")
+            session = _console_session(root)
+            listing = self._call_tool(root, session, action="blocks")
             self.assertEqual(listing["blocks"][0]["admission_status"], "pending_review")
             self.assertEqual(listing["blocks"][0]["replay"]["reason_code"], "review_required")
-            payload = self._call_tool(root, action="read", label="pending-ref")
+            payload = self._call_tool(root, session, action="read", label="pending-ref")
             self.assertTrue(payload["found"])
             self.assertFalse(payload["replay"]["eligible"])
             self.assertEqual(payload["replay"]["reason_code"], "review_required")
@@ -2449,7 +2487,7 @@ class BundleReplayAdmissionTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
             provider = OmhMemoryProvider(root / ".omh")
-            provider.initialize("session", hermes_home=root / ".hermes", agent_context="primary")
+            provider.initialize("session", platform="cli", hermes_home=root / ".hermes", agent_context="primary")
             for index in range(80):
                 provider.on_memory_write(
                     "add",
@@ -2517,7 +2555,7 @@ class BundleReplayAdmissionTests(unittest.TestCase):
                 )
 
             provider = OmhMemoryProvider(omh_home)
-            provider.initialize("session_001", hermes_home=root / ".hermes", agent_context="primary")
+            provider.initialize("session_001", platform="cli", hermes_home=root / ".hermes", agent_context="primary")
             with patch(
                 "omh.plugin_bundle.omh.memory_provider.read_memory_blocks",
                 wraps=read_memory_blocks,
@@ -2537,9 +2575,17 @@ class BundleReplayAdmissionTests(unittest.TestCase):
             self.assertNotIn("LEGACY_REFERENCE_VALUE", pack)
 
     @staticmethod
-    def _call_tool(root: Path, **args: object) -> dict:
+    def _call_tool(root: Path, session_id: str = "", **args: object) -> dict:
         with patch.dict(os.environ, {"OMH_HOME": str(root / ".omh"), "HERMES_HOME": str(root / ".hermes")}):
-            return json.loads(omh_memory_handler(args))
+            return json.loads(omh_memory_handler(args, session_id=session_id))
+
+
+def _console_session(root: Path, session_id: str = "tool-console") -> str:
+    """A CLI session the provider described, where `blocks` and `read` run (`memory_session_lens`)."""
+    OmhMemoryProvider(root / ".omh").initialize(
+        session_id, hermes_home=str(root / ".hermes"), platform="cli", agent_context="primary", cwd=str(root)
+    )
+    return session_id
 
 
 def _approve_record(root: Path, summary: str, *, home: str = ".omh", **capture: object) -> dict:
@@ -2569,7 +2615,7 @@ class RecordsReachPrefetchTests(unittest.TestCase):
 
     def _provider(self, root: Path, *, cwd: Path | None = None) -> OmhMemoryProvider:
         provider = OmhMemoryProvider(root / ".omh")
-        provider.initialize("s1", hermes_home=str(root / ".hermes"), agent_context="primary", cwd=str(cwd or root))
+        provider.initialize("s1", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary", cwd=str(cwd or root))
         return provider
 
     def test_an_approved_record_is_served_and_a_pending_or_rejected_one_is_not(self) -> None:
@@ -2763,7 +2809,7 @@ class RecallIndicatorTests(unittest.TestCase):
 
     def _provider(self, root: Path) -> OmhMemoryProvider:
         provider = OmhMemoryProvider(root / ".omh")
-        provider.initialize("s1", hermes_home=str(root / ".hermes"), agent_context="primary", cwd=str(root))
+        provider.initialize("s1", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary", cwd=str(root))
         return provider
 
     def test_the_status_matches_the_hermes_contract_field_for_field(self) -> None:
@@ -2831,7 +2877,7 @@ class DreamingReachesTheTurnTests(unittest.TestCase):
 
     def _provider(self, root: Path, **kwargs: object) -> OmhMemoryProvider:
         provider = OmhMemoryProvider(root / ".omh")
-        provider.initialize("s1", hermes_home=str(root / ".hermes"), agent_context="primary", cwd=str(root), **kwargs)
+        provider.initialize("s1", hermes_home=str(root / ".hermes"), agent_context="primary", cwd=str(root), **{"platform": "cli", **kwargs})
         return provider
 
     def test_a_due_brief_is_served_in_the_pack_and_never_counts_as_a_memory(self) -> None:

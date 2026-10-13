@@ -29,7 +29,7 @@ from ..plugin_bundle.omh.memory_dreaming import read_dreaming_state
 from ..plugin_bundle.omh.memory_principals import parse_principal_context
 from ..plugin_bundle.omh.memory_provider import OmhMemoryProvider
 from ..plugin_bundle.omh.project_identity import mint_explicit_project_identity, project_identity_root, require_project_identity, resolve_project_identity
-from ..plugin_bundle.omh.memory_records import prefetch_scope_allowlist
+from ..plugin_bundle.omh.memory_records import prefetch_required_scope_kinds, prefetch_scope_allowlist
 from ..workflows.memory_project_identity import build_project_identity_migration_report, migrate_project_identity, rollback_project_identity_migration
 from ..plugin_bundle.omh.metadata import MEMORY_PROVIDER_NAME
 from ..memory import (
@@ -329,6 +329,7 @@ def cmd_memory_recall(args: argparse.Namespace) -> int:
             include_stale=args.include_stale,
             include_archived=args.include_archived,
             allowed_scopes=prefetch_scope_allowlist(project_identity=resolution.identity, session_id=args.session_id) if automatic else None,
+            required_scope_kinds=prefetch_required_scope_kinds(resolution.identity) if automatic else None,
             inspection=not automatic,
             observer=args.observer,
             observed=args.observed,

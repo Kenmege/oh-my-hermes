@@ -53,6 +53,7 @@ from .memory import (
     HANDOFF_CONTEXT_PACK_SCHEMA_VERSION,
     PROJECT_MEMORY_RECALL_PACK_SCHEMA_VERSION,
     freshness_reason_detail,
+    scope_allowlist_errors,
 )
 
 
@@ -81,6 +82,9 @@ _ROLE_CONTEXT_PACK_KEYS = {
     "schema_version",
     "pack_hash",
     "scope",
+    # Present only when the records span more than `scope`: the allowlist the
+    # recall pack declares it selected under (`_pack_scope`).
+    "scope_allowlist",
     "records",
     "record_count",
     "redaction_policy",
@@ -170,10 +174,12 @@ def build_role_context_pack(
         {"position": index, **entry}
         for index, entry in enumerate(records)
     ]
+    pack_scope, scope_allowlist = _pack_scope(scope, context_pack, memory_recall_pack)
     pack: dict[str, object] = {
         "schema_version": ROLE_CONTEXT_PACK_SCHEMA_VERSION,
         "pack_hash": "",
-        "scope": _pack_scope(scope, context_pack, memory_recall_pack),
+        "scope": pack_scope,
+        **({"scope_allowlist": scope_allowlist} if scope_allowlist is not None else {}),
         "records": positioned,
         "record_count": len(positioned),
         "redaction_policy": "metadata_only",
@@ -233,7 +239,18 @@ def validate_role_context_pack(value: Any, *, label: str = "role_context_pack") 
     if not isinstance(value.get("claim_boundary"), str) or not value.get("claim_boundary"):
         errors.append(f"{label} claim_boundary must be a non-empty string")
     _validate_pack_scope(value.get("scope"), errors, f"{label}.scope")
-    errors.extend(_validate_pack_records(value.get("records"), value.get("scope"), f"{label}.records", label))
+    scope_allowlist = value.get("scope_allowlist")
+    if "scope_allowlist" in value:
+        errors.extend(scope_allowlist_errors(scope_allowlist, value.get("scope"), f"{label}.scope_allowlist"))
+    errors.extend(
+        _validate_pack_records(
+            value.get("records"),
+            value.get("scope"),
+            f"{label}.records",
+            label,
+            scope_allowlist=scope_allowlist if isinstance(scope_allowlist, list) else None,
+        )
+    )
     records = value.get("records")
     if isinstance(records, list) and value.get("record_count") != len(records):
         errors.append(f"{label}.record_count must equal the number of records")
@@ -502,31 +519,51 @@ def _is_stale_reason(reason_code: str) -> bool:
     return reason_code not in ADVISORY_FRESHNESS_REASONS and bool(freshness_reason_detail(reason_code))
 
 
-def _pack_scope(scope: Any, context_pack: Any, memory_recall_pack: Any) -> dict[str, str]:
-    candidates: list[dict[str, str]] = []
+def _pack_scope(scope: Any, context_pack: Any, memory_recall_pack: Any) -> tuple[dict[str, str], list[dict[str, str]] | None]:
+    """The pack's scope, and the allowlist its records span when they span more than it.
+
+    Every pack-level scope and every context-pack record must still be one
+    scope. A recall pack's records may also sit inside the allowlist that pack
+    declares it was selected under (`scope_allowlist`, set by the handoff when
+    its records span user-global, a project or a thread): those are one
+    audience the selector already admitted, not guidance from elsewhere. A
+    record outside both -- another project, another thread -- still fails the
+    built pack's validation, so `build_role_context_pack` raises.
+    """
+    pack_level: list[dict[str, str]] = []
     for candidate in (scope, _pack_field(context_pack, "scope"), _pack_field(memory_recall_pack, "scope")):
         if candidate is not None:
-            candidates.append(_scope_value(candidate))
-    candidates.extend(_source_item_scopes(context_pack, memory_recall_pack))
-    if not candidates:
-        return dict(_DEFAULT_SCOPE)
-    first = candidates[0]
-    if any(candidate != first for candidate in candidates[1:]):
+            pack_level.append(_scope_value(candidate))
+    context_items, recall_items = _source_item_scopes(context_pack, memory_recall_pack)
+    ordered = [*pack_level, *context_items, *recall_items]
+    if not ordered:
+        return dict(_DEFAULT_SCOPE), None
+    first = ordered[0]
+    if any(candidate != first for candidate in [*pack_level, *context_items]):
         raise ValueError("role context guidance scope must match across packs and included records")
-    return first
+    outside = [item for item in recall_items if item != first]
+    if not outside:
+        return first, None
+    declared = _pack_field(memory_recall_pack, "scope_allowlist")
+    if scope_allowlist_errors(declared, first, "memory_recall_pack.scope_allowlist"):
+        raise ValueError("role context guidance scope must match across packs and included records")
+    # Whether each record sits inside it is `validate_role_context_pack`'s
+    # check, which every built pack passes through.
+    return first, [_scope_value(item) for item in declared]
 
 
-def _source_item_scopes(context_pack: Any, memory_recall_pack: Any) -> list[dict[str, str]]:
-    scopes: list[dict[str, str]] = []
+def _source_item_scopes(context_pack: Any, memory_recall_pack: Any) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    context_scopes: list[dict[str, str]] = []
+    recall_scopes: list[dict[str, str]] = []
     if isinstance(context_pack, dict):
         for item in context_pack.get("included_context", []) or []:
             if isinstance(item, dict) and item.get("source") == "omh_memory":
-                scopes.append(_scope_value(item.get("scope")))
+                context_scopes.append(_scope_value(item.get("scope")))
     if isinstance(memory_recall_pack, dict):
         for item in memory_recall_pack.get("included_records", []) or []:
             if isinstance(item, dict):
-                scopes.append(_scope_value(item.get("scope")))
-    return scopes
+                recall_scopes.append(_scope_value(item.get("scope")))
+    return context_scopes, recall_scopes
 
 
 def _scope_value(value: Any) -> dict[str, str]:
@@ -555,7 +592,9 @@ def _validate_pack_scope(value: Any, errors: list[str], label: str) -> None:
             errors.append(f"{label}.{key} must be a non-empty string")
 
 
-def _validate_pack_records(value: Any, pack_scope: Any, label: str, pack_label: str) -> list[str]:
+def _validate_pack_records(
+    value: Any, pack_scope: Any, label: str, pack_label: str, *, scope_allowlist: list[Any] | None = None
+) -> list[str]:
     errors: list[str] = []
     if not isinstance(value, list):
         return [f"{label} must be a list"]
@@ -601,8 +640,13 @@ def _validate_pack_records(value: Any, pack_scope: Any, label: str, pack_label: 
             scope_errors: list[str] = []
             _validate_pack_scope(record_scope, scope_errors, f"{item_label}.scope")
             errors.extend(scope_errors)
-            if not scope_errors and isinstance(pack_scope, dict) and record_scope != pack_scope:
-                errors.append(f"{item_label}.scope must match {pack_label}.scope")
+            if (
+                not scope_errors
+                and isinstance(pack_scope, dict)
+                and record_scope != pack_scope
+                and not (scope_allowlist is not None and item.get("origin") == PROJECT_MEMORY_RECALL_PACK_SCHEMA_VERSION and record_scope in scope_allowlist)
+            ):
+                errors.append(f"{item_label}.scope must match {pack_label}.scope or, for a recall record, its scope_allowlist")
         if item.get("source_kind") == "domain_intelligence_profile":
             if isinstance(item.get("scope"), dict) and item["scope"].get("ref") == "default":
                 errors.append(f"{item_label}.scope.ref must not be default for a domain profile")

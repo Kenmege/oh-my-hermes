@@ -4,6 +4,7 @@ import argparse
 from collections.abc import Mapping
 import json
 import math
+import os
 import re
 import sys
 from pathlib import Path
@@ -45,6 +46,7 @@ from ..ingress import CHAT_SOURCES, extract_event_attachments, extract_message_t
 from ..installer import OmhError
 from ..local_store import read_json_object
 from ..memory import memory_recall_pack_for_handoff, read_handoff_context_pack_file, record_attached_recall_usage
+from ..plugin_bundle.omh.memory_session_lens import OPERATOR_CONSOLE_PLATFORMS, SURFACE_OPERATOR_CONSOLE, SURFACE_SHARED
 from ..coding.product_family_templates import PRODUCT_FAMILIES, product_family_template
 from ..coding.product_quality_harnesses import product_quality_harness
 from ..coding.project_governance import discover_project_governance
@@ -261,7 +263,9 @@ def cmd_coding_delegate(args: argparse.Namespace) -> int:
             attached_representations,
         )
         transformation = _transformation(args)
-        memory_recall_pack = memory_recall_pack_for_handoff(paths, message, executor_target=executor_target)
+        memory_recall_pack = memory_recall_pack_for_handoff(
+            paths, message, executor_target=executor_target, surface_class=_delegate_memory_surface(args)
+        )
         payload = build_coding_delegation_payload(
             message,
             source=args.source,
@@ -774,6 +778,30 @@ def _postcondition_exit_statuses(entries: list[str] | None) -> dict[str, int]:
             raise ValueError(f"--postcondition-exit {postcondition_id} is recorded twice")
         statuses[postcondition_id] = int(raw_status)
     return statuses
+
+
+def _delegate_memory_surface(args: argparse.Namespace) -> str:
+    """An operator typing `omh coding delegate` at a terminal is an operator console; anything else is shared.
+
+    `--source` defaults to `generic`, and Hermes runs the same command from
+    any chat with stdin and stdout piped (`tools/environments/local.py`), so
+    the source name cannot tell the two apart. A terminal can: both streams are
+    TTYs when a person typed it. A platform event (`--event-json`), piped input
+    (`--stdin`) or a named chat source is never a console. Neither is a child
+    of a gateway session: Hermes copies the session's `HERMES_SESSION_PLATFORM`
+    into every process it spawns (`tools/environments/local.py`,
+    `_inject_session_context_env`), which also covers a command it runs under a
+    pseudo-terminal.
+    """
+    if args.event_json or args.stdin or args.source != "generic":
+        return SURFACE_SHARED
+    session_platform = os.environ.get("HERMES_SESSION_PLATFORM", "")
+    if session_platform and session_platform not in OPERATOR_CONSOLE_PLATFORMS:
+        return SURFACE_SHARED
+    try:
+        return SURFACE_OPERATOR_CONSOLE if sys.stdin.isatty() and sys.stdout.isatty() else SURFACE_SHARED
+    except (AttributeError, OSError, ValueError):
+        return SURFACE_SHARED
 
 
 def _transformation(args: argparse.Namespace) -> dict[str, object] | None:

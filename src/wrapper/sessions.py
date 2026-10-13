@@ -25,7 +25,7 @@ from ..system.record_revision import (
     record_revision_of,
     require_not_terminal,
 )
-from ..memory import memory_recall_pack_for_handoff, record_attached_recall_usage
+from ..memory import memory_recall_pack_for_handoff, memory_surface_for_source, record_attached_recall_usage
 from ..paths import OmhPaths
 from ..runtime.records import (
     build_event_record,
@@ -960,6 +960,7 @@ def _prepare_prompt_only_session_handoff(
             message,
             executor_target=executor_target,
             session_id=str(session["session_id"]),
+            surface_class=memory_surface_for_source(str(session["source"])),
         ),
         capability_snapshot_directory=_capability_snapshot_directory(paths),
     )
@@ -1080,6 +1081,7 @@ def _prepare_runtime_session_handoff(
             message,
             executor_target=executor_target,
             session_id=str(session["session_id"]),
+            surface_class=memory_surface_for_source(str(session["source"])),
         ),
         capability_snapshot_directory=_capability_snapshot_directory(paths),
     )
