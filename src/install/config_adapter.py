@@ -1893,10 +1893,10 @@ def _scalar_value(value: str) -> str:
     """One scalar after `key:`; a quoted value runs to its close quote, so a trailing comment is not read.
 
     The plugin's own reader is the one parser (`skill_ownership.yaml_scalar`).
-    Where it cannot say -- a quote that never closes, a double-quoted escape
-    other than `\\\\` or `\\"` -- this keeps the answer it gave before that
-    parser existed, so only a quoted value followed by a comment reads
-    differently.
+    Where it cannot say -- a quote that never closes, another double-quoted
+    escape -- this keeps the answer it gave before that parser existed, so a
+    quoted value followed by a comment, and a `''`, `\\\\` or `\\"` escape inside
+    quotes, now read as YAML reads them; everything else reads as before.
     """
     parsed = yaml_scalar(value)
     if parsed is not None:

@@ -36,6 +36,7 @@ from ..install.installer import (
     hermes_edited_skills,
     installed_skill_directories,
     installed_skill_names,
+    manifest_pack,
     missing_managed_skills,
     profile_skill_names,
 )
@@ -2240,14 +2241,20 @@ def _hermes_skill_edits_check(
     # `writes` is already cut to the managed roots (`_managed_skill_roots`).
     under_managed = {(write.ledger, write.ts, write.path) for write in writes}
     edited = hermes_edited_skills(manifest, paths, writes=writes)
-    named = [_hermes_edit_line(item) for item in edited[:_HERMES_EDITS_NAMED_LIMIT]]
-    if len(edited) > _HERMES_EDITS_NAMED_LIMIT:
-        named.append(f"and {len(edited) - _HERMES_EDITS_NAMED_LIMIT} more")
+    # Two different outcomes: a kept skill stays as it is on every install; an
+    # edit in a directory this release does not render the skill into goes nowhere.
+    kept = [item for item in edited if item["disposition"] != "left_behind"]
+    left_behind = [item for item in edited if item["disposition"] == "left_behind"]
     parts: list[str] = []
-    if edited:
+    if kept:
         parts.append(
-            f"{len(edited)} OMH-managed skill(s) hold a Hermes edit that installs keep, so they receive no OMH "
-            f"update: {'; '.join(named)}"
+            f"{len(kept)} OMH-managed skill(s) hold a Hermes edit that installs keep, so they receive no OMH "
+            f"update: {_hermes_edit_lines(kept)}"
+        )
+    if left_behind:
+        parts.append(
+            f"{len(left_behind)} Hermes edit(s) sit in a directory this release does not render the skill into, "
+            f"so installs neither keep nor carry them: {_hermes_edit_lines(left_behind)}"
         )
     parts.append(
         f"Hermes' curator ledger records {len(under_managed)} skill write(s) under OMH-managed skills"
@@ -2277,7 +2284,7 @@ def _missing_skills_on_next_install(paths: OmhPaths, manifest: dict) -> list[dic
     names = profile_skill_names(
         paths.skills_dir, _recorded_skill_profile(manifest), [template.name for template in builtin_skill_templates()]
     )
-    return missing_managed_skills(manifest, paths.skills_dir, names)
+    return missing_managed_skills(manifest, manifest_pack(manifest, paths), names)
 
 
 def _recorded_skill_profile(manifest: dict) -> str:
@@ -2314,6 +2321,13 @@ def _missing_managed_skills_check(manifest: dict, missing: list[dict]) -> Check:
         remediation=action,
         next_action=action,
     )
+
+
+def _hermes_edit_lines(items: list[dict]) -> str:
+    named = [_hermes_edit_line(item) for item in items[:_HERMES_EDITS_NAMED_LIMIT]]
+    if len(items) > _HERMES_EDITS_NAMED_LIMIT:
+        named.append(f"and {len(items) - _HERMES_EDITS_NAMED_LIMIT} more")
+    return "; ".join(named)
 
 
 def _hermes_edit_line(item: dict) -> str:

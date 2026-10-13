@@ -41,6 +41,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest import mock
@@ -581,13 +582,24 @@ class InstallerKeepsHermesEditTests(_Home):
         (backup / "SKILL.md").write_bytes(self.skill_file().read_bytes())
         (backup / "personal.md").write_text("mine\n", encoding="utf-8")
         install_skill_pack(self.paths, profile="core")
-        _append_ledger(self.paths.hermes_home, _ledger_row(backup / "personal.md", action="write_file"))
-
+        # A copy nobody edited through Hermes is not an edit to report.
         self.assertNotIn("hermes_edited_skills", install_skill_pack(self.paths, profile="core"))
-        install_skill_pack(self.paths, profile="core", force=True)
+        _append_ledger(self.paths.hermes_home, _ledger_row(backup / "personal.md", action="write_file"))
+        rendered = self.skill_file().read_bytes()
 
+        plain = install_skill_pack(self.paths, profile="core")
+        forced = install_skill_pack(self.paths, profile="core", force=True)
+
+        # Reported, and nothing else: the copy is not kept in the skill's
+        # place (the skill itself still renders) and --force leaves it alone.
+        for result in (plain, forced):
+            self.assertEqual(
+                [(item["disposition"], item["path"]) for item in result["hermes_edited_skills"]],
+                [("left_behind", f"my-backups/{backup.name}/SKILL.md")],
+            )
         self.assertTrue((backup / "personal.md").is_file())
-        self.assertTrue(self.skill_file().is_file())
+        self.assertEqual(self.skill_file().read_bytes(), rendered)
+        self.assertIn("neither kept nor carried", self._summary(plain))
 
     def test_a_record_path_that_leaves_the_pack_is_never_followed(self) -> None:
         # Probe P4: a record climbing out of the pack, with kept evidence.
@@ -665,6 +677,172 @@ class InstallerKeepsHermesEditTests(_Home):
 
         self.assertEqual([item["disposition"] for item in result["restored_skills"]], ["restored"])
         self.assertFalse(self.skill_file().exists())
+
+    def test_a_renamed_copy_in_a_folder_of_ones_own_is_reported_not_pruned(self) -> None:
+        # A copy under a name the catalog does not ship is recorded like an
+        # orphaned skill, but OMH never rendered anything under `my-backups/`.
+        install_skill_pack(self.paths, profile="core")
+        copy = self.paths.skills_dir / "my-backups" / "omh-routing-old"
+        copy.mkdir(parents=True)
+        (copy / "SKILL.md").write_bytes(self.skill_file().read_bytes())
+        (copy / "personal.md").write_text("mine\n", encoding="utf-8")
+        install_skill_pack(self.paths, profile="core")
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue((copy / "personal.md").is_file())
+        self.assertEqual(result["pruned_skills"], [])
+        self.assertEqual(
+            result["prune_skipped_skills"],
+            [{"name": "omh-routing-old", "path": "my-backups/omh-routing-old/SKILL.md", "reason": "not_an_omh_layout"}],
+        )
+        self.assertIn("Left omh-routing-old at my-backups/omh-routing-old/SKILL.md in place", self._summary(result))
+
+    def test_a_plain_install_never_prunes_through_a_record_path_that_leaves_the_pack(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        outside = self.root / "outside" / "victim"
+        outside.mkdir(parents=True)
+        (outside / "SKILL.md").write_text("victim\n", encoding="utf-8")
+        (outside / "precious.txt").write_text("precious\n", encoding="utf-8")
+        manifest = read_manifest(self.paths.manifest_path)
+        manifest["skills"].append(
+            {
+                "name": "victim",
+                "path": os.path.relpath(outside / "SKILL.md", self.paths.skills_dir).replace(os.sep, "/"),
+                "sha256": sha256_file(outside / "SKILL.md"),
+                "source": "builtin",
+            }
+        )
+        self.paths.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue((outside / "precious.txt").is_file())
+        self.assertEqual(result["pruned_skills"], [])
+        self.assertEqual([item["name"] for item in result["prune_skipped_skills"]], ["victim"])
+
+    def test_the_pruner_never_follows_a_category_link_out_of_the_pack(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        category = self.paths.skills_dir / skill_install_relative_dir(SKILL).parts[0]
+        outside = self.root / "outside" / "shared-category"
+        shutil.copytree(category, outside)
+        shutil.rmtree(category)
+        category.symlink_to(outside, target_is_directory=True)
+        orphan = outside / "legacy-orphan-skill"
+        orphan.mkdir()
+        (orphan / "SKILL.md").write_text("# someone else's\n", encoding="utf-8")
+        manifest = read_manifest(self.paths.manifest_path)
+        manifest["skills"].append(
+            {
+                "name": "legacy-orphan-skill",
+                "path": f"{category.name}/legacy-orphan-skill/SKILL.md",
+                "sha256": sha256_file(orphan / "SKILL.md"),
+                "source": "builtin",
+            }
+        )
+        self.paths.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue((orphan / "SKILL.md").is_file())
+        self.assertIn(
+            {"name": "legacy-orphan-skill", "path": f"{category.name}/legacy-orphan-skill/SKILL.md", "reason": "outside_the_skills_directory"},
+            result["prune_skipped_skills"],
+        )
+
+    def test_force_never_clears_through_a_category_link_out_of_the_pack(self) -> None:
+        # Probe N2: the category directory is a link, and the ledger row was
+        # written through it.
+        install_skill_pack(self.paths, profile="core")
+        category = self.paths.skills_dir / skill_install_relative_dir(SKILL).parts[0]
+        outside = self.root / "outside" / "shared-category"
+        shutil.copytree(category, outside)
+        personal = outside / self.skill_file().parent.name / "personal.md"
+        personal.write_text("mine\n", encoding="utf-8")
+        shutil.rmtree(category)
+        category.symlink_to(outside, target_is_directory=True)
+        through_link = os.path.normpath(self.skill_file().parent / "personal.md")
+        _append_ledger(
+            self.paths.hermes_home,
+            json.dumps(
+                {
+                    "id": "n2", "ts": "2026-10-13T04:00:00+00:00", "actor": "curator", "action": "write_file",
+                    "skill": self.skill_file().parent.name, "evidence": {}, "before": [],
+                    "after": [{"path": through_link, "sha256": sha256_file(personal)}],
+                }
+            ),
+        )
+
+        install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertTrue(personal.is_file())
+
+    def test_a_kept_skill_is_not_carried_through_a_category_link_out_of_the_new_pack(self) -> None:
+        first = OmhPaths(omh_home=self.paths.omh_home, hermes_home=self.paths.hermes_home, managed_skills_dir=self.root / "gen-1" / "skills")
+        second = OmhPaths(omh_home=self.paths.omh_home, hermes_home=self.paths.hermes_home, managed_skills_dir=self.root / "gen-2" / "skills")
+        install_skill_pack(first, profile="core")
+        self.hermes_patch(self.skill_file(first))
+        outside = self.root / "outside" / "shared-category"
+        theirs = outside / self.skill_file(first).parent.name / "personal.md"
+        theirs.parent.mkdir(parents=True)
+        theirs.write_text("mine\n", encoding="utf-8")
+        second.skills_dir.mkdir(parents=True)
+        (second.skills_dir / skill_install_relative_dir(SKILL).parts[0]).symlink_to(outside, target_is_directory=True)
+
+        install_skill_pack(second, profile="core")
+
+        self.assertTrue(theirs.is_file())
+
+    def test_an_edit_where_a_release_moved_the_skill_is_reported_left_behind(self) -> None:
+        # A staged update over a generation whose record sits in the skill's
+        # former category directory, with kept evidence on the record.
+        first = OmhPaths(omh_home=self.paths.omh_home, hermes_home=self.paths.hermes_home, managed_skills_dir=self.root / "gen-1" / "skills")
+        second = OmhPaths(omh_home=self.paths.omh_home, hermes_home=self.paths.hermes_home, managed_skills_dir=self.root / "gen-2" / "skills")
+        install_skill_pack(first, profile="core")
+        old_render = self.skill_file(first).parent
+        moved = first.skills_dir / "former-category" / old_render.name
+        moved.parent.mkdir(parents=True)
+        old_render.rename(moved)
+        with (moved / "SKILL.md").open("a", encoding="utf-8") as handle:
+            handle.write("\nlearned: kept edit\n")
+        manifest = read_manifest(self.paths.manifest_path)
+        current = f"{skill_install_relative_dir(SKILL).as_posix()}/SKILL.md"
+        for record in manifest["skills"]:
+            if record["path"] == current:
+                record["path"] = f"former-category/{old_render.name}/SKILL.md"
+                record["sha256"] = sha256_file(moved / "SKILL.md")
+                record[HERMES_EDIT_RECORD_KEY] = {"actor": "curator", "ts": "2026-10-13T01:02:03+00:00", "action": "patch", "ledger": "l"}
+        self.paths.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        template = next(template for template in builtin_skill_templates() if template.name == SKILL)
+
+        result = install_skill_pack(second, profile="core")
+
+        self.assertEqual(
+            [(item["name"], item["disposition"], item["path"]) for item in result["hermes_edited_skills"]],
+            [(SKILL, "left_behind", f"former-category/{old_render.name}/SKILL.md")],
+        )
+        # Not carried and not cleared: the new generation holds OMH's render,
+        # the old one still holds the edit.
+        self.assertEqual(self.skill_file(second).read_text(encoding="utf-8"), template.content)
+        self.assertIn("kept edit", (moved / "SKILL.md").read_text(encoding="utf-8"))
+        self.assertFalse((second.skills_dir / "former-category").exists())
+
+    def test_force_names_the_files_it_removes_for_good(self) -> None:
+        # Probe N9: a person's own file beside a Hermes-added one.
+        install_skill_pack(self.paths, profile="core")
+        render = self.skill_file().parent
+        (render / "my-notes.md").write_text("never ledgered\n", encoding="utf-8")
+        added = render / "references" / "lessons.md"
+        added.write_text("lesson\n", encoding="utf-8")
+        _append_ledger(self.paths.hermes_home, _ledger_row(added, action="write_file"))
+        self.store_blob(added)
+
+        result = install_skill_pack(self.paths, profile="core", force=True)
+
+        [item] = result["hermes_edited_skills"]
+        self.assertEqual(item["ledger_copy"], ["references/lessons.md"])
+        self.assertEqual(item["discarded"], ["my-notes.md"])
+        self.assertIn("holds no copy of: my-notes.md", self._summary(result))
 
     def test_a_supporting_file_patch_keeps_the_whole_skill(self) -> None:
         install_skill_pack(self.paths, profile="core")
@@ -807,6 +985,34 @@ class DoctorLedgerTests(_Home):
             path.unlink() if path.is_file() else path.rmdir()
         skill_dir.rmdir()
         return f"{skill_install_relative_dir(name).as_posix()}/SKILL.md"
+
+    def test_a_missing_skill_is_judged_in_the_pack_the_manifest_describes(self) -> None:
+        # The installer judges it there (`manifest_pack`), so doctor does too.
+        elsewhere = OmhPaths(omh_home=self.paths.omh_home, hermes_home=self.paths.hermes_home, managed_skills_dir=self.root / "gen-1" / "skills")
+        install_skill_pack(elsewhere, profile="core")
+        for path in sorted(self.skill_file(elsewhere).parent.rglob("*"), reverse=True):
+            path.unlink() if path.is_file() else path.rmdir()
+        self.skill_file(elsewhere).parent.rmdir()
+
+        check = next(check for check in run_doctor(self.paths) if check.name == "missing_managed_skills")
+
+        self.assertIn("1 managed skill(s) are missing their SKILL.md", check.message)
+        self.assertIn(f"{SKILL} at ", check.message)
+
+    def test_a_left_behind_edit_is_named_apart_from_kept_ones(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        backup = self.paths.skills_dir / "my-backups" / self.skill_file().parent.name
+        backup.mkdir(parents=True)
+        (backup / "SKILL.md").write_bytes(self.skill_file().read_bytes())
+        (backup / "personal.md").write_text("mine\n", encoding="utf-8")
+        install_skill_pack(self.paths, profile="core")
+        _append_ledger(self.paths.hermes_home, _ledger_row(backup / "personal.md", action="write_file"))
+
+        check = next(check for check in run_doctor(self.paths) if check.name == "hermes_skill_edits")
+
+        self.assertEqual(check.severity, "warning")
+        self.assertIn("1 Hermes edit(s) sit in a directory this release does not render the skill into", check.message)
+        self.assertNotIn("that installs keep", check.message)
 
     def test_a_missing_skill_the_next_install_restores_is_a_warning_without_force(self) -> None:
         install_skill_pack(self.paths, profile="core")

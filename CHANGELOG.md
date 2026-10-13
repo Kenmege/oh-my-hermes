@@ -24,14 +24,22 @@ All notable changes will be documented here.
   left its current content, an unchanged one when a ledger write to another
   file of the skill still matches or a file OMH renders for it that Hermes
   removed is still absent; a row's unchanged files are not counted. Only the
-  directory OMH renders for the skill counts: a copy of a managed skill
-  elsewhere in the skills directory, or a recorded path that leaves it, is
-  never kept, carried, or cleared. A kept skill is carried into a new
-  generation on a staged update (when the install's skill profile carries
-  it) and listed with the ledger's actor, action, and time. `--force` clears
-  the render directory of every skill it renders again that holds a Hermes
-  write, and the summary says whether the ledger still holds a copy of the
-  replaced files.
+  directory OMH renders for the skill counts: a same-name copy of a managed
+  skill elsewhere in the skills directory is never kept, carried, or cleared
+  as a Hermes edit, and an edit in a directory an earlier release rendered
+  the skill into, after a release moved it, is reported as `left_behind` and
+  not carried. A kept skill is carried into a new generation on a staged
+  update (when the install's skill profile carries it) and listed with the
+  ledger's actor, action, and time. `--force` clears the render directory of
+  every skill it renders again that holds a Hermes write, never through a
+  category directory that links out of the skills directory, and the summary
+  says whether the ledger still holds a copy of the replaced files and names
+  any file it removed that OMH does not render and the ledger has no copy of.
+  The orphan pruner now removes a directory recorded under a name the catalog
+  no longer ships only where OMH renders skills (the top level or a category
+  directory) and only when it resolves inside the skills directory; a renamed
+  copy in a folder of your own, or a recorded path that leaves the skills
+  directory, is left in place and listed under `prune_skipped_skills`.
   A change the ledger does not account for still refuses the install as
   before; a managed skill whose SKILL.md is gone (in the pack the manifest
   describes, so a staged update reports it too) is rendered again and

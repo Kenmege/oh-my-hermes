@@ -4848,7 +4848,10 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
         if not isinstance(item, dict):
             continue
         copies = item.get("ledger_copy") if isinstance(item.get("ledger_copy"), list) else []
-        if item.get("disposition") != "replaced":
+        disposition = item.get("disposition")
+        if disposition == "left_behind":
+            key = "hermes_edit_left_behind_line"
+        elif disposition != "replaced":
             key = "hermes_edit_kept_line"
         else:
             # Only a copy the ledger still stores is claimed recoverable; a row
@@ -4860,11 +4863,20 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
             files=", ".join(str(copy) for copy in copies),
         )
         print(_color(f"  {line}", "1;33", use_color))
+        discarded = item.get("discarded") if isinstance(item.get("discarded"), list) else []
+        if discarded:
+            line = tr(language, "hermes_edit_discarded_line", name=item.get("name", ""), files=", ".join(map(str, discarded)))
+            print(_color(f"  {line}", "1;33", use_color))
     restored = payload.get("restored_skills")
     for item in restored if isinstance(restored, list) else []:
         if isinstance(item, dict):
             key = "managed_skill_restored_line" if item.get("disposition") == "restored" else "managed_skill_not_restored_line"
             print(_color(f"  {tr(language, key, name=item.get('name', ''), path=item.get('path', ''))}", "1;33", use_color))
+    prune_skipped = payload.get("prune_skipped_skills")
+    for item in prune_skipped if isinstance(prune_skipped, list) else []:
+        if isinstance(item, dict):
+            line = tr(language, "prune_skipped_line", name=item.get("name", ""), path=item.get("path", ""))
+            print(_color(f"  {line}", "1;33", use_color))
     profile_state = payload.get("skill_profile_state")
     if isinstance(profile_state, dict) and profile_state.get("retained_exception"):
         retained = profile_state.get("full_only_installed_skills", [])
