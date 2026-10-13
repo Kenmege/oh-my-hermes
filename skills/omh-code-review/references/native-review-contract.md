@@ -27,9 +27,8 @@ what the `delegate_task` call itself returns tells you which.
 
 The call's own result carries a `results` list in the same turn. A delegated
 subagent gets this, and so does a session that cannot be handed a result later:
-a kanban worker, a scheduled job, a one-shot run, a stateless request, or any
-session while the background pool is full. Each entry is the host's record of
-one reviewer:
+a kanban worker, a scheduled job, a one-shot run, or any session while the
+background pool is full. Each entry is the host's record of one reviewer:
 
 | Field | Meaning | What you do |
 | --- | --- | --- |

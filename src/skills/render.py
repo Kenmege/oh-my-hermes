@@ -7776,7 +7776,8 @@ verdicts are the ones `code-review` already names.
 - A `ship` names what it checked. `checked_clean` is required and non-empty on a
   `ship`, so a verdict with no finding and nothing checked does not validate.
 - A return that does not match the schema is not a review. Ask once for a
-  corrected return, naming what failed. If the second return still does not
+  corrected return, naming what failed, unless the host already made that ask
+  (a retry count on the result says so). If the corrected return still does not
   match, the review is `not_observed`: never a pass, and a verdict lifted out of
   the unmatched text is not a verdict.
 - A return that matches has a checked shape. Its findings are still claims, read
@@ -7920,9 +7921,8 @@ what the `delegate_task` call itself returns tells you which.
 
 The call's own result carries a `results` list in the same turn. A delegated
 subagent gets this, and so does a session that cannot be handed a result later:
-a kanban worker, a scheduled job, a one-shot run, a stateless request, or any
-session while the background pool is full. Each entry is the host's record of
-one reviewer:
+a kanban worker, a scheduled job, a one-shot run, or any session while the
+background pool is full. Each entry is the host's record of one reviewer:
 
 | Field | Meaning | What you do |
 | --- | --- | --- |

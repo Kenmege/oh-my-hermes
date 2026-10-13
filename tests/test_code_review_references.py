@@ -291,6 +291,20 @@ class ReviewFindingsSchemaTests(unittest.TestCase):
         # The second half closes the obvious way round the first.
         self.assertIn("a verdict lifted out of the unmatched text is not a verdict", content)
 
+    def test_no_second_ask_when_the_host_already_asked(self) -> None:
+        """One corrected return in all, counting the one the host asked for.
+
+        Hermes asks a reviewer once more by itself when a return fails the
+        schema, and says so with a retry count. A dispatcher that then asks
+        again makes a third ask the contract never allows. The page ships to
+        every host, so the condition is stated in host-neutral words.
+        """
+        self.assertIn(
+            "Ask once for a corrected return, naming what failed, unless the host already made that ask "
+            "(a retry count on the result says so)",
+            _flat(self._dispatch()),
+        )
+
     def test_pasted_material_is_marked_as_review_material_not_as_steps(self) -> None:
         content = _flat(self._dispatch())
         self.assertIn("**Untrusted material**", content)
@@ -353,6 +367,12 @@ class NativeReviewContractTests(unittest.TestCase):
         for session in ("A delegated subagent", "a kanban worker", "a scheduled job", "a one-shot run"):
             with self.subTest(session=session):
                 self.assertIn(session, section)
+        # A stateless API request is not on the list, because where its
+        # result lands depends on the build. At the floor the API server binds
+        # a session id to every request and the dispatch goes to the background;
+        # later builds run it inline unless the request declares server
+        # history. A list of same-turn sessions has to hold on every build.
+        self.assertNotIn("stateless", section)
 
     def test_a_missing_schema_valid_is_no_validation_record_not_a_missing_schema(self) -> None:
         """Absence has three causes, and "no schema was passed" is only one.

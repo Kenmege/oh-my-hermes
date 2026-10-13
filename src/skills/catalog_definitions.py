@@ -130,6 +130,15 @@ FAILURE_ORIGIN_PROOF_RULE = (
     "worktree (`git worktree add --detach <dir> <merge-base>`, removed afterwards), never by stashing or checking out the tree "
     f"the user is working in; otherwise `{_UNKNOWN_ORIGIN}`"
 )
+# The two proofs can disagree: a test that already fails at the merge-base can
+# fail on a line the diff edited. The observed run settles it, because the
+# diff-line reading only says where the failure surfaced, not whether the change
+# caused it, and reading it the other way hands FIX_READY to a failure the change
+# did not cause.
+FAILURE_ORIGIN_PRECEDENCE = (
+    "An observed merge-base run outranks a diff-line reading: a check that fails the same way at the merge-base is "
+    f"`{_PRE_EXISTING}` even when its failure points at a line the diff changed"
+)
 # `introduced` has two admissible proofs, and the two are different kinds of
 # evidence: a merge-base run was observed, a diff-line reading was inferred from
 # where the failure points. The origin sits inside an observed row, so the row
@@ -5235,7 +5244,7 @@ _DEFINITIONS = [
             "Recommend the smallest safe fix path and name when no fix is justified without more logs.",
             "Prefer targeted reruns before broad expensive checks, then broaden only when the changed surface requires it.",
             "Preserve exact observed failure snippets or file references without treating them as current PASS evidence.",
-            f"Give each cluster an origin: {FAILURE_ORIGIN_PROOF_RULE}. {FAILURE_ORIGIN_PROOF_NAMING}.",
+            f"Give each cluster an origin: {FAILURE_ORIGIN_PROOF_RULE}. {FAILURE_ORIGIN_PRECEDENCE}. {FAILURE_ORIGIN_PROOF_NAMING}.",
             f"Return FIX_READY only for `{_INTRODUCED}` clusters; a `{_PRE_EXISTING}` cluster gets its own follow-up handoff outside this change's fix. Clusters of different origins still share one verdict: NEEDS_MORE_LOGS while any cluster is `{_UNKNOWN_ORIGIN}`, naming the merge-base run as the missing evidence, even beside `{_INTRODUCED}` ones; otherwise FIX_READY when at least one is `{_INTRODUCED}`; otherwise, with every cluster `{_PRE_EXISTING}`, ROUTE_TO_VERIFICATION_GATE.",
         ),
         why_this_exists=(
@@ -5523,7 +5532,7 @@ _DEFINITIONS = [
             "a field left out is a gap in the record, not a shorter record.",
             "For native `omh_todo` checkpoints, load the todo-checklist closing recipe; `record` then `recall` this verification declaration. Stored declarations are not proof.",
             "When the change answers to a written spec, plan, or issue, load `references/requirement-coverage-map.md` and map requirement to task to evidence under stable ids before claiming coverage.",
-            f"Give each failing check an `origin`: {FAILURE_ORIGIN_PROOF_RULE}. {FAILURE_ORIGIN_PROOF_NAMING}.",
+            f"Give each failing check an `origin`: {FAILURE_ORIGIN_PROOF_RULE}. {FAILURE_ORIGIN_PRECEDENCE}. {FAILURE_ORIGIN_PROOF_NAMING}.",
             f"Return PASS only when required checks pass and stale or missing evidence is resolved; PASS never stands beside a failing required check, whatever its origin. A required check that fails `{_PRE_EXISTING}` is HOLD worded as not charged to the change, naming the merge-base run that proves it, and only when the failing run's scope still covered the change: a failure that stopped the check before it exercised the change, such as a collection or import error, leaves that check as missing evidence. `{_UNKNOWN_ORIGIN}` is HOLD with the merge-base run named as the missing evidence.",
             "Keep fixes, reruns, review, CI, and merge as separate observed states.",
         ),

@@ -20,7 +20,11 @@ import unittest
 
 from omh.evidence.observed_check_results import FAILURE_ORIGINS
 from omh.skills.catalog import builtin_definitions, builtin_harnesses
-from omh.skills.catalog_definitions import FAILURE_ORIGIN_PROOF_NAMING, FAILURE_ORIGIN_PROOF_RULE
+from omh.skills.catalog_definitions import (
+    FAILURE_ORIGIN_PRECEDENCE,
+    FAILURE_ORIGIN_PROOF_NAMING,
+    FAILURE_ORIGIN_PROOF_RULE,
+)
 from omh.skills.packaging import builtin_skill_templates
 from omh.skills.render import agent_skill_templates
 
@@ -73,6 +77,21 @@ class FailureOriginProofRuleTests(unittest.TestCase):
             with self.subTest(skill=name):
                 lines = [line for line in _definition(name).quality_bar if FAILURE_ORIGIN_PROOF_RULE in line]
                 self.assertEqual(len(lines), 1, f"{name} no longer carries the shared origin rule exactly once")
+
+    def test_an_observed_merge_base_failure_outranks_a_diff_line_reading(self) -> None:
+        """When the two proofs disagree, the observed run decides.
+
+        A test that is already red at the merge-base can fail on a line the
+        diff edited. Read by the diff line it is `introduced`, and
+        build-failure-triage would hand it to the change as FIX_READY. The run
+        observed it failing without the change, so it is `pre_existing`.
+        """
+        self.assertTrue(FAILURE_ORIGIN_PRECEDENCE.startswith("An observed merge-base run outranks a diff-line reading"))
+        self.assertIn("is `pre_existing` even when its failure points at a line the diff changed", FAILURE_ORIGIN_PRECEDENCE)
+        for name in (GATE, TRIAGE):
+            with self.subTest(skill=name):
+                line = next(line for line in _definition(name).quality_bar if FAILURE_ORIGIN_PROOF_RULE in line)
+                self.assertIn(f"{FAILURE_ORIGIN_PROOF_RULE}. {FAILURE_ORIGIN_PRECEDENCE}.", line)
 
     def test_the_row_names_which_proof_its_origin_rests_on(self) -> None:
         """`introduced` read off the diff is an inference, and the row says so.
