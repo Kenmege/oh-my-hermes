@@ -2,9 +2,10 @@
 
 A native tool is PRESENT when its name is in the session's tool list OR in
 the tool_search catalog. Hermes defers a curated set of core tools behind the
-tool_search bridge by default (`todo_list`, `cronjob_manage` and
-`image_generate` among them, since the release tagged ``v2026.9.21``), and a
-deferred tool is reachable through ``tool_call``: it is present, not
+tool_search bridge by default -- `todo_list`, `cronjob_manage` and
+`image_generate` among them, already at the plugin's floor (tag ``v2026.9.7``,
+``_DEFAULT_DEFERRED_TOOLS`` in ``tools/tool_search.py``) -- and a deferred
+tool is reachable through ``tool_call``: it is present, not
 missing. Hermes also peels the bridge before plugin hooks run, so a deferred
 tool's call reaches ``pre_tool_call`` / ``post_tool_call`` under its own
 name, never as ``tool_call``.
@@ -44,7 +45,12 @@ TOOL_SEARCH_TOOL = "tool_search"
 def native_tool_present(
     name: str, *, tool_list: Iterable[str] = (), tool_search_catalog: Iterable[str] = ()
 ) -> bool:
-    """Whether ``name`` is in the session's tool list or its tool_search catalog."""
+    """Whether ``name`` is in the session's tool list or its tool_search catalog.
+
+    No caller in the plugin holds both name sets yet -- hooks are handed no
+    tool list -- so the plan checklist states the rule through the clause
+    below. This is the code face for the later surfaces that do hold them.
+    """
     return bool(name) and (name in set(tool_list) or name in set(tool_search_catalog))
 
 

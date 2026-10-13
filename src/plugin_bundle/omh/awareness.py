@@ -6656,13 +6656,14 @@ _PLAN_TODO_WORKFLOWS = frozenset(
     }
 )
 
-# ONE tool holds the steps, never both (`native_todo`). A planning run keeps
-# them in omh_todo because only omh_todo carries the `plan_stage` the edit gate
-# reads; otherwise Hermes' native todo_list holds them wherever it is present,
-# and OMH mirrors each write into the plan record this rule's checklist is.
+# ONE tool holds the steps, never both (`native_todo`). A planning run and an
+# accepted plan keep them in omh_todo because only omh_todo carries the
+# `plan_stage` the edit gate and `omh_team` read; otherwise Hermes' native
+# todo_list holds them wherever it is present, and OMH mirrors each write into
+# the plan record this rule's checklist is.
 PLAN_TODO_DECLARATION_RULE = (
     "Declare this run's checklist before the first step in ONE tool, never both: "
-    "omh_todo for a planning run (it carries plan_stage), else "
+    "omh_todo for a planning run or an accepted plan (they carry plan_stage), else "
     f"{NATIVE_TODO_TOOL} when {native_tool_presence_clause(NATIVE_TODO_TOOL)} "
     "(OMH mirrors it), else omh_todo. Keep exactly one item active as steps land. "
     "Todo items are declarations, never execution evidence."

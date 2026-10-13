@@ -1144,8 +1144,8 @@ _DEFINITIONS = [
             # ceiling, so naming the one checklist tool was paid for by the
             # rationale clauses around it rather than by raising the ceiling.
             "Initialize the phase todo before engine work (todo init) in ONE tool, never both: "
-            f"`{NATIVE_TODO_TOOL}` when {native_tool_presence_clause(NATIVE_TODO_TOOL, code=True)} (OMH mirrors it), else `omh_todo`. "
-            "Declare numbered phases in delivery order — bootstrap, one implement/verify/deliver task per lane or work unit, independent review lanes, and an evidence-and-cleanup close, one task per observable outcome — keep exactly one item active, and update states as lanes complete, so the run walks a bounded checklist, not an open-ended loop. Phase names and task titles are written in English as short labels even when the conversation runs in another language, since the HUD checklist is an operator surface.",
+            f"`{NATIVE_TODO_TOOL}` when {native_tool_presence_clause(NATIVE_TODO_TOOL, code=True)} (OMH mirrors it), else `omh_todo`; an accepted plan stays in `omh_todo`. "
+            "Declare numbered phases in delivery order — bootstrap, one implement/verify/deliver task per lane or work unit, independent review lanes, and an evidence-and-cleanup close, one task per observable outcome — keep exactly one item active, and update states as lanes complete, so the run walks a bounded checklist. Phase names and task titles are written in English as short labels even when the conversation runs in another language, since the HUD checklist is an operator surface.",
         ),
         do_not_use_when=(
             "Avoid conflicting parallel writers; use single-owner or ordered execution.",
@@ -1278,7 +1278,7 @@ _DEFINITIONS = [
         portable_override_shadows={
             "quality_bar": "4da819b34e0cadefe525df0cb5bc43116e034cf54212574a59a2ad9f58468dff",
             "safety_rules": "f5a8f74812425af82829bc083dac62883a283ed8acfa5bc299a594c107ccd4f7",
-            "opening_steps": "b940617840a7fbabcb4c4df696f573bfebec3a1934102c7cc1ed9b47bd5db15e",
+            "opening_steps": "632f26cd6eeb333b99ad0312a3c568a456d6e36c66d510b6af201ae25f65abf0",
             "final_checklist": "aa86ffc317352fb5f4a3cfa3dac07f436232e87055edb9a6adc7bf8b70896366",
             "why_this_exists": "537b436c502275cd7aea748406d5018300d92d31fe670a4c3b48090058b4c0c6",
         },
@@ -8167,7 +8167,7 @@ _DEFINITIONS = [
         phase="observability",
         hermes_role="retained-operator",
         handoff_policy=(
-            "Keep the steps in ONE tool, never both: a planning run or a code-story template keeps them in `omh_todo`; "
+            "Keep the steps in ONE tool, never both: a planning run, an accepted plan or a code-story template keeps them in `omh_todo`; "
             f"otherwise `{NATIVE_TODO_TOOL}` holds them when {native_tool_presence_clause(NATIVE_TODO_TOOL, code=True)}, "
             "and OMH mirrors each write into this plan todo, else `omh_todo`. `omh_todo` alone holds `plan_stage`, "
             "checkpoint/record/recall, `blocked_reason` and `deferred_reason`. A checklist item is a plan declaration "

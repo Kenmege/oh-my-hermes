@@ -3058,11 +3058,11 @@ Do not declare one for work that is a single step, work already finished, or a q
 
 Hermes has a checklist tool of its own, `{NATIVE_TODO_TOOL}`. When {presence}, it holds the steps: write the list there and move its states there. OMH mirrors each of those writes into this plan todo, so the HUD and the plan's continuation and stall checks read it with no second copy. Writing the same list to `omh_todo` as well doubles every update and is never needed. Without `{NATIVE_TODO_TOOL}`, `omh_todo` holds the steps and everything below applies to it directly.
 
-Two kinds of plan keep their steps in `omh_todo` even when `{NATIVE_TODO_TOOL}` is there, because what they depend on exists only on `omh_todo`: a planning run, whose `plan_stage` the edit gate reads, and a `{CODE_STORY_TEMPLATE}` template, whose phases a native list cannot carry. While either is open, a `{NATIVE_TODO_TOOL}` write is not mirrored over it.
+Three kinds of plan keep their steps in `omh_todo` even when `{NATIVE_TODO_TOOL}` is there, because what they depend on exists only on `omh_todo`: a planning run, whose `plan_stage` the edit gate reads; an accepted plan, whose `plan_stage=accepted` and `check:` items `omh_team` binds its lanes to; and a `{CODE_STORY_TEMPLATE}` template, whose phases a native list cannot carry. While any of them is open, a `{NATIVE_TODO_TOOL}` write is not mirrored over it.
 
 With `{NATIVE_TODO_TOOL}` holding the steps, call `omh_todo` only for what it alone records:
 
-- an item's `blocked_reason` (`action=advance`), kept across later `{NATIVE_TODO_TOOL}` writes until that item is marked completed;
+- an item's `blocked_reason` (`action=advance`), kept across later `{NATIVE_TODO_TOOL}` writes while that item's status stays where it was; resuming, completing or reopening it ends the reason;
 - the plan's `deferred_reason`, which lapses at the next change to the list;
 - the checkpoint/record/recall dossier (`references/closing-a-story.md`);
 - advancing a done item to done again after its check passes, which is what binds that command to it.
@@ -3177,8 +3177,9 @@ accepted points, not every brainstormed idea. Stop or analysis-only instructions
 and intervening topic changes outrank an old plan. An unrelated story, modal or
 book is not a continuation request merely because the same words occur.
 
-For multi-turn work, declare just the accepted items with `omh_todo action=set`,
-then `action=checkpoint`, `accepted=true`, short `rejected` summaries and the
+For multi-turn work, declare just the accepted items in the plan's one
+checklist tool (`todo_list`, which OMH mirrors, or `omh_todo action=set`; never
+both), then `omh_todo action=checkpoint`, `accepted=true`, short `rejected` summaries and the
 exact revision/worktree and environment fingerprints. This freezes scope; it
 does not approve an edit or change `plan_stage`. Read `action=show` before
 replacing an existing plan. The code-story template remains optional.
@@ -4563,7 +4564,7 @@ The loop does not create a root row for the goal and hang the iterations under i
 
 ## Todo and Closing
 
-One `omh_todo` item per open board row, its text the row title plus the last observed status, updated from the readback pass and from nothing else. A row that reaches `done` closes its item; a row that is `blocked` carries the block reason as the item's `blocked_reason`.
+One item per open board row in the plan's one checklist tool (`todo_list`, which OMH mirrors, or `omh_todo`; never both), its text the row title plus the last observed status, updated from the readback pass and from nothing else. A row that reaches `done` closes its item; a row that is `blocked` carries the block reason as the item's `blocked_reason`, recorded with `omh_todo`.
 
 The loop closes in the main session. A verifier `done` is `worker reported done` until this session re-runs the verification where the workspace is reachable, and the goal closes only through the loop's own completion gate. A board row is never goal completion evidence.
 
@@ -5145,7 +5146,7 @@ A row in `review` is a request (the observed fact is `review_requested`), and a 
 - One `kanban_list` per turn boundary scoped by `assignee` or `status`, one `kanban_show` per row that changed, no polling.
 - Each probe's `result` is the worker's report, bounded and labelled by the readback pass, and quoted as such in the closing brief: `probe <title> reported: <result>`. The main session never restates a probe result as its own observation.
 - Pass/fail evidence stays separate from proposed fixes, as the in-session QA discipline already requires; the fixer row is a proposed fix until it is re-verified.
-- One `omh_todo` item per open row, updated from the readback pass and from nothing else.
+- One item per open row in the plan's one checklist tool (`todo_list` or `omh_todo`, never both), updated from the readback pass and from nothing else.
 
 ## Cleanup
 
@@ -5466,7 +5467,7 @@ Then invoke the returned `native_action` through the ordinary Hermes tool loop. 
 
 - At most one `kanban_list` per turn boundary, scoped by `assignee` or `status`, never a polling loop.
 - One `kanban_show` per lane whose row changed state in that list.
-- One `omh_todo` item per board lane, updated from the readback pass and from nothing else; the item's text is the lane title plus the last observed status.
+- One item per board lane in the plan's one checklist tool (`todo_list` or `omh_todo`, never both), updated from the readback pass and from nothing else; the item's text is the lane title plus the last observed status.
 - Results arrive bounded and labelled by the readback pass. A `result` field is a worker's report, quoted as such; the parent never restates it as its own finding.
 
 The parent ends its turn after preparing lanes and re-enters on the next user turn or scheduled check. There is no wait, attach, retry, or amend verb for a board row: a row whose prompt was wrong is completed with a blocker summary and a new row is created with the corrected prompt.

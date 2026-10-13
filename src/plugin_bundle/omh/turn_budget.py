@@ -88,16 +88,17 @@ ROLE_CONTEXT_CHAR_LIMIT = 2600
 # a finished background process opened). It is under `all_surfaces`, which
 # still sets the maximum, and the fallback maximum is unchanged with it.
 # Re-derived from the producer.
-# 5662 -> 5761: the route hint's `plan_todo` line now says which ONE tool holds
-# the run's steps -- omh_todo for a planning run, else Hermes' todo_list where
-# it is present (OMH mirrors it), else omh_todo (+99 on the routed request,
-# after dropping its "so the Hermes TUI shows the person" clause). It rides
-# only a turn routed to one of the six checklist workflows. The alternative,
-# leaving it naming omh_todo alone, is what had sessions writing the same list
-# to both tools on every update. The plan line's reconciliation clause stopped
-# naming omh_todo and the evidence rule started (one +14, one -14), so the
-# `done_unverified_plan` scenario is unchanged. Re-derived from the producer.
-PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5761
+# 5662 -> 5781: the route hint's `plan_todo` line now says which ONE tool holds
+# the run's steps -- omh_todo for a planning run or an accepted plan, else
+# Hermes' todo_list where it is present (OMH mirrors it), else omh_todo (+119
+# on the routed request, after dropping its "so the Hermes TUI shows the
+# person" clause). It rides only a turn routed to one of the six checklist
+# workflows. The alternative, leaving it naming omh_todo alone, is how a
+# session came to declare one plan in both tools. The plan line's
+# reconciliation clause stopped naming omh_todo and the evidence rule started
+# (one +14, one -14), so the `done_unverified_plan` scenario is unchanged.
+# Re-derived from the producer.
+PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5781
 # The same scenario set on the fallback: a session the awareness section did
 # not render for (a restart resume, a legacy id-rotating compaction, a refused
 # section, an older host) still gets the primer in the fenced context, so its
@@ -118,9 +119,9 @@ PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5761
 # main carried are absorbed, so the ceiling is zero-slack again. The
 # section-host limit above does not move: nothing new is injected per turn
 # there. Re-derived from the producer.
-# 7098 -> 7197: the same `plan_todo` wording (+99). Re-derived from the
+# 7098 -> 7217: the same `plan_todo` wording (+119). Re-derived from the
 # producer.
-PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 7197
+PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 7217
 
 SLOT_LIMITS: dict[str, int] = {
     "primer": AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT,

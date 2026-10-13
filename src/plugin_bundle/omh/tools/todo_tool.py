@@ -77,7 +77,8 @@ _COMPLETION_FIELDS = {
 # The second sentence is the one-checklist rule (`native_todo`): steps live in
 # exactly one tool. Hermes' native todo_list holds them wherever the presence
 # rule finds it, and OMH mirrors it into this record, so this tool is then
-# called only for what todo_list cannot say. A planning run and a code-story
+# called only for what todo_list cannot say. A planning run, an accepted plan
+# (whose stage and `check:` items `omh_team` binds lanes to) and a code-story
 # template keep their steps here, because `plan_stage` and the template exist
 # only on this tool.
 OMH_TODO_SCHEMA = {
@@ -85,7 +86,7 @@ OMH_TODO_SCHEMA = {
     "description": (
         "Declare, advance, clear, or read this session's metadata-only plan todo list, which the OMH HUD "
         "renders above the prompt; other sessions neither see nor overwrite it. "
-        "Keep steps in ONE tool, never both: a planning run or a code-story template keeps them here; "
+        "Keep steps in ONE tool, never both: a planning run, an accepted plan or a code-story template keeps them here; "
         f"otherwise, when {native_tool_presence_clause(NATIVE_TODO_TOOL)}, keep them in {NATIVE_TODO_TOOL} "
         "(OMH mirrors each write into this plan) and call this tool only for checkpoint/record/recall, "
         "blocked_reason, deferred_reason, or advancing a done item again after its check passes. "

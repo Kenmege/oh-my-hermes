@@ -173,13 +173,14 @@ presence), it does: the plugin's `post_tool_call` projects each successful
 against recorded commands like any done mark, and `cancelled` as `done` with
 a `blocked_reason` — and `omh_todo` is called only for what `todo_list`
 cannot say: `plan_stage`, the completion dossier, an item's `blocked_reason`
-(carried across later native writes by item text) and the plan's
-`deferred_reason`. Where it is absent, `omh_todo` is the only writer. Every
+(carried across later native writes by item text while the item's status
+stays where it was) and the plan's `deferred_reason`. Where it is absent, `omh_todo` is the only writer. Every
 reader — the HUD, the widget, the Desktop pane, the plan-stage gate, the
 stall finding and the continuation drive — reads the record through
 `read_omh_todo` and never asks which tool wrote it. A native write never
-replaces an open plan stamped `awaiting_acceptance` or an open template plan,
-since only `omh_todo` can express either. An `omh_todo` advance keeps the
+replaces an open plan carrying a `plan_stage` — awaiting acceptance, or
+accepted and bound by `omh_team` — or an open template plan, since only
+`omh_todo` can express them. An `omh_todo` advance keeps the
 record's `source`; only a whole-list `set` re-declares it. Where Hermes draws
 its own todo list — the modern TUI and Hermes Desktop — the OMH dock and pane
 leave a `todo_list`-held plan's items to it and show only what it cannot: a

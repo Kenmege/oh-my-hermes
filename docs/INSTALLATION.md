@@ -1549,9 +1549,9 @@ whichever tool holds it and the model never writes the same list twice. A
 native `completed` is still a declaration, and a `cancelled` item shows as
 skipped. `omh_todo` then carries only what `todo_list` cannot: `plan_stage`
 on a planning run, the completion dossier, an item's `blocked_reason` and
-the plan's `deferred_reason`. A planning checklist awaiting acceptance and a
-`code-story` plan stay with `omh_todo`; a native write does not replace
-either while it is open. Hermes draws a `todo_list` itself in the modern TUI
+the plan's `deferred_reason`. A planning checklist awaiting acceptance, an
+accepted plan and a `code-story` plan stay with `omh_todo`; a native write
+replaces none of them while it is open. Hermes draws a `todo_list` itself in the modern TUI
 (under the latest message, then archived into the transcript) and in Hermes
 Desktop (the composer's status stack), so for a plan `todo_list` holds the
 OMH panel above the prompt and the Desktop pane do not repeat its items: they

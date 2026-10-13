@@ -64,7 +64,9 @@ from omh.plugin_bundle.omh.todo_store import (
     PLAN_STAGE_ACCEPTED,
     PLAN_STAGE_AWAITING_ACCEPTANCE,
     TODO_CLAIM_BOUNDARY,
+    build_todo_record,
     todo_path,
+    write_todo,
 )
 from omh.plugin_bundle.omh.tool_bursts import record_tool_call, record_tool_call_close
 from omh.plugin_bundle.omh.tools.todo_tool import OMH_TODO_SCHEMA, omh_todo_handler
@@ -213,6 +215,25 @@ class ProjectionTest(_NativeTodoHomeTest):
         self.assertEqual(self.project([]), "cleared")
         self.assertEqual(self.todo()["status"], "absent")
 
+    def test_an_emptied_native_list_never_removes_the_home_wide_record(self):
+        # An operator's `omh runtime todo set` writes the unstamped home-wide
+        # record; a session with no record of its own clearing its native list
+        # has nothing of its own to remove.
+        _ = write_todo(self.home, build_todo_record("operator plan", [{"text": "rotate keys"}], source="cli"))
+        self.assertEqual(self.project([]), "already_absent")
+        self.assertTrue(todo_path(self.home).is_file())
+
+        self.write_native([native("1", "land the fix", "in_progress")])
+        self.assertEqual(self.project([]), "cleared")
+        self.assertTrue(todo_path(self.home).is_file())
+
+    def test_a_json_string_list_is_a_write(self):
+        # Hermes parses `todos` sent as a JSON string and writes it
+        # (`tools/todo_tool.py` at v2026.9.7); the result carries the list.
+        todos = [native("1", "land the fix", "in_progress")]
+        self.write_native(todos, args={"todos": json.dumps(todos)})
+        self.assertEqual([item["text"] for item in self.todo()["items"]], ["land the fix"])
+
 
 class DeclinedCallTest(_NativeTodoHomeTest):
     """Every call that is not a successful native write leaves the record alone."""
@@ -284,6 +305,25 @@ class NativeStatusIsADeclarationTest(_NativeTodoHomeTest):
         self.assertIn("window_start", done)
         self.assertEqual(self.stored()["claim_boundary"], TODO_CLAIM_BOUNDARY)
 
+    def test_a_cancelled_item_brought_back_is_driven_again(self):
+        self.write_native([native("1", "land the fix", "completed"), native("2", "beta", "cancelled"), native("3", "gamma", "completed")])
+        self.write_native([native("1", "land the fix", "completed"), native("2", "beta", "pending"), native("3", "gamma", "completed")])
+
+        beta = self.todo()["items"][1]
+        self.assertEqual((beta["text"], beta["state"]), ("beta", "pending"))
+        self.assertNotIn("blocked_reason", beta)
+        message, _ = plan_continuation_reading(
+            omh_home=str(self.home), hermes_home=str(self.hermes), session_ref=SESSION
+        )
+        self.assertIn("next: beta", message)
+
+    def test_a_cancelled_item_completed_later_is_not_counted_skipped(self):
+        self.write_native([native("1", "beta", "cancelled"), native("2", "gamma", "pending")])
+        self.write_native([native("1", "beta", "completed"), native("2", "gamma", "pending")])
+        todo = self.todo()
+        self.assertNotIn("blocked_reason", todo["items"][0])
+        self.assertEqual(todo["counts"]["skipped"], 0)
+
     def test_cancelled_reads_as_skipped(self):
         self.write_native([native("1", "old idea", "cancelled"), native("2", "open the PR")])
         todo = self.todo()
@@ -295,7 +335,7 @@ class NativeStatusIsADeclarationTest(_NativeTodoHomeTest):
 class OmhTodoOnlyFieldsTest(_NativeTodoHomeTest):
     """What only `omh_todo` records survives a native write, or is not touched by one."""
 
-    def test_a_blocked_reason_survives_until_the_item_completes(self):
+    def test_a_blocked_reason_survives_while_the_item_status_holds(self):
         self.write_native([native("1", "land the fix", "in_progress"), native("2", "open the PR")])
         result = self.omh_todo(
             {
@@ -314,6 +354,23 @@ class OmhTodoOnlyFieldsTest(_NativeTodoHomeTest):
 
         self.write_native([native("1", "land the fix", "completed"), native("2", "open the PR", "in_progress")])
         self.assertNotIn("blocked_reason", self.todo()["items"][0])
+
+    def test_a_resumed_item_loses_its_recorded_reason_and_is_driven(self):
+        self.write_native([native("1", "land the fix", "completed"), native("2", "open the PR", "pending")])
+        _ = self.omh_todo(
+            {"action": "advance", "item": 2, "item_text": "open the PR", "state": "pending", "blocked_reason": "CI credentials"}
+        )
+        message, _ = plan_continuation_reading(
+            omh_home=str(self.home), hermes_home=str(self.hermes), session_ref=SESSION
+        )
+        self.assertEqual(message, "")
+
+        self.write_native([native("1", "land the fix", "completed"), native("2", "open the PR", "in_progress")])
+        self.assertNotIn("blocked_reason", self.todo()["items"][1])
+        message, _ = plan_continuation_reading(
+            omh_home=str(self.home), hermes_home=str(self.hermes), session_ref=SESSION
+        )
+        self.assertIn("next: open the PR", message)
 
     def test_a_deferral_lapses_on_a_native_item_change_and_holds_without_one(self):
         todos = [native("1", "land the fix", "in_progress"), native("2", "open the PR")]
@@ -358,11 +415,33 @@ class OmhTodoOnlyFieldsTest(_NativeTodoHomeTest):
         )
         self.assertEqual((directive or {}).get("action"), "approve")
 
-    def test_an_accepted_plan_is_replaced_and_its_acceptance_does_not_transfer(self):
+    def test_an_open_accepted_plan_keeps_its_record_for_the_team_lane(self):
+        # `omh_team` binds its lanes to this session's plan with
+        # plan_stage=accepted and its `check:` items (src/workflows/team.py),
+        # so a todo_list write must not replace it while it is open.
         _ = self.omh_todo(
             {
                 "action": "set",
-                "items": [{"text": "options and tradeoffs", "state": "done"}, {"text": "go", "state": "active"}],
+                "items": [
+                    {"text": "options and tradeoffs", "state": "done"},
+                    {"text": "lane a check: `make test`", "state": "active"},
+                ],
+                "plan_stage": PLAN_STAGE_ACCEPTED,
+            }
+        )
+        before = self.stored()
+
+        self.assertEqual(self.project([native("1", "write the code", "in_progress")]), "held_by_omh_todo")
+        self.write_native([native("1", "write the code", "in_progress")])
+
+        self.assertEqual(self.stored(), before)
+        self.assertEqual(self.todo()["plan_stage"], PLAN_STAGE_ACCEPTED)
+
+    def test_a_finished_accepted_plan_is_replaced_and_its_acceptance_does_not_transfer(self):
+        _ = self.omh_todo(
+            {
+                "action": "set",
+                "items": [{"text": "options and tradeoffs", "state": "done"}, {"text": "go", "state": "done"}],
                 "plan_stage": PLAN_STAGE_ACCEPTED,
             }
         )
