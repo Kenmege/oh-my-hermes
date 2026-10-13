@@ -44,12 +44,17 @@ A frame counts only as the template writes it: the turn's first line is the
 frame line (or, where the template continues it with a tick or an interval,
 starts with it and closes with `]`), and the next non-blank line opens with
 the template's next fixed text. `[/initiate-setup] is not working` and
-`[/loop wakeup #3] what does this mean?` are a person writing. On a messaging
-gateway Hermes may put its own material before the frame
+`[/loop wakeup #3] what does this mean?` are a person writing. A heartbeat's
+next line is the person's own recurring instruction, so a person who types
+under a pasted heartbeat frame cannot be told from the host there. On a
+messaging gateway Hermes may put its own material before the frame
 (`gateway/run_inbound.py`, modelled in `jev_consent`): a Discord trigger note
 or a reply pointer, each closed by `]` and a blank line, channel-history
 backfill ending in `[New message]`, and a `[<name>] ` sender prefix in a
-shared session. Those are removed before the frame is read.
+shared session. Those are removed before the frame, and before OMH's own loop
+forms, are read. A reply pointer whose quoted text itself holds `]` and a
+blank line is cut there instead; the turn then reads as a person's, which
+routes as before this module existed.
 
 A loop on a timer. "every 5 minutes", "5분마다", or `/loop 5m ...` asks for a
 check repeated on a cadence, which is Hermes' native `/loop` inside the
@@ -101,7 +106,8 @@ HOST_COMMAND_TURN_FRAMES = (
         "[/learn] The user wants you to learn a reusable skill from the request below, and save it.",
         "THE REQUEST:",
     ),
-    HostFrame("[/initiate-setup]"),
+    # The template's body is a SKILL.md file, which opens with its frontmatter.
+    HostFrame("[/initiate-setup]", "---"),
 )
 
 # Set on the route hint payload when the hint table read the message as a
@@ -109,12 +115,15 @@ HOST_COMMAND_TURN_FRAMES = (
 # the catalog on its own, leaves the goal loop off on the same verdict.
 NATIVE_LOOP_CADENCE_HINT_KEY = "native_loop_cadence"
 
-_LOOP_CADENCE_UNITS = frozenset({"second", "seconds", "secs", "minute", "minutes", "mins", "hour", "hours"})
+_LOOP_CADENCE_UNITS = frozenset(
+    {"second", "seconds", "sec", "secs", "minute", "minutes", "min", "mins", "hour", "hours", "hr", "hrs"}
+)
 _LOOP_CADENCE_PHRASES = ("초마다", "분마다", "시간마다", "매분", "매시간", "주기적으로")
 _OMH_LOOP_INVOCATION_PREFIXES = ("./loop", "$loop", "omh loop", "omh 루프")
-# The skill's own name and its older `omh-` label, word-bounded, wherever
-# they appear ("use the ulw-loop skill every 2 hours", "/ulw-loop ...").
-_OMH_LOOP_SKILL_NAME = re.compile(r"(?<![\w-])(?:ulw|omh)-loop(?![\w-])")
+# The skill's own name and its older `omh-` label, wherever they appear
+# ("use the ulw-loop skill every 2 hours", "/ulw-loop ...", "ulw-loop로"). The
+# boundary is Latin only, so a Korean particle after the name keeps it.
+_OMH_LOOP_SKILL_NAME = re.compile(r"(?<![0-9a-z_-])(?:ulw|omh)-loop(?![0-9a-z_-])")
 _WORD = re.compile(r"[0-9a-z]+")
 # `_INTERVAL_TOKEN_RE` in `hermes_cli/loops.py`: hours, then minutes, then
 # seconds, at least one, digits first.
@@ -146,19 +155,25 @@ def _opens_with_frame(text: str) -> bool:
     return False
 
 
-def host_command_turn(message: object) -> bool:
-    """Whether Hermes opened this turn from one of its own session-command templates."""
-    if not isinstance(message, str):
-        return False
-    text = _fold(message)
+def _after_gateway_material(text: str) -> str:
+    """The folded text after the backfill and host blocks a gateway prepends; a block
+    that never closes is left in place, so nothing after it reads as the turn's start."""
     if _FOLDED_BACKFILL_SEPARATOR in text:
         text = text.rsplit(_FOLDED_BACKFILL_SEPARATOR, 1)[1]
     text = text.lstrip()
     while text.startswith(_FOLDED_HOST_BLOCK_OPENERS):
         end = text.find(_HOST_BLOCK_END)
         if end == -1:
-            return False
+            break
         text = text[end + len(_HOST_BLOCK_END):].lstrip()
+    return text
+
+
+def host_command_turn(message: object) -> bool:
+    """Whether Hermes opened this turn from one of its own session-command templates."""
+    if not isinstance(message, str):
+        return False
+    text = _after_gateway_material(_fold(message))
     if _opens_with_frame(text):
         return True
     sender = _SENDER_PREFIX.match(text)
@@ -184,9 +199,18 @@ def native_loop_cadence(text: str) -> bool:
     with its own loop and goal signals.
     """
     folded = _fold(text).strip()
-    if folded.startswith(_OMH_LOOP_INVOCATION_PREFIXES) or _OMH_LOOP_SKILL_NAME.search(folded):
+    # The name first, on the whole text, so a bracketed `[ulw-loop]` that the
+    # sender-prefix strip below would take for a display name still counts.
+    if _OMH_LOOP_SKILL_NAME.search(folded):
         return False
-    leading = folded.split(maxsplit=2)
+    # The leading forms are read where the person's own words start.
+    lead = _after_gateway_material(folded)
+    sender = _SENDER_PREFIX.match(lead)
+    if sender:
+        lead = lead[sender.end():]
+    if lead.startswith(_OMH_LOOP_INVOCATION_PREFIXES):
+        return False
+    leading = lead.split(maxsplit=2)
     # The native command's own syntax: `/loop [interval] <prompt>`.
     if len(leading) > 1 and leading[0] in ("loop", "/loop") and _interval_term(leading[1]):
         return True

@@ -7520,7 +7520,7 @@ def _direct_workflow_invocation_hint(
 # and goal words the router's loop guard reads (`_loop_goal_guard_applies`),
 # so the two surfaces draw the same line.
 _BARE_LOOP_PHRASES = frozenset({"/loop", "run a loop", "run loop", "start a loop", "start loop", "keep looping", "루프"})
-_LOOP_GOAL_WORDS = ("목표 루프", "improve", "friction", "first-run", "stars", "adoption")
+_LOOP_GOAL_WORDS = ("loop skill", "목표 루프", "improve", "friction", "first-run", "stars", "adoption")
 
 
 def _native_loop_cadence_only(cadence_text: str, goal_text: str) -> bool:

@@ -4173,8 +4173,8 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase(
         "hermes-initiate-setup-turn-is-host-owned",
         "A Hermes /initiate-setup turn is not routed",
-        "[/initiate-setup]\n\nGuide the user through first-run setup: pick a model provider, connect "
-        "accounts, and install plugins.",
+        "[/initiate-setup]\n\n---\nname: initiate-setup\ndescription: Run the first-run setup chat.\n---\n\n"
+        "Guide the user through first-run setup: pick a model provider, connect accounts, and install plugins.",
         "answer_directly",
         "direct_answer",
         "toolbelt-readiness",
@@ -4216,6 +4216,24 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "native-loop-compound-interval-is-not-the-goal-loop",
         "The native /loop syntax with a compound interval is not the goal loop",
         "/loop 1h30m check whether the nightly build passed",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    # A timer spelled with a short unit is a timer, and a code loop on a timer
+    # is a question about that loop; both were the goal loop before.
+    RoutingPrecisionCase(
+        "loop-every-5-min-is-native-loop",
+        "A loop on a timer written with a short unit is Hermes' /loop",
+        "loop every 5 min check CI",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
+    RoutingPrecisionCase(
+        "bash-while-loop-on-a-timer-is-not-the-goal-loop",
+        "A bash while loop on a timer is a code question, not the goal loop",
+        "write a while loop in bash that checks a URL every 10 seconds",
         "answer_directly",
         "direct_answer",
         "loop",
@@ -11098,6 +11116,44 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "run-ulw-loop-on-a-timer-keeps-loop",
         "Running ulw-loop on a timer stays the goal loop",
         "run ulw-loop every hour on the onboarding docs",
+        "dispatch",
+        "loop",
+        "prepare_scheduled_ops_blueprint",
+        "loop",
+    ),
+    # The sentence that invokes the skill keeps it on a timer, and so do OMH's
+    # own forms behind a shared session's sender prefix.
+    RoutingInterventionCase(
+        "invoked-ulw-loop-skill-on-a-timer-keeps-loop",
+        "Invoking the ulw-loop skill on a timer stays the goal loop",
+        "use the ulw-loop skill every 2 hours to improve the README",
+        "dispatch",
+        "loop",
+        "choose_permission_profile",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "invoked-loop-skill-on-a-timer-keeps-loop",
+        "Invoking the loop skill by its catalog name on a timer stays the goal loop",
+        "use the loop skill every 2 hours to improve the README",
+        "dispatch",
+        "loop",
+        "choose_permission_profile",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "korean-invoked-ulw-loop-skill-on-a-timer-keeps-loop",
+        "Invoking ulw-loop in Korean on a timer stays the goal loop",
+        "ulw-loop 스킬로 1시간마다 README 개선해줘",
+        "dispatch",
+        "loop",
+        "choose_permission_profile",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "dollar-loop-behind-a-sender-prefix-keeps-loop",
+        "OMH's $loop form behind a shared session's sender prefix stays the goal loop",
+        "[alice] $loop every hour check CI",
         "dispatch",
         "loop",
         "prepare_scheduled_ops_blueprint",

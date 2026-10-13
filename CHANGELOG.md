@@ -23,10 +23,14 @@ All notable changes will be documented here.
   5 minutes and check whether CI is green", `5분마다 … 루프 돌려줘`,
   `/loop 5m …`) no longer dispatches the goal loop or draws the `ulw-loop`
   route hint or candidate line: the router answers directly and names the
-  `/loop` command (compound intervals such as `/loop 1h30m` included), while
-  `./loop`, `$loop`, `omh loop`, the skill's own name `ulw-loop`, a named goal
-  loop ("goal loop", "목표 루프", "계속 개선"), and a timed request that carries
-  a product or star goal keep the goal loop. The turns Hermes
+  `/loop` command (compound intervals such as `/loop 1h30m` and short units
+  such as `5 min` included); a for, while, event, or media loop on a timer is
+  answered directly without that advice. `./loop`, `$loop`, and `omh loop`
+  (also behind a messaging gateway's sender prefix or trigger note), the
+  skill's own name `ulw-loop` and the sentence that invokes the skill, a named
+  goal loop ("goal loop", "목표 루프", "계속 개선"), and a timed request that
+  carries a product or star goal are never read as Hermes' timer and route as
+  they did before. The turns Hermes
   writes for its own session commands are no longer routed at all: `/plan`,
   `/loop` wakeups, `/goal` continuations (with a completion contract or
   `/subgoal` criteria, after a failed quality gate, and the kick that stands
@@ -34,8 +38,11 @@ All notable changes will be documented here.
   `/learn`, and `/initiate-setup`, each recognised by its template's opening
   line and the fixed text that follows it, also behind the sender prefix,
   Discord trigger note, reply pointer, or channel backfill a messaging gateway
-  puts before it; a person who pastes a frame and keeps typing is still read
-  as a person. The CLI and the TUI give none of these turns a `display_kind`,
+  puts before it. A frame followed by the person's own words on the same
+  line, or by anything other than the text its template writes next, is still
+  read as a person; a heartbeat's next line is the person's own recurring
+  instruction, so typing under a pasted heartbeat frame cannot be told apart.
+  The CLI and the TUI give none of these turns a `display_kind`,
   and the gateway stamps only its `/loop` wakeups and, since 0.21.4, its
   heartbeats. The router and the chat wrapper answer them directly, and the
   plugin's per-turn hook renders no route hint, vocabulary match, or candidate

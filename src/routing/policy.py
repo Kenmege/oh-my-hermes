@@ -7472,8 +7472,35 @@ def _durable_research_goal_guard_applies(normalized_query: str, query_tokens: se
 # "loop", "루프", or "반복해서" names that timer rather than OMH's long-horizon
 # goal loop, so it stops counting as an explicit loop in the guard below. A
 # name for the goal loop itself ("goal loop", "목표 루프", "loop engineering",
-# "keep improving") still counts whatever timer sits beside it, as do a
-# product or north-star goal and OMH's own invocation forms.
+# "keep improving", "the loop skill") still counts whatever timer sits beside
+# it, as do a product or north-star goal and OMH's own invocation forms.
+#
+# A programming or media loop on a timer ("a for loop that sleeps every 5
+# seconds", "the music loop restarts every 30 seconds") is not the goal loop
+# either, but nobody asked the agent to repeat a check, so its direct answer
+# carries no `/loop` advice.
+_CONSTRUCT_LOOP_PHRASES = (
+    "for loop",
+    "while loop",
+    "event loop",
+    "bash loop",
+    "shell loop",
+    "loop in python",
+    "loop in bash",
+    "music loop",
+    "audio loop",
+    "video loop",
+    "game loop",
+    "for 루프",
+    "while 루프",
+    "루프문",
+    "반복문",
+)
+
+
+def loop_construct_named(message: str) -> bool:
+    """Whether the loop in the message is a programming or media construct."""
+    return _contains_phrase(normalized_phrase(message), _CONSTRUCT_LOOP_PHRASES)
 
 
 def native_loop_cadence_request(message: str) -> bool:
@@ -7499,7 +7526,7 @@ def host_owned_command_turn(message: str) -> bool:
 def _loop_goal_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     named_loop = _contains_phrase(
         normalized_query,
-        ("loopable", "loop engineering", "goal loop", "목표 루프", "계속 개선", "계속해서 개선"),
+        ("loopable", "loop engineering", "goal loop", "loop skill", "목표 루프", "계속 개선", "계속해서 개선"),
     )
     bare_loop = "loop" in query_tokens or _contains_phrase(normalized_query, ("루프", "반복해서"))
     explicit_loop = named_loop or (bare_loop and not native_loop_cadence(normalized_query))

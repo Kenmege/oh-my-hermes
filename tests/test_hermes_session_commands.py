@@ -27,6 +27,7 @@ from omh.plugin_bundle.omh.hermes_session_commands import (
 from omh.plugin_bundle.omh.skill_shortlist import skill_candidates_for_turn
 from omh.routing.chat import (
     HOST_COMMAND_TURN_REASON,
+    LOOP_CONSTRUCT_REASON,
     NATIVE_LOOP_CADENCE_REASON,
     route_chat_message,
 )
@@ -81,6 +82,7 @@ HOST_TURNS = {
     ),
     "initiate setup": (
         "[/initiate-setup]\n\n",
+        "---\nname: initiate-setup\ndescription: Run the first-run setup chat.\n---\n\n"
         "Guide the user through first-run setup: pick a model provider, connect accounts, and install plugins.",
     ),
 }
@@ -100,6 +102,9 @@ _DISCORD_NOTE = "[Triggering message id: `1234` — use as `message_id` for repl
 _REPLY_POINTER = '[Replying to bob: "can you plan it"]\n\n'
 _BACKFILL = "bob: the release is friday\n\n[New message]\n"
 _SENDER = "[alice] "
+# The order v2026.9.7 assembles them in: the reply pointer outermost, then the
+# Discord trigger note, then the sender-prefixed text.
+_FLOOR_ORDER = _REPLY_POINTER + _DISCORD_NOTE + _SENDER
 
 # Loops on a timer that name OMH's goal loop -- by a goal-loop phrase or by the
 # skill's own name -- and stay with it, and loops on a timer that name nothing
@@ -115,6 +120,17 @@ _GOAL_LOOP_ON_A_TIMER = (
     "/ulw-loop every 5m check CI",
     "./loop every 5 minutes check whether CI is green",
     "run a loop every 30 minutes to improve first-run experience until install friction is lower",
+    # The sentence that invokes the skill keeps it, however the skill is named.
+    "use the ulw-loop skill every 2 hours to improve the README",
+    "use the ulw-loop skill every 2 hours to fix src/app.py",
+    "please use the ulw-loop skill every 2 hours on the README",
+    "use the omh-loop skill every 2 hours to improve the README",
+    "use the loop skill every 2 hours to improve the README",
+    "use the loop skill every 2 hours to check whether CI is green",
+    "ulw-loop 스킬로 1시간마다 README 개선해줘",
+    # OMH's own forms behind a shared session's sender prefix.
+    "[alice] $loop every hour check CI",
+    "[alice] omh loop every 30 minutes check CI",
 )
 _NATIVE_LOOP_ON_A_TIMER = (
     "loop every 5 minutes and check whether CI is green",
@@ -123,6 +139,23 @@ _NATIVE_LOOP_ON_A_TIMER = (
     "loop 10m check the queue depth",
     "5분마다 CI가 초록색인지 확인하는 루프 돌려줘",
     "주기적으로 루프 돌면서 큐 상태 봐줘",
+    "loop every 5 min check CI",
+    "loop every 2 hrs check CI",
+    "[alice] loop every 5 minutes and check whether CI is green",
+)
+# OMH's own forms on a timer whose route is not the goal loop (on 8616ce7d0
+# too): what matters is that no surface reads them as Hermes' `/loop`.
+_OMH_FORMS_ELSEWHERE = (
+    "[alice] ./loop every 5 minutes check CI",
+    _DISCORD_NOTE + "[alice] ./loop every 5 minutes check CI",
+    "1시간마다 ulw-loop로 README 개선해줘",
+    "[ulw-loop] every 5 minutes check CI",
+)
+# Loops on a timer that are code or media, not a request to repeat a check.
+_LOOP_CONSTRUCTS_ON_A_TIMER = (
+    "write a while loop in bash that checks a URL every 10 seconds",
+    "the music loop restarts every 30 seconds in my game, how do I fix it?",
+    "파이썬 for 루프로 5초마다 로그 출력하는 코드 짜줘",
 )
 
 
@@ -153,6 +186,7 @@ class HostCommandTurnTest(unittest.TestCase):
             ("backfill", _BACKFILL),
             ("discord note and sender", _DISCORD_NOTE + _SENDER),
             ("reply pointer and sender", _REPLY_POINTER + _SENDER),
+            ("floor order", _FLOOR_ORDER),
         ):
             for turn_name, turn in (("plan", _PLAN), ("goal", _GOAL)):
                 with self.subTest(prefix=name, turn=turn_name):
@@ -175,12 +209,19 @@ class HostCommandTurnTest(unittest.TestCase):
             "[Goal set] I want to build a todo app in React",
             "[Heartbeat — recurring instruction, fires every 10m] why do I keep seeing this?",
             "[/plan — plan mode]\n\nwhat is this mode for?",
+            "[/initiate-setup]\nwhy is this here?",
         ):
             with self.subTest(message=message):
                 self.assertFalse(host_command_turn(message))
         for value in (None, 7, ["[/loop wakeup #1]"]):
             with self.subTest(value=value):
                 self.assertFalse(host_command_turn(value))
+
+    def test_a_heartbeat_frame_cannot_tell_who_typed_the_next_line(self):
+        # The heartbeat's next line is the person's own recurring instruction,
+        # so a person typing under a pasted frame reads as the host. Pinned so
+        # the limit stays stated rather than discovered.
+        self.assertTrue(host_command_turn("[Heartbeat — recurring instruction, fires every 10m]\nwhy do I see this?"))
 
 
 class NativeLoopCadenceTest(unittest.TestCase):
@@ -194,6 +235,10 @@ class NativeLoopCadenceTest(unittest.TestCase):
             "loop 30s ping the health endpoint",
             "5분마다 CI가 초록색인지 확인하는 루프 돌려줘",
             "매시간 루프로 큐 상태 봐줘",
+            "loop every 5 min check CI",
+            "loop every 2 hrs check CI",
+            "loop every 30 sec check the queue",
+            "[alice] loop every 5 minutes and check whether CI is green",
         ):
             with self.subTest(text=text):
                 self.assertTrue(native_loop_cadence(text))
@@ -206,6 +251,16 @@ class NativeLoopCadenceTest(unittest.TestCase):
             "use the ulw-loop skill every 2 hours to check whether CI is green",
             "run omh-loop every hour on the docs",
             "/ulw-loop every 5m check CI",
+            "ulw-loop 스킬로 1시간마다 README 개선해줘",
+            # A Korean particle after the name keeps the name.
+            "1시간마다 ulw-loop로 README 개선해줘",
+            # Behind the gateway's sender prefix and trigger note.
+            "[alice] $loop every hour check CI",
+            "[alice] ./loop every 5 minutes check CI",
+            "[alice] omh loop every 30 minutes check CI",
+            _DISCORD_NOTE + "[alice] ./loop every 5 minutes check CI",
+            # A bracketed name is still the name, not a sender prefix.
+            "[ulw-loop] every 5 minutes check CI",
             "loop until the tests pass",
             "/loop fix the flaky site-two integration test",
             "grow to 5m users",
@@ -294,6 +349,15 @@ class RouterTest(unittest.TestCase):
             with self.subTest(turn=name):
                 self.assertEqual(self._route(HOST_TURNS[name][1])["action"], "dispatch")
 
+    def test_a_loop_construct_on_a_timer_gets_no_loop_advice(self):
+        for message in _LOOP_CONSTRUCTS_ON_A_TIMER:
+            with self.subTest(message=message):
+                route = self._route(message)
+                self.assertEqual(route["action"], "fallback")
+                self.assertEqual(route["reason"], LOOP_CONSTRUCT_REASON)
+                self.assertEqual(route["clarification"], self._DIRECT)
+        self.assertNotIn("/loop", LOOP_CONSTRUCT_REASON)
+
     def test_a_loop_on_a_timer_is_answered_with_the_native_command(self):
         for message in _NATIVE_LOOP_ON_A_TIMER:
             with self.subTest(message=message):
@@ -312,11 +376,23 @@ class RouterTest(unittest.TestCase):
     def test_the_router_and_the_hint_reach_one_timer_verdict(self):
         # The router answers a timed loop directly exactly when the hint drops
         # the goal loop; neither surface may keep it while the other lets go.
-        for message in (*_GOAL_LOOP_ON_A_TIMER, *_NATIVE_LOOP_ON_A_TIMER, "check the deploy every 5 minutes", "keep looping every 2 hours on the release checklist"):
+        for message in (
+            *_GOAL_LOOP_ON_A_TIMER,
+            *_NATIVE_LOOP_ON_A_TIMER,
+            *_OMH_FORMS_ELSEWHERE,
+            *_LOOP_CONSTRUCTS_ON_A_TIMER,
+            "check the deploy every 5 minutes",
+            "keep looping every 2 hours on the release checklist",
+        ):
             with self.subTest(message=message):
-                router = self._route(message)["reason"] == NATIVE_LOOP_CADENCE_REASON
+                router = self._route(message)["reason"] in (NATIVE_LOOP_CADENCE_REASON, LOOP_CONSTRUCT_REASON)
                 hint = awareness_route_hint(message).get(NATIVE_LOOP_CADENCE_HINT_KEY) is True
                 self.assertEqual(router, hint)
+        for message in _OMH_FORMS_ELSEWHERE:
+            with self.subTest(message=message):
+                self.assertNotIn(
+                    self._route(message)["reason"], (NATIVE_LOOP_CADENCE_REASON, LOOP_CONSTRUCT_REASON)
+                )
 
 
 if __name__ == "__main__":  # pragma: no cover - module entry point

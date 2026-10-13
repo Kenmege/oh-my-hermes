@@ -67,6 +67,7 @@ from .policy import (
     explicit_skill_invocation as explicit_skill_name,
     host_owned_command_turn,
     is_ambiguous_scores,
+    loop_construct_named,
     meets_confidence_threshold,
     native_loop_cadence,
     native_loop_cadence_request,
@@ -119,8 +120,9 @@ FILE_LOOKUP_REASON = (
 DIRECT_ANSWER_REASON = (
     "Plain user question; answer directly in chat instead of opening an OMH workflow or picker."
 )
-# Two turns Hermes owns, answered in chat without a workflow. Each reason keeps
-# the direct-answer wording the wrapper reads (`_is_direct_answer_fallback`).
+# A turn Hermes owns, and a loop on a timer, answered in chat without a
+# workflow. Each reason keeps the direct-answer wording the wrapper reads
+# (`_is_direct_answer_fallback`).
 HOST_COMMAND_TURN_REASON = (
     "Hermes wrote this turn from its own session command (/plan, /loop, /goal, /heartbeat, /learn, or a "
     "goal-mode kanban card), and its text is the host's instruction for the turn; answer directly by "
@@ -129,6 +131,11 @@ HOST_COMMAND_TURN_REASON = (
 NATIVE_LOOP_CADENCE_REASON = (
     "A check repeated on a timer is Hermes' native /loop, which the user starts (for example "
     "/loop 5m <the check>); answer directly with that command instead of opening an OMH workflow or goal loop."
+)
+# The same timer on a programming or media loop: a question, not a request to repeat a check.
+LOOP_CONSTRUCT_REASON = (
+    "A programming or media loop on a timer is a question about that loop, not a request to repeat a "
+    "check; answer directly instead of opening an OMH workflow or goal loop."
 )
 WEAK_DISPATCH_EVIDENCE_REASON = (
     "The best match scored high on shared everyday words or a guard boost, not on its own trigger "
@@ -2019,7 +2026,14 @@ def _with_canonical_display_names(routing_message: str) -> str:
     # every hour" reads as Hermes' `/loop` timer (`native_loop_cadence`). There
     # the name folds to `loop engineering`, a catalog phrase of the goal loop
     # that the loop guard counts as naming it, whatever timer sits beside it.
-    if native_loop_cadence(canonical) and not native_loop_cadence(routing_message):
+    # A sentence that already invokes the skill ("use the ulw-loop skill every
+    # 2 hours to improve the README") keeps the catalog key, which that
+    # invocation needs to resolve.
+    if (
+        native_loop_cadence(canonical)
+        and not native_loop_cadence(routing_message)
+        and explicit_skill_invocation(canonical) != "loop"
+    ):
         canonical = canonical_display_mentions(
             routing_message, {**_canonical_skill_by_display_name(), **_GOAL_LOOP_DISPLAY_FOLD}
         )
@@ -2037,13 +2051,15 @@ def _route_chat_message_cached(
         return _direct_answer_decision(
             message, source=source, min_confidence=min_confidence, reason=HOST_COMMAND_TURN_REASON
         ).to_dict()
-    routing_message = _with_canonical_display_names(scrub_diagnostic_status_text(executable_routing_text(message)))
+    pre_fold = scrub_diagnostic_status_text(executable_routing_text(message))
+    routing_message = _with_canonical_display_names(pre_fold)
     if not routing_message.strip():
         return _direct_answer_decision(message, source=source, min_confidence=min_confidence).to_dict()
-    if native_loop_cadence_request(routing_message):
-        return _direct_answer_decision(
-            message, source=source, min_confidence=min_confidence, reason=NATIVE_LOOP_CADENCE_REASON
-        ).to_dict()
+    # The timer is also read before display names fold to catalog keys: an
+    # invoked `ulw-loop` keeps its name there and is OMH's goal loop.
+    if native_loop_cadence(pre_fold) and native_loop_cadence_request(routing_message):
+        reason = LOOP_CONSTRUCT_REASON if loop_construct_named(routing_message) else NATIVE_LOOP_CADENCE_REASON
+        return _direct_answer_decision(message, source=source, min_confidence=min_confidence, reason=reason).to_dict()
     # Built once: the fast paths and the scorer below read its stages instead
     # of each re-deriving the prep chain from `routing_message`.
     query = RoutingQuery.from_message(routing_message)
@@ -7665,7 +7681,7 @@ def _is_file_lookup_reason(reason: str) -> bool:
 
 
 def _is_direct_answer_reason(reason: str) -> bool:
-    return reason in (DIRECT_ANSWER_REASON, HOST_COMMAND_TURN_REASON, NATIVE_LOOP_CADENCE_REASON)
+    return reason in (DIRECT_ANSWER_REASON, HOST_COMMAND_TURN_REASON, NATIVE_LOOP_CADENCE_REASON, LOOP_CONSTRUCT_REASON)
 
 
 def _is_heavy_lane_vagueness_reason(reason: str) -> bool:

@@ -497,7 +497,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # trigger note, which still dispatched ultrawork and
             # github-event-ops (3); and the native `/loop 1h30m` syntax, which
             # the single-unit interval check missed (1).
-            expected=506,
+            # Its second review adds two, each answered directly: a loop on a
+            # timer written with a short unit (`5 min`), and a bash while loop
+            # on a timer, a code question that no longer gets `/loop` advice;
+            # both dispatched the goal loop before.
+            expected=508,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -634,7 +638,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Its review adds four more the timer had taken away: a named goal
             # loop and a Korean keep-improving loop on a timer, and the
             # `ulw-loop` skill named or run on a timer.
-            expected=701,
+            # The second review adds four the timer still took: the sentence
+            # that invokes the skill on a timer, by `ulw-loop`, by the catalog
+            # name `loop`, and in Korean, and OMH's `$loop` behind a shared
+            # session's sender prefix.
+            expected=705,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
