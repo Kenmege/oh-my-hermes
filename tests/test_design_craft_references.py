@@ -15,6 +15,7 @@ because the nearest upstream is Sustainable-Use-licensed and OMH is MIT.
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import unittest
 
 from omh.skill_pack import builtin_skill_reference_templates, builtin_skill_templates
@@ -131,6 +132,24 @@ class DesignSystemContractTests(unittest.TestCase):
         front_matter = _unwrapped(content.split("## Token front matter", 1)[1].split("## Body sections", 1)[0])
         for token in ("`name:`", "`colors:`", "`primary`", "`omitted:`", "`{colors.primary}`", "`button-primary-hover`"):
             self.assertIn(token, front_matter, token)
+        unwrapped = _unwrapped(body)
+        # The format matches heading text exactly: a numbered or marked
+        # heading is a section it does not know, and a repeated one is
+        # rejected.
+        self.assertIn(
+            "Write each heading as the bare name spelled exactly as listed, with no number and no *OMH* marker",
+            unwrapped,
+        )
+        self.assertIn("so `## 1. Overview` is a section it does not know", unwrapped)
+        self.assertIn("Use each heading once: the format tells a consumer to reject a file that repeats one", unwrapped)
+        # Only `surface` / `on-surface` are the format's recommended names;
+        # `X` / `on-X` is OMH generalizing that pattern.
+        self.assertIn(
+            "The front matter spells the pair `X` and `on-X` (`primary` / `on-primary`), "
+            "the pattern of the format's recommended `surface` / `on-surface` names",
+            unwrapped,
+        )
+        self.assertIn("for `ring` and the `chart-N` set that warning is expected, not a contract failure", unwrapped)
 
     def test_the_earlier_numbered_layout_stays_valid_until_the_user_asks(self) -> None:
         # Migration default: a file already written in the 0-8 layout is a
@@ -152,13 +171,31 @@ class DesignSystemContractTests(unittest.TestCase):
             self.assertIn(heading, legacy, heading)
         self.assertIn("still a valid contract and satisfies the gate", legacy)
         self.assertIn("Do not rewrite it into the format unasked", legacy)
-        self.assertIn("they are not contract failures", legacy)
         self.assertIn("Convert only when the user asks", legacy)
         self.assertIn("A conversion moves decisions and makes none", legacy)
+        # Sibling references speak the format's terms; a legacy file takes
+        # them through the conversion map read in reverse, without front
+        # matter, or the legacy rule would contradict them.
+        self.assertIn(
+            "In a legacy file, write each into its counterpart by reading the conversion map below in reverse, "
+            "as prose and without adding front matter",
+            legacy,
+        )
+        for mapping in (
+            "Overview, Signature Element, and Do's and Don'ts into Atmosphere & Identity",
+            "Colors, Shapes, `colors:`, and `rounded:` into Color",
+            "Layout and `spacing:` into Spacing & Layout",
+            "Elevation & Depth into Depth & Surface",
+        ):
+            self.assertIn(mapping, legacy, mapping)
+        # A file with no YAML gets one no-YAML warning and no other check.
+        self.assertIn("the linter reports a single no-YAML warning and runs no other check", legacy)
+        self.assertIn("That warning is not a contract failure", legacy)
 
     def test_lint_is_evidence_only_from_a_run_and_file_mechanics_defer_to_design_md(self) -> None:
         content = _unwrapped(_reference("frontend", "references/design-system-contract.md"))
-        self.assertIn("Hermes' bundled `design-md` skill is available", content)
+        self.assertIn("For a file in the format, when Hermes' bundled `design-md` skill is available", content)
+        self.assertIn("A file in the earlier OMH layout is not handed to it", content)
         self.assertIn("`npx -y @google/design.md lint DESIGN.md`", content)
         self.assertIn("the lint status is `not_observed`", content)
         self.assertIn("OMH itself runs no package and makes no network call", content)
@@ -166,7 +203,7 @@ class DesignSystemContractTests(unittest.TestCase):
         self.assertIn("google-labs-code/design.md@", content)
         self.assertIn("NousResearch/hermes-agent@", content)
 
-    def test_section_one_carries_the_taste_direction_the_rubric_judges_by(self) -> None:
+    def test_the_overview_carries_the_taste_direction_the_rubric_judges_by(self) -> None:
         # The rubric judges inside the claimed direction, so the contract
         # must have a place to declare it — including borrowed elements.
         content = _reference("frontend", "references/design-system-contract.md")
@@ -178,6 +215,23 @@ class DesignSystemContractTests(unittest.TestCase):
         self.assertIn("CJK", content)
         self.assertIn("word-break", content)
         self.assertIn("truncation", content)
+
+    def test_no_frontend_text_points_at_a_numbered_design_md_section(self) -> None:
+        # Section numbers named the earlier 0-8 layout and mean something
+        # else in the format, so every pointer names the section instead.
+        # The subject is every packaged `frontend` text, so a new reference
+        # joins the guard without being listed.
+        numbered = re.compile(r"DESIGN\.md`?\s+sections?\s+\d")
+        texts = [
+            (template.relative_path, template.content)
+            for template in builtin_skill_reference_templates()
+            if template.skill_name == "frontend"
+        ]
+        texts.append(("SKILL.md", _body("frontend")))
+        self.assertGreater(len(texts), 1)
+        for name, content in texts:
+            with self.subTest(text=name):
+                self.assertIsNone(numbered.search(content))
 
 
 class TasteFoundationsTests(unittest.TestCase):
@@ -488,6 +542,7 @@ class SkillBodyPointerTests(unittest.TestCase):
         self.assertIn("A new DESIGN.md is Google's DESIGN.md format", body)
         self.assertIn("converted only when the user asks", body)
         self.assertIn("Hermes' bundled `design-md` skill is available", body)
+        self.assertIn("export a file in the format through it, never a file in the earlier layout", body)
         self.assertIn("lint is evidence only from a run that executed, otherwise `not_observed`", body)
 
     def test_frontend_body_carries_the_default_prior_and_the_override_test(self) -> None:

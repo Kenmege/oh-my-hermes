@@ -11,16 +11,19 @@ lacks, amend the contract before touching the code.
 
 `DESIGN.md` is also the file name of Google's open DESIGN.md format, and
 Hermes bundles a `design-md` skill for that format. Two shapes for one file
-would hand the model two contradicting instructions, so OMH keeps no shape
-of its own: a new contract is a DESIGN.md in that format which also carries
+would hand the model two contradicting instructions, so a new contract uses
+no shape of OMH's own: it is a DESIGN.md in that format which also carries
 OMH's extra sections. The format allows them, because a consumer keeps a
 heading it does not recognize instead of rejecting the file.
 
-- **File mechanics go to `design-md`.** When Hermes' bundled `design-md`
-  skill is available, load it to write the token block, lint the file, diff
-  two versions, or export Tailwind or DTCG tokens. This reference decides
-  what the contract has to settle and when it blocks code; it does not
-  restate the format's schema.
+- **File mechanics go to `design-md`.** For a file in the format, when
+  Hermes' bundled `design-md` skill is available, load it to write the token
+  block, lint the file, diff two versions, or export Tailwind or DTCG
+  tokens. A file in the earlier OMH layout is not handed to it: its
+  authoring adds front matter and reorders sections, which is the rewrite
+  the legacy rule below forbids. This reference decides what the contract
+  has to settle and when it blocks code; it does not restate the format's
+  schema.
 - **Lint counts only when it ran.** A lint result is observed contract
   evidence when Hermes, or the executor the user selected, ran
   `npx -y @google/design.md lint DESIGN.md` against the current file and
@@ -52,6 +55,11 @@ to reject a file that repeats one. Every section is written (the Research
 Log on greenfield builds), and an empty one states its decision ("no
 elevation system; flat surfaces only") — silence is not a decision.
 
+Write each heading as the bare name spelled exactly as listed, with no number
+and no *OMH* marker (`## Colors`, `## Do's and Don'ts`, `## Research Log`).
+The format matches heading text exactly, so `## 1. Overview` is a section it
+does not know, and the order check never sees it.
+
 1. **Overview** — the audience, three adjectives the surface must read as,
    and the chosen taste direction (primary, plus any deliberately borrowed
    elements with their reasons).
@@ -64,14 +72,18 @@ elevation system; flat surfaces only") — silence is not a decision.
    steps:
    - **Surface and on-surface pairs.** Every surface token has the text
      token that sits on it. The front matter spells the pair `X` and `on-X`
-     (`surface` / `on-surface`, `primary` / `on-primary`), the naming the
-     format recommends; in CSS, shadcn/ui names the same pair `X` and
-     `X-foreground` (`card` / `card-foreground`) and daisyUI names it `X`
-     and `X-content`. A component picks the pair, never a surface with an
-     unrelated text color, so contrast is checked once per pair instead of
-     once per component.
+     (`primary` / `on-primary`), the pattern of the format's recommended
+     `surface` / `on-surface` names; in CSS, shadcn/ui names the same pair
+     `X` and `X-foreground` (`card` / `card-foreground`) and daisyUI names
+     it `X` and `X-content`. A component picks the pair, never a surface
+     with an unrelated text color, so contrast is checked once per pair
+     instead of once per component.
    - **The focus ring is its own token** (`ring`), not the accent reused, so
-     focus stays visible on every surface the accent sits on.
+     focus stays visible on every surface the accent sits on. Once
+     `components:` exists, a color token no component references and outside
+     the families the linter exempts (`on-` partners and the Material color
+     families) draws an `orphaned-tokens` warning; for `ring` and the
+     `chart-N` set that warning is expected, not a contract failure.
    - **Themes redefine variables; components never branch.** A front-matter
      token holds one value, so it records the default theme, and the prose
      gives every other theme's values under the same token names. In CSS,
@@ -124,8 +136,16 @@ that layout is still a valid contract and satisfies the gate.
 
 - Read and follow it as written, and amend it in its own layout. Do not
   rewrite it into the format unasked.
-- Lint findings against it measure its distance from the format; they are
-  not contract failures.
+- Other references name the format's sections and token groups. In a legacy
+  file, write each into its counterpart by reading the conversion map below
+  in reverse, as prose and without adding front matter: Overview, Signature
+  Element, and Do's and Don'ts into Atmosphere & Identity; Colors, Shapes,
+  `colors:`, and `rounded:` into Color; Layout and `spacing:` into Spacing &
+  Layout; Elevation & Depth into Depth & Surface; `typography:` and
+  `components:` into Typography and Components.
+- Lint says nothing about it: with no front matter and no fenced YAML block,
+  the linter reports a single no-YAML warning and runs no other check. That
+  warning is not a contract failure.
 - Convert only when the user asks. Atmosphere & Identity splits into
   Overview and Signature Element; Color becomes Colors, its values move into
   `colors:`, and its radius knob moves to Shapes; Spacing & Layout becomes

@@ -19,12 +19,17 @@ All notable changes will be documented here.
   A `DESIGN.md` already written in the earlier numbered layout stays a valid
   contract: the skill follows and amends it in place and converts it only
   when the user asks, using a section mapping that moves decisions without
-  making new ones. Authoring, linting, diffing, and exporting the file go to
-  `design-md` when it is available, and a lint result counts as observed
-  contract evidence only when Hermes or the selected executor actually ran
-  `npx -y @google/design.md lint` on the current file; otherwise the lint
-  status is `not_observed`. OMH itself still runs no package and makes no
-  network call. The chart, motion, taste, and TUI references now name the
+  making new ones; content other references name in the format's terms is
+  written into the legacy file's counterpart section, without front matter.
+  Headings are the bare section names, unnumbered, since the format matches
+  heading text exactly. Authoring, linting, diffing, and exporting a file in
+  the format go to `design-md` when it is available (a legacy file is not
+  handed to it, since its authoring rewrites), and a lint result counts as
+  observed contract evidence only when Hermes or the selected executor
+  actually ran `npx -y @google/design.md lint` on the current file; otherwise
+  the lint status is `not_observed`. OMH itself still runs no package and
+  makes no network call. The chart-styling, component-registry-adoption (its
+  motion profiles), taste-foundations, and tui-craft references now name the
   section they mean instead of a section number, and `docs/SKILL-SOURCES.md`
   records both upstreams with closure receipts.
 
