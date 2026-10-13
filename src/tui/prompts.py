@@ -31,6 +31,8 @@ from .width import line_width, truncate_line, wrap_line
 APPROVAL_CHOICES = ("once", "session", "deny")
 _APPROVAL_LABELS = {"once": "allow once", "session": "allow this session", "deny": "deny"}
 _APPROVAL_KEYS = {"o": "once", "s": "session", "d": "deny", "n": "deny", "y": "once"}
+# The keys that pick a clarify choice. `str.isdigit` also admits "²" or "٣", which `int` rejects.
+CHOICE_DIGITS = "123456789"
 
 _DECLINE_NOTICES = {
     "vault.unlock_prompt": "Hermes asked to unlock a password vault. Vault prompts run in `hermes --tui`; declined.",
@@ -154,7 +156,7 @@ class PromptSlot:
             self.selected = (self.selected - 1) % len(choices)
         elif key.name == DOWN:
             self.selected = (self.selected + 1) % len(choices)
-        elif key.name == CHAR and not key.ctrl and not key.alt and key.char.isdigit():
+        elif key.name == CHAR and not key.ctrl and not key.alt and len(key.char) == 1 and key.char in CHOICE_DIGITS:
             index = int(key.char) - 1
             if 0 <= index < len(choices):
                 return self._record_answer(choices[index])
@@ -177,7 +179,7 @@ class PromptSlot:
         if max_rows <= 0:
             return []
         if self.method == "approval":
-            rows = self._approval_lines(width, theme)
+            rows = self._approval_lines(width, theme, max_rows)
         elif self.method == "clarify":
             rows = self._clarify_lines(width, theme)
         else:
@@ -187,14 +189,28 @@ class PromptSlot:
             rows = rows[:1] + rows[len(rows) - (max_rows - 1):] if max_rows > 1 else rows[:1]
         return [truncate_line(row, width) for row in rows]
 
-    def _approval_lines(self, width: int, theme: Theme) -> list[Line]:
+    def _approval_lines(self, width: int, theme: Theme, max_rows: int) -> list[Line]:
+        """Header, the command's FIRST rows, `… +K more lines` when cut, then the choices.
+
+        The beginning of a command is what says what it does, so a long one is
+        cut from the end. The choice row is kept whatever the budget; with a
+        single spare row that row shows the command's head, not the marker.
+        """
         description = str(self.params.get("description") or "dangerous command")
         command = str(self.params.get("command") or "")
-        rows: list[Line] = [(Span("⚠ Hermes asks to run ", theme.warn), Span(description, theme.warn))]
-        for wrapped in wrap_line((Span("  " + command, theme.text),), width) if command else []:
-            rows.append(wrapped)
-        rows.append(self._approval_choice_row(width, theme))
-        return rows
+        header: Line = (Span("⚠ Hermes asks to run ", theme.warn), Span(description, theme.warn))
+        choices = self._approval_choice_row(width, theme)
+        if max_rows <= 1:
+            return [choices]
+        command_rows = wrap_line((Span("  " + command, theme.text),), width) if command else []
+        room = max_rows - 2
+        if len(command_rows) > room:
+            kept = room - 1 if room >= 2 else room
+            hidden = len(command_rows) - kept
+            command_rows = command_rows[:kept]
+            if room >= 2:
+                command_rows.append((Span(f"  … +{hidden} more line{'s' if hidden != 1 else ''}", theme.dim),))
+        return [header, *command_rows, choices]
 
     def _approval_choice_row(self, width: int, theme: Theme) -> Line:
         """The choices on one row; short labels when the long ones would cut `deny` off the edge."""

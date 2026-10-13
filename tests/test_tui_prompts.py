@@ -83,6 +83,32 @@ class ApprovalTests(unittest.TestCase):
         self.assertIn("Hermes asks", text[0])
         self.assertIn("deny", text[1])
 
+    def test_a_long_command_shows_its_head_then_how_much_was_cut(self) -> None:
+        # The shape a live run cut wrong: a multi-line `python3 -c` script, tail shown, head lost.
+        command = 'python3 -c "\ndef is_prime(n):\n    if n < 2:\n        return False\n' + "    pass\n" * 8 + '"'
+        approval = slot("approval", {**APPROVAL, "command": command, "description": "script execution via -e/-c flag"})
+        rows = approval.lines(60, DEFAULT_THEME, max_rows=6)
+        text = ["".join(span.text for span in row) for row in rows]
+        total = command.count("\n") + 1
+        self.assertEqual(len(rows), 6)
+        self.assertIn("script execution", text[0])
+        self.assertEqual(text[1:4], ['  python3 -c "', "def is_prime(n):", "    if n < 2:"])
+        self.assertEqual(text[4], f"  … +{total - 3} more lines")
+        self.assertEqual(rows[4][0].style, DEFAULT_THEME.dim)
+        self.assertIn("deny", text[5])
+
+    def test_one_spare_row_shows_the_commands_first_row(self) -> None:
+        approval = slot("approval", {**APPROVAL, "command": "first line\nsecond line\nthird line"})
+        text = ["".join(span.text for span in row) for row in approval.lines(60, DEFAULT_THEME, max_rows=3)]
+        self.assertEqual(text[1], "  first line")
+        self.assertIn("deny", text[2])
+
+    def test_a_command_that_fits_is_shown_whole_with_no_marker(self) -> None:
+        approval = slot("approval", {**APPROVAL, "command": "one\ntwo"})
+        text = ["".join(span.text for span in row) for row in approval.lines(60, DEFAULT_THEME, max_rows=6)]
+        self.assertEqual(text[1:3], ["  one", "two"])
+        self.assertEqual(len(text), 4)
+        self.assertFalse(any("more line" in row for row in text))
 
     def test_deny_stays_visible_at_every_width(self) -> None:
         approval = slot("approval", APPROVAL)
@@ -113,6 +139,12 @@ class ClarifyTests(unittest.TestCase):
 
     def test_escape_cancels_with_no_answers(self) -> None:
         self.assertEqual(slot("clarify", CLARIFY).handle_key(Key(ESCAPE)).frame, {"result": {}})
+
+    def test_only_the_digits_one_to_nine_pick_a_choice(self) -> None:
+        for char in ("²", "٣", "0", "3", "١"):
+            with self.subTest(char=char):
+                self.assertIsNone(slot("clarify", CLARIFY).handle_key(Key(CHAR, char)))
+        self.assertEqual(slot("clarify", CLARIFY).handle_key(Key(CHAR, "1")).frame, {"result": {"answers": {"q0": "red (Recommended)"}}})
 
     def test_paste_does_nothing_on_its_own(self) -> None:
         self.assertIsNone(slot("clarify", CLARIFY).handle_key(Paste("blue")))
