@@ -547,13 +547,13 @@ class Transcript:
         """Ignored: it relays the assistant's own content, so it would repeat the answer as thought."""
 
     def _on_tool_generating(self, payload: dict[str, Any]) -> None:
-        name = _str(payload.get("name"))
+        name = _first_line(_str(payload.get("name")))
         if name:
             self._tool_group().tools.append(ToolRow(tool_id="", name=name))
 
     def _on_tool_start(self, payload: dict[str, Any]) -> None:
         tool_id = _str(payload.get("tool_id"))
-        name = _str(payload.get("name")) or "tool"
+        name = _first_line(_str(payload.get("name"))) or "tool"
         group = self._tool_group()
         row = _find_row(group, tool_id) or _drafted_row(group, name)
         if row is None:
@@ -572,7 +572,7 @@ class Transcript:
         group = self._tool_group()
         row = _find_row(group, tool_id)
         if row is None:
-            name = _str(payload.get("name")) or "tool"
+            name = _first_line(_str(payload.get("name"))) or "tool"
             row = ToolRow(tool_id=tool_id, name=name, args_summary=_args_summary(payload))
             group.tools.append(row)
         row.status = tool_result_status(payload.get("result"))

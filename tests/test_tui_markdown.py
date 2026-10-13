@@ -12,7 +12,7 @@ from dataclasses import replace
 import unicodedata
 import unittest
 
-from omh.tui.markdown import MarkdownState, render_line, render_lines, render_markdown
+from omh.tui.markdown import MarkdownState, clean_text, render_line, render_lines, render_markdown, strip_escapes
 from omh.tui.style import Line, Span
 from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.width import is_control, line_width
@@ -271,11 +271,66 @@ class MalformedInputTests(unittest.TestCase):
                     if width >= 20:
                         self.assertTrue(all(line_width(row) <= width for row in rows))
 
-    def test_escape_sequences_lose_their_escape_character(self) -> None:
-        self.assertEqual(texts(render("\x1b[2J\x1b[31mred\x07")), ["[2J[31mred"])
+    def test_escape_sequences_are_dropped_whole(self) -> None:
+        self.assertEqual(texts(render("\x1b[2J\x1b[31mred\x07")), ["red"])
 
     def test_tabs_expand_to_spaces(self) -> None:
         self.assertEqual(texts(render("\tx")), ["    x"])
+
+
+class EscapeSequenceTests(unittest.TestCase):
+    """Gateway text carries ANSI colour (Hermes renders inline diffs with SGR); none of it may reach a Line."""
+
+    CASES = (
+        ("\x1b[38;2;255;255;255;48;2;120;20;20m-old\x1b[0m", "-old"),
+        ("\x1b[1;31mbold red\x1b[m plain", "bold red plain"),
+        ("\x1b]8;;https://example.com\x07link\x1b]8;;\x07", "link"),
+        ("\x1b]8;id=1;https://example.com\x1b\\link\x1b]8;;\x1b\\ after", "link after"),
+        ("\x1b]0;window title\x07text", "text"),
+        ("up\x1b[2Aleft\x1b[10D\x1b[10;5Hat\x1b[K\x1b[2J", "upleftat"),
+        ("\x1b[?25lhidden cursor\x1b[?25h", "hidden cursor"),
+        ("\x1b7saved\x1b8 \x1b(Bcharset\x1bc", "saved charset"),
+        ("\x1bPdevice control\x1b\\kept", "kept"),
+        ("\x9b31m8-bit csi\x9b0m", "8-bit csi"),
+        ("\x9d8;;u\x9clink\x9d8;;\x9c", "link"),
+        ("cut off \x1b[38;2;12", "cut off "),
+        ("unterminated \x1b]8;;https://x.y never closes", "unterminated "),
+        ("broken \x1b[31한글", "broken 한글"),
+        ("lone escape \x1b", "lone escape "),
+        ("plain text, no escapes [31m", "plain text, no escapes [31m"),
+    )
+
+    def test_complete_and_cut_off_sequences_are_dropped_whole(self) -> None:
+        for source, expected in self.CASES:
+            with self.subTest(source=source):
+                self.assertEqual(strip_escapes(source), expected)
+                self.assertEqual(clean_text(source), expected)
+
+    def test_every_markdown_construct_drops_them(self) -> None:
+        document = "\n".join(
+            [
+                "# \x1b[1mTitle\x1b[0m",
+                "- \x1b[32mitem\x1b[0m",
+                "> \x1b]8;;https://x.y\x07quote\x1b]8;;\x07",
+                "`\x1b[31mcode\x1b[0m` and [\x1b[4mlink\x1b[0m](https://x.y)",
+                "```python",
+                "x = '\x1b[31mred\x1b[0m'",
+                "```",
+                "```diff",
+                "\x1b[38;2;255;255;255;48;2;20;90;20m+added\x1b[0m",
+                "```",
+            ]
+        )
+        rows = render(document, width=40)
+        self.assertEqual(
+            texts(rows),
+            ["Title", "• item", "│ quote", "code and link (https://x.y)", "python", "x = 'red'", "diff",
+             "+added" + " " * 34],
+        )
+        for row in rows:
+            for span in row:
+                self.assertNotIn("\x1b", span.text)
+                self.assertNotIn("[3", span.text)
 
 
 if __name__ == "__main__":

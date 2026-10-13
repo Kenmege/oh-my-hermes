@@ -18,10 +18,13 @@ and removed lines are full-row bands, inline `code`, **bold**, *italic* / _itali
 Constructs that need a later line to decide an earlier one (setext headings,
 indented code) are left out on purpose.
 
-Every row is plain `Line`s for `screen.py` to paint. Tabs are expanded and
-every control character is dropped first, so text from the model can never
-smuggle an escape sequence onto the terminal. Malformed markdown renders as
-literal text; nothing here raises on any input.
+Every row is plain `Line`s for `screen.py` to paint. `clean_text` runs first:
+whole escape sequences (CSI, OSC, the other control strings, two-byte escapes)
+are dropped, then tabs are expanded and every remaining control character is
+dropped, so text from the model can never smuggle an escape sequence onto the
+terminal, nor leave the `[38;2;…m` debris that dropping only the ESC byte
+would. Malformed markdown renders as literal text; nothing here raises on any
+input.
 """
 
 from __future__ import annotations
@@ -51,6 +54,14 @@ _RULE_CHARS = frozenset("-*_")
 _MIN_RULE_RUN = 3
 _ESCAPABLE = frozenset("\\`*_[]()#+-.!|>~")
 
+ESC = "\x1b"
+BEL = "\x07"
+CSI_8BIT = "\x9b"
+ST_8BIT = "\x9c"
+_STRING_INTRODUCERS = frozenset("]PX^_")  # after ESC: OSC, DCS, SOS, PM, APC
+_STRING_8BIT = frozenset("\x9d\x90\x98\x9e\x9f")  # the same five as single 8-bit characters
+_INTRODUCERS = (ESC, CSI_8BIT, *_STRING_8BIT)
+
 
 @dataclass(frozen=True)
 class MarkdownState:
@@ -66,9 +77,79 @@ class MarkdownState:
         return bool(self.fence)
 
 
+def _csi_end(text: str, index: int) -> int:
+    """The index after a CSI whose parameters start at `index` (ECMA-48: params, intermediates, final).
+
+    A sequence cut off or broken by a character outside that grammar ends where
+    it broke: what was read is dropped and the rest of the text stays.
+    """
+    while index < len(text) and "0" <= text[index] <= "?":
+        index += 1
+    while index < len(text) and " " <= text[index] <= "/":
+        index += 1
+    if index < len(text) and "@" <= text[index] <= "~":
+        return index + 1
+    return index
+
+
+def _control_string_end(text: str, index: int) -> int:
+    """The index after a control string (OSC, DCS, ...) whose body starts at `index`.
+
+    BEL or ST (ESC \\ or the 8-bit ST) ends it; an unterminated one runs to the
+    end of the text, which is what a terminal would swallow too.
+    """
+    while index < len(text):
+        ch = text[index]
+        if ch in (BEL, ST_8BIT):
+            return index + 1
+        if ch == ESC and text[index + 1 : index + 2] == "\\":
+            return index + 2
+        index += 1
+    return index
+
+
+def _escape_end(text: str, index: int) -> int:
+    """The index after the escape sequence whose ESC is at `index`; a lone ESC is one character."""
+    introducer = text[index + 1 : index + 2]
+    if introducer == "[":
+        return _csi_end(text, index + 2)
+    if introducer and introducer in _STRING_INTRODUCERS:
+        return _control_string_end(text, index + 2)
+    after = index + 1
+    while after < len(text) and " " <= text[after] <= "/":
+        after += 1  # nF intermediates, as in ESC ( B
+    if after < len(text) and "0" <= text[after] <= "~":
+        return after + 1
+    return index + 1
+
+
+def strip_escapes(text: str) -> str:
+    """`text` without any complete or cut-off terminal escape sequence (7-bit or 8-bit introducers)."""
+    if not any(mark in text for mark in _INTRODUCERS):
+        return text
+    kept: list[str] = []
+    index = 0
+    while index < len(text):
+        ch = text[index]
+        if ch == ESC:
+            index = _escape_end(text, index)
+        elif ch == CSI_8BIT:
+            index = _csi_end(text, index + 1)
+        elif ch in _STRING_8BIT:
+            index = _control_string_end(text, index + 1)
+        else:
+            kept.append(ch)
+            index += 1
+    return "".join(kept)
+
+
 def clean_text(text: str) -> str:
-    """One source line made safe to paint: tabs expanded, every control character dropped."""
-    return "".join(ch for ch in text.expandtabs(TAB_CELLS) if not is_control(ch))
+    """One source line made safe to paint: escape sequences dropped whole, tabs expanded, controls dropped.
+
+    Every piece of gateway text that becomes a `Line` (assistant text, tool
+    names and summaries, inline diffs, notices) passes through here.
+    """
+    return "".join(ch for ch in strip_escapes(text).expandtabs(TAB_CELLS) if not is_control(ch))
 
 
 def wrap_prefixed(spans: Sequence[Span], first: Line, rest: Line, width: int) -> list[Line]:

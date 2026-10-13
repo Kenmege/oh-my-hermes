@@ -224,7 +224,7 @@ class PlainTurnTests(LoopTestCase):
         self.step(ev("message.start"))
         self.step(ev("message.delta", text="\x1b[2Jboom\x07\n"))
         self.step(ev("message.complete", text="", status="complete"))
-        self.assertEqual(texts(self.taken), ["[2Jboom"])
+        self.assertEqual(texts(self.taken), ["boom"])
         self.assertFalse(any(is_control(ch) for row in self.taken for span in row for ch in span.text))
 
     def test_user_text_is_plain_wrapped_and_composed(self) -> None:
@@ -498,6 +498,77 @@ class TurnEndTests(LoopTestCase):
         self.step(Event(type="message.delta", session_id=SID, payload={"text": 42}))
         self.step(ev("tool.complete"))
         self.assertEqual(self.history(), ["⏺ Tool calls (1)", "  ✓ tool"])
+
+
+SGR_RED = "\x1b[38;2;255;80;80m"
+SGR_RESET = "\x1b[0m"
+OSC8_OPEN = "\x1b]8;;https://example.com\x1b\\"
+OSC8_CLOSE = "\x1b]8;;\x1b\\"
+CURSOR_MOVES = "\x1b[2A\x1b[10;5H\x1b[K"
+
+
+def painted(text: str) -> str:
+    """`text` wrapped in the escape kinds gateway text may carry: SGR colour, an OSC 8 link, cursor moves."""
+    return f"{CURSOR_MOVES}{SGR_RED}{OSC8_OPEN}{text}{OSC8_CLOSE}{SGR_RESET}"
+
+
+class EscapeHygieneTests(LoopTestCase):
+    """Every entry point where gateway text becomes a Line drops whole escape sequences, never just ESC."""
+
+    def assert_clean(self, rows: list[Line]) -> None:
+        for row in rows:
+            for span in row:
+                self.assertFalse(any(is_control(ch) for ch in span.text), span.text)
+                for debris in ("[38;2", "[0m", "]8;;", "[2A", "[10;5H", "[K"):
+                    self.assertNotIn(debris, span.text)
+
+    def test_no_entry_point_leaves_escape_debris(self) -> None:
+        self.user(painted("user prompt"))
+        self.step(ev("message.start"))
+        self.step(ev("thinking.delta", text=painted("spinner text")))
+        self.assertEqual(self.transcript.activity, "spinner text")
+        self.step(ev("status.update", kind="status", text=painted("Compacting…")))
+        self.assertEqual(self.transcript.status, TurnStatus("status", "Compacting…"))
+        self.step(ev("reasoning.delta", text=painted("weighing it")))
+        self.assertEqual(self.live(), ["", "▸ thinking… weighing it"])
+        self.step(ev("tool.generating", name=painted("terminal")))
+        self.step(ev("tool.start", tool_id="t1", name=painted("terminal"), context=painted("ls -la")))
+        self.step(
+            ev(
+                "tool.complete",
+                tool_id="t1",
+                name=painted("terminal"),
+                duration_s=0.5,
+                summary=painted("listed 3 files"),
+                result={"exit_code": 0},
+            )
+        )
+        self.step(ev("message.delta", text=painted("**answer** line") + "\n"))
+        self.step(ev("message.complete", text="", status="complete", warning=painted("context is 90% full")))
+        self.transcript.add_notice(painted("a notice"), "warn")
+        self.step()
+        self.assert_clean(self.taken)
+        history = self.history()
+        self.assert_clean(self.transcript.history_lines(WIDTH, THEME, details=True))
+        self.assertEqual(
+            history,
+            [
+                "› user prompt",
+                "",
+                "▾ thought for 0.0s",
+                "  weighing it",
+                "",
+                "⏺ Tool calls (1)",
+                "  ✓ terminal  ls -la  0.5s",
+                "    ⎿ listed 3 files",
+                "",
+                "answer line",
+                "",
+                "⚠ context is 90% full",
+                "",
+                "⚠ a notice",
+            ],
+        )
 
 
 if __name__ == "__main__":
