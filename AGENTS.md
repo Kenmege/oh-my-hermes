@@ -190,7 +190,8 @@ PR without the chat history.
   started. The mode is shown on the composer (both rules and the mode
   row, or the status line on a short terminal) only once Hermes confirms it
   for that session; when turning it on, an answer that confirms anything else
-  is a failure, followed by an explicit off; and `session.info` corrects
+  is a failure, followed by an explicit off, and accept is shown again if
+  Hermes does not confirm that off either; and `session.info` corrects
   what is shown, so yolo that Hermes reports for its own reasons is shown
   too, except that one saying approvals are on within 2 seconds of a
   confirmed on is held until the next, keeping accept shown. Ctrl+T and

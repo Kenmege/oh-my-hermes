@@ -45,10 +45,11 @@ per-session yolo, so entering and leaving it are `config.set` calls that
 always name this session and an explicit value and never a `scope`; the mode
 shown changes only once Hermes confirms it for this session, an answer that
 confirms anything else is treated as a failure and followed by an explicit
-off, and `session.info` corrects what is shown (one saying approvals are on
-within `YOLO_SETTLE_SECONDS` of a confirmed on waits for the next: it may be a
-snapshot Hermes took before the switch). With approvals off
-Hermes sends no approval request, so the TUI still answers none. Plan is the
+off (accept is shown again if that off is not confirmed either: approvals
+may be off), and `session.info` corrects what is shown (one saying approvals
+are on within `YOLO_SETTLE_SECONDS` of a confirmed on waits for the next: it
+may be a snapshot Hermes took before the switch). With approvals off Hermes
+sends no approval request, so the TUI still answers none. Plan is the
 TUI's own flag, apart from what accept shows: a prompt typed while it is on
 goes as `/plan <text>`. When Hermes has approvals off on its own (an off it
 confirmed did not end them, or they were off without the TUI turning them
@@ -247,7 +248,10 @@ HERMES_APPROVALS_NOTICE = (
     "or /yolo turned them off. Accept all stays shown, and Shift+Tab now turns plan mode on and off "
     "without changing Hermes' setting."
 )
-SWITCH_BACK_FAILED_NOTICE = "Hermes did not confirm the switch back either ({}). Check /yolo in Hermes."
+SWITCH_BACK_FAILED_NOTICE = (
+    "Hermes did not confirm the switch back either ({}), so approvals may be off: accept all is shown again, "
+    "and Shift+Tab asks Hermes to turn them back on."
+)
 LEFT_YOLO_NOTICE = (
     "Hermes did not confirm that the session you left asks for approvals again ({}). "
     "Its approvals may stay off while this Hermes gateway runs."
@@ -1719,7 +1723,10 @@ class App:
             self._request(
                 "config.set",
                 {"key": "yolo", "session_id": sid, "value": YOLO_OFF},
-                self._on_switched_back,
+                lambda result: self._on_switched_back(sid, yolo_answer_problem(result, False)),
+                lambda error: self._on_switched_back(
+                    sid, f"{error.get('code')}: {as_text(error.get('message')) or 'refused'}"
+                ),
             )
         elif problem:
             self.transcript.add_notice(ACCEPT_STUCK_NOTICE.format(problem), NOTICE_ERROR)  # accept stays shown
@@ -1732,10 +1739,19 @@ class App:
                 self._say_hermes_approvals()
         return True
 
-    def _on_switched_back(self, result: dict[str, Any]) -> None:
-        problem = yolo_answer_problem(result, False)
+    def _on_switched_back(self, sid: str, problem: str) -> bool:
+        """The explicit off after an on Hermes did not confirm; `problem` says why this answer confirms nothing either.
+
+        Unconfirmed, approvals may be off, so accept is shown again, as the
+        TUI's own: Shift+Tab then asks for the off once more, and leaving the
+        session sends one. Accept shown with approvals on costs nothing;
+        normal shown with them off would hide that Hermes asks nothing.
+        """
         if problem:
             self.transcript.add_notice(SWITCH_BACK_FAILED_NOTICE.format(problem), NOTICE_ERROR)
+            if sid == self.sid:
+                self.approvals_off = self.yolo_by_tui = True
+        return True
 
     # ── reasoning effort ──
 

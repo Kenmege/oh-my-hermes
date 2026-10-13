@@ -524,6 +524,34 @@ class ModeCycleTests(unittest.TestCase):
         self.assertEqual(len(notices(app, NOTICE_ERROR)), 2)
         self.assertIn("did not confirm the switch back", notices(app)[-1])
 
+    def test_a_switch_back_that_fails_shows_accept_again_the_safe_way(self) -> None:
+        failures = {
+            "an error": {"error": {"code": 5001, "message": "boom"}},
+            "an unconfirmed answer": {"result": {"key": "yolo", "value": "1", "scope": "session"}},
+        }
+        for name, frame in failures.items():
+            with self.subTest(name):
+                app, client = make_app()
+                app._on_input(SHIFT_TAB)
+                answer(app, client, {"key": "yolo", "value": "1", "scope": "global"})
+                self.assertEqual(app.mode, MODE_NORMAL)
+                app._on_response(Response(2, frame.get("result"), frame.get("error")))
+                self.assertEqual(app.mode, MODE_ACCEPT)
+                notice = notices(app, NOTICE_ERROR)[-1]
+                self.assertIn("did not confirm the switch back", notice)
+                self.assertNotIn("config.set failed", " ".join(notices(app)))  # handled, not the generic error
+                sent = len(client.calls)
+                app._on_input(SHIFT_TAB)  # and the key asks for the off again
+                self.assertEqual(client.calls[sent:], [YOLO_OFF_CALL])
+
+    def test_a_switch_back_answered_after_the_session_was_left_changes_nothing_shown(self) -> None:
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        answer(app, client, {"key": "yolo", "value": "1", "scope": "global"})
+        app._adopt_session({"session_id": "live-2", "info": {}})
+        app._on_response(Response(2, None, {"code": 5001, "message": "boom"}))
+        self.assertEqual(app.mode, MODE_NORMAL)
+
     def test_without_a_session_nothing_is_sent(self) -> None:
         app, client = make_app()
         app.sid = ""
