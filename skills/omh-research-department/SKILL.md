@@ -24,8 +24,8 @@ This is a Hermes-native `research-department` workflow skill.
 - The user only needs a one-off business synthesis; use `research-brief`.
 - The request is pure scheduling with no source collection or synthesis; use `automation-blueprint`.
 - The user asks for coding implementation; prepare a selected executor/runtime handoff after the research plan is accepted.
-- The request is one news watch over named companies, or a scheduled run of a watch that already exists, with no knowledge store, synthesis tool, or briefing lanes to set up, and Hermes' bundled `competitor-news-monitor` skill is in the skill index; load that skill.
-- The user wants a one-off paper search by topic, author, category, or paper id rather than a recurring paper review, and Hermes' bundled `arxiv` skill is in the skill index; load that skill.
+- The request is one news watch over named companies, or a scheduled run of a watch that already exists, with no knowledge store, synthesis tool, or briefing lanes to set up, and Hermes' bundled `competitor-news-monitor` skill is available; load that skill.
+- The user wants a one-off paper search by topic, author, category, or paper id rather than a recurring paper review, and Hermes' bundled `arxiv` skill is available; load that skill.
 
 ## Examples
 
@@ -78,7 +78,7 @@ Quality bar:
 - Map Scout, Analyst, and Briefer lanes to concrete OMH skills and source inbox buckets.
 - Expose collected, synthesized, briefed, conflict, and verification counts as status, not execution proof.
 - List required evidence before claiming retrieval, synthesis, storage, delivery, or verification.
-- Inside the Scout lane, when the watch area is a set of named companies and Hermes' bundled `competitor-news-monitor` skill is in the skill index, run the watch through that skill; when the user names no knowledge store and the bundled `llm-wiki` skill is in the skill index, offer it as the store.
+- Inside the Scout lane, when the watch area is a set of named companies and Hermes' bundled `competitor-news-monitor` skill is available, run the watch through that skill; when the user names no knowledge store and the bundled `llm-wiki` skill is available, offer it as the store.
 - A schedule stays a prepared job description in the plan and OMH creates no job. In a Hermes session the job is created with the `cronjob_manage` tool, and it counts as created only from that tool's observed result or a cron listing.
 - For a recurring watch, write the watchlist and the materiality threshold down once, before the first run, and reuse them unchanged: what is watched and what is worth reporting change only by a recorded edit, so one candidate is accepted or rejected the same way on every run.
 - Report coverage source by source on every run. A source the run could not read is unknown coverage for that period and is named as a gap; it is never reported as a quiet period or as nothing new.

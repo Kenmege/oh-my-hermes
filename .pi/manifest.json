@@ -131,7 +131,7 @@
     "omh-operating-rhythm/SKILL.md": "ec66b715e91bcf7cc78cb5f50bdb29ac5b4d96376ab55d2f2e38c52f9a70e3a6",
     "omh-ops-observability-card/SKILL.md": "99f500ec4384b06c5949174eda92137ce1669258929470954326ef4874688767",
     "omh-ops-review/SKILL.md": "0476e9471cf84d4360591eb8730e9b3d2b3fc78df73b02acce969a53eabf229d",
-    "omh-paper-learning/SKILL.md": "2c67ef71b99d69adf7167c0b93ec8ed123ad6562292f9b59c6e16e5552e523ff",
+    "omh-paper-learning/SKILL.md": "916a112888dbd6e761a9950ac64a84f33da29a95de536514fbbcabfc0e33af4a",
     "omh-people-ops/SKILL.md": "f7eb49c19e0ed7ce96aaebfb423f1b9e5ed1a6ee2e592644a2d418d5f076e140",
     "omh-physical-device-readiness/SKILL.md": "e9e418d01d6975cff79ac46f8b09e94c346d7a77114a9f4620ba191ed555117d",
     "omh-plan/SKILL.md": "f5a19acc54ef2901e28ffc8cf9c286f2a66fe3c50b17ced9fc800370446107d1",
@@ -150,7 +150,7 @@
     "omh-release-cut/references/release-and-rollback-method.md": "e97a49d65d6b943fa5bbacc4f8083fcd94e52d864cea97301c9b945180e57cc9",
     "omh-reliability-review/SKILL.md": "e3d6f6fef43c4698a83d689730c171de7fac282397a5a6a657ab1606dcc489da",
     "omh-report-package/SKILL.md": "5ae3f9d3d9dd9d6038f1b4d37f58915361d4e25d12ff2ecea02c27a6b247dabd",
-    "omh-research-brief/SKILL.md": "ba060436f8e9bf245917fc5381092670597af619ad03de48583b4d12ec9335af",
+    "omh-research-brief/SKILL.md": "bd2c664c3cdbcfd6ccebe8a408517f7f71215f3eb4d5a7358bff4eb055dfff63",
     "omh-rules-distill/SKILL.md": "55a6b64d85db685a531eb53df7f60284ac452a297651fa4dff5a8b068c9bc8e1",
     "omh-run-efficiency/SKILL.md": "a896b93d5bbe90b9fe138c2637f9df4d167f3861407f9bb2fb8349617d8a53f9",
     "omh-running-work-board/SKILL.md": "0c1c1dd1e1a8efdd05e13e0b000537cef904f88777cad3dfa9a0763c46e13aa0",
@@ -167,7 +167,7 @@
     "omh-security-safety-review/references/credential-rotation.md": "2a4e1cacc2c10141a1aaff437353150696c397f5fec0b41536eb5d946ebff065",
     "omh-skill-health/SKILL.md": "02f843131ffbf582a7659bec55e278505327eeb0cd7dbdd84e34d50bcc7f322b",
     "omh-skill-scout/SKILL.md": "365c38a051c4e4776cfc4d4459c90db250d79340c219dbd0d1f4d55ffff43b96",
-    "omh-source-finder/SKILL.md": "38c6954a8ed6ef0d141ac6d9a82edd70e4e4e1bc64fc58e2aa28816211655cfe",
+    "omh-source-finder/SKILL.md": "a8504d243833a343fc5f9806dbf8d88025a9494a67b52f2c8d1c249df4714a60",
     "omh-support-operations/SKILL.md": "eaa36e08eb9e91c0dc51ee4d3e22e44fff644dd85a674dc3cf86538aa7c2e505",
     "omh-tech-debt-audit/SKILL.md": "218fddf9e7be0ebc6c95b59ad4d6ce19eba9239e0f21dbbd6e0d16bef1960bff",
     "omh-tech-debt-audit/references/debt-dimensions.md": "7d0d601c1fc8897f0ce433dfa2ae44c2a5c9dd69ded28d7775cb6adbdd2afb75",
@@ -179,7 +179,7 @@
     "omh-visual-qa/SKILL.md": "e57a45f135b4f1224cf65766e9fc851511ddecf4c56482b183205e8f8fb14cfc",
     "omh-visual-qa/references/visual-verdict-contract.md": "7c803a3997dc58be0a4b88f2d7aa081cc5cac49a227d0cc19437cd1aad420759",
     "omh-voice-input/SKILL.md": "d15fab885fb53df39b45466ab376d983a70a204ecba10a809e442c8ce2f7c283",
-    "omh-web-research/SKILL.md": "b022bfa4842eff0aca4009bf2e1bbf12cd1d0ca1f96cbde0ed854648a520ff40",
+    "omh-web-research/SKILL.md": "8dc161e09f4046c6358f6fc8c34baa9bd4b51a43a682216c9a18c2ad2223b0e4",
     "omh-wiki/SKILL.md": "5d166038d310402a398e81bccbe225b7d5f6843046deb2170dbb87dc39f8bc60",
     "omh-wiki/references/wiki-blueprint.md": "2ff6894489712962ea86e135462c8bdc74039bb2587566d5abec0201c8828c9d",
     "omh-wiki/references/wiki-operations.md": "656b7873c4d9ad4458244bb376d4808dac9af7a520c35b6f22b58cbbe8434528",
@@ -197,7 +197,7 @@
     "ulw-perf/SKILL.md": "4189814b67cd81e446f42dc0dbb0e91168c065d2833b9dbc895539226bb927ad",
     "ulw-plan/SKILL.md": "b4083d2acaca9857391e0212e10f917802a5f77a05a86ecbeb6e3e9f8f08c080",
     "ulw-qa/SKILL.md": "11049ec3a49f47c5b0447cb8faa6b36ade31da65219def1a9d5526d9f535479f",
-    "ulw-research/SKILL.md": "bb2466a6186688f219d08fa3918017019ad9012b7967f62f4f98324211e291ce",
+    "ulw-research/SKILL.md": "8505911387a459e38b19e5ecde7d7f8e1a9ef03368f09aa61b1688224f1a023d",
     "ulw-research/references/briefing-format.md": "466c21fb7bedefe1e42dbdb3f8ddaf3321504882140af507a292188678243dac",
     "ulw-work/SKILL.md": "83ef58a402b022658c67696bab23cfaf93dbc1f1131c0cbee722487a46db2af4",
     "ulw-work/references/dependency-topology.md": "b6cbd98db3612d4bee2a6f1052ac120a7a360955f3e0ab1f26d37a1f20ad2a86"
@@ -318,7 +318,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "5c5487310722bf31cbe31515fa5d08e891b30d37bb880d6f91449128fbd062d2",
+  "source_digest": "d37ceb973816ebd31054b2a2588cc12f17746445e791d965c96190cab594c249",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

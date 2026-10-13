@@ -394,12 +394,14 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_file_lookup",
         "file_or_text",
     ),
-    # Requests a skill Hermes bundles owns outright. `web-research` and
-    # `research-department` now name `grounded-citations`,
-    # `competitor-news-monitor`, and `arxiv` in their do-not-use boundaries;
-    # these pin the same boundary at the router, so a later trigger cannot
-    # quietly start dispatching an OMH research skill for the bundled skill's
-    # own job.
+    # Five sentences a skill Hermes bundles owns, pinned as non-dispatch.
+    # `web-research` and `research-department` now name `grounded-citations`,
+    # `competitor-news-monitor`, and `arxiv` in their do-not-use boundaries.
+    # These cases pin these five sentences and nothing wider. The router
+    # still dispatches `web-research` for a ledger check phrased with its own
+    # `citation check` trigger or with the Korean `출처` trigger, and for an
+    # arXiv lookup phrased with `look up`; those dispatches predate the
+    # boundary lines and are left to the trigger-collision work.
     #
     # No `forbidden_candidate` on the three clarify cases: that field reads the
     # clarify's candidate and its shortlist, which record what scoring found

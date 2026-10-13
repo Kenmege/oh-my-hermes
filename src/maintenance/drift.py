@@ -467,13 +467,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # setup guide while `web extract backend` was a trigger, and
             # building a web search backend, a clarify that must never become
             # a dispatch of the setup guide (2).
-            # The research citation-ledger work adds five requests that a
+            # The research citation-ledger work adds five sentences that a
             # skill Hermes bundles owns, none of which may dispatch an OMH
-            # research skill: rebuilding the Sources block of a draft from the
-            # citation ledger, a Korean request to check a draft's citation
-            # ids against the ledger, an arXiv category search, one scheduled
-            # run of an existing competitor watch, and a news alert on one
-            # named company (5).
+            # research skill (these five only; the same requests phrased with
+            # a `web-research` trigger still dispatch it): rebuilding the
+            # Sources block of a draft from the citation ledger, a Korean
+            # request to check a draft's citation ids against the ledger, an
+            # arXiv category search, one scheduled run of an existing
+            # competitor watch, and a news alert on one named company (5).
             expected=489,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
