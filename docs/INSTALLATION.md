@@ -338,7 +338,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   after the new one opened, so a session that cannot be opened (for example
   one another process holds) leaves you where you were.
 
-Keys:
+Keys (`?` on an empty composer, or `/keys`, shows this list in the TUI; q or
+Esc closes it):
 
 | Key | Does |
 | --- | --- |
@@ -349,14 +350,26 @@ Keys:
 | Shift+Tab | Cycles the input mode: normal, accept all, plan |
 | Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max |
 | `@` | Starts a file or folder reference; Hermes offers matches above the composer |
-| ↑ / ↓ | Walk the input history at the composer's first and last row |
+| `?` | On an empty composer, shows this list; `/keys` does too |
+| ↑ / ↓ | Move between the composer's rows, walk the input history at its first and last row, or move through an open completion menu |
 | ↑ | On an empty composer with prompts queued, takes them all back into the composer to edit |
-| Esc | On an empty composer, interrupts a running turn (the activity row shows how long it has run) |
+| ← / → | Move by a character; with Ctrl or Alt, by a word |
+| Home / End, Ctrl+A / Ctrl+E | Go to the start or the end of the line |
+| Backspace / Delete | Delete a character; Backspace on an empty composer removes the last attached image |
+| Ctrl+W | Deletes the word before the caret |
+| Ctrl+U / Ctrl+K | Delete to the start or the end of the line |
+| Esc | Closes the `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run) |
 | Ctrl+V | Attaches the clipboard image |
 | Ctrl+O | Shows or hides thinking and tool detail |
 | Ctrl+L | Redraws the screen |
 | Ctrl+C | Clears the composer, interrupts a running turn, or (twice when idle) exits |
-| Ctrl+D | On an empty composer, exits |
+| Ctrl+D | On an empty composer, exits; with text, deletes the character ahead |
+| ← / → then Enter | On an approval, picks allow once or allow this session; Enter alone denies |
+| `d`, `n` | On an approval, deny |
+| 1 to 9 | On a clarify question with choices, pick one; ↑ / ↓ then Enter on an empty answer does too |
+| Esc, Ctrl+C | On a question Hermes asked, decline it (an approval is denied); Ctrl+C first clears an answer being typed |
+| ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions` list, move, switch to the highlighted session, or close it; typing filters the list |
+| j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, long command output, this list), move a line, a page, or to either end, or leave |
 
 Ctrl+Enter and Shift+Enter reach the OMH TUI as keys of their own only where
 the terminal reports them. On start it asks iTerm2, kitty, WezTerm, tmux, VS
@@ -394,7 +407,7 @@ take a steer yet, the text goes as an ordinary prompt instead. The OMH TUI
 steers only with text you typed and sent this way: a queued prompt is never
 turned into a steer.
 
-Slash commands the OMH TUI runs itself: `/help`, `/quit`, `/new`,
+Slash commands the OMH TUI runs itself: `/help`, `/keys`, `/quit`, `/new`,
 `/sessions`, `/redraw`, `/history` (an in-memory pager over this session),
 `/details` (show or hide thinking and tool detail on the live block),
 `/queue`, `/steer <text>`, `/effort <level>`, `/logs` (the gateway's recent

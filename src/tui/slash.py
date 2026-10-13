@@ -45,7 +45,8 @@ class SlashCommand:
 
 COMMANDS: tuple[SlashCommand, ...] = (
     # The terminal's own commands.
-    SlashCommand("help", LOCAL, "Show commands and keys"),
+    SlashCommand("help", LOCAL, "Show commands"),
+    SlashCommand("keys", LOCAL, "List every key (also ? on an empty composer)"),
     SlashCommand("quit", LOCAL, "Leave the OMH TUI", ("exit",)),
     SlashCommand("new", LOCAL, "Start a new session", ("clear", "reset")),
     SlashCommand("sessions", LOCAL, "Switch to a stored session (a picker, or /sessions <id or title>)",

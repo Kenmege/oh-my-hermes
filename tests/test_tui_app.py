@@ -1549,7 +1549,8 @@ class LocalCommandTests(AppTestCase):
         history = run.terminal.history()
         self.assertIn("/omh-model  Pick OMH model chains", history)
         self.assertIn("Hermes commands (8): /new /clear /redraw /history /save /retry /prompt /undo", history)
-        self.assertIn("Ctrl+D on empty input exits", history)
+        # The keys live in one table that ? and /keys draw; /help points there.
+        self.assertIn("Keys: ? on an empty composer, or /keys, lists every key.", history)
         self.assertIn("/yolo included", history)
         # The banner no longer says it, so /help is where the way back to Hermes' own terminal stays.
         self.assertIn("Bare `hermes` opens Hermes' own terminal.", history)

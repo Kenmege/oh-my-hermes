@@ -13,8 +13,9 @@ as on any other exit.
 
 `App` is the loop. One thread owns the terminal and every model: it reads
 input with a short timeout, routes keys (the pager while it is open, then
-Ctrl+O and Ctrl+L, an open prompt slot, the session picker, the attachment
-keys and Esc, the completion menu, then the composer), takes everything the
+Ctrl+O and Ctrl+L, an open prompt slot, the session picker, the mode, effort
+and key-list keys, the attachment keys and Esc, the completion menu, the
+queue's Up, then the composer), takes everything the
 gateway sent since the last step, takes the newest HUD snapshot, and
 repaints when something changed or a spinner is due. Calls made from the
 loop go out with `GatewayClient.request` and their answers come back through
@@ -107,6 +108,7 @@ from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_
 from .prompts import CHOICE_DIGITS, Answer, ImmediateAnswer, PromptSlot, open_request
 from .screen import CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
 from .session_picker import PICK, SessionPicker, session_rows
+from .shortcuts import shortcut_lines
 from .slash import (
     COMMANDS,
     DROPPED,
@@ -221,13 +223,9 @@ YOLO_NOTE = (
     "Hermes commands go to Hermes as you type them, /yolo included: it turns off Hermes' approval prompts, "
     "so the OMH TUI then has none to show."
 )
-HELP_KEYS = (
-    "Keys: Enter sends · \\ then Enter, Alt+Enter or Ctrl+J adds a line · Tab completes a /command or an @path\n"
-    "Esc interrupts a running turn · Ctrl+V attaches the clipboard image (drag & drop works too) · "
-    "Backspace on empty input removes the last one\n"
-    "Ctrl+O shows or hides details · Ctrl+L redraws · Ctrl+C interrupts a turn or clears the input · "
-    "Ctrl+D on empty input exits"
-)
+# The keys themselves are `shortcuts.SHORTCUTS`, drawn by `?` and /keys; /help only points there.
+HELP_KEYS = "Keys: ? on an empty composer, or /keys, lists every key."
+GUIDE_KEY = "?"
 
 
 class TerminalLike(Protocol):
@@ -1076,7 +1074,7 @@ class App:
         if self.slot is None and self.picker is not None:
             self._picker_key(event)
             return
-        if self.slot is None and (self._mode_key(event) or self._effort_key(event)):
+        if self.slot is None and (self._mode_key(event) or self._effort_key(event) or self._guide_key(event)):
             return
         if self.slot is None and (self._attachment_input(event) or self._escape(event)):
             return
@@ -1565,6 +1563,7 @@ class App:
     def _local_handlers(self) -> dict[str, Callable[[str], None]]:
         return {
             "help": self._help,
+            "keys": self._keys,
             "quit": self._quit,
             "new": self._new_session,
             "redraw": self._redraw,
@@ -1591,6 +1590,18 @@ class App:
         rows.append(HELP_KEYS)
         rows.append(BARE_HERMES_NOTE)
         self.transcript.add_notice("\n".join(rows))
+
+    def _guide_key(self, event: Key | Paste) -> bool:
+        """`?` on an empty composer opens the key list; with anything typed it is a character."""
+        plain = isinstance(event, Key) and event.name == CHAR and not event.ctrl and not event.alt
+        if not plain or event.char != GUIDE_KEY or self.composer.text:
+            return False
+        self._keys("")
+        return True
+
+    def _keys(self, arg: str) -> None:
+        """The key list on the alternate screen; q or Esc leaves, as in every pager."""
+        self._open_pager("keys", shortcut_lines(self.size[0], self.theme))
 
     def _quit(self, arg: str) -> None:
         """Close the session first, so Hermes ends its runtime before the gateway reads end of input."""
