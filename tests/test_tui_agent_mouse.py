@@ -495,6 +495,23 @@ class IgnoredReportTests(unittest.TestCase):
                 if into is not resizing:
                     self.assertFalse(app.terminal.mouse_reporting)  # type: ignore[attr-defined]
 
+    def test_while_a_question_is_open_a_click_opens_nothing_before_any_frame_redraws_the_cells(self) -> None:
+        # The question opens and the click comes in the same read: `clickable` still holds the last frame's cells.
+        for where in ("strip", "list"):
+            for method, params in (("approval", {"command": "rm -rf ./x"}), ("vault.code", {})):
+                with self.subTest(where=where, method=method):
+                    app, client = running()
+                    if where == "list":
+                        app._on_input(Key(DOWN))
+                    y = row_of(app, "read the diff")
+                    x = column_of(app, "read the diff")
+                    self.assertTrue(app.clickable)
+                    app._on_server_request(ServerRequest("srq-1", method, params))
+                    self.assertTrue(app.clickable)  # no frame since: the cells are still there
+                    click(app, x, y)
+                    self.assertEqual((app.pager, app.log_agent, client.calls), (None, "", []))
+                    self.assertIsNotNone(app.slot)
+
     def test_another_programs_leftover_reports_open_nothing_in_a_session_without_agents(self) -> None:
         app, client = make_app(busy=True)
         settled(app)

@@ -2366,15 +2366,17 @@ class App:
     def _on_mouse(self, event: Mouse) -> None:
         """A plain left press on an agent, on the strip or in the list, opens that agent's log; nothing else does anything.
 
-        `clickable` holds the cells of the last frame a click opens and is
-        empty whenever the TUI has not asked for reports, so a report another
-        program left on opens nothing. The report's row is read against the
-        region's last row, and dropped while that row is not certain or the
-        screen is being redrawn for a new size.
+        The one other thing a click does is leave the list, from its main
+        row, which has no log. `clickable` holds the cells of the last frame
+        a click opens and is empty whenever the TUI has not asked for
+        reports, so a report another program left on opens nothing. The
+        report's row is read against the region's last row, and dropped while
+        that row is not certain, while a question Hermes asked has the keys,
+        or while the screen is being redrawn for a new size.
         """
         plain = event.button == BUTTON_LEFT and event.pressed and not (event.motion or event.shift or event.alt or event.ctrl)
         last = self.region.last_row(self.size[1])
-        if not plain or last is None or self.pager is not None or self.redraw_at is not None:
+        if not plain or last is None or self.pager is not None or self.slot is not None or self.redraw_at is not None:
             return
         above, column = last - (event.y - 1), event.x - 1  # a report counts rows and columns from 1
         target = next((hit.subagent_id for hit in self.clickable.get(above, ()) if hit.start <= column < hit.end), None)
