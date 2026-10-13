@@ -4887,6 +4887,19 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
             line = tr(language, key, name=item.get("name", ""), path=item.get("path", ""), reason=reason)
             print(_color(f"  {line}", "1;33", use_color))
     force_pruned = payload.get("force_pruned_skills")
+    forced_names = {
+        str(item.get("name", "")) for item in (force_pruned if isinstance(force_pruned, list) else []) if isinstance(item, dict)
+    }
+    # Everything an install removes is named here; a `--force` removal has its
+    # own lines below, with what it lost.
+    pruned = payload.get("pruned_skills")
+    for name in pruned if isinstance(pruned, list) else []:
+        if str(name) not in forced_names:
+            print(_color(f"  {tr(language, 'pruned_skill_line', name=name)}", "1;33", use_color))
+    flat_removed = payload.get("flat_layout_skills_removed")
+    for name in flat_removed if isinstance(flat_removed, list) else []:
+        if str(name) not in forced_names:
+            print(_color(f"  {tr(language, 'flat_layout_removed_line', name=name)}", "1;33", use_color))
     for item in force_pruned if isinstance(force_pruned, list) else []:
         if not isinstance(item, dict):
             continue

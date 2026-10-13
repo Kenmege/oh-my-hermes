@@ -528,7 +528,15 @@ class InstallerKeepsHermesEditTests(_Home):
         )
         self.assertIn(f"Restored {SKILL} at", self._summary(result))
 
-    def test_the_pruner_leaves_a_kept_skill_the_catalog_dropped(self) -> None:
+    def test_an_install_whose_own_catalog_lacks_a_kept_skill_leaves_it(self) -> None:
+        """A kept skill is withheld from the pruners even when this install's catalog lacks it.
+
+        That is the shape of an explicit `--from-skills-dir` source missing a
+        skill the catalog definitions still render; the template list is
+        patched because building such a source is beside the point. It does
+        NOT model a skill a release retired: there the name no longer resolves
+        to its render directory at all, which `RetiredSkillEditTests` covers.
+        """
         install_skill_pack(self.paths, profile="core")
         self.hermes_patch(self.skill_file())
         install_skill_pack(self.paths, profile="core")
@@ -715,26 +723,19 @@ class InstallerKeepsHermesEditTests(_Home):
         copy.mkdir(parents=True)
         (copy / "SKILL.md").write_bytes(self.skill_file().read_bytes())
         (copy / "personal.md").write_text("mine\n", encoding="utf-8")
-        install_skill_pack(self.paths, profile="core")
+        recorded = install_skill_pack(self.paths, profile="core")
 
         result = install_skill_pack(self.paths, profile="core")
 
         self.assertTrue((copy / "personal.md").is_file())
         self.assertEqual(result["pruned_skills"], [])
-        self.assertEqual(
-            result["prune_skipped_skills"],
-            [
-                {
-                    "name": "omh-routing-old",
-                    "path": "my-backups/omh-routing-old/SKILL.md",
-                    "reason": "not_rendered_by_omh",
-                    "newly_seen": True,
-                }
-            ],
-        )
+        expected = {"name": "omh-routing-old", "path": "my-backups/omh-routing-old/SKILL.md", "reason": "not_rendered_by_omh"}
+        # Named by the install that first records it, listed by every later one.
+        self.assertEqual(recorded["prune_skipped_skills"], [{**expected, "newly_seen": True}])
+        self.assertEqual(result["prune_skipped_skills"], [{**expected, "newly_seen": False}])
         self.assertIn(
             "Left omh-routing-old at my-backups/omh-routing-old/SKILL.md in place: OMH did not render it",
-            self._summary(result),
+            self._summary(recorded),
         )
         # A manifest written before render marks existed still spares it, by
         # where it sits.
@@ -913,6 +914,10 @@ class InstallerKeepsHermesEditTests(_Home):
                 # The skill itself renders where this release renders it.
                 self.assertTrue(self.skill_file().is_file())
                 self.assertIn(f"stays at {flat.name}/SKILL.md", self._summary(result))
+                # Reported as left behind, and not listed a second time as
+                # something the pruners left in place.
+                self.assertNotIn("prune_skipped_skills", result)
+                self.assertNotIn(b"prune_skipped_skills", self.paths.manifest_path.read_bytes())
 
     def test_a_left_behind_edit_to_skill_md_does_not_refuse_the_install(self) -> None:
         # Probe Q6b: the edited SKILL.md differs from its record, and the
@@ -1198,7 +1203,6 @@ class RenderMarkPruneTests(_Home):
     def test_a_directory_omh_did_not_render_is_named_once_and_listed_every_time(self) -> None:
         install_skill_pack(self.paths, profile="core")
         self.own_skill("guide/my-own-skill")
-        install_skill_pack(self.paths, profile="core")
 
         first = install_skill_pack(self.paths, profile="core")
         second = install_skill_pack(self.paths, profile="core")
@@ -1223,7 +1227,7 @@ class RenderMarkPruneTests(_Home):
             again = install_skill_pack(self.paths, profile="core")
 
         self.assertTrue(retired.is_file())
-        self.assertIn("its SKILL.md changed since OMH rendered it", self.summary(again))
+        self.assertIn("it changed since OMH rendered it (its SKILL.md, or a Hermes edit in it)", self.summary(again))
 
     def test_an_emptied_category_with_a_stray_skill_file_is_not_removed(self) -> None:
         # No other skill below it, so "holds another SKILL.md" is false; it is
@@ -1399,6 +1403,187 @@ class RenderMarkPruneTests(_Home):
         self.assertNotIn("not where OMH renders", same)
         self.assertIn("OMH did not render it", english["not_rendered_by_omh"])
         self.assertIn("holds other skills", english["category_directory"])
+
+
+class RetiredSkillEditTests(_Home):
+    """A skill a release really retired, with a Hermes edit left in it.
+
+    The catalog no longer knows the name, so it falls back to a render path it
+    never had (`workflow/omh-old-skill`) and nothing keeps the directory. The
+    pruners judged "changed since OMH rendered it" by the SKILL.md hash alone,
+    so a Hermes write to a supporting file went with the directory on a plain
+    install, and nothing said so.
+    """
+
+    NAME = "old-skill"
+    REL = "tracker/omh-old-skill/SKILL.md"
+
+    def retired_skill(self, *, kept: bool) -> tuple[Path, Path]:
+        install_skill_pack(self.paths, profile="core")
+        directory = self.paths.skills_dir / "tracker" / "omh-old-skill"
+        (directory / "references").mkdir(parents=True)
+        (directory / "SKILL.md").write_text("---\nname: omh-old-skill\n---\nretired\n", encoding="utf-8")
+        lessons = directory / "references" / "lessons.md"
+        lessons.write_text("learned: check the lockfile first\n", encoding="utf-8")
+        _append_ledger(self.paths.hermes_home, _ledger_row(lessons, action="write_file"))
+        self.store_blob(lessons)
+        sha = sha256_file(directory / "SKILL.md")
+        record = {"name": self.NAME, "path": self.REL, "sha256": sha, "source": "builtin", RENDER_MARK_KEY: sha}
+        if kept:
+            record[HERMES_EDIT_RECORD_KEY] = {"actor": "curator", "ts": "2026-10-13T01:02:03+00:00", "action": "write_file", "ledger": "l"}
+        self.edit_manifest(lambda manifest: manifest["skills"].append(record))
+        return directory, lessons
+
+    def summary(self, payload: dict) -> str:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            setup_commands._print_install_summary({"skills": [], **payload}, command="install")
+        return out.getvalue()
+
+    def assert_left_then_forced(self, directory: Path, lessons: Path) -> None:
+        plain = install_skill_pack(self.paths, profile="core")
+        self.assertTrue(lessons.is_file())
+        self.assertEqual(plain["pruned_skills"], [])
+        self.assertIn(
+            (self.NAME, self.REL, "changed_since_rendered"),
+            [(item["name"], item["path"], item["reason"]) for item in plain["prune_skipped_skills"]],
+        )
+        self.assertIn("A run with --force removes it.", self.summary(plain))
+        # Still left on the next plain install.
+        self.assertTrue(install_skill_pack(self.paths, profile="core") and lessons.is_file())
+
+        forced = install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertFalse(directory.exists())
+        [item] = forced["force_pruned_skills"]
+        self.assertEqual(item["ledger_copy"], ["references/lessons.md"])
+        self.assertIn("still holds a copy of references/lessons.md", self.summary(forced))
+
+    def test_a_kept_supporting_file_edit_survives_retirement(self) -> None:
+        self.assert_left_then_forced(*self.retired_skill(kept=True))
+
+    def test_kept_evidence_alone_keeps_it_after_the_ledger_row_is_gone(self) -> None:
+        # The ledger can be trimmed; the record's evidence is what remains,
+        # and it has to survive the manifest each install rewrites.
+        directory, lessons = self.retired_skill(kept=True)
+        (self.paths.hermes_home / CURATOR_LEDGER_RELATIVE_PATH).unlink()
+
+        for _ in range(2):
+            result = install_skill_pack(self.paths, profile="core")
+            self.assertTrue(lessons.is_file())
+            # By path: once the catalog no longer knows the name, the next
+            # manifest records the directory under its own name.
+            self.assertIn(
+                (self.REL, "changed_since_rendered"),
+                [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
+            )
+
+    def test_a_ledgered_write_not_yet_kept_survives_retirement(self) -> None:
+        self.assert_left_then_forced(*self.retired_skill(kept=False))
+
+    def test_a_flat_leftover_holding_a_hermes_file_is_left(self) -> None:
+        # The pre-relabel position, named by the canonical name: not the
+        # skill's label, so it is not reported as left behind, and only the
+        # flat-layout pruner's own rule stands between it and removal.
+        install_skill_pack(self.paths, profile="core")
+        render = self.skill_file().parent
+        flat = self.paths.skills_dir / SKILL
+        shutil.copytree(render, flat)
+        lessons = flat / "references" / "lessons.md"
+        lessons.write_text("lesson\n", encoding="utf-8")
+        install_skill_pack(self.paths, profile="core")
+        _append_ledger(self.paths.hermes_home, _ledger_row(lessons, action="write_file"))
+
+        def claim_rendered(manifest: dict) -> None:
+            for record in manifest["skills"]:
+                if record["path"] == f"{flat.name}/SKILL.md":
+                    record[RENDER_MARK_KEY] = record["sha256"]
+
+        self.edit_manifest(claim_rendered)
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue(lessons.is_file())
+        self.assertEqual(result["flat_layout_skills_removed"], [])
+        self.assertIn(
+            (SKILL, "changed_since_rendered"),
+            [(item["name"], item["reason"]) for item in result["prune_skipped_skills"]],
+        )
+
+    def test_an_unchanged_flat_leftover_is_removed_and_the_summary_says_so(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        flat = self.paths.skills_dir / SKILL
+        shutil.copytree(self.skill_file().parent, flat)
+        install_skill_pack(self.paths, profile="core")
+
+        def claim_rendered(manifest: dict) -> None:
+            for record in manifest["skills"]:
+                if record["path"] == f"{SKILL}/SKILL.md":
+                    record[RENDER_MARK_KEY] = record["sha256"]
+
+        self.edit_manifest(claim_rendered)
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertFalse(flat.exists())
+        self.assertEqual(result["flat_layout_skills_removed"], [SKILL])
+        self.assertIn(f"Removed the top-level copy of {SKILL}", self.summary(result))
+
+    def test_a_retired_skill_with_no_edit_is_removed_and_the_summary_says_so(self) -> None:
+        # A person's file beside an unchanged SKILL.md, no ledger row: the
+        # mark proves OMH rendered the directory and the whole of it goes,
+        # which the summary now names (it printed nothing before).
+        install_skill_pack(self.paths, profile="core")
+        directory = self.paths.skills_dir / "tracker" / "omh-old-skill"
+        directory.mkdir(parents=True)
+        (directory / "SKILL.md").write_text("---\nname: omh-old-skill\n---\nretired\n", encoding="utf-8")
+        (directory / "my-notes.md").write_text("mine\n", encoding="utf-8")
+        sha = sha256_file(directory / "SKILL.md")
+        self.edit_manifest(
+            lambda manifest: manifest["skills"].append(
+                {"name": self.NAME, "path": self.REL, "sha256": sha, "source": "builtin", RENDER_MARK_KEY: sha}
+            )
+        )
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertFalse(directory.exists())
+        self.assertEqual(result["pruned_skills"], [self.NAME])
+        self.assertIn(f"Removed {self.NAME}: the catalog no longer ships it", self.summary(result))
+
+
+class ManifestStabilityTests(_Home):
+    """An install over an unchanged disk writes the same manifest bytes.
+
+    `omh update` reads the manifest hash to say whether the workflow content
+    changed, so a manifest rewritten on an unchanged disk reports a change
+    that did not happen.
+    """
+
+    def test_identical_installs_after_a_directory_appears_write_identical_manifests(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        self.own_skill("guide/my-own-skill")
+
+        results, snapshots = [], []
+        for _ in range(3):
+            results.append(install_skill_pack(self.paths, profile="core"))
+            snapshots.append(self.paths.manifest_path.read_bytes())
+
+        self.assertEqual(snapshots[1], snapshots[0])
+        self.assertEqual(snapshots[2], snapshots[1])
+        self.assertNotIn(b"newly_seen", snapshots[0])
+        listed = [
+            [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]] for result in results
+        ]
+        self.assertEqual(listed, [[("guide/my-own-skill/SKILL.md", "not_rendered_by_omh")]] * 3)
+        out = []
+        for result in results:
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                setup_commands._print_install_summary({"skills": [], **result}, command="install")
+            out.append(buffer.getvalue())
+        # Named by the install that first records it, then only in the JSON.
+        self.assertIn("Left my-own-skill at guide/my-own-skill/SKILL.md in place", out[0])
+        self.assertNotIn("my-own-skill", out[1])
+        self.assertNotIn("my-own-skill", out[2])
 
 
 class CaseVariantRenderDirectoryTests(_Home):
