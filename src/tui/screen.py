@@ -34,6 +34,17 @@ whose bottom sits on the screen's last row keeps it there.
 Precondition: the region is never taller than the terminal. Cursor-up stops
 at the top of the screen, so a taller region would lose its relative
 bookkeeping; the layout's height budget guarantees this.
+
+Where the region is on the screen (`last_row`) is worked out, never asked of
+the terminal, and only where it is certain. Growing pushes the last row down
+one screen row per row added, and so does every flushed line beyond the pad,
+until the last row is the screen's last row, where it stays. So the row is
+known once those pushes would have reached the screen's last row from any
+start, and from the first frame on when the caller says that frame starts on
+the screen's top row (`at_top`: it homed the cursor first). A frame that
+takes rows off the region's end moves the last row back up. The app never
+draws one (its frames are never shorter than the region), so nothing here
+follows it: the row is unknown from then on.
 """
 
 from __future__ import annotations
@@ -100,7 +111,7 @@ def paint_line(line: Line, width: int) -> str:
 
 
 class LiveRegion:
-    def __init__(self, write: Callable[[str], None]) -> None:
+    def __init__(self, write: Callable[[str], None], at_top: bool = False) -> None:
         self._write = write
         self._rows: list[str] = []  # painted bytes of each row the region holds
         self._row = 0  # hardware cursor row, relative to the region's top
@@ -109,6 +120,12 @@ class LiveRegion:
         self._lines: tuple[Line, ...] = ()
         self._cursor = (0, 0)
         self._pad = 0  # how many of the top rows are padding `flush_above` may write into
+        # What `last_row` stands on: whether the first frame starts on the screen's top row, that
+        # frame's height (0 until it is drawn), and the rows the last row was pushed down since
+        # (None once a frame took rows off the region's end).
+        self._at_top = at_top
+        self._first_height = 0
+        self._pushed: int | None = 0
 
     @property
     def height(self) -> int:
@@ -119,6 +136,23 @@ class LiveRegion:
     def pad(self) -> int:
         """How many of the region's top rows are padding."""
         return self._pad
+
+    def last_row(self, screen_rows: int) -> int | None:
+        """The 0-based screen row the region's last row is on, or None where that is not certain.
+
+        `screen_rows` is the terminal's height, the same since the first frame.
+        """
+        if not self._rows or self._pushed is None:
+            return None
+        from_top = self._first_height - 1 + self._pushed  # where a first frame on the top row would be now
+        if from_top >= screen_rows - 1:
+            return screen_rows - 1  # a start further down reached the last row sooner
+        return from_top if self._at_top else None
+
+    def _shift_last_row(self, rows: int) -> None:
+        """The last row went `rows` rows down the screen (fewer where the screen ended); a negative count loses it."""
+        if self._pushed is not None:
+            self._pushed = self._pushed + rows if rows >= 0 else None
 
     def _move_to(self, row: int, ops: list[str]) -> None:
         """Cursor to column 0 of region row `row`, which must already exist on screen."""
@@ -135,6 +169,10 @@ class LiveRegion:
         rows = [paint_line(line, width) for line in lines]
         repaint_all = width != self._width
         held = max(len(self._rows), 1)  # the row the cursor is on is the region's first row
+        if not self._first_height:
+            self._first_height = len(rows)
+        elif self._rows:  # empty after a flush past the pad, which counted its own push
+            self._shift_last_row(len(rows) - len(self._rows))
         if len(rows) > held:
             self._move_to(held - 1, ops)
             ops.append(NEWLINE * (len(rows) - held))
@@ -193,12 +231,17 @@ class LiveRegion:
         # The cursor now sits on the row below the last flushed line: the new top.
         self._row = 0
         self._parked = None
+        if not self._first_height:
+            self._at_top = self._at_top and not lines  # the first frame now starts below these lines
         if len(lines) <= self._pad:
             self._rows = self._rows[consumed:]  # the rows below the pad did not move
         else:
             ops.append(ERASE_BELOW)
             self._rows = []
             self._width = None
+            if self._first_height:
+                # The rows left restart below the flushed lines; with none left, nothing says where.
+                self._shift_last_row(len(lines) - consumed if len(self._lines) > consumed else -1)
         self._pad -= consumed
         self._lines = self._lines[consumed:]
         self._cursor = (self._cursor[0] - consumed, self._cursor[1])
@@ -218,3 +261,6 @@ class LiveRegion:
         self._lines = ()
         self._cursor = (0, 0)
         self._pad = 0
+        self._at_top = False  # the next first frame starts wherever this region's top row was
+        self._first_height = 0
+        self._pushed = 0

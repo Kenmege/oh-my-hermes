@@ -10,6 +10,7 @@ clipping. The model's own behaviour is pinned at the end of the file.
 
 from __future__ import annotations
 
+import random
 import re
 import unittest
 
@@ -34,13 +35,13 @@ def printable(written: str) -> str:
 
 
 class Harness:
-    def __init__(self, rows: int = 10, cols: int = 20, history: int = 0) -> None:
+    def __init__(self, rows: int = 10, cols: int = 20, history: int = 0, at_top: bool = False) -> None:
         self.screen = VTScreen(rows, cols)
         self.cols = cols
         self.writes: list[str] = []
         for index in range(history):
             self.screen.feed(f"history {index}\r\n")
-        self.region = LiveRegion(self._write)
+        self.region = LiveRegion(self._write, at_top=at_top)
 
     def _write(self, text: str) -> None:
         self.writes.append(text)
@@ -238,6 +239,129 @@ class PadRowTests(unittest.TestCase):
         self.assertEqual((harness.region.height, harness.region.pad), (2, 2))
         harness.region.clear()
         self.assertEqual((harness.region.height, harness.region.pad), (0, 0))
+
+
+END = "END"
+
+
+def ending(rows: int, pad: int = 0) -> list[Line]:
+    """A frame of `rows` rows whose last row reads END, the first `pad` of them blank."""
+    return plain(*[""] * pad, *[f"row {n}" for n in range(rows - pad - 1)], END)
+
+
+class LastRowTests(unittest.TestCase):
+    """`LiveRegion.last_row`: the screen row the region ends on, said only where it is certain.
+
+    Every answer is checked against the row END is on in the VT screen.
+    """
+
+    def shown(self, harness: Harness) -> int:
+        return harness.screen.lines().index(END)
+
+    def test_before_any_frame_there_is_no_row(self) -> None:
+        for at_top in (False, True):
+            self.assertIsNone(Harness(at_top=at_top).region.last_row(10))
+
+    def test_a_first_frame_from_the_top_row_ends_on_its_own_last_row(self) -> None:
+        harness = Harness(rows=10, at_top=True)
+        harness.render(ending(4))
+        self.assertEqual((harness.region.last_row(10), self.shown(harness)), (3, 3))
+
+    def test_the_same_frame_from_a_row_nobody_told_it_says_nothing(self) -> None:
+        # Nine rows on a ten-row screen end on row 8 from the top row and on row 9 from anywhere else.
+        ends = set()
+        for history in range(10):
+            harness = Harness(rows=10, history=history)
+            harness.render(ending(9))
+            self.assertIsNone(harness.region.last_row(10), history)
+            ends.add(self.shown(harness))
+        self.assertEqual(ends, {8, 9})
+
+    def test_one_row_of_growth_after_a_full_first_frame_settles_it_from_any_start(self) -> None:
+        for history in range(10):
+            harness = Harness(rows=10, history=history)
+            harness.render(ending(9, pad=3), pad=3)
+            harness.flush(plain("a", "b"))  # into the pad: the region is seven rows and ends where it did
+            self.assertIsNone(harness.region.last_row(10), history)
+            harness.render(ending(8))
+            self.assertEqual((harness.region.last_row(10), self.shown(harness)), (9, 9), history)
+
+    def test_growth_pushes_the_row_down_one_per_row_and_stops_at_the_screens_last(self) -> None:
+        harness = Harness(rows=10, at_top=True)
+        seen = []
+        for rows in (2, 2, 5, 6, 9, 10):
+            harness.render(ending(rows))
+            seen.append(harness.region.last_row(10))
+            self.assertEqual(seen[-1], self.shown(harness))
+        self.assertEqual(seen, [1, 1, 4, 5, 8, 9])
+
+    def test_a_flush_into_the_pad_leaves_the_row_and_one_past_the_pad_pushes_it(self) -> None:
+        harness = Harness(rows=12, at_top=True)
+        harness.render(ending(6, pad=3), pad=3)
+        harness.flush(plain("a", "b"))
+        self.assertEqual((harness.region.last_row(12), self.shown(harness)), (5, 5))
+        harness.flush(plain("c", "d", "e"))  # one pad row left: two lines push
+        self.assertEqual((harness.region.last_row(12), self.shown(harness)), (7, 7))
+        harness.flush(plain(*"fghijklm"))  # far past the screen's end
+        self.assertEqual((harness.region.last_row(12), self.shown(harness)), (11, 11))
+
+    def test_a_frame_that_takes_rows_off_the_end_loses_the_row_for_good(self) -> None:
+        harness = Harness(rows=10, at_top=True)
+        harness.render(ending(6))
+        harness.render(ending(4))
+        self.assertIsNone(harness.region.last_row(10))
+        harness.render(ending(8))  # END is on row 7: growth after a shrink is not the push it would have been
+        self.assertIsNone(harness.region.last_row(10))
+        self.assertEqual(self.shown(harness), 7)
+
+    def test_a_flush_before_the_first_frame_means_the_frame_did_not_start_on_the_top_row(self) -> None:
+        harness = Harness(rows=10, at_top=True)
+        harness.flush(plain("banner"))
+        harness.render(ending(4))
+        self.assertIsNone(harness.region.last_row(10))
+        self.assertEqual(self.shown(harness), 4)
+
+    def test_a_flush_that_leaves_no_row_of_the_region_loses_the_row(self) -> None:
+        harness = Harness(rows=10, at_top=True)
+        harness.render(plain("", ""), pad=2)
+        harness.flush(plain("a", "b", "c"))
+        harness.render(ending(3))
+        self.assertIsNone(harness.region.last_row(10))
+
+    def test_clear_forgets_the_row_and_the_top_row_start(self) -> None:
+        harness = Harness(rows=10, at_top=True)
+        harness.render(ending(4))
+        harness.region.clear()
+        self.assertIsNone(harness.region.last_row(10))
+        harness.render(ending(4))
+        self.assertIsNone(harness.region.last_row(10))
+
+    def test_whatever_is_drawn_and_flushed_an_answer_is_the_row_on_the_screen(self) -> None:
+        rng = random.Random(20261013)
+        answered = unknown = 0
+        for case in range(300):
+            rows = rng.choice((6, 10, 24))
+            at_top = rng.random() < 0.5
+            harness = Harness(rows=rows, cols=20, history=0 if at_top else rng.randrange(rows), at_top=at_top)
+            height = 0
+            for step in range(30):
+                if rng.random() < 0.6:
+                    # mostly growth, as the frame builder draws; now and then rows come off the end
+                    low = height if rng.random() < 0.9 else 1
+                    height = rng.randint(max(low, 1), rows - 1)
+                    pad = rng.randrange(height)
+                    harness.render(ending(height, pad), pad=pad)
+                elif height:
+                    harness.flush(plain(*[f"flushed {case}.{step}.{n}" for n in range(rng.randrange(rows + 3))]))
+                    height = harness.region.height
+                said = harness.region.last_row(rows)
+                if said is None or not height:
+                    unknown += 1
+                    continue
+                answered += 1
+                self.assertEqual(said, self.shown(harness), (case, step, rows, at_top))
+        self.assertGreater(answered, 2000)
+        self.assertGreater(unknown, 500)
 
 
 class ClippingAndStyleTests(unittest.TestCase):
