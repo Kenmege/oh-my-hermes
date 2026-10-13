@@ -646,7 +646,26 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # the only capability field that moved, by the five characters the new id is
 # longer; the native field mapping itself sits below the capability row's
 # quality-bar and safety-rule windows. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 488225
+# 488225 -> 489837: production skills onto Hermes' native producers. Six
+# rows had three quality-bar lines, so the line each gains is the fourth the
+# row carries: `materials-package` and `deliverable-package` the rule that a
+# document QA rung is observed only from the bundled producer's result field
+# (`"rendered": false` stays not observed), `report-package` the bundled
+# `powerpoint` skill as its binary-deck tool, `deploy-and-monitor` the
+# monitor-mode cron job prepared through `automation-blueprint`, and
+# `operating-rhythm` and `meeting-brief` the action-item fields.
+# `deliverable-package` and `ultraqa` state their own first Do-Not-Use line
+# instead of a generic one. The detail of each rule sits past the row's
+# bounds, and the shared document rule and `report-package`'s line were
+# tightened before raising. Re-derived from the producer.
+# 489837 -> 490030: review of that change. The shared document rule now says
+# a rung taken from a bundled producer is observed only from its field while
+# other observed evidence for a rung still counts (`materials-package`,
+# `deliverable-package`); `deploy-and-monitor`'s monitor source is the user's
+# source, never one OMH writes; `visual-qa`'s handoff policy counts captures
+# the session's own browser tools take; `report-package`'s line is shorter.
+# Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 490030
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -1823,9 +1842,9 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # above removes. So it takes the same policy: the measurement plus
 # `FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT`, rounded UP to the next multiple
 # of `FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS` (10,000, about a
-# tenth of the measurement). The 15,323 chars of headroom (130,000 - 114,677)
+# tenth of the measurement). The 15,906 chars of headroom (130,000 - 114,094)
 # hold about ten median lane members, while a renderer change that stamps
-# one more shared sentence longer than about 107 chars into every one of the
+# one more shared sentence longer than about 112 chars into every one of the
 # 142 bodies, or a few skills that copy other skills' own sections, still
 # fails.
 #
@@ -1861,7 +1880,12 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # shared lines, and `github-event-ops` carries its own recovery notes, so
 # those sections are no longer byte-identical to another skill's. 114,677
 # plus 10%, rounded up to the next 10,000, is still 130,000.
-FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 114677
+# 130,000 -> 130,000 (measurement 114,677 -> 114,094): `deliverable-package`
+# states its own Do-Not-Use instead of the feature-surface shape's three
+# shared lines, and `ultraqa` its own instead of the catalog's two fallback
+# lines, so neither section is byte-identical to another skill's any more.
+# 114,094 plus 10%, rounded up to the next 10,000, is still 130,000.
+FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 114094
 FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS = 10000
 FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT = 130000
 

@@ -59,6 +59,8 @@ from .catalog_types import (
     ADVERSARIAL_CONSENSUS_PERSPECTIVES,
     ADVERSARIAL_CONSENSUS_ROUNDS,
     DEEP_INTERVIEW_MAX_ROUNDS,
+    DOCUMENT_PRODUCER_QA_RULE,
+    DOCUMENT_PRODUCER_RUNGS_RULE,
     ENGINE_CLOSING_BRIEF_RULE,
     ENGINE_ENTRY_CONFIRMATION_RULE,
     ENGINE_FIT_RECOMMENDATION_RULE,
@@ -2466,6 +2468,7 @@ _DEFINITIONS = [
             "Turn context into agenda topics, prompts, decisions needed, and a record template.",
             "Keep prep distinct from actual meeting minutes or accepted decisions.",
             "Identify missing context that would change the meeting structure.",
+            "Give the record template's action-item rows outcome, owner, due date, dependency, acceptance condition, and source columns, each marked unknown until the meeting record fills it.",
         ),
         why_this_exists="`meeting-brief` exists to turn scattered context into a focused agenda, discussion prompts, decision points, and a record template without pretending the meeting already happened.",
         do_not_use_when=(
@@ -3452,6 +3455,8 @@ _DEFINITIONS = [
             "Name cadence, audience, time window, known notes, and missing evidence before producing a record.",
             "Separate agenda/templates from observed minutes, decisions, and action items.",
             "Record follow-up ownership only when supplied or explicitly mark it unknown.",
+            "Record each action item with its outcome, owner, due date, dependency, acceptance condition, and source reference, marking an owner or date the notes do not state as unknown, and keep a proposal that was discussed but not decided out of the decision log.",
+            "On Hermes, when the bundled `meeting-action-items` skill is available, it may pull decisions, owners, and actions out of the supplied notes; its list is a reading of those notes, so every item keeps its source reference and stays unaccepted until the notes or the owner confirm it, and a ticket or message it drafts is reported as published only after the user approved it and it was read back.",
         ),
         why_this_exists="`operating-rhythm` exists so recurring operating work has durable minutes, decisions, and follow-up history without pretending a meeting outcome was observed.",
         do_not_use_when=(
@@ -3519,6 +3524,8 @@ _DEFINITIONS = [
             "Name audience, reporting period, sections, supplied facts, assumptions, and missing data.",
             "Keep report packaging independent from reliability review unless explicitly requested.",
             "Export only Markdown/JSON outlines unless a separate presentation tool produces a binary deck.",
+            "On Hermes, that tool can be the bundled `powerpoint` skill, and a deck it builds counts as generated from its read-back (`pptx_read.py --outline`).",
+            "On Hermes, a render check taken from `pptx_render.py` counts only from a result reading `\"rendered\": true` whose images, rendered into a fresh directory, match `slide_count` and were each inspected; `\"rendered\": false` exits 0 yet leaves that check not observed, and a render observed another way still counts.",
         ),
         why_this_exists="`report-package` exists to make reporting a first-class operations surface: Hermes can produce clean report and slide outlines while keeping approvals, delivery, and binary deck export as separate evidence.",
         do_not_use_when=(
@@ -3614,6 +3621,8 @@ _DEFINITIONS = [
             "Name audience, source inputs, requested extraction/comparison task, target formats, outline sections, assumptions, missing inputs, and output owner.",
             "Attach format-specific QA expectations before preparing a binary-generation handoff.",
             "Record binary export, render QA, formula checks, approvals, and delivery only from observed evidence.",
+            DOCUMENT_PRODUCER_QA_RULE,
+            DOCUMENT_PRODUCER_RUNGS_RULE,
         ),
         why_this_exists=(
             "`materials-package` exists so Hermes can handle document, deck, spreadsheet, PDF, Word, Keynote, HWP, and Markdown "
@@ -3758,6 +3767,8 @@ _DEFINITIONS = [
             "Show `generate_visual_image` only when wrapper context reports image_generation_capability/v1 as connected, and still treat it as wrapper-owned action rather than evidence.",
             "When image_generation_capability/v1 is unknown or prompt_only, ask which image tool to use and route to image_generation_setup/v1 instead of pretending generation can start.",
             "For image edits, require a supplied image reference and state preserve, remove, replace, crop, and output constraints without claiming the source image was loaded.",
+            f"On Hermes, report image_generation_capability/v1 as `connected` when {native_tool_presence_clause('image_generate', code=True)}, since Hermes offers that tool only while an image backend is configured, and as `prompt_only` otherwise; never infer it from a Hermes version, a provider key, or a model name.",
+            "A supplied-image edit goes through that tool only when its own description offers to edit an existing image; when it says text-to-image only, the edit stays a prompt card. A result with `success: true` names the file or URL in `image` and backs one visual_generation_receipt/v1 attempt, with every route field the result does not state left unknown; a generated-image claim still needs visual_observation/v1, and visual QA and delivery stay separate.",
         ),
         quality_tier="visual-card-gated",
         quality_bar=(
@@ -5071,7 +5082,7 @@ _DEFINITIONS = [
         delegation_boundary="retained-catalog-intent",
         handoff_policy=(
             "Keep the QA plan, evidence manifest, target-lineage rule, and verdict narration in Hermes. "
-            "Screenshots, TUI captures, image diffs, browser runs, OCR/CJK checks, and oracle reviews are observed evidence supplied by the wrapper, executor, or user."
+            "Screenshots, TUI captures, image diffs, browser runs, OCR/CJK checks, and oracle reviews are observed evidence supplied by the wrapper, executor, or user, or taken by the session's own browser tools."
         ),
         required_inputs=(
             "surface type",
@@ -5148,6 +5159,11 @@ _DEFINITIONS = [
             "Score every round through `references/visual-verdict-contract.md`: integer 0-100 score, PASS/REVISE/BLOCK, and a differences list pairing each observed problem with the smallest fix.",
             "Hold 90 as the pass line: under it the verdict is REVISE and the named edits, a recapture of the same pages/states/viewports, and a fresh scored round are owed; rescoring the same captures is not a new round.",
             "A host-collected sub-90 baseline needs a changed revision, next round ordinal, and newer same-condition capture; plan caps only tighten.",
+            f"On Hermes, when {native_tool_presence_clause('browser_vision', code=True)}, the session can take its own captures: each such render_capture_manifest/v1 entry records the `screenshot_path` it returned, the URL, the viewport width the page reported, and the target revision, and an entry missing any of the four is not evidence; captures from the wrapper, executor, or user still count.",
+            "Score a round from the captured image itself, never from an auxiliary model's `analysis` text, which is what the capture tool returns when the session has no native vision.",
+            f"On Hermes, for the session's own captures, set each required viewport with `browser_cdp` `Emulation.setDeviceMetricsOverride` when {native_tool_presence_clause('browser_cdp', code=True)} (Hermes offers it only with a CDP endpoint the user configured), then read the width back through `browser_console` (`window.innerWidth`) before the capture: each `browser_cdp` call opens its own connection, so the override may not hold, and a width that reads back other than the one requested is not that viewport. Without that tool, a width the browser does not already report is a named blocker for the session's own captures, and a capture of that width from the wrapper, executor, or user still counts.",
+            f"On Hermes, when {native_tool_presence_clause('browser_console', code=True)}, read it after every navigation and every interaction in scope and record its errors in console_network_health/v1; a clean console read is console evidence only, never network, accessibility, or visual evidence.",
+            "Exploratory bug-hunting goes to Hermes' bundled `dogfood` skill when it is available: its issues and screenshots enter this verdict only as observed findings bound to the target lineage, and a report with no issues is not a PASS.",
         ),
         why_this_exists=(
             "`visual-qa` gives OMH a completion gate for rendered surfaces so layout breaks, AI-looking polish gaps, CJK text problems, "
@@ -5158,6 +5174,7 @@ _DEFINITIONS = [
             "The user needs a broad visual quality rubric before generation; use `design-quality-gate`.",
             "The user needs image-card prompt creation; use `img-summary`.",
             "The user wants non-visual code tests, CI, or PR review only; use the coding/review workflow.",
+            "Open-ended bug-hunting across a web app with no page, state, and viewport matrix or target revision to judge; on Hermes, use the bundled `dogfood` skill when it is available.",
         ),
         good_example=SkillExample(
             prompt="visual-qa 이 랜딩페이지가 모바일/데스크톱에서 깨지는지 스크린샷 기준으로 검증해줘.",
@@ -5186,6 +5203,29 @@ _DEFINITIONS = [
             "layout looks off in the browser",
             "verify the ui with screenshots",
         ),
+        # A non-Hermes host has none of the session's browser tools, so its
+        # body keeps the capture binding, scoring, viewport read-back, and
+        # console rules without them, and a viewport blocker there never
+        # outlaws a capture another tool supplied.
+        portable_overrides={
+            "quality_bar": (
+                "List the exact pages, states, viewports, files, images, or TUI frames being checked.",
+                "For TUI surfaces, bind every capture to an explicit terminal size (80x24 and 120x40 at minimum); pasted rendered output at a named size is the screenshot-equivalent, and a capture without its size is not evidence.",
+                "Combine objective capture/diff evidence, hotspot review, alpha/transparent-background checks, and human-readable visual findings.",
+                "Capture interaction, click-path, and motion states when the UI has transitions or controls that change state.",
+                "Separate design-system consistency, functional integrity, visual fidelity, responsive behavior, accessibility visibility, and CJK/text precision.",
+                "Score every round through `references/visual-verdict-contract.md`: integer 0-100 score, PASS/REVISE/BLOCK, and a differences list pairing each observed problem with the smallest fix.",
+                "Hold 90 as the pass line: under it the verdict is REVISE and the named edits, a recapture of the same pages/states/viewports, and a fresh scored round are owed; rescoring the same captures is not a new round.",
+                "A host-collected sub-90 baseline needs a changed revision, next round ordinal, and newer same-condition capture; plan caps only tighten.",
+                "Bind each capture to its screenshot path, URL, the viewport width the page reported, and the target revision; an entry missing any of the four is not evidence.",
+                "Score a round from the captured image itself, never from another model's text description of it.",
+                "Set a viewport only through a tool that can, and read the width back before the capture; a width that reads back other than the one requested is not that viewport, and a width nothing could set is a named blocker unless a capture of it is supplied.",
+                "Read the browser console after every navigation and every interaction in scope; a clean console read is console evidence only, never network, accessibility, or visual evidence.",
+            ),
+        },
+        portable_override_shadows={
+            "quality_bar": "e0d5ad2c294f405088a877e50eb4b6e38d34f3da4024d5a16698fafa70f2d4ac",
+        },
     ),
     SkillDefinition(
         "build-failure-triage",
@@ -6727,6 +6767,8 @@ _DEFINITIONS = [
             "Name release scope, target environment, health signals, rollback criteria, and evidence owner.",
             "Show pre-deploy, deploy decision, monitor, rollback, and post-deploy as distinct stages.",
             "Mark health and rollback status unknown until observed evidence arrives.",
+            "On Hermes, a watchlist that must keep running after this turn is prepared as a native blueprint through `automation-blueprint` (a cron job whose `monitor` source, a health URL or a script whose output carries no timestamps, is the user's source, never one OMH writes), activated by the user or Hermes and never by OMH.",
+            "On Hermes, the first monitor tick runs against a baseline with nothing to diff, so it is not a detected change; a silent tick says only that nothing was delivered (a no_change run, or an agent run that answered `[SILENT]`) and never that the release is healthy; a source that failed is an error, not a change; and what the job finds enters the post-deploy status only from its recorded runs (`hermes cron runs <job_id>`) and its open `hermes cron incidents`.",
         ),
         do_not_use_when=(
             "An incident has already been declared and the work is commanding it -- severity, commander, running timeline, recovery verification -- rather than watching a release; use `live-incident-response`.",
@@ -6776,6 +6818,17 @@ _DEFINITIONS = [
             "A check no automation can hold gets a manual test guide, never a done claim: load `references/manual-test-guide.md` for the step shape (setup, do, expect, broken), the four reasons a step may stay manual, and why it stays `prepared_not_observed` until a run records a fresh `observed_check_results/v1`. `code-story` phase `VI. Manual test guide`; rendered surfaces go to `visual-qa`.",
             "For probes that must run in Hermes-owned isolation or outlive this session, load `references/board-fanin.md`: one probe row per scenario in its own worktree, one fixer row whose `parents` is every probe, re-verification through the review lane, and findings only through bounded readback.",
             "When Hermes owns the coding path, read `hermes_coding_harness/v1` before saying build, verification, review, docs, or PR-prep evidence exists.",
+            f"On a web app, when {native_tool_presence_clause('browser_vision', code=True)}, run each hostile scenario through the session's browser tools against the target the user named (local or staging unless stated), and a scenario that would submit, buy, send, or delete on a live surface waits for the user's approval; read `browser_console` after every navigation and interaction, and keep a failing scenario's `screenshot_path` and console errors as its observed evidence.",
+        ),
+        why_this_exists=(
+            "`ultraqa` exists because behavior that passes its own tests can still fail under inputs and conditions "
+            "nobody wrote down: it turns the changed behavior and known risks into hostile scenarios, records each "
+            "one's observed pass or fail apart from any proposed fix, and hands fixes to the selected coding executor."
+        ),
+        do_not_use_when=(
+            "Exploratory bug-hunting across a web app with no changed behavior to attack; on Hermes, use the bundled `dogfood` skill when it is available, and bring a finding back here as a scenario to reproduce.",
+            "Judging whether a rendered page, image, or terminal frame looks right across viewports and states; use `visual-qa`.",
+            "Confirming that a finished change meets its acceptance criteria with the smallest proving check, when no hostile scenarios are wanted; use `verification-gate`.",
         ),
         situations=(
             "try to break this feature",
@@ -6794,14 +6847,12 @@ _DEFINITIONS = [
                 "Report pass/fail evidence separately from proposed fixes.",
                 "Delegate code mutations discovered by QA to the selected coding executor.",
                 "Read actual host/executor evidence before claiming build, verification, review, documentation, or PR-preparation results.",
-            ),
-            "why_this_exists": (
-                "`ultraqa` exists to keep `verification` work explicit, evidence-backed, and inside the host/executor boundary instead of relying on ad hoc chat narration.",
+                "On a web app, run hostile scenarios against the target the user named (local or staging unless stated); a scenario that would submit, buy, send, or delete on a live surface waits for the user's approval.",
+                "Read the browser console after every navigation and interaction, and keep a failing scenario's screenshot and console errors as its observed evidence.",
             ),
         },
         portable_override_shadows={
-            "quality_bar": "8724923b8be08b1b18d7c0b3331b2250d7703cc81aa061af96955b8c59b6bbe6",
-            "why_this_exists": "094f539b7deedfe8d338446727ebb6a6b6bfc6dea66d3a563420f6b7ba1d9dea",
+            "quality_bar": "fd505892259dccd760f846ec347c2472bcff73f48faecef4313417d31c28c034",
         },
     ),
     SkillDefinition(

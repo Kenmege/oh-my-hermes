@@ -69,6 +69,7 @@ Quality bar:
 - Turn context into agenda topics, prompts, decisions needed, and a record template.
 - Keep prep distinct from actual meeting minutes or accepted decisions.
 - Identify missing context that would change the meeting structure.
+- Give the record template's action-item rows outcome, owner, due date, dependency, acceptance condition, and source columns, each marked unknown until the meeting record fills it.
 
 Required inputs:
 

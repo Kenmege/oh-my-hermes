@@ -114,6 +114,11 @@ NON_SKILL_BACKTICKS = frozenset(
         "cronjob_manage",
         "/goal",
         "/goal draft",
+        # A skill Hermes bundles, named by `visual-qa` and `ultraqa` for
+        # open-ended exploratory web QA it owns outright. It is not a catalog
+        # sibling, so it adds no deference pair and the router has no rank for
+        # it.
+        "dogfood",
     }
 )
 
@@ -266,9 +271,14 @@ NON_SKILL_BACKTICKS = frozenset(
 # `external-connector-readiness`, `toolbelt-readiness`, and `command-operator`
 # with `connector-operator` in one statement. Twelve cases, fifteen pairs,
 # five new owners (`github-event-ops` already deferred).
-EXPECTED_DEFERENCE_CASES = 338
-EXPECTED_DEFERENCE_PAIRS = 352
-EXPECTED_DEFERRING_OWNERS = 96
+# Two more skills state their own Do-Not-Use against Hermes' native producers:
+# `deliverable-package` (a feature-surface skill) adds `materials-package` and
+# `report-package`; `ultraqa` replaces the catalog's generic fallback lines and
+# adds `visual-qa` and `verification-gate`. Four cases, four pairs, two new
+# owners.
+EXPECTED_DEFERENCE_CASES = 342
+EXPECTED_DEFERENCE_PAIRS = 356
+EXPECTED_DEFERRING_OWNERS = 98
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.

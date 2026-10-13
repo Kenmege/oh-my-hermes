@@ -24,6 +24,7 @@ This is a Hermes-native `visual-qa` workflow skill.
 - The user needs a broad visual quality rubric before generation; use `design-quality-gate`.
 - The user needs image-card prompt creation; use `img-summary`.
 - The user wants non-visual code tests, CI, or PR review only; use the coding/review workflow.
+- Open-ended bug-hunting across a web app with no page, state, and viewport matrix or target revision to judge; on Hermes, use the bundled `dogfood` skill when it is available.
 
 ## Examples
 
@@ -80,10 +81,15 @@ Quality bar:
 - Score every round through `references/visual-verdict-contract.md`: integer 0-100 score, PASS/REVISE/BLOCK, and a differences list pairing each observed problem with the smallest fix.
 - Hold 90 as the pass line: under it the verdict is REVISE and the named edits, a recapture of the same pages/states/viewports, and a fresh scored round are owed; rescoring the same captures is not a new round.
 - A host-collected sub-90 baseline needs a changed revision, next round ordinal, and newer same-condition capture; plan caps only tighten.
+- On Hermes, when `browser_vision` is in your tool list or tool_search finds it, the session can take its own captures: each such render_capture_manifest/v1 entry records the `screenshot_path` it returned, the URL, the viewport width the page reported, and the target revision, and an entry missing any of the four is not evidence; captures from the wrapper, executor, or user still count.
+- Score a round from the captured image itself, never from an auxiliary model's `analysis` text, which is what the capture tool returns when the session has no native vision.
+- On Hermes, for the session's own captures, set each required viewport with `browser_cdp` `Emulation.setDeviceMetricsOverride` when `browser_cdp` is in your tool list or tool_search finds it (Hermes offers it only with a CDP endpoint the user configured), then read the width back through `browser_console` (`window.innerWidth`) before the capture: each `browser_cdp` call opens its own connection, so the override may not hold, and a width that reads back other than the one requested is not that viewport. Without that tool, a width the browser does not already report is a named blocker for the session's own captures, and a capture of that width from the wrapper, executor, or user still counts.
+- On Hermes, when `browser_console` is in your tool list or tool_search finds it, read it after every navigation and every interaction in scope and record its errors in console_network_health/v1; a clean console read is console evidence only, never network, accessibility, or visual evidence.
+- Exploratory bug-hunting goes to Hermes' bundled `dogfood` skill when it is available: its issues and screenshots enter this verdict only as observed findings bound to the target lineage, and a report with no issues is not a PASS.
 
 Handoff policy:
 
-Keep the QA plan, evidence manifest, target-lineage rule, and verdict narration in Hermes. Screenshots, TUI captures, image diffs, browser runs, OCR/CJK checks, and oracle reviews are observed evidence supplied by the wrapper, executor, or user.
+Keep the QA plan, evidence manifest, target-lineage rule, and verdict narration in Hermes. Screenshots, TUI captures, image diffs, browser runs, OCR/CJK checks, and oracle reviews are observed evidence supplied by the wrapper, executor, or user, or taken by the session's own browser tools.
 
 Required inputs:
 

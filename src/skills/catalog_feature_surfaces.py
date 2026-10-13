@@ -10,7 +10,14 @@ the surface template.
 from __future__ import annotations
 
 from ..plugin_bundle.omh.native_tools import native_tool_presence_clause
-from .catalog_types import EXECUTION_WAIT_DISCIPLINE_RULE, HermesReferenceLine, _GENERAL_RECOVERY_NOTES, _feature_surface_skill
+from .catalog_types import (
+    DOCUMENT_PRODUCER_QA_RULE,
+    DOCUMENT_PRODUCER_RUNGS_RULE,
+    EXECUTION_WAIT_DISCIPLINE_RULE,
+    HermesReferenceLine,
+    _GENERAL_RECOVERY_NOTES,
+    _feature_surface_skill,
+)
 
 # A run with nobody to answer the chat confirmation cannot satisfy it, so the
 # gated action does not run there; "marked missing" never means "ran without
@@ -381,12 +388,26 @@ _FEATURE_SURFACE_SKILLS = (
         boundary="A deliverable package card is not binary generation, render QA, formula recalculation, approval, upload, attachment, or delivery evidence.",
         good_prompt="deliverable-package turn this research into PPT and PDF with attachment status.",
         bad_prompt="deliverable-package claim the PDF was attached without observed file evidence.",
+        extra_quality_bar=(
+            DOCUMENT_PRODUCER_QA_RULE,
+            DOCUMENT_PRODUCER_RUNGS_RULE,
+            "A file is `generated` only from the producer's read-back of the written file, `approved` only from the person's answer, and `attached` only from the destination's own read-back, never from a reply that names the file.",
+        ),
         situations=(
             "was the pdf attached",
             "status of the report files",
             "deliver these documents to the client",
             "which files are approved",
             "attach the deck to the thread",
+        ),
+        why_this_exists=(
+            "`deliverable-package` exists because a requested file moves through prepared, generated, QA-checked, "
+            "approved, and attached states that no single tool reports together: it tracks each file through them "
+            "and reports a state only from that state's own evidence, never from an earlier one's."
+        ),
+        do_not_use_when=(
+            "Planning a deck, PDF, workbook, or document from source inputs before any file exists (its outline, target formats, and QA ladder); use `materials-package`.",
+            "A text-only report, executive brief, or slide outline with no file to produce; use `report-package`.",
         ),
     ),
     _feature_surface_skill(

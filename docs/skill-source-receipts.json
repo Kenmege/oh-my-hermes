@@ -529,6 +529,39 @@
       "reviewed_on": "2026-10-13",
       "rationale": "Adopted Hermes' Automation Blueprints and cron as what automation-blueprint's record prepares; OMH keeps its own failure decisions, mapped onto the scheduler's own behavior, and never creates a job.",
       "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-13-materials-package-hermes-document-producers",
+      "candidate_key": "materials-package@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2110",
+      "reviewed_on": "2026-10-13",
+      "rationale": "Adopted Hermes' bundled document skills as a source of materials QA rungs; a rung taken from one is observed only from its result field for that file, false stays not_observed, other evidence still counts.",
+      "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-13-visual-qa-hermes-dogfood",
+      "candidate_key": "visual-qa@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2110",
+      "reviewed_on": "2026-10-13",
+      "rationale": "Adopted dogfood's console-after-every-step rule and screenshot-path evidence; exploratory web QA defers to it when available, and its report is an observed finding, never a PASS.",
+      "supersedes": null
+    },
+    {
+      "receipt_id": "ssc-2026-10-13-operating-rhythm-hermes-meeting-action-items",
+      "candidate_key": "operating-rhythm@github.com/nousresearch/hermes-agent",
+      "prior_checkpoint": null,
+      "next_checkpoint": "63d0b94120027d487c9a5235b9ec64b696af1b26",
+      "disposition": "adopted",
+      "decision_ref": "#2110",
+      "reviewed_on": "2026-10-13",
+      "rationale": "Adopted the action-item fields outcome, owner, due date, dependency, acceptance, and source, with open values marked unknown; the bundled skill's extraction stays a reading of the notes.",
+      "supersedes": null
     }
   ]
 }

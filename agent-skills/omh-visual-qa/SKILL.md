@@ -25,6 +25,7 @@ This is an OMH `visual-qa` workflow skill, projected for Agent Skills hosts (Cla
 - The user needs a broad visual quality rubric before generation; use `design-quality-gate`.
 - The user needs image-card prompt creation; use `img-summary`.
 - The user wants non-visual code tests, CI, or PR review only; use the coding/review workflow.
+- Open-ended bug-hunting across a web app with no page, state, and viewport matrix or target revision to judge; on Hermes, use the bundled `dogfood` skill when it is available.
 
 ## Examples
 
@@ -76,6 +77,10 @@ Quality bar:
 - Score every round through `references/visual-verdict-contract.md`: integer 0-100 score, PASS/REVISE/BLOCK, and a differences list pairing each observed problem with the smallest fix.
 - Hold 90 as the pass line: under it the verdict is REVISE and the named edits, a recapture of the same pages/states/viewports, and a fresh scored round are owed; rescoring the same captures is not a new round.
 - A host-collected sub-90 baseline needs a changed revision, next round ordinal, and newer same-condition capture; plan caps only tighten.
+- Bind each capture to its screenshot path, URL, the viewport width the page reported, and the target revision; an entry missing any of the four is not evidence.
+- Score a round from the captured image itself, never from another model's text description of it.
+- Set a viewport only through a tool that can, and read the width back before the capture; a width that reads back other than the one requested is not that viewport, and a width nothing could set is a named blocker unless a capture of it is supplied.
+- Read the browser console after every navigation and every interaction in scope; a clean console read is console evidence only, never network, accessibility, or visual evidence.
 
 Required inputs:
 
