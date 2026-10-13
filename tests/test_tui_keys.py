@@ -728,6 +728,19 @@ class ReportsAfterTheOffTests(unittest.TestCase):
         # Its ESC arrived 0.45 s after the off; the silence that would settle it ends past 0.5 s.
         self.assertEqual(self.split(1, 0.2, 0.45), [self.DECODED])
 
+    def test_a_byte_that_joins_a_held_escape_does_not_move_when_the_report_started(self) -> None:
+        # Its ESC came 0.45 s after the off and its `[` at 0.6 s: the report started inside the grace, so
+        # `ESC[` still waits and the rest finishes it, though the `[` alone came after the grace.
+        paused = PausedInput(reporting=False, off_at=0.0)
+        paused.now = 0.45
+        paused.feed(self.RELEASE[:1])
+        paused.pause(0.15)
+        paused.feed(self.RELEASE[1:2])
+        paused.pause(0.1)
+        paused.feed(self.RELEASE[2:])
+        paused.pause(2.0)
+        self.assertEqual(paused.events, [self.DECODED])
+
     def test_an_escape_that_arrived_while_reporting_was_on_waits_though_it_is_off_now(self) -> None:
         paused = PausedInput(reporting=False, off_at=0.01)
         paused.feed(b"\x1b")  # at 0: reporting was still on
