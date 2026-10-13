@@ -449,11 +449,16 @@ the level once Hermes confirms it; a level Hermes refuses leaves the row as it
 was and says so.
 
 A steer adds what you typed to the turn that is running, without interrupting
-it; Hermes reads it after its next tool call, and the transcript notes
-`↪ steered:` once Hermes took it. If the turn ended first, or Hermes cannot
-take a steer yet, the text goes as an ordinary prompt instead. If you left the
-session (`/new`, a switch) before Hermes answered, the text comes back to the
-composer and is not sent to the session you are in. The OMH TUI
+it: Hermes reads it after its next tool call, or, while it is compressing the
+context, queues it and sends it as the next prompt once compression is done.
+Hermes gives the same answer for both, so the transcript notes
+`↪ steer queued by Hermes:` for either. If Hermes does not take the steer
+while the turn still runs (an agent still starting, or one that takes no
+steer), the text joins the OMH TUI's own queue (`⧗`) and goes when the turn
+ends, whatever `display.busy_input_mode` says, so it never interrupts the
+turn; if the turn had already ended, it goes as an ordinary prompt. If you
+left the session (`/new`, a switch) before Hermes answered, the text comes
+back to the composer and is not sent to the session you are in. The OMH TUI
 steers only with text you typed and sent this way: a queued prompt is never
 turned into a steer.
 

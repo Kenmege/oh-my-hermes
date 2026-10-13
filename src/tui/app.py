@@ -33,10 +33,12 @@ The queue is the TUI's own (the gateway has no call that withdraws a prompt):
 its prompts are listed above the composer's top rule, and Up on an empty
 composer takes all of them back into the composer.
 Ctrl+Enter and `/steer <text>` send what the person typed into the running
-turn (`session.steer`); the TUI steers nothing on its own, and text Hermes
-does not take as a steer goes as a prompt instead of being dropped. A steer
-answered after its session was left goes back to the composer instead: the
-session now live never receives it.
+turn (`session.steer`); the TUI steers nothing on its own. Text Hermes does
+not take as a steer joins the TUI's queue while the turn runs, whatever the
+busy mode, and goes as a prompt once it ends; sent at once, it would
+interrupt or redirect the turn it was meant to steer. A steer answered after
+its session was left goes back to the composer instead: the session now live
+never receives it.
 
 Input modes: Shift+Tab cycles normal, accept and plan. Accept is Hermes'
 per-session yolo, so entering and leaving it are `config.set` calls that
@@ -260,8 +262,13 @@ QUEUE_ROWS = 3
 QUEUE_EDIT_HINT = "↑ edit"
 QUEUE_HINT_GAP = 2
 
-STEERED_NOTICE = "↪ steered: {}"
+# Hermes answers `queued` both when the running turn takes the steer (at its next tool call) and when it
+# queues the text as the next prompt because it is compressing the context; the notice is true of both.
+STEERED_NOTICE = "↪ steer queued by Hermes: {}"
 STEER_REJECTED = "rejected"  # `session.steer`'s status when the turn ended before the text arrived
+STEER_REFUSED_NOTICE = "Hermes did not take the steer ({code}): {message}. {fallback}"
+STEER_HELD = "It waits in the queue and goes when the turn ends."
+STEER_SENT = "Sent as a prompt instead."
 STEER_USAGE = "Usage: /steer <text to add to the running turn>"
 STEER_LEFT_NOTICE = (
     "Hermes answered a steer after you left its session. "
@@ -1484,19 +1491,25 @@ class App:
         else:
             self._send_typed(text)
 
-    def _send_typed(self, text: str) -> None:
-        """A prompt the person typed and sent: in plan mode as `/plan <text>`, the way a typed `/plan` goes."""
-        if self.plan_mode:
-            self._run_slash(plan_invocation(text))
-        else:
-            self._send_prompt(text)
+    def _send_typed(self, text: str, hold: bool = False) -> None:
+        """A prompt the person typed and sent: in plan mode as `/plan <text>`, the way a typed `/plan` goes.
 
-    def _send_prompt(self, text: str, shown: str = "", typed: str = "") -> None:
-        """Send `text`, or queue it behind the running turn; `typed` is what Up puts back in the composer."""
+        `hold` keeps it behind a running turn whatever the busy mode (`_send_prompt`).
+        """
+        if self.plan_mode:
+            self._run_slash(replace(plan_invocation(text), held=hold))
+        else:
+            self._send_prompt(text, hold=hold)
+
+    def _send_prompt(self, text: str, shown: str = "", typed: str = "", hold: bool = False) -> None:
+        """Send `text`, or queue it behind the running turn; `typed` is what Up puts back in the composer.
+
+        `hold` queues it behind a running turn whatever the busy mode.
+        """
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
-        if self._busy() and self.busy_mode == BUSY_QUEUE:
+        if self._busy() and (hold or self.busy_mode == BUSY_QUEUE):
             self.queued.append((text, shown, typed))
             return
         self._submit_prompt(text, shown)
@@ -1578,20 +1591,25 @@ class App:
         if sid != self.sid:
             self._steer_back(text)
         elif as_text(result.get("status")) == STEER_REJECTED:
-            self._send_typed(text)  # the turn ended before the text arrived: it is the next prompt
+            self._send_typed(text, hold=True)  # the next prompt: after the turn, if one still runs here
         else:
             self.transcript.add_notice(STEERED_NOTICE.format(first_line(text)))
 
     def _on_steer_refused(self, sid: str, text: str, error: dict[str, Any]) -> bool:
-        """Hermes could not steer (an agent still starting, or one that takes no steer): the text goes as a prompt."""
+        """Hermes could not steer (an agent still starting, or one that takes no steer): the text is the next prompt.
+
+        While a turn runs it waits in the TUI's queue, whatever the busy mode;
+        only an idle session gets it as a prompt at once.
+        """
         if sid != self.sid:
             self._steer_back(text)
             return True
+        fallback = STEER_HELD if self._busy() else STEER_SENT
         message = as_text(error.get("message")) or "refused"
         self.transcript.add_notice(
-            f"Hermes did not take the steer ({error.get('code')}): {message}. Sent as a prompt instead.", NOTICE_WARN
+            STEER_REFUSED_NOTICE.format(code=error.get("code"), message=message, fallback=fallback), NOTICE_WARN
         )
-        self._send_typed(text)
+        self._send_typed(text, hold=True)
         return True
 
     def _steer_back(self, text: str) -> None:
@@ -1812,7 +1830,7 @@ class App:
         if kind in ("send", "skill"):
             if message.strip():
                 shown = as_text(result.get("display")).strip() or invocation.shown
-                self._send_prompt(message, shown, typed=invocation.typed)
+                self._send_prompt(message, shown, typed=invocation.typed, hold=invocation.held)
             else:
                 self.transcript.add_notice(f"/{invocation.name}: empty message", NOTICE_WARN)
         elif kind == "prefill":

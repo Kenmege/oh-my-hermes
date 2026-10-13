@@ -110,13 +110,16 @@ class SlashInvocation:
     """One slash command: `name` as typed (no slash), the rest as `arg`.
 
     `for_plan_mode` says the TUI wrote the command around a prompt the person
-    typed in plan mode, instead of the person typing the command.
+    typed in plan mode, instead of the person typing the command. `held` says
+    a prompt the command sends waits for a running turn to end whatever the
+    busy mode: it is a steer Hermes did not take.
     """
 
     name: str
     arg: str
     command: SlashCommand | None
     for_plan_mode: bool = False
+    held: bool = False
 
     @property
     def text(self) -> str:

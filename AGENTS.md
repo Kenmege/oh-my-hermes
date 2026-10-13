@@ -202,7 +202,10 @@ PR without the chat history.
   them on), Shift+Tab sends nothing and turns only plan mode on and off. A
   steer (Ctrl+Enter, `/steer`) sends into the running turn only text the
   person typed and sent that way; the TUI never steers on its own, and a
-  queued prompt is never turned into a steer. The
+  queued prompt is never turned into a steer. A steer Hermes does not take
+  waits in the TUI's own queue while the turn runs, whatever the busy mode,
+  so it never interrupts the turn; only an idle session gets it as a prompt
+  at once. The
   subagent views (the strip, the list, one agent's log) are read-only:
   `subagent.tail` is the only subagent call the TUI makes, it reads the tail
   of the log the person opened, and the TUI never steers, interrupts or
