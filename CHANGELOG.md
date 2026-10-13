@@ -19,6 +19,11 @@ All notable changes will be documented here.
   protocol"); the gateway slice it relies on is declared in
   `src/tui/gateway_contract.py`.
 
+- **The OMH status widget keeps ordinary punctuation in plan and agent text.**
+  Its character allowlist dropped apostrophes, commas, question marks and
+  quotes, so a plan item `person's` rendered as `persons` in Hermes' TUI; the
+  OMH TUI's panels share the same allowlist and now render the same text.
+
 - **A new `spend-gate` skill shows what a spend will cost before the agent
   moves any money, and calls it done only on a receipt.** It covers every
   rail: a card checkout in a page, an HTTP 402 or pay-per-request call, a

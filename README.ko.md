@@ -278,12 +278,12 @@ omh
 <table align="center">
   <tr>
     <td width="50%" align="center">
-      <img src="assets/omh-terminal-boot-hud.png" alt="The OH-MY-HERMES boot"><br>
-      <sub><b>OH-MY-HERMES 부팅.</b></sub>
+      <img src="assets/omh-tui-turn.png" alt="The OMH TUI: an edit with its diff, highlighted code, and the plan panel above the composer"><br>
+      <sub><b>편집과 diff, 그리고 프롬프트 위의 plan.</b></sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/omh-terminal-ulw-work-session.png" alt="An ulw-work run"><br>
-      <sub><b><code>ulw-work</code> 실행.</b></sub>
+      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete, with deny selected by default"><br>
+      <sub><b>Hermes가 묻고 사람이 정합니다. 기본값은 거부.</b></sub>
     </td>
   </tr>
 </table>

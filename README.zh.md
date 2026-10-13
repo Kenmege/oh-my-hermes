@@ -274,12 +274,12 @@ omh
 <table align="center">
   <tr>
     <td width="50%" align="center">
-      <img src="assets/omh-terminal-boot-hud.png" alt="The OH-MY-HERMES boot"><br>
-      <sub><b>OH-MY-HERMES 启动画面。</b></sub>
+      <img src="assets/omh-tui-turn.png" alt="The OMH TUI: an edit with its diff, highlighted code, and the plan panel above the composer"><br>
+      <sub><b>一次编辑及其 diff,以及提示符上方的 plan。</b></sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/omh-terminal-ulw-work-session.png" alt="An ulw-work run"><br>
-      <sub><b><code>ulw-work</code> 运行中。</b></sub>
+      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete, with deny selected by default"><br>
+      <sub><b>Hermes 询问,由人决定。默认拒绝。</b></sub>
     </td>
   </tr>
 </table>
