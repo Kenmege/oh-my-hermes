@@ -163,8 +163,14 @@ NATIVE_LOOP_CLAUSES = {
 
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
 _NEGATED = re.compile(r"\b(?:never|not|no)\b", re.IGNORECASE)
-# A sentence that would turn Hermes' approval gate on.
-_ENABLES_GATE = re.compile(r"\b(?:enable|enabling|turn(?:ing)?\b[^.]*\bon|switch(?:ing)?\b[^.]*\bon)\b", re.IGNORECASE)
+# One clause of a sentence; a negation elsewhere in the sentence does not
+# govern it ("OMH never approves one, and proposes turning it on").
+_CLAUSE_END = re.compile(r"[;,]|: ")
+# A clause that would turn Hermes' approval gate on.
+# The span may cross a dot: the gate's own key is `memory.write_approval`.
+_ENABLES_GATE = re.compile(
+    r"\b(?:enables?|enabling|turn(?:s|ing)?\b.*?\bon|switch(?:es|ing)?\b.*?\bon)\b", re.IGNORECASE
+)
 # A sentence that ties a use or load count to removing a skill.
 _USAGE_COUNT = re.compile(r"\.usage\.json|\b(?:use|usage|view|load)\s+counts?\b", re.IGNORECASE)
 _REMOVAL = re.compile(r"\b(?:prune|pruning|retire|retiring|archive|archiving|remove|removing)\b", re.IGNORECASE)
@@ -174,6 +180,12 @@ _HUMAN_CAPTURE_APPROVAL = "omh memory approve"
 
 def _sentences(content: str) -> list[str]:
     return [sentence for line in content.splitlines() for sentence in _SENTENCE_END.split(line)]
+
+
+def _negated_before(text: str, pattern: re.Pattern[str]) -> bool:
+    """A negation comes before the first match: "never present X as Y", not "present X as Y, not Z"."""
+    match = pattern.search(text)
+    return match is not None and _NEGATED.search(text[: match.start()]) is not None
 
 
 def _bodies() -> list[tuple[str, str, str]]:
@@ -257,10 +269,16 @@ class OwnerDirectiveTests(unittest.TestCase):
             if "write_approval" in sentence
         ]
         self.assertTrue(mentions, "no body names write_approval; the check below would be vacuous")
-        for projection, name, sentence in mentions:
-            if _ENABLES_GATE.search(sentence):
-                with self.subTest(body=f"{projection}:{name}", sentence=sentence[:80]):
-                    self.assertRegex(sentence, _NEGATED)
+        gate_clauses = [
+            (projection, name, clause)
+            for projection, name, sentence in mentions
+            for clause in _CLAUSE_END.split(sentence)
+            if "write_approval" in clause and _ENABLES_GATE.search(clause)
+        ]
+        self.assertTrue(gate_clauses, "no clause turns the gate on or off; the check below would be vacuous")
+        for projection, name, clause in gate_clauses:
+            with self.subTest(body=f"{projection}:{name}", clause=clause[:80]):
+                self.assertTrue(_negated_before(clause, _ENABLES_GATE), clause)
 
     def test_no_native_loop_body_routes_a_capture_through_a_person(self) -> None:
         names = {omh_skill_display_name(name) for name in NATIVE_LOOP_SKILLS}
@@ -279,7 +297,7 @@ class OwnerDirectiveTests(unittest.TestCase):
         self.assertTrue(mentions, "no body ties a count to removal; the check below would be vacuous")
         for projection, name, sentence in mentions:
             with self.subTest(body=f"{projection}:{name}", sentence=sentence[:80]):
-                self.assertRegex(sentence, _NEGATED)
+                self.assertTrue(_negated_before(sentence, _USAGE_COUNT), sentence)
 
     def test_a_staged_write_is_never_reported_as_landed(self) -> None:
         mentions = [
