@@ -8,25 +8,31 @@ All notable changes will be documented here.
   transcript excerpt to leave the team, and calls it redacted only after the
   file that leaves was scanned.** Asking Hermes to strip PII from an export
   for a vendor, redact personal data from logs before a public GitHub issue,
-  pseudonymize ids before a fine-tune corpus, or de-identify records before a
-  model provider sees them now opens this review; requests like these used to
-  dispatch GitHub event ops, the connector operator, the media operator, or
-  model-finetuning, or got a clarifying question. It asks where the file goes
+  pseudonymize ids in a dataset before a fine-tune corpus, or de-identify a
+  CSV before a model provider sees it now opens this review; requests like
+  these used to dispatch GitHub event ops, the connector operator, the media
+  operator, or model-finetuning, or got a clarifying question. It opens only
+  when a file-shaped carrier (an export, dataset, CSV, file, logs, records, an
+  extract or a transcript excerpt) is leaving the team (a vendor, contractor,
+  agency, researcher, public issue, model provider, training corpus, or a verb
+  that sends it). The same words about code, Hermes settings, a GDPR or
+  contract question, storage-wide scans, messages and tickets, a pull request
+  or issue, or a personal account do not open it. It asks where the file goes
   and what that destination needs, classifies every field as a direct
-  identifier, quasi-identifier, secret, free text, or not personal, drops what
-  is not needed before masking anything, and keeps any pseudonym mapping at a
+  identifier, quasi-identifier, secret, free text, or not personal, reads a
+  row only when per-column shape counts leave a field unclear, drops what is
+  not needed before masking anything, and keeps any pseudonym mapping at a
   local path outside the shipped file. The verdict is `redacted` only after an
   observed residual scan of the exact file that leaves counts every class,
   free text included; without one it is `not_observed`. Counts come from
   Hermes' `search_files` in its `count` mode or a detector script run through
-  `execute_code` that prints counts only, so no matched value enters the
-  session. The skill says plainly that Hermes' `privacy.redact_pii` and
+  `execute_code` that prints counts only; that script's stderr and any
+  traceback return too, so it catches its own errors without echoing a value.
+  The skill says plainly that Hermes' `privacy.redact_pii` and
   `security.redact_secrets` cover gateway chat identifiers and tool output,
   never a file that leaves. What left is recorded as metadata only:
   destination, date, fields, row count, and digest. OMH uploads nothing, keeps
-  no raw value, and leaves the lawful basis to `legal-compliance-review`. A
-  GDPR question, a logging-pipeline change, and the words PII, redact, mask,
-  or share in their everyday senses do not open it.
+  no raw value, and leaves the lawful basis to `legal-compliance-review`.
 
 - **The coding lane works with Hermes' own delegation, board, and debugging
   skills instead of beside them.** `ulw-work` loads a Hermes-only

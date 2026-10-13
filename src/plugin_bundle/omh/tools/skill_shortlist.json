@@ -1615,7 +1615,7 @@
 }
 },
 {
-"anchors":"asked attach bug chat contractor copy customer de deidentify email export number phon pseudonymis pseudonymisation pseudonymiz pseudonymization researcher server spreadsheet still train usag vendor",
+"anchors":"asked attach bug chat contractor copy customer de deidentify detail email export number phon pseudonymis pseudonymisation pseudonymiz pseudonymization researcher server spreadsheet still train usag vendor",
 "hangul":"",
 "hangul_anchors":"",
 "label":"omh-data-share-review",
@@ -1623,9 +1623,9 @@
 "situation":"Before data leaves the team -- a dataset, log, ticket export or transcript excerpt bound for a vendor, a public issue, a model provider or a training corpus",
 "terms":{
 "1":"after befor bound bundl call class classify come count crm file inventory keep kept left local map metadata minimiz minimization noth observ output plan raw record secret upload",
-"2":"anonymiz asked attach bug chat copy corpus customer de deidentify direct email excerpt field first hand identify issu leav list mask model number phon pii provider pseudonymis pseudonymisation pseudonymization quasi redaction remov report researcher safe scrub server set spreadsheet still strip support team ticket transcript usag want",
+"2":"anonymiz asked attach bug chat copy corpus de deidentify detail direct email excerpt field first hand identify issu leav list mask model number phon pii provider pseudonymis pseudonymisation pseudonymization quasi redaction remov report researcher safe scrub server set spreadsheet still strip support team ticket transcript usag want",
 "3":"contractor identifier personal pseudonymiz redact",
-"4":"dataset export public residual scan train vendor",
+"4":"customer dataset export public residual scan train vendor",
 "5":"review shar",
 "6":"log",
 "9":"data"

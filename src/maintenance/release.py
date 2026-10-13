@@ -709,10 +709,10 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # the row's first four. The `ultrawork`, `plan`, `app-debugging`, and
 # `decision-prototype` additions sit past the row's bounds, in the compact
 # body, or in references, and move nothing here. Re-derived from the producer.
-# 493103 -> 497416: one capability row for the new `data-share-review` skill
+# 493103 -> 497611: one capability row for the new `data-share-review` skill
 # plus the reciprocal boundary line `legal-compliance-review` gains. Re-derived
 # from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 497416
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 497611
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

@@ -524,8 +524,14 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # held-back words in their everyday sense; two GDPR questions and a
             # logging-pipeline change, which carry its phrases and must not
             # dispatch it; and an analysis of an already pseudonymized dataset,
-            # whose finished state is not one of its phrases (8).
-            expected=536,
+            # whose finished state is not one of its phrases (8). Its first
+            # review adds thirty-two: thirty requests that carry its phrases
+            # but no file leaving the team, each of which dispatched it while a
+            # phrase counted anywhere -- messages, tickets and PR comments,
+            # code and libraries, Hermes settings, storage-wide scans, a vendor
+            # contract, a definition, a personal account, and a screenshot --
+            # and two that pin the held-back word "pii" (32).
+            expected=568,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -695,8 +701,13 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # operator, or the connector operator before; and three that keep
             # three of those owners when nothing is to be taken out: a crash
             # log for a GitHub issue, a support transcript summary, and
-            # fine-tuning on tickets (10).
-            expected=736,
+            # fine-tuning on tickets (10). Its first review adds nine: a vendor
+            # ticket export with the customer details to take out and a CSV
+            # redacted before a vendor gets it, which must dispatch it; and
+            # seven its phrases reached while counted anywhere, which stay
+            # with GitHub event ops (labeling, closing, reviewing, triaging,
+            # a workflow, a rerun) and web research (a blog post) (9).
+            expected=745,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

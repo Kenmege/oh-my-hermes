@@ -4079,7 +4079,7 @@ Run it on the exact file that leaves, after the last transform, and print counts
 | quasi-identifier | rows whose combination of kept quasi-identifiers is shared by fewer than k rows; k comes from the team, and 5 is a common starting point |
 | free text | the direct-identifier shapes above and the original identifier values, inside each free-text field |
 
-The original-value check is the one a pattern scan cannot replace: a pseudonymized email column passes every email pattern while a notes field quotes the same address.
+The original-value check is the one a pattern scan cannot replace: a pseudonymized email column passes every email pattern while a notes field quotes the same address. Run it as a script that reads the source column and the output file and prints one count; never type a value into a search pattern, which puts it into the session.
 
 Verdict: `redacted` when every class counts zero, or each remaining hit is named and accepted by the user; `not_observed` when no scan ran; otherwise not redacted, with the counts.
 

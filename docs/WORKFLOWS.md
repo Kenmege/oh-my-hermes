@@ -7489,11 +7489,11 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Compatibility alias: `false`
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
-- Handoff policy: Keep the field inventory, minimization plan, residual scan result, and share record in Hermes. Field classes come from the header, the schema, and a few sampled rows; scan counts come only from an observed scan of the exact file that leaves; OMH uploads nothing, stores no raw value, and keeps no pseudonym mapping.
+- Handoff policy: Keep the field inventory, minimization plan, residual scan result, and share record in Hermes. Field classes come from the header, the schema, and per-column shape counts; scan counts come only from an observed scan of the exact file that leaves; OMH uploads nothing, stores no raw value, and keeps no pseudonym mapping.
 - Why this exists: `data-share-review` exists because data leaving the team had no owner: Hermes redacts identifiers in gateway chat and secrets in tool output, `security-safety-review` reviews an agent's own exposure, and `legal-compliance-review` reads the obligations, while nothing minimized a file's fields, kept its pseudonym mapping local, and refused to call it redacted before a scan of what actually leaves.
 - First steps:
   - Ask where the file goes and what the destination needs it for before touching a field.
-  - Inventory the fields from the header and a few rows before planning any masking.
+  - Inventory the fields from the header and the schema before planning any masking.
 - Use when: Use when a dataset, log bundle, ticket or CRM export, or transcript excerpt is about to leave the team -- to a vendor or contractor, a public issue, a model provider, or a training corpus -- and its personal data, identifiers, and secrets must come out first. The output is a field inventory with each field's class, a minimization plan, a residual scan of the file that leaves with counts per class, and a metadata-only record of what left; OMH uploads nothing and keeps no raw data.
 - Do not use when:
   - Whether the data may lawfully leave at all -- the lawful basis, a DPA, consent, or a cross-border transfer -- is a contract and compliance question; use `legal-compliance-review`, then return here for the fields.
@@ -7502,19 +7502,19 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Filing the issue once its attachment is clean -- the title, labels, and reproduction steps; use `github-issue-intake`.
   - Building the training set or deciding whether to train once the corpus is clean; use `model-finetuning`.
   - Working the support queue -- triaging or answering tickets rather than exporting them; use `support-operations`.
-- Strong routing signals: `data-share-review`, `data share review`, `pii redaction`, `redact pii`, `pseudonymize`, `de-identify`, `anonymize the dataset`, `residual pii`, `redact the pii`, `redact personal data`, `strip pii`, `strip the pii`, `remove pii`, `remove the pii`, `scrub pii`, `scrub the pii`, `mask pii`, `mask personal data`, `remove personal data`, `scan for pii`, `pseudonymise`, `pseudonymization`, `pseudonymisation`, `deidentify`, `quasi-identifier`, `quasi-identifiers`, `direct identifiers`, `anonymize this dataset`, `anonymize the data`, `anonymize the logs`, `redact the logs`, `redact these logs`
+- Strong routing signals: `data-share-review`, `data share review`, `pii redaction`, `redact pii`, `pseudonymize`, `de-identify`, `anonymize the dataset`, `residual pii`, `redact the pii`, `redact personal data`, `strip pii`, `strip the pii`, `remove pii`, `remove the pii`, `scrub pii`, `scrub the pii`, `mask pii`, `mask personal data`, `remove personal data`, `scan for pii`, `pseudonymise`, `pseudonymizing`, `pseudonymization`, `pseudonymisation`, `de-identifying`, `deidentify`, `quasi-identifier`, `quasi-identifiers`, `direct identifiers`, `anonymize this dataset`, `anonymize the data`, `anonymize the logs`, `redact the logs`, `redact these logs`, `customer details out`, `personal details out`
 - Good example:
   - Prompt: the analytics vendor wants last month's ticket export, take the customer details out first
-  - Expected behavior: Ask what the vendor needs, inventory the columns from the header and a few rows, drop the ones it does not need, pseudonymize the customer id with the mapping kept in a local folder, count emails, phone numbers, names, and secrets in the output with a scan that prints counts only, and write the share record.
+  - Expected behavior: Ask what the vendor needs, inventory the columns from the header and per-column shape counts, drop the ones it does not need, pseudonymize the customer id with the mapping kept in a local folder, count emails, phone numbers, names, and secrets in the output with a scan that prints counts only, and write the share record.
   - Why: A masking step that was never followed by a scan of the shipped file has not shown that anything came out.
 - Bad example:
   - Prompt: I ran find and replace on the emails, so the file is clean, right
   - Expected behavior: Hold the verdict at not_observed: count every class in the exact file that leaves, free-text fields included, before calling it redacted.
   - Why: A find and replace covers the shapes it was given; names and account numbers in a notes column stay.
 - Quality bar:
-  - Inventory fields from the header, the schema, and a few sampled rows read with `read_file` and its line limit; reading the whole file puts every row into the session.
+  - Inventory fields from the header and the schema, read with `read_file` and its line limit; when a field's class is unclear, prefer a script that prints per-column shape counts, and read a row only when that still leaves it unclear, because every row read enters the session.
   - Load `references/data-share-method.md` for the field classes, the minimization order, the pseudonymization method, the per-class scan patterns, and the quasi-identifier group check instead of recalling them.
-  - Count each class with `search_files` in its `count` output mode, or with a detector script run through `execute_code` when `execute_code` is in your tool list or tool_search finds it; only that script's stdout returns, so it prints counts. With neither, hand the user the scan to run and keep the verdict not_observed until the counts come back.
+  - Count each class with `search_files` in its `count` output mode, or with a detector script run through `execute_code` when `execute_code` is in your tool list or tool_search finds it; its stdout returns, and so do stderr and any traceback, so it prints counts only and catches its own errors without echoing a value. With neither, hand the user the scan to run and keep the verdict not_observed until the counts come back.
   - Hermes' `privacy.redact_pii` hashes user and chat identifiers in the gateway's session prompt on the platforms that allow it, and `security.redact_secrets` masks secret-shaped strings in tool output; neither changes a file that leaves, so neither is this scan.
   - Keep inventoried, minimized, masked, scanned, and shipped as separate states for the file.
 - Completion checklist:
@@ -7529,7 +7529,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Required inputs:
   - the file or export about to leave, and the destination it goes to
   - why the destination needs it, which decides the fields it may keep
-  - the header or schema, plus a few sample rows when a field's content is unclear
+  - the header or schema, and per-column shape counts when a field's content is unclear
   - where the pseudonym mapping may be kept locally, when a field must stay joinable
 - Expected outputs:
   - field_inventory/v1

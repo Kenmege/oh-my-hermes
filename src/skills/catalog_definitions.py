@@ -24,6 +24,7 @@ from ..paper_learning import (
     PAPER_LEARNING_SOURCE_STATES,
 )
 from ..plugin_bundle.omh.domain_signals import SPECIALIST_DOMAIN_TRIGGERS
+from ..plugin_bundle.omh.data_share_cues import DATA_SHARE_REVIEW_PHRASES
 from ..plugin_bundle.omh.native_tools import NATIVE_CRON_TOOL, NATIVE_TODO_TOOL, native_tool_presence_clause
 from ..routing.materials_cues import (
     OFFICE_FILE_MATERIAL_CATALOG_TRIGGERS,
@@ -11229,40 +11230,7 @@ _DEFINITIONS.append(
     SkillDefinition(
         "data-share-review",
         "Before data leaves the team -- a dataset, log, ticket export or transcript excerpt bound for a vendor, a public issue, a model provider or a training corpus: classify every field, minimize first, pseudonymize with the mapping kept local, and call it redacted only after an observed residual scan.",
-        (
-            "data-share-review",
-            "data share review",
-            "pii redaction",
-            "redact pii",
-            "pseudonymize",
-            "de-identify",
-            "anonymize the dataset",
-            "residual pii",
-            "redact the pii",
-            "redact personal data",
-            "strip pii",
-            "strip the pii",
-            "remove pii",
-            "remove the pii",
-            "scrub pii",
-            "scrub the pii",
-            "mask pii",
-            "mask personal data",
-            "remove personal data",
-            "scan for pii",
-            "pseudonymise",
-            "pseudonymization",
-            "pseudonymisation",
-            "deidentify",
-            "quasi-identifier",
-            "quasi-identifiers",
-            "direct identifiers",
-            "anonymize this dataset",
-            "anonymize the data",
-            "anonymize the logs",
-            "redact the logs",
-            "redact these logs",
-        ),
+        DATA_SHARE_REVIEW_PHRASES,
         (
             "Use when a dataset, log bundle, ticket or CRM export, or transcript excerpt is about to leave the team -- to a "
             "vendor or contractor, a public issue, a model provider, or a training corpus -- and its personal data, "
@@ -11276,13 +11244,14 @@ _DEFINITIONS.append(
         delegation_boundary="retained-catalog-intent",
         handoff_policy=(
             "Keep the field inventory, minimization plan, residual scan result, and share record in Hermes. Field "
-            "classes come from the header, the schema, and a few sampled rows; scan counts come only from an observed "
-            "scan of the exact file that leaves; OMH uploads nothing, stores no raw value, and keeps no pseudonym mapping."
+            "classes come from the header, the schema, and per-column shape counts; scan counts come only from an "
+            "observed scan of the exact file that leaves; OMH uploads nothing, stores no raw value, and keeps no "
+            "pseudonym mapping."
         ),
         required_inputs=(
             "the file or export about to leave, and the destination it goes to",
             "why the destination needs it, which decides the fields it may keep",
-            "the header or schema, plus a few sample rows when a field's content is unclear",
+            "the header or schema, and per-column shape counts when a field's content is unclear",
             "where the pseudonym mapping may be kept locally, when a field must stay joinable",
         ),
         expected_outputs=(
@@ -11307,11 +11276,11 @@ _DEFINITIONS.append(
         ),
         quality_tier="observed-residual-scan",
         quality_bar=(
-            "Inventory fields from the header, the schema, and a few sampled rows read with `read_file` and its line limit; reading the whole file puts every row into the session.",
+            "Inventory fields from the header and the schema, read with `read_file` and its line limit; when a field's class is unclear, prefer a script that prints per-column shape counts, and read a row only when that still leaves it unclear, because every row read enters the session.",
             "Load `references/data-share-method.md` for the field classes, the minimization order, the pseudonymization method, the per-class scan patterns, and the quasi-identifier group check instead of recalling them.",
             "Count each class with `search_files` in its `count` output mode, or with a detector script run through `execute_code` when "
             + native_tool_presence_clause("execute_code", code=True)
-            + "; only that script's stdout returns, so it prints counts. With neither, hand the user the scan to run and keep the verdict not_observed until the counts come back.",
+            + "; its stdout returns, and so do stderr and any traceback, so it prints counts only and catches its own errors without echoing a value. With neither, hand the user the scan to run and keep the verdict not_observed until the counts come back.",
             "Hermes' `privacy.redact_pii` hashes user and chat identifiers in the gateway's session prompt on the platforms that allow it, and `security.redact_secrets` masks secret-shaped strings in tool output; neither changes a file that leaves, so neither is this scan.",
             "Keep inventoried, minimized, masked, scanned, and shipped as separate states for the file.",
         ),
@@ -11323,7 +11292,7 @@ _DEFINITIONS.append(
         ),
         opening_steps=(
             "Ask where the file goes and what the destination needs it for before touching a field.",
-            "Inventory the fields from the header and a few rows before planning any masking.",
+            "Inventory the fields from the header and the schema before planning any masking.",
         ),
         do_not_use_when=(
             "Whether the data may lawfully leave at all -- the lawful basis, a DPA, consent, or a cross-border transfer -- is a contract and compliance question; use `legal-compliance-review`, then return here for the fields.",
@@ -11336,7 +11305,7 @@ _DEFINITIONS.append(
         good_example=SkillExample(
             prompt="the analytics vendor wants last month's ticket export, take the customer details out first",
             expected=(
-                "Ask what the vendor needs, inventory the columns from the header and a few rows, drop the ones it does "
+                "Ask what the vendor needs, inventory the columns from the header and per-column shape counts, drop the ones it does "
                 "not need, pseudonymize the customer id with the mapping kept in a local folder, count emails, phone "
                 "numbers, names, and secrets in the output with a scan that prints counts only, and write the share record."
             ),
@@ -11371,15 +11340,15 @@ _DEFINITIONS.append(
         # capability instead of the tool.
         portable_overrides={
             "quality_bar": (
-                "Inventory fields from the header, the schema, and a few sampled rows read with a line limit; reading the whole file puts every row into the session.",
+                "Inventory fields from the header and the schema, read with a line limit; when a field's class is unclear, prefer a script that prints per-column shape counts, and read a row only when that still leaves it unclear, because every row read enters the session.",
                 "Load `references/data-share-method.md` for the field classes, the minimization order, the pseudonymization method, the per-class scan patterns, and the quasi-identifier group check instead of recalling them.",
-                "Count each class with the host's content search in a count-only mode, or with a detector script that prints counts only. With neither, hand the user the scan to run and keep the verdict not_observed until the counts come back.",
+                "Count each class with the host's content search in a count-only mode, or with a detector script that prints counts only and catches its own errors, since its error output returns too. With neither, hand the user the scan to run and keep the verdict not_observed until the counts come back.",
                 "A host's own redaction of chat or tool output never changes a file that leaves, so it is not this scan.",
                 "Keep inventoried, minimized, masked, scanned, and shipped as separate states for the file.",
             ),
         },
         portable_override_shadows={
-            "quality_bar": "4013208ed028268fe9299becb883cc039d989893a58bf0a1c938d49f911c11dc",
+            "quality_bar": "be476a45f7468e60a75d81bfcd304e24fe2aaa09203628036c9caa8c8dabaadd",
         },
     )
 )

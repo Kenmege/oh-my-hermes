@@ -285,10 +285,11 @@ NON_SKILL_BACKTICKS = frozenset(
 # `workflow-learning`, and `skill-scout`; `workflow-learning` adds
 # `memory-new`, `instinct-ledger`, and `agent-debug`. Twenty-one cases,
 # twenty-two pairs, seven new owners.
-# `data-share-review` (#2118) defers to `legal-compliance-review`,
-# `security-safety-review`, `data-analysis`, `github-issue-intake`,
-# `model-finetuning`, and `support-operations`, and `legal-compliance-review`
-# gains the statement pointing back. Seven cases, seven pairs, one owner.
+# `data-share-review`, added for files leaving the team, defers to
+# `legal-compliance-review`, `security-safety-review`, `data-analysis`,
+# `github-issue-intake`, `model-finetuning`, and `support-operations`, and
+# `legal-compliance-review` gains the statement pointing back. Seven cases,
+# seven pairs, one owner.
 EXPECTED_DEFERENCE_CASES = 377
 EXPECTED_DEFERENCE_PAIRS = 392
 EXPECTED_DEFERRING_OWNERS = 111
