@@ -89,7 +89,7 @@ Quality bar:
 
 Handoff policy:
 
-Keep paper explanation in Hermes. Route file export to `materials-package`, current-source discovery to `research`, recurring monitoring to `research-department`, and reproduction or implementation to an accepted coding handoff only after the explanation plan is accepted.
+Keep paper explanation in Hermes. Route file export to `omh-materials-package`, current-source discovery to `ulw-research`, recurring monitoring to `omh-research-department`, and reproduction or implementation to an accepted coding handoff only after the explanation plan is accepted.
 
 Required inputs:
 

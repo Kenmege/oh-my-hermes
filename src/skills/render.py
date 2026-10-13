@@ -307,6 +307,9 @@ def _installable_skill_names() -> frozenset[str]:
 def loadable_skill_mentions(line: str) -> str:
     """Rewrite each backticked installed catalog name in `line` to its display label.
 
+    Applied where a body hands work to a sibling: the `## Do Not Use When`
+    lines and the handoff policy.
+
     `skill_view` loads a skill by the label its directory carries (`omh-apps`,
     `ulw-research`), not by the canonical catalog name (`connector-operator`,
     `research`), so a sibling named canonically is a pointer the model cannot
@@ -680,7 +683,7 @@ def _skill_metadata_block(
     definition = _target_definition(definition, target)
     role = f"Hermes role: `{definition.hermes_role}`\n" if target == "hermes" else ""
     handoff = (
-        f"\n\nHandoff policy:\n\n{definition.handoff_policy}"
+        f"\n\nHandoff policy:\n\n{loadable_skill_mentions(definition.handoff_policy)}"
         f"{_executor_readiness_skill_note(definition)}{_delegation_transparency_skill_note(definition)}"
         f"{_route_capacity_skill_note(definition)}"
         if target == "hermes" else ""
@@ -2771,7 +2774,7 @@ Quality bar:
 
 Handoff policy:
 
-{definition.handoff_policy}{_executor_readiness_skill_note(definition)}{_delegation_transparency_skill_note(definition)}
+{loadable_skill_mentions(definition.handoff_policy)}{_executor_readiness_skill_note(definition)}{_delegation_transparency_skill_note(definition)}
 
 Required inputs:
 

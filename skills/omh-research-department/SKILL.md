@@ -88,7 +88,7 @@ Quality bar:
 
 Handoff policy:
 
-Keep the research operating model in Hermes. Map Scout to `research`/`source-finder`, Analyst to `research-brief`/`web-research`, and Briefer to `report-package` or meeting/report workflows. Record retrieval, synthesis-tool output, knowledge-store writes, delivery, and verification only from observed evidence.
+Keep the research operating model in Hermes. Map Scout to `ulw-research`/`omh-web-research`, Analyst to `omh-research-brief`/`omh-web-research`, and Briefer to `omh-report-package` or meeting/report workflows. Record retrieval, synthesis-tool output, knowledge-store writes, delivery, and verification only from observed evidence.
 
 Required inputs:
 

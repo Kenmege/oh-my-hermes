@@ -68,7 +68,7 @@ Quality bar:
 
 Handoff policy:
 
-Keep decision framing, evidence classification, assumption ranking, test precommitment, and the discovery decision in Hermes. A prepared plan, ledger, portfolio, or receipt is not participant recruitment, an interview, a survey, a payment, a prototype, a PRD, code, or a launch. Prepare a `product-brief` handoff only from a `persevere` receipt the decision owner accepted; route a single empirical prototype question to `decision-prototype`; reach `idea-to-deploy` only after the resulting product brief and plan are accepted.
+Keep decision framing, evidence classification, assumption ranking, test precommitment, and the discovery decision in Hermes. A prepared plan, ledger, portfolio, or receipt is not participant recruitment, an interview, a survey, a payment, a prototype, a PRD, code, or a launch. Prepare a `omh-product-brief` handoff only from a `persevere` receipt the decision owner accepted; route a single empirical prototype question to `omh-decision-prototype`; reach `omh-idea-to-deploy` only after the resulting product brief and plan are accepted.
 
 Required inputs:
 

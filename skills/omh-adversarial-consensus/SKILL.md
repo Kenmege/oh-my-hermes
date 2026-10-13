@@ -90,7 +90,7 @@ Quality bar:
 
 Handoff policy:
 
-Keep every round in Hermes as prepared prompt contracts. The distilled bundle is planning input: hand it to `ralplan` or `plan` for the plan itself, and prepare a selected executor/runtime handoff only after that separate planning pass produces an accepted plan.
+Keep every round in Hermes as prepared prompt contracts. The distilled bundle is planning input: hand it to `ulw-plan` or `omh-plan` for the plan itself, and prepare a selected executor/runtime handoff only after that separate planning pass produces an accepted plan.
 
 Required inputs:
 

@@ -66,7 +66,7 @@ Quality bar:
 
 Handoff policy:
 
-Keep lifecycle framing, audience and safety policy, experiment design, and readout interpretation in Hermes. A prepared journey or experiment plan is not a send, a flag change, a delivered message, a displayed treatment, a user action, a business outcome, or a causal result. Hand external sends and flag mutations to `connector-operator`, copy to `content-operator`, supplied-data calculation to `data-analysis`, recurring scheduling to `automation-blueprint`, and validated product changes to `product-brief`, each only after the human approval gate and only reported from observed evidence.
+Keep lifecycle framing, audience and safety policy, experiment design, and readout interpretation in Hermes. A prepared journey or experiment plan is not a send, a flag change, a delivered message, a displayed treatment, a user action, a business outcome, or a causal result. Hand external sends and flag mutations to `omh-apps`, copy to `omh-content-operator`, supplied-data calculation to `omh-data-analysis`, recurring scheduling to `omh-automation-blueprint`, and validated product changes to `omh-product-brief`, each only after the human approval gate and only reported from observed evidence.
 
 Required inputs:
 

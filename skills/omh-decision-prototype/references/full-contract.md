@@ -78,7 +78,7 @@ Quality bar:
 
 Handoff policy:
 
-Keep the decision question, hypothesis, budget, scratch boundary, measurement method, and decision receipt in Hermes. When a selected executor or runtime (Codex, Claude Code, Hermes runtime/handoff, or a generic executor) will run the experiment, prepare an executor-neutral handoff with exact commands and expected observations; it stays `prepared_not_observed` until observed outputs exist. A prototype result is decision grounding only: promotion into production requires a separate accepted `ralplan` plan and its own implementation handoff.
+Keep the decision question, hypothesis, budget, scratch boundary, measurement method, and decision receipt in Hermes. When a selected executor or runtime (Codex, Claude Code, Hermes runtime/handoff, or a generic executor) will run the experiment, prepare an executor-neutral handoff with exact commands and expected observations; it stays `prepared_not_observed` until observed outputs exist. A prototype result is decision grounding only: promotion into production requires a separate accepted `ulw-plan` plan and its own implementation handoff.
 
 Required inputs:
 

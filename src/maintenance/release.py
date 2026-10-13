@@ -695,7 +695,11 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # shape's shared generic line. The pending-write, provider-slot, ledger, scan,
 # import-preview, and usage-count rules sit past the rows' bounds and move
 # nothing here. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 492655
+# 492655 -> 492654: `research-department`'s handoff policy maps Scout to the
+# lanes its prepared plan emits, `research`/`web-research`, instead of
+# `research`/`source-finder`; the row is one character shorter. Re-derived
+# from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 492654
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

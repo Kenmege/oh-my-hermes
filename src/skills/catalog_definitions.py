@@ -2184,7 +2184,7 @@ _DEFINITIONS = [
         hermes_role="retained-cognition",
         delegation_boundary="retained-catalog-intent",
         handoff_policy=(
-            "Keep the research operating model in Hermes. Map Scout to `research`/`source-finder`, "
+            "Keep the research operating model in Hermes. Map Scout to `research`/`web-research`, "
             "Analyst to `research-brief`/`web-research`, and Briefer to `report-package` or meeting/report workflows. "
             "Record retrieval, synthesis-tool output, knowledge-store writes, delivery, and verification only from observed evidence."
         ),

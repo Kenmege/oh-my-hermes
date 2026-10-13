@@ -88,7 +88,7 @@ Quality bar:
 
 Handoff policy:
 
-Keep document reading in Hermes: `read_file`, the built-in `pdf` skill scripts, `delegate_task` range children, and `vision_analyze` for scanned pages. Route file export to `materials-package`, paper tutoring to `paper-learning`, and source acquisition to `source-finder`.
+Keep document reading in Hermes: `read_file`, the built-in `pdf` skill scripts, `delegate_task` range children, and `vision_analyze` for scanned pages. Route file export to `omh-materials-package`, paper tutoring to `omh-paper-learning`, and source acquisition to `omh-source-finder`.
 
 Required inputs:
 
