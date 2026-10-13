@@ -18,6 +18,11 @@ or withdrawn by the gateway. Three rules shape this module:
   gateway would otherwise wait out its whole deadline.
 - Nothing typed into a masked prompt is kept: the slot holds no copy of the
   value after it builds the answer frame.
+
+Every slot row hangs off a `▌` bar, in the warn colour for an approval and
+the accent for anything else, so a question Hermes asked never reads as
+panel or transcript text. The command an approval would run is drawn in the
+code style; the choices are plain text, the selected one highlighted.
 """
 
 from __future__ import annotations
@@ -44,6 +49,7 @@ _APPROVAL_NARROW_LABELS = {"once": "once", "session": "sess", "deny": "deny"}
 _DENY_KEYS = frozenset("dn")
 # The keys that pick a clarify choice. `str.isdigit` also admits "²" or "٣", which `int` rejects.
 CHOICE_DIGITS = "123456789"
+SLOT_BAR = "▌ "
 
 _DECLINE_NOTICES = {
     "vault.unlock_prompt": "Hermes asked to unlock a password vault. Vault prompts run in `hermes --tui`; declined.",
@@ -191,16 +197,18 @@ class PromptSlot:
     def lines(self, width: int, theme: Theme, max_rows: int) -> list[Line]:
         if max_rows <= 0:
             return []
+        inner = max(width - len(SLOT_BAR), 1)
         if self.method == "approval":
-            rows = self._approval_lines(width, theme, max_rows)
+            rows = self._approval_lines(inner, theme, max_rows)
         elif self.method == "clarify":
-            rows = self._clarify_lines(width, theme)
+            rows = self._clarify_lines(inner, theme)
         else:
-            rows = self._value_lines(width, theme)
+            rows = self._value_lines(inner, theme)
         if len(rows) > max_rows:
             # The header and the choices matter most; the body is what gets cut.
             rows = rows[:1] + rows[len(rows) - (max_rows - 1):] if max_rows > 1 else rows[:1]
-        return [truncate_line(row, width) for row in rows]
+        bar = Span(SLOT_BAR, theme.warn if self.method == "approval" else theme.accent)
+        return [truncate_line((bar, *truncate_line(row, inner)), width) for row in rows]
 
     def _approval_lines(self, width: int, theme: Theme, max_rows: int) -> list[Line]:
         """Header, the command's FIRST rows, `… +K more lines` when cut, then the choices.
@@ -215,7 +223,7 @@ class PromptSlot:
         choices = self._approval_choice_row(width, theme)
         if max_rows <= 1:
             return [choices]
-        command_rows = wrap_line((Span("  " + command, theme.text),), width) if command else []
+        command_rows = wrap_line((Span("  " + command, theme.code),), width) if command else []
         room = max_rows - 2
         if len(command_rows) > room:
             kept = room - 1 if room >= 2 else room
@@ -231,7 +239,7 @@ class PromptSlot:
         for form, hint in (("long", keys), ("short", keys), ("short", ""), ("narrow", "")):
             spans: list[Span] = [Span("  ", theme.text)]
             for index, choice in enumerate(self.approval_choices()):
-                style = theme.menu_current if index == self.selected else theme.dim
+                style = theme.menu_current if index == self.selected else theme.text
                 spans.append(Span(_approval_label(choice, form), style))
                 spans.append(Span(" ", theme.text))
             if hint:

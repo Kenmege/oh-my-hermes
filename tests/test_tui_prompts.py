@@ -31,6 +31,19 @@ CLARIFY = {
 CTRL_C = Key(CHAR, "c", ctrl=True)
 
 
+def bar_styles(rows: list) -> set:
+    """The style of each row's first cells, after checking they are the bar (a same-style span may follow it merged)."""
+    for row in rows:
+        assert row[0].text.startswith(prompts.SLOT_BAR), row
+    return {row[0].style for row in rows}
+
+
+def unbarred(text: str) -> str:
+    """A slot row's text without the `▌ ` bar every slot row hangs off."""
+    assert text.startswith(prompts.SLOT_BAR), text
+    return text[len(prompts.SLOT_BAR) :]
+
+
 def slot(method: str, params: dict) -> prompts.PromptSlot:
     opened = prompts.open_request("srq-1", method, params)
     assert isinstance(opened, prompts.PromptSlot)
@@ -82,6 +95,14 @@ class ApprovalTests(unittest.TestCase):
             with self.subTest(char=char):
                 self.assertEqual(slot("approval", APPROVAL).handle_key(Key(CHAR, char)).frame, {"result": {"choice": "deny"}})
 
+    def test_a_digit_picks_no_approval_choice(self) -> None:
+        # Digits pick clarify choices; on an approval they would be allow shortcuts, so they do nothing.
+        for char in "0123456789":
+            with self.subTest(char=char):
+                approval = slot("approval", APPROVAL)
+                self.assertIsNone(approval.handle_key(Key(CHAR, char)))
+                self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "deny"}})
+
     def test_the_choice_row_names_arrows_and_enter_and_no_letter_shortcut(self) -> None:
         row = line_text(slot("approval", APPROVAL).lines(80, DEFAULT_THEME, max_rows=4)[-1])
         self.assertIn("allow once", row)
@@ -126,21 +147,21 @@ class ApprovalTests(unittest.TestCase):
         total = command.count("\n") + 1
         self.assertEqual(len(rows), 6)
         self.assertIn("script execution", text[0])
-        self.assertEqual(text[1:4], ['  python3 -c "', "def is_prime(n):", "    if n < 2:"])
-        self.assertEqual(text[4], f"  … +{total - 3} more lines")
-        self.assertEqual(rows[4][0].style, DEFAULT_THEME.dim)
+        self.assertEqual([unbarred(row) for row in text[1:4]], ['  python3 -c "', "def is_prime(n):", "    if n < 2:"])
+        self.assertEqual(unbarred(text[4]), f"  … +{total - 3} more lines")
+        self.assertEqual(rows[4][1].style, DEFAULT_THEME.dim)
         self.assertIn("deny", text[5])
 
     def test_one_spare_row_shows_the_commands_first_row(self) -> None:
         approval = slot("approval", {**APPROVAL, "command": "first line\nsecond line\nthird line"})
         text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=3))
-        self.assertEqual(text[1], "  first line")
+        self.assertEqual(unbarred(text[1]), "  first line")
         self.assertIn("deny", text[2])
 
     def test_a_command_that_fits_is_shown_whole_with_no_marker(self) -> None:
         approval = slot("approval", {**APPROVAL, "command": "one\ntwo"})
         text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=6))
-        self.assertEqual(text[1:3], ["  one", "two"])
+        self.assertEqual([unbarred(row) for row in text[1:3]], ["  one", "two"])
         self.assertEqual(len(text), 4)
         self.assertFalse(any("more line" in row for row in text))
 
@@ -149,18 +170,46 @@ class ApprovalTests(unittest.TestCase):
         for width in range(18, 120):
             with self.subTest(width=width):
                 row = approval.lines(width, DEFAULT_THEME, max_rows=4)[-1]
-                self.assertTrue(line_text(row).lstrip().startswith("deny"), line_text(row))
+                self.assertTrue(unbarred(line_text(row)).lstrip().startswith("deny"), line_text(row))
                 self.assertLessEqual(line_width(row), width)
 
     def test_the_narrowest_choice_row_spells_short_words_not_letters(self) -> None:
         # A lone `o` or `s` reads as a shortcut, and no letter allows anything.
         approval = slot("approval", APPROVAL)
-        self.assertEqual(line_text(approval.lines(23, DEFAULT_THEME, max_rows=4)[-1]).split(), ["deny", "once", "sess"])
+        narrowest = unbarred(line_text(approval.lines(25, DEFAULT_THEME, max_rows=4)[-1]))
+        self.assertEqual(narrowest.split(), ["deny", "once", "sess"])
         for width in range(18, 120):
             with self.subTest(width=width):
                 # The labels only: the hint after them names `d`, which does deny.
-                labels = line_text(approval.lines(width, DEFAULT_THEME, max_rows=4)[-1]).split("←→")[0].split()
+                labels = unbarred(line_text(approval.lines(width, DEFAULT_THEME, max_rows=4)[-1])).split("←→")[0].split()
                 self.assertFalse([word for word in labels if len(word) == 1 and word.isalpha()], labels)
+
+    def test_every_row_hangs_off_a_warn_bar_and_the_command_reads_as_code(self) -> None:
+        approval = slot("approval", {**APPROVAL, "command": "one\ntwo"})
+        rows = approval.lines(60, DEFAULT_THEME, max_rows=6)
+        self.assertEqual(bar_styles(rows), {DEFAULT_THEME.warn})
+        self.assertEqual([row[1].style for row in rows[1:3]], [DEFAULT_THEME.code, DEFAULT_THEME.code])
+
+    def test_choices_read_as_text_and_the_selected_one_is_highlighted(self) -> None:
+        approval = slot("approval", APPROVAL)
+        approval.handle_key(Key(RIGHT))
+        row = approval.lines(80, DEFAULT_THEME, max_rows=4)[-1]
+        styles = {span.text.strip(): span.style for span in row if span.text.strip() in ("deny", "allow once", "allow this session")}
+        self.assertEqual(
+            styles,
+            {"deny": DEFAULT_THEME.text, "allow once": DEFAULT_THEME.menu_current, "allow this session": DEFAULT_THEME.text},
+        )
+
+
+class SlotBarTests(unittest.TestCase):
+    def test_a_question_or_a_value_prompt_hangs_off_an_accent_bar(self) -> None:
+        for method, params in (("clarify", CLARIFY), ("sudo", {"session_id": "s"}), ("secret", {"env_var": "API_KEY"})):
+            with self.subTest(method=method):
+                rows = slot(method, params).lines(60, DEFAULT_THEME, max_rows=6)
+                self.assertTrue(rows)
+                self.assertEqual(bar_styles(rows), {DEFAULT_THEME.accent})
+                self.assertTrue(all(line_width(row) <= 60 for row in rows))
+
 
 class ClarifyTests(unittest.TestCase):
     def test_a_number_picks_that_choice(self) -> None:
