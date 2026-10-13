@@ -9011,8 +9011,8 @@ ignored:
 | --- | --- | --- |
 | Overlap | Keeps one run of a job in flight; a fire that comes due while the last run is still going is skipped. | `skip_when_running` is what happens. `queue_after_running` and `allow_concurrent` are not honoured. |
 | Missed run | A recurring fire the scheduler reaches late still runs, once, and a backlog of misses collapses into that one run. Some builds also read a global `cron.catch_up_missed` switch that drops a fire later than the catch-up window instead. | `run_once_when_late` is native. `skip_missed_window` exists only as that global switch, where the build has it. |
-| Retry | No general retry; a failed run waits for its next occurrence. Where the installed Hermes ships `cron/unreachable_retry.py`, a fire that failed before any model call was made is tried again a few times on a short bounded ladder before the failure is reported, and an `unreachable_retry` entry on the job record means one is pending. | `no_retry` describes every other failure. `retry_bounded` is not honoured outside that narrow case. |
-| Backfill | None; missed windows are never replayed one by one. One extra run is `{NATIVE_CRON_TOOL}` action `run` (or `hermes cron run`), which starts right away in the background. | `no_backfill` is native. `backfill_bounded_window` means the user asking for each of those runs. |
+| Retry | No general retry; a failed run waits for its next occurrence. Where the installed Hermes ships `cron/unreachable_retry.py`, a recurring job's fire that failed on a transient network or DNS error before any model call is re-run up to three times within about an hour, unless the next scheduled occurrence comes first; the failure notice waits meanwhile, `cron.retry_unreachable: false` turns it off, and an `unreachable_retry` entry on the job record means one is pending. | `no_retry` describes every other failure. `retry_bounded` is not honoured outside that narrow case. |
+| Backfill | None; missed windows are never replayed one by one. One extra run is `{NATIVE_CRON_TOOL}` action `run`, which fires at once in the background, or `hermes cron run`, which runs it on the scheduler's next tick. | `no_backfill` is native. `backfill_bounded_window` means the user asking for each of those runs. |
 | Failure pause | No automatic pause. After several failures in a row (`cron.failure_nudge_threshold`, default 3, one value for every job) the failure notice suggests pausing; the pause is `{NATIVE_CRON_TOOL}` action `pause` or `hermes cron pause`. `failure_deliver` sends failure notices somewhere other than `deliver`. | `pause_after_consecutive_failures` holds only when someone acts on that notice. |
 
 ## Delivery target
@@ -9037,27 +9037,41 @@ nothing changed; it is the user's source, never one OMH writes.
 
 Hermes calls a scheduled skill an Automation Blueprint: a skill whose
 frontmatter carries `metadata.hermes.blueprint`. A
-`prepared_native_blueprint/v1` record prepares that block and the matching cron
-call, so what the user approves is what Hermes will read:
+`prepared_native_blueprint/v1` record prepares that block and an equivalent
+cron call. They reach Hermes by different routes and do not carry the same
+things:
 
 - The block: `schedule` (required), `deliver`, `prompt`, and `no_agent`, taken
-  from the prepared intents. `model`, `provider`, and `enabled_toolsets` stay
-  the user's: a model pin is theirs to set, and `{NATIVE_CRON_TOOL}` does not
-  take one from the agent.
-- The cron call, used when {cron_present}: the same values as a
-  `{NATIVE_CRON_TOOL}` `create`, plus the `skills` the context chain names.
-- `needs_confirmation` names the fields still open. Hermes parses the schedule
-  when the job is created, so confirm it in one of Hermes' forms first - an
-  interval such as `every 2h`, a day and time such as `weekdays at 9am`, or a
-  cron expression.
+  from the prepared intents. Hermes reads it only from a skill's frontmatter,
+  and a job made from it preloads that one skill and carries no `continuity`,
+  so a report-on-change job made this way needs
+  `hermes cron edit <job_id> --continuity` afterwards, or a `monitor` source.
+- The cron call, used when
+  {cron_present},
+  and otherwise handed to the user as the equivalent
+  `hermes cron create "<schedule>" "<prompt>" --deliver <target> --skill <name> --continuity`
+  command: the same values as a `{NATIVE_CRON_TOOL}` `create`, plus the
+  `skills` the context chain names and `continuity` when only changes are
+  reported.
+- A model pin is the user's to set: the block's own `model` and `provider`
+  keys, `hermes cron create` or `hermes cron edit` with `--model` and
+  `--provider`, or, where `{NATIVE_CRON_TOOL}` offers `pinned`, `pinned=true`
+  only on the user's explicit request, which pins the current main model.
+  `{NATIVE_CRON_TOOL}` takes no `model` or `provider` argument, and the
+  prepared call never pins. `enabled_toolsets` is left unset, which keeps
+  every default tool; the agent may narrow it when the job is created.
+- `needs_confirmation` names the fields still open, `prompt` included while
+  the silence rule is unsettled. Hermes parses the schedule when the job is
+  created, so confirm it in one of Hermes' forms first - an interval such as
+  `every 2h`, a day and time such as `weekdays at 9am`, or a cron expression.
 
-Activation is never OMH's, and it happens in one of three ways, each started
+Activation is never OMH's, and it happens in one of four ways, each started
 by the person or by Hermes: `/blueprint` for one of Hermes' own catalog
 automations, which asks for the values and creates the job; accepting the
 Suggested Cron Job that `/suggestions` lists after a blueprint skill is
-installed from the hub, which is never scheduled until accepted; or a
-`{NATIVE_CRON_TOOL}` `create` the user asked for in the conversation. Preparing
-a blueprint is not that request.
+installed from the hub, which is never scheduled until accepted; a
+`{NATIVE_CRON_TOOL}` `create` the user asked for in the conversation; or a
+`hermes cron create` the user runs. Preparing a blueprint is not that request.
 
 ## After activation
 

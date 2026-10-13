@@ -30,6 +30,34 @@ READABLE_INDEX_SCHEMA_VERSIONS = (HERMES_OPS_INDEX_SCHEMA_VERSION, "hermes_ops_b
 HERMES_OPS_VALIDATION_SCHEMA_VERSION = "prepared_native_blueprint_validation/v1"
 NATIVE_BLUEPRINT_FRONTMATTER_KEY = "metadata.hermes.blueprint"
 NATIVE_BLUEPRINT_FIELDS = ("schedule", "deliver", "prompt", "no_agent", "model", "provider", "enabled_toolsets")
+# The arguments `cronjob_manage` accepts at the plugin floor (tag v2026.9.7).
+# It has no `model` or `provider` argument at the floor or on upstream main;
+# main adds `pinned`, which its schema reserves for an explicit user request.
+NATIVE_CRON_CREATE_ARGS = (
+    "action",
+    "job_id",
+    "prompt",
+    "schedule",
+    "name",
+    "repeat",
+    "deliver",
+    "failure_deliver",
+    "skills",
+    "script",
+    "monitor",
+    "no_agent",
+    "context_from",
+    "continuity",
+    "enabled_toolsets",
+    "workdir",
+    "attach_to_session",
+    "paused",
+    "paused_reason",
+)
+# A model pin is the user's: the blueprint block's own keys, `hermes cron
+# create|edit --model --provider`, or `pinned=true` on their explicit request.
+# A prepared call never carries one.
+_MODEL_PIN_ARGS = ("model", "provider", "pinned")
 # Delivery surfaces the blueprint normalizer names that Hermes' cron `deliver`
 # field spells differently: the current conversation is `origin`. A platform
 # name such as `slack` sends to the home channel configured for it.
@@ -126,6 +154,8 @@ _SILENCE_TERMS = (
     "only when changed",
     "only if something changed",
     "only when something changes",
+    "only if status changes",
+    "only when status changes",
     "if nothing changed",
     "if no change",
     "stay quiet",
@@ -223,7 +253,7 @@ def build_scheduled_ops_blueprint(
         "context_chain": _context_chain(skill_suggestions),
         "no_agent_suitability": no_agent_suitability,
         "prompt_outline": prompt_outline,
-        "native_blueprint": _native_blueprint(request_summary, skill_suggestions, schedule_intent, delivery_intent, silence_policy),
+        "native_blueprint": _native_blueprint(clean_request, skill_suggestions, schedule_intent, delivery_intent, silence_policy),
         "wrapper_actions": [
             "show_blueprint",
             "revise_schedule",
@@ -248,7 +278,7 @@ def build_scheduled_ops_blueprint(
         "staged_gap_map": staged_gap_map(),
         "next_action": (
             "Present the prepared native blueprint in Hermes and ask for the schedule/delivery confirmation it still needs; "
-            "the user or Hermes activates it (/blueprint, a Suggested Cron Job, or cronjob_manage create), never OMH."
+            "the user or Hermes activates it (/blueprint, a Suggested Cron Job, cronjob_manage create, or hermes cron create), never OMH."
         ),
         "status_card": _status_card(schedule_intent, delivery_intent, silence_policy, no_agent_suitability),
     }
@@ -648,7 +678,7 @@ def _missing_decisions(
 
 
 def _native_blueprint(
-    request_summary: str,
+    request: str,
     skill_suggestions: list[dict[str, str]],
     schedule_intent: dict[str, object],
     delivery_intent: dict[str, object],
@@ -656,16 +686,19 @@ def _native_blueprint(
 ) -> dict[str, object]:
     """Project the prepared intents onto Hermes' own blueprint block and cron call.
 
-    Only fields Hermes reads are written. `model` and `provider` stay unset:
-    `cronjob_manage` does not take them from the agent, because a per-job
-    model pin is the user's to set. A schedule the normalizer could not pin
-    down is passed through as the user wrote it and listed under
-    `needs_confirmation`; Hermes parses it when the job is created.
+    Only fields Hermes reads are written, and no model pin: `cronjob_manage`
+    has no `model` or `provider` argument, and a pin is the user's to set.
+    The prompt is the whole request, never the summary preview, because a
+    cron run starts in a fresh session and its prompt is all it has. A
+    schedule the normalizer could not pin down is passed through as the user
+    wrote it and listed under `needs_confirmation`; Hermes parses it when the
+    job is created. An unsettled silence rule leaves `prompt` open, since
+    that rule would be the prompt's last instruction.
     """
     schedule = str(schedule_intent.get("explicit_schedule", "")).strip()
     deliver = _native_deliver(delivery_intent)
     report_changes_only = silence_policy.get("mode") == "only_report_changes"
-    prompt = request_summary
+    prompt = request
     if report_changes_only:
         prompt = f"{prompt}\n\nIf nothing changed since the previous run, reply with [SILENT] alone."
     create: dict[str, object] = {"action": "create", "schedule": schedule, "prompt": prompt, "deliver": deliver}
@@ -679,6 +712,8 @@ def _native_blueprint(
         needs_confirmation.append("schedule")
     if delivery_intent.get("requires_observed_gateway_evidence"):
         needs_confirmation.append("deliver")
+    if silence_policy.get("requires_confirmation"):
+        needs_confirmation.append("prompt")
     return {
         "status": "prepared",
         "frontmatter_key": NATIVE_BLUEPRINT_FRONTMATTER_KEY,
@@ -710,8 +745,13 @@ def _native_blueprint_errors(value: object) -> list[str]:
     create = value.get("cronjob_manage_create")
     if not isinstance(create, dict) or create.get("action") != "create":
         errors.append(f"native_blueprint.cronjob_manage_create must be a {NATIVE_CRON_TOOL} create call")
-    elif {"model", "provider"} & set(create):
-        errors.append(f"native_blueprint.cronjob_manage_create must not pin model or provider; {NATIVE_CRON_TOOL} leaves those to the user")
+    elif set(_MODEL_PIN_ARGS) & set(create):
+        errors.append(
+            f"native_blueprint.cronjob_manage_create must not pin a model ({', '.join(_MODEL_PIN_ARGS)}); a pin is the user's to set"
+        )
+    elif not set(create) <= set(NATIVE_CRON_CREATE_ARGS):
+        unknown = ", ".join(sorted(set(create) - set(NATIVE_CRON_CREATE_ARGS)))
+        errors.append(f"native_blueprint.cronjob_manage_create may hold only {NATIVE_CRON_TOOL} arguments; not: {unknown}")
     if value.get("activation_owner") != "user_or_hermes":
         errors.append("native_blueprint.activation_owner must be user_or_hermes; OMH creates no cron job")
     return errors

@@ -221,7 +221,7 @@
       "scope": "ops-observability-card playbook standardizes wrapper-safe token, cost, latency, run-history, and failure-mode boundaries"
     }
   ],
-  "next_action": "Present the prepared native blueprint in Hermes and ask for the schedule/delivery confirmation it still needs; the user or Hermes activates it (/blueprint, a Suggested Cron Job, or cronjob_manage create), never OMH.",
+  "next_action": "Present the prepared native blueprint in Hermes and ask for the schedule/delivery confirmation it still needs; the user or Hermes activates it (/blueprint, a Suggested Cron Job, cronjob_manage create, or hermes cron create), never OMH.",
   "status_card": {
     "schema_version": "hermes_ops_status_card/v1",
     "headline": "Prepared native blueprint",

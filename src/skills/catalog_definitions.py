@@ -6333,8 +6333,8 @@ _DEFINITIONS = [
             "Route later coding, material generation, or report delivery into separate accepted handoffs when needed.",
             (
                 "OMH creates, pauses, and removes no cron job: activation is the user's or Hermes' (`/blueprint`, an accepted "
-                f"Suggested Cron Job, or a `{NATIVE_CRON_TOOL}` create the user asked for in this conversation), and a job Hermes "
-                "lists is observed status, not proof that a run delivered."
+                f"Suggested Cron Job, a `{NATIVE_CRON_TOOL}` create the user asked for in this conversation, or a "
+                "`hermes cron create` the user runs), and a job Hermes lists is observed status, not proof that a run delivered."
             ),
         ),
         quality_tier="ops-blueprint-gated",
@@ -6346,8 +6346,10 @@ _DEFINITIONS = [
             (
                 "Project the prepared native blueprint onto Hermes' own fields: the `metadata.hermes.blueprint` block (schedule, "
                 f"deliver, prompt, no_agent) and the matching `{NATIVE_CRON_TOOL}` create call when "
-                f"{native_tool_presence_clause(NATIVE_CRON_TOOL, code=True)}; report-on-change is a `[SILENT]` final reply, and "
-                "model or provider pins stay the user's."
+                f"{native_tool_presence_clause(NATIVE_CRON_TOOL, code=True)}, otherwise give the user the equivalent "
+                "`hermes cron create` command; report-on-change is a `[SILENT]` final reply. A model pin is the user's to set: "
+                "the block's own `model` and `provider` keys, `hermes cron create` or `hermes cron edit` with `--model` and "
+                f"`--provider`, or `pinned=true` only on the user's explicit request where `{NATIVE_CRON_TOOL}` offers it."
             ),
             "Map overlap, missed-run, retry, backfill, and failure-pause onto what Hermes cron does natively and say which choices it cannot honour, so nobody is asked for a policy the runtime ignores; the map is in `references/recurring-surface-choice.md`.",
             f"After activation, read status from Hermes, not from the blueprint: `{NATIVE_CRON_TOOL}` list (state, last_status, next_run_at), `hermes cron runs`, and open `hermes cron incidents` (detected or alerted).",

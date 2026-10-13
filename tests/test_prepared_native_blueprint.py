@@ -105,7 +105,48 @@ class PreparedNativeBlueprintRecordTests(unittest.TestCase):
         self.assertEqual(native["block"]["schedule"], "every day at 9am")
         self.assertEqual(native["block"]["prompt"], blueprint["request_summary"])
         self.assertNotIn("continuity", native["cronjob_manage_create"])
-        self.assertEqual(native["needs_confirmation"], [])
+        # Nothing said whether an unchanged run should stay quiet, so the
+        # prompt is not settled either: it is where that rule would go.
+        self.assertTrue(blueprint["silence_policy"]["requires_confirmation"])
+        self.assertEqual(native["needs_confirmation"], ["prompt"])
+
+    def test_the_skills_own_good_example_reports_only_on_change(self) -> None:
+        prompt = _definition().good_example.prompt
+        self.assertIn("only if status changes", prompt)
+        blueprint = build_scheduled_ops_blueprint(prompt, created_at="2026-06-16T00:00:00Z")
+        native = blueprint["native_blueprint"]
+
+        self.assertEqual(blueprint["silence_policy"]["mode"], "only_report_changes")
+        self.assertFalse(blueprint["silence_policy"]["requires_confirmation"])
+        self.assertTrue(
+            native["block"]["prompt"].endswith("If nothing changed since the previous run, reply with [SILENT] alone.")
+        )
+        self.assertNotIn("prompt", native["needs_confirmation"])
+
+    def test_an_unsettled_silence_rule_leaves_the_prompt_to_confirm(self) -> None:
+        blueprint = build_scheduled_ops_blueprint(
+            "every weekday run an uptime check and send a Slack digest",
+            created_at="2026-06-16T00:00:00Z",
+        )
+
+        self.assertEqual(blueprint["silence_policy"]["mode"], "report_each_run")
+        self.assertTrue(blueprint["silence_policy"]["requires_confirmation"])
+        self.assertIn("prompt", blueprint["native_blueprint"]["needs_confirmation"])
+
+    def test_the_cron_prompt_is_the_whole_request_not_the_summary_preview(self) -> None:
+        request = (
+            "every morning "
+            + "check the competitor pricing page, the release notes feed, and the vendor status page for each supplier; " * 4
+            + "then summarise what moved and why it matters for our renewal decisions this quarter."
+        )
+        clean = " ".join(request.split())
+        self.assertGreater(len(clean), 400)
+        blueprint = build_scheduled_ops_blueprint(request, created_at="2026-06-16T00:00:00Z")
+        native = blueprint["native_blueprint"]
+
+        self.assertTrue(blueprint["request_summary"].endswith("..."))
+        self.assertEqual(native["block"]["prompt"], clean)
+        self.assertEqual(native["cronjob_manage_create"]["prompt"], clean)
 
     def test_validator_refuses_a_native_record_that_drops_or_bends_the_projection(self) -> None:
         cases = (
@@ -123,7 +164,22 @@ class PreparedNativeBlueprintRecordTests(unittest.TestCase):
             (
                 "model pin",
                 lambda record: record["native_blueprint"]["cronjob_manage_create"].update(model="any-model"),
-                "native_blueprint.cronjob_manage_create must not pin model or provider",
+                "native_blueprint.cronjob_manage_create must not pin a model",
+            ),
+            (
+                "provider pin alone",
+                lambda record: record["native_blueprint"]["cronjob_manage_create"].update(provider="any-provider"),
+                "native_blueprint.cronjob_manage_create must not pin a model",
+            ),
+            (
+                "pinned flag",
+                lambda record: record["native_blueprint"]["cronjob_manage_create"].update(pinned=True),
+                "native_blueprint.cronjob_manage_create must not pin a model",
+            ),
+            (
+                "argument cronjob_manage does not take",
+                lambda record: record["native_blueprint"]["cronjob_manage_create"].update(base_url="https://example.invalid"),
+                "native_blueprint.cronjob_manage_create may hold only cronjob_manage arguments",
             ),
             (
                 "not a create call",
@@ -199,14 +255,43 @@ class LegacyBlueprintCompatTests(unittest.TestCase):
 
 
 class SkillMapsOntoNativeCronTests(unittest.TestCase):
-    def test_quality_bar_states_the_cron_tool_presence_rule(self) -> None:
+    def test_quality_bar_states_the_cron_tool_presence_rule_and_its_fallback(self) -> None:
         self.assertTrue(
             any(
-                "the matching `cronjob_manage` create call when `cronjob_manage` is in your tool list or tool_search finds it;"
+                "the matching `cronjob_manage` create call when `cronjob_manage` is in your tool list or tool_search "
+                "finds it, otherwise give the user the equivalent `hermes cron create` command;"
                 in line
                 for line in _definition().quality_bar
             )
         )
+
+    def test_quality_bar_names_where_a_model_pin_is_set(self) -> None:
+        self.assertTrue(
+            any(
+                "A model pin is the user's to set: the block's own `model` and `provider` keys, `hermes cron create` or "
+                "`hermes cron edit` with `--model` and `--provider`, or `pinned=true` only on the user's explicit request "
+                "where `cronjob_manage` offers it."
+                in line
+                for line in _definition().quality_bar
+            )
+        )
+
+    def test_reference_states_the_routes_into_hermes_and_where_pins_live(self) -> None:
+        section = " ".join(_section(_reference(), "## The native blueprint").split())
+
+        self.assertIn(
+            "Hermes reads it only from a skill's frontmatter, and a job made from it preloads that one skill and "
+            "carries no `continuity`",
+            section,
+        )
+        self.assertIn(
+            "otherwise handed to the user as the equivalent "
+            '`hermes cron create "<schedule>" "<prompt>" --deliver <target> --skill <name> --continuity` command',
+            section,
+        )
+        self.assertIn("`cronjob_manage` takes no `model` or `provider` argument, and the prepared call never pins.", section)
+        self.assertIn("`enabled_toolsets` is left unset, which keeps every default tool;", section)
+        self.assertNotIn("does not take one from the agent", section)
 
     def test_every_failure_posture_is_mapped_onto_hermes_cron(self) -> None:
         section = _section(_reference(), "### What Hermes cron already decides")
@@ -227,11 +312,25 @@ class SkillMapsOntoNativeCronTests(unittest.TestCase):
         self.assertIn("`retry_bounded` is not honoured outside that narrow case.", section)
         self.assertIn("`pause_after_consecutive_failures` holds only when someone acts on that notice.", section)
 
+    def test_the_two_one_off_run_paths_are_told_apart(self) -> None:
+        section = _section(_reference(), "### What Hermes cron already decides")
+
+        self.assertIn(
+            "One extra run is `cronjob_manage` action `run`, which fires at once in the background, or "
+            "`hermes cron run`, which runs it on the scheduler's next tick.",
+            section,
+        )
+
     def test_post_floor_scheduler_features_are_presence_rules_not_versions(self) -> None:
         reference = _reference()
         body = next(template.content for template in builtin_skill_templates() if template.name == "automation-blueprint")
 
         self.assertIn("Where the installed Hermes ships `cron/unreachable_retry.py`,", reference)
+        self.assertIn(
+            "a recurring job's fire that failed on a transient network or DNS error before any model call",
+            " ".join(reference.split()),
+        )
+        self.assertIn("`cron.retry_unreachable: false` turns it off", reference)
         self.assertIn("Some builds also read a global `cron.catch_up_missed` switch", reference)
         version = re.compile(r"\b0\.2\d\.\d|\bv2026\.\d")
         self.assertIsNone(version.search(reference))

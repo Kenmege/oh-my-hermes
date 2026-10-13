@@ -4243,7 +4243,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Name cadence/timezone uncertainty, delivery target, silence/no-change rule, selected skills, and context chain.
   - When the recurring work is saved, say it is paused and name what activation needs: explicit overlap, missed-run, retry, backfill, and failure-pause decisions, an approval reference, and an observer from the approved runtime surface.
   - Before activation, say what the policy does when a prior run is still active, when a window is missed, and when failures repeat; after a safety pause, report the applied policy and that resuming needs a policy revision.
-  - Project the prepared native blueprint onto Hermes' own fields: the `metadata.hermes.blueprint` block (schedule, deliver, prompt, no_agent) and the matching `cronjob_manage` create call when `cronjob_manage` is in your tool list or tool_search finds it; report-on-change is a `[SILENT]` final reply, and model or provider pins stay the user's.
+  - Project the prepared native blueprint onto Hermes' own fields: the `metadata.hermes.blueprint` block (schedule, deliver, prompt, no_agent) and the matching `cronjob_manage` create call when `cronjob_manage` is in your tool list or tool_search finds it, otherwise give the user the equivalent `hermes cron create` command; report-on-change is a `[SILENT]` final reply. A model pin is the user's to set: the block's own `model` and `provider` keys, `hermes cron create` or `hermes cron edit` with `--model` and `--provider`, or `pinned=true` only on the user's explicit request where `cronjob_manage` offers it.
   - Map overlap, missed-run, retry, backfill, and failure-pause onto what Hermes cron does natively and say which choices it cannot honour, so nobody is asked for a policy the runtime ignores; the map is in `references/recurring-surface-choice.md`.
   - After activation, read status from Hermes, not from the blueprint: `cronjob_manage` list (state, last_status, next_run_at), `hermes cron runs`, and open `hermes cron incidents` (detected or alerted).
   - Expose whether a no-agent watchdog is a candidate without claiming it exists or ran.
@@ -4277,7 +4277,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - A saved recurring intent is paused; never report that an occurrence ran without a runtime run reference recorded against that exact intent revision.
   - A prepared failure policy is not enforcement: OMH never starts, skips, queues, retries, or backfills an occurrence, and a policy decision is not proof the runtime honoured it.
   - Route later coding, material generation, or report delivery into separate accepted handoffs when needed.
-  - OMH creates, pauses, and removes no cron job: activation is the user's or Hermes' (`/blueprint`, an accepted Suggested Cron Job, or a `cronjob_manage` create the user asked for in this conversation), and a job Hermes lists is observed status, not proof that a run delivered.
+  - OMH creates, pauses, and removes no cron job: activation is the user's or Hermes' (`/blueprint`, an accepted Suggested Cron Job, a `cronjob_manage` create the user asked for in this conversation, or a `hermes cron create` the user runs), and a job Hermes lists is observed status, not proof that a run delivered.
 
 ### reliability-review
 
