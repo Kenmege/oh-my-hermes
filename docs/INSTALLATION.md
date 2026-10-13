@@ -367,7 +367,7 @@ Esc closes it):
 | `\` then Enter, Alt+Enter, Shift+Enter, Ctrl+J | Adds a line |
 | Ctrl+Enter | Steers a running turn with the composer's text; idle, sends it as Enter does |
 | Tab | Completes a slash command, or the `@` reference being typed |
-| Shift+Tab | Cycles the input mode: normal, accept all, plan |
+| Shift+Tab | Cycles the input mode: normal, accept all, plan; while Hermes itself has approvals off, turns plan on and off |
 | Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max |
 | `@` | Starts a file or folder reference; Hermes offers matches above the composer |
 | `?` | On an empty composer, shows this list; `/keys` does too |
@@ -413,8 +413,10 @@ sets in Hermes' own terminal, and never `approvals.mode`; it shows the mode
 only once Hermes confirms the switch for this session, and switches it back off
 when you leave the mode. A new or resumed session starts from what Hermes
 reports for it, and when Hermes reports approvals off for its own reasons
-(`approvals.mode` is off, or it was started with `--yolo`) the composer shows
-accept all as well. In plan mode each prompt you send goes to Hermes as
+(`approvals.mode` is off, it was started with `--yolo`, or `/yolo` turned them
+off) the composer shows accept all as well. Those approvals are not the OMH
+TUI's to turn back on: Shift+Tab then sends nothing and turns plan mode on and
+off beside accept all, and the transcript says so once per session. In plan mode each prompt you send goes to Hermes as
 `/plan <text>`, its prompt for a written plan instead of the work; that is an
 instruction to the model, not a restriction on its tools. An answer to a
 question Hermes asked is sent as typed in every mode.

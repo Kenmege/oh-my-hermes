@@ -43,7 +43,11 @@ shown changes only once Hermes confirms it for this session, an answer that
 confirms anything else is treated as a failure and followed by an explicit
 off, and every `session.info` corrects what is shown. With approvals off
 Hermes sends no approval request, so the TUI still answers none. Plan is the
-TUI's own flag: a prompt typed while it is on goes as `/plan <text>`.
+TUI's own flag, apart from what accept shows: a prompt typed while it is on
+goes as `/plan <text>`. When Hermes has approvals off on its own (an off it
+confirmed did not end them, or they were off without the TUI turning them
+on), accept stays shown and Shift+Tab turns only plan on and off, sending
+nothing.
 Ctrl+T and `/effort <level>` set the session's reasoning effort the same way
 (`config.set` with the session id); the level shown is the one Hermes
 confirmed or reports in `session.info`.
@@ -98,7 +102,7 @@ from ..commands.theme_picker import (
 from ..skin_pack import default_theme, skin_colors, theme_for_name, theme_for_skin_name, theme_names
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
-from .frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN, STATUS_SEPARATOR, build_frame, sticky_line
+from .frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN, STATUS_SEPARATOR, build_frame, sticky_line
 from .gateway import (
     Event,
     GatewayCallError,
@@ -216,9 +220,11 @@ ACCEPT_REFUSED_NOTICE = (
     "Accept all stays off, and the OMH TUI asked Hermes to switch it back off."
 )
 ACCEPT_STUCK_NOTICE = "Hermes did not confirm that this session asks for approvals again ({}). Accept all may still be on."
-ACCEPT_ELSEWHERE_NOTICE = (
-    "Hermes switched this session's accept all off but still reports approvals off: "
-    "its approvals.mode is off, or it was started with --yolo. Accept all stays shown."
+# Said once per session, the first time Shift+Tab meets approvals Hermes turned off on its own.
+HERMES_APPROVALS_NOTICE = (
+    "Hermes itself has approvals off for this session: its approvals.mode is off, it was started with --yolo, "
+    "or /yolo turned them off. Accept all stays shown, and Shift+Tab now turns plan mode on and off "
+    "without changing Hermes' setting."
 )
 SWITCH_BACK_FAILED_NOTICE = "Hermes did not confirm the switch back either ({}). Check /yolo in Hermes."
 
@@ -376,12 +382,12 @@ def context_percent(usage: object) -> float | None:
 
 
 def mode_label(mode: str, theme: Theme) -> Line:
-    """The mode's own words on the mode row: accept and plan have them, normal has none."""
-    if mode == MODE_ACCEPT:
-        return (Span(ACCEPT_LABEL, replace(theme.mode_accept, bold=True)),)
-    if mode == MODE_PLAN:
-        return (Span(PLAN_LABEL, replace(theme.mode_plan, bold=True)),)
-    return ()
+    """The mode's own words on the mode row: accept and plan have them, both when both are on, normal has none."""
+    accept: Line = (Span(ACCEPT_LABEL, replace(theme.mode_accept, bold=True)),)
+    plan: Line = (Span(PLAN_LABEL, replace(theme.mode_plan, bold=True)),)
+    if mode == MODE_ACCEPT_PLAN:
+        return (*accept, Span(STRIP_SEPARATOR, theme.hint), *plan)
+    return {MODE_ACCEPT: accept, MODE_PLAN: plan}.get(mode, ())
 
 
 def strip_column(mode: str, theme: Theme) -> int:
@@ -411,7 +417,7 @@ def mode_row_line(
     label = mode_label(mode, theme)
     if mode == MODE_ACCEPT:
         hint = ACCEPT_HINT
-    elif mode == MODE_PLAN:
+    elif mode in (MODE_PLAN, MODE_ACCEPT_PLAN):
         hint = PLAN_HINT
     elif busy:
         keys = [INTERRUPT_KEY_HINT, STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
@@ -728,9 +734,12 @@ class App:
         self.model = ""
         self.context = ""
         self.context_percent: float | None = None
-        # The input mode (normal, accept, plan) and the reasoning effort the mode row shows; "" shows none.
-        self.mode = MODE_NORMAL
-        self.effort = ""
+        # What the composer shows (`mode`): accept while Hermes has approvals off, the TUI's own plan flag.
+        self.approvals_off = False
+        self.plan_mode = False
+        self.yolo_by_tui = False  # the approvals off shown are the TUI's own confirmed `on`, not Hermes' own
+        self.hermes_approvals_said = False  # HERMES_APPROVALS_NOTICE was shown in this session
+        self.effort = ""  # the reasoning effort the mode row shows; "" shows none
         self.mode_request_open = False  # a yolo call is out: Shift+Tab waits for its answer
         self.yolo_reported: bool | None = None  # `session.info`'s yolo since the last yolo call went out
         self.effort_asked = ""  # the newest effort still waiting for Hermes' answer; the next Ctrl+T steps on from it
@@ -862,12 +871,12 @@ class App:
         self.turn_pending = bool(result.get("running"))
         self.busy_since = self.clock()
         # Accept belongs to the session being left; this one says its own, here or in its first session.info.
+        # Plan is the TUI's flag and stays as it was.
         self.mode_request_open = False
         self.yolo_reported = None
+        self.approvals_off = self.yolo_by_tui = self.hermes_approvals_said = False
         self.effort_asked = ""
         self.effort = ""
-        if self.mode == MODE_ACCEPT:
-            self.mode = MODE_NORMAL
         self._take_session_state(info if isinstance(info, dict) else {})
         self._adopt_stored(as_text(result.get("stored_session_id")) or fallback_stored)
 
@@ -1073,9 +1082,10 @@ class App:
     def _take_session_state(self, info: Mapping[str, Any]) -> None:
         """Hermes' own word on the session: its reasoning effort, and whether its approvals are off.
 
-        Approvals off means accept is shown, on means it is not. Hermes
-        reports yolo on for its own reasons too (`approvals.mode` off,
-        `--yolo`), and then the composer says so as well.
+        Approvals off means accept is shown, on means it is not; the plan
+        flag is the TUI's and stays as it is. Hermes reports yolo on for its
+        own reasons too (`approvals.mode` off, `--yolo`, a `/yolo` typed to
+        it), and then the composer says so as well.
         """
         effort = info.get("reasoning_effort")
         if isinstance(effort, str):
@@ -1083,11 +1093,9 @@ class App:
         yolo = info.get("yolo")
         if not isinstance(yolo, bool):
             return
-        self.yolo_reported = yolo
-        if yolo:
-            self.mode = MODE_ACCEPT
-        elif self.mode == MODE_ACCEPT:
-            self.mode = MODE_NORMAL
+        self.yolo_reported = self.approvals_off = yolo
+        if not yolo:
+            self.yolo_by_tui = False  # nothing has approvals off now, the TUI's own switch included
 
     def _take_usage(self, usage: object) -> None:
         """A usage block with context figures replaces the shown ones; one without leaves them."""
@@ -1374,7 +1382,7 @@ class App:
 
     def _send_typed(self, text: str) -> None:
         """A prompt the person typed and sent: in plan mode as `/plan <text>`, the way a typed `/plan` goes."""
-        if self.mode == MODE_PLAN:
+        if self.plan_mode:
             self._run_slash(plan_invocation(text))
         else:
             self._send_prompt(text)
@@ -1485,18 +1493,31 @@ class App:
         return True
 
     def _cycle_mode(self) -> None:
-        """normal → accept → plan → normal. Entering and leaving accept wait for Hermes; plan is the TUI's own flag."""
+        """normal → accept → plan → normal. Entering and leaving accept wait for Hermes; plan is the TUI's own flag.
+
+        Approvals Hermes turned off on its own are not the TUI's to turn back
+        on: then accept stays shown and the key turns plan on and off, with
+        nothing sent.
+        """
         if self.mode_request_open:
             return  # one change at a time: the mode shown is the last one Hermes confirmed
-        if self.mode == MODE_PLAN:
-            self.mode = MODE_NORMAL
-        elif self.mode == MODE_ACCEPT:
-            self._set_yolo(False, then=MODE_PLAN)
+        if self.approvals_off and not self.yolo_by_tui:
+            self.plan_mode = not self.plan_mode
+            self._say_hermes_approvals()
+        elif self.approvals_off:
+            self._set_yolo(False)
+        elif self.plan_mode:
+            self.plan_mode = False
         else:
-            self._set_yolo(True, then=MODE_ACCEPT)
+            self._set_yolo(True)
 
-    def _set_yolo(self, on: bool, then: str) -> None:
-        """Ask Hermes to turn this session's approvals off (`on`) or back on; `then` is the mode once it confirms.
+    def _say_hermes_approvals(self) -> None:
+        if not self.hermes_approvals_said:
+            self.hermes_approvals_said = True
+            self.transcript.add_notice(HERMES_APPROVALS_NOTICE, NOTICE_WARN)
+
+    def _set_yolo(self, on: bool) -> None:
+        """Ask Hermes to turn this session's approvals off (`on`) or back on; accept, or plan, once it confirms.
 
         The only caller is Shift+Tab. The call always names the session and
         an explicit value: without a session Hermes would set the switch for
@@ -1511,20 +1532,24 @@ class App:
         self._request(
             "config.set",
             {"key": "yolo", "session_id": sid, "value": YOLO_ON if on else YOLO_OFF},
-            lambda result: self._on_yolo_answer(sid, on, then, yolo_answer_problem(result, on)),
+            lambda result: self._on_yolo_answer(sid, on, yolo_answer_problem(result, on)),
             lambda error: self._on_yolo_answer(
-                sid, on, then, f"{error.get('code')}: {as_text(error.get('message')) or 'refused'}"
+                sid, on, f"{error.get('code')}: {as_text(error.get('message')) or 'refused'}"
             ),
         )
 
-    def _on_yolo_answer(self, sid: str, on: bool, then: str, problem: str) -> bool:
-        """Hermes answered a yolo call; `problem` says why the answer confirms nothing ("" when it does)."""
+    def _on_yolo_answer(self, sid: str, on: bool, problem: str) -> bool:
+        """Hermes answered a yolo call; `problem` says why the answer confirms nothing ("" when it does).
+
+        A confirmed off moves on to plan. When Hermes still reports approvals
+        off after it, they are Hermes' own: accept stays shown beside plan.
+        """
         if sid != self.sid:
             return True  # that session was left meanwhile, and its switch with it
         self.mode_request_open = False
         if problem and on:
             # Whatever Hermes did, it was not "this session only": show accept off and ask for it explicitly.
-            self.mode = MODE_NORMAL
+            self.approvals_off = False
             self.transcript.add_notice(ACCEPT_REFUSED_NOTICE.format(problem), NOTICE_ERROR)
             self._request(
                 "config.set",
@@ -1534,12 +1559,11 @@ class App:
         elif problem:
             self.transcript.add_notice(ACCEPT_STUCK_NOTICE.format(problem), NOTICE_ERROR)  # accept stays shown
         elif on:
-            self.mode = then
-        elif self.yolo_reported:
-            self.mode = MODE_ACCEPT
-            self.transcript.add_notice(ACCEPT_ELSEWHERE_NOTICE, NOTICE_WARN)
+            self.approvals_off = self.yolo_by_tui = True
         else:
-            self.mode = then
+            self.yolo_by_tui, self.plan_mode, self.approvals_off = False, True, bool(self.yolo_reported)
+            if self.approvals_off:
+                self._say_hermes_approvals()
         return True
 
     def _on_switched_back(self, result: dict[str, Any]) -> None:
@@ -2118,6 +2142,13 @@ class App:
             self.region.flush_above(stable, cols)
         self._take_clickable(frame.budget, hits, listed)
 
+    @property
+    def mode(self) -> str:
+        """What the composer's rules and mode row show: accept while approvals are off, plan while its flag is on."""
+        if self.approvals_off:
+            return MODE_ACCEPT_PLAN if self.plan_mode else MODE_ACCEPT
+        return MODE_PLAN if self.plan_mode else MODE_NORMAL
+
     # ── subagents ──
 
     def _spinner_frame(self) -> int:
@@ -2361,14 +2392,17 @@ class App:
             return self.theme.status_bad
         return self.theme.status_warn if percent >= CONTEXT_WARN_PERCENT else self.theme.status
 
-    def _mode_chip(self) -> tuple[str, Style]:
-        """The mode in short for the status line: only where the mode row is not drawn and the mode is not normal."""
+    def _mode_chips(self) -> tuple[tuple[str, Style], ...]:
+        """The mode in short for the status line, accept then plan: only where the mode row is not drawn."""
         bar = self.theme.status
         cols, rows = self.size
-        if under_composer(rows, cols)[1] or self.mode not in MODE_CHIPS:
-            return "", bar
-        colour = self.theme.mode_accept if self.mode == MODE_ACCEPT else self.theme.mode_plan
-        return MODE_CHIPS[self.mode], replace(colour, bg=bar.bg, bold=True)
+        if under_composer(rows, cols)[1]:
+            return ()
+        shown = (
+            (MODE_ACCEPT, self.theme.mode_accept, self.approvals_off),
+            (MODE_PLAN, self.theme.mode_plan, self.plan_mode),
+        )
+        return tuple((MODE_CHIPS[mode], replace(colour, bg=bar.bg, bold=True)) for mode, colour, on in shown if on)
 
     def _status_line(self, cols: int) -> Line:
         """OMH's segments, then model, context and state, on the status bar's background.
@@ -2386,9 +2420,9 @@ class App:
             Span(span.text, replace(span.style, bg=bar.bg)) for span in status_segments(payload, self.theme)
         )
         model, context, state = (self.model, bar), (self.context, self._context_style()), (self._state_text(), bar)
-        chip = self._mode_chip()
+        chips = self._mode_chips()
         tail: Line = ()
-        for fields in ((model, context, chip, state), (model, chip, state), (chip, state)):
+        for fields in ((model, context, *chips, state), (model, *chips, state), (*chips, state)):
             tail = tuple(
                 span
                 for text, style in fields

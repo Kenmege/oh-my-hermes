@@ -192,9 +192,12 @@ PR without the chat history.
   shown too. Ctrl+T and `/effort` set that session's reasoning effort through
   the same session-scoped call. Plan mode is the frontend's own flag, also
   turned on with Shift+Tab: while it is on, a prompt the person types goes to
-  Hermes as `/plan <text>`. A steer (Ctrl+Enter, `/steer`) sends into the
-  running turn only text the person typed and sent that way; the TUI never
-  steers on its own, and a queued prompt is never turned into a steer. The
+  Hermes as `/plan <text>`. While Hermes has approvals off on its own (an off
+  it confirmed did not end them, or they were off without the TUI turning
+  them on), Shift+Tab sends nothing and turns only plan mode on and off. A
+  steer (Ctrl+Enter, `/steer`) sends into the running turn only text the
+  person typed and sent that way; the TUI never steers on its own, and a
+  queued prompt is never turned into a steer. The
   subagent views (the strip, the list, one agent's log) are read-only:
   `subagent.tail` is the only subagent call the TUI makes, it reads the tail
   of the log the person opened, and the TUI never steers, interrupts or

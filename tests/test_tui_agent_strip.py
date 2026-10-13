@@ -15,7 +15,7 @@ import unittest
 
 from _tui_lines import line_text
 from test_tui_app import status_index
-from test_tui_modes import SID, RecordingClient, answer, drawn, make_app, type_text
+from test_tui_modes import SID, RecordingClient, answer, drawn, make_app, show_mode, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND, cells, payload
 from omh.tui.app import App, mode_label, mode_row_line, strip_column
 from omh.tui.frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
@@ -199,7 +199,7 @@ class StripTests(unittest.TestCase):
         for mode, row in expected.items():
             with self.subTest(mode=mode):
                 app, _client = agent_app(cols=120)
-                app.mode = mode
+                show_mode(app, mode)
                 self.assertEqual(mode_row(app), row)
 
     def test_the_effort_stays_on_the_right_while_the_strip_leaves_it_room(self) -> None:
@@ -266,7 +266,7 @@ class StripTests(unittest.TestCase):
             for cols in (80, 120):
                 with self.subTest(mode=mode, cols=cols):
                     app, _client = agent_app(cols=cols)
-                    app.mode = mode
+                    show_mode(app, mode)
                     row = mode_row(app)
                     _line, hits = app._agent_strip(cols)
                     self.assertEqual([hit.subagent_id for hit in hits], [MAIN_ID, FIRST, SECOND])

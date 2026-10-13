@@ -29,7 +29,8 @@ All notable changes will be documented here.
   accept all and plan: accept all turns off Hermes' approvals for that session
   only (Hermes' per-session switch, never `approvals.mode`) and is shown on
   the composer once Hermes confirms it, and plan sends each prompt as
-  `/plan <text>`. Ctrl+T or `/effort <level>` sets the session's reasoning
+  `/plan <text>`; where Hermes has approvals off on its own, Shift+Tab sends
+  nothing and turns plan on and off beside accept all. Ctrl+T or `/effort <level>` sets the session's reasoning
   effort, Ctrl+Enter or `/steer <text>` adds typed text to the running turn,
   queued prompts are listed above the composer and Up takes them back to
   edit, `?` or `/keys` lists every key from the table the docs are held to,

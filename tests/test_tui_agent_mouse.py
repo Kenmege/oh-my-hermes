@@ -21,7 +21,7 @@ from _tui_gateway_replay import Scenario
 from test_tui_agent_list import INTERRUPTED_PROMPT, delegating_scenario, focused, more_agents, under_the_frame
 from test_tui_agent_strip import STARTS, agent_app, relay
 from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, FakePoller, ScriptedTerminal, Step, status_index
-from test_tui_modes import SID, RecordingClient, drawn, make_app, type_text
+from test_tui_modes import SID, RecordingClient, drawn, make_app, show_mode, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND
 from omh.tui import terminal as terminal_module
 from omh.tui.app import AGENT_LIST_HINT, EXIT_DRAIN_READS, EXIT_DRAIN_SECONDS, SLOT_ARM_SECONDS, App
@@ -299,7 +299,7 @@ class StripClickTests(unittest.TestCase):
         for mode in (MODE_ACCEPT, MODE_PLAN):
             with self.subTest(mode=mode):
                 app, _client = running(cols=120)
-                app.mode = mode
+                show_mode(app, mode)
                 y = row_of(app, "● main  ")
                 x = column_of(app, "read the diff")
                 self.assertGreater(x, 40)  # well right of where it sits in normal mode

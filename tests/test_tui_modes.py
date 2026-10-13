@@ -32,7 +32,7 @@ from test_tui_app import (
 from omh.tui import app as app_module
 from omh.tui import gateway_contract as contract
 from omh.tui.app import EFFORT_CYCLE, SLOT_ARM_SECONDS, App, queue_lines
-from omh.tui.frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
+from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder
 from omh.tui.layout import slot_cap
@@ -94,6 +94,12 @@ def type_text(app: App, text: str) -> None:
 def answer(app: App, client: RecordingClient, result: dict | None = None, error: dict | None = None) -> None:
     """Answer the newest call."""
     app._on_response(Response(len(client.calls), result, error))
+
+
+def show_mode(app: App, mode: str) -> None:
+    """Put `app` in `mode` as the composer shows it: accept (approvals off), plan (the TUI's flag), or both."""
+    app.approvals_off = mode in (MODE_ACCEPT, MODE_ACCEPT_PLAN)
+    app.plan_mode = mode in (MODE_PLAN, MODE_ACCEPT_PLAN)
 
 
 def notices(app: App, level: str | None = None) -> list[str]:
@@ -329,6 +335,15 @@ class ModeCycleTests(unittest.TestCase):
                 self.assertEqual(len(notices(app)), 1)
                 self.assertEqual(len(client.calls), 2)
 
+    def test_a_failed_on_returns_to_normal_even_after_a_session_info_said_on(self) -> None:
+        # Whatever Hermes reported meanwhile, a call that did not confirm "this session only" shows nothing on.
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        session_info(app, yolo=True)
+        answer(app, client, {"key": "yolo", "value": "1", "scope": "global"})
+        self.assertEqual(app.mode, MODE_NORMAL)
+        self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])
+
     def test_an_error_answer_to_accept_is_a_failure_too(self) -> None:
         # 5001 can follow a switch that was already flipped, so the explicit off still goes out.
         app, client = make_app()
@@ -372,15 +387,21 @@ class ModeCycleTests(unittest.TestCase):
                 (notice,) = notices(app, NOTICE_ERROR)
                 self.assertIn("may still be on", notice)
 
-    def test_an_off_while_hermes_still_reports_approvals_off_keeps_accept(self) -> None:
+    def test_an_off_while_hermes_still_reports_approvals_off_keeps_accept_beside_plan(self) -> None:
         # approvals.mode off, or --yolo: the session switch is off and Hermes still asks nothing.
         app, client = in_accept()
         app._on_input(SHIFT_TAB)
         session_info(app, yolo=True)
         answer(app, client, YOLO_IS_OFF)
-        self.assertEqual(app.mode, MODE_ACCEPT)
+        self.assertEqual(app.mode, MODE_ACCEPT_PLAN)  # the press reached plan, and approvals off stays shown
         (notice,) = notices(app, NOTICE_WARN)
-        self.assertIn("still reports approvals off", notice)
+        self.assertIn("Hermes itself has approvals off", notice)
+        # From here the approvals are Hermes' own: the key moves plan alone, sends nothing, says nothing more.
+        for expected in (MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_ACCEPT):
+            app._on_input(SHIFT_TAB)
+            self.assertEqual(app.mode, expected)
+        self.assertEqual(client.calls, [YOLO_OFF_CALL])
+        self.assertEqual(len(notices(app)), 1)
 
     def test_the_session_info_that_precedes_a_confirmed_off_does_not_cost_plan(self) -> None:
         app, client = in_accept()
@@ -457,6 +478,81 @@ class ModeCycleTests(unittest.TestCase):
         self.assertNotIn("scope", keys)
 
 
+class HermesOwnApprovalsTests(unittest.TestCase):
+    """Approvals Hermes turned off on its own: accept stays shown, and Shift+Tab moves plan alone."""
+
+    def test_shift_tab_turns_plan_on_and_off_and_sends_nothing(self) -> None:
+        app, client = make_app()
+        session_info(app, yolo=True)  # approvals.mode off, --yolo, or a /yolo typed to Hermes
+        self.assertEqual(app.mode, MODE_ACCEPT)
+        for expected in (MODE_ACCEPT_PLAN, MODE_ACCEPT, MODE_ACCEPT_PLAN):
+            app._on_input(SHIFT_TAB)
+            self.assertEqual(app.mode, expected)
+        self.assertEqual(client.calls, [])
+        (notice,) = notices(app)
+        self.assertEqual(notice, app_module.HERMES_APPROVALS_NOTICE)
+        type_text(app, "fix the flaky test")
+        app._on_input(Key(ENTER))  # plan is on, so the prompt goes as /plan
+        self.assertEqual(client.calls, [("slash.exec", {"command": "plan fix the flaky test", "session_id": SID})])
+
+    def test_the_notice_is_said_once_per_session(self) -> None:
+        app, _client = make_app()
+        session_info(app, yolo=True)
+        for _ in range(4):
+            app._on_input(SHIFT_TAB)
+        app._adopt_session({"session_id": "live-2", "info": {"yolo": True}})
+        app._on_input(SHIFT_TAB)
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(notices(app), [app_module.HERMES_APPROVALS_NOTICE] * 2)
+
+    def test_approvals_turned_back_on_and_off_again_without_the_tui_are_hermes_own(self) -> None:
+        # The TUI's on, then a /yolo typed to Hermes turns approvals on, and another turns them off again.
+        now = [100.0]
+        app, client = make_app(clock=lambda: now[0])
+        app._on_input(SHIFT_TAB)
+        answer(app, client, YOLO_IS_ON)
+        now[0] += 10
+        session_info(app, yolo=False)
+        session_info(app, yolo=True)
+        app._on_input(SHIFT_TAB)
+        self.assertEqual((app.mode, client.calls), (MODE_ACCEPT_PLAN, [YOLO_ON_CALL]))
+
+    def test_once_hermes_turns_them_back_on_the_cycle_is_the_tuis_again(self) -> None:
+        app, client = make_app()
+        session_info(app, yolo=True)
+        app._on_input(SHIFT_TAB)
+        session_info(app, yolo=False)  # approvals.mode set back, or /yolo again
+        self.assertEqual(app.mode, MODE_PLAN)
+        app._on_input(SHIFT_TAB)
+        self.assertEqual((app.mode, client.calls), (MODE_NORMAL, []))
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [YOLO_ON_CALL])
+
+    def test_approvals_the_tui_turned_off_are_still_the_tuis_to_turn_back_on(self) -> None:
+        # Hermes emits session.info with yolo true before it answers the call that turned it on.
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        session_info(app, yolo=True)
+        answer(app, client, YOLO_IS_ON)
+        session_info(app, yolo=True)
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])
+        self.assertEqual(notices(app), [])
+
+    def test_both_labels_show_on_the_mode_row_and_both_chips_on_a_short_terminal(self) -> None:
+        app, _client = make_app()
+        session_info(app, yolo=True)
+        app._on_input(SHIFT_TAB)
+        screen = drawn(app)
+        self.assertTrue(any(line.startswith("⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ to cycle)") for line in screen))
+        rules = [line for line in screen if line and set(line) == {"━"}]
+        self.assertEqual(len(rules), 2)  # approvals off is what the rules keep showing
+        short, _client = make_app(rows=9)
+        session_info(short, yolo=True)
+        short._on_input(SHIFT_TAB)
+        self.assertTrue(status_row_of(drawn(short)).rstrip().endswith("⏵⏵ accept │ ⏸ plan │ idle"))
+
+
 class ModeFollowsHermesTests(unittest.TestCase):
     def test_session_info_decides_whether_accept_is_shown(self) -> None:
         app, _client = make_app()
@@ -464,18 +560,20 @@ class ModeFollowsHermesTests(unittest.TestCase):
         self.assertEqual(app.mode, MODE_ACCEPT)
         session_info(app, yolo=False)
         self.assertEqual(app.mode, MODE_NORMAL)
-        app.mode = MODE_PLAN
+        show_mode(app, MODE_PLAN)
         session_info(app, yolo=False)
         self.assertEqual(app.mode, MODE_PLAN)
-        session_info(app, yolo=True)  # approvals off outranks the TUI's own plan flag
-        self.assertEqual(app.mode, MODE_ACCEPT)
+        session_info(app, yolo=True)  # approvals off is shown, and the TUI's own plan flag stays on beside it
+        self.assertEqual(app.mode, MODE_ACCEPT_PLAN)
+        session_info(app, yolo=False)
+        self.assertEqual(app.mode, MODE_PLAN)
 
     def test_a_session_info_without_a_yolo_word_changes_nothing(self) -> None:
         for payload in ({}, {"yolo": None}, {"yolo": "1"}, {"yolo": 1}):
             for mode in (MODE_NORMAL, MODE_ACCEPT, MODE_PLAN):
                 with self.subTest(payload=payload, mode=mode):
                     app, _client = make_app()
-                    app.mode = mode
+                    show_mode(app, mode)
                     session_info(app, **payload)
                     self.assertEqual(app.mode, mode)
 
@@ -493,7 +591,7 @@ class ModeFollowsHermesTests(unittest.TestCase):
 
     def test_plan_stays_on_across_a_new_session(self) -> None:
         app, _client = make_app()
-        app.mode = MODE_PLAN
+        show_mode(app, MODE_PLAN)
         app._adopt_session({"session_id": "live-2", "info": {}})
         self.assertEqual(app.mode, MODE_PLAN)
 
@@ -511,7 +609,7 @@ class ModeFollowsHermesTests(unittest.TestCase):
 class PlanModeTests(unittest.TestCase):
     def plan_app(self, busy: bool = False) -> tuple[App, RecordingClient]:
         app, client = make_app(busy=busy)
-        app.mode = MODE_PLAN
+        show_mode(app, MODE_PLAN)
         return app, client
 
     def test_a_prompt_goes_as_slash_plan_through_the_slash_command_path(self) -> None:
@@ -541,7 +639,7 @@ class PlanModeTests(unittest.TestCase):
         for mode in (MODE_NORMAL, MODE_ACCEPT):
             with self.subTest(mode=mode):
                 app, client = make_app()
-                app.mode = mode
+                show_mode(app, mode)
                 type_text(app, "fix the flaky test")
                 app._on_input(Key(ENTER))
                 self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": "fix the flaky test"})])
@@ -565,7 +663,7 @@ class PlanModeTests(unittest.TestCase):
             with self.subTest(method=method):
                 now = [100.0]
                 app, client = make_app(clock=lambda: now[0])
-                app.mode = MODE_PLAN
+                show_mode(app, MODE_PLAN)
                 app._on_server_request(ServerRequest("srq-1", method, params))
                 now[0] += SLOT_ARM_SECONDS
                 type_text(app, "the blue one")
@@ -921,12 +1019,12 @@ class QueueTests(unittest.TestCase):
     def test_a_prompt_a_command_built_comes_back_as_what_was_typed(self) -> None:
         # Plan mode wrote /plan around the prompt, so the prompt comes back; a typed command comes back as typed.
         app, client = make_app(busy=True)
-        app.mode = MODE_PLAN
+        show_mode(app, MODE_PLAN)
         type_text(app, "fix the flaky test")
         app._on_input(Key(ENTER))
         answer(app, client, error={"code": contract.NOT_MINE, "message": "pending-input command"})
         answer(app, client, {"type": "send", "message": PLAN_PROMPT})
-        app.mode = MODE_NORMAL
+        show_mode(app, MODE_NORMAL)
         type_text(app, "/learn the build")
         app._on_input(Key(ENTER))
         answer(app, client, error={"code": contract.NOT_MINE, "message": "pending-input command"})
@@ -950,7 +1048,7 @@ class ModeChipTests(unittest.TestCase):
 
     def status(self, mode: str, rows: int, cols: int = 80) -> str:
         app, _client = make_app(rows=rows, cols=cols)
-        app.mode = mode
+        show_mode(app, mode)
         return status_row_of(drawn(app))
 
     def test_a_short_terminal_carries_the_mode_on_the_status_line(self) -> None:
@@ -970,7 +1068,7 @@ class ModeChipTests(unittest.TestCase):
             for mode, label in ((MODE_ACCEPT, "⏵⏵ accept all on"), (MODE_PLAN, "⏸ plan mode on")):
                 with self.subTest(rows=rows, mode=mode):
                     app, _client = make_app(rows=rows)
-                    app.mode = mode
+                    show_mode(app, mode)
                     screen = drawn(app)
                     self.assertEqual(status_row_of(screen).rstrip(), "⚚ OMH │ idle")
                     self.assertTrue(any(line.startswith(label) for line in screen))
@@ -981,15 +1079,15 @@ class ModeChipTests(unittest.TestCase):
         for mode, expected in ((MODE_ACCEPT, " │ ⏵⏵ accept │ idle"), (MODE_PLAN, " │ ⏸ plan │ idle")):
             with self.subTest(mode=mode):
                 app, _client = make_app(rows=24, cols=19)
-                app.mode = mode
+                show_mode(app, mode)
                 self.assertIn(expected, "\n".join(drawn(app)))
         wide, _client = make_app(rows=24, cols=20)
-        wide.mode = MODE_ACCEPT
+        show_mode(wide, MODE_ACCEPT)
         self.assertEqual(status_row_of(drawn(wide)).rstrip(), "⚚ OMH │ idle")
 
     def test_the_chip_outlasts_the_model_and_the_context_when_the_line_is_cut(self) -> None:
         app, _client = make_app(rows=9, cols=30)
-        app.mode = MODE_ACCEPT
+        show_mode(app, MODE_ACCEPT)
         app.model, app.context = "a-rather-long-model-name", "ctx 14k/1M 1%"
         text = line_text(app._status_line(30))
         self.assertEqual(text.rstrip(), "⚚ OMH │ ⏵⏵ accept │ idle")
@@ -1004,7 +1102,7 @@ class ModeChipTests(unittest.TestCase):
             for mode, colour in ((MODE_ACCEPT, theme.mode_accept), (MODE_PLAN, theme.mode_plan)):
                 with self.subTest(theme=name, mode=mode):
                     app, _client = make_app(rows=9, theme=theme)
-                    app.mode = mode
+                    show_mode(app, mode)
                     chip = next(span for span in app._status_line(80) if span.text in ("⏵⏵ accept", "⏸ plan"))
                     self.assertEqual((chip.style.fg, chip.style.bg, chip.style.bold), (colour.fg, theme.status.bg, True))
                     self.assertGreaterEqual(contrast_ratio(chip.style.fg, chip.style.bg), TEXT_CONTRAST)

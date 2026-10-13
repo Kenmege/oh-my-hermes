@@ -8,8 +8,11 @@ result to `LiveRegion.render(frame.lines, frame.cursor, cols, pad=frame.pad)`.
 The composer is framed: a rule above it and a rule below it, both drawn in
 the input mode's glyph and colour (normal `─` in the rule colour, accept `━`
 in `mode_accept`, plan `┄` in `mode_plan`), so the mode reads from the frame
-even where hue alone would not tell it apart. The mode row under the bottom
-rule is a line the app builds; the frame only places it.
+even where hue alone would not tell it apart. Accept with plan on beside it
+(Hermes has approvals off on its own, and the plan flag is on) draws accept's
+rules: approvals off is what the frame must never hide, and the mode row
+names both. The mode row under the bottom rule is a line the app builds; the
+frame only places it.
 
 The composer stays put. The first frame at a terminal size
 (previous height 0: nothing drawn yet, or the region was just cleared for a
@@ -65,7 +68,8 @@ STATUS_SEPARATOR = " │ "
 MODE_NORMAL = "normal"
 MODE_ACCEPT = "accept"
 MODE_PLAN = "plan"
-MODE_RULE_GLYPHS = {MODE_NORMAL: RULE_GLYPH, MODE_ACCEPT: "━", MODE_PLAN: "┄"}
+MODE_ACCEPT_PLAN = "accept+plan"  # approvals off and the plan flag on, both at once
+MODE_RULE_GLYPHS = {MODE_NORMAL: RULE_GLYPH, MODE_ACCEPT: "━", MODE_PLAN: "┄", MODE_ACCEPT_PLAN: "━"}
 
 
 @dataclass(frozen=True)
@@ -145,7 +149,9 @@ def build_frame(
 
 def rule_line(width: int, theme: Theme = DEFAULT_THEME, mode: str = MODE_NORMAL) -> Line:
     """One edge of the composer frame, full width, in the mode's glyph and colour (normal for an unknown mode)."""
-    style = {MODE_ACCEPT: theme.mode_accept, MODE_PLAN: theme.mode_plan}.get(mode, theme.rule)
+    style = {MODE_ACCEPT: theme.mode_accept, MODE_ACCEPT_PLAN: theme.mode_accept, MODE_PLAN: theme.mode_plan}.get(
+        mode, theme.rule
+    )
     return (Span(MODE_RULE_GLYPHS.get(mode, RULE_GLYPH) * max(width, 0), style),)
 
 
