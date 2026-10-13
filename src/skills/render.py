@@ -1841,7 +1841,7 @@ When work finishes, the capture for the next reader is three artifacts: a deep g
 
 ## Boundary
 
-A `{WIKI_BLUEPRINT_SCHEMA_VERSION}` is prepared design context, not evidence that a store was created, written to, or migrated. OMH does not host the wiki; the user's own store does.
+A `{WIKI_BLUEPRINT_SCHEMA_VERSION}` is a prepared design artifact, not evidence that a store was created, written to, or migrated. OMH does not host the wiki; the user's own store does.
 
 ## Use When
 
