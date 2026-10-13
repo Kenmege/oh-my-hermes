@@ -1,0 +1,1092 @@
+"""The OMH TUI's event loop and entry point.
+
+`main` is what `python -m omh.tui` runs once Hermes' launcher has handed the
+frontend its environment. Everything that can stop the TUI from starting is
+settled before the first byte is drawn, and each such failure exits with
+`FALLBACK_EXIT`, so `omh` opens Hermes' own terminal instead: a terminal that
+cannot run the TUI, a gateway that does not start, and a startup call this
+Hermes no longer understands. An attach hand-off is refused with exit 1 and a
+line naming `hermes --tui --resume <id>` (0 would make `omh` print a resume
+hint for a session this TUI never opened).
+
+`App` is the loop. One thread owns the terminal and every model: it reads
+input with a short timeout, routes keys (an open prompt slot first, then the
+completion menu, then the composer), takes everything the gateway sent since
+the last step, takes the newest HUD snapshot, and repaints when something
+changed or a spinner is due. Calls made from the loop go out with
+`GatewayClient.request` and their answers come back through `poll`, so a
+slow slash command never freezes the screen.
+
+Protocol rules from the M0 measurement, all enforced here: every server
+request is answered (a slot, or an immediate decline with a notice); events
+whose envelope `session_id` is not the live session are dropped, except
+`gateway.*`; the stored session id is tracked from every `session.info` and
+written (id only, mode 0600) to `HERMES_TUI_ACTIVE_SESSION_FILE`; input sent
+while a turn runs is queued in memory unless Hermes' config explicitly asks
+for `interrupt` or `steer`.
+
+Nothing here writes to disk except that file. Prompt text, the transcript,
+server-request frames and the gateway's stderr stay in memory and on the
+person's own terminal.
+"""
+
+from __future__ import annotations
+
+import base64
+from collections import deque
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
+import json
+import os
+import sys
+import time
+from typing import Any, Protocol, TextIO
+
+from ..skin_pack import default_theme, skin_colors, theme_for_name, theme_for_skin_name, theme_names
+from . import gateway_contract as contract
+from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
+from .frame import STATUS_SEPARATOR, build_frame, sticky_line
+from .gateway import (
+    Event,
+    GatewayCallError,
+    GatewayClient,
+    GatewayExited,
+    GatewayTimeout,
+    GatewayUnavailable,
+    Response,
+    ServerRequest,
+    attach_refused,
+    gateway_spawn,
+)
+from .keys import CHAR, DOWN, ESCAPE, UP, Key, KeyDecoder, Paste
+from .launch import FALLBACK_EXIT
+from .layout import slot_cap
+from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
+from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
+from .prompts import Answer, ImmediateAnswer, PromptSlot, open_request
+from .screen import SHOW_CURSOR, LiveRegion
+from .slash import (
+    COMMANDS,
+    DROPPED,
+    HERMES,
+    LOCAL,
+    Completion,
+    SlashInvocation,
+    catalog_pairs,
+    completions,
+    dropped_notice,
+    hermes_notice,
+    parse_slash,
+)
+from .style import Line, Span
+from .terminal import Terminal, terminal_supported
+from .theme import DEFAULT_THEME, Theme, theme_named
+from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript
+from .width import line_width, truncate_line, wrap_line
+
+READ_TIMEOUT_SECONDS = 0.05
+TICK_SECONDS = 0.1
+EXIT_CONFIRM_SECONDS = 2.0
+STARTUP_TAIL_LINES = 10
+
+BUSY_QUEUE = "queue"
+BUSY_MODES = frozenset({"queue", "steer", "interrupt"})
+
+STATE_IDLE = "idle"
+STATE_RUNNING = "running"
+STATE_WAITING = "waiting on you"
+
+EXIT_HINT = "Ctrl+C again to exit"
+OSC52_COPY = "\x1b]52;c;{}\x07"
+MENU_NAME_CELLS = 16
+HELP_KEYS = (
+    "Keys: Enter sends · Alt+Enter or Ctrl+J adds a line · Tab completes a /command · "
+    "Ctrl+C interrupts a turn or clears the input · Ctrl+D on empty input exits"
+)
+
+
+class TerminalLike(Protocol):
+    def __enter__(self) -> Any: ...
+    def __exit__(self, *exc: object) -> Any: ...
+    def size(self) -> tuple[int, int]: ...
+    def resized(self) -> bool: ...
+    def read(self, timeout: float) -> bytes: ...
+    def write(self, text: str) -> None: ...
+
+
+class PollerLike(Protocol):
+    def start(self) -> None: ...
+    def stop(self) -> None: ...
+    def set_session(self, stored_id: str) -> None: ...
+    def take(self) -> HudSnapshot | None: ...
+
+
+@dataclass(frozen=True)
+class _Pending:
+    """A call sent from the loop: what to do with its result, and (optionally) with its error.
+
+    `on_error` returns True when it handled the error; otherwise the error becomes a notice.
+    """
+
+    method: str
+    on_result: Callable[[dict[str, Any]], None]
+    on_error: Callable[[dict[str, Any]], bool] | None = None
+
+
+# ── small pure helpers ────────────────────────────────────────────────────
+
+
+def _text(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def busy_mode(config_result: Mapping[str, Any]) -> str:
+    """`display.busy_input_mode` from a `config.get {key: "full"}` answer; queue unless it says otherwise.
+
+    The `busy` getter cannot be used: it answers `interrupt` when the key is
+    unset (the server's default), which hides exactly the case the TUI must
+    read as `queue`, the default Hermes' own TUI applies.
+    """
+    config = config_result.get("config")
+    display = config.get("display") if isinstance(config, dict) else None
+    raw = display.get("busy_input_mode") if isinstance(display, dict) else None
+    value = raw.strip().lower() if isinstance(raw, str) else ""
+    return value if value in BUSY_MODES else BUSY_QUEUE
+
+
+def _compact_count(value: float) -> str:
+    for size, suffix in ((1_000_000, "M"), (1_000, "k")):
+        if value >= size:
+            return f"{value / size:.1f}".removesuffix(".0") + suffix
+    return str(int(value))
+
+
+def context_text(usage: object) -> str:
+    """`ctx 13.9k/1M 1%` from a `session.usage` / `session.info` usage block; "" when it has no context figures."""
+    if not isinstance(usage, dict):
+        return ""
+    used = usage.get("context_used")
+    limit = usage.get("context_max")
+    if not isinstance(used, int | float) or not isinstance(limit, int | float) or limit <= 0:
+        return ""
+    text = f"ctx {_compact_count(used)}/{_compact_count(limit)}"
+    percent = usage.get("context_percent")
+    if isinstance(percent, int | float) and not isinstance(percent, bool):
+        text += f" {percent:.0f}%"
+    return text
+
+
+def resume_command(stored_id: str) -> str:
+    return f"hermes --tui --resume {stored_id}" if stored_id else "hermes --tui"
+
+
+def attach_message(environ: Mapping[str, str]) -> str:
+    return (
+        "omh: the OMH TUI does not attach to a gateway another runtime owns; "
+        f"open it in Hermes' own terminal: {resume_command(environ.get('HERMES_TUI_RESUME', ''))}"
+    )
+
+
+def write_active_session(path: str, stored_id: str) -> None:
+    """Write `{"session_id": <stored id>}` (mode 0600) for the launcher's exit epilogue. Best effort.
+
+    The id is the only thing this TUI ever writes to disk; a failure costs
+    the launcher its resume hint and nothing else.
+    """
+    if not path or not stored_id:
+        return
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"session_id": stored_id}))
+        os.chmod(path, 0o600)
+    except OSError:
+        return
+
+
+def _matches(request_id: str, params: Mapping[str, Any], ids: set[str]) -> bool:
+    """Whether a withdrawal naming `ids` covers this request (its JSON-RPC id or an approval's own id)."""
+    return request_id in ids or _text(params.get("request_id")) in ids
+
+
+def _slot_owns(slot: PromptSlot, event: Key | Paste, composer_text: str) -> bool:
+    """Whether a key goes to the open slot rather than the composer.
+
+    An approval takes every key. A slot answered with text takes only what
+    the composer has no use for: Esc and the arrows always, Ctrl+C on empty
+    input (decline), and a digit on empty input when it can pick a clarify
+    choice. Everything else types the answer.
+    """
+    if not slot.wants_text:
+        return True
+    if not isinstance(event, Key):
+        return False
+    if event.name in (ESCAPE, UP, DOWN):
+        return True
+    if composer_text or event.name != CHAR:
+        return False
+    if event.ctrl:
+        return event.char == "c"
+    return slot.method == "clarify" and not event.alt and event.char.isascii() and event.char.isdigit()
+
+
+def _menu_lines(entries: list[Completion], index: int, width: int, max_rows: int, theme: Theme) -> list[Line]:
+    """The completion menu, scrolled so the highlighted entry is visible."""
+    if not entries or max_rows <= 0:
+        return []
+    start = min(max(index - max_rows + 1, 0), max(len(entries) - max_rows, 0))
+    rows: list[Line] = []
+    for number in range(start, min(start + max_rows, len(entries))):
+        entry = entries[number]
+        current = number == index
+        style = theme.menu_current if current else theme.menu
+        name = f" /{entry.name}".ljust(MENU_NAME_CELLS)
+        rows.append(truncate_line((Span(name, style), Span(f" {entry.summary} ", style)), width))
+    return rows
+
+
+@contextmanager
+def _suspended(terminal: TerminalLike) -> Iterator[None]:
+    """Hand the terminal back (cooked mode, cursor shown) for the body, then take it again."""
+    terminal.__exit__(None, None, None)
+    try:
+        yield
+    finally:
+        terminal.__enter__()
+
+
+def run_model_chain_picker(environ: Mapping[str, str], theme: Theme) -> str:
+    """`omh model-chains`' picker, run in process on the bare terminal; returns a one-line result.
+
+    The same rows and the same validated save the Hermes widget used
+    (`plugin_bundle/omh/model_chain_picker.py`), painted by the CLI picker.
+    """
+    from ..catalogs.model_chain_table import CHAIN_SURFACE_PURPOSES, MODEL_DISPLAY_LABELS
+    from ..commands.model_chain_picker import pick_chains_interactively
+    from ..plugin_bundle.omh.model_chain_picker import apply_picker_changes, chain_entries, picker_rows
+
+    omh_home = environ.get("OMH_HOME") or None
+    hermes_home = environ.get("HERMES_HOME") or None
+    try:
+        payload = picker_rows(
+            omh_home, hermes_home=hermes_home, labels=MODEL_DISPLAY_LABELS, purposes=CHAIN_SURFACE_PURPOSES
+        )
+    except (OSError, ValueError) as error:
+        return f"/omh-model could not read the model chains: {error}"
+    skin = theme_for_name(theme.name) or default_theme()
+    try:
+        changes = pick_chains_interactively(
+            payload, use_color=not environ.get("NO_COLOR"), palette=skin_colors(skin.skin_name)
+        )
+    except KeyboardInterrupt:  # cbreak keeps ISIG, so Ctrl+C in the picker is a signal
+        changes = None
+    if changes is None:
+        return f"Cancelled; {payload['path']} was not changed."
+    if not changes:
+        return "No model-chain changes."
+    result = apply_picker_changes(
+        omh_home, {name: chain_entries(chain) for name, chain in changes.items()}, hermes_home=hermes_home
+    )
+    if "error" in result:
+        return f"/omh-model did not save: {result['error']}"
+    count = len(result["changed"])
+    return (
+        f"Saved {count} categor{'y' if count == 1 else 'ies'} to {result['path']}. "
+        "New delegations use this order; running children keep theirs."
+    )
+
+
+# ── the loop ──────────────────────────────────────────────────────────────
+
+
+class App:
+    """The OMH TUI after its gateway started: `startup()` opens the session, `run()` is the loop."""
+
+    def __init__(
+        self,
+        terminal: TerminalLike,
+        client: GatewayClient,
+        environ: Mapping[str, str],
+        *,
+        poller: PollerLike,
+        theme: Theme = DEFAULT_THEME,
+        clock: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], float] = time.time,
+        pick_model_chains: Callable[[Mapping[str, str], Theme], str] = run_model_chain_picker,
+    ) -> None:
+        self.terminal = terminal
+        self.client = client
+        self.environ = environ
+        self.poller = poller
+        self.theme = theme
+        self.clock = clock
+        self.wall_clock = wall_clock
+        self.pick_model_chains = pick_model_chains
+        self.transcript = Transcript(clock)
+        self.composer = Composer()
+        self.region = LiveRegion(terminal.write)
+        self.decoder = KeyDecoder()
+        self.size = terminal.size()
+        self.sid = ""
+        self.stored_id = ""
+        self.model = ""
+        self.context = ""
+        self.busy_mode = BUSY_QUEUE
+        self.catalog: list[tuple[str, str]] = []
+        self.slot: PromptSlot | None = None
+        self.slot_draft = ""
+        self.waiting_requests: deque[ServerRequest] = deque()
+        self.queued: deque[tuple[str, str]] = deque()  # (text sent, text shown)
+        self.sticky = ""
+        self.turn_pending = False  # a prompt went out and its turn has not started (or ended) yet
+        self.pending: dict[int, _Pending] = {}
+        self.menu_index = 0
+        self.pager: Pager | None = None
+        self.resized_while_paging = False
+        self.hud: HudSnapshot | None = None
+        self.exit_armed_at: float | None = None
+        self.exit_code: int | None = None
+        self.farewell = ""
+        self.anchor = True  # the next frame re-anchors the region (first frame, resize, redraw)
+        self.dirty = True
+        self.last_render = 0.0
+
+    # ── startup ──
+
+    def startup(self) -> None:
+        """Read the busy mode and the command catalog, then open or resume the session.
+
+        Raises `GatewayCallError` (drift on any call, or any error from the
+        session call), `GatewayTimeout` or `GatewayUnavailable`; the caller
+        turns each into `FALLBACK_EXIT`.
+        """
+        self.busy_mode = busy_mode(self._optional_call("config.get", {"key": "full"}))
+        self.catalog = catalog_pairs(self._optional_call("commands.catalog", {}))
+        resume = self.environ.get("HERMES_TUI_RESUME", "")
+        if resume:
+            result = self.client.call("session.resume", {"session_id": resume, "cols": self.size[0]})
+        else:
+            result = self.client.call("session.create", self._create_params())
+        self._adopt_session(result, fallback_stored=resume)
+        if resume:
+            self.transcript.add_notice(f"Resumed session {self.stored_id}.")
+        for entry in result.get("open_requests") or []:
+            if isinstance(entry, dict) and isinstance(entry.get("id"), str) and isinstance(entry.get("method"), str):
+                params = entry.get("params")
+                self._on_server_request(ServerRequest(entry["id"], entry["method"], params if isinstance(params, dict) else {}))
+
+    def _optional_call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """A startup call the TUI can do without, except when the answer is drift."""
+        try:
+            return self.client.call(method, params)
+        except GatewayCallError as error:
+            if error.drift:
+                raise
+            return {}
+
+    def _create_params(self) -> dict[str, Any]:
+        params: dict[str, Any] = {"cols": self.size[0]}
+        cwd = self.environ.get("HERMES_TUI_CWD") or self.environ.get("HERMES_CWD")
+        if cwd:
+            params["cwd"] = cwd
+        return params
+
+    def _adopt_session(self, result: Mapping[str, Any], fallback_stored: str = "") -> None:
+        self.sid = _text(result.get("session_id"))
+        info = result.get("info")
+        self.model = _text(info.get("model")) if isinstance(info, dict) else ""
+        self.turn_pending = bool(result.get("running"))
+        self._adopt_stored(_text(result.get("stored_session_id")) or fallback_stored)
+
+    def _adopt_stored(self, stored: str) -> None:
+        if not stored or stored == self.stored_id:
+            return
+        self.stored_id = stored
+        write_active_session(self.environ.get("HERMES_TUI_ACTIVE_SESSION_FILE", ""), stored)
+        self.poller.set_session(stored)
+
+    # ── loop ──
+
+    def run(self) -> int:
+        """Run until the person quits or the gateway is gone; the exit code."""
+        self.poller.start()
+        try:
+            while self.exit_code is None:
+                self._step()
+        finally:
+            self._shutdown()
+        return self.exit_code
+
+    def _step(self) -> None:
+        if self.terminal.resized():
+            self._on_resize()
+        try:
+            data = self.terminal.read(READ_TIMEOUT_SECONDS)
+        except EOFError:
+            self.exit_code = 0
+            return
+        for event in self.decoder.feed(data) if data else self.decoder.flush():
+            self.dirty = True
+            self._on_input(event)
+            if self.exit_code is not None:
+                return
+        self._drain_gateway()
+        if self.exit_code is not None:
+            return
+        self._take_hud()
+        self._render_when_due()
+
+    def _shutdown(self) -> None:
+        self.poller.stop()
+        if self.pager is not None:
+            self.pager = None
+            self.terminal.write(ALT_SCREEN_OFF + SHOW_CURSOR)
+        cols = self.size[0]
+        stable = self.transcript.take_stable_lines(cols, self.theme)
+        if stable:
+            self.region.flush_above(stable, cols)
+        self.region.clear()
+        self.client.close()
+
+    def _busy(self) -> bool:
+        return self.transcript.running or self.turn_pending
+
+    # ── gateway ──
+
+    def _request(
+        self,
+        method: str,
+        params: dict[str, Any],
+        on_result: Callable[[dict[str, Any]], None],
+        on_error: Callable[[dict[str, Any]], bool] | None = None,
+    ) -> None:
+        try:
+            request_id = self.client.request(method, params)
+        except GatewayUnavailable as error:
+            self._lose_gateway(str(error))
+            return
+        self.pending[request_id] = _Pending(method, on_result, on_error)
+
+    def _respond(self, answer: Answer) -> None:
+        try:
+            self.client.respond(answer.request_id, answer.frame)
+        except GatewayUnavailable as error:
+            self._lose_gateway(str(error))
+
+    def _lose_gateway(self, reason: str) -> None:
+        if self.exit_code is not None:
+            return
+        self.transcript.add_notice(f"{reason}.", NOTICE_ERROR)
+        self.farewell = f"omh: {reason}. Resume the session in Hermes' own terminal: {resume_command(self.stored_id)}"
+        self.exit_code = 1
+
+    def _drain_gateway(self) -> None:
+        for item in self.client.poll():
+            self.dirty = True
+            if isinstance(item, Event):
+                self._on_event(item)
+            elif isinstance(item, ServerRequest):
+                self._on_server_request(item)
+            elif isinstance(item, Response):
+                self._on_response(item)
+            elif isinstance(item, GatewayExited):
+                self._lose_gateway(f"the Hermes gateway exited (code {item.returncode})")
+            if self.exit_code is not None:
+                return
+
+    def _on_response(self, response: Response) -> None:
+        pending = self.pending.pop(response.id, None)
+        if pending is None:
+            return
+        if response.error is None:
+            pending.on_result(response.result or {})
+            return
+        error = response.error
+        if contract.is_drift_error(error):
+            self._lose_gateway(
+                f"this Hermes refused {pending.method} ({error.get('code')}); "
+                "it no longer speaks the protocol the OMH TUI was built for"
+            )
+            return
+        if pending.on_error is not None and pending.on_error(error):
+            return
+        self.transcript.add_notice(
+            f"{pending.method} failed ({error.get('code')}): {_text(error.get('message'))}", NOTICE_ERROR
+        )
+
+    def _on_event(self, event: Event) -> None:
+        if not event.type.startswith(contract.GATEWAY_SCOPED_EVENT_PREFIX) and event.session_id != self.sid:
+            return
+        payload = event.payload
+        if event.type == "session.info":
+            self._on_session_info(payload)
+        elif event.type == "session.usage":
+            self.context = context_text(payload.get("usage")) or self.context
+        elif event.type in ("request.cancel", "approval.cancelled"):
+            self._on_withdrawn(payload)
+        elif event.type == "error":
+            self.transcript.add_notice(_text(payload.get("message")) or "The gateway reported an error.", NOTICE_ERROR)
+        else:
+            self.transcript.apply(event)
+            if event.type == "message.start":
+                self.turn_pending = False
+            elif event.type == "message.complete":
+                self.turn_pending = False
+                self._drain_queue()
+
+    def _on_session_info(self, payload: Mapping[str, Any]) -> None:
+        self.model = _text(payload.get("model")) or self.model
+        self.context = context_text(payload.get("usage")) or self.context
+        # `running` is not read: the previous turn's closing `running: false` arrives after
+        # `message.complete`, by which time a queued prompt may already be pending.
+        self._adopt_stored(_text(payload.get("stored_session_id")))
+
+    def _on_withdrawn(self, payload: Mapping[str, Any]) -> None:
+        ids = {_text(payload.get("id"))} - {""}
+        request_ids = payload.get("request_ids")
+        if isinstance(request_ids, list):
+            ids.update(value for value in request_ids if isinstance(value, str) and value)
+        self.waiting_requests = deque(
+            request for request in self.waiting_requests if not _matches(request.id, request.params, ids)
+        )
+        slot = self.slot
+        if slot is not None and _matches(slot.request_id, slot.params, ids):
+            self._close_slot()
+            reason = _text(payload.get("reason")) or "withdrawn"
+            self.transcript.add_notice(f"Hermes withdrew its {slot.method} request ({reason}).", NOTICE_WARN)
+
+    # ── server requests and the prompt slot ──
+
+    def _on_server_request(self, request: ServerRequest) -> None:
+        if self.slot is not None:
+            self.waiting_requests.append(request)
+            return
+        if self.pager is not None:
+            self._leave_pager()
+        opened = open_request(request.id, request.method, request.params)
+        if isinstance(opened, ImmediateAnswer):
+            self._respond(opened.answer)
+            self.transcript.add_notice(opened.notice, NOTICE_WARN)
+            return
+        self.slot = opened
+        if opened.wants_text:
+            self.slot_draft = self.composer.text
+            self._set_composer("")
+            self.composer.masked = opened.masked
+
+    def _answer(self, answer: Answer) -> None:
+        self._respond(answer)
+        self._close_slot()
+
+    def _close_slot(self) -> None:
+        slot, self.slot = self.slot, None
+        if slot is not None and slot.wants_text:
+            self.composer.masked = False
+            self._set_composer(self.slot_draft)
+            self.slot_draft = ""
+        while self.slot is None and self.waiting_requests:
+            self._on_server_request(self.waiting_requests.popleft())
+
+    def _decline_all_requests(self) -> None:
+        """Answer every open and waiting request with its decline frame (the session is going away)."""
+        while self.slot is not None:
+            self._answer(self.slot.decline())
+        while self.waiting_requests:
+            request = self.waiting_requests.popleft()
+            opened = open_request(request.id, request.method, request.params)
+            self._respond(opened.answer if isinstance(opened, ImmediateAnswer) else opened.decline())
+
+    # ── input ──
+
+    def _set_composer(self, text: str) -> None:
+        self.composer.text = ""
+        self.composer.caret = 0
+        if text:
+            self.composer.handle(Paste(text))
+
+    def _on_input(self, event: Key | Paste) -> None:
+        if self.pager is not None:
+            if not self.pager.handle_key(event, self.size[1]):
+                self._leave_pager()
+            return
+        if self.slot is not None and _slot_owns(self.slot, event, self.composer.text):
+            answer = self.slot.handle_key(event)
+            if answer is not None:
+                self._answer(answer)
+            return
+        if self.slot is None and isinstance(event, Key) and self._menu_moves(event):
+            return
+        before = self.composer.text
+        action = self.composer.handle(event)
+        if self.composer.text != before:
+            self.menu_index = 0
+        self._on_composer(action)
+
+    def _on_composer(self, action: ComposerAction) -> None:
+        if action.kind == SUBMIT:
+            if self.slot is not None:
+                answer = self.slot.submit_text(action.text)
+                if answer is not None:
+                    self._answer(answer)
+            else:
+                self._submit(action.text)
+        elif action.kind == INTERRUPT:
+            self._interrupt_or_exit()
+        elif action.kind == EXIT:
+            self.exit_code = 0
+        elif action.kind == COMPLETE and self.slot is None:
+            self._accept_completion()
+
+    def _interrupt_or_exit(self) -> None:
+        """Ctrl+C on empty input: interrupt a running turn, else exit on a second press within 2 s."""
+        if self._busy():
+            if self.sid:
+                self._request("session.interrupt", {"session_id": self.sid}, lambda result: None)
+            return
+        now = self.clock()
+        if self.exit_armed_at is not None and now - self.exit_armed_at <= EXIT_CONFIRM_SECONDS:
+            self.exit_code = 0
+            return
+        self.exit_armed_at = now
+        self.transcript.add_notice(EXIT_HINT)
+
+    def _menu_entries(self) -> list[Completion]:
+        """Completions while the composer holds a leading `/word` and nothing else."""
+        text = self.composer.text
+        if self.slot is not None or not text.startswith("/") or any(ch.isspace() for ch in text):
+            return []
+        prefix = text[1:]
+        if "/" in prefix:
+            return []
+        return completions(prefix, self.catalog)
+
+    def _menu_moves(self, key: Key) -> bool:
+        if key.name not in (UP, DOWN):
+            return False
+        entries = self._menu_entries()
+        if not entries:
+            return False
+        self.menu_index = (self.menu_index + (-1 if key.name == UP else 1)) % len(entries)
+        return True
+
+    def _accept_completion(self) -> None:
+        entries = self._menu_entries()
+        if entries:
+            self._set_composer(f"/{entries[min(self.menu_index, len(entries) - 1)].name} ")
+
+    # ── prompts ──
+
+    def _submit(self, text: str) -> None:
+        if not text.strip():
+            return
+        invocation = parse_slash(text)
+        if invocation is not None:
+            self._run_slash(invocation)
+        else:
+            self._send_prompt(text)
+
+    def _send_prompt(self, text: str, shown: str = "") -> None:
+        if not self.sid:
+            self.transcript.add_notice("No session is open yet; try again in a moment.", NOTICE_WARN)
+            return
+        if self._busy() and self.busy_mode == BUSY_QUEUE:
+            self.queued.append((text, shown))
+            return
+        self._submit_prompt(text, shown)
+
+    def _submit_prompt(self, text: str, shown: str = "", queued: bool = False) -> None:
+        self.transcript.add_user(shown or text)
+        self.sticky = shown or text
+        self.turn_pending = True
+        params: dict[str, Any] = {"session_id": self.sid, "text": text}
+        if queued:
+            params["queued"] = True  # the busy path holds a drained prompt; it never redirects or steers it
+        self._request("prompt.submit", params, lambda result: None, self._on_submit_error)
+
+    def _on_submit_error(self, error: dict[str, Any]) -> bool:
+        self.turn_pending = False
+        return False
+
+    def _drain_queue(self) -> None:
+        if self.queued and self.sid:
+            text, shown = self.queued.popleft()
+            self._submit_prompt(text, shown, queued=True)
+
+    # ── slash commands ──
+
+    def _run_slash(self, invocation: SlashInvocation, depth: int = 0) -> None:
+        command = invocation.command
+        if command is not None and command.route == LOCAL:
+            self._local_handlers()[command.name](invocation.arg)
+        elif command is not None and command.route == HERMES:
+            self.transcript.add_notice(hermes_notice(command))
+        elif command is not None and command.route == DROPPED:
+            self.transcript.add_notice(dropped_notice(command))
+        elif not self.sid:
+            self.transcript.add_notice("No session is open yet; try again in a moment.", NOTICE_WARN)
+        else:
+            self._request(
+                "slash.exec",
+                {"command": invocation.text, "session_id": self.sid},
+                lambda result: self._on_slash_result(invocation, result, depth),
+                lambda error: self._on_slash_refused(invocation, error, depth),
+            )
+
+    def _on_slash_refused(self, invocation: SlashInvocation, error: dict[str, Any], depth: int) -> bool:
+        """`slash.exec` refusing a command `command.dispatch` owns (4018) falls back to it, as Ink does."""
+        if error.get("code") != contract.NOT_MINE:
+            return False
+        self._request(
+            "command.dispatch",
+            {"name": invocation.name, "arg": invocation.arg, "session_id": self.sid},
+            lambda result: self._on_dispatch(invocation, result, depth),
+        )
+        return True
+
+    def _on_slash_result(self, invocation: SlashInvocation, result: dict[str, Any], depth: int) -> None:
+        if result.get("type"):
+            self._on_dispatch(invocation, result, depth)
+            return
+        body = _text(result.get("output")) or f"/{invocation.name}: no output"
+        warning = _text(result.get("warning"))
+        self._show_output(invocation.name, f"warning: {warning}\n{body}" if warning else body)
+
+    def _on_dispatch(self, invocation: SlashInvocation, result: dict[str, Any], depth: int) -> None:
+        kind = _text(result.get("type"))
+        if kind in ("exec", "plugin"):
+            self._show_output(invocation.name, _text(result.get("output")) or "(no output)")
+            return
+        if kind == "alias":
+            target = _text(result.get("target")).lstrip("/")
+            aliased = parse_slash(f"/{target} {invocation.arg}") if target and depth == 0 else None
+            if aliased is not None:
+                self._run_slash(aliased, depth + 1)
+            else:
+                self.transcript.add_notice(f"/{invocation.name}: the alias did not resolve.", NOTICE_WARN)
+            return
+        notice = _text(result.get("notice")).strip()
+        if notice:
+            self.transcript.add_notice(notice)
+        message = _text(result.get("message"))
+        if kind in ("send", "skill"):
+            if message.strip():
+                self._send_prompt(message, _text(result.get("display")).strip())
+            else:
+                self.transcript.add_notice(f"/{invocation.name}: empty message", NOTICE_WARN)
+        elif kind == "prefill":
+            if message:
+                self._set_composer(message)
+        else:
+            other = _text(result.get("output")) or _text(result.get("display"))
+            if other:
+                self._show_output(invocation.name, other)
+
+    def _show_output(self, name: str, text: str) -> None:
+        """A command's output as a notice, or in the pager when it is longer than half the screen."""
+        cols, rows = self.size
+        source = text.split("\n")
+        if len(source) <= max(rows // 2, 3):
+            self.transcript.add_notice(text)
+            return
+        lines = [wrapped for line in source for wrapped in (wrap_line((Span(line),), cols) or [()])]
+        self._open_pager(f"/{name}", lines)
+        self.transcript.add_notice(f"/{name}: {len(source)} lines, shown in the pager.")
+
+    def _local_handlers(self) -> dict[str, Callable[[str], None]]:
+        return {
+            "help": self._help,
+            "quit": self._quit,
+            "new": self._new_session,
+            "redraw": self._redraw,
+            "history": self._history,
+            "details": self._details,
+            "queue": self._show_queue,
+            "logs": self._logs,
+            "copy": self._copy,
+            "theme": self._theme,
+            "omh-model": self._omh_model,
+        }
+
+    def _help(self, arg: str) -> None:
+        rows = ["OMH TUI commands:"]
+        rows += [f"  /{command.name:<10} {command.summary}" for command in COMMANDS if command.route == LOCAL]
+        names = " ".join(name for name, _summary in self.catalog)
+        rows.append(f"Hermes commands ({len(self.catalog)}): {names}" if names else "Hermes commands: none listed.")
+        rows.append(HELP_KEYS)
+        self.transcript.add_notice("\n".join(rows))
+
+    def _quit(self, arg: str) -> None:
+        self.exit_code = 0
+
+    def _new_session(self, arg: str) -> None:
+        if not self.sid:
+            self.transcript.add_notice("No session is open yet; try again in a moment.", NOTICE_WARN)
+            return
+        self._decline_all_requests()
+        old, self.sid = self.sid, ""  # the old session's events are dropped from here on
+        self._request(
+            "session.close",
+            {"session_id": old},
+            lambda result: self._create_session(),
+            lambda error: self._create_session() or True,
+        )
+
+    def _create_session(self) -> None:
+        self._request("session.create", self._create_params(), self._on_new_session)
+
+    def _on_new_session(self, result: dict[str, Any]) -> None:
+        self.transcript = Transcript(self.clock)
+        self.queued.clear()
+        self.sticky = ""
+        self._adopt_session(result)
+        self.transcript.add_notice(f"New session {self.stored_id}.")
+
+    def _redraw(self, arg: str) -> None:
+        self.region.clear()
+        self.anchor = True
+
+    def _history(self, arg: str) -> None:
+        lines = self.transcript.history_lines(self.size[0], self.theme, details=True)
+        if lines:
+            self._open_pager("history", lines)
+        else:
+            self.transcript.add_notice("Nothing in this session's transcript yet.")
+
+    def _details(self, arg: str) -> None:
+        # No notice: a new block would close the live one, the only block the toggle changes.
+        self.transcript.toggle_details()
+
+    def _show_queue(self, arg: str) -> None:
+        if not self.queued:
+            self.transcript.add_notice("Nothing is queued.")
+            return
+        rows = ["Queued (sent one at a time as each turn ends):"]
+        rows += [f"  {number}. {shown or text}" for number, (text, shown) in enumerate(self.queued, start=1)]
+        self.transcript.add_notice("\n".join(rows))
+
+    def _logs(self, arg: str) -> None:
+        tail = self.client.stderr_tail()
+        if tail:
+            self._open_pager("gateway stderr (memory only)", [(Span(line),) for line in tail])
+        else:
+            self.transcript.add_notice("The gateway has written nothing to stderr.")
+
+    def _copy(self, arg: str) -> None:
+        last = next((block for block in reversed(self.transcript.blocks) if isinstance(block, AssistantBlock)), None)
+        if last is None or not last.text.strip():
+            self.transcript.add_notice("No reply to copy yet.")
+            return
+        encoded = base64.b64encode(last.text.strip().encode("utf-8")).decode("ascii")
+        self.terminal.write(OSC52_COPY.format(encoded))
+        self.transcript.add_notice("Copied the last reply to the clipboard (OSC 52; the terminal must allow it).")
+
+    def _theme(self, arg: str) -> None:
+        if not arg:
+            self.transcript.add_notice(f"Theme {self.theme.name}. Available: {', '.join(theme_names())}.")
+        elif theme_for_name(arg) or theme_for_skin_name(arg):
+            self.theme = theme_named(arg)
+            self.transcript.add_notice(f"Theme {self.theme.name} applies to this session; `omh theme` keeps it.")
+        else:
+            self.transcript.add_notice(f"No theme named {arg}. Available: {', '.join(theme_names())}.", NOTICE_WARN)
+
+    def _omh_model(self, arg: str) -> None:
+        self.region.clear()
+        with _suspended(self.terminal):
+            message = self.pick_model_chains(self.environ, self.theme)
+        self.size = self.terminal.size()
+        self.anchor = True
+        self.transcript.add_notice(message)
+
+    # ── pager ──
+
+    def _open_pager(self, title: str, lines: list[Line]) -> None:
+        self.pager = Pager(title, lines)
+        self.terminal.write(ALT_SCREEN_ON)
+
+    def _leave_pager(self) -> None:
+        self.pager = None
+        self.terminal.write(ALT_SCREEN_OFF + SHOW_CURSOR)
+        if self.resized_while_paging:
+            self.resized_while_paging = False
+            self.region.clear()
+            self.anchor = True
+
+    # ── drawing ──
+
+    def _on_resize(self) -> None:
+        self.size = self.terminal.size()
+        self.dirty = True
+        if self.pager is not None:
+            self.resized_while_paging = True
+            return
+        self.region.clear()
+        self.anchor = True
+
+    def _take_hud(self) -> None:
+        snapshot = self.poller.take()
+        if snapshot is not None and snapshot.session_id == self.stored_id:
+            self.hud = snapshot
+            self.dirty = True
+
+    def _panel_live(self) -> bool:
+        payload = self.hud.payload if self.hud is not None else None
+        return isinstance(payload, Mapping) and bool(payload.get("active"))
+
+    def _render_when_due(self) -> None:
+        now = self.clock()
+        due = (self._busy() or self._panel_live()) and now - self.last_render >= TICK_SECONDS
+        if not (self.dirty or due):
+            return
+        self.dirty = False
+        self.last_render = now
+        self._render()
+
+    def _render(self) -> None:
+        cols, rows = self.size
+        if self.pager is not None:
+            self.terminal.write(self.pager.frame(cols, rows, self.theme))
+            return
+        stable = self.transcript.take_stable_lines(cols, self.theme)
+        if stable:
+            self.region.flush_above(stable, cols)
+        previous = 0 if self.anchor else self.region.height
+        self.anchor = False
+        frame = build_frame(
+            cols=cols,
+            rows=rows,
+            composer=self.composer,
+            status=self._status_line(cols),
+            previous_height=previous,
+            sticky=sticky_line(self.sticky, cols, self.theme) if self._busy() and self.sticky.strip() else None,
+            tail=self._tail(cols),
+            slot=self._slot_lines(cols, rows),
+            theme=self.theme,
+        )
+        self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad)
+
+    def _tail(self, cols: int) -> list[Line]:
+        lines = list(self.transcript.live_lines(cols, self.theme))
+        if self._busy():
+            status = self.transcript.status
+            text = self.transcript.activity or (status.text if status is not None else "") or "working…"
+            spinner = SPINNER_FRAMES[int(self.clock() / TICK_SECONDS) % len(SPINNER_FRAMES)]
+            lines.append(truncate_line((Span(f"{spinner} {text}", self.theme.dim),), cols))
+        return lines
+
+    def _slot_lines(self, cols: int, rows: int) -> list[Line]:
+        cap = slot_cap(rows, cols)
+        if cap <= 0:
+            return []
+        if self.slot is not None:
+            return self.slot.lines(cols, self.theme, cap)
+        entries = self._menu_entries()
+        if entries:
+            return _menu_lines(entries, min(self.menu_index, len(entries) - 1), cols, cap, self.theme)
+        payload = self.hud.payload if self.hud is not None else None
+        if payload is None:
+            return []
+        return panel_lines(payload, cols, cap, self.theme, self.wall_clock(), received_at=self.hud.received_at)
+
+    def _state_text(self) -> str:
+        if self.slot is not None:
+            state = STATE_WAITING
+        elif self._busy():
+            state = STATE_RUNNING
+        else:
+            state = STATE_IDLE
+        return f"{state} · queued {len(self.queued)}" if self.queued else state
+
+    def _status_line(self, cols: int) -> Line:
+        """OMH's segments, then model, context and state, on the status bar's background.
+
+        When it does not fit, the context goes first and the model next, so the
+        state (idle / running / waiting on you) is the last thing cut.
+        """
+        bar = self.theme.status
+        payload = self.hud.payload if self.hud is not None else None
+        head = [Span(span.text, replace(span.style, bg=bar.bg)) for span in status_segments(payload, self.theme)]
+        state = self._state_text()
+        line: Line = ()
+        for fields in ((self.model, self.context, state), (self.model, state), (state,)):
+            spans = list(head)
+            for text in fields:
+                if text:
+                    spans += [Span(STATUS_SEPARATOR, self.theme.status_dim), Span(text, bar)]
+            line = tuple(spans)
+            if line_width(line) <= cols:
+                break
+        line = truncate_line(line, cols)
+        filler = cols - line_width(line)
+        return line + ((Span(" " * filler, bar),) if filler > 0 else ())
+
+
+# ── entry point ───────────────────────────────────────────────────────────
+
+
+def _say(stream: TextIO, text: str) -> None:
+    stream.write(text + "\n")
+    stream.flush()
+
+
+def _start_gateway(
+    environ: Mapping[str, str], make_client: Callable[..., GatewayClient], stderr: TextIO
+) -> tuple[GatewayClient, Event] | None:
+    """The started gateway client and its ready event, or None after saying why it did not start."""
+    try:
+        client = make_client(gateway_spawn(environ))
+        return client, client.start()
+    except GatewayUnavailable as error:
+        _say(stderr, f"omh: the Hermes gateway did not start: {error}")
+        for line in error.stderr_tail[-STARTUP_TAIL_LINES:]:
+            _say(stderr, f"  {line}")
+    except GatewayCallError as error:
+        _say(stderr, f"omh: the Hermes gateway refused the OMH TUI: {error}")
+    return None
+
+
+def main(
+    environ: Mapping[str, str],
+    *,
+    stdin: TextIO | None = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+    open_terminal: Callable[[], TerminalLike] = Terminal,
+    make_client: Callable[..., GatewayClient] = GatewayClient,
+    make_poller: Callable[[str | None, str | None], PollerLike] = HudPoller,
+) -> int:
+    """Start the OMH TUI and return its exit code (`FALLBACK_EXIT` when it could not start)."""
+    stdin = sys.stdin if stdin is None else stdin
+    stdout = sys.stdout if stdout is None else stdout
+    stderr = sys.stderr if stderr is None else stderr
+    if not terminal_supported(stdin, stdout, environ):
+        _say(stderr, "omh: this terminal cannot run the OMH TUI; opening Hermes' own terminal instead.")
+        return FALLBACK_EXIT
+    if attach_refused(environ):
+        _say(stderr, attach_message(environ))
+        return 1
+    started = _start_gateway(environ, make_client, stderr)
+    if started is None:
+        return FALLBACK_EXIT
+    client, ready = started
+    skin = ready.payload.get("skin")
+    terminal = open_terminal()
+    app = App(
+        terminal,
+        client,
+        environ,
+        poller=make_poller(environ.get("OMH_HOME") or None, environ.get("HERMES_HOME") or None),
+        theme=theme_named(_text(skin.get("name")) if isinstance(skin, dict) else ""),
+    )
+    try:
+        app.startup()
+    except (GatewayCallError, GatewayTimeout, GatewayUnavailable) as error:
+        client.close()
+        _say(stderr, f"omh: the OMH TUI could not open a Hermes session: {error}")
+        return FALLBACK_EXIT
+    with terminal:
+        code = app.run()
+    if app.farewell:
+        _say(stderr, app.farewell)
+    return code
