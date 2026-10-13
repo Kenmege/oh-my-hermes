@@ -26,11 +26,14 @@ written (id only, mode 0600) to `HERMES_TUI_ACTIVE_SESSION_FILE`; input sent
 while a turn runs is queued in memory unless Hermes' config explicitly asks
 for `interrupt` or `steer`.
 
-Nothing here writes to disk except that file. Prompt text, the transcript,
-server-request frames and the gateway's stderr stay in memory and on the
-person's own terminal. An attached image is a path the gateway resolves and
-queues itself (`image.attach`, `clipboard.paste`, `input.detect_drop`); the
-TUI keeps only its name for the chip row.
+Prompt text, the transcript, attachments, secrets, server-request frames and
+the gateway's stderr stay in memory and on the person's own terminal; nothing
+here writes them anywhere. The files the TUI writes are metadata: that
+session file, and what OMH's HUD reader (`panels.HudPoller`, its fan-out
+cache under `<omh_home>/runtime/`) and the model-chain picker (`/omh-model`'s
+saved chains) write under the OMH home. An attached image is a path the
+gateway resolves and queues itself (`image.attach`, `clipboard.paste`,
+`input.detect_drop`); the TUI keeps only its name for the chip row.
 """
 
 from __future__ import annotations
@@ -335,8 +338,8 @@ def attach_message(environ: Mapping[str, str]) -> str:
 def write_active_session(path: str, stored_id: str) -> None:
     """Write `{"session_id": <stored id>}` (mode 0600) for the launcher's exit epilogue. Best effort.
 
-    The id is the only thing this TUI ever writes to disk; a failure costs
-    the launcher its resume hint and nothing else.
+    The id is all the file holds; a failure costs the launcher its resume
+    hint and nothing else.
     """
     if not path or not stored_id:
         return

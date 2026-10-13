@@ -349,17 +349,21 @@ The terminal frontend bare `omh` opens (`src/tui/`, installed as `omh.tui`).
 the packaged shim `omh/tui/frontend/dist/entry.js`, so Hermes' launcher still
 resolves the profile, the resume target, the working directory and session
 ownership, then starts the shim in place of its Ink app. The shim hands the
-terminal to `python -I -m omh.tui`, which spawns Hermes' `tui_gateway` with the
-interpreter and import path the launcher provided and speaks its stdio
-JSON-RPC. Layout, input, rendering and the OMH panels are OMH's; every model
-call, tool run and approval decision is the gateway's. Finished transcript
-lines go to the terminal's own scrollback; only a bottom region (the streaming
-tail, one slot for the plan and agents panels or a prompt Hermes asked, the
-composer, and the status line) repaints, and the composer's row does not move
-when the slot grows or shrinks. When it cannot start (unsupported terminal,
-Windows, no Node for the launcher, gateway unavailable, protocol drift at
-startup) it exits 75 and `omh` opens Hermes' own terminal instead. Bare
-`hermes` is unaffected.
+terminal to `omh.tui.app.main` on OMH's interpreter, started `-E -P` so the
+launcher's `PYTHONPATH` and the working directory stay off its import path;
+the TUI spawns Hermes' `tui_gateway` with the interpreter and import path the
+launcher provided and speaks its stdio JSON-RPC. Layout, input, rendering and
+the OMH panels are OMH's; every model call, tool run and approval decision is
+the gateway's. It writes no prompt text, transcript or server-request frame;
+its only writes are metadata (the launcher's active-session file, and what
+OMH's HUD reader and model-chain picker write under the OMH home). Finished
+transcript lines go to the terminal's own scrollback; only a bottom region
+(the streaming tail, one slot for the plan and agents panels or a prompt
+Hermes asked, the composer, and the status line) repaints, and the composer's
+row does not move when the slot grows or shrinks. When it cannot start
+(unsupported terminal, Windows, no Node for the launcher, an OMH that cannot
+import itself, gateway unavailable, protocol drift at startup) it exits 75
+and `omh` opens Hermes' own terminal instead. Bare `hermes` is unaffected.
 _Avoid_: Modern TUI (Hermes' Ink app), OMH status widget (an extension of
 Hermes' TUI), a Hermes patch or fork, an execution surface
 

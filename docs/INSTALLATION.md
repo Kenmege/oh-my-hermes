@@ -310,9 +310,12 @@ run and approval decision stays Hermes'; the screen is OMH's.
   lines move it.
 - When Hermes asks something (an approval, a clarify question, a sudo
   password), the question takes the slot until you answer. Nothing is answered
-  for you: Esc or Ctrl+C declines, and an approval offers `once`, `session`
-  and `deny`, with Enter on an untouched approval denying. Approving a command
-  permanently stays a choice for `hermes --tui`.
+  for you: Esc or Ctrl+C declines. An approval offers allow once, allow this
+  session and deny; allowing takes the arrows and then Enter, `d` or `n`
+  denies, and Enter on an untouched approval denies. Keys pressed in the first
+  moment after an approval appears are ignored, so typing that was meant for
+  the composer cannot answer it. Approving a command permanently stays a
+  choice for `hermes --tui`.
 - Images: drag an image file onto the terminal, press Ctrl+V for an image on
   the clipboard, or type `/image <path>`. Each one shows as a chip on the row
   above the input (`📎 shot.png 1280×720`) and goes with the next message you
@@ -353,8 +356,10 @@ gateway no longer speaks what the TUI was built for — it says why and `omh`
 opens Hermes' own terminal instead, so you lose the OMH screen, never the
 session. If the gateway changes mid-session, the TUI leaves with the command
 that reopens the same session in `hermes`. The OMH TUI writes no prompt text,
-transcript or Hermes question to disk; the one file it writes is the
-launcher's active-session file, which holds the session id.
+transcript, attachment, secret or Hermes question to disk. What it does write
+is metadata: the launcher's active-session file, which holds the session id,
+and what OMH's own HUD reader and model-chain picker write under the OMH home
+(the HUD's fan-out cache, and the chains `/omh-model` saves).
 
 Bare `hermes` is unchanged: it opens Hermes' own terminal, which still shows
 the OMH skin and status widget when the branded-TUI choice below is active.

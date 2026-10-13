@@ -172,13 +172,17 @@ PR without the chat history.
   own. That frontend spawns exactly one child, Hermes' `tui_gateway`, with the
   interpreter and import path the launcher handed it, and speaks the
   gateway's stdio JSON-RPC. It relays only what the person types. It never
-  answers an approval, clarify, sudo, or secret request on its own; a timeout,
-  Esc or Ctrl+C is a decline, and an approval decline is an explicit deny. It
+  answers an approval, clarify, sudo, or secret request on its own: Esc or
+  Ctrl+C declines, an approval decline is an explicit deny, allowing a
+  command takes the arrows and then Enter, and a request the gateway
+  withdraws (its own timeout, an interrupt) closes without an answer. It
   never attaches to a session another runtime owns: when the launcher sets
   `HERMES_TUI_GATEWAY_URL`, it exits and names `hermes`. It writes no prompt
-  text, transcript, or server-request frame to disk or to a log (the one file
-  it writes is the launcher's active-session file, holding the session id),
-  keeping the metadata-only rule. The frontend opens no socket and makes no
+  text, transcript, attachment, secret or server-request frame to disk or to
+  a log. The files it does write are metadata: the launcher's active-session
+  file (the session id), and what OMH's own HUD reader and model-chain picker
+  already write under the OMH home (the HUD fan-out cache and its lock, and
+  the chains `/omh-model` saves). The frontend opens no socket and makes no
   network call, strips the sidecar and attach URLs from the gateway's
   environment, and reaps the gateway when it exits. OMH itself still makes no
   LLM call; every model call, and every other network call the gateway makes,
