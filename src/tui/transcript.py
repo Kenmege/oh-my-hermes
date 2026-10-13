@@ -435,6 +435,18 @@ class Transcript:
         if text.strip():
             self._append(AssistantBlock(text, done=True))
 
+    def fail_turn(self, message: str) -> None:
+        """A turn the gateway ended with a bare `error` event instead of `message.complete`.
+
+        The live block closes as it stands, the error follows it, and the turn
+        state clears, as `message.complete` with `status: error` would leave it.
+        """
+        self._close_live()
+        self._append(NoticeBlock(message, NOTICE_ERROR))
+        self.running = False
+        self.activity = ""
+        self.status = None
+
     def toggle_details(self) -> bool:
         """Expand or collapse the live block's details; blocks already taken never repaint."""
         self.details_expanded = not self.details_expanded

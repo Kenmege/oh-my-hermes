@@ -45,11 +45,20 @@ from _tui_gateway_replay import (
 from _vt_screen import VTScreen
 from omh.tui import terminal as terminal_module
 from omh.skin_pack import hex_to_rgb
-from omh.tui.app import BANNER_HINT, EXIT_HINT, App, initial_theme, main
-from omh.tui.gateway import GatewayClient, gateway_spawn
-from omh.tui.keys import Paste
+from omh.tui.app import (
+    APPROVAL_ARM_SECONDS,
+    BANNER_HINT,
+    EXIT_HINT,
+    App,
+    initial_theme,
+    main,
+    picker_key,
+    run_model_chain_picker,
+)
+from omh.tui.gateway import GatewayClient, GatewayUnavailable, gateway_spawn
+from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Paste
 from omh.tui.launch import FALLBACK_EXIT
-from omh.tui.theme import theme_named
+from omh.tui.theme import DEFAULT_THEME, theme_named
 from omh.version import __version__
 
 FAST_GRACE = 0.3
@@ -61,6 +70,7 @@ STATUS_MARK = "⚚ OMH"
 RULE_MARK = "────"
 STARTUP_METHODS = ["client.capabilities", "config.get", "commands.catalog", "session.create"]
 NO_TERMIOS = terminal_module.termios is None
+TURN_CANCELLED = "Turn cancelled before the agent was ready"
 
 
 def startup_answers() -> tuple[tuple[str, dict], ...]:
@@ -312,6 +322,41 @@ class StartupRefusalTests(AppTestCase):
         self.assertEqual(run.clients[0].close(grace=FAST_GRACE), 0)
 
 
+    def test_ctrl_c_while_the_session_opens_exits_130_and_closes_the_gateway(self) -> None:
+        # The gateway start and the session call run before the terminal goes raw, where
+        # Ctrl+C is still SIGINT; KeyboardInterrupt stands in for it on the first startup call.
+        run = self.prepare(Scenario("session", spans("session", "startup"), answers=startup_answers()))
+        build = self.make_client(run)
+
+        def interrupted(spawn: object) -> GatewayClient:
+            client = build(spawn)
+            call = client.call
+
+            def call_or_interrupt(method: str, params: dict, timeout: float = 30.0) -> dict:
+                if method == "config.get":
+                    raise KeyboardInterrupt
+                return call(method, params, timeout)
+
+            client.call = call_or_interrupt  # type: ignore[method-assign]
+            return client
+
+        run.code = main(
+            run.environ,
+            stdin=TtyStream(),
+            stdout=TtyStream(),
+            stderr=run.stderr,
+            open_terminal=lambda: run.terminal,
+            make_client=interrupted,
+            make_poller=lambda omh_home, hermes_home: run.poller,
+        )
+        self.assertEqual(run.code, 130)
+        self.assertIn("interrupted", run.stderr.getvalue())
+        self.assertNotIn("Traceback", run.stderr.getvalue())
+        self.assertEqual(run.terminal.entered, 0)
+        with self.assertRaises(GatewayUnavailable):  # its input was closed: the child is being reaped
+            run.clients[0].request("session.list", {"limit": 1})
+
+
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
 class SessionTests(AppTestCase):
     def test_startup_draws_status_and_composer_and_writes_the_active_session_file(self) -> None:
@@ -428,6 +473,47 @@ class SessionTests(AppTestCase):
         self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": ROTATED_ID})
         self.assertEqual(stat.S_IMODE(os.stat(run.active_session_file).st_mode), 0o600)
 
+    def error_run(self, *, submits: int) -> Run:
+        """A session whose prompt.submit is answered `streaming` and then ended by a bare `error` event.
+
+        Hermes 6c61c3e27d does this when it cancels a turn before the agent is ready
+        (`tui_gateway/methods_prompt.py`): no `message.start`, no `message.complete`.
+        """
+        submit = (5, 7)  # the recorded prompt.submit and its `streaming` answer
+        played = (*spans("session", "startup", "create"), *([submit] * submits))
+        position = sum(stop - start for start, stop in played[:3])
+        error = {"jsonrpc": "2.0", "method": "event", "params": {
+            "type": "error", "session_id": LIVE_ID, "payload": {"message": TURN_CANCELLED}}}
+        return self.prepare(Scenario("session", played, inject=((position, json.dumps(error)),), answers=startup_answers()))
+
+    def test_a_turn_ended_by_an_error_event_leaves_the_tui_idle_so_ctrl_c_twice_exits(self) -> None:
+        run = self.error_run(submits=1)
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "first prompt"),
+            Step(b"\x03", when=lambda: TURN_CANCELLED in terminal.history() and terminal.idle(), label="idle again"),
+            Step(b"\x03", when=terminal.shows(EXIT_HINT), label="the exit hint"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual(run.calls("session.interrupt"), [])
+
+    def test_a_turn_ended_by_an_error_event_sends_the_next_queued_prompt(self) -> None:
+        run = self.error_run(submits=2)
+        terminal = run.terminal
+        terminal.script(
+            # One read: the second prompt queues behind the first, whose turn the error ends.
+            Step(b"first prompt\rsecond prompt\r", when=terminal.idle, label="idle"),
+            Step(b"\x04", when=lambda: len(run.calls("prompt.submit")) == 2, label="the queued prompt sent"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        first, second = run.calls("prompt.submit")
+        self.assertEqual(first["params"], {"session_id": LIVE_ID, "text": "first prompt"})
+        self.assertEqual(second["params"], {"session_id": LIVE_ID, "text": "second prompt", "queued": True})
+        history = terminal.history()
+        self.assertLess(history.index(TURN_CANCELLED), history.index("› second prompt"))
+
     def test_a_gateway_exit_mid_session_returns_1_with_the_resume_line(self) -> None:
         run = self.prepare(
             Scenario("session", spans("session", "startup", "create"), answers=startup_answers(), after=EXIT)
@@ -523,11 +609,16 @@ class PromptSlotTests(AppTestCase):
         self.assertEqual(answers, [{"jsonrpc": "2.0", "id": "srq-52e9720342b6", "result": {"choice": "deny"}}])
         self.assertIn("It was blocked", run.terminal.history())
 
+    def armed(self, run: Run, label: str) -> Callable[[], bool]:
+        """Ready once the approval that step `label` saw has been open past the arm delay."""
+        return lambda: time.monotonic() - run.terminal.fired[label] > APPROVAL_ARM_SECONDS + 0.05
+
     def test_an_approval_opens_a_slot_and_d_sends_the_explicit_deny(self) -> None:
         run = self.approval_run()
         run.terminal.script(
             self.submit(run, "Run rm -rf ./omh-m0-probe-dir"),
-            Step(b"d", when=run.terminal.shows("Hermes asks to run"), capture="slot", label="the approval slot"),
+            Step(when=run.terminal.shows("Hermes asks to run"), capture="slot", label="the approval slot"),
+            Step(b"d", when=self.armed(run, "the approval slot"), label="armed"),
             Step(b"\x04", when=lambda: "proceed." in run.terminal.history() and run.terminal.idle(), label="end"),
         )
         self.run_main(run)
@@ -541,10 +632,34 @@ class PromptSlotTests(AppTestCase):
         run = self.approval_run()
         run.terminal.script(
             self.submit(run, "Run rm -rf ./omh-m0-probe-dir"),
-            Step(b"\x1b", when=run.terminal.shows("Hermes asks to run"), label="the approval slot"),
+            Step(when=run.terminal.shows("Hermes asks to run"), label="the approval slot"),
+            Step(b"\x1b", when=self.armed(run, "the approval slot"), label="armed"),
             Step(b"\x04", when=lambda: "proceed." in run.terminal.history() and run.terminal.idle(), label="end"),
         )
         self.run_main(run)
+        self.assert_denied(run)
+
+    def test_keys_that_arrive_as_an_approval_opens_are_ignored(self) -> None:
+        # Left, Left, Enter would allow once. Typed for the composer as the request lands, they
+        # reach the slot inside the arm delay and do nothing; the replay accepts only the deny.
+        run = self.approval_run()
+        terminal = run.terminal
+        now = [100.0]
+        client = self.make_client(run)(gateway_spawn(run.environ))
+        client.start(ready_timeout=10.0)
+        app = App(terminal, client, run.environ, poller=run.poller, clock=lambda: now[0])
+        app.startup()
+        terminal.script(
+            self.submit(run, "Run rm -rf ./omh-m0-probe-dir"),
+            Step(b"\x1b[D\x1b[D\r", when=terminal.shows("Hermes asks to run"), label="the approval slot"),
+            Step(when=lambda: not now.__setitem__(0, 100.0 + APPROVAL_ARM_SECONDS / 2), label="half the delay"),
+            Step(b"\r", when=terminal.shows("Hermes asks to run"), label="still arming"),
+            Step(when=lambda: not now.__setitem__(0, 100.0 + APPROVAL_ARM_SECONDS), label="the delay passed"),
+            Step(b"d", when=terminal.shows("Hermes asks to run"), label="armed"),
+            Step(b"\x04", when=lambda: "proceed." in terminal.history() and terminal.idle(), label="end"),
+        )
+        with terminal:
+            run.code = app.run()
         self.assert_denied(run)
 
     def test_a_resumed_sessions_open_request_is_redelivered_as_a_slot(self) -> None:
@@ -568,7 +683,8 @@ class PromptSlotTests(AppTestCase):
             env={"HERMES_TUI_RESUME": APPROVAL_STORED_ID},
         )
         run.terminal.script(
-            Step(b"d", when=run.terminal.shows("Hermes asks to run"), label="the re-delivered approval"),
+            Step(when=run.terminal.shows("Hermes asks to run"), label="the re-delivered approval"),
+            Step(b"d", when=self.armed(run, "the re-delivered approval"), label="armed"),
             Step(b"\x04", when=lambda: "proceed." in run.terminal.history() and run.terminal.idle(), label="end"),
         )
         self.run_main(run)
@@ -682,14 +798,16 @@ class SlashCommandTests(AppTestCase):
         self.assertNotIn("history · ", back)
         self.assertEqual(run.calls("slash.exec"), [])
 
-    def test_omh_model_suspends_the_terminal_around_the_picker(self) -> None:
+    def test_omh_model_reads_the_picker_keys_from_the_raw_terminal_and_ctrl_c_cancels(self) -> None:
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
         terminal = run.terminal
-        seen: list[tuple[int, int]] = []
+        keys: list[str] = []
 
-        def picker(environ: object, theme: object) -> str:
-            seen.append((terminal.entered, terminal.exited))
-            return "No model-chain changes."
+        def picker(environ: object, theme: object, *, read_key, write, width: int) -> str:
+            write("picker frame\nsecond row\n")
+            while not keys or keys[-1] not in ("quit", "enter"):
+                keys.append(read_key())
+            return "Cancelled; the model chains were not changed."
 
         client = self.make_client(run)(gateway_spawn(run.environ))
         client.start(ready_timeout=10.0)
@@ -697,14 +815,42 @@ class SlashCommandTests(AppTestCase):
         app.startup()
         terminal.script(
             self.submit(run, "/omh-model"),
-            Step(b"\x04", when=terminal.shows("No model-chain changes."), label="the picker result"),
+            Step(b"\x1b[Bj\x03", when=terminal.shows("second row"), label="the picker frame"),
+            Step(b"\x04", when=terminal.shows("Cancelled; the model chains"), label="the picker result"),
         )
         with terminal:
             run.code = app.run()
         self.assert_clean_run(run)
-        # Inside the picker the TUI had left the terminal once and not yet re-entered it.
-        self.assertEqual(seen, [(1, 1)])
-        self.assertEqual((terminal.entered, terminal.exited), (2, 2))
+        # Ctrl+C reached the picker as a key (raw mode keeps it from being a signal).
+        self.assertEqual(keys, ["down", "down", "quit"])
+        # The terminal stayed in the TUI's raw mode: never handed back and re-entered.
+        self.assertEqual((terminal.entered, terminal.exited), (1, 1))
+        self.assertIn("picker frame\r\nsecond row\r\n", "".join(terminal.writes))
+
+
+class ModelChainPickerTests(unittest.TestCase):
+    def test_tui_keys_map_to_picker_tokens_and_ctrl_c_ctrl_d_esc_cancel(self) -> None:
+        cases = {
+            Key(UP): "up", Key(DOWN): "down", Key(LEFT): "left", Key(RIGHT): "right", Key(ENTER): "enter",
+            Key(ESCAPE): "quit", Key(CHAR, "c", ctrl=True): "quit", Key(CHAR, "d", ctrl=True): "quit",
+            Key(CHAR, "j"): "down", Key(CHAR, "+"): "plus", Key(CHAR, "d"): "default", Key(CHAR, "q"): "quit",
+            Key(CHAR, "x"): "", Key(CHAR, "v", ctrl=True): "", Key(LEFT, alt=True): "", Paste("q"): "",
+        }
+        for event, token in cases.items():
+            with self.subTest(event=event):
+                self.assertEqual(picker_key(event), token)
+
+    def test_a_cancelled_picker_writes_its_frame_through_the_seam_and_saves_nothing(self) -> None:
+        root = Path(self.enterContext(make_test_tempdir("omh-tui-picker-")))
+        environ = {"OMH_HOME": str(root / "omh"), "HERMES_HOME": str(root / "hermes"), "NO_COLOR": "1"}
+        keys = iter(["down", "right", "quit"])
+        written: list[str] = []
+        message = run_model_chain_picker(
+            environ, DEFAULT_THEME, read_key=lambda: next(keys), write=written.append, width=100
+        )
+        self.assertTrue(message.startswith("Cancelled;"), message)
+        self.assertIn("Model chains", written[0])
+        self.assertEqual(list(root.iterdir()), [])
 
 
 FRESH_LIVE_ID = "fresh01"

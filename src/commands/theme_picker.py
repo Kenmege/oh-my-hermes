@@ -83,6 +83,11 @@ _CSI_KEYS = {"A": KEY_UP, "B": KEY_DOWN, "C": KEY_RIGHT, "D": KEY_LEFT}
 _ESCAPE_PEEK_SECONDS = 0.05
 
 
+def plain_key(char: str) -> str:
+    """The key token one typed character means to every OMH picker; `KEY_NONE` when it means nothing."""
+    return _PLAIN_KEYS.get(char, KEY_NONE)
+
+
 def cursor_up(rows: int) -> str:
     return f"{ESC}[{rows}A" if rows > 0 else ""
 
@@ -152,7 +157,7 @@ def read_terminal_key(stream: TextIO | None = None) -> str:
     if not first:
         return KEY_QUIT
     if first != ESC:
-        return _PLAIN_KEYS.get(first, KEY_NONE)
+        return plain_key(first)
     # A bare Escape and the start of an arrow sequence look identical until the
     # next byte does or does not arrive; a short peek separates them.
     ready, _, _ = select.select([descriptor], [], [], _ESCAPE_PEEK_SECONDS)

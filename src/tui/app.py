@@ -37,8 +37,7 @@ from __future__ import annotations
 
 import base64
 from collections import deque
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 import json
 import os
@@ -47,6 +46,16 @@ import time
 from typing import Any, Protocol, TextIO
 
 from ..plugin_bundle.omh.runtime_reader import elapsed_text
+from ..commands.theme_picker import (
+    KEY_DOWN,
+    KEY_ENTER,
+    KEY_LEFT,
+    KEY_NONE,
+    KEY_QUIT,
+    KEY_RIGHT,
+    KEY_UP,
+    plain_key,
+)
 from ..skin_pack import default_theme, skin_colors, theme_for_name, theme_for_skin_name, theme_names
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
@@ -63,13 +72,13 @@ from .gateway import (
     attach_refused,
     gateway_spawn,
 )
-from .keys import BACKSPACE, CHAR, DOWN, ESCAPE, UP, Key, KeyDecoder, Paste
+from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, KeyDecoder, Paste
 from .launch import FALLBACK_EXIT
 from .layout import slot_cap
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
 from .prompts import CHOICE_DIGITS, Answer, ImmediateAnswer, PromptSlot, open_request
-from .screen import CLEAR_SCREEN_AND_SCROLLBACK, SHOW_CURSOR, LiveRegion
+from .screen import CLEAR_SCREEN_AND_SCROLLBACK, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
 from .session_picker import PICK, SessionPicker, session_rows
 from .slash import (
     COMMANDS,
@@ -96,7 +105,11 @@ TICK_SECONDS = 0.1
 # A window drag sends a burst of SIGWINCH; redraw once the size has held this long.
 RESIZE_SETTLE_SECONDS = 0.15
 EXIT_CONFIRM_SECONDS = 2.0
+# Every key is ignored this long after an approval opens, so Enter or an arrow
+# typed for the composer as the request arrives cannot answer it.
+APPROVAL_ARM_SECONDS = 0.4
 STARTUP_TAIL_LINES = 10
+INTERRUPTED_EXIT = 130
 # Closing the gateway on exit: stdin EOF, then terminate, then kill. The live
 # region is already cleared and the terminal restored before this wait starts.
 CLOSE_GRACE_SECONDS = 0.5
@@ -378,24 +391,33 @@ def _menu_lines(entries: list[tuple[str, str]], index: int, width: int, max_rows
     return rows
 
 
-@contextmanager
-def _suspended(terminal: TerminalLike) -> Iterator[None]:
-    """Hand the terminal back (cooked mode, cursor shown) for the body, then take it again."""
-    terminal.__exit__(None, None, None)
-    try:
-        yield
-    finally:
-        terminal.__enter__()
+_PICKER_KEYS = {UP: KEY_UP, DOWN: KEY_DOWN, LEFT: KEY_LEFT, RIGHT: KEY_RIGHT, ENTER: KEY_ENTER, ESCAPE: KEY_QUIT}
 
 
-def run_model_chain_picker(environ: Mapping[str, str], theme: Theme) -> str:
-    """`omh model-chains`' picker, run in process on the bare terminal; returns a one-line result.
+def picker_key(event: Key | Paste) -> str:
+    """One decoded key as an OMH picker's key token. Raw mode makes Ctrl+C a key, and it cancels like Esc."""
+    if isinstance(event, Paste) or event.alt:
+        return KEY_NONE
+    if event.name != CHAR:
+        return _PICKER_KEYS.get(event.name, KEY_NONE)
+    if event.ctrl:
+        return KEY_QUIT if event.char in ("c", "d") else KEY_NONE
+    return plain_key(event.char)
+
+
+def run_model_chain_picker(
+    environ: Mapping[str, str], theme: Theme, *, read_key: Callable[[], str], write: Callable[[str], None], width: int
+) -> str:
+    """`omh model-chains`' picker, driven through the TUI's own terminal; returns a one-line result.
 
     The same rows and the same validated save the Hermes widget used
     (`plugin_bundle/omh/model_chain_picker.py`), painted by the CLI picker.
+    `read_key`, `write` and `width` are the picker's seams, so the terminal
+    stays in the TUI's raw mode: no terminal setting changes, and Ctrl+C
+    reaches the picker as a key that cancels instead of a signal.
     """
     from ..catalogs.model_chain_table import CHAIN_SURFACE_PURPOSES, MODEL_DISPLAY_LABELS
-    from ..commands.model_chain_picker import pick_chains_interactively
+    from ..commands.model_chain_picker import run_picker
     from ..plugin_bundle.omh.model_chain_picker import apply_picker_changes, chain_entries, picker_rows
 
     omh_home = environ.get("OMH_HOME") or None
@@ -407,12 +429,14 @@ def run_model_chain_picker(environ: Mapping[str, str], theme: Theme) -> str:
     except (OSError, ValueError) as error:
         return f"/omh-model could not read the model chains: {error}"
     skin = theme_for_name(theme.name) or default_theme()
-    try:
-        changes = pick_chains_interactively(
-            payload, use_color=not environ.get("NO_COLOR"), palette=skin_colors(skin.skin_name)
-        )
-    except KeyboardInterrupt:  # cbreak keeps ISIG, so Ctrl+C in the picker is a signal
-        changes = None
+    changes = run_picker(
+        payload,
+        read_key=read_key,
+        write=write,
+        use_color=not environ.get("NO_COLOR"),
+        width=width,
+        palette=skin_colors(skin.skin_name),
+    )
     if changes is None:
         return f"Cancelled; {payload['path']} was not changed."
     if not changes:
@@ -445,7 +469,7 @@ class App:
         theme: Theme = DEFAULT_THEME,
         clock: Callable[[], float] = time.monotonic,
         wall_clock: Callable[[], float] = time.time,
-        pick_model_chains: Callable[[Mapping[str, str], Theme], str] = run_model_chain_picker,
+        pick_model_chains: Callable[..., str] = run_model_chain_picker,
     ) -> None:
         self.terminal = terminal
         self.client = client
@@ -467,6 +491,7 @@ class App:
         self.busy_mode = BUSY_QUEUE
         self.catalog: list[tuple[str, str]] = []
         self.slot: PromptSlot | None = None
+        self.slot_opened_at = 0.0
         self.slot_draft = ""
         self.waiting_requests: deque[ServerRequest] = deque()
         self.queued: deque[tuple[str, str]] = deque()  # (text sent, text shown)
@@ -711,7 +736,7 @@ class App:
         elif event.type in ("request.cancel", "approval.cancelled"):
             self._on_withdrawn(payload)
         elif event.type == "error":
-            self.transcript.add_notice(_text(payload.get("message")) or "The gateway reported an error.", NOTICE_ERROR)
+            self._on_error_event(_text(payload.get("message")) or "The gateway reported an error.")
         else:
             self.transcript.apply(event)
             if event.type == "message.start":
@@ -721,6 +746,20 @@ class App:
             elif event.type == "message.complete":
                 self.turn_pending = False
                 self._drain_queue()
+
+    def _on_error_event(self, message: str) -> None:
+        """A bare `error` event; during a turn it ends that turn.
+
+        Hermes sends no `message.complete` after it refuses a turn (another
+        process owns the session) or cancels one before the agent was ready, so
+        the turn closes here and the queue moves on, as Ink's `recordError` does.
+        """
+        if not self._busy():
+            self.transcript.add_notice(message, NOTICE_ERROR)
+            return
+        self.transcript.fail_turn(message)
+        self.turn_pending = False
+        self._drain_queue()
 
     def _on_session_info(self, payload: Mapping[str, Any]) -> None:
         self.model = _text(payload.get("model")) or self.model
@@ -757,6 +796,7 @@ class App:
             self.transcript.add_notice(opened.notice, NOTICE_WARN)
             return
         self.slot = opened
+        self.slot_opened_at = self.clock()
         if opened.wants_text:
             self.slot_draft = self.composer.text
             self._set_composer("")
@@ -800,6 +840,8 @@ class App:
         if self._display_key(event):
             return
         if self.slot is not None and _slot_owns(self.slot, event, self.composer.text):
+            if self._approval_arming():
+                return
             answer = self.slot.handle_key(event)
             if answer is not None:
                 self._answer(answer)
@@ -816,6 +858,12 @@ class App:
         if self.composer.text != before:
             self.menu_index = 0
         self._on_composer(action)
+
+    def _approval_arming(self) -> bool:
+        """Whether an approval opened too recently to take a key (`APPROVAL_ARM_SECONDS`)."""
+        if self.slot is None or self.slot.method != "approval":
+            return False
+        return self.clock() - self.slot_opened_at < APPROVAL_ARM_SECONDS
 
     def _on_composer(self, action: ComposerAction) -> None:
         if action.kind == SUBMIT:
@@ -1313,12 +1361,36 @@ class App:
             self.transcript.add_notice(f"No theme named {arg}. Available: {', '.join(theme_names())}.", NOTICE_WARN)
 
     def _omh_model(self, arg: str) -> None:
+        """Run the model-chain picker below the transcript, on the terminal as it is (raw)."""
         self.region.clear()
-        with _suspended(self.terminal):
-            message = self.pick_model_chains(self.environ, self.theme)
+        self.terminal.write(HIDE_CURSOR)
+        message = self.pick_model_chains(
+            self.environ,
+            self.theme,
+            read_key=self._picker_reader(),
+            # Raw mode writes "\n" as a bare line feed; the picker's lines need a carriage return too.
+            write=lambda text: self.terminal.write(text.replace("\n", "\r\n")),
+            width=self.size[0],
+        )
+        self.terminal.write(SHOW_CURSOR)
         self.size = self.terminal.size()
         self.anchor = True
         self.transcript.add_notice(message)
+
+    def _picker_reader(self) -> Callable[[], str]:
+        """A picker's `read_key` over the TUI's terminal and key decoder; a hung-up terminal cancels."""
+        pending: deque[Key | Paste] = deque()
+
+        def read_key() -> str:
+            while not pending:
+                try:
+                    data = self.terminal.read(READ_TIMEOUT_SECONDS)
+                except EOFError:
+                    return KEY_QUIT
+                pending.extend(self.decoder.feed(data) if data else self.decoder.flush())
+            return picker_key(pending.popleft())
+
+        return read_key
 
     # ── pager ──
 
@@ -1496,13 +1568,10 @@ def _say(stream: TextIO, text: str) -> None:
     stream.flush()
 
 
-def _start_gateway(
-    environ: Mapping[str, str], make_client: Callable[..., GatewayClient], stderr: TextIO
-) -> tuple[GatewayClient, Event] | None:
-    """The started gateway client and its ready event, or None after saying why it did not start."""
+def _start_gateway(client: GatewayClient, stderr: TextIO) -> Event | None:
+    """The gateway's ready event, or None after saying why it did not start."""
     try:
-        client = make_client(gateway_spawn(environ))
-        return client, client.start()
+        return client.start()
     except GatewayUnavailable as error:
         _say(stderr, f"omh: the Hermes gateway did not start: {error}")
         for line in error.stderr_tail[-STARTUP_TAIL_LINES:]:
@@ -1510,6 +1579,37 @@ def _start_gateway(
     except GatewayCallError as error:
         _say(stderr, f"omh: the Hermes gateway refused the OMH TUI: {error}")
     return None
+
+
+def _run(
+    client: GatewayClient,
+    environ: Mapping[str, str],
+    stderr: TextIO,
+    open_terminal: Callable[[], TerminalLike],
+    make_poller: Callable[[str | None, str | None], PollerLike],
+) -> int:
+    """Start the gateway, open the session, then run the loop on the raw terminal; the exit code."""
+    ready = _start_gateway(client, stderr)
+    if ready is None:
+        return FALLBACK_EXIT
+    terminal = open_terminal()
+    app = App(
+        terminal,
+        client,
+        environ,
+        poller=make_poller(environ.get("OMH_HOME") or None, environ.get("HERMES_HOME") or None),
+        theme=initial_theme(ready.payload),
+    )
+    try:
+        app.startup()
+    except (GatewayCallError, GatewayTimeout, GatewayUnavailable) as error:
+        _say(stderr, f"omh: the OMH TUI could not open a Hermes session: {error}")
+        return FALLBACK_EXIT
+    with terminal:
+        code = app.run()
+    if app.farewell:
+        _say(stderr, app.farewell)
+    return code
 
 
 def main(
@@ -1532,30 +1632,18 @@ def main(
     if attach_refused(environ):
         _say(stderr, attach_message(environ))
         return 1
-    started = _start_gateway(environ, make_client, stderr)
-    if started is None:
-        return FALLBACK_EXIT
-    client, ready = started
-    terminal = open_terminal()
-    app = App(
-        terminal,
-        client,
-        environ,
-        poller=make_poller(environ.get("OMH_HOME") or None, environ.get("HERMES_HOME") or None),
-        theme=initial_theme(ready.payload),
-    )
     try:
-        app.startup()
-    except (GatewayCallError, GatewayTimeout, GatewayUnavailable) as error:
-        client.close()
-        _say(stderr, f"omh: the OMH TUI could not open a Hermes session: {error}")
+        client = make_client(gateway_spawn(environ))
+    except GatewayUnavailable as error:
+        _say(stderr, f"omh: the Hermes gateway did not start: {error}")
         return FALLBACK_EXIT
     try:
-        with terminal:
-            code = app.run()
-        if app.farewell:
-            _say(stderr, app.farewell)
+        return _run(client, environ, stderr, open_terminal, make_poller)
+    except KeyboardInterrupt:
+        # Ctrl+C is a signal, not a key, until the terminal goes raw: while the gateway starts
+        # and the session opens. The child is reaped below either way.
+        _say(stderr, "omh: the OMH TUI was interrupted.")
+        return INTERRUPTED_EXIT
     finally:
         # The screen has settled and the terminal is the shell's again; only now wait on the child.
         client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
-    return code

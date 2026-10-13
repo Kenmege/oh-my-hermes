@@ -50,9 +50,21 @@ class ApprovalTests(unittest.TestCase):
         approval.handle_key(Key(LEFT))
         self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "once"}})
 
-    def test_letter_keys_answer_directly(self) -> None:
-        self.assertEqual(slot("approval", APPROVAL).handle_key(Key(CHAR, "s")).frame["result"]["choice"], "session")
-        self.assertEqual(slot("approval", APPROVAL).handle_key(Key(CHAR, "o")).frame["result"]["choice"], "once")
+    def test_a_letter_can_only_deny(self) -> None:
+        # A key typed for the composer must never allow a command: o, s, y and the rest do nothing.
+        for char in ("o", "s", "y", "a", "O", "S", "Y"):
+            with self.subTest(char=char):
+                self.assertIsNone(slot("approval", APPROVAL).handle_key(Key(CHAR, char)))
+        for char in ("d", "n", "D", "N"):
+            with self.subTest(char=char):
+                self.assertEqual(slot("approval", APPROVAL).handle_key(Key(CHAR, char)).frame, {"result": {"choice": "deny"}})
+
+    def test_the_choice_row_names_arrows_and_enter_and_no_letter_shortcut(self) -> None:
+        row = "".join(span.text for span in slot("approval", APPROVAL).lines(80, DEFAULT_THEME, max_rows=4)[-1])
+        self.assertIn("allow once", row)
+        self.assertIn("←→ then Enter · d or Esc denies", row)
+        self.assertNotIn("o:", row)
+        self.assertNotIn("s:", row)
 
     def test_escape_and_ctrl_c_send_an_explicit_deny(self) -> None:
         for key in (Key(ESCAPE), CTRL_C):
@@ -62,7 +74,6 @@ class ApprovalTests(unittest.TestCase):
     def test_a_session_choice_hermes_did_not_offer_is_not_shown(self) -> None:
         approval = slot("approval", {**APPROVAL, "choices": ["once", "deny"]})
         self.assertEqual(approval.approval_choices(), ("once", "deny"))
-        self.assertIsNone(approval.handle_key(Key(CHAR, "s")))
 
     def test_submitted_text_does_not_answer_an_approval(self) -> None:
         approval = slot("approval", APPROVAL)

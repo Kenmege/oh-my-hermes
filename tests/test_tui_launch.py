@@ -108,11 +108,15 @@ class ShimTests(unittest.TestCase):
         recorded = json.loads(record.read_text(encoding="utf-8")) if record.exists() else None
         return result, recorded
 
-    def test_the_shim_starts_omh_tui_isolated_and_moves_the_launcher_path_aside(self) -> None:
+    def test_the_shim_starts_omh_tui_without_the_launcher_path_and_keeps_user_site(self) -> None:
         with TemporaryDirectory() as tmp:
             result, recorded = self._run_shim(Path(tmp))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(recorded["argv"], ["-I", "-m", "omh.tui"])
+        # -E drops PYTHONPATH/PYTHONHOME, -P the working directory; -I (and -s) would drop the
+        # user site-packages a `pip install --user` OMH lives in.
+        self.assertEqual(recorded["argv"][:3], ["-E", "-P", "-c"])
+        self.assertIn("from omh.tui.app import main", recorded["argv"][3])
+        self.assertFalse({"-I", "-s"} & set(recorded["argv"]))
         self.assertNotIn("PYTHONPATH", recorded["env"])
         self.assertNotIn("NODE_OPTIONS", recorded["env"])
         self.assertEqual(recorded["env"]["OMH_TUI_GATEWAY_PYTHONPATH"], "/hermes/root:/hermes/runtime/site-packages")
@@ -123,6 +127,19 @@ class ShimTests(unittest.TestCase):
             with self.subTest(code=code), TemporaryDirectory() as tmp:
                 result, _recorded = self._run_shim(Path(tmp), exit_code=code)
                 self.assertEqual(result.returncode, code)
+
+    def test_an_interpreter_that_cannot_import_omh_asks_for_the_fallback(self) -> None:
+        # `-S` leaves site-packages, where this OMH is installed, off the path: `import omh` fails.
+        with TemporaryDirectory() as tmp:
+            no_site = _executable(Path(tmp) / "python", f'#!/bin/sh\nexec "{sys.executable}" -S "$@"\n')
+            result = subprocess.run(
+                ["node", str(launch.FRONTEND_ENTRY)],
+                env={"PATH": os.environ.get("PATH", ""), "OMH_TUI_PYTHON": str(no_site)},
+                capture_output=True, text=True, timeout=30, cwd=tmp,
+            )
+        self.assertEqual(result.returncode, launch.FALLBACK_EXIT, result.stderr)
+        self.assertIn("could not import", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
 
     def test_without_an_interpreter_the_shim_asks_for_the_fallback(self) -> None:
         result = subprocess.run(

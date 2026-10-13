@@ -1,4 +1,9 @@
-"""`python -m omh.tui`: the OMH TUI, as Hermes' launcher starts it through the frontend shim."""
+"""`python -m omh.tui`: the OMH TUI by hand.
+
+The frontend shim does not start it this way: it imports `omh.tui.app.main`
+itself, so an OMH that cannot import exits with `FALLBACK_EXIT` instead of a
+traceback.
+"""
 
 from __future__ import annotations
 

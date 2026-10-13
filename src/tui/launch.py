@@ -5,7 +5,9 @@
 resume target, the working directory and session ownership exactly as it does
 for its own terminal, and runs `frontend/dist/entry.js` in place of its Ink
 app. That file is a small Node shim that hands the terminal to
-`python -I -m omh.tui` with the interpreter named in `OMH_TUI_PYTHON`.
+`omh.tui.app.main` on the interpreter named in `OMH_TUI_PYTHON`, started with
+`-E -P` so neither the launcher's `PYTHONPATH` nor the working directory is
+on its import path.
 
 When the TUI cannot start it exits with `FALLBACK_EXIT`, and `omh` opens
 Hermes' own terminal instead, so a failure costs the person the OMH surface,

@@ -5,8 +5,12 @@ takes over the panel slot above the composer until it is answered, declined,
 or withdrawn by the gateway. Three rules shape this module:
 
 - Nothing is answered on the person's behalf. Every answer comes from a key
-  they pressed or text they submitted; a timeout, Esc, or Ctrl+C sends the
-  contract's decline frame (an explicit deny for approvals).
+  they pressed or text they submitted; Esc or Ctrl+C sends the contract's
+  decline frame (an explicit deny for approvals). Allowing a command takes
+  the arrows and then Enter: a letter can only deny, and the app ignores
+  every key for a moment after an approval opens. A request the gateway
+  withdraws itself (its own timeout, an interrupt) arrives as
+  `request.cancel`, and the app closes the slot without answering.
 - Nothing is left unanswered. A request the TUI cannot show is answered at
   once with its decline frame and a visible notice, because over stdio the
   gateway would otherwise wait out its whole deadline.
@@ -30,7 +34,9 @@ from .width import line_width, truncate_line, wrap_line
 # decision for Hermes' own terminal.
 APPROVAL_CHOICES = ("once", "session", "deny")
 _APPROVAL_LABELS = {"once": "allow once", "session": "allow this session", "deny": "deny"}
-_APPROVAL_KEYS = {"o": "once", "s": "session", "d": "deny", "n": "deny", "y": "once"}
+# A letter can only deny. Allowing takes the arrows and Enter, so a key typed
+# for the composer as the slot opens can never run a command.
+_DENY_KEYS = frozenset("dn")
 # The keys that pick a clarify choice. `str.isdigit` also admits "²" or "٣", which `int` rejects.
 CHOICE_DIGITS = "123456789"
 
@@ -142,10 +148,8 @@ class PromptSlot:
             self.selected = (self.selected + 1) % len(choices)
         elif key.name == ENTER:
             return Answer(self.request_id, {"result": {"choice": choices[self.selected]}})
-        elif key.name == CHAR and not key.ctrl and not key.alt and key.char.lower() in _APPROVAL_KEYS:
-            choice = _APPROVAL_KEYS[key.char.lower()]
-            if choice in choices:
-                return Answer(self.request_id, {"result": {"choice": choice}})
+        elif key.name == CHAR and not key.ctrl and not key.alt and key.char.lower() in _DENY_KEYS:
+            return self.decline()
         return None
 
     def _clarify_key(self, key: Key) -> Answer | None:
@@ -214,7 +218,8 @@ class PromptSlot:
 
     def _approval_choice_row(self, width: int, theme: Theme) -> Line:
         """The choices on one row; short labels when the long ones would cut `deny` off the edge."""
-        for form, hint in (("long", "  Esc denies"), ("short", "  Esc denies"), ("short", ""), ("letter", "")):
+        keys = "  ←→ then Enter · d or Esc denies"
+        for form, hint in (("long", keys), ("short", keys), ("short", ""), ("letter", "")):
             spans: list[Span] = [Span("  ", theme.text)]
             for index, choice in enumerate(self.approval_choices()):
                 style = theme.menu_current if index == self.selected else theme.dim
@@ -259,11 +264,11 @@ class PromptSlot:
 
 def _approval_label(choice: str, form: str) -> str:
     if form == "long":
-        return f" {choice[0]}: {_APPROVAL_LABELS[choice]} "
+        return f" {_APPROVAL_LABELS[choice]} "
     if form == "short":
-        return f" {choice[0]}:{choice} "
+        return f" {choice} "
     # The narrowest form still spells out the safe choice.
-    return " d=deny " if choice == "deny" else f" {choice[0]} "
+    return " deny " if choice == "deny" else f" {choice[0]} "
 
 
 def open_request(request_id: str, method: str, params: dict[str, Any]) -> PromptSlot | ImmediateAnswer:
@@ -276,6 +281,6 @@ def open_request(request_id: str, method: str, params: dict[str, Any]) -> Prompt
         return ImmediateAnswer(_decline(request_id, method), notice)
     slot = PromptSlot(request_id=request_id, method=method, params=dict(params))
     if method == "approval":
-        # Enter on an untouched approval denies: allowing takes a deliberate key.
+        # Enter on an untouched approval denies: allowing takes the arrows, then Enter.
         slot.selected = slot.approval_choices().index("deny")
     return slot
