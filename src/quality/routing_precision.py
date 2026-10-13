@@ -3750,6 +3750,17 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
     ),
+    # The context credit needs frontend's appearance phrase said whole, not
+    # only a UI word beside a code unit: this report names a page and a module
+    # but no appearance phrase, and it dispatched the cleaner (13) without
+    # that condition.
+    RoutingPrecisionCase(
+        "ai-slop-on-settings-page-from-module-stays-a-clarify",
+        "A report that AI slop on a page comes from a module is not a cleanup request",
+        "the ai slop on the settings page comes from this module",
+        "answer_clarification",
+        "",
+    ),
     # Frontend's appearance phrase on a non-UI target is not a restyle: song
     # lyrics, a tweet, and a profile bio called AI slop ask instead of
     # dispatching frontend (each did while the phrase counted anywhere).
