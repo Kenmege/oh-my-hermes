@@ -29,7 +29,7 @@ from . import CaseResult, JsonValue, unavailable_case
 FIELDS = {
     "create": ("title assignee",
                "body parents skills workspace_kind workspace_path priority max_runtime_seconds "
-               "idempotency_key initial_status model provider completion_contract"),
+               "idempotency_key initial_status model provider completion_contract goal_mode goal_max_turns"),
     "link": ("parent_id child_id", ""), "comment": ("task_id body", ""),
     "heartbeat": ("", "task_id note"),
     "request_review": ("summary", "task_id reviewer metadata"),
@@ -43,7 +43,7 @@ FIELDS = {
 # Non-string property types the researched schemas declare; everything else is a string.
 TYPED_FIELDS = {"parents": "array", "skills": "array", "created_cards": "array", "metadata": "object",
                 "limit": "integer", "priority": "integer", "max_runtime_seconds": "integer",
-                "include_archived": "boolean"}
+                "include_archived": "boolean", "goal_mode": "boolean", "goal_max_turns": "integer"}
 WORKSPACE_KINDS = ["scratch", "dir", "worktree"]
 
 

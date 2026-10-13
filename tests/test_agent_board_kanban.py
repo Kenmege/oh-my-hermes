@@ -252,6 +252,30 @@ class AgentBoardFoundation(unittest.TestCase):
         long_comment = self.prepare(self.board(), request("comment", "note-1", {"body": "x" * 16_001}, task_id="T1"))
         self.assertEqual(long_comment["state"], "prepared")
 
+    def test_k5_goal_mode_fields_on_create_are_typed_and_bounded(self):
+        # kanban-lane.md tells a builder lane to pass `goal_mode` and a turn
+        # budget; both are native `kanban_create` fields at the floor release,
+        # so the create admits them with the host's own types and a bounded budget.
+        base: dict[str, object] = {"title": "lane-task", "assignee": "worker-profile"}
+        refused: list[tuple[dict[str, object], str]] = [
+            ({"goal_mode": "true"}, "invalid_boolean"),
+            ({"goal_mode": 1}, "invalid_boolean"),
+            ({"goal_max_turns": 0}, "invalid_integer"),
+            ({"goal_max_turns": 101}, "invalid_integer"),
+            ({"goal_max_turns": True}, "invalid_integer"),
+        ]
+        for extra, reason in refused:
+            with self.subTest(reason=reason, extra=extra), self.assertRaises(ValueError) as caught:
+                _ = self.prepare(self.board(), request("create", "lane-1", dict(base, **extra)))
+            self.assertEqual(str(caught.exception), reason)
+        for extra in ({"goal_mode": True, "goal_max_turns": 1}, {"goal_mode": True, "goal_max_turns": 100},
+                      {"goal_mode": False}):
+            with self.subTest(extra=extra):
+                prepared = self.prepare(self.board(), request("create", "lane-1", dict(base, **extra)))
+                self.assertEqual(prepared["state"], "prepared")
+                self.assertEqual(self.action(prepared)["arguments"],
+                                 dict(base, **extra, board="qa-board", idempotency_key="lane-1"))
+
     def test_k1_lane_role_fills_the_lane_contract_and_is_stripped(self):
         from omh.workflows.agent_board import LANE_ROLES, native_schema_supported
 
@@ -601,6 +625,25 @@ class AgentBoardFoundation(unittest.TestCase):
         self.assertEqual(receipt["attachment_refs"], [{"board_ref": board.board_ref, "task_id": "T1", "attachment_id": i, "size": 2, "content_type": "text/plain"} for i in range(1, 33)])
         self.assertTrue(receipt["truncated"])
         self.assertNotIn("private-body", json.dumps(board.snapshot()))
+
+    def test_k6_show_reads_a_parked_card_and_still_refuses_an_unknown_status(self):
+        # A worker can park its card in the host's `scheduled` status
+        # (kanban-lane.md); the main session's readback must read that card,
+        # while a status the host does not define still fails the receipt.
+        def show(status: str) -> dict[str, object]:
+            board = self.board()
+            prepared = self.prepare(board, request("show", "show-1", {}, task_id="T1"))
+            _ = self.begin(board, prepared)
+            receipt = self.observe(board, prepared, {"task": {"id": "T1", "status": status, "current_run_id": 2},
+                "parents": [], "children": [], "comments": [], "events": [], "runs": [], "worker_context": ""})
+            assert receipt is not None
+            return receipt
+
+        parked = show("scheduled")
+        self.assertEqual((parked["state"], parked["fact"], parked["landed_status"]), ("observed", "show", "scheduled"))
+        unknown = show("parked")
+        self.assertEqual(unknown["state"], "failed")
+        self.assertNotIn("landed_status", unknown)
 
     def test_k8_foundation_ambiguous_failed_and_missing_post_never_retry(self):
         for result in [None, {"error": "private-error"}, {"ok": False}, {"ok": True}]:
