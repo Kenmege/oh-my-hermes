@@ -18,14 +18,15 @@ Terminals that `Terminal` asks for richer key reports send some keys as kitty
 CSI u (`ESC[99;5u`) or xterm modifyOtherKeys (`ESC[27;5;99~`). A key xterm's
 legacy bytes can say decodes to the very `Key` those bytes give, so Ctrl+C,
 Esc, Tab, Alt+b or Shift+a behave the same either way, and so does every Ctrl
-chord xterm sends as one control byte: Ctrl with a letter, with `@ [ \ ] ^ _ /`
+chord xterm sends as one control byte: Ctrl with a letter, with `@ [ \\ ] ^ _ /`
 or space, or with a digit from 2 to 8 (Ctrl+2 a NUL, Ctrl+3 Esc, Ctrl+8 and
 Ctrl+? DEL, which is Backspace). The reports add what legacy bytes cannot say,
 such as Ctrl+Enter and Shift+Enter. A Ctrl chord xterm has no control byte for
 (Ctrl+1, Ctrl+9, Ctrl+0, Ctrl+comma, ...) stays a Ctrl chord, where a legacy
-terminal may send the bare character instead; the TUI binds none of them. A key decoded from either
-form carries `protocol=True`, and `KeyDecoder.protocol_reported` turns on at
-the first one: the terminal is known to send them only once it has.
+terminal may send the bare character instead; the TUI binds none of them. A
+key decoded from either form carries `protocol=True`, and
+`KeyDecoder.protocol_reported` turns on at the first one: the terminal is
+known to send them only once it has.
 
 While `Terminal.set_mouse(True)` has mouse reporting on, a click arrives as an
 SGR report (`ESC[<b;x;yM` press, `ESC[<b;x;ym` release) and decodes to a
