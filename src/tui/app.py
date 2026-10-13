@@ -88,7 +88,7 @@ from .style import Line, Span
 from .terminal import Terminal, terminal_supported
 from .theme import DEFAULT_THEME, Theme, build_theme, theme_named
 from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript
-from .width import cell_width, clusters, line_width, truncate_line, wrap_line
+from .width import line_width, truncate_left, truncate_line, wrap_line
 from ..version import __version__
 
 READ_TIMEOUT_SECONDS = 0.05
@@ -244,18 +244,6 @@ def short_path(path: str, home: str) -> str:
 _BANNER_MIN_PATH_CELLS = 12
 
 
-def _left_truncate(text: str, cells: int) -> str:
-    """`text` cut from the left to `cells`, keeping its end (the informative part of a path)."""
-    if cell_width(text) <= cells:
-        return text
-    kept = ""
-    for cluster in reversed(clusters(text)):
-        if cell_width("…" + cluster + kept) > cells:
-            break
-        kept = cluster + kept
-    return "…" + kept
-
-
 def banner_lines(*, model: str, cwd: str, resumed: str, theme: Theme, width: int) -> list[Line]:
     """The header flushed to scrollback once, before the first frame, and the hint under it.
 
@@ -275,7 +263,7 @@ def banner_lines(*, model: str, cwd: str, resumed: str, theme: Theme, width: int
         )
 
     room = width - line_width(header("")) - len(" · ")
-    path = _left_truncate(cwd, room) if cwd and room >= _BANNER_MIN_PATH_CELLS else ""
+    path = truncate_left(cwd, room) if cwd and room >= _BANNER_MIN_PATH_CELLS else ""
     return [truncate_line(header(path), width), truncate_line((Span(BANNER_HINT, theme.dim),), width), ()]
 
 
@@ -586,6 +574,7 @@ class App:
         self.sid = _text(result.get("session_id"))
         info = result.get("info")
         self.model = _text(info.get("model")) if isinstance(info, dict) else ""
+        self.context = ""  # the next session.usage says how full this session is
         self.turn_pending = bool(result.get("running"))
         self.busy_since = self.clock()
         self._adopt_stored(_text(result.get("stored_session_id")) or fallback_stored)

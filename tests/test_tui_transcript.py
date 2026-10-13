@@ -120,6 +120,22 @@ class RetakeTests(LoopTestCase):
         self.assertEqual(self.transcript.take_stable_lines(30, THEME), [], "a retaken line was offered twice")
         self.assertIn("line two is still streaming", "".join(texts(live)))
 
+
+class ToolPathArgumentTests(LoopTestCase):
+    def test_a_path_argument_keeps_its_file_name_when_cut(self) -> None:
+        path = "/private/tmp/claude-501/" + "y" * 60 + "/project/hello.py"
+        self.step(ev("message.start"))
+        self.step(ev("tool.start", tool_id="t1", name="patch", context=path))
+        row = [line for line in self.live(width=50) if "patch" in line][0]
+        self.assertIn("hello.py", row)
+        self.assertIn("…", row)
+
+    def test_prose_arguments_are_still_cut_at_the_end(self) -> None:
+        self.step(ev("message.start"))
+        self.step(ev("tool.start", tool_id="t1", name="terminal", context="echo " + "z" * 80))
+        row = [line for line in self.live(width=50) if "terminal" in line][0]
+        self.assertIn("echo", row)
+
 class PlainTurnTests(LoopTestCase):
     def test_plain_turn_flushes_per_completed_line_and_fully_at_complete(self) -> None:
         self.assertEqual(self.user("Reply with exactly the word: ok"), ["› Reply with exactly the word: ok"])
@@ -631,7 +647,7 @@ class InlineDiffTests(LoopTestCase):
         self.step(ev("message.interim", text="Editing the greeting.", already_streamed=True))
         self.edit(PATCH_INLINE_DIFF, {"success": True, "diff": PATCH_DIFF, "files_modified": ["src/app.py"]})
         live = self.live()
-        self.assertEqual(live[live.index("  ✓ patch  src/app.py  0.3s") + 1], "    a/src/app.py → b/src/app.py")
+        self.assertEqual(live[live.index("  ✓ patch  src/app.py  0.3s") + 1], "    src/app.py")
         flushed = self.step(ev("message.delta", text="\n\nDone — it prints 안녕 now."))
         diff = self.taken[-5:]
         self.step(ev("message.complete", text="Done — it prints 안녕 now.", status="complete"))
@@ -641,7 +657,7 @@ class InlineDiffTests(LoopTestCase):
                 "",
                 "⏺ Tool calls (1)",
                 "  ✓ patch  src/app.py  0.3s",
-                "    a/src/app.py → b/src/app.py",
+                "    src/app.py",
                 "    @@ -1,2 +1,2 @@",
                 "     import os",
                 "    -print('hello')" + " " * 41,

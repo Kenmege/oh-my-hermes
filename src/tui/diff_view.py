@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from .markdown import clean_text, hard_wrap, wrap_prefixed
 from .style import Line, Span, Style
 from .theme import Theme
-from .width import cell_width, line_width
+from .width import cell_width, line_width, truncate_left
 
 DIFF_FILE = "file"
 DIFF_HUNK = "hunk"
@@ -73,12 +73,37 @@ def _trimmed(lines: list[str]) -> list[str]:
     return lines[start:end]
 
 
+def _side(name: str) -> str:
+    """One side of the file header without git's `a/` or `b/` prefix."""
+    for prefix in ("a/", "b/"):
+        if name.startswith(prefix):
+            return name[len(prefix):]
+    return name
+
+
+_NO_FILE = "/dev/null"  # git's side of a created or deleted file
+
+
+def compact_file_header(text: str) -> str:
+    """`a/x → b/x` as `x` when one file is edited, created or deleted; `x → y` only for a rename."""
+    before, _, after = text.strip().partition(FILE_ARROW)
+    old, new = _side(before.strip()), _side(after.strip())
+    if old in (new, _NO_FILE, ""):
+        return new
+    if new == _NO_FILE:
+        return old
+    return f"{old}{FILE_ARROW}{new}"
+
+
 def parse_inline_diff(payload: str) -> tuple[DiffLine, ...]:
     """The classified lines of an `inline_diff` payload; () for an empty one or one that is only the header."""
     lines = _trimmed([clean_text(line) for line in payload.split("\n")])
     if lines and lines[0].lstrip().startswith(REVIEW_HEADER_MARK):
         lines = _trimmed(lines[1:])
-    return tuple(DiffLine(_kind(line), line) for line in lines)
+    classified = [DiffLine(_kind(line), line) for line in lines]
+    return tuple(
+        DiffLine(line.kind, compact_file_header(line.text)) if line.kind == DIFF_FILE else line for line in classified
+    )
 
 
 def _style(kind: str, theme: Theme) -> Style:
@@ -122,6 +147,10 @@ def _line_rows(line: DiffLine, width: int, theme: Theme) -> list[Line]:
     style = _style(line.kind, theme)
     if line.kind == DIFF_NOTE:
         return _note_rows(line.text, style, width)
+    if line.kind == DIFF_FILE:
+        # One row, cut from the left: the end of a path names the file.
+        indent = _indent(width)
+        return [(*indent, Span(truncate_left(line.text, width - line_width(indent)), style))]
     return _code_rows(line.text, style, width, band=line.kind in (DIFF_ADDED, DIFF_REMOVED))
 
 

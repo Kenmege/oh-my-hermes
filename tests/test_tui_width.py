@@ -210,5 +210,17 @@ class LineLevelTests(unittest.TestCase):
         self.assertEqual(wrap_line((), 5), [()])
 
 
+class TruncateLeftTests(unittest.TestCase):
+    def test_keeps_the_end_and_never_splits_a_wide_char(self) -> None:
+        from omh.tui.width import cell_width, truncate_left
+
+        self.assertEqual(truncate_left("/a/b/c/hello.py", 10), "…/hello.py")
+        self.assertEqual(truncate_left("short", 10), "short")
+        cut = truncate_left("/경로/한글/파일.py", 9)
+        self.assertTrue(cut.endswith("파일.py"), cut)
+        self.assertLessEqual(cell_width(cut), 9)
+        self.assertEqual(truncate_left("abc", 0), "")
+
+
 if __name__ == "__main__":
     unittest.main()

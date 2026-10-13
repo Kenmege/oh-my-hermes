@@ -69,7 +69,7 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(
             parse_inline_diff(SAMPLE),
             (
-                DiffLine(DIFF_FILE, "a/src/app.py → b/src/app.py"),
+                DiffLine(DIFF_FILE, "src/app.py"),
                 DiffLine(DIFF_HUNK, "@@ -1,3 +1,3 @@"),
                 DiffLine(DIFF_CONTEXT, " import os"),
                 DiffLine(DIFF_REMOVED, "-print('hello')"),
@@ -87,7 +87,7 @@ class ParseTests(unittest.TestCase):
     def test_a_payload_without_the_header_keeps_its_first_line(self) -> None:
         self.assertEqual(
             parse_inline_diff(f"{FILE}/dev/null → b/new.py{RESET}\r\n{PLUS}+x = 1{RESET}\r\n"),
-            (DiffLine(DIFF_FILE, "/dev/null → b/new.py"), DiffLine(DIFF_ADDED, "+x = 1")),
+            (DiffLine(DIFF_FILE, "new.py"), DiffLine(DIFF_ADDED, "+x = 1")),
         )
 
     def test_tabs_expand_and_decomposed_hangul_is_kept_for_the_renderer_to_compose(self) -> None:
@@ -104,7 +104,7 @@ class RowTests(unittest.TestCase):
         self.assertEqual(
             rows,
             [
-                (indent, Span("a/src/app.py → b/src/app.py", THEME.label)),
+                (indent, Span("src/app.py", THEME.label)),
                 (indent, Span("@@ -1,3 +1,3 @@", THEME.accent)),
                 (indent, Span(" import os", THEME.code)),
                 (indent, Span("-print('hello')" + " " * 21, THEME.diff_remove)),
@@ -156,6 +156,27 @@ class RowTests(unittest.TestCase):
                             self.assertFalse(any(is_control(ch) for ch in span.text), span.text)
                     if width >= 9:
                         self.assertTrue(all(line_width(row) <= width for row in rows))
+
+
+class FileHeaderTests(unittest.TestCase):
+    def test_an_edit_names_its_file_once(self) -> None:
+        from omh.tui.diff_view import compact_file_header
+
+        self.assertEqual(compact_file_header("a//tmp/p/hello.py → b//tmp/p/hello.py"), "/tmp/p/hello.py")
+        self.assertEqual(compact_file_header("a/src/x.py → b/src/x.py"), "src/x.py")
+        self.assertEqual(compact_file_header("a/old.py → b/new.py"), "old.py → new.py")
+
+    def test_a_long_header_is_one_row_ending_in_the_file_name(self) -> None:
+        from omh.tui.diff_view import diff_rows, parse_inline_diff
+        from omh.tui.theme import DEFAULT_THEME
+
+        long = "/private/tmp/claude-501/" + "x" * 80 + "/scratchpad/m9/project/hello.py"
+        lines = parse_inline_diff(f"a/{long} → b/{long}\n@@ -1 +1 @@\n-a\n+b")
+        rows = diff_rows(lines, 60, DEFAULT_THEME, full=True)
+        header = "".join(span.text for span in rows[0])
+        self.assertTrue(header.rstrip().endswith("project/hello.py"), header)
+        self.assertIn("…", header)
+        self.assertNotIn("→", header)
 
 
 if __name__ == "__main__":

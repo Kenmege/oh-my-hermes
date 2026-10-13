@@ -54,7 +54,7 @@ from .gateway import Event
 from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
 from .style import Line, Span, Style
 from .theme import Theme
-from .width import line_width, truncate, truncate_line
+from .width import line_width, truncate, truncate_left, truncate_line
 
 TOOL_GENERATING = "generating"
 TOOL_RUNNING = "running"
@@ -335,6 +335,11 @@ def _tool_mark(status: str, theme: Theme) -> Span:
     return Span("◌", theme.dim)
 
 
+def _is_path(text: str) -> bool:
+    """A single path argument (`/abs/x.py`, `~/x`, `./x`): its end names the file, so it is cut from the left."""
+    return " " not in text and text.startswith(("/", "~/", "./", "../"))
+
+
 def _tool_row(tool: ToolRow, width: int, theme: Theme) -> Line:
     """One line per tool: mark, name, args summary (cut first), duration."""
     head: Line = (Span(TOOL_ROW_INDENT), _tool_mark(tool.status, theme), Span(" "), Span(tool.name, theme.tool))
@@ -344,7 +349,8 @@ def _tool_row(tool: ToolRow, width: int, theme: Theme) -> Line:
     room = width - line_width(head) - line_width(tail) - len(COLUMN_GAP)
     args: Line = ()
     if tool.args_summary and room > 1:
-        args = (Span(COLUMN_GAP + truncate(tool.args_summary, room), theme.dim),)
+        cut = truncate_left if _is_path(tool.args_summary) else truncate
+        args = (Span(COLUMN_GAP + cut(tool.args_summary, room), theme.dim),)
     return truncate_line((*head, *args, *tail), width)
 
 

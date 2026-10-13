@@ -254,6 +254,20 @@ def line_width(line: Line) -> int:
     return sum(cell_width(span.text) for span in line)
 
 
+def truncate_left(text: str, cells: int, ellipsis: str = "…") -> str:
+    """`text` cut from the LEFT to `cells`, keeping its end: for paths, whose end says what they name."""
+    if cell_width(text) <= cells:
+        return text
+    if cells <= cell_width(ellipsis):
+        return ellipsis[:cells] if cells > 0 else ""
+    kept = ""
+    for cluster in reversed(clusters(text)):
+        if cell_width(ellipsis + cluster + kept) > cells:
+            break
+        kept = cluster + kept
+    return ellipsis + kept
+
+
 def truncate_line(line: Line, cells: int, ellipsis: str = "…") -> Line:
     """`truncate` for a styled line; the ellipsis takes the style of the text it replaces."""
     return _items_line(_truncate_items(_line_items(line), cells, ellipsis))
