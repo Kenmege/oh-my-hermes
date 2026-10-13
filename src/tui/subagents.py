@@ -62,6 +62,7 @@ from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
 from ..plugin_bundle.omh.runtime_reader import elapsed_text
+from . import gateway_contract as contract
 from .markdown import clean_text, wrap_prefixed
 from .panels import SPINNER_FRAMES
 from .style import Line, Span
@@ -273,12 +274,12 @@ class Roster:
         self.evicted = 0  # agents the cap pushed out since the last `clear`
         self._frames = 0  # frames that named a held agent, for `Agent.seen`
         self._handlers: dict[str, Callable[[str, dict[str, Any], float], None]] = {
-            "subagent.spawn_requested": self._on_spawn_requested,
-            "subagent.start": self._on_alive,
-            "subagent.progress": self._on_alive,
-            "subagent.thinking": self._on_thinking,
-            "subagent.tool": self._on_tool,
-            "subagent.complete": self._on_complete,
+            contract.SUBAGENT_SPAWN_REQUESTED: self._on_spawn_requested,
+            contract.SUBAGENT_START: self._on_alive,
+            contract.SUBAGENT_PROGRESS: self._on_alive,
+            contract.SUBAGENT_THINKING: self._on_thinking,
+            contract.SUBAGENT_TOOL: self._on_tool,
+            contract.SUBAGENT_COMPLETE: self._on_complete,
         }
 
     # ── input ──

@@ -265,7 +265,6 @@ QUEUE_HINT_GAP = 2
 # Hermes answers `queued` both when the running turn takes the steer (at its next tool call) and when it
 # queues the text as the next prompt because it is compressing the context; the notice is true of both.
 STEERED_NOTICE = "↪ steer queued by Hermes: {}"
-STEER_REJECTED = "rejected"  # `session.steer`'s status when the turn ended before the text arrived
 STEER_REFUSED_NOTICE = "Hermes did not take the steer ({code}): {message}. {fallback}"
 STEER_HELD = "It waits in the queue and goes when the turn ends."
 STEER_SENT = "Sent as a prompt instead."
@@ -276,7 +275,6 @@ STEER_LEFT_NOTICE = (
 )
 
 # Subagents: the strip on the mode row, the list Down opens, and one agent's log in the pager.
-SUBAGENT_EVENT_PREFIX = "subagent."
 STRIP_SEPARATOR = " · "
 AGENT_LIST_ROWS = 7  # main and six agents; a longer roster scrolls
 AGENT_LIST_HINT = "↑↓ select · ⏎ view log · esc back"
@@ -1132,7 +1130,7 @@ class App:
             self._on_connection_request(payload)
         elif event.type == "error":
             self._on_error_event(as_text(payload.get("message")) or "The gateway reported an error.")
-        elif event.type.startswith(SUBAGENT_EVENT_PREFIX):
+        elif event.type.startswith(contract.SUBAGENT_EVENT_PREFIX):
             self.roster.apply(event.type, payload, self.clock())  # folds what it knows; raises on nothing
             if isinstance(payload, Mapping):  # a new frame for an agent: its tail is asked for again
                 self.tail_misses.pop(as_text(payload.get("subagent_id")), None)
@@ -1193,10 +1191,10 @@ class App:
         `session.info` decides. The other way round needs no hold: approvals
         off is shown at once, since in doubt the composer shows accept.
         """
-        effort = info.get("reasoning_effort")
+        effort = info.get(contract.SESSION_INFO_REASONING_EFFORT)
         if isinstance(effort, str):
             self.effort = effort
-        yolo = info.get("yolo")
+        yolo = info.get(contract.SESSION_INFO_YOLO)
         if not isinstance(yolo, bool):
             return
         confirmed_at = self.yolo_confirmed_at
@@ -1590,7 +1588,7 @@ class App:
     def _on_steered(self, sid: str, text: str, result: dict[str, Any]) -> None:
         if sid != self.sid:
             self._steer_back(text)
-        elif as_text(result.get("status")) == STEER_REJECTED:
+        elif as_text(result.get("status")) == contract.STEER_REJECTED:
             self._send_typed(text, hold=True)  # the next prompt: after the turn, if one still runs here
         else:
             self.transcript.add_notice(STEERED_NOTICE.format(first_line(text)))
@@ -2544,13 +2542,14 @@ class App:
         if seq != self.tail_seq:
             return True
         self.tail_open = False
-        if result.get("available") is not True:
+        if result.get(contract.TAIL_AVAILABLE) is not True:
             self.tail_misses[subagent_id] = self.tail_misses.get(subagent_id, 0) + 1
             return True
         self.tail_misses.pop(subagent_id, None)
         agent = self.roster.agents.get(subagent_id)
         if sid == self.sid and agent is not None and agent.status == RUNNING:
-            self.roster.ingest_tail(subagent_id, as_text(result.get("text")), result.get("truncated") is True)
+            text, truncated = as_text(result.get(contract.TAIL_TEXT)), result.get(contract.TAIL_TRUNCATED) is True
+            self.roster.ingest_tail(subagent_id, text, truncated)
         return True
 
     @property

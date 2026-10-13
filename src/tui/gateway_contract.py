@@ -2,13 +2,17 @@
 
 The gateway's own contract (`tui_gateway/contracts/`, generated into an OpenRPC
 file under `apps/`) is not packaged in a Hermes wheel, so it cannot be read at
-runtime. What this module declares instead is the subset the TUI uses: the
-methods it calls and the keys it sends, and how it answers each
+runtime. What this module declares instead is the subset the TUI uses.
+Outbound: the methods it calls and the keys it sends, and how it answers each
 server-to-client request. A drift in either surfaces at runtime as a param
 rejection (4000) or an unknown method (-32601), which the client treats as
-"this Hermes no longer speaks what the TUI was built for". Events need no
-declaration: the TUI ignores a type it does not handle, and the gateway adds
-event types more often than it changes the ones the TUI reads.
+"this Hermes no longer speaks what the TUI was built for". Inbound: the event
+names, fields and values the TUI keys on that the OMH TUI v2 batch added (the
+subagent events, `session.info`'s yolo and effort, `subagent.tail`'s result,
+`session.steer`'s status), read from here by the app and the roster. Nothing
+checks an inbound shape at runtime: an event type the TUI does not handle is
+ignored, and a renamed field reads as absent. The older transcript events and
+their fields are read where they are folded (`transcript`, `subagents`).
 
 Declared against Hermes 6c61c3e27d (2026-10-07).
 """
@@ -37,8 +41,8 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "session.resume": frozenset({"session_id", "cols"}),
     "session.close": frozenset({"session_id"}),
     "session.interrupt": frozenset({"session_id"}),
-    # Typed text into the running turn. A refusal (`rejected`, or an error) puts the text in the TUI's queue
-    # while a turn runs, and sends it as a prompt only when the session is idle.
+    # Typed text into the running turn; see STEER_STATUSES for the answer. A refusal (`rejected`, or an error)
+    # puts the text in the TUI's queue while a turn runs, and sends it as a prompt only when the session is idle.
     "session.steer": frozenset({"session_id", "text"}),
     # See CONFIG_SET_VALUES: `scope` is deliberately not declared.
     "config.set": frozenset({"key", "value", "session_id"}),
@@ -74,6 +78,42 @@ CONFIG_SET_SESSION_SCOPE = "session"  # what a yolo answer's `scope` must say
 # Events whose envelope `session_id` is not the live session are dropped, except
 # these: they belong to the gateway, not to a session.
 GATEWAY_SCOPED_EVENT_PREFIX = "gateway."
+
+# ── inbound: what the TUI keys on in what Hermes sends ──
+
+# The `subagent.*` events (`tui_gateway/contracts/events.py`, one `SubagentEventPayload` each, all built by
+# `tool_progress._progress_subagent`). The app hands every event under the prefix to the roster, which folds
+# these six; `subagent.text` is mirrored to the child's own session and never reaches the parent's.
+SUBAGENT_EVENT_PREFIX = "subagent."
+SUBAGENT_SPAWN_REQUESTED = "subagent.spawn_requested"
+SUBAGENT_START = "subagent.start"
+SUBAGENT_PROGRESS = "subagent.progress"
+SUBAGENT_THINKING = "subagent.thinking"
+SUBAGENT_TOOL = "subagent.tool"
+SUBAGENT_COMPLETE = "subagent.complete"
+SUBAGENT_EVENTS = (
+    SUBAGENT_SPAWN_REQUESTED, SUBAGENT_START, SUBAGENT_PROGRESS, SUBAGENT_THINKING, SUBAGENT_TOOL, SUBAGENT_COMPLETE,
+)
+
+# `session.info` (and a create or resume answer's `info`), `contracts/common.py` `SessionLiveInfo`:
+# `yolo` (bool) is this session's approvals off, `reasoning_effort` (str, "" when unset) its effort.
+SESSION_INFO_YOLO = "yolo"
+SESSION_INFO_REASONING_EFFORT = "reasoning_effort"
+
+# `subagent.tail`'s result (`contracts/profiles_vault_complete_foreign_subagents.py` `SubagentTailResult`):
+# `available` is false while the child has no live transcript; `text` is its last 16 KB, `truncated` says
+# the tail was cut. `subagent_id` is echoed and not read.
+TAIL_AVAILABLE = "available"
+TAIL_TEXT = "text"
+TAIL_TRUNCATED = "truncated"
+
+# `session.steer`'s `status` (`contracts/sessions.py` `CorrectionStatus`; `redirected` is `session.redirect`'s
+# only). `queued` means the running turn took the text, or, while Hermes compresses the context, that Hermes
+# queued it as the next prompt (`tui_gateway/methods_session_interrupt.py`); the answer is the same for both.
+# `rejected` means the session is idle, or the agent refused it.
+STEER_QUEUED = "queued"
+STEER_REJECTED = "rejected"
+STEER_STATUSES = frozenset({STEER_QUEUED, "redirected", STEER_REJECTED})
 
 # Environment the TUI removes before spawning the gateway. The sidecar URL makes
 # the gateway tee every event to a socket; the gateway URL is the launcher's

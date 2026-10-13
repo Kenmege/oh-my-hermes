@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 import unittest
 
@@ -115,6 +116,99 @@ class ClientMethodTests(unittest.TestCase):
         self.assertTrue(contract.is_drift_error({"code": -32601, "message": "unknown method"}))
         self.assertFalse(contract.is_drift_error({"code": 4090, "message": "lease"}))
         self.assertFalse(contract.is_drift_error("unknown method"))
+
+
+TUI_DIR = Path(contract.__file__).parent
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "tui_gateway"
+
+
+# `panels` reads OMH's own HUD snapshot (`read_omh_hud`), never a gateway frame: its `yolo` and `queued` are OMH's.
+NOT_GATEWAY_READERS = frozenset({"gateway_contract.py", "panels.py"})
+
+
+def tui_modules() -> dict[str, ast.Module]:
+    """Every TUI module that reads what the gateway sends, parsed."""
+    return {
+        path.name: ast.parse(path.read_text(encoding="utf-8"))
+        for path in sorted(TUI_DIR.glob("*.py"))
+        if path.name not in NOT_GATEWAY_READERS
+    }
+
+
+def recorded_events(name: str) -> list[tuple[str, dict]]:
+    """(type, payload) of every event a recorded fixture holds, whichever of the two row shapes it uses."""
+    lines = (FIXTURES / f"{name}.jsonl").read_text(encoding="utf-8").splitlines()[1:]
+    events = []
+    for row in map(json.loads, lines):
+        params = row.get("frame", {}).get("params", {}) if "frame" in row else row
+        if row.get("dir", "in") == "in" and isinstance(params.get("type"), str):
+            events.append((params["type"], params.get("payload", {})))
+    return events
+
+
+class InboundTests(unittest.TestCase):
+    """The names, fields and values the TUI keys on in what Hermes sends, declared once."""
+
+    def test_the_declared_shapes_are_the_ones_hermes_names(self) -> None:
+        # Read from Hermes 6c61c3e27d's registry (tui_gateway/contracts/): the six event(...) calls for
+        # SubagentEventPayload in events.py, CorrectionStatus in sessions.py, SubagentTailResult's fields in
+        # profiles_vault_complete_foreign_subagents.py, and SessionLiveInfo's yolo and reasoning_effort in common.py.
+        self.assertEqual(
+            contract.SUBAGENT_EVENTS,
+            ("subagent.spawn_requested", "subagent.start", "subagent.progress", "subagent.thinking", "subagent.tool",
+             "subagent.complete"),
+        )
+        self.assertTrue(all(name.startswith(contract.SUBAGENT_EVENT_PREFIX) for name in contract.SUBAGENT_EVENTS))
+        self.assertEqual(contract.STEER_STATUSES, {"queued", "redirected", "rejected"})
+        self.assertLessEqual({contract.STEER_QUEUED, contract.STEER_REJECTED}, contract.STEER_STATUSES)
+        tail_result = {"subagent_id", "available", "text", "truncated"}
+        self.assertLessEqual({contract.TAIL_AVAILABLE, contract.TAIL_TEXT, contract.TAIL_TRUNCATED}, tail_result)
+        self.assertEqual((contract.SESSION_INFO_YOLO, contract.SESSION_INFO_REASONING_EFFORT), ("yolo", "reasoning_effort"))
+
+    def test_recorded_frames_carry_the_declared_shapes(self) -> None:
+        relayed = recorded_events("subagent_relay")
+        self.assertTrue(relayed)
+        for event_type, _payload in relayed:
+            with self.subTest(event_type=event_type):
+                self.assertIn(event_type, contract.SUBAGENT_EVENTS)
+        infos = [payload for name in ("session", "approval") for kind, payload in recorded_events(name) if kind == "session.info"]
+        self.assertTrue(infos)
+        for payload in infos:
+            self.assertIsInstance(payload[contract.SESSION_INFO_YOLO], bool)
+            self.assertIsInstance(payload[contract.SESSION_INFO_REASONING_EFFORT], str)
+
+    def test_the_roster_folds_exactly_the_declared_subagent_events(self) -> None:
+        from omh.tui.subagents import Roster
+
+        self.assertEqual(set(Roster()._handlers), set(contract.SUBAGENT_EVENTS))
+
+    def test_the_tui_reads_these_shapes_through_the_contract_only(self) -> None:
+        fields = {
+            contract.SESSION_INFO_YOLO, contract.SESSION_INFO_REASONING_EFFORT, contract.TAIL_AVAILABLE, contract.TAIL_TRUNCATED,
+        }
+        for name, module in tui_modules().items():
+            for node in ast.walk(module):
+                with self.subTest(module=name, line=getattr(node, "lineno", 0)):
+                    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                        # A subagent name written out is a method the TUI calls, never an event it reads.
+                        if node.value.startswith(contract.SUBAGENT_EVENT_PREFIX):
+                            self.assertIn(node.value, contract.CLIENT_METHODS)
+                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get":
+                        literal = node.args[0] if node.args and isinstance(node.args[0], ast.Constant) else None
+                        self.assertNotIn(getattr(literal, "value", None), fields)
+                    if isinstance(node, ast.Compare):
+                        compared = [part for part in (node.left, *node.comparators) if isinstance(part, ast.Constant)]
+                        self.assertFalse({part.value for part in compared} & contract.STEER_STATUSES)
+        (on_tail,) = [
+            node for node in ast.walk(tui_modules()["app.py"]) if isinstance(node, ast.FunctionDef) and node.name == "_on_tail"
+        ]
+        literal_gets = [
+            node.args[0].value
+            for node in ast.walk(on_tail)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get"
+            and node.args and isinstance(node.args[0], ast.Constant)
+        ]
+        self.assertEqual(literal_gets, [])  # `text` too: it is the tail's own field, read by its declared name
 
 
 if __name__ == "__main__":

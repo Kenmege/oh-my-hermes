@@ -370,9 +370,11 @@ Hermes' TUI), a Hermes patch or fork, an execution surface
 **Hermes gateway protocol**:
 Hermes' `tui_gateway` newline JSON-RPC over stdio, which the OMH TUI speaks as
 a client. The slice the TUI relies on (the methods it calls with the only
-keys it sends, and how it answers each server-to-client request) is declared
-once in `src/tui/gateway_contract.py`, against a named Hermes commit; an event
-type it does not handle is ignored, never an error. The gateway rejects
+keys it sends, how it answers each server-to-client request, and the subagent
+events and the `session.info`, `subagent.tail` and `session.steer` fields and
+values it keys on) is declared once in `src/tui/gateway_contract.py`, against
+a named Hermes commit; an event type it does not handle is ignored, never an
+error. The gateway rejects
 unknown keys (code 4000) and unknown methods (-32601); the TUI reads either as
 drift, falls back at startup, and leaves mid-session with the command to
 reopen the session in `hermes`. This is a read and write coupling to
