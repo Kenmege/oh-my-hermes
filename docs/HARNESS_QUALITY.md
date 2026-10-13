@@ -280,7 +280,7 @@ reports, per `sessions.source` tag, what Hermes recorded for its sessions:
 | `omh_tool_calls` | those whose `tool_name` starts with `omh_`, plus `omh_tool_names` per name |
 | `sessions_with_omh_tool` | sessions with at least one such call |
 | `skill_views` | distinct `skill_view` results |
-| `omh_skill_views` | those whose result description starts with `[omh] `, or whose name-only result (a reference-file load, a compaction placeholder) names a catalog skill, plus `omh_skill_names` per name |
+| `omh_skill_views` | those whose result names a label the OMH catalog renders (current, historical, or retired), whether it is a SKILL.md load or a name-only result (a reference-file load, a compaction placeholder), plus `omh_skill_names` per name |
 | `sessions_with_omh_skill_view` | sessions with at least one such load |
 | `sessions_with_any_omh` | sessions with either signal |
 
@@ -293,12 +293,16 @@ distinct `tool_call_id` per session, because a compaction re-persists tool
 rows under new ids and a raw row count would inflate every surface that ran
 long enough to compact; the first row by id decides what a call was, and a
 row without a `tool_call_id` counts once by its own id. The OMH-skill signal
-is the catalog's own `[omh] ` description prefix carried back in the
-`skill_view` result, not the `omh-` display name, because the `ulw-*` skills
-are OMH skills too. A reference-file load and the `[skill_view] name=...`
-placeholder a compaction leaves carry only a name, which counts when it is a
-catalog skill's display name, current or historical; any other result that is
-not a JSON object falls back to the marker substring. The window field is
+is the skill's name carried back in the `skill_view` result: a label the
+catalog renders, which covers the `omh-*` and `ulw-*` labels alike, every
+label an earlier release rendered, and the labels of retired skills, so a
+session recorded before a rename still counts. A reference-file load and the
+`[skill_view] name=...` placeholder a compaction leaves carry only that name;
+a result that is not a JSON object is read for its frontmatter `name:` line.
+The description is not required to carry anything. A result whose description
+starts with the `[omh] ` prefix still counts under a name the catalog does not
+render (a skill imported from a local source), and non-JSON content with no
+catalog name falls back to that marker. The window field is
 `COALESCE(last_activity_at, started_at)`, and `--since` takes an ISO-8601
 timestamp or epoch seconds. Archived and hidden sessions are included: a
 session that used OMH and was archived later still used it. An empty window

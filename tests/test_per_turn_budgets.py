@@ -378,6 +378,19 @@ class IndexOpeningLintTests(unittest.TestCase):
         # Only the visible window counts: words past character 57 never reach it.
         self.assertEqual(skill_index.index_opening("[omh] " + "a" * 60 + " b c"), "a" * 51)
 
+    def test_the_opening_words_are_the_same_with_and_without_the_description_prefix(self) -> None:
+        # An installed body keeps the prefix until its next update; the lint
+        # must read the same opening words from either.
+        for text in ("Hermes Code Review workflow: bug-first", "Review, a pull request."):
+            with self.subTest(text=text):
+                self.assertEqual(skill_index.index_opening(f"[omh] {text}"), skill_index.index_opening(text))
+        self.assertEqual(skill_index.index_opening("Hermes Code Review workflow: bug-first"), "hermes code review")
+
+    def test_the_prefix_costs_six_characters_of_the_visible_window(self) -> None:
+        # The window is 57 characters either way; the prefix sits inside it.
+        self.assertEqual(skill_index.index_opening("[omh] " + "a" * 60 + " b c"), "a" * 51)
+        self.assertEqual(skill_index.index_opening("a" * 60 + " b c"), "a" * 57)
+
     def test_openings_that_differ_by_the_third_word_do_not_collide(self) -> None:
         pairs = [("one", "[omh] Hermes frontend workflow: x"), ("two", "[omh] Hermes frontend refactor: y")]
         self.assertEqual(skill_index.index_opening_collisions(pairs), {})

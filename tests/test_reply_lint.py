@@ -545,13 +545,14 @@ class PayloadTests(unittest.TestCase):
 
 
 # A skill_view result carries the SKILL.md frontmatter; OMH's own skills are
-# the ones whose description starts with the catalog's `[omh] ` prefix, which
-# includes the `ulw-*` display names.
+# the ones whose name the catalog renders, which includes the `ulw-*` labels.
+# One body carries the `[omh] ` description prefix and one does not, so the
+# hand counts hold for both.
 OMH_PLAN_SKILL_VIEW = json.dumps(
     {"name": "omh-plan", "description": "[omh] Hermes Plan workflow: turn a goal into a plan.", "success": True}
 )
 ULW_WORK_SKILL_VIEW = json.dumps(
-    {"name": "ulw-work", "description": "[omh] Ultrawork: carry a goal to done.", "success": True}
+    {"name": "ulw-work", "description": "Ultrawork: carry a goal to done.", "success": True}
 )
 OTHER_SKILL_VIEW = json.dumps({"name": "reviewer", "description": "Review code for defects.", "success": True})
 OMH_FILE_SKILL_VIEW = json.dumps({"name": "omh-plan", "file": "references/plan.md", "content": "notes", "success": True})

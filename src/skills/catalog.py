@@ -1116,6 +1116,31 @@ def retired_display_names() -> dict[str, str]:
     return mapping
 
 
+@lru_cache(maxsize=1)
+def _canonical_by_skill_label() -> dict[str, str]:
+    definitions = _builtin_definitions_cached()
+    mapping = {omh_skill_display_name(definition.name): definition.name for definition in definitions}
+    for definition in definitions:
+        for label in historical_skill_display_names(definition.name):
+            mapping.setdefault(label, definition.name)
+    return mapping
+
+
+def canonical_skill_for_label(label: str) -> str:
+    """Canonical name of the OMH skill a host loaded as `label`, or "" when the catalog never rendered it.
+
+    This is how a reader decides that a loaded skill is OMH's: by the label the
+    catalog renders into `name:`, not by anything in the description. Every
+    catalog definition counts, retired ones included, under its current label
+    and every label an earlier release rendered (`omh-ultrawork`,
+    `ulw-ultrawork`, `ulw-team`), so a session recorded before a rename or a
+    retirement still resolves. Current labels win a collision. A bare canonical
+    name (`plan`, `team`) is deliberately not a label: it is an ordinary word
+    another product's skill can carry.
+    """
+    return _canonical_by_skill_label().get(label.strip(), "")
+
+
 def retired_skill_migration_error(label: str) -> dict[str, str]:
     """Named migration error for a retired skill label or tap path.
 
