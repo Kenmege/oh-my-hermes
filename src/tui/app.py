@@ -1059,9 +1059,10 @@ class App:
         if self.banner_facts is not None:
             stable = banner_lines(**self.banner_facts, theme=self.theme, width=cols) + stable
             self.banner_facts = None
-        if stable:
+        anchoring = self.anchor
+        if stable and not anchoring:
             self.region.flush_above(stable, cols)
-        previous = 0 if self.anchor else self.region.height
+        previous = 0 if anchoring else self.region.height
         self.anchor = False
         frame = build_frame(
             cols=cols,
@@ -1075,6 +1076,11 @@ class App:
             theme=self.theme,
         )
         self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad)
+        if stable and anchoring:
+            # An anchoring frame fills the screen with pad rows. Lines flushed before it
+            # (the banner, a resumed history) would be pushed off the top before anyone
+            # saw them; flushed after it, they land in those pad rows instead.
+            self.region.flush_above(stable, cols)
 
     def _tail(self, cols: int) -> list[Line]:
         lines = list(self.transcript.live_lines(cols, self.theme))

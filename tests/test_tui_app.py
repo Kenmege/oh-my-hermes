@@ -710,6 +710,21 @@ class OpeningTests(AppTestCase):
             history[:2], [f"⚚ OH-MY-HERMES v{__version__} · deepseek/deepseek-v4.1-flash-ultrafast · ~/project", BANNER_HINT]
         )
 
+    def test_the_banner_is_on_screen_at_the_first_frame_not_pushed_into_scrollback(self) -> None:
+        # The first frame fills the screen with pad rows; the banner must land in them.
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers()),
+            cols=100,
+            env={"HOME": "/fixture"},
+        )
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, capture="first", label="the first frame"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        screen = run.terminal.captures["first"]
+        self.assertTrue(screen[0].startswith("⚚ OH-MY-HERMES"), screen[:3])
+        self.assertEqual(screen[1], BANNER_HINT)
+        self.assertEqual(run.terminal.screen.scrollback, [])
+
     def test_the_banner_stays_one_row_and_keeps_the_end_of_a_long_path(self) -> None:
         from omh.tui.app import banner_lines
         from omh.tui.theme import DEFAULT_THEME
