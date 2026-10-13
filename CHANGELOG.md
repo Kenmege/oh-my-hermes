@@ -14,7 +14,8 @@ All notable changes will be documented here.
   report until the verification fan-in runs. With the user's
   `delegation.worktree_isolation` on, each lane works on its own
   `hermes-subagent/…` branch, so integration is a merge the parent performs
-  before any check: the checked team lane now says a check run before that
+  before any check, after committing whatever a lane left uncommitted in its
+  worktree: the checked team lane now says a check run before that
   merge tests a tree without the lane's work, and the file-ownership manifest
   is compared per lane branch. A one-shot run, which is also how a kanban
   worker runs, that is refused for its delegation budget finishes the

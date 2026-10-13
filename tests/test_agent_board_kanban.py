@@ -645,6 +645,17 @@ class AgentBoardFoundation(unittest.TestCase):
         self.assertEqual(unknown["state"], "failed")
         self.assertNotIn("landed_status", unknown)
 
+    def test_k5_list_filter_still_refuses_the_statuses_older_hosts_cannot_filter_by(self):
+        # Reading a parked card back is one thing; filtering a list by it is
+        # another: the floor host's kanban_list status enum has no `scheduled`
+        # (nor `review`), so OMH refuses that filter as it always has.
+        for status in ("scheduled", "review"):
+            with self.subTest(status=status), self.assertRaises(ValueError) as caught:
+                _ = self.prepare(self.board(), request("list", "list-1", {"status": status}))
+            self.assertEqual(str(caught.exception), "invalid_list_status")
+        admitted = self.prepare(self.board(), request("list", "list-1", {"status": "blocked"}))
+        self.assertEqual(admitted["state"], "prepared")
+
     def test_k8_foundation_ambiguous_failed_and_missing_post_never_retry(self):
         for result in [None, {"error": "private-error"}, {"ok": False}, {"ok": True}]:
             with self.subTest(result=result):

@@ -97,7 +97,8 @@ two lanes writing into one checkout at the same time. It does not make an
 overlap safe: the two edits now meet at the merge instead of in the working
 tree, and a clean merge of them is the same silent defect. Write the manifest
 exactly as strictly, and run the comparison above per lane against that lane's
-branch, which is where its changes are, before merging any of them.
+branch plus anything its worktree still holds uncommitted, which is where its
+changes are, before merging any of them.
 
 ## Reporting
 

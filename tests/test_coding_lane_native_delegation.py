@@ -103,6 +103,7 @@ class NativeDelegation(unittest.TestCase):
     def test_a_matched_shape_is_not_a_checked_claim(self) -> None:
         text = _reference("ultrawork", "references/native-delegation.md")
         self.assertIn("A matched shape is a checked shape, not a checked claim.", text)
+        self.assertIn("A lane whose answer did not match is `not_observed`; its text holds leads, not a result.", text)
         self.assertIn(
             "A lane's answer stays the lane's report whatever the host checked; the run is complete only on "
             "the verification fan-in this session runs",
@@ -129,6 +130,13 @@ class NativeDelegation(unittest.TestCase):
             "verification fan-in on the merged tree. A check before that merge tests a tree without the lane's work.",
             "A completion message carries no `worktree` entry.",
             "Isolation moves a collision from the working tree to the merge; it does not remove it.",
+            # A lane that changed files without committing has a branch with no
+            # commits: merging branches alone would drop its work from the fan-in.
+            "A worktree left dirty (`dirty: true`, or `git -C <path> status --porcelain` non-empty) is committed on "
+            "its branch before the merge; find lanes with `git worktree list`, and a branch with no commits is not "
+            "an empty lane until its worktree is checked.",
+            "The first isolated lane makes the host add `.worktrees/` to the repository's `.gitignore` when it is "
+            "missing: an uncommitted change in your checkout that is the host's, not a lane's.",
         ):
             with self.subTest(clause=clause[:60]):
                 self.assertIn(clause, text)
@@ -136,8 +144,10 @@ class NativeDelegation(unittest.TestCase):
     def test_a_spent_one_shot_budget_runs_the_rest_inline(self) -> None:
         text = _reference("ultrawork", "references/native-delegation.md")
         for clause in (
+            # The host refuses a call whose requested children would pass the cap
+            # and charges nothing for it, so the refusal can read "0/2 used".
             "When `delegate_task` refuses with an error that names `delegation.oneshot_max_children`, "
-            "this run's budget is spent:",
+            "treat this run's budget as spent, even when the refusal counts fewer used than the cap:",
             "Do not retry the call, and do not split it smaller to fit under the cap.",
             "Run each remaining lane yourself in this session, one at a time in dependency order, each with its "
             "own `VERIFY`.",
@@ -149,14 +159,16 @@ class NativeDelegation(unittest.TestCase):
     def test_a_team_check_waits_for_the_merge_under_isolation(self) -> None:
         self.assertIn(
             "A check run here then tests a tree without that lane's work, and a pass would accept a lane nobody "
-            "checked. Merge each returned helper's branch into this workspace before `team_reconcile`;",
+            "checked. Commit what a helper left uncommitted in its worktree, then merge each returned helper's "
+            "branch into this workspace before `team_reconcile`;",
             _reference("ultrawork", "references/team-lane.md"),
         )
 
     def test_the_manifest_is_compared_per_lane_branch(self) -> None:
         self.assertIn(
             "Write the manifest exactly as strictly, and run the comparison above per lane against that lane's "
-            "branch, which is where its changes are, before merging any of them.",
+            "branch plus anything its worktree still holds uncommitted, which is where its changes are, before "
+            "merging any of them.",
             _reference("ultrawork", "references/file-ownership-manifest.md"),
         )
 
@@ -175,7 +187,8 @@ class BoardFields(unittest.TestCase):
     def test_a_completion_contract_is_not_merge_evidence(self) -> None:
         for clause in (
             "the board refuses `kanban_complete` until every check the repository requires has passed on that "
-            "PR's current head commit.",
+            "PR's current head commit. It reads those checks with the `gh` CLI on the machine that completes the "
+            "card",
             "A repository with no required checks never satisfies the contract, so a lane there omits the field, "
             "as does a lane that publishes nothing.",
             "the closing brief still reads the PR head again before it says a change landed, and a passed contract "
@@ -187,6 +200,16 @@ class BoardFields(unittest.TestCase):
     def test_a_judge_agreeing_is_still_a_worker_report(self) -> None:
         self.assertIn(
             "The judge's agreement is a model's reading of the card, so the row is still `worker reported done`.",
+            self.text,
+        )
+        self.assertIn("leave verifier and reviewer lanes single-run.", self.text)
+
+    def test_a_goal_mode_card_cannot_be_parked(self) -> None:
+        # The host refuses kanban_schedule on a goal_mode card, and blocks one
+        # only with a genuine external-blocker kind (tools/kanban_tools.py).
+        self.assertIn(
+            "A `goal_mode` card cannot be parked: it blocks only with `kind` `dependency` or `needs_input`; give no "
+            "goal mode to a lane that may wait on time.",
             self.text,
         )
 
@@ -228,6 +251,8 @@ class ContextFileLoading(unittest.TestCase):
         "Each directory from the repository root down to the working directory adds its own file, root first,",
         "**An `AGENTS.override.md` replaces the `AGENTS.md` beside it** for Hermes Agent, in that one directory.",
         "The inventory lists every override, and a drift check reads the override rather than the committed file.",
+        "In a repository Hermes works in, keep the text in `AGENTS.md`, make `CLAUDE.md` and the rest pointers, and "
+        "add no `.hermes.md`.",
     )
 
     def test_the_method_states_hermes_loading_rules(self) -> None:

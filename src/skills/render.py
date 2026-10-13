@@ -4113,7 +4113,7 @@ Load this while writing or updating an agent instruction file. OMH prepares the 
 
 When several exist, keep one source and point the others at it, so two files cannot disagree. A pointer works only for a reader that follows it, so check how each reader loads before choosing which file holds the text:
 
-- **Hermes Agent loads one project file type per session.** It takes the first type that has a non-empty file and reads no other: `.hermes.md` or `HERMES.md`, the nearest from the working directory up to the repository root; then `AGENTS.md`; then `CLAUDE.md`, in the working directory only; then `.cursorrules` with `.cursor/rules/*.mdc`, in the working directory only. Outside a repository it looks in the working directory alone. It follows no pointer written inside the file it loaded, so a `.hermes.md` that only points elsewhere is all Hermes reads, and `CLAUDE.md` reaches Hermes only where neither of the first two types exists. In a repository Hermes works in, keep the text in `AGENTS.md` and make the other files the pointers.
+- **Hermes Agent loads one project file type per session.** It takes the first type that has a non-empty file and reads no other: `.hermes.md` or `HERMES.md`, the nearest from the working directory up to the repository root; then `AGENTS.md`; then `CLAUDE.md`, in the working directory only; then `.cursorrules` with `.cursor/rules/*.mdc`, in the working directory only. Outside a repository it looks in the working directory alone. It follows no pointer written inside the file it loaded, so a `.hermes.md` that only points elsewhere is all Hermes reads, and `CLAUDE.md` reaches Hermes only where neither of the first two types exists. In a repository Hermes works in, keep the text in `AGENTS.md`, make `CLAUDE.md` and the rest pointers, and add no `.hermes.md`.
 - **Hermes Agent reads every `AGENTS.md` on that path.** Each directory from the repository root down to the working directory adds its own file, root first, and a file identical to one already read is skipped, so a nested file adds to the root file rather than replacing it.
 - **An `AGENTS.override.md` replaces the `AGENTS.md` beside it** for Hermes Agent, in that one directory. It is usually untracked, so an edit to the committed `AGENTS.md` there changes nothing for a session that finds the override. The inventory lists every override, and a drift check reads the override rather than the committed file.
 
@@ -5486,7 +5486,7 @@ Load this reference when an accepted `ultrawork` plan splits into in-session `de
 ## Limits to State
 
 - Helpers share one workspace by default. A check is attributed to its lane, but another lane's edits are in the same tree; checks wait until every team helper is back to narrow this, not remove it.
-- With Hermes' `delegation.worktree_isolation` on, a helper works in a git worktree of its own and its edits land on its own branch, not in this workspace. A check run here then tests a tree without that lane's work, and a pass would accept a lane nobody checked. Merge each returned helper's branch into this workspace before `team_reconcile`; `references/native-delegation.md` says how to find the branches.
+- With Hermes' `delegation.worktree_isolation` on, a helper works in a git worktree of its own and its edits land on its own branch, not in this workspace. A check run here then tests a tree without that lane's work, and a pass would accept a lane nobody checked. Commit what a helper left uncommitted in its worktree, then merge each returned helper's branch into this workspace before `team_reconcile`; `references/native-delegation.md` says how to find the branches.
 - A check runs code the helpers wrote, as the person's own user account with the real home folder.
 - Parallel helpers in one call share one model route; a lane that needs a different model is dispatched in its own call after `omh_delegate_route`.
 - Board lanes (`references/kanban-lane.md`) are not checked by `omh_team` yet; they still follow the prepare and readback recipe there.
@@ -5534,13 +5534,15 @@ What changes for the parent:
 
 - A lane starts from the last commit, not from your working tree: uncommitted edits in your checkout are not in its worktree.
 - A lane's edits are not in your checkout. They are commits on its branch, or uncommitted changes left in its worktree. Integration is a merge you perform: merge each lane's branch in dependency order, then run the verification fan-in on the merged tree. A check before that merge tests a tree without the lane's work.
+- A worktree left dirty (`dirty: true`, or `git -C <path> status --porcelain` non-empty) is committed on its branch before the merge; find lanes with `git worktree list`, and a branch with no commits is not an empty lane until its worktree is checked.
 - A same-turn result carries a `worktree` entry for each lane with `path`, `branch`, `commits`, `dirty`, and `pruned`. The host deletes a worktree only when its lane made no commits and left it clean (`pruned: true`). `inspection_failed: true` means the host could not count the commits or read the status; it kept the worktree, and nothing about the lane's work is known until you look.
-- A completion message carries no `worktree` entry. Find the lanes' branches yourself (`git worktree list`, `git branch --list 'hermes-subagent/*'`) before integrating, and remove each worktree and branch once it is merged.
+- A completion message carries no `worktree` entry. Find the lanes yourself before integrating, and remove each worktree and branch once it is merged.
+- The first isolated lane makes the host add `.worktrees/` to the repository's `.gitignore` when it is missing: an uncommitted change in your checkout that is the host's, not a lane's.
 - Isolation moves a collision from the working tree to the merge; it does not remove it. The file-ownership manifest still decides which lanes may run together.
 
 ## 3. The one-shot delegation budget
 
-A one-shot run (`hermes chat -q`, which is also how a kanban worker runs) may cap how many children it delegates in total. When `delegate_task` refuses with an error that names `delegation.oneshot_max_children`, this run's budget is spent:
+A one-shot run (`hermes chat -q`, which is also how a kanban worker runs) may cap how many children it delegates in total. When `delegate_task` refuses with an error that names `delegation.oneshot_max_children`, treat this run's budget as spent, even when the refusal counts fewer used than the cap:
 
 - Do not retry the call, and do not split it smaller to fit under the cap.
 - Run each remaining lane yourself in this session, one at a time in dependency order, each with its own `VERIFY`.
@@ -5713,10 +5715,10 @@ The run closes in the main session, never in a worker. Read back once, confirm t
 
 Three create fields and two worker transitions put part of a lane's contract on the board itself. What the board records for them is the host's record: one more piece of evidence beside OMH's own checks, never a replacement for them.
 
-- `completion_contract`. A lane that publishes a pull request declares where at create time: `OWNER/REPO`, or the exact PR URL. Its worker completes with `metadata.published_pr` naming the PR, and the board refuses `kanban_complete` until every check the repository requires has passed on that PR's current head commit. It reads those checks with the `gh` CLI where the worker runs and records a `pr_acceptance` event, visible in `kanban_show`, listing each required check, its conclusion, and the head SHA. A repository with no required checks never satisfies the contract, so a lane there omits the field, as does a lane that publishes nothing. The event describes that head at that moment: the closing brief still reads the PR head again before it says a change landed, and a passed contract is neither review nor merge evidence.
+- `completion_contract`. A lane that publishes a pull request declares where at create time: `OWNER/REPO`, or the exact PR URL. Its worker completes with `metadata.published_pr` naming the PR, and the board refuses `kanban_complete` until every check the repository requires has passed on that PR's current head commit. It reads those checks with the `gh` CLI on the machine that completes the card and records a `pr_acceptance` event, visible in `kanban_show`, listing each required check, its conclusion, and the head SHA. A repository with no required checks never satisfies the contract, so a lane there omits the field, as does a lane that publishes nothing. The event describes that head at that moment: the closing brief still reads the PR head again before it says a change landed, and a passed contract is neither review nor merge evidence.
 - `goal_mode` with `goal_max_turns`. After each turn a judge model decides from the worker's reply whether what the card's title and body ask for is met; while it is not and turns remain, the worker continues in that session, and spending the whole budget leaves the card blocked for a person. Use it for a builder whose `STOP WHEN` takes more than one turn; leave verifier and reviewer lanes single-run. The judge's agreement is a model's reading of the card, so the row is still `worker reported done`.
 - `kanban_request_review`. A builder whose work must be reviewed before it counts ends with this transition instead of `kanban_complete`, naming the reviewing profile in `reviewer`; its `STOP WHEN` says which of the two ends the lane. The card moves to the `review` column, which is not a block. Unless the operator turned review dispatch off, the dispatcher then opens a review run on the card with Hermes' bundled `sdlc-review` loaded beside the card's own skills, and that run either requests changes, which sends the card back to its builder, or completes it. A separate reviewer row still fits a review that spans several builders; it is ordinary work, and its `done` is not the review column's approval.
-- `kanban_schedule`. In a worker, when """ + native_tool_presence_clause("kanban_schedule", code=True) + """, a lane that must wait for a time or an outside event parks its card with it and puts the wake condition in `reason`. The run ends and the card stops being dispatched, but nothing wakes it: the tool sets no timer, so the lane's `body` names who unblocks it. Without the tool, the worker blocks the card with the same reason (`kanban_block`).
+- `kanban_schedule`. In a worker, when """ + native_tool_presence_clause("kanban_schedule", code=True) + """, a lane that must wait for a time or an outside event parks its card with it and puts the wake condition in `reason`. The run ends and the card stops being dispatched, but nothing wakes it: the tool sets no timer, so the lane's `body` names who unblocks it. Without the tool, the worker blocks the card with the same reason (`kanban_block`). A `goal_mode` card cannot be parked: it blocks only with `kind` `dependency` or `needs_input`; give no goal mode to a lane that may wait on time.
 
 ## Provenance Words
 
@@ -12664,7 +12666,8 @@ two lanes writing into one checkout at the same time. It does not make an
 overlap safe: the two edits now meet at the merge instead of in the working
 tree, and a clean merge of them is the same silent defect. Write the manifest
 exactly as strictly, and run the comparison above per lane against that lane's
-branch, which is where its changes are, before merging any of them.
+branch plus anything its worktree still holds uncommitted, which is where its
+changes are, before merging any of them.
 
 ## Reporting
 

@@ -37,13 +37,15 @@ What changes for the parent:
 
 - A lane starts from the last commit, not from your working tree: uncommitted edits in your checkout are not in its worktree.
 - A lane's edits are not in your checkout. They are commits on its branch, or uncommitted changes left in its worktree. Integration is a merge you perform: merge each lane's branch in dependency order, then run the verification fan-in on the merged tree. A check before that merge tests a tree without the lane's work.
+- A worktree left dirty (`dirty: true`, or `git -C <path> status --porcelain` non-empty) is committed on its branch before the merge; find lanes with `git worktree list`, and a branch with no commits is not an empty lane until its worktree is checked.
 - A same-turn result carries a `worktree` entry for each lane with `path`, `branch`, `commits`, `dirty`, and `pruned`. The host deletes a worktree only when its lane made no commits and left it clean (`pruned: true`). `inspection_failed: true` means the host could not count the commits or read the status; it kept the worktree, and nothing about the lane's work is known until you look.
-- A completion message carries no `worktree` entry. Find the lanes' branches yourself (`git worktree list`, `git branch --list 'hermes-subagent/*'`) before integrating, and remove each worktree and branch once it is merged.
+- A completion message carries no `worktree` entry. Find the lanes yourself before integrating, and remove each worktree and branch once it is merged.
+- The first isolated lane makes the host add `.worktrees/` to the repository's `.gitignore` when it is missing: an uncommitted change in your checkout that is the host's, not a lane's.
 - Isolation moves a collision from the working tree to the merge; it does not remove it. The file-ownership manifest still decides which lanes may run together.
 
 ## 3. The one-shot delegation budget
 
-A one-shot run (`hermes chat -q`, which is also how a kanban worker runs) may cap how many children it delegates in total. When `delegate_task` refuses with an error that names `delegation.oneshot_max_children`, this run's budget is spent:
+A one-shot run (`hermes chat -q`, which is also how a kanban worker runs) may cap how many children it delegates in total. When `delegate_task` refuses with an error that names `delegation.oneshot_max_children`, treat this run's budget as spent, even when the refusal counts fewer used than the cap:
 
 - Do not retry the call, and do not split it smaller to fit under the cap.
 - Run each remaining lane yourself in this session, one at a time in dependency order, each with its own `VERIFY`.
