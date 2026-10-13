@@ -21,7 +21,16 @@ from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, Step, startup_answers
 from test_tui_modes import SID, RecordingClient, answer, composer_index, drawn, make_app, notices, queue, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND
 from omh.tui import gateway_contract as contract
-from omh.tui.app import AGENT_LIST_HINT, AGENT_LIST_ROWS, SLOT_ARM_SECONDS, TAIL_POLL_SECONDS, VIEW_OPEN_NOTICE, App
+from omh.tui.app import (
+    AGENT_LIST_HINT,
+    AGENT_LIST_ROWS,
+    SLOT_ARM_SECONDS,
+    TAIL_ANSWER_SECONDS,
+    TAIL_MISSES_BEFORE_STOP,
+    TAIL_POLL_SECONDS,
+    VIEW_OPEN_NOTICE,
+    App,
+)
 from omh.tui.frame import MODE_NORMAL
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, Paste
@@ -576,12 +585,25 @@ class TailPollTests(unittest.TestCase):
         self.assertEqual(client.calls, [TAIL_CALL])
         self.assertEqual(contract.call_problem(*TAIL_CALL), "")
 
-    def test_no_second_call_goes_out_while_the_first_has_no_answer(self) -> None:
-        app, client, now = self.open()
-        for _ in range(100):
+    def test_an_unanswered_call_holds_the_next_back_for_ten_seconds_and_its_late_answer_is_dropped(self) -> None:
+        app, client, now = self.open(frames=FRAMES[:6])
+        before = paged(app)[3:]
+        for _ in range(20):  # 50.0 to 59.5
             app._ask_tail_when_due()
             now[0] += 0.5
         self.assertEqual(client.calls, [TAIL_CALL])
+        self.assertEqual((now[0], TAIL_ANSWER_SECONDS), (60.0, 10.0))
+        app._ask_tail_when_due()
+        self.assertEqual(client.calls, [TAIL_CALL, TAIL_CALL])  # ten seconds without an answer: one more goes
+        app._on_response(Response(1, TAIL, None))  # the first call's answer, late
+        drawn(app)
+        self.assertEqual(paged(app)[3:], before)  # dropped: the second call is the one waited for
+        now[0] += TAIL_POLL_SECONDS
+        app._ask_tail_when_due()
+        self.assertEqual(len(tails(client)), 2)  # and it did not free the second call's place
+        answer(app, client, TAIL)
+        drawn(app)
+        self.assertEqual(paged(app)[3:], ["reading src/api/client.py", "found 3 call sites"])
 
     def test_an_available_tail_becomes_the_log(self) -> None:
         app, client, _now = self.open(frames=FRAMES[:6])
@@ -699,7 +721,53 @@ class TailPollTests(unittest.TestCase):
             answer(app, client, {**TAIL, "available": available})
         drawn(app)
         self.assertEqual((paged(app)[3:], notices(app)), (before, []))
-        self.assertEqual(len(tails(client)), 4)  # and it keeps asking, at its pace
+        self.assertEqual(len(tails(client)), 4)  # each one an answer without a tail; it asks again, at its pace
+
+    def test_five_answers_in_a_row_without_a_tail_stop_the_calls_until_the_agent_sends_a_frame(self) -> None:
+        app, client, now = self.open()
+
+        def ask_and_miss(times: int) -> None:
+            for _ in range(times):
+                now[0] += TAIL_POLL_SECONDS
+                before = len(client.calls)
+                app._ask_tail_when_due()
+                if len(client.calls) > before:
+                    answer(app, client, NO_TAIL)
+
+        self.assertEqual(TAIL_MISSES_BEFORE_STOP, 5)
+        ask_and_miss(4)
+        answer_error = {"code": 4001, "message": "session not found or not owned by this transport"}
+        now[0] += TAIL_POLL_SECONDS
+        app._ask_tail_when_due()
+        answer(app, client, error=answer_error)  # an error is an answer without a tail too
+        self.assertEqual(len(tails(client)), 5)
+        ask_and_miss(30)  # a minute
+        self.assertEqual(len(tails(client)), 5)  # ten seconds of nothing: no more calls for this agent
+        agent_event(app, "tool", SECOND, tool_name="terminal", tool_count=1)  # another agent's frame
+        ask_and_miss(3)
+        self.assertEqual(len(tails(client)), 5)
+        agent_event(app, "tool", tool_name="read_file", tool_preview="src/a.py", tool_count=1)  # its own
+        ask_and_miss(10)
+        self.assertEqual(len(tails(client)), 10)  # asked again, and bounded again
+
+    def test_a_tail_in_between_starts_the_count_again_and_the_count_is_each_agents(self) -> None:
+        app, client, now = self.open()
+        for result in (NO_TAIL, NO_TAIL, NO_TAIL, NO_TAIL, TAIL, NO_TAIL, NO_TAIL, NO_TAIL, NO_TAIL):
+            now[0] += TAIL_POLL_SECONDS
+            app._ask_tail_when_due()
+            answer(app, client, result)
+        self.assertEqual(len(tails(client)), 9)
+        now[0] += TAIL_POLL_SECONDS
+        app._ask_tail_when_due()
+        self.assertEqual(len(tails(client)), 10)  # four in a row since the tail: it still asks
+        answer(app, client, NO_TAIL)
+        now[0] += TAIL_POLL_SECONDS
+        app._ask_tail_when_due()
+        self.assertEqual(len(tails(client)), 10)  # five: it stops
+        app._on_input(Key(RIGHT))  # the next agent's log has its own count
+        now[0] += TAIL_POLL_SECONDS
+        app._ask_tail_when_due()
+        self.assertEqual(tails(client)[-1], {"session_id": SID, "subagent_id": SECOND})
 
     def test_an_error_answer_changes_nothing_and_says_nothing(self) -> None:
         app, client, now = self.open(frames=FRAMES[:6])
@@ -764,6 +832,19 @@ class TailPollTests(unittest.TestCase):
         now[0] += TAIL_POLL_SECONDS
         app._ask_tail_when_due()
         self.assertEqual(tails(client)[-1], {"session_id": SID, "subagent_id": SECOND})
+
+    def test_a_log_opened_again_within_two_seconds_of_the_last_call_waits_for_the_pace(self) -> None:
+        app, client, now = self.open()
+        app._ask_tail_when_due()
+        answer(app, client, TAIL)
+        app._on_input(Key(CHAR, "q"))
+        now[0] += 1.0
+        app._on_input(Key(ENTER))  # the same log, opened again from the list
+        app._ask_tail_when_due()
+        self.assertEqual(len(tails(client)), 1)  # not as it opens: one second after the last call
+        now[0] += TAIL_POLL_SECONDS - 1.0
+        app._ask_tail_when_due()
+        self.assertEqual(len(tails(client)), 2)
 
     def test_the_tail_is_the_only_call_the_agent_views_make(self) -> None:
         app, client, now = self.open()

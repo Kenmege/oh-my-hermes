@@ -62,14 +62,16 @@ an agent the mode row carries a strip of them, Down on an empty composer
 gives the keys to a list of them (the one thing that moves the composer: see
 `frame`), and Enter or a click opens one agent's log in the pager. The log is
 read-only: `subagent.tail` is asked for the open agent while it runs, at most
-every `TAIL_POLL_SECONDS`, and nothing is ever sent to a subagent. Mouse
-reports are on only while a click has an agent to land on and the row it
-would land on is certain: a turn running with agents named on the strip, or
-the list open. A plain left click on one of those cells opens that agent's
-log, or on the list's main row leaves the list; every other report does
-nothing. None types, however a pause splits it across reads (`keys`), and the
-one way a report can act as a key is a split right after its first byte that
-lasts over `keys.REPORTING_ESCAPE_SECONDS`: that ESC is Esc, as in tmux and vim.
+every `TAIL_POLL_SECONDS`, and no more once `TAIL_MISSES_BEFORE_STOP` answers
+in a row had no tail, until that agent sends a frame; nothing is ever sent to
+a subagent. Mouse reports are on only while a click has an agent to land on
+and the row it would land on is certain: a turn running with agents named on
+the strip, or the list open. A plain left click on one of those cells opens
+that agent's log, or on the list's main row leaves the list; every other
+report does nothing. None types, however a pause splits it across reads
+(`keys`), and the one way a report can act as a key is a split right after
+its first byte that lasts over `keys.REPORTING_ESCAPE_SECONDS`: that ESC is
+Esc, as in tmux and vim.
 
 Prompt text, the transcript, attachments, secrets, server-request frames and
 the gateway's stderr stay in memory and on the person's own terminal; nothing
@@ -264,6 +266,12 @@ AGENT_LIST_ROWS = 7  # main and six agents; a longer roster scrolls
 AGENT_LIST_HINT = "↑↓ select · ⏎ view log · esc back"
 AGENT_LOG_KEYS = "←/→ agents"
 TAIL_POLL_SECONDS = 2.0
+# Hermes answers `available: false` while an agent's log is not there yet, as it starts. Five answers in a row
+# like that (ten seconds at the pace above) stop the calls for that agent, so one whose `subagent.complete`
+# never comes is not asked forever; a new frame for it asks again.
+TAIL_MISSES_BEFORE_STOP = 5
+# A call with no answer this long no longer holds the next one back; its answer, if it still comes, is dropped.
+TAIL_ANSWER_SECONDS = 10.0
 # On the way out, after mouse reports are switched off: the terminal acts on that a moment later,
 # so reports already on their way are read and dropped instead of landing on the shell's prompt.
 # At most `EXIT_DRAIN_READS` reads, each waiting its share of `EXIT_DRAIN_SECONDS`.
@@ -807,6 +815,8 @@ class App:
         self.log_agent = ""  # the agent whose log the pager shows; "" for every other pager
         self.tail_asked_at: float | None = None  # when the last `subagent.tail` went out
         self.tail_open = False  # that call has no answer yet
+        self.tail_seq = 0  # the last call; an answer to an earlier one is dropped
+        self.tail_misses: dict[str, int] = {}  # agent id -> answers in a row without a tail
         # The cells a click opens, as last drawn: rows above the status line → the entries on that row.
         self.clickable: dict[int, tuple[Hit, ...]] = {}
         self.dirty = True
@@ -1067,6 +1077,8 @@ class App:
             self._on_error_event(as_text(payload.get("message")) or "The gateway reported an error.")
         elif event.type.startswith(SUBAGENT_EVENT_PREFIX):
             self.roster.apply(event.type, payload, self.clock())  # folds what it knows; raises on nothing
+            if isinstance(payload, Mapping):  # a new frame for an agent: its tail is asked for again
+                self.tail_misses.pop(as_text(payload.get("subagent_id")), None)
         else:
             self.transcript.apply(event)
             if event.type == "message.start":
@@ -2388,35 +2400,52 @@ class App:
     def _ask_tail_when_due(self) -> None:
         """`subagent.tail` for the agent whose log is open, while it runs: at most one call every `TAIL_POLL_SECONDS`.
 
-        The first goes out as a log opens, and the pace is the view's, not
-        each agent's: moving to another agent does not bring the next call
-        forward. None goes out while the last has no answer, for an agent
-        that is not running, or without a session.
+        The pace is the view's, not each agent's: the first call goes out as
+        a log opens unless one went out less than `TAIL_POLL_SECONDS` before,
+        and moving to another agent does not bring the next call forward.
+        None goes out while the last has had no answer for less than
+        `TAIL_ANSWER_SECONDS`, for an agent that is not running, for one whose
+        last `TAIL_MISSES_BEFORE_STOP` answers had no tail and that sent no
+        frame since, or without a session.
         """
         agent = self.roster.agents.get(self.log_agent) if self.pager is not None else None
-        if agent is None or agent.status != RUNNING or not self.sid or self.tail_open:
+        if agent is None or agent.status != RUNNING or not self.sid:
+            return
+        if self.tail_misses.get(agent.subagent_id, 0) >= TAIL_MISSES_BEFORE_STOP:
             return
         now = self.clock()
-        if self.tail_asked_at is not None and now - self.tail_asked_at < TAIL_POLL_SECONDS:
-            return
+        if self.tail_asked_at is not None:
+            since = now - self.tail_asked_at
+            if since < TAIL_POLL_SECONDS or (self.tail_open and since < TAIL_ANSWER_SECONDS):
+                return
+        self.tail_seq += 1
         self.tail_asked_at, self.tail_open = now, True
-        sid, subagent_id = self.sid, agent.subagent_id
+        seq, sid, subagent_id = self.tail_seq, self.sid, agent.subagent_id
         self._request(
             "subagent.tail",
             {"session_id": sid, "subagent_id": subagent_id},
-            lambda result: self._on_tail(sid, subagent_id, result),
-            lambda error: self._on_tail(sid, subagent_id, {}),  # the log keeps what the events gave it
+            lambda result: self._on_tail(seq, sid, subagent_id, result),
+            lambda error: self._on_tail(seq, sid, subagent_id, {}),  # the log keeps what the events gave it
         )
 
-    def _on_tail(self, sid: str, subagent_id: str, result: Mapping[str, Any]) -> bool:
+    def _on_tail(self, seq: int, sid: str, subagent_id: str, result: Mapping[str, Any]) -> bool:
         """A `subagent.tail` answer: read only when Hermes has a tail, for an agent still running in this session.
 
         A tail that arrives after its agent finished would replace the reply
-        its `subagent.complete` put in the log, so it is dropped.
+        its `subagent.complete` put in the log, so it is dropped. An answer
+        without a tail (`available` anything but true, or an error) counts
+        towards `TAIL_MISSES_BEFORE_STOP`. An answer to a call that timed out
+        (`TAIL_ANSWER_SECONDS`) is dropped: the call after it is the one waited for.
         """
+        if seq != self.tail_seq:
+            return True
         self.tail_open = False
+        if result.get("available") is not True:
+            self.tail_misses[subagent_id] = self.tail_misses.get(subagent_id, 0) + 1
+            return True
+        self.tail_misses.pop(subagent_id, None)
         agent = self.roster.agents.get(subagent_id)
-        if sid == self.sid and agent is not None and agent.status == RUNNING and result.get("available") is True:
+        if sid == self.sid and agent is not None and agent.status == RUNNING:
             self.roster.ingest_tail(subagent_id, as_text(result.get("text")), result.get("truncated") is True)
         return True
 
