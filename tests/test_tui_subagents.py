@@ -532,6 +532,19 @@ class RosterCapTests(unittest.TestCase):
         self.assertEqual(list(roster.agents)[0], "sa-1")
         self.assertEqual(list(roster.agents)[-1], "sa-new")
 
+    def test_seen_longest_ago_counts_the_last_frame_not_the_first(self) -> None:
+        roster = self._full()
+        feed(roster, "tool", subagent_id="sa-0")  # the first agent introduced, still busy
+        feed(roster, "thinking", subagent_id="sa-2", text="a thought")
+        feed(roster, "start", subagent_id="sa-new")
+        self.assertIn("sa-0", roster.agents)
+        self.assertNotIn("sa-1", roster.agents)
+        self.assertEqual(list(roster.agents)[:2], ["sa-0", "sa-2"])  # recency never reorders what is drawn
+        feed(roster, "start", subagent_id="sa-newer")
+        self.assertNotIn("sa-3", roster.agents)
+        self.assertIn("sa-2", roster.agents)
+        self.assertEqual(roster.evicted, 2)
+
     def test_one_more_pushes_out_the_oldest_finished_agent_first(self) -> None:
         roster = self._full()
         feed(roster, "complete", subagent_id="sa-40", status="failed")

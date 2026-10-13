@@ -43,8 +43,9 @@ shown has no row to land on. A finished agent is frozen, so a repeated
 and a late `subagent.tail` can only fill a log that is still empty.
 
 Bounds. The roster holds `ROSTER_CAP` agents; one more pushes out a finished
-agent, or the one seen longest ago when none has finished, and `evicted`
-counts them until `clear`. A log holds `LOG_ROW_CAP` rows; `dropped` counts
+agent, or the one seen longest ago when none has finished (every frame that
+names an agent counts as seeing it, so a busy agent stays however early it
+first reported), and `evicted` counts them until `clear`. A log holds `LOG_ROW_CAP` rows; `dropped` counts
 the ones pushed out, and the log view says so on its first row. Every stored
 string is cut to a fixed length when it is read.
 
@@ -148,6 +149,7 @@ class Agent:
     log: deque[LogRow] = field(default_factory=_new_log)
     dropped: int = 0  # rows the cap pushed out of `log`
     tail_cut: bool = False  # `log` was seeded from a tail that had already lost its beginning
+    seen: int = 0  # the roster's count of frames when one last named this agent; the lowest was seen longest ago
 
     @property
     def name(self) -> str:
@@ -269,6 +271,7 @@ class Roster:
     def __init__(self) -> None:
         self.agents: dict[str, Agent] = {}
         self.evicted = 0  # agents the cap pushed out since the last `clear`
+        self._frames = 0  # frames that named a held agent, for `Agent.seen`
         self._handlers: dict[str, Callable[[str, dict[str, Any], float], None]] = {
             "subagent.spawn_requested": self._on_spawn_requested,
             "subagent.start": self._on_alive,
@@ -294,6 +297,10 @@ class Roster:
         if not isinstance(subagent_id, str) or not 0 < len(subagent_id) <= ID_CHARS:
             return
         handler(subagent_id, payload, now)
+        agent = self.agents.get(subagent_id)
+        if agent is not None:
+            self._frames += 1
+            agent.seen = self._frames
 
     def clear(self) -> None:
         """Drop every agent: the app calls this when a new turn starts."""
@@ -327,8 +334,8 @@ class Roster:
         """Keep the roster under its cap: a finished agent leaves first, else the one seen longest ago."""
         if len(self.agents) < ROSTER_CAP:
             return
-        finished = (key for key, agent in self.agents.items() if agent.status in FINISHED_STATUSES)
-        del self.agents[next(finished, next(iter(self.agents)))]
+        finished = next((key for key, agent in self.agents.items() if agent.status in FINISHED_STATUSES), None)
+        del self.agents[finished if finished is not None else min(self.agents, key=lambda key: self.agents[key].seen)]
         self.evicted += 1
 
     def _live(self, subagent_id: str, payload: dict[str, Any], now: float, status: str) -> Agent | None:
