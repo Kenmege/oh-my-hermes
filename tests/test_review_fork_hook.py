@@ -158,6 +158,12 @@ class ForkTurnStateTest(unittest.TestCase):
         arm_tool_call(SESSION, "t2", "call-2")
         self.assertFalse(consent_observed(SESSION))
 
+    def test_a_later_turn_naming_no_parent_is_a_turn(self) -> None:
+        # The ordinary shape: a real session id and the empty parent the host
+        # sends for an agent that is not a child.
+        self.own_lane()
+        self.assertIn(BOARD_CARD, _context(self.turn("where were we", parent_session_id="")))
+
     def test_a_turn_naming_another_parent_or_none_is_a_turn(self) -> None:
         self.own_lane()
         # A delegate child names its parent's id, never its own.

@@ -643,7 +643,7 @@ class OmhTodoOnlyFieldsTest(_NativeTodoHomeTest):
         fork = self.context(user_message="Review the conversation above", parent_session_id=SESSION)
         self.assertNotIn("was not mirrored", fork)
         self.assertIn("was not mirrored", self.context())
-        # A delegate child or a compression continuation names another parent.
+        # A delegate child names another parent; a compression continuation names none.
         self.write_native([native("1", "unrelated work", "in_progress")])
         self.assertIn("was not mirrored", self.context(parent_session_id=OTHER_SESSION))
 
