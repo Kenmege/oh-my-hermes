@@ -268,7 +268,7 @@ class ClippingAndStyleTests(unittest.TestCase):
     def test_control_characters_cannot_move_the_cursor(self) -> None:
         harness = Harness(rows=4)
         harness.render([(Span("a\x1b[2Jb\r\nc\x07"),), (Span("next"),)])
-        self.assertEqual(harness.screen.lines()[:2], ["a[2Jbc", "next"])
+        self.assertEqual(harness.screen.lines()[:2], ["abc", "next"])  # the whole sequence goes, not only ESC
 
 
 class ClearTests(unittest.TestCase):
@@ -372,6 +372,18 @@ class VTScreenModelTests(unittest.TestCase):
         screen.feed("1Dc\x1b")
         screen.feed("[Bd")
         self.assertEqual(screen.lines(), ["ac", "  d"])
+
+
+class EscapeGuardTests(unittest.TestCase):
+    def test_a_sequence_inside_span_text_never_reaches_the_terminal(self) -> None:
+        from omh.tui.screen import paint_line
+        from omh.tui.style import Span
+
+        painted = paint_line((Span("\x1b[31mred\x1b[0m \x1b]8;;http://x\x07link\x1b]8;;\x07 \x1b[2Jdone"),), 40)
+        self.assertNotIn("[31m", painted)
+        self.assertNotIn("]8;;", painted)
+        self.assertNotIn("[2J", painted)
+        self.assertIn("red link done", painted)
 
 
 if __name__ == "__main__":

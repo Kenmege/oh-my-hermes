@@ -40,6 +40,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
+from .escapes import strip_escapes
 from .style import CSI, SGR_RESET, Line, Span
 from .width import is_control, line_width, truncate_line
 
@@ -68,7 +69,15 @@ def cursor_forward(cols: int) -> str:
 
 
 def _without_controls(line: Line) -> Line:
-    return tuple(Span("".join(ch for ch in span.text if not is_control(ch)), span.style) for span in line)
+    """The last guard before bytes reach the terminal: no escape sequence or control in span text.
+
+    Styles are painted from `Span.style`, never from the text, so any sequence
+    found in text came from somewhere else (a gateway string, a tool summary)
+    and is removed whole rather than leaving its parameters on screen.
+    """
+    return tuple(
+        Span("".join(ch for ch in strip_escapes(span.text) if not is_control(ch)), span.style) for span in line
+    )
 
 
 def paint_line(line: Line, width: int) -> str:
