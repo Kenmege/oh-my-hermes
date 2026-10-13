@@ -344,6 +344,7 @@ Keys:
 | `\` then Enter, Alt+Enter, Shift+Enter, Ctrl+J | Adds a line |
 | Ctrl+Enter | Steers a running turn with the composer's text; idle, sends it as Enter does |
 | Tab | Completes a slash command, or the `@` reference being typed |
+| Shift+Tab | Cycles the input mode: normal, accept all, plan |
 | `@` | Starts a file or folder reference; Hermes offers matches above the composer |
 | ↑ / ↓ | Walk the input history at the composer's first and last row |
 | Esc | On an empty composer, interrupts a running turn (the activity row shows how long it has run) |
@@ -363,6 +364,19 @@ switched off on exit, a crash, SIGTERM and SIGHUP included. Elsewhere,
 Terminal.app among them, both keys send what Enter sends, so there
 `/steer <text>` steers and `\` then Enter, Alt+Enter or Ctrl+J adds a line.
 `OMH_TUI_KEYBOARD=legacy` stops the request on any terminal.
+
+Shift+Tab cycles three input modes, and both composer rules and the mode row
+show the one that is on. Accept all turns off Hermes' approval prompts for that
+session only. The OMH TUI sets Hermes' per-session switch, the one Shift+Tab
+sets in Hermes' own terminal, and never `approvals.mode`; it shows the mode
+only once Hermes confirms the switch for this session, and switches it back off
+when you leave the mode. A new or resumed session starts from what Hermes
+reports for it, and when Hermes reports approvals off for its own reasons
+(`approvals.mode` is off, or it was started with `--yolo`) the composer shows
+accept all as well. In plan mode each prompt you send goes to Hermes as
+`/plan <text>`, its prompt for a written plan instead of the work; that is an
+instruction to the model, not a restriction on its tools. An answer to a
+question Hermes asked is sent as typed in every mode.
 
 A steer adds what you typed to the turn that is running, without interrupting
 it; Hermes reads it after its next tool call, and the transcript notes

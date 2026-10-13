@@ -346,9 +346,9 @@ class GatewayClient:
                 self._inbox_ready.wait(remaining)
 
     def _send_call(self, method: str, params: dict[str, Any], waiting: set[int]) -> int:
-        undeclared = contract.undeclared_params(method, params)
-        if undeclared:
-            raise ValueError(f"{method} does not declare {', '.join(undeclared)} in the gateway contract")
+        problem = contract.call_problem(method, params)
+        if problem:
+            raise ValueError(problem)
         with self._inbox_ready:
             request_id = self._next_id
             self._next_id += 1

@@ -32,6 +32,15 @@ Ctrl+Enter and `/steer <text>` send what the person typed into the running
 turn (`session.steer`); the TUI steers nothing on its own, and text Hermes
 does not take as a steer goes as a prompt instead of being dropped.
 
+Input modes: Shift+Tab cycles normal, accept and plan. Accept is Hermes'
+per-session yolo, so entering and leaving it are `config.set` calls that
+always name this session and an explicit value and never a `scope`; the mode
+shown changes only once Hermes confirms it for this session, an answer that
+confirms anything else is treated as a failure and followed by an explicit
+off, and every `session.info` corrects what is shown. With approvals off
+Hermes sends no approval request, so the TUI still answers none. Plan is the
+TUI's own flag: a prompt typed while it is on goes as `/plan <text>`.
+
 Prompt text, the transcript, attachments, secrets, server-request frames and
 the gateway's stderr stay in memory and on the person's own terminal; nothing
 here writes them anywhere. The files the TUI writes are metadata: that
@@ -83,7 +92,7 @@ from .gateway import (
     attach_refused,
     gateway_spawn,
 )
-from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, KeyDecoder, Mouse, Paste
+from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Mouse, Paste
 from .launch import FALLBACK_EXIT
 from .layout import slot_cap
 from .markdown import clean_text
@@ -104,6 +113,7 @@ from .slash import (
     dropped_notice,
     hermes_notice,
     parse_slash,
+    plan_invocation,
 )
 from .style import Line, Span, Style
 from .terminal import Terminal, terminal_supported
@@ -157,6 +167,21 @@ BUSY_MODES = frozenset({"queue", "steer", "interrupt"})
 STATE_IDLE = "idle"
 STATE_RUNNING = "running"
 STATE_WAITING = "waiting on you"
+
+# Accept mode is Hermes' per-session yolo. The TUI sends these words; Hermes answers "1" or "0".
+YOLO_ON = "on"
+YOLO_OFF = "off"
+YOLO_ANSWERS = {True: "1", False: "0"}
+ACCEPT_REFUSED_NOTICE = (
+    "Hermes did not turn approvals off for this session alone ({}). "
+    "Accept all stays off, and the OMH TUI asked Hermes to switch it back off."
+)
+ACCEPT_STUCK_NOTICE = "Hermes did not confirm that this session asks for approvals again ({}). Accept all may still be on."
+ACCEPT_ELSEWHERE_NOTICE = (
+    "Hermes switched this session's accept all off but still reports approvals off: "
+    "its approvals.mode is off, or it was started with --yolo. Accept all stays shown."
+)
+SWITCH_BACK_FAILED_NOTICE = "Hermes did not confirm the switch back either ({}). Check /yolo in Hermes."
 
 STEERED_NOTICE = "↪ steered: {}"
 STEER_REJECTED = "rejected"  # `session.steer`'s status when the turn ended before the text arrived
@@ -310,6 +335,20 @@ def mode_row_line(
     if not right:
         return left
     return (*left, Span(" " * (width - line_width(left) - line_width(right))), *right)
+
+
+def yolo_answer_problem(result: Mapping[str, Any], on: bool) -> str:
+    """Why a `config.set yolo` answer does not confirm the session switch that was asked for; "" when it does.
+
+    Hermes answers `{value: "1" | "0", scope: "session"}` for the per-session
+    flag. Any other scope means it changed something wider than this session.
+    """
+    scope, value = result.get("scope"), result.get("value")
+    if scope != contract.CONFIG_SET_SESSION_SCOPE:
+        return f"it answered scope {json.dumps(scope)}"
+    if value != YOLO_ANSWERS[on]:
+        return f"it answered value {json.dumps(value)}"
+    return ""
 
 
 def first_line(text: str) -> str:
@@ -576,6 +615,8 @@ class App:
         # The input mode (normal, accept, plan) and the reasoning effort the mode row shows; "" shows none.
         self.mode = MODE_NORMAL
         self.effort = ""
+        self.mode_request_open = False  # a yolo call is out: Shift+Tab waits for its answer
+        self.yolo_reported: bool | None = None  # `session.info`'s yolo since the last yolo call went out
         self.busy_mode = BUSY_QUEUE
         self.catalog: list[tuple[str, str]] = []
         self.slot: PromptSlot | None = None
@@ -695,6 +736,12 @@ class App:
         self.transcript.cwd = cwd or str(self._create_params().get("cwd", ""))
         self.turn_pending = bool(result.get("running"))
         self.busy_since = self.clock()
+        # Accept belongs to the session being left; this one says its own, here or in its first session.info.
+        self.mode_request_open = False
+        self.yolo_reported = None
+        if self.mode == MODE_ACCEPT:
+            self.mode = MODE_NORMAL
+        self._take_session_state(info if isinstance(info, dict) else {})
         self._adopt_stored(as_text(result.get("stored_session_id")) or fallback_stored)
 
     def _adopt_stored(self, stored: str) -> None:
@@ -870,9 +917,25 @@ class App:
     def _on_session_info(self, payload: Mapping[str, Any]) -> None:
         self.model = as_text(payload.get("model")) or self.model
         self._take_usage(payload.get("usage"))
+        self._take_session_state(payload)
         # `running` is not read: the previous turn's closing `running: false` arrives after
         # `message.complete`, by which time a queued prompt may already be pending.
         self._adopt_stored(as_text(payload.get("stored_session_id")))
+
+    def _take_session_state(self, info: Mapping[str, Any]) -> None:
+        """Hermes' own word on the session's approvals: on means accept is shown, off means it is not.
+
+        Hermes reports yolo on for its own reasons too (`approvals.mode` off,
+        `--yolo`), and then the composer says so as well.
+        """
+        yolo = info.get("yolo")
+        if not isinstance(yolo, bool):
+            return
+        self.yolo_reported = yolo
+        if yolo:
+            self.mode = MODE_ACCEPT
+        elif self.mode == MODE_ACCEPT:
+            self.mode = MODE_NORMAL
 
     def _take_usage(self, usage: object) -> None:
         """A usage block with context figures replaces the shown ones; one without leaves them."""
@@ -966,6 +1029,8 @@ class App:
             return
         if self.slot is None and self.picker is not None:
             self._picker_key(event)
+            return
+        if self.slot is None and self._mode_key(event):
             return
         if self.slot is None and (self._attachment_input(event) or self._escape(event)):
             return
@@ -1143,6 +1208,13 @@ class App:
         if invocation is not None:
             self._run_slash(invocation)
         else:
+            self._send_typed(text)
+
+    def _send_typed(self, text: str) -> None:
+        """A prompt the person typed and sent: in plan mode as `/plan <text>`, the way a typed `/plan` goes."""
+        if self.mode == MODE_PLAN:
+            self._run_slash(plan_invocation(text))
+        else:
             self._send_prompt(text)
 
     def _send_prompt(self, text: str, shown: str = "") -> None:
@@ -1193,7 +1265,7 @@ class App:
         elif self._busy():
             self._steer(arg)
         else:
-            self._send_prompt(arg)
+            self._send_typed(arg)
 
     def _steer(self, text: str) -> None:
         """Send `text` into the running turn. Its only callers pass what the person typed and sent."""
@@ -1209,7 +1281,7 @@ class App:
 
     def _on_steered(self, text: str, result: dict[str, Any]) -> None:
         if as_text(result.get("status")) == STEER_REJECTED:
-            self._send_prompt(text)  # the turn ended before the text arrived: it is the next prompt
+            self._send_typed(text)  # the turn ended before the text arrived: it is the next prompt
         else:
             self.transcript.add_notice(STEERED_NOTICE.format(first_line(text)))
 
@@ -1219,8 +1291,80 @@ class App:
         self.transcript.add_notice(
             f"Hermes did not take the steer ({error.get('code')}): {message}. Sent as a prompt instead.", NOTICE_WARN
         )
-        self._send_prompt(text)
+        self._send_typed(text)
         return True
+
+    # ── input modes ──
+
+    def _mode_key(self, event: Key | Paste) -> bool:
+        """Shift+Tab cycles the input mode; with a completion menu open it stays the no-op it was."""
+        if not isinstance(event, Key) or event.name != TAB or not event.shift or self._menu_rows():
+            return False
+        self._cycle_mode()
+        return True
+
+    def _cycle_mode(self) -> None:
+        """normal → accept → plan → normal. Entering and leaving accept wait for Hermes; plan is the TUI's own flag."""
+        if self.mode_request_open:
+            return  # one change at a time: the mode shown is the last one Hermes confirmed
+        if self.mode == MODE_PLAN:
+            self.mode = MODE_NORMAL
+        elif self.mode == MODE_ACCEPT:
+            self._set_yolo(False, then=MODE_PLAN)
+        else:
+            self._set_yolo(True, then=MODE_ACCEPT)
+
+    def _set_yolo(self, on: bool, then: str) -> None:
+        """Ask Hermes to turn this session's approvals off (`on`) or back on; `then` is the mode once it confirms.
+
+        The only caller is Shift+Tab. The call always names the session and
+        an explicit value: without a session Hermes would set the switch for
+        the whole gateway process, and a blank value toggles whatever it finds.
+        """
+        if not self.sid:
+            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
+            return
+        sid = self.sid
+        self.mode_request_open = True
+        self.yolo_reported = None
+        self._request(
+            "config.set",
+            {"key": "yolo", "session_id": sid, "value": YOLO_ON if on else YOLO_OFF},
+            lambda result: self._on_yolo_answer(sid, on, then, yolo_answer_problem(result, on)),
+            lambda error: self._on_yolo_answer(
+                sid, on, then, f"{error.get('code')}: {as_text(error.get('message')) or 'refused'}"
+            ),
+        )
+
+    def _on_yolo_answer(self, sid: str, on: bool, then: str, problem: str) -> bool:
+        """Hermes answered a yolo call; `problem` says why the answer confirms nothing ("" when it does)."""
+        if sid != self.sid:
+            return True  # that session was left meanwhile, and its switch with it
+        self.mode_request_open = False
+        if problem and on:
+            # Whatever Hermes did, it was not "this session only": show accept off and ask for it explicitly.
+            self.mode = MODE_NORMAL
+            self.transcript.add_notice(ACCEPT_REFUSED_NOTICE.format(problem), NOTICE_ERROR)
+            self._request(
+                "config.set",
+                {"key": "yolo", "session_id": sid, "value": YOLO_OFF},
+                self._on_switched_back,
+            )
+        elif problem:
+            self.transcript.add_notice(ACCEPT_STUCK_NOTICE.format(problem), NOTICE_ERROR)  # accept stays shown
+        elif on:
+            self.mode = then
+        elif self.yolo_reported:
+            self.mode = MODE_ACCEPT
+            self.transcript.add_notice(ACCEPT_ELSEWHERE_NOTICE, NOTICE_WARN)
+        else:
+            self.mode = then
+        return True
+
+    def _on_switched_back(self, result: dict[str, Any]) -> None:
+        problem = yolo_answer_problem(result, False)
+        if problem:
+            self.transcript.add_notice(SWITCH_BACK_FAILED_NOTICE.format(problem), NOTICE_ERROR)
 
     # ── slash commands ──
 
@@ -1280,7 +1424,7 @@ class App:
         message = as_text(result.get("message"))
         if kind in ("send", "skill"):
             if message.strip():
-                self._send_prompt(message, as_text(result.get("display")).strip())
+                self._send_prompt(message, as_text(result.get("display")).strip() or invocation.shown)
             else:
                 self.transcript.add_notice(f"/{invocation.name}: empty message", NOTICE_WARN)
         elif kind == "prefill":

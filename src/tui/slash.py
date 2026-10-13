@@ -17,7 +17,9 @@ three kinds:
 Everything else goes to `slash.exec`, and a 4018 refusal from it falls back to
 `command.dispatch`, the order Ink uses. That includes `/yolo`, which turns off
 Hermes' approval prompts: the person typed it, and the TUI relays what the
-person types (`/help` says so).
+person types (`/help` says so). It also includes `/plan`, which plan mode
+relies on: a prompt typed in plan mode goes out as `/plan <text>`
+(`plan_invocation`), so `/plan` must never be routed to `hermes` or `dropped`.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ HERMES = "hermes"
 DROPPED = "dropped"
 
 HERMES_DOOR = "hermes --tui"
+PLAN_COMMAND = "plan"  # Hermes' one-turn plan prompt; the TUI's plan mode sends every prompt through it
 
 
 @dataclass(frozen=True)
@@ -102,11 +105,17 @@ for _command in COMMANDS:
 
 @dataclass(frozen=True)
 class SlashInvocation:
-    """One typed slash command: `name` as typed (no slash), the rest as `arg`."""
+    """One slash command: `name` as typed (no slash), the rest as `arg`.
+
+    `shown` is set only when the TUI wrote the command for the person (plan
+    mode): what the transcript shows for the prompt the command sends, in
+    place of the prompt Hermes builds from it.
+    """
 
     name: str
     arg: str
     command: SlashCommand | None
+    shown: str = ""
 
     @property
     def text(self) -> str:
@@ -127,6 +136,12 @@ def parse_slash(text: str) -> SlashInvocation | None:
     if not head or "/" in head:
         return None
     return SlashInvocation(name=head, arg=arg.strip(), command=_BY_NAME.get(head))
+
+
+def plan_invocation(text: str) -> SlashInvocation:
+    """`/plan <text>` for a prompt typed in plan mode, routed as a typed `/plan` is; the transcript shows the command."""
+    arg = text.strip()
+    return SlashInvocation(PLAN_COMMAND, arg, _BY_NAME.get(PLAN_COMMAND), shown=f"/{PLAN_COMMAND} {arg}")
 
 
 def hermes_notice(command: SlashCommand) -> str:

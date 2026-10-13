@@ -54,6 +54,40 @@ class ClientMethodTests(unittest.TestCase):
         }
         self.assertEqual(sorted(set(contract.CLIENT_METHODS) - literals), [])
 
+    def test_the_two_calls_this_phase_adds_carry_exactly_what_hermes_names(self) -> None:
+        # Read from Hermes 6c61c3e27d's registry (tui_gateway/contracts/): ConfigSetParams is key, value,
+        # session_id, scope, confirm_expensive_model, profile; SessionCorrectionParams is session_id, text, profile.
+        self.assertEqual(contract.CLIENT_METHODS["config.set"], {"key", "value", "session_id"})
+        self.assertEqual(contract.CLIENT_METHODS["session.steer"], {"session_id", "text"})
+        self.assertEqual(contract.CONFIG_SET_KEYS, {"yolo", "reasoning"})
+
+    def test_a_config_set_is_sendable_only_for_one_session_with_an_explicit_value(self) -> None:
+        good = {"key": "yolo", "value": "on", "session_id": "live-1"}
+        self.assertEqual(contract.call_problem("config.set", good), "")
+        self.assertEqual(contract.call_problem("config.set", {**good, "key": "reasoning", "value": "high"}), "")
+        refused = {
+            "a scope": {**good, "scope": "global"},
+            "a session scope too": {**good, "scope": "session"},
+            "no session id": {"key": "yolo", "value": "on"},
+            "an empty session id": {**good, "session_id": ""},
+            "a null session id": {**good, "session_id": None},
+            "no value (a toggle)": {"key": "yolo", "session_id": "live-1"},
+            "an empty value": {**good, "value": ""},
+            "a bool value": {**good, "value": True},
+            "another key": {**good, "key": "approvals.mode", "value": "off"},
+            "the model key": {**good, "key": "model", "value": "x"},
+            "no key": {"value": "on", "session_id": "live-1"},
+        }
+        for name, params in refused.items():
+            with self.subTest(name):
+                self.assertNotEqual(contract.call_problem("config.set", params), "")
+
+    def test_call_problem_names_undeclared_keys_for_every_method(self) -> None:
+        self.assertEqual(contract.call_problem("session.create", {"cols": 80, "cwd": "/w"}), "")
+        self.assertIn("title", contract.call_problem("session.create", {"cols": 80, "title": "x"}))
+        self.assertIn("scope", contract.call_problem("config.set", {"key": "yolo", "scope": "global"}))
+        self.assertEqual(contract.call_problem("session.steer", {"session_id": "live-1", "text": "x"}), "")
+
     def test_every_key_of_an_undeclared_method_is_undeclared(self) -> None:
         self.assertEqual(contract.undeclared_params("voice.toggle", {"on": True}), ["on"])
 

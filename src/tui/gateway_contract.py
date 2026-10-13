@@ -39,6 +39,8 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "session.interrupt": frozenset({"session_id"}),
     # Typed text into the running turn; `rejected` when the session is idle, and the text then goes as a prompt.
     "session.steer": frozenset({"session_id", "text"}),
+    # See CONFIG_SET_KEYS: `scope` is deliberately not declared.
+    "config.set": frozenset({"key", "value", "session_id"}),
     "session.list": frozenset({"limit"}),
     "prompt.submit": frozenset({"session_id", "text", "queued"}),
     # Attachments: the gateway resolves and queues the file; the TUI sends a path, never bytes.
@@ -49,6 +51,14 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "slash.exec": frozenset({"command", "session_id"}),
     "command.dispatch": frozenset({"name", "arg", "session_id"}),
 }
+
+# The `config.set` keys the TUI sets, both for one session: `yolo` (approvals off) and `reasoning`
+# (the effort). Hermes applies either one wider when it cannot tie the call to a session: with no
+# `session_id`, yolo sets `HERMES_YOLO_MODE` in the gateway's process environment and reasoning
+# rewrites config.yaml, and `scope: "global"` writes `approvals.mode` for good. So every call carries
+# the session id and an explicit value, and `scope` is not a key the TUI can send at all.
+CONFIG_SET_KEYS = frozenset({"yolo", "reasoning"})
+CONFIG_SET_SESSION_SCOPE = "session"  # what a yolo answer's `scope` must say
 
 # Events whose envelope `session_id` is not the live session are dropped, except
 # these: they belong to the gateway, not to a session.
@@ -118,3 +128,21 @@ def undeclared_params(method: str, params: dict[str, object]) -> list[str]:
     """Keys in `params` the contract does not declare for `method` (all of them for an unknown method)."""
     allowed = CLIENT_METHODS.get(method, frozenset())
     return sorted(key for key in params if key not in allowed)
+
+
+def call_problem(method: str, params: dict[str, object]) -> str:
+    """Why the TUI must not send this call; "" when it may.
+
+    An undeclared key, or a `config.set` that Hermes would apply beyond one
+    session: a key outside `CONFIG_SET_KEYS`, no session id, or no explicit
+    value (a blank yolo value toggles whatever the state is).
+    """
+    undeclared = undeclared_params(method, params)
+    if undeclared:
+        return f"{method} does not declare {', '.join(undeclared)} in the gateway contract"
+    if method != "config.set":
+        return ""
+    if params.get("key") not in CONFIG_SET_KEYS:
+        return f"config.set does not declare the key {params.get('key')!r} in the gateway contract"
+    blank = [name for name in ("session_id", "value") if not isinstance(params.get(name), str) or not params[name]]
+    return f"config.set needs {' and '.join(blank)}: without it Hermes writes beyond the session" if blank else ""

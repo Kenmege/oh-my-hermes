@@ -314,6 +314,19 @@ class GatewayErrorTests(ReplayTestCase):
         # have reported a mismatch and exited instead of answering.
         self.assertIn("sessions", client.call("session.list", {}))
 
+    def test_a_config_set_beyond_one_session_is_refused_before_anything_is_sent(self) -> None:
+        client = self.started(Scenario("session", spans("session", "startup", "session_list")))
+        for params in (
+            {"key": "yolo", "value": "on"},  # no session: Hermes would flip the gateway process's switch
+            {"key": "yolo", "value": "on", "session_id": ""},
+            {"key": "yolo", "session_id": "b6af062a"},  # no value: a toggle
+            {"key": "yolo", "value": "on", "session_id": "b6af062a", "scope": "global"},
+            {"key": "approvals.mode", "value": "off", "session_id": "b6af062a"},
+        ):
+            with self.subTest(params=params), self.assertRaises(ValueError):
+                client.request("config.set", params)
+        self.assertIn("sessions", client.call("session.list", {}))
+
     def test_a_call_without_an_answer_times_out_and_the_client_stays_usable(self) -> None:
         (startup,) = spans("session", "startup")
         (listing_start, _stop), = spans("session", "session_list")
