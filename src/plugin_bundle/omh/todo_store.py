@@ -33,6 +33,7 @@ from typing import Any, Callable, Iterator
 # import omh core; a copy here would be the third, and the policy gate in
 # `tests/test_journal_lock_portability.py` exists to stop exactly that.
 from .awareness_delivery import _awareness_delivery_lock
+from .native_tools import NATIVE_TODO_TOOL
 from .todo_evidence import EVIDENCE_KINDS, evidence_key, valid_evidence
 from .todo_templates import (
     TODO_TEMPLATES,
@@ -998,6 +999,13 @@ def advance_todo_item(
             raise TodoValidationError(
                 f"todo item state must be one of {', '.join(TODO_ITEM_STATES)}"
             )
+        # On a plan Hermes' `todo_list` holds (`native_todo`), item states are
+        # todo_list's: an advance records its reasons and keeps the state the
+        # last todo_list write set. Otherwise the next todo_list write -- which
+        # still shows the native status -- would read the advance's state as a
+        # move and drop the reason it carried.
+        if record.get("source") == NATIVE_TODO_TOOL and current.get("state") in TODO_ITEM_STATES:
+            state = current["state"]
         updated = dict(current)
         updated["state"] = state
         safe_reason = strip_control_characters(blocked_reason)

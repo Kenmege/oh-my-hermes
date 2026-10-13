@@ -7093,7 +7093,8 @@ def awareness_primer_payload() -> dict[str, object]:
             "Use omh_probe when the user asks whether OMH is installed, what is missing, or what the next setup/runtime evidence step should be.",
             "Use omh_status or omh_hud for metadata-only runtime state.",
             (
-                f"Keep one plan checklist, never two: {NATIVE_TODO_TOOL} when "
+                "Keep one plan checklist, never two: omh_todo for a planning run or an accepted plan, "
+                f"else {NATIVE_TODO_TOOL} when "
                 f"{native_tool_presence_clause(NATIVE_TODO_TOOL)} (OMH mirrors it into the HUD plan), "
                 "else omh_todo; omh_todo also holds plan_stage, checkpoint/record/recall, blocked_reason "
                 "and deferred_reason. Items are declarations, never execution evidence."

@@ -15,15 +15,13 @@ release shipped; it does not say what this session was given -- toolset
 scope, the platform, a tool the person disabled, or a deferral list they
 edited all change the answer on the same build.
 
-The rule has two faces, and every OMH surface uses one of them rather than
-restating it:
-
-* ``native_tool_present`` -- for code that holds the two name sets.
-* ``native_tool_presence_clause`` -- for text the MODEL applies: awareness
-  lines, tool descriptions, skill bodies. Hermes hands a plugin hook neither
-  set (``pre_llm_call`` carries no tool list), while the model sees its own
-  tool list and can ask tool_search, so text states the rule in these words
-  and the model evaluates it for the session it is in.
+Every OMH surface states the rule through ``native_tool_presence_clause``
+rather than restating it: awareness lines, tool descriptions, skill bodies.
+Hermes hands a plugin hook neither name set (``pre_llm_call`` carries no tool
+list), while the model sees its own tool list and can ask tool_search, so the
+text states the rule in these words and the model evaluates it for the
+session it is in. Code that comes to hold both sets adds the predicate here,
+beside the clause, when it first needs one.
 
 A surface that needs a native tool states what it does when the clause is
 false, in the same sentence. The first user is the plan checklist: native
@@ -36,22 +34,8 @@ both places.
 """
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 NATIVE_TODO_TOOL = "todo_list"
 TOOL_SEARCH_TOOL = "tool_search"
-
-
-def native_tool_present(
-    name: str, *, tool_list: Iterable[str] = (), tool_search_catalog: Iterable[str] = ()
-) -> bool:
-    """Whether ``name`` is in the session's tool list or its tool_search catalog.
-
-    No caller in the plugin holds both name sets yet -- hooks are handed no
-    tool list -- so the plan checklist states the rule through the clause
-    below. This is the code face for the later surfaces that do hold them.
-    """
-    return bool(name) and (name in set(tool_list) or name in set(tool_search_catalog))
 
 
 def native_tool_presence_clause(name: str, *, code: bool = False) -> str:

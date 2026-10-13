@@ -40,7 +40,7 @@ book is not a continuation request merely because the same words occur.
 
 For multi-turn work, declare just the accepted items in the plan's one
 checklist tool (`todo_list`, which OMH mirrors, or `omh_todo action=set`; never
-both), then `omh_todo action=checkpoint`, `accepted=true`, short `rejected` summaries and the
+both; `omh_todo` when the plan carries `plan_stage`), then `omh_todo action=checkpoint`, `accepted=true`, short `rejected` summaries and the
 exact revision/worktree and environment fingerprints. This freezes scope; it
 does not approve an edit or change `plan_stage`. Read `action=show` before
 replacing an existing plan. The code-story template remains optional.

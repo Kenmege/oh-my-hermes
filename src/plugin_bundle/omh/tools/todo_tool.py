@@ -86,7 +86,8 @@ OMH_TODO_SCHEMA = {
     "description": (
         "Declare, advance, clear, or read this session's metadata-only plan todo list, which the OMH HUD "
         "renders above the prompt; other sessions neither see nor overwrite it. "
-        "Keep steps in ONE tool, never both: a planning run, an accepted plan or a code-story template keeps them here; "
+        "Keep steps in ONE tool, never both: a planning run, an accepted plan or a code-story template keeps them here "
+        "(to leave one for unrelated work, clear it or record a deferred_reason first); "
         f"otherwise, when {native_tool_presence_clause(NATIVE_TODO_TOOL)}, keep them in {NATIVE_TODO_TOOL} "
         "(OMH mirrors each write into this plan) and call this tool only for checkpoint/record/recall, "
         "blocked_reason, deferred_reason, or advancing a done item again after its check passes. "

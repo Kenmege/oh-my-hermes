@@ -12,11 +12,11 @@ Do not declare one for work that is a single step, work already finished, or a q
 
 Hermes has a checklist tool of its own, `todo_list`. When `todo_list` is in your tool list or tool_search finds it, it holds the steps: write the list there and move its states there. OMH mirrors each of those writes into this plan todo, so the HUD and the plan's continuation and stall checks read it with no second copy. Writing the same list to `omh_todo` as well doubles every update and is never needed. Without `todo_list`, `omh_todo` holds the steps and everything below applies to it directly.
 
-Three kinds of plan keep their steps in `omh_todo` even when `todo_list` is there, because what they depend on exists only on `omh_todo`: a planning run, whose `plan_stage` the edit gate reads; an accepted plan, whose `plan_stage=accepted` and `check:` items `omh_team` binds its lanes to; and a `code-story` template, whose phases a native list cannot carry. While any of them is open, a `todo_list` write is not mirrored over it.
+Three kinds of plan keep their steps in `omh_todo` even when `todo_list` is there, because what they depend on exists only on `omh_todo`: a planning run, whose `plan_stage` the edit gate reads; an accepted plan, whose `plan_stage=accepted` and `check:` items `omh_team` binds its lanes to; and a `code-story` template, whose phases a native list cannot carry. A plan awaiting acceptance and a template hold while they are open, and an accepted plan until it goes stale, finished or not; while one holds, a `todo_list` write is not mirrored over it. To leave one for unrelated work, end it first with `omh_todo action=clear`, or record the person's redirect as `deferred_reason`; until then a `todo_list` write is not mirrored and the plan keeps naming its next item.
 
 With `todo_list` holding the steps, call `omh_todo` only for what it alone records:
 
-- an item's `blocked_reason` (`action=advance`), kept across later `todo_list` writes while that item's status stays where it was; resuming, completing or reopening it ends the reason;
+- an item's `blocked_reason` (`action=advance`, which on a plan `todo_list` holds keeps the state `todo_list` last set), kept across later `todo_list` writes while the item stays where it was or is paused from in_progress back to pending; resuming, completing, cancelling or reopening it ends the reason;
 - the plan's `deferred_reason`, which lapses at the next change to the list;
 - the checkpoint/record/recall dossier (`references/closing-a-story.md`);
 - advancing a done item to done again after its check passes, which is what binds that command to it.

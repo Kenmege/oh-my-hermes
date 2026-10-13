@@ -34,23 +34,39 @@ existing spelling of a step closed without being worked, which the counts
 report as skipped and the evidence check passes over.
 
 What a native write may not do is take over a plan only `omh_todo` can
-express. An open plan carrying any ``plan_stage`` is one: while it awaits
-acceptance it is the plan-stage gate's own record, and once accepted it is
-the plan `omh_team` binds its lanes to (``plan_stage=accepted`` and its
-``check:`` items, `src/workflows/team.py`). An open code-story template is
-another: a phase shape a native list cannot hold. While any of them stands,
-the native write is left unprojected and the plan keeps its record. Every
-other plan is replaced, as an `omh_todo action=set` replaces it: the native
-write is a new declaration, so it carries no template and no
-``deferred_reason`` (which lapses on any item change by design).
+express. A plan awaiting acceptance is the plan-stage gate's own record, held
+while it is open. An accepted plan is the one `omh_team` binds its lanes to
+(``plan_stage=accepted`` and its ``check:`` items, `src/workflows/team.py`,
+which binds a finished plan too), held until it goes stale whether or not it
+is finished. A code-story template is a phase shape a native list cannot
+hold, held while it is open. While any of them stands, the native write is
+left unprojected and the plan keeps its record; leaving one for unrelated
+work is `omh_todo action=clear`, or the person's redirect recorded as
+``deferred_reason``. Every other plan is replaced, as an
+`omh_todo action=set` replaces it: the native write is a new declaration, so
+it carries no template and no ``deferred_reason`` (which lapses on any item
+change by design). A native list identical to an `omh_todo`-written one is
+adopted rather than rewritten: the record keeps its items and stamp and
+takes ``source: todo_list``, so the surfaces that leave a todo_list-held
+plan to Hermes' own panel stop drawing it twice.
+
+On a todo_list-held plan `todo_list` alone sets item states: an
+`omh_todo action=advance` there records its reasons and leaves the state as
+`todo_list` last wrote it (`todo_store.advance_todo_item`). So the state a
+reason was recorded against is the native status of that moment, and the
+carry below compares the native status before and after.
 
 An item's ``blocked_reason`` is the one field carried, matched by item text
 as `omh_todo` binds by text, because `todo_list` has no way to say it and the
-next native write would otherwise drop it. It lasts while the item's status
-stays where it was when the reason was recorded; a native status change --
-resumed, completed, reopened -- ends it, so a resumed item is driven again
-rather than silenced until it completes. The reason OMH writes for a
-cancelled item is never carried: the native status decides it each write.
+next native write would otherwise drop it. It lasts while the item stays
+where it was, and through a pause back from in_progress to pending -- Hermes
+allows one in_progress item, so moving on from a blocked item pauses it and
+does not unblock it. Resuming, completing, cancelling or reopening the item
+ends the reason, so a resumed item is driven again rather than silenced
+until it completes. The reason OMH writes for a cancelled item is never
+carried, the native status decides it each write; a reason the model
+recorded on an item it had already closed outranks it when that item is
+then cancelled.
 
 Writes arrive in order, so the projection keeps no ordering of its own.
 Hermes never runs two `todo_list` calls at once: it is not in
@@ -82,6 +98,7 @@ from .todo_store import (
     MAX_TODO_ITEMS,
     MAX_TODO_TEXT_CHARS,
     TODO_STALE_SECONDS,
+    PLAN_STAGE_ACCEPTED,
     TODO_PLAN_STAGES,
     _paired_with_prior,
     _remove_todo_file,
@@ -167,10 +184,14 @@ def project_native_todo(
             items, prior, session_ref, hermes_home=Path(hermes_home)
         )
         # A native write that leaves every item as stored is the list standing
-        # still, whoever last wrote the record: nothing is restamped, and the
-        # fields only `omh_todo` sets -- a live deferral among them -- stay.
+        # still: nothing is restamped, and the fields only `omh_todo` sets -- a
+        # live deferral among them -- stay. A record `omh_todo` wrote is
+        # adopted as it stands, so it reads as todo_list's from now on.
         if bound == prior.get("items"):
-            return "unchanged"
+            if prior.get("source") == NATIVE_TODO_SOURCE:
+                return "unchanged"
+            _ = write_todo(home, {**prior, "source": NATIVE_TODO_SOURCE})
+            return "adopted"
         record = build_todo_record(
             "", bound, source=NATIVE_TODO_SOURCE, session_ref=session_ref, dropped=dropped
         )
@@ -234,9 +255,15 @@ def native_todo_items(todos: object, prior_items: object = ()) -> list[dict[str,
         items.append(item)
     for item, prior in _paired_with_prior(items, prior_items)[0]:
         reason = prior.get("blocked_reason") if prior else None
-        if item.get("blocked_reason") or not isinstance(reason, str) or not reason.strip():
+        if not isinstance(reason, str) or not reason.strip() or reason == NATIVE_CANCELLED_REASON:
             continue
-        if reason == NATIVE_CANCELLED_REASON or prior.get("state") != item["state"]:
+        if item.get("blocked_reason") == NATIVE_CANCELLED_REASON:
+            if prior.get("state") == "done":
+                item["blocked_reason"] = reason
+            continue
+        moved = prior.get("state") != item["state"]
+        paused = prior.get("state") == "active" and item["state"] == "pending"
+        if moved and not paused:
             continue
         item["blocked_reason"] = reason
     while len(items) > MAX_TODO_ITEMS:
@@ -259,18 +286,21 @@ def _result_todos(result: object) -> list[Any] | None:
 
 
 def _held_by_omh_todo(prior: dict[str, Any]) -> bool:
-    """Whether the stored plan is one only `omh_todo` can express, and still open.
+    """Whether the stored plan is one only `omh_todo` can express, and still holds.
 
-    A plan stage of either kind, or a template. Open and fresh is the test the
-    plan-stage gate itself applies (`established`): a finished or stale plan
-    holds nothing, so a native list replaces it like any other.
+    Fresh, always: a stale plan holds nothing. An accepted plan holds while it
+    is fresh, finished or not, because `omh_team` binds a finished accepted
+    plan as well. A plan awaiting acceptance or a template holds while it is
+    open too, the test the plan-stage gate itself applies (`established`).
     """
-    if prior.get("plan_stage") not in TODO_PLAN_STAGES and not prior.get("template"):
+    stage = prior.get("plan_stage")
+    if stage not in TODO_PLAN_STAGES and not prior.get("template"):
         return False
     items = prior.get("items")
-    if not isinstance(items, list) or not any(
+    is_open = isinstance(items, list) and any(
         isinstance(item, dict) and item.get("state") != "done" for item in items
-    ):
+    )
+    if stage != PLAN_STAGE_ACCEPTED and not is_open:
         return False
     try:
         written = datetime.fromisoformat(str(prior.get("updated_at", "")).replace("Z", "+00:00"))

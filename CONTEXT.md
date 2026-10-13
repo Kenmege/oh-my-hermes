@@ -173,15 +173,19 @@ presence), it does: the plugin's `post_tool_call` projects each successful
 against recorded commands like any done mark, and `cancelled` as `done` with
 a `blocked_reason` — and `omh_todo` is called only for what `todo_list`
 cannot say: `plan_stage`, the completion dossier, an item's `blocked_reason`
-(carried across later native writes by item text while the item's status
-stays where it was) and the plan's `deferred_reason`. Where it is absent, `omh_todo` is the only writer. Every
+and the plan's `deferred_reason`. On a `todo_list`-held plan `todo_list`
+alone sets item states (an `omh_todo` advance there keeps the state and the
+`source`), and a recorded reason is carried across later native writes by
+item text while the item stays where it was or is paused back to pending.
+Where it is absent, `omh_todo` is the only writer. Every
 reader — the HUD, the widget, the Desktop pane, the plan-stage gate, the
 stall finding and the continuation drive — reads the record through
 `read_omh_todo` and never asks which tool wrote it. A native write never
-replaces an open plan carrying a `plan_stage` — awaiting acceptance, or
-accepted and bound by `omh_team` — or an open template plan, since only
-`omh_todo` can express them. An `omh_todo` advance keeps the
-record's `source`; only a whole-list `set` re-declares it. Where Hermes draws
+replaces a plan only `omh_todo` can express: one awaiting acceptance or a
+template plan while it is open, or an accepted plan — the one `omh_team`
+binds — until it goes stale; `omh_todo action=clear` or a recorded
+`deferred_reason` is how a session leaves one. Only a whole-list `set`
+re-declares a record's `source`. Where Hermes draws
 its own todo list — the modern TUI and Hermes Desktop — the OMH dock and pane
 leave a `todo_list`-held plan's items to it and show only what it cannot: a
 reason `omh_todo` recorded on an open item, the stall finding, and in the TUI
@@ -393,11 +397,11 @@ Whether a Hermes tool is available to a session: its name is in the
 session's tool list OR in the tool_search catalog. A deferred tool is
 reachable through the `tool_call` bridge and is present, and Hermes peels the
 bridge before plugin hooks run, so its calls reach `post_tool_call` under its
-own name. One rule with two faces in `src/plugin_bundle/omh/native_tools.py`:
-`native_tool_present` for code holding the name sets, and
-`native_tool_presence_clause` for text the model evaluates — plugin hooks are
-handed no tool list, the model sees its own. Every surface that relies on a
-native tool uses one of the two and says what happens when it is absent.
+own name. Stated once, by `native_tool_presence_clause` in
+`src/plugin_bundle/omh/native_tools.py`, as text the model evaluates —
+plugin hooks are handed no tool list, the model sees its own. Every surface
+that relies on a native tool uses that clause and says what happens when the
+tool is absent.
 _Avoid_: gating on a Hermes version number (a version says what shipped, not
 what this session was given), reading a deferred tool as missing
 
