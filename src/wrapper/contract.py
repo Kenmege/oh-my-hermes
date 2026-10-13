@@ -31,6 +31,7 @@ from ..routing.catalog_questions import is_skill_catalog_question as _is_skill_c
 from ..routing.chat import (
     LOOP_CONSTRUCT_REASON,
     NATIVE_LOOP_CADENCE_REASON,
+    TYPED_LOOP_GOAL_REASON,
     public_chat_route_payload,
     route_explanation_payload,
     route_question_observation,
@@ -9507,7 +9508,7 @@ def _is_loop_timer_answer(decision: dict[str, object]) -> bool:
     router skill here is not a question for the catalog picker or the intro,
     quickstart, or status card.
     """
-    return str(decision.get("reason", "")) in (NATIVE_LOOP_CADENCE_REASON, LOOP_CONSTRUCT_REASON)
+    return str(decision.get("reason", "")) in (NATIVE_LOOP_CADENCE_REASON, TYPED_LOOP_GOAL_REASON, LOOP_CONSTRUCT_REASON)
 
 
 def _is_generic_skill_catalog_route(message: str, decision: dict[str, object]) -> bool:

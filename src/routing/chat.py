@@ -45,6 +45,7 @@ from ..plugin_bundle.omh.hermes_session_commands import (
     LOOP_TIMER_NATIVE,
     LOOP_TIMERS_ANSWERED_DIRECTLY,
     loop_timer_verdict,
+    typed_loop_sets_goal,
 )
 from ..plugin_bundle.omh.route_question_mode import ROUTE_QUESTION_MODE_OFF, route_question_mode_fields
 from .intent import classify_workflow_intent, scrub_diagnostic_status_text
@@ -134,6 +135,15 @@ HOST_COMMAND_TURN_REASON = (
 NATIVE_LOOP_CADENCE_REASON = (
     "A check repeated on a timer is Hermes' native /loop, which the user starts (for example "
     "/loop 5m <the check>); answer directly with that command instead of opening an OMH workflow or goal loop."
+)
+# A typed `/loop` whose prompt names OMH's loop or sets it a goal is still Hermes'
+# command; OMH's goal loop takes the goal from its own form, `./loop <goal>`
+# (the wrapper's picker entry for the loop skill).
+TYPED_LOOP_GOAL_REASON = (
+    "The user typed Hermes' own /loop with a cadence, which Hermes runs on that timer itself; its prompt "
+    "names OMH's loop or sets it a goal, and OMH's goal loop starts from ./loop <goal>, not from /loop. "
+    "Answer directly: say /loop repeats its prompt as written and offer ./loop <goal> for the goal loop, "
+    "instead of opening an OMH workflow."
 )
 # The same timer on a programming or media loop: a question, not a request to repeat a check.
 LOOP_CONSTRUCT_REASON = (
@@ -2062,11 +2072,14 @@ def _route_chat_message_cached(
     # use ulw-plan" is a request for that skill.
     loop_timer = loop_timer_verdict(executable_message)
     if loop_timer in LOOP_TIMERS_ANSWERED_DIRECTLY and explicit_skill_invocation(routing_message) in (None, "loop"):
+        if loop_timer != LOOP_TIMER_NATIVE:
+            reason = LOOP_CONSTRUCT_REASON
+        elif typed_loop_sets_goal(executable_message):
+            reason = TYPED_LOOP_GOAL_REASON
+        else:
+            reason = NATIVE_LOOP_CADENCE_REASON
         return _direct_answer_decision(
-            message,
-            source=source,
-            min_confidence=min_confidence,
-            reason=NATIVE_LOOP_CADENCE_REASON if loop_timer == LOOP_TIMER_NATIVE else LOOP_CONSTRUCT_REASON,
+            message, source=source, min_confidence=min_confidence, reason=reason
         ).to_dict()
     # Built once: the fast paths and the scorer below read its stages instead
     # of each re-deriving the prep chain from `routing_message`.
@@ -7689,7 +7702,13 @@ def _is_file_lookup_reason(reason: str) -> bool:
 
 
 def _is_direct_answer_reason(reason: str) -> bool:
-    return reason in (DIRECT_ANSWER_REASON, HOST_COMMAND_TURN_REASON, NATIVE_LOOP_CADENCE_REASON, LOOP_CONSTRUCT_REASON)
+    return reason in (
+        DIRECT_ANSWER_REASON,
+        HOST_COMMAND_TURN_REASON,
+        NATIVE_LOOP_CADENCE_REASON,
+        TYPED_LOOP_GOAL_REASON,
+        LOOP_CONSTRUCT_REASON,
+    )
 
 
 def _is_heavy_lane_vagueness_reason(reason: str) -> bool:

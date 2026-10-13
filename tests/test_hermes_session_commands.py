@@ -32,12 +32,14 @@ from omh.plugin_bundle.omh.hermes_session_commands import (
     NATIVE_LOOP_CADENCE_HINT_KEY,
     host_command_turn,
     loop_timer_verdict,
+    typed_loop_sets_goal,
 )
 from omh.plugin_bundle.omh.skill_shortlist import skill_candidates_for_turn
 from omh.routing.chat import (
     HOST_COMMAND_TURN_REASON,
     LOOP_CONSTRUCT_REASON,
     NATIVE_LOOP_CADENCE_REASON,
+    TYPED_LOOP_GOAL_REASON,
     route_chat_message,
 )
 from omh.routing.policy import LOOP_GOAL_GUARD, active_routing_guard_rules
@@ -177,6 +179,7 @@ VERDICTS = {
     "every hour, loop over the queue": LOOP_TIMER_NATIVE,
     "every 2 hours loop and make the test suite faster": LOOP_TIMER_NATIVE,
     "every 5 minutes check CI in a loop": LOOP_TIMER_NATIVE,
+    "every 5 minutes, in a loop, check CI": LOOP_TIMER_NATIVE,
     # Korean: the cadence opens, and the loop is what it runs.
     "5분마다 반복해서 CI 확인해줘": LOOP_TIMER_NATIVE,
     "10분마다 loop 돌려서 빌드 상태 체크해줘": LOOP_TIMER_NATIVE,
@@ -269,6 +272,58 @@ VERDICTS = {
     '[Replying to: "is CI green?"\n\nloop every 5 minutes and check CI': LOOP_TIMER_NONE,
 }
 
+# The same shapes describing a fault, not asking for a loop: a cadence first and
+# "in a loop" after a subject, a Korean clause that closes on a statement, and
+# `loop` as a noun. Each must route as it did before. The first twelve are the
+# fifth review's; the rest were written for the fix.
+FAULT_STATEMENTS = (
+    "Every few minutes the agent gets stuck in a loop.",
+    "every few minutes my agent gets stuck in a loop. how do I fix it?",
+    "every 5 minutes my pod restarts in a loop. how do I stop it?",
+    "every 10 minutes the deploy job fails in a loop. can you look at the logs?",
+    "[alice] every few minutes the bot replies in a loop.",
+    "every 5 minutes in a loop my agent asks the same question, how do I stop it?",
+    "5분마다 반복해서 에러가 나요, 왜 그래요?",
+    "10초마다 반복해서 앱이 꺼져요. 원인 분석해줘",
+    "5분마다 반복해서 알림이 와요, 끄는 법 알려줘",
+    "5분마다 루프 돌면서 메모리가 늘어나요",
+    "루프 돌면서 5분마다 앱이 죽어요",
+    "every 2 minutes loop on the main thread blocks the UI, why?",
+    # A subject that is a plain noun, which no list of subject words would hold.
+    "every 5 minutes CI fails in a loop",
+    "every 2 minutes requests time out in a loop",
+    "every hour builds break in a loop on main",
+    "every 3 minutes users get kicked from the voice channel in a loop",
+    "every few seconds the websocket reconnects in a loop, any idea why?",
+    "every 30 seconds our cron job retries in a loop and floods the logs",
+    "every hour the backup script runs in a loop and never finishes",
+    "every 10 minutes it crashes and restarts in a loop",
+    "every 15 minutes loop counters reset to zero, is that expected?",
+    "every 5 minutes I get logged out in a loop",
+    "every few minutes Hermes repeats the same answer in a loop",
+    "every 20 seconds the progress bar spins in a loop and nothing loads",
+    "each hour the importer reprocesses the same file in a loop",
+    "every 2 minutes loop on the worker thread spikes the CPU",
+    "5분마다 반복해서 서버가 재시작돼요",
+    "10분마다 반복해서 빌드가 실패해, 왜 이래?",
+    "루프 돌면서 30초마다 CPU가 튀어요",
+    "1시간마다 루프 돌려서 그런지 배포가 느려졌어요",
+    "매분 반복해서 로그인이 풀립니다",
+    "5분마다 루프 돌면서 같은 메시지를 보내요, 고쳐줘",
+    "30초마다 반복해서 알림이 울려서 짜증나",
+    "매시간 반복해서 동기화가 꼬여요",
+)
+
+# A typed `/loop` whose prompt would otherwise be OMH's goal loop: still Hermes'
+# command, answered with how OMH's goal loop is started instead.
+TYPED_LOOP_GOALS = (
+    "/loop 2h improve the onboarding docs",
+    "/loop 30m keep improving the docs until the repo hits 10k stars",
+    "/loop 5m use the loop skill to check CI",
+    "/loop 10m ask omh loop for status",
+    "/loop 5m check whether ulw-loop finished",
+)
+
 # Each names another skill, so that skill keeps the turn; the last two open
 # with a loop command, which the router's explicit-invocation gate decides.
 INVOKED_BESIDE_A_TIMED_LOOP = {
@@ -294,7 +349,15 @@ def _hint_workflows(message: str) -> list[str]:
 def _router_answer(message: str) -> str:
     """The loop-timer verdict the chat router acted on, read off its reason."""
     reason = route_chat_message(message, source="discord")["reason"]
-    return {NATIVE_LOOP_CADENCE_REASON: LOOP_TIMER_NATIVE, LOOP_CONSTRUCT_REASON: LOOP_TIMER_CONSTRUCT}.get(reason, "")
+    return {
+        NATIVE_LOOP_CADENCE_REASON: LOOP_TIMER_NATIVE,
+        TYPED_LOOP_GOAL_REASON: LOOP_TIMER_NATIVE,
+        LOOP_CONSTRUCT_REASON: LOOP_TIMER_CONSTRUCT,
+    }.get(reason, "")
+
+
+def _native_reason(message: str) -> str:
+    return TYPED_LOOP_GOAL_REASON if typed_loop_sets_goal(executable_routing_text(message)) else NATIVE_LOOP_CADENCE_REASON
 
 
 class HostCommandTurnTest(unittest.TestCase):
@@ -466,10 +529,40 @@ class OneVerdictOnEverySurfaceTest(unittest.TestCase):
                 continue
             with self.subTest(sentence=sentence):
                 route = route_chat_message(sentence, source="discord")
-                self.assertEqual((route["action"], route["reason"]), ("fallback", NATIVE_LOOP_CADENCE_REASON))
+                self.assertEqual((route["action"], route["reason"]), ("fallback", _native_reason(sentence)))
                 self.assertEqual(route["clarification"], _DIRECT)
                 self.assertNotIn("ulw-loop", _hint_workflows(sentence))
         self.assertIn("/loop 5m", NATIVE_LOOP_CADENCE_REASON)
+
+    def test_a_typed_loop_with_a_goal_is_told_how_the_goal_loop_starts(self):
+        # Hermes runs a typed `/loop` itself; OMH's chat surfaces still answer
+        # it, and there the prompt's goal is pointed at OMH's own form instead
+        # of being called a check.
+        from omh.wrapper.contract import _SKILL_PICKER_ENTRIES
+
+        goal_loop_form = next(entry[3] for entry in _SKILL_PICKER_ENTRIES if entry[0] == "loop")
+        self.assertIn(goal_loop_form, TYPED_LOOP_GOAL_REASON)
+        self.assertNotIn("check", TYPED_LOOP_GOAL_REASON)
+        for sentence in TYPED_LOOP_GOALS:
+            with self.subTest(sentence=sentence):
+                self.assertEqual(loop_timer_verdict(sentence), LOOP_TIMER_NATIVE)
+                self.assertTrue(typed_loop_sets_goal(sentence))
+                payload = build_chat_interaction_payload(sentence, source="discord")
+                self.assertEqual(
+                    (payload["route"]["reason"], payload["next_action"]), (TYPED_LOOP_GOAL_REASON, "answer_directly")
+                )
+        # The same command with a plain check keeps the plain reason, and the
+        # untyped form with a goal stays the goal loop.
+        self.assertFalse(typed_loop_sets_goal("/loop 5m check CI"))
+        self.assertEqual(route_chat_message("/loop 5m check CI", source="discord")["reason"], NATIVE_LOOP_CADENCE_REASON)
+        self.assertFalse(typed_loop_sets_goal("loop every 2 hours and improve the onboarding docs"))
+
+    def test_a_fault_statement_on_a_cadence_decides_nothing(self):
+        for sentence in FAULT_STATEMENTS:
+            with self.subTest(sentence=sentence):
+                self.assertEqual(loop_timer_verdict(executable_routing_text(sentence)), LOOP_TIMER_NONE)
+                self.assertEqual(_router_answer(sentence), "")
+                self.assertNotIn(NATIVE_LOOP_CADENCE_HINT_KEY, awareness_route_hint(sentence))
 
     def test_the_wrapper_keeps_a_native_loop_answer_over_its_omh_cards(self):
         # The prompt asks about OMH, but the request is the loop: before, the
@@ -486,7 +579,7 @@ class OneVerdictOnEverySurfaceTest(unittest.TestCase):
                 payload = build_chat_interaction_payload(sentence, source="discord")
                 self.assertEqual(
                     (payload["route"]["action"], payload["route"]["reason"], payload["next_action"]),
-                    ("fallback", NATIVE_LOOP_CADENCE_REASON, "answer_directly"),
+                    ("fallback", _native_reason(sentence), "answer_directly"),
                 )
 
     def test_a_loop_construct_is_answered_without_loop_advice(self):

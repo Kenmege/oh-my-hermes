@@ -32,7 +32,14 @@ All notable changes will be documented here.
   messaging gateway's sender prefix, trigger note, reply pointer, or channel
   backfill and a courtesy opener: a loop word anywhere else ("the retry loop
   fires every 5 seconds", "check CI every 5 min in a loop", the spaced
-  `cto loop` trigger) decides nothing, and the turn routes as before. A skill
+  `cto loop` trigger) decides nothing, and the turn routes as before. The
+  same openings also describe faults, so a trailing "in a loop" counts only
+  after a verb that asks for a check (check, run, ping, poll, watch, and a
+  few more), `loop` after a cadence only when the next word reads as its
+  object or a conjunction, and a Korean form only when its first clause
+  closes on a request ending (`…줘`, `…주세요`, `…하세요`): "every 5 minutes my
+  pod restarts in a loop", "every 5 minutes CI fails in a loop", and
+  `5분마다 반복해서 에러가 나요` route as before. A skill
   the router reads as explicitly invoked ("loop every 5 minutes and run the
   code-review skill on new PRs") still gets the turn. One
   function decides this for the router, its loop guard, the route hint, and
@@ -46,7 +53,9 @@ All notable changes will be documented here.
   the like) or a repeat cue (until, iteratively, keep improving), or a star
   word with a product word. A typed `/loop`
   with its cadence is Hermes' command whatever its prompt mentions, OMH's
-  name and goal words included. `ulw-loop` named after a cadence ("every 2
+  name and goal words included; where the prompt would otherwise have been
+  the goal loop, the answer says `/loop` repeats it as written and that
+  `./loop <goal>` starts OMH's goal loop. `ulw-loop` named after a cadence ("every 2
   hours ulw-loop the flaky test list", "every hour ulw-loop the build
   failures on main") now opens the goal loop, where app-debugging and
   build-failure-triage took those sentences before. The turns Hermes

@@ -61,6 +61,12 @@ courtesy opener, never the backfill before `[New message]`:
   CI in a loop`, `5분마다 루프 돌려서 ...`, `5분마다 반복해서 ...`, `5분마다
   ... 루프 돌려줘`).
 
+The same openings describe faults ("every 5 minutes my pod restarts in a
+loop", "5분마다 반복해서 에러가 나요"), so the trailing `in a loop` counts only
+after a verb that asks for a check, `loop` after a cadence only when the next
+word reads as its object or a conjunction, and a Korean form only when its
+first clause closes on a request ending.
+
 A loop word anywhere else -- a thing the request talks about ("the retry
 loop fires every 5 seconds"), or a loop the cadence does not open ("check CI
 every 5 minutes in a loop") -- leaves the verdict `none`: the turn routes as
@@ -70,7 +76,8 @@ or explain a `for` loop or a music loop that runs on a timer is
 (`goal_loop`) when the person uses one of OMH's own forms, names the goal
 loop, or sets it a goal (`_carries_goal` is the whole rule) -- with one
 exception: a typed `/loop` with its cadence is Hermes' command whatever its
-prompt mentions. Every surface that has to decide -- the chat router's early
+prompt mentions (`typed_loop_sets_goal` says when its prompt would otherwise
+have been the goal loop). Every surface that has to decide -- the chat router's early
 answer, the loop guard in the scorer, the route hint and the candidate line --
 takes the verdict from this one function, read on the turn's executable
 routing text (`reference_regions`), so none of them keeps word lists of its
@@ -158,7 +165,7 @@ _COURTESY_LEAD = re.compile(
 # loop over the inbox"). A noun does not ("every 10 minutes loop detection
 # kills my agent").
 _LOOP_VERB_CONTINUATIONS = frozenset(
-    {"and", "then", "over", "through", "on", "to", "until", "back", "it", "them"}
+    {"and", "then", "over", "through", "to", "until", "back", "it", "them"}
     | {"the", "this", "that", "these", "those", "my", "our", "a", "an"}
 )
 _KOREAN_LOOP = r"(?:루프|loop)(?:를|을)?\s?"
@@ -171,6 +178,21 @@ _KOREAN_LOOP_PREDICATE = re.compile(
 _KOREAN_LOOP_CLOSE = re.compile(rf"{_KOREAN_LOOP}(?:돌려줘|돌려 줘|돌려주세요)(?=[\s.,!~]|$)")
 # `every 5 minutes check CI in a loop`: the loop as the request's adverbial.
 _IN_A_LOOP = "in a loop"
+# The same shape describes a fault ("every 5 minutes CI fails in a loop",
+# "every few minutes my agent gets stuck in a loop"), so the adverbial counts
+# only after a verb that opens a request for a repeated check. The list is
+# closed and leaves out verbs that are as often a sentence's subject (build,
+# test, update, deploy, restart, sync, log, report): a request it misses
+# routes as it did before.
+_IN_A_LOOP_VERBS = frozenset(
+    {"check", "run", "rerun", "ping", "poll", "watch", "monitor", "scan", "fetch", "pull", "refresh", "review"}
+    | {"summarize", "post", "send", "look", "tell", "triage", "retry", "compare", "measure", "print", "query"}
+    | {"hit", "curl", "read", "show", "notify", "remind", "verify", "inspect", "collect", "sweep", "probe"}
+)
+# A Korean clause asks for something when it closes on a request ending; the
+# same words close on a statement otherwise ("5분마다 반복해서 에러가 나요").
+_KOREAN_REQUEST_ENDINGS = ("줘", "줘요", "주세요", "주십시오", "하세요", "하십시오", "해라", "하라")
+_CLAUSE_END = re.compile(r"[,.!?;\n，。]")
 # `루프 돌면서 5분마다 ...`: the loop first, then its cadence.
 _KOREAN_LOOP_FIRST = re.compile(rf"{_KOREAN_LOOP}(?:돌면서|돌려서|돌리면서)\s?{_KOREAN_CADENCE}(?=\s)")
 _SENTENCE_END = re.compile(r"(?<=[.?!;])\s|\n")
@@ -385,6 +407,21 @@ def _first_sentence(text: str) -> str:
     return _SENTENCE_END.split(text, maxsplit=1)[0].strip()
 
 
+def _korean_request(text: str) -> bool:
+    """Whether the first clause of `text` closes on a Korean request ending."""
+    return _CLAUSE_END.split(text, maxsplit=1)[0].strip().rstrip("~ ").endswith(_KOREAN_REQUEST_ENDINGS)
+
+
+def _in_a_loop_request(clause: str) -> bool:
+    """Whether `clause`, read after its cadence, asks for a check repeated in a loop."""
+    if clause.startswith(_IN_A_LOOP):
+        clause = clause[len(_IN_A_LOOP):].lstrip(" ,")
+    elif not clause.endswith(f" {_IN_A_LOOP}"):
+        return False
+    words = clause.split(maxsplit=1)
+    return bool(words) and _bare(words[0]) in _IN_A_LOOP_VERBS
+
+
 def _loop_is_the_request(lead: str) -> bool:
     """Whether `lead` opens with a loop command and its cadence, in either order."""
     words = lead.split()
@@ -397,7 +434,7 @@ def _loop_is_the_request(lead: str) -> bool:
     ):
         return True
     if _KOREAN_LOOP_FIRST.match(lead):
-        return True
+        return _korean_request(lead)
     korean = _KOREAN_CADENCE_LEAD.match(lead)
     past = _past_cadence(words, 0)
     if korean:
@@ -414,10 +451,9 @@ def _loop_is_the_request(lead: str) -> bool:
         # a verb from a noun.
         if len(after) == 1 or after[0] != "loop" or _bare(after[1]) in _LOOP_VERB_CONTINUATIONS:
             return True
-    if _KOREAN_LOOP_PREDICATE.match(rest):
+    if _KOREAN_LOOP_PREDICATE.match(rest) and _korean_request(rest):
         return True
-    clause = _bare(_first_sentence(rest))
-    if clause.startswith(_IN_A_LOOP) or clause.endswith(f" {_IN_A_LOOP}"):
+    if _in_a_loop_request(_bare(_first_sentence(rest))):
         return True
     return bool(_KOREAN_LOOP_CLOSE.search(_first_sentence(lead)))
 
@@ -462,21 +498,17 @@ def _carries_goal(folded: str) -> bool:
 
 
 @lru_cache(maxsize=1024)
-def loop_timer_verdict(text: str) -> str:
-    """Whether `text` opens with a loop on a timer: one of the four `LOOP_TIMER_*` verdicts.
-
-    `text` is the turn's executable routing text, before any display-name fold.
-    `goal_loop` and `none` both leave the turn to its ordinary route.
-    """
+def _loop_timer_reading(text: str) -> tuple[str, bool]:
+    """The verdict on `text`, and whether a typed `/loop` overrode a goal-loop verdict to reach it."""
     folded = _fold(text).strip()
     # A turn Hermes wrote is no request at all, whatever its template says.
     if _host_command_turn(folded):
-        return LOOP_TIMER_NONE
+        return LOOP_TIMER_NONE, False
     # Only the person's current message is read: not the backfill, and not a
     # host block that never closed, which still holds whatever follows it.
     message = _after_gateway_material(folded)
     if message.startswith(_FOLDED_HOST_BLOCK_OPENERS):
-        return LOOP_TIMER_NONE
+        return LOOP_TIMER_NONE, False
     sender = _SENDER_PREFIX.match(message)
     lead = _after_courtesy(message[sender.end():] if sender else message)
     # OMH's names stand where the loop word would: "/ulw-loop every 5m ..." has
@@ -487,15 +519,35 @@ def loop_timer_verdict(text: str) -> str:
     elif _asks_for_a_construct_on_a_timer(plain):
         shape = LOOP_TIMER_CONSTRUCT
     else:
-        return LOOP_TIMER_NONE
+        return LOOP_TIMER_NONE, False
+    # The name is read on the whole message, so a bracketed `[ulw-loop]` that
+    # the sender-prefix strip took for a display name still counts.
+    goal = bool(
+        _OMH_LOOP_NAME.search(message)
+        or lead.startswith(_OMH_LOOP_LEADS)
+        or _names_goal_loop(lead)
+        or _carries_goal(lead)
+    )
     # Typed out with its cadence, the native command is the native command,
     # whatever its prompt mentions.
     if lead.startswith("/loop ") and shape == LOOP_TIMER_NATIVE:
-        return LOOP_TIMER_NATIVE
-    # The name is read on the whole message, so a bracketed `[ulw-loop]` that
-    # the sender-prefix strip took for a display name still counts.
-    if _OMH_LOOP_NAME.search(message) or lead.startswith(_OMH_LOOP_LEADS):
-        return LOOP_TIMER_GOAL
-    if _names_goal_loop(lead) or _carries_goal(lead):
-        return LOOP_TIMER_GOAL
-    return shape
+        return LOOP_TIMER_NATIVE, goal
+    return (LOOP_TIMER_GOAL if goal else shape), False
+
+
+def loop_timer_verdict(text: str) -> str:
+    """Whether `text` opens with a loop on a timer: one of the four `LOOP_TIMER_*` verdicts.
+
+    `text` is the turn's executable routing text, before any display-name fold.
+    `goal_loop` and `none` both leave the turn to its ordinary route.
+    """
+    return _loop_timer_reading(text)[0]
+
+
+def typed_loop_sets_goal(text: str) -> bool:
+    """Whether `text` is a typed `/loop` whose prompt would otherwise make it OMH's goal loop.
+
+    Its verdict is `native_loop` all the same; a surface that answers it can
+    say how OMH's goal loop is started instead.
+    """
+    return _loop_timer_reading(text)[1]
