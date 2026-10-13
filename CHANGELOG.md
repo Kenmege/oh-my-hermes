@@ -17,7 +17,10 @@ All notable changes will be documented here.
   drift) it exits 75 and `omh` opens Hermes' own terminal; bare `hermes` is
   unchanged. The boundary is in CONTEXT.md ("OMH TUI", "Hermes gateway
   protocol"); the gateway slice it relies on is declared in
-  `src/tui/gateway_contract.py`.
+  `src/tui/gateway_contract.py`. The composer sits between two rules drawn in
+  the input mode's glyph and colour, over a mode row that names the mode or
+  the keys that matter now; replies open with `⏺`, a diff numbers its lines
+  in a gutter, and the status line reads brand, model, context, state.
 
 - **The OMH status widget and the Hermes Desktop pane keep ordinary
   punctuation and drop whole escape sequences.** Their character allowlists

@@ -304,8 +304,13 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - The bottom region holds, from the top: the prompt you just sent (while the
   turn runs), the tail of the reply that is still streaming, one slot for the
   OMH plan and agents panel (or a question Hermes asked, or the slash-command
-  menu), the composer, and a status line with the OMH version, the model,
-  context use and what the session is doing.
+  menu), the composer framed by a rule above and below it, a mode row, and a
+  status line with the model, context use (warn from 80 % full, bad from
+  95 %) and what the session is doing. The version is on the banner.
+- The mode row names the input mode, or the keys that matter right now, and
+  the reasoning effort when Hermes reports one; both rules take the mode's
+  glyph and colour, so the mode reads from the frame as well as the label.
+  A short terminal drops the mode row first, then the lower rule.
 - The composer does not move when the panel grows or shrinks; only its own
   lines move it.
 - When Hermes asks something (an approval, a clarify question, a sudo
@@ -331,15 +336,21 @@ run and approval decision stays Hermes'; the screen is OMH's.
   after the new one opened, so a session that cannot be opened (for example
   one another process holds) leaves you where you were.
 
-Keys: Enter sends; a backslash right before Enter, Alt+Enter or Ctrl+J adds a
-line; Tab completes a slash command, or the `@` file or folder reference you
-are typing (from the list Hermes offers above the composer); Up/Down walk the
-input history at the edges of the composer; Esc on an empty composer
-interrupts a running turn, and the activity row shows how long the turn has
-run; Ctrl+V attaches the clipboard image; Ctrl+O shows or hides thinking and
-tool detail; Ctrl+L redraws the screen; Ctrl+C clears the composer, interrupts
-a running turn, or (pressed twice when idle) exits; Ctrl+D on an empty
-composer exits.
+Keys:
+
+| Key | Does |
+| --- | --- |
+| Enter | Sends the composer |
+| `\` then Enter, Alt+Enter, Ctrl+J | Adds a line |
+| Tab | Completes a slash command, or the `@` reference being typed |
+| `@` | Starts a file or folder reference; Hermes offers matches above the composer |
+| ↑ / ↓ | Walk the input history at the composer's first and last row |
+| Esc | On an empty composer, interrupts a running turn (the activity row shows how long it has run) |
+| Ctrl+V | Attaches the clipboard image |
+| Ctrl+O | Shows or hides thinking and tool detail |
+| Ctrl+L | Redraws the screen |
+| Ctrl+C | Clears the composer, interrupts a running turn, or (twice when idle) exits |
+| Ctrl+D | On an empty composer, exits |
 
 Slash commands the OMH TUI runs itself: `/help`, `/quit`, `/new`,
 `/sessions`, `/redraw`, `/history` (an in-memory pager over this session),
