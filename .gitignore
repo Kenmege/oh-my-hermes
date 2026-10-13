@@ -19,6 +19,8 @@ venv/
 # Build artifacts
 build/
 dist/
+# Hermes' launcher requires the OMH TUI shim at <HERMES_TUI_DIR>/dist/entry.js.
+!src/tui/frontend/dist/
 *.egg-info/
 *.whl
 

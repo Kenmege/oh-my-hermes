@@ -104,6 +104,7 @@ packages = [
 
 [tool.setuptools.package-data]
 "omh.skins" = ["*.yaml"]
+"omh.tui" = ["frontend/dist/*.js"]
 "omh.tui_widgets" = ["*.mjs"]
 "omh.catalogs" = ["*.json"]
 "omh.routing.trigger_packs" = ["*.json"]
