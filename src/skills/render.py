@@ -10143,9 +10143,9 @@ concrete instance of each gap above, observed in its source.
 
 ## Named motion profiles
 
-Define motion once, as named profiles in `DESIGN.md` section 6, instead of
-per-component values. Each profile fixes four numbers: stagger, duration,
-easing, and travel distance.
+Define motion once, as named profiles in the `DESIGN.md` Motion &
+Interaction section, instead of per-component values. Each profile fixes
+four numbers: stagger, duration, easing, and travel distance.
 
 - **Calm** - long durations, small travel, gentle ease-out, little or no
   stagger. Product UI and reading surfaces.
@@ -10201,9 +10201,9 @@ drift when the theme changes, and the first to break in dark mode.
 
 ## Chart tokens
 
-Define the chart's tokens beside the rest of the palette in `DESIGN.md`
-section 2, under `:root` and redefined under the dark theme, never inline in a
-chart config:
+Define the chart's tokens beside the rest of the palette - `colors:` entries
+in `DESIGN.md`, then CSS variables under `:root` redefined under the dark
+theme - never inline in a chart config:
 
 - **Categorical** - `chart-1` .. `chart-N`, one hue per series, chosen to be
   distinguishable from each other and from the status colors.
@@ -10270,7 +10270,7 @@ library's.
 ## Designed states
 
 Loading, no-data, and error are states of the chart, designed like any other
-component state in `DESIGN.md` section 5:
+component state in the `DESIGN.md` Components section:
 
 - **Loading** - a skeleton that holds the chart's final dimensions, so the
   page does not shift when data arrives.
@@ -10758,61 +10758,156 @@ read it and follow it — and when the work introduces a token, primitive,
 interaction state, motion rule, or piece of accepted debt the contract
 lacks, amend the contract before touching the code.
 
-## Structure
+## One file, one format
 
-`DESIGN.md` carries these sections, in order. An empty section is written as
-an explicit decision ("no elevation system; flat surfaces only") — silence is
-not a decision.
+`DESIGN.md` is also the file name of Google's open DESIGN.md format, and
+Hermes bundles a `design-md` skill for that format. Two shapes for one file
+would hand the model two contradicting instructions, so a new contract uses
+no shape of OMH's own: it is a DESIGN.md in that format which also carries
+OMH's extra sections. The format allows them, because a consumer keeps a
+heading it does not recognize instead of rejecting the file.
 
-0. **Research Log** (greenfield builds) — an entry for every research lane
-   that ran: the source consulted, what was taken from it (layout rhythm,
-   color logic, type pairing choices), and any skipped lane with its
-   reason. No log entry means the lane did not run.
-1. **Atmosphere & Identity** — three adjectives the surface must read as,
-   the chosen taste direction (primary, plus any deliberately borrowed
-   elements with their reasons), the one signature element a template would
-   not have, and the audience.
-2. **Color** — the full palette as tokens: background layers, text
-   hierarchy, accent budget, semantic states, borders. Name the proportion
-   discipline (for example 60/30/10) and the contrast floor (WCAG AA at
-   minimum). Write colors as semantic tokens, not raw palette steps:
+- **File mechanics go to `design-md`.** For a file in the format, when
+  Hermes' bundled `design-md` skill is available, load it to write the token
+  block, lint the file, diff two versions, or export Tailwind or DTCG
+  tokens. A file in the earlier OMH layout is not handed to it: its
+  authoring adds front matter and reorders sections, which is the rewrite
+  the legacy rule below forbids. This reference decides what the contract
+  has to settle and when it blocks code; it does not restate the format's
+  schema.
+- **Lint counts only when it ran.** A lint result is observed contract
+  evidence when Hermes, or the executor the user selected, ran
+  `npx -y @google/design.md lint DESIGN.md` against the current file and
+  the findings are in hand. An error finding (a broken token reference, for
+  one) blocks the contract; each warning is reported together with what was
+  decided about it. With no run, the lint status is `not_observed`; reading
+  the file never makes it lint-clean. OMH itself runs no package and makes
+  no network call.
+
+## Token front matter
+
+The file opens with a YAML block between two `---` lines. It always carries
+`name:` and `colors:` with a `primary` entry, and adds `typography:`,
+`spacing:`, `rounded:`, and `components:` for every group the design has. A
+component points at tokens through references such as `{{colors.primary}}`
+instead of repeating raw values, and a state that changes a value is a
+sibling entry (`button-primary-hover`), never a nested key. A group left out
+on purpose goes under `omitted:` with its reason, so the gap reads as a
+decision. When the prose and a token disagree, the token wins and the prose
+is corrected.
+
+## Body sections
+
+Body sections are `##` headings. The format's eight sections keep the
+format's order; the four OMH sections (marked *OMH*) sit next to the section
+they extend, which the format permits because its order check skips a
+heading it does not know. Use each heading once: the format tells a consumer
+to reject a file that repeats one. Every section is written (the Research
+Log on greenfield builds), and an empty one states its decision ("no
+elevation system; flat surfaces only") — silence is not a decision.
+
+Write each heading as the bare name spelled exactly as listed, with no number
+and no *OMH* marker (`## Colors`, `## Do's and Don'ts`, `## Research Log`).
+The format matches heading text exactly, so `## 1. Overview` is a section it
+does not know, and the order check never sees it.
+
+1. **Overview** — the audience, three adjectives the surface must read as,
+   and the chosen taste direction (primary, plus any deliberately borrowed
+   elements with their reasons).
+2. **Signature Element** *(OMH)* — the one element a template would not
+   have, where it appears, and why this product earns it.
+3. **Colors** — the full palette as `colors:` tokens: background layers,
+   text hierarchy, accent budget, semantic states, borders. The prose names
+   the proportion discipline (for example 60/30/10) and the contrast floor
+   (WCAG AA at minimum). Write colors as semantic tokens, not raw palette
+   steps:
    - **Surface and on-surface pairs.** Every surface token has the text
-     token that sits on it - shadcn/ui names them `X` and `X-foreground`
-     (`primary` / `primary-foreground`, `card` / `card-foreground`), daisyUI
-     names them `X` and `X-content`. A component picks the pair, never a
-     surface with an unrelated text color, so contrast is checked once per
-     pair instead of once per component.
-   - **The focus ring is its own token** (`ring` in shadcn/ui), not the
-     accent reused, so focus stays visible on every surface the accent sits
-     on.
-   - **Themes redefine variables; components never branch.** Light, dark,
-     and any brand theme redefine the same variable names under `:root`,
-     `.dark`, or `[data-theme="..."]`; OKLCH values are a sound choice
-     because lightness steps stay perceptually even. Do not write `dark:`
-     variants on semantic colors - a `dark:` override beside a semantic
-     token means the token is not doing its job, and the two will disagree
-     at the next theme change.
-   - **One radius knob.** A single `--radius` drives the radius scale (small,
-     medium, large derived from it), so the shape language changes in one
-     place.
-3. **Typography** — the pairing (at most two families), a modular scale with
-   named steps, weights in use, and line-height rules for body versus
-   display. When the audience reads CJK: the fallback stacks, CJK
-   line-height and letter-spacing rules, and `word-break`/truncation
-   behavior for the heavy script.
-4. **Spacing & Layout** — the base unit, the spacing scale, container
-   widths, the grid, and which element owns scroll on every screen shape.
-5. **Components** — the reusable primitives (button, input, card, nav,
-   table, ...) with their variants and every interaction state: default,
-   hover, focus-visible, active, disabled, loading, error, empty.
-6. **Motion & Interaction** — duration and easing tokens, what animates and
-   what never does, and the `prefers-reduced-motion` behavior. Motion is
-   punctuation, not decoration.
-7. **Depth & Surface** — the elevation system (shadows, borders, blur) or
+     token that sits on it. The front matter spells the pair `X` and `on-X`
+     (`primary` / `on-primary`), the pattern of the format's recommended
+     `surface` / `on-surface` names; in CSS, shadcn/ui names the same pair
+     `X` and `X-foreground` (`card` / `card-foreground`) and daisyUI names
+     it `X` and `X-content`. A component picks the pair, never a surface
+     with an unrelated text color, so contrast is checked once per pair
+     instead of once per component.
+   - **The focus ring is its own token** (`ring`), not the accent reused, so
+     focus stays visible on every surface the accent sits on. Once
+     `components:` exists, a color token no component references draws an
+     `orphaned-tokens` warning unless it is in a referenced token's family or
+     in the Material baseline families; for `ring` and the `chart-N` set that
+     warning is expected, not a contract failure.
+   - **Themes redefine variables; components never branch.** A front-matter
+     token holds one value, so it records the default theme, and the prose
+     gives every other theme's values under the same token names. In CSS,
+     light, dark, and any brand theme redefine the same variable names under
+     `:root`, `.dark`, or `[data-theme="..."]`; OKLCH values are a sound
+     choice because lightness steps stay perceptually even. Do not write
+     `dark:` variants on semantic colors - a `dark:` override beside a
+     semantic token means the token is not doing its job, and the two will
+     disagree at the next theme change.
+4. **Typography** — the pairing (at most two families), a modular scale
+   whose named steps are the `typography:` tokens, weights in use, and
+   line-height rules for body versus display. When the audience reads CJK:
+   the fallback stacks, CJK line-height and letter-spacing rules, and
+   `word-break`/truncation behavior for the heavy script.
+5. **Layout** — the base unit and spacing scale as `spacing:` tokens,
+   container widths, the grid, and which element owns scroll on every
+   screen shape.
+6. **Elevation & Depth** — the elevation system (shadows, borders, blur) or
    the explicit decision not to have one.
-8. **Accessibility Constraints & Accepted Debt** — the constraints honored
-   (keyboard paths, focus order, contrast) and the debt knowingly accepted,
-   each with its reason.
+7. **Shapes** — the corner language as the `rounded:` scale. **One radius
+   knob.** A single `--radius` drives the radius scale (small, medium, large
+   derived from it), so the shape language changes in one place.
+8. **Components** — the reusable primitives (button, input, card, nav,
+   table, ...) with their variants and every interaction state: default,
+   hover, focus-visible, active, disabled, loading, error, empty. A state
+   that changes a token value is its own `components:` entry.
+9. **Motion & Interaction** *(OMH)* — duration and easing tokens as named
+   profiles, what animates and what never does, and the
+   `prefers-reduced-motion` behavior. The format has no motion token group,
+   so the profiles live in this section. Motion is punctuation, not
+   decoration.
+10. **Do's and Don'ts** — rules a reviewer can check against a screenshot:
+    the accent budget in practice, the rules of any named style preset, and
+    the patterns this surface refuses.
+11. **Accessibility Constraints & Accepted Debt** *(OMH)* — the constraints
+    honored (keyboard paths, focus order, contrast) and the debt knowingly
+    accepted, each with its reason.
+12. **Research Log** *(OMH, greenfield builds)* — an entry for every
+    research lane that ran: the source consulted, what was taken from it
+    (layout rhythm, color logic, type pairing choices), and any skipped lane
+    with its reason. No log entry means the lane did not run.
+
+## A contract in the earlier OMH layout
+
+Before this alignment, an OMH contract had no front matter and nine
+numbered sections: 0 Research Log, 1 Atmosphere & Identity, 2 Color,
+3 Typography, 4 Spacing & Layout, 5 Components, 6 Motion & Interaction,
+7 Depth & Surface, 8 Accessibility Constraints & Accepted Debt. A file in
+that layout is still a valid contract and satisfies the gate.
+
+- Read and follow it as written, and amend it in its own layout. Do not
+  rewrite it into the format unasked.
+- Other references name the format's sections and token groups. In a legacy
+  file, write each into its counterpart by reading the conversion map below
+  in reverse, as prose and without adding front matter: Overview and
+  Signature Element into Atmosphere & Identity; Colors, Shapes, `colors:`,
+  and `rounded:` into Color; Layout and `spacing:` into Spacing & Layout;
+  Elevation & Depth into Depth & Surface; `typography:` and `components:`
+  into Typography and Components. Do's and Don'ts has no counterpart, since
+  the format added it; as an added mapping, its rules go into Atmosphere &
+  Identity.
+- Lint says nothing about it: with no front matter and no fenced YAML block,
+  the linter reports a single no-YAML warning and runs no other check. That
+  warning is not a contract failure.
+- Convert only when the user asks. Atmosphere & Identity splits into
+  Overview and Signature Element; Color becomes Colors, its values move into
+  `colors:`, and its radius knob moves to Shapes; Spacing & Layout becomes
+  Layout with `spacing:` tokens; Depth & Surface becomes Elevation & Depth;
+  Typography and Components keep their names and gain their token groups;
+  Research Log, Motion & Interaction, and Accessibility Constraints &
+  Accepted Debt carry over as OMH sections; Do's and Don'ts is new. A
+  conversion moves decisions and makes none: a gap it exposes goes to the
+  user as a question, never filled in silently.
 
 ## Local reference data
 
@@ -10822,9 +10917,9 @@ display/body font stacks with fallbacks and CJK notes, and UX guidelines with
 the reason each one holds. Contexts include `dashboard`, `dev-tool`,
 `fintech`, `data-viz`, `editorial`, `docs`, `ecommerce`, `healthcare`,
 `landing`, `mobile`, `portfolio`, `public-sector`, `saas`, and `education`.
-Query it while filling sections 2, 3, and 5 so the starting tokens are a
-considered choice instead of a framework default, and while checking the
-review prompts in `references/taste-foundations.md`.
+Query it while filling Colors, Typography, and Components so the starting
+tokens are a considered choice instead of a framework default, and while
+checking the review prompts in `references/taste-foundations.md`.
 
 The rows are input, not authority. Nothing is decided until it is written
 into `DESIGN.md`, and the contract — not the query — is what gates the code.
@@ -10834,8 +10929,8 @@ no rendered evidence.
 ## Workflow
 
 - Greenfield: design research is a build step, not optional exploration —
-  consult references and real product surfaces, record each lane in section
-  0, and write the contract BEFORE the first component.
+  consult references and real product surfaces, record each lane in the
+  Research Log, and write the contract BEFORE the first component.
 - Existing UI without a contract: stop and ask the user which path they
   want — either match the existing visual language and keep new styling
   local to the code it touches, or pause to extract the contract and shared
@@ -10848,9 +10943,18 @@ no rendered evidence.
 
 `DESIGN.md` is a prepared contract, not rendered evidence: implementation,
 screenshots, accessibility checks, and visual verdicts stay observed-only
-through the visual-QA and web-QA owners.
+through the visual-QA and web-QA owners. An observed lint run speaks for the
+file — its structure, its token references, the contrast of the component
+color pairs it declares — and never for the rendered UI.
 
 {_DESIGN_CRAFT_ATTRIBUTION}
+
+The token front matter, the section names and their order, and the lint
+command follow Google's DESIGN.md format
+(`google-labs-code/design.md@9bf8eae`, Apache-2.0). Handing file authoring,
+lint, diff, and export to Hermes' bundled `design-md` skill follows that
+skill's stated scope (`NousResearch/hermes-agent@63d0b94`, MIT). Both were
+read as references; the wording here is OMH's own.
 """
 
 
@@ -11015,7 +11119,7 @@ failure this reference exists to prevent.
 ## Name one primary direction
 
 Taste directions pull in different directions; blending them by accident
-produces mud. Name ONE primary direction in `DESIGN.md` section 1. An
+produces mud. Name ONE primary direction in the `DESIGN.md` Overview. An
 element genuinely borrowed from another direction is allowed — named there
 with its reason — so a hybrid brief (a premium marketing shell over an
 operational product) stays expressible without dissolving into no direction
@@ -11039,9 +11143,9 @@ at all.
 ## Style presets are rule sets, not adjectives
 
 When a brief names a style - "neobrutalism", "glassy", "Swiss" - write it
-into `DESIGN.md` as concrete rules a reviewer can check against a screenshot.
-A style name with no rules is the same unactionable negation as "make it
-modern".
+into the `DESIGN.md` Do's and Don'ts as concrete rules a reviewer can check
+against a screenshot. A style name with no rules is the same unactionable
+negation as "make it modern".
 
 **Neobrutalism**, as a worked example:
 
@@ -11116,10 +11220,10 @@ An override is actionable only when it carries concrete values:
   CJK stack when the audience needs one;
 - the geometry that travels with them: radius, border weight, spacing base.
 
-Those land in `DESIGN.md` sections 2 and 3 before implementation starts. When
-the direction arrives as negations only, convert it into tokens and state them
-back — a named palette and stack the user can reject is a decision; "less
-AI-looking" is not.
+Those land in `DESIGN.md` as `colors:`, `typography:`, `rounded:`, and
+`spacing:` tokens before implementation starts. When the direction arrives as
+negations only, convert it into tokens and state them back — a named palette
+and stack the user can reject is a decision; "less AI-looking" is not.
 
 ## Review prompts — not bans
 
@@ -11223,7 +11327,7 @@ every panel boxed, so no panel leads.
 ## Name one terminal aesthetic
 
 As with web taste directions, blending terminal aesthetics by accident
-produces mud. Name ONE in `DESIGN.md` section 1 and execute it
+produces mud. Name ONE in the `DESIGN.md` Overview and execute it
 consistently across every screen, prompt, help line, and empty state:
 
 - **Minimal utility** — quiet monochrome plus one accent; density and

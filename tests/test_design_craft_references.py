@@ -15,6 +15,7 @@ because the nearest upstream is Sustainable-Use-licensed and OMH is MIT.
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import unittest
 
 from omh.skill_pack import builtin_skill_reference_templates, builtin_skill_templates
@@ -89,18 +90,10 @@ class DesignSystemContractTests(unittest.TestCase):
     def test_the_gate_is_stated_before_the_structure(self) -> None:
         content = _reference("frontend", "references/design-system-contract.md")
         self.assertIn("no component code before `DESIGN.md` exists", content)
-        for heading in (
-            "Research Log",
-            "Atmosphere & Identity",
-            "Color",
-            "Typography",
-            "Spacing & Layout",
-            "Components",
-            "Motion & Interaction",
-            "Depth & Surface",
-            "Accessibility Constraints & Accepted Debt",
-        ):
-            self.assertIn(heading, content, heading)
+        self.assertLess(
+            content.index("no component code before `DESIGN.md` exists"),
+            content.index("## Body sections"),
+        )
         # Empty sections are decisions; existing UI without a contract stops
         # and asks; a code value outside the contract is drift.
         self.assertIn("silence is not a decision", _unwrapped(content))
@@ -108,7 +101,124 @@ class DesignSystemContractTests(unittest.TestCase):
         self.assertIn("drift", content)
         self.assertIn("observed-only", content)
 
-    def test_section_one_carries_the_taste_direction_the_rubric_judges_by(self) -> None:
+    def test_new_contracts_use_the_format_sections_in_the_format_order(self) -> None:
+        # Hermes bundles `design-md` for Google's DESIGN.md format under the
+        # same file name. OMH's own numbered layout gave the model two
+        # contradicting instructions for one file, so a new contract is the
+        # format: token front matter, the format's eight sections in the
+        # format's order, and OMH's sections beside them under names the
+        # format does not use (the format rejects a repeated heading).
+        content = _reference("frontend", "references/design-system-contract.md")
+        body = content.split("## Body sections", 1)[1].split("## A contract in the earlier OMH layout", 1)[0]
+        format_sections = (
+            "**Overview**",
+            "**Colors**",
+            "**Typography**",
+            "**Layout**",
+            "**Elevation & Depth**",
+            "**Shapes**",
+            "**Components**",
+            "**Do's and Don'ts**",
+        )
+        positions = [body.index(heading) for heading in format_sections]
+        self.assertEqual(positions, sorted(positions))
+        for extension in (
+            "**Signature Element** *(OMH)*",
+            "**Motion & Interaction** *(OMH)*",
+            "**Accessibility Constraints & Accepted Debt** *(OMH)*",
+            "**Research Log** *(OMH, greenfield builds)*",
+        ):
+            self.assertIn(extension, body, extension)
+        front_matter = _unwrapped(content.split("## Token front matter", 1)[1].split("## Body sections", 1)[0])
+        for token in ("`name:`", "`colors:`", "`primary`", "`omitted:`", "`{colors.primary}`", "`button-primary-hover`"):
+            self.assertIn(token, front_matter, token)
+        unwrapped = _unwrapped(body)
+        # The format matches heading text exactly: a numbered or marked
+        # heading is a section it does not know, and a repeated one is
+        # rejected.
+        self.assertIn(
+            "Write each heading as the bare name spelled exactly as listed, with no number and no *OMH* marker",
+            unwrapped,
+        )
+        self.assertIn("so `## 1. Overview` is a section it does not know", unwrapped)
+        self.assertIn("Use each heading once: the format tells a consumer to reject a file that repeats one", unwrapped)
+        # Only `surface` / `on-surface` are the format's recommended names;
+        # `X` / `on-X` is OMH generalizing that pattern.
+        self.assertIn(
+            "The front matter spells the pair `X` and `on-X` (`primary` / `on-primary`), "
+            "the pattern of the format's recommended `surface` / `on-surface` names",
+            unwrapped,
+        )
+        # The linter exempts a token's whole family, not only its `on-`
+        # partner, plus the Material baseline families.
+        self.assertIn(
+            "draws an `orphaned-tokens` warning unless it is in a referenced token's family or "
+            "in the Material baseline families",
+            unwrapped,
+        )
+        self.assertIn("for `ring` and the `chart-N` set that warning is expected, not a contract failure", unwrapped)
+
+    def test_the_earlier_numbered_layout_stays_valid_until_the_user_asks(self) -> None:
+        # Migration default: a file already written in the 0-8 layout is a
+        # contract the gate accepts; conversion happens only on request and
+        # moves decisions without making new ones.
+        content = _reference("frontend", "references/design-system-contract.md")
+        legacy = _unwrapped(content.split("## A contract in the earlier OMH layout", 1)[1].split("## Local reference data", 1)[0])
+        for heading in (
+            "0 Research Log",
+            "1 Atmosphere & Identity",
+            "2 Color",
+            "3 Typography",
+            "4 Spacing & Layout",
+            "5 Components",
+            "6 Motion & Interaction",
+            "7 Depth & Surface",
+            "8 Accessibility Constraints & Accepted Debt",
+        ):
+            self.assertIn(heading, legacy, heading)
+        self.assertIn("still a valid contract and satisfies the gate", legacy)
+        self.assertIn("Do not rewrite it into the format unasked", legacy)
+        self.assertIn("Convert only when the user asks", legacy)
+        self.assertIn("A conversion moves decisions and makes none", legacy)
+        # Sibling references speak the format's terms; a legacy file takes
+        # them through the conversion map read in reverse, without front
+        # matter, or the legacy rule would contradict them.
+        self.assertIn(
+            "In a legacy file, write each into its counterpart by reading the conversion map below in reverse, "
+            "as prose and without adding front matter",
+            legacy,
+        )
+        for mapping in (
+            "Overview and Signature Element into Atmosphere & Identity",
+            "Colors, Shapes, `colors:`, and `rounded:` into Color",
+            "Layout and `spacing:` into Spacing & Layout",
+            "Elevation & Depth into Depth & Surface",
+            "`typography:` and `components:` into Typography and Components",
+        ):
+            self.assertIn(mapping, legacy, mapping)
+        # Do's and Don'ts is new in the forward map, so its reverse is an
+        # added mapping, said as such rather than passed off as a reversal.
+        self.assertIn(
+            "Do's and Don'ts has no counterpart, since the format added it; as an added mapping, "
+            "its rules go into Atmosphere & Identity",
+            legacy,
+        )
+        # A file with no YAML gets one no-YAML warning and no other check.
+        self.assertIn("the linter reports a single no-YAML warning and runs no other check", legacy)
+        self.assertIn("That warning is not a contract failure", legacy)
+
+    def test_lint_is_evidence_only_from_a_run_and_file_mechanics_defer_to_design_md(self) -> None:
+        content = _unwrapped(_reference("frontend", "references/design-system-contract.md"))
+        self.assertIn("For a file in the format, when Hermes' bundled `design-md` skill is available", content)
+        self.assertIn("A file in the earlier OMH layout is not handed to it", content)
+        self.assertIn("`npx -y @google/design.md lint DESIGN.md`", content)
+        self.assertIn("the lint status is `not_observed`", content)
+        self.assertIn("OMH itself runs no package and makes no network call", content)
+        self.assertIn("never for the rendered UI", content)
+        self.assertIn("google-labs-code/design.md@", content)
+        self.assertIn("NousResearch/hermes-agent@", content)
+
+    def test_the_overview_carries_the_taste_direction_the_rubric_judges_by(self) -> None:
         # The rubric judges inside the claimed direction, so the contract
         # must have a place to declare it — including borrowed elements.
         content = _reference("frontend", "references/design-system-contract.md")
@@ -120,6 +230,29 @@ class DesignSystemContractTests(unittest.TestCase):
         self.assertIn("CJK", content)
         self.assertIn("word-break", content)
         self.assertIn("truncation", content)
+
+    def test_no_frontend_text_points_at_a_numbered_design_md_section(self) -> None:
+        # Section numbers named the earlier 0-8 layout and mean something
+        # else in the format, so every pointer names the section instead.
+        # The subject is every packaged `frontend` text, so a new reference
+        # joins the guard without being listed.
+        # Both word orders: "`DESIGN.md` section 2" / "DESIGN.md's sections 2
+        # and 3", and "section 2 of DESIGN.md" / "sections 2 and 3 in the
+        # `DESIGN.md`". A section named in words carries no digit and passes.
+        numbered = re.compile(
+            r"DESIGN\.md`?(?:'s)?\s+sections?\s+\d"
+            r"|\bsections?\s+\d+(?:(?:,\s*|,?\s+(?:and|or)\s+)\d+)*\s+(?:of|in)\s+(?:the\s+)?`?DESIGN\.md"
+        )
+        texts = [
+            (template.relative_path, template.content)
+            for template in builtin_skill_reference_templates()
+            if template.skill_name == "frontend"
+        ]
+        texts.append(("SKILL.md", _body("frontend")))
+        self.assertGreater(len(texts), 1)
+        for name, content in texts:
+            with self.subTest(text=name):
+                self.assertIsNone(numbered.search(content))
 
 
 class TasteFoundationsTests(unittest.TestCase):
@@ -179,7 +312,7 @@ class TasteFoundationsTests(unittest.TestCase):
         self.assertIn("A negation names what to stop; it never names where to go", content)
         self.assertIn("a palette as hex", content)
         self.assertIn("a typeface stack", content)
-        self.assertIn("`DESIGN.md` sections 2 and 3", content)
+        self.assertIn("Those land in `DESIGN.md` as `colors:`, `typography:`, `rounded:`, and `spacing:` tokens", content)
 
     def test_review_prompts_are_questions_not_a_second_ban_list(self) -> None:
         # These patterns are legitimate when something chose them, so they
@@ -420,6 +553,18 @@ class SkillBodyPointerTests(unittest.TestCase):
         self.assertIn("references/taste-foundations.md", body)
         self.assertIn("references/reference-token-extraction.md", body)
         self.assertIn("no component code before the contract exists", body)
+
+    def test_frontend_body_names_the_format_and_hands_file_mechanics_to_design_md(self) -> None:
+        # The two DESIGN.md contracts meet in the always-loaded body, so the
+        # body itself says which format a new file uses, that the earlier
+        # layout stays valid, and that Hermes' bundled skill owns authoring,
+        # lint, diff, and export.
+        body = _body("frontend")
+        self.assertIn("A new DESIGN.md is Google's DESIGN.md format", body)
+        self.assertIn("converted only when the user asks", body)
+        self.assertIn("Hermes' bundled `design-md` skill is available", body)
+        self.assertIn("export a file in the format through it, never a file in the earlier layout", body)
+        self.assertIn("lint is evidence only from a run that executed, otherwise `not_observed`", body)
 
     def test_frontend_body_carries_the_default_prior_and_the_override_test(self) -> None:
         # The prior and the "negations are not overrides" rule are wrong to

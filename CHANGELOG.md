@@ -4,6 +4,36 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The `frontend` design contract now uses Google's DESIGN.md format, so it
+  no longer contradicts Hermes' bundled `design-md` skill.** Both install by
+  default and both describe a project-root `DESIGN.md`, but OMH's contract
+  asked for nine numbered sections with no front matter while `design-md`
+  writes Google's format: YAML token front matter and a fixed section order
+  that its linter checks. A new contract is now that format (`name:`,
+  `colors:`, and the other token groups in the front matter; Overview through
+  Do's and Don'ts in the format's order) with OMH's Signature Element, Motion
+  & Interaction, Accessibility Constraints & Accepted Debt, and Research Log
+  sections beside them, which the format keeps and its order check skips.
+  The surface/on-surface pairs, the focus-ring token, and the single radius
+  knob carry over into the front matter and the Colors and Shapes sections.
+  A `DESIGN.md` already written in the earlier numbered layout stays a valid
+  contract: the skill follows and amends it in place and converts it only
+  when the user asks, using a section mapping that moves decisions without
+  making new ones; content other references name in the format's terms is
+  written into the legacy file's counterpart section, without front matter.
+  Headings are the bare section names, unnumbered, since the format matches
+  heading text exactly. Authoring, linting, diffing, and exporting a file in
+  the format go to `design-md` when it is available (a legacy file is not
+  handed to it, since its authoring rewrites), and a lint result counts as
+  observed contract evidence only when Hermes or the selected executor
+  actually ran `npx -y @google/design.md lint` on the current file; otherwise
+  the lint status is `not_observed`. OMH itself still runs no package and
+  makes no network call. The chart-styling, component-registry-adoption (its
+  motion profiles), taste-foundations, and tui-craft references now name the
+  section they mean instead of a section number, and `docs/SKILL-SOURCES.md`
+  records both upstreams with closure receipts.
+
+
 - **Every shipped skill passes the Hermes install scanner of every
   supported Hermes release, not only one.** Hermes changes
   `tools/skills_guard.py` between releases, and the repo gate ran only the
