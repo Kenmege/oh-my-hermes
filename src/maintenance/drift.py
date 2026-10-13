@@ -519,7 +519,32 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # workbook column and a Word text edit, clarifies already that pin
             # that none of them reaches an OMH wiki, cleanup or material lane
             # (7).
-            expected=528,
+            # The `data-share-review` skill adds eight: a PII acronym question
+            # and a shared doc, a redacted film and a photo mask, which use its
+            # held-back words in their everyday sense; two GDPR questions and a
+            # logging-pipeline change, which carry its phrases and must not
+            # dispatch it; and an analysis of an already pseudonymized dataset,
+            # whose finished state is not one of its phrases (8). Its first
+            # review adds thirty-two: thirty requests that carry its phrases
+            # but no file leaving the team, each of which dispatched it while a
+            # phrase counted anywhere -- messages, tickets and PR comments,
+            # code and libraries, Hermes settings, storage-wide scans, a vendor
+            # contract, a definition, a personal account, and a screenshot --
+            # and two that pin the held-back word "pii" (32). Its second
+            # review adds twelve: requests that only mention redaction and a
+            # file leaving -- delivering "customer details out", merging or
+            # reviewing a pull request, a Slack message, a post, a blog post, a
+            # translation, a reminder, a video, a vendor comparison, a sample
+            # message -- none of which leads with a data-protection verb (12).
+            # Its third review adds twenty-three: requests whose lead verb
+            # removes something that is not personal data (vendor, product,
+            # file or column names, pricing details, a flag, a header row,
+            # markers), that remove the protection itself, that review a pull
+            # request, notebook or slides, or that lead with another job
+            # before a later clause (23). Its fourth review adds two: a lead verb
+            # that is being defined ("de-identify means what exactly ...?",
+            # "de-identify is the term we use ..."), which is not a command (2).
+            expected=605,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -681,7 +706,35 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # (6); a team wiki in Notion still reaching `wiki` (1); and a
             # research department digest into an LLM wiki and a team's paper
             # research pipeline still reaching `research-department` (2).
-            expected=726,
+            # The `data-share-review` skill adds ten: seven files leaving the
+            # team with personal data to take out first -- for a vendor, a
+            # fine-tune corpus, a public GitHub issue, a public tracker, a
+            # contractor, a model provider, and a residual scan -- four of
+            # which dispatched model-finetuning, GitHub event ops, the media
+            # operator, or the connector operator before; and three that keep
+            # three of those owners when nothing is to be taken out: a crash
+            # log for a GitHub issue, a support transcript summary, and
+            # fine-tuning on tickets (10). Its first review adds nine: a vendor
+            # ticket export with the customer details to take out and a CSV
+            # redacted before a vendor gets it, which must dispatch it; and
+            # seven its phrases reached while counted anywhere, which stay
+            # with GitHub event ops (labeling, closing, reviewing, triaging,
+            # a workflow, a rerun) and web research (a blog post) (9). Its
+            # second review adds four: a crash log redacted before a public
+            # GitHub issue, which must dispatch it, and three requests that
+            # only mention redaction, which stay with GitHub event ops, the
+            # connector operator, and the gateway intent card (4). Its third
+            # review removes the skill's boost and guard stand-downs, so it
+            # drops the three interventions only the boost dispatched (a vendor
+            # ticket export with the PII to strip, one with the customer
+            # details to take out, and a CSV redacted before a vendor gets
+            # it), re-pins five to what ordinary scoring now does (four stay
+            # with the guard that holds the issue, transcript or send, and the
+            # fine-tune corpus one asks between the two owners), replaces the
+            # residual-scan one with an export de-identified for a researcher,
+            # and adds six requests other skills hold, three of them opening in
+            # Hangul (+6, -3).
+            expected=752,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -691,7 +744,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             describe="Installable workflow skills quoted in reference surfaces",
             live=_installable_skill_count,
             # The current workflow additions are part of the installable catalog.
-            expected=142,
+            # `data-share-review` adds one.
+            expected=143,
             sites=(
                 "docs/README.md",
                 # The docs index quotes the count in prose and

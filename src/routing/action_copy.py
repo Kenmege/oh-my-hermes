@@ -98,6 +98,8 @@ NEXT_ACTION_LABELS: dict[str, str] = {
     "show_rollout_halt": "showing the rollout halt thresholds",
     "prepare_control_test_plan": "preparing a control test plan",
     "show_severity_grade": "showing the criteria behind the severity grade",
+    "prepare_data_share_review": "preparing a data share review",
+    "show_residual_scan": "showing the residual scan counts by class",
     "prepare_release_plan": "preparing a release plan",
     "show_release_readiness": "showing the release readiness verdict",
     "prepare_accessibility_audit": "preparing an accessibility audit",

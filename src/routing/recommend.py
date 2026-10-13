@@ -35,6 +35,7 @@ from .query import RoutingQuery
 from ..plugin_bundle.omh.hermes_session_commands import LOOP_TIMER_NONE
 from .policy import (
     appearance_edit_request,
+    data_share_review_offers_itself,
     everyday_sense_phrase_unanchored,
     KOREAN_NOUN_PARTICLES,
     PUBLIC_PLUGIN_CONNECTOR_ALIAS_PHRASES,
@@ -1236,6 +1237,18 @@ _SKILL_POLICIES = {
             "Prepare control_under_test/v1 with the population and its completeness check; sample_design/v1 sized from the "
             "control's frequency; evidence_request/v1 per item; reperformance_record/v1; and deficiency_severity_grade/v1 "
             "derived from stated likelihood, magnitude against materiality, and compensating controls, or withheld."
+        ),
+    ),
+    "data-share-review": RecommendationPolicy(
+        next_action="prepare_data_share_review",
+        evidence_boundary=(
+            "A data share review is not a redacted file until an observed residual scan of the exact file that leaves "
+            "counts every class; OMH uploads nothing, keeps no raw value or pseudonym mapping, and decides no lawful basis."
+        ),
+        wrapper_guidance=(
+            "Prepare field_inventory/v1 with each field's class; minimization_plan/v1 with one action per field and the "
+            "local path of any pseudonym mapping; residual_scan/v1 with observed counts per class on the shipped file, "
+            "or not_observed; and the metadata-only share_record/v1."
         ),
     ),
     "mobile-release": RecommendationPolicy(
@@ -3097,6 +3110,43 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "testing",
             "tests",
             "weakness",
+        }
+    ),
+    # `data-share-review` is built from "data", "share", "review", "pii",
+    # "redact", "redaction", "strip", "remove", "scrub", "mask", "personal",
+    # "anonymize", "dataset", "logs", "scan", "residual", "direct" and
+    # "identifiers" -- "what does pii stand for", "mask the background in this
+    # photo", "share this doc with my team", "how do I anonymize my browsing"
+    # and "my personal data was in a breach" all scored it as bare tokens.
+    # Only the complete phrases score. Tokens that mean nothing else stay
+    # creditable: `pseudonymize` and its spellings and -ing form, `deidentify`,
+    # `de-identify`, `de-identifying`, `quasi-identifier(s)`.
+    "data-share-review": frozenset(
+        {
+            "anonymize",
+            "data",
+            "data-share",
+            "dataset",
+            "direct",
+            "identifier",
+            "identifiers",
+            "identify",
+            "identifying",
+            "logs",
+            "mask",
+            "personal",
+            "pii",
+            "quasi",
+            "redact",
+            "redaction",
+            "remove",
+            "residual",
+            "review",
+            "scan",
+            "scrub",
+            "share",
+            "strip",
+            "these",
         }
     ),
     # `mobile-release` is built from "app", "store", "play", "google",
@@ -5667,4 +5717,5 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     "sales-pipeline-review": _sales_pipeline_review_offers_itself,
     # An LLM wiki is the pattern Hermes' bundled `llm-wiki` skill builds.
     "wiki": lambda normalized_query, query_tokens: not llm_wiki_request(normalized_query),
+    "data-share-review": data_share_review_offers_itself,
 }

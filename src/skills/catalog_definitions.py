@@ -24,6 +24,7 @@ from ..paper_learning import (
     PAPER_LEARNING_SOURCE_STATES,
 )
 from ..plugin_bundle.omh.domain_signals import SPECIALIST_DOMAIN_TRIGGERS
+from ..plugin_bundle.omh.data_share_cues import DATA_SHARE_REVIEW_PHRASES
 from ..plugin_bundle.omh.native_tools import NATIVE_CRON_TOOL, NATIVE_TODO_TOOL, native_tool_presence_clause
 from ..routing.materials_cues import (
     OFFICE_FILE_MATERIAL_CATALOG_TRIGGERS,
@@ -2927,6 +2928,7 @@ _DEFINITIONS = [
             "The review is about code, secrets, permissions, prompt injection, dependencies, or unsafe tool behavior; use `security-safety-review`.",
             "The request is a plain-language rewrite without a legal-risk review objective; use `content-operator`.",
             "The user asks to sign, accept, submit, file, publish, or change a policy or contract in an external system; use `connector-operator` only after explicit authority.",
+            "Redact the PII in the file itself and scan it before sending it, once sharing it is cleared; use `data-share-review`.",
         ),
         good_example=SkillExample(
             prompt="Review this vendor DPA for data-processing obligations, risky clauses, and questions for counsel.",
@@ -11221,6 +11223,133 @@ _DEFINITIONS.append(
             "is this failed reconciliation bad enough to report to the audit committee",
             "we found three unapproved journal entries in the sample, now what",
         ),
+    )
+)
+
+_DEFINITIONS.append(
+    SkillDefinition(
+        "data-share-review",
+        "Before data leaves the team -- a dataset, log, ticket export or transcript excerpt bound for a vendor, a public issue, a model provider or a training corpus: classify every field, minimize first, pseudonymize with the mapping kept local, and call it redacted only after an observed residual scan.",
+        DATA_SHARE_REVIEW_PHRASES,
+        (
+            "Use when a dataset, log bundle, ticket or CRM export, or transcript excerpt is about to leave the team -- to a "
+            "vendor or contractor, a public issue, a model provider, or a training corpus -- and its personal data, "
+            "identifiers, and secrets must come out first. The output is a field inventory with each field's class, a "
+            "minimization plan, a residual scan of the file that leaves with counts per class, and a metadata-only record "
+            "of what left; OMH uploads nothing and keeps no raw data."
+        ),
+        category="review",
+        phase="data-share-review",
+        hermes_role="retained-cognition",
+        delegation_boundary="retained-catalog-intent",
+        handoff_policy=(
+            "Keep the field inventory, minimization plan, residual scan result, and share record in Hermes. Field "
+            "classes come from the header, the schema, and per-column shape counts; scan counts come only from an "
+            "observed scan of the exact file that leaves; OMH uploads nothing, stores no raw value, and keeps no "
+            "pseudonym mapping."
+        ),
+        required_inputs=(
+            "the file or export about to leave, and the destination it goes to",
+            "why the destination needs it, which decides the fields it may keep",
+            "the header or schema, and per-column shape counts when a field's content is unclear",
+            "where the pseudonym mapping may be kept locally, when a field must stay joinable",
+        ),
+        expected_outputs=(
+            "field_inventory/v1",
+            "minimization_plan/v1",
+            "residual_scan/v1",
+            "share_record/v1",
+        ),
+        artifact_expectations=(
+            "field_inventory/v1 lists every column, key, and free-text field with its class -- direct identifier, quasi-identifier, secret, free text, or not personal -- and the evidence for the class",
+            "minimization_plan/v1 gives each field one action -- drop, generalize, mask, or pseudonymize -- with the destination's need for the fields it keeps, and names the local path that holds any pseudonym mapping outside the shipped file",
+            "residual_scan/v1 records, for the exact file that leaves, the scan method and an observed count per class with zero hits or each remaining hit accepted by name, and its verdict: redacted, or not_observed when no scan ran",
+            "share_record/v1 is metadata only -- destination, date, fields shipped, row count, and the sha256 digest of the shipped file -- and holds no value from it",
+        ),
+        safety_rules=(
+            "Call the output redacted only after an observed residual scan of the exact file that leaves, counted per class; without one the state is not_observed, whatever the masking step reported.",
+            "Minimize before masking: drop every field the destination does not need, because a masked field that ships still links rows back to people.",
+            "Keep the pseudonym mapping local, outside the shipped file and its folder; a mapping that travels with the data reverses it.",
+            "Treat free text as unscanned until the residual scan counts it: notes, comments, and transcript excerpts hide names, emails, and account numbers that a column plan never touches.",
+            "A scan prints counts, never matched values; a hit printed to the session reaches the model provider the same way the raw file would.",
+            "OMH uploads nothing, keeps no raw value, and records only the metadata-only share record; whether the data may lawfully leave at all is not decided here.",
+        ),
+        quality_tier="observed-residual-scan",
+        quality_bar=(
+            "Inventory fields from the header and the schema, read with `read_file` and its line limit; when a field's class is unclear, prefer a script that prints per-column shape counts, and read a row only when that still leaves it unclear, because every row read enters the session.",
+            "Load `references/data-share-method.md` for the field classes, the minimization order, the pseudonymization method, the per-class scan patterns, and the quasi-identifier group check instead of recalling them.",
+            "Count each class with `search_files` in its `count` output mode, or with a detector script run through `execute_code` when "
+            + native_tool_presence_clause("execute_code", code=True)
+            + "; its stdout returns, and so do stderr and any traceback, so it prints counts only and catches its own errors without echoing a value. With neither, hand the user the scan to run and keep the verdict not_observed until the counts come back.",
+            "Hermes' `privacy.redact_pii` hashes user and chat identifiers in the gateway's session prompt on the platforms that allow it, and `security.redact_secrets` masks secret-shaped strings in tool output; neither changes a file that leaves, so neither is this scan.",
+            "Keep inventoried, minimized, masked, scanned, and shipped as separate states for the file.",
+        ),
+        why_this_exists=(
+            "`data-share-review` exists because data leaving the team had no owner: Hermes redacts identifiers in "
+            "gateway chat and secrets in tool output, `security-safety-review` reviews an agent's own exposure, and "
+            "`legal-compliance-review` reads the obligations, while nothing minimized a file's fields, kept its pseudonym "
+            "mapping local, and refused to call it redacted before a scan of what actually leaves."
+        ),
+        opening_steps=(
+            "Ask where the file goes and what the destination needs it for before touching a field.",
+            "Inventory the fields from the header and the schema before planning any masking.",
+        ),
+        do_not_use_when=(
+            "Whether the data may lawfully leave at all -- the lawful basis, a DPA, consent, or a cross-border transfer -- is a contract and compliance question; use `legal-compliance-review`, then return here for the fields.",
+            "The exposure is an agent's tool permissions, a secret in code, or a prompt-injection path rather than a file about to leave; use `security-safety-review`.",
+            "The ask is analysing the dataset itself -- trends, a cleanup, a chart; use `data-analysis`.",
+            "Filing the issue once its attachment is clean -- the title, labels, and reproduction steps; use `github-issue-intake`.",
+            "Building the training set or deciding whether to train once the corpus is clean; use `model-finetuning`.",
+            "Working the support queue -- triaging or answering tickets rather than exporting them; use `support-operations`.",
+        ),
+        good_example=SkillExample(
+            prompt="the analytics vendor wants last month's ticket export, take the customer details out first",
+            expected=(
+                "Ask what the vendor needs, inventory the columns from the header and per-column shape counts, drop the ones it does "
+                "not need, pseudonymize the customer id with the mapping kept in a local folder, count emails, phone "
+                "numbers, names, and secrets in the output with a scan that prints counts only, and write the share record."
+            ),
+            why="A masking step that was never followed by a scan of the shipped file has not shown that anything came out.",
+        ),
+        bad_example=SkillExample(
+            prompt="I ran find and replace on the emails, so the file is clean, right",
+            expected="Hold the verdict at not_observed: count every class in the exact file that leaves, free-text fields included, before calling it redacted.",
+            why="A find and replace covers the shapes it was given; names and account numbers in a notes column stay.",
+        ),
+        final_checklist=(
+            "Every field has a class and an action, and each kept field names the destination's need for it.",
+            "The pseudonym mapping, if any, sits at a local path outside the shipped file.",
+            "The residual scan ran on the exact file that leaves and counted every class, free text included.",
+            "The verdict is redacted only with that scan observed; otherwise it reads not_observed.",
+            "The share record holds destination, date, fields, row count, and digest, and no value from the file.",
+        ),
+        recovery_notes=(
+            "If the scan cannot run in this session, hand the user the per-class scan and keep the verdict not_observed until the counts come back.",
+            "If a class still has hits after masking, fix the field or the free text and scan again; never ship on an explained hit that was not accepted by name.",
+        ),
+        situations=(
+            "the vendor wants a copy of our customer list",
+            "attaching server logs to a public bug report",
+            "these support chats are going into a training set",
+            "is it safe to hand this spreadsheet to a contractor",
+            "the export still has emails and phone numbers in it",
+            "a researcher asked for our usage data",
+        ),
+        # Outside Hermes the file tools have other names and Hermes' own
+        # redaction settings do not exist, so the portable body names the
+        # capability instead of the tool.
+        portable_overrides={
+            "quality_bar": (
+                "Inventory fields from the header and the schema, read with a line limit; when a field's class is unclear, prefer a script that prints per-column shape counts, and read a row only when that still leaves it unclear, because every row read enters the session.",
+                "Load `references/data-share-method.md` for the field classes, the minimization order, the pseudonymization method, the per-class scan patterns, and the quasi-identifier group check instead of recalling them.",
+                "Count each class with the host's content search in a count-only mode, or with a detector script that prints counts only and catches its own errors, since its error output returns too. With neither, hand the user the scan to run and keep the verdict not_observed until the counts come back.",
+                "A host's own redaction of chat or tool output never changes a file that leaves, so it is not this scan.",
+                "Keep inventoried, minimized, masked, scanned, and shipped as separate states for the file.",
+            ),
+        },
+        portable_override_shadows={
+            "quality_bar": "be476a45f7468e60a75d81bfcd304e24fe2aaa09203628036c9caa8c8dabaadd",
+        },
     )
 )
 

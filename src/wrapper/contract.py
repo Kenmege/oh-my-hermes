@@ -299,6 +299,8 @@ VISIBLE_ACTIONS = (
     "show_rollout_halt",
     "prepare_control_test_plan",
     "show_severity_grade",
+    "prepare_data_share_review",
+    "show_residual_scan",
     "prepare_release_plan",
     "show_release_readiness",
     "show_frontend_handoff",
@@ -1150,6 +1152,8 @@ _ACK_PRIMARY_ACTIONS_BY_NEXT_ACTION = {
     "show_rollout_halt": ("show_rollout_halt", "Show the halt thresholds"),
     "prepare_control_test_plan": ("prepare_control_test_plan", "Plan the control test"),
     "show_severity_grade": ("show_severity_grade", "Show the severity criteria"),
+    "prepare_data_share_review": ("prepare_data_share_review", "Review the data share"),
+    "show_residual_scan": ("show_residual_scan", "Show the residual scan"),
     "prepare_release_plan": ("prepare_release_plan", "Plan the release"),
     "show_release_readiness": ("show_release_readiness", "Show release readiness"),
     "prepare_accessibility_audit": ("prepare_accessibility_audit", "Audit accessibility"),
@@ -2444,6 +2448,36 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
             "population pulled",
             "evidence obtained",
             "control re-performed",
+        ],
+    },
+    "data-share-review": {
+        "kind": "data_share_review",
+        "headline": "I can get this file ready to leave the team and show what still remains in it.",
+        "body": (
+            "I will ask where it goes and what that destination needs, classify every field, drop what is not needed, "
+            "pseudonymize what must stay joinable with the mapping kept on your side, and count each class left in the "
+            "exact file that leaves. I upload nothing and keep no raw value."
+        ),
+        "phase": "data_share_review_prepared",
+        "next_action": "prepare_data_share_review",
+        "artifact_schema": "residual_scan/v1",
+        "claim_boundary_suffix": "It is not a redacted file until a residual scan of the file that leaves is observed.",
+        "actions": [
+            {"id": "prepare_data_share_review", "label": "Review the data share", "style": "primary"},
+            {"id": "show_residual_scan", "label": "Show the residual scan", "style": "secondary"},
+            {"id": "show_status", "label": "Show status", "style": "secondary"},
+        ],
+        "recommended_flow": [
+            "name_the_destination_and_its_need",
+            "inventory_and_classify_fields",
+            "minimize_then_pseudonymize",
+            "scan_the_shipped_file_per_class",
+            "record_what_left",
+        ],
+        "evidence_not_observed": [
+            "fields removed",
+            "residual scan run",
+            "file shared",
         ],
     },
     "iac-change": {

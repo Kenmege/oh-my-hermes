@@ -7,6 +7,7 @@ import re
 import unicodedata
 
 from .boundary_phrase import contains_boundary_phrase as _contains_boundary_phrase
+from .data_share_cues import data_share_request_admitted
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES as _CODING_DELIVERY_REQUEST_PHRASES,
     CODING_DELIVERY_REQUEST_TOKENS as _CODING_DELIVERY_REQUEST_TOKENS,
@@ -1245,6 +1246,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "operating-rhythm": "research_and_ops",
     "finance-analysis": "research_and_ops",
     "internal-audit": "research_and_ops",
+    "data-share-review": "research_and_ops",
     "people-ops": "research_and_ops",
     "legal-compliance-review": "research_and_ops",
     "support-operations": "research_and_ops",
@@ -1588,6 +1590,17 @@ _AWARENESS_MESSAGE_MARKERS = (
     "significant deficiency",
     "segregation of duties",
     "audit sampling",
+    # Data leaving the team: "pii", "redact", "mask" and "share" alone are
+    # everyday words or other lanes, so only the phrases that name taking
+    # personal data out of a file arm awareness; "pseudonymize" is a token
+    # marker, because as a substring it also arms "the pseudonymized dataset".
+    "data-share-review",
+    "pii redaction",
+    "redact pii",
+    "redact personal data",
+    "de-identify",
+    "quasi-identifier",
+    "residual pii",
     "tech-debt-audit",
     "tech debt",
     "debt ledger",
@@ -1714,6 +1727,8 @@ _AWARENESS_MESSAGE_MARKERS = (
 _AWARENESS_TOKEN_MARKERS = frozenset(
     {
         "omh",
+        "pseudonymize",
+        "pseudonymise",
         "accessibility",
         "agent-debug",
         "agent-evaluation",
@@ -1962,6 +1977,48 @@ _ROUTE_HINT_RULES = (
             "legal-compliance-review",
             "production-audit",
             "tech-debt-audit",
+        ),
+    },
+    {
+        "id": "data_share_review",
+        "workflow": "data-share-review",
+        "lane": "research_and_ops",
+        "next_action": "prepare_data_share_review",
+        "reason": "A dataset, log, export, or transcript excerpt is about to leave the team; classify its fields, minimize first, pseudonymize with the mapping kept local, and call it redacted only after an observed residual scan of the file that leaves.",
+        "fallback_action": "ask_where_the_file_goes_and_what_the_destination_needs",
+        "not_evidence_yet": (
+            "fields removed",
+            "residual scan run",
+            "file shared",
+        ),
+        # Only the phrases that name taking personal data out of a file. A bare
+        # "pii", "redact", "mask" or "share" is absent: an acronym question, a
+        # censored film, a photo mask, and a shared doc all say them. The
+        # phrases also name code, settings, legal questions and issue triage,
+        # so the hint stands only for the request `data_share_cues` admits.
+        "phrases": (
+            "data-share-review",
+            "data share review",
+            "pii redaction",
+            "redact pii",
+            "redact the pii",
+            "redact personal data",
+            "strip the pii",
+            "remove the pii",
+            "residual pii",
+            "de-identify",
+            "quasi-identifier",
+        ),
+        # Whole tokens, so "the pseudonymized dataset" is not a cue. Every cue
+        # also needs an admitted request (`_rule_suppressed_by_context`).
+        "tokens": ("pseudonymize", "pseudonymise", "pseudonymization", "pseudonymisation", "deidentify"),
+        "adjacent_workflows": (
+            "legal-compliance-review",
+            "security-safety-review",
+            "data-analysis",
+            "github-issue-intake",
+            "model-finetuning",
+            "support-operations",
         ),
     },
     {
@@ -6881,6 +6938,7 @@ def awareness_primer_payload() -> dict[str, object]:
                 "reliability-review",
                 "finance-analysis",
                 "internal-audit",
+                "data-share-review",
                 "people-ops",
                 "legal-compliance-review",
                 "support-operations",
@@ -7427,6 +7485,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "ultraqa": "dispatch_to_workflow",
     "finance-analysis": "prepare_finance_analysis",
     "internal-audit": "prepare_control_test_plan",
+    "data-share-review": "prepare_data_share_review",
     "people-ops": "prepare_people_ops_brief",
     "legal-compliance-review": "prepare_legal_compliance_review",
     "support-operations": "prepare_support_operations",
@@ -8182,6 +8241,8 @@ def _long_document_page_count_signal(text: str) -> bool:
 
 def _rule_suppressed_by_context(rule: dict[str, object], text: str) -> bool:
     rule_id = str(rule.get("id", ""))
+    if rule_id == "data_share_review":
+        return not data_share_request_admitted(text)
     visual_markers = (
         "image card",
         "summary card",

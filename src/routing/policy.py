@@ -31,6 +31,7 @@ from .reference_regions import executable_routing_text
 from .jev_addressing import jev_addressed_skill
 from .localization import normalized_phrase, phrase_is_spoken, routing_terms, routing_tokens
 from .materials_cues import OFFICE_FILE_MATERIAL_PHRASES
+from ..plugin_bundle.omh.data_share_cues import data_share_request_admitted
 from .missed_route import has_normalized_missed_omh_workflow_context
 from .omh_help import is_omh_docs_question
 from .visual_qa_cues import BROWSER_VISUAL_QA_PHRASES, CUSTOMER_SYMPTOM_REPORT_PHRASES
@@ -2971,6 +2972,18 @@ _SECURITY_EVENT_OVER_GITHUB_EVENT_PHRASES = (
     "leaked credential",
     "committed a secret",
 )
+# `data-share-review` is scored only for a sentence that leads with redact,
+# pseudonymize, anonymize or de-identify on a file leaving the team
+# (`data_share_cues`, which the awareness route hint reads too). It has no
+# boost and no guard stands down for it: a request another skill holds stays
+# with that skill.
+
+
+def data_share_review_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
+    """A sentence that leads with a protective verb on a file leaving the team."""
+    return data_share_request_admitted(normalized_query)
+
+
 # A build waiting in TestFlight or a store's review is a store release owned by
 # `mobile-release` (#1568), not a CI build or a pull-request review: the store,
 # not GitHub, decides what happens next.

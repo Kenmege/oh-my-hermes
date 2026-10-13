@@ -3392,6 +3392,7 @@ _PRIMARY_HARNESSES = {
     "model-finetuning": "research",
     "mobile-release": "app-delivery-loop",
     "internal-audit": "critic",
+    "data-share-review": "critic",
     "ask": "critic",
     "cancel": "goal-execution",
     "skill": "docs-specialist",
