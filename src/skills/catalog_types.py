@@ -1353,10 +1353,15 @@ def _feature_surface_skill(
     extra_safety_rules: tuple[str, ...] = (),
     extra_quality_bar: tuple[str, ...] = (),
     extra_do_not_use_when: tuple[str, ...] = (),
+    why_this_exists: str = "",
+    do_not_use_when: tuple[str, ...] = (),
     situations: tuple[str, ...] = (),
     portable_overrides: Mapping[str, tuple[str, ...]] | None = None,
     portable_override_shadows: Mapping[str, str] | None = None,
 ) -> SkillDefinition:
+    # `why_this_exists` and `do_not_use_when` replace the shape's generic Why
+    # and its three generic Do-Not-Use lines for a skill that states its own;
+    # `extra_do_not_use_when` still follows either set.
     return SkillDefinition(
         name,
         description,
@@ -1387,14 +1392,20 @@ def _feature_surface_skill(
             "Expose missing tools, credentials, targets, or observations as user-visible gaps.",
             *extra_quality_bar,
         ),
-        why_this_exists=(
+        why_this_exists=why_this_exists
+        or (
             f"`{name}` exists so Hermes users can ask for this workflow in chat and get a structured, "
             "checkable answer instead of an improvised one."
         ),
         do_not_use_when=(
-            "The request is already handled by a narrower explicit skill with stronger evidence.",
-            "The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.",
-            "The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.",
+            *(
+                do_not_use_when
+                or (
+                    "The request is already handled by a narrower explicit skill with stronger evidence.",
+                    "The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.",
+                    "The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.",
+                )
+            ),
             *extra_do_not_use_when,
         ),
         good_example=SkillExample(

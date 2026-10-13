@@ -77,6 +77,7 @@ Quality bar:
 - Diff-approved apply: show the config or `.env` diff with redacted placeholders; apply only after the user explicitly approves.
 - Verify: confirm applicable items using non-secret metadata, never secret values.
 - Keep the read/draft-only access boundary — never enable Send permission — as a hard constraint on every apply step, not an optional recommendation.
+- When `manage_connections` is in your tool list or tool_search finds it, connect mail and calendar through it rather than a hand-written MCP config diff (`connect` for a hosted account, `install` or `authorize` for a catalog MCP server), and take each app's answer as given: `skipped` means continue with the surface that is connected or ask in chat, never calling it again on your own; when its result does not name the granted access, the read-and-draft-only check stays `not_observed` until the user confirms the account's access.
 
 Handoff policy:
 
@@ -102,6 +103,7 @@ Safety rules:
 - Configure mail and calendar MCP access as read and draft only; never enable Send permission, even if the user asks — drafts stay for the user to send themselves.
 - Use Hermes-native secure entry or user-side OAuth/app-password setup, never chat; disclose authorized storage without exposing secrets.
 - Do not treat a prepared connection as an observed brief; only report a brief after the connection is verified.
+- The bundled `google-workspace` OAuth setup requests `gmail.send` and `gmail.modify` on every run, and its setup script accepts no `--services` flag to narrow that, though that skill's own instructions show one: a connection made through it cannot meet read-and-draft-only, so never apply it as this skill's connection, and when the user connects it themselves, report the send scope as granted, never as read-and-draft-only.
 
 ## Runtime Evidence
 

@@ -16,13 +16,12 @@ This is an OMH `connector-operator` workflow skill, projected for Agent Skills h
 
 ## Why This Exists
 
-`connector-operator` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+`connector-operator` exists because an email sent, a ticket written, or an invite delivered cannot be taken back: it scopes the provider, target, and payload, takes a missing connection to the host's own connection setup and respects a skip, and reports delivery only from a provider receipt.
 
 ## Do Not Use When
 
-- The request is already handled by a narrower explicit skill with stronger evidence.
-- The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-- The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+- Only the reply or thread policy of a Discord, Slack, or Telegram conversation is in question; use `gateway-intent-card`.
+- The user is choosing or adopting a new provider, MCP server, or integration rather than acting through one; use `external-connector-readiness`.
 
 ## Examples
 
@@ -46,9 +45,9 @@ Bad example:
 
 ## Recovery Notes
 
-- If the connector, credentials, or permission is missing, route to toolbelt-readiness before preparing action success claims.
+- If the connector, credentials, or permission is missing: on Hermes, when `manage_connections` is in your tool list or tool_search finds it, use it for the app the user named (`status`, then `connect`) and take each app's answer as given: `connected` proceeds, `skipped` means continue without that app or ask in chat, never calling it again on your own or reaching the app another way, and `not_connected` stays a named gap. Otherwise route to toolbelt-readiness before preparing action success claims.
 - If the request is only chat thread delivery policy for Discord, Slack, or Telegram, route to gateway-intent-card instead.
-- If the external app action would create, send, invite, mutate, or delete provider state, require an explicit confirmation gate.
+- If the external app action would create, send, invite, mutate, or delete provider state, require an explicit confirmation gate; when the host itself asks the user to approve that call, its answer is the gate's observed evidence and is not asked a second time.
 
 
 
@@ -92,7 +91,7 @@ Artifact expectations:
 
 - connector_task_card/v1 metadata-only wrapper card when prepared
 - connector_scope/v1 with provider, target object, allowed action, payload summary, and stop condition
-- connector_auth_boundary/v1 separating missing connector, missing credentials, user-supplied authority, and credential-use prohibition
+- connector_auth_boundary/v1 separating missing connector, missing credentials, user-supplied authority, and credential-use prohibition, with the host's own connection answer per app (`connected`, `skipped`, or `not_connected` on Hermes) when recorded
 - connector_confirmation_gate/v1 for sending, ticket mutation, external write, webhook delivery, CRM/database update, or irreversible provider action
 - connector_result_manifest/v1 only when provider response, message id, ticket id, API transcript, or delivery receipt is observed
 

@@ -4,6 +4,39 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The operator skills now take Hermes' own approval, checkpoint, vault, and
+  connection answers as their gate evidence instead of asking the user a
+  second time.** `command-operator` records the terminal result's `approval`
+  note or `blocked` status as the safety gate and confirms in chat only for an
+  install, deploy, production change, or external send, or when approvals are
+  off; it also says that a cron, one-shot, or webhook run denies a flagged
+  command by default, so the command goes to a person's turn instead of being
+  rephrased. `workspace-file-operator` records whether a checkpoint can undo a
+  destructive step before taking it -- Hermes' checkpoints are off unless the
+  user turned them on, and the user's `/rollback` answer is the only reading
+  that marks one available -- and its harness gains that ladder step.
+  `browser-operator` sends sign-ins, one-time codes, and saved cards to
+  `browser_vault` when the session has it, and names OMH's own browser adapter
+  bridge as a blocker for the vault rather than falling back to credentials in
+  chat. `connector-operator` and `morning-brief` take a missing connection to
+  `manage_connections` when the session has it and treat a `skipped` app as
+  the user's answer. `morning-brief` reports that the bundled
+  `google-workspace` OAuth setup always requests `gmail.send` (its setup
+  script takes no `--services` flag), so that connection is never reported as
+  read-and-draft-only. `security-safety-review` and
+  `physical-device-readiness` emit a proposed `approvals.deny` list for
+  blocked terminal commands that the user applies; OMH writes no Hermes
+  config. `github-event-ops` takes its intake from a Hermes webhook route,
+  treats the payload as untrusted, and reports a PR comment only after
+  reading it back. `parallel-tools` proposes one change,
+  `mcp_servers.<name>.supports_parallel_tool_calls: true` per named MCP
+  server, instead of an update. A tool that is not in every supported Hermes
+  release is named only behind the "in your tool list or tool_search finds
+  it" rule, never a version. The feature-surface skills among these state
+  their own Why and Do-Not-Use instead of the shape's shared lines, through a
+  per-skill override that later skills can reuse.
+
+
 - **Review and verification skills use the contracts Hermes already enforces,
   and a failing check now says whether the change caused it.** `code-review`
   prints its finding shape as a JSON Schema in the dispatch reference: a

@@ -16,13 +16,12 @@ This is a Hermes-native `workspace-file-operator` workflow skill.
 
 ## Why This Exists
 
-`workspace-file-operator` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+`workspace-file-operator` exists because a delete, overwrite, or bulk move often has no undo point: it scopes the path, records before any destructive step whether a checkpoint can undo it (Hermes takes none unless checkpoints are on), and reports only what file evidence shows.
 
 ## Do Not Use When
 
-- The request is already handled by a narrower explicit skill with stronger evidence.
-- The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-- The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+- An ordinary list, search, read, or one-file edit inside a known folder; use the native file tools directly.
+- The request converts files or produces a deck, PDF, or attachment; use `materials-package` or `deliverable-package`.
 
 ## Examples
 
@@ -42,6 +41,7 @@ Bad example:
 
 - The path root, allowed file operations, excluded paths, destructive-operation policy, and stop condition are explicit.
 - Delete, overwrite, move, rename, permission change, archive mutation, upload, and download are gated or marked missing.
+- Checkpoint availability is recorded before any destructive step; without an observed checkpoint, a reversible copy or a move to trash comes first, or the user confirms the irreversible step.
 - Directory listings, file contents, hashes, diffs, and operation results are reported only from observed file evidence.
 
 ## Recovery Notes
@@ -49,6 +49,8 @@ Bad example:
 - If the target path or folder is missing, ask for the smallest path scope needed before preparing the operation.
 - If delete, overwrite, move, rename, chmod, or irreversible cleanup is requested, require an explicit confirmation gate.
 - If the request is file conversion, deck/PDF export, or attachment delivery, route to materials-package or deliverable-package instead.
+- On Hermes, when a checkpoint covers the change, the user's `/rollback` restores it and `/diff session` shows what the session changed since the checkpoint baseline; cite either only after the user runs it.
+- On Hermes, a write that its own file guards refuse or hold for approval (a sensitive system path, a protected instruction file) is that gate's outcome to record, `blocked` or the user's answer, never a write to retry through another tool.
 
 ## Workflow Lane
 
@@ -102,7 +104,7 @@ Artifact expectations:
 - file_operation_scope/v1 with path root, allowed operations, excluded paths, and stop condition
 - file_observation_manifest/v1 only when directory listings, file stats, hashes, diffs, or operation output are observed
 - session_file_activity/v1 (`omh quality-evidence file-activity --hermes-session <id> --json`) cited in that manifest for which workspace files a Hermes session's read_file, write_file, and patch calls named and the outcome Hermes recorded; never as file-content, hash, diff, test, review, CI, or merge evidence
-- file_confirmation_gate/v1 for delete, overwrite, move, rename, chmod, archive mutation, or irreversible cleanup
+- file_confirmation_gate/v1 for delete, overwrite, move, rename, chmod, archive mutation, or irreversible cleanup, with checkpoint availability recorded before the step: on Hermes, checkpoints are off unless the user turned them on (`checkpoints.enabled`), and the user's `/rollback` says whether this session takes them, so record `available` only from that answer, `not_available` when it reports them off, and `not_observed` until then
 
 Safety rules:
 
