@@ -13,7 +13,7 @@ from ..host_observation import (
     observe_plugin_tool_call,
 )
 from ..dispatch_outcomes import _parse_timestamp
-from ..native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
+from ..native_tools import NATIVE_CANCELLED_REASON, NATIVE_TODO_TOOL, native_tool_presence_clause
 from ..orchestration_say import todo_say, with_say
 from ..runtime_reader import default_omh_home, read_omh_todo
 from ..todo_evidence import observed_calls
@@ -401,17 +401,30 @@ def bind_declared_items(
     return bound, dropped
 
 
-def _state_kept(record: dict[str, Any], item: object, requested: object) -> str:
+# The record's states in the words todo_list uses, which are the ones the
+# model sees on a plan todo_list holds.
+_NATIVE_STATUS_OF_STATE = {"pending": "pending", "active": "in_progress", "done": "completed"}
+
+
+def _state_kept(record: object, item: object, requested: object) -> str:
     """The note for an advance whose state todo_list kept, or ``""``."""
-    items = record.get("items") if isinstance(record, dict) else None
-    if record.get("source") != NATIVE_TODO_TOOL or not isinstance(items, list):
+    if not isinstance(record, dict) or record.get("source") != NATIVE_TODO_TOOL:
         return ""
-    if isinstance(item, bool) or not isinstance(item, int) or not 1 <= item <= len(items):
+    items = record.get("items")
+    if not isinstance(items, list) or isinstance(item, bool) or not isinstance(item, int):
         return ""
-    stored = items[item - 1].get("state") if isinstance(items[item - 1], dict) else None
-    if not stored or stored == requested:
+    if not 1 <= item <= len(items) or not isinstance(items[item - 1], dict):
         return ""
-    return f"todo_list sets item states on this plan; item {item} stays {stored}"
+    entry = items[item - 1]
+    stored = entry.get("state")
+    if stored not in _NATIVE_STATUS_OF_STATE or stored == requested:
+        return ""
+    status = (
+        "cancelled"
+        if entry.get("blocked_reason") == NATIVE_CANCELLED_REASON
+        else _NATIVE_STATUS_OF_STATE[stored]
+    )
+    return f"todo_list sets item states on this plan; item {item} stays {status}"
 
 
 def _declares_done(items: object) -> bool:

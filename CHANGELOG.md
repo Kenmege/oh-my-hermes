@@ -27,8 +27,9 @@ All notable changes will be documented here.
   are open, and an accepted plan (the one `omh_team` binds its lanes to)
   until it goes stale; a `todo_list` write does not replace them, leaving
   one for unrelated work is `omh_todo action=clear` (a recorded
-  `deferred_reason` only pauses it), and the next turn says once when a
-  `todo_list` write was not mirrored. Where `todo_list` is absent, `omh_todo` is the tracker exactly as before. The
+  `deferred_reason` only pauses it), and the session's next turn is told
+  once when a `todo_list` write was not mirrored and the plan is still held
+  and not deferred. Where `todo_list` is absent, `omh_todo` is the tracker exactly as before. The
   `omh_todo` description, the route hint's checklist line, the plan nudge,
   the `todo-checklist` skill and the `ulw-work` and `ulw-plan` opening steps
   now say to use one tool for the steps, never both. Where Hermes draws its

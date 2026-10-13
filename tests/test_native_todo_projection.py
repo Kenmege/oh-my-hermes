@@ -427,7 +427,7 @@ class OmhTodoOnlyFieldsTest(_NativeTodoHomeTest):
         self.write_native([native("1", "a", "in_progress"), native("2", "b", "pending")])
         result = self.omh_todo({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
         self.assertEqual(result["status"], "written")
-        self.assertEqual(result["state_kept"], "todo_list sets item states on this plan; item 1 stays active")
+        self.assertEqual(result["state_kept"], "todo_list sets item states on this plan; item 1 stays in_progress")
         self.assertEqual(self.todo()["items"][0]["state"], "active")
         # The same advance on an omh_todo plan moves the state and says nothing.
         declared = self.omh_todo(
@@ -437,6 +437,19 @@ class OmhTodoOnlyFieldsTest(_NativeTodoHomeTest):
         moved = self.omh_todo({"action": "advance", "item": 1, "item_text": "a", "state": "done"}, session=OTHER_SESSION)
         self.assertNotIn("state_kept", moved)
         self.assertEqual(self.todo(OTHER_SESSION)["items"][0]["state"], "done")
+        # The note speaks todo_list's vocabulary, cancelled included.
+        self.write_native([native("1", "a", "completed"), native("2", "b", "cancelled"), native("3", "c", "pending")])
+        for item, text, status in ((1, "a", "completed"), (2, "b", "cancelled")):
+            kept = self.omh_todo({"action": "advance", "item": item, "item_text": text, "state": "pending"})
+            self.assertEqual(kept["state_kept"], f"todo_list sets item states on this plan; item {item} stays {status}")
+        # An advance that sends no reason does not turn the cancelled item into a completed one.
+        self.assertEqual(self.todo()["items"][1]["blocked_reason"], NATIVE_CANCELLED_REASON)
+        # The sentence is about todo_list-held plans and is never said of another record.
+        from omh.plugin_bundle.omh.tools.todo_tool import _state_kept
+
+        record = {"source": "omh_todo", "items": [{"text": "a", "state": "active"}]}
+        self.assertEqual(_state_kept(record, 1, "done"), "")
+        self.assertIn("stays in_progress", _state_kept({**record, "source": NATIVE_TODO_SOURCE}, 1, "done"))
 
     def test_adoption_keeps_every_omh_todo_field(self):
         # A finished planning plan is not held, so an identical native list
@@ -572,35 +585,122 @@ class OmhTodoOnlyFieldsTest(_NativeTodoHomeTest):
         self.assertEqual(self.stored(), before)
         self.assertEqual(self.stored()["source"], "omh_todo")
 
-    def test_a_held_write_is_named_once_on_the_next_turn(self):
+    ACCEPTED_PLAN = {
+        "action": "set",
+        "items": [{"text": "lane a check: `make test`", "state": "active"}],
+        "plan_stage": PLAN_STAGE_ACCEPTED,
+    }
+
+    def context(self, session=SESSION, **overrides) -> str:
+        """One `pre_llm_call` for ``session``, as the host opens a later turn."""
         from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
 
-        _ = self.omh_todo(
-            {"action": "set", "items": [{"text": "lane a check: `make test`", "state": "active"}], "plan_stage": PLAN_STAGE_ACCEPTED}
+        call = dict(
+            omh_home=str(self.home), hermes_home=str(self.hermes), session_id=session,
+            user_message="continue", is_first_turn=False,
         )
+        call.update(overrides)
+        return str((pre_llm_call(**call) or {}).get("context", ""))
+
+    def note(self, session=SESSION) -> str:
+        return held_native_write_note(session, self.home)
+
+    def test_a_held_write_is_named_once_on_the_next_turn(self):
+        _ = self.omh_todo(self.ACCEPTED_PLAN)
         self.write_native([native("1", "unrelated work", "in_progress")])
 
-        def context() -> str:
-            payload = pre_llm_call(
-                omh_home=str(self.home), hermes_home=str(self.hermes), session_id=SESSION,
-                user_message="continue", is_first_turn=False,
-            )
-            return str((payload or {}).get("context", ""))
+        # Another session reading first neither gets the line nor spends it.
+        self.assertEqual(self.note(OTHER_SESSION), "")
+        self.assertNotIn("was not mirrored", self.context(OTHER_SESSION))
 
-        first = context()
+        first = self.context()
         self.assertIn("Your last todo_list write was not mirrored: this session's accepted plan is held in omh_todo", first)
         self.assertIn("omh_todo action=clear", first)
-        self.assertNotIn("was not mirrored", context())
-        self.assertEqual(held_native_write_note(OTHER_SESSION), "")
+        self.assertNotIn("was not mirrored", self.context())
 
-    def test_a_mirrored_write_forgets_an_earlier_held_note(self):
+    def test_a_fork_sharing_the_session_id_does_not_spend_the_line(self):
+        # Hermes' background review runs right after the turn under the
+        # parent's own id (`session_id == parent_session_id`); the line is for
+        # the person's next turn.
+        _ = self.omh_todo(self.ACCEPTED_PLAN)
+        self.write_native([native("1", "unrelated work", "in_progress")])
+
+        fork = self.context(user_message="Review the conversation above", parent_session_id=SESSION)
+        self.assertNotIn("was not mirrored", fork)
+        self.assertIn("was not mirrored", self.context())
+        # A delegate child or a compression continuation names another parent.
+        self.write_native([native("1", "unrelated work", "in_progress")])
+        self.assertIn("was not mirrored", self.context(parent_session_id=OTHER_SESSION))
+
+    def test_the_line_names_the_kind_of_plan_that_holds(self):
+        cases = {
+            "accepted plan": self.ACCEPTED_PLAN,
+            "plan awaiting acceptance": {**self.ACCEPTED_PLAN, "plan_stage": PLAN_STAGE_AWAITING_ACCEPTANCE},
+            "code-story plan": {"action": "set", "template": "code-story"},
+        }
+        for index, (kind, plan) in enumerate(cases.items()):
+            with self.subTest(kind=kind):
+                session = f"{SESSION}-{index}"
+                _ = self.omh_todo(plan, session=session)
+                self.write_native([native("1", "unrelated work", "in_progress")], session=session)
+                self.assertIn(f"this session's {kind} is held in omh_todo", self.note(session))
+
+    def test_the_line_is_decided_from_the_record_as_it_stands(self):
+        held = [native("1", "unrelated work", "in_progress")]
+        cases = {
+            "cleared since": lambda: self.omh_todo({"action": "clear"}),
+            "re-declared as a plain plan": lambda: self.omh_todo({"action": "set", "items": [{"text": "x", "state": "active"}]}),
+            "gone stale": lambda: self.age(minutes=25 * 60),
+        }
+        for name, after in cases.items():
+            with self.subTest(case=name):
+                _ = self.omh_todo(self.ACCEPTED_PLAN)
+                self.write_native(held)
+                _ = after()
+                self.assertNotIn("was not mirrored", self.context())
+                _ = self.omh_todo({"action": "clear"})
+
+    def test_a_deferred_plan_gets_no_line(self):
+        # The person paused the plan; the plan line says so and asks for
+        # nothing, and "clear it" would be the wrong instruction.
+        _ = self.omh_todo(self.ACCEPTED_PLAN)
         _ = self.omh_todo(
-            {"action": "set", "items": [{"text": "lane a check: `make test`", "state": "active"}], "plan_stage": PLAN_STAGE_ACCEPTED}
+            {
+                "action": "advance", "item": 1, "item_text": "lane a check", "state": "active",
+                "deferred_reason": "the person asked for the release notes first",
+            }
         )
+        self.assertEqual(self.project([native("1", "release notes", "in_progress")]), "held_by_omh_todo")
+        context = self.context(user_message="")
+        self.assertIn("deferred: the person asked for the release notes first", context)
+        self.assertNotIn("was not mirrored", context)
+
+    def test_a_mirrored_write_forgets_an_earlier_held_write(self):
+        # Held, cleared, mirrored, then a new accepted plan -- all before the
+        # next turn. The last todo_list write WAS mirrored, so nothing is said.
+        _ = self.omh_todo(self.ACCEPTED_PLAN)
         self.assertEqual(self.project([native("1", "unrelated work", "in_progress")]), "held_by_omh_todo")
         _ = self.omh_todo({"action": "clear"})
         self.assertEqual(self.project([native("1", "unrelated work", "in_progress")]), "projected")
-        self.assertEqual(held_native_write_note(SESSION), "")
+        _ = self.omh_todo(self.ACCEPTED_PLAN)
+        self.assertEqual(self.note(), "")
+
+    def test_pending_lines_are_bounded_oldest_out_first(self):
+        cap = native_todo._MAX_HELD_NOTES
+        for index in range(cap):
+            native_todo._note_held_write(f"s{index}")
+        # Re-noting a session already pending moves it to newest and evicts
+        # nobody: the table was full, and it still holds the same sessions.
+        native_todo._note_held_write("s5")
+        self.assertEqual(len(native_todo._HELD_NOTES), cap)
+        self.assertEqual(next(iter(native_todo._HELD_NOTES)), "s0")
+        self.assertEqual(list(native_todo._HELD_NOTES)[-1], "s5")
+        # A new session at the cap pushes the oldest out, and only it.
+        native_todo._note_held_write("one-more")
+        self.assertEqual(len(native_todo._HELD_NOTES), cap)
+        self.assertNotIn("s0", native_todo._HELD_NOTES)
+        self.assertEqual(next(iter(native_todo._HELD_NOTES)), "s1")
+        self.assertIn("s5", native_todo._HELD_NOTES)
 
     def test_a_stale_accepted_plan_is_replaced_and_its_acceptance_does_not_transfer(self):
         _ = self.omh_todo(

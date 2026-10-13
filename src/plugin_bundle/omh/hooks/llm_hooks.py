@@ -753,12 +753,17 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
         )
         if todo_reminder:
             context_parts.append(todo_reminder)
-        # Once, on the turn after a todo_list write the plan's hold kept out
-        # of the record (`native_todo`): the only place the model learns why
-        # its list and the plan line disagree.
-        held_note = held_native_write_note(session_id)
-        if held_note:
-            context_parts.append(held_note)
+        # Once, on the session's next turn after a todo_list write the plan's
+        # hold kept out of the record (`native_todo`): the only place the
+        # model learns why its list and the plan line disagree. Not on a fork
+        # that shares the session's id -- Hermes' background review runs right
+        # after the turn as `session_id == parent_session_id` and would spend
+        # the line before the person's next message; a delegate child and a
+        # compression continuation carry a different parent id.
+        if str(kwargs.get("parent_session_id") or "").strip() != session_id.strip():
+            held_note = held_native_write_note(session_id.strip(), omh_home)
+            if held_note:
+                context_parts.append(held_note)
         workflow_context = active_workflow_context(
             omh_home, session_id
         )

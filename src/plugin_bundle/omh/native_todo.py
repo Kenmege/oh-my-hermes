@@ -42,10 +42,11 @@ is finished. A code-story template is a phase shape a native list cannot
 hold, held while it is open. While any of them stands, the native write is
 left unprojected and the plan keeps its record; leaving one for unrelated
 work is `omh_todo action=clear`. A recorded ``deferred_reason`` does not
-release it -- the hold never reads it, so the plan keeps its stage, its gate
-and its team binding, and the deferral only stops it naming its next item.
-The next turn says so once (``held_native_write_note``). Every other plan is
-replaced, as an
+release it -- the hold never reads it -- so the plan keeps its stage, its
+gate and its team binding and is paused: the plan line stops asking for its
+next item and the turn-end drive stops until the item list changes. The
+session's next turn is told once when a write was held
+(``held_native_write_note``). Every other plan is replaced, as an
 `omh_todo action=set` replaces it: the native write is a new declaration, so
 it carries no template and no ``deferred_reason`` (which lapses on any item
 change by design). A native list identical to an `omh_todo`-written one is
@@ -96,7 +97,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .native_tools import NATIVE_TODO_TOOL
+from .native_tools import NATIVE_CANCELLED_REASON, NATIVE_TODO_TOOL
 from .todo_store import (
     MAX_TODO_DEPTH,
     MAX_TODO_ITEMS,
@@ -110,6 +111,7 @@ from .todo_store import (
     build_todo_record,
     read_todo_record,
     strip_control_characters,
+    todo_items_digest,
     todo_path,
     write_todo,
 )
@@ -118,9 +120,6 @@ from .tools.todo_tool import bind_declared_items
 # The record's `source` for a projected list. The tool's own name, so a reader
 # of the file can tell which tool holds the steps without a second vocabulary.
 NATIVE_TODO_SOURCE = NATIVE_TODO_TOOL
-# The `blocked_reason` a cancelled native item carries. Written by OMH, not the
-# model, and worded as what the record shows rather than why it happened.
-NATIVE_CANCELLED_REASON = "cancelled in todo_list"
 # Hermes' four statuses (`tools/todo_tool.py`, `VALID_STATUSES`) onto the
 # record's three states. An unknown status reads as pending, which is what
 # Hermes itself stores for one.
@@ -139,8 +138,8 @@ _TRUNCATION_MARK = "…"
 # The one line a session is told when the hold kept its todo_list write out.
 # Without it the model sees its own list in Hermes' panel while the plan line
 # keeps naming the held plan's next item, and nothing says why. It rides the
-# next turn's `pre_llm_call` once and is gone (``held_native_write_note``);
-# `tool_result` would be the closer seam, but Hermes fires
+# session's next `pre_llm_call` once and is gone (``held_native_write_note``);
+# the tool result would be the closer seam, but Hermes fires
 # ``transform_tool_result`` for agent-runtime tools such as todo_list only
 # after the plugin's floor.
 HELD_NATIVE_WRITE_NOTE = (
@@ -152,36 +151,68 @@ _HELD_KINDS = {
     PLAN_STAGE_AWAITING_ACCEPTANCE: "plan awaiting acceptance",
     PLAN_STAGE_ACCEPTED: "accepted plan",
 }
-# Process memory, the way `code_mode_guidance` keeps its one-shot line: the
-# hooks that write and read it run in the agent's process, and a restart only
-# loses one advisory line. Bounded so a long-lived gateway cannot grow it.
-_HELD_NOTES: dict[str, str] = {}
+_HELD_TEMPLATE_KIND = "code-story plan"
+# Which sessions have a held write nobody has been told about. Process
+# memory, the way `code_mode_guidance` keeps its one-shot line: the hooks
+# that write and read it run in the agent's process, and a restart only loses
+# one advisory line. Insertion-ordered and bounded, oldest out first, so a
+# long-lived gateway cannot grow it. Only the fact is kept: what the line
+# says is read off the plan record when the line is rendered.
+_HELD_NOTES: dict[str, None] = {}
 _HELD_NOTES_LOCK = threading.Lock()
 _MAX_HELD_NOTES = 64
 
 
-def held_native_write_note(session_ref: str) -> str:
+def held_native_write_note(session_ref: str, omh_home: str | Path) -> str:
     """The line for a todo_list write the hold kept out of this session's plan, or ``""``.
 
-    Read once: the next call answers ``""`` until another write is held.
+    Read once: the pending fact is consumed here, so the next call answers
+    ``""`` until another write is held. It is consumed BEFORE the line is
+    delivered, which is the known limit: a `pre_llm_call` that outlives
+    Hermes' hook timeout is abandoned with its result, and that one line is
+    lost.
+
+    What the line says is decided now, off the record as it stands, never off
+    the moment of the write. A plan cleared, re-declared as a plain one, or
+    gone stale since is no longer held and gets no line. Nor does a plan whose
+    deferral is live: the person paused it, the plan line already says so and
+    asks for nothing, and telling the model to clear a plan they only paused
+    would be the wrong instruction.
+
+    The caller keeps a background-review fork out (`pre_llm_call`): it runs
+    under the parent's session id and would spend the parent's line.
     """
+    key = str(session_ref or "").strip()
     with _HELD_NOTES_LOCK:
-        kind = _HELD_NOTES.pop(str(session_ref or ""), "")
-    return HELD_NATIVE_WRITE_NOTE.format(kind=kind) if kind else ""
+        if key not in _HELD_NOTES:
+            return ""
+        del _HELD_NOTES[key]
+    record = read_todo_record(Path(omh_home), key) or {}
+    if not _held_by_omh_todo(record) or _deferral_is_live(record):
+        return ""
+    kind = _HELD_KINDS.get(str(record.get("plan_stage", "")), _HELD_TEMPLATE_KIND)
+    return HELD_NATIVE_WRITE_NOTE.format(kind=kind)
 
 
-def _note_held_write(session_ref: str, prior: dict[str, Any]) -> None:
-    kind = _HELD_KINDS.get(str(prior.get("plan_stage", "")), "code-story plan")
+def _note_held_write(session_ref: str) -> None:
     with _HELD_NOTES_LOCK:
         _HELD_NOTES.pop(session_ref, None)
         if len(_HELD_NOTES) >= _MAX_HELD_NOTES:
-            _HELD_NOTES.pop(next(iter(_HELD_NOTES)))
-        _HELD_NOTES[session_ref] = kind
+            del _HELD_NOTES[next(iter(_HELD_NOTES))]
+        _HELD_NOTES[session_ref] = None
 
 
 def _forget_held_write(session_ref: str) -> None:
     with _HELD_NOTES_LOCK:
         _HELD_NOTES.pop(session_ref, None)
+
+
+def _deferral_is_live(record: dict[str, Any]) -> bool:
+    """Whether the record's deferral still holds: a reason, and the item list it was written with."""
+    reason = record.get("deferred_reason")
+    if not isinstance(reason, str) or not reason.strip():
+        return False
+    return record.get("deferred_items_digest") == todo_items_digest(record.get("items"))
 
 
 def _reset_held_notes() -> None:
@@ -232,7 +263,7 @@ def project_native_todo(
     try:
         prior = read_todo_record(home, session_ref) or {}
         if _held_by_omh_todo(prior):
-            _note_held_write(session_ref, prior)
+            _note_held_write(session_ref)
             return "held_by_omh_todo"
         _forget_held_write(session_ref)
         items = native_todo_items(todos, prior.get("items"))

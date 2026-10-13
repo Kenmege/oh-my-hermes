@@ -299,7 +299,9 @@ def pre_llm_call_context_scenario_chars() -> dict[str, int]:
       one-time held-write line ride together.
     - `all_surfaces_without_section`: `all_surfaces` on the fallback, primer
       included; the fallback's maximum.
-    - `all_surfaces`: all of the above in one first turn. The parts add, so
+    - `all_surfaces`: the route hint, candidate line, largest role, active
+      workflow and running board in one first turn (the two plan scenarios
+      above need a later turn and are not part of it). The parts add, so
       this is the largest of the seeded scenarios; it is not a bound on every
       turn, because the parts listed below are not seeded. The routed request
       also gets a candidate line, since the line stands down only for a

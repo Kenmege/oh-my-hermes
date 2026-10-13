@@ -36,6 +36,11 @@ from __future__ import annotations
 
 NATIVE_TODO_TOOL = "todo_list"
 TOOL_SEARCH_TOOL = "tool_search"
+# The `blocked_reason` a cancelled todo_list item carries in the OMH plan
+# record (`native_todo`). Written by OMH, not the model, and worded as what the
+# record shows rather than why it happened. Here, beside the tool's name, so
+# the projection and the `omh_todo` tool read one string.
+NATIVE_CANCELLED_REASON = "cancelled in todo_list"
 
 
 def native_tool_presence_clause(name: str, *, code: bool = False) -> str:

@@ -33,7 +33,7 @@ from typing import Any, Callable, Iterator
 # import omh core; a copy here would be the third, and the policy gate in
 # `tests/test_journal_lock_portability.py` exists to stop exactly that.
 from .awareness_delivery import _awareness_delivery_lock
-from .native_tools import NATIVE_TODO_TOOL
+from .native_tools import NATIVE_CANCELLED_REASON, NATIVE_TODO_TOOL
 from .todo_evidence import EVIDENCE_KINDS, evidence_key, valid_evidence
 from .todo_templates import (
     TODO_TEMPLATES,
@@ -904,7 +904,8 @@ def advance_todo_item(
     record's declaring tool is kept, and ``source`` names the writer only for
     a record that names none. On a record `todo_list` holds, the item's
     ``state`` is not the caller's either: the advance records its reasons and
-    keeps the state the last `todo_list` write set (`native_todo`).
+    keeps the state the last `todo_list` write set (`native_todo`), a
+    cancelled item's own reason included when the call sends none.
 
     The template name is read off the stored record and sent back through, so
     a single-item write neither drops it nor escapes it: the phase coverage
@@ -1006,14 +1007,18 @@ def advance_todo_item(
         # last todo_list write set. Otherwise the next todo_list write -- which
         # still shows the native status -- would read the advance's state as a
         # move and drop the reason it carried.
-        if record.get("source") == NATIVE_TODO_TOOL and current.get("state") in TODO_ITEM_STATES:
+        native_held = record.get("source") == NATIVE_TODO_TOOL
+        if native_held and current.get("state") in TODO_ITEM_STATES:
             state = current["state"]
         updated = dict(current)
         updated["state"] = state
         safe_reason = strip_control_characters(blocked_reason)
         if safe_reason:
             updated["blocked_reason"] = blocked_reason
-        else:
+        elif not (native_held and current.get("blocked_reason") == NATIVE_CANCELLED_REASON):
+            # `cancelled` is a todo_list status the record spells as this
+            # reason, so an advance that sends none does not turn a cancelled
+            # item into a completed one.
             updated.pop("blocked_reason", None)
         prior_state = current.get("state")
         if state != "done":
