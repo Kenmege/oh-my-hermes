@@ -26,6 +26,13 @@ count: `composer_rows + 3` rows up from the region's end on any terminal of
 menu, tail or mode do. A shorter terminal drops the mode row, then the bottom
 rule, by its height alone, so the offset is still fixed for each size.
 
+One exception, and only one: while the agent list is focused (`agent_list`
+has rows) it is drawn where the mode row was and is as tall as it needs to
+be, up to `layout.agent_list_cap`, so the composer rises by the rows the list
+adds. That lasts exactly as long as the focus does. The frame after it has
+one mode row again and the same height, so the composer is back on the row
+it left, and no frame without the list ever moves it.
+
 An empty composer shows `placeholder` after the prompt glyph in the hint
 colour while the app asks for it (no slot open). It is drawn, never typed:
 the caret stays right after the glyph and the composer's text stays empty.
@@ -86,13 +93,15 @@ def build_frame(
     mode: str = MODE_NORMAL,
     mode_row: Line = (),
     placeholder: str = "",
+    agent_list: Sequence[Line] = (),
 ) -> Frame:
     """The region for one repaint; `previous_height` is `LiveRegion.height` right now.
 
     `attachments` is drawn as the composer's first row when the composer may
     have two rows; a terminal too short for that shows the input alone.
     `mode` picks both rules' glyph and colour; `mode_row` is drawn under the
-    bottom rule where the terminal has room for it.
+    bottom rule where the terminal has room for it. `agent_list`, the focused
+    agent list's rows, takes that row's place and its own height.
     """
     cap = composer_cap(rows)
     chips = [attachments] if attachments is not None and cap >= 2 else []
@@ -110,6 +119,7 @@ def build_frame(
         slot_rows=len(slot),
         composer_rows=len(composer_lines),
         min_height=min_height,
+        agent_list_rows=len(agent_list),
     )
     rule = rule_line(cols, theme, mode)
     lines = compose(
@@ -122,6 +132,7 @@ def build_frame(
         bottom_rule=rule,
         mode=truncate_line(mode_row, cols),
         status=status,
+        agent_list=[truncate_line(row, cols) for row in agent_list],
     )
     return Frame(
         lines=tuple(lines),

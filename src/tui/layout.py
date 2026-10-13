@@ -10,7 +10,8 @@ Top to bottom the region holds:
     top rule        the composer frame's upper edge
     composer        1..composer_cap(rows) input rows, the caret parked here
     bottom rule     the composer frame's lower edge
-    mode row        the input mode, or a hint for the keys that matter now
+    mode row        the input mode, or a hint for the keys that matter now; while the agent
+                    list is focused, its rows instead
     status line
 
 The budget is a pure function of the terminal size and the content sizes:
@@ -35,6 +36,11 @@ The budget is a pure function of the terminal size and the content sizes:
   it its bottom row. The rows under the composer depend only on the terminal
   size, so the composer's distance from the bottom depends only on the
   composer's own row count, which is the invariant the composer row stands on.
+- The one exception: while the agent list is focused (`agent_list_rows` above
+  zero) it takes the mode row's place and as many rows as it has, up to
+  `agent_list_cap`, so the composer sits that much higher. The moment focus
+  leaves, the mode row is one row again and the pad takes the difference, so
+  the composer is back on the row it left.
 """
 
 from __future__ import annotations
@@ -116,6 +122,17 @@ def slot_cap(rows: int, cols: int) -> int:
     return 0 if is_tiny(rows, cols) else rows // 3
 
 
+def agent_list_cap(rows: int, cols: int) -> int:
+    """The most rows the focused agent list may take, its hint row included; 0 where there is no mode row.
+
+    What is left of the region once the top rule, a composer at its cap, the
+    bottom rule and the status line have their rows.
+    """
+    if not under_composer(rows, cols)[1]:
+        return 0
+    return max_height(rows) - composer_cap(rows) - 3
+
+
 def allocate(
     rows: int,
     cols: int,
@@ -125,12 +142,15 @@ def allocate(
     slot_rows: int,
     composer_rows: int,
     min_height: int,
+    agent_list_rows: int = 0,
 ) -> Budget:
     """Rows for each part of the region (see the module docstring for the rules)."""
     room = max_height(rows)
     composer = min(max(composer_rows, 1), composer_cap(rows))
     status = min(1, room - composer)
     bottom_rule, mode = under_composer(rows, cols)
+    if agent_list_rows > 0:
+        mode = min(agent_list_rows, agent_list_cap(rows, cols))
     left = room - composer - status - bottom_rule - mode
     rule = slot = sticky_rows = tail = 0
     if not is_tiny(rows, cols):
@@ -179,11 +199,13 @@ def compose(
     bottom_rule: Line,
     mode: Line,
     status: Line,
+    agent_list: Sequence[Line] = (),
 ) -> list[Line]:
     """The region's rows, exactly `budget.total` of them, top to bottom.
 
     The tail keeps its last rows; the slot and the composer keep their first
-    rows (their producers size them to `slot_cap` and `composer_cap`).
+    rows (their producers size them to `slot_cap` and `composer_cap`), and so
+    does `agent_list`, which takes the mode row's rows when it has any.
     """
     region: list[Line] = [BLANK] * budget.pad
     if budget.sticky:
@@ -196,8 +218,7 @@ def compose(
     region.extend(composer_rows + [BLANK] * (budget.composer - len(composer_rows)))
     if budget.bottom_rule:
         region.append(bottom_rule)
-    if budget.mode:
-        region.append(mode)
+    region.extend(_first(agent_list or [mode], budget.mode))
     if budget.status:
         region.append(status)
     return region

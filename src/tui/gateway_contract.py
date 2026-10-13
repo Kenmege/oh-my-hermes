@@ -42,6 +42,8 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     # See CONFIG_SET_VALUES: `scope` is deliberately not declared.
     "config.set": frozenset({"key", "value", "session_id"}),
     "session.list": frozenset({"limit"}),
+    # Read-only: the last 16 KB of one child's live transcript, for the agent log view. See `call_problem`.
+    "subagent.tail": frozenset({"session_id", "subagent_id"}),
     "prompt.submit": frozenset({"session_id", "text", "queued"}),
     # Attachments: the gateway resolves and queues the file; the TUI sends a path, never bytes.
     "image.attach": frozenset({"session_id", "path"}),
@@ -141,12 +143,18 @@ def undeclared_params(method: str, params: dict[str, object]) -> list[str]:
 def call_problem(method: str, params: dict[str, object]) -> str:
     """Why the TUI must not send this call; "" when it may.
 
-    An undeclared key, or a `config.set` that Hermes would apply beyond one
-    session: a key or a value outside `CONFIG_SET_VALUES`, or no session id.
+    An undeclared key; a `config.set` that Hermes would apply beyond one
+    session (a key or a value outside `CONFIG_SET_VALUES`, or no session id);
+    or a `subagent.tail` that does not name both a session and a subagent.
+    Hermes answers a tail without a subagent id as a rejected parameter
+    (4000), which the client reads as drift and ends the session over.
     """
     undeclared = undeclared_params(method, params)
     if undeclared:
         return f"{method} does not declare {', '.join(undeclared)} in the gateway contract"
+    if method == "subagent.tail":
+        missing = [key for key in ("session_id", "subagent_id") if not (isinstance(params.get(key), str) and params[key])]
+        return f"subagent.tail needs {' and '.join(missing)}: Hermes rejects the call without" if missing else ""
     if method != "config.set":
         return ""
     key, value, session_id = params.get("key"), params.get("value"), params.get("session_id")

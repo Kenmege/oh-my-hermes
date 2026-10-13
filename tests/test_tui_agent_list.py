@@ -1,0 +1,745 @@
+"""The agent list Down opens under the composer, the log view Enter opens from it, and the tail it reads.
+
+The in-memory cases drive an `App` over the recording client from
+`test_tui_modes`, with Hermes 6c61c3e27d's recorded subagent frames
+(`test_tui_agent_strip.relay`). A `subagent.tail` answer is handed back in the
+shape `tui_gateway/methods_subagents.py` gives it: `subagent_id`, `available`,
+`text`, `truncated`. The clock is the test's, so "at most one call every two
+seconds" is counted, never waited for. One case runs the real loop against
+the replay gateway, with the recorded frames injected into a recorded turn.
+"""
+
+from __future__ import annotations
+
+import json
+import unittest
+
+from _tui_gateway_replay import Scenario, recorded_answer, spans
+from _tui_lines import lines_text
+from test_tui_agent_strip import STARTS, agent_app, agent_event, relay
+from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, Step, startup_answers, status_index
+from test_tui_modes import SID, RecordingClient, answer, composer_index, drawn, make_app, notices, queue, type_text
+from test_tui_subagents import FIRST, FRAMES, SECOND
+from omh.tui import gateway_contract as contract
+from omh.tui.app import AGENT_LIST_HINT, AGENT_LIST_ROWS, SLOT_ARM_SECONDS, TAIL_POLL_SECONDS, App
+from omh.tui.frame import MODE_NORMAL
+from omh.tui.gateway import Event, Response, ServerRequest
+from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, Paste
+from omh.tui.pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
+from omh.tui.session_picker import SessionPicker, SessionRow
+from omh.tui.subagents import MAIN_ID
+from omh.tui.theme import DEFAULT_THEME
+
+CTRL_C = Key(CHAR, "c", ctrl=True)
+TAIL_CALL = ("subagent.tail", {"session_id": SID, "subagent_id": FIRST})
+TAIL = {"subagent_id": FIRST, "available": True, "text": "reading src/api/client.py\nfound 3 call sites\n", "truncated": False}
+NO_TAIL = {"subagent_id": FIRST, "available": False, "text": "", "truncated": False}
+
+
+def under_the_frame(app: App) -> list[str]:
+    """The rows between the composer's bottom rule and the status line: the mode row, or the agent list."""
+    screen = drawn(app)
+    rules = [index for index, line in enumerate(screen) if line.strip() and set(line.strip()) <= set("─━┄")]
+    return screen[rules[-1] + 1 : status_index(screen)]
+
+
+def focused(**options: object) -> tuple[App, RecordingClient]:
+    """An app whose agent list has the keys, on the first agent."""
+    app, client = agent_app(**options)
+    app._on_input(Key(DOWN))
+    return app, client
+
+
+def more_agents(app: App, count: int) -> list[str]:
+    ids = [f"sa-extra-{number}" for number in range(count)]
+    for number, subagent_id in enumerate(ids):
+        agent_event(app, "start", subagent_id, goal=f"task {number}")
+    return ids
+
+
+def log_open(**options: object) -> tuple[App, RecordingClient]:
+    """An app showing the first agent's log, opened from the list."""
+    app, client = focused(**options)
+    app._on_input(Key(ENTER))
+    return app, client
+
+
+def paged(app: App) -> list[str]:
+    assert app.pager is not None
+    return lines_text(list(app.pager.lines))
+
+
+def tails(client: RecordingClient) -> list[dict]:
+    return client.named("subagent.tail")
+
+
+class ListFocusTests(unittest.TestCase):
+    def test_down_on_an_empty_composer_gives_the_list_the_keys_on_the_first_agent(self) -> None:
+        app, client = agent_app()
+        self.assertEqual(len(under_the_frame(app)), 1)  # the mode row, with the strip
+        app._on_input(Key(DOWN))
+        self.assertEqual(app.list_selected, FIRST)
+        rows = under_the_frame(app)
+        expected, ids = app.roster.list_lines(80, DEFAULT_THEME, FIRST, 0, AGENT_LIST_ROWS, 0.0)
+        self.assertEqual(ids, (MAIN_ID, FIRST, SECOND))
+        self.assertEqual(rows, [text.rstrip() for text in lines_text(expected)] + [AGENT_LIST_HINT])
+        self.assertEqual(rows[0], "  ● main")
+        self.assertTrue(rows[1].startswith("▸ ⠋ find usages of old_api in src/"), rows[1])
+        self.assertTrue(rows[2].startswith("  ⠋ read the diff for risks"), rows[2])
+        self.assertEqual(rows[-1], "↑↓ select · ⏎ view log · esc back")
+        self.assertEqual(client.calls, [])
+
+    def test_with_no_agent_down_is_still_the_composers(self) -> None:
+        app, _client = make_app()
+        type_text(app, "an earlier prompt")
+        app._on_input(Key(ENTER))
+        app._on_input(Key(UP))
+        self.assertEqual(app.composer.text, "an earlier prompt")
+        app._on_input(Key(DOWN))  # the input history's way back to the empty draft
+        self.assertEqual((app.composer.text, app.list_selected), ("", None))
+        app._on_input(Key(DOWN))
+        self.assertEqual((app.composer.text, app.list_selected), ("", None))
+        self.assertEqual(len(under_the_frame(app)), 1)
+
+    def test_with_agents_down_still_walks_the_history_until_the_composer_is_empty(self) -> None:
+        app, _client = make_app()
+        type_text(app, "an earlier prompt")
+        app._on_input(Key(ENTER))
+        relay(app, STARTS)
+        app._on_input(Key(UP))
+        app._on_input(Key(DOWN))
+        self.assertEqual((app.composer.text, app.list_selected), ("", None))
+        app._on_input(Key(DOWN))
+        self.assertEqual(app.list_selected, FIRST)
+
+    def test_down_is_not_the_lists_while_something_else_has_the_keys_or_the_composer_has_text(self) -> None:
+        def approval(app: App) -> None:
+            app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+
+        def question(app: App) -> None:
+            choices = {"questions": [{"qid": "q0", "question": "Which?", "choices": ["red", "blue"]}]}
+            app._on_server_request(ServerRequest("srq-1", "clarify", choices))
+
+        def typed_answer(app: App) -> None:
+            app._on_server_request(ServerRequest("srq-1", "vault.code", {}))
+
+        def picker(app: App) -> None:
+            app.picker = SessionPicker([SessionRow("stored-1", "a title", "", 0.0, 1)], current="")
+
+        def pager(app: App) -> None:
+            app.pager = Pager("history", [])
+
+        def menu(app: App) -> None:
+            type_text(app, "/he")
+
+        def draft(app: App) -> None:
+            type_text(app, "a draft")
+
+        def path_menu(app: App) -> None:
+            from omh.tui.app import PathItem
+
+            app.path_items = [PathItem("@src/", "src/", "dir")]
+
+        for opened in (approval, question, typed_answer, picker, pager, menu, draft, path_menu):
+            with self.subTest(opened.__name__):
+                now = [100.0]
+                app, client = agent_app(clock=lambda: now[0])
+                opened(app)
+                now[0] += SLOT_ARM_SECONDS
+                app._on_input(Key(DOWN))
+                self.assertIsNone(app.list_selected)
+                self.assertEqual((client.calls, client.answers), ([], []))
+
+    def test_below_ten_rows_there_is_no_list_to_open(self) -> None:
+        for rows in (6, 9):
+            with self.subTest(rows=rows):
+                app, _client = agent_app(rows=rows)
+                app._on_input(Key(DOWN))
+                self.assertIsNone(app.list_selected)
+        app, _client = agent_app(rows=10)
+        app._on_input(Key(DOWN))
+        self.assertEqual(app.list_selected, FIRST)
+
+    def test_up_and_down_move_the_highlight_and_stop_at_either_end(self) -> None:
+        app, _client = focused()
+        seen = []
+        for key in (DOWN, DOWN, DOWN, UP, UP, UP, UP, DOWN):
+            app._on_input(Key(key))
+            seen.append(app.list_selected)
+        self.assertEqual(seen, [SECOND, SECOND, SECOND, FIRST, MAIN_ID, MAIN_ID, MAIN_ID, FIRST])
+        rows = under_the_frame(app)
+        self.assertEqual([row[:2] for row in rows[:3]], ["  ", "▸ ", "  "])
+
+    def test_the_list_shows_main_and_six_agents_and_scrolls_to_keep_the_highlight_in_view(self) -> None:
+        app, _client = agent_app()
+        extra = more_agents(app, 7)  # nine agents with the two recorded ones
+        app._on_input(Key(DOWN))
+        rows = under_the_frame(app)
+        self.assertEqual(len(rows), AGENT_LIST_ROWS + 1)
+        self.assertEqual((rows[0], rows[-1]), ("  ● main", AGENT_LIST_HINT))
+        self.assertIn("task 3", rows[6])
+        for _ in range(8):
+            app._on_input(Key(DOWN))
+        self.assertEqual(app.list_selected, extra[-1])
+        rows = under_the_frame(app)
+        self.assertEqual(len(rows), AGENT_LIST_ROWS + 1)
+        self.assertTrue(rows[6].startswith("▸ ") and "task 6" in rows[6], rows[6])
+        self.assertIn("task 0", rows[0])  # main and the two recorded agents scrolled off
+        for _ in range(9):
+            app._on_input(Key(UP))
+        self.assertEqual(under_the_frame(app)[0], "▸ ● main")
+
+    def test_a_short_terminal_shows_as_many_rows_as_it_can_spare(self) -> None:
+        app, _client = agent_app(rows=10)
+        more_agents(app, 7)
+        app._on_input(Key(DOWN))
+        rows = under_the_frame(app)
+        self.assertEqual(len(rows), 4)  # three of the list and the hint
+        self.assertEqual(rows[-1], AGENT_LIST_HINT)
+        self.assertTrue(rows[1].startswith("▸ "), rows)
+
+    def test_the_composer_rises_by_the_lists_extra_rows_only_while_it_is_focused_and_comes_back(self) -> None:
+        app, _client = agent_app()
+        before = drawn(app)
+        resting, status = composer_index(before), status_index(before)
+        app._on_input(Key(DOWN))
+        during = drawn(app)
+        self.assertEqual(composer_index(during), resting - 3)  # main, two agents and the hint, where one row was
+        self.assertEqual(status_index(during), status)
+        agent_event(app, "start", "sa-late", goal="a third task")
+        self.assertEqual(composer_index(drawn(app)), resting - 4)
+        app._on_input(Key(ESCAPE))
+        after = drawn(app)
+        self.assertEqual((composer_index(after), status_index(after)), (resting, status))
+        self.assertEqual(composer_index(drawn(app)), resting)  # and it stays there on the next repaint
+
+    def test_the_caret_stays_on_the_composer_while_the_list_has_the_keys(self) -> None:
+        app, _client = focused()
+        screen = drawn(app)
+        self.assertEqual(app.terminal.screen.cursor[0], composer_index(screen))  # type: ignore[attr-defined]
+
+
+class ListLeaveTests(unittest.TestCase):
+    def test_enter_on_main_only_leaves(self) -> None:
+        app, client = focused()
+        app._on_input(Key(UP))
+        app._on_input(Key(ENTER))
+        self.assertEqual((app.list_selected, app.pager, client.calls), (None, None, []))
+        self.assertEqual(app.composer.text, "")
+
+    def test_esc_leaves_without_interrupting_the_turn(self) -> None:
+        app, client = focused()
+        app._on_input(Key(ESCAPE))
+        self.assertEqual((app.list_selected, client.calls), (None, []))
+        self.assertEqual(len(under_the_frame(app)), 1)
+        app._on_input(Key(ESCAPE))  # the list is gone: this Esc is the one that interrupts
+        self.assertEqual(client.calls, [("session.interrupt", {"session_id": SID})])
+
+    def test_ctrl_c_leaves_without_interrupting_or_arming_the_exit(self) -> None:
+        for busy in (True, False):
+            with self.subTest(busy=busy):
+                app, client = focused(busy=busy)
+                app._on_input(CTRL_C)
+                self.assertEqual((app.list_selected, client.calls, notices(app), app.exit_code), (None, [], [], None))
+
+    def test_a_typed_character_leaves_the_list_and_is_typed(self) -> None:
+        app, client = focused()
+        type_text(app, "hi")
+        self.assertEqual((app.list_selected, app.composer.text, client.calls), (None, "hi", []))
+
+    def test_a_paste_leaves_the_list_and_is_pasted(self) -> None:
+        app, _client = focused()
+        app._on_input(Paste("two\nlines"))
+        self.assertEqual((app.list_selected, app.composer.text), (None, "two\nlines"))
+
+    def test_any_other_key_leaves_and_does_what_it_always_did(self) -> None:
+        app, client = focused()
+        app._on_input(Key(TAB, shift=True))
+        self.assertIsNone(app.list_selected)
+        self.assertEqual(client.calls, [("config.set", {"key": "yolo", "session_id": SID, "value": "on"})])
+        app, _client = focused()
+        app._on_input(Key(CHAR, "?"))
+        self.assertIsNone(app.list_selected)
+        self.assertIsNotNone(app.pager)  # the key list
+        self.assertEqual(app.log_agent, "")
+
+    def test_an_approval_arriving_closes_the_list_and_the_enter_aimed_at_it_answers_nothing(self) -> None:
+        now = [100.0]
+        app, client = focused(clock=lambda: now[0])
+        self.assertEqual(app.list_selected, FIRST)
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+        now[0] += SLOT_ARM_SECONDS / 2
+        app._on_input(Key(ENTER))  # on its way to "view log" when the approval opened
+        self.assertEqual(client.answers, [])
+        self.assertEqual((app.list_selected, app.pager), (None, None))
+        self.assertIsNotNone(app.slot)
+        self.assertEqual(len(under_the_frame(app)), 1)  # the mode row is back under the composer
+        now[0] += SLOT_ARM_SECONDS
+        for key in (Key(DOWN), Key(UP)):
+            app._on_input(key)  # the approval takes every key and these two pick nothing
+        self.assertEqual((app.list_selected, client.answers), (None, []))
+        app._on_input(Key(ENTER))  # a deliberate Enter on the untouched approval: the explicit deny
+        self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "deny"}})])
+        self.assertIsNone(app.list_selected)  # and answering it does not bring the list back
+        self.assertEqual(client.calls, [])
+
+    def test_a_question_answered_with_text_closes_the_list_too(self) -> None:
+        now = [100.0]
+        app, client = focused(clock=lambda: now[0])
+        app._on_server_request(ServerRequest("srq-1", "vault.code", {}))
+        app._on_input(Key(ENTER))
+        self.assertEqual((client.answers, app.list_selected, app.pager), ([], None, None))
+
+    def test_the_session_picker_opening_closes_the_list(self) -> None:
+        app, client = focused()
+        app._sessions("")
+        answer(app, client, recorded_answer("session", "session_list")["result"])
+        self.assertIsNotNone(app.picker)
+        self.assertIsNone(app.list_selected)
+        app._on_input(Key(DOWN))  # the picker's key now
+        self.assertIsNone(app.list_selected)
+
+    def test_a_queued_prompt_starting_its_turn_empties_the_roster_and_closes_the_list(self) -> None:
+        app, _client = focused()
+        queue(app, "the next task")
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertEqual(len(under_the_frame(app)), 1)
+        self.assertIsNone(app.list_selected)
+
+    def test_a_terminal_resized_below_ten_rows_closes_the_list(self) -> None:
+        app, _client = focused()
+        app.terminal.screen.resize(9, 80)  # type: ignore[attr-defined]
+        app._on_resize()
+        app._full_redraw()
+        app.redraw_at = None
+        drawn(app)
+        self.assertIsNone(app.list_selected)
+
+    def test_a_highlighted_agent_that_is_gone_leaves_the_highlight_on_main(self) -> None:
+        app, _client = focused()
+        app._on_input(Key(DOWN))
+        self.assertEqual(app.list_selected, SECOND)
+        app.roster.clear()
+        agent_event(app, "start", FIRST)
+        self.assertEqual(under_the_frame(app)[0], "▸ ● main")
+        self.assertEqual(app.list_selected, MAIN_ID)
+
+
+class AgentLogTests(unittest.TestCase):
+    def test_enter_on_an_agent_opens_its_log_on_the_alternate_screen(self) -> None:
+        app, _client = focused(frames=FRAMES[:6])
+        app._on_input(Key(ENTER))
+        self.assertEqual(app.log_agent, FIRST)
+        self.assertIn(ALT_SCREEN_ON, app.terminal.writes)  # type: ignore[attr-defined]
+        self.assertEqual(paged(app), lines_text(app.roster.log_lines(FIRST, 80, DEFAULT_THEME, 0.0)))
+        self.assertEqual(
+            paged(app),
+            [
+                "find usages of old_api in src/ and list every call site",
+                "running · 0s · 3 tools · deepseek-v4.1-flash",
+                "",
+                "▸ I will grep for old_api first",
+                "⏺ search_files  old_api",
+                "⏺ read_file  src/api/client.py",
+                "⏺ terminal",
+            ],
+        )
+        assert app.pager is not None
+        self.assertEqual(app.pager.title, "find usages of · ←/→ agents")
+        screen = drawn(app)
+        self.assertEqual(screen[0], "find usages of old_api in src/ and list every call site")
+        self.assertIn("find usages of · ←/→ agents", screen[-1])
+
+    def test_q_and_esc_come_back_to_the_list_on_the_agent_that_was_shown(self) -> None:
+        for key in (Key(CHAR, "q"), Key(ESCAPE)):
+            with self.subTest(key=key):
+                app, client = log_open()
+                app._on_input(key)
+                self.assertEqual((app.pager, app.log_agent, app.list_selected), (None, "", FIRST))
+                self.assertIn(ALT_SCREEN_OFF, "".join(app.terminal.writes))  # type: ignore[attr-defined]
+                self.assertEqual(under_the_frame(app)[-1], AGENT_LIST_HINT)
+                self.assertEqual(client.named("session.interrupt"), [])  # that Esc left the log, nothing more
+
+    def test_the_log_redraws_as_the_agents_events_arrive(self) -> None:
+        now = [0.0]
+        app, _client = log_open(clock=lambda: now[0])
+        self.assertEqual(paged(app)[-1], "no output yet")
+        now[0] = 4.0
+        agent_event(app, "tool", tool_name="read_file", tool_preview="src/a.py", tool_count=1)
+        agent_event(app, "tool", SECOND, tool_name="terminal", tool_count=1)  # another agent's: not this log's
+        drawn(app)
+        self.assertEqual(paged(app)[1:], ["running · 4s · 1 tool · deepseek-v4.1-flash", "", "⏺ read_file  src/a.py"])
+        agent_event(app, "complete", status="completed", summary="three call sites", duration_seconds=5.0, tool_count=1)
+        drawn(app)
+        self.assertEqual(paged(app)[1], "completed · 5s · 1 tool · deepseek-v4.1-flash")
+        self.assertEqual(paged(app)[-1], "three call sites")
+
+    def test_a_log_read_at_its_end_follows_new_rows_and_one_scrolled_up_stays(self) -> None:
+        app, _client = agent_app()
+        for number in range(60):
+            agent_event(app, "tool", tool_name=f"tool_{number}", tool_count=number + 1)
+        app._on_input(Key(DOWN))
+        app._on_input(Key(ENTER))
+        drawn(app)
+        assert app.pager is not None
+        body = app.pager.body_rows(24)
+        self.assertEqual(app.pager.top, len(app.pager.lines) - body)  # opened on its newest rows
+        self.assertIn("tool_59", app.terminal.screen.lines()[body - 1])  # type: ignore[attr-defined]
+        agent_event(app, "tool", tool_name="tool_60", tool_count=61)
+        drawn(app)
+        self.assertEqual(app.pager.top, len(app.pager.lines) - body)
+        self.assertIn("tool_60", app.terminal.screen.lines()[body - 1])  # type: ignore[attr-defined]
+        for _ in range(5):
+            app._on_input(Key(CHAR, "k"))
+        held = app.pager.top
+        agent_event(app, "tool", tool_name="tool_61", tool_count=62)
+        drawn(app)
+        self.assertEqual(app.pager.top, held)
+        self.assertNotIn("tool_61", "\n".join(app.terminal.screen.lines()[:body]))  # type: ignore[attr-defined]
+
+    def test_left_and_right_move_to_the_agent_before_and_after_and_stop_at_either_end(self) -> None:
+        app, _client = log_open()
+        seen = []
+        for key in (RIGHT, RIGHT, LEFT, LEFT):
+            app._on_input(Key(key))
+            assert app.pager is not None
+            seen.append((app.log_agent, app.pager.title, paged(app)[0]))
+        first = (FIRST, "find usages of · ←/→ agents", "find usages of old_api in src/ and list every call site")
+        second = (SECOND, "read the diff · ←/→ agents", "read the diff for risks")
+        self.assertEqual(seen, [second, second, first, first])
+        app._on_input(Key(RIGHT))
+        app._on_input(Key(CHAR, "q"))
+        self.assertEqual(app.list_selected, SECOND)  # back in the list, on the agent last shown
+
+    def test_left_and_right_in_any_other_pager_do_nothing(self) -> None:
+        app, _client = agent_app()
+        app._on_input(Key(CHAR, "?"))
+        assert app.pager is not None
+        before = (app.pager.title, list(app.pager.lines), app.pager.top)
+        for key in (LEFT, RIGHT):
+            app._on_input(Key(key))
+        self.assertEqual((app.pager.title, list(app.pager.lines), app.pager.top), before)
+        self.assertEqual(app.log_agent, "")
+
+    def test_a_log_whose_agent_a_new_turn_dropped_keeps_its_rows(self) -> None:
+        app, client = log_open(frames=FRAMES[:6])
+        shown = paged(app)
+        app.roster.clear()
+        agent_event(app, "start", "sa-new", goal="the next turn's agent")
+        drawn(app)
+        self.assertEqual(paged(app), shown)
+        for key in (LEFT, RIGHT):
+            app._on_input(Key(key))
+        self.assertEqual((app.log_agent, paged(app)), (FIRST, shown))
+        app._ask_tail_when_due()
+        self.assertEqual(tails(client), [])
+
+    def test_an_approval_arriving_closes_the_log_and_the_list_under_it(self) -> None:
+        now = [100.0]
+        app, client = log_open(clock=lambda: now[0])
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+        app._on_input(Key(ENTER))
+        self.assertEqual((app.pager, app.log_agent, client.answers), (None, "", []))
+        drawn(app)
+        self.assertIsNone(app.list_selected)
+        self.assertIsNotNone(app.slot)
+
+    def test_a_log_is_not_opened_for_an_agent_the_roster_does_not_hold(self) -> None:
+        app, _client = agent_app()
+        app._open_agent_log("sa-nobody")
+        self.assertEqual((app.pager, app.log_agent), (None, ""))
+
+
+class TailPollTests(unittest.TestCase):
+    def open(self, **options: object) -> tuple[App, RecordingClient, list[float]]:
+        now = [50.0]
+        app, client = log_open(clock=lambda: now[0], **options)
+        return app, client, now
+
+    def test_opening_a_running_agents_log_asks_for_its_tail_once(self) -> None:
+        app, client, _now = self.open()
+        self.assertEqual(client.calls, [])  # nothing until the loop's next step
+        app._ask_tail_when_due()
+        self.assertEqual(client.calls, [TAIL_CALL])
+        self.assertEqual(contract.call_problem(*TAIL_CALL), "")
+
+    def test_no_second_call_goes_out_while_the_first_has_no_answer(self) -> None:
+        app, client, now = self.open()
+        for _ in range(100):
+            app._ask_tail_when_due()
+            now[0] += 0.5
+        self.assertEqual(client.calls, [TAIL_CALL])
+
+    def test_an_available_tail_becomes_the_log(self) -> None:
+        app, client, _now = self.open(frames=FRAMES[:6])
+        app._ask_tail_when_due()
+        answer(app, client, TAIL)
+        drawn(app)
+        self.assertEqual(paged(app)[3:], ["reading src/api/client.py", "found 3 call sites"])
+        self.assertEqual(notices(app), [])
+
+    def test_a_tail_hermes_cut_says_earlier_output_is_missing(self) -> None:
+        app, client, _now = self.open()
+        app._ask_tail_when_due()
+        answer(app, client, {**TAIL, "text": "f a line\nthe first whole line\nthe last line\n", "truncated": True})
+        drawn(app)
+        self.assertEqual(paged(app)[3:], ["… earlier output not shown", "the first whole line", "the last line"])
+
+    def test_the_next_call_waits_two_seconds_from_the_last_one(self) -> None:
+        app, client, now = self.open()
+        app._ask_tail_when_due()
+        answer(app, client, TAIL)
+        for later in (0.05, 1.0, TAIL_POLL_SECONDS - 0.01):
+            now[0] = 50.0 + later
+            app._ask_tail_when_due()
+            self.assertEqual(len(tails(client)), 1, later)
+        now[0] = 50.0 + TAIL_POLL_SECONDS
+        app._ask_tail_when_due()
+        self.assertEqual(client.calls, [TAIL_CALL, TAIL_CALL])
+
+    def test_over_ten_seconds_of_steps_no_two_calls_are_less_than_two_seconds_apart(self) -> None:
+        app, client, now = self.open()
+        sent_at: list[float] = []
+        for step in range(201):  # the loop's 50 ms step, every answer back within it
+            now[0] = 50.0 + step * 0.05
+            before = len(client.calls)
+            app._ask_tail_when_due()
+            if len(client.calls) > before:
+                sent_at.append(now[0])
+                answer(app, client, TAIL)
+        self.assertEqual(len(sent_at), 6)  # at 0, 2, 4, 6, 8 and 10 seconds
+        self.assertTrue(all(later - earlier >= TAIL_POLL_SECONDS for earlier, later in zip(sent_at, sent_at[1:])))
+        self.assertEqual(TAIL_POLL_SECONDS, 2.0)
+
+    def test_a_slow_answer_does_not_bring_the_next_call_forward(self) -> None:
+        app, client, now = self.open()
+        app._ask_tail_when_due()
+        now[0] = 59.0  # nine seconds for the answer
+        answer(app, client, TAIL)
+        app._ask_tail_when_due()
+        app._ask_tail_when_due()
+        self.assertEqual(len(tails(client)), 2)  # one more, not one per missed interval
+
+    def test_no_call_after_the_agent_finished(self) -> None:
+        app, client, now = self.open()
+        app._ask_tail_when_due()
+        answer(app, client, TAIL)
+        agent_event(app, "complete", status="completed", summary="done")
+        for _ in range(20):
+            now[0] += 1.0
+            app._ask_tail_when_due()
+        self.assertEqual(len(tails(client)), 1)
+
+    def test_no_call_for_an_agent_that_had_finished_before_its_log_opened(self) -> None:
+        app, client = agent_app(frames=FRAMES, busy=False)
+        app._on_input(Key(DOWN))
+        app._on_input(Key(ENTER))
+        self.assertEqual(app.log_agent, FIRST)
+        app._ask_tail_when_due()
+        self.assertEqual(client.calls, [])
+
+    def test_no_call_for_an_agent_still_waiting_for_a_worker(self) -> None:
+        app, client = agent_app()
+        agent_event(app, "spawn_requested", "sa-queued", goal="waiting its turn")
+        app._open_agent_log("sa-queued")
+        app._ask_tail_when_due()
+        self.assertEqual(client.calls, [])
+
+    def test_no_call_without_a_session(self) -> None:
+        app, client, now = self.open()
+        app.sid = ""
+        for _ in range(10):
+            now[0] += 3.0
+            app._ask_tail_when_due()
+        self.assertEqual(client.calls, [])
+
+    def test_no_call_once_the_log_is_closed_or_while_another_pager_is_open(self) -> None:
+        app, client, now = self.open()
+        app._on_input(Key(CHAR, "q"))
+        app._ask_tail_when_due()
+        self.assertEqual(client.calls, [])
+        app._on_input(Key(ESCAPE))  # out of the list
+        app._on_input(Key(CHAR, "?"))  # the key list: a pager, but no agent's log
+        now[0] += 5.0
+        app._ask_tail_when_due()
+        self.assertEqual(client.calls, [])
+
+    def test_no_call_while_only_the_list_or_the_strip_is_shown(self) -> None:
+        app, client = focused()
+        app._ask_tail_when_due()
+        app._on_input(Key(ESCAPE))
+        app._ask_tail_when_due()
+        self.assertEqual(client.calls, [])
+
+    def test_a_tail_that_is_not_available_changes_nothing_and_says_nothing(self) -> None:
+        app, client, now = self.open(frames=FRAMES[:6])
+        before = paged(app)[3:]  # the log under the header, whose elapsed time moves with the clock
+        self.assertEqual(len(before), 4)
+        app._ask_tail_when_due()
+        answer(app, client, NO_TAIL)
+        drawn(app)
+        self.assertEqual((paged(app)[3:], notices(app)), (before, []))
+        # A reply that says available with any word but true is not one either.
+        for available in ("true", 1, None):
+            now[0] += TAIL_POLL_SECONDS
+            app._ask_tail_when_due()
+            answer(app, client, {**TAIL, "available": available})
+        drawn(app)
+        self.assertEqual((paged(app)[3:], notices(app)), (before, []))
+        self.assertEqual(len(tails(client)), 4)  # and it keeps asking, at its pace
+
+    def test_an_error_answer_changes_nothing_and_says_nothing(self) -> None:
+        app, client, now = self.open(frames=FRAMES[:6])
+        before = paged(app)
+        app._ask_tail_when_due()
+        answer(app, client, error={"code": 4001, "message": "session not found or not owned by this transport"})
+        drawn(app)
+        self.assertEqual((paged(app), notices(app), app.exit_code), (before, [], None))
+        now[0] += TAIL_POLL_SECONDS
+        app._ask_tail_when_due()
+        self.assertEqual(len(tails(client)), 2)
+
+    def test_a_hermes_without_the_method_is_drift_like_any_declared_call(self) -> None:
+        app, client, _now = self.open()
+        app._ask_tail_when_due()
+        answer(app, client, error={"code": contract.METHOD_NOT_FOUND, "message": "unknown method"})
+        self.assertEqual(app.exit_code, 1)
+        self.assertIn("subagent.tail", app.farewell)
+
+    def test_a_tail_answered_after_the_agent_finished_does_not_replace_its_reply(self) -> None:
+        app, client, _now = self.open()
+        app._ask_tail_when_due()
+        agent_event(app, "complete", status="completed", summary="three call sites", duration_seconds=5.0)
+        answer(app, client, TAIL)
+        drawn(app)
+        self.assertEqual(paged(app)[3:], ["three call sites"])
+
+    def test_a_tail_answered_after_the_session_was_left_is_dropped(self) -> None:
+        app, client, now = self.open()
+        app._ask_tail_when_due()
+        app.sid = "live-2"
+        app._on_response(Response(1, TAIL, None))
+        self.assertEqual(len(app.roster.agents[FIRST].log), 0)
+        now[0] += TAIL_POLL_SECONDS
+        app._ask_tail_when_due()  # and the next one goes out for the session the app is in now
+        self.assertEqual(tails(client)[-1], {"session_id": "live-2", "subagent_id": FIRST})
+
+    def test_a_tail_whose_text_is_not_text_is_not_read(self) -> None:
+        app, client, _now = self.open()
+        app._ask_tail_when_due()
+        answer(app, client, {**TAIL, "text": ["not", "text"]})
+        self.assertEqual(len(app.roster.agents[FIRST].log), 0)
+
+    def test_after_moving_to_another_agent_the_next_tail_is_that_agents(self) -> None:
+        app, client, now = self.open()
+        app._ask_tail_when_due()
+        answer(app, client, TAIL)
+        app._on_input(Key(RIGHT))
+        app._ask_tail_when_due()
+        self.assertEqual(len(tails(client)), 1)  # the pace is the view's, not each agent's
+        now[0] += TAIL_POLL_SECONDS
+        app._ask_tail_when_due()
+        self.assertEqual(tails(client)[-1], {"session_id": SID, "subagent_id": SECOND})
+
+    def test_the_tail_is_the_only_call_the_agent_views_make(self) -> None:
+        app, client, now = self.open()
+        for key in (RIGHT, LEFT, Key(CHAR, "q"), Key(UP), Key(DOWN), Key(ENTER), Key(CHAR, "q"), Key(ESCAPE)):
+            app._on_input(key if isinstance(key, Key) else Key(key))
+            now[0] += 3.0
+            app._ask_tail_when_due()
+            if client.calls and app.tail_open:
+                answer(app, client, TAIL)
+            drawn(app)
+        self.assertEqual({method for method, _params in client.calls}, {"subagent.tail"})
+        self.assertEqual(client.answers, [])
+        self.assertEqual(app.mode, MODE_NORMAL)
+
+
+def subagent_frame(event_type: str, payload: dict[str, object]) -> str:
+    """One recorded subagent frame as the gateway would send it on the live session."""
+    return json.dumps(
+        {"jsonrpc": "2.0", "method": "event", "params": {"type": event_type, "session_id": LIVE_ID, "payload": payload}}
+    )
+
+
+INTERRUPTED_PROMPT = "Write the numbers from 1 to 300, one per line, nothing else."
+
+
+def delegating_scenario(*answers: tuple[str, dict]) -> Scenario:
+    """The recorded turn the person interrupts, with Hermes' subagent frames arriving just before it waits.
+
+    The replay holds that turn open until it reads `session.interrupt`, so
+    the agents stay running for as long as the script needs them.
+    """
+    played = spans("session", "startup", "create", "interrupted_turn")
+    waits_at = sum(stop - start for start, stop in played[:2]) + 18  # the recorded session.interrupt
+    frames = tuple((waits_at, subagent_frame(event_type, payload)) for event_type, payload in FRAMES[:6])
+    return Scenario("session", played, inject=frames, answers=(*startup_answers(), *answers))
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class AgentReplayTests(AppTestCase):
+    def test_the_strip_the_list_and_the_log_work_in_the_real_loop_and_the_tail_is_asked_of_hermes(self) -> None:
+        tail = {"subagent_id": FIRST, "available": True, "text": "TAIL: grepping src/\n", "truncated": False}
+        run = self.prepare(delegating_scenario(("subagent.tail", {"result": tail})))
+        terminal = run.terminal
+        listed = terminal.shows("↑↓ select · ⏎ view log · esc back")
+        terminal.script(
+            self.submit(run, INTERRUPTED_PROMPT),
+            Step(b"\x1b[B", when=terminal.shows("● main  "), capture="strip", label="the strip"),
+            Step(b"\r", when=listed, capture="list", label="the list"),
+            Step(b"\x1b[C", when=terminal.shows("TAIL: grepping src/"), capture="log", label="the tail in the log"),
+            Step(b"q", when=terminal.shows("read the diff · ←/→ agents"), capture="second", label="the second agent"),
+            Step(b"\x1b", when=listed, capture="back", label="the list again"),
+            Step(b"\x1b", when=lambda: not listed() and terminal.shows("● main  ")(), label="the strip again"),
+            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(), label="the end"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        captures = terminal.captures
+        strip = captures["strip"][status_index(captures["strip"]) - 1]
+        self.assertTrue(strip.startswith("● main  "), strip)
+        self.assertIn("find usages of", strip)
+        self.assertIn("read the diff", strip)
+        rows = captures["list"]
+        status = status_index(rows)
+        self.assertEqual(rows[status - 4], "  ● main")
+        self.assertTrue(rows[status - 3].startswith("▸ ") and "find usages of old_api" in rows[status - 3], rows)
+        self.assertEqual(rows[status - 1], "↑↓ select · ⏎ view log · esc back")
+        self.assertEqual(composer_index(rows), composer_index(captures["strip"]) - 3)
+        self.assertEqual(captures["log"][0], "find usages of old_api in src/ and list every call site")
+        self.assertEqual(captures["second"][0], "read the diff for risks")
+        self.assertTrue(captures["back"][status_index(captures["back"]) - 2].startswith("▸ "), captures["back"])
+        calls = run.calls("subagent.tail")
+        self.assertEqual(calls[0]["params"], {"session_id": LIVE_ID, "subagent_id": FIRST})
+        self.assertLessEqual(len(calls), 2)
+        self.assertEqual(len(run.calls("session.interrupt")), 1)  # the last Esc alone, with the list gone
+
+
+class ContractTests(unittest.TestCase):
+    def test_the_tail_call_carries_exactly_what_hermes_names(self) -> None:
+        # Hermes 6c61c3e27d: SubagentIdParams is session_id, subagent_id and profile (tui_gateway/contracts/).
+        self.assertEqual(contract.CLIENT_METHODS["subagent.tail"], {"session_id", "subagent_id"})
+        self.assertEqual(contract.call_problem(*TAIL_CALL), "")
+
+    def test_a_tail_call_hermes_would_reject_is_never_sent(self) -> None:
+        # A missing subagent id is answered 4000, which the client reads as drift and leaves the session over.
+        refused = {
+            "no subagent id": {"session_id": SID},
+            "an empty subagent id": {"session_id": SID, "subagent_id": ""},
+            "a subagent id that is not text": {"session_id": SID, "subagent_id": 7},
+            "no session id": {"subagent_id": FIRST},
+            "an empty session id": {"session_id": "", "subagent_id": FIRST},
+            "a key Hermes takes but the TUI does not send": {"session_id": SID, "subagent_id": FIRST, "profile": "x"},
+            "text to send to the agent": {"session_id": SID, "subagent_id": FIRST, "text": "do this"},
+        }
+        for name, params in refused.items():
+            with self.subTest(name):
+                self.assertNotEqual(contract.call_problem("subagent.tail", params), "")
+
+    def test_the_tui_declares_no_call_that_writes_to_a_subagent(self) -> None:
+        self.assertEqual([method for method in contract.CLIENT_METHODS if method.startswith("subagent.")], ["subagent.tail"])
+
+
+if __name__ == "__main__":
+    unittest.main()

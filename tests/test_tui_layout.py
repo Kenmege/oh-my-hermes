@@ -6,7 +6,10 @@ hard ones: the region is never taller than `rows - 1`, composer and status
 fit before anything else, the rows under the composer follow the terminal's
 height alone (the mode row goes before the bottom rule), the caps hold, and
 `min_height` is honoured with pad rows. `compose` is checked for row order,
-the tail keeping its last rows, and the exact row count.
+the tail keeping its last rows, and the exact row count. The focused agent
+list is the one content size that changes the rows under the composer; it is
+checked over the same sizes for the bound that matters, that the region still
+fits and nothing above the composer is lost that the list did not need.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ from omh.tui.layout import (
     MIN_ROWS,
     MODE_ROW_MIN_ROWS,
     Budget,
+    agent_list_cap,
     allocate,
     caret_row,
     compose,
@@ -197,6 +201,77 @@ class AllocateExampleTests(unittest.TestCase):
         self.assertEqual([composer_cap(rows) for rows in (1, 2, 3, 7, 8, 24, 80)], [0, 1, 1, 1, 2, 6, 20])
         self.assertEqual([slot_cap(rows, 80) for rows in (5, 6, 24, 80)], [0, 2, 8, 26])
         self.assertEqual(slot_cap(24, MIN_COLS - 1), 0)
+
+
+class AgentListBudgetTests(unittest.TestCase):
+    def test_the_list_takes_the_mode_rows_place_and_its_own_height(self) -> None:
+        plain_row = allocate(24, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1, min_height=23)
+        listed = allocate(
+            24, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1, min_height=23, agent_list_rows=5
+        )
+        self.assertEqual((plain_row.mode, listed.mode), (1, 5))
+        self.assertEqual((plain_row.total, listed.total), (23, 23))  # the pad gave the four rows
+        self.assertEqual(plain_row.composer_top - listed.composer_top, 4)
+
+    def test_the_cap_is_what_the_frame_and_a_full_composer_leave(self) -> None:
+        self.assertEqual([agent_list_cap(rows, 80) for rows in (6, 9, 10, 11, 12, 13, 16, 24, 80)], [0, 0, 4, 5, 5, 6, 8, 14, 56])
+        self.assertEqual(agent_list_cap(24, MIN_COLS - 1), 0)
+        for rows in range(MODE_ROW_MIN_ROWS, 86):
+            with self.subTest(rows=rows):
+                self.assertGreaterEqual(agent_list_cap(rows, 80), 4)  # three agents and the hint, at least
+
+    def test_no_list_of_any_length_breaks_the_budget_at_any_size(self) -> None:
+        for rows, cols, composer_rows, asked in itertools.product(ROWS, COLS, COMPOSER_ROWS, (1, 2, 4, 8, 30, 500)):
+            got = allocate(
+                rows, cols, sticky=True, tail_rows=40, slot_rows=9, composer_rows=composer_rows, min_height=rows + 3,
+                agent_list_rows=asked,
+            )
+            without = allocate(
+                rows, cols, sticky=True, tail_rows=40, slot_rows=9, composer_rows=composer_rows, min_height=rows + 3
+            )
+            where = f"{rows}x{cols} composer {composer_rows} list {asked}"
+            self.assertLessEqual(got.total, max(rows - 1, 0), where)
+            self.assertEqual(got.mode, min(asked, agent_list_cap(rows, cols)), where)
+            # the composer, its two rules and the status line are what they were without the list
+            self.assertEqual(
+                (got.rule, got.composer, got.bottom_rule, got.status),
+                (without.rule, without.composer, without.bottom_rule, without.status),
+                where,
+            )
+            if not without.mode:
+                self.assertEqual(got, without, where)  # no mode row to replace: the list is not drawn
+
+    def test_compose_draws_the_list_where_the_mode_row_was_and_keeps_its_first_rows(self) -> None:
+        parts = budget(rule=1, composer=1, bottom_rule=1, mode=3, status=1)
+        region = compose(
+            parts,
+            sticky=None,
+            tail=[],
+            slot=[],
+            rule=(Span("──"),),
+            composer=plain("› a"),
+            bottom_rule=(Span("__"),),
+            mode=(Span("mode"),),
+            status=(Span("status"),),
+            agent_list=plain("main", "agent 1", "agent 2", "hint"),
+        )
+        self.assertEqual(lines_text(region), ["──", "› a", "__", "main", "agent 1", "agent 2", "status"])
+        self.assertEqual(len(region), parts.total)
+
+    def test_a_frame_with_the_list_puts_it_over_the_status_line_and_the_caret_on_the_composer(self) -> None:
+        composer = Composer(text="hi", caret=2)
+        status = (Span("status"),)
+        resting = build_frame(cols=40, rows=24, composer=composer, status=status, previous_height=23, mode_row=(Span("mode"),))
+        listed = build_frame(
+            cols=40, rows=24, composer=composer, status=status, previous_height=23, mode_row=(Span("mode"),),
+            agent_list=plain("main", "agent 1", "x" * 60),
+        )
+        self.assertEqual(lines_text(list(resting.lines))[-4:], ["› hi", "─" * 40, "mode", "status"])
+        self.assertEqual(
+            lines_text(list(listed.lines))[-6:], ["› hi", "─" * 40, "main", "agent 1", "x" * 39 + "…", "status"]
+        )
+        self.assertEqual((listed.height, resting.height), (23, 23))
+        self.assertEqual(listed.cursor, (resting.cursor[0] - 2, resting.cursor[1]))
 
 
 class ComposeTests(unittest.TestCase):

@@ -13,9 +13,9 @@ as on any other exit.
 
 `App` is the loop. One thread owns the terminal and every model: it reads
 input with a short timeout, routes keys (the pager while it is open, then
-Ctrl+O and Ctrl+L, an open prompt slot, the session picker, the mode, effort
-and key-list keys, the attachment keys and Esc, the completion menu, the
-queue's Up, then the composer), takes everything the
+Ctrl+O and Ctrl+L, an open prompt slot, the session picker, the agent list,
+the mode, effort and key-list keys, the attachment keys and Esc, the
+completion menu, the queue's Up, then the composer), takes everything the
 gateway sent since the last step, takes the newest HUD snapshot, and
 repaints when something changed or a spinner is due. Calls made from the
 loop go out with `GatewayClient.request` and their answers come back through
@@ -50,7 +50,11 @@ confirmed or reports in `session.info`.
 
 Subagents: every `subagent.*` event of the live session is folded into one
 `subagents.Roster`, which a new turn and a new session empty. While it holds
-an agent the mode row carries a strip of them.
+an agent the mode row carries a strip of them, Down on an empty composer
+gives the keys to a list of them (the one thing that moves the composer: see
+`frame`), and Enter opens one agent's log in the pager. The log is
+read-only: `subagent.tail` is asked for the open agent while it runs, at most
+every `TAIL_POLL_SECONDS`, and nothing is ever sent to a subagent.
 
 Prompt text, the transcript, attachments, secrets, server-request frames and
 the gateway's stderr stay in memory and on the person's own terminal; nothing
@@ -105,7 +109,7 @@ from .gateway import (
 )
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Mouse, Paste
 from .launch import FALLBACK_EXIT
-from .layout import slot_cap, under_composer
+from .layout import agent_list_cap, slot_cap, under_composer
 from .markdown import clean_text
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
@@ -128,7 +132,7 @@ from .slash import (
     plan_invocation,
 )
 from .style import Line, Span, Style
-from .subagents import Hit, Roster
+from .subagents import MAIN_ID, RUNNING, Hit, Roster
 from .terminal import Terminal, terminal_supported
 from .theme import DEFAULT_THEME, Theme, build_theme, theme_named
 from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, as_text
@@ -212,9 +216,13 @@ STEERED_NOTICE = "↪ steered: {}"
 STEER_REJECTED = "rejected"  # `session.steer`'s status when the turn ended before the text arrived
 STEER_USAGE = "Usage: /steer <text to add to the running turn>"
 
-# Subagents: the strip on the mode row.
+# Subagents: the strip on the mode row, the list Down opens, and one agent's log in the pager.
 SUBAGENT_EVENT_PREFIX = "subagent."
 STRIP_SEPARATOR = " · "
+AGENT_LIST_ROWS = 7  # main and six agents; a longer roster scrolls
+AGENT_LIST_HINT = "↑↓ select · ⏎ view log · esc back"
+AGENT_LOG_KEYS = "←/→ agents"
+TAIL_POLL_SECONDS = 2.0
 
 # One BEL when an approval opens, so a terminal in the background can flag the tab or bounce.
 BELL = "\a"
@@ -730,6 +738,10 @@ class App:
         self.path_items: list[PathItem] = []
         self.connection_ops: set[str] = set()  # `connection.request` operations already named in a notice
         self.roster = Roster()  # the running turn's subagents
+        self.list_selected: str | None = None  # the agent list's highlighted row while the list has the keys
+        self.log_agent = ""  # the agent whose log the pager shows; "" for every other pager
+        self.tail_asked_at: float | None = None  # when the last `subagent.tail` went out
+        self.tail_open = False  # that call has no answer yet
         self.dirty = True
         self.last_render = 0.0
 
@@ -870,6 +882,7 @@ class App:
             return
         self._track_path_token()
         self._ask_path_completion_when_due()
+        self._ask_tail_when_due()
         self._take_hud()
         self._render_when_due()
 
@@ -1062,6 +1075,7 @@ class App:
             return
         self.slot = opened
         self.slot_opened_at = self.clock()
+        self._settle_list()  # a question has the keys now: the agent list gives them up
         if opened.method == "approval" and self.environ.get(BELL_ENV) != BELL_OFF:
             self.terminal.write(BELL)  # once per approval, as its slot opens; the wait is on the person
         if opened.wants_text:
@@ -1108,7 +1122,9 @@ class App:
         if isinstance(event, Mouse):
             return  # not a key; a report from mouse tracking another program left on must type nothing
         if self.pager is not None:
-            if not self.pager.handle_key(event, self.size[1]):
+            if self.log_agent and isinstance(event, Key) and event.name in (LEFT, RIGHT):
+                self._step_agent_log(-1 if event.name == LEFT else 1)
+            elif not self.pager.handle_key(event, self.size[1]):
                 self._leave_pager()
             return
         if self._display_key(event):
@@ -1122,6 +1138,8 @@ class App:
             return
         if self.slot is None and self.picker is not None:
             self._picker_key(event)
+            return
+        if self.slot is None and self._agent_list_key(event):
             return
         if self.slot is None and (self._mode_key(event) or self._effort_key(event) or self._guide_key(event)):
             return
@@ -1720,6 +1738,7 @@ class App:
         rows = session_rows(result)
         if rows:
             self.picker = SessionPicker(rows, current=self.stored_id)
+            self._settle_list()
         else:
             self.transcript.add_notice("Hermes has no stored sessions to switch to.")
 
@@ -1922,6 +1941,7 @@ class App:
 
     def _leave_pager(self) -> None:
         self.pager = None
+        self.log_agent = ""
         self.terminal.write(ALT_SCREEN_OFF + SHOW_CURSOR)
         if self.resized_while_paging:
             self.resized_while_paging = False
@@ -1988,7 +2008,9 @@ class App:
 
     def _render(self) -> None:
         cols, rows = self.size
+        self._settle_list()
         if self.pager is not None:
+            self._refresh_agent_log()
             self.terminal.write(self.pager.frame(cols, rows, self.theme))
             return
         stable = self.transcript.take_stable_lines(cols, self.theme)
@@ -2002,6 +2024,7 @@ class App:
         previous = 0 if anchoring else self.region.height
         self.anchor = False
         strip, _hits = self._agent_strip(cols)
+        agent_list, _listed = self._agent_list(cols, rows)
         frame = build_frame(
             cols=cols,
             rows=rows,
@@ -2027,6 +2050,7 @@ class App:
                 strip=strip,
             ),
             placeholder=PLACEHOLDER if self.slot is None and self.picker is None else "",
+            agent_list=agent_list,
         )
         self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad)
         if stable and anchoring:
@@ -2045,6 +2069,126 @@ class App:
         start = strip_column(self.mode, self.theme)
         line, hits = self.roster.strip_line(cols - start, self.theme, self._spinner_frame())
         return line, tuple(Hit(hit.start + start, hit.end + start, hit.subagent_id) for hit in hits)
+
+    def _agent_list(self, cols: int, rows: int) -> tuple[list[Line], tuple[str, ...]]:
+        """The focused agent list (its rows, then the hint row) and the id of each row; nothing while it has no focus."""
+        if self.list_selected is None:
+            return [], ()
+        room = min(AGENT_LIST_ROWS, agent_list_cap(rows, cols) - 1)  # the last row is the hint's
+        lines, listed = self.roster.list_lines(
+            cols, self.theme, self.list_selected, self._spinner_frame(), room, self.clock()
+        )
+        return [*lines, truncate_line((Span(AGENT_LIST_HINT, self.theme.hint),), cols)], listed
+
+    def _list_available(self) -> bool:
+        """Whether the agent list can be shown: agents to list, the mode row it replaces, and nothing else holding the keys."""
+        cols, rows = self.size
+        return bool(self.roster.agents and under_composer(rows, cols)[1]) and self.slot is None and self.picker is None
+
+    def _settle_list(self) -> None:
+        """Take the keys back from a list that can no longer be shown; keep its highlight on a row it still has."""
+        if self.list_selected is None:
+            return
+        if not self._list_available():
+            self.list_selected = None
+        elif self.list_selected not in self.roster.agents:
+            self.list_selected = MAIN_ID
+
+    def _agent_list_key(self, event: Key | Paste) -> bool:
+        """The agent list's keys; True when the list took the key.
+
+        Down on an empty composer gives the list the keys, on the first
+        agent, while there is one to list and no completion menu is open.
+        Then Up and Down move, Enter opens the highlighted agent's log (on
+        main it only leaves) and Esc or Ctrl+C leaves. Anything else leaves
+        too and is then read as it would have been, so typing types.
+        """
+        self._settle_list()
+        name = event.name if isinstance(event, Key) else ""  # a paste is no key of the list's
+        if self.list_selected is None:
+            if name != DOWN or self.composer.text or self._menu_rows() or not self._list_available():
+                return False
+            self.list_selected = next(iter(self.roster.agents))
+            return True
+        if name in (UP, DOWN):
+            ids = self.roster.ids()
+            row = ids.index(self.list_selected) + (-1 if name == UP else 1)
+            self.list_selected = ids[min(max(row, 0), len(ids) - 1)]
+            return True
+        if name == ENTER and self.list_selected != MAIN_ID:
+            self._open_agent_log(self.list_selected)  # over the list: leaving the log comes back to it
+            return True
+        self.list_selected = None
+        return name in (ENTER, ESCAPE) or event == Key(CHAR, "c", ctrl=True)
+
+    def _open_agent_log(self, subagent_id: str) -> None:
+        """One agent's log on the alternate screen, opened at its newest rows; nothing for an agent no longer held."""
+        if subagent_id not in self.roster.agents:
+            return
+        self._open_pager("", [])
+        self.log_agent = subagent_id
+        self._refresh_agent_log(to_end=True)
+
+    def _step_agent_log(self, step: int) -> None:
+        """Left and Right in the log view: the agent before or after this one, stopping at either end."""
+        ids = tuple(self.roster.agents)
+        if self.log_agent not in ids:
+            return
+        self.log_agent = ids[min(max(ids.index(self.log_agent) + step, 0), len(ids) - 1)]
+        if self.list_selected is not None:
+            self.list_selected = self.log_agent  # leaving the log comes back to the row it shows
+        self._refresh_agent_log(to_end=True)
+
+    def _refresh_agent_log(self, to_end: bool = False) -> None:
+        """Rebuild the open log from the roster; a view on its last page stays on it as rows arrive.
+
+        An agent the roster no longer holds (a new turn began) keeps the rows
+        last drawn.
+        """
+        agent = self.roster.agents.get(self.log_agent)
+        if self.pager is None or agent is None:
+            return
+        cols, rows = self.size
+        at_end = self.pager.top >= len(self.pager.lines) - self.pager.body_rows(rows)
+        self.pager.title = f"{agent.name} · {AGENT_LOG_KEYS}"
+        self.pager.lines = self.roster.log_lines(agent.subagent_id, cols, self.theme, self.clock())
+        if to_end or at_end:
+            self.pager.top = len(self.pager.lines)  # past the end: the pager shows the last full page
+
+    def _ask_tail_when_due(self) -> None:
+        """`subagent.tail` for the agent whose log is open, while it runs: at most one call every `TAIL_POLL_SECONDS`.
+
+        The first goes out as a log opens, and the pace is the view's, not
+        each agent's: moving to another agent does not bring the next call
+        forward. None goes out while the last has no answer, for an agent
+        that is not running, or without a session.
+        """
+        agent = self.roster.agents.get(self.log_agent) if self.pager is not None else None
+        if agent is None or agent.status != RUNNING or not self.sid or self.tail_open:
+            return
+        now = self.clock()
+        if self.tail_asked_at is not None and now - self.tail_asked_at < TAIL_POLL_SECONDS:
+            return
+        self.tail_asked_at, self.tail_open = now, True
+        sid, subagent_id = self.sid, agent.subagent_id
+        self._request(
+            "subagent.tail",
+            {"session_id": sid, "subagent_id": subagent_id},
+            lambda result: self._on_tail(sid, subagent_id, result),
+            lambda error: self._on_tail(sid, subagent_id, {}),  # the log keeps what the events gave it
+        )
+
+    def _on_tail(self, sid: str, subagent_id: str, result: Mapping[str, Any]) -> bool:
+        """A `subagent.tail` answer: read only when Hermes has a tail, for an agent still running in this session.
+
+        A tail that arrives after its agent finished would replace the reply
+        its `subagent.complete` put in the log, so it is dropped.
+        """
+        self.tail_open = False
+        agent = self.roster.agents.get(subagent_id)
+        if sid == self.sid and agent is not None and agent.status == RUNNING and result.get("available") is True:
+            self.roster.ingest_tail(subagent_id, as_text(result.get("text")), result.get("truncated") is True)
+        return True
 
     @property
     def keyboard_protocol(self) -> bool:
