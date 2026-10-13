@@ -710,6 +710,28 @@ class OpeningTests(AppTestCase):
             history[:2], [f"⚚ OH-MY-HERMES v{__version__} · deepseek/deepseek-v4.1-flash-ultrafast · ~/project", BANNER_HINT]
         )
 
+    def test_the_banner_stays_one_row_and_keeps_the_end_of_a_long_path(self) -> None:
+        from omh.tui.app import banner_lines
+        from omh.tui.theme import DEFAULT_THEME
+        from omh.tui.width import line_width
+
+        cwd = "/private/tmp/claude-501/a-very-long-scratch-directory-name/session/scratchpad/m9/project"
+        for width in (40, 60, 80, 110, 200):
+            with self.subTest(width=width):
+                header, hint, _blank = banner_lines(model="deepseek/deepseek-v4.1-flash-ultrafast", cwd=cwd,
+                                                    resumed="", theme=DEFAULT_THEME, width=width)
+                text = "".join(span.text for span in header)
+                self.assertLessEqual(line_width(header), width)
+                self.assertLessEqual(line_width(hint), width)
+                if "…" in text and "m9/project" not in text and width >= 110:
+                    self.fail(f"the path lost its end at width {width}: {text}")
+        wide = "".join(span.text for span in banner_lines(model="m", cwd=cwd, resumed="", theme=DEFAULT_THEME,
+                                                           width=110)[0])
+        self.assertTrue(wide.endswith("m9/project"), wide)
+        narrow = "".join(span.text for span in banner_lines(model="a-long-model-name-that-fills-the-row", cwd=cwd,
+                                                             resumed="", theme=DEFAULT_THEME, width=60)[0])
+        self.assertNotIn("/private", narrow)
+
     def test_the_recorded_default_skin_paints_sky_and_an_omh_skin_paints_its_theme(self) -> None:
         ready = turn_rows("session", 0)
         crimson = {**ready, "params": {**ready["params"], "payload": {"skin": {"name": "omh-crimson"}}}}

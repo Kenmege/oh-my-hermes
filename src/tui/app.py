@@ -83,7 +83,7 @@ from .style import Line, Span
 from .terminal import Terminal, terminal_supported
 from .theme import DEFAULT_THEME, Theme, build_theme, theme_named
 from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript
-from .width import line_width, truncate_line, wrap_line
+from .width import cell_width, clusters, line_width, truncate_line, wrap_line
 from ..version import __version__
 
 READ_TIMEOUT_SECONDS = 0.05
@@ -205,16 +205,43 @@ def short_path(path: str, home: str) -> str:
     return path
 
 
-def banner_lines(*, model: str, cwd: str, resumed: str, theme: Theme) -> list[Line]:
-    """The header flushed to scrollback once, before the first frame, and the hint under it."""
+# Below this many cells the working directory says too little to be worth a column.
+_BANNER_MIN_PATH_CELLS = 12
+
+
+def _left_truncate(text: str, cells: int) -> str:
+    """`text` cut from the left to `cells`, keeping its end (the informative part of a path)."""
+    if cell_width(text) <= cells:
+        return text
+    kept = ""
+    for cluster in reversed(clusters(text)):
+        if cell_width("…" + cluster + kept) > cells:
+            break
+        kept = cluster + kept
+    return "…" + kept
+
+
+def banner_lines(*, model: str, cwd: str, resumed: str, theme: Theme, width: int) -> list[Line]:
+    """The header flushed to scrollback once, before the first frame, and the hint under it.
+
+    The header is one row at `width`: the working directory is shortened from
+    the left to what is left over (and dropped when that is too little), and
+    whatever still overflows is cut at the edge rather than wrapped.
+    """
     facts = [f"resumed {resumed}"] if resumed else []
-    facts += [text for text in (model, cwd) if text]
-    header: Line = (
-        Span(BANNER_BRAND, replace(theme.heading, bold=True)),
-        Span(f" v{__version__}", theme.dim),
-        *(span for fact in facts for span in (Span(" · ", theme.dim), Span(fact, theme.text))),
-    )
-    return [header, (Span(BANNER_HINT, theme.dim),), ()]
+    facts += [model] if model else []
+
+    def header(path: str) -> Line:
+        shown = [*facts, path] if path else facts
+        return (
+            Span(BANNER_BRAND, replace(theme.heading, bold=True)),
+            Span(f" v{__version__}", theme.dim),
+            *(span for fact in shown for span in (Span(" · ", theme.dim), Span(fact, theme.text))),
+        )
+
+    room = width - line_width(header("")) - len(" · ")
+    path = _left_truncate(cwd, room) if cwd and room >= _BANNER_MIN_PATH_CELLS else ""
+    return [truncate_line(header(path), width), truncate_line((Span(BANNER_HINT, theme.dim),), width), ()]
 
 
 def _tool_summary(message: Mapping[str, Any]) -> str:
@@ -393,7 +420,7 @@ class App:
         self.exit_armed_at: float | None = None
         self.exit_code: int | None = None
         self.farewell = ""
-        self.banner: list[Line] = []  # flushed above the first frame, then cleared
+        self.banner_facts: dict[str, str] | None = None  # the header, flushed above the first frame once
         self.anchor = True  # the next frame re-anchors the region (first frame, resize, redraw)
         self.dirty = True
         self.last_render = 0.0
@@ -417,12 +444,11 @@ class App:
         self._adopt_session(result, fallback_stored=resume)
         info = result.get("info")
         cwd = (_text(info.get("cwd")) if isinstance(info, dict) else "") or self._create_params().get("cwd", "")
-        self.banner = banner_lines(
-            model=self.model,
-            cwd=short_path(cwd, self.environ.get("HOME", "")),
-            resumed=self.stored_id if resume else "",
-            theme=self.theme,
-        )
+        self.banner_facts = {
+            "model": self.model,
+            "cwd": short_path(cwd, self.environ.get("HOME", "")),
+            "resumed": self.stored_id if resume else "",
+        }
         if resume:
             self._draw_history(result.get("messages"))
         for entry in result.get("open_requests") or []:
@@ -1030,9 +1056,9 @@ class App:
             self.terminal.write(self.pager.frame(cols, rows, self.theme))
             return
         stable = self.transcript.take_stable_lines(cols, self.theme)
-        if self.banner:
-            stable = [row for line in self.banner for row in (wrap_line(line, cols) if line else [()])] + stable
-            self.banner = []
+        if self.banner_facts is not None:
+            stable = banner_lines(**self.banner_facts, theme=self.theme, width=cols) + stable
+            self.banner_facts = None
         if stable:
             self.region.flush_above(stable, cols)
         previous = 0 if self.anchor else self.region.height
