@@ -304,7 +304,7 @@ class Roster:
             agent.seen = self._frames
 
     def clear(self) -> None:
-        """Drop every agent: the app calls this when a new turn starts."""
+        """Drop every agent: the app calls this when a new turn starts and when it leaves a session."""
         self.agents.clear()
         self.evicted = 0
 

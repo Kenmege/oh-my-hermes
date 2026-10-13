@@ -23,7 +23,7 @@ from _tui_gateway_replay import Scenario
 from test_tui_agent_list import INTERRUPTED_PROMPT, delegating_scenario, focused, more_agents, under_the_frame
 from test_tui_agent_strip import STARTS, agent_app, relay
 from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, FakePoller, ScriptedTerminal, Step, status_index
-from test_tui_modes import SID, RecordingClient, drawn, make_app, show_mode, type_text
+from test_tui_modes import SID, RecordingClient, composer_index, drawn, make_app, show_mode, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND
 from omh.commands.theme_picker import KEY_DOWN, KEY_NONE
 from omh.tui import keys as keys_module
@@ -1239,8 +1239,7 @@ class MouseReplayTests(AppTestCase):
 
 
 def composer_text(screen: list[str]) -> str:
-    rules = [index for index, line in enumerate(screen) if line.strip() and set(line.strip()) <= set("─━┄")]
-    return screen[rules[-2] + 1]
+    return screen[composer_index(screen)]
 
 
 if __name__ == "__main__":

@@ -848,7 +848,6 @@ class App:
         self.log_agent = ""  # the agent whose log the pager shows; "" for every other pager
         self.tail_asked_at: float | None = None  # when the last `subagent.tail` went out
         self.tail_open = False  # that call has no answer yet
-        self.tail_seq = 0  # the last call; an answer to an earlier one is dropped
         self.tail_misses: dict[str, int] = {}  # agent id -> answers in a row without a tail
         # The cells a click opens, as last drawn: rows above the status line → the entries on that row.
         self.clickable: dict[int, tuple[Hit, ...]] = {}
@@ -2603,15 +2602,15 @@ class App:
             since = now - self.tail_asked_at
             if since < TAIL_POLL_SECONDS or (self.tail_open and since < TAIL_ANSWER_SECONDS):
                 return
-        self._forget_tail_calls()  # a call still out timed out; its answer would be dropped by `seq`
-        self.tail_seq += 1
+        # A call still out timed out: forgetting it drops its answer (`_on_response` ignores an id not in `pending`).
+        self._forget_tail_calls()
         self.tail_asked_at, self.tail_open = now, True
-        seq, sid, subagent_id = self.tail_seq, self.sid, agent.subagent_id
+        sid, subagent_id = self.sid, agent.subagent_id
         self._request(
             "subagent.tail",
             {"session_id": sid, "subagent_id": subagent_id},
-            lambda result: self._on_tail(seq, sid, subagent_id, result),
-            lambda error: self._on_tail(seq, sid, subagent_id, {}),  # the log keeps what the events gave it
+            lambda result: self._on_tail(sid, subagent_id, result),
+            lambda error: self._on_tail(sid, subagent_id, {}),  # the log keeps what the events gave it
         )
 
     def _clear_roster(self) -> None:
@@ -2626,17 +2625,15 @@ class App:
         for request_id in [rid for rid, call in self.pending.items() if call.method == "subagent.tail"]:
             del self.pending[request_id]
 
-    def _on_tail(self, seq: int, sid: str, subagent_id: str, result: Mapping[str, Any]) -> bool:
+    def _on_tail(self, sid: str, subagent_id: str, result: Mapping[str, Any]) -> bool:
         """A `subagent.tail` answer: read only when Hermes has a tail, for an agent still running in this session.
 
         A tail that arrives after its agent finished would replace the reply
         its `subagent.complete` put in the log, so it is dropped. An answer
         without a tail (`available` anything but true, or an error) counts
         towards `TAIL_MISSES_BEFORE_STOP`. An answer to a call that timed out
-        (`TAIL_ANSWER_SECONDS`) is dropped: the call after it is the one waited for.
+        (`TAIL_ANSWER_SECONDS`) never reaches here: the call after it forgot it.
         """
-        if seq != self.tail_seq:
-            return True
         self.tail_open = False
         if result.get(contract.TAIL_AVAILABLE) is not True:
             self.tail_misses[subagent_id] = self.tail_misses.get(subagent_id, 0) + 1
