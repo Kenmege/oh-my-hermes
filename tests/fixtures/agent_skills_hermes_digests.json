@@ -24,9 +24,9 @@
   "codebase-onboarding": "c604623f641ae38026951712bbe2e6ed62ba26fc5413ed066dfeb66c181598e3",
   "codebase-uml": "2342c510401082490fb87dca8c046d63d8b19c8ae2dcbef0c04314d8df544487",
   "codegraph-refresh": "ebeda6b25aa5ed8e5fef7aa3d3d976e078091560a2d4ce0db98bcf36b83301b5",
-  "command-operator": "77a5e2ed478410df17458f22e45540772cef8d9019d57d67181474b83a6e2092",
+  "command-operator": "d741a6d2c217d444a287ad16ae433009fcb0c98462c87b525fc0b9a7c7e0f453",
   "commit-pr-authoring": "e896cf76ac16f32af91fc17948c035528cfcb2d5e766ca6b76f7eacec2a0de94",
-  "connector-operator": "37bd9b6c76d326d4874710cc84ef3c415f3eaf1269278d19de046fd7374b3c48",
+  "connector-operator": "e9d600fabe1d27d06761dbbb68aa30b0903841f2586c3c0eafc689f2a6095e5d",
   "content-operator": "cb842f86a965133d2c74bc2a22e04e39fbab684d3301e6acff56a31e9acb3853",
   "context": "372aa8e9d50db2e0f7e60988e1b9ee0bfd13a0a4e64dbd24d8e0d40067b3d80b",
   "context-budget-review": "12360627394861d52f22a27438a25dd81be94ed4b8e1d1aabc21c23c3e347126",
@@ -140,5 +140,5 @@
   "wiki": "87f4c34047e9da8570ba5f897a45359cf3a00f942cb4310d0693f0453c9d526b",
   "workflow-learning": "69d864420fecf676e19ec36c672389ce478cb97131fc17fa33b5af932e0efbfa",
   "workspace-audit": "882803b50cb3a38a1bbb336cc1b025ff6ba085c994fe5dce22e2688e48852abd",
-  "workspace-file-operator": "1ccc29b8be80367be6b0179cd34fae35a4ebd2b042d4b4ffa15f4dc4db11f1d2"
+  "workspace-file-operator": "fdccfdd5a5abe62c248ce4aa3ec2b949e28482a9e4391c9339e84040a2d5557e"
 }

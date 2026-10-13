@@ -12,6 +12,14 @@ from __future__ import annotations
 from ..plugin_bundle.omh.native_tools import native_tool_presence_clause
 from .catalog_types import EXECUTION_WAIT_DISCIPLINE_RULE, HermesReferenceLine, _GENERAL_RECOVERY_NOTES, _feature_surface_skill
 
+# A run with nobody to answer the chat confirmation cannot satisfy it, so the
+# gated action does not run there; "marked missing" never means "ran without
+# it". One sentence, stated in each operator skill's completion checklist.
+_UNATTENDED_GATE = (
+    "With nobody to answer the confirmation (a scheduled job, a one-shot run, a webhook run), an irreversible or "
+    "externally visible action is not run: it is handed to a person's turn and its confirmation is recorded as missing."
+)
+
 _FEATURE_SURFACE_SKILLS = (
     _feature_surface_skill(
         "github-event-ops",
@@ -576,7 +584,8 @@ _FEATURE_SURFACE_SKILLS = (
         ),
         final_checklist=(
             "The path root, allowed file operations, excluded paths, destructive-operation policy, and stop condition are explicit.",
-            "Delete, overwrite, move, rename, permission change, archive mutation, upload, and download are gated or marked missing.",
+            "Delete, overwrite, move, rename, permission change, archive mutation, upload, and download are gated, or marked missing and not run.",
+            _UNATTENDED_GATE,
             "Checkpoint availability is recorded before any destructive step, and the confirmation gate holds either way; without an observed checkpoint covering the target, a reversible copy or a move to trash comes first.",
             "Directory listings, file contents, hashes, diffs, and operation results are reported only from observed file evidence.",
         ),
@@ -656,14 +665,15 @@ _FEATURE_SURFACE_SKILLS = (
         ),
         final_checklist=(
             "Command text, working directory, environment assumptions, timeout, safety level, and stop condition are explicit.",
-            "Destructive, credential, network, filesystem mutation, install, deploy, and production commands are confirmed in chat before the run or marked missing; a native approval note is recorded beside that confirmation, never in place of it.",
+            "Destructive, credential, network, filesystem mutation, install, deploy, and production commands are confirmed in chat before the run, or marked missing and not run; a native approval note is recorded beside that confirmation, never in place of it.",
+            _UNATTENDED_GATE,
             "Exit codes, stdout/stderr, test results, package-manager effects, and filesystem mutations are reported only from observed command evidence.",
         ),
         recovery_notes=(
             "If command text or working directory is missing, ask for the smallest missing scope needed before preparing the command task.",
             "If the command is irreversible or externally visible, require an explicit confirmation gate in chat before the run, whether or not the host flags it: deleting or overwriting user data, discarding history or force-pushing, deleting a remote branch, dropping, deleting from, truncating, or flushing a database, a credentialed or networked mutation, device actuation, an install, a deploy, a production change, or an external send.",
             "On Hermes, record the terminal result's `approval` note beside that confirmation as additional evidence, never in place of it: a note that the command \"was approved by the user\" is the person's answer to Hermes' own prompt for that command, while \"auto-approved by smart approval\" or no note at all is not a person's consent, and a `pending_approval` status means the command has not run yet and waits for the person's `/approve` or `/deny`, so it is never re-run or reworded.",
-            "On Hermes, a cron job, a one-shot `-q` run, or a webhook run denies a flagged command by default (`approvals.cron_mode`, `approvals.single_query_mode`, `approvals.unattended_mode`): record the block as the gate's outcome and hand the command to a person's turn, never rephrase it to get past the gate.",
+            "On Hermes, a cron job, a one-shot `-q` run, or a webhook run denies a flagged command by default (`approvals.cron_mode`, `approvals.single_query_mode`, `approvals.unattended_mode`): record the block as the gate's outcome and hand the command to a person's turn, never rephrase it to get past the gate. Nobody can answer the chat confirmation in those runs either, so an irreversible or externally visible command that Hermes does not flag is not run: it is handed to a person's turn and its confirmation is recorded as missing.",
             "If the user supplied failed command output and asks for root cause, route to build-failure-triage or agent-debug instead of preparing a fresh command.",
         ),
         # The timeout and stop condition this surface already requires say when
@@ -756,7 +766,8 @@ _FEATURE_SURFACE_SKILLS = (
         ),
         final_checklist=(
             "Provider, target object, allowed action, payload summary, authority, confirmation policy, and stop condition are explicit.",
-            "Credentials, missing connector setup, external writes, sends, ticket mutations, calendar invites, CRM updates, and webhook delivery are gated or marked missing.",
+            "Credentials, missing connector setup, external writes, sends, ticket mutations, calendar invites, CRM updates, and webhook delivery are gated, or marked missing and not run.",
+            _UNATTENDED_GATE,
             "Message ids, ticket ids, provider responses, delivery receipts, and API effects are reported only from observed connector evidence.",
         ),
         recovery_notes=(

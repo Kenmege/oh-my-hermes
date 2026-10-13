@@ -79,14 +79,39 @@ CONNECTOR_CONFIRMATION = (
     "confirmation."
 )
 
+# A run with nobody to answer the chat confirmation cannot satisfy it, so
+# the gated action does not run there; "marked missing" never means "ran
+# without it".
+UNATTENDED_GATE = (
+    "With nobody to answer the confirmation (a scheduled job, a one-shot run, a webhook run), an irreversible or "
+    "externally visible action is not run: it is handed to a person's turn and its confirmation is recorded as "
+    "missing."
+)
+UNATTENDED_GATE_SKILLS = ("command-operator", "workspace-file-operator", "connector-operator")
+COMMAND_UNATTENDED = (
+    "Nobody can answer the chat confirmation in those runs either, so an irreversible or externally visible command "
+    "that Hermes does not flag is not run: it is handed to a person's turn and its confirmation is recorded as "
+    "missing."
+)
+
+# A sentence that names the host's prompt, approval, or note beside one of
+# these words is trading the chat confirmation for it, unless the same
+# sentence negates the trade ("never in place of it").
+_HOST_ANSWER = re.compile(r"\b(?:prompt|prompts|approval|approve|approved|note)\b", re.IGNORECASE)
+_TRADE = re.compile(
+    r"\b(?:skip|skips|skipping|instead of|in place of|replace|replaces|replacing|no need)\b", re.IGNORECASE
+)
+_NEGATED = re.compile(r"\b(?:never|not)\b", re.IGNORECASE)
+
 NATIVE_GATE_CLAUSES = {
     "command-operator": (
         COMMAND_CONFIRMATION,
         COMMAND_NATIVE_NOTE,
         "Destructive, credential, network, filesystem mutation, install, deploy, and production commands are "
-        "confirmed in chat before the run or marked missing; a native approval note is recorded beside that "
+        "confirmed in chat before the run, or marked missing and not run; a native approval note is recorded beside that "
         "confirmation, never in place of it.",
         "On Hermes, a cron job, a one-shot `-q` run, or a webhook run denies a flagged command by default",
+        COMMAND_UNATTENDED,
     ),
     "workspace-file-operator": (
         "record `available` only when the user's `/rollback` lists checkpoints for a directory that holds the target "
@@ -244,6 +269,20 @@ class NativeGateClauseTests(unittest.TestCase):
                 continue
             with self.subTest(body=f"{projection}:{name}"):
                 self.assertNotIn("a second time", content)
+            for sentence in _sentences(content):
+                if _HOST_ANSWER.search(sentence) and _TRADE.search(sentence) and not _NEGATED.search(sentence):
+                    with self.subTest(body=f"{projection}:{name}", sentence=sentence[:80]):
+                        self.fail(f"trades the chat confirmation for a host answer: {sentence}")
+
+    def test_an_unattended_run_does_not_run_the_gated_action(self) -> None:
+        hermes = {template.name: template.content for template in builtin_skill_templates()}
+        portable = {template.name: template.content for template in agent_skill_templates()}
+        for name in UNATTENDED_GATE_SKILLS:
+            with self.subTest(skill=name):
+                self.assertIn(UNATTENDED_GATE, hermes[name])
+                self.assertIn(UNATTENDED_GATE, portable[omh_skill_display_name(name)])
+                self.assertNotIn("gated or marked missing", hermes[name])
+                self.assertNotIn("gated or marked missing", portable[omh_skill_display_name(name)])
 
     def test_checkpoint_availability_is_recorded_before_the_destructive_confirmation(self) -> None:
         ladder = {harness.name: harness for harness in builtin_harnesses()}["workspace-file-operator"].evidence_ladder

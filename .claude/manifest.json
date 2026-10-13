@@ -26,7 +26,7 @@
     "omh-apple-design/references/web-production-libraries.md": "81ac6fd49dc78ea629cc949d9d0aed99eea969629d3606866882988f5ec5e99e",
     "omh-application-threat-model/SKILL.md": "028a2bc9d658d96d8987b07c6da9de9e96b1f8646c3667a557b88f84469a036f",
     "omh-application-threat-model/references/threat-model-method.md": "ed3819fecf9c8d7208a49fbbebc5863dcc9df009a663e0d012431bc3296e5e8e",
-    "omh-apps/SKILL.md": "5407300e9c52a3c0f484ca211fb8061d79bc020c19461de8d2aa37aa4f9868cb",
+    "omh-apps/SKILL.md": "6d759b63b2129322e4905e0b3e9e92f0ffe90e1de3e24d8f0cc38775203f33c8",
     "omh-ask/SKILL.md": "db0dbeca4f712063ba3155f4f235a88c20a7c7bd78e7c0dd7cfd4774b7331081",
     "omh-award-bar-score/SKILL.md": "64b5d5a3d80fb7ffbb3062b7c489ffcdd28847c18b233b9f18a22b5500d021a1",
     "omh-award-bar-score/references/award-judging-model.md": "3eb04c94402da5efaa2d3bc18bb66acd1121b234a8b82a47a878c5d01725be50",
@@ -71,7 +71,7 @@
     "omh-external-connector-readiness/references/memory-provider-trial.md": "b6eda7efc3307d8bd6540bec47b2564f3e565da5ad8133bd998b2ebcabdf29a3",
     "omh-failure-signal-audit/SKILL.md": "ea34846d980bab8d2878deeaf9b3a284f7b3ec178d228b7af438aad05b2579f4",
     "omh-feedback-triage/SKILL.md": "00e8008b7cc2b4d0eeca4dd2dde0c4fb1ea5e112c6f167189da5c9c2b9a61262",
-    "omh-files/SKILL.md": "0238d2487a63fb2c10eaa2bda8e8e7180f69627eac1ad6738ad5dc919676db57",
+    "omh-files/SKILL.md": "b33fa17bc738c19006eeacdda9dc4f772670cc18828dbf592bcc659ec519f9fa",
     "omh-finance-analysis/SKILL.md": "7a2cb00ccd913a82172b58f3be124b2c031d9bbcbba46cd5549ecfa3554fd9c9",
     "omh-finance-analysis/references/procedure.md": "0fd8b3ad528d10aebd971c26375de9775e95429d3dbdc3a6f2ee5cc063a9c79c",
     "omh-frontend-refactor/SKILL.md": "347d22b3dd7d7f57524bd2737658d64e65095fa8f3e665ddff528da4043c16f2",
@@ -171,7 +171,7 @@
     "omh-support-operations/SKILL.md": "eaa36e08eb9e91c0dc51ee4d3e22e44fff644dd85a674dc3cf86538aa7c2e505",
     "omh-tech-debt-audit/SKILL.md": "218fddf9e7be0ebc6c95b59ad4d6ce19eba9239e0f21dbbd6e0d16bef1960bff",
     "omh-tech-debt-audit/references/debt-dimensions.md": "7d0d601c1fc8897f0ce433dfa2ae44c2a5c9dd69ded28d7775cb6adbdd2afb75",
-    "omh-terminal/SKILL.md": "630748945a4fa36c7c256c8342ade2ce31fbab1ee90bfd98f9690227a6ab29bd",
+    "omh-terminal/SKILL.md": "71f6508fdac631d252e6985607aa3e6d7ccf33dc828aa14813810f6f889de2f0",
     "omh-toolbelt-readiness/SKILL.md": "127705531ef74f4a0b3c70b23b72955d7c2f9b6b6d762b7097d380920905ad7f",
     "omh-verification-gate/SKILL.md": "daa0644a323b2e8436a14135f74babccb5102a88434fc1b33beb55f4d0d573bd",
     "omh-verification-gate/references/generated-artifact-provenance.md": "91a818c86eb8311e39f7e1e0f1dca2bed5066551acff83a656aeb78e947f2fad",
@@ -318,7 +318,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "dadd47c7cd7c0dded0794e35e019932cb993dddc0ede1953c98875821a36c9ee",
+  "source_digest": "8f3e2b7b7434384abb923f35f9a5233e614af028cfe80b36a73ed4b2ee0e818a",
   "targets": {
     "repo": ".claude/skills",
     "user": ".claude/skills"

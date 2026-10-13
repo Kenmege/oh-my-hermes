@@ -8990,7 +8990,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Expose missing tools, credentials, targets, or observations as user-visible gaps.
 - Completion checklist:
   - The path root, allowed file operations, excluded paths, destructive-operation policy, and stop condition are explicit.
-  - Delete, overwrite, move, rename, permission change, archive mutation, upload, and download are gated or marked missing.
+  - Delete, overwrite, move, rename, permission change, archive mutation, upload, and download are gated, or marked missing and not run.
+  - With nobody to answer the confirmation (a scheduled job, a one-shot run, a webhook run), an irreversible or externally visible action is not run: it is handed to a person's turn and its confirmation is recorded as missing.
   - Checkpoint availability is recorded before any destructive step, and the confirmation gate holds either way; without an observed checkpoint covering the target, a reversible copy or a move to trash comes first.
   - Directory listings, file contents, hashes, diffs, and operation results are reported only from observed file evidence.
 - Recovery notes:
@@ -9059,13 +9060,14 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Choose the wait strategy before starting long-running work and bind it to a completion signal the host exposes, never to a status loop: a command that fits one tool call runs once in the foreground with a duration-sized timeout; a longer terminal command runs in the background with completion notification armed and no process-status polling; a delegated lane relies on its delivered result while the parent continues independent work or ends the turn; a CI, PR, deploy, file, port, log-line, or external-session condition uses the host's monitor when observed, else exactly ONE bounded watcher or adaptive backoff outside model turns. Record the handle and observation mode at dispatch; every armed wait needs a hard deadline, a cancellation path, and a fallback naming the missing capability. Each wait closes in one terminal state with bounded evidence; an unbounded idle or busy-wait is a defect and a lost notification times out. One decision-changing midpoint peek and any user-requested status check stay allowed; neither is the wait mechanism. Ladder and terminal states: shared rail.
 - Completion checklist:
   - Command text, working directory, environment assumptions, timeout, safety level, and stop condition are explicit.
-  - Destructive, credential, network, filesystem mutation, install, deploy, and production commands are confirmed in chat before the run or marked missing; a native approval note is recorded beside that confirmation, never in place of it.
+  - Destructive, credential, network, filesystem mutation, install, deploy, and production commands are confirmed in chat before the run, or marked missing and not run; a native approval note is recorded beside that confirmation, never in place of it.
+  - With nobody to answer the confirmation (a scheduled job, a one-shot run, a webhook run), an irreversible or externally visible action is not run: it is handed to a person's turn and its confirmation is recorded as missing.
   - Exit codes, stdout/stderr, test results, package-manager effects, and filesystem mutations are reported only from observed command evidence.
 - Recovery notes:
   - If command text or working directory is missing, ask for the smallest missing scope needed before preparing the command task.
   - If the command is irreversible or externally visible, require an explicit confirmation gate in chat before the run, whether or not the host flags it: deleting or overwriting user data, discarding history or force-pushing, deleting a remote branch, dropping, deleting from, truncating, or flushing a database, a credentialed or networked mutation, device actuation, an install, a deploy, a production change, or an external send.
   - On Hermes, record the terminal result's `approval` note beside that confirmation as additional evidence, never in place of it: a note that the command "was approved by the user" is the person's answer to Hermes' own prompt for that command, while "auto-approved by smart approval" or no note at all is not a person's consent, and a `pending_approval` status means the command has not run yet and waits for the person's `/approve` or `/deny`, so it is never re-run or reworded.
-  - On Hermes, a cron job, a one-shot `-q` run, or a webhook run denies a flagged command by default (`approvals.cron_mode`, `approvals.single_query_mode`, `approvals.unattended_mode`): record the block as the gate's outcome and hand the command to a person's turn, never rephrase it to get past the gate.
+  - On Hermes, a cron job, a one-shot `-q` run, or a webhook run denies a flagged command by default (`approvals.cron_mode`, `approvals.single_query_mode`, `approvals.unattended_mode`): record the block as the gate's outcome and hand the command to a person's turn, never rephrase it to get past the gate. Nobody can answer the chat confirmation in those runs either, so an irreversible or externally visible command that Hermes does not flag is not run: it is handed to a person's turn and its confirmation is recorded as missing.
   - If the user supplied failed command output and asks for root cause, route to build-failure-triage or agent-debug instead of preparing a fresh command.
 - Required inputs:
   - user request
@@ -9124,7 +9126,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Expose missing tools, credentials, targets, or observations as user-visible gaps.
 - Completion checklist:
   - Provider, target object, allowed action, payload summary, authority, confirmation policy, and stop condition are explicit.
-  - Credentials, missing connector setup, external writes, sends, ticket mutations, calendar invites, CRM updates, and webhook delivery are gated or marked missing.
+  - Credentials, missing connector setup, external writes, sends, ticket mutations, calendar invites, CRM updates, and webhook delivery are gated, or marked missing and not run.
+  - With nobody to answer the confirmation (a scheduled job, a one-shot run, a webhook run), an irreversible or externally visible action is not run: it is handed to a person's turn and its confirmation is recorded as missing.
   - Message ids, ticket ids, provider responses, delivery receipts, and API effects are reported only from observed connector evidence.
 - Recovery notes:
   - If the connector, credentials, or permission is missing: on Hermes, when `manage_connections` is in your tool list or tool_search finds it, use it for the app the user named (`status`, then `connect`) and take each app's answer as given: `connected` proceeds, `skipped` means continue without that app or ask in chat, never calling it again on your own or reaching the app another way, and `not_connected` stays a named gap. Otherwise route to toolbelt-readiness before preparing action success claims.

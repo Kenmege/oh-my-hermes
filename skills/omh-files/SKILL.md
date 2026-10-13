@@ -40,7 +40,8 @@ Bad example:
 ## Completion Checklist
 
 - The path root, allowed file operations, excluded paths, destructive-operation policy, and stop condition are explicit.
-- Delete, overwrite, move, rename, permission change, archive mutation, upload, and download are gated or marked missing.
+- Delete, overwrite, move, rename, permission change, archive mutation, upload, and download are gated, or marked missing and not run.
+- With nobody to answer the confirmation (a scheduled job, a one-shot run, a webhook run), an irreversible or externally visible action is not run: it is handed to a person's turn and its confirmation is recorded as missing.
 - Checkpoint availability is recorded before any destructive step, and the confirmation gate holds either way; without an observed checkpoint covering the target, a reversible copy or a move to trash comes first.
 - Directory listings, file contents, hashes, diffs, and operation results are reported only from observed file evidence.
 
