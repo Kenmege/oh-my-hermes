@@ -368,7 +368,15 @@ that directory, as it does without any other local change that is not a kept
 Hermes edit, and the directory stays in the previous generation. `--force`
 removes it, except under `OMH_SECURITY=strict`, where `--force` overrides no
 local change, and lists it under `force_pruned_skills`, with the files Hermes'
-ledger still holds a copy of and the files that are gone for good. A manifest
+ledger still holds a copy of and the files that are gone for good. A Hermes
+curator ledger that exists but cannot be read (for example a permission error,
+or bytes that are not UTF-8), or that holds a line naming a path in the skills
+directory that is not a ledger row, may record such a write, so a marked
+directory with nothing else against it is listed as `ledger_unreadable` and
+left in place, with the ledger and its error named in the summary (and under
+`unreadable_ledgers` in the `--json` result); a ledger that does not exist
+records nothing. `--force` removes it on the same terms, and says the ledger
+could not be read instead of what it holds. A manifest
 written before marks existed is handled once more by the earlier rule, which
 does not know what OMH rendered or look for Hermes writes: an unchanged record
 at the top level or in a category directory, inside the skills directory, is

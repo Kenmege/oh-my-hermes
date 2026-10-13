@@ -61,7 +61,7 @@ def curator_ledger_paths(hermes_home: Path) -> list[Path]:
 
 
 def read_ledger_writes(
-    hermes_home: Path, within: Iterable[Path] | None = None
+    hermes_home: Path, within: Iterable[Path] | None = None, *, report_unparsed_rows: bool = False
 ) -> tuple[list[LedgerWrite], list[str]]:
     """Every file write the home's ledgers record, oldest first, and the ledgers that could not be read.
 
@@ -69,6 +69,11 @@ def read_ledger_writes(
     line that names none of them is skipped before it is parsed: a ledger
     written before Hermes 0.21.4 recorded every file of a skill on every row
     and could grow to hundreds of megabytes.
+
+    A line that is not a ledger row (not JSON, or not an object) is skipped.
+    With `report_unparsed_rows` it is also named in the unread list, for a
+    caller that must not act on a write it could not read: such a line may
+    record one.
     """
     needles = _path_needles(within) if within is not None else None
     writes: list[LedgerWrite] = []
@@ -81,10 +86,15 @@ def read_ledger_writes(
         except (OSError, UnicodeDecodeError) as error:
             unread.append(f"{ledger}: {error}")
             continue
-        for line in text.splitlines():
+        for number, line in enumerate(text.splitlines(), start=1):
             if needles is not None and not any(needle in line for needle in needles):
                 continue
-            writes.extend(_row_writes(line, str(ledger)))
+            row_writes = _row_writes(line, str(ledger))
+            if row_writes is None:
+                if report_unparsed_rows:
+                    unread.append(f"{ledger}: line {number} is not a ledger row")
+                continue
+            writes.extend(row_writes)
     if within is not None:
         roots = list(within)
         writes = [write for write in writes if any(writes_under([write], root) for root in roots)]
@@ -103,14 +113,17 @@ def _path_needles(roots: Iterable[Path]) -> set[str]:
     return needles
 
 
-def _row_writes(line: str, ledger: str) -> list[LedgerWrite]:
+def _row_writes(line: str, ledger: str) -> list[LedgerWrite] | None:
+    """The writes one ledger line records, or None when the line is not a ledger row."""
     if not line.strip():
         return []
     try:
         row = json.loads(line)
     except json.JSONDecodeError:
-        return []
-    if not isinstance(row, dict) or str(row.get("action", "")) in _NOT_AN_EDIT:
+        return None
+    if not isinstance(row, dict):
+        return None
+    if str(row.get("action", "")) in _NOT_AN_EDIT:
         return []
     before = _file_states(row.get("before"))
     # Upstream `_delta`, for rows written before Hermes applied it: a file with

@@ -171,6 +171,7 @@ RENDER_MARKS_FLAG = "render_marks"
 PRUNE_SKIP_REASONS = (
     "not_rendered_by_omh",
     "changed_since_rendered",
+    "ledger_unreadable",
     "not_an_omh_layout",
     "outside_the_skills_directory",
     "category_directory",
@@ -620,8 +621,15 @@ def install_skill_pack(
     overwrite_allowed = _overwrite_allowed(force)
     install_names = {template.name for template in templates}
     pack = manifest_pack(manifest, paths) if manifest else paths.skills_dir
-    # One ledger read per install, cut to the two packs it can concern.
-    ledger_writes = read_ledger_writes(paths.hermes_home, within=[pack, paths.skills_dir])[0] if manifest else []
+    # One ledger read per install, cut to the two packs it can concern. Only
+    # the pruners read the unread list: a removal is final, so a ledger that
+    # exists and cannot be read, or a line naming these packs that is not a
+    # row, keeps what they would otherwise remove.
+    ledger_writes, unreadable_ledgers = (
+        read_ledger_writes(paths.hermes_home, within=[pack, paths.skills_dir], report_unparsed_rows=True)
+        if manifest
+        else ([], [])
+    )
     hermes_edited = hermes_edited_skills(
         manifest,
         paths,
@@ -730,6 +738,7 @@ def install_skill_pack(
         force=overwrite_allowed,
         hermes_home=paths.hermes_home,
         writes=ledger_writes,
+        ledger_unreadable=bool(unreadable_ledgers),
     )
     flat_layout = _prune_flat_layout_skill_directories(
         paths.skills_dir,
@@ -738,6 +747,7 @@ def install_skill_pack(
         force=overwrite_allowed,
         hermes_home=paths.hermes_home,
         writes=ledger_writes,
+        ledger_unreadable=bool(unreadable_ledgers),
     )
     removed_directories = orphans_removed + flat_layout["removed"]
     prune_skipped = prune_skipped + flat_layout["skipped"]
@@ -762,6 +772,7 @@ def install_skill_pack(
         catalog_names,
         withheld=set(kept) | left_behind,
         writes=ledger_writes,
+        ledger_unreadable=bool(unreadable_ledgers),
     )
     previously_listed = {
         str(item.get("path", ""))
@@ -791,19 +802,28 @@ def install_skill_pack(
     result = {key: value for key, value in manifest_data.items() if key != "prune_skipped_skills"}
     if reported:
         result["prune_skipped_skills"] = reported
+    if unreadable_ledgers:
+        # In the result only: the error text would move the manifest bytes.
+        result["unreadable_ledgers"] = unreadable_ledgers
     return result
 
 
 def _standing_prune_skips(
-    skills_dir: Path, manifest: dict, catalog_names: set[str], *, withheld: set[str], writes: list[LedgerWrite]
+    skills_dir: Path,
+    manifest: dict,
+    catalog_names: set[str],
+    *,
+    withheld: set[str],
+    writes: list[LedgerWrite],
+    ledger_unreadable: bool,
 ) -> list[dict]:
     """What a plain install over `manifest` would leave in place, by both pruners, without deleting anything."""
     candidate = {**manifest, "skills": [record for record in manifest["skills"] if record.get("path") not in withheld]}
     _removed, orphan_skips, _forced = _prune_orphaned_skills(
-        skills_dir, candidate, catalog_names, force=False, writes=writes, remove=False
+        skills_dir, candidate, catalog_names, force=False, writes=writes, ledger_unreadable=ledger_unreadable, remove=False
     )
     flat = _prune_flat_layout_skill_directories(
-        skills_dir, candidate, catalog_names, force=False, writes=writes, remove=False
+        skills_dir, candidate, catalog_names, force=False, writes=writes, ledger_unreadable=ledger_unreadable, remove=False
     )
     return sorted(orphan_skips + flat["skipped"], key=lambda item: (item["path"], item["reason"]))
 
@@ -902,7 +922,7 @@ def _render_marks(manifest: dict | None) -> dict[str, str]:
     }
 
 
-def _render_mark_refusal(record: dict, skill_file: Path, writes: list[LedgerWrite]) -> str:
+def _render_mark_refusal(record: dict, skill_file: Path, writes: list[LedgerWrite], ledger_unreadable: bool) -> str:
     """Why a record of a marked manifest may not be pruned on a plain install, or "" when it may.
 
     Only a record carrying the render mark is OMH's to delete at all: an
@@ -919,6 +939,10 @@ def _render_mark_refusal(record: dict, skill_file: Path, writes: list[LedgerWrit
     Judged by the SKILL.md alone, a Hermes write to a supporting file of a
     skill a release retired went with the directory on a plain install, and
     nothing said so.
+
+    A ledger that exists and cannot be read may record such a write, so a
+    directory with nothing else against it is `ledger_unreadable` rather than
+    removed; a ledger that does not exist records nothing.
     """
     mark = record.get(RENDER_MARK_KEY)
     if not isinstance(mark, str) or not mark:
@@ -931,27 +955,33 @@ def _render_mark_refusal(record: dict, skill_file: Path, writes: list[LedgerWrit
         return "changed_since_rendered"
     if writes_in_skill_dir(skill_file.parent, writes):
         return "changed_since_rendered"
+    if ledger_unreadable:
+        return "ledger_unreadable"
     return ""
+
+
+# The refusals `force` overrides: a directory OMH rendered that changed since,
+# or one it cannot judge because the ledger could not be read.
+_FORCE_REMOVES = frozenset({"changed_since_rendered", "ledger_unreadable"})
 
 
 def _skip_item(record: dict, name: object, rel: object, reason: str) -> dict:
     return {"name": str(name), "path": str(rel), "reason": reason}
 
 
-def _force_pruned_item(name: object, rel: object, directory: Path, hermes_home: Path | None) -> dict:
-    """What `--force` loses by removing a retired skill whose SKILL.md changed since OMH rendered it.
+def _force_pruned_item(name: object, rel: object, directory: Path, hermes_home: Path | None, reason: str) -> dict:
+    """What `--force` loses by removing a marked directory a plain install leaves, and why it was left.
 
     Built before the directory goes: the files Hermes' ledger still holds a
-    copy of, and the rest, which are gone for good.
+    copy of, and the rest, which are gone for good. When the ledger could not
+    be read, neither is knowable, so neither is claimed.
     """
+    item = {"name": str(name), "path": str(rel), "reason": reason}
+    if reason == "ledger_unreadable":
+        return item
     writes = read_ledger_writes(hermes_home)[0] if hermes_home is not None else []
     ledger_copy = _ledger_copies(directory, writes)
-    return {
-        "name": str(name),
-        "path": str(rel),
-        "ledger_copy": ledger_copy,
-        "discarded": _discarded_for_good(directory, frozenset(), ledger_copy),
-    }
+    return {**item, "ledger_copy": ledger_copy, "discarded": _discarded_for_good(directory, frozenset(), ledger_copy)}
 
 
 def _holds_other_skills(directory: Path, category_dirs: list[Path]) -> bool:
@@ -1017,6 +1047,7 @@ def _prune_flat_layout_skill_directories(
     force: bool,
     hermes_home: Path | None = None,
     writes: list[LedgerWrite] | None = None,
+    ledger_unreadable: bool = False,
     remove: bool = True,
 ) -> dict[str, list]:
     """Drop a flat top-level skill directory once its categorized copy is in place.
@@ -1039,8 +1070,9 @@ def _prune_flat_layout_skill_directories(
     that carries render marks, (d) means the record carries the mark and
     nothing in the directory changed since OMH rendered it, the same question
     the orphan pruner asks (`_render_mark_refusal`). An unmarked record is never
-    removed, `--force` or not; a marked one whose SKILL.md changed is left on
-    a plain install and removed by ``force``, reported in `forced` with what
+    removed, `--force` or not; a marked one that changed, or that cannot be
+    judged because a ledger could not be read (``ledger_unreadable``), is left
+    on a plain install and removed by ``force``, reported in `forced` with what
     that loses. Everything left is returned in `skipped` with the reason.
     Under a manifest written before marks existed, (d) is the rule it was
     written under: byte-identical to what the manifest recorded, with anything
@@ -1091,12 +1123,12 @@ def _prune_flat_layout_skill_directories(
             retained.append(canonical)
             continue
         if marked:
-            reason = _render_mark_refusal(record, entry / "SKILL.md", pack_writes)
-            if reason and not (force and reason == "changed_since_rendered"):
+            reason = _render_mark_refusal(record, entry / "SKILL.md", pack_writes, ledger_unreadable)
+            if reason and not (force and reason in _FORCE_REMOVES):
                 skipped.append(_skip_item(record, canonical, rel, reason))
                 continue
             if reason and remove:
-                forced.append(_force_pruned_item(canonical, rel, entry, hermes_home))
+                forced.append(_force_pruned_item(canonical, rel, entry, hermes_home, reason))
         elif rel in modified and not force:
             retained.append(canonical)
             continue
@@ -1207,6 +1239,7 @@ def _prune_orphaned_skills(
     force: bool,
     hermes_home: Path | None = None,
     writes: list[LedgerWrite] | None = None,
+    ledger_unreadable: bool = False,
     remove: bool = True,
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """Remove managed skill dirs recorded in the prior manifest that the full catalog no longer ships.
@@ -1217,8 +1250,10 @@ def _prune_orphaned_skills(
     rule that admitted it (`render_mark`, or `earlier_manifest` for a manifest from before
     marks) and `kind` always `retired_skill`; every candidate left in place is returned
     second with the reason; third, what ``force`` lost for each changed directory it removed.
-    ``writes`` are Hermes' ledger writes, for what "changed" means (`_render_mark_refusal`);
-    with ``remove`` false nothing is deleted and only the verdicts are returned.
+    ``writes`` are Hermes' ledger writes, for what "changed" means (`_render_mark_refusal`),
+    and ``ledger_unreadable`` says a ledger exists that could not be read, which leaves a
+    marked directory with nothing else against it in place (`ledger_unreadable`) until
+    ``force``; with ``remove`` false nothing is deleted and only the verdicts are returned.
 
     The rule is provenance. The manifest records every SKILL.md under the pack, not only
     what OMH rendered, so a record alone never made a directory OMH's to delete.
@@ -1289,12 +1324,12 @@ def _prune_orphaned_skills(
             skipped.append(_skip_item(record, name, rel, "same_directory_as_a_rendered_skill"))
             continue
         if marked:
-            reason = _render_mark_refusal(record, target_dir / "SKILL.md", pack_writes)
-            if reason and not (force and reason == "changed_since_rendered"):
+            reason = _render_mark_refusal(record, target_dir / "SKILL.md", pack_writes, ledger_unreadable)
+            if reason and not (force and reason in _FORCE_REMOVES):
                 skipped.append(_skip_item(record, name, rel, reason))
                 continue
             if reason and remove:
-                forced.append(_force_pruned_item(name, rel, target_dir, hermes_home))
+                forced.append(_force_pruned_item(name, rel, target_dir, hermes_home, reason))
         if not remove:
             continue
         shutil.rmtree(target_dir)

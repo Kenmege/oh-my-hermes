@@ -56,17 +56,23 @@ All notable changes will be documented here.
   that is not a kept Hermes edit) and removed by `--force`, except under
   `OMH_SECURITY=strict`, where `--force` overrides no local change; `--force`
   lists it under `force_pruned_skills` with the files the ledger still holds a
-  copy of and the files that are gone for good. Every directory left in place
-  is listed under `prune_skipped_skills` on every install, and the manifest
-  stays byte-identical across installs over an unchanged disk; the summary
-  names a `not_rendered_by_omh` directory once, on the install that first
-  records it, and the other reasons each time. The first install over a
-  manifest written before marks existed still applies the earlier rule once:
-  it removes an unchanged directory at an OMH position inside the skills
-  directory -- including one of your own, as earlier releases did -- and
-  `--force` also removes a changed one; the summary names each directory it
-  removed by its path and says OMH cannot tell whether it rendered it, and the
-  manifest it writes carries marks. Whichever rule applies,
+  copy of and the files that are gone for good. A ledger that exists but
+  cannot be read, or a line in it that names a path in the skills directory
+  and is not a ledger row, may record such a write, so a marked directory with
+  nothing else against it is left in place as `ledger_unreadable`, naming the
+  ledger and its error (`unreadable_ledgers` in the result); a missing ledger
+  records nothing, and `--force` removes it on the same terms without claiming
+  what the ledger holds. Every directory left in place is listed under
+  `prune_skipped_skills` on every install, and the manifest stays
+  byte-identical across installs over an unchanged disk; the summary names a
+  `not_rendered_by_omh` directory once, on the install that first records it,
+  and the other reasons each time. The first install over a manifest written
+  before marks existed still applies the earlier rule once: it removes an
+  unchanged directory at an OMH position inside the skills directory --
+  including one of your own, as earlier releases did -- and `--force` also
+  removes a changed one; the summary names each directory it removed by its
+  path and says OMH cannot tell whether it rendered it, and the manifest it
+  writes carries marks. Whichever rule applies,
   a pruner never follows a recorded path out of the skills directory or a
   link that leads out, never removes a category directory or any directory
   holding other skills (a stray `guide/SKILL.md` used to take the whole

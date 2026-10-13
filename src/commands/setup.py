@@ -4873,6 +4873,8 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
             key = "managed_skill_restored_line" if item.get("disposition") == "restored" else "managed_skill_not_restored_line"
             print(_color(f"  {tr(language, key, name=item.get('name', ''), path=item.get('path', ''))}", "1;33", use_color))
     prune_skipped = payload.get("prune_skipped_skills")
+    unreadable = payload.get("unreadable_ledgers")
+    ledger = "; ".join(map(str, unreadable)) if isinstance(unreadable, list) and unreadable else "-"
     for item in prune_skipped if isinstance(prune_skipped, list) else []:
         if isinstance(item, dict):
             # One line per reason: a directory left because it is not OMH's and
@@ -4884,7 +4886,7 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
                 # pack should not read the same line on every install.
                 continue
             key = f"prune_skipped_{reason}_line" if reason in PRUNE_SKIP_REASONS else "prune_skipped_line"
-            line = tr(language, key, name=item.get("name", ""), path=item.get("path", ""), reason=reason)
+            line = tr(language, key, name=item.get("name", ""), path=item.get("path", ""), reason=reason, ledger=ledger)
             print(_color(f"  {line}", "1;33", use_color))
     force_pruned = payload.get("force_pruned_skills")
     forced_paths = {
@@ -4911,7 +4913,11 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
         if not isinstance(item, dict):
             continue
         copies = item.get("ledger_copy") if isinstance(item.get("ledger_copy"), list) else []
-        key = "retired_skill_force_removed_line" if copies else "retired_skill_force_removed_unrecoverable_line"
+        if item.get("reason") == "ledger_unreadable":
+            # Nothing is known about what the ledger holds, so nothing is claimed.
+            key = "retired_skill_force_removed_ledger_unreadable_line"
+        else:
+            key = "retired_skill_force_removed_line" if copies else "retired_skill_force_removed_unrecoverable_line"
         line = tr(
             language, key, name=item.get("name", ""), path=item.get("path", ""),
             files=", ".join(str(copy) for copy in copies),

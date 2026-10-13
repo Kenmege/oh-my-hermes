@@ -1126,7 +1126,7 @@ class RenderMarkPruneTests(_Home):
             [(item["name"], item["reason"]) for item in result["prune_skipped_skills"]],
             [("doctor", "changed_since_rendered")],
         )
-        self.assertIn("A run with --force removes it.", self.summary(result))
+        self.assertIn("A run with --force removes it, except under OMH_SECURITY=strict.", self.summary(result))
 
     def test_force_removes_a_changed_retired_skill_and_says_what_that_lost(self) -> None:
         # The mark proves OMH rendered the path; --force is consent to lose
@@ -1461,7 +1461,7 @@ class RetiredSkillEditTests(_Home):
             (self.NAME, self.REL, "changed_since_rendered"),
             [(item["name"], item["path"], item["reason"]) for item in plain["prune_skipped_skills"]],
         )
-        self.assertIn("A run with --force removes it.", self.summary(plain))
+        self.assertIn("A run with --force removes it, except under OMH_SECURITY=strict.", self.summary(plain))
         # Still left on the next plain install.
         self.assertTrue(install_skill_pack(self.paths, profile="core") and lessons.is_file())
 
@@ -1713,6 +1713,179 @@ class RetiredSkillEditTests(_Home):
         self.assertIn(
             (self.REL, "changed_since_rendered"),
             [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
+        )
+
+    def marked_retired_skill(self) -> Path:
+        """A retired skill OMH rendered, its SKILL.md unchanged and nothing else in it."""
+        install_skill_pack(self.paths, profile="core")
+        directory = self.paths.skills_dir / "tracker" / "omh-old-skill"
+        directory.mkdir(parents=True)
+        (directory / "SKILL.md").write_text("---\nname: omh-old-skill\n---\nretired\n", encoding="utf-8")
+        sha = sha256_file(directory / "SKILL.md")
+        self.edit_manifest(
+            lambda manifest: manifest["skills"].append(
+                {"name": self.NAME, "path": self.REL, "sha256": sha, "source": "builtin", RENDER_MARK_KEY: sha}
+            )
+        )
+        return directory
+
+    def corrupt_ledger(self) -> Path:
+        """A ledger that exists and cannot be decoded: OMH cannot tell what Hermes wrote."""
+        ledger = self.paths.hermes_home / CURATOR_LEDGER_RELATIVE_PATH
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        ledger.write_bytes(b"\xff\xfe not a ledger row\n")
+        return ledger
+
+    def test_a_missing_ledger_means_no_writes_and_the_removal_proceeds(self) -> None:
+        directory = self.marked_retired_skill()
+        self.assertFalse((self.paths.hermes_home / CURATOR_LEDGER_RELATIVE_PATH).exists())
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertFalse(directory.exists())
+        self.assertEqual(result["pruned_skills"], [self.NAME])
+        self.assertNotIn("unreadable_ledgers", result)
+
+    def test_an_unreadable_ledger_keeps_a_directory_omh_would_remove(self) -> None:
+        # Fail closed: an unreadable ledger may record a Hermes write under
+        # the directory, and a removal is final.
+        directory = self.marked_retired_skill()
+        ledger = self.corrupt_ledger()
+
+        for _ in range(2):
+            result = install_skill_pack(self.paths, profile="core")
+            self.assertTrue(directory.is_dir())
+            self.assertEqual(result["pruned_skills"], [])
+            self.assertNotIn("removed_skill_directories", result)
+            self.assertIn(
+                (self.REL, "ledger_unreadable"),
+                [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
+            )
+            [unread] = result["unreadable_ledgers"]
+            self.assertTrue(unread.startswith(f"{ledger}: "), unread)
+            [line] = self.removal_lines(result, needle=self.REL)
+            self.assertIn(f"Hermes' curator ledger could not be read ({unread})", line)
+            self.assertIn("A run with --force removes it, except under OMH_SECURITY=strict.", line)
+        # Persisted as the standing verdict, without the error text.
+        standing = read_manifest(self.paths.manifest_path)["prune_skipped_skills"]
+        self.assertIn({"name": "omh-old-skill", "path": self.REL, "reason": "ledger_unreadable"}, standing)
+        self.assertNotIn(b"unreadable_ledgers", self.paths.manifest_path.read_bytes())
+        for language in ("ko", "ja", "zh"):
+            with self.subTest(language=language):
+                [line] = self.removal_lines(result, language, self.REL)
+                self.assertIn(unread, line)
+                self.assertIn("OMH_SECURITY=strict", line)
+
+        with mock.patch.dict(os.environ, {"OMH_SECURITY": "strict"}):
+            strict = install_skill_pack(self.paths, profile="core", force=True)
+        self.assertTrue(directory.is_dir())
+        self.assertNotIn("force_pruned_skills", strict)
+
+        forced = install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertFalse(directory.exists())
+        # Nothing is claimed about what the ledger holds: it could not be read.
+        self.assertEqual(forced["force_pruned_skills"], [{"name": "omh-old-skill", "path": self.REL, "reason": "ledger_unreadable"}])
+        [line] = self.removal_lines(forced)
+        self.assertEqual(
+            line,
+            f"Removed omh-old-skill at {self.REL} because --force was given: Hermes' curator ledger could not be "
+            "read, so OMH could not tell whether Hermes wrote under it or whether the ledger holds a copy of it.",
+        )
+
+    def test_a_ledger_line_under_the_pack_that_is_not_a_row_keeps_it_too(self) -> None:
+        # A torn row that names a file in the directory may be the write that
+        # changed it. A torn line naming no path in the pack says nothing about it.
+        directory = self.marked_retired_skill()
+        elsewhere = json.dumps(os.path.realpath(self.root / "elsewhere" / "SKILL.md"))
+        ledger = _append_ledger(self.paths.hermes_home, '{"id": "x", "after": [{"path": ' + elsewhere)
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertFalse(directory.exists())
+        self.assertNotIn("unreadable_ledgers", result)
+
+        directory = self.marked_retired_skill()
+        named = json.dumps(os.path.realpath(directory / "references" / "lessons.md"))
+        _append_ledger(self.paths.hermes_home, '{"id": "y", "after": [{"path": ' + named)
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue(directory.is_dir())
+        self.assertEqual(result["unreadable_ledgers"], [f"{ledger}: line 2 is not a ledger row"])
+        self.assertIn(
+            (self.REL, "ledger_unreadable"),
+            [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
+        )
+        # The reader every other caller uses is unchanged: the line is skipped, not reported.
+        self.assertEqual(read_ledger_writes(self.paths.hermes_home, within=[self.paths.skills_dir]), ([], []))
+
+    def test_a_recorded_write_outranks_an_unreadable_line(self) -> None:
+        # What is known is said: the ledger records a write under the
+        # directory, so --force can still name the copies it holds.
+        directory, lessons = self.retired_skill(kept=False)
+        named = json.dumps(os.path.realpath(directory / "references" / "torn.md"))
+        _append_ledger(self.paths.hermes_home, '{"id": "z", "after": [{"path": ' + named)
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue(lessons.is_file())
+        self.assertIn("unreadable_ledgers", result)
+        self.assertIn(
+            (self.REL, "changed_since_rendered"),
+            [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
+        )
+
+    def test_an_unreadable_ledger_keeps_a_flat_leftover_too(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        flat = self.paths.skills_dir / SKILL
+        shutil.copytree(self.skill_file().parent, flat)
+        install_skill_pack(self.paths, profile="core")
+
+        def claim_rendered(manifest: dict) -> None:
+            for record in manifest["skills"]:
+                if record["path"] == f"{SKILL}/SKILL.md":
+                    record[RENDER_MARK_KEY] = record["sha256"]
+
+        self.edit_manifest(claim_rendered)
+        self.corrupt_ledger()
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue(flat.is_dir())
+        self.assertEqual(result["flat_layout_skills_removed"], [])
+        self.assertIn(
+            (f"{SKILL}/SKILL.md", "ledger_unreadable"),
+            [(item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
+        )
+
+    def test_an_unreadable_ledger_changes_nothing_else(self) -> None:
+        # The live skills update as before, and a manifest from before marks
+        # keeps its own rule, which never read the ledger.
+        install_skill_pack(self.paths, profile="core")
+        own = self.own_skill("my-own-top")
+        install_skill_pack(self.paths, profile="core")
+        skill_file = self.skill_file()
+        template = next(template for template in builtin_skill_templates() if template.name == SKILL)
+        skill_file.write_text(template.content + "\nolder render\n", encoding="utf-8")
+        current = f"{skill_install_relative_dir(SKILL).as_posix()}/SKILL.md"
+
+        def older_render(manifest: dict) -> None:
+            for record in manifest["skills"]:
+                if record["path"] == current:
+                    record["sha256"] = sha256_file(skill_file)
+
+        self.edit_manifest(older_render, legacy=True)
+        self.corrupt_ledger()
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertEqual(skill_file.read_text(encoding="utf-8"), template.content)
+        self.assertNotIn("hermes_edited_skills", result)
+        self.assertFalse(own.exists())
+        self.assertEqual(
+            [(item["path"], item["rule"]) for item in result["removed_skill_directories"]],
+            [("my-own-top/SKILL.md", "earlier_manifest")],
         )
 
     def test_strict_security_keeps_a_changed_flat_leftover_under_force(self) -> None:
