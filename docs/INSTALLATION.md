@@ -347,16 +347,20 @@ OMH removes a skill directory only when it can show that it rendered it. Each
 install marks the manifest record of every `SKILL.md` it wrote with the hash
 it wrote, and flags the manifest as carrying such marks. Under a flagged
 manifest, a directory is removed (a skill the catalog no longer ships, or a
-leftover top-level copy from the pre-category layout) only when its record
-carries the mark and its `SKILL.md` still has that hash; `--force` does not
-change this. Everything else is left in place and listed under
-`prune_skipped_skills` with a reason: `not_rendered_by_omh` for a directory an
-install merely found, such as your own skill in a category directory or a
-renamed copy beside a managed skill, and `changed_since_rendered` for one that
-was edited after OMH wrote it. A manifest written before marks existed is
-handled once more by the earlier rule (an unchanged record at the top level or
-in a category directory, inside the skills directory; `--force` also removes a
-changed one), and the manifest that install writes carries marks from then on.
+leftover top-level copy from the pre-category layout) when its record carries
+the mark and its `SKILL.md` still has that hash. A directory whose record has
+no mark is one an install merely found, such as your own skill in a category
+directory or a renamed copy beside a managed skill: it is never removed, with
+or without `--force`, and is listed under `prune_skipped_skills` as
+`not_rendered_by_omh` on every install; the summary names it once, when it is
+first seen. A marked directory whose `SKILL.md` was edited after OMH wrote it
+is listed as `changed_since_rendered` and left by a plain install; `--force`
+removes it and lists it under `force_pruned_skills`, with the files Hermes'
+ledger still holds a copy of and the files that are gone for good. A manifest
+written before marks existed is handled once more by the earlier rule (an
+unchanged record at the top level or in a category directory, inside the
+skills directory; `--force` also removes a changed one), and the manifest that
+install writes carries marks from then on.
 Under either rule a directory is never removed when it resolves outside the
 skills directory, when it is a category directory or holds other skills, or
 when it is, under another spelling, a directory OMH renders a skill into (a

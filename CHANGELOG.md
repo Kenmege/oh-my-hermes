@@ -39,11 +39,16 @@ All notable changes will be documented here.
   Pruning now follows provenance. An install marks every manifest record
   whose SKILL.md it wrote with the hash it wrote (`rendered_sha256`) and flags
   the manifest (`render_marks`). Under a flagged manifest, the orphan pruner
-  and the flat-layout pruner delete only a marked record whose SKILL.md still
-  has that hash; every other candidate is left in place and listed under
-  `prune_skipped_skills` with its reason (`not_rendered_by_omh`,
-  `changed_since_rendered`), with or without `--force`, so your own skill in a
-  category directory or beside a managed one is never pruned again. A manifest
+  and the flat-layout pruner delete a marked record whose SKILL.md still has
+  that hash. An unmarked record (`not_rendered_by_omh`) is never removed, with
+  or without `--force`, so your own skill in a category directory or beside a
+  managed one is never pruned again. A marked record whose SKILL.md changed
+  (`changed_since_rendered`) is left by a plain install and removed by
+  `--force`, which lists it under `force_pruned_skills` with the files the
+  ledger still holds a copy of and the files that are gone for good. Every
+  directory left in place is listed under `prune_skipped_skills` with its
+  reason on every install; the summary names a `not_rendered_by_omh`
+  directory once, when it is first seen, and the other reasons each time. A manifest
   written before marks existed is pruned once more by the rule it was written
   under (an unchanged record at an OMH position inside the skills directory;
   `--force` also prunes a changed one), and the manifest that install writes

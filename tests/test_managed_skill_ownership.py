@@ -723,7 +723,14 @@ class InstallerKeepsHermesEditTests(_Home):
         self.assertEqual(result["pruned_skills"], [])
         self.assertEqual(
             result["prune_skipped_skills"],
-            [{"name": "omh-routing-old", "path": "my-backups/omh-routing-old/SKILL.md", "reason": "not_rendered_by_omh"}],
+            [
+                {
+                    "name": "omh-routing-old",
+                    "path": "my-backups/omh-routing-old/SKILL.md",
+                    "reason": "not_rendered_by_omh",
+                    "newly_seen": True,
+                }
+            ],
         )
         self.assertIn(
             "Left omh-routing-old at my-backups/omh-routing-old/SKILL.md in place: OMH did not render it",
@@ -1072,11 +1079,73 @@ class RenderMarkPruneTests(_Home):
         self.assertEqual(result["pruned_skills"], ["doctor"])
         self.assertFalse(retired.exists())
 
-    def test_a_retired_skill_changed_since_omh_rendered_it_is_left_even_with_force(self) -> None:
+    def changed_retired_skill(self) -> Path:
+        """A skill OMH rendered, edited since, whose record already holds the edited hash.
+
+        The record holding the new hash is what a reconcile or an earlier
+        `--force` leaves; with the old hash a plain install refuses outright,
+        as it does for any changed managed file.
+        """
         install_skill_pack(self.paths, profile="core")
         retired = self.skill_file(name="doctor")
         with retired.open("a", encoding="utf-8") as handle:
             handle.write("\nsomeone kept working on it\n")
+        (retired.parent / "my-notes.md").write_text("mine\n", encoding="utf-8")
+
+        def rehash(manifest: dict) -> None:
+            for record in manifest["skills"]:
+                if record["name"] == "doctor":
+                    record["sha256"] = sha256_file(retired)
+
+        self.edit_manifest(rehash)
+        return retired
+
+    def test_a_changed_retired_skill_is_left_by_a_plain_install(self) -> None:
+        retired = self.changed_retired_skill()
+        first, second = self.drop_from_catalog("doctor")
+
+        with first, second:
+            result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue(retired.is_file())
+        self.assertEqual(result["pruned_skills"], [])
+        self.assertNotIn("force_pruned_skills", result)
+        self.assertEqual(
+            [(item["name"], item["reason"]) for item in result["prune_skipped_skills"]],
+            [("doctor", "changed_since_rendered")],
+        )
+        self.assertIn("A run with --force removes it.", self.summary(result))
+
+    def test_force_removes_a_changed_retired_skill_and_says_what_that_lost(self) -> None:
+        # The mark proves OMH rendered the path; --force is consent to lose
+        # the changes, as it is for a live skill.
+        retired = self.changed_retired_skill()
+        _append_ledger(self.paths.hermes_home, _ledger_row(retired, action="patch"))
+        self.store_blob(retired)
+        relative = f"{skill_install_relative_dir('doctor').as_posix()}/SKILL.md"
+        first, second = self.drop_from_catalog("doctor")
+
+        with first, second:
+            result = install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertFalse(retired.parent.exists())
+        self.assertEqual(result["pruned_skills"], ["doctor"])
+        [item] = result["force_pruned_skills"]
+        self.assertEqual((item["name"], item["path"]), ("doctor", relative))
+        self.assertEqual(item["ledger_copy"], ["SKILL.md"])
+        self.assertIn("my-notes.md", item["discarded"])
+        self.assertNotIn("SKILL.md", item["discarded"])
+        summary = self.summary(result)
+        self.assertIn(f"Removed doctor at {relative} because --force was given", summary)
+        self.assertIn("still holds a copy of SKILL.md", summary)
+        self.assertIn("Removing doctor deleted files Hermes' curator ledger holds no copy of:", summary)
+
+    def test_force_never_removes_what_omh_did_not_render(self) -> None:
+        # The same state without the mark: a directory an install merely found.
+        retired = self.changed_retired_skill()
+        self.edit_manifest(
+            lambda manifest: [record.pop(RENDER_MARK_KEY, None) for record in manifest["skills"] if record["name"] == "doctor"]
+        )
         first, second = self.drop_from_catalog("doctor")
 
         with first, second:
@@ -1084,9 +1153,98 @@ class RenderMarkPruneTests(_Home):
 
         self.assertTrue(retired.is_file())
         self.assertEqual(result["pruned_skills"], [])
+        self.assertNotIn("force_pruned_skills", result)
+        self.assertEqual([item["reason"] for item in result["prune_skipped_skills"]], ["not_rendered_by_omh"])
+
+    def summary(self, payload: dict) -> str:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            setup_commands._print_install_summary({"skills": [], **payload}, command="install")
+        return out.getvalue()
+
+    def test_the_flat_layout_pruner_follows_the_same_rule(self) -> None:
+        # A top-level copy OMH rendered (its record carries the mark), edited
+        # since, beside the categorized skill that replaced it.
+        install_skill_pack(self.paths, profile="core")
+        render = self.skill_file().parent
+        flat = self.paths.skills_dir / render.name
+        shutil.copytree(render, flat)
+        rendered_sha = sha256_file(flat / "SKILL.md")
+        with (flat / "SKILL.md").open("a", encoding="utf-8") as handle:
+            handle.write("\nedited after OMH wrote it\n")
+        install_skill_pack(self.paths, profile="core")
+
+        def claim_rendered(manifest: dict) -> None:
+            for record in manifest["skills"]:
+                if record["path"] == f"{flat.name}/SKILL.md":
+                    record[RENDER_MARK_KEY] = rendered_sha
+
+        self.edit_manifest(claim_rendered)
+        plain = install_skill_pack(self.paths, profile="core")
+        self.assertTrue((flat / "SKILL.md").is_file())
+        self.assertIn(
+            (SKILL, "changed_since_rendered"),
+            [(item["name"], item["reason"]) for item in plain["prune_skipped_skills"]],
+        )
+
+        self.edit_manifest(claim_rendered)
+        forced = install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertFalse(flat.exists())
+        self.assertEqual(forced["flat_layout_skills_removed"], [SKILL])
+        self.assertEqual([(item["name"], item["path"]) for item in forced["force_pruned_skills"]], [(SKILL, f"{flat.name}/SKILL.md")])
+        self.assertTrue(self.skill_file().is_file())
+
+    def test_a_directory_omh_did_not_render_is_named_once_and_listed_every_time(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        self.own_skill("guide/my-own-skill")
+        install_skill_pack(self.paths, profile="core")
+
+        first = install_skill_pack(self.paths, profile="core")
+        second = install_skill_pack(self.paths, profile="core")
+        reconcile_skill_profile(self.paths)
+        third = install_skill_pack(self.paths, profile="core")
+
+        expected = {"name": "my-own-skill", "path": "guide/my-own-skill/SKILL.md", "reason": "not_rendered_by_omh"}
+        self.assertEqual(first["prune_skipped_skills"], [{**expected, "newly_seen": True}])
+        self.assertIn("Left my-own-skill at guide/my-own-skill/SKILL.md in place", self.summary(first))
+        # Still in the result on every later install, a reconcile in between
+        # included, and no longer in what a person reads.
+        for later in (second, third):
+            self.assertEqual(later["prune_skipped_skills"], [{**expected, "newly_seen": False}])
+            self.assertNotIn("my-own-skill", self.summary(later))
+
+    def test_a_reason_a_person_can_act_on_is_printed_every_time(self) -> None:
+        retired = self.changed_retired_skill()
+        first, second = self.drop_from_catalog("doctor")
+
+        with first, second:
+            install_skill_pack(self.paths, profile="core")
+            again = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue(retired.is_file())
+        self.assertIn("its SKILL.md changed since OMH rendered it", self.summary(again))
+
+    def test_an_emptied_category_with_a_stray_skill_file_is_not_removed(self) -> None:
+        # No other skill below it, so "holds another SKILL.md" is false; it is
+        # still the category directory, and what else sits in it is not OMH's.
+        category = self.paths.skills_dir / skill_install_relative_dir(SKILL).parts[0]
+        category.mkdir(parents=True)
+        (category / "SKILL.md").write_text("stray\n", encoding="utf-8")
+        (category / "notes.txt").write_text("kept beside the skills\n", encoding="utf-8")
+        manifest = manifest_module.new_manifest(
+            "builtin", self.paths.skills_dir, manifest_module.skill_records(self.paths.skills_dir, "builtin")
+        )
+        catalog = {template.name for template in builtin_skill_templates()}
+
+        removed, skipped, _forced = installer._prune_orphaned_skills(
+            self.paths.skills_dir, manifest, catalog, force=True
+        )
+
+        self.assertEqual(removed, [])
+        self.assertTrue((category / "notes.txt").is_file())
         self.assertEqual(
-            [(item["name"], item["reason"]) for item in result["prune_skipped_skills"]],
-            [("doctor", "changed_since_rendered")],
+            skipped, [{"name": category.name, "path": f"{category.name}/SKILL.md", "reason": "category_directory"}]
         )
 
     def test_a_manifest_from_before_marks_is_pruned_by_its_own_rule_once(self) -> None:
@@ -1152,8 +1310,8 @@ class RenderMarkPruneTests(_Home):
                 self.assertTrue((copy / "personal.md").is_file())
                 self.assertEqual(result["flat_layout_skills_removed"], [])
                 self.assertIn(
-                    {"name": SKILL, "path": f"{copy.name}/SKILL.md", "reason": "not_rendered_by_omh"},
-                    result["prune_skipped_skills"],
+                    (SKILL, f"{copy.name}/SKILL.md", "not_rendered_by_omh"),
+                    [(item["name"], item["path"], item["reason"]) for item in result["prune_skipped_skills"]],
                 )
 
     def test_a_directory_holding_other_skills_is_never_pruned(self) -> None:
@@ -1186,7 +1344,9 @@ class RenderMarkPruneTests(_Home):
         )
         catalog = {template.name for template in builtin_skill_templates()} - {"ultrawork"}
 
-        _removed, skipped = installer._prune_orphaned_skills(self.paths.skills_dir, manifest, catalog, force=True)
+        _removed, skipped, _forced = installer._prune_orphaned_skills(
+            self.paths.skills_dir, manifest, catalog, force=True
+        )
 
         # The retired skill's own render directory goes, as it always did; the
         # category and every other skill in it stay.

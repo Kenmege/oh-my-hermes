@@ -4878,8 +4878,28 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
             # One line per reason: a directory left because it is not OMH's and
             # one left because it IS the render directory are opposite facts.
             reason = str(item.get("reason", ""))
+            if reason == "not_rendered_by_omh" and item.get("newly_seen") is False:
+                # Said once, when the directory was first seen. The result
+                # still lists it; a person who keeps their own skills in the
+                # pack should not read the same line on every install.
+                continue
             key = f"prune_skipped_{reason}_line" if reason in PRUNE_SKIP_REASONS else "prune_skipped_line"
             line = tr(language, key, name=item.get("name", ""), path=item.get("path", ""), reason=reason)
+            print(_color(f"  {line}", "1;33", use_color))
+    force_pruned = payload.get("force_pruned_skills")
+    for item in force_pruned if isinstance(force_pruned, list) else []:
+        if not isinstance(item, dict):
+            continue
+        copies = item.get("ledger_copy") if isinstance(item.get("ledger_copy"), list) else []
+        key = "retired_skill_force_removed_line" if copies else "retired_skill_force_removed_unrecoverable_line"
+        line = tr(
+            language, key, name=item.get("name", ""), path=item.get("path", ""),
+            files=", ".join(str(copy) for copy in copies),
+        )
+        print(_color(f"  {line}", "1;33", use_color))
+        discarded = item.get("discarded") if isinstance(item.get("discarded"), list) else []
+        if discarded:
+            line = tr(language, "retired_skill_discarded_line", name=item.get("name", ""), files=", ".join(map(str, discarded)))
             print(_color(f"  {line}", "1;33", use_color))
     profile_state = payload.get("skill_profile_state")
     if isinstance(profile_state, dict) and profile_state.get("retained_exception"):
