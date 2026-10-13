@@ -1,0 +1,330 @@
+"""The OMH TUI's live region (`omh.tui.screen`) driven into a VT screen model.
+
+The region repaints with relative motion only, so these tests start it at the
+bottom of a screen that already holds shell history, the way a real launch
+does, and read back what a terminal would show: the region's rows, the
+scrollback above, and where the hardware cursor ended up. The model raises on
+any write past the right margin, so every frame here also proves the
+clipping. The model's own behaviour is pinned at the end of the file.
+"""
+
+from __future__ import annotations
+
+import re
+import unittest
+
+from _vt_screen import VTOverflow, VTScreen
+
+from omh.tui.screen import LiveRegion, paint_line
+from omh.tui.style import SGR_RESET, Line, Span, Style
+
+_CSI = re.compile(r"\x1b\[([0-?]*)[ -/]*([@-~])")
+RED_BOLD = Style(fg="#ff0000", bold=True)
+RED_BOLD_SGR = (1, 38, 2, 255, 0, 0)
+FAMILY = "\U0001F468‍\U0001F469‍\U0001F467‍\U0001F466"
+
+
+def plain(*texts: str) -> list[Line]:
+    return [(Span(text),) for text in texts]
+
+
+def printable(written: str) -> str:
+    """The text a write paints, with every control sequence and CR/LF removed."""
+    return _CSI.sub("", written).replace("\r", "").replace("\n", "")
+
+
+class Harness:
+    def __init__(self, rows: int = 10, cols: int = 20, history: int = 0) -> None:
+        self.screen = VTScreen(rows, cols)
+        self.cols = cols
+        self.writes: list[str] = []
+        for index in range(history):
+            self.screen.feed(f"history {index}\r\n")
+        self.region = LiveRegion(self._write)
+
+    def _write(self, text: str) -> None:
+        self.writes.append(text)
+        self.screen.feed(text)
+
+    def render(self, lines: list[Line], cursor: tuple[int, int] = (0, 0), width: int | None = None) -> None:
+        self.region.render(lines, cursor, self.cols if width is None else width)
+
+    def flush(self, lines: list[Line], width: int | None = None) -> None:
+        self.region.flush_above(lines, self.cols if width is None else width)
+
+
+class FirstFrameTests(unittest.TestCase):
+    def test_first_frame_paints_from_the_cursor_row(self) -> None:
+        harness = Harness()
+        harness.render(plain("one", "two", "three"), cursor=(2, 1))
+        self.assertEqual(harness.screen.lines()[:4], ["one", "two", "three", ""])
+        self.assertEqual(harness.screen.cursor, (2, 1))
+        self.assertTrue(harness.screen.cursor_visible)
+        self.assertTrue(harness.screen.autowrap)
+
+    def test_first_frame_at_the_bottom_scrolls_history_up(self) -> None:
+        harness = Harness(rows=10, history=9)  # the shell left the cursor on the last row
+        harness.render(plain("one", "two", "three"), cursor=(2, 0))
+        self.assertEqual(harness.screen.scrollback, ["history 0", "history 1"])
+        self.assertEqual(harness.screen.lines()[-4:], ["history 8", "one", "two", "three"])
+        self.assertEqual(harness.screen.cursor, (9, 0))
+
+    def test_an_empty_first_frame_writes_nothing(self) -> None:
+        harness = Harness()
+        harness.render([])
+        self.assertEqual(harness.writes, [])
+
+
+class RepaintTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.harness = Harness(rows=10, history=9)
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=(2, 0))
+
+    def test_an_unchanged_frame_writes_nothing(self) -> None:
+        before = len(self.harness.writes)
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=(2, 0))
+        self.assertEqual(len(self.harness.writes), before)
+
+    def test_only_the_changed_row_is_repainted(self) -> None:
+        self.harness.render(plain("alpha", "BETA", "gamma"), cursor=(2, 0))
+        self.assertEqual(printable(self.harness.writes[-1]), "BETA")
+        self.assertEqual(self.harness.screen.lines()[-3:], ["alpha", "BETA", "gamma"])
+
+    def test_a_shorter_row_leaves_no_tail_behind(self) -> None:
+        self.harness.render(plain("alpha", "b", "gamma"), cursor=(2, 0))
+        self.assertEqual(self.harness.screen.lines()[-3:], ["alpha", "b", "gamma"])
+
+    def test_cursor_is_parked_where_asked(self) -> None:
+        self.harness.render(plain("alpha", "BETA", "gamma"), cursor=(1, 4))
+        self.assertEqual(self.harness.screen.cursor, (8, 4))
+
+    def test_moving_only_the_cursor_paints_no_text(self) -> None:
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=(0, 3))
+        self.assertEqual(printable(self.harness.writes[-1]), "")
+        self.assertEqual(self.harness.screen.cursor, (7, 3))
+
+    def test_cursor_is_clamped_into_the_region(self) -> None:
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=(10, 99))
+        self.assertEqual(self.harness.screen.cursor, (9, 19))
+
+    def test_a_width_change_repaints_every_row(self) -> None:
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=(2, 0), width=12)
+        self.assertEqual(printable(self.harness.writes[-1]), "alphabetagamma")
+
+    def test_only_relative_motion_is_used(self) -> None:
+        self.harness.render(plain("alpha", "beta", "gamma", "delta"), cursor=(1, 2))
+        self.harness.flush(plain("done"))
+        self.harness.render(plain("x"))
+        self.harness.region.clear()
+        finals = {final for text in self.harness.writes for _, final in _CSI.findall(text)}
+        self.assertLessEqual(finals, {"A", "B", "C", "K", "J", "m", "h", "l"})
+
+
+class HeightChangeTests(unittest.TestCase):
+    def test_growth_scrolls_earlier_content_into_scrollback(self) -> None:
+        harness = Harness(rows=10, history=9)
+        harness.render(plain("one", "two", "three"), cursor=(2, 0))
+        harness.render(plain("one", "two", "three", "four", "five"), cursor=(4, 0))
+        self.assertEqual(harness.screen.scrollback, ["history 0", "history 1", "history 2", "history 3"])
+        self.assertEqual(harness.screen.lines()[-6:], ["history 8", "one", "two", "three", "four", "five"])
+        self.assertEqual(harness.screen.cursor, (9, 0))
+
+    def test_shrink_blanks_the_freed_rows(self) -> None:
+        harness = Harness(rows=10, history=4)
+        harness.render(plain("one", "two", "three", "four", "five"), cursor=(4, 0))
+        harness.render(plain("one", "two"), cursor=(1, 2))
+        self.assertEqual(harness.screen.lines()[3:], ["history 3", "one", "two", "", "", "", ""])
+        self.assertEqual(harness.screen.cursor, (5, 2))
+
+    def test_an_empty_frame_blanks_the_region(self) -> None:
+        harness = Harness(rows=10, history=4)
+        harness.render(plain("one", "two"), cursor=(1, 0))
+        harness.render([])
+        self.assertEqual(harness.screen.lines()[3:7], ["history 3", "", "", ""])
+        self.assertEqual(harness.screen.cursor, (4, 0))
+
+    def test_growing_again_after_a_shrink_reuses_the_freed_rows(self) -> None:
+        harness = Harness(rows=10, history=4)
+        harness.render(plain("one", "two", "three"), cursor=(2, 0))
+        harness.render(plain("one"))
+        harness.render(plain("one", "two", "three"), cursor=(2, 0))
+        self.assertEqual(harness.screen.scrollback, [])
+        self.assertEqual(harness.screen.lines()[3:8], ["history 3", "one", "two", "three", ""])
+
+
+class FlushAboveTests(unittest.TestCase):
+    def test_flushed_lines_land_directly_above_the_region(self) -> None:
+        harness = Harness(rows=10)
+        harness.render(plain("a", "b", "c"), cursor=(2, 1))
+        harness.flush(plain("f1", "f2"))
+        self.assertEqual(harness.screen.lines()[:6], ["f1", "f2", "a", "b", "c", ""])
+        self.assertEqual(harness.screen.cursor, (4, 1))
+
+    def test_flushed_lines_reach_scrollback_and_the_region_stays_intact(self) -> None:
+        harness = Harness(rows=10, history=9)
+        harness.render(plain("a", "b", "c"), cursor=(1, 0))
+        flushed = [f"line {index}" for index in range(15)]
+        harness.flush(plain(*flushed))
+        history = [f"history {index}" for index in range(9)]
+        self.assertEqual(harness.screen.history(), history + flushed + ["a", "b", "c"])
+        self.assertEqual(harness.screen.lines()[-3:], ["a", "b", "c"])
+        self.assertEqual(harness.screen.scrollback[-1], "line 7")
+        self.assertEqual(harness.screen.cursor, (8, 0))
+
+    def test_flush_after_a_shrink_leaves_no_stale_rows(self) -> None:
+        harness = Harness(rows=10, history=2)
+        harness.render(plain("1", "2", "3", "4", "5"), cursor=(4, 0))
+        harness.render(plain("1", "2"), cursor=(1, 0))
+        harness.flush(plain("done"))
+        self.assertEqual(harness.screen.lines()[:7], ["history 0", "history 1", "done", "1", "2", "", ""])
+
+    def test_flush_before_any_frame_just_prints(self) -> None:
+        harness = Harness(rows=10)
+        harness.flush(plain("hello"))
+        self.assertEqual(harness.screen.lines()[:2], ["hello", ""])
+        self.assertEqual(harness.screen.cursor, (1, 0))
+        self.assertTrue(harness.screen.cursor_visible)
+
+    def test_flushed_lines_are_clipped_too(self) -> None:
+        harness = Harness(rows=6, cols=8)
+        harness.render(plain("x"))
+        harness.flush(plain("a much longer line than eight", "한글한글한글"))
+        self.assertEqual(harness.screen.lines()[:3], ["a much l", "한글한글", "x"])
+
+
+class ClippingAndStyleTests(unittest.TestCase):
+    def test_wide_glyphs_are_dropped_whole_at_the_edge(self) -> None:
+        harness = Harness(rows=4, cols=7)  # the model raises on any write past column 7
+        harness.render(plain("한글한글한글", "ab한글", FAMILY * 5))
+        self.assertEqual(harness.screen.lines()[:3], ["한글한", "ab한글", FAMILY * 3])
+
+    def test_a_full_width_row_keeps_its_last_glyph(self) -> None:
+        harness = Harness(rows=4, cols=5)
+        harness.render([(Span("abcde"),), (Span("xy", RED_BOLD), Span("한글"))])
+        harness.render([(Span("abcde"),), (Span("XY", RED_BOLD), Span("한글"))])
+        self.assertEqual(harness.screen.lines()[:2], ["abcde", "XY한"])
+
+    def test_styles_are_painted_and_reset_before_the_row_ends(self) -> None:
+        harness = Harness(rows=4)
+        harness.render([(Span("err", RED_BOLD), Span(" ok"))])
+        self.assertEqual(harness.screen.attrs_at(0, 0), RED_BOLD_SGR)
+        self.assertEqual(harness.screen.attrs_at(0, 2), RED_BOLD_SGR)
+        self.assertEqual(harness.screen.attrs_at(0, 3), ())
+        self.assertEqual(harness.screen.attrs_at(0, 10), ())  # the erased tail: no colour bleed
+
+    def test_painted_rows_end_in_default_attributes(self) -> None:
+        row = paint_line((Span("err", RED_BOLD),), 3)
+        self.assertEqual(row, f"{RED_BOLD.sgr()}err{SGR_RESET}")
+        self.assertEqual(paint_line((Span("ok"),), 5), "ok\x1b[K")
+
+    def test_control_characters_cannot_move_the_cursor(self) -> None:
+        harness = Harness(rows=4)
+        harness.render([(Span("a\x1b[2Jb\r\nc\x07"),), (Span("next"),)])
+        self.assertEqual(harness.screen.lines()[:2], ["a[2Jbc", "next"])
+
+
+class ClearTests(unittest.TestCase):
+    def test_clear_erases_the_region_and_the_next_frame_starts_at_its_top(self) -> None:
+        harness = Harness(rows=10, history=7)
+        harness.render(plain("a", "b", "c"), cursor=(2, 1))
+        harness.region.clear()
+        self.assertEqual(harness.screen.lines()[-4:], ["history 6", "", "", ""])
+        self.assertEqual(harness.screen.cursor, (7, 0))
+        harness.render(plain("x", "y"), cursor=(1, 0))
+        self.assertEqual(harness.screen.lines()[-4:], ["history 6", "x", "y", ""])
+
+    def test_clear_with_nothing_shown_writes_nothing(self) -> None:
+        harness = Harness()
+        harness.region.clear()
+        self.assertEqual(harness.writes, [])
+
+    def test_clear_returns_the_cursor_to_column_zero_even_with_no_rows(self) -> None:
+        harness = Harness()
+        harness.render([], cursor=(0, 5))
+        harness.region.clear()
+        self.assertEqual(harness.screen.cursor, (0, 0))
+
+
+class VTScreenModelTests(unittest.TestCase):
+    def test_line_feed_at_the_bottom_scrolls_into_scrollback(self) -> None:
+        screen = VTScreen(rows=2, cols=5)
+        screen.feed("a\r\nb\r\nc")
+        self.assertEqual(screen.scrollback, ["a"])
+        self.assertEqual(screen.lines(), ["b", "c"])
+
+    def test_line_feed_keeps_the_column(self) -> None:
+        screen = VTScreen(rows=3, cols=5)
+        screen.feed("ab\nc")
+        self.assertEqual(screen.lines(), ["ab", "  c", ""])
+
+    def test_relative_motion_clamps_at_the_edges(self) -> None:
+        screen = VTScreen(rows=3, cols=5)
+        screen.feed("\x1b[9B\x1b[9C")
+        self.assertEqual(screen.cursor, (2, 4))
+        screen.feed("\x1b[9A\x1b[9D")
+        self.assertEqual(screen.cursor, (0, 0))
+        screen.feed("\x1b[2;3H")
+        self.assertEqual(screen.cursor, (1, 2))
+
+    def test_erase_in_line_modes(self) -> None:
+        screen = VTScreen(rows=1, cols=5)
+        for sequence, expected in (("\x1b[K", "ab"), ("\x1b[1K", "   de"), ("\x1b[2K", "")):
+            with self.subTest(sequence=sequence):
+                screen.feed("\rabcde\r\x1b[2C" + sequence)
+                self.assertEqual(screen.lines(), [expected])
+
+    def test_erase_in_display_modes(self) -> None:
+        screen = VTScreen(rows=3, cols=3)
+        screen.feed("aaa\r\nbbb\r\nccc\x1b[2A\r\x1b[1C\x1b[J")
+        self.assertEqual(screen.lines(), ["a", "", ""])
+        screen.feed("\x1b[2J")
+        self.assertEqual(screen.lines(), ["", "", ""])
+
+    def test_wide_glyphs_take_two_cells_and_break_cleanly(self) -> None:
+        screen = VTScreen(rows=1, cols=6)
+        screen.feed("한글a")
+        self.assertEqual(screen.cursor, (0, 5))
+        screen.feed("\r\x1b[1Cx")  # overwrite the right half of 한
+        self.assertEqual(screen.lines(), [" x글a"])
+
+    def test_writing_past_the_margin_raises(self) -> None:
+        screen = VTScreen(rows=1, cols=3)
+        screen.feed("abc")
+        with self.assertRaises(VTOverflow):
+            screen.feed("d")
+        screen.feed("\rab")
+        with self.assertRaises(VTOverflow):
+            screen.feed("한")
+
+    def test_erase_at_the_margin_deletes_the_last_glyph_like_xterm(self) -> None:
+        screen = VTScreen(rows=1, cols=3)
+        screen.feed("abc\x1b[K")
+        self.assertEqual(screen.lines(), ["ab"])
+
+    def test_sgr_is_recorded_per_cell_and_reset(self) -> None:
+        screen = VTScreen(rows=1, cols=6)
+        screen.feed("\x1b[1;38;2;255;0;0mab\x1b[0mc\x1b[4md\x1b[me")
+        self.assertEqual([screen.attrs_at(0, col) for col in range(5)], [RED_BOLD_SGR, RED_BOLD_SGR, (), (4,), ()])
+
+    def test_modes_are_recorded_and_unknown_sequences_ignored(self) -> None:
+        screen = VTScreen(rows=1, cols=5)
+        screen.feed("\x1b[?25l\x1b[?2004h\x1b[?7l\x1b[5n\x1b[>c\x1b7a")
+        self.assertFalse(screen.cursor_visible)
+        self.assertTrue(screen.bracketed_paste)
+        self.assertFalse(screen.autowrap)
+        self.assertEqual(screen.lines(), ["a"])
+        screen.feed("\x1b[?25h\x1b[?2004l\x1b[?7h")
+        self.assertTrue(screen.cursor_visible)
+        self.assertFalse(screen.bracketed_paste)
+        self.assertTrue(screen.autowrap)
+
+    def test_an_escape_split_across_feeds(self) -> None:
+        screen = VTScreen(rows=2, cols=5)
+        screen.feed("ab\x1b[")
+        screen.feed("1Dc\x1b")
+        screen.feed("[Bd")
+        self.assertEqual(screen.lines(), ["ac", "  d"])
+
+
+if __name__ == "__main__":
+    unittest.main()
