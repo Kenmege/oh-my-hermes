@@ -4238,6 +4238,17 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "loop",
     ),
+    # A check asked of a loop on a timer is Hermes' `/loop` even when the thing
+    # checked is itself a code loop; before, it dispatched the goal loop, and
+    # for one review round it was answered as a question about that code.
+    RoutingPrecisionCase(
+        "timed-loop-checking-a-code-loop-is-native-loop",
+        "A timed loop that checks an event loop is Hermes' /loop",
+        "loop every 5 minutes and check whether the event loop lag is under 100ms",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
 )
 
 
@@ -11158,6 +11169,38 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "loop",
         "prepare_scheduled_ops_blueprint",
         "loop",
+    ),
+    # One verdict now decides every timed loop for the router and the hint.
+    # These three sat on its edges: an OMH form behind a reply pointer and a
+    # sender prefix, whose block end the scorer's collapsed text no longer
+    # shows; a loop asked to make something better; and another skill whose
+    # name merely ends in "loop".
+    RoutingInterventionCase(
+        "omh-loop-behind-a-reply-pointer-and-sender-keeps-loop",
+        "OMH's loop form behind a reply pointer and a sender prefix stays the goal loop",
+        "[Replying to: \"is CI green?\"]\n\n[alice] omh loop every 30 minutes check CI",
+        "dispatch",
+        "loop",
+        "ask_goal_boundary",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "improving-loop-on-a-timer-keeps-loop",
+        "A timed loop asked to improve something stays the goal loop",
+        "loop every hour and improve the docs",
+        "dispatch",
+        "loop",
+        "prepare_scheduled_ops_blueprint",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "cto-loop-on-a-timer-keeps-cto-loop",
+        "Another skill whose name ends in loop keeps its own route on a timer",
+        "run omh-cto-loop every 30 minutes on the roadmap",
+        "dispatch",
+        "cto-loop",
+        "run_cto_loop",
+        "cto_loop",
     ),
 )
 

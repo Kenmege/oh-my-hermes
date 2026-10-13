@@ -13,7 +13,11 @@ from .executor_cues import (
     OMO_RUNTIME_CODING_AGENT_PHRASES as _OMO_RUNTIME_CODING_AGENT_PHRASES,
     SUBSTRING_NAMED_CODING_AGENT_PHRASES as _SUBSTRING_NAMED_CODING_AGENT_PHRASES,
 )
-from .hermes_session_commands import NATIVE_LOOP_CADENCE_HINT_KEY, mentions_loop, native_loop_cadence
+from .hermes_session_commands import (
+    LOOP_TIMERS_ANSWERED_DIRECTLY,
+    NATIVE_LOOP_CADENCE_HINT_KEY,
+    loop_timer_verdict,
+)
 from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
 from .reference_regions import executable_routing_text
@@ -6025,11 +6029,12 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
         else _without_diagnostic_status_lines(localized_normalized)
     )
     tokens = set(re.findall(r"[a-z0-9][a-z0-9_-]*", routing_normalized))
-    # The timer is read before display names fold to catalog keys, so the
-    # skill's own name `ulw-loop` keeps the goal loop, as it does in the router.
-    # With the goal-loop hint withheld, the slots go to what the rest of the
-    # message asks for, exactly as for the same check said without a timer.
-    timed_native_loop = _native_loop_cadence_only(normalized, routing_normalized)
+    # A loop on a timer that is Hermes' `/loop`, or a code or media loop: the
+    # same function on the same executable text the chat router reads, so the
+    # hint and the router reach one verdict. With the goal-loop hint withheld,
+    # the slots go to what the rest of the message asks for, exactly as for
+    # the same check said without a timer.
+    timed_native_loop = loop_timer_verdict(matching_message) in LOOP_TIMERS_ANSWERED_DIRECTLY
     fixed_or_pass_verification_context = (
         _fixed_or_pass_verification_context(routing_normalized)
         and not _fixed_or_pass_status_question_context(routing_normalized)
@@ -7512,33 +7517,6 @@ def _direct_workflow_invocation_hint(
         if isinstance(context_card, dict)
         else [],
     }
-
-
-# The loopability phrases that only name a loop. Every other phrase of that
-# rule names the goal loop or a goal (`goal loop`, first-run friction, a star
-# target) and keeps the loop hint even on a timer, as do the goal-loop names
-# and goal words the router's loop guard reads (`_loop_goal_guard_applies`),
-# so the two surfaces draw the same line.
-_BARE_LOOP_PHRASES = frozenset({"/loop", "run a loop", "run loop", "start a loop", "start loop", "keep looping", "루프"})
-_LOOP_GOAL_WORDS = ("loop skill", "목표 루프", "improve", "friction", "first-run", "stars", "adoption")
-
-
-def _native_loop_cadence_only(cadence_text: str, goal_text: str) -> bool:
-    """A loop put on a timer with no goal beside it: Hermes' native `/loop`, not this hint.
-
-    `cadence_text` is the message before display names fold to catalog keys;
-    `goal_text` is the localized routing text the rule phrases match. The
-    loop word and the timer are the router's own predicates
-    (`native_loop_cadence_request`), so the two surfaces reach one verdict.
-    """
-    if not (mentions_loop(cadence_text) and native_loop_cadence(cadence_text)):
-        return False
-    rule = _route_hint_rule_by_id("loopability_goal") or {}
-    goal_phrases = (
-        *(phrase for phrase in rule.get("phrases", ()) if phrase not in _BARE_LOOP_PHRASES),
-        *_LOOP_GOAL_WORDS,
-    )
-    return not any(phrase in goal_text for phrase in goal_phrases)
 
 
 def _workflow_not_evidence_yet(

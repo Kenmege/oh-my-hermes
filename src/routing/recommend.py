@@ -32,6 +32,7 @@ from .trigger_language_packs import (
 )
 from .path_signal import PATH_GLOB_SCORE, matching_path_glob, path_mentions
 from .query import RoutingQuery
+from ..plugin_bundle.omh.hermes_session_commands import LOOP_TIMER_NONE
 from .policy import (
     appearance_edit_request,
     everyday_sense_phrase_unanchored,
@@ -2586,6 +2587,7 @@ def _recommend_skills_cached(key: _RawMessageKey, apply_guardrails: bool) -> tup
         definitions=definitions,
         explicit_skill=explicit_skill,
         apply_guardrails=apply_guardrails,
+        loop_timer=q.loop_timer,
     )
 
 
@@ -2623,6 +2625,7 @@ def scored_field_winner_without_explicit_invocation(query: str | RoutingQuery, c
         explicit_skill=None,
         apply_guardrails=True,
         name_credited_skill=candidate or None,
+        loop_timer=q.loop_timer,
     )
     return field[0].skill if field else ""
 
@@ -2647,6 +2650,7 @@ def confident_scored_field_winner(query: str | RoutingQuery) -> str:
         definitions=[prepared.definition for prepared in prepared_definitions],
         explicit_skill=None,
         apply_guardrails=True,
+        loop_timer=q.loop_timer,
     )
     return field[0].skill if field and field[0].confidence == "high" else ""
 
@@ -2663,6 +2667,7 @@ def _scored_field(
     explicit_skill: str | None,
     apply_guardrails: bool,
     name_credited_skill: str | None = None,
+    loop_timer: str = LOOP_TIMER_NONE,
 ) -> tuple[Recommendation, ...]:
     ecosystem_identity_connector_match = _ecosystem_identity_connector_explicit_match(normalized_query)
     domain_signal = specialist_domain_route_signal(routing_text.scoring_text)
@@ -2701,7 +2706,9 @@ def _scored_field(
         scored = [recommendation for recommendation in scored if recommendation.skill != "automation-blueprint"]
     matches = scored
     if apply_guardrails:
-        guards = active_routing_guard_rules(normalized_query, query_tokens, explicit_skill=explicit_skill)
+        guards = active_routing_guard_rules(
+            normalized_query, query_tokens, explicit_skill=explicit_skill, loop_timer=loop_timer
+        )
         public_plugin_connector_match = _public_plugin_connector_readiness_match(normalized_query)
         if (
             ecosystem_identity_connector_match

@@ -23,14 +23,18 @@ All notable changes will be documented here.
   5 minutes and check whether CI is green", `5분마다 … 루프 돌려줘`,
   `/loop 5m …`) no longer dispatches the goal loop or draws the `ulw-loop`
   route hint or candidate line: the router answers directly and names the
-  `/loop` command (compound intervals such as `/loop 1h30m` and short units
-  such as `5 min` included); a for, while, event, or media loop on a timer is
-  answered directly without that advice. `./loop`, `$loop`, and `omh loop`
-  (also behind a messaging gateway's sender prefix or trigger note), the
-  skill's own name `ulw-loop` and the sentence that invokes the skill, a named
-  goal loop ("goal loop", "목표 루프", "계속 개선"), and a timed request that
-  carries a product or star goal are never read as Hermes' timer and route as
-  they did before. The turns Hermes
+  `/loop` command (compound intervals such as `/loop 1h30m` and short or
+  glued units such as `5 min` and `5mins` included); a timed loop that is only
+  a for, while, event, or media loop is answered directly without that advice.
+  One function decides this for the router, its loop guard, the route hint,
+  and the candidate line, and the router and the hint are pinned to agree on
+  every probe sentence. A timed loop stays OMH's
+  goal loop, routed as before, when it uses OMH's own forms (`./loop`,
+  `$loop`, `omh loop`, also behind a messaging gateway's sender prefix,
+  trigger note, reply pointer, or backfill), names the skill (`ulw-loop`, "the
+  loop skill") or the goal loop ("goal loop", "목표 루프"), asks the loop to
+  improve something, or carries a product or star goal; a typed-out `/loop`
+  on a timer is the native command whatever its prompt asks. The turns Hermes
   writes for its own session commands are no longer routed at all: `/plan`,
   `/loop` wakeups, `/goal` continuations (with a completion contract or
   `/subgoal` criteria, after a failed quality gate, and the kick that stands

@@ -501,7 +501,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # timer written with a short unit (`5 min`), and a bash while loop
             # on a timer, a code question that no longer gets `/loop` advice;
             # both dispatched the goal loop before.
-            expected=508,
+            # The third review adds one, answered directly: a timed loop that
+            # checks an event loop, which dispatched the goal loop before and
+            # for one round read as a question about that code.
+            expected=509,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -642,7 +645,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # that invokes the skill on a timer, by `ulw-loop`, by the catalog
             # name `loop`, and in Korean, and OMH's `$loop` behind a shared
             # session's sender prefix.
-            expected=705,
+            # The third review adds three on the edges of the one verdict: an
+            # OMH form behind a reply pointer and a sender prefix, a timed
+            # loop asked to improve something, and `cto-loop` on a timer,
+            # which keeps its own route.
+            expected=708,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

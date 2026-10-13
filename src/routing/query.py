@@ -32,6 +32,7 @@ from .intent import scrub_diagnostic_status_text
 from .localization import RoutingText, normalized_phrase, prepare_routing_text
 from .policy import everyday_sense_phrase_unanchored
 from .reference_regions import executable_routing_text
+from ..plugin_bundle.omh.hermes_session_commands import LOOP_TIMER_NONE, loop_timer_verdict
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,10 @@ class RoutingQuery:
     routing_text: RoutingText
     normalized: str
     tokens: frozenset[str]
+    # What a loop on a timer in this text is (`hermes_session_commands`), read
+    # on `executable`: `normalized` joins every whitespace run, which erases
+    # the block ends a messaging gateway's own prefixes close with.
+    loop_timer: str = LOOP_TIMER_NONE
 
     @classmethod
     def from_message(cls, text: str) -> RoutingQuery:
@@ -59,6 +64,7 @@ class RoutingQuery:
             routing_text=routing_text,
             normalized=normalized,
             tokens=frozenset(_tokens(normalized)),
+            loop_timer=loop_timer_verdict(executable),
         )
 
     @classmethod
