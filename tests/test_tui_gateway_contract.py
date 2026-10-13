@@ -59,7 +59,13 @@ class ClientMethodTests(unittest.TestCase):
         # session_id, scope, confirm_expensive_model, profile; SessionCorrectionParams is session_id, text, profile.
         self.assertEqual(contract.CLIENT_METHODS["config.set"], {"key", "value", "session_id"})
         self.assertEqual(contract.CLIENT_METHODS["session.steer"], {"session_id", "text"})
-        self.assertEqual(contract.CONFIG_SET_KEYS, {"yolo", "reasoning"})
+        self.assertEqual(set(contract.CONFIG_SET_VALUES), {"yolo", "reasoning"})
+        self.assertEqual(contract.CONFIG_SET_VALUES["yolo"], {"on", "off"})
+        # hermes_constants.VALID_REASONING_EFFORTS in 6c61c3e27d, plus none (parse_reasoning_effort: thinking off).
+        self.assertEqual(
+            contract.REASONING_LEVELS, ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
+        )
+        self.assertEqual(contract.CONFIG_SET_VALUES["reasoning"], set(contract.REASONING_LEVELS))
 
     def test_a_config_set_is_sendable_only_for_one_session_with_an_explicit_value(self) -> None:
         good = {"key": "yolo", "value": "on", "session_id": "live-1"}
@@ -74,6 +80,8 @@ class ClientMethodTests(unittest.TestCase):
             "no value (a toggle)": {"key": "yolo", "session_id": "live-1"},
             "an empty value": {**good, "value": ""},
             "a bool value": {**good, "value": True},
+            "a yolo word Hermes also reads": {**good, "value": "1"},
+            "an effort as a yolo value": {**good, "value": "high"},
             "another key": {**good, "key": "approvals.mode", "value": "off"},
             "the model key": {**good, "key": "model", "value": "x"},
             "no key": {"value": "on", "session_id": "live-1"},
@@ -81,6 +89,17 @@ class ClientMethodTests(unittest.TestCase):
         for name, params in refused.items():
             with self.subTest(name):
                 self.assertNotEqual(contract.call_problem("config.set", params), "")
+
+    def test_a_reasoning_config_set_takes_effort_levels_only(self) -> None:
+        # Under the same key Hermes reads these as display settings and writes them to config.yaml.
+        effort = {"key": "reasoning", "session_id": "live-1"}
+        for level in contract.REASONING_LEVELS:
+            with self.subTest(level=level):
+                self.assertEqual(contract.call_problem("config.set", {**effort, "value": level}), "")
+        for word in ("show", "hide", "on", "off", "full", "all", "clamp", "collapse", "short", "HIGH", "", "hgih"):
+            with self.subTest(word=word):
+                self.assertNotEqual(contract.call_problem("config.set", {**effort, "value": word}), "")
+        self.assertNotEqual(contract.call_problem("config.set", {"key": "reasoning", "value": "high"}), "")
 
     def test_call_problem_names_undeclared_keys_for_every_method(self) -> None:
         self.assertEqual(contract.call_problem("session.create", {"cols": 80, "cwd": "/w"}), "")

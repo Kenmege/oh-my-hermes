@@ -40,6 +40,9 @@ confirms anything else is treated as a failure and followed by an explicit
 off, and every `session.info` corrects what is shown. With approvals off
 Hermes sends no approval request, so the TUI still answers none. Plan is the
 TUI's own flag: a prompt typed while it is on goes as `/plan <text>`.
+Ctrl+T and `/effort <level>` set the session's reasoning effort the same way
+(`config.set` with the session id); the level shown is the one Hermes
+confirmed or reports in `session.info`.
 
 Prompt text, the transcript, attachments, secrets, server-request frames and
 the gateway's stderr stay in memory and on the person's own terminal; nothing
@@ -182,6 +185,10 @@ ACCEPT_ELSEWHERE_NOTICE = (
     "its approvals.mode is off, or it was started with --yolo. Accept all stays shown."
 )
 SWITCH_BACK_FAILED_NOTICE = "Hermes did not confirm the switch back either ({}). Check /yolo in Hermes."
+
+# Ctrl+T steps through these; `/effort` takes any level in `contract.REASONING_LEVELS`.
+EFFORT_CYCLE = ("low", "medium", "high", "xhigh", "max")
+EFFORT_REFUSED_NOTICE = "Hermes did not set the reasoning effort to {} ({}); it stays as shown."
 
 STEERED_NOTICE = "↪ steered: {}"
 STEER_REJECTED = "rejected"  # `session.steer`'s status when the turn ended before the text arrived
@@ -617,6 +624,7 @@ class App:
         self.effort = ""
         self.mode_request_open = False  # a yolo call is out: Shift+Tab waits for its answer
         self.yolo_reported: bool | None = None  # `session.info`'s yolo since the last yolo call went out
+        self.effort_asked = ""  # the newest effort still waiting for Hermes' answer; the next Ctrl+T steps on from it
         self.busy_mode = BUSY_QUEUE
         self.catalog: list[tuple[str, str]] = []
         self.slot: PromptSlot | None = None
@@ -739,6 +747,8 @@ class App:
         # Accept belongs to the session being left; this one says its own, here or in its first session.info.
         self.mode_request_open = False
         self.yolo_reported = None
+        self.effort_asked = ""
+        self.effort = ""
         if self.mode == MODE_ACCEPT:
             self.mode = MODE_NORMAL
         self._take_session_state(info if isinstance(info, dict) else {})
@@ -923,11 +933,15 @@ class App:
         self._adopt_stored(as_text(payload.get("stored_session_id")))
 
     def _take_session_state(self, info: Mapping[str, Any]) -> None:
-        """Hermes' own word on the session's approvals: on means accept is shown, off means it is not.
+        """Hermes' own word on the session: its reasoning effort, and whether its approvals are off.
 
-        Hermes reports yolo on for its own reasons too (`approvals.mode` off,
+        Approvals off means accept is shown, on means it is not. Hermes
+        reports yolo on for its own reasons too (`approvals.mode` off,
         `--yolo`), and then the composer says so as well.
         """
+        effort = info.get("reasoning_effort")
+        if isinstance(effort, str):
+            self.effort = effort
         yolo = info.get("yolo")
         if not isinstance(yolo, bool):
             return
@@ -1030,7 +1044,7 @@ class App:
         if self.slot is None and self.picker is not None:
             self._picker_key(event)
             return
-        if self.slot is None and self._mode_key(event):
+        if self.slot is None and (self._mode_key(event) or self._effort_key(event)):
             return
         if self.slot is None and (self._attachment_input(event) or self._escape(event)):
             return
@@ -1366,6 +1380,59 @@ class App:
         if problem:
             self.transcript.add_notice(SWITCH_BACK_FAILED_NOTICE.format(problem), NOTICE_ERROR)
 
+    # ── reasoning effort ──
+
+    def _effort_key(self, event: Key | Paste) -> bool:
+        """Ctrl+T steps the reasoning effort through `EFFORT_CYCLE`, from low when it is at none of them."""
+        if not isinstance(event, Key) or event.name != CHAR or not event.ctrl or event.alt or event.char != "t":
+            return False
+        current = self.effort_asked or self.effort
+        step = EFFORT_CYCLE.index(current) + 1 if current in EFFORT_CYCLE else 0
+        self._set_effort(EFFORT_CYCLE[step % len(EFFORT_CYCLE)])
+        return True
+
+    def _effort_command(self, arg: str) -> None:
+        """`/effort <level>`: any level Hermes takes; alone, it names the level shown and the choices."""
+        level = arg.strip().lower()
+        levels = ", ".join(contract.REASONING_LEVELS)
+        if level in contract.REASONING_LEVELS:
+            self._set_effort(level)
+        elif level:
+            self.transcript.add_notice(f"No reasoning effort named {arg}. Levels: {levels}.", NOTICE_WARN)
+        else:
+            now = f"Reasoning effort {self.effort}." if self.effort else "Hermes reports no reasoning effort."
+            self.transcript.add_notice(f"{now} /effort <level> sets it for this session. Levels: {levels}.")
+
+    def _set_effort(self, level: str) -> None:
+        """Ask Hermes for `level` in this session; the mode row changes once Hermes confirms it."""
+        if not self.sid:
+            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
+            return
+        sid = self.sid
+        self.effort_asked = level
+        self._request(
+            "config.set",
+            {"key": "reasoning", "session_id": sid, "value": level},
+            lambda result: self._on_effort_answer(sid, level, result.get("value")),
+            lambda error: self._on_effort_answer(
+                sid, level, None, f"{error.get('code')}: {as_text(error.get('message')) or 'refused'}"
+            ),
+        )
+
+    def _on_effort_answer(self, sid: str, level: str, value: object, refusal: str = "") -> bool:
+        """Hermes answered an effort call: its `value` is the level it set, or `refusal` says why it set none."""
+        if sid != self.sid:
+            return True  # that session was left meanwhile
+        if self.effort_asked == level:
+            self.effort_asked = ""
+        if not refusal and value != level:
+            refusal = f"it answered {json.dumps(value)}"
+        if refusal:
+            self.transcript.add_notice(EFFORT_REFUSED_NOTICE.format(level, refusal), NOTICE_WARN)
+        else:
+            self.effort = level
+        return True
+
     # ── slash commands ──
 
     def _run_slash(self, invocation: SlashInvocation, depth: int = 0) -> None:
@@ -1456,6 +1523,7 @@ class App:
             "details": self._details,
             "queue": self._show_queue,
             "steer": self._steer_command,
+            "effort": self._effort_command,
             "logs": self._logs,
             "copy": self._copy,
             "theme": self._theme,

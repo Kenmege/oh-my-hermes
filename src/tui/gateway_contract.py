@@ -39,7 +39,7 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "session.interrupt": frozenset({"session_id"}),
     # Typed text into the running turn; `rejected` when the session is idle, and the text then goes as a prompt.
     "session.steer": frozenset({"session_id", "text"}),
-    # See CONFIG_SET_KEYS: `scope` is deliberately not declared.
+    # See CONFIG_SET_VALUES: `scope` is deliberately not declared.
     "config.set": frozenset({"key", "value", "session_id"}),
     "session.list": frozenset({"limit"}),
     "prompt.submit": frozenset({"session_id", "text", "queued"}),
@@ -52,12 +52,20 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "command.dispatch": frozenset({"name", "arg", "session_id"}),
 }
 
-# The `config.set` keys the TUI sets, both for one session: `yolo` (approvals off) and `reasoning`
-# (the effort). Hermes applies either one wider when it cannot tie the call to a session: with no
-# `session_id`, yolo sets `HERMES_YOLO_MODE` in the gateway's process environment and reasoning
-# rewrites config.yaml, and `scope: "global"` writes `approvals.mode` for good. So every call carries
-# the session id and an explicit value, and `scope` is not a key the TUI can send at all.
-CONFIG_SET_KEYS = frozenset({"yolo", "reasoning"})
+# The reasoning efforts Hermes takes (`hermes_constants.VALID_REASONING_EFFORTS`), and `none` for thinking off.
+REASONING_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
+
+# The `config.set` keys the TUI sets, both for one session, with the only values it sends: `yolo`
+# (approvals off) and `reasoning` (the effort). Hermes applies either one wider when it cannot tie
+# the call to a session: with no `session_id`, yolo sets `HERMES_YOLO_MODE` in the gateway's process
+# environment and reasoning rewrites config.yaml, and `scope: "global"` writes `approvals.mode` for
+# good. A blank yolo value toggles whatever the state is, and `reasoning` with show, hide, on, off,
+# full or clamp is a display setting Hermes writes to config.yaml. So every call carries the session
+# id and one of these values, and `scope` is not a key the TUI can send at all.
+CONFIG_SET_VALUES: dict[str, frozenset[str]] = {
+    "yolo": frozenset({"on", "off"}),
+    "reasoning": frozenset(REASONING_LEVELS),
+}
 CONFIG_SET_SESSION_SCOPE = "session"  # what a yolo answer's `scope` must say
 
 # Events whose envelope `session_id` is not the live session are dropped, except
@@ -134,15 +142,19 @@ def call_problem(method: str, params: dict[str, object]) -> str:
     """Why the TUI must not send this call; "" when it may.
 
     An undeclared key, or a `config.set` that Hermes would apply beyond one
-    session: a key outside `CONFIG_SET_KEYS`, no session id, or no explicit
-    value (a blank yolo value toggles whatever the state is).
+    session: a key or a value outside `CONFIG_SET_VALUES`, or no session id.
     """
     undeclared = undeclared_params(method, params)
     if undeclared:
         return f"{method} does not declare {', '.join(undeclared)} in the gateway contract"
     if method != "config.set":
         return ""
-    if params.get("key") not in CONFIG_SET_KEYS:
-        return f"config.set does not declare the key {params.get('key')!r} in the gateway contract"
-    blank = [name for name in ("session_id", "value") if not isinstance(params.get(name), str) or not params[name]]
-    return f"config.set needs {' and '.join(blank)}: without it Hermes writes beyond the session" if blank else ""
+    key, value, session_id = params.get("key"), params.get("value"), params.get("session_id")
+    allowed = CONFIG_SET_VALUES.get(key) if isinstance(key, str) else None
+    if allowed is None:
+        return f"config.set does not declare the key {key!r} in the gateway contract"
+    if not isinstance(value, str) or value not in allowed:
+        return f"config.set does not declare the value {value!r} for {key} in the gateway contract"
+    if not isinstance(session_id, str) or not session_id:
+        return f"config.set {key} needs a session id: without one Hermes writes beyond the session"
+    return ""

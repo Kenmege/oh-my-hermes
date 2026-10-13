@@ -20,7 +20,7 @@ from _tui_gateway_replay import Scenario, spans
 from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, FakePoller, ScriptedTerminal, Step, startup_answers
 from omh.tui import app as app_module
 from omh.tui import gateway_contract as contract
-from omh.tui.app import SLOT_ARM_SECONDS, App
+from omh.tui.app import EFFORT_CYCLE, SLOT_ARM_SECONDS, App
 from omh.tui.frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, ENTER, TAB, Key
@@ -39,6 +39,7 @@ YOLO_IS_ON = {"key": "yolo", "value": "1", "scope": "session"}
 YOLO_IS_OFF = {"key": "yolo", "value": "0", "scope": "session"}
 YOLO_ON_CALL = ("config.set", {"key": "yolo", "session_id": SID, "value": "on"})
 YOLO_OFF_CALL = ("config.set", {"key": "yolo", "session_id": SID, "value": "off"})
+CTRL_T = Key(CHAR, "t", ctrl=True)
 PLAN_PROMPT = "[/plan — plan mode]\n\nFor this turn, you are in PLAN MODE.\n\nTask to plan:\nfix the flaky test\n"
 
 
@@ -559,8 +560,158 @@ class PlanModeTests(unittest.TestCase):
         self.assertEqual(plan_invocation("  two\nlines \n").shown, "/plan two\nlines")
 
 
+def effort_call(level: str, sid: str = SID) -> tuple[str, dict]:
+    return ("config.set", {"key": "reasoning", "session_id": sid, "value": level})
+
+
+def effort_set(level: str) -> dict:
+    """Hermes 6c61c3e27d's answer to a session effort (`_set_reasoning`): the word it took."""
+    return {"key": "reasoning", "value": level}
+
+
+class EffortTests(unittest.TestCase):
+    def test_ctrl_t_steps_the_effort_and_shows_it_once_hermes_confirms(self) -> None:
+        app, client = make_app()
+        seen = []
+        for _ in range(len(EFFORT_CYCLE) + 1):
+            app._on_input(CTRL_T)
+            asked = client.calls[-1][1]["value"]
+            self.assertNotEqual(app.effort, asked)  # shown only once Hermes answers
+            answer(app, client, effort_set(asked))
+            self.assertEqual(app.effort, asked)
+            seen.append(asked)
+        self.assertEqual(seen, ["low", "medium", "high", "xhigh", "max", "low"])
+        self.assertEqual(client.calls, [effort_call(level) for level in seen])
+        self.assertEqual(notices(app), [])
+
+    def test_a_level_outside_the_cycle_steps_to_low(self) -> None:
+        for level in ("", "none", "minimal", "ultra", "something-new"):
+            with self.subTest(level=level):
+                app, client = make_app()
+                app.effort = level
+                app._on_input(CTRL_T)
+                self.assertEqual(client.calls, [effort_call("low")])
+
+    def test_presses_before_the_answer_step_on_from_what_was_asked(self) -> None:
+        app, client = make_app()
+        app.effort = "low"
+        app._on_input(CTRL_T)
+        app._on_input(CTRL_T)
+        self.assertEqual(client.calls, [effort_call("medium"), effort_call("high")])
+        app._on_response(Response(1, effort_set("medium"), None))
+        self.assertEqual(app.effort, "medium")
+        app._on_response(Response(2, effort_set("high"), None))
+        self.assertEqual(app.effort, "high")
+        app._on_input(CTRL_T)
+        self.assertEqual(client.calls[-1], effort_call("xhigh"))
+
+    def test_a_refused_effort_says_so_and_leaves_the_display(self) -> None:
+        refusals = (
+            ("an error", None, {"code": 4002, "message": "unknown reasoning value: low"}),
+            ("another level", effort_set("medium"), None),
+            ("no value", {"key": "reasoning"}, None),
+        )
+        for name, result, error in refusals:
+            with self.subTest(name):
+                app, client = make_app()
+                app.effort = "high"
+                app._on_input(CTRL_T)
+                answer(app, client, result, error)
+                self.assertEqual(app.effort, "high")
+                (notice,) = notices(app, NOTICE_WARN)
+                self.assertIn("did not set the reasoning effort to xhigh", notice)
+                app._on_input(CTRL_T)  # and the next press asks for the same step again
+                self.assertEqual(client.calls[-1], effort_call("xhigh"))
+
+    def test_ctrl_t_does_nothing_while_a_question_is_open_or_without_a_session(self) -> None:
+        for method, params in (("approval", {"command": "rm -rf ./x"}), ("sudo", {"command": "apt install x"})):
+            with self.subTest(method=method):
+                now = [100.0]
+                app, client = make_app(clock=lambda: now[0])
+                app._on_server_request(ServerRequest("srq-1", method, params))
+                now[0] += SLOT_ARM_SECONDS
+                app._on_input(CTRL_T)
+                self.assertEqual((client.calls, client.answers), ([], []))
+                self.assertEqual(app.composer.text, "")
+        app, client = make_app()
+        app.sid = ""
+        app._on_input(CTRL_T)
+        self.assertEqual(client.calls, [])
+        self.assertEqual(len(notices(app, NOTICE_WARN)), 1)
+
+    def test_session_info_is_where_the_shown_effort_comes_from(self) -> None:
+        app, _client = make_app()
+        session_info(app, reasoning_effort="high")
+        self.assertEqual(app.effort, "high")
+        session_info(app, reasoning_effort="none", yolo=False)
+        self.assertEqual(app.effort, "none")
+        for payload in ({}, {"reasoning_effort": None}, {"reasoning_effort": 3}):
+            session_info(app, **payload)
+            self.assertEqual(app.effort, "none")
+        session_info(app, reasoning_effort="")  # Hermes' word for the provider's default
+        self.assertEqual(app.effort, "")
+
+    def test_a_new_session_shows_its_own_effort(self) -> None:
+        app, client = make_app()
+        app.effort = "high"
+        app._on_input(CTRL_T)
+        app._adopt_session({"session_id": "live-2", "info": {}})
+        self.assertEqual(app.effort, "")
+        answer(app, client, effort_set("xhigh"))  # the session left answers late
+        self.assertEqual(app.effort, "")
+        app._adopt_session({"session_id": "live-3", "info": {"reasoning_effort": "max"}})
+        self.assertEqual(app.effort, "max")
+        app._on_input(CTRL_T)
+        self.assertEqual(client.calls[-1], effort_call("low", "live-3"))
+
+    def test_the_effort_command_takes_any_hermes_level(self) -> None:
+        for level in contract.REASONING_LEVELS:
+            with self.subTest(level=level):
+                app, client = make_app()
+                type_text(app, f"/effort {level.upper()}")
+                app._on_input(Key(ENTER))
+                self.assertEqual(client.calls, [effort_call(level)])
+                answer(app, client, effort_set(level))
+                self.assertEqual(app.effort, level)
+
+    def test_the_effort_command_sends_nothing_that_is_not_a_level(self) -> None:
+        # show, hide, on, off, full and clamp are display settings under the same Hermes key.
+        for word in ("show", "hide", "on", "off", "full", "clamp", "hgih", "high --global"):
+            with self.subTest(word=word):
+                app, client = make_app()
+                type_text(app, f"/effort {word}")
+                app._on_input(Key(ENTER))
+                self.assertEqual(client.calls, [])
+                (notice,) = notices(app, NOTICE_WARN)
+                self.assertIn("none, minimal, low, medium, high, xhigh, max, ultra", notice)
+
+    def test_the_effort_command_alone_names_the_level_shown(self) -> None:
+        app, client = make_app()
+        app.effort = "high"
+        type_text(app, "/effort")
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [])
+        (notice,) = notices(app)
+        self.assertIn("Reasoning effort high.", notice)
+
+
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
 class ModeReplayTests(AppTestCase):
+    def test_ctrl_t_shows_the_effort_hermes_confirmed_on_the_mode_row(self) -> None:
+        answers = (*startup_answers(), ("config.set", {"result": effort_set("low")}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            Step(b"\x14", when=terminal.idle, capture="before", label="idle"),
+            Step(b"\x04", when=terminal.shows("effort low"), label="the effort"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (call,) = run.calls("config.set")
+        self.assertEqual(call["params"], {"key": "reasoning", "session_id": LIVE_ID, "value": "low"})
+        # "ctrl+t effort" is the hint; the level itself is absent until Hermes names one.
+        self.assertNotIn("effort low", "\n".join(terminal.captures["before"]))
+
     def test_shift_tab_walks_the_modes_and_the_frame_shows_each(self) -> None:
         answers = (*startup_answers(), ("config.set", {"result": YOLO_IS_ON}), ("config.set", {"result": YOLO_IS_OFF}))
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))

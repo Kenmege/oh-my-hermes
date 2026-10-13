@@ -345,6 +345,7 @@ Keys:
 | Ctrl+Enter | Steers a running turn with the composer's text; idle, sends it as Enter does |
 | Tab | Completes a slash command, or the `@` reference being typed |
 | Shift+Tab | Cycles the input mode: normal, accept all, plan |
+| Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max |
 | `@` | Starts a file or folder reference; Hermes offers matches above the composer |
 | ↑ / ↓ | Walk the input history at the composer's first and last row |
 | Esc | On an empty composer, interrupts a running turn (the activity row shows how long it has run) |
@@ -378,6 +379,11 @@ accept all as well. In plan mode each prompt you send goes to Hermes as
 instruction to the model, not a restriction on its tools. An answer to a
 question Hermes asked is sent as typed in every mode.
 
+Ctrl+T steps this session's reasoning effort, and `/effort <level>` sets any
+level Hermes takes (`none`, `minimal` and `ultra` as well). The mode row shows
+the level once Hermes confirms it; a level Hermes refuses leaves the row as it
+was and says so.
+
 A steer adds what you typed to the turn that is running, without interrupting
 it; Hermes reads it after its next tool call, and the transcript notes
 `↪ steered:` once Hermes took it. If the turn ended first, or Hermes cannot
@@ -388,9 +394,9 @@ turned into a steer.
 Slash commands the OMH TUI runs itself: `/help`, `/quit`, `/new`,
 `/sessions`, `/redraw`, `/history` (an in-memory pager over this session),
 `/details` (show or hide thinking and tool detail on the live block),
-`/queue`, `/steer <text>`, `/logs` (the gateway's recent stderr, kept in
-memory only), `/copy`, `/image`, `/paste` (the clipboard image), `/theme`, and
-`/omh-model`.
+`/queue`, `/steer <text>`, `/effort <level>`, `/logs` (the gateway's recent
+stderr, kept in memory only), `/copy`, `/image`, `/paste` (the clipboard
+image), `/theme`, and `/omh-model`.
 Commands whose screen exists only in Hermes' own terminal (`/voice`, `/pet`,
 `/agents`, the billing flows, `/save`, `/prompt`, ...) say so and name
 `hermes --tui`. Everything else goes to Hermes as it would from Hermes'
