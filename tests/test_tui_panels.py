@@ -607,5 +607,14 @@ class WidgetParityTests(unittest.TestCase):
                 self.assertGreater(len(mine[1:plan_at]), 1)
 
 
+
+class PunctuationTests(unittest.TestCase):
+    def test_ordinary_punctuation_in_plan_text_survives_and_controls_do_not(self) -> None:
+        from omh.tui.panels import _sanitize
+
+        self.assertEqual(_sanitize("Answer nothing on the person's behalf, ok?"), "Answer nothing on the person's behalf, ok?")
+        self.assertEqual(_sanitize("a\x1b[31mb\x07c"), "abc")
+
+
 if __name__ == "__main__":
     unittest.main()

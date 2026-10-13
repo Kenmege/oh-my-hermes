@@ -488,7 +488,7 @@ class TuiWidgetPackTests(unittest.TestCase):
         # anthropic/claude...)`, `(codex/maestro ...)`, `turn 3 (12 tools)` --
         # so the allowlist keeps them; stripping them rendered the category
         # and model as one run-on token (`architectanthropic/c...`).
-        self.assertIn("/[^\\p{L}\\p{N} .:/_·|+()\\[\\]!\\-]/gu", widget)
+        self.assertIn("/[^\\p{L}\\p{N} .:/_·|+()\\[\\]!\\-',;?\"#%&=@~]/gu", widget)
         self.assertNotIn("safeText(value, 4096)", widget)
         self.assertIn("'blocked_by_dependency'", widget)
         self.assertIn("'dry_run_planned'", widget)

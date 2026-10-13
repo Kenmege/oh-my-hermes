@@ -35,6 +35,7 @@ import unicodedata
 
 from ..plugin_bundle.omh.runtime_reader import elapsed_text, read_omh_hud, todo_unchanged_text
 from ..version import __version__
+from .escapes import strip_escapes
 from .style import Line, Span, Style
 from .theme import Theme
 from .width import cell_width, clusters, truncate, truncate_line
@@ -112,7 +113,7 @@ GRAPH_FAILED_STATES = frozenset(
 
 # The widget's text allowlist: letters, digits and the punctuation the row
 # grammar is shaped by. Everything else (controls, escapes, emoji) is dropped.
-_SAFE_PUNCTUATION = frozenset(" .:/_·|+()[]!-")
+_SAFE_PUNCTUATION = frozenset(" .:/_·|+()[]!-',;?\"#%&=@~")
 
 
 # ── poller ────────────────────────────────────────────────────────────────
@@ -261,7 +262,8 @@ class HudPoller:
 
 
 def _sanitize(value: Any) -> str:
-    text = unicodedata.normalize("NFC", "" if value is None else str(value))
+    # Whole escape sequences first: dropping only their ESC byte would leave `[31m` as text.
+    text = unicodedata.normalize("NFC", strip_escapes("" if value is None else str(value)))
     return "".join(ch for ch in text if ch in _SAFE_PUNCTUATION or unicodedata.category(ch)[0] in "LN")
 
 
