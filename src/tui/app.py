@@ -1732,6 +1732,7 @@ class App:
         if problem and on:
             # Whatever Hermes did, it was not "this session only": show accept off and ask for it explicitly.
             self.approvals_off = False
+            self.mode_request_open = True  # the switch-back is a yolo call out too: possibly on until it is answered
             self.transcript.add_notice(ACCEPT_REFUSED_NOTICE.format(problem), NOTICE_ERROR)
             self._request(
                 "config.set",
@@ -1759,11 +1760,16 @@ class App:
         TUI's own: Shift+Tab then asks for the off once more, and leaving the
         session sends one. Accept shown with approvals on costs nothing;
         normal shown with them off would hide that Hermes asks nothing.
+        An answer for a session already left changes nothing and says
+        nothing: leaving it counted the switch-back as possibly on and sent
+        an off of its own, whose answer reports for it.
         """
+        if sid != self.sid:
+            return True
+        self.mode_request_open = False
         if problem:
             self.transcript.add_notice(SWITCH_BACK_FAILED_NOTICE.format(problem), NOTICE_ERROR)
-            if sid == self.sid:
-                self.approvals_off = self.yolo_by_tui = True
+            self.approvals_off = self.yolo_by_tui = True
         return True
 
     # ── reasoning effort ──

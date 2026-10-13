@@ -549,8 +549,20 @@ class ModeCycleTests(unittest.TestCase):
         app._on_input(SHIFT_TAB)
         answer(app, client, {"key": "yolo", "value": "1", "scope": "global"})
         app._adopt_session({"session_id": "live-2", "info": {}})
+        said = notices(app)
         app._on_response(Response(2, None, {"code": 5001, "message": "boom"}))
         self.assertEqual(app.mode, MODE_NORMAL)
+        self.assertEqual(notices(app), said)  # and says nothing: "accept all is shown again" is not true here
+
+    def test_shift_tab_waits_for_the_switch_back_as_for_any_yolo_call(self) -> None:
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        answer(app, client, {"key": "yolo", "value": "1", "scope": "global"})
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])
+        answer(app, client, YOLO_IS_OFF)
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL, YOLO_ON_CALL])
 
     def test_without_a_session_nothing_is_sent(self) -> None:
         app, client = make_app()
@@ -960,6 +972,19 @@ class LeavingTurnsYoloOffTests(unittest.TestCase):
                 app._on_input(SHIFT_TAB)  # on from normal, off from accept; no answer yet
                 app._enter_session(self.NEW)
                 self.assertEqual(client.calls[-2:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+
+    def test_a_switch_back_still_out_counts_as_possibly_on_and_its_answer_lands_nowhere(self) -> None:
+        unconfirmed = {"key": "yolo", "value": "1", "scope": "session"}
+        for frame in ({"error": {"code": 5001, "message": "boom"}}, {"result": unconfirmed}, {"result": YOLO_IS_OFF}):
+            with self.subTest(frame=frame):
+                app, client = make_app()
+                app._on_input(SHIFT_TAB)
+                answer(app, client, {"key": "yolo", "value": "1", "scope": "global"})  # refused: the switch-back goes out
+                app._enter_session(self.NEW)
+                self.assertEqual(client.calls[2:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+                app._on_response(Response(2, frame.get("result"), frame.get("error")))  # the switch-back's answer
+                self.assertEqual(notices(app), [])
+                self.assertEqual((app.sid, app.mode), ("live-2", MODE_NORMAL))
 
     def test_nothing_is_sent_for_yolo_the_tui_did_not_set(self) -> None:
         for hermes_own in (False, True):
