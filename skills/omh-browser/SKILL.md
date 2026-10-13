@@ -16,13 +16,13 @@ This is a Hermes-native `browser-operator` workflow skill.
 
 ## Why This Exists
 
-`browser-operator` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+`browser-operator` exists because native browser tools act on a live page with no scope, sign-in boundary, or trace requirement of their own: it fixes the URL, allowed actions, and stop condition, sends sign-ins and saved cards to Hermes' credential vault so secrets never pass through chat, and counts only observed page evidence.
 
 ## Do Not Use When
 
-- The request is already handled by a narrower explicit skill with stronger evidence.
-- The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-- The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+- An ordinary read of a public page with no sign-in, form, or purchase; use the native browser tools directly unless OMH's browser adapter bridge is enabled, which blocks them.
+- The question is whether a page looks right at each viewport; use `visual-qa`.
+- A web lookup or a cited answer rather than an interaction with a page; use `web-research`.
 
 ## Examples
 
@@ -44,6 +44,7 @@ Bad example:
 - Gate credentials/login/payment/purchase/destruction/scraping/export; observed traces only.
 - Host request admission (not enablement/adapter presence) gates schemas/context/callbacks/writes. Refuse foreign/stale/expired/released/ambiguous targets; no index fallback.
 - omh_browser blocks native browser_*; inert by default. Opted-in effects need exact approval: docs/BROWSER-EFFECTS.md.
+- Sign-ins, one-time codes, and saved cards go through `browser_vault` when `browser_vault` is in your tool list or tool_search finds it (`list` first; `fill` for a saved login, card, or address; `enter_code` for a one-time code after the password; `save_login` when nothing is saved for the site, so the user types it into Hermes' masked prompt; Hermes asks the user before it fills a card and refuses that in a headless run): no password, card number, card security code, or one-time code is asked for, typed, or echoed in chat; record only its `success` and `filled_fields`, and never retry a `payment_declined`. Without it, the sign-in is the user's own step and a named gap.
 
 ## Recovery Notes
 
@@ -52,6 +53,7 @@ Bad example:
 - Host receipt BLOCK: production click/submit, retry after auth/4xx/assertion/mutation failure, or over two transient read-only retries.
 - POSIX native agent-browser collector: cold-desktop anonymous read-only Chromium only; other engine/profile/fixture/locale/timezone: named blocker (unsupported_browser_engine_webkit), never substitution.
 - Trace drift: `promotion status` unlinks only managed SKILL.md, keeps generations/receipts; no autoheal/watch/global fallback.
+- With OMH's browser adapter bridge enabled (`browser_adapter.enabled`), OMH's own hook blocks every native `browser_*` tool, the credential vault included: report the vault as blocked by the bound `omh_browser` lifecycle and never fall back to credentials in chat.
 
 ## Workflow Lane
 

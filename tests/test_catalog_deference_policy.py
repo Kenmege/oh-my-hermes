@@ -246,9 +246,20 @@ NON_SKILL_BACKTICKS = frozenset(
 # `legal-compliance-review`, `production-audit`, and `tech-debt-audit`, and
 # `finance-analysis` gains the statement pointing back. Five cases, five
 # pairs, one owner.
-EXPECTED_DEFERENCE_CASES = 326
-EXPECTED_DEFERENCE_PAIRS = 337
-EXPECTED_DEFERRING_OWNERS = 91
+# Six feature-surface skills replace the shape's three generic Do-Not-Use
+# lines with their own: `github-event-ops` adds `github-issue-intake` and
+# `build-failure-triage`; `browser-operator` adds `visual-qa` and
+# `web-research`; `workspace-file-operator` adds `materials-package` and
+# `deliverable-package` in one statement; `command-operator` adds
+# `build-failure-triage` and `agent-debug` in one statement and
+# `security-safety-review`; `connector-operator` adds `gateway-intent-card`
+# and `external-connector-readiness`; `physical-device-readiness` adds
+# `external-connector-readiness`, `toolbelt-readiness`, and `command-operator`
+# with `connector-operator` in one statement. Twelve cases, fifteen pairs,
+# five new owners (`github-event-ops` already deferred).
+EXPECTED_DEFERENCE_CASES = 338
+EXPECTED_DEFERENCE_PAIRS = 352
+EXPECTED_DEFERRING_OWNERS = 96
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
 # not one more dict line with a plausible sentence attached.

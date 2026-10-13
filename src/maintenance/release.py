@@ -622,7 +622,24 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # failing row's. It is the third quality-bar line and the capability row
 # carries the first four. The rest of the origin rules sit below that window
 # and do not reach this section. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 487739
+# 487739 -> 488154: operator skills onto Hermes' native gates. Six
+# feature-surface skills (`github-event-ops`, `browser-operator`,
+# `workspace-file-operator`, `command-operator`, `connector-operator`,
+# `physical-device-readiness`) now state their own Do-Not-Use, so the one
+# `do_not_use_when` entry each row carries is that skill's first boundary
+# instead of the shape's shared generic line. `parallel-tools`' expected
+# outputs and a third safety rule name the per-server
+# `supports_parallel_tool_calls` diff and its read/write race instead of an
+# update command. The `security-safety-review` and `morning-brief` additions
+# sit past the row's bounds and move nothing here. The `parallel-tools` rows
+# were tightened before raising. Re-derived from the producer.
+# 488154 -> 488220: review of that change. `browser-operator`'s first
+# Do-Not-Use line, the one its row carries, now says the native browser tools
+# are the route only while OMH's browser adapter bridge is off, since the
+# bridge blocks them. The restored chat confirmations in `command-operator`
+# and `connector-operator` sit past the row's bounds. Re-derived from the
+# producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 488220
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -1766,10 +1783,17 @@ STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # where `test_one_more_ordinary_lane_member_fits_every_body_budget` found
 # that the largest lane-mate copy (`ultrawork`, +26,322) no longer fits.
 # 1,129,901 plus 10%, rounded up to the next 50,000, is 1,250,000.
-FULL_PROFILE_SKILL_BODY_MEASURED_CHARS = 1129901
+# 1129901 -> 1225209 (measured; the ceiling 1250000 -> 1350000): stacked on
+# the research citation-ledger bodies (#2104, +9,204 over 2a8d3bca8) and the
+# review-contract bodies (#2105, +4,311), the operator skills' own
+# Do-Not-Use and native-gate notes (+8,374 here) took the pack to 1,225,209,
+# where `test_one_more_ordinary_lane_member_fits_every_body_budget` found
+# that the largest lane-mate copy (`ultrawork`, +26,353) no longer fits.
+# 1,225,209 plus 10%, rounded up to the next 50,000, is 1,350,000.
+FULL_PROFILE_SKILL_BODY_MEASURED_CHARS = 1225209
 FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT = 10
 FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS = 50000
-FULL_PROFILE_SKILL_BODY_CHAR_LIMIT = 1250000
+FULL_PROFILE_SKILL_BODY_CHAR_LIMIT = 1350000
 FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # Repeated bytes: characters of full-profile SKILL.md `##` sections that are
 # byte-identical to the same section in another skill -- the second and later
@@ -1792,9 +1816,9 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # above removes. So it takes the same policy: the measurement plus
 # `FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT`, rounded UP to the next multiple
 # of `FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS` (10,000, about a
-# tenth of the measurement). The 13,458 chars of headroom (130,000 - 116,542)
-# hold about nine median lane members, while a renderer change that stamps
-# one more shared sentence longer than about 94 chars into every one of the
+# tenth of the measurement). The 15,323 chars of headroom (130,000 - 114,677)
+# hold about ten median lane members, while a renderer change that stamps
+# one more shared sentence longer than about 107 chars into every one of the
 # 142 bodies, or a few skills that copy other skills' own sections, still
 # fails.
 #
@@ -1825,7 +1849,12 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # (the research default plus a line naming the citation check), so that
 # section is no longer byte-identical to another skill's in those three
 # bodies. 116,542 plus 10%, rounded up to the next 10,000, is still 130,000.
-FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 116542
+# 130,000 -> 130,000 (measurement 116,542 -> 114,677): six feature-surface
+# operator skills state their own Do-Not-Use instead of the shape's three
+# shared lines, and `github-event-ops` carries its own recovery notes, so
+# those sections are no longer byte-identical to another skill's. 114,677
+# plus 10%, rounded up to the next 10,000, is still 130,000.
+FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 114677
 FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS = 10000
 FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT = 130000
 

@@ -2590,6 +2590,7 @@ _FEATURE_SURFACE_HARNESSES = (
             "path_scope_recorded",
             "allowed_operations_recorded",
             "excluded_paths_recorded",
+            "checkpoint_availability_recorded_when_destructive",
             "confirmation_recorded_when_destructive",
             "file_observation_recorded_when_available",
         ),
