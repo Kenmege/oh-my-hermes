@@ -92,6 +92,18 @@ advances on journal events alone — and `all_units_terminal` is false for an
 empty roster, because "nothing to wait for" and "everything finished" are
 different answers.
 
+A supervisor does not loop on that command in its own turns. `--wait` turns
+it into one bounded watcher, run once in the background with an exit
+notification: it re-reads the same roster every `--interval` seconds (default
+30) and stops at the first read where `stuck_units` names a unit (exit 3), or
+every unit is terminal (exit 0 when each is `verified`, else 1), or when
+`--timeout` (default 600, at most 3600) passes first (exit 124). A stuck unit
+outranks a finished roster, because a unit the dispatch summary recorded at
+`account_limit` is over and still needs a person. It prints only the last
+roster, with a `wait` block naming the outcome, and like every read it writes
+nothing. Without `--wait` the command still exits 0: a read reports, it does
+not grade.
+
 ### Unit execution states
 
 Vocabulary in `src/coding/unit_execution_state.py`; the mid-run verdict is

@@ -42,6 +42,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 import re
+import time
 from typing import Any, Callable, Mapping
 
 from ..plugin_bundle.omh.run_records import FANOUT_CONTRACT_FILE
@@ -248,7 +249,76 @@ def render_fanout_status_text(roster: Mapping[str, Any]) -> str:
         # the line a supervisor has to act on.
         lines.append(f"Stuck, needs intervention: {', '.join(stuck)}")
     lines.append(str(roster.get("claim_boundary", FANOUT_STATUS_CLAIM_BOUNDARY)))
+    wait = roster.get("wait")
+    if isinstance(wait, Mapping):
+        # Last, so a host that relays only the tail of a background command's
+        # output still carries why the watcher stopped.
+        lines.append(
+            f"Wait ended: {wait.get('outcome', _UNKNOWN)} after {wait.get('waited_seconds', 0)}s "
+            f"({wait.get('reads', 0)} reads, timeout {wait.get('timeout_seconds', 0)}s)."
+        )
     return "\n".join(lines)
+
+
+# Why `wait_for_fanout_status` stopped. A stuck unit outranks a finished
+# roster: a unit the dispatch summary recorded at `account_limit` is terminal
+# AND needs a person, and the stop has to say the second thing. The deadline
+# ranks last because it is the only reason that answers nothing about the work.
+WAIT_OUTCOME_STUCK_UNITS = "stuck_units"
+WAIT_OUTCOME_ALL_UNITS_TERMINAL = "all_units_terminal"
+WAIT_OUTCOME_TIMED_OUT = "timed_out"
+WAIT_OUTCOMES = (WAIT_OUTCOME_STUCK_UNITS, WAIT_OUTCOME_ALL_UNITS_TERMINAL, WAIT_OUTCOME_TIMED_OUT)
+
+
+def wait_for_fanout_status(
+    read_roster: Callable[[], dict[str, Any]],
+    *,
+    timeout_seconds: int,
+    interval_seconds: int,
+    clock: Callable[[], float] | None = None,
+    sleep: Callable[[float], None] | None = None,
+) -> dict[str, Any]:
+    """Re-read the roster until it names a reason to stop, then return it.
+
+    The roster's own fields decide, never a re-derivation here: a non-empty
+    `stuck_units` stops the wait (`awaiting_input` and `account_limit` are
+    members, so a unit waiting on a person or on a provider limit ends it at
+    the read that first shows it), then `all_units_terminal`, then the
+    deadline. The returned roster is the last one read, plus a `wait` block
+    naming which of those it was. Like the roster itself this writes nothing:
+    the loop only reads, sleeps, and reads again.
+
+    `read_roster` errors propagate. A fanout id the journal has never named
+    stays the error it is on a single read rather than a reason to keep
+    waiting, so a mistyped id fails at once instead of at the deadline.
+    """
+    now = clock or time.monotonic
+    pause = sleep or time.sleep
+    started = now()
+    reads = 0
+    while True:
+        roster = read_roster()
+        reads += 1
+        waited = max(0.0, now() - started)
+        if roster.get("stuck_units"):
+            outcome = WAIT_OUTCOME_STUCK_UNITS
+        elif roster.get("all_units_terminal"):
+            outcome = WAIT_OUTCOME_ALL_UNITS_TERMINAL
+        elif waited >= timeout_seconds:
+            outcome = WAIT_OUTCOME_TIMED_OUT
+        else:
+            pause(min(float(interval_seconds), timeout_seconds - waited))
+            continue
+        return {
+            **roster,
+            "wait": {
+                "outcome": outcome,
+                "reads": reads,
+                "waited_seconds": int(waited),
+                "timeout_seconds": timeout_seconds,
+                "interval_seconds": interval_seconds,
+            },
+        }
 
 
 def _unit_progress_phrase(unit: Mapping[str, object]) -> str:

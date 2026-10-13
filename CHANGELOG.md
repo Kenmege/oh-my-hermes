@@ -4,6 +4,29 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A Maestro supervisor now waits on a dispatch with one bounded background
+  watcher instead of polling the roster every minute in its own turns.**
+  `omh coding fanout status --wait` re-reads the same read-only roster until
+  the roster itself names a reason to stop, prints only that last roster with
+  a `wait` block, and exits with a code that says which reason it was: 3 at
+  the first read where `stuck_units` names a unit (so a unit waiting on a
+  person, held by a provider limit, blocked on a permission, missing objects,
+  or stalled still stops the wait the moment it shows), 0 when every unit is
+  terminal and `verified`, 1 when every unit is terminal and one is not, and
+  124 when `--timeout` passes first. A stuck unit outranks a finished roster,
+  because a unit the dispatch summary recorded at `account_limit` is over and
+  still needs a person. `--timeout` (default 600 seconds, at most 3600) and
+  `--interval` (default 30, at most 300) are refused without `--wait`; an
+  unknown fanout id fails on the first read rather than at the deadline; the
+  watcher writes nothing. Without `--wait` the command exits 0 as before. The
+  `ulw-maestro` skill now starts that command once through Hermes'
+  `terminal(background=true, notify=true)` when the tool is present, reads the
+  roster once on its exit, and keeps every per-poll intervention rule it had:
+  exit 3 is the moment to intervene, and on exit 124 a unit still `unknown` is
+  a missing record to chase while only a unit still `running` gets a fresh
+  watcher.
+
+
 - **OMH no longer steers the model against Hermes' own `clarify`, `/loop`,
   `/goal`, and `/plan`.** `ulw-interview` sends each question's two to four
   candidate answers through Hermes' native `clarify` tool when it is in the

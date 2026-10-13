@@ -2341,21 +2341,108 @@ def cmd_coding_fanout_status(args: argparse.Namespace) -> int:
 
     Journal evidence plus read-only contract/workspace/binary checks for copy-only
     session actions. This never advances a unit, revives one, or records a read.
+
+    `--wait` is the one bounded watcher a supervisor runs instead of a poll
+    loop in its own turns: it re-reads the same roster until the roster names a
+    reason to stop (`wait_for_fanout_status`), prints only that last roster,
+    and exits with `_fanout_status_wait_exit_code`. A single read still exits 0,
+    because a read reports; it does not grade.
     """
-    from ..coding.fanout_status import project_fanout_status, render_fanout_status_text
+    from ..coding.fanout_status import project_fanout_status, render_fanout_status_text, wait_for_fanout_status
+
+    wait = bool(getattr(args, "wait", False))
+    timeout = getattr(args, "timeout", None)
+    interval = getattr(args, "interval", None)
+    if not wait and (timeout is not None or interval is not None):
+        # Accepting them silently would let a caller believe it had bounded a
+        # wait that never started.
+        raise OmhError("fanout status --timeout and --interval apply only with --wait")
+    timeout = FANOUT_STATUS_WAIT_DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout
+    interval = FANOUT_STATUS_WAIT_DEFAULT_INTERVAL_SECONDS if interval is None else interval
+    if not 1 <= timeout <= FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS:
+        raise OmhError(f"fanout status --timeout must be 1..{FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS} seconds")
+    if not 1 <= interval <= FANOUT_STATUS_WAIT_MAX_INTERVAL_SECONDS:
+        raise OmhError(f"fanout status --interval must be 1..{FANOUT_STATUS_WAIT_MAX_INTERVAL_SECONDS} seconds")
 
     paths = _paths(args)
-    try:
-        roster = project_fanout_status(
+
+    def read_roster() -> dict:
+        return project_fanout_status(
             paths, args.fanout_id, unit_id=getattr(args, 'unit', None),
             allow_unconfined=bool(getattr(args, 'allow_unconfined', False)),
         )
+
+    try:
+        if wait:
+            roster = wait_for_fanout_status(read_roster, timeout_seconds=timeout, interval_seconds=interval)
+        else:
+            roster = read_roster()
     except (OSError, ValueError) as exc:
         raise OmhError(f"fanout status unavailable: {exc}") from exc
     if _wants_json(args):
         _print_json(roster)
     else:
         print(render_fanout_status_text(roster))
+    return _fanout_status_wait_exit_code(roster) if wait else 0
+
+
+# Bounds for `fanout status --wait`. The default deadline is the ten minutes
+# after which a unit still reading `unknown` is a missing record to chase
+# rather than a unit to wait on. The ceilings keep every watcher bounded
+# whatever a caller types; a longer wait is a fresh watcher.
+FANOUT_STATUS_WAIT_DEFAULT_TIMEOUT_SECONDS = 600
+FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS = 3600
+FANOUT_STATUS_WAIT_DEFAULT_INTERVAL_SECONDS = 30
+FANOUT_STATUS_WAIT_MAX_INTERVAL_SECONDS = 300
+# `fanout status --wait` stopped because `stuck_units` named a unit: the work
+# needs a person now. Not 0, because nothing finished; not 1, because nothing
+# has failed for good -- an answer, an account switch, or a permission fix can
+# still move it; not 2, which `main` returns for an OmhError; not 75, because
+# waiting longer is exactly what does not help.
+FANOUT_STATUS_WAIT_STUCK_EXIT_CODE = 3
+# The deadline passed while units were neither terminal nor stuck. timeout(1)'s
+# 124, so a shell can tell "the clock ran out" from every answer about the work.
+FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE = 124
+
+
+def _fanout_status_wait_exit_code(roster: dict) -> int:
+    """0 only when the watcher stopped on a finished roster whose units all verified.
+
+    3 when `stuck_units` names a unit, whatever else is true: a unit the
+    dispatch summary recorded at `account_limit` is terminal and still needs a
+    person, and a shell reading only the status must hear the second thing.
+    124 when the deadline passed first; the roster then answers nothing about
+    whether the work finished. 1 when every unit is terminal and one of them is
+    not `verified` -- `verified` is the only success state, so a unit that
+    exited 0 without a validated result is a failure here too. A roster row
+    always carries `unit_state`; a row without one is graded only by the
+    generic failure signals below.
+
+    Generic failure signals -- a refused or interrupted run, or a unit
+    carrying a failure kind -- are never success either, so this mapper cannot
+    be passed by ignoring them.
+    """
+    from ..coding.fanout_status import WAIT_OUTCOME_STUCK_UNITS, WAIT_OUTCOME_TIMED_OUT
+    from ..coding.unit_execution_state import UNIT_STATE_VERIFIED
+
+    summary = roster if isinstance(roster, dict) else {}
+    if summary.get("interrupted"):
+        return 130
+    if summary.get("refused"):
+        return 1
+    wait = summary.get("wait")
+    outcome = wait.get("outcome") if isinstance(wait, dict) else None
+    if summary.get("stuck_units") or outcome == WAIT_OUTCOME_STUCK_UNITS:
+        return FANOUT_STATUS_WAIT_STUCK_EXIT_CODE
+    if outcome == WAIT_OUTCOME_TIMED_OUT:
+        return FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE
+    units = summary.get("units")
+    if isinstance(units, list) and any(
+        isinstance(unit, dict)
+        and (unit.get("failure_kind") or ("unit_state" in unit and unit["unit_state"] != UNIT_STATE_VERIFIED))
+        for unit in units
+    ):
+        return 1
     return 0
 
 
@@ -3493,6 +3580,29 @@ def _add_coding_commands(sub) -> None:
             "Observe a unit worktree for its resume projection even when no filesystem write fence can be "
             "proven on this host. Git there reads configuration the unit wrote; without this flag such a "
             "worktree is not observed and its resume reads workspace_unfenced."
+        ),
+    )
+    fanout_status.add_argument(
+        "--wait",
+        action="store_true",
+        help=(
+            f"Re-read the roster until it names a unit in stuck_units (exit {FANOUT_STATUS_WAIT_STUCK_EXIT_CODE}), "
+            "every unit is terminal (exit 0 when all verified, else 1), or --timeout passes "
+            f"(exit {FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE}); print only the last roster."
+        ),
+    )
+    fanout_status.add_argument(
+        "--timeout", type=int, default=None,
+        help=(
+            f"With --wait: seconds before the wait gives up (default {FANOUT_STATUS_WAIT_DEFAULT_TIMEOUT_SECONDS}, "
+            f"maximum {FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS})."
+        ),
+    )
+    fanout_status.add_argument(
+        "--interval", type=int, default=None,
+        help=(
+            f"With --wait: seconds between roster reads (default {FANOUT_STATUS_WAIT_DEFAULT_INTERVAL_SECONDS}, "
+            f"maximum {FANOUT_STATUS_WAIT_MAX_INTERVAL_SECONDS})."
         ),
     )
     fanout_status.add_argument("--json", action="store_true", help="Emit the machine payload instead of plain text.")
