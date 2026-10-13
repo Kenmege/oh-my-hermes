@@ -98,7 +98,8 @@ mid-interview check now and continue from Round 4.
 
 Give every question two to four real candidates, the one you recommend first: answers the user
 could actually pick, drawn from the request, repo evidence, or the tradeoff the question is
-really about, never filler to reach a count.
+really about, never filler to reach a count, and never a candidate whose text is itself a bare
+number (a reply by number would collide with it, in the list below and in a messaging picker).
 
 - **With Hermes' `clarify` tool** (in your tool list or tool search): keep the header in your
   message and ask through `clarify` — one `questions` entry, the sentence as `question`, the
@@ -106,8 +107,7 @@ really about, never filler to reach a count.
   question sentence: the picker marks the recommendation and adds its own typed-answer row.
 - **Without it**: after the question sentence, a short numbered list of the candidates, then one
   final free-input entry in the user's language — for example English
-  `N) Something else — type your answer`, Korean `N) 기타 — 직접 입력` — and never a candidate
-  whose text is itself a bare number (it would collide with reply-by-number).
+  `N) Something else — type your answer`, Korean `N) 기타 — 직접 입력`.
 - A number, an option's own words, or a completely different free-text answer are all valid;
   free text is always accepted, even when it matches no option. Never re-ask because the reply
   was not a listed option.

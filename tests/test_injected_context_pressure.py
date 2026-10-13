@@ -925,6 +925,24 @@ class NoRoutingOnHostCommandTurnsTest(_InjectionTestCase):
                 self.assertNotIn("[OMH Route Hint]", self._turn(frame + body, session=f"command-{index}"))
                 self.assertIn("[OMH Route Hint]", self._turn(body, session=f"typed-{index}"))
 
+    def test_a_gateway_prefix_before_the_frame_does_not_reopen_routing(self):
+        # A messaging gateway puts a shared session's `[<name>] ` sender
+        # prefix, or a Discord trigger note, before the turn text.
+        for index, prefix in enumerate(
+            (
+                "[alice] ",
+                "[Triggering message id: `1234` — use as `message_id` for reply/react/pin via the discord tools.]\n\n",
+            )
+        ):
+            with self.subTest(prefix=prefix[:12]):
+                self.assertNotIn(
+                    "[OMH Route Hint]",
+                    self._turn(prefix + PLAN_MODE_FRAME + PLAN_MODE_BODY, session=f"prefixed-{index}"),
+                )
+                self.assertIn(
+                    "[OMH Route Hint]", self._turn(prefix + PLAN_MODE_BODY, session=f"prefixed-typed-{index}")
+                )
+
     def test_a_first_command_turn_keeps_the_primer_and_claims_no_route(self):
         context = self._turn(PLAN_MODE_FRAME + PLAN_MODE_BODY, session="first", is_first_turn=True)
 

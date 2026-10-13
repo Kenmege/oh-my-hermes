@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
-from ..plugin_bundle.omh.hermes_session_commands import host_command_turn, native_loop_cadence
+from ..plugin_bundle.omh.hermes_session_commands import host_command_turn, mentions_loop, native_loop_cadence
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES,
     CODING_DELIVERY_REQUEST_TOKENS,
@@ -7469,19 +7469,19 @@ def _durable_research_goal_guard_applies(normalized_query: str, query_tokens: se
 # A loop on a timer ("every 5 minutes", "5분마다", `/loop 5m ...`) is Hermes'
 # native `/loop` inside the session, or a cron job when it must run
 # unattended (`hermes_session_commands.native_loop_cadence`). Beside one, a bare
-# "loop" or "루프" names that timer rather than OMH's long-horizon goal loop, so
-# it stops counting as an explicit loop in the guard below; a request that also
-# carries a product or north-star goal still reaches the guard through those
-# signals, and OMH's own invocation forms keep theirs.
+# "loop", "루프", or "반복해서" names that timer rather than OMH's long-horizon
+# goal loop, so it stops counting as an explicit loop in the guard below. A
+# name for the goal loop itself ("goal loop", "목표 루프", "loop engineering",
+# "keep improving") still counts whatever timer sits beside it, as do a
+# product or north-star goal and OMH's own invocation forms.
 
 
 def native_loop_cadence_request(message: str) -> bool:
     """A loop asked for on a timer and nothing more: Hermes' `/loop`, not OMH's goal loop."""
     normalized_query = normalized_phrase(message).strip()
     query_tokens = routing_tokens(normalized_query)
-    loop_word = "loop" in query_tokens or _contains_phrase(normalized_query, ("루프", "반복해서"))
     return (
-        loop_word
+        mentions_loop(normalized_query)
         and native_loop_cadence(normalized_query)
         and not _loop_goal_guard_applies(normalized_query, query_tokens)
     )
@@ -7497,12 +7497,12 @@ def host_owned_command_turn(message: str) -> bool:
 
 
 def _loop_goal_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
-    explicit_loop = "loop" in query_tokens or _contains_phrase(
+    named_loop = _contains_phrase(
         normalized_query,
-        ("loopable", "loop engineering", "goal loop", "루프", "반복해서", "계속 개선", "계속해서 개선"),
+        ("loopable", "loop engineering", "goal loop", "목표 루프", "계속 개선", "계속해서 개선"),
     )
-    if explicit_loop and native_loop_cadence(normalized_query):
-        explicit_loop = False
+    bare_loop = "loop" in query_tokens or _contains_phrase(normalized_query, ("루프", "반복해서"))
+    explicit_loop = named_loop or (bare_loop and not native_loop_cadence(normalized_query))
     repeated_improvement = bool({"repeatedly", "iteratively", "iterate", "until"} & query_tokens) or _contains_phrase(
         normalized_query,
         (

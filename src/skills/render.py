@@ -1713,7 +1713,8 @@ mid-interview check now and continue from Round {soft_round}.
 
 Give every question two to four real candidates, the one you recommend first: answers the user
 could actually pick, drawn from the request, repo evidence, or the tradeoff the question is
-really about, never filler to reach a count.
+really about, never filler to reach a count, and never a candidate whose text is itself a bare
+number (a reply by number would collide with it, in the list below and in a messaging picker).
 
 - **With Hermes' `clarify` tool** (in your tool list or tool search): keep the header in your
   message and ask through `clarify` — one `questions` entry, the sentence as `question`, the
@@ -1721,8 +1722,7 @@ really about, never filler to reach a count.
   question sentence: the picker marks the recommendation and adds its own typed-answer row.
 - **Without it**: after the question sentence, a short numbered list of the candidates, then one
   final free-input entry in the user's language — for example English
-  `N) Something else — type your answer`, Korean `N) 기타 — 직접 입력` — and never a candidate
-  whose text is itself a bare number (it would collide with reply-by-number).
+  `N) Something else — type your answer`, Korean `N) 기타 — 직접 입력`.
 - A number, an option's own words, or a completely different free-text answer are all valid;
   free text is always accepted, even when it matches no option. Never re-ask because the reply
   was not a listed option.
@@ -6737,7 +6737,7 @@ def context_skill() -> SkillTemplate:
 1. Classify the turn as a safe lookup, reviewed capture, terminology correction, unresolved decision frontier, or confirmed planning/handoff transition.
 2. For lookup, inspect the optional source and active reviewed profile on demand, answer directly, and name source/freshness status. File presence, profile match, or nomination is not proof that a model used the content.
 3. Before capture, show the exact machine-only projection and ask for confirmation. Staging creates pending candidates only; review and approval remain separate.
-4. Before interviewing, confirm frontier entry. Then present every currently dependency-ready decision in one numbered batch per round, using stable `{decision_id_prefix}1`, `{decision_id_prefix}2`, ... identifiers. When Hermes' `clarify` tool is present (in your tool list or tool search), the round header and each decision's evidence and tradeoff stay in your message and the batch goes through `clarify`: one `questions` entry per decision, named by its identifier, with the recommendation first in `choices` beside the real alternatives, no free-input row of your own, and no options in the question text. Decisions in one frontier have no prerequisite between them, so they share the call, and a batch past the tool's per-call limit continues in a second call in the same round; a dependent never joins its prerequisite, and an unanswered entry leaves its decision open. Without `clarify`, the numbered batch in your message is the fallback.
+4. Before interviewing, confirm frontier entry. Then present every currently dependency-ready decision in one numbered batch per round, using stable `{decision_id_prefix}1`, `{decision_id_prefix}2`, ... identifiers. When Hermes' `clarify` tool is present (in your tool list or tool search), the round header and each decision's evidence and tradeoff stay in your message and the batch goes through `clarify`: one `questions` entry per decision whose question text opens with its identifier, at most four `choices` with the recommendation first beside the real alternatives, no free-input row of your own, and no options in the question text. Decisions in one frontier have no prerequisite between them, so they share the call, and a batch past the tool's per-call limit continues in a second call in the same round; a dependent never joins its prerequisite, and an unanswered entry leaves its decision open. Without `clarify`, the numbered batch in your message is the fallback.
 5. The frontier is bounded at {max_rounds} rounds. Run a non-round consent check before Round {soft_round}. Lookup, research, entry consent, summary confirmation, and next-path consent do not consume rounds.
 6. Stop on the first matching condition: every reachable decision is resolved, deferred, or blocked; the user asks to stop or proceed; or the answer to Round {max_rounds} is recorded. Never emit Round {max_rounds + 1}.
 7. Omitted decisions stay open and recommendations require explicit acceptance. If round or decision identity cannot be recovered, close with a named recovery blocker instead of restarting.

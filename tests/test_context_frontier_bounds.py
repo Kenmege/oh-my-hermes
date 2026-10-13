@@ -168,8 +168,10 @@ class ContextFrontierClarifyTests(unittest.TestCase):
     def test_the_round_goes_through_clarify_choices_when_present(self) -> None:
         protocol = self._protocol()
         self.assertIn("When Hermes' `clarify` tool is present (in your tool list or tool search)", protocol)
-        self.assertIn("one `questions` entry per decision, named by its identifier", protocol)
-        self.assertIn("with the recommendation first in `choices` beside the real alternatives", protocol)
+        # The tool keeps only the first four choices, and the question's own text
+        # is the one field every Hermes version echoes back, so the identifier lives there.
+        self.assertIn("one `questions` entry per decision whose question text opens with its identifier", protocol)
+        self.assertIn("at most four `choices` with the recommendation first beside the real alternatives", protocol)
         self.assertIn("no free-input row of your own, and no options in the question text", protocol)
         self.assertIn("the round header and each decision's evidence and tradeoff stay in your message", protocol)
 

@@ -12,8 +12,9 @@ All notable changes will be documented here.
   adds no free-input row of its own (the picker supplies one), and a second
   question joins the same call only when neither answer could change the
   other. `ulw-context` asks each frontier round the same way, one `questions`
-  entry per dependency-ready decision with its recommendation first, since
-  decisions in one frontier have no prerequisite between them. Where `clarify`
+  entry per dependency-ready decision, its identifier opening the question and
+  at most four choices with the recommendation first, since decisions in one
+  frontier have no prerequisite between them. Where `clarify`
   is absent, the numbered list or batch in the message stays the fallback, and
   free text is still accepted either way. `ulw-loop` gains
   Do-Not-Use lines that hand a check repeated on a timer to native `/loop`,
@@ -22,14 +23,21 @@ All notable changes will be documented here.
   5 minutes and check whether CI is green", `5분마다 … 루프 돌려줘`,
   `/loop 5m …`) no longer dispatches the goal loop or draws the `ulw-loop`
   route hint or candidate line: the router answers directly and names the
-  `/loop` command, while `./loop`, `$loop`, `omh loop`, and a timed request
-  that carries a product or star goal keep the goal loop. The turns Hermes
+  `/loop` command (compound intervals such as `/loop 1h30m` included), while
+  `./loop`, `$loop`, `omh loop`, the skill's own name `ulw-loop`, a named goal
+  loop ("goal loop", "목표 루프", "계속 개선"), and a timed request that carries
+  a product or star goal keep the goal loop. The turns Hermes
   writes for its own session commands are no longer routed at all: `/plan`,
   `/loop` wakeups, `/goal` continuations (with a completion contract or
   `/subgoal` criteria, after a failed quality gate, and the kick that stands
   in for a goal just sent), goal-mode kanban nudges, `/heartbeat` firings,
   `/learn`, and `/initiate-setup`, each recognised by its template's opening
-  frame. The router and the chat wrapper answer them directly, and the
+  line and the fixed text that follows it, also behind the sender prefix,
+  Discord trigger note, reply pointer, or channel backfill a messaging gateway
+  puts before it; a person who pastes a frame and keeps typing is still read
+  as a person. The CLI and the TUI give none of these turns a `display_kind`,
+  and the gateway stamps only its `/loop` wakeups and, since 0.21.4, its
+  heartbeats. The router and the chat wrapper answer them directly, and the
   plugin's per-turn hook renders no route hint, vocabulary match, or candidate
   line on them, as it already did for rows Hermes stamps with a
   `display_kind`.

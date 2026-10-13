@@ -491,7 +491,13 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # the image-card skill (2); and the heartbeat, `/learn`, and
             # `/initiate-setup` turns, which dispatched automation, memory, and
             # toolbelt skills (3).
-            expected=502,
+            # The review of that work adds four, each answered directly: a
+            # `/plan` turn behind a shared session's sender prefix and one
+            # behind a reply pointer, and a `/goal` turn behind a Discord
+            # trigger note, which still dispatched ultrawork and
+            # github-event-ops (3); and the native `/loop 1h30m` syntax, which
+            # the single-unit interval check missed (1).
+            expected=506,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -625,7 +631,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The native Hermes command work adds three loop dispatches that a
             # timer must not take away: an OMH `./loop` goal, the `./loop`
             # form on a timer, and a timed loop carrying a first-run goal.
-            expected=697,
+            # Its review adds four more the timer had taken away: a named goal
+            # loop and a Korean keep-improving loop on a timer, and the
+            # `ulw-loop` skill named or run on a timer.
+            expected=701,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

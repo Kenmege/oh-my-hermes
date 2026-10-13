@@ -116,8 +116,14 @@ class DeepInterviewProtocolTest(unittest.TestCase):
         self.assertIn("free text is always accepted, even when it matches no option.", unwrapped)
         self.assertIn("Never re-ask because the reply was not a listed option.", unwrapped)
         # A candidate whose text is a bare number would make a numeric reply undecidable
-        # between "option 3" and "the literal answer 3".
+        # between "option 3" and "the literal answer 3". The rule sits in the paragraph
+        # both paths share: a messaging gateway's `clarify` text fallback also picks a
+        # choice by its number.
         self.assertIn("never a candidate whose text is itself a bare number", unwrapped)
+        self.assertLess(
+            unwrapped.index("never a candidate whose text is itself a bare number"),
+            unwrapped.index("**With Hermes' `clarify` tool**"),
+        )
         # The candidate list must not read as extra questions, or it would collide with the
         # one-question-per-round rule the header advertises.
         self.assertIn("it does not break the one-question rule.", unwrapped)

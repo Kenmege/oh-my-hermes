@@ -4179,6 +4179,47 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "toolbelt-readiness",
     ),
+    # A messaging gateway puts its own material before the frame: a shared
+    # session's sender prefix, a Discord trigger note, a reply pointer. Before,
+    # each of these still routed (ultrawork for the plan, github-event-ops for
+    # the goal). The native `/loop` interval syntax with hours and minutes is a
+    # timer too, which the single-unit check missed.
+    RoutingPrecisionCase(
+        "hermes-plan-turn-behind-a-sender-prefix-is-host-owned",
+        "A shared-session /plan turn behind its sender prefix is not routed",
+        "[alice] [/plan \u2014 plan mode]\n\nFor this turn, you are in PLAN MODE \u2014 planning only.\n\n"
+        "Task to plan:\nadd a dark mode toggle to the settings page\n",
+        "answer_directly",
+        "direct_answer",
+        "ultrawork",
+    ),
+    RoutingPrecisionCase(
+        "hermes-goal-turn-behind-a-discord-note-is-host-owned",
+        "A /goal turn behind a Discord trigger note and sender prefix is not routed",
+        "[Triggering message id: `1234` \u2014 use as `message_id` for reply/react/pin via the discord tools.]\n\n"
+        "[alice] [Continuing toward your standing goal]\nGoal: ship the OMH loop docs, fix the failing CI on PR 42\n\n"
+        "Continue working toward this goal. Take the next concrete step.",
+        "answer_directly",
+        "direct_answer",
+        "github-event-ops",
+    ),
+    RoutingPrecisionCase(
+        "hermes-plan-turn-behind-a-reply-pointer-is-host-owned",
+        "A /plan turn behind a reply pointer is not routed",
+        "[Replying to bob: \"can you plan it\"]\n\n[/plan \u2014 plan mode]\n\nFor this turn, you are in PLAN MODE "
+        "\u2014 planning only.\n\nTask to plan:\nadd a dark mode toggle\n",
+        "answer_directly",
+        "direct_answer",
+        "ultrawork",
+    ),
+    RoutingPrecisionCase(
+        "native-loop-compound-interval-is-not-the-goal-loop",
+        "The native /loop syntax with a compound interval is not the goal loop",
+        "/loop 1h30m check whether the nightly build passed",
+        "answer_directly",
+        "direct_answer",
+        "loop",
+    ),
 )
 
 
@@ -11021,6 +11062,45 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "dispatch",
         "loop",
         "choose_permission_profile",
+        "loop",
+    ),
+    # A timer does not take the goal loop away from a request that names it --
+    # by a goal-loop phrase or by the skill's own name -- however the timer is
+    # written.
+    RoutingInterventionCase(
+        "goal-loop-on-a-timer-keeps-loop",
+        "A named goal loop on a timer stays the goal loop",
+        "start a goal loop that iterates every 2 hours until the onboarding drop-off is under 20%",
+        "dispatch",
+        "loop",
+        "choose_permission_profile",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "korean-keep-improving-loop-on-a-timer-keeps-loop",
+        "A Korean keep-improving loop on a timer stays the goal loop",
+        "1시간마다 온보딩을 계속 개선하는 루프 돌려줘, 첫 실행 성공률 90% 될 때까지",
+        "dispatch",
+        "loop",
+        "choose_permission_profile",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "ulw-loop-skill-on-a-timer-keeps-loop",
+        "The ulw-loop skill named on a timer stays the goal loop",
+        "use the ulw-loop skill every 2 hours to check whether CI is green",
+        "dispatch",
+        "loop",
+        "ask_goal_boundary",
+        "loop",
+    ),
+    RoutingInterventionCase(
+        "run-ulw-loop-on-a-timer-keeps-loop",
+        "Running ulw-loop on a timer stays the goal loop",
+        "run ulw-loop every hour on the onboarding docs",
+        "dispatch",
+        "loop",
+        "prepare_scheduled_ops_blueprint",
         "loop",
     ),
 )

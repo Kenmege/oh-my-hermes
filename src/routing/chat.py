@@ -68,6 +68,7 @@ from .policy import (
     host_owned_command_turn,
     is_ambiguous_scores,
     meets_confidence_threshold,
+    native_loop_cadence,
     native_loop_cadence_request,
     point_in_time_web_guard_applies,
 )
@@ -1994,6 +1995,9 @@ def _joined_ulw_invocation(routing_message: str) -> str:
     return re.sub(pattern, r"ulw-\1", routing_message, flags=re.IGNORECASE)
 
 
+_GOAL_LOOP_DISPLAY_FOLD = {"ulw-loop": "loop engineering", "omh-loop": "loop engineering"}
+
+
 def _with_canonical_display_names(routing_message: str) -> str:
     """Accept the `omh-` labels wrapper bodies render as input to routing matching.
 
@@ -2009,7 +2013,17 @@ def _with_canonical_display_names(routing_message: str) -> str:
     # Join the spaced form first: the mapping below is keyed on the rendered
     # labels, which are hyphenated.
     routing_message = _joined_ulw_invocation(routing_message)
-    return canonical_display_mentions(routing_message, _canonical_skill_by_display_name())
+    canonical = canonical_display_mentions(routing_message, _canonical_skill_by_display_name())
+    # `ulw-loop` beside a timer names OMH's goal loop, which the bare catalog
+    # key would stop saying: "run ulw-loop every hour" folded to "run loop
+    # every hour" reads as Hermes' `/loop` timer (`native_loop_cadence`). There
+    # the name folds to `loop engineering`, a catalog phrase of the goal loop
+    # that the loop guard counts as naming it, whatever timer sits beside it.
+    if native_loop_cadence(canonical) and not native_loop_cadence(routing_message):
+        canonical = canonical_display_mentions(
+            routing_message, {**_canonical_skill_by_display_name(), **_GOAL_LOOP_DISPLAY_FOLD}
+        )
+    return canonical
 
 
 @lru_cache(maxsize=2048)
