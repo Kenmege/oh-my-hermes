@@ -82,7 +82,11 @@ def _omh_home(pack: dict[str, object] | None):
             )
         else:
             root.mkdir(parents=True)
-        with patch.dict(os.environ, {"OMH_HOME": str(root)}):
+        # A profile `config.yaml` setting outranks OMH_HOME, so an ambient
+        # HERMES_HOME holding one would redirect the pack lookup away from `root`.
+        hermes_home = Path(tmp).resolve() / ".hermes"
+        hermes_home.mkdir()
+        with patch.dict(os.environ, {"OMH_HOME": str(root), "HERMES_HOME": str(hermes_home)}):
             _clear_pack_and_route_caches()
             try:
                 yield root
