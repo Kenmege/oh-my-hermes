@@ -9,14 +9,16 @@ All notable changes will be documented here.
   blueprint` writes is renamed from `hermes_ops_blueprint/v1` to
   `prepared_native_blueprint/v1` and gains a `native_blueprint` projection:
   the `metadata.hermes.blueprint` block (schedule, deliver, prompt,
-  no_agent) and the matching `cronjob_manage` create call. The prompt is
-  the whole request, the current conversation is `origin`, a
-  report-on-change rule is a `[SILENT]` final reply plus `continuity`, and
-  the fields still open are listed under `needs_confirmation`, `prompt`
-  included while the silence rule is unsettled. The validator refuses a
-  block field Hermes does not read, a `model`, `provider`, or `pinned`
-  argument on the create call, and any argument `cronjob_manage` does not
-  take; a model pin stays the user's (the block's own keys, `hermes cron
+  no_agent) and the matching `cronjob_manage` create call. The stored
+  prompt is the bounded request preview (the record keeps no raw request),
+  the current conversation is `origin`, a report-on-change rule is a
+  `[SILENT]` final reply plus `continuity`, and the fields still open are
+  listed under `needs_confirmation`, `prompt` included while the silence
+  rule is unsettled or the request ran past the preview, in which case the
+  full prompt is written from the conversation when the job is created. The
+  validator refuses a block field Hermes does not read, a `model`,
+  `provider`, or `pinned` argument on the create call, and any argument the
+  `cronjob_manage` schema does not advertise at the plugin floor; a model pin stays the user's (the block's own keys, `hermes cron
   create` or `edit` with `--model` and `--provider`, or `pinned=true` on
   their explicit request where `cronjob_manage` offers it). The skill and
   its recurring-surface reference map OMH's overlap, missed-run, retry,

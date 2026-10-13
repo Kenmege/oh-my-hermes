@@ -119,8 +119,11 @@ things:
   prepared call never pins. `enabled_toolsets` is left unset, which keeps
   every default tool; the agent may narrow it when the job is created.
 - `needs_confirmation` names the fields still open, `prompt` included while
-  the silence rule is unsettled. Hermes parses the schedule when the job is
-  created, so confirm it in one of Hermes' forms first - an interval such as
+  the silence rule is unsettled or the request ran past the stored preview.
+  The stored prompt is a bounded preview of the request, not a
+  self-contained cron prompt: while `prompt` is open, write the full prompt
+  from the request in the conversation when the job is created. Hermes
+  parses the schedule when the job is created, so confirm it in one of Hermes' forms first - an interval such as
   `every 2h`, a day and time such as `weekdays at 9am`, or a cron expression.
 
 Activation is never OMH's, and it happens in one of four ways, each started

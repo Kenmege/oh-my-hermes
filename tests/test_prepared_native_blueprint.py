@@ -133,7 +133,10 @@ class PreparedNativeBlueprintRecordTests(unittest.TestCase):
         self.assertTrue(blueprint["silence_policy"]["requires_confirmation"])
         self.assertIn("prompt", blueprint["native_blueprint"]["needs_confirmation"])
 
-    def test_the_cron_prompt_is_the_whole_request_not_the_summary_preview(self) -> None:
+    def test_a_long_request_stores_only_the_preview_and_leaves_the_prompt_open(self) -> None:
+        # The record is metadata-only by default, so it never keeps the raw
+        # request. A preview is not a self-contained cron prompt, so the
+        # prompt stays open and is written from the conversation at activation.
         request = (
             "every morning "
             + "check the competitor pricing page, the release notes feed, and the vendor status page for each supplier; " * 4
@@ -141,12 +144,26 @@ class PreparedNativeBlueprintRecordTests(unittest.TestCase):
         )
         clean = " ".join(request.split())
         self.assertGreater(len(clean), 400)
-        blueprint = build_scheduled_ops_blueprint(request, created_at="2026-06-16T00:00:00Z")
+        blueprint = build_scheduled_ops_blueprint(
+            request, silence="only if something changed", created_at="2026-06-16T00:00:00Z"
+        )
         native = blueprint["native_blueprint"]
 
+        self.assertFalse(blueprint["silence_policy"]["requires_confirmation"])
         self.assertTrue(blueprint["request_summary"].endswith("..."))
-        self.assertEqual(native["block"]["prompt"], clean)
-        self.assertEqual(native["cronjob_manage_create"]["prompt"], clean)
+        self.assertTrue(native["block"]["prompt"].startswith(blueprint["request_summary"]))
+        self.assertEqual(native["cronjob_manage_create"]["prompt"], native["block"]["prompt"])
+        self.assertNotIn(clean, json.dumps(blueprint, ensure_ascii=False))
+        self.assertIn("prompt", native["needs_confirmation"])
+
+    def test_reference_says_the_stored_prompt_is_a_bounded_preview(self) -> None:
+        section = " ".join(_section(_reference(), "## The native blueprint").split())
+
+        self.assertIn(
+            "The stored prompt is a bounded preview of the request, not a self-contained cron prompt: while `prompt` "
+            "is open, write the full prompt from the request in the conversation when the job is created.",
+            section,
+        )
 
     def test_validator_refuses_a_native_record_that_drops_or_bends_the_projection(self) -> None:
         cases = (
@@ -179,7 +196,7 @@ class PreparedNativeBlueprintRecordTests(unittest.TestCase):
             (
                 "argument cronjob_manage does not take",
                 lambda record: record["native_blueprint"]["cronjob_manage_create"].update(base_url="https://example.invalid"),
-                "native_blueprint.cronjob_manage_create may hold only cronjob_manage arguments",
+                "native_blueprint.cronjob_manage_create may hold only the arguments the cronjob_manage schema advertises",
             ),
             (
                 "not a create call",
