@@ -1,6 +1,7 @@
 ---
 name: "omh-plan"
 description: "[omh] Software feature or bugfix not yet planned: structured planning before execution. Use when the user says: plan, implementation plan, make a plan, write a plan, write the plan, task breakdown, safe feature, safely add a feature."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, planning]
@@ -51,7 +52,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use for structured planning when implementation is not ready to start safely, including feature work that needs a safe plan before handoff.
 

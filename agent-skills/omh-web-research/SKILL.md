@@ -1,6 +1,7 @@
 ---
 name: "omh-web-research"
 description: "[omh] Current technical or business fact to cite from web: web lookup lane - settle a current-facts question in one cited retrieval round with retrieval dates and source-quality notes; for pre-spec grounding across reference implementations use `research`. Use when the user says: web-research, web research, web search, search the web, internet search, look up, look up sources, latest sources."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, research]
@@ -20,14 +21,12 @@ This is an OMH `web-research` workflow skill, projected for Agent Skills hosts (
 
 ## Do Not Use When
 
-- The decision needs reference-implementation study, a declared depth budget, or a decision-grounding dossier; use `research`.
-- The output is a typed candidate inventory and acquisition status rather than an answer; use `source-finder`.
-- The ask is a market, competitor, pricing, or customer decision brief; use `research-brief`.
-- The user wants recurring monitoring, a source inbox, or Scout/Analyst/Briefer operations; use `research-department`.
-- The user wants to configure or cheapen web search itself, such as a provider API key or a search or extract backend or tier; use `websearch-setup`.
-- The study target is this repository rather than the open web; use `codebase-onboarding`.
-- The request is only citation bookkeeping on a draft that already exists - renumbering, rebuilding the Sources block, or checking cited ids against the ledger - with nothing new to retrieve, and Hermes' bundled `grounded-citations` skill is available; load that skill.
-- The answer is an arXiv paper list or one paper's entry - a search by topic, author, category, or paper id - and Hermes' bundled `arxiv` skill is available; load that skill.
+- The decision needs reference-implementation study, a declared depth budget, or a decision-grounding dossier; use `ulw-research`.
+- The output is a typed candidate inventory and acquisition status rather than an answer; use `omh-source-finder`.
+- The ask is a market, competitor, pricing, or customer decision brief; use `omh-research-brief`.
+- The user wants recurring monitoring, a source inbox, or Scout/Analyst/Briefer operations; use `omh-research-department`.
+- The user wants to configure or cheapen web search itself, such as a provider API key or a search or extract backend or tier; use `omh-websearch-setup`.
+- The study target is this repository rather than the open web; use `omh-codebase-onboarding`.
 
 ## Examples
 
@@ -60,7 +59,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when the answer depends on current external facts that one round of cited web retrieval can settle, with no reference-implementation study and no declared depth budget.
 

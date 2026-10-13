@@ -1,6 +1,7 @@
 ---
 name: "omh-materials-package"
 description: "[omh] PPT, PDF, Excel, or HWP output to produce: decks, PDFs, spreadsheets, documents, HWP, Markdown, and binary export handoffs. Use when the user says: materials-package, material package, materials package, document package, deck file, binary export, file export, render qa."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, materials]
@@ -20,8 +21,8 @@ This is an OMH `materials-package` workflow skill, projected for Agent Skills ho
 
 ## Do Not Use When
 
-- The user only needs a weekly/monthly report outline; use `report-package`.
-- The user asks for recurring meeting minutes or scrum history; use `operating-rhythm`.
+- The user only needs a weekly/monthly report outline; use `omh-report-package`.
+- The user asks for recurring meeting minutes or scrum history; use `omh-operating-rhythm`.
 - The request is code documentation, README, or project wiki maintenance; use the docs/wiki workflow.
 
 ## Examples
@@ -51,7 +52,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should turn source inputs into a material plan for decks, PDFs, Word/documents, spreadsheets, HWP, Markdown, office-file summaries, comparisons, table extraction plans, or binary export handoff without claiming file generation.
 

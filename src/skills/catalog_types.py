@@ -141,6 +141,17 @@ def omh_skill_display_name(name: str) -> str:
     return f"{prefix}{text}"
 
 
+def skill_view_call(installed_path: str) -> str:
+    """The `skill_view` call that loads `<label>/<path>` from an installed skill.
+
+    `skill_view` takes a skill name and a path inside that skill, so a body
+    that points at another skill's reference writes the call the model can
+    issue as written rather than a bare `<label>/references/...` path.
+    """
+    skill, _, path = installed_path.partition("/")
+    return f"skill_view(name='{skill}', file_path='{path}')"
+
+
 def historical_skill_display_names(name: str) -> tuple[str, ...]:
     """Return display labels earlier releases rendered for this canonical name.
 
@@ -854,6 +865,71 @@ class HermesReferenceLine(str):
         return (str(self), self.reference)
 
 
+# Skills Hermes bundles that an OMH skill hands part of its job to, by the name
+# Hermes loads them under. Each one is a bundled skill both at the
+# `requires_hermes` floor (tag v2026.9.7) and on upstream main (63d0b94120),
+# read with `git ls-tree <rev> -- skills` on 2026-10-13. None shares a name
+# with a catalog skill or its display label, which a test holds. A name
+# outside this set is refused, so a typo or an upstream rename fails when the
+# catalog loads instead of shipping a line naming a skill Hermes cannot load.
+HERMES_BUNDLED_SKILL_NAMES = frozenset(
+    {
+        "architecture-diagram",
+        "arxiv",
+        "claude-code",
+        "codex",
+        "competitor-news-monitor",
+        "docx",
+        "dogfood",
+        "github",
+        "grounded-citations",
+        "hermes-agent-skill-authoring",
+        "humanizer",
+        "llm-wiki",
+        "meeting-action-items",
+        "opencode",
+        "pdf",
+        "powerpoint",
+        "requesting-code-review",
+        "sdlc-review",
+        "simplify-code",
+        "spike",
+        "systematic-debugging",
+        "xlsx",
+    }
+)
+
+
+class HermesSkillLine(str):
+    """A `do_not_use_when` line that hands the request to a skill Hermes bundles.
+
+    Hermes' skill index tells the model to load every skill that is even partly
+    relevant, so an OMH skill and the bundled skill sharing its job both get
+    loaded unless one of them says which request belongs to the other. This is
+    that sentence. It is the plain line everywhere it is read, so the Hermes
+    body renders it as written; the Agent Skills projection drops it
+    (`_target_definition` in `render.py`), because no other host bundles the
+    skill it names. `skills` must each appear backticked in the line and belong
+    to `HERMES_BUNDLED_SKILL_NAMES`; `metadata.hermes.related_skills` lists them.
+    """
+
+    skills: tuple[str, ...]
+
+    def __new__(cls, text: str, skills: tuple[str, ...]) -> HermesSkillLine:
+        unknown = sorted(set(skills) - HERMES_BUNDLED_SKILL_NAMES)
+        if not skills or unknown:
+            raise ValueError(f"HermesSkillLine must name bundled Hermes skills, got {unknown or 'none'}")
+        missing = [skill for skill in skills if f"`{skill}`" not in text]
+        if missing:
+            raise ValueError(f"HermesSkillLine must name {missing} in backticks in the line")
+        line = super().__new__(cls, text)
+        line.skills = tuple(skills)
+        return line
+
+    def __getnewargs__(self) -> tuple[str, tuple[str, ...]]:
+        return (str(self), self.skills)
+
+
 @dataclass(frozen=True)
 class SkillExample:
     prompt: str
@@ -1009,13 +1085,16 @@ class SkillDefinition:
                     "and inside the Hermes/executor boundary instead of relying on ad hoc chat narration."
                 ),
             )
-        if not self.do_not_use_when:
+        # A definition whose only lines hand requests to bundled Hermes skills
+        # still declines casual chat and unobserved evidence like one with none.
+        if all(isinstance(line, HermesSkillLine) for line in self.do_not_use_when):
             object.__setattr__(
                 self,
                 "do_not_use_when",
                 (
                     "The request is casual chat, a status-only acknowledgement, or another workflow has stronger routing evidence.",
                     "The user needs implementation, review, CI, merge, or external publishing evidence that has not been delegated or observed.",
+                    *self.do_not_use_when,
                 ),
             )
         if self.good_example is None:

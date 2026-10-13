@@ -1,6 +1,8 @@
 ---
 name: "omh-commit-pr-authoring"
 description: "[omh] Commit message or pull-request body to write for a change: draft it in the repository's own convention, with `Tested:` listing only commands observed to run and everything prepared but not run under `Not-tested:`. Use when the user says: commit-pr-authoring, commit message, commit messages, write the commit message, draft the commit message, commit body, squash message, pr body."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, verification]
@@ -8,6 +10,7 @@ metadata:
     phase: commit-pr-authoring
     role: reviewer
     quality_tier: evidence-ledger-gated
+    related_skills: [omh-code-review, omh-github-event-ops, omh-github-issue-intake, omh-content-operator]
 ---
 
 # Commit Pr Authoring
@@ -25,10 +28,10 @@ This is a Hermes-native `commit-pr-authoring` workflow skill.
 
 ## Do Not Use When
 
-- The request is to find defects in the diff or judge whether the change is ready; use `code-review`.
-- The request routes an incoming pull-request, issue, or CI webhook event; use `github-event-ops`.
-- The request turns a chat report into a GitHub issue; use `github-issue-intake`.
-- The request is release notes or product copy for readers outside the repository; use `content-operator`.
+- The request is to find defects in the diff or judge whether the change is ready; use `omh-code-review`.
+- The request routes an incoming pull-request, issue, or CI webhook event; use `omh-github-event-ops`.
+- The request turns a chat report into a GitHub issue; use `omh-github-issue-intake`.
+- The request is release notes or product copy for readers outside the repository; use `omh-content-operator`.
 
 ## Examples
 
@@ -61,9 +64,9 @@ Bad example:
 
 - Current lane: **Coding handoff** (`idea-to-deploy`, `llm-app-dev`, `cto-loop`, `deploy-and-monitor`, `code-review`, `build-failure-triage`, `verification-gate`, `security-safety-review`, `+28 more`) - coding owners, handoffs, review, CI, and merge evidence.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use when a change is ready to record and the user wants its commit message or pull-request body written: the repository's template and recent log read first, the subject and body in that convention, the trailers the repo requires, and a `Tested:` line that lists only commands observed to run, with everything prepared but not run under `Not-tested:`. OMH prepares the text; the commit, the push, and the PR are the user's or the executor's.
 
@@ -131,4 +134,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

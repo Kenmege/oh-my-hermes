@@ -83,9 +83,29 @@ STRUCTURE_LINT_RULE_IDS = (
 # casual-register Korean persona writing its interim progress lines in
 # English (miku, 2026-09-30). Same reason as the entries above. Warranted
 # always-loaded growth, not drift.
-STRUCTURE_LINT_SKILL_BODY_BYTE_CEILING = 27_100
+#
+# 27_100 -> 27_200: `ultrawork` ships 27_156 bytes (27_089 before) once its
+# `## Do Not Use When` names `decision-prototype` and `loop` by the labels
+# `skill_view` loads (`omh-decision-prototype`, `ulw-loop`) and its
+# frontmatter lists them as `related_skills`. A sibling named by a name the
+# host cannot load is a pointer the model cannot follow, and the list is what
+# `skill_view` returns beside the body. Warranted always-loaded growth, not
+# drift.
+#
+# 27_200 -> 27_300: `ultrawork` ships 27_271 bytes once its frontmatter
+# carries `license` and `author`, its `## Use When` heading becomes the
+# `## When to Use` Hermes' skill linter expects, and its two shared-rail
+# pointers become the `skill_view(name=..., file_path=...)` call that loads
+# the rail. Same reason as the entry above: the pointer is read where the
+# rail is needed. Warranted always-loaded growth, not drift.
+STRUCTURE_LINT_SKILL_BODY_BYTE_CEILING = 27_300
 _PICKER_SAFE_TRIGGER = re.compile(r"^[0-9A-Za-z\uac00-\ud7a3][0-9A-Za-z\uac00-\ud7a3 _.-]*$")
-_FRONTMATTER = re.compile(r'^---\nname: (.+)\ndescription: (.+)\nmetadata:\n(.*?)\n---\n', re.DOTALL)
+# `license` and `author` sit between the description and `metadata`; each
+# scalar is one line, so the two scalars stop at their own line end.
+_FRONTMATTER = re.compile(
+    r'^---\nname: ([^\n]+)\ndescription: ([^\n]+)\n(?:license: [^\n]+\n)?(?:author: [^\n]+\n)?metadata:\n(.*?)\n---\n',
+    re.DOTALL,
+)
 _JSON_STRING = re.compile(r'"(?:[^"\\\x00-\x1f]|\\["\\/bfnrt]|\\u[0-9A-Fa-f]{4})*"')
 
 

@@ -4,6 +4,62 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Generated skills follow more of Hermes' own skill-authoring
+  conventions.** Every Hermes skill body now opens its trigger section with
+  `## When to Use`, the heading Hermes' skill linter looks for, and carries
+  `license: MIT` and `author` in its frontmatter (the Agent Skills projection
+  carries `license` only, the field that spec defines). Pointers to the
+  references the router skill owns (the shared rail, the Jev rail,
+  structural code search, workflow artifacts) are written as the call that
+  loads them, such as
+  `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`,
+  instead of a bare path the model had to translate. A test now holds every
+  shipped `SKILL.md` free of Hermes' inline-shell shape, which Hermes would
+  run as a command when `skills.inline_shell` is on.
+
+- **Three request shapes that belong to a skill Hermes bundles, or to a
+  work board, stop dispatching an OMH skill.** An architecture diagram of
+  cloud or infrastructure pieces described in words, with no codebase,
+  repository, module, folder, `src` tree, CDK or Terraform named, no longer
+  dispatches `codebase-uml`; Hermes bundles `architecture-diagram` for it.
+  An English message naming an LLM wiki no longer reaches the wiki
+  blueprint, nor the research department unless one is named outright;
+  Hermes bundles `llm-wiki`. A review of what sits on a kanban, board, task,
+  Trello or Jira card no longer opens an image card; a dashboard, scoreboard
+  or storyboard card still does. Each of those turns now asks instead.
+  Measured on the chat-interaction surface over both routing corpora, every
+  sentence literal in the routing tests, the sentences this change was
+  probed with, and its reviews' sentences: those are the only routes whose
+  action or selected skill moves, each from a dispatch to a clarify. arXiv
+  lookups, citation checks and paper research route as they did. The
+  research-department body maps Scout to the `research` and `web-research`
+  lanes its prepared plan emits, and handoff policies, like Do Not Use When
+  lines, name siblings by the labels `skill_view` loads.
+
+- **Skill bodies name their siblings by the name Hermes can load, and say
+  which requests belong to a skill Hermes bundles.** A `## Do Not Use When`
+  line that hands a request to a sibling used to name it by its catalog name
+  (`connector-operator`, `strategy-brief`, `research`), which `skill_view`
+  cannot load because the installed directory carries the display label
+  (`omh-apps`, `omh-decide`, `ulw-research`). The renderer now writes the
+  label in both the Hermes body and the Agent Skills projection; the catalog
+  keeps canonical names, so routing and the deference graph are unchanged. A
+  sibling that is no longer installed keeps its catalog name. The Hermes
+  frontmatter gains `metadata.hermes.related_skills`, derived from those same
+  lines, which `skill_view` returns beside the body; Hermes' per-turn skill
+  index does not read it, and the index size is unchanged. A skill whose job
+  overlaps a skill Hermes bundles now carries one line naming which request
+  belongs to the bundled one: `requesting-code-review`, `systematic-debugging`,
+  `simplify-code`, `spike`, `dogfood`, `llm-wiki`, `grounded-citations`,
+  `arxiv`, `architecture-diagram`, `github`, `claude-code` / `codex` /
+  `opencode`, `sdlc-review`, `meeting-action-items`, `humanizer`, `pdf` /
+  `docx` / `powerpoint` / `xlsx`, `hermes-agent-skill-authoring`, and
+  `competitor-news-monitor`. Those lines are Hermes-only, no other host
+  bundles those skills: the deferral lines `web-research`,
+  `research-department`, `visual-qa`, `ultraqa` and `code-review` already
+  carried for `grounded-citations`, `arxiv`, `competitor-news-monitor`,
+  `dogfood` and `sdlc-review` keep their wording and now leave the Agent
+  Skills projection too, each counterpart named once per skill.
 - **The memory and learning skills now read what Hermes' own learning loop
   wrote or is holding: pending memory writes, staged skill writes, the skill
   audit ledger, curator run reports, and the one memory-provider slot.**

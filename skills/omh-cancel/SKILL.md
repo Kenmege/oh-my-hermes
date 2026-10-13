@@ -1,6 +1,8 @@
 ---
 name: "omh-cancel"
 description: "[omh] Aborting an active workflow: ending active workflow state cleanly. Use when the user says: cancel, stop the workflow, abort the run, cancel the loop."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, operator]
@@ -8,6 +10,7 @@ metadata:
     phase: state-cleanup
     role: tracker
     quality_tier: evidence-gated
+    related_skills: [omh-running-work-board]
 ---
 
 # Cancel
@@ -21,7 +24,7 @@ This is a Hermes-native `cancel` workflow skill.
 ## Do Not Use When
 
 - The workflow finished and its outcome should be kept; record it with omh state finish instead of clearing it.
-- The user wants to see what is still running rather than stop it; use `running-work-board`.
+- The user wants to see what is still running rather than stop it; use `omh-running-work-board`.
 - The user means cancelling something in their own product or accounts, such as an order, a subscription, or a meeting, rather than OMH or host work.
 
 ## Examples
@@ -53,9 +56,9 @@ Bad example:
 
 - Current lane: **Automation and status** (`achievements`, `workspace-audit`, `production-audit`, `live-incident-response`, `automation-blueprint`, `github-event-ops`, `github-issue-intake`, `buzz`, `+39 more`) - schedules, status, health, and ops review.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use to cleanly end active adapted workflow state.
 
@@ -115,4 +118,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

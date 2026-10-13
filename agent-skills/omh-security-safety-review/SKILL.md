@@ -1,6 +1,7 @@
 ---
 name: "omh-security-safety-review"
 description: "[omh] Agent or automation safety risks: review prompt, tool, secret, dependency, destructive-action, and explicit local plugin risks before agent or code execution. Use when the user says: security-safety-review, security safety review, ai coding safety, agent safety review, prompt injection review, tool permission review, secret exposure review, destructive action review."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, review]
@@ -20,11 +21,11 @@ This is an OMH `security-safety-review` workflow skill, projected for Agent Skil
 
 ## Do Not Use When
 
-- The user asks for production readiness across release, rollback, and observability; use `production-audit`.
-- The user asks for merge verification commands; use `verification-gate`.
-- The user asks for a normal code review focused on bugs; use `code-review`.
-- The subject is an application or service rather than the agent's own runtime -- its assets, trust boundaries, attack scenarios, and the controls that defend them; use `application-threat-model`.
-- Something already happened to shipped code -- a CVE published against a dependency, a credential pushed to a repository, a license question about a package; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.
+- The user asks for production readiness across release, rollback, and observability; use `omh-production-audit`.
+- The user asks for merge verification commands; use `omh-verification-gate`.
+- The user asks for a normal code review focused on bugs; use `omh-code-review`.
+- The subject is an application or service rather than the agent's own runtime -- its assets, trust boundaries, attack scenarios, and the controls that defend them; use `omh-application-threat-model`.
+- Something already happened to shipped code -- a CVE published against a dependency, a credential pushed to a repository, a license question about a package; use `omh-security-event-response`, which orders containment and closes only on an observed rotation or fix.
 
 ## Examples
 
@@ -53,7 +54,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should identify security, prompt-injection, tool-permission, secret, dependency, destructive-action, or explicit local plugin risks before execution or release.
 

@@ -1,6 +1,8 @@
 ---
 name: "omh-materials-package"
 description: "[omh] PPT, PDF, Excel, or HWP output to produce: decks, PDFs, spreadsheets, documents, HWP, Markdown, and binary export handoffs. Use when the user says: materials-package, material package, materials package, document package, deck file, binary export, file export, render qa."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, materials]
@@ -8,6 +10,7 @@ metadata:
     phase: material-plan
     role: operator
     quality_tier: material-gated
+    related_skills: [omh-report-package, omh-operating-rhythm, pdf, docx, powerpoint, xlsx]
 ---
 
 # Materials Package
@@ -20,9 +23,10 @@ This is a Hermes-native `materials-package` workflow skill.
 
 ## Do Not Use When
 
-- The user only needs a weekly/monthly report outline; use `report-package`.
-- The user asks for recurring meeting minutes or scrum history; use `operating-rhythm`.
+- The user only needs a weekly/monthly report outline; use `omh-report-package`.
+- The user asks for recurring meeting minutes or scrum history; use `omh-operating-rhythm`.
 - The request is code documentation, README, or project wiki maintenance; use the docs/wiki workflow.
+- The user wants an operation done on one existing file - fill a PDF form, merge or split PDFs, or edit the text of a Word document, the slides of a deck, or the cells of a workbook - rather than a material plan with an export and QA ladder; load Hermes' bundled `pdf`, `docx`, `powerpoint`, or `xlsx` skill for that file instead of this one.
 
 ## Examples
 
@@ -53,9 +57,9 @@ Bad example:
 
 - Current lane: **Materials and visual summaries** (`design-orchestration`, `apple-design`, `design-quality-gate`, `award-bar-score`, `frontend`, `accessibility-audit`, `visual-qa`, `content-operator`, `+6 more`) - web, accessibility, visual QA, files, and packages.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use when Hermes should turn source inputs into a material plan for decks, PDFs, Word/documents, spreadsheets, HWP, Markdown, office-file summaries, comparisons, table extraction plans, or binary export handoff without claiming file generation.
 
@@ -122,4 +126,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

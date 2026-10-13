@@ -1,6 +1,8 @@
 ---
 name: "omh-apps"
 description: "[omh] Email, Slack, or Jira action to perform: external app actions - email, Slack, Discord, Notion, Linear, Jira, CRM, and similar providers, scoped with auth, payload, confirmation, and result-evidence gates. Use when the user says: connector-operator, connector operator, external app action, external connector action, saas action, api action, send email, email customer."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, connector]
@@ -8,6 +10,7 @@ metadata:
     phase: connector-task
     role: guide
     quality_tier: workflow-surface-gated
+    related_skills: [omh-gateway-intent-card, omh-external-connector-readiness]
 ---
 
 # Connector Operator
@@ -20,8 +23,8 @@ This is a Hermes-native `connector-operator` workflow skill.
 
 ## Do Not Use When
 
-- Only the reply or thread policy of a Discord, Slack, or Telegram conversation is in question; use `gateway-intent-card`.
-- The user is choosing or adopting a new provider, MCP server, or integration rather than acting through one; use `external-connector-readiness`.
+- Only the reply or thread policy of a Discord, Slack, or Telegram conversation is in question; use `omh-gateway-intent-card`.
+- The user is choosing or adopting a new provider, MCP server, or integration rather than acting through one; use `omh-external-connector-readiness`.
 
 ## Examples
 
@@ -54,9 +57,9 @@ Bad example:
 
 - Current lane: **Automation and status** (`achievements`, `workspace-audit`, `production-audit`, `live-incident-response`, `automation-blueprint`, `github-event-ops`, `github-issue-intake`, `buzz`, `+39 more`) - schedules, status, health, and ops review.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use when Hermes should prepare or supervise a provider-backed external app action without claiming connector availability, credentials, API mutation, delivery, or success.
 
@@ -126,4 +129,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

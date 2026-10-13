@@ -1,6 +1,7 @@
 ---
 name: "omh-commit-pr-authoring"
 description: "[omh] Commit message or pull-request body to write for a change: draft it in the repository's own convention, with `Tested:` listing only commands observed to run and everything prepared but not run under `Not-tested:`. Use when the user says: commit-pr-authoring, commit message, commit messages, write the commit message, draft the commit message, commit body, squash message, pr body."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, verification]
@@ -25,10 +26,10 @@ This is an OMH `commit-pr-authoring` workflow skill, projected for Agent Skills 
 
 ## Do Not Use When
 
-- The request is to find defects in the diff or judge whether the change is ready; use `code-review`.
-- The request routes an incoming pull-request, issue, or CI webhook event; use `github-event-ops`.
-- The request turns a chat report into a GitHub issue; use `github-issue-intake`.
-- The request is release notes or product copy for readers outside the repository; use `content-operator`.
+- The request is to find defects in the diff or judge whether the change is ready; use `omh-code-review`.
+- The request routes an incoming pull-request, issue, or CI webhook event; use `omh-github-event-ops`.
+- The request turns a chat report into a GitHub issue; use `omh-github-issue-intake`.
+- The request is release notes or product copy for readers outside the repository; use `omh-content-operator`.
 
 ## Examples
 
@@ -59,7 +60,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when a change is ready to record and the user wants its commit message or pull-request body written: the repository's template and recent log read first, the subject and body in that convention, the trailers the repo requires, and a `Tested:` line that lists only commands observed to run, with everything prepared but not run under `Not-tested:`. OMH prepares the text; the commit, the push, and the PR are the user's or the executor's.
 

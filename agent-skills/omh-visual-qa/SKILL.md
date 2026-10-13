@@ -1,6 +1,7 @@
 ---
 name: "omh-visual-qa"
 description: "[omh] Rendered UI needing a visual verdict: prepare observed-only rendered QA gates for web, frontend, image, document, and TUI surfaces. Use when the user says: visual-qa, visual qa, visual QA, visual quality assurance, visual check, web qa, web visual qa, screenshot qa."
+license: MIT
 compatibility: "Requires the omh CLI on PATH (pip install oh-my-hermes)."
 metadata:
   hermes:
@@ -21,11 +22,10 @@ This is an OMH `visual-qa` workflow skill, projected for Agent Skills hosts (Cla
 
 ## Do Not Use When
 
-- The user needs initial frontend design or redesign planning before implementation; use `frontend`.
-- The user needs a broad visual quality rubric before generation; use `design-quality-gate`.
-- The user needs image-card prompt creation; use `img-summary`.
+- The user needs initial frontend design or redesign planning before implementation; use `omh-frontend`.
+- The user needs a broad visual quality rubric before generation; use `omh-design-quality-gate`.
+- The user needs image-card prompt creation; use `omh-image-cards`.
 - The user wants non-visual code tests, CI, or PR review only; use the coding/review workflow.
-- Open-ended bug-hunting across a web app with no page, state, and viewport matrix or target revision to judge; on Hermes, use the bundled `dogfood` skill when it is available.
 
 ## Examples
 
@@ -54,7 +54,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use after or during visual surface work when Hermes must define the render evidence, viewport/state coverage, diff review, oracle review, and PASS/REVISE/BLOCK verdict without fabricating QA.
 

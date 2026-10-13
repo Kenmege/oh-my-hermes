@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from .catalog_types import (
     ExpertQuestion,
+    HermesSkillLine,
     ProcedureCheck,
     ProcedureStep,
     SkillDefinition,
@@ -185,6 +186,10 @@ DEFINITION = SkillDefinition(
         "The request is a premium content, layout, or visual quality gate on deliverables; use `design-quality-gate`.",
         "The uncertainty is whether customers have the problem or would adopt the solution, which needs customer evidence rather than a technical or interaction spike; use `product-discovery-validation`.",
         "The request needs QA certification, production-readiness evidence, or a performance baseline for release; prototype results do not generalize beyond their declared fixture and environment.",
+        HermesSkillLine(
+            "The user wants an idea's feasibility probed across several questions with throwaway spikes, with no single decision for a plan to consume; load Hermes' bundled `spike` skill instead of this one.",
+            ("spike",),
+        ),
     ),
     good_example=SkillExample(
         prompt="Run a small spike to check whether the streaming API can hold 500 concurrent connections on one worker before we plan the migration.",

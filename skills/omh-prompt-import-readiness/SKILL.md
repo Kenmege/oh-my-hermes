@@ -1,6 +1,8 @@
 ---
 name: "omh-prompt-import-readiness"
 description: "[omh] Importing prompt files for Hermes: prompt import readiness - review and normalize external CLI-agent prompt files before offering slash-command candidates; use external-connector-readiness for plugin or API adoption and toolbelt-readiness for missing runtime capabilities. Use when the user says: prompt-import-readiness, prompt import readiness, slash prompt import, slash prompts import, slash command prompt import, prompt library import, prompt folder import, prompt directory import."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, prompt]
@@ -8,6 +10,7 @@ metadata:
     phase: prompt-import-readiness
     role: guide
     quality_tier: workflow-surface-gated
+    related_skills: [omh-external-connector-readiness, omh-toolbelt-readiness, omh-skill-scout]
 ---
 
 # Prompt Import Readiness
@@ -20,9 +23,9 @@ This is a Hermes-native `prompt-import-readiness` workflow skill.
 
 ## Do Not Use When
 
-- Adopting a plugin, connector, API, or memory provider; use `external-connector-readiness`.
-- A runtime capability or CLI the work needs is missing; use `toolbelt-readiness`.
-- Searching for an existing skill to reuse before writing one; use `skill-scout`.
+- Adopting a plugin, connector, API, or memory provider; use `omh-external-connector-readiness`.
+- A runtime capability or CLI the work needs is missing; use `omh-toolbelt-readiness`.
+- Searching for an existing skill to reuse before writing one; use `omh-skill-scout`.
 
 ## Examples
 
@@ -58,9 +61,9 @@ Bad example:
 
 - Current lane: **Automation and status** (`achievements`, `workspace-audit`, `production-audit`, `live-incident-response`, `automation-blueprint`, `github-event-ops`, `github-issue-intake`, `buzz`, `+39 more`) - schedules, status, health, and ops review.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use before importing, normalizing, or exposing external prompt files as Hermes slash commands so source trust, formats, argument interpolation, name collisions, review status, and dry-run evidence stay explicit.
 
@@ -136,4 +139,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

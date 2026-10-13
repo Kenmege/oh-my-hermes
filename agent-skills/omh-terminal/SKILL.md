@@ -1,6 +1,7 @@
 ---
 name: "omh-terminal"
 description: "[omh] Shell command or test-suite execution: policy overlay for terminal commands - add cwd, environment, safety, and result-evidence gates after preferring native shell tools for ordinary CLI, package-manager, and test runs. Use when the user says: command-operator, command operator, terminal command, terminal task, shell command, shell task, cli command, command execution."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, command]
@@ -21,8 +22,8 @@ This is an OMH `command-operator` workflow skill, projected for Agent Skills hos
 ## Do Not Use When
 
 - An ordinary read-only or test command with a known working directory and nothing to gate; run it with the native terminal tool.
-- The user pasted a failed command's output and asks for the cause; use `build-failure-triage`, or `agent-debug` when the agent itself is stuck.
-- The user wants a command blocked for the agent from now on; use `security-safety-review`, which prepares a proposed deny-glob list for the user to apply.
+- The user pasted a failed command's output and asks for the cause; use `omh-build-failure-triage`, or `omh-agent-debug` when the agent itself is stuck.
+- The user wants a command blocked for the agent from now on; use `omh-security-safety-review`, which prepares a proposed deny-glob list for the user to apply.
 
 ## Examples
 
@@ -55,7 +56,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should prepare or supervise terminal/CLI command execution without claiming the command ran or succeeded.
 

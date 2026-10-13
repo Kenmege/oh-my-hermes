@@ -1,6 +1,7 @@
 ---
 name: "omh-instinct-ledger"
 description: "[omh] Recurring lessons worth promoting: turn repeated project or cross-project lessons into atomic, confidence-scored instinct candidates with scoped promotion and export boundaries. Use when the user says: instinct-ledger, instinct ledger, project instincts, project-scoped instincts, project scoped instincts, global instincts, instinct review, instinct candidate."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, optimization]
@@ -20,9 +21,9 @@ This is an OMH `instinct-ledger` workflow skill, projected for Agent Skills host
 
 ## Do Not Use When
 
-- A single missed route or one run's trace; use `workflow-learning` first.
-- Writing reviewed lessons into AGENTS guidance, prompts, or skills; use `rules-distill`.
-- A run that is stuck right now; use `agent-debug` before drawing a lesson from it.
+- A single missed route or one run's trace; use `omh-workflow-learning` first.
+- Writing reviewed lessons into AGENTS guidance, prompts, or skills; use `omh-rules-distill`.
+- A run that is stuck right now; use `omh-agent-debug` before drawing a lesson from it.
 
 ## Examples
 
@@ -54,7 +55,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should review repeated observations, user corrections, workflow lessons, or failure patterns as atomic project-scoped or global instinct candidates with confidence, evidence, promotion, import, or export decisions.
 

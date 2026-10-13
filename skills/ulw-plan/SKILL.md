@@ -1,6 +1,8 @@
 ---
 name: "ulw-plan"
 description: "[omh] High-stakes technical proposal needing approval: consensus planning with review gates. Use when the user says: ralplan, consensus plan, reviewed plan, issue to PR, acceptance criteria, verification command, reviewable PR, risky planning."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, planning]
@@ -8,6 +10,7 @@ metadata:
     phase: reviewed-plan
     role: planner
     quality_tier: reviewed-plan-gated
+    related_skills: [ulw-interview, ulw-work, omh-ai-slop-cleaner, omh-refactor-plan, omh-decision-prototype, ulw-context]
 ---
 
 # Ralplan
@@ -24,13 +27,13 @@ This is a Hermes-native `ralplan` workflow skill.
 
 ## Do Not Use When
 
-- The request is still too ambiguous to name requirements, non-goals, or acceptance criteria; use `deep-interview` first.
-- The user asks for one full research-plan-implementation-review-PR cycle; use `ultrawork` (its `delivery_boundary` capability) and keep ralplan as the planning stage.
-- The change is a small local refactor or cleanup with no architectural or regression risk; use `ultrawork`, or `ai-slop-cleaner` when observable behavior must stay identical.
-- The refactor's direction is already decided and what is missing is its execution shape - which files move in which phase, what verifies each phase, where each phase rolls back to; use `refactor-plan`.
-- One plan-blocking choice still needs behavior evidence rather than argument; run `decision-prototype` first and consume its decision receipt without transcript replay.
+- The request is still too ambiguous to name requirements, non-goals, or acceptance criteria; use `ulw-interview` first.
+- The user asks for one full research-plan-implementation-review-PR cycle; use `ulw-work` (its `delivery_boundary` capability) and keep ralplan as the planning stage.
+- The change is a small local refactor or cleanup with no architectural or regression risk; use `ulw-work`, or `omh-ai-slop-cleaner` when observable behavior must stay identical.
+- The refactor's direction is already decided and what is missing is its execution shape - which files move in which phase, what verifies each phase, where each phase rolls back to; use `omh-refactor-plan`.
+- One plan-blocking choice still needs behavior evidence rather than argument; run `omh-decision-prototype` first and consume its decision receipt without transcript replay.
 - The user wants a pure source lookup, citation check, or paper explanation with no implementation plan.
-- The unresolved work is repository terminology alignment or a project-language decision frontier; use `context` before planning.
+- The unresolved work is repository terminology alignment or a project-language decision frontier; use `ulw-context` before planning.
 
 ## Examples
 
@@ -67,9 +70,9 @@ Bad example:
 
 - Current lane: **Intent -> plan** (`oh-my-hermes`, `meta-router`, `deep-interview`, `context`, `plan`, `ralplan`, `adversarial-consensus`, `codebase-onboarding`, `+8 more`) - clarify, plan, ship, or loop goals.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use when requirements are clear enough for planning but architecture, evidence, alternatives, risks, or tests need a reviewed plan before execution.
 
@@ -153,4 +156,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

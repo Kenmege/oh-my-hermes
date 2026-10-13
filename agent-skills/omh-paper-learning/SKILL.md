@@ -1,6 +1,7 @@
 ---
 name: "omh-paper-learning"
 description: "[omh] Paper or paper PDF to understand: explain a supplied paper or paper/PDF at a selected level while preserving full section coverage and source evidence boundaries. Use when the user says: paper-learning, paper learning, paper-explainer, paper explainer, paper explanation, explain this paper, explain this arxiv paper, paper walkthrough."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, research]
@@ -20,10 +21,10 @@ This is an OMH `paper-learning` workflow skill, projected for Agent Skills hosts
 
 ## Do Not Use When
 
-- The request asks to export, convert, render, or package a file; use `materials-package`.
-- The request asks for daily/weekly paper monitoring, digest, source inbox, or Scout/Analyst/Briefer operations; use `research-department`.
-- The request asks to find current papers or sources when no supplied paper exists; use `research`.
-- The request asks for a visual/image card; use `img-summary`.
+- The request asks to export, convert, render, or package a file; use `omh-materials-package`.
+- The request asks for daily/weekly paper monitoring, digest, source inbox, or Scout/Analyst/Briefer operations; use `omh-research-department`.
+- The request asks to find current papers or sources when no supplied paper exists; use `ulw-research`.
+- The request asks for a visual/image card; use `omh-image-cards`.
 - The request asks to implement or reproduce the paper's code; prepare a coding handoff only after a paper learning or reproduction plan is accepted.
 
 ## Examples
@@ -58,7 +59,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should explain a supplied paper, arXiv entry, paper PDF, pasted excerpt, or extracted paper text at a selected level while keeping a coverage ledger instead of shrinking the paper into a lossy summary.
 

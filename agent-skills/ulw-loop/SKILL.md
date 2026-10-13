@@ -1,6 +1,7 @@
 ---
 name: "ulw-loop"
 description: "[omh] Ambitious project goal needing many build cycles: agentic interviewer -> planner -> researcher -> builder -> reviewer cycles until a real gate. Use when the user says: loop, goal loop, long horizon goal, never stop, research plan goal feedback, token exhaustion resume, permission profile, star 10k."
+license: MIT
 compatibility: "Requires the omh CLI on PATH (pip install oh-my-hermes)."
 metadata:
   hermes:
@@ -21,8 +22,8 @@ This is an OMH `loop` workflow skill, projected for Agent Skills hosts (Claude C
 
 ## Do Not Use When
 
-- The user asks for one bounded delivery cycle; use `ultrawork`'s delivery-boundary capability instead.
-- Scope and milestones are already known and only durable checkpoint/resume tracking is needed; use `ultrawork`'s durable-checkpoint capability.
+- The user asks for one bounded delivery cycle; use `ulw-work`'s delivery-boundary capability instead.
+- Scope and milestones are already known and only durable checkpoint/resume tracking is needed; use `ulw-work`'s durable-checkpoint capability.
 - The user gives only a north-star outcome such as revenue, stars, or adoption and has not accepted a bounded first loop goal.
 - The goal is too vague to name an observable problem, next artifact, verification signal, or stop condition.
 - The goal depends mainly on external waiting, adoption, revenue, or community response without observable local next actions.
@@ -62,7 +63,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when the user starts a high-level goal or invokes loop. Direct loop invocation means start/continue through interviewer, planner, researcher, builder, reviewer, and loop-controller lanes until a real gate stops it.
 

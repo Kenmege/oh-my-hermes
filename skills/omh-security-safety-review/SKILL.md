@@ -1,6 +1,8 @@
 ---
 name: "omh-security-safety-review"
 description: "[omh] Agent or automation safety risks: review prompt, tool, secret, dependency, destructive-action, and explicit local plugin risks before agent or code execution. Use when the user says: security-safety-review, security safety review, ai coding safety, agent safety review, prompt injection review, tool permission review, secret exposure review, destructive action review."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, review]
@@ -8,6 +10,7 @@ metadata:
     phase: security-safety-review
     role: reviewer
     quality_tier: security-safety-gated
+    related_skills: [omh-production-audit, omh-verification-gate, omh-code-review, omh-application-threat-model, omh-security-event-response]
 ---
 
 # Security Safety Review
@@ -20,11 +23,11 @@ This is a Hermes-native `security-safety-review` workflow skill.
 
 ## Do Not Use When
 
-- The user asks for production readiness across release, rollback, and observability; use `production-audit`.
-- The user asks for merge verification commands; use `verification-gate`.
-- The user asks for a normal code review focused on bugs; use `code-review`.
-- The subject is an application or service rather than the agent's own runtime -- its assets, trust boundaries, attack scenarios, and the controls that defend them; use `application-threat-model`.
-- Something already happened to shipped code -- a CVE published against a dependency, a credential pushed to a repository, a license question about a package; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.
+- The user asks for production readiness across release, rollback, and observability; use `omh-production-audit`.
+- The user asks for merge verification commands; use `omh-verification-gate`.
+- The user asks for a normal code review focused on bugs; use `omh-code-review`.
+- The subject is an application or service rather than the agent's own runtime -- its assets, trust boundaries, attack scenarios, and the controls that defend them; use `omh-application-threat-model`.
+- Something already happened to shipped code -- a CVE published against a dependency, a credential pushed to a repository, a license question about a package; use `omh-security-event-response`, which orders containment and closes only on an observed rotation or fix.
 
 ## Examples
 
@@ -55,9 +58,9 @@ Bad example:
 
 - Current lane: **Coding handoff** (`idea-to-deploy`, `llm-app-dev`, `cto-loop`, `deploy-and-monitor`, `code-review`, `build-failure-triage`, `verification-gate`, `security-safety-review`, `+28 more`) - coding owners, handoffs, review, CI, and merge evidence.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use when Hermes should identify security, prompt-injection, tool-permission, secret, dependency, destructive-action, or explicit local plugin risks before execution or release.
 
@@ -146,4 +149,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

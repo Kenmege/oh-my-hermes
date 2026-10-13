@@ -1,6 +1,8 @@
 ---
 name: "omh-web-research"
 description: "[omh] Current technical or business fact to cite from web: web lookup lane - settle a current-facts question in one cited retrieval round with retrieval dates and source-quality notes; for pre-spec grounding across reference implementations use `research`. Use when the user says: web-research, web research, web search, search the web, internet search, look up, look up sources, latest sources."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, research]
@@ -8,6 +10,7 @@ metadata:
     phase: web-evidence
     role: researcher
     quality_tier: source-gated
+    related_skills: [ulw-research, omh-source-finder, omh-research-brief, omh-research-department, omh-websearch-setup, omh-codebase-onboarding, grounded-citations, arxiv]
 ---
 
 # Web Research
@@ -20,12 +23,12 @@ This is a Hermes-native `web-research` workflow skill.
 
 ## Do Not Use When
 
-- The decision needs reference-implementation study, a declared depth budget, or a decision-grounding dossier; use `research`.
-- The output is a typed candidate inventory and acquisition status rather than an answer; use `source-finder`.
-- The ask is a market, competitor, pricing, or customer decision brief; use `research-brief`.
-- The user wants recurring monitoring, a source inbox, or Scout/Analyst/Briefer operations; use `research-department`.
-- The user wants to configure or cheapen web search itself, such as a provider API key or a search or extract backend or tier; use `websearch-setup`.
-- The study target is this repository rather than the open web; use `codebase-onboarding`.
+- The decision needs reference-implementation study, a declared depth budget, or a decision-grounding dossier; use `ulw-research`.
+- The output is a typed candidate inventory and acquisition status rather than an answer; use `omh-source-finder`.
+- The ask is a market, competitor, pricing, or customer decision brief; use `omh-research-brief`.
+- The user wants recurring monitoring, a source inbox, or Scout/Analyst/Briefer operations; use `omh-research-department`.
+- The user wants to configure or cheapen web search itself, such as a provider API key or a search or extract backend or tier; use `omh-websearch-setup`.
+- The study target is this repository rather than the open web; use `omh-codebase-onboarding`.
 - The request is only citation bookkeeping on a draft that already exists - renumbering, rebuilding the Sources block, or checking cited ids against the ledger - with nothing new to retrieve, and Hermes' bundled `grounded-citations` skill is available; load that skill.
 - The answer is an arXiv paper list or one paper's entry - a search by topic, author, category, or paper id - and Hermes' bundled `arxiv` skill is available; load that skill.
 
@@ -62,9 +65,9 @@ Bad example:
 
 - Current lane: **Research and company ops** (`product-docs`, `source-finder`, `web-research`, `research`, `model-optimization`, `inference-serving`, `model-finetuning`, `research-brief`, `+20 more`) - research, signals, ops, and briefings.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use when the answer depends on current external facts that one round of cited web retrieval can settle, with no reference-implementation study and no declared depth budget.
 
@@ -138,4 +141,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

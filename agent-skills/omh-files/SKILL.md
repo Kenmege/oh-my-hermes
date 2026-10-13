@@ -1,6 +1,7 @@
 ---
 name: "omh-files"
 description: "[omh] Folder cleanup, renames, or deletions: policy overlay for local file tasks - add path scoping and destructive-action gates after preferring native file tools for ordinary list, search, organize, copy, move, and rename actions. Use when the user says: workspace-file-operator, workspace file operator, file operator, file operation, file operations, filesystem task, filesystem operation, file system task."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, filesystem]
@@ -21,7 +22,7 @@ This is an OMH `workspace-file-operator` workflow skill, projected for Agent Ski
 ## Do Not Use When
 
 - An ordinary list, search, read, or one-file edit inside a known folder; use the native file tools directly.
-- The request converts files or produces a deck, PDF, or attachment; use `materials-package` or `deliverable-package`.
+- The request converts files or produces a deck, PDF, or attachment; use `omh-materials-package` or `omh-deliverable-package`.
 
 ## Examples
 
@@ -55,7 +56,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should prepare or supervise local workspace/file-system operations such as listing, searching, organizing, copying, moving, renaming, archiving, or deleting files without claiming the operation ran.
 

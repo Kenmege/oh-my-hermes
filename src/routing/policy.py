@@ -802,6 +802,11 @@ _VISUAL_SUMMARY_SHORT_REQUEST_PHRASES = frozenset(
         "create a photo",
     )
 )
+# A card on a work board is a work item, not an image card: "review the PR
+# linked on the kanban card" asks for a review, and `review` beside `card` is
+# otherwise this guard's image-card shape. Matched as spoken phrases, so
+# `board card` is not found inside "dashboard card" or "storyboard card".
+_WORK_ITEM_CARD_PHRASES = ("kanban card", "board card", "task card", "trello card", "jira card", "칸반 카드")
 _VISUAL_SUMMARY_NON_VISUAL_WORK_TOKENS = _normalized_token_set(
     {
         "classifier",
@@ -7991,6 +7996,10 @@ def _research_department_guard_applies(normalized_query: str, query_tokens: set[
     if _wiki_capture_destination_request(normalized_query, query_tokens):
         return False
     explicit_research_ops = _contains_phrase(normalized_query, _RESEARCH_DEPARTMENT_PHRASES)
+    # A research department named outright keeps its request even when the
+    # digest lands in an LLM wiki; otherwise the LLM wiki is the request.
+    if llm_wiki_request(normalized_query) and not explicit_research_ops:
+        return False
     if _omh_capability_question(normalized_query) and explicit_research_ops:
         return True
     research_infra_setup = _contains_phrase(normalized_query, _RESEARCH_DEPARTMENT_SETUP_PHRASES)
@@ -8066,6 +8075,16 @@ def _research_department_guard_applies(normalized_query: str, query_tokens: set[
     return recurring and (research or collect_synthesize_brief) and (
         support or specific_research_domain or explicit_research_ops or collect_synthesize_brief
     )
+
+
+def llm_wiki_request(normalized_query: str) -> bool:
+    """The message names an LLM wiki, the pattern Hermes' bundled `llm-wiki` skill builds.
+
+    That skill ingests sources into, queries, and lints a markdown knowledge
+    base the agent maintains itself; "knowledge base" and "ingest" in such a
+    message are its words, not a research department's or a wiki blueprint's.
+    """
+    return _contains_phrase(normalized_query, ("llm wiki", "llm-wiki"))
 
 
 def _wiki_capture_destination_request(normalized_query: str, query_tokens: set[str]) -> bool:
@@ -10047,7 +10066,11 @@ def _visual_summary_guard_applies(normalized_query: str, query_tokens: set[str])
         and not _VISUAL_SUMMARY_NON_VISUAL_WORK_TOKENS & query_tokens
     ):
         return True
-    if _VISUAL_SUMMARY_CARD_TOKENS & query_tokens and _VISUAL_SUMMARY_OUTPUT_CONTEXT_TOKENS & query_tokens:
+    if (
+        _VISUAL_SUMMARY_CARD_TOKENS & query_tokens
+        and _VISUAL_SUMMARY_OUTPUT_CONTEXT_TOKENS & query_tokens
+        and not any(phrase_is_spoken(normalized_query, normalized_phrase(phrase)) for phrase in _WORK_ITEM_CARD_PHRASES)
+    ):
         return True
     if _VISUAL_SUMMARY_NON_VISUAL_WORK_TOKENS & query_tokens:
         return False

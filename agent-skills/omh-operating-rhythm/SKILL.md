@@ -1,6 +1,7 @@
 ---
 name: "omh-operating-rhythm"
 description: "[omh] Team minutes, retros, and decision history to keep: meeting minutes, scrum/sprint records, retros, decisions, and follow-up history. Use when the user says: operating-rhythm, operating rhythm, meeting minutes, meeting history, scrum record, sprint planning, sprint review, sprint retrospective."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, operations]
@@ -20,8 +21,8 @@ This is an OMH `operating-rhythm` workflow skill, projected for Agent Skills hos
 
 ## Do Not Use When
 
-- The user only needs a one-off meeting agenda before the meeting; use `meeting-brief`.
-- The request is a weekly status/risk summary rather than cadence history; use `ops-review`.
+- The user only needs a one-off meeting agenda before the meeting; use `omh-meeting-brief`.
+- The request is a weekly status/risk summary rather than cadence history; use `omh-ops-review`.
 - The user asks for report packaging, PPT outline, or reliability evidence review.
 
 ## Examples
@@ -51,7 +52,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should prepare or maintain recurring operating records such as meetings, scrums, sprint plans, retrospectives, decisions, and follow-ups.
 

@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+import re
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -155,6 +156,15 @@ V6_ONLY_PIPES = {
 }
 
 
+# `agent/skill_preprocessing.py` `_INLINE_SHELL_RE`, the same pattern at the
+# floor tag v2026.9.7 and at upstream 63d0b94120. With `skills.inline_shell`
+# on, `skill_view` replaces each match in a SKILL.md body with that command's
+# output, so a body carrying the shape would run a command on load. A linked
+# reference is served raw at both revisions (`_serve_skill_file` in
+# `tools/skills_tool_plugin.py`), which is why the pin reads bodies only.
+INLINE_SHELL = re.compile(r"!`([^`\n]+)`")
+
+
 def _skill_dirs() -> list[Path]:
     return [path for root in SHIPPED_SKILL_ROOTS for path in sorted(root.iterdir()) if path.is_dir()]
 
@@ -193,6 +203,19 @@ class HermesInstallScanTests(unittest.TestCase):
             "a skill body trips a Hermes install-scanner rule; reword the producer in "
             "src/skills (never the generated file), regenerate, and re-derive the digests:\n" + report,
         )
+
+    def test_no_shipped_skill_body_carries_an_inline_shell_command(self) -> None:
+        # No OMH skill means to run anything when it loads, so the count is zero
+        # across every shipped SKILL.md, the Agent Skills projection included.
+        shipped = sorted(path / "SKILL.md" for path in _skill_dirs())
+        self.assertTrue(shipped)
+        hits = [
+            f"{path.relative_to(REPO)}: {match.group(0)}"
+            for path in shipped
+            for match in INLINE_SHELL.finditer(path.read_text(encoding="utf-8"))
+        ]
+        self.assertEqual(hits, [], "a shipped skill body carries Hermes' inline-shell shape")
+        self.assertIsNotNone(INLINE_SHELL.search("Today is !`date`."), "the pattern no longer matches its own shape")
 
     def test_every_release_from_the_floor_up_has_its_scanner_vendored(self) -> None:
         requirement = declared_range(PLUGIN_MANIFEST)

@@ -1,6 +1,8 @@
 ---
 name: "omh-rules-distill"
 description: "[omh] Turn repeated lessons into written rules: extract repeated principles from skills, prompts, traces, reviews, and failures into reviewed rule candidates without auto-mutating guidance. Use when the user says: rules-distill, rules distill, distill rules, rule distillation, principle distill, skill principles, extract agent rules, turn traces into rules."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, knowledge]
@@ -8,6 +10,7 @@ metadata:
     phase: rules-distillation
     role: memory-keeper
     quality_tier: rules-distillation-gated
+    related_skills: [omh-workflow-learning, omh-wiki, omh-agent-instructions]
 ---
 
 # Rules Distill
@@ -20,10 +23,10 @@ This is a Hermes-native `rules-distill` workflow skill.
 
 ## Do Not Use When
 
-- The user wants a single workflow route regression; use `workflow-learning`.
-- The user wants durable factual project memory; use `wiki` or memory curation.
+- The user wants a single workflow route regression; use `omh-workflow-learning`.
+- The user wants durable factual project memory; use `omh-wiki` or memory curation.
 - The user already approved a concrete code/doc change; use the implementation workflow.
-- The ask is writing or keeping current the file an agent reads at startup -- AGENTS.md, CLAUDE.md, a Cursor rule; use `agent-instructions`, which updates only its marked region.
+- The ask is writing or keeping current the file an agent reads at startup -- AGENTS.md, CLAUDE.md, a Cursor rule; use `omh-agent-instructions`, which updates only its marked region.
 
 ## Examples
 
@@ -54,9 +57,9 @@ Bad example:
 
 - Current lane: **Automation and status** (`achievements`, `workspace-audit`, `production-audit`, `live-incident-response`, `automation-blueprint`, `github-event-ops`, `github-issue-intake`, `buzz`, `+39 more`) - schedules, status, health, and ops review.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use when Hermes should turn repeated workflow lessons, skill behavior, review comments, or failure traces into candidate rules that humans can review before docs or catalog changes.
 
@@ -127,4 +130,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

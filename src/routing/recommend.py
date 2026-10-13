@@ -54,6 +54,7 @@ from .policy import (
     explicit_skill_invocation,
     is_explicit_one_off_request,
     jit_learn_guard_applies,
+    llm_wiki_request,
     media_input_operator_guard_applies,
     ops_observability_external_blocked,
     ops_observability_generic_metrics_blocked,
@@ -5503,6 +5504,20 @@ def _context_alignment_offers_itself(normalized_query: str, query_tokens: set[st
     )
 
 
+_CODE_DIAGRAM_TOKENS = frozenset(
+    {
+        "code", "codebase", "repo", "repository", "module", "modules", "package", "packages", "class", "classes",
+        # A source tree or one of its folders is code to read the structure from.
+        "src", "folder", "folders", "directory", "directories",
+        # Infrastructure defined in code is still code to read the structure from.
+        "cdk", "terraform",
+    }
+)
+_INFRASTRUCTURE_DIAGRAM_TOKENS = frozenset(
+    {"aws", "gcp", "azure", "cloud", "vpc", "subnet", "subnets", "infrastructure", "infra", "kubernetes", "k8s", "svg"}
+)
+
+
 def _codebase_uml_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
     """Keep prose about architecture from offering the diagram workflow.
 
@@ -5513,8 +5528,13 @@ def _codebase_uml_offers_itself(normalized_query: str, query_tokens: set[str]) -
     code, or draw/picture aimed at the codebase. Explicit invocation overrides
     this, as `_score_definition` already exempts.
     """
-    if {"uml", "plantuml", "diagram", "diagrams", "다이어그램"} & query_tokens:
+    if {"uml", "plantuml"} & query_tokens:
         return True
+    if {"diagram", "diagrams", "다이어그램"} & query_tokens:
+        # Hermes bundles `architecture-diagram`, which draws a system, cloud,
+        # or infrastructure architecture the user describes. A diagram of
+        # infrastructure with no code to read the structure from is its job.
+        return not (_INFRASTRUCTURE_DIAGRAM_TOKENS & query_tokens and not _CODE_DIAGRAM_TOKENS & query_tokens)
     if any(token.startswith("시각화") for token in query_tokens):
         return True
     code_target = bool({"architecture", "code", "codebase", "repo", "repository"} & query_tokens)
@@ -5645,4 +5665,6 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     "prompt-import-readiness": _prompt_import_readiness_recommendation_applies,
     "physical-device-readiness": _physical_device_readiness_recommendation_applies,
     "sales-pipeline-review": _sales_pipeline_review_offers_itself,
+    # An LLM wiki is the pattern Hermes' bundled `llm-wiki` skill builds.
+    "wiki": lambda normalized_query, query_tokens: not llm_wiki_request(normalized_query),
 }

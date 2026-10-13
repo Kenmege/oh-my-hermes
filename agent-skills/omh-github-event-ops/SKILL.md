@@ -1,6 +1,7 @@
 ---
 name: "omh-github-event-ops"
 description: "[omh] Incoming GitHub PR, issue, or CI event: GitHub event operations: route PR, issue, CI, and review webhook events into triage, review, or fix handoff cards. Use when the user says: github-event-ops, github event ops, github ops, github triage, github pr, github review, github action, github actions."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, github-ops]
@@ -20,10 +21,10 @@ This is an OMH `github-event-ops` workflow skill, projected for Agent Skills hos
 
 ## Do Not Use When
 
-- One issue to file from a bug report or an idea, with no incoming event to route; use `github-issue-intake`.
-- A failing build log to diagnose, with no event routing left to decide; use `build-failure-triage`.
-- The event is a security advisory, a CVE in a dependency, or a leaked credential; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.
-- The PR is a dependabot or renovate version bump with no advisory; use `refactor-plan`, which decides whether it is safe to merge from the breaking changes against this repository's call sites.
+- One issue to file from a bug report or an idea, with no incoming event to route; use `omh-github-issue-intake`.
+- A failing build log to diagnose, with no event routing left to decide; use `omh-build-failure-triage`.
+- The event is a security advisory, a CVE in a dependency, or a leaked credential; use `omh-security-event-response`, which orders containment and closes only on an observed rotation or fix.
+- The PR is a dependabot or renovate version bump with no advisory; use `omh-refactor-plan`, which decides whether it is safe to merge from the breaking changes against this repository's call sites.
 
 ## Examples
 
@@ -55,7 +56,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes receives or is asked to reason about GitHub PR, issue, review, or CI events and must choose review, triage, or fix-handoff without claiming a bot ran.
 

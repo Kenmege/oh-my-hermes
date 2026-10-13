@@ -1,6 +1,7 @@
 ---
 name: "omh-meeting-brief"
 description: "[omh] Upcoming work meeting that lacks an agenda: agenda, prompts, decisions, and record template. Use when the user says: meeting-brief, meeting brief, meeting agenda, agenda, discussion prompts, decisions needed, record template, meeting topics."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, meeting]
@@ -51,7 +52,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should prepare a meeting agenda, discussion prompts, decision points, and a record template.
 

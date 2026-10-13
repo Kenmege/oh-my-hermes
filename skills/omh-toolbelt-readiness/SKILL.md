@@ -1,6 +1,8 @@
 ---
 name: "omh-toolbelt-readiness"
 description: "[omh] Which tools and credentials a workflow needs: inventory which MCP servers, CLIs, APIs, credentials, and connectors a workflow needs; use external-connector-readiness to assess one named integration and executor-runtime-readiness to choose the coding owner. Use when the user says: toolbelt-readiness, mcp readiness, tool readiness, plugin readiness, connector readiness, needed mcp, api credential, missing cli."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, tools]
@@ -8,6 +10,7 @@ metadata:
     phase: readiness-check
     role: tracker
     quality_tier: workflow-surface-gated
+    related_skills: [omh-external-connector-readiness, omh-executor-runtime-readiness]
 ---
 
 # Toolbelt Readiness
@@ -20,8 +23,8 @@ This is a Hermes-native `toolbelt-readiness` workflow skill.
 
 ## Do Not Use When
 
-- One named integration needs assessing end to end before adoption; use `external-connector-readiness`.
-- The question is which coding owner should run the work; use `executor-runtime-readiness`.
+- One named integration needs assessing end to end before adoption; use `omh-external-connector-readiness`.
+- The question is which coding owner should run the work; use `omh-executor-runtime-readiness`.
 - The user wants a tool installed, a credential validated, or a connector called now; the card names that step and who runs it, and performs none of them.
 
 ## Examples
@@ -53,9 +56,9 @@ Bad example:
 
 - Current lane: **Automation and status** (`achievements`, `workspace-audit`, `production-audit`, `live-incident-response`, `automation-blueprint`, `github-event-ops`, `github-issue-intake`, `buzz`, `+39 more`) - schedules, status, health, and ops review.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use when a workflow depends on MCP, CLI, API credentials, or connectors and Hermes must show installed, missing, optional, and unsafe tools.
 
@@ -118,4 +121,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

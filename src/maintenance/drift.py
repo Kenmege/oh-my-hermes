@@ -507,7 +507,19 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # The fourth review adds one, answered directly: a typed `/loop`
             # with its cadence whose prompt names `ulw-loop`, which dispatched
             # the goal loop before.
-            expected=510,
+            # Requests a skill Hermes bundles owns, and reviews of a work-board
+            # card, add eighteen: two reviews of what sits on a kanban card and
+            # a Trello card created for review, which dispatched `img-summary`
+            # (3); three infrastructure diagrams with no code to read, which
+            # dispatched `codebase-uml` (3); an article ingested into an LLM
+            # wiki and an LLM-wiki-style knowledge base from PDFs, which
+            # dispatched `research-department` (2); three LLM wikis of notes or
+            # in a vault, which dispatched `wiki` (3); and building an LLM wiki,
+            # two runs of the `simplify-code` skill, a PDF form, a PDF merge, a
+            # workbook column and a Word text edit, clarifies already that pin
+            # that none of them reaches an OMH wiki, cleanup or material lane
+            # (7).
+            expected=528,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -659,7 +671,17 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # install friction; and `ulw-loop` named after a cadence on a flaky
             # list and on build failures, which now open the goal loop where
             # app-debugging and build-failure-triage took them before.
-            expected=714,
+            # The bundled-skill boundary adds twelve on the OMH side of it: an
+            # image card beside a kanban card, and a dashboard card and a
+            # scoreboard card for a review, still reaching `img-summary` (3); a
+            # class diagram of a cloud SDK module, an architecture diagram of
+            # the codebase, one of an AWS CDK app, one of a cloud app from its
+            # services folder, one of a services directory, and one of AWS
+            # infrastructure from the src tree still reaching `codebase-uml`
+            # (6); a team wiki in Notion still reaching `wiki` (1); and a
+            # research department digest into an LLM wiki and a team's paper
+            # research pipeline still reaching `research-department` (2).
+            expected=726,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

@@ -1,6 +1,7 @@
 ---
 name: "omh-build-failure-triage"
 description: "[omh] Build or CI failure to triage: classify build, typecheck, lint, test, CI, and DCO failures into minimal safe fix handoffs. Use when the user says: build-failure-triage, build failure triage, build failure, build-failure, build fix, build failed, build failing, compile error."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, verification]
@@ -20,11 +21,11 @@ This is an OMH `build-failure-triage` workflow skill, projected for Agent Skills
 
 ## Do Not Use When
 
-- The user needs a pre-merge evidence matrix for passing or missing checks; use `verification-gate`.
-- The user needs a code review of changed behavior rather than failing command triage; use `code-review`.
-- The user needs broad production readiness; use `production-audit`.
-- The user asks for incident or SLO review after deployment; use `reliability-review`.
-- A test passes on some runs and not others, or the code returns a wrong value whose cause is unknown; use `app-debugging`.
+- The user needs a pre-merge evidence matrix for passing or missing checks; use `omh-verification-gate`.
+- The user needs a code review of changed behavior rather than failing command triage; use `omh-code-review`.
+- The user needs broad production readiness; use `omh-production-audit`.
+- The user asks for incident or SLO review after deployment; use `omh-reliability-review`.
+- A test passes on some runs and not others, or the code returns a wrong value whose cause is unknown; use `omh-app-debugging`.
 
 ## Examples
 
@@ -57,7 +58,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes must inspect a failing build, typecheck, lint, test, CI, or DCO signal and prepare the smallest evidence-backed remediation handoff without redesigning the system.
 

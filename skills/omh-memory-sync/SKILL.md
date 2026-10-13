@@ -1,6 +1,8 @@
 ---
 name: "omh-memory-sync"
 description: "[omh] Outdated or wrong Hermes memory entries: English-canonical Hermes memory-review guidance: inspect USER.md and MEMORY.md claims and prepare a native write diff without invoking, applying, or observing a native write; for a new fact use memory-new, and for a past decision use decision-recall. Use when the user says: memory-sync, memory curation, memory review, memory inspect, memory check, memory update, context cleanup, curate memory."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, memory]
@@ -8,6 +10,7 @@ metadata:
     phase: curation-review
     role: memory-keeper
     quality_tier: workflow-surface-gated
+    related_skills: [omh-memory-new, omh-decision-recall, omh-external-connector-readiness]
 ---
 
 # Memory Sync
@@ -20,9 +23,9 @@ This is a Hermes-native `memory-sync` workflow skill.
 
 ## Do Not Use When
 
-- The user states a new fact to remember; capture it with `memory-new`.
-- The user asks what was decided or rejected before; use `decision-recall`.
-- The user wants a memory provider enabled, switched, paused, or removed; use `external-connector-readiness`, which owns the provider slot.
+- The user states a new fact to remember; capture it with `omh-memory-new`.
+- The user asks what was decided or rejected before; use `omh-decision-recall`.
+- The user wants a memory provider enabled, switched, paused, or removed; use `omh-external-connector-readiness`, which owns the provider slot.
 
 ## Examples
 
@@ -53,7 +56,7 @@ Bad example:
 
 - Current lane: **Retained knowledge** (`memory-new`, `memory-sync`, `decision-recall`, `wiki`) - memory, rejected alternatives, wiki notes, retrieval, and staleness.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
 ## English-Canonical Interview Protocol
 
@@ -102,7 +105,7 @@ Ranking limits: pins guarantee inclusion but never override expiry, scope, persp
 
 Normal users talk to Hermes in natural language; `omh memory ...` commands are agent/operator references.
 
-## Use When
+## When to Use
 
 Use when existing Hermes USER.md, MEMORY.md, or accumulated skill memories need an English-canonical, claim-by-claim review. It prepares native write guidance only; no OMH surface invokes, applies, or observes a native write — a user-approved diff is applied by Hermes's own native memory tool. Do not use for new project or product candidates.
 
@@ -170,4 +173,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

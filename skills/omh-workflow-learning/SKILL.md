@@ -1,6 +1,8 @@
 ---
 name: "omh-workflow-learning"
 description: "[omh] Missed route or run lessons to record: classify and review self-improvement store routes as an auxiliary review lane before durable writes, then record workflow attempts as metadata-only traces, evals, review queues, patch proposals, regression cases, audits, indexes, and exports. Use when the user says: workflow-learning, workflow learning, route-signal, self-improvement store routing, store route review, memory skill wiki routing, learning trace, learning audit."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, optimization]
@@ -8,6 +10,7 @@ metadata:
     phase: workflow-learning
     role: tracker
     quality_tier: workflow-surface-gated
+    related_skills: [omh-memory-new, omh-instinct-ledger, omh-agent-debug]
 ---
 
 # Workflow Learning
@@ -20,9 +23,9 @@ This is a Hermes-native `workflow-learning` workflow skill.
 
 ## Do Not Use When
 
-- A lasting fact the user wants kept; capture it with `memory-new`.
-- Lessons seen across runs or projects to score and promote; use `instinct-ledger`.
-- A run that is stuck or looping right now; use `agent-debug`.
+- A lasting fact the user wants kept; capture it with `omh-memory-new`.
+- Lessons seen across runs or projects to score and promote; use `omh-instinct-ledger`.
+- A run that is stuck or looping right now; use `omh-agent-debug`.
 
 ## Examples
 
@@ -55,9 +58,9 @@ Bad example:
 
 - Current lane: **Automation and status** (`achievements`, `workspace-audit`, `production-audit`, `live-incident-response`, `automation-blueprint`, `github-event-ops`, `github-issue-intake`, `buzz`, `+39 more`) - schedules, status, health, and ops review.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use after a Hermes/OMH workflow attempt should become inspectable, evaluable, routed to memory/skill/wiki/failure-retrospective/automation review, persisted as a metadata-only store-route decision, queued for review, audited, replayable as a regression, converted to a patch handoff, exported, repaired after index drift, or captured as a missed-route signal without raw prompts. Store-route records are an auxiliary review lane surfaced by `learning review` and `learning store-routes`; they are not canonical learning index/export records until a reviewed destination produces its own artifact.
 
@@ -120,4 +123,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

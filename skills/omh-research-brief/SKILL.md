@@ -1,6 +1,8 @@
 ---
 name: "omh-research-brief"
 description: "[omh] Business question on market, competitors, pricing: business research brief - turns a market, competitor, pricing, or customer question into a structured evidence-vs-inference brief; for raw link gathering use ulw-research, and for ongoing multi-role research use research-department. Use when the user says: research-brief, business-research, business research, research brief, decision brief, pricing decision brief, decision-ready brief, source-backed business research."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, research]
@@ -8,6 +10,7 @@ metadata:
     phase: business-brief
     role: researcher
     quality_tier: source-gated
+    related_skills: [omh-product-discovery-validation, ulw-research, omh-source-finder]
 ---
 
 # Research Brief
@@ -20,9 +23,9 @@ This is a Hermes-native `research-brief` workflow skill.
 
 ## Do Not Use When
 
-- The user needs to decide whether a customer problem deserves product investment with evidence typing and customer re-entry; use `product-discovery-validation`.
-- The request is only fresh links, citations, or current facts without a business question or decision audience; use `research`.
-- Sources have not yet been selected and the user wants source types, candidates, or acquisition state; use `source-finder`.
+- The user needs to decide whether a customer problem deserves product investment with evidence typing and customer re-entry; use `omh-product-discovery-validation`.
+- The request is only fresh links, citations, or current facts without a business question or decision audience; use `ulw-research`.
+- Sources have not yet been selected and the user wants source types, candidates, or acquisition state; use `omh-source-finder`.
 
 ## Examples
 
@@ -54,9 +57,9 @@ Bad example:
 
 - Current lane: **Research and company ops** (`product-docs`, `source-finder`, `web-research`, `research`, `model-optimization`, `inference-serving`, `model-finetuning`, `research-brief`, `+20 more`) - research, signals, ops, and briefings.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use when Hermes should scope a business question, gather or summarize source-backed evidence, and preserve evidence/inference boundaries before strategy or handoff.
 
@@ -121,4 +124,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

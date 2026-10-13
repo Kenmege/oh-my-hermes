@@ -1,6 +1,7 @@
 ---
 name: "omh-physical-device-readiness"
 description: "[omh] Agent control of a robot, 3D printer, or IoT relay: gate robots, 3D printers, IoT relays, sensors, and lab hardware before trials; use external-connector-readiness for provider or connector adoption and toolbelt-readiness for missing control tools. Use when the user says: physical-device-readiness, physical device readiness, device safety readiness, physical device safety, hardware safety gate, 3d printer readiness, 3D printer safety, snapmaker printer safety."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, operations]
@@ -20,9 +21,9 @@ This is an OMH `physical-device-readiness` workflow skill, projected for Agent S
 
 ## Do Not Use When
 
-- The device is reached through a provider or connector the user has not adopted yet; use `external-connector-readiness`.
-- The tool that would control the device is missing; use `toolbelt-readiness`.
-- The user asks to run the command, move the hardware, or start the print now; use `command-operator` or `connector-operator`, which need observed operator approval before any execution claim.
+- The device is reached through a provider or connector the user has not adopted yet; use `omh-external-connector-readiness`.
+- The tool that would control the device is missing; use `omh-toolbelt-readiness`.
+- The user asks to run the command, move the hardware, or start the print now; use `omh-terminal` or `omh-apps`, which need observed operator approval before any execution claim.
 
 ## Examples
 
@@ -53,7 +54,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use before preparing or adopting a workflow that could move, heat, print, actuate, unlock, or otherwise affect physical devices so safety envelope, sensor/camera gates, dry-run policy, operator approval, emergency stop, and observation requirements are explicit.
 

@@ -1,6 +1,8 @@
 ---
 name: "omh-github-event-ops"
 description: "[omh] Incoming GitHub PR, issue, or CI event: GitHub event operations: route PR, issue, CI, and review webhook events into triage, review, or fix handoff cards. Use when the user says: github-event-ops, github event ops, github ops, github triage, github pr, github review, github action, github actions."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, github-ops]
@@ -8,6 +10,7 @@ metadata:
     phase: event-routing
     role: operator
     quality_tier: workflow-surface-gated
+    related_skills: [omh-github-issue-intake, omh-build-failure-triage, omh-security-event-response, omh-refactor-plan, github]
 ---
 
 # Github Event Ops
@@ -20,10 +23,11 @@ This is a Hermes-native `github-event-ops` workflow skill.
 
 ## Do Not Use When
 
-- One issue to file from a bug report or an idea, with no incoming event to route; use `github-issue-intake`.
-- A failing build log to diagnose, with no event routing left to decide; use `build-failure-triage`.
-- The event is a security advisory, a CVE in a dependency, or a leaked credential; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.
-- The PR is a dependabot or renovate version bump with no advisory; use `refactor-plan`, which decides whether it is safe to merge from the breaking changes against this repository's call sites.
+- One issue to file from a bug report or an idea, with no incoming event to route; use `omh-github-issue-intake`.
+- A failing build log to diagnose, with no event routing left to decide; use `omh-build-failure-triage`.
+- The event is a security advisory, a CVE in a dependency, or a leaked credential; use `omh-security-event-response`, which orders containment and closes only on an observed rotation or fix.
+- The PR is a dependabot or renovate version bump with no advisory; use `omh-refactor-plan`, which decides whether it is safe to merge from the breaking changes against this repository's call sites.
+- The user wants a GitHub operation carried out with the gh CLI - open or label an issue, open or merge a PR, leave review comments, manage a repository - rather than an incoming event routed to a handoff card; load Hermes' bundled `github` skill instead of this one.
 
 ## Examples
 
@@ -57,9 +61,9 @@ Bad example:
 
 - Current lane: **Automation and status** (`achievements`, `workspace-audit`, `production-audit`, `live-incident-response`, `automation-blueprint`, `github-event-ops`, `github-issue-intake`, `buzz`, `+39 more`) - schedules, status, health, and ops review.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use when Hermes receives or is asked to reason about GitHub PR, issue, review, or CI events and must choose review, triage, or fix-handoff without claiming a bot ran.
 
@@ -122,4 +126,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

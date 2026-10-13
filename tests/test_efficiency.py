@@ -367,7 +367,7 @@ class EfficiencyContractTests(unittest.TestCase):
         are asserted against each rendered body for representative core and full skills.
         """
         from omh.routing.chat import route_chat_message
-        from omh.skills.render import SHARED_RAIL_REFERENCE_PATH
+        from omh.skills.render import SHARED_RAIL_SKILL_VIEW
 
         templates = {template.name: template.content for template in builtin_skill_templates()}
         definitions = {definition.name: definition for definition in builtin_definitions()}
@@ -403,7 +403,7 @@ class EfficiencyContractTests(unittest.TestCase):
                     "native subagents -> Hermes delegation when available, otherwise sequential lanes",
                     content,
                 )
-                self.assertIn(SHARED_RAIL_REFERENCE_PATH, content)
+                self.assertIn(SHARED_RAIL_SKILL_VIEW, content)
 
     def test_omh_awareness_context_is_strong_but_bounded(self) -> None:
         workflow_skill_names = {template.name for template in builtin_skill_templates()} - {"oh-my-hermes"}

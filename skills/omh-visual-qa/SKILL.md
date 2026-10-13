@@ -1,6 +1,8 @@
 ---
 name: "omh-visual-qa"
 description: "[omh] Rendered UI needing a visual verdict: prepare observed-only rendered QA gates for web, frontend, image, document, and TUI surfaces. Use when the user says: visual-qa, visual qa, visual QA, visual quality assurance, visual check, web qa, web visual qa, screenshot qa."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, materials]
@@ -8,6 +10,7 @@ metadata:
     phase: visual-qa
     role: operator
     quality_tier: visual-qa-gated
+    related_skills: [omh-frontend, omh-design-quality-gate, omh-image-cards, dogfood]
 ---
 
 # Visual Qa
@@ -20,9 +23,9 @@ This is a Hermes-native `visual-qa` workflow skill.
 
 ## Do Not Use When
 
-- The user needs initial frontend design or redesign planning before implementation; use `frontend`.
-- The user needs a broad visual quality rubric before generation; use `design-quality-gate`.
-- The user needs image-card prompt creation; use `img-summary`.
+- The user needs initial frontend design or redesign planning before implementation; use `omh-frontend`.
+- The user needs a broad visual quality rubric before generation; use `omh-design-quality-gate`.
+- The user needs image-card prompt creation; use `omh-image-cards`.
 - The user wants non-visual code tests, CI, or PR review only; use the coding/review workflow.
 - Open-ended bug-hunting across a web app with no page, state, and viewport matrix or target revision to judge; on Hermes, use the bundled `dogfood` skill when it is available.
 
@@ -55,9 +58,9 @@ Bad example:
 
 - Current lane: **Materials and visual summaries** (`design-orchestration`, `apple-design`, `design-quality-gate`, `award-bar-score`, `frontend`, `accessibility-audit`, `visual-qa`, `content-operator`, `+6 more`) - web, accessibility, visual QA, files, and packages.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use after or during visual surface work when Hermes must define the render evidence, viewport/state coverage, diff review, oracle review, and PASS/REVISE/BLOCK verdict without fabricating QA.
 
@@ -176,4 +179,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

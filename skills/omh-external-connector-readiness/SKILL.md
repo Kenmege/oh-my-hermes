@@ -1,6 +1,8 @@
 ---
 name: "omh-external-connector-readiness"
 description: "[omh] Evaluating a plugin, connector, or API for adoption: external connector readiness - assess whether a named plugin, connector, API, data provider, or multimodal route is safe, affordable, fresh, and observable; use executor-runtime-readiness for coding-owner choice and toolbelt-readiness for missing capability inventory. Use when the user says: external-connector-readiness, external connector readiness, connector readiness matrix, plugin readiness matrix, provider readiness, api readiness, connector adoption, external plugin adoption."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, connector]
@@ -8,6 +10,7 @@ metadata:
     phase: connector-readiness
     role: guide
     quality_tier: workflow-surface-gated
+    related_skills: [omh-executor-runtime-readiness, omh-toolbelt-readiness, omh-live-info, omh-apps]
 ---
 
 # External Connector Readiness
@@ -20,9 +23,9 @@ This is a Hermes-native `external-connector-readiness` workflow skill.
 
 ## Do Not Use When
 
-- Choosing which coding owner runs a task; use `executor-runtime-readiness`.
-- Finding which tool, credential, or install is missing for work already chosen; use `toolbelt-readiness`.
-- A read-only live lookup or an external write through a connector already adopted; use `live-info-operator` or `connector-operator`.
+- Choosing which coding owner runs a task; use `omh-executor-runtime-readiness`.
+- Finding which tool, credential, or install is missing for work already chosen; use `omh-toolbelt-readiness`.
+- A read-only live lookup or an external write through a connector already adopted; use `omh-live-info` or `omh-apps`.
 
 ## Examples
 
@@ -61,9 +64,9 @@ Bad example:
 
 - Current lane: **Automation and status** (`achievements`, `workspace-audit`, `production-audit`, `live-incident-response`, `automation-blueprint`, `github-event-ops`, `github-issue-intake`, `buzz`, `+39 more`) - schedules, status, health, and ops review.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use before adopting, enabling, or routing an external plugin/connector/API when Hermes must compare capability, auth, cost, modality, freshness, safety, fallback, and observable trial evidence. Use it for an optional memory provider too, where enabling, switching, pausing, or removing it also needs identity scope, automatic hooks, retention, deletion, export, and switching answered before adoption.
 
@@ -154,4 +157,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

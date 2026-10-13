@@ -7323,7 +7323,7 @@ def awareness_workflow_context_markdown(skill_name: str) -> str:
             f"- {lane_line}",
             "- If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.",
             "- Shared product, routing, compatibility, and evidence rules: "
-            "`omh-routing/references/skill-common-rail.md`.",
+            "`skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.",
         ]
     )
 

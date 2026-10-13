@@ -808,8 +808,11 @@ _ULTRAPROCESS_OBLIGATIONS = (
         "unique",
         "missing_loop_routing_boundary",
         (
+            # The rendered body names the sibling by the label `skill_view`
+            # loads (`loadable_skill_mentions` in `skills/render.py`); the
+            # carried catalog line below keeps the canonical `loop`.
             SectionRequirement(
-                "Do Not Use When", ("open-ended feedback loop or long-horizon campaign", "use `loop`")
+                "Do Not Use When", ("open-ended feedback loop or long-horizon campaign", "use `ulw-loop`")
             ),
         ),
         carried=(

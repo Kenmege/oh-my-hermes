@@ -1,6 +1,7 @@
 ---
 name: "omh-research-brief"
 description: "[omh] Business question on market, competitors, pricing: business research brief - turns a market, competitor, pricing, or customer question into a structured evidence-vs-inference brief; for raw link gathering use ulw-research, and for ongoing multi-role research use research-department. Use when the user says: research-brief, business-research, business research, research brief, decision brief, pricing decision brief, decision-ready brief, source-backed business research."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, research]
@@ -20,9 +21,9 @@ This is an OMH `research-brief` workflow skill, projected for Agent Skills hosts
 
 ## Do Not Use When
 
-- The user needs to decide whether a customer problem deserves product investment with evidence typing and customer re-entry; use `product-discovery-validation`.
-- The request is only fresh links, citations, or current facts without a business question or decision audience; use `research`.
-- Sources have not yet been selected and the user wants source types, candidates, or acquisition state; use `source-finder`.
+- The user needs to decide whether a customer problem deserves product investment with evidence typing and customer re-entry; use `omh-product-discovery-validation`.
+- The request is only fresh links, citations, or current facts without a business question or decision audience; use `ulw-research`.
+- Sources have not yet been selected and the user wants source types, candidates, or acquisition state; use `omh-source-finder`.
 
 ## Examples
 
@@ -52,7 +53,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should scope a business question, gather or summarize source-backed evidence, and preserve evidence/inference boundaries before strategy or handoff.
 

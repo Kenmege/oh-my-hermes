@@ -1,6 +1,8 @@
 ---
 name: "omh-browser"
 description: "[omh] Browser login, click, or form task: policy overlay for browser tasks - add auth, confirmation, and observed-trace gates after preferring the native browser for ordinary URL, click, login, and form actions. Use when the user says: browser-operator, browser operator, browser task, browser operation, browser automation, browser session, webpage operation, web page operation."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, browser]
@@ -8,6 +10,7 @@ metadata:
     phase: browser-task
     role: guide
     quality_tier: workflow-surface-gated
+    related_skills: [omh-visual-qa, omh-web-research]
 ---
 
 # Browser Operator
@@ -21,8 +24,8 @@ This is a Hermes-native `browser-operator` workflow skill.
 ## Do Not Use When
 
 - An ordinary read of a public page with no sign-in, form, or purchase; use the native browser tools directly unless OMH's browser adapter bridge is enabled, which blocks them.
-- The question is whether a page looks right at each viewport; use `visual-qa`.
-- A web lookup or a cited answer rather than an interaction with a page; use `web-research`.
+- The question is whether a page looks right at each viewport; use `omh-visual-qa`.
+- A web lookup or a cited answer rather than an interaction with a page; use `omh-web-research`.
 
 ## Examples
 
@@ -59,9 +62,9 @@ Bad example:
 
 - Current lane: **Automation and status** (`achievements`, `workspace-audit`, `production-audit`, `live-incident-response`, `automation-blueprint`, `github-event-ops`, `github-issue-intake`, `buzz`, `+39 more`) - schedules, status, health, and ops review.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use when Hermes should prepare or supervise a browser/page interaction request such as opening a URL, clicking, logging in, filling forms, or capturing page blockers without claiming browser execution.
 
@@ -135,4 +138,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

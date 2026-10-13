@@ -1,6 +1,7 @@
 ---
 name: "omh-report-package"
 description: "[omh] Periodic report for executives: weekly/monthly reports, executive briefs, PPT-ready outlines, and upload packages. Use when the user says: report-package, report package, weekly report, monthly report, executive report, exec brief, leadership deck, status package."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, reporting]
@@ -20,7 +21,7 @@ This is an OMH `report-package` workflow skill, projected for Agent Skills hosts
 
 ## Do Not Use When
 
-- The user needs SLO, incident, or error-budget review; use `reliability-review`.
+- The user needs SLO, incident, or error-budget review; use `omh-reliability-review`.
 - The user asks for a live `.pptx` deck file rather than a PPT-ready outline.
 - The request is meeting minutes, scrum history, or action-item tracking.
 
@@ -51,7 +52,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should turn supplied inputs into a report, executive brief, PPT-ready outline, or upload package without claiming presentation delivery.
 

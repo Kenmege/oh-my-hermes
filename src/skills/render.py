@@ -5,6 +5,7 @@ from dataclasses import dataclass, fields, replace
 from typing import Literal
 from functools import lru_cache
 import json
+import re
 
 from .catalog import (
     DEEP_INTERVIEW_MAX_ROUNDS,
@@ -17,6 +18,7 @@ from .catalog import (
     decision_frontier_policy,
     declared_primary_harness,
     harness_quality_contract,
+    installable_skill_definitions,
     memory_context_policy_for_skill,
     omh_description,
     omh_skill_display_name,
@@ -36,9 +38,11 @@ from .catalog_types import (
     EXECUTION_WAIT_DISCIPLINE_RULE,
     HERMES_SCANNER_EXCLUDED_TERMS,
     HermesReferenceLine,
+    HermesSkillLine,
     LLM_APP_DEV_EVAL_DELIVERABLES,
     LLM_APP_DEV_PUBLIC_BOARD_ACTIONS,
     LLM_APP_DEV_RAILS,
+    skill_view_call,
 )
 from .llm_app_references import (
     LLM_APP_DEV_CONDITIONAL_CONTRACTS,
@@ -87,6 +91,11 @@ from ..workflows.wiki_patterns import wiki_agent_reader_rules, wiki_operation_ru
 
 
 WORKFLOW_REGISTRY_TRIGGER_LIMIT = 9
+
+# The package's own `license` and `authors` in pyproject.toml, which
+# `tests/test_loadable_sibling_names.py` holds these to.
+SKILL_LICENSE = "MIT"
+SKILL_AUTHOR = "oh-my-hermes maintainers"
 
 
 @dataclass(frozen=True)
@@ -160,10 +169,14 @@ GOAL_STATUS_REFERENCE_CONTEXT = (
 # verbatim policy text below is the single maintained copy.
 # Points at the installed directory, which carries the display label.
 SHARED_RAIL_REFERENCE_PATH = "omh-routing/references/skill-common-rail.md"
+# The same file as the `skill_view` call that loads it.
+SHARED_RAIL_SKILL_VIEW = skill_view_call(SHARED_RAIL_REFERENCE_PATH)
 
 # Cross-skill pointer to the structural-code-search playbook reference owned by
 # the router skill. Like the shared rail, it uses the installed directory label.
 STRUCTURAL_SEARCH_REFERENCE_PATH = "omh-routing/references/structural-code-search.md"
+# The operator reference for `omh runtime workflow-artifact`, owned by the router skill.
+WORKFLOW_ARTIFACTS_REFERENCE_PATH = "omh-routing/references/workflow-artifacts.md"
 
 HARNESS_DISCIPLINE_RULES = (
     "Start from the representative harness registry in `oh-my-hermes` when the workflow needs coding, "
@@ -282,12 +295,66 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `{SHARED_RAIL_REFERENCE_PATH}`. Load it when applicable; otherwise name an unavailable capability."""
+Shared product, compatibility, topology, memory, harness, and execution rules: `{SHARED_RAIL_SKILL_VIEW}`. Load it when applicable; otherwise name an unavailable capability."""
 
 
 @lru_cache(maxsize=1)
 def _definitions_by_name() -> dict[str, SkillDefinition]:
     return {definition.name: definition for definition in builtin_definitions()}
+
+
+# A sibling named in a `do_not_use_when` line: a backticked token in the catalog
+# name shape, the same shape `tests/test_catalog_deference_policy.py` reads the
+# deference graph with.
+_BACKTICKED_SKILL_NAME = re.compile(r"`([a-z0-9][a-z0-9-]*)`")
+
+
+@lru_cache(maxsize=1)
+def _installable_skill_names() -> frozenset[str]:
+    return frozenset(definition.name for definition in installable_skill_definitions())
+
+
+def loadable_skill_mentions(line: str) -> str:
+    """Rewrite each backticked installed catalog name in `line` to its display label.
+
+    Applied where a body hands work to a sibling: the `## Do Not Use When`
+    lines and the handoff policy.
+
+    `skill_view` loads a skill by the label its directory carries (`omh-apps`,
+    `ulw-research`), not by the canonical catalog name (`connector-operator`,
+    `research`), so a sibling named canonically is a pointer the model cannot
+    follow. The catalog keeps canonical names, which routing and the deference
+    graph read; only the rendered line changes. A name that is not installed
+    stays as written, because no label would load it either.
+    """
+    installed = _installable_skill_names()
+
+    def _label(match: re.Match[str]) -> str:
+        name = match.group(1)
+        return f"`{omh_skill_display_name(name)}`" if name in installed else match.group(0)
+
+    return _BACKTICKED_SKILL_NAME.sub(_label, line)
+
+
+def related_skill_names(definition: SkillDefinition) -> tuple[str, ...]:
+    """The skills this body hands a request to, by the name Hermes loads each one under.
+
+    Derived from `do_not_use_when` rather than declared beside it: every
+    installed catalog sibling its lines name, as a display label, and every
+    bundled Hermes skill its `HermesSkillLine`s name, each once and in the
+    order the lines name them. Rendered as `metadata.hermes.related_skills`,
+    which `skill_view` returns beside the body; Hermes' per-turn skill index
+    does not read it.
+    """
+    installed = _installable_skill_names()
+    related: list[str] = []
+    for line in definition.do_not_use_when:
+        for name in _BACKTICKED_SKILL_NAME.findall(line):
+            if name in installed and name != definition.name:
+                related.append(omh_skill_display_name(name))
+        if isinstance(line, HermesSkillLine):
+            related.extend(line.skills)
+    return tuple(dict.fromkeys(related))
 
 
 # A host's skill picker reads frontmatter `name` + `description` only — the
@@ -419,14 +486,28 @@ def _frontmatter(
     display_name = omh_skill_display_name(name)
     encoded_name = json.dumps(display_name, ensure_ascii=False)
     encoded_description = json.dumps(description, ensure_ascii=False)
+    # Hermes' skill linter asks every skill for `license` and `author`. The
+    # Agent Skills spec defines `license` and no `author`, so the portable
+    # projection carries only the first.
+    provenance = f"license: {SKILL_LICENSE}\n" + (
+        f"author: {json.dumps(SKILL_AUTHOR)}\n" if target == "hermes" else ""
+    )
     return (
-        f"---\nname: {encoded_name}\ndescription: {encoded_description}\n{compatibility}metadata:\n"
+        f"---\nname: {encoded_name}\ndescription: {encoded_description}\n{provenance}{compatibility}metadata:\n"
         f"  hermes:\n    tags: [workflow, oh-my-hermes, {category}]\n"
         f"    category: {category}\n    phase: {phase}\n"
         f"    role: {definition.hermes_role if definition else 'guide'}\n"
         f"    quality_tier: {definition.quality_tier if definition else 'evidence-gated'}\n"
-        f"{_requires_tools_line(definition, target)}---\n"
+        f"{_related_skills_line(definition, target)}{_requires_tools_line(definition, target)}---\n"
     )
+
+
+def _related_skills_line(definition: SkillDefinition | None, target: str) -> str:
+    """Hermes `related_skills`: `skill_view` returns it beside the body. Hermes-only."""
+    related = related_skill_names(definition) if definition is not None and target == "hermes" else ()
+    if not related:
+        return ""
+    return f"    related_skills: [{', '.join(related)}]\n"
 
 
 def _requires_tools_line(definition: SkillDefinition | None, target: str) -> str:
@@ -578,7 +659,7 @@ def _quality_rubric_sections(
 {_opening_steps_block(definition)}
 ## Do Not Use When
 
-{_tuple_list(definition.do_not_use_when)}
+{_tuple_list(tuple(loadable_skill_mentions(line) for line in definition.do_not_use_when))}
 
 ## Examples
 
@@ -618,7 +699,7 @@ def _skill_metadata_block(
     definition = _target_definition(definition, target)
     role = f"Hermes role: `{definition.hermes_role}`\n" if target == "hermes" else ""
     handoff = (
-        f"\n\nHandoff policy:\n\n{definition.handoff_policy}"
+        f"\n\nHandoff policy:\n\n{loadable_skill_mentions(definition.handoff_policy)}"
         f"{_executor_readiness_skill_note(definition)}{_delegation_transparency_skill_note(definition)}"
         f"{_route_capacity_skill_note(definition)}"
         if target == "hermes" else ""
@@ -1594,7 +1675,7 @@ Ranking limits: pins guarantee inclusion but never override expiry, scope, persp
 
 Normal users talk to Hermes in natural language; `omh memory ...` commands are agent/operator references.
 
-## Use When
+## When to Use
 
 {definition.use_when}
 
@@ -1763,7 +1844,7 @@ question is Round {soft_round}; if they choose to plan, stop rule 2 applies.
 These are stop rules you follow, not caps OMH enforces. When torn between one more question and
 stopping, stop and plan.
 
-## Use When
+## When to Use
 
 {definition.use_when}
 
@@ -1813,7 +1894,7 @@ Legacy v1 material is migration/review-required: show `memory inventory` counts 
 
 Normal users use natural-language Hermes chat. `omh memory ...` commands are agent/operator control-plane references, not normal-user setup.
 
-## Use When
+## When to Use
 
 {definition.use_when}
 
@@ -1863,7 +1944,7 @@ When work finishes, the capture for the next reader is three artifacts: a deep g
 
 A `{WIKI_BLUEPRINT_SCHEMA_VERSION}` is a prepared design artifact, not evidence that a store was created, written to, or migrated. OMH does not host the wiki; the user's own store does.
 
-## Use When
+## When to Use
 
 {definition.use_when}
 
@@ -2407,7 +2488,7 @@ platform identity layered over source `hermes`, safe evidence boundaries, and
 progressive guidance. Block's Buzz relay and CLI own their runtime semantics.
 
 """
-    content = template.content.replace("## Use When\n", lane_section + "## Use When\n", 1)
+    content = template.content.replace("## When to Use\n", lane_section + "## When to Use\n", 1)
     return SkillTemplate(template.name, content)
 
 
@@ -2616,20 +2697,21 @@ def _target_definition(
         return definition
     if target != "agent-skills":
         raise ValueError(f"Unsupported skill target: {target}")
-    misplaced = sorted(
-        field.name for field in fields(definition)
-        if field.name != "quality_bar"
-        and isinstance(getattr(definition, field.name), tuple)
-        and any(isinstance(item, HermesReferenceLine) for item in getattr(definition, field.name))
-    )
-    if misplaced:
-        # Only quality_bar is filtered below; anywhere else the line would
-        # reach the portable body pointing at a reference it does not ship.
-        raise ValueError(f"{definition.name}: HermesReferenceLine is honoured only in quality_bar, found in {misplaced}")
-    if any(isinstance(line, HermesReferenceLine) for line in definition.quality_bar):
-        definition = replace(definition, quality_bar=tuple(
-            line for line in definition.quality_bar if not isinstance(line, HermesReferenceLine)
-        ))
+    # Each Hermes-only line type is filtered from one field below; anywhere
+    # else the line would reach the portable body pointing at a reference it
+    # does not ship or a skill its host does not bundle.
+    for line_type, honoured in ((HermesReferenceLine, "quality_bar"), (HermesSkillLine, "do_not_use_when")):
+        misplaced = sorted(
+            field.name for field in fields(definition)
+            if field.name != honoured
+            and isinstance(getattr(definition, field.name), tuple)
+            and any(isinstance(item, line_type) for item in getattr(definition, field.name))
+        )
+        if misplaced:
+            raise ValueError(f"{definition.name}: {line_type.__name__} is honoured only in {honoured}, found in {misplaced}")
+        lines = getattr(definition, honoured)
+        if any(isinstance(line, line_type) for line in lines):
+            definition = replace(definition, **{honoured: tuple(line for line in lines if not isinstance(line, line_type))})
     overrides = definition.portable_overrides
     return replace(definition, **{
         field: "\n".join(lines) if isinstance(getattr(definition, field), str) else lines
@@ -2661,7 +2743,7 @@ def _workflow_full_body(
 
 {awareness}
 
-## Use When
+## When to Use
 
 {definition.use_when}
 
@@ -2688,7 +2770,7 @@ holds the workflow-specific detail without copying those shared rails.
 
 {_quality_rubric_sections(definition)}
 
-## Use When
+## When to Use
 
 {definition.use_when}
 
@@ -2708,7 +2790,7 @@ Quality bar:
 
 Handoff policy:
 
-{definition.handoff_policy}{_executor_readiness_skill_note(definition)}{_delegation_transparency_skill_note(definition)}
+{loadable_skill_mentions(definition.handoff_policy)}{_executor_readiness_skill_note(definition)}{_delegation_transparency_skill_note(definition)}
 
 Required inputs:
 
@@ -2747,9 +2829,9 @@ def _progressive_workflow_body(definition: SkillDefinition, name: str) -> str:
 
 **HOLD:** Missing inputs or failed contract gates. Prepared OMH routing is not execution or approval. **Completion:** Follow the full-contract checklist.
 
-Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+Shared product, routing, compatibility, and evidence rules: `{SHARED_RAIL_SKILL_VIEW}`.
 
-Agent/operator: `omh runtime workflow-artifact {name} {operation} --input <json-file-or->` {verb} bounded metadata only. Shared operator reference: `omh-routing/references/workflow-artifacts.md`.
+Agent/operator: `omh runtime workflow-artifact {name} {operation} --input <json-file-or->` {verb} bounded metadata only. Shared operator reference: `{skill_view_call(WORKFLOW_ARTIFACTS_REFERENCE_PATH)}`.
 
 Contract: `references/full-contract.md`. Procedure: `references/procedure.md`.
 
@@ -4436,7 +4518,7 @@ _STRUCTURAL_SEARCH_SECTION = (
     "## Structural Code Search\n"
     "\n"
     "When the target is a syntactic shape rather than a string, load "
-    f"`{STRUCTURAL_SEARCH_REFERENCE_PATH}` before searching. "
+    f"`{skill_view_call(STRUCTURAL_SEARCH_REFERENCE_PATH)}` before searching. "
     "If ast-grep is not on PATH, use grep/ripgrep exactly as today. Cap exploration to a few bounded, "
     "targeted queries before reading a full file, escalate to a wider query only when a bounded pass "
     "finds nothing or stays ambiguous, and stop once the target is found.\n"
@@ -6944,7 +7026,7 @@ before mutation unless that separate action is authorized.
 - Current lane: **Research and company ops**. Stay read-only and return to the
   router when the request belongs to another workflow.
 - Shared product, routing, compatibility, and evidence rules:
-  `omh-routing/references/skill-common-rail.md`.
+  `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
 ## Completion Checklist
 

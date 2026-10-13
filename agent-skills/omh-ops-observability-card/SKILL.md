@@ -1,6 +1,7 @@
 ---
 name: "omh-ops-observability-card"
 description: "[omh] Tracking cost, tokens, latency, or service health: prepare an operations command-board for wrapper-safe token, cost, latency, run history, queue, failure-mode, external metric-provider, and service-quality evidence boundaries. Use when the user says: ops-observability-card, observability card, operations command board, ops command board, service quality board, service quality, external metric provider, metric provider."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, observability]
@@ -21,7 +22,7 @@ This is an OMH `ops-observability-card` workflow skill, projected for Agent Skil
 ## Do Not Use When
 
 - The user asks what their own Hermes conversation has used or cost; Hermes' /usage shows this session's tokens and context, /insights estimates cost across recent sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost.
-- The user wants one run's timing and context-budget report; use `run-efficiency`.
+- The user wants one run's timing and context-budget report; use `omh-run-efficiency`.
 - The user asks OMH to sign in to a metric provider, billing console, or dashboard and pull live figures; the card reads only supplied payloads and Hermes' own records.
 
 ## Examples
@@ -51,7 +52,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when automation, loops, gateway work, executor handoffs, or service operations need a safe command-board for cost, latency, token, history, failure-mode, supplied metric-provider, and service-quality visibility.
 

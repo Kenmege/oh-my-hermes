@@ -1,6 +1,7 @@
 ---
 name: "omh-run-efficiency"
 description: "[omh] Run efficiency and context usage report: report supplied local run efficiency while provider data stays unobserved. Use when the user says: run-efficiency, run efficiency report, local run efficiency, context utilization, tool duration report, 실행 효율 리포트, 컨텍스트 사용량, 도구 지연 시간."
+license: MIT
 compatibility: "Requires the omh CLI on PATH (pip install oh-my-hermes)."
 metadata:
   hermes:
@@ -22,7 +23,7 @@ This is an OMH `run-efficiency` workflow skill, projected for Agent Skills hosts
 ## Do Not Use When
 
 - The user asks only what this Hermes conversation has used or cost so far; Hermes' /usage shows this session's tokens and context, /insights estimates cost across recent sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost.
-- The user wants service latency, uptime, error rates, or supplied metric-provider figures; use `ops-observability-card`.
+- The user wants service latency, uptime, error rates, or supplied metric-provider figures; use `omh-ops-observability-card`.
 - The user wants a provider invoice or quota truth; no OMH report observes either, so name the provider's own console as the source.
 
 ## Examples
@@ -52,7 +53,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use for a bounded local efficiency report from supplied metadata with provider gaps explicit.
 

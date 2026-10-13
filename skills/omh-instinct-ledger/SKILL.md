@@ -1,6 +1,8 @@
 ---
 name: "omh-instinct-ledger"
 description: "[omh] Recurring lessons worth promoting: turn repeated project or cross-project lessons into atomic, confidence-scored instinct candidates with scoped promotion and export boundaries. Use when the user says: instinct-ledger, instinct ledger, project instincts, project-scoped instincts, project scoped instincts, global instincts, instinct review, instinct candidate."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, optimization]
@@ -8,6 +10,7 @@ metadata:
     phase: instinct-ledger
     role: tracker
     quality_tier: workflow-surface-gated
+    related_skills: [omh-workflow-learning, omh-rules-distill, omh-agent-debug]
 ---
 
 # Instinct Ledger
@@ -20,9 +23,9 @@ This is a Hermes-native `instinct-ledger` workflow skill.
 
 ## Do Not Use When
 
-- A single missed route or one run's trace; use `workflow-learning` first.
-- Writing reviewed lessons into AGENTS guidance, prompts, or skills; use `rules-distill`.
-- A run that is stuck right now; use `agent-debug` before drawing a lesson from it.
+- A single missed route or one run's trace; use `omh-workflow-learning` first.
+- Writing reviewed lessons into AGENTS guidance, prompts, or skills; use `omh-rules-distill`.
+- A run that is stuck right now; use `omh-agent-debug` before drawing a lesson from it.
 
 ## Examples
 
@@ -56,9 +59,9 @@ Bad example:
 
 - Current lane: **Automation and status** (`achievements`, `workspace-audit`, `production-audit`, `live-incident-response`, `automation-blueprint`, `github-event-ops`, `github-issue-intake`, `buzz`, `+39 more`) - schedules, status, health, and ops review.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use when Hermes should review repeated observations, user corrections, workflow lessons, or failure patterns as atomic project-scoped or global instinct candidates with confidence, evidence, promotion, import, or export decisions.
 
@@ -125,4 +128,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

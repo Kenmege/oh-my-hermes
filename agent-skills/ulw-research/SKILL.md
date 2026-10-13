@@ -1,6 +1,7 @@
 ---
 name: "ulw-research"
 description: "[omh] Deep dive before a decision: deep research engine - grounding for specs and decisions: study open-source reference implementations with pinned refs, gather live web evidence with citation discipline, verify contested claims, and distill a decision-grounding dossier that planning consumes; for a decision brief use research-brief, for upstream guidance use web-research. Use when the user says: research plan, literature review, research literature, review recent papers, deep research, deep-research, exhaustive research, saturation research."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, research]
@@ -24,14 +25,14 @@ This is an OMH `research` workflow skill, projected for Agent Skills hosts (Clau
 
 ## Do Not Use When
 
-- The user asks for a full plan-to-PR delivery cycle; use `ultrawork` (its `delivery_boundary` capability) or a planning workflow after research instead.
+- The user asks for a full plan-to-PR delivery cycle; use `ulw-work` (its `delivery_boundary` capability) or a planning workflow after research instead.
 - The request is purely local repo inspection with no external, current, citation, or source-comparison need.
-- The study target is this repository itself rather than external references; use `codebase-onboarding`.
+- The study target is this repository itself rather than external references; use `omh-codebase-onboarding`.
 - The user needs coding execution, review, CI, or merge evidence rather than research synthesis.
-- The requested output is a typed candidate list or acquisition status without factual synthesis; use `source-finder`.
-- The user needs a market, customer, or pricing decision brief with evidence-versus-inference treatment; use `research-brief`.
-- The user asks for recurring monitoring, a source inbox, or Scout/Analyst/Briefer operations; use `research-department`.
-- One cited retrieval round settles the question and no reference implementation needs reading; use `web-research`.
+- The requested output is a typed candidate list or acquisition status without factual synthesis; use `omh-source-finder`.
+- The user needs a market, customer, or pricing decision brief with evidence-versus-inference treatment; use `omh-research-brief`.
+- The user asks for recurring monitoring, a source inbox, or Scout/Analyst/Briefer operations; use `omh-research-department`.
+- One cited retrieval round settles the question and no reference implementation needs reading; use `omh-web-research`.
 
 ## Examples
 
@@ -66,7 +67,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use for research before planning, deciding, or handoff - from current web evidence and citations to exhaustive grounding with studied reference implementations and verified contested claims.
 

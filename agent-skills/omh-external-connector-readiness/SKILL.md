@@ -1,6 +1,7 @@
 ---
 name: "omh-external-connector-readiness"
 description: "[omh] Evaluating a plugin, connector, or API for adoption: external connector readiness - assess whether a named plugin, connector, API, data provider, or multimodal route is safe, affordable, fresh, and observable; use executor-runtime-readiness for coding-owner choice and toolbelt-readiness for missing capability inventory. Use when the user says: external-connector-readiness, external connector readiness, connector readiness matrix, plugin readiness matrix, provider readiness, api readiness, connector adoption, external plugin adoption."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, connector]
@@ -20,9 +21,9 @@ This is an OMH `external-connector-readiness` workflow skill, projected for Agen
 
 ## Do Not Use When
 
-- Choosing which coding owner runs a task; use `executor-runtime-readiness`.
-- Finding which tool, credential, or install is missing for work already chosen; use `toolbelt-readiness`.
-- A read-only live lookup or an external write through a connector already adopted; use `live-info-operator` or `connector-operator`.
+- Choosing which coding owner runs a task; use `omh-executor-runtime-readiness`.
+- Finding which tool, credential, or install is missing for work already chosen; use `omh-toolbelt-readiness`.
+- A read-only live lookup or an external write through a connector already adopted; use `omh-live-info` or `omh-apps`.
 
 ## Examples
 
@@ -59,7 +60,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use before adopting, enabling, or routing an external plugin/connector/API when Hermes must compare capability, auth, cost, modality, freshness, safety, fallback, and observable trial evidence. Use it for an optional memory provider too, where enabling, switching, pausing, or removing it also needs identity scope, automatic hooks, retention, deletion, export, and switching answered before adoption.
 

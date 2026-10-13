@@ -16,6 +16,7 @@ from .catalog_types import (
     EXECUTION_WAIT_DISCIPLINE_RULE,
     HERMES_USAGE_SURFACES_CLAUSE,
     HermesReferenceLine,
+    HermesSkillLine,
     _GENERAL_RECOVERY_NOTES,
     _feature_surface_skill,
 )
@@ -98,6 +99,10 @@ _FEATURE_SURFACE_SKILLS = (
         extra_do_not_use_when=(
             "The event is a security advisory, a CVE in a dependency, or a leaked credential; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.",
             "The PR is a dependabot or renovate version bump with no advisory; use `refactor-plan`, which decides whether it is safe to merge from the breaking changes against this repository's call sites.",
+            HermesSkillLine(
+                "The user wants a GitHub operation carried out with the gh CLI - open or label an issue, open or merge a PR, leave review comments, manage a repository - rather than an incoming event routed to a handoff card; load Hermes' bundled `github` skill instead of this one.",
+                ("github",),
+            ),
         ),
     ),
     _feature_surface_skill(
@@ -161,6 +166,10 @@ _FEATURE_SURFACE_SKILLS = (
         ),
         extra_do_not_use_when=(
             "A multi-lane implementation of an accepted plan is ultrawork, which prepares its durable lanes through this board.",
+            HermesSkillLine(
+                "The turn is a Kanban worker that the review dispatcher started on a review-lane task to verify a review-requested handoff; that worker loads Hermes' bundled `sdlc-review` skill, not this one.",
+                ("sdlc-review",),
+            ),
         ),
         situations=(
             "board for my agents",
@@ -1328,6 +1337,12 @@ _FEATURE_SURFACE_SKILLS = (
             "If the request asks to send, post, invite, ticket, or mutate an external app, route to connector-operator before claiming delivery.",
             "If the request asks for PDF, PPT, DOCX, HWP, spreadsheet, or attachment packaging, route to materials-package or deliverable-package.",
             "If the request is a simple one-off sentence or paragraph transformation, answer directly instead of opening a workflow.",
+        ),
+        extra_do_not_use_when=(
+            HermesSkillLine(
+                "The user wants a draft to stop sounding machine-written - strip AI tells or match their own voice - with no audience, source, or review gate to scope; load Hermes' bundled `humanizer` skill instead of this one.",
+                ("humanizer",),
+            ),
         ),
         situations=(
             "write the changelog for this version",

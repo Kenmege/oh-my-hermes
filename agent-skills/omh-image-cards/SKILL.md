@@ -1,6 +1,7 @@
 ---
 name: "omh-image-cards"
 description: "[omh] Infographic card for meeting notes, a report, or PR: image prompt cards - turn meetings, reports, PRs, issues, research, and releases into domain-aware image prompt cards. Use when the user says: img-summary, img summary, visual prompt card, image card, image generation, image edit, edit this image, remove the background."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, materials]
@@ -20,8 +21,8 @@ This is an OMH `img-summary` workflow skill, projected for Agent Skills hosts (C
 
 ## Do Not Use When
 
-- The user needs a deck, PDF, spreadsheet, HWP, Markdown package, or binary file export plan; use `materials-package`.
-- The user wants a text-only report, leadership brief, or PPT-ready outline; use `report-package`.
+- The user needs a deck, PDF, spreadsheet, HWP, Markdown package, or binary file export plan; use `omh-materials-package`.
+- The user wants a text-only report, leadership brief, or PPT-ready outline; use `omh-report-package`.
 - The user asks OMH to directly generate, inspect, upload, or post an image without a wrapper-supplied observed evidence path.
 
 ## Examples
@@ -51,7 +52,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should prepare a source-specific visual or supplied-image edit prompt without claiming generation or transformation.
 

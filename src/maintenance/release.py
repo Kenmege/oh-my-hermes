@@ -695,7 +695,11 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # shape's shared generic line. The pending-write, provider-slot, ledger, scan,
 # import-preview, and usage-count rules sit past the rows' bounds and move
 # nothing here. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 492655
+# 492655 -> 492654: `research-department`'s handoff policy maps Scout to the
+# lanes its prepared plan emits, `research`/`web-research`, instead of
+# `research`/`source-finder`; the row is one character shorter. Re-derived
+# from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 492654
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -1866,17 +1870,18 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # `## Runtime Evidence`. A new skill that joins an existing lane carries its
 # own copy and its author cannot avoid it: rendering a copy of every ordinary
 # catalog member (no artifact contracts, no progressive disclosure) with its
-# skill-specific sections made unique adds a median of about 1,450 repeated
-# chars and at most about 2,340. A zero-slack figure would have made every
-# new skill raise this constant, which is the churn the footprint ceiling
-# above removes. So it takes the same policy: the measurement plus
+# skill-specific sections made unique adds a median of about 1,370 repeated
+# chars and at most about 2,580 (re-read from the producer for the C2
+# loadable-names change). A zero-slack figure would have made every new skill
+# raise this constant, which is the churn the footprint ceiling above
+# removes. So it takes the same policy: the measurement plus
 # `FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT`, rounded UP to the next multiple
 # of `FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS` (10,000, about a
-# tenth of the measurement). The 10,952 chars of headroom (120,000 - 109,048)
-# hold about seven median lane members, while a renderer change that stamps
-# one more shared sentence longer than about 77 chars into every one of the
-# 142 bodies, or a few skills that copy other skills' own sections, still
-# fails.
+# tenth of the measurement). On that tree the producer reads 112,977, so the
+# 7,023 chars left under 120,000 hold about five median lane members, while a
+# renderer change that stamps one more shared sentence longer than about 49
+# chars into every one of the 142 bodies, or a few skills that copy other
+# skills' own sections, still fails.
 #
 # The measurement is also a floor: `tests/test_per_turn_budgets.py` fails when
 # the producer reads below `FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS`,
@@ -1928,7 +1933,13 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # `workflow-learning`) state their own Do-Not-Use instead of the shape's three
 # shared lines, so those sections are no longer byte-identical to another
 # skill's. 109,048 plus 10%, rounded up to the next 10,000, is 120,000.
-FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 109048
+# 120,000 -> 120,000 (measurement 109,048 -> 108,465): every byte of the drop
+# is `## Do Not Use When`. `wiki` and `content-operator` each gained a line
+# handing one request to the Hermes-bundled skill that shares its job, so
+# their sections stop being copies of a shared boundary, and `plan`'s, which
+# only `wiki`'s matched, stops having a twin. 108,465 plus 10%, rounded up
+# to the next 10,000, is still 120,000.
+FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 108465
 FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS = 10000
 FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT = 120000
 

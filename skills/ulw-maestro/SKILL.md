@@ -1,6 +1,8 @@
 ---
 name: "ulw-maestro"
 description: "[omh] Coding owner already chosen, handoff pending: prepares the handoff for the coding agent you already chose, composing its prompt from that agent's own installed skills; never selects the owner and never executes the work itself. Use when the user says: ulw-maestro, coding handoff, prepare the handoff, prepare a coding handoff, hand off the coding work, external executor handoff, handoff prompt, delegation prompt."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, execution]
@@ -8,6 +10,7 @@ metadata:
     phase: external-handoff
     role: handoff-guide
     quality_tier: handoff-gated
+    related_skills: [omh-executor-runtime-readiness, ulw-work, claude-code, codex, opencode]
 ---
 
 # Maestro
@@ -23,8 +26,9 @@ This is a Hermes-native `maestro` workflow skill.
 - No coding owner is chosen yet for this run; the Hermes harness stays the default and this engine never picks one.
 - The request is a concept question about maestro, prepared handoffs, or a coding-agent name, or a filename that happens to contain one -- answer directly instead.
 - The user wants advice on which coding owner to pick -- ask, don't compose.
-- The user is asking whether an owner CAN run right now -- use `executor-runtime-readiness` instead.
-- The request is lane-splitting or a full delivery cycle rather than one lane's handoff -- use `ultrawork`, which enters this engine for lanes with an external owner.
+- The user is asking whether an owner CAN run right now -- use `omh-executor-runtime-readiness` instead.
+- The request is lane-splitting or a full delivery cycle rather than one lane's handoff -- use `ulw-work`, which enters this engine for lanes with an external owner.
+- The user wants a coding task handed straight to the Claude Code, Codex, or opencode CLI in the terminal, with no prompt composed from that CLI's own installed skills -- load Hermes' bundled `claude-code`, `codex`, or `opencode` skill instead of this one.
 
 ## Examples
 
@@ -58,9 +62,9 @@ Bad example:
 
 - Current lane: **Coding handoff** (`idea-to-deploy`, `llm-app-dev`, `cto-loop`, `deploy-and-monitor`, `code-review`, `build-failure-triage`, `verification-gate`, `security-safety-review`, `+28 more`) - coding owners, handoffs, review, CI, and merge evidence.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use once a lane's coding owner is an explicit external CLI and the work needs a prompt composed from that CLI's own installed skills, its readiness and permission checked, and its session captured for steering.
 
@@ -156,4 +160,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

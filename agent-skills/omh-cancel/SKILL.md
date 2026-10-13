@@ -1,6 +1,7 @@
 ---
 name: "omh-cancel"
 description: "[omh] Aborting an active workflow: ending active workflow state cleanly. Use when the user says: cancel, stop the workflow, abort the run, cancel the loop."
+license: MIT
 compatibility: "Requires the omh CLI on PATH (pip install oh-my-hermes)."
 metadata:
   hermes:
@@ -22,7 +23,7 @@ This is an OMH `cancel` workflow skill, projected for Agent Skills hosts (Claude
 ## Do Not Use When
 
 - The workflow finished and its outcome should be kept; record it with omh state finish instead of clearing it.
-- The user wants to see what is still running rather than stop it; use `running-work-board`.
+- The user wants to see what is still running rather than stop it; use `omh-running-work-board`.
 - The user means cancelling something in their own product or accounts, such as an order, a subscription, or a meeting, rather than OMH or host work.
 
 ## Examples
@@ -52,7 +53,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use to cleanly end active adapted workflow state.
 

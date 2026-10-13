@@ -1,6 +1,7 @@
 ---
 name: "omh-verification-gate"
 description: "[omh] Proof a change is done before merge: define and record build, lint, typecheck, test, security, docs, generated-output, and CI evidence before completion or merge. Use when the user says: verification-gate, verification gate, quality gate, release gate, test gate, build lint test, lint typecheck tests, verify before merge."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, verification]
@@ -20,9 +21,9 @@ This is an OMH `verification-gate` workflow skill, projected for Agent Skills ho
 
 ## Do Not Use When
 
-- The user asks for visual render QA; use `visual-qa`.
-- The user asks for production release readiness beyond verification commands; use `production-audit`.
-- The user wants a bug-first code review of a diff; use `code-review`.
+- The user asks for visual render QA; use `omh-visual-qa`.
+- The user asks for production release readiness beyond verification commands; use `omh-production-audit`.
+- The user wants a bug-first code review of a diff; use `omh-code-review`.
 
 ## Examples
 
@@ -51,7 +52,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes must turn a change, PR, release, or claim into a concrete evidence checklist and PASS/HOLD/BLOCK verdict.
 

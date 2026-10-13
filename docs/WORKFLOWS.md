@@ -686,6 +686,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user wants advice on which coding owner to pick -- ask, don't compose.
   - The user is asking whether an owner CAN run right now -- use `executor-runtime-readiness` instead.
   - The request is lane-splitting or a full delivery cycle rather than one lane's handoff -- use `ultrawork`, which enters this engine for lanes with an external owner.
+  - The user wants a coding task handed straight to the Claude Code, Codex, or opencode CLI in the terminal, with no prompt composed from that CLI's own installed skills -- load Hermes' bundled `claude-code`, `codex`, or `opencode` skill instead of this one.
 - Strong routing signals: `$maestro`, `ulw-maestro`, `coding handoff`, `prepare the handoff`, `prepare a coding handoff`, `hand off the coding work`, `external executor handoff`, `handoff prompt`, `delegation prompt`, `コーディング委任`, `委任プロンプト`, `ハンドオフを準備`, `外部の実行エージェントに渡す`, `코딩 위임`, `위임 프롬프트`, `핸드오프 준비`, `외부 실행기 위임`, `코딩 에이전트에 넘기`, `编码委托`, `移交提示词`, `准备交接`, `交给编码代理`
 - Good example:
   - Prompt: $maestro codex already agreed to take this -- compose the handoff prompt for the retry-queue fix.
@@ -1154,7 +1155,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Compatibility alias: `false`
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
-- Handoff policy: Keep the research operating model in Hermes. Map Scout to `research`/`source-finder`, Analyst to `research-brief`/`web-research`, and Briefer to `report-package` or meeting/report workflows. Record retrieval, synthesis-tool output, knowledge-store writes, delivery, and verification only from observed evidence.
+- Handoff policy: Keep the research operating model in Hermes. Map Scout to `research`/`web-research`, Analyst to `research-brief`/`web-research`, and Briefer to `report-package` or meeting/report workflows. Record retrieval, synthesis-tool output, knowledge-store writes, delivery, and verification only from observed evidence.
 - Why this exists: `research-department` exists so Hermes users can start complex research-ops patterns without manually designing profiles, cron, knowledge storage, synthesis tooling, and delivery glue, while OMH keeps every runtime claim observed-only.
 - Use when: Use when Hermes should turn an ongoing or recurring research request into a prepared Scout -> Analyst -> Briefer workflow with source inbox, knowledge-store and synthesis-tool readiness, and briefing status without claiming research execution.
 - Do not use when:
@@ -1371,6 +1372,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user needs observed meeting minutes, decisions, or action items but has not provided notes.
   - The request is strategy synthesis without a meeting audience, agenda, or decision ceremony.
   - The follow-up is implementation work that already has accepted requirements and should become a plan or handoff.
+  - The meeting already happened, its notes or transcript are in hand, and the user wants decisions, owners, follow-ups, or tickets drawn from them; load Hermes' bundled `meeting-action-items` skill instead of this one.
 - Strong routing signals: `meeting-brief`, `meeting brief`, `meeting agenda`, `agenda`, `discussion prompts`, `decisions needed`, `record template`, `meeting topics`, `회의 주제`, `회의 아젠다`, `아젠다`, `회의 준비`, `논의 질문`, `결정할 것`, `기록 템플릿`
 - Good example:
   - Prompt: Prepare a meeting agenda for a leadership sync on setup UX, plugin bridge defaults, and release risk.
@@ -2391,6 +2393,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user only needs a weekly/monthly report outline; use `report-package`.
   - The user asks for recurring meeting minutes or scrum history; use `operating-rhythm`.
   - The request is code documentation, README, or project wiki maintenance; use the docs/wiki workflow.
+  - The user wants an operation done on one existing file - fill a PDF form, merge or split PDFs, or edit the text of a Word document, the slides of a deck, or the cells of a workbook - rather than a material plan with an export and QA ladder; load Hermes' bundled `pdf`, `docx`, `powerpoint`, or `xlsx` skill for that file instead of this one.
 - Strong routing signals: `materials-package`, `material package`, `materials package`, `document package`, `deck file`, `binary export`, `file export`, `render qa`, `layout qa`, `ppt and pdf`, `pdf and ppt`, `ppt/pdf`, `pdf/ppt`, `spreadsheet to pdf`, `excel to pdf`, `monthly report pdf`, `attached spreadsheet`, `word document`, `word doc`, `document action items`, `compare pdfs`, `pdf differences`, `extract tables from pdf`, `pdf to csv`, `spreadsheet analysis brief`, `clean analysis brief`, `pdf`, `pptx`, `keynote`, `keynote deck`, `docx`, `xlsx`, `csv report`, `spreadsheet`, `excel`, `hwp`, `korean hwp`, `proposal document`, `PDF`, `HWP`, `첨부한 엑셀`, `첨부한 워드`, `워드 문서`, `PDF 두 개 비교`, `PDF 표를 CSV`, `PDF 표 추출`, `분석 브리프`, `엑셀을 월간 보고서`, `자료 패키지`, `자료 처리`, `자료 생성`, `문서 패키지`, `문서 생성`, `제안서 문서`, `엑셀`, `스프레드시트`, `피디에프`, `한글 문서`, `키노트`, `파일 export`, `파일 생성`, `렌더 QA`, `PDF랑 PPT`, `PPT랑 PDF`, `PDF와 PPT`, `PPT와 PDF`, `PDF랑 PPT로`
 - Good example:
   - Prompt: materials-package 엑셀 매출 리포트를 PDF로 공유할 수 있게 준비해줘.
@@ -4022,6 +4025,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user wants the local code index refreshed or a task-scoped handoff pack, not a picture; use `codegraph-refresh`.
   - The user wants a narrative first-read tour, reading path, or glossary; use `codebase-onboarding`.
   - The user wants a summary card, thumbnail, or explainer image of a PR, meeting, or release rather than a structural diagram; use `img-summary`.
+  - The user describes a system, cloud, or infrastructure architecture in words and wants it drawn as a styled diagram, with no repository to read the structure from; load Hermes' bundled `architecture-diagram` skill instead of this one.
 - Strong routing signals: `codebase-uml`, `codebase uml`, `uml`, `plantuml`, `uml diagram`, `class diagram`, `package diagram`, `module diagram`, `architecture diagram`, `dependency diagram`, `module dependency diagram`, `visualize the codebase`, `visualize this codebase`, `visualize the code`, `visualize the architecture`, `codebase visualization`, `code visualization`, `diagram of the codebase`, `diagram the codebase`, `draw the architecture`, `draw the codebase`, `architecture picture`, `codebase picture`, `picture of the codebase`, `코드베이스 시각화`, `코드베이스 시각화해줘`, `코드베이스를 시각화`, `아키텍처 다이어그램`, `UML 다이어그램`, `패키지 다이어그램`, `클래스 다이어그램`, `코드베이스 다이어그램`, `코드 구조 그림`, `코드베이스 그림으로`, `코드 구조도`
 - Good example:
   - Prompt: Visualize our codebase and drop the picture here so the new teammate can see how the routing package fits.
@@ -4952,6 +4956,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - There is no diff, file set, claim, artifact, or expected behavior to review.
   - The request is broad product critique, strategy, or planning rather than code or evidence review.
   - A kanban review worker needs its card's transition decided: Hermes' bundled `sdlc-review` owns approve, request-changes, and escalate there, and this skill only supplies the findings that decision cites.
+  - The user wants their own uncommitted changes checked before a commit or push, with a security scan, quality gates, and fixes applied in place; load Hermes' bundled `requesting-code-review` skill for that pre-commit pass instead of this one.
 - Strong routing signals: `code-review`, `$code-review`, `review`, `audit`, `find bugs`, `release gate`, `claim audit`, `evidence audit`, `README claim`, `what actually happened`, `code review`, `review gate`, `コードレビュー`, `バグを見つけて`, `実際に何をしたか`, `리뷰`, `코드 리뷰`, `리뷰까지`, `릴리즈 전`, `실제 코드와 맞는가`, `실제로 뭐 했는지`, `검증된 결과`, `代码评审`, `代码审查`, `找出缺陷`
 - Good example:
   - Prompt: $code-review review this PR for install/update UX regressions and missing tests.
@@ -5029,6 +5034,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The goal is new or changed behavior rather than removing existing code; a plain refactor, feature, or fix request belongs to `ultrawork`.
   - The cleanup would change architecture or module boundaries and needs its execution shaped into phases first; use `refactor-plan`, or `ralplan` when the direction itself is still contested.
   - The user wants code judged for bugs or merge readiness with no drafted slop removal to inspect; use `code-review` for a bug-first review and `failure-signal-audit` for swallowed failures.
+  - The user asks to simplify their own recent changes, a commit, or the staged diff with a reuse, quality, and efficiency pass rather than a behavior-locked removal of existing code; load Hermes' bundled `simplify-code` skill for that instead of this one.
 - Strong routing signals: `ai-slop-cleaner`, `$ai-slop-cleaner`, `cleanup`, `deslop`, `refactor`, `risky`, `behavior-preserving refactor`, `risk analysis`, `refactor workflow`, `legacy refactor`, `anti-slop pass`, `anti-slop review`, `anti-slop sweep`, `ai slop`, `deslop review`, `리팩터링`, `리팩토링`, `위험 분석`, `변경 범위 제한`, `회귀 테스트`
 - Good example:
   - Prompt: $ai-slop-cleaner remove duplicated router branches and lock behavior with regression tests before refactoring.
@@ -5456,6 +5462,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Do not use when:
   - The request is casual chat, a status-only acknowledgement, or another workflow has stronger routing evidence.
   - The user needs implementation, review, CI, merge, or external publishing evidence that has not been delegated or observed.
+  - The user wants the agent to ingest sources into, query, or lint an interlinked markdown knowledge base it maintains itself in the Karpathy LLM Wiki pattern; load Hermes' bundled `llm-wiki` skill instead of this one.
 - Strong routing signals: `wiki`, `project wiki`, `build a wiki`, `start a wiki`, `organize my notes`, `external knowledge store`, `knowledge base`, `Obsidian`, `markdown vault`, `Notion knowledge base`, `Google Drive wiki`, `옵시디언`, `마크다운 볼트`, `노션 지식베이스`, `위키`, `위키 만들`, `지식베이스`, `지식 정리 체계`
 - Good example:
   - Prompt: wiki: six of us keep re-answering the same questions in chat; help me stand up a wiki in Notion.
@@ -5638,6 +5645,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user wants an OMH capability family turned on or off; use `capability-toggle`.
   - The user wants a public skill found and vetted before installing it; use `skill-scout`.
   - The user wants skill health checked: stale surfaces, failure patterns, or pending amendments; use `skill-health`.
+  - The user is writing or editing a skill that ships in the hermes-agent repository itself rather than a local one; load Hermes' bundled `hermes-agent-skill-authoring` skill instead of this one.
 - Strong routing signals: `skill`, `$skill`, `skills`, `manage skills`
 - Good example:
   - Prompt: which skills do I have, and add one for our release checklist
@@ -6328,6 +6336,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The event concerns an already-existing issue, PR, review, or CI run; use github-event-ops instead.
   - The user wants implementation; coding stays a separate follow-up lane with its own maintainer authority.
   - The report describes a security vulnerability; redirect to the private SECURITY.md path.
+  - The issue is already decided and the user only wants it filed or edited with the gh CLI, with no chat report to classify, question, or de-duplicate; load Hermes' bundled `github` skill instead of this one.
 - Strong routing signals: `github-issue-intake`, `github issue intake`, `issue intake`, `file this as an issue`, `file a github issue`, `open a github issue`, `create a github issue`, `submit a github issue`, `report a bug as an issue`, `new github issue`, `이슈로 올려줘`, `깃허브 이슈로 올려줘`, `이슈 등록해줘`, `깃허브 이슈 등록해줘`, `깃허브 이슈 만들어줘`, `깃허브 이슈 생성해줘`, `버그 리포트 올려줘`, `새 이슈 만들어줘`
 - Good example:
   - Prompt: please file this as an issue: omh setup fails on Windows
@@ -6655,6 +6664,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The build, compile, or CI job fails the same way on every run; use `build-failure-triage`.
   - The subject is an agent or workflow run that misbehaved rather than the application code; use `agent-debug`.
   - The cause is already demonstrated and the request is to judge whether the fix is proven; use `verification-gate`.
+  - Hermes' bundled `systematic-debugging` skill is already loaded for this bug; follow its phases instead of loading this one too, unless the reproduction, the rival hypotheses, and the observation that separated them must be kept as a record.
 - Strong routing signals: `app-debugging`, `app debugging`, `application debugging`, `root cause`, `root-cause`, `find the root cause`, `root cause analysis`, `flaky test`, `flaky tests`, `test is flaky`, `intermittent test failure`, `fails intermittently`, `fails one run in`, `passes locally but fails in ci`, `heisenbug`, `bug disappears`, `disappears when i add a print`, `race condition`, `lost update`, `update is lost`, `wrong return value`, `returns the wrong value`, `reproduce the bug`, `minimal reproduction`
 - Good example:
   - Prompt: a test fails one run in five in CI, how do I find out why
@@ -7563,6 +7573,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The request is a premium content, layout, or visual quality gate on deliverables; use `design-quality-gate`.
   - The uncertainty is whether customers have the problem or would adopt the solution, which needs customer evidence rather than a technical or interaction spike; use `product-discovery-validation`.
   - The request needs QA certification, production-readiness evidence, or a performance baseline for release; prototype results do not generalize beyond their declared fixture and environment.
+  - The user wants an idea's feasibility probed across several questions with throwaway spikes, with no single decision for a plan to consume; load Hermes' bundled `spike` skill instead of this one.
 - Strong routing signals: `decision-prototype`, `$decision-prototype`, `decision prototype`, `prototype this uncertain choice before planning`, `prototype before planning`, `prototype the uncertain choice`, `run a small spike`, `small spike`, `spike solution`, `decision spike`, `feasibility spike`, `test the risky assumption first`, `test the risky assumption`, `throwaway prototype`, `disposable prototype`, `timing probe`, `api probe`
 - Good example:
   - Prompt: Run a small spike to check whether the streaming API can hold 500 concurrent connections on one worker before we plan the migration.
@@ -8466,6 +8477,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - A failing build log to diagnose, with no event routing left to decide; use `build-failure-triage`.
   - The event is a security advisory, a CVE in a dependency, or a leaked credential; use `security-event-response`, which orders containment and closes only on an observed rotation or fix.
   - The PR is a dependabot or renovate version bump with no advisory; use `refactor-plan`, which decides whether it is safe to merge from the breaking changes against this repository's call sites.
+  - The user wants a GitHub operation carried out with the gh CLI - open or label an issue, open or merge a PR, leave review comments, manage a repository - rather than an incoming event routed to a handoff card; load Hermes' bundled `github` skill instead of this one.
 - Strong routing signals: `github-event-ops`, `github event ops`, `github ops`, `github triage`, `github pr`, `github review`, `github action`, `github actions`, `pr opened`, `pull request opened`, `pull request review`, `pr review`, `ci failed`, `check failed`, `checks failed`, `failing checks`, `issue opened`, `issue triage`, `pull request webhook`, `github webhook`, `github issue`, `github issue to pr`, `auto review pr`, `label issue`, `label pr`, `ci analysis`, `fix handoff`, `review handoff`, `깃허브`, `깃허브 pr`, `깃허브 이슈`, `github issue 들어온`, `이슈 라벨`, `pr 리뷰`, `리뷰 라벨`, `픽스 핸드오프`, `ci 실패`
 - Good example:
   - Prompt: github-event-ops PR opened with failing CI; triage whether this needs review or fix handoff.
@@ -8528,6 +8540,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
   - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
   - A multi-lane implementation of an accepted plan is ultrawork, which prepares its durable lanes through this board.
+  - The turn is a Kanban worker that the review dispatcher started on a review-lane task to verify a review-requested handoff; that worker loads Hermes' bundled `sdlc-review` skill, not this one.
 - Strong routing signals: `agent-board`, `agent board`, `kanban`, `multi-agent`, `multi agent`, `multi agent board`, `multiple hermes agents`, `multiple hermes profiles`, `hermes profiles`, `subagent`, `subagents`, `sub agent`, `sub agents`, `agent coordination`, `agent task board`, `task board`, `roles and board`, `role board`, `heartbeat`, `blocker`, `agent blocker`, `agent heartbeat`, `agent handoff`, `handoff board`, `interviewer reviewer builder`, `reviewer builder`, `칸반`, `멀티 에이전트`, `서브에이전트`, `서브 에이전트`, `여러 에이전트`, `Hermes agent 여러 명`, `여러 명이 같이 일`, `에이전트 보드`, `작업 배분`, `역할 배분`, `작업 보드`, `역할과 보드`, `역할 보드`
 - Good example:
   - Prompt: agent-board coordinate PM, CTO, QA, and release agents on this launch checklist.
@@ -9530,6 +9543,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The request is already handled by a narrower explicit skill with stronger evidence.
   - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
   - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+  - The user wants a draft to stop sounding machine-written - strip AI tells or match their own voice - with no audience, source, or review gate to scope; load Hermes' bundled `humanizer` skill instead of this one.
 - Strong routing signals: `content-operator`, `content operator`, `content workflow`, `writing workflow`, `publish-ready writing`, `publish ready writing`, `release notes`, `release note draft`, `newsletter draft`, `customer announcement`, `customer copy`, `product copy`, `landing page copy`, `social post draft`, `email draft`, `draft an email`, `rewrite for executives`, `summarize for customers`, `style guide rewrite`, `audience and tone`, `tone of voice`, `콘텐츠 오퍼레이터`, `글쓰기 워크플로`, `릴리즈 노트`, `릴리즈노트`, `뉴스레터 초안`, `고객 공지문`, `고객 공지`, `고객용 요약`, `메일 초안`, `이메일 초안`, `채널별 톤`, `문체 가이드`
 - Good example:
   - Prompt: content-operator draft publish-ready release notes with audience, tone, source scope, review gates, and hallucination checks.

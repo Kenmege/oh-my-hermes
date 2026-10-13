@@ -1,6 +1,7 @@
 ---
 name: "omh-apps"
 description: "[omh] Email, Slack, or Jira action to perform: external app actions - email, Slack, Discord, Notion, Linear, Jira, CRM, and similar providers, scoped with auth, payload, confirmation, and result-evidence gates. Use when the user says: connector-operator, connector operator, external app action, external connector action, saas action, api action, send email, email customer."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, connector]
@@ -20,8 +21,8 @@ This is an OMH `connector-operator` workflow skill, projected for Agent Skills h
 
 ## Do Not Use When
 
-- Only the reply or thread policy of a Discord, Slack, or Telegram conversation is in question; use `gateway-intent-card`.
-- The user is choosing or adopting a new provider, MCP server, or integration rather than acting through one; use `external-connector-readiness`.
+- Only the reply or thread policy of a Discord, Slack, or Telegram conversation is in question; use `omh-gateway-intent-card`.
+- The user is choosing or adopting a new provider, MCP server, or integration rather than acting through one; use `omh-external-connector-readiness`.
 
 ## Examples
 
@@ -52,7 +53,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use when Hermes should prepare or supervise a provider-backed external app action without claiming connector availability, credentials, API mutation, delivery, or success.
 

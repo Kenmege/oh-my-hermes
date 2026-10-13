@@ -1,6 +1,7 @@
 ---
 name: "omh-context-budget-review"
 description: "[omh] Context window or token budget at risk: plan compact context, token/cost budgets, summarization checkpoints, and overflow recovery before long agent work. Use when the user says: context-budget-review, context budget review, context budget, token budget review, token budget, prompt budget, prompt caching, prompt cache."
+license: MIT
 compatibility: "Requires the omh CLI on PATH (pip install oh-my-hermes)."
 metadata:
   hermes:
@@ -22,7 +23,7 @@ This is an OMH `context-budget-review` workflow skill, projected for Agent Skill
 ## Do Not Use When
 
 - The user asks only what this Hermes session has used or cost so far; Hermes' /usage shows this session's tokens and context, /insights estimates cost across recent sessions, and the omh_run_summary tool relays this conversation's recorded tokens and cost.
-- The user asks to continue a loopable goal; use `loop` unless budget planning is the explicit blocker.
+- The user asks to continue a loopable goal; use `ulw-loop` unless budget planning is the explicit blocker.
 - The task is a short one-step answer with no meaningful context risk.
 
 ## Examples
@@ -52,7 +53,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use before long-running research, coding, review, or multi-agent work when context, token, cost, or summary drift could break quality.
 

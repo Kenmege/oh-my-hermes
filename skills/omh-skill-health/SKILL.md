@@ -1,6 +1,8 @@
 ---
 name: "omh-skill-health"
 description: "[omh] OMH skill portfolio health overview: prepare a metadata-only OMH skill portfolio dashboard with stale surfaces, observed failure signals, pending amendments, and top actions. Use when the user says: skill-health, skill health, skill portfolio health, skill dashboard, skill health dashboard, skill failure pattern dashboard, skill failure patterns, pending skill amendments."
+license: MIT
+author: "oh-my-hermes maintainers"
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, operations]
@@ -8,6 +10,7 @@ metadata:
     phase: skill-health
     role: operator
     quality_tier: workflow-surface-gated
+    related_skills: [omh-doctor, omh-workflow-learning, omh-skill-scout]
 ---
 
 # Skill Health
@@ -20,9 +23,9 @@ This is a Hermes-native `skill-health` workflow skill.
 
 ## Do Not Use When
 
-- OMH setup, install, or a skill that does not load; use `doctor`.
-- One run that missed a route or went wrong; use `workflow-learning`.
-- Finding a new skill to adopt; use `skill-scout`.
+- OMH setup, install, or a skill that does not load; use `omh-doctor`.
+- One run that missed a route or went wrong; use `omh-workflow-learning`.
+- Finding a new skill to adopt; use `omh-skill-scout`.
 
 ## Examples
 
@@ -56,9 +59,9 @@ Bad example:
 
 - Current lane: **Automation and status** (`achievements`, `workspace-audit`, `production-audit`, `live-incident-response`, `automation-blueprint`, `github-event-ops`, `github-issue-intake`, `buzz`, `+39 more`) - schedules, status, health, and ops review.
 - If intent belongs to another lane, hand back to `oh-my-hermes` or name the adjacent workflow.
-- Shared product, routing, compatibility, and evidence rules: `omh-routing/references/skill-common-rail.md`.
+- Shared product, routing, compatibility, and evidence rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
 
-## Use When
+## When to Use
 
 Use when operators need portfolio-level skill health without treating it as install repair, live execution success, or automatic skill mutation.
 
@@ -120,4 +123,4 @@ Reply in the user's own words and the host's own voice: its SOUL.md persona owns
 
 Use Hermes-native subagent/delegation features when available: native subagents -> Hermes delegation when available, otherwise sequential lanes.
 
-Shared product, compatibility, topology, memory, harness, and execution rules: `omh-routing/references/skill-common-rail.md`. Load it when applicable; otherwise name an unavailable capability.
+Shared product, compatibility, topology, memory, harness, and execution rules: `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`. Load it when applicable; otherwise name an unavailable capability.

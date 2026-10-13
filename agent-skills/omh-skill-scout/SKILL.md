@@ -1,6 +1,7 @@
 ---
 name: "omh-skill-scout"
 description: "[omh] Existing skills to reuse before authoring: prepare a metadata-only search-before-creation report for local, marketplace, GitHub, and web skill candidates with risk review and adoption options. Use when the user says: skill-scout, skill scout, skill candidate, skill candidate search, skill discovery, find a skill, find skills, top skills."
+license: MIT
 metadata:
   hermes:
     tags: [workflow, oh-my-hermes, operations]
@@ -20,9 +21,9 @@ This is an OMH `skill-scout` workflow skill, projected for Agent Skills hosts (C
 
 ## Do Not Use When
 
-- Repairing an OMH install or a skill that does not load; use `doctor`.
-- A health overview of the skills already installed; use `skill-health`.
-- Writing or changing a skill once the scout decision is made; use `skill`.
+- Repairing an OMH install or a skill that does not load; use `omh-doctor`.
+- A health overview of the skills already installed; use `omh-skill-health`.
+- Writing or changing a skill once the scout decision is made; use `omh-skill`.
 
 ## Examples
 
@@ -53,7 +54,7 @@ Bad example:
 
 
 
-## Use When
+## When to Use
 
 Use before creating or adapting a skill so OMH can compare existing local, marketplace, GitHub, or web candidates without installing, copying, or trusting them by default.
 

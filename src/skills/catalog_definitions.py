@@ -68,6 +68,7 @@ from .catalog_types import (
     ENGINE_INTERJECTION_RESUME_RULE,
     EXECUTION_WAIT_DISCIPLINE_RULE,
     HERMES_USAGE_SURFACES_CLAUSE,
+    HermesSkillLine,
     LLM_APP_DEV_EVAL_DELIVERABLES,
     LLM_APP_DEV_PUBLIC_BOARD_ACTIONS,
     LLM_APP_DEV_RAILS,
@@ -1510,6 +1511,12 @@ _DEFINITIONS = [
             "The user is asking whether an owner CAN run right now -- use `executor-runtime-readiness` instead.",
             "The request is lane-splitting or a full delivery cycle rather than one lane's handoff -- use "
             "`ultrawork`, which enters this engine for lanes with an external owner.",
+            HermesSkillLine(
+                "The user wants a coding task handed straight to the Claude Code, Codex, or opencode CLI in the "
+                "terminal, with no prompt composed from that CLI's own installed skills -- load Hermes' bundled "
+                "`claude-code`, `codex`, or `opencode` skill instead of this one.",
+                ("claude-code", "codex", "opencode"),
+            ),
         ),
         good_example=SkillExample(
             prompt="$maestro codex already agreed to take this -- compose the handoff prompt for the retry-queue fix.",
@@ -1822,8 +1829,14 @@ _DEFINITIONS = [
             # requests that need nothing this lane adds. Each line is
             # conditional on the skill being present, so it declines nothing
             # on a host that does not ship it.
-            "The request is only citation bookkeeping on a draft that already exists - renumbering, rebuilding the Sources block, or checking cited ids against the ledger - with nothing new to retrieve, and Hermes' bundled `grounded-citations` skill is available; load that skill.",
-            "The answer is an arXiv paper list or one paper's entry - a search by topic, author, category, or paper id - and Hermes' bundled `arxiv` skill is available; load that skill.",
+            HermesSkillLine(
+                "The request is only citation bookkeeping on a draft that already exists - renumbering, rebuilding the Sources block, or checking cited ids against the ledger - with nothing new to retrieve, and Hermes' bundled `grounded-citations` skill is available; load that skill.",
+                ("grounded-citations",),
+            ),
+            HermesSkillLine(
+                "The answer is an arXiv paper list or one paper's entry - a search by topic, author, category, or paper id - and Hermes' bundled `arxiv` skill is available; load that skill.",
+                ("arxiv",),
+            ),
         ),
         good_example=SkillExample(
             prompt="이번 주 기준으로 그 API 요금제 어떻게 바뀌었는지 웹서치해서 알려줘.",
@@ -2171,7 +2184,7 @@ _DEFINITIONS = [
         hermes_role="retained-cognition",
         delegation_boundary="retained-catalog-intent",
         handoff_policy=(
-            "Keep the research operating model in Hermes. Map Scout to `research`/`source-finder`, "
+            "Keep the research operating model in Hermes. Map Scout to `research`/`web-research`, "
             "Analyst to `research-brief`/`web-research`, and Briefer to `report-package` or meeting/report workflows. "
             "Record retrieval, synthesis-tool output, knowledge-store writes, delivery, and verification only from observed evidence."
         ),
@@ -2222,8 +2235,14 @@ _DEFINITIONS = [
             "The user asks for coding implementation; prepare a selected executor/runtime handoff after the research plan is accepted.",
             # Requests the bundled Hermes skills own outright. Each line is
             # conditional on the skill being present.
-            "The request is one news watch over named companies, or a scheduled run of a watch that already exists, with no knowledge store, synthesis tool, or briefing lanes to set up, and Hermes' bundled `competitor-news-monitor` skill is available; load that skill.",
-            "The user wants a one-off paper search by topic, author, category, or paper id rather than a recurring paper review, and Hermes' bundled `arxiv` skill is available; load that skill.",
+            HermesSkillLine(
+                "The request is one news watch over named companies, or a scheduled run of a watch that already exists, with no knowledge store, synthesis tool, or briefing lanes to set up, and Hermes' bundled `competitor-news-monitor` skill is available; load that skill.",
+                ("competitor-news-monitor",),
+            ),
+            HermesSkillLine(
+                "The user wants a one-off paper search by topic, author, category, or paper id rather than a recurring paper review, and Hermes' bundled `arxiv` skill is available; load that skill.",
+                ("arxiv",),
+            ),
         ),
         good_example=SkillExample(
             prompt="Set up a Scout, Analyst, and Briefer research flow for daily competitor and market changes.",
@@ -2476,6 +2495,10 @@ _DEFINITIONS = [
             "The user needs observed meeting minutes, decisions, or action items but has not provided notes.",
             "The request is strategy synthesis without a meeting audience, agenda, or decision ceremony.",
             "The follow-up is implementation work that already has accepted requirements and should become a plan or handoff.",
+            HermesSkillLine(
+                "The meeting already happened, its notes or transcript are in hand, and the user wants decisions, owners, follow-ups, or tickets drawn from them; load Hermes' bundled `meeting-action-items` skill instead of this one.",
+                ("meeting-action-items",),
+            ),
         ),
         good_example=SkillExample(
             prompt="Prepare a meeting agenda for a leadership sync on setup UX, plugin bridge defaults, and release risk.",
@@ -3633,6 +3656,10 @@ _DEFINITIONS = [
             "The user only needs a weekly/monthly report outline; use `report-package`.",
             "The user asks for recurring meeting minutes or scrum history; use `operating-rhythm`.",
             "The request is code documentation, README, or project wiki maintenance; use the docs/wiki workflow.",
+            HermesSkillLine(
+                "The user wants an operation done on one existing file - fill a PDF form, merge or split PDFs, or edit the text of a Word document, the slides of a deck, or the cells of a workbook - rather than a material plan with an export and QA ladder; load Hermes' bundled `pdf`, `docx`, `powerpoint`, or `xlsx` skill for that file instead of this one.",
+                ("pdf", "docx", "powerpoint", "xlsx"),
+            ),
         ),
         good_example=SkillExample(
             prompt="materials-package 엑셀 매출 리포트를 PDF로 공유할 수 있게 준비해줘.",
@@ -5175,7 +5202,10 @@ _DEFINITIONS = [
             "The user needs a broad visual quality rubric before generation; use `design-quality-gate`.",
             "The user needs image-card prompt creation; use `img-summary`.",
             "The user wants non-visual code tests, CI, or PR review only; use the coding/review workflow.",
-            "Open-ended bug-hunting across a web app with no page, state, and viewport matrix or target revision to judge; on Hermes, use the bundled `dogfood` skill when it is available.",
+            HermesSkillLine(
+                "Open-ended bug-hunting across a web app with no page, state, and viewport matrix or target revision to judge; on Hermes, use the bundled `dogfood` skill when it is available.",
+                ("dogfood",),
+            ),
         ),
         good_example=SkillExample(
             prompt="visual-qa 이 랜딩페이지가 모바일/데스크톱에서 깨지는지 스크린샷 기준으로 검증해줘.",
@@ -6079,6 +6109,10 @@ _DEFINITIONS = [
             "The user wants the local code index refreshed or a task-scoped handoff pack, not a picture; use `codegraph-refresh`.",
             "The user wants a narrative first-read tour, reading path, or glossary; use `codebase-onboarding`.",
             "The user wants a summary card, thumbnail, or explainer image of a PR, meeting, or release rather than a structural diagram; use `img-summary`.",
+            HermesSkillLine(
+                "The user describes a system, cloud, or infrastructure architecture in words and wants it drawn as a styled diagram, with no repository to read the structure from; load Hermes' bundled `architecture-diagram` skill instead of this one.",
+                ("architecture-diagram",),
+            ),
         ),
         good_example=SkillExample(
             prompt="Visualize our codebase and drop the picture here so the new teammate can see how the routing package fits.",
@@ -6836,7 +6870,10 @@ _DEFINITIONS = [
             "one's observed pass or fail apart from any proposed fix, and hands fixes to the selected coding executor."
         ),
         do_not_use_when=(
-            "Exploratory bug-hunting across a web app with no changed behavior to attack; on Hermes, use the bundled `dogfood` skill when it is available, and bring a finding back here as a scenario to reproduce.",
+            HermesSkillLine(
+                "Exploratory bug-hunting across a web app with no changed behavior to attack; on Hermes, use the bundled `dogfood` skill when it is available, and bring a finding back here as a scenario to reproduce.",
+                ("dogfood",),
+            ),
             "Judging whether a rendered page, image, or terminal frame looks right across viewports and states; use `visual-qa`.",
             "Confirming that a finished change meets its acceptance criteria with the smallest proving check, when no hostile scenarios are wanted; use `verification-gate`.",
         ),
@@ -7244,7 +7281,14 @@ _DEFINITIONS = [
             "The user asks to implement the fix rather than review existing code or claims.",
             "There is no diff, file set, claim, artifact, or expected behavior to review.",
             "The request is broad product critique, strategy, or planning rather than code or evidence review.",
-            "A kanban review worker needs its card's transition decided: Hermes' bundled `sdlc-review` owns approve, request-changes, and escalate there, and this skill only supplies the findings that decision cites.",
+            HermesSkillLine(
+                "A kanban review worker needs its card's transition decided: Hermes' bundled `sdlc-review` owns approve, request-changes, and escalate there, and this skill only supplies the findings that decision cites.",
+                ("sdlc-review",),
+            ),
+            HermesSkillLine(
+                "The user wants their own uncommitted changes checked before a commit or push, with a security scan, quality gates, and fixes applied in place; load Hermes' bundled `requesting-code-review` skill for that pre-commit pass instead of this one.",
+                ("requesting-code-review",),
+            ),
         ),
         good_example=SkillExample(
             prompt="$code-review review this PR for install/update UX regressions and missing tests.",
@@ -7281,17 +7325,8 @@ _DEFINITIONS = [
             "does the readme match the code",
         ),
         # The kanban review lane and its bundled `sdlc-review` exist only on
-        # Hermes, so the portable body keeps the three host-neutral boundaries.
-        portable_overrides={
-            "do_not_use_when": (
-                "The user asks to implement the fix rather than review existing code or claims.",
-                "There is no diff, file set, claim, artifact, or expected behavior to review.",
-                "The request is broad product critique, strategy, or planning rather than code or evidence review.",
-            ),
-        },
-        portable_override_shadows={
-            "do_not_use_when": "dd5dabeb666b245c582ddf9431e36bbe2360cd6421e8673d5a33a602b68b2c4d",
-        },
+        # Hermes; that line is a `HermesSkillLine`, so the portable body keeps
+        # the three host-neutral boundaries without a whole-section override.
     ),
     SkillDefinition(
         "ai-slop-cleaner",
@@ -7320,6 +7355,10 @@ _DEFINITIONS = [
             "The goal is new or changed behavior rather than removing existing code; a plain refactor, feature, or fix request belongs to `ultrawork`.",
             "The cleanup would change architecture or module boundaries and needs its execution shaped into phases first; use `refactor-plan`, or `ralplan` when the direction itself is still contested.",
             "The user wants code judged for bugs or merge readiness with no drafted slop removal to inspect; use `code-review` for a bug-first review and `failure-signal-audit` for swallowed failures.",
+            HermesSkillLine(
+                "The user asks to simplify their own recent changes, a commit, or the staged diff with a reuse, quality, and efficiency pass rather than a behavior-locked removal of existing code; load Hermes' bundled `simplify-code` skill for that instead of this one.",
+                ("simplify-code",),
+            ),
         ),
         hermes_role="runtime-handoff-guidance",
         handoff_policy="Use Hermes to define cleanup scope and regression checks; route behavior-preserving edits to the selected coding runtime once tests are clear.",
@@ -8062,6 +8101,12 @@ _DEFINITIONS = [
             "If the destination is unknown, record the missing facts and keep the guidance vendor-neutral.",
             "If the fact may be stale, record the staleness warning and next refresh action.",
         ),
+        do_not_use_when=(
+            HermesSkillLine(
+                "The user wants the agent to ingest sources into, query, or lint an interlinked markdown knowledge base it maintains itself in the Karpathy LLM Wiki pattern; load Hermes' bundled `llm-wiki` skill instead of this one.",
+                ("llm-wiki",),
+            ),
+        ),
         situations=(
             "set up a team wiki in notion",
             "organize my obsidian vault",
@@ -8237,6 +8282,10 @@ _DEFINITIONS = [
             "The user wants a public skill found and vetted before installing it; use `skill-scout`.",
             "The user wants skill health checked: stale surfaces, failure patterns, or pending amendments; use "
             "`skill-health`.",
+            HermesSkillLine(
+                "The user is writing or editing a skill that ships in the hermes-agent repository itself rather than a local one; load Hermes' bundled `hermes-agent-skill-authoring` skill instead of this one.",
+                ("hermes-agent-skill-authoring",),
+            ),
         ),
         good_example=SkillExample(
             prompt="which skills do I have, and add one for our release checklist",
@@ -9191,6 +9240,10 @@ _DEFINITIONS.append(
             "The event concerns an already-existing issue, PR, review, or CI run; use github-event-ops instead.",
             "The user wants implementation; coding stays a separate follow-up lane with its own maintainer authority.",
             "The report describes a security vulnerability; redirect to the private SECURITY.md path.",
+            HermesSkillLine(
+                "The issue is already decided and the user only wants it filed or edited with the gh CLI, with no chat report to classify, question, or de-duplicate; load Hermes' bundled `github` skill instead of this one.",
+                ("github",),
+            ),
         ),
         good_example=SkillExample(
             prompt="please file this as an issue: omh setup fails on Windows",
@@ -9743,6 +9796,10 @@ _DEFINITIONS.append(
             "The build, compile, or CI job fails the same way on every run; use `build-failure-triage`.",
             "The subject is an agent or workflow run that misbehaved rather than the application code; use `agent-debug`.",
             "The cause is already demonstrated and the request is to judge whether the fix is proven; use `verification-gate`.",
+            HermesSkillLine(
+                "Hermes' bundled `systematic-debugging` skill is already loaded for this bug; follow its phases instead of loading this one too, unless the reproduction, the rival hypotheses, and the observation that separated them must be kept as a record.",
+                ("systematic-debugging",),
+            ),
         ),
         good_example=SkillExample(
             prompt="a test fails one run in five in CI, how do I find out why",
