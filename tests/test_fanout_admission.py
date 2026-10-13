@@ -452,6 +452,16 @@ class FanoutRecoveredPressureIntegrationTests(unittest.TestCase):
 
 
 class FanoutInterruptedAdmissionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # The dispatch under test sets the process-global interrupt flag and
+        # leaves it for the next dispatch entry; a sibling spawning through
+        # signal_safe_unit_runner directly would be SIGTERMed on
+        # register-then-check (#1482).
+        from omh.coding.fanout_dispatch import _INTERRUPT_FLAG
+
+        _INTERRUPT_FLAG.clear()
+        self.addCleanup(_INTERRUPT_FLAG.clear)
+
     def test_interrupt_cleanup_observes_a_collected_clean_completion_once(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
