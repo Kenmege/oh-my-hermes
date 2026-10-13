@@ -325,6 +325,74 @@ class PluginDataLayoutTests(HermesAchievementsTestCase):
         self.assertIsNone(freshness["age_seconds"])
         self.assertTrue(freshness["stale"])
 
+    def test_zero_generated_at_counts_as_missing(self) -> None:
+        # The plugin's own rule treats a non-positive timestamp as no snapshot time.
+        self._write_plugin_file("scan_snapshot.json", {"generated_at": 0, "achievements": []}, directory=self.data_dir)
+
+        freshness = observe_achievements(self.paths, now=1_760_000_000)["snapshot_freshness"]
+
+        self.assertIsNone(freshness["generated_at"])
+        self.assertIsNone(freshness["age_seconds"])
+        self.assertTrue(freshness["stale"])
+
+    def test_numbers_too_large_for_a_float_degrade_instead_of_raising(self) -> None:
+        huge = 10**400
+        self._write_plugin_file(
+            "scan_snapshot.json",
+            {
+                "generated_at": huge,
+                "achievements": [
+                    {"id": "pct", "state": "discovered", "progress": 3, "progress_pct": huge},
+                    {"id": "raw", "state": "discovered", "progress": huge},
+                    {"id": "ratio", "state": "discovered", "progress": {"current": huge, "target": 10}},
+                ],
+            },
+            directory=self.data_dir,
+        )
+
+        payload = observe_achievements(self.paths, now=1_760_000_000)
+
+        self.assertEqual(payload["status"], "observed")
+        self.assertIsNone(payload["snapshot_freshness"]["generated_at"])
+        self.assertTrue(payload["snapshot_freshness"]["stale"])
+        self.assertEqual(find_badge(payload["badges"], "pct")["progress_percent"], 3.0)
+        self.assertIsNone(find_badge(payload["badges"], "raw")["progress_percent"])
+        self.assertIsNone(find_badge(payload["badges"], "ratio")["progress_percent"])
+        status, stdout, stderr = run_cli([*self._base_args(), "context", "brief", "--json"])
+        self.assertEqual(status, 0, stderr)
+        status, stdout, stderr = run_cli([*self._base_args(), "achievements", "summary"], output_json=False)
+        self.assertEqual(status, 0, stderr)
+
+    def test_state_tier_key_raises_a_tier_and_never_lowers_one(self) -> None:
+        self._write_plugin_file(
+            "scan_snapshot.json",
+            {
+                "achievements": [
+                    {"id": "kept", "state": "unlocked", "tier": "Gold"},
+                    {"id": "raised", "state": "unlocked", "tier": "Copper"},
+                    {"id": "filled", "state": "discovered"},
+                ]
+            },
+            directory=self.data_dir,
+        )
+        self._write_plugin_file(
+            "state.json",
+            {
+                "unlocked": {
+                    "kept": {"tier": "copper", "first_tier": "copper"},
+                    "raised": {"tier": "gold"},
+                    "filled": {"tier": "silver", "first_tier": "copper"},
+                }
+            },
+            directory=self.data_dir,
+        )
+
+        badges = observe_achievements(self.paths)["badges"]
+
+        self.assertEqual(find_badge(badges, "kept")["tier"], "gold")
+        self.assertEqual(find_badge(badges, "raised")["tier"], "gold")
+        self.assertEqual(find_badge(badges, "filled")["tier"], "silver")
+
     def test_legacy_only_install_dir_is_read_and_reported(self) -> None:
         self._write_list_shaped_artifacts()
 
@@ -721,6 +789,42 @@ class AchievementsHudTests(HermesAchievementsTestCase):
             members = runtime_reader._read_hud_json_leading_members(path, root=self.hermes_home)
 
         self.assertEqual(members, {"achievements": [1]})
+
+    def test_hud_snapshot_without_a_badge_list_and_no_state_is_not_observed(self) -> None:
+        self._write_plugin_file(
+            "scan_snapshot.json", {"generated_at": 1_760_000_000, "sessions": []}, directory=self.data_dir
+        )
+
+        status, stdout, stderr = run_cli([*self._base_args(), "hud", "--preset", "full", "--json"])
+
+        self.assertEqual(status, 0, stderr)
+        payload = json.loads(stdout)
+        self.assertFalse(payload["achievements"]["observed"])
+        self.assertIsNone(payload["achievements"]["unlocked_count"])
+        self.assertFalse(any(segment.startswith("ach:") for segment in payload["display"]["segments"]))
+
+    def test_hud_survives_a_badge_list_nested_past_the_recursion_limit(self) -> None:
+        depth = 100_000
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        (self.data_dir / "scan_snapshot.json").write_text(
+            '{"achievements": ' + "[" * depth + "]" * depth + "}", encoding="utf-8"
+        )
+
+        summary = runtime_reader._achievements_summary(self.hermes_home)
+
+        self.assertEqual(
+            summary,
+            {"observed": False, "unlocked_count": None, "total_count": None, "total_status": "not_observed"},
+        )
+
+    def test_leading_member_reader_applies_the_hidden_content_filter(self) -> None:
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        path = self.data_dir / "scan_snapshot.json"
+        path.write_text(json.dumps({"achievements": [{"id": "a", "reasoning": "hidden"}]}), encoding="utf-8")
+
+        members = runtime_reader._read_hud_json_leading_members(path, root=self.hermes_home)
+
+        self.assertEqual(members, {})
 
     def test_full_preset_hud_prefers_plugin_data_over_legacy(self) -> None:
         self._write_list_shaped_artifacts()

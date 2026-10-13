@@ -43,8 +43,8 @@ def observe_achievements(
     snapshot_path, snapshot_location = _plugin_file(paths, "scan_snapshot.json")
     state_path, state_location = _plugin_file(paths, "state.json")
     errors: list[str] = []
-    # `utf-8-sig` as the plugin reads them: a legacy file saved with a BOM
-    # still parses, and one without is unaffected.
+    # `utf-8-sig`, as current Hermes (0.21.6 and later) reads them: a file
+    # saved with a BOM still parses, and one without is unaffected.
     snapshot, snapshot_error = read_json_object_result(snapshot_path, encoding="utf-8-sig")
     if snapshot_error:
         errors.append(f"scan_snapshot.json: {snapshot_error}")
@@ -100,11 +100,8 @@ def _plugin_file(paths: OmhPaths, name: str) -> tuple[Path, str]:
 
 def _snapshot_freshness(snapshot: dict[str, Any] | None, *, now: float) -> dict[str, Any]:
     value = (snapshot or {}).get("generated_at")
-    generated_at = (
-        int(value)
-        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
-        else None
-    )
+    number = _finite_float(value)
+    generated_at = int(value) if number is not None and number > 0 else None
     age_seconds = int(now) - generated_at if generated_at is not None else None
     return {
         "generated_at": generated_at,
@@ -272,13 +269,26 @@ def _normalize_badge(entry: dict[str, Any], *, fallback_id: str = "") -> dict[st
 
 
 def _entry_progress_percent(entry: dict[str, Any]) -> float | None:
-    # The bundled plugin writes `progress` as the raw metric count and
-    # `progress_pct` as the percent toward the next tier, so a count of 1 or
-    # 450 must not be read as a fraction or a percent.
-    percent = entry.get("progress_pct")
-    if isinstance(percent, (int, float)) and not isinstance(percent, bool) and math.isfinite(percent):
-        return round(min(max(float(percent), 0.0), 100.0), 1)
+    # The bundled plugin's `progress` is the raw metric count for a tiered
+    # badge (the averaged percent for a multi-condition one), so a count of 1
+    # or 450 must not be read as a fraction or a percent. Its `progress_pct` is
+    # the percent toward the next tier, or toward completion, for both kinds.
+    percent = _finite_float(entry.get("progress_pct"))
+    if percent is not None:
+        return round(min(max(percent, 0.0), 100.0), 1)
     return _progress_percent(entry.get("progress"))
+
+
+def _finite_float(value: Any) -> float | None:
+    # A JSON integer can be too large for a float (OverflowError) and JSON as
+    # Python reads it allows NaN and Infinity; none of those is a usable number.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    return number if math.isfinite(number) else None
 
 
 def _normalize_tier(value: Any) -> str:
@@ -298,20 +308,18 @@ def _normalize_state(entry: dict[str, Any]) -> str:
 
 
 def _progress_percent(value: Any) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        number = float(value)
+    number = _finite_float(value)
+    if number is not None:
         percent = number * 100.0 if 0.0 <= number <= 1.0 else number
         return round(min(max(percent, 0.0), 100.0), 1)
     if isinstance(value, dict):
-        current = value.get("current")
-        target = value.get("target") or value.get("total")
-        if isinstance(current, (int, float)) and isinstance(target, (int, float)) and float(target) > 0:
-            return round(min(max(float(current) / float(target) * 100.0, 0.0), 100.0), 1)
-        percent = value.get("percent")
-        if isinstance(percent, (int, float)) and not isinstance(percent, bool):
-            return round(min(max(float(percent), 0.0), 100.0), 1)
+        current = _finite_float(value.get("current"))
+        target = _finite_float(value.get("target") or value.get("total"))
+        if current is not None and target is not None and target > 0:
+            return round(min(max(current / target * 100.0, 0.0), 100.0), 1)
+        percent = _finite_float(value.get("percent"))
+        if percent is not None:
+            return round(min(max(percent, 0.0), 100.0), 1)
     return None
 
 
@@ -343,10 +351,11 @@ def _apply_state_unlocks(badges: dict[str, dict[str, Any]], state: dict[str, Any
         if not badge_id:
             continue
         badge = badges.get(badge_id)
-        # state.json is the plugin's sticky-unlock floor: an unlock there stands
-        # even when the snapshot shows the badge locked. Like the plugin, the
-        # floor fills a missing tier from `first_tier`, never lowers a tier, and
-        # leaves the next-tier progress the snapshot recorded.
+        # state.json is the plugin's unlock record. Current Hermes (0.21.4 and
+        # later) treats it as a sticky floor: an unlock there stands even when
+        # the snapshot shows the badge locked. Like that floor, this fills a
+        # missing tier from `first_tier`, never lowers a tier, and leaves the
+        # next-tier progress the snapshot recorded.
         first_tier = _normalize_tier(meta.get("first_tier"))
         if badge is None:
             badges[badge_id] = {
@@ -362,9 +371,12 @@ def _apply_state_unlocks(badges: dict[str, dict[str, Any]], state: dict[str, Any
         badge["state"] = "unlocked"
         if badge["progress_percent"] is None:
             badge["progress_percent"] = 100.0
-        tier = _normalize_tier(meta.get("tier")) or (first_tier if not badge["tier"] else "")
-        if tier:
+        # A `tier` key (older artifact shapes) may only raise the tier.
+        tier = _normalize_tier(meta.get("tier"))
+        if tier and (not badge["tier"] or TIER_ORDER.index(tier) > TIER_ORDER.index(badge["tier"])):
             badge["tier"] = tier
+        elif not badge["tier"] and first_tier:
+            badge["tier"] = first_tier
         unlocked_at = _clean_text(meta.get("unlocked_at") or meta.get("unlockedAt"))
         if unlocked_at:
             badge["unlocked_at"] = unlocked_at

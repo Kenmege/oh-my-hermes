@@ -9,30 +9,33 @@ All notable changes will be documented here.
   `state.json` under `plugin-data/hermes-achievements/` in the active
   profile's Hermes home, copies an old install-directory file forward once,
   and never writes the old location again, so `omh achievements`, the
-  context brief profile, and the full HUD preset reported nothing or a frozen
-  copy on supported Hermes. Each file is now read from `plugin-data/` first
-  and from the legacy `plugins/hermes-achievements/` only when `plugin-data/`
-  has no copy, and the payload's `source` names the directory each file came
-  from. A new `snapshot_freshness` block reports the snapshot's
-  `generated_at`, its age, and whether it is stale by the plugin's own
-  rescan rule; OMH applies the rule to the file and never calls the
-  dashboard. Badge progress now comes from the plugin's `progress_pct`;
-  its `progress` is a raw count, and any nonzero count read as complete. An
-  unlock in `state.json` still marks a badge unlocked, as the plugin's own
-  sticky-unlock floor does, but now fills a missing tier from the unlock's
-  `first_tier`, never lowers a tier, and keeps the snapshot's next-tier
-  progress instead of overwriting it with 100%. `agent_summary.json` is no
-  longer read: the plugin has no writer for it, and the profile is derived
-  from the observed badges. The snapshot also carries per-session stats for
-  the whole history, so on a real install it is far larger than the HUD's
-  read cap and the HUD used to count nothing from it. The HUD now reads only
-  the leading members that fit whole within its cap, where the plugin's
-  sorted keys put the badge list. A total it cannot read is reported as
-  `total_status: not_observed` with no denominator in the `ach:` segment,
-  never as 0. Plugin timestamps, which are epoch seconds, appear as UTC
-  ISO-8601 in `omh achievements` text and the Markdown export, while the
-  JSON keeps the raw values. Both readers accept a file saved with a
-  byte-order mark, as the plugin does.
+  context brief profile, and the full HUD preset reported nothing or a
+  frozen copy on supported Hermes. Each file is now read from `plugin-data/`
+  first and from the legacy `plugins/hermes-achievements/` only when
+  `plugin-data/` has no copy, and the payload's `source` names the directory
+  each file came from. A new `snapshot_freshness` block reports the
+  snapshot's `generated_at`, its age, and whether it is stale by the
+  plugin's own rescan rule; OMH applies the rule to the file and never calls
+  the dashboard. Badge progress now comes from the plugin's `progress_pct`.
+  For a tiered badge its `progress` is the raw metric count, which was read
+  as a percentage (and a count of 1 as a fraction), so a count of 2 to 99
+  showed as that many percent and a count of 1 or of 100 and more as 100%.
+  An unlock in `state.json` still marks a badge unlocked, as current Hermes
+  (0.21.4 and later) does with its sticky-unlock floor. It now fills a
+  missing tier from the unlock's `first_tier`, never lowers a tier, and
+  keeps the snapshot's next-tier progress instead of overwriting it with
+  100%. `agent_summary.json` is no longer read: the plugin has no writer for
+  it, and the profile is derived from the observed badges. The snapshot also
+  carries per-session stats for the whole history, so on a real install it
+  is far larger than the HUD's read cap and the HUD used to count nothing
+  from it. The HUD now reads only the leading members that fit whole within
+  its cap, where the plugin's sorted keys put the badge list. A total it
+  cannot read is reported as `total_status: not_observed` with no
+  denominator in the `ach:` segment, never as 0. Plugin timestamps, which
+  are epoch seconds, appear as UTC ISO-8601 in `omh achievements` text and
+  the Markdown export, while the JSON keeps the raw values. Both readers
+  accept a file saved with a byte-order mark, as current Hermes (0.21.6 and
+  later) does.
 
 
 - **The `frontend` design contract now uses Google's DESIGN.md format, so it

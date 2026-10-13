@@ -1909,7 +1909,7 @@ def _achievements_summary(hermes_home: Path) -> dict[str, Any]:
     # real install outgrows the HUD read cap. The badge list the HUD counts is
     # bounded by the catalog and the plugin writes keys sorted, so it sits
     # ahead of `sessions` and is read from the leading members alone.
-    # `utf-8-sig` matches how the plugin reads both files.
+    # `utf-8-sig`, as current Hermes (0.21.6 and later) reads both files.
     snapshot = _read_hud_json_leading_members(snapshot_path, root=hermes_home)
     state = _read_hud_json(state_path, root=hermes_home, encoding="utf-8-sig")
     # None means not observed: an unread count is never reported as 0.
