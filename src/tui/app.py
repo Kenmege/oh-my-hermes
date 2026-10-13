@@ -46,6 +46,7 @@ import sys
 import time
 from typing import Any, Protocol, TextIO
 
+from ..plugin_bundle.omh.runtime_reader import elapsed_text
 from ..skin_pack import default_theme, skin_colors, theme_for_name, theme_for_skin_name, theme_names
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
@@ -112,16 +113,21 @@ STATE_RUNNING = "running"
 STATE_WAITING = "waiting on you"
 
 EXIT_HINT = "Ctrl+C again to exit"
+INTERRUPT_HINT = "esc to interrupt"
 OSC52_COPY = "\x1b]52;c;{}\x07"
 MENU_NAME_CELLS = 16
 SESSION_LIST_LIMIT = 50
+# `complete.path` goes out once the `@` token has held still this long.
+PATH_COMPLETE_DEBOUNCE_SECONDS = 0.12
 ATTACH_ICON = "📎"
 ATTACH_HINT = "Backspace removes"
 NO_SESSION_NOTICE = "No session is open yet; try again in a moment."
 HELP_KEYS = (
-    "Keys: Enter sends · Alt+Enter or Ctrl+J adds a line · Tab completes a /command · "
-    "Ctrl+C interrupts a turn or clears the input · Ctrl+D on empty input exits\n"
-    "Ctrl+V attaches the clipboard image (drag & drop works too) · Backspace on empty input removes the last one"
+    "Keys: Enter sends · \\ then Enter, Alt+Enter or Ctrl+J adds a line · Tab completes a /command or an @path\n"
+    "Esc interrupts a running turn · Ctrl+V attaches the clipboard image (drag & drop works too) · "
+    "Backspace on empty input removes the last one\n"
+    "Ctrl+O shows or hides details · Ctrl+L redraws · Ctrl+C interrupts a turn or clears the input · "
+    "Ctrl+D on empty input exits"
 )
 
 
@@ -160,6 +166,15 @@ class Attachment:
     path: str
     name: str
     size: str  # "1280×720", or "" when the gateway could not read the dimensions
+
+
+@dataclass(frozen=True)
+class PathItem:
+    """One `complete.path` row: `text` replaces the `@` token, `display` and `meta` are what the menu shows."""
+
+    text: str
+    display: str
+    meta: str
 
 
 # ── small pure helpers ────────────────────────────────────────────────────
@@ -280,6 +295,27 @@ def attachment_line(attachments: Sequence[Attachment], width: int, theme: Theme)
     return truncate_line((Span(f"{ATTACH_ICON} {labels}", theme.accent), Span(f"  {ATTACH_HINT}", theme.dim)), width)
 
 
+def path_items(result: Mapping[str, Any]) -> list[PathItem]:
+    """The rows of a `complete.path` answer; rows without a `text` are skipped."""
+    items = result.get("items")
+    if not isinstance(items, list):
+        return []
+    return [
+        PathItem(_text(item.get("text")), _text(item.get("display")), _text(item.get("meta")))
+        for item in items
+        if isinstance(item, dict) and _text(item.get("text"))
+    ]
+
+
+def at_token(text: str, caret: int) -> tuple[int, str]:
+    """(start, word) of the whitespace-delimited word that ends at the caret, when it starts with `@`; else (caret, "")."""
+    start = caret
+    while start > 0 and not text[start - 1].isspace():
+        start -= 1
+    word = text[start:caret]
+    return (start, word) if word.startswith("@") else (caret, "")
+
+
 def _tool_summary(message: Mapping[str, Any]) -> str:
     return f"{_text(message.get('name')) or 'tool'}  {_text(message.get('context'))}".strip()
 
@@ -339,18 +375,18 @@ def _slot_owns(slot: PromptSlot, event: Key | Paste, composer_text: str) -> bool
     return slot.method == "clarify" and not event.alt and len(event.char) == 1 and event.char in CHOICE_DIGITS
 
 
-def _menu_lines(entries: list[Completion], index: int, width: int, max_rows: int, theme: Theme) -> list[Line]:
-    """The completion menu, scrolled so the highlighted entry is visible."""
+def _menu_lines(entries: list[tuple[str, str]], index: int, width: int, max_rows: int, theme: Theme) -> list[Line]:
+    """The completion menu (`(label, summary)` rows), scrolled so the highlighted entry is visible."""
     if not entries or max_rows <= 0:
         return []
     start = min(max(index - max_rows + 1, 0), max(len(entries) - max_rows, 0))
     rows: list[Line] = []
     for number in range(start, min(start + max_rows, len(entries))):
-        entry = entries[number]
+        label, summary = entries[number]
         current = number == index
         style = theme.menu_current if current else theme.menu
-        name = f" /{entry.name}".ljust(MENU_NAME_CELLS)
-        rows.append(truncate_line((Span(name, style), Span(f" {entry.summary} ", style)), width))
+        name = f" {label}".ljust(MENU_NAME_CELLS)
+        rows.append(truncate_line((Span(name, style), Span(f" {summary} ", style)), width))
     return rows
 
 
@@ -460,8 +496,13 @@ class App:
         self.banner_record: dict[str, str] | None = None  # kept, so a full redraw can print it again
         self.redraw_at: float | None = None  # when a settled resize redraws everything
         self.anchor = True  # the next frame re-anchors the region (first frame, resize, redraw)
+        self.busy_since = 0.0  # when the running turn (or the prompt still waiting for it) started
         self.attachments: list[Attachment] = []  # images the gateway queued for the next prompt
         self.picker: SessionPicker | None = None
+        self.path_word = ""  # the `@` token `complete.path` was last scheduled for
+        self.path_due: float | None = None  # when that call goes out (debounced)
+        self.path_seq = 0  # the newest call; an answer to an older one is stale
+        self.path_items: list[PathItem] = []
         self.dirty = True
         self.last_render = 0.0
 
@@ -546,6 +587,7 @@ class App:
         info = result.get("info")
         self.model = _text(info.get("model")) if isinstance(info, dict) else ""
         self.turn_pending = bool(result.get("running"))
+        self.busy_since = self.clock()
         self._adopt_stored(_text(result.get("stored_session_id")) or fallback_stored)
 
     def _adopt_stored(self, stored: str) -> None:
@@ -587,6 +629,8 @@ class App:
         self._drain_gateway()
         if self.exit_code is not None:
             return
+        self._track_path_token()
+        self._ask_path_completion_when_due()
         self._take_hud()
         self._render_when_due()
 
@@ -682,6 +726,8 @@ class App:
         else:
             self.transcript.apply(event)
             if event.type == "message.start":
+                if not self.turn_pending:  # a turn this TUI did not start (a resumed one, a server queue)
+                    self.busy_since = self.clock()
                 self.turn_pending = False
             elif event.type == "message.complete":
                 self.turn_pending = False
@@ -762,6 +808,8 @@ class App:
             if not self.pager.handle_key(event, self.size[1]):
                 self._leave_pager()
             return
+        if self._display_key(event):
+            return
         if self.slot is not None and _slot_owns(self.slot, event, self.composer.text):
             answer = self.slot.handle_key(event)
             if answer is not None:
@@ -770,7 +818,7 @@ class App:
         if self.slot is None and self.picker is not None:
             self._picker_key(event)
             return
-        if self.slot is None and self._attachment_input(event):
+        if self.slot is None and (self._attachment_input(event) or self._escape(event)):
             return
         if self.slot is None and isinstance(event, Key) and self._menu_moves(event):
             return
@@ -795,6 +843,19 @@ class App:
         elif action.kind == COMPLETE and self.slot is None:
             self._accept_completion()
 
+    def _display_key(self, event: Key | Paste) -> bool:
+        """Ctrl+O (details) and Ctrl+L (redraw) work whatever has the keys; True when it was one."""
+        if not isinstance(event, Key) or event.name != CHAR or not event.ctrl or event.alt:
+            return False
+        if event.char == "o":
+            # No notice: a new block would close the live one, the only block the toggle changes.
+            self.transcript.toggle_details()
+        elif event.char == "l":
+            self._full_redraw()
+        else:
+            return False
+        return True
+
     def _attachment_input(self, event: Key | Paste) -> bool:
         """Ctrl+V, Backspace on an empty composer with images queued, and a one-line paste (a drop); True when handled."""
         if isinstance(event, Paste):
@@ -816,11 +877,26 @@ class App:
             return True
         return False
 
+    def _escape(self, event: Key | Paste) -> bool:
+        """Esc closes the `@` path menu, or interrupts a running turn when the composer is empty."""
+        if not isinstance(event, Key) or event.name != ESCAPE:
+            return False
+        if self.path_items:
+            self.path_items = []
+            return True
+        if not self.composer.text and self._busy():
+            self._interrupt()
+            return True
+        return False
+
+    def _interrupt(self) -> None:
+        if self.sid:
+            self._request("session.interrupt", {"session_id": self.sid}, lambda result: None)
+
     def _interrupt_or_exit(self) -> None:
         """Ctrl+C on empty input: interrupt a running turn, else exit on a second press within 2 s."""
         if self._busy():
-            if self.sid:
-                self._request("session.interrupt", {"session_id": self.sid}, lambda result: None)
+            self._interrupt()
             return
         now = self.clock()
         if self.exit_armed_at is not None and now - self.exit_armed_at <= EXIT_CONFIRM_SECONDS:
@@ -839,19 +915,67 @@ class App:
             return []
         return completions(prefix, self.catalog)
 
+    def _menu_rows(self) -> list[tuple[str, str]]:
+        """The open completion menu as `(label, summary)` rows: slash commands, else `@` paths."""
+        entries = self._menu_entries()
+        if entries:
+            return [(f"/{entry.name}", entry.summary) for entry in entries]
+        return [(item.display or item.text, item.meta) for item in self.path_items]
+
     def _menu_moves(self, key: Key) -> bool:
         if key.name not in (UP, DOWN):
             return False
-        entries = self._menu_entries()
-        if not entries:
+        rows = self._menu_rows()
+        if not rows:
             return False
-        self.menu_index = (self.menu_index + (-1 if key.name == UP else 1)) % len(entries)
+        self.menu_index = (self.menu_index + (-1 if key.name == UP else 1)) % len(rows)
         return True
 
     def _accept_completion(self) -> None:
         entries = self._menu_entries()
         if entries:
             self._set_composer(f"/{entries[min(self.menu_index, len(entries) - 1)].name} ")
+            return
+        start, word = at_token(self.composer.text, self.composer.caret)
+        if not self.path_items or not word:
+            return
+        item = self.path_items[min(self.menu_index, len(self.path_items) - 1)]
+        self.composer.replace(start, self.composer.caret, item.text)
+        self.path_items = []
+        if not item.text.endswith("/"):
+            self.path_word = item.text  # an accepted file closes the menu; a folder lists its contents next
+
+    def _track_path_token(self) -> None:
+        """Schedule `complete.path` for the `@` token at the caret once it holds still; drop the menu without one."""
+        open_composer = self.slot is None and self.picker is None
+        word = at_token(self.composer.text, self.composer.caret)[1] if open_composer else ""
+        if word == self.path_word:
+            return
+        self.path_word = word
+        if word:
+            self.path_due = self.clock() + PATH_COMPLETE_DEBOUNCE_SECONDS
+        else:
+            self.path_due = None
+            self.path_items = []
+
+    def _ask_path_completion_when_due(self) -> None:
+        if self.path_due is None or self.clock() < self.path_due or not self.sid:
+            return
+        self.path_due = None
+        self.path_seq += 1
+        seq, word = self.path_seq, self.path_word
+        self._request(
+            "complete.path",
+            {"word": word, "session_id": self.sid},
+            lambda result: self._on_path_items(seq, word, result),
+            lambda error: True,  # completion is advisory; a failed lookup offers nothing
+        )
+
+    def _on_path_items(self, seq: int, word: str, result: dict[str, Any]) -> None:
+        if seq != self.path_seq or word != self.path_word:
+            return  # the token moved on while this answer was on its way
+        self.path_items = path_items(result)
+        self.menu_index = 0
 
     # ── prompts ──
 
@@ -877,6 +1001,7 @@ class App:
         self.transcript.add_user(shown or text)
         self.sticky = shown or text
         self.turn_pending = True
+        self.busy_since = self.clock()
         self.attachments.clear()  # the gateway sends its queued images with this turn
         params: dict[str, Any] = {"session_id": self.sid, "text": text}
         if queued:
@@ -1318,8 +1443,11 @@ class App:
         if self._busy():
             status = self.transcript.status
             text = self.transcript.activity or (status.text if status is not None else "") or "working…"
-            spinner = SPINNER_FRAMES[int(self.clock() / TICK_SECONDS) % len(SPINNER_FRAMES)]
-            lines.append(truncate_line((Span(f"{spinner} {text}", self.theme.dim),), cols))
+            now = self.clock()
+            spinner = SPINNER_FRAMES[int(now / TICK_SECONDS) % len(SPINNER_FRAMES)]
+            elapsed = elapsed_text(now - (self.busy_since or now))
+            row = f"{spinner} {text} ({elapsed} · {INTERRUPT_HINT})"
+            lines.append(truncate_line((Span(row, self.theme.dim),), cols))
         return lines
 
     def _slot_lines(self, cols: int, rows: int) -> list[Line]:
@@ -1330,9 +1458,9 @@ class App:
             return self.slot.lines(cols, self.theme, cap)
         if self.picker is not None:
             return self.picker.lines(cols, self.theme, cap, self.wall_clock())
-        entries = self._menu_entries()
-        if entries:
-            return _menu_lines(entries, min(self.menu_index, len(entries) - 1), cols, cap, self.theme)
+        rows = self._menu_rows()
+        if rows:
+            return _menu_lines(rows, min(self.menu_index, len(rows) - 1), cols, cap, self.theme)
         payload = self.hud.payload if self.hud is not None else None
         if payload is None:
             return []

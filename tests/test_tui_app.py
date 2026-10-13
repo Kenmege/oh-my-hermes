@@ -25,6 +25,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import time
 import unittest
@@ -46,6 +47,7 @@ from omh.tui import terminal as terminal_module
 from omh.skin_pack import hex_to_rgb
 from omh.tui.app import BANNER_HINT, EXIT_HINT, App, initial_theme, main
 from omh.tui.gateway import GatewayClient, gateway_spawn
+from omh.tui.keys import Paste
 from omh.tui.launch import FALLBACK_EXIT
 from omh.tui.theme import theme_named
 from omh.version import __version__
@@ -1046,6 +1048,7 @@ CLIP = {
 }
 OTHER_STORED_ID = "20261012_090000_router"
 OTHER_LIVE_ID = "c0ffee01"
+INTERRUPT_ROW = re.compile(r"\(\d+s · esc to interrupt\)")
 
 
 def bracketed(text: str) -> bytes:
@@ -1054,6 +1057,10 @@ def bracketed(text: str) -> bytes:
 
 def status_index(screen: list[str]) -> int:
     return next(index for index, line in enumerate(screen) if STATUS_MARK in line)
+
+
+def status_row_of(screen: list[str]) -> str:
+    return screen[status_index(screen)]
 
 
 def composer_row(screen: list[str]) -> str:
@@ -1263,6 +1270,160 @@ class SessionSwitchTests(AppTestCase):
         self.assertEqual(run.calls("prompt.submit")[0]["params"]["session_id"], LIVE_ID)
         self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": STORED_ID})
 
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class KeyTests(AppTestCase):
+    def interrupted_run(self) -> Run:
+        return self.prepare(
+            Scenario("session", spans("session", "startup", "create", "interrupted_turn"), answers=startup_answers())
+        )
+
+    def running(self, run: Run) -> Callable[[], bool]:
+        return lambda: run.terminal.status_row().rstrip().endswith("running")
+
+    def test_esc_on_an_empty_composer_interrupts_and_with_text_keeps_the_draft(self) -> None:
+        run = self.interrupted_run()
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "Write the numbers from 1 to 300, one per line, nothing else."),
+            Step(b"draft", when=self.running(run), capture="running", label="running"),
+            Step(b"\x1b", when=terminal.shows("› draft"), label="the draft"),
+            # The replay holds the turn open until it sees session.interrupt, so a turn still running
+            # well after that Esc proves the Esc sent nothing.
+            Step(b"\x15", when=lambda: terminal.shows("› draft")() and time.monotonic() - terminal.fired["the draft"] > 0.4,
+                 capture="after the first esc", label="the draft after Esc"),
+            Step(b"\x1b", when=lambda: not terminal.shows("› draft")(), label="the empty composer"),
+            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(), label="end"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (interrupt,) = run.calls("session.interrupt")
+        self.assertEqual(interrupt["params"], {"session_id": LIVE_ID})
+        self.assertTrue(status_row_of(terminal.captures["after the first esc"]).rstrip().endswith("running"))
+        activity = [line for line in terminal.captures["running"] if INTERRUPT_ROW.search(line)]
+        self.assertEqual(len(activity), 1, terminal.captures["running"])
+
+    def test_the_activity_row_counts_the_seconds_since_the_prompt(self) -> None:
+        run = self.interrupted_run()
+        terminal = run.terminal
+        two_seconds = re.compile(r"\(2s · esc to interrupt\)")
+        terminal.script(
+            self.submit(run, "Write the numbers from 1 to 300, one per line, nothing else."),
+            Step(b"\x03", when=lambda: any(two_seconds.search(line) for line in terminal.screen.lines()),
+                 label="two seconds in"),
+            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(), label="end"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        pressed = terminal.fired["the idle status line"]
+        self.assertGreaterEqual(terminal.fired["two seconds in"] - pressed, 2.0)
+
+    def test_at_completion_asks_complete_path_and_tab_replaces_the_token(self) -> None:
+        items = {"items": [
+            {"text": "@file:src/app.py", "display": "app.py", "meta": ""},
+            {"text": "@folder:src/", "display": "src/", "meta": "dir"},
+        ]}
+        answers = (*startup_answers(), ("complete.path", {"result": items}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            Step(b"look at @sr", when=terminal.idle, label="idle"),
+            Step(b"\t", when=terminal.shows(" app.py"), capture="menu", label="the path menu"),
+            # Past the debounce, so a re-ask for the accepted file would have gone out by now.
+            Step(b"\x03\x04", when=lambda: terminal.shows("› look at @file:src/app.py")()
+                 and time.monotonic() - terminal.fired["the path menu"] > 0.5, capture="accepted",
+                 label="the accepted path"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        # One call for the whole typed word (debounced), none for the accepted file.
+        (asked,) = run.calls("complete.path")
+        self.assertEqual(asked["params"], {"word": "@sr", "session_id": LIVE_ID})
+        menu = terminal.captures["menu"]
+        status = status_index(menu)
+        self.assertTrue(menu[status - 4].startswith(" app.py"), menu)
+        self.assertTrue(menu[status - 3].startswith(" src/"), menu)
+        self.assertIn("dir", menu[status - 3])
+        accepted = terminal.captures["accepted"]
+        self.assertFalse(any(line.startswith(" src/") for line in accepted), accepted)
+
+    def test_path_completion_waits_for_the_token_to_hold_still_and_drops_a_stale_answer(self) -> None:
+        items = {"items": [{"text": "@file:src/app.py", "display": "app.py", "meta": ""}]}
+        answers = (*startup_answers(), ("complete.path", {"result": items}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        now = [100.0]
+        client = self.make_client(run)(gateway_spawn(run.environ))
+        client.start(ready_timeout=10.0)
+        app = App(terminal, client, run.environ, poller=run.poller, clock=lambda: now[0])
+        app.startup()
+        terminal.script(
+            Step(b"look at @s", when=terminal.idle, label="idle"),
+            Step(b"r", when=lambda: True, label="the next key, no time later"),
+            Step(b"", when=lambda: not now.__setitem__(0, 101.0), label="the token held still"),
+            Step(b"\x03\x04", when=terminal.shows(" app.py"), label="the path menu"),
+        )
+        with terminal:
+            run.code = app.run()
+        self.assert_clean_run(run)
+        self.assertEqual([frame["params"] for frame in run.calls("complete.path")],
+                         [{"word": "@sr", "session_id": LIVE_ID}])
+        # An answer for a word the composer has moved on from is dropped.
+        app.composer.handle(Paste("@srx"))
+        app._track_path_token()
+        app.path_items = []
+        app._on_path_items(app.path_seq, "@sr", items)
+        self.assertEqual(app.path_items, [])
+
+    def test_ctrl_o_toggles_details(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        terminal = run.terminal
+        client = self.make_client(run)(gateway_spawn(run.environ))
+        client.start(ready_timeout=10.0)
+        app = App(terminal, client, run.environ, poller=run.poller)
+        app.startup()
+        seen: list[bool] = []
+        terminal.script(
+            Step(b"\x0f", when=terminal.idle, label="idle"),
+            Step(b"\x0f", when=lambda: app.transcript.details_expanded and not seen.append(True), label="expanded"),
+            Step(b"\x04", when=lambda: not app.transcript.details_expanded, label="collapsed"),
+        )
+        with terminal:
+            run.code = app.run()
+        self.assert_clean_run(run)
+        self.assertEqual(seen, [True])
+
+    def test_ctrl_l_redraws_the_session_from_memory(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers())
+        )
+        terminal = run.terminal
+        cleared = "\x1b[3J"
+        terminal.script(
+            self.submit(run, "Reply with exactly the word: ok"),
+            Step(b"\x0c", when=lambda: "later." in terminal.history() and terminal.idle(), label="the reply"),
+            Step(b"\x04", when=lambda: cleared in "".join(terminal.writes) and terminal.idle(), capture="redrawn",
+                 label="the redraw"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        everything = terminal.screen.scrollback + terminal.captures["redrawn"]
+        self.assertEqual(sum(line.startswith("⚚ OH-MY-HERMES") for line in everything), 1, everything)
+        self.assertEqual(sum("I'm Hermes, your agent" in line for line in everything), 1, everything)
+
+    def test_a_backslash_before_enter_adds_a_line_instead_of_sending(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers())
+        )
+        terminal = run.terminal
+        terminal.script(
+            Step(b"line one\\\rline two\r", when=terminal.idle, label="idle"),
+            Step(b"\x04", when=lambda: "later." in terminal.history() and terminal.idle(), label="the reply"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (submitted,) = run.calls("prompt.submit")
+        self.assertEqual(submitted["params"], {"session_id": LIVE_ID, "text": "line one\nline two"})
 
 
 if __name__ == "__main__":

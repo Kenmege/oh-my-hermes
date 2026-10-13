@@ -32,7 +32,7 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "config.get": frozenset({"key"}),
     "commands.catalog": frozenset(),
     "complete.slash": frozenset({"text", "session_id"}),
-    "complete.path": frozenset({"word"}),
+    "complete.path": frozenset({"word", "session_id"}),
     "session.create": frozenset({"cols", "cwd"}),
     "session.resume": frozenset({"session_id", "cols"}),
     "session.close": frozenset({"session_id"}),

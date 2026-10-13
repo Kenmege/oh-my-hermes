@@ -139,6 +139,27 @@ class NewlineAndSubmitTests(unittest.TestCase):
         self.assertEqual(composer.text, "a\nb\nc")
         self.assertEqual(composer.handle(Key(ENTER)), ComposerAction(SUBMIT, "a\nb\nc"))
 
+    def test_enter_right_after_a_backslash_turns_it_into_a_newline(self) -> None:
+        composer = Composer()
+        typed(composer, "one\\")
+        self.assertEqual(composer.handle(Key(ENTER)), ComposerAction(NONE))
+        typed(composer, "two")
+        self.assertEqual((composer.text, composer.caret), ("one\ntwo", 7))
+        self.assertEqual(composer.handle(Key(ENTER)), ComposerAction(SUBMIT, "one\ntwo"))
+
+    def test_a_backslash_away_from_the_caret_or_in_masked_input_does_not_hold_enter(self) -> None:
+        composer = Composer(text="a\\ b", caret=4)
+        self.assertEqual(composer.handle(Key(ENTER)), ComposerAction(SUBMIT, "a\\ b"))
+        masked = Composer(masked=True)
+        typed(masked, "pw\\")
+        self.assertEqual(masked.handle(Key(ENTER)), ComposerAction(SUBMIT, "pw\\"))
+
+    def test_replace_swaps_a_range_and_parks_the_caret_after_it(self) -> None:
+        composer = Composer(text="see @sr now", caret=7)
+        composer.replace(4, 7, "@file:src/" + HANGUL_NFD + ".md")
+        self.assertEqual(composer.text, f"see @file:src/{HANGUL}.md now")
+        self.assertEqual(composer.caret, len(f"see @file:src/{HANGUL}.md"))
+
 
 class DeleteTests(unittest.TestCase):
     def test_backspace_removes_one_cluster(self) -> None:

@@ -19,7 +19,8 @@ edge. Continuation rows are indented by the prompt's width. When the input
 needs more than `max_rows` rows, the visible window scrolls just enough to
 keep the caret row inside it.
 
-Keys: printable text inserts; Enter submits; Alt+Enter and Ctrl+J insert a
+Keys: printable text inserts; Enter submits, except right after a backslash,
+which it turns into a newline; Alt+Enter and Ctrl+J insert a
 newline; Backspace/Delete remove one cluster; Left/Right move one cluster,
 with Ctrl or Alt one word; Up/Down move one visual row and browse history at
 the first and last row; Home/End and Ctrl+A/Ctrl+E go to the start/end of the
@@ -209,6 +210,10 @@ class Composer:
         if cleaned:
             self._replace(self.caret, self.caret, cleaned)
 
+    def replace(self, start: int, end: int, text: str) -> None:
+        """Put `text` (cleaned as a paste is) in place of `self.text[start:end]`; the caret lands after it."""
+        self._replace(start, end, _clean(text, self.masked))
+
     def _units(self) -> tuple[list[str], list[int], int]:
         """Clusters, their boundaries, and the caret's cluster index."""
         units = clusters(self.text)
@@ -231,6 +236,9 @@ class Composer:
             self._insert(event.text)
             return NOTHING
         if event.name == ENTER:
+            if not event.alt and not self.masked and self.text[self.caret - 1 : self.caret] == "\\":
+                self._replace(self.caret - 1, self.caret, NEWLINE)
+                return NOTHING
             if event.alt:
                 self._insert(NEWLINE)
                 return NOTHING
