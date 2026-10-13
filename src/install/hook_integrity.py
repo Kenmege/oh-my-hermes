@@ -176,7 +176,8 @@ HOOK_REVIEWS: dict[str, dict[str, Any]] = {
         "capability": (
             "closing the in-flight tool-call ledger entry that backs the OMH "
             "HUD's liveness signal (open-call count, stalled-todo warning, "
-            "parallel-shot lifetime)"
+            "parallel-shot lifetime), and mirroring Hermes' native todo_list "
+            "writes into the session's OMH plan todo"
         ),
     },
     "pre_verify": {

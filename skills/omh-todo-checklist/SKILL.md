@@ -42,6 +42,7 @@ Bad example:
 ## Completion Checklist
 
 - Exactly one item is active, or the list is complete and every item is done.
+- The steps live in one tool; the same list is never written to both `todo_list` and `omh_todo`.
 - Use `action=advance` or a complete `action=set` list; never drop an item by omission.
 - Item states are described as declarations; observed results are cited separately or named as missing.
 - Name whether work is blocked or human-deferred.
@@ -75,6 +76,7 @@ Reasoning demand: `light`
 Quality bar:
 
 - A `done` item is a declaration, never observed evidence.
+- With `todo_list` holding the steps, mark states there and call `omh_todo` only for what it alone records; a native `completed` is judged against recorded commands exactly like `done`, and `cancelled` reads as skipped.
 - For accepted multi-turn work, load `references/closing-a-story.md` before checkpoint, recall, explicit resume or recording verification/review/QA declarations. Preserve rejected ideas separately; templates remain optional.
 - Current intent overrides old plans. Stop, analysis-only and topic changes take precedence; ask only when scope is ambiguous. Missing, stale or malformed evidence is not clean; waiting for a child remains open.
 - Keep exactly one item active so the HUD names the current step.
@@ -86,7 +88,7 @@ Quality bar:
 
 Handoff policy:
 
-Declare and update the checklist directly with `omh_todo`; a checklist item is a plan declaration and never dispatches, executes, or verifies anything.
+Keep the steps in ONE tool, never both: a planning run or a code-story template keeps them in `omh_todo`; otherwise `todo_list` holds them when `todo_list` is in your tool list or `tool_search` finds it, and OMH mirrors each write into this plan todo, else `omh_todo`. `omh_todo` alone holds `plan_stage`, checkpoint/record/recall, `blocked_reason` and `deferred_reason`. A checklist item is a plan declaration and never dispatches, executes, or verifies anything.
 
 Required inputs:
 

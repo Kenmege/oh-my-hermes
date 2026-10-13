@@ -71,6 +71,7 @@ from .hooks.nudge_budget import (
 # "is this the same call", and the two would disagree the first time either
 # of them changed.
 from .tool_bursts import tool_args_digest
+from .native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
 
 ENGAGEMENT_NUDGE_SCHEMA_VERSION: Final = "omh_engagement_nudge/v1"
 # Its own JSON key, the way `code_mode_guidance` adds one: a tool result that
@@ -138,13 +139,20 @@ DELEGATION_NUDGE_DIRECT_READ_THRESHOLD: Final = 5
 # model has declined twice is not going to work the third time.
 MAX_ENGAGEMENT_NUDGES: Final = 2
 
+# "No plan is declared" is read off the session's plan record, which a native
+# todo_list write reaches too (`native_todo`), so the nudge names both tools
+# and asks for one of them. The tool choice was paid for out of the sentence's
+# own length, not the per-session bound in `tests/test_engagement_nudges.py`:
+# "the steps you are actually taking" became "your steps", "what is planned
+# and what is left" became "what is left", and "has something to reconcile
+# ... against" became "can check ... against it".
 PLAN_NUDGE_TEXT: Final = (
     "[OMH plan todo] This session has changed files {count} times and no plan is "
-    "declared. Declare one now with omh_todo -- the steps you are actually "
-    "taking, exactly one of them active -- so the Hermes TUI shows the person "
-    "what is planned and what is left, and so the next turn has something to "
-    "reconcile a completion claim against. Todo items are declarations, never "
-    "execution evidence."
+    f"declared. Declare one now in ONE tool -- {NATIVE_TODO_TOOL} when "
+    f"{native_tool_presence_clause(NATIVE_TODO_TOOL)}, else omh_todo -- with "
+    "your steps, exactly one active, so the person sees what is left and the "
+    "next turn can check a completion claim against it. Items are "
+    "declarations, never execution evidence."
 )
 # What the two tools actually do, measured in the host rather than inferred
 # from their names. This sentence used to end "omh_delegate_route to pick one,

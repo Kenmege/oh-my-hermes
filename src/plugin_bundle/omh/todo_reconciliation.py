@@ -219,10 +219,15 @@ EVIDENCE_REASONS = (
 # the stop criterion's own escape -- a done item carrying one is closed as
 # skipped. Rendered only while such an item exists, so a plan without one pays
 # nothing.
+#
+# Both moves name omh_todo, even on a plan whose steps live in Hermes'
+# todo_list: re-sending a completed item there is the list standing still
+# (`bind_done_items` keeps a done-to-done item exactly as it was), so only
+# omh_todo's advance binds the new command to the item.
 TODO_EVIDENCE_RULE = (
     "A done mark closes an item only with a passing command recorded for it: "
-    "run the check that shows it, then advance it to done again, or give it "
-    "an omh_todo blocked_reason saying why no command can show it."
+    "run the check that shows it, then advance it to done again with omh_todo, "
+    "or give it an omh_todo blocked_reason saying why no command can show it."
 )
 
 # How the plan line says each reason. The line is read by the model and may be
@@ -309,9 +314,14 @@ TODO_ANSWER_FIRST_RULE = (
 # the plan, in record terms rather than in prose. What is left in the
 # always-on half is the standing invariant of the record itself (completed
 # items marked done, exactly one active), which nothing else states.
+#
+# It names no tool. The checklist is in whichever ONE tool holds the steps --
+# Hermes' todo_list, mirrored into this record (`native_todo`), or omh_todo --
+# and naming omh_todo here asked a todo_list session to write the same list a
+# second time on every turn.
 TODO_RECONCILIATION_RULE_FIRST_CLAUSE = (
-    "Before claiming this work is finished, reconcile the checklist with "
-    "omh_todo: mark completed items done and keep exactly one item active."
+    "Before claiming this work is finished, reconcile the checklist: mark "
+    "completed items done and keep exactly one item active."
 )
 
 # The evidence boundary stays on the budgeted side rather than moving to every

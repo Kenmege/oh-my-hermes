@@ -1541,6 +1541,18 @@ does not load TUI widget files, so this panel is a modern-TUI-only surface.
 merge evidence; an all-done list collapses to a single header line and a list
 untouched for 24 hours is hidden as stale.
 
+Hermes' own checklist tool, `todo_list`, reaches the same panel. Wherever it
+is present — in the session's tool list, or found through `tool_search` — it
+holds the steps, and the plugin's `post_tool_call` hook mirrors each
+successful `todo_list` write into the session's plan todo, so one plan shows
+whichever tool holds it and the model never writes the same list twice. A
+native `completed` is still a declaration, and a `cancelled` item shows as
+skipped. `omh_todo` then carries only what `todo_list` cannot: `plan_stage`
+on a planning run, the completion dossier, an item's `blocked_reason` and
+the plan's `deferred_reason`. A planning checklist awaiting acceptance and a
+`code-story` plan stay with `omh_todo`; a native write does not replace
+either while it is open.
+
 A plan may be declared from a named phase template instead of from phases the
 model writes out itself. `omh_todo` with `action=set` and
 `template: code-story` declares the ten phases of a code story — `I. Story`,

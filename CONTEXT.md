@@ -165,6 +165,22 @@ offered to the host's active-session lease registry, which pairs a created
 session's transport id with its durable key; an unpaired reference stays its
 own identity and reads no other session's record.
 
+Two tools write this one record, and only one of them holds a given plan's
+steps. Where Hermes' native `todo_list` is present (see Native tool
+presence), it does: the plugin's `post_tool_call` projects each successful
+`todo_list` write into the session's own record with `source: todo_list`
+(`src/plugin_bundle/omh/native_todo.py`) — `completed` as `done`, judged
+against recorded commands like any done mark, and `cancelled` as `done` with
+a `blocked_reason` — and `omh_todo` is called only for what `todo_list`
+cannot say: `plan_stage`, the completion dossier, an item's `blocked_reason`
+(carried across later native writes by item text) and the plan's
+`deferred_reason`. Where it is absent, `omh_todo` is the only writer. Every
+reader — the HUD, the widget, the Desktop pane, the plan-stage gate, the
+stall finding and the continuation drive — reads the record through
+`read_omh_todo` and never asks which tool wrote it. A native write never
+replaces an open plan stamped `awaiting_acceptance` or an open template plan,
+since only `omh_todo` can express either.
+
 One field on this record refuses work rather than describing it, which is why
 it is named here: a planning run stamps `plan_stage: awaiting_acceptance` when
 it declares the checklist, and while that holds, a `write_file` or `patch` in
@@ -176,7 +192,8 @@ CLI write, a record predating the field — is ungated. Still a declaration and
 still never evidence: the stamp says what the run claims about the person's
 answer, never that a plan was reviewed or that anything was implemented.
 _Avoid_: task list as evidence, TodoWrite (that is another product's tool
-name), reading an absent `plan_stage` as an unaccepted plan
+name), reading an absent `plan_stage` as an unaccepted plan, a second
+checklist (the same steps written to both `todo_list` and `omh_todo`)
 
 **Completion dossier**:
 The record a verification verdict, a review finding set, or a QA result
@@ -364,6 +381,19 @@ hand-placed standalone copy in an isolated home; the copy step is read from
 the app's source), OMH status widget (that is the Modern-TUI surface)
 
 ### Host surfaces OMH reads
+
+**Native tool presence**:
+Whether a Hermes tool is available to a session: its name is in the
+session's tool list OR in the tool_search catalog. A deferred tool is
+reachable through the `tool_call` bridge and is present, and Hermes peels the
+bridge before plugin hooks run, so its calls reach `post_tool_call` under its
+own name. One rule with two faces in `src/plugin_bundle/omh/native_tools.py`:
+`native_tool_present` for code holding the name sets, and
+`native_tool_presence_clause` for text the model evaluates — plugin hooks are
+handed no tool list, the model sees its own. Every surface that relies on a
+native tool uses one of the two and says what happens when it is absent.
+_Avoid_: gating on a Hermes version number (a version says what shipped, not
+what this session was given), reading a deferred tool as missing
 
 **Live TUI session row**:
 A row in `$HERMES_HOME/state.db` `sessions`, scoped to `source='tui'`, not

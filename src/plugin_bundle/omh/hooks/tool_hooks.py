@@ -10,9 +10,10 @@ from typing import Protocol, TypeGuard, runtime_checkable
 
 from ..degradation import runtime_binding_degradation
 from ..approval_bypass import record_approval_bypass
-from ..host_observation import observe_plugin_hook_call
+from ..host_observation import host_session_id, observe_plugin_hook_call
 from ..jev_consent import arm_tool_call as arm_jev_tool_call
 from ..jev_consent import disarm_tool_call as disarm_jev_tool_call
+from ..native_todo import project_native_todo
 from ..omh_roles import extract_role_marker, resolve_role_name, role_aliases, role_names
 from ..plan_stage_gate import plan_stage_edit_directive
 from ..team_gate import team_start_directive
@@ -357,6 +358,12 @@ def post_tool_call(**kwargs: object) -> dict[str, object] | None:
     the text -- and a result this seam cannot digest leaves the entry
     unknown, which degrades the guard to the argument comparison it
     shipped with rather than to a refusal.
+
+    And it is the one place a native `todo_list` write is seen, so it
+    projects that list into the session's plan todo record (`native_todo`):
+    one checklist for the HUD and the plan guards whichever tool holds the
+    steps. The projection writes only OMH's own record and never touches
+    the tool result.
     """
     if str(kwargs.get("tool_name", "") or "") == "omh_jev_ask":
         # First, before any early return: the call is finished, so its arm
@@ -374,6 +381,11 @@ def post_tool_call(**kwargs: object) -> dict[str, object] | None:
         tool_call_id=kwargs.get("tool_call_id") or "", turn_id=kwargs.get("turn_id") or "",
         status=str(kwargs.get("status") or ""), omh_home=omh_home,
         hermes_home=hermes_home,
+    )
+    _ = project_native_todo(
+        tool_name=kwargs.get("tool_name"), args=_tool_arguments(kwargs),
+        result=kwargs.get("result"), status=kwargs.get("status"),
+        session_ref=host_session_id(kwargs), omh_home=omh_home, hermes_home=hermes_home,
     )
     bridge = _agent_board_bridge()
     if bridge is not None:

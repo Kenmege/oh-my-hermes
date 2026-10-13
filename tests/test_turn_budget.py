@@ -103,7 +103,10 @@ class TurnBudgetTests(unittest.TestCase):
     def test_the_moved_history_moved_whole(self) -> None:
         moved = _HISTORY_LINE.findall(TURN_BUDGET_SOURCE.read_text(encoding="utf-8"))
         remaining = set(_HISTORY_LINE.findall(RELEASE_SOURCE.read_text(encoding="utf-8")))
-        self.assertEqual(tuple(moved), MOVED_HISTORY)
+        # Every moved entry, in its order. Entries written since the move sit
+        # beside them -- a limit raised here records its reason here -- so the
+        # moved ones are compared as the subsequence they still form.
+        self.assertEqual(tuple(entry for entry in moved if entry in MOVED_HISTORY), MOVED_HISTORY)
         self.assertEqual(remaining & set(MOVED_HISTORY), set())
 
 
