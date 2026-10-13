@@ -465,17 +465,86 @@ class ModeCycleTests(unittest.TestCase):
                 app._on_input(key)
                 self.assertEqual(client.calls, [YOLO_ON_CALL])
 
-    def test_no_call_the_app_builds_carries_a_scope(self) -> None:
-        tree = ast.parse(Path(app_module.__file__).read_text(encoding="utf-8"))
-        keys = {
-            key.value
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Dict)
-            for key in node.keys
-            if isinstance(key, ast.Constant)
-        }
-        self.assertIn("session_id", keys)  # the walk does see the params the app builds
-        self.assertNotIn("scope", keys)
+    def test_every_call_the_mode_and_effort_scenarios_send_passes_the_contract_check(self) -> None:
+        # The recording client checks each call as GatewayClient does and raises; this one only records,
+        # so a call the check would refuse reaches the assertion below instead of stopping the scenario.
+        class Unchecked(RecordingClient):
+            def request(self, method: str, params: dict) -> int:
+                self.calls.append((method, dict(params)))
+                return len(self.calls)
+
+        def cycle(app: App, client: RecordingClient, now: list[float]) -> None:
+            app._on_input(SHIFT_TAB)
+            session_info(app, yolo=True)
+            answer(app, client, YOLO_IS_ON)
+            now[0] += 0.5
+            session_info(app, yolo=False)  # held: within the settle window of the confirmed on
+            app._on_input(SHIFT_TAB)
+            session_info(app, yolo=False)
+            answer(app, client, YOLO_IS_OFF)
+            app._on_input(SHIFT_TAB)
+
+        def refused_on(app: App, client: RecordingClient, now: list[float]) -> None:
+            app._on_input(SHIFT_TAB)
+            answer(app, client, {"key": "yolo", "value": "1", "scope": "global"})
+            answer(app, client, {"key": "yolo", "value": "1", "scope": "session"})  # the switch back fails too
+            app._on_input(SHIFT_TAB)
+            answer(app, client, error={"code": 5001, "message": "boom"})
+
+        def stuck_off(app: App, client: RecordingClient, now: list[float]) -> None:
+            app._on_input(SHIFT_TAB)
+            answer(app, client, YOLO_IS_ON)
+            app._on_input(SHIFT_TAB)
+            answer(app, client, error={"code": 4001, "message": "session not found"})
+            app._on_input(SHIFT_TAB)
+            session_info(app, yolo=True)
+            answer(app, client, YOLO_IS_OFF)
+            for _ in range(3):
+                app._on_input(SHIFT_TAB)  # Hermes' own approvals from here: plan alone
+
+        def hermes_own(app: App, client: RecordingClient, now: list[float]) -> None:
+            session_info(app, yolo=True)
+            for _ in range(3):
+                app._on_input(SHIFT_TAB)
+            session_info(app, yolo=False)
+            app._on_input(SHIFT_TAB)
+            app._on_input(SHIFT_TAB)
+
+        def left_mid_call(app: App, client: RecordingClient, now: list[float]) -> None:
+            app._on_input(SHIFT_TAB)
+            app._on_input(CTRL_T)
+            app._adopt_session({"session_id": "live-2", "info": {"yolo": False}})
+            app._on_response(Response(1, YOLO_IS_ON, None))
+            app._on_response(Response(2, effort_set("low"), None))
+            app._on_input(SHIFT_TAB)
+            app._on_input(CTRL_T)
+
+        def effort(app: App, client: RecordingClient, now: list[float]) -> None:
+            for _ in range(3):
+                app._on_input(CTRL_T)
+                answer(app, client, effort_set(client.calls[-1][1]["value"]))
+            for level in ("ultra", "none", "minimal", "show", "high --global"):
+                type_text(app, f"/effort {level}")
+                app._on_input(Key(ENTER))
+
+        sent: list[tuple[str, dict]] = []
+        for scenario in (cycle, refused_on, stuck_off, hermes_own, left_mid_call, effort):
+            with self.subTest(scenario=scenario.__name__):
+                now = [100.0]
+                client = Unchecked()
+                app = App(ScriptedTerminal(24, 80), client, {}, poller=FakePoller(), clock=lambda: now[0])  # type: ignore[arg-type]
+                app.sid = SID
+                scenario(app, client, now)
+                for method, params in client.calls:
+                    self.assertEqual(contract.call_problem(method, params), "", (method, params))
+                sent += client.calls
+        configs = [params for method, params in sent if method == "config.set"]
+        self.assertEqual(
+            {(params["key"], params["value"]) for params in configs},
+            {("yolo", "on"), ("yolo", "off"), ("reasoning", "low"), ("reasoning", "medium"), ("reasoning", "high"),
+             ("reasoning", "ultra"), ("reasoning", "none"), ("reasoning", "minimal")},
+        )
+        self.assertEqual({params["session_id"] for params in configs}, {SID, "live-2"})
 
 
 class HermesOwnApprovalsTests(unittest.TestCase):
