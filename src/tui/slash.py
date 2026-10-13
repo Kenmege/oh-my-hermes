@@ -51,6 +51,8 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("history", LOCAL, "Page through this session's transcript"),
     SlashCommand("details", LOCAL, "Show or hide thinking and tool details", ("detail",)),
     SlashCommand("queue", LOCAL, "Show messages waiting for the current turn", ("q",)),
+    SlashCommand("steer", LOCAL, "Add a message to the running turn (/steer <text>; Ctrl+Enter where it is a key)",
+                 ("s",)),
     SlashCommand("logs", LOCAL, "Show the gateway's recent stderr (kept in memory only)"),
     SlashCommand("copy", LOCAL, "Copy the last reply to the clipboard"),
     SlashCommand("image", LOCAL, "Attach an image file to the next message (/image <path>)"),

@@ -37,6 +37,8 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "session.resume": frozenset({"session_id", "cols"}),
     "session.close": frozenset({"session_id"}),
     "session.interrupt": frozenset({"session_id"}),
+    # Typed text into the running turn; `rejected` when the session is idle, and the text then goes as a prompt.
+    "session.steer": frozenset({"session_id", "text"}),
     "session.list": frozenset({"limit"}),
     "prompt.submit": frozenset({"session_id", "text", "queued"}),
     # Attachments: the gateway resolves and queues the file; the TUI sends a path, never bytes.

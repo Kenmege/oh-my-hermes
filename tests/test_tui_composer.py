@@ -136,6 +136,25 @@ class NewlineAndSubmitTests(unittest.TestCase):
         self.assertEqual(composer.text, "a\nb\nc")
         self.assertEqual(composer.handle(Key(ENTER)), ComposerAction(SUBMIT, "a\nb\nc"))
 
+    def test_shift_enter_adds_a_line_as_alt_enter_does(self) -> None:
+        for modifier in ("alt", "shift"):
+            with self.subTest(modifier=modifier):
+                composer = Composer()
+                typed(composer, "a\\")
+                self.assertEqual(composer.handle(Key(ENTER, **{modifier: True})), ComposerAction(NONE))
+                typed(composer, "b")
+                # The backslash stays: only a plain Enter trades it for the newline.
+                self.assertEqual(composer.text, "a\\\nb")
+                self.assertEqual(composer.history, [])
+
+    def test_ctrl_enter_submits_as_enter_does(self) -> None:
+        for key in (Key(ENTER), Key(ENTER, ctrl=True)):
+            with self.subTest(key=key):
+                composer = Composer()
+                typed(composer, "send me")
+                self.assertEqual(composer.handle(key), ComposerAction(SUBMIT, "send me"))
+                self.assertEqual(composer.history, ["send me"])
+
     def test_enter_right_after_a_backslash_turns_it_into_a_newline(self) -> None:
         composer = Composer()
         typed(composer, "one\\")

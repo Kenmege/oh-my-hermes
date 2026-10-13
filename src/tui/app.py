@@ -28,6 +28,9 @@ whose envelope `session_id` is not the live session are dropped, except
 is tracked from every `session.info` and written (id only, mode 0600) to
 `HERMES_TUI_ACTIVE_SESSION_FILE`; input sent while a turn runs is queued in
 memory unless Hermes' config explicitly asks for `interrupt` or `steer`.
+Ctrl+Enter and `/steer <text>` send what the person typed into the running
+turn (`session.steer`); the TUI steers nothing on its own, and text Hermes
+does not take as a steer goes as a prompt instead of being dropped.
 
 Prompt text, the transcript, attachments, secrets, server-request frames and
 the gateway's stderr stay in memory and on the person's own terminal; nothing
@@ -154,6 +157,10 @@ BUSY_MODES = frozenset({"queue", "steer", "interrupt"})
 STATE_IDLE = "idle"
 STATE_RUNNING = "running"
 STATE_WAITING = "waiting on you"
+
+STEERED_NOTICE = "↪ steered: {}"
+STEER_REJECTED = "rejected"  # `session.steer`'s status when the turn ended before the text arrived
+STEER_USAGE = "Usage: /steer <text to add to the running turn>"
 
 EXIT_HINT = "Ctrl+C again to exit"
 INTERRUPT_HINT = "esc to interrupt"
@@ -303,6 +310,11 @@ def mode_row_line(
     if not right:
         return left
     return (*left, Span(" " * (width - line_width(left) - line_width(right))), *right)
+
+
+def first_line(text: str) -> str:
+    """The first line of a prompt, for the rows that name it in one line."""
+    return text.strip().split("\n", 1)[0]
 
 
 def initial_theme(ready_payload: Mapping[str, Any]) -> Theme:
@@ -963,13 +975,14 @@ class App:
         action = self.composer.handle(event)
         if self.composer.text != before:
             self.menu_index = 0
-        self._on_composer(action)
+        self._on_composer(action, steer=isinstance(event, Key) and event.name == ENTER and event.ctrl)
 
     def _slot_arming(self) -> bool:
         """Whether the open slot opened too recently to take a key or a submit (`SLOT_ARM_SECONDS`)."""
         return self.slot is not None and self.clock() - self.slot_opened_at < SLOT_ARM_SECONDS
 
-    def _on_composer(self, action: ComposerAction) -> None:
+    def _on_composer(self, action: ComposerAction, steer: bool = False) -> None:
+        """Act on what the composer made of a key; `steer` says the key was Ctrl+Enter."""
         if action.kind == SUBMIT:
             if self.slot is not None:
                 if self._slot_arming():
@@ -977,6 +990,8 @@ class App:
                 answer = self.slot.submit_text(action.text)
                 if answer is not None:
                     self._answer(answer)
+            elif steer:
+                self._steer_or_submit(action.text)
             else:
                 self._submit(action.text)
         elif action.kind == INTERRUPT:
@@ -1162,6 +1177,51 @@ class App:
             text, shown = self.queued.popleft()
             self._submit_prompt(text, shown, queued=True)
 
+    # ── steering ──
+
+    def _steer_or_submit(self, text: str) -> None:
+        """Ctrl+Enter: steer the running turn with the typed text. Idle, or on a slash command, it is Enter."""
+        if self._busy() and text.strip() and parse_slash(text) is None:
+            self._steer(text)
+        else:
+            self._submit(text)
+
+    def _steer_command(self, arg: str) -> None:
+        """`/steer <text>`: what Ctrl+Enter does, on any terminal. Idle, the text goes as a prompt."""
+        if not arg:
+            self.transcript.add_notice(STEER_USAGE, NOTICE_WARN)
+        elif self._busy():
+            self._steer(arg)
+        else:
+            self._send_prompt(arg)
+
+    def _steer(self, text: str) -> None:
+        """Send `text` into the running turn. Its only callers pass what the person typed and sent."""
+        if not self.sid:
+            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
+            return
+        self._request(
+            "session.steer",
+            {"session_id": self.sid, "text": text},
+            lambda result: self._on_steered(text, result),
+            lambda error: self._on_steer_refused(text, error),
+        )
+
+    def _on_steered(self, text: str, result: dict[str, Any]) -> None:
+        if as_text(result.get("status")) == STEER_REJECTED:
+            self._send_prompt(text)  # the turn ended before the text arrived: it is the next prompt
+        else:
+            self.transcript.add_notice(STEERED_NOTICE.format(first_line(text)))
+
+    def _on_steer_refused(self, text: str, error: dict[str, Any]) -> bool:
+        """Hermes could not steer (an agent still starting, or one that takes no steer): the text goes as a prompt."""
+        message = as_text(error.get("message")) or "refused"
+        self.transcript.add_notice(
+            f"Hermes did not take the steer ({error.get('code')}): {message}. Sent as a prompt instead.", NOTICE_WARN
+        )
+        self._send_prompt(text)
+        return True
+
     # ── slash commands ──
 
     def _run_slash(self, invocation: SlashInvocation, depth: int = 0) -> None:
@@ -1251,6 +1311,7 @@ class App:
             "history": self._history,
             "details": self._details,
             "queue": self._show_queue,
+            "steer": self._steer_command,
             "logs": self._logs,
             "copy": self._copy,
             "theme": self._theme,

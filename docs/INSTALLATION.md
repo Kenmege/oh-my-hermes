@@ -341,7 +341,8 @@ Keys:
 | Key | Does |
 | --- | --- |
 | Enter | Sends the composer |
-| `\` then Enter, Alt+Enter, Ctrl+J | Adds a line |
+| `\` then Enter, Alt+Enter, Shift+Enter, Ctrl+J | Adds a line |
+| Ctrl+Enter | Steers a running turn with the composer's text; idle, sends it as Enter does |
 | Tab | Completes a slash command, or the `@` reference being typed |
 | `@` | Starts a file or folder reference; Hermes offers matches above the composer |
 | ↑ / ↓ | Walk the input history at the composer's first and last row |
@@ -359,15 +360,23 @@ protocol and xterm modifyOtherKeys, and Ghostty for modifyOtherKeys only: the
 terminals Hermes' own TUI asks, recognised as Hermes recognises them, from
 `TERM_PROGRAM`, `TERM`, `TMUX`, `KITTY_WINDOW_ID` or `WT_SESSION`. Both are
 switched off on exit, a crash, SIGTERM and SIGHUP included. Elsewhere,
-Terminal.app among them, both keys send what Enter sends. Every key the TUI
-binds today works the same either way. `OMH_TUI_KEYBOARD=legacy` stops the
-request on any terminal.
+Terminal.app among them, both keys send what Enter sends, so there
+`/steer <text>` steers and `\` then Enter, Alt+Enter or Ctrl+J adds a line.
+`OMH_TUI_KEYBOARD=legacy` stops the request on any terminal.
+
+A steer adds what you typed to the turn that is running, without interrupting
+it; Hermes reads it after its next tool call, and the transcript notes
+`↪ steered:` once Hermes took it. If the turn ended first, or Hermes cannot
+take a steer yet, the text goes as an ordinary prompt instead. The OMH TUI
+steers only with text you typed and sent this way: a queued prompt is never
+turned into a steer.
 
 Slash commands the OMH TUI runs itself: `/help`, `/quit`, `/new`,
 `/sessions`, `/redraw`, `/history` (an in-memory pager over this session),
 `/details` (show or hide thinking and tool detail on the live block),
-`/queue`, `/logs` (the gateway's recent stderr, kept in memory only), `/copy`,
-`/image`, `/paste` (the clipboard image), `/theme`, and `/omh-model`.
+`/queue`, `/steer <text>`, `/logs` (the gateway's recent stderr, kept in
+memory only), `/copy`, `/image`, `/paste` (the clipboard image), `/theme`, and
+`/omh-model`.
 Commands whose screen exists only in Hermes' own terminal (`/voice`, `/pet`,
 `/agents`, the billing flows, `/save`, `/prompt`, ...) say so and name
 `hermes --tui`. Everything else goes to Hermes as it would from Hermes'

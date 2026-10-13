@@ -20,8 +20,9 @@ needs more than `max_rows` rows, the visible window scrolls just enough to
 keep the caret row inside it.
 
 Keys: printable text inserts; Enter submits, except right after a backslash,
-which it turns into a newline; Alt+Enter and Ctrl+J insert a
-newline; Backspace/Delete remove one cluster; Left/Right move one cluster,
+which it turns into a newline; Alt+Enter, Shift+Enter and Ctrl+J insert a
+newline (Ctrl+Enter is Enter here; the app decides what its submit means);
+Backspace/Delete remove one cluster; Left/Right move one cluster,
 with Ctrl or Alt one word; Up/Down move one visual row and browse history at
 the first and last row; Home/End and Ctrl+A/Ctrl+E go to the start/end of the
 logical line; Ctrl+U/Ctrl+K kill to the start/end of the line (at the edge,
@@ -242,10 +243,11 @@ class Composer:
             self._insert(event.text)
             return NOTHING
         if event.name == ENTER:
-            if not event.alt and not self.masked and self.text[self.caret - 1 : self.caret] == "\\":
+            adds_line = event.alt or event.shift
+            if not adds_line and not self.masked and self.text[self.caret - 1 : self.caret] == "\\":
                 self._replace(self.caret - 1, self.caret, NEWLINE)
                 return NOTHING
-            if event.alt:
+            if adds_line:
                 self._insert(NEWLINE)
                 return NOTHING
             return self._submit()
