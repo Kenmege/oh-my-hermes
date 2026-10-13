@@ -1278,7 +1278,7 @@ _DEFINITIONS = [
         portable_override_shadows={
             "quality_bar": "4da819b34e0cadefe525df0cb5bc43116e034cf54212574a59a2ad9f58468dff",
             "safety_rules": "f5a8f74812425af82829bc083dac62883a283ed8acfa5bc299a594c107ccd4f7",
-            "opening_steps": "fec3e88f2e026fbc67a2e47760817adc17bba4b679fddb4d078cf28742890938",
+            "opening_steps": "b940617840a7fbabcb4c4df696f573bfebec3a1934102c7cc1ed9b47bd5db15e",
             "final_checklist": "aa86ffc317352fb5f4a3cfa3dac07f436232e87055edb9a6adc7bf8b70896366",
             "why_this_exists": "537b436c502275cd7aea748406d5018300d92d31fe670a4c3b48090058b4c0c6",
         },

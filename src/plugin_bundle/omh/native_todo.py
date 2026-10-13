@@ -45,6 +45,21 @@ matched by item text, as `omh_todo` binds by text -- because `todo_list` has
 no way to say it and the next native write would otherwise drop it; marking
 the item completed ends it.
 
+Writes arrive in order, so the projection keeps no ordering of its own.
+Hermes never runs two `todo_list` calls at once: it is not in
+``_PARALLEL_SAFE_TOOLS`` (``agent/tool_dispatch_helpers.py``, v2026.9.7 and
+origin/main), so ``_batch_admission`` makes every call a sequential barrier,
+and the sequential executor finishes one call -- its ``post_tool_call``
+included, which the dispatcher waits on (``plugins_dispatch.py``
+``_run_hook_callback_bounded``) -- before it starts the next. The one gap is
+a hook outliving ``plugins.hook_callback_timeout`` (30 s by default) and
+being abandoned; this projection's own lock wait is two seconds.
+
+Where the projected items are drawn is each surface's call, read off
+``source``: the modern TUI dock and the Desktop pane leave a todo_list-held
+plan's items to Hermes' own todo panel and show only what it cannot
+(`omh-status.mjs`, `desktop/plugin.js`).
+
 This module imports nothing from ``omh`` (`tests/test_plugin_bundle_standalone.py`).
 """
 from __future__ import annotations

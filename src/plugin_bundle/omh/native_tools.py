@@ -51,9 +51,12 @@ def native_tool_present(
 def native_tool_presence_clause(name: str, *, code: bool = False) -> str:
     """The presence rule as a clause the model evaluates: ``<name> is in your tool list or tool_search finds it``.
 
-    ``code`` wraps both tool names in backticks for markdown surfaces (skill
-    bodies); plain text surfaces (awareness lines, tool descriptions) leave
-    them bare, as the rest of their wording does.
+    ``code`` wraps the named tool in backticks for markdown surfaces (skill
+    bodies), which is the one shape every surface states the rule in:
+    ``f"when {native_tool_presence_clause('clarify', code=True)}"`` reads
+    "when `clarify` is in your tool list or tool_search finds it". Plain text
+    surfaces (awareness lines, tool descriptions) leave the name bare, as the
+    rest of their wording does.
     """
     tick = "`" if code else ""
-    return f"{tick}{name}{tick} is in your tool list or {tick}{TOOL_SEARCH_TOOL}{tick} finds it"
+    return f"{tick}{name}{tick} is in your tool list or {TOOL_SEARCH_TOOL} finds it"

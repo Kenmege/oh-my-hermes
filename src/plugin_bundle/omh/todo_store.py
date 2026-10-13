@@ -899,7 +899,9 @@ def advance_todo_item(
     session, deferral and template handling, the same ``validate_todo_items``,
     the same stamp. There is no second validator here and no second schema; a
     record this produces is byte-equal to the one `set` produces for the same
-    plan.
+    plan. ``source`` is the one field that is not the caller's: the stored
+    record's declaring tool is kept, and ``source`` names the writer only for
+    a record that names none.
 
     The template name is read off the stored record and sent back through, so
     a single-item write neither drops it nor escapes it: the phase coverage
@@ -1055,11 +1057,18 @@ def advance_todo_item(
         stored_plan_stage = record.get("plan_stage", "")
         if stored_plan_stage not in TODO_PLAN_STAGES:
             stored_plan_stage = ""
+        # The declaring tool stays, for the reason the stage does: an advance
+        # annotates the plan, it does not re-declare it. That is what keeps a
+        # plan Hermes' `todo_list` holds (`native_todo`) read as todo_list's
+        # after `omh_todo` records a reason on one of its items, so the
+        # surfaces that leave its items to Hermes' own panel keep doing so.
+        # ``source`` names the writer only for a record that names none.
+        stored_source = record.get("source", "")
         try:
             advanced = build_todo_record(
                 record.get("title", ""),
                 items,
-                source=source,
+                source=stored_source if isinstance(stored_source, str) and stored_source else source,
                 session_ref=session_ref,
                 deferred_reason=deferred_reason,
                 template=stored_template,

@@ -1033,6 +1033,69 @@ export default function register(sdk) {
     )
   }
 
+  // A plan whose steps Hermes' own `todo_list` holds (`native_todo`, the
+  // reader's `source`; `NATIVE_TODO_SOURCE` in native_tools.py). The modern
+  // TUI already draws that list: it mounts its LiveTodoPanel under the latest
+  // user message for the turn and archives the list into the transcript when
+  // the turn ends (ui-tui/src/components/appLayout.tsx and
+  // app/turnStore.ts `archiveTodosAtTurnEnd`, at v2026.9.7 and origin/main).
+  // Drawing the same items here was the second checklist on screen, so this
+  // dock keeps only what Hermes cannot show: a reason omh_todo recorded on an
+  // open item, the reader's stall finding, and the parallel-shot badge. With
+  // none of those it is the frame rule alone, as with no plan at all.
+  const NATIVE_TODO_SOURCE = 'todo_list'
+  const NATIVE_HELD_WAITING_ROWS = 3
+  function NativeHeldPlan({ columns, payload, t, todo, viewportRows }) {
+    const items = Array.isArray(todo.items) ? todo.items : []
+    const waiting = items.filter(item => item.state !== 'done' && safeText(item.blocked_reason))
+    const unchanged =
+      todo.status === 'established' &&
+      todo.stall &&
+      todo.stall.status === 'unchanged' &&
+      Number.isFinite(todo.updated_age_seconds)
+        ? elapsedText(Math.max(0, todo.updated_age_seconds))
+        : ''
+    const shot = planShotBadge(payload, t)
+    if (!waiting.length && !unchanged && !shot) return h(Rule, { columns, t })
+    const header = h(
+      Text,
+      { wrap: 'truncate-end' },
+      h(Text, { bold: true, color: t.color.primary }, '[Plan]'),
+      h(Text, { color: t.color.muted }, ' in todo_list'),
+      waiting.length ? h(Text, { color: t.color.border }, SEPARATOR) : null,
+      waiting.length ? h(Text, { color: t.color.warn }, `${waiting.length} waiting`) : null,
+      unchanged ? h(Text, { color: t.color.muted }, ` · unchanged ${unchanged}`) : null,
+      shot,
+    )
+    // The same share of the terminal the full panel budgets (a third, less
+    // the header and the rule), so a short terminal keeps the header alone;
+    // a host that answers with no height leaves the rows unclamped, as there.
+    const bodyRowBudget = Number.isFinite(viewportRows)
+      ? Math.max(1, Math.floor(viewportRows / 3)) - 2
+      : NATIVE_HELD_WAITING_ROWS
+    const shown = waiting.slice(0, Math.min(NATIVE_HELD_WAITING_ROWS, Math.max(0, bodyRowBudget)))
+    const budget = Math.max(16, columns - 10)
+    const reasonCells = Math.min(48, Math.max(8, budget - 36)) // TODO_BLOCKED_REASON_DISPLAY_CHARS, runtime_reader.py
+    const rows = shown.map((item, index) =>
+      h(
+        Text,
+        { key: `native-waiting-${index}`, wrap: 'truncate-end' },
+        h(Text, { color: t.color.text }, `  ${item.state === 'active' ? '[•]' : '[ ]'} ${truncateCells(item.text, Math.max(8, budget - reasonCells - 12))}`),
+        h(Text, { color: t.color.warn }, ` (waiting: ${truncateCells(item.blocked_reason, reasonCells)})`),
+      ),
+    )
+    if (waiting.length > shown.length && shown.length) {
+      rows.push(
+        h(
+          Text,
+          { key: 'native-waiting-more', wrap: 'truncate-end' },
+          h(Text, { color: t.color.muted }, `... (${waiting.length - shown.length} more waiting)`),
+        ),
+      )
+    }
+    return h(Box, { flexDirection: 'column', width: '100%' }, header, ...rows, h(Rule, { columns, t }))
+  }
+
   function TodoPanel({ columns, state, t, viewportRows }) {
     const payload = state.payload
     if (!payload || payload.error || payload.privacy !== 'metadata_only') return null
@@ -1045,6 +1108,9 @@ export default function register(sdk) {
     // blinks with the plan lifecycle.
     if (todo.status !== 'established' && todo.status !== 'all_done') {
       return h(Rule, { columns, t })
+    }
+    if (todo.source === NATIVE_TODO_SOURCE) {
+      return h(NativeHeldPlan, { columns, payload, t, todo, viewportRows })
     }
     const counts = todo.counts || {}
     const title = safeText(todo.title)

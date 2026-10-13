@@ -603,7 +603,7 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64552
 # 487167 -> 487221: second review. The diagnosis output ends its list with
 # Hermes' default backend when nothing else resolves. Re-derived from the
 # producer.
-# 487221 -> 487688: one checklist per plan, all of it in `todo-checklist`'s
+# 487221 -> 487686: one checklist per plan, all of it in `todo-checklist`'s
 # row. Its handoff policy, one quality-bar line and one final-checklist line
 # say which ONE tool holds the steps -- Hermes' todo_list where it is present
 # (OMH mirrors it), else omh_todo, with a planning run and a code-story
@@ -611,9 +611,9 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64552
 # handoff policy named omh_todo alone, which is what had a session write one
 # list to both tools on every update. Re-derived from the producer.
 # Stacked on the three `websearch-setup` raises above: 487221 is that tree's
-# value, this change moves only the `todo-checklist` row, and 487688 is the
+# value, this change moves only the `todo-checklist` row, and 487686 is the
 # producer's reading of the combined tree.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 487688
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 487686
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

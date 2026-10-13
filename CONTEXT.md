@@ -179,7 +179,12 @@ reader — the HUD, the widget, the Desktop pane, the plan-stage gate, the
 stall finding and the continuation drive — reads the record through
 `read_omh_todo` and never asks which tool wrote it. A native write never
 replaces an open plan stamped `awaiting_acceptance` or an open template plan,
-since only `omh_todo` can express either.
+since only `omh_todo` can express either. An `omh_todo` advance keeps the
+record's `source`; only a whole-list `set` re-declares it. Where Hermes draws
+its own todo list — the modern TUI and Hermes Desktop — the OMH dock and pane
+leave a `todo_list`-held plan's items to it and show only what it cannot: a
+reason `omh_todo` recorded on an open item, the stall finding, and in the TUI
+dock the parallel-shot badge.
 
 One field on this record refuses work rather than describing it, which is why
 it is named here: a planning run stamps `plan_stage: awaiting_acceptance` when

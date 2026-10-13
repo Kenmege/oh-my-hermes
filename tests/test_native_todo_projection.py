@@ -52,7 +52,7 @@ from omh.plugin_bundle.omh.native_tools import (
     native_tool_presence_clause,
 )
 from omh.plugin_bundle.omh.plan_stage_gate import plan_stage_edit_directive
-from omh.plugin_bundle.omh.runtime_reader import read_omh_todo
+from omh.plugin_bundle.omh.runtime_reader import read_omh_hud, read_omh_todo
 from omh.plugin_bundle.omh.todo_reconciliation import (
     TODO_CONTINUATION_RULE,
     open_todo_reminder,
@@ -69,6 +69,7 @@ from omh.plugin_bundle.omh.todo_store import (
 from omh.plugin_bundle.omh.tool_bursts import record_tool_call, record_tool_call_close
 from omh.plugin_bundle.omh.tools.todo_tool import OMH_TODO_SCHEMA, omh_todo_handler
 
+REPO = Path(__file__).resolve().parents[1]
 SESSION = "20261013_101010_abc123"
 OTHER_SESSION = "20261013_202020_def456"
 
@@ -397,6 +398,41 @@ class OmhTodoOnlyFieldsTest(_NativeTodoHomeTest):
         self.assertEqual(self.project([native("1", "write the code", "in_progress")]), "projected")
 
 
+class HudPayloadTest(_NativeTodoHomeTest):
+    """The payload names the tool holding the steps; each surface decides from that.
+
+    The HUD payload stays whole -- the text lines (`omh runtime todo show`,
+    `omh_hud`) are no host todo surface and keep every item -- and carries
+    `source`, which the TUI dock and the Desktop pane read to leave a
+    todo_list-held plan's items to Hermes' own panel.
+    """
+
+    def test_a_projected_plan_reaches_the_payload_as_todo_list_held_and_whole(self):
+        self.write_native([native("1", "land the fix", "completed"), native("2", "open the PR", "in_progress")])
+        payload = read_omh_hud(self.home, self.hermes, session_ref=SESSION)
+        self.assertEqual(payload["todo"]["source"], NATIVE_TODO_SOURCE)
+        self.assertEqual([item["text"] for item in payload["todo"]["items"]], ["land the fix", "open the PR"])
+        self.assertTrue(any("open the PR" in line for line in payload["display"]["todo_lines"]))
+
+    def test_recording_a_reason_with_omh_todo_keeps_the_plan_todo_list_held(self):
+        self.write_native([native("1", "land the fix", "in_progress"), native("2", "open the PR")])
+        _ = self.omh_todo(
+            {"action": "advance", "item": 2, "item_text": "open the PR", "state": "pending", "blocked_reason": "CI credentials"}
+        )
+        self.assertEqual(self.stored()["source"], NATIVE_TODO_SOURCE)
+        # A whole-list omh_todo set re-declares the plan, and then omh_todo holds it.
+        _ = self.omh_todo({"action": "set", "items": [{"text": "land the fix", "state": "active"}]})
+        self.assertEqual(self.stored()["source"], "omh_todo")
+
+    def test_the_renderers_key_on_the_projection_source(self):
+        for path in ("src/omh/tui_widgets/omh-status.mjs", "src/plugin_bundle/omh/desktop/plugin.js"):
+            with self.subTest(renderer=path):
+                self.assertIn(
+                    f"NATIVE_TODO_SOURCE = '{NATIVE_TODO_SOURCE}'",
+                    (REPO / path).read_text(encoding="utf-8"),
+                )
+
+
 class GuardsReadOneRecordTest(_NativeTodoHomeTest):
     """The continuation drive and the stall finding read the plan whichever tool wrote it."""
 
@@ -500,7 +536,15 @@ class PresenceRuleTest(unittest.TestCase):
                 self.assertIn("ONE tool", text)
         self.assertEqual(
             native_tool_presence_clause(NATIVE_TODO_TOOL, code=True),
-            "`todo_list` is in your tool list or `tool_search` finds it",
+            "`todo_list` is in your tool list or tool_search finds it",
+        )
+
+    def test_the_clause_states_another_tool_in_the_same_sentence_shape(self):
+        # The shape a later surface (clarify, cronjob_manage, ...) states the
+        # rule in, so every native tool reads under one sentence.
+        self.assertEqual(
+            f"when {native_tool_presence_clause('clarify', code=True)}",
+            "when `clarify` is in your tool list or tool_search finds it",
         )
 
 

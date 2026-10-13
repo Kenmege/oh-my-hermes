@@ -88,7 +88,7 @@ Quality bar:
 
 Handoff policy:
 
-Keep the steps in ONE tool, never both: a planning run or a code-story template keeps them in `omh_todo`; otherwise `todo_list` holds them when `todo_list` is in your tool list or `tool_search` finds it, and OMH mirrors each write into this plan todo, else `omh_todo`. `omh_todo` alone holds `plan_stage`, checkpoint/record/recall, `blocked_reason` and `deferred_reason`. A checklist item is a plan declaration and never dispatches, executes, or verifies anything.
+Keep the steps in ONE tool, never both: a planning run or a code-story template keeps them in `omh_todo`; otherwise `todo_list` holds them when `todo_list` is in your tool list or tool_search finds it, and OMH mirrors each write into this plan todo, else `omh_todo`. `omh_todo` alone holds `plan_stage`, checkpoint/record/recall, `blocked_reason` and `deferred_reason`. A checklist item is a plan declaration and never dispatches, executes, or verifies anything.
 
 Required inputs:
 

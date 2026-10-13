@@ -26,7 +26,13 @@ All notable changes will be documented here.
   the tracker exactly as before. The `omh_todo` description, the route
   hint's checklist line, the plan nudge, the `todo-checklist` skill and the
   `ulw-work` and `ulw-plan` opening steps now say to use one tool for the
-  steps, never both.
+  steps, never both. Where Hermes draws its own todo list -- the modern TUI
+  and Hermes Desktop -- the OMH panel above the prompt and the Desktop pane
+  no longer draw a `todo_list`-held plan's items a second time: they show a
+  compact "in todo_list" plan summary only for what Hermes does not show (an
+  item waiting on a reason `omh_todo` recorded, the stall finding, and in the
+  TUI the parallel-shot badge), and nothing otherwise. Recording a reason with
+  `omh_todo` keeps the plan `todo_list`'s.
 
 
 - **`websearch-setup` configures the web search settings Hermes actually
