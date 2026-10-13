@@ -22,6 +22,15 @@ switched off while a frame paints: if the terminal measures a glyph wider
 than the width table does, the row is cut at the edge instead of wrapping
 into the next row and shifting the whole region by one.
 
+Pad rows: a frame may declare its first `pad` rows padding, blank rows the
+layout adds so the region keeps its height (and so its bottom row) when the
+content shrinks. `flush_above` writes into pad rows first: the flushed lines
+land in those rows, which stop being part of the region, so the region gets
+shorter by that many rows from the top and nothing below them moves or is
+repainted. Only the lines beyond the pad push the region down the old way,
+scrolling the screen by exactly as many rows as they add. Either way a region
+whose bottom sits on the screen's last row keeps it there.
+
 Precondition: the region is never taller than the terminal. Cursor-up stops
 at the top of the screen, so a taller region would lose its relative
 bookkeeping; the layout's height budget guarantees this.
@@ -87,6 +96,17 @@ class LiveRegion:
         self._width: int | None = None
         self._lines: tuple[Line, ...] = ()
         self._cursor = (0, 0)
+        self._pad = 0  # how many of the top rows are padding `flush_above` may write into
+
+    @property
+    def height(self) -> int:
+        """Rows the region holds on screen now (0 before the first frame and after `clear`)."""
+        return len(self._rows)
+
+    @property
+    def pad(self) -> int:
+        """How many of the region's top rows are padding."""
+        return self._pad
 
     def _move_to(self, row: int, ops: list[str]) -> None:
         """Cursor to column 0 of region row `row`, which must already exist on screen."""
@@ -133,30 +153,43 @@ class LiveRegion:
             return "".join(park)
         return "".join([HIDE_CURSOR, AUTOWRAP_OFF, *ops, AUTOWRAP_ON, *park, SHOW_CURSOR])
 
-    def render(self, lines: Sequence[Line], cursor: tuple[int, int], width: int) -> None:
-        """Show `lines` as the region and park the cursor at `cursor` = (row, col) within it."""
+    def render(self, lines: Sequence[Line], cursor: tuple[int, int], width: int, pad: int = 0) -> None:
+        """Show `lines` as the region and park the cursor at `cursor` = (row, col) within it.
+
+        The first `pad` lines are padding (blank rows) that `flush_above` may write into.
+        """
         frame = self._compose(lines, cursor, width, [])
+        self._pad = min(max(pad, 0), len(self._rows))
         if frame:
             self._write(frame)
 
     def flush_above(self, lines: Sequence[Line], width: int) -> None:
         """Print `lines` permanently above the region, then repaint the region beneath them.
 
-        The lines are written over the region's top rows and push it down; once
-        they scroll off the screen they are ordinary scrollback.
+        The first lines fill the region's pad rows, which then leave the region:
+        it gets shorter from the top and its bottom stays put. Lines beyond the
+        pad are written over the region's top rows and push it down; once they
+        scroll off the screen they are ordinary scrollback.
         """
         width = max(width, 1)
+        consumed = min(len(lines), self._pad)
         ops: list[str] = []
         self._move_to(0, ops)
         for line in lines:
             ops.append(paint_line(line, width))
             ops.append(NEWLINE)
-        ops.append(ERASE_BELOW)
         # The cursor now sits on the row below the last flushed line: the new top.
-        self._rows = []
         self._row = 0
         self._parked = None
-        self._width = None
+        if len(lines) <= self._pad:
+            self._rows = self._rows[consumed:]  # the rows below the pad did not move
+        else:
+            ops.append(ERASE_BELOW)
+            self._rows = []
+            self._width = None
+        self._pad -= consumed
+        self._lines = self._lines[consumed:]
+        self._cursor = (self._cursor[0] - consumed, self._cursor[1])
         self._write(self._compose(self._lines, self._cursor, width, ops))
 
     def clear(self) -> None:
@@ -172,3 +205,4 @@ class LiveRegion:
         self._width = None
         self._lines = ()
         self._cursor = (0, 0)
+        self._pad = 0

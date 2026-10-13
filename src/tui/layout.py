@@ -1,0 +1,170 @@
+"""The live region's height budget and the order its parts stack in.
+
+Top to bottom the region holds:
+
+    pad rows        blank rows that keep the region's bottom fixed when content shrinks
+    sticky prompt   "↳ you: …" while a turn runs
+    streaming tail  the last rows of the live transcript block
+    slot            panel, completion menu or server-request prompt (one at a time)
+    composer rule
+    composer        1..composer_cap(rows) input rows, the caret parked here
+    status line
+
+The budget is a pure function of the terminal size and the content sizes:
+
+- The region is never taller than `rows - 1`. `LiveRegion` moves only
+  relative to its own top and cursor-up stops at the top of the screen, so a
+  region taller than the screen loses its bookkeeping; the spare row keeps the
+  region clear of that edge.
+- Composer and status are placed first, so they always fit: the composer gets
+  `min(input rows, max(1, rows // 4))`, at least one row whenever the screen
+  has two; the status row comes next.
+- Then the rule, then the slot (at most `rows // 3`), then the sticky prompt
+  (only when asked and a row is left), and the tail takes whatever remains,
+  keeping its last rows.
+- Below `MIN_ROWS` rows or `MIN_COLS` columns only composer and status are drawn.
+- No-shrink: `min_height` is the region's current height. When content needs
+  fewer rows, pad rows fill the top so the region keeps its height, and with
+  it its bottom row. The composer's distance from the bottom then depends only
+  on the composer's own row count, which is the invariant the composer row
+  stands on.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass
+
+from .style import Line
+
+MIN_ROWS = 6
+MIN_COLS = 20
+
+BLANK: Line = ()
+
+
+@dataclass(frozen=True)
+class Budget:
+    pad: int
+    sticky: int
+    tail: int
+    slot: int
+    rule: int
+    composer: int
+    status: int
+
+    @property
+    def total(self) -> int:
+        return self.pad + self.sticky + self.tail + self.slot + self.rule + self.composer + self.status
+
+    @property
+    def composer_top(self) -> int:
+        """Region row of the composer's first row."""
+        return self.pad + self.sticky + self.tail + self.slot + self.rule
+
+
+def max_height(rows: int) -> int:
+    """The tallest region a terminal of `rows` rows may hold."""
+    return max(rows - 1, 0)
+
+
+def is_tiny(rows: int, cols: int) -> bool:
+    """True when the terminal is too small for anything but composer and status."""
+    return rows < MIN_ROWS or cols < MIN_COLS
+
+
+def composer_cap(rows: int) -> int:
+    """The most rows the composer may show; render it with this as `max_rows`."""
+    room = max_height(rows)
+    if room >= 2:
+        room -= 1  # the status row
+    return min(max(1, rows // 4), room)
+
+
+def slot_cap(rows: int, cols: int) -> int:
+    """The most rows a slot may take; slot producers size their content to it."""
+    return 0 if is_tiny(rows, cols) else rows // 3
+
+
+def allocate(
+    rows: int,
+    cols: int,
+    *,
+    sticky: bool,
+    tail_rows: int,
+    slot_rows: int,
+    composer_rows: int,
+    min_height: int,
+) -> Budget:
+    """Rows for each part of the region (see the module docstring for the rules)."""
+    room = max_height(rows)
+    composer = min(max(composer_rows, 1), composer_cap(rows))
+    status = min(1, room - composer)
+    left = room - composer - status
+    rule = slot = sticky_rows = tail = 0
+    if not is_tiny(rows, cols):
+        rule = min(1, left)
+        left -= rule
+        slot = min(max(slot_rows, 0), slot_cap(rows, cols), left)
+        left -= slot
+        sticky_rows = 1 if sticky and left > 0 else 0
+        left -= sticky_rows
+        tail = min(max(tail_rows, 0), left)
+    content = sticky_rows + tail + slot + rule + composer + status
+    pad = min(max(min_height - content, 0), room - content)
+    return Budget(
+        pad=pad,
+        sticky=sticky_rows,
+        tail=tail,
+        slot=slot,
+        rule=rule,
+        composer=composer,
+        status=status,
+    )
+
+
+def _last(lines: Sequence[Line], count: int) -> list[Line]:
+    """The last `count` lines, blank rows on top when there are fewer."""
+    kept = list(lines)[max(len(lines) - count, 0) :] if count > 0 else []
+    return [BLANK] * (count - len(kept)) + kept
+
+
+def _first(lines: Sequence[Line], count: int) -> list[Line]:
+    """The first `count` lines, blank rows on top when there are fewer."""
+    kept = list(lines)[:count] if count > 0 else []
+    return [BLANK] * (count - len(kept)) + kept
+
+
+def compose(
+    budget: Budget,
+    *,
+    sticky: Line | None,
+    tail: Sequence[Line],
+    slot: Sequence[Line],
+    rule: Line,
+    composer: Sequence[Line],
+    status: Line,
+) -> list[Line]:
+    """The region's rows, exactly `budget.total` of them, top to bottom.
+
+    The tail keeps its last rows; the slot and the composer keep their first
+    rows (their producers size them to `slot_cap` and `composer_cap`).
+    """
+    region: list[Line] = [BLANK] * budget.pad
+    if budget.sticky:
+        region.append(sticky if sticky is not None else BLANK)
+    region.extend(_last(tail, budget.tail))
+    region.extend(_first(slot, budget.slot))
+    if budget.rule:
+        region.append(rule)
+    composer_rows = list(composer)[: budget.composer]
+    region.extend(composer_rows + [BLANK] * (budget.composer - len(composer_rows)))
+    if budget.status:
+        region.append(status)
+    return region
+
+
+def caret_row(budget: Budget, composer_caret_row: int) -> int:
+    """The region row of the composer's caret row."""
+    last = max(budget.composer - 1, 0)
+    return budget.composer_top + min(max(composer_caret_row, 0), last)

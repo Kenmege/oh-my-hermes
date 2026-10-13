@@ -46,8 +46,10 @@ class Harness:
         self.writes.append(text)
         self.screen.feed(text)
 
-    def render(self, lines: list[Line], cursor: tuple[int, int] = (0, 0), width: int | None = None) -> None:
-        self.region.render(lines, cursor, self.cols if width is None else width)
+    def render(
+        self, lines: list[Line], cursor: tuple[int, int] = (0, 0), width: int | None = None, pad: int = 0
+    ) -> None:
+        self.region.render(lines, cursor, self.cols if width is None else width, pad=pad)
 
     def flush(self, lines: list[Line], width: int | None = None) -> None:
         self.region.flush_above(lines, self.cols if width is None else width)
@@ -190,6 +192,52 @@ class FlushAboveTests(unittest.TestCase):
         harness.render(plain("x"))
         harness.flush(plain("a much longer line than eight", "한글한글한글"))
         self.assertEqual(harness.screen.lines()[:3], ["a much l", "한글한글", "x"])
+
+
+class PadRowTests(unittest.TestCase):
+    """Pad rows: `flush_above` writes into them first and the region's bottom stays put."""
+
+    def setUp(self) -> None:
+        self.harness = Harness(rows=10, history=9)  # the region's bottom is the screen's last row
+        self.frame = plain("", "", "", "a", "b")
+        self.harness.render(self.frame, cursor=(4, 1), pad=3)
+        self.history = [f"history {index}" for index in range(9)]
+
+    def test_a_flush_into_pad_rows_moves_and_repaints_nothing_else(self) -> None:
+        self.harness.flush(plain("f1", "f2"))
+        self.assertEqual(printable(self.harness.writes[-1]), "f1f2")
+        self.assertEqual(self.harness.screen.lines()[-5:], ["f1", "f2", "", "a", "b"])
+        self.assertEqual(self.harness.screen.history(), self.history + ["f1", "f2", "", "a", "b"])
+        self.assertEqual(self.harness.screen.cursor, (9, 1))
+        self.assertEqual((self.harness.region.height, self.harness.region.pad), (3, 1))
+
+    def test_the_next_frame_sees_the_shorter_region(self) -> None:
+        self.harness.flush(plain("f1", "f2"))
+        before = len(self.harness.writes)
+        self.harness.render(self.frame[2:], cursor=(2, 1), pad=1)
+        self.assertEqual(len(self.harness.writes), before)  # the same rows: nothing to write
+
+    def test_a_flush_longer_than_the_pad_fills_it_then_pushes(self) -> None:
+        flushed = ["f1", "f2", "f3", "f4", "f5"]
+        self.harness.flush(plain(*flushed))
+        self.assertEqual(self.harness.screen.history(), self.history + flushed + ["a", "b"])
+        self.assertEqual(self.harness.screen.lines()[-2:], ["a", "b"])
+        self.assertEqual(self.harness.screen.cursor, (9, 1))
+        self.assertEqual((self.harness.region.height, self.harness.region.pad), (2, 0))
+
+    def test_a_region_of_pad_only_takes_the_flush_whole(self) -> None:
+        harness = Harness(rows=10, history=3)
+        harness.render(plain("", ""), cursor=(1, 0), pad=2)
+        harness.flush(plain("f1", "f2"))
+        self.assertEqual(harness.screen.lines()[:6], ["history 0", "history 1", "history 2", "f1", "f2", ""])
+        self.assertEqual(harness.region.height, 0)
+
+    def test_pad_is_clamped_to_the_frame_and_reset_by_clear(self) -> None:
+        harness = Harness(rows=10)
+        harness.render(plain("", "x"), cursor=(1, 0), pad=5)
+        self.assertEqual((harness.region.height, harness.region.pad), (2, 2))
+        harness.region.clear()
+        self.assertEqual((harness.region.height, harness.region.pad), (0, 0))
 
 
 class ClippingAndStyleTests(unittest.TestCase):
