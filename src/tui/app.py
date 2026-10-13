@@ -95,6 +95,7 @@ import base64
 from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
+import errno
 import json
 import os
 import signal
@@ -987,21 +988,41 @@ class App:
         self._render_when_due()
 
     def _shutdown(self) -> None:
+        """Hand the screen back to the shell, then stop the HUD poller and turn off yolo the TUI set.
+
+        The terminal writes come first (reports off, the alternate screen
+        left, the live region erased whatever the last lines' rendering
+        raises), and the other steps run whatever those raise, so a failing
+        step never leaves the shell on the alternate screen or with reports
+        on. A hung-up terminal (SIGHUP, a closed window) refuses every write
+        with EIO and has no screen to hand back: that ends the writes quietly,
+        as in `Terminal._restore`, and the exit already under way (the
+        signal's SystemExit) is the one that propagates.
+        """
         reports_may_arrive = self._reports_may_arrive()  # read before the off below starts a new grace period
-        self.poller.stop()
-        self._set_mouse(False)
-        if self.pager is not None:
-            self.pager = None
-            self.terminal.write(ALT_SCREEN_OFF + SHOW_CURSOR)
-        cols = self.size[0]
-        stable = self.transcript.take_stable_lines(cols, self.theme)
-        if stable:
-            self.region.flush_above(stable, cols)
-        self.region.clear()
-        if reports_may_arrive:
-            self._discard_late_reports()
-        if self.sid:  # the gateway may outlive the TUI by its close grace, or longer
-            self._turn_off_yolo_set_here(self.sid)
+        try:
+            self._set_mouse(False)
+            if self.pager is not None:
+                self.pager = None
+                self.terminal.write(ALT_SCREEN_OFF + SHOW_CURSOR)
+            cols = self.size[0]
+            try:
+                stable = self.transcript.take_stable_lines(cols, self.theme)
+                if stable:
+                    self.region.flush_above(stable, cols)
+            finally:
+                self.region.clear()
+            if reports_may_arrive:
+                self._discard_late_reports()
+        except OSError as error:
+            if error.errno != errno.EIO:
+                raise
+        finally:
+            try:
+                self.poller.stop()
+            finally:
+                if self.sid:  # the gateway may outlive the TUI by its close grace, or longer
+                    self._turn_off_yolo_set_here(self.sid)
 
     def _set_mouse(self, enabled: bool) -> None:
         """Turn mouse reports on or off, noting when they went off: reports sent before the off still arrive after it."""

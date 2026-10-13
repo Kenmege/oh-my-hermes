@@ -15,6 +15,7 @@ and from there the row is known. `UnknownRowTests` covers the launch itself.
 
 from __future__ import annotations
 
+import errno
 from pathlib import Path
 import unittest
 
@@ -54,6 +55,7 @@ from omh.tui.keys import (
     Mouse,
 )
 from omh.tui.pager import ALT_SCREEN_OFF
+from omh.tui.screen import ERASE_BELOW
 from omh.tui.session_picker import SessionPicker, SessionRow
 
 MOUSE_ON = terminal_module.MOUSE_REPORTING_ON
@@ -261,6 +263,87 @@ class MouseStateTests(unittest.TestCase):
         app._shutdown()
         self.assertEqual(mouse_calls(app), [True, False])
         self.assertIn(ALT_SCREEN_OFF, "".join(app.terminal.writes))  # type: ignore[attr-defined]
+
+
+class HungUpTerminal(ScriptedTerminal):
+    """A scripted terminal that can be made to refuse every write, as a pty whose window closed does (EIO)."""
+
+    refusal: int | None = None
+
+    def write(self, text: str) -> None:
+        if self.refusal is not None:
+            raise OSError(self.refusal, "the terminal refused the write")
+        super().write(text)
+
+
+class FailingShutdownTests(unittest.TestCase):
+    """Whatever fails on the way out, the shell gets its screen back, and the exit under way is the one reported."""
+
+    def leaving(self) -> tuple[App, RecordingClient, HungUpTerminal]:
+        terminal = HungUpTerminal()
+        client = RecordingClient()
+        app = App(terminal, client, {}, poller=FakePoller(), clock=lambda: 0.0)  # type: ignore[arg-type]
+        app.sid = SID
+        app.turn_pending = True
+        relay(app, STARTS)
+        settled(app)
+        self.assertTrue(terminal.mouse_reporting)
+        app.yolo_by_tui = True  # accept is on: the exit owes Hermes an explicit off
+        return app, client, terminal
+
+    def test_a_hang_up_with_reports_on_leaves_by_the_signal_not_a_traceback(self) -> None:
+        app, client, terminal = self.leaving()
+
+        def hang_up(timeout: float) -> bytes:
+            terminal.refusal = errno.EIO
+            raise SystemExit(128 + 1)  # SIGHUP, as _exit_on_signal raises it
+
+        terminal.read = hang_up  # type: ignore[method-assign]
+        with self.assertRaises(SystemExit) as raised:
+            app.run()
+        self.assertEqual(raised.exception.code, 129)
+        self.assertTrue(app.poller.stopped)  # type: ignore[attr-defined]
+        self.assertIn(("config.set", {"key": "yolo", "session_id": SID, "value": "off"}), client.calls)
+
+    def test_a_poller_that_fails_to_stop_leaves_the_screen_handed_back(self) -> None:
+        app, client, terminal = self.leaving()
+        app._on_input(Key(DOWN))
+        app._on_input(Key(ENTER))  # an agent's log: the alternate screen
+        drawn(app)
+
+        def broken(timeout: float = 1.0) -> None:
+            raise RuntimeError("the HUD thread is wedged")
+
+        app.poller.stop = broken  # type: ignore[method-assign]
+        start = len(terminal.writes)
+        with self.assertRaises(RuntimeError):
+            app._shutdown()
+        written = "".join(terminal.writes[start:])
+        self.assertIn(ALT_SCREEN_OFF, written)
+        self.assertIn(ERASE_BELOW, written)
+        self.assertFalse(terminal.mouse_reporting)
+        self.assertIn(("config.set", {"key": "yolo", "session_id": SID, "value": "off"}), client.calls)
+
+    def test_last_lines_that_fail_to_render_still_leave_the_region_erased(self) -> None:
+        app, _client, terminal = self.leaving()
+
+        def broken(cols: int, theme: object) -> list:
+            raise ValueError("a block that cannot render")
+
+        app.transcript.take_stable_lines = broken  # type: ignore[method-assign]
+        start = len(terminal.writes)
+        with self.assertRaises(ValueError):
+            app._shutdown()
+        self.assertIn(ERASE_BELOW, "".join(terminal.writes[start:]))
+        self.assertTrue(app.poller.stopped)  # type: ignore[attr-defined]
+
+    def test_a_refusal_that_is_not_a_hang_up_still_raises(self) -> None:
+        app, _client, terminal = self.leaving()
+        terminal.refusal = errno.EBADF
+        with self.assertRaises(OSError) as raised:
+            app._shutdown()
+        self.assertEqual(raised.exception.errno, errno.EBADF)
+        self.assertTrue(app.poller.stopped)  # type: ignore[attr-defined]
 
 
 class StripClickTests(unittest.TestCase):
