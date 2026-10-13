@@ -505,6 +505,7 @@ class App:
         self.waiting_requests: deque[ServerRequest] = deque()
         self.queued: deque[tuple[str, str]] = deque()  # (text sent, text shown)
         self.sticky = ""
+        self.flushed_since_prompt = 0  # rows printed above the region since the last prompt was sent
         self.turn_pending = False  # a prompt went out and its turn has not started (or ended) yet
         self.pending: dict[int, _Pending] = {}
         self.menu_index = 0
@@ -1060,6 +1061,7 @@ class App:
     def _submit_prompt(self, text: str, shown: str = "", queued: bool = False) -> None:
         self.transcript.add_user(shown or text)
         self.sticky = shown or text
+        self.flushed_since_prompt = 0
         self.turn_pending = True
         self.busy_since = self.clock()
         self.attachments.clear()  # the gateway sends its queued images with this turn
@@ -1224,6 +1226,7 @@ class App:
         self.transcript = Transcript(self.clock)
         self.queued.clear()
         self.sticky = ""
+        self.flushed_since_prompt = 0  # rows printed above the region since the last prompt was sent
         self.attachments.clear()  # the gateway queued them for the session being left
         self.hud = None
         self._adopt_session(result, fallback_stored)
@@ -1517,6 +1520,7 @@ class App:
         anchoring = self.anchor
         if stable and not anchoring:
             self.region.flush_above(stable, cols)
+        self.flushed_since_prompt += len(stable)
         previous = 0 if anchoring else self.region.height
         self.anchor = False
         frame = build_frame(
@@ -1525,7 +1529,7 @@ class App:
             composer=self.composer,
             status=self._status_line(cols),
             previous_height=previous,
-            sticky=sticky_line(self.sticky, cols, self.theme) if self._busy() and self.sticky.strip() else None,
+            sticky=sticky_line(self.sticky, cols, self.theme) if self._sticky_needed(rows) else None,
             tail=self._tail(cols),
             slot=self._slot_lines(cols, rows),
             theme=self.theme,
@@ -1539,6 +1543,17 @@ class App:
             # (the banner, a resumed history) would be pushed off the top before anyone
             # saw them; flushed after it, they land in those pad rows instead.
             self.region.flush_above(stable, cols)
+
+    def _sticky_needed(self, rows: int) -> bool:
+        """Whether the sent prompt needs echoing above the composer: only once it has scrolled off.
+
+        Everything above the live region is transcript, so while the rows printed
+        since the prompt (the prompt's own rows included) still fit there, the
+        prompt itself is on screen and an echo would only repeat it.
+        """
+        if not (self._busy() and self.sticky.strip()):
+            return False
+        return self.flushed_since_prompt > rows - self.region.height
 
     def _tail(self, cols: int) -> list[Line]:
         lines = list(self.transcript.live_lines(cols, self.theme))
