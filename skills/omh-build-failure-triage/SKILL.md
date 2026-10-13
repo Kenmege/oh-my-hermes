@@ -45,6 +45,7 @@ Bad example:
 - The failing command/job, freshness, exit status, and log/source boundary are explicit.
 - Failure clusters separate syntax/type/lint/test/dependency/config/environment/DCO causes.
 - The proposed remediation is minimal, scoped to affected files, and separated from implementation evidence.
+- Every cluster carries an origin, and no FIX_READY handoff covers a `pre_existing` or `unknown` one.
 - The rerun ladder names targeted, broad local, CI, and DCO checks without claiming they already passed.
 - The final verdict is FIX_READY, NEEDS_MORE_LOGS, BLOCKED_BY_ENVIRONMENT, or ROUTE_TO_VERIFICATION_GATE.
 
@@ -80,6 +81,8 @@ Quality bar:
 - Recommend the smallest safe fix path and name when no fix is justified without more logs.
 - Prefer targeted reruns before broad expensive checks, then broaden only when the changed surface requires it.
 - Preserve exact observed failure snippets or file references without treating them as current PASS evidence.
+- Give each cluster an origin: `introduced` when the same command passes at the merge-base or the failure points at a line the diff added or changed; `pre_existing` only when an observed run of the same command fails the same way at the merge-base in a clean detached worktree (`git worktree add --detach <dir> <merge-base>`, removed afterwards), never by stashing or checking out the tree the user is working in; otherwise `unknown`. An observed merge-base run outranks a diff-line reading: a check that fails the same way at the merge-base is `pre_existing` even when its failure points at a line the diff changed. Name the proof beside the origin: a merge-base run is an observation, a diff-line reading is an inference.
+- Return FIX_READY only for `introduced` clusters; a `pre_existing` cluster gets its own follow-up handoff outside this change's fix. Clusters of different origins still share one verdict: NEEDS_MORE_LOGS while any cluster is `unknown`, naming the merge-base run as the missing evidence, even beside `introduced` ones; otherwise FIX_READY when at least one is `introduced`; otherwise, with every cluster `pre_existing`, ROUTE_TO_VERIFICATION_GATE.
 
 Handoff policy:
 
@@ -108,7 +111,7 @@ Artifact expectations:
 
 - build_failure_triage_plan/v1 with failing surface, freshness, affected files, allowed actions, and stop condition
 - failure_log_digest/v1 preserves exact command/job, exit status, top frames, file paths, and omitted-log boundary
-- failure_cluster_matrix/v1 groups syntax, type, lint, test assertion, flaky, dependency, config, DCO, and environment failures separately
+- failure_cluster_matrix/v1 groups syntax, type, lint, test assertion, flaky, dependency, config, DCO, and environment failures separately, each cluster with an origin of introduced, pre_existing, or unknown
 - root_cause_hypothesis_set/v1 ranks likely causes with confidence and evidence instead of guessing from one line
 - minimal_fix_handoff/v1 names the selected executor, affected files, smallest patch direction, and rejected broad refactors
 - rerun_plan/v1 orders targeted rerun, broader local check, CI rerun, and stale-check blocker

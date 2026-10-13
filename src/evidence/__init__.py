@@ -12,17 +12,20 @@ from .labels import (
     status_prose,
 )
 from .observed_check_results import (
+    FAILURE_ORIGINS,
     OBSERVED_CHECK_RESULT_FIELDS,
     OBSERVED_CHECK_RESULTS_TOKEN,
     ObservedCheckResultField,
     observed_check_result_field_names,
     observed_check_results_expectation,
+    observed_check_results_failing_only_note,
     observed_check_results_field_phrase,
 )
 
 __all__ = [
     "CONFIDENCES",
     "EVIDENCE_LABELS_SCHEMA_VERSION",
+    "FAILURE_ORIGINS",
     "OBSERVED_CHECK_RESULTS_TOKEN",
     "OBSERVED_CHECK_RESULT_FIELDS",
     "PHASES",
@@ -32,6 +35,7 @@ __all__ = [
     "confidence_label",
     "observed_check_result_field_names",
     "observed_check_results_expectation",
+    "observed_check_results_failing_only_note",
     "observed_check_results_field_phrase",
     "phase_label",
     "status_label",

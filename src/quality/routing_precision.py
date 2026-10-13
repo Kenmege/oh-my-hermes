@@ -2530,6 +2530,24 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_clarification",
         "",
     ),
+    # Hermes' kanban dispatcher opens every worker, the review lane's included,
+    # with this literal prompt and loads its own `sdlc-review` for a review
+    # card. The words name a board task and no diff, so the route asks and
+    # never offers `code-review` as the workflow.
+    #
+    # `answer_clarification` is what the router does with this prompt today,
+    # not the goal. The prompt is host-written, and a change that teaches the
+    # router to leave host-written turns alone may route nothing here and move
+    # the expected action. The forbidden candidate is the half that must
+    # survive that move.
+    RoutingPrecisionCase(
+        "kanban-worker-prompt-is-not-a-code-review",
+        "The dispatcher's kanban worker prompt asks for no code review",
+        "work kanban task t_1a2b3c4d",
+        "answer_clarification",
+        "",
+        "code-review",
+    ),
     RoutingPrecisionCase(
         "a-building-inspection-is-not-a-build-failure",
         "A failing building inspection has no code context",
@@ -5437,6 +5455,19 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "answer_clarification",
         "clarification",
         "code-review",
+    ),
+    # The positive half of `kanban-worker-prompt-is-not-a-code-review`: a person
+    # asking for bugs in a diff still reaches code-review when the diff hangs
+    # off a kanban task. The review lane's hand-off decides who moves the card,
+    # not who reads the code.
+    RoutingInterventionCase(
+        "kanban-task-diff-bug-hunt-stays-code-review",
+        "A bug hunt over a kanban task's diff is still a code review",
+        "find bugs in the diff attached to kanban task t_1a2b3c4d",
+        "dispatch",
+        "code-review",
+        "prepare_review_or_followup_handoff",
+        "review_check",
     ),
     RoutingInterventionCase(
         "exact-paper-learning-capability",

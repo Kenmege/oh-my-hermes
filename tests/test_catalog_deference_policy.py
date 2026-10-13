@@ -101,6 +101,10 @@ NON_SKILL_BACKTICKS = frozenset(
         "grounded-citations",
         "competitor-news-monitor",
         "arxiv",
+        # A skill Hermes bundles, not an OMH catalog skill: `code-review` hands
+        # a kanban review card's transition to it. No deference case follows,
+        # because the router can only rank catalog skills.
+        "sdlc-review",
     }
 )
 

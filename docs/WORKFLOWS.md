@@ -3458,10 +3458,13 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Recommend the smallest safe fix path and name when no fix is justified without more logs.
   - Prefer targeted reruns before broad expensive checks, then broaden only when the changed surface requires it.
   - Preserve exact observed failure snippets or file references without treating them as current PASS evidence.
+  - Give each cluster an origin: `introduced` when the same command passes at the merge-base or the failure points at a line the diff added or changed; `pre_existing` only when an observed run of the same command fails the same way at the merge-base in a clean detached worktree (`git worktree add --detach <dir> <merge-base>`, removed afterwards), never by stashing or checking out the tree the user is working in; otherwise `unknown`. An observed merge-base run outranks a diff-line reading: a check that fails the same way at the merge-base is `pre_existing` even when its failure points at a line the diff changed. Name the proof beside the origin: a merge-base run is an observation, a diff-line reading is an inference.
+  - Return FIX_READY only for `introduced` clusters; a `pre_existing` cluster gets its own follow-up handoff outside this change's fix. Clusters of different origins still share one verdict: NEEDS_MORE_LOGS while any cluster is `unknown`, naming the merge-base run as the missing evidence, even beside `introduced` ones; otherwise FIX_READY when at least one is `introduced`; otherwise, with every cluster `pre_existing`, ROUTE_TO_VERIFICATION_GATE.
 - Completion checklist:
   - The failing command/job, freshness, exit status, and log/source boundary are explicit.
   - Failure clusters separate syntax/type/lint/test/dependency/config/environment/DCO causes.
   - The proposed remediation is minimal, scoped to affected files, and separated from implementation evidence.
+  - Every cluster carries an origin, and no FIX_READY handoff covers a `pre_existing` or `unknown` one.
   - The rerun ladder names targeted, broad local, CI, and DCO checks without claiming they already passed.
   - The final verdict is FIX_READY, NEEDS_MORE_LOGS, BLOCKED_BY_ENVIRONMENT, or ROUTE_TO_VERIFICATION_GATE.
 - Recovery notes:
@@ -3486,7 +3489,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Artifact expectations:
   - build_failure_triage_plan/v1 with failing surface, freshness, affected files, allowed actions, and stop condition
   - failure_log_digest/v1 preserves exact command/job, exit status, top frames, file paths, and omitted-log boundary
-  - failure_cluster_matrix/v1 groups syntax, type, lint, test assertion, flaky, dependency, config, DCO, and environment failures separately
+  - failure_cluster_matrix/v1 groups syntax, type, lint, test assertion, flaky, dependency, config, DCO, and environment failures separately, each cluster with an origin of introduced, pre_existing, or unknown
   - root_cause_hypothesis_set/v1 ranks likely causes with confidence and evidence instead of guessing from one line
   - minimal_fix_handoff/v1 names the selected executor, affected files, smallest patch direction, and rejected broad refactors
   - rerun_plan/v1 orders targeted rerun, broader local check, CI rerun, and stale-check blocker
@@ -3669,10 +3672,11 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Quality bar:
   - Tie every completion claim to the smallest check that proves it, then broaden for shared surfaces.
   - When a diff touches a declared generated path, name its source of truth and regeneration command before the edit rather than after a byte gate rejects it; a diff touching a generator and its output together is the correct shape, not a violation — load `references/generated-artifact-provenance.md` for the declaration and reporting rules.
-  - Record every field the `observed_check_results/v1` artifact expectation below names, for each observed result; a field left out is a gap in the record, not a shorter record.
+  - Record every field the `observed_check_results/v1` artifact expectation below names, for each observed result (`origin` on a failing check only); a field left out is a gap in the record, not a shorter record.
   - For native `omh_todo` checkpoints, load the todo-checklist closing recipe; `record` then `recall` this verification declaration. Stored declarations are not proof.
   - When the change answers to a written spec, plan, or issue, load `references/requirement-coverage-map.md` and map requirement to task to evidence under stable ids before claiming coverage.
-  - Return PASS only when required checks pass and stale or missing evidence is resolved.
+  - Give each failing check an `origin`: `introduced` when the same command passes at the merge-base or the failure points at a line the diff added or changed; `pre_existing` only when an observed run of the same command fails the same way at the merge-base in a clean detached worktree (`git worktree add --detach <dir> <merge-base>`, removed afterwards), never by stashing or checking out the tree the user is working in; otherwise `unknown`. An observed merge-base run outranks a diff-line reading: a check that fails the same way at the merge-base is `pre_existing` even when its failure points at a line the diff changed. Name the proof beside the origin: a merge-base run is an observation, a diff-line reading is an inference.
+  - Return PASS only when required checks pass and stale or missing evidence is resolved; PASS never stands beside a failing required check, whatever its origin. A required check that fails `pre_existing` is HOLD worded as not charged to the change, naming the merge-base run that proves it, and only when the failing run's scope still covered the change: a failure that stopped the check before it exercised the change, such as a collection or import error, leaves that check as missing evidence. `unknown` is HOLD with the merge-base run named as the missing evidence.
   - Keep fixes, reruns, review, CI, and merge as separate observed states.
 - Completion checklist:
   - The scenario, expected behavior, observed result, and pass/fail basis are named.
@@ -3696,8 +3700,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - not-evidence boundary
 - Artifact expectations:
   - verification_matrix/v1 covering build, lint, typecheck, unit/integration/e2e tests, generated docs, static/security checks, diff hygiene, and CI/DCO when applicable
-  - observed_check_results/v1 with command (verbatim, not a description of it), source (this checkout, a CI job, or an operator report), exit status, summary (what the output said), scope (what that run covered, since a narrower run proves less), and freshness (when it ran, and whether the tree has moved since)
-  - claim_verdict/v1 with PASS, HOLD, or BLOCK and exact missing or failed checks
+  - observed_check_results/v1 with command (verbatim, not a description of it), source (this checkout, a CI job, or an operator report), exit status, summary (what the output said), scope (what that run covered, since a narrower run proves less), freshness (when it ran, and whether the tree has moved since), and origin (for a failing check: introduced, pre_existing, or unknown)
+  - claim_verdict/v1 with PASS, HOLD, or BLOCK and exact missing or failed checks, each failed one with its origin
   - generated_artifact_provenance/v1 with one row per touched generated path: the source of truth that produces it, the regeneration command, and the drift gate that catches it, or the single state `map_not_declared` when the repository declares no generated-artifact map
 - Safety rules:
   - Do not treat a planned command, stale output, green local check, or prepared handoff as fresh verification evidence.
@@ -4912,6 +4916,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user asks to implement the fix rather than review existing code or claims.
   - There is no diff, file set, claim, artifact, or expected behavior to review.
   - The request is broad product critique, strategy, or planning rather than code or evidence review.
+  - A kanban review worker needs its card's transition decided: Hermes' bundled `sdlc-review` owns approve, request-changes, and escalate there, and this skill only supplies the findings that decision cites.
 - Strong routing signals: `code-review`, `$code-review`, `review`, `audit`, `find bugs`, `release gate`, `claim audit`, `evidence audit`, `README claim`, `what actually happened`, `code review`, `review gate`, `コードレビュー`, `バグを見つけて`, `実際に何をしたか`, `리뷰`, `코드 리뷰`, `리뷰까지`, `릴리즈 전`, `실제 코드와 맞는가`, `실제로 뭐 했는지`, `검증된 결과`, `代码评审`, `代码审查`, `找出缺陷`
 - Good example:
   - Prompt: $code-review review this PR for install/update UX regressions and missing tests.
@@ -4931,6 +4936,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Review on two axes and report them side by side, never re-ranked against each other: the correctness/risk axis judges the code as it is, and the spec axis judges the diff against the dispatch's Claim and Requirements pointer. A clean diff that does not do what was asked is a spec-axis finding; when no Claim or spec pointer was supplied, report the spec axis as `not_assessed` with that reason instead of staying silent.
   - Judge maintainability findings against the named baseline in `omh-code-review/references/smell-baseline.md`: a baseline smell is a judgement call to argue from evidence, never an automatic finding, and the reviewed repository's own standards override the baseline wherever they conflict.
   - Close with two lists beside the verdict: what was checked and found clean, and what could not be assessed with the reason. An absent finding is evidence only when the closing says the surface was actually checked.
+  - Hermes handles two parts of a review itself; load `omh-code-review/references/native-review-contract.md` for both. When `delegate_task` is in your tool list or tool_search finds it, pass the findings schema as the reviewer task's `output_schema`. The host validates the return, but its `schema_valid` record reaches you only when the call returns its results in the same turn; a result that arrives later as a completion message carries none, so check that summary against the schema yourself and never read `completed` as validated. A return that fails the contract is `not_observed`, never a pass. Inside a kanban review worker, `no_ship` becomes the request-changes transition that `sdlc-review` makes.
   - When the reviewed work ran in a Hermes session, cite `session_file_activity/v1` (`omh quality-evidence file-activity --hermes-session <id> --json`) to scope which workspace files its read_file, write_file, and patch calls touched, with the outcome Hermes recorded; it is file lineage, never file-content, diff, test, review, CI, or merge evidence.
   - For native `omh_todo` checkpoints, load the todo-checklist closing recipe; `record` then `recall` this review declaration. Stored declarations are not proof.
 - Completion checklist:
@@ -4944,7 +4950,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - If no diff, file set, PR, or artifact is available, inspect the requested target or ask one target question before reviewing.
   - If tests fail or are missing, cite the exact command gap and do not approve the change as verified.
   - If independent review evidence is unavailable, say so directly instead of implying a second reviewer passed it.
-  - To dispatch a reviewer rather than write the findings yourself, load `omh-code-review/references/review-dispatch.md`; it carries the base-SHA rule and the implementer status contract.
+  - To dispatch a reviewer rather than write the findings yourself, load `omh-code-review/references/review-dispatch.md`; it carries the base-SHA rule, the findings schema the return is checked against, and the implementer status contract.
   - When findings arrive for work you own, load `omh-code-review/references/review-response.md` before changing anything.
   - For maintainability judgement calls, load `omh-code-review/references/smell-baseline.md`; it names the twelve baseline smells with their fixes and the repo-standards-override rule.
   - When one bug-first pass is not enough, load `omh-code-review/references/review-lenses.md` and run the five lenses separately; the verification-gap lens asks whether anything would go red if the changed behavior broke.
@@ -6694,6 +6700,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The convention read names the template and log sample it drew from.
   - Every `Tested:` entry maps to an observed ledger row with its exit status.
   - Every prepared, skipped, or unobserved command is under `Not-tested:` with its reason.
+  - The draft lists the paths to stage, and any state-claiming subject prefix maps to an observed ledger row.
   - Nothing was committed, pushed, or opened by OMH.
 - Recovery notes:
   - If no run records exist, draft with an empty `Tested:` and every command under `Not-tested:`, and ask for the observed output.
@@ -6713,9 +6720,12 @@ These surfaces are generated command references, not installed Hermes workflow s
   - repo_convention_read/v1 names the template path, the subject shape and trailers seen in the recent log, and the sign-off rule, or says which of them was not found
   - evidence_ledger/v1 lists every command with observed or not_observed; observed carries the exit status and where it was seen
   - commit_message_draft/v1 and pr_body_draft/v1 take `Tested:` and the validation section only from observed ledger rows
+  - commit_message_draft/v1 lists the paths the commit covers, so whoever records it stages those paths and nothing else
 - Safety rules:
   - List a command under `Tested:` only when the evidence ledger records it as observed; a command that was prepared, planned, or described as passing without a run record goes under `Not-tested:`, whatever the wording says.
   - Never commit, amend, push, or open the PR; OMH prepares the text and the user or the executor records it.
+  - Name the paths a commit covers and have them staged by path; never write or recommend `git add -A` or `git add .`, which sweeps unrelated dirty files into the commit.
+  - A subject prefix that claims a state, such as `[verified]`, `[reviewed]`, or `[tested]`, is a projection of the evidence ledger: write it only when the repository's log uses that prefix and the ledger holds the observed row it claims, never as a default.
   - Read the repository's own template and recent log before drafting; impose no convention the repository does not use.
   - Do not claim CI, review, or merge state in the text unless it was observed, and name what was not.
   - Never put credentials, tokens, private URLs, or raw transcripts into a commit message or PR body.

@@ -53,6 +53,52 @@ class CommitPrAuthoringCatalogTests(unittest.TestCase):
         body = next(template.content for template in builtin_skill_templates() if template.name == SKILL)
         self.assertIn(REFERENCE_PATH, body)
 
+    def test_a_commit_is_staged_by_named_path(self) -> None:
+        """A stage-everything command puts files in a commit its message never mentions.
+
+        OMH does not stage or commit, so the rule binds the text: the draft
+        names the paths, and it never tells whoever records it to sweep the
+        tree. A dirty file the user was editing for another reason is the
+        thing that sweep takes with it.
+        """
+
+        mine = _definition(SKILL)
+        rule = next(rule for rule in mine.safety_rules if "`git add -A`" in rule)
+        self.assertTrue(rule.startswith("Name the paths a commit covers and have them staged by path"))
+        self.assertIn("never write or recommend", rule)
+        self.assertIn("`git add .`", rule)
+        self.assertTrue(any("lists the paths the commit covers" in line for line in mine.artifact_expectations))
+        self.assertTrue(any("lists the paths to stage" in line for line in mine.final_checklist))
+        reference = next(
+            template.content
+            for template in builtin_skill_reference_templates()
+            if template.skill_name == SKILL and template.relative_path == REFERENCE_PATH
+        )
+        self.assertIn("## 6. What the commit covers", reference)
+        self.assertIn("A path that is dirty and not on the list is reported as left out", reference)
+
+    def test_a_state_claiming_prefix_is_a_ledger_projection_never_a_default(self) -> None:
+        """`[verified]` on a subject is a claim, so it follows the `Tested:` rule.
+
+        A prefix written by habit says an independent check approved a commit
+        nobody checked. It needs the observed row it claims and a repository
+        whose log actually uses it; either missing, it is left off.
+        """
+
+        mine = _definition(SKILL)
+        rule = next(rule for rule in mine.safety_rules if "`[verified]`" in rule)
+        self.assertIn("is a projection of the evidence ledger", rule)
+        self.assertIn("the ledger holds the observed row it claims", rule)
+        self.assertIn("the repository's log uses that prefix", rule)
+        self.assertTrue(rule.endswith("never as a default."))
+        reference = next(
+            template.content
+            for template in builtin_skill_reference_templates()
+            if template.skill_name == SKILL and template.relative_path == REFERENCE_PATH
+        )
+        self.assertIn("It is never a default", reference)
+        self.assertIn("the reviewer's own verdict, not the author's", reference)
+
 
 class CommitPrAuthoringRoutingTests(unittest.TestCase):
     def test_the_issue_rows_dispatch_here(self) -> None:
