@@ -340,9 +340,11 @@ leaves it out; `omh doctor` reports either case under
 `missing_managed_skills`, with no `--force` advice. A directory recorded under
 a name the catalog no longer ships is removed, when unchanged, only where OMH
 renders skills (the top level of the skills directory or one of its category
-directories) and only when it resolves inside the skills directory; anywhere
-else, such as a renamed copy in a folder of your own, it is left in place and
-listed under `prune_skipped_skills`. The OMH plugin refuses Hermes' edits and
+directories), only when it resolves inside the skills directory, and never
+when it is, under another spelling, a directory OMH renders a skill into (a
+render directory renamed to another letter case on a case-insensitive
+filesystem); anywhere else, such as a renamed copy in a folder of your own, it
+is left in place and listed under `prune_skipped_skills`. The OMH plugin refuses Hermes' edits and
 deletes of managed skills in the first place and points the model at a
 separately named skill or the workflow-learning lane instead, and `omh doctor`
 reports what the ledger records under OMH-managed skills under

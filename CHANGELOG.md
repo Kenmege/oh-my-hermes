@@ -39,7 +39,10 @@ All notable changes will be documented here.
   no longer ships only where OMH renders skills (the top level or a category
   directory) and only when it resolves inside the skills directory; a renamed
   copy in a folder of your own, or a recorded path that leaves the skills
-  directory, is left in place and listed under `prune_skipped_skills`.
+  directory, is left in place and listed under `prune_skipped_skills`. On a
+  case-insensitive filesystem, a render directory renamed to another letter
+  case is recorded as the skill it holds and is never pruned: before, the
+  second plain install deleted the skill it had just rendered there.
   A change the ledger does not account for still refuses the install as
   before; a managed skill whose SKILL.md is gone (in the pack the manifest
   describes, so a staged update reports it too) is rendered again and

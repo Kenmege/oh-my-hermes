@@ -54,12 +54,13 @@ from omh.commands import setup as setup_commands
 from omh.core.errors import OmhError
 from omh.hashutil import sha256_file
 from omh.install import installer
+from omh.install import manifest as manifest_module
 from omh.install.config_adapter import memory_provider_selection, skill_create_dir_selection
 from omh.install.curator_ledger import CURATOR_LEDGER_RELATIVE_PATH, read_ledger_writes
 from omh.install.installer import HERMES_EDIT_RECORD_KEY, install_skill_pack, skill_install_relative_dir
 from omh.maintenance import doctor as doctor_module
 from omh.maintenance.doctor import run_doctor
-from omh.manifest import read_manifest
+from omh.manifest import read_manifest, same_directory
 from omh.paths import OmhPaths
 from omh.plugin_bundle.omh import skill_ownership
 from omh.plugin_bundle.omh.hooks import nudge_budget, session_attendance
@@ -893,6 +894,104 @@ class InstallerKeepsHermesEditTests(_Home):
 
         self.assertEqual([item["disposition"] for item in result["hermes_edited_skills"]], ["kept"])
         self.assertEqual(self.paths.manifest_path.read_bytes(), before)
+
+
+class CaseVariantRenderDirectoryTests(_Home):
+    """A render directory renamed to another letter case, where that is still the same directory.
+
+    macOS's default filesystem is case-insensitive: `guide/OMH-ROUTING` IS
+    `guide/omh-routing`. The manifest used to record it by its on-disk
+    spelling, which is a name the catalog does not ship, so the second plain
+    install rendered into the directory and then pruned it as an orphan
+    (measured on origin/main d3f5d610d: SKILL.md gone, `pruned_skills`
+    `['OMH-ROUTING']`, back on the third install). Skipped where the
+    filesystem tells the two spellings apart.
+    """
+
+    def rename_render_dir(self) -> Path:
+        install_skill_pack(self.paths, profile="core")
+        render = self.skill_file().parent
+        variant = render.parent / render.name.upper()
+        render.rename(variant)
+        if not render.exists():
+            self.skipTest("case-sensitive filesystem: the renamed directory is a different directory")
+        return variant
+
+    def skill_record(self) -> list[tuple[str, str]]:
+        return [
+            (record["name"], record["path"])
+            for record in read_manifest(self.paths.manifest_path)["skills"]
+            if "routing" in record["path"].lower()
+        ]
+
+    def test_the_skill_survives_plain_installs_and_force_and_stays_healthy(self) -> None:
+        self.rename_render_dir()
+        render_path = f"{skill_install_relative_dir(SKILL).as_posix()}/SKILL.md"
+        template = next(template for template in builtin_skill_templates() if template.name == SKILL)
+
+        for force in (False, False, True, False):
+            with self.subTest(force=force):
+                result = install_skill_pack(self.paths, profile="core", force=force)
+                self.assertEqual(self.skill_file().read_text(encoding="utf-8"), template.content)
+                self.assertEqual(result["pruned_skills"], [])
+                # Recorded as the catalog skill at the path an install renders,
+                # so nothing is reported, this time or any later one.
+                self.assertNotIn("prune_skipped_skills", result)
+                self.assertEqual(self.skill_record(), [(SKILL, render_path)])
+
+        checks = {check.name: check for check in run_doctor(self.paths)}
+        self.assertTrue(checks["local_modifications"].ok, checks["local_modifications"].message)
+        self.assertTrue(checks[f"skill:{SKILL}"].ok)
+        self.assertNotIn("missing_managed_skills", checks)
+
+    def test_a_manifest_that_recorded_the_other_spelling_does_not_prune_the_skill(self) -> None:
+        # What an install before this guard wrote after the rename.
+        variant = self.rename_render_dir()
+        manifest = read_manifest(self.paths.manifest_path)
+        for record in manifest["skills"]:
+            if record["name"] == SKILL:
+                record["name"] = variant.name
+                record["path"] = f"{variant.parent.name}/{variant.name}/SKILL.md"
+        self.paths.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        result = install_skill_pack(self.paths, profile="core")
+
+        self.assertTrue(self.skill_file().is_file())
+        self.assertEqual(result["pruned_skills"], [])
+        self.assertEqual(
+            result["prune_skipped_skills"],
+            [
+                {
+                    "name": variant.name,
+                    "path": f"{variant.parent.name}/{variant.name}/SKILL.md",
+                    "reason": "same_directory_as_a_rendered_skill",
+                }
+            ],
+        )
+        # Reported once: this install recorded the skill properly.
+        self.assertNotIn("prune_skipped_skills", install_skill_pack(self.paths, profile="core"))
+
+    def test_a_folded_name_match_alone_does_not_rename_a_record(self) -> None:
+        # Where the filesystem tells the spellings apart, the other-case
+        # directory is another directory and keeps its own record. Asked of
+        # the filesystem (`same_directory`), stubbed here so this runs on
+        # either kind.
+        relative = skill_install_relative_dir(SKILL)
+        other = self.paths.skills_dir / relative.parent / relative.name.upper()
+        other.mkdir(parents=True)
+        (other / "SKILL.md").write_text("someone else's\n", encoding="utf-8")
+
+        with mock.patch.object(manifest_module, "same_directory", return_value=False):
+            records = manifest_module.skill_records(self.paths.skills_dir, "builtin")
+
+        self.assertEqual(
+            [(record.name, record.path) for record in records],
+            [(other.name, f"{relative.parent.as_posix()}/{other.name}/SKILL.md")],
+        )
+
+    def test_two_paths_that_cannot_be_read_are_not_the_same_directory(self) -> None:
+        self.assertFalse(same_directory(self.root / "absent-a", self.root / "absent-b"))
+        self.assertTrue(same_directory(self.root, self.root / "."))
 
 
 class ConfigScalarTests(unittest.TestCase):

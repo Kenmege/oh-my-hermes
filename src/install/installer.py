@@ -20,7 +20,14 @@ from .curator_ledger import (
 )
 from .plugin_pack import host_managed_plugin
 from ..local_store import atomic_write_text, discard_path, is_directory_link, read_json_object_result
-from ..manifest import local_modifications, new_manifest, read_manifest, skill_records, write_manifest
+from ..manifest import (
+    local_modifications,
+    new_manifest,
+    read_manifest,
+    same_directory,
+    skill_records,
+    write_manifest,
+)
 from ..paths import (
     OmhPaths,
     command_entry_belongs_to_managed_install,
@@ -926,14 +933,19 @@ def _prune_orphaned_skills(
     record alone does not make a directory OMH's to delete. Two more conditions hold, and a
     record failing either is returned in the second list instead of pruned: (d) the directory
     sits where an OMH release renders skills (`omh_layout_dir`), which a person's renamed copy
-    in a folder of their own does not; and (e) it resolves inside the skills directory, so a
-    recorded path that climbs out, or a link that leads out, is never followed.
+    in a folder of their own does not; (e) it resolves inside the skills directory, so a
+    recorded path that climbs out, or a link that leads out, is never followed; and (f) it is
+    not, under another spelling, a directory this catalog renders a skill into. On a
+    case-insensitive filesystem a render directory renamed to another letter case was
+    recorded under a name the catalog does not ship, and pruning it deleted the skill the
+    same install had just rendered there.
     """
     if not manifest:
         return [], []
     modified = set(local_modifications(manifest, skills_dir))
     categories = render_categories(catalog_names)
     real_skills_dir = os.path.realpath(skills_dir)
+    render_dirs = [skills_dir / skill_install_relative_dir(catalog_name) for catalog_name in sorted(catalog_names)]
     removed: list[str] = []
     skipped: list[dict] = []
     for record in manifest.get("skills", []):
@@ -955,6 +967,9 @@ def _prune_orphaned_skills(
             continue
         if not _strictly_inside(os.path.realpath(target_dir), real_skills_dir):
             skipped.append({"name": str(name), "path": str(rel), "reason": "outside_the_skills_directory"})
+            continue
+        if any(same_directory(target_dir, render_dir) for render_dir in render_dirs):
+            skipped.append({"name": str(name), "path": str(rel), "reason": "same_directory_as_a_rendered_skill"})
             continue
         shutil.rmtree(target_dir)
         removed.append(name)

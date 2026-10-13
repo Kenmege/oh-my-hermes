@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from ..skill_pack import builtin_skill_templates
-from ..skills.catalog import omh_skill_display_name
+from ..skills.catalog import omh_skill_display_name, omh_skill_install_path
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Any
 
@@ -65,20 +66,39 @@ def skill_records(skills_dir: Path, source: str) -> list[SkillRecord]:
     canonical_by_directory = {
         omh_skill_display_name(template.name): template.name for template in builtin_skill_templates()
     }
+    # A directory that is spelled in another letter case than the one an
+    # install renders, yet IS that directory (a case-insensitive filesystem,
+    # after someone renamed it), is recorded as the skill it holds, at the
+    # path the install renders. Recorded by its on-disk spelling it became a
+    # skill the catalog does not ship, and the orphan pruner deleted the
+    # directory the same install had just rendered into.
+    render_by_folded_path = {
+        omh_skill_install_path(template.name).casefold(): (template.name, omh_skill_install_path(template.name))
+        for template in builtin_skill_templates()
+    }
     for skill_file in sorted(skills_dir.rglob("SKILL.md")):
         rel = skill_file.relative_to(skills_dir)
         if rel.parts and rel.parts[0] == IMPORTED_SKILLS_DIR_NAME:
             continue
         directory = skill_file.parent.name
-        records.append(
-            SkillRecord(
-                name=canonical_by_directory.get(directory, directory),
-                path=rel.as_posix(),
-                sha256=sha256_file(skill_file),
-                source=source,
-            )
-        )
+        name, path = canonical_by_directory.get(directory, directory), rel.as_posix()
+        rendered = render_by_folded_path.get(rel.parent.as_posix().casefold())
+        if (
+            rendered is not None
+            and rel.parent.as_posix() != rendered[1]
+            and same_directory(skills_dir / rendered[1], skill_file.parent)
+        ):
+            name, path = rendered[0], f"{rendered[1]}/SKILL.md"
+        records.append(SkillRecord(name=name, path=path, sha256=sha256_file(skill_file), source=source))
     return records
+
+
+def same_directory(first: Path, second: Path) -> bool:
+    """Whether two paths are one directory on disk, however each is spelled; False when either cannot be read."""
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        return False
 
 
 def local_modifications(manifest: dict[str, Any] | None, skills_dir: Path) -> list[str]:
