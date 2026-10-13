@@ -8998,6 +8998,15 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "plan",
     ),
     RoutingInterventionCase(
+        "ai-slop-in-repo-reaches-slop-cleaner",
+        "Cleaning AI slop out of a repo reaches the slop cleaner",
+        "clean up the ai slop in this repo",
+        "dispatch",
+        "ai-slop-cleaner",
+        "forward_plan_to_selected_workflow",
+        "plan",
+    ),
+    RoutingInterventionCase(
         "ai-slop-in-code-reaches-slop-cleaner",
         "Cleaning up AI slop in a code directory reaches the slop cleaner",
         "clean up the AI slop in src/auth",
