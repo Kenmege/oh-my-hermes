@@ -28,6 +28,9 @@ whose envelope `session_id` is not the live session are dropped, except
 is tracked from every `session.info` and written (id only, mode 0600) to
 `HERMES_TUI_ACTIVE_SESSION_FILE`; input sent while a turn runs is queued in
 memory unless Hermes' config explicitly asks for `interrupt` or `steer`.
+The queue is the TUI's own (the gateway has no call that withdraws a prompt):
+its prompts are listed above the composer's top rule, and Up on an empty
+composer takes all of them back into the composer.
 Ctrl+Enter and `/steer <text>` send what the person typed into the running
 turn (`session.steer`); the TUI steers nothing on its own, and text Hermes
 does not take as a steer goes as a prompt instead of being dropped.
@@ -189,6 +192,12 @@ SWITCH_BACK_FAILED_NOTICE = "Hermes did not confirm the switch back either ({}).
 # Ctrl+T steps through these; `/effort` takes any level in `contract.REASONING_LEVELS`.
 EFFORT_CYCLE = ("low", "medium", "high", "xhigh", "max")
 EFFORT_REFUSED_NOTICE = "Hermes did not set the reasoning effort to {} ({}); it stays as shown."
+
+# The prompts waiting for the running turn, listed above the composer's top rule.
+QUEUE_GLYPH = "⧗ "
+QUEUE_ROWS = 3
+QUEUE_EDIT_HINT = "↑ edit"
+QUEUE_HINT_GAP = 2
 
 STEERED_NOTICE = "↪ steered: {}"
 STEER_REJECTED = "rejected"  # `session.steer`'s status when the turn ended before the text arrived
@@ -361,6 +370,28 @@ def yolo_answer_problem(result: Mapping[str, Any], on: bool) -> str:
 def first_line(text: str) -> str:
     """The first line of a prompt, for the rows that name it in one line."""
     return text.strip().split("\n", 1)[0]
+
+
+def queue_lines(prompts: Sequence[str], width: int, max_rows: int, theme: Theme) -> list[Line]:
+    """The queued prompts, next to be sent first: `⧗ <first line>` each, never more than `max_rows` rows.
+
+    At most `QUEUE_ROWS` prompts are named and `+N more` counts the rest;
+    `↑ edit`, the key that takes them back into the composer, ends the last row.
+    """
+    if not prompts or max_rows <= 0:
+        return []
+    named = min(len(prompts), QUEUE_ROWS, max_rows)
+    if named < len(prompts):
+        named = min(named, max_rows - 1)  # the last row counts the rest
+    rows: list[Line] = [
+        (Span(QUEUE_GLYPH, theme.muted), Span(clean_text(first_line(text)), theme.text)) for text in prompts[:named]
+    ]
+    if named < len(prompts):
+        rows.append((Span(f"+{len(prompts) - named} more", theme.muted),))
+    hint: Line = (Span(QUEUE_EDIT_HINT, theme.hint),)
+    last = truncate_line(rows[-1], max(width - line_width(hint) - QUEUE_HINT_GAP, 0))
+    rows[-1] = (*last, Span(" " * (width - line_width(last) - line_width(hint))), *hint)
+    return [truncate_line(row, width) for row in rows]
 
 
 def initial_theme(ready_payload: Mapping[str, Any]) -> Theme:
@@ -631,7 +662,8 @@ class App:
         self.slot_opened_at = 0.0
         self.slot_draft = ""
         self.waiting_requests: deque[ServerRequest] = deque()
-        self.queued: deque[tuple[str, str]] = deque()  # (text sent, text shown)
+        # (text sent, text shown, text typed); "" shown or typed means the text sent.
+        self.queued: deque[tuple[str, str, str]] = deque()
         self.sticky = ""
         self.flushed_since_prompt = 0  # rows printed above the region since the last prompt was sent
         self.turn_pending = False  # a prompt went out and its turn has not started (or ended) yet
@@ -1050,6 +1082,8 @@ class App:
             return
         if self.slot is None and isinstance(event, Key) and self._menu_moves(event):
             return
+        if self.slot is None and self._recall_queue(event):
+            return
         before = self.composer.text
         action = self.composer.handle(event)
         if self.composer.text != before:
@@ -1231,12 +1265,13 @@ class App:
         else:
             self._send_prompt(text)
 
-    def _send_prompt(self, text: str, shown: str = "") -> None:
+    def _send_prompt(self, text: str, shown: str = "", typed: str = "") -> None:
+        """Send `text`, or queue it behind the running turn; `typed` is what Up puts back in the composer."""
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
         if self._busy() and self.busy_mode == BUSY_QUEUE:
-            self.queued.append((text, shown))
+            self.queued.append((text, shown, typed))
             return
         self._submit_prompt(text, shown)
 
@@ -1260,8 +1295,21 @@ class App:
 
     def _drain_queue(self) -> None:
         if self.queued and self.sid:
-            text, shown = self.queued.popleft()
+            text, shown, _typed = self.queued.popleft()
             self._submit_prompt(text, shown, queued=True)
+
+    def _recall_queue(self, event: Key | Paste) -> bool:
+        """Up on an empty composer takes every queued prompt back into it, one per line, and empties the queue.
+
+        A prompt a slash command built comes back as the command that was
+        typed, so sending it again runs the command again. With nothing queued
+        Up is the composer's: it walks the input history.
+        """
+        if not isinstance(event, Key) or event.name != UP or self.composer.text or not self.queued:
+            return False
+        self._set_composer("\n".join(typed or text for text, _shown, typed in self.queued))
+        self.queued.clear()
+        return True
 
     # ── steering ──
 
@@ -1491,7 +1539,8 @@ class App:
         message = as_text(result.get("message"))
         if kind in ("send", "skill"):
             if message.strip():
-                self._send_prompt(message, as_text(result.get("display")).strip() or invocation.shown)
+                shown = as_text(result.get("display")).strip() or invocation.shown
+                self._send_prompt(message, shown, typed=invocation.typed)
             else:
                 self.transcript.add_notice(f"/{invocation.name}: empty message", NOTICE_WARN)
         elif kind == "prefill":
@@ -1731,7 +1780,7 @@ class App:
             self.transcript.add_notice("Nothing is queued.")
             return
         rows = ["Queued (sent one at a time as each turn ends):"]
-        rows += [f"{number}. {shown or text}" for number, (text, shown) in enumerate(self.queued, start=1)]
+        rows += [f"{number}. {shown or text}" for number, (text, shown, _typed) in enumerate(self.queued, start=1)]
         self.transcript.add_notice("\n".join(rows))
 
     def _logs(self, arg: str) -> None:
@@ -1956,6 +2005,15 @@ class App:
             return self.slot.lines(cols, self.theme, cap)
         if self.picker is not None:
             return self.picker.lines(cols, self.theme, cap, self.wall_clock())
+        # Nothing has the keys: the queued prompts take the slot's last rows, right above the composer's
+        # top rule, and the menu or the panel gets the rows left. A question or the picker hides them,
+        # since Up then does not edit the queue.
+        queue = queue_lines([shown or text for text, shown, _typed in self.queued], cols, cap, self.theme)
+        return self._menu_or_panel_lines(cols, cap - len(queue)) + queue
+
+    def _menu_or_panel_lines(self, cols: int, cap: int) -> list[Line]:
+        if cap <= 0:
+            return []
         rows = self._menu_rows()
         if rows:
             return _menu_lines(rows, min(self.menu_index, len(rows) - 1), cols, cap, self.theme)

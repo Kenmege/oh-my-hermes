@@ -5,7 +5,8 @@ Top to bottom the region holds:
     pad rows        blank rows that keep the region's bottom fixed when content shrinks
     sticky prompt   "↳ you: …" while a turn runs
     streaming tail  the last rows of the live transcript block
-    slot            panel, completion menu or server-request prompt (one at a time)
+    slot            panel, completion menu or server-request prompt (one at a time); under a
+                    panel or menu, or alone, the app's rows for the queued prompts
     top rule        the composer frame's upper edge
     composer        1..composer_cap(rows) input rows, the caret parked here
     bottom rule     the composer frame's lower edge

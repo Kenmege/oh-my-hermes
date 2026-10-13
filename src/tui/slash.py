@@ -108,20 +108,33 @@ for _command in COMMANDS:
 class SlashInvocation:
     """One slash command: `name` as typed (no slash), the rest as `arg`.
 
-    `shown` is set only when the TUI wrote the command for the person (plan
-    mode): what the transcript shows for the prompt the command sends, in
-    place of the prompt Hermes builds from it.
+    `for_plan_mode` says the TUI wrote the command around a prompt the person
+    typed in plan mode, instead of the person typing the command.
     """
 
     name: str
     arg: str
     command: SlashCommand | None
-    shown: str = ""
+    for_plan_mode: bool = False
 
     @property
     def text(self) -> str:
         """The command as `slash.exec` takes it: no leading slash."""
         return f"{self.name} {self.arg}".rstrip()
+
+    @property
+    def typed(self) -> str:
+        """What the person typed: the command line, or only the prompt when plan mode wrote the command."""
+        return self.arg if self.for_plan_mode else f"/{self.text}"
+
+    @property
+    def shown(self) -> str:
+        """What the transcript shows for a prompt the command sends when Hermes names no display text.
+
+        The command itself when plan mode wrote it; "" for a typed command,
+        which keeps showing the prompt Hermes built.
+        """
+        return f"/{self.text}" if self.for_plan_mode else ""
 
 
 def parse_slash(text: str) -> SlashInvocation | None:
@@ -141,8 +154,7 @@ def parse_slash(text: str) -> SlashInvocation | None:
 
 def plan_invocation(text: str) -> SlashInvocation:
     """`/plan <text>` for a prompt typed in plan mode, routed as a typed `/plan` is; the transcript shows the command."""
-    arg = text.strip()
-    return SlashInvocation(PLAN_COMMAND, arg, _BY_NAME.get(PLAN_COMMAND), shown=f"/{PLAN_COMMAND} {arg}")
+    return SlashInvocation(PLAN_COMMAND, text.strip(), _BY_NAME.get(PLAN_COMMAND), for_plan_mode=True)
 
 
 def hermes_notice(command: SlashCommand) -> str:

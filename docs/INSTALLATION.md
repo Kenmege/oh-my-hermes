@@ -304,9 +304,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - The bottom region holds, from the top: the prompt you just sent (while the
   turn runs), the tail of the reply that is still streaming, one slot for the
   OMH plan and agents panel (or a question Hermes asked, or the slash-command
-  menu), the composer framed by a rule above and below it, a mode row, and a
-  status line with the model, context use (warn from 80 % full, bad from
-  95 %) and what the session is doing. The version is on the banner.
+  menu), the prompts queued behind the running turn (`⧗`, up to three named
+  and the rest counted), the composer framed by a rule above and below it, a
+  mode row, and a status line with the model, context use (warn from 80 %
+  full, bad from 95 %) and what the session is doing. The version is on the
+  banner.
 - The mode row names the input mode, or the keys that matter right now, and
   the reasoning effort when Hermes reports one; both rules take the mode's
   glyph and colour, so the mode reads from the frame as well as the label.
@@ -348,6 +350,7 @@ Keys:
 | Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max |
 | `@` | Starts a file or folder reference; Hermes offers matches above the composer |
 | ↑ / ↓ | Walk the input history at the composer's first and last row |
+| ↑ | On an empty composer with prompts queued, takes them all back into the composer to edit |
 | Esc | On an empty composer, interrupts a running turn (the activity row shows how long it has run) |
 | Ctrl+V | Attaches the clipboard image |
 | Ctrl+O | Shows or hides thinking and tool detail |
