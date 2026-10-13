@@ -8,7 +8,6 @@ load_local_package()
 
 from omh.plugin_bundle.omh.awareness import _route_hint_rule_matches, _spend_awareness_marked, awareness_route_hint
 from omh.plugin_bundle.omh.native_tools import native_tool_presence_clause
-from omh.plugin_bundle.omh.spend_signals import spend_frame_withdraws
 from omh.quality.routing_precision import ROUTING_PRECISION_CASES
 from omh.routing.localization import normalized_phrase
 from omh.routing.policy import everyday_sense_phrase_unanchored
@@ -230,7 +229,7 @@ class SpendGateContractTests(unittest.TestCase):
                     self.assertNotIn("0.21", text)
 
     def test_the_chat_card_waits_for_the_typed_yes_and_keeps_no_card(self) -> None:
-        body = build_chat_interaction_payload("pay for the hotel booking with my card", source="discord")[
+        body = build_chat_interaction_payload("please pay for the hotel booking with my card", source="discord")[
             "chat_response"
         ]["body"]
         self.assertIn("and wait for your typed yes.", body)
@@ -301,63 +300,77 @@ class SpendGateRoutingTests(unittest.TestCase):
                 self.assertEqual(route["action"], "dispatch")
                 self.assertEqual(route["selected_skill"], owner)
 
+    def test_a_request_marker_outside_the_phrase_is_required(self) -> None:
+        # Deliberately conservative: an imperative with no marker routes as
+        # before this skill existed. That gives up "pay with my card for the
+        # hotel" so that "Pay with my card in safari is broken" -- the same
+        # words naming a feature -- never reaches the gate.
+        for message, admitted in (
+            ("pay with my card for the hotel", False),
+            ("buy it for me", False),
+            ("pay with my saved card on amazon", False),
+            ("Pay with my card in safari is broken", False),
+            ("please pay with my card for the hotel", True),
+            ("pay with my card for the hotel please", True),
+            ("can you pay with my card for the hotel", True),
+            ("could you pay with my card for the hotel", True),
+            ("would you pay with my card for the hotel", True),
+            ("will you pay with my card for the hotel", True),
+            ("go ahead and pay with my card for the hotel", True),
+            ("i need you to pay with my card for the hotel", True),
+            ("i want you to pay with my card for the hotel", True),
+            ("hermes, pay with my card for the hotel", True),
+            ("pay with my card $40 for the refill", True),
+            ("pay with my card 40 dollars for the refill", True),
+            ("buy the cheapest one for me with my card", True),
+            # "for me" said as part of the phrase is not a marker.
+            ("buy it for me on the product page", False),
+            ("buy this for me on amazon", False),
+            ("can you buy it for me?", True),
+        ):
+            with self.subTest(message=message):
+                self.assertIs(bool(_spend_gate_clause(normalized_phrase(message))), admitted)
+
     def test_only_a_request_that_leads_with_a_spend_is_admitted(self) -> None:
         for message, admitted in (
-            ("buy it for me", True),
-            ("hey, can you please buy it for me", True),
-            ("go ahead buy it for me", True),
             ("please buy it for me", True),
-            ("use spend gate before you buy anything", True),
-            ("top up my openai credits by $50 with my card", True),
+            ("hey, can you please buy it for me", True),
+            ("please use spend gate before you buy anything", True),
+            ("can you top up my openai credits by $50 with my card", True),
             ("transfer 40 dollars from my wallet to the vendor", True),
-            ("place an order for two large pizzas from dominos", True),
+            ("please place an order for two large pizzas from dominos", True),
             ("go ahead and pay the 402 challenge for the dataset", True),
-            ("buy it for me if it is under $20, check the pricing first", True),
-            ("did the payment go through after you clicked pay? the checkout page timed out", True),
-            ("transcribe this call, then buy it for me if it is cheap", False),
-            ("슬랙에 메시지 보내줘: pay with my card for the vendor invoice", False),
-            ("complete the checkout flow for my card payments", False),
-            ("pay with my saved card toggle is broken", False),
-            ("place the order of the slides so the demo comes first", False),
-            ("Check out this article on why you should never pay with my card abroad", False),
-            ("Pay attention when someone says buy it for me in chat", False),
-            ("Tip: always pay with my card abroad", False),
-            ("Order 5512: did the payment go through? the customer is asking", False),
-            ("Order of events when you pay with my card: auth, capture, settle", False),
-            ("Pay with my card or PayPal, which is safer?", False),
-            ("Pay-per-request APIs are cheaper for low traffic", False),
-            ("Buy-side analysts use my credit card data in their models", False),
-            ("Pay stubs with my card number on them are a privacy risk", False),
-            ("Pay with my saved card returns a 500 error", False),
-            ("Buy it for me is the copy marketing wants on the CTA", False),
-            ("Checkout with my saved card fails on staging", False),
-            ("Buy it for me buttons convert better than add to cart", False),
-            ("Pay the invoice with my card toggle", False),
-            ("write a blog post on how to pay with my saved card", False),
-            ("triage the issues about the checkout flow for my card payments", False),
-            ("send a slack message saying I paid the vendor", False),
-            ("schedule a reminder to pay my rent", False),
-            ("which card is best to pay for the tickets", False),
-            ("she will place an order with the supplier tomorrow", False),
-            ("transfer the repo ownership to the new github org", False),
-            ("the place the order button doesn't respond on safari", False),
-            ("my mom asked did the payment go through", False),
-            ("did the payment go through is the most common support question we get", False),
-            ("did the payment go through for my mom's order", False),
+            ("please buy it for me if it is under $20, check the pricing first", True),
+            ("hermes, did the payment go through after you clicked pay? the checkout page timed out", True),
+            ("please transcribe this call, then buy it for me if it is cheap", False),
+            ("please schedule a reminder to pay my rent", False),
+            ("can you write a blog post on how to pay with my saved card", False),
+            ("please send a slack message saying I paid the vendor", False),
+            ("could you tell me which card is best to pay for the tickets", False),
+            ("please triage the issues about the checkout flow for my card payments", False),
+            ("슬랙에 메시지 보내줘: please pay with my card for the vendor invoice", False),
+            ("please place the order of the slides so the demo comes first", False),
+            ("please check out this article on why you should never pay with my card abroad", False),
+            ("hermes, did the payment go through for my mom's order", False),
+            ("hermes, my mom asked did the payment go through", False),
+            ("please transfer the repo ownership to the new github org", False),
         ):
             with self.subTest(message=message):
                 self.assertIs(bool(_spend_gate_clause(normalized_phrase(message))), admitted)
 
     def test_the_gates_phrases_count_only_inside_the_request_clause(self) -> None:
-        self.assertEqual(_spend_gate_clause("pay on my behalf for the hotel, but show me the total"), "pay on my behalf for the hotel")
-        self.assertEqual(_spend_gate_clause("book the hotel for friday and pay with my card"), "")
-        self.assertEqual(_spend_gate_clause("book the meeting with finance about money on my behalf"), "")
+        self.assertEqual(
+            _spend_gate_clause("please pay on my behalf for the hotel, but show me the total"),
+            "pay on my behalf for the hotel",
+        )
+        self.assertEqual(_spend_gate_clause("please book the hotel for friday and pay with my card"), "")
+        self.assertEqual(_spend_gate_clause("please book the meeting with finance about money on my behalf"), "")
         for message in (
-            "Book the meeting with finance about money on my behalf",
-            "Subscribe to the newsletter about money on my behalf",
-            "book the hotel for friday and pay with my card",
-            "renew the tls certificate when the money on my behalf policy allows",
-            "renew the domain registration about money on my behalf",
+            "Please book the meeting with finance about money on my behalf",
+            "Please subscribe to the newsletter about money on my behalf",
+            "please book the hotel for friday and pay with my card",
+            "please renew the tls certificate when the money on my behalf policy allows",
+            "please renew the domain registration about money on my behalf",
         ):
             with self.subTest(message=message):
                 route = _route(message)
@@ -366,45 +379,99 @@ class SpendGateRoutingTests(unittest.TestCase):
 
     def test_only_what_may_follow_a_request_may_follow_a_phrase(self) -> None:
         for message, admitted in (
-            ("pay with my saved card on amazon", True),
-            ("pay with my card for the hotel", True),
-            ("send money to my friend on venmo", True),
+            ("please pay with my saved card on amazon", True),
+            ("please pay with my card for the hotel", True),
+            ("please send money to my friend on venmo", True),
+            ("please buy it for me", True),
             ("buy it for me please", True),
-            ("buy it for me now", True),
-            ("buy it for me right away", True),
+            ("can you buy it for me now", True),
+            ("can you buy it for me right away", True),
             ("buy it for me $40", True),
-            ("buy it for me with my card", True),
-            ("pay with my saved card stopped working on safari", False),
-            ("pay with my card would be nice to have in v2", False),
-            ("pay with my card or paypal which is safer", False),
-            ("buy it for me went live last week", False),
-            ("check out a cheaper pay with my card option", False),
-            ("buy it for me with confidence", False),
-            ("approve this purchase request in coupa", False),
+            ("please buy it for me with my card", True),
+            ("please pay with my saved card stopped working on safari", False),
+            ("please pay with my card would be nice to have in v2", False),
+            ("please pay with my card or paypal", False),
+            ("please buy it for me went live last week", False),
+            ("please pay with my card option", False),
+            ("please buy it for me with confidence", False),
+            ("please approve this purchase request in coupa", False),
             # Every phrase must pass, not one: "buy it for me" is followed by
             # the person's card, "with my card" by a noun.
-            ("buy it for me with my card toggle", False),
+            ("please buy it for me with my card toggle", False),
         ):
             with self.subTest(message=message):
                 self.assertIs(bool(_spend_gate_clause(normalized_phrase(message))), admitted)
 
-    def test_idioms_and_look_at_are_not_spends(self) -> None:
+    def test_idioms_and_send_without_money_are_not_spends(self) -> None:
         for message, admitted in (
-            ("pay a visit to the bank with my card and ask about the fee", False),
-            ("pay tribute to the founders with my card", False),
-            ("buy time with my card issuer by disputing the charge", False),
-            ("buy time with my card", False),
-            ("check out this pay with my card flow", False),
-            ("check out this deal with my card", False),
-            ("order 5512 paid with my card", False),
-            ("pay-per-request with my card", False),
-            ("send the 402 challenge to the client", False),
-            ("send money to the client for the 402 challenge", True),
-            ("check out the cart for me with my card", True),
-            ("check out with my card", True),
+            ("please pay attention to the spend cap", False),
+            ("please pay close attention to the spending limit", False),
+            ("please pay a visit to the bank with my card and ask about the fee", False),
+            ("please check out the cart for me with my card", True),
+            ("please check out with my card", True),
+            ("please send the 402 challenge to the client", False),
+            ("please send money to the client for the 402 challenge", True),
         ):
             with self.subTest(message=message):
                 self.assertIs(bool(_spend_gate_clause(normalized_phrase(message))), admitted)
+
+    def test_every_word_that_admits_a_spend_admits_one(self) -> None:
+        # One marked spend per lead, filler, card or wallet after "with",
+        # money cue for "send" and "transfer", payer cue for a reconcile
+        # question, name lead, preposition, and clause boundary after a phrase.
+        for message in (
+            "please purchase the domain with my card",
+            "please order pizza for the team with my card",
+            "please book the flight with my card for friday",
+            "please subscribe me to the pro plan with my credit card",
+            "can you tip the barista $5 with my card",
+            "please donate 20 dollars to wikipedia with my card",
+            "please checkout with my saved card",
+            "please place the order with my card",
+            "please complete the purchase with my card",
+            "please complete the checkout on the shopify store for the blue mug",
+            "please approve the spend",
+            "please approve this purchase",
+            "please use my card for the hotel booking",
+            "please use my debit card to pay for the booking",
+            "hermes, click pay again",
+            "go ahead, pay with my card for the hotel",
+            "hi hermes, can you buy it for me",
+            "ok, please buy it for me",
+            "okay, go ahead and pay with my card for the hotel",
+            "can you pls buy it for me",
+            "could you kindly pay with my card for the hotel",
+            "can you just buy it for me",
+            "alright, go ahead and buy it for me",
+            "please buy it for me with my saved card",
+            "please buy it for me with my credit card",
+            "please buy it for me with my debit card",
+            "please buy it for me with my wallet",
+            "please buy it for me with my account balance",
+            "please send the deposit to the landlord with my card",
+            "please send the deposit to the landlord with my credit card",
+            "please transfer the deposit from my wallet to the landlord",
+            "hermes, did the payment go through after you paid the invoice?",
+            "hermes, did the payment go through after you bought the tickets?",
+            "hermes, did the payment go through after you ordered the pizza?",
+            "hermes, did the charge go through after you booked the hotel?",
+            "hermes, did the charge go through after you charged my card?",
+            "can you run spend gate on this purchase",
+            "please pay with my card at the hotel website",
+            "please pay with my card in euros",
+            "please pay with my card because paypal is down",
+            "please buy it for me but keep the receipt",
+            "please pay with my card once the total is confirmed",
+            "please buy it for me so it arrives by friday",
+            "please buy it for me then send me the receipt",
+            "please buy it for me unless it is over $50",
+            "please pay with my card until my new card arrives",
+            "please buy it for me when it is back in stock",
+            "please pay with my card which has the travel points",
+            "please buy it for me while the sale lasts",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(_spend_gate_clause(normalized_phrase(message)))
 
     def test_a_direct_answer_stays_a_direct_answer(self) -> None:
         # The skill's description words alone must not turn a direct answer
@@ -414,25 +481,17 @@ class SpendGateRoutingTests(unittest.TestCase):
                 self.assertEqual(_route(message)["action"], "fallback")
 
     def test_an_admitted_sentence_without_a_spend_phrase_routes_as_before(self) -> None:
-        # "renew" admits the sentence, but no phrase of the gate is in it, so
-        # the skill's description words must not lead the clarify.
-        for message in ("renew the tls certificate", "order these imports alphabetically", "pay attention to the details"):
+        # "please renew" admits the sentence, but no phrase of the gate is in
+        # it, so the skill's description words must not lead the clarify.
+        for message in (
+            "please renew the tls certificate",
+            "please order these imports alphabetically",
+            "please pay attention to the details",
+        ):
             with self.subTest(message=message):
                 route = _route(message)
                 self.assertNotEqual(route.get("selected_skill"), SKILL)
                 self.assertNotEqual(route.get("candidate_skill"), SKILL)
-
-    def test_frames_an_admitted_sentence_can_still_carry_withdraw_the_skill(self) -> None:
-        for message, withdrawn in (
-            ("checkout times out for users who pick pay with my saved card", True),
-            ("a customer wants to pay with my card", True),
-            ("check the pricing and buy it for me if it is under $20", False),
-            ("complete the purchase on the checkout page once I confirm", False),
-            ("pay the 402 challenge on this paid data endpoint", False),
-            ("buy a screen protector for me", False),
-        ):
-            with self.subTest(message=message):
-                self.assertIs(spend_frame_withdraws(normalized_phrase(message)), withdrawn)
 
     def test_everyday_cap_and_wallet_phrases_need_a_word_of_paying(self) -> None:
         for message, withdrawn in (
@@ -459,13 +518,13 @@ class SpendGateRouteHintTests(unittest.TestCase):
                 self.assertNotIn(SKILL, _hinted_workflows(case.message))
 
     def test_the_same_phrases_elsewhere_get_no_hint(self) -> None:
-        # "order the pre-spending review notes by date" is admitted (it leads
-        # with "order") and contains "pre-spend" as part of a longer word: the
-        # hint's phrases count only as whole words.
+        # "please order the pre-spending review notes by date" is admitted (it
+        # leads with "order") and contains "pre-spend" as part of a longer
+        # word: the hint's phrases count only as whole words.
         for message in (
             *NOT_SPENDING,
             "consumer spending capacity is falling",
-            "order the pre-spending review notes by date",
+            "please order the pre-spending review notes by date",
             "what is a pre-spend card",
             "did the payment go through is the most common support question we get",
         ):
@@ -473,61 +532,70 @@ class SpendGateRouteHintTests(unittest.TestCase):
                 self.assertNotIn(SKILL, _hinted_workflows(message))
 
     def test_the_rule_helper_reads_whole_words_inside_the_clause(self) -> None:
-        self.assertTrue(_route_hint_rule_matches("spend_gate", "buy it for me", set()))
-        self.assertFalse(_route_hint_rule_matches("spend_gate", "order the pre-spending review notes by date", set()))
-        self.assertFalse(_route_hint_rule_matches("spend_gate", "check out this thread about agents that buy it for me", set()))
+        self.assertTrue(_route_hint_rule_matches("spend_gate", "please buy it for me", set()))
+        self.assertFalse(_route_hint_rule_matches("spend_gate", "buy it for me", set()))
+        self.assertFalse(_route_hint_rule_matches("spend_gate", "please order the pre-spending review notes by date", set()))
+        self.assertFalse(
+            _route_hint_rule_matches("spend_gate", "please check out this thread about agents that buy it for me", set())
+        )
 
     def test_spend_markers_arm_awareness_only_inside_an_admitted_clause(self) -> None:
-        self.assertTrue(_spend_awareness_marked("buy it for me"))
+        self.assertTrue(_spend_awareness_marked("please buy it for me"))
         for message in (
+            "buy it for me",
             "consumer spending capacity is falling",
-            "check out this thread about agents that buy it for me automatically",
-            "write a blog post on why agents should not spend money on my behalf",
+            "please check out this thread about agents that buy it for me automatically",
+            "please write a blog post on why agents should not spend money on my behalf",
         ):
             with self.subTest(message=message):
                 self.assertFalse(_spend_awareness_marked(message))
 
     def test_a_spend_of_the_persons_own_money_gets_the_hint(self) -> None:
         for message in (
-            "buy it for me",
-            "pay with my saved card on amazon",
-            "use my credit card to buy the concert tickets",
-            "pay on my behalf for the hotel, but show me the total and fees first",
+            "please buy it for me",
+            "can you pay with my saved card on amazon",
+            "can you use my credit card to buy the concert tickets",
+            "please pay on my behalf for the hotel, but show me the total and fees first",
+            "buy this monitor for me on amazon with my saved card",
             "spend-gate: buy the domain example.dev for me",
         ):
             with self.subTest(message=message):
                 self.assertEqual(awareness_route_hint(message)["selected_workflow"], SKILL)
 
 
+# Each carries a request marker outside the gate's phrase: "please", "can
+# you", "go ahead", an address to Hermes, or an amount.
 DISPATCHES = (
     "go ahead and pay the 402 challenge for the dataset",
-    "pay the 402 challenge on this paid data endpoint",
-    "pay for the hotel booking with my card",
+    "please pay the 402 challenge on this paid data endpoint",
+    "please pay for the hotel booking with my card",
     "transfer 40 dollars from my wallet to my landlord",
-    "pay on my behalf for the hotel, but show me the total and fees first",
-    "pay with my saved card on amazon",
-    "approve the purchase from the paid data endpoint",
-    "pay the invoice from acme with my card",
+    "please pay on my behalf for the hotel, but show me the total and fees first",
+    "can you pay with my saved card on amazon",
+    "please approve the purchase from the paid data endpoint",
+    "please pay the invoice from acme with my card",
+    "Please pay with my card for the hotel",
+    "Pay with my card $40 for the refill",
 )
 LEADS = (
-    "buy the trip supplies with my card, up to $200",
-    "did the payment go through after you clicked pay? it timed out",
+    "buy the trip supplies for me with my card, up to $200",
+    "hermes, did the payment go through after you clicked pay? it timed out",
     "go ahead and buy it for me if the total stays under 50 dollars",
-    "renew my netflix subscription with my card",
-    "use my credit card to buy the concert tickets",
+    "please renew my netflix subscription with my card",
+    "can you use my credit card to buy the concert tickets",
     "top up my openai credits by $50 with my card",
-    "send money to my friend on venmo",
-    "buy it for me if it is under $20, check the pricing first",
-    "use spend gate before you buy anything",
-    # Words after the request clause do not score: each of these dispatched
-    # while they did.
-    "use my credit card to buy the concert tickets, and the note about pay with my saved card can wait",
-    "renew my netflix subscription with my card, the pay with my saved card setting stays",
+    "please send money to my friend on venmo",
+    "please buy it for me if it is under $20, check the pricing first",
+    "Hermes, buy this for me on my behalf",
+    # Words after the request clause do not score: this dispatched while
+    # they did.
+    "please use my credit card to buy the concert tickets, and the note about pay with my saved card can wait",
 )
 # Each is a sense of the gate's words that moves no money for the person:
 # everyday money talk, a branch checkout, payment software being built or
-# tested, a question about payments, procurement, someone else's payment, and
-# an ordering of things.
+# tested, a question about payments, procurement, someone else's payment, an
+# ordering of things, and a feature, label or bug named by the gate's own
+# words with no request marker.
 NOT_SPENDING = (
     "I paid the rent yesterday",
     "I paid for lunch with my card",
@@ -613,6 +681,33 @@ NOT_SPENDING = (
     "Buy it for me got 3% more clicks in the experiment",
     "Pay with my card looks broken on mobile",
     "Use my credit card might be a better CTA",
+    # The gate's phrase followed by a preposition, with no request marker: a
+    # bug report, a roadmap note, a slide, a slogan.
+    "Pay with my card in safari is broken",
+    "Pay with my card from the settings page is greyed out",
+    "Pay with my card when logged in shows a spinner",
+    "Pay with my card and paypal are both supported now",
+    "Pay with my saved card to amazon works fine on desktop",
+    "Pay with my card for subscriptions is coming in v2",
+    "Pay on my behalf for minors needs parental consent",
+    "Pay with my card on slide 3 needs a bigger font",
+    "Pay with my card on the whiteboard sketch",
+    "Pay with my card at 2x speed in the demo recording",
+    "pay on my behalf in the sense of the policy doc",
+    "pay with my card in the demo video",
+    "buy it for me at the hackathon booth is our slogan",
+    "use my credit card for the screenshot",
+    "Pay with my card on mobile stopped working",
+    "Buy it for me on the product page doesn't render",
+    "Use my credit card at checkout fails with a 3DS error",
+    "Buy it for me in the mobile app crashes on launch",
+    "Pay with my saved card in the iOS build is missing",
+    "Buy it for me at checkout converts 3% better",
+    "Buy it for me and wishlist are the two CTAs",
+    "Buy this for me on amazon was the first prompt we tested",
+    "Use my credit card for the demo is what the script says",
+    "Pay with my card, not apple pay, is the default",
+    "Pay on my behalf to the landlord is a feature request from Q3",
 )
 OWNERS = (
     ("open the staging checkout url, click login and fill the form", "browser-operator"),
@@ -626,6 +721,9 @@ OWNERS = (
     ("triage the issues about the checkout flow for my card payments", "feedback-triage"),
     ("Checkout with my saved card fails on staging", "feedback-triage"),
     ("Checkout with my card breaks when the cart has 0 items", "feedback-triage"),
+    ("Use my credit card at checkout fails with a 3DS error", "feedback-triage"),
+    ("Buy it for me in the mobile app crashes on launch", "feedback-triage"),
+    ("Pay on my behalf to the landlord is a feature request from Q3", "plan"),
 )
 
 

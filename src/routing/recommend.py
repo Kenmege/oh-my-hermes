@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 import re
 
-from ..plugin_bundle.omh.spend_signals import spend_frame_withdraws, spend_request_clause
+from ..plugin_bundle.omh.spend_signals import spend_request_clause
 from ..skills.catalog import SkillDefinition, builtin_definitions, routable_definitions
 from .domain_signals import (
     DomainOperatorOverride,
@@ -5781,15 +5781,17 @@ def _spend_gate_offers_itself(normalized_query: str, query_tokens: set[str]) -> 
     Routing is deliberately conservative. The gate competes only in ordinary
     scoring, through phrases held to whole-phrase matches, on the request
     clause `spend_request_clause` returns (the bundle's `spend_signals`,
-    which the awareness route hint and markers read too): a clause that opens
-    with a spend addressed to the agent, where every one of the gate's
-    phrases is followed only by what may follow a request. Every other
-    sentence -- a phrase used as a topic, a subject, a label, a question, a
-    later clause -- routes exactly as before this skill existed, and nothing
-    here stands down another skill's guard.
+    which the awareness route hint and markers read too): a message marked as
+    a request outside the gate's own phrase ("please", "can you", an address
+    to Hermes, an amount, ...), whose clause opens with a spend addressed to
+    the agent, where every one of the gate's phrases is followed only by what
+    may follow a request. Every other sentence -- an unmarked imperative, a
+    phrase used as a topic, a subject, a label, a later clause -- routes
+    exactly as before this skill existed, and nothing here stands down another
+    skill's guard.
     """
     del query_tokens
-    return bool(_spend_gate_clause(normalized_query)) and not spend_frame_withdraws(normalized_query)
+    return bool(_spend_gate_clause(normalized_query))
 
 
 # Skills that withdraw from the shortlist unless their own precondition holds,

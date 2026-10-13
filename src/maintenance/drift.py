@@ -581,8 +581,13 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # verb of another tense ("stopped working", "broke", "went live"),
             # a modal ("would be nice", "could confuse", "might be"), "or" (a
             # comparison), a noun ("card issuer", "option"), or an idiom ("buy
-            # time", "pay a visit") (16).
-            expected=711,
+            # time", "pay a visit") (16). Its fourth review adds twenty-one
+            # that an allowed first word let through ("pay with my card in
+            # safari is broken", "buy it for me and wishlist are the two
+            # CTAs"); the gate now also needs a request marker outside its
+            # phrase -- "please", "can you", "go ahead", "hermes", an amount,
+            # or "for me" -- and none of these has one (21).
+            expected=732,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -792,8 +797,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # admission adds one owner: triaging issues about card payments in
             # a checkout stays on feedback-triage (1). Its second review adds
             # two more checkout failure reports that stay on feedback-triage,
-            # where the noun "checkout" was read as the verb (2).
-            expected=774,
+            # where the noun "checkout" was read as the verb (2). Its fourth
+            # review adds three that keep their base dispatch: a 3DS failure
+            # report and a crash report on feedback-triage, and a feature
+            # request on plan (3).
+            expected=777,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

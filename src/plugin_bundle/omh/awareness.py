@@ -21,7 +21,7 @@ from .hermes_session_commands import (
 )
 from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
-from .spend_signals import spend_frame_withdraws, spend_request_phrases
+from .spend_signals import spend_request_phrases
 from .reference_regions import executable_routing_text
 from .degradation import (
     COMPONENT_LOCALIZED_ROUTING_TEXT,
@@ -4133,8 +4133,8 @@ _ROUTE_HINT_RULES = (
         ),
         # Only the skill's own names and phrases that make the person the
         # payer, matched as whole words inside the request clause the router
-        # admits too (`_route_hint_phrase_matches`, `spend_request_phrases`),
-        # and withdrawn by the same frames (`_rule_suppressed_by_context`). The other trigger phrases are absent:
+        # admits too (`_route_hint_phrase_matches`, `spend_request_phrases`).
+        # The other trigger phrases are absent:
         # this table has no anchor, and "complete the checkout", "wallet
         # transfer", "did the payment go through", "spending cap" and "http 402"
         # also name a checkout screen, a question about wallets, a customer's
@@ -8313,10 +8313,6 @@ def _rule_suppressed_by_context(rule: dict[str, object], text: str) -> bool:
     rule_id = str(rule.get("id", ""))
     if rule_id == "data_share_review":
         return not data_share_request_admitted(text)
-    if rule_id == "spend_gate":
-        # The phrases are read inside `spend_request_phrases` already
-        # (`_route_hint_phrase_matches`); this adds the router's frames.
-        return spend_frame_withdraws(text)
     visual_markers = (
         "image card",
         "summary card",
