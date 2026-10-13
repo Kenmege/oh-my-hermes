@@ -130,6 +130,8 @@ Safety rules:
 - Show `generate_visual_image` only when wrapper context reports image_generation_capability/v1 as connected, and still treat it as wrapper-owned action rather than evidence.
 - When image_generation_capability/v1 is unknown or prompt_only, ask which image tool to use and route to image_generation_setup/v1 instead of pretending generation can start.
 - For image edits, require a supplied image reference and state preserve, remove, replace, crop, and output constraints without claiming the source image was loaded.
+- On Hermes, report image_generation_capability/v1 as `connected` when `image_generate` is in your tool list or tool_search finds it, since Hermes offers that tool only while an image backend is configured, and as `prompt_only` otherwise; never infer it from a Hermes version, a provider key, or a model name.
+- A supplied-image edit goes through that tool only when its own description offers to edit an existing image; when it says text-to-image only, the edit stays a prompt card. A result with `success: true` names the file in `image` and backs one visual_generation_receipt/v1 attempt, with every route field the result does not state left unknown; a generated-image claim still needs visual_observation/v1, and visual QA and delivery stay separate.
 
 ## Runtime Evidence
 

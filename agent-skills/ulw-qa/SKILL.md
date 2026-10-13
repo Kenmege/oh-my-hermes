@@ -16,12 +16,13 @@ This is an OMH `ultraqa` workflow skill, projected for Agent Skills hosts (Claud
 
 ## Why This Exists
 
-`ultraqa` exists to keep `verification` work explicit, evidence-backed, and inside the host/executor boundary instead of relying on ad hoc chat narration.
+`ultraqa` exists because behavior that passes its own tests can still fail under inputs and conditions nobody wrote down: it turns the changed behavior and known risks into hostile scenarios, records each one's observed pass or fail apart from any proposed fix, and hands fixes to the selected coding executor.
 
 ## Do Not Use When
 
-- The request is casual chat, a status-only acknowledgement, or another workflow has stronger routing evidence.
-- The user needs implementation, review, CI, merge, or external publishing evidence that has not been delegated or observed.
+- Exploratory bug-hunting across a web app with no changed behavior to attack; on Hermes, use the bundled `dogfood` skill when it is available, and bring a finding back here as a scenario to reproduce.
+- Judging whether a rendered page, image, or terminal frame looks right across viewports and states; use `visual-qa`.
+- Confirming that a finished change meets its acceptance criteria with the smallest proving check, when no hostile scenarios are wanted; use `verification-gate`.
 
 ## Examples
 
@@ -73,6 +74,7 @@ Quality bar:
 - Report pass/fail evidence separately from proposed fixes.
 - Delegate code mutations discovered by QA to the selected coding executor.
 - Read actual host/executor evidence before claiming build, verification, review, documentation, or PR-preparation results.
+- On a web app, read the browser console after every navigation and interaction, and keep a failing scenario's screenshot and console errors as its observed evidence.
 
 Required inputs:
 

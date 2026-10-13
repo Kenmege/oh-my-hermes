@@ -74,6 +74,8 @@ Quality bar:
 - Name cadence, audience, time window, known notes, and missing evidence before producing a record.
 - Separate agenda/templates from observed minutes, decisions, and action items.
 - Record follow-up ownership only when supplied or explicitly mark it unknown.
+- Record each action item with its outcome, owner, due date, dependency, acceptance condition, and source reference, marking an owner or date the notes do not state as unknown, and keep a proposal that was discussed but not decided out of the decision log.
+- On Hermes, when the bundled `meeting-action-items` skill is available, it may pull decisions, owners, and actions out of the supplied notes; its list is a reading of those notes, so every item keeps its source reference and stays unaccepted until the notes or the owner confirm it, and a ticket or message it drafts is reported as published only after the user approved it and it was read back.
 
 Handoff policy:
 

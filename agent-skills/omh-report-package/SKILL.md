@@ -69,6 +69,8 @@ Quality bar:
 - Name audience, reporting period, sections, supplied facts, assumptions, and missing data.
 - Keep report packaging independent from reliability review unless explicitly requested.
 - Export only Markdown/JSON outlines unless a separate presentation tool produces a binary deck.
+- On Hermes, that tool is the bundled `powerpoint` skill, and a deck built from the outline counts as generated only from its read-back (`pptx_read.py --outline`).
+- The deck counts as render-checked only from a `pptx_render.py` result reading `"rendered": true` whose slide images were each inspected; `"rendered": false` exits 0 yet leaves render QA not observed.
 
 Required inputs:
 

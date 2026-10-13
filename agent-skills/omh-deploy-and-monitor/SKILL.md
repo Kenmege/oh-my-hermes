@@ -69,6 +69,8 @@ Quality bar:
 - Name release scope, target environment, health signals, rollback criteria, and evidence owner.
 - Show pre-deploy, deploy decision, monitor, rollback, and post-deploy as distinct stages.
 - Mark health and rollback status unknown until observed evidence arrives.
+- On Hermes, a watchlist that must keep running after this turn is prepared as a native blueprint through `automation-blueprint` (a cron job whose `monitor` source is a health URL or a script whose output carries no timestamps), activated by the user or Hermes and never by OMH.
+- The first monitor tick only sets a baseline, a tick that stays silent means the source output did not change and never that the release is healthy, and a source that failed is an error, not a change; what the job finds enters the post-deploy status only from its recorded runs (`hermes cron runs <job_id>`) and its open `hermes cron incidents`.
 
 Required inputs:
 

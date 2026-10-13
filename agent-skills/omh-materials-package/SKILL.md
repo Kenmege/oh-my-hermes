@@ -69,6 +69,8 @@ Quality bar:
 - Name audience, source inputs, requested extraction/comparison task, target formats, outline sections, assumptions, missing inputs, and output owner.
 - Attach format-specific QA expectations before preparing a binary-generation handoff.
 - Record binary export, render QA, formula checks, approvals, and delivery only from observed evidence.
+- On Hermes, a file's QA rung is observed only from the bundled document skill's result for that exact file, judged by its field, not its exit code: `"rendered": false` or `"recalculated": false` exits 0 yet leaves the rung not observed, blocked on the missing tools it names.
+- Rung sources, when the bundled skill is available: `powerpoint` gives `slide_count` (`pptx_read.py --outline`) and `render_screenshot` (`pptx_render.py`, one image per slide in `files`); `pdf` gives `page_count` (`pdf_read.py --meta`) and `render_preview` (`pdf_page_image.py`); `xlsx` gives `sheet_schema` (`xlsx_read.py --sheets`) and `formula_recalculation` (`xlsx_recalc.py`, then the cached results read back with `xlsx_read.py --formulas`, where an error value is a finding); `docx` gives `section_structure` and `required_clause_check` (`docx_read.py --structure` and `--text`) but no `page_count` or appearance until a converted PDF is rendered, and `docx_validate.py` checks package health, never rendering. Images that exist are not a render pass until each one has been inspected, and a producer's `"ok": true` is never the QA verdict.
 
 Required inputs:
 

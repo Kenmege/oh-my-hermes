@@ -1384,6 +1384,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Turn context into agenda topics, prompts, decisions needed, and a record template.
   - Keep prep distinct from actual meeting minutes or accepted decisions.
   - Identify missing context that would change the meeting structure.
+  - Give the record template's action-item rows outcome, owner, due date, dependency, acceptance condition, and source columns, each marked unknown until the meeting record fills it.
 - Completion checklist:
   - The agenda, participants or audience, decisions needed, and record template are named.
   - Meeting prep, observed minutes, accepted decisions, and action ownership are separate states.
@@ -2281,6 +2282,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Name cadence, audience, time window, known notes, and missing evidence before producing a record.
   - Separate agenda/templates from observed minutes, decisions, and action items.
   - Record follow-up ownership only when supplied or explicitly mark it unknown.
+  - Record each action item with its outcome, owner, due date, dependency, acceptance condition, and source reference, marking an owner or date the notes do not state as unknown, and keep a proposal that was discussed but not decided out of the decision log.
+  - On Hermes, when the bundled `meeting-action-items` skill is available, it may pull decisions, owners, and actions out of the supplied notes; its list is a reading of those notes, so every item keeps its source reference and stays unaccepted until the notes or the owner confirm it, and a ticket or message it drafts is reported as published only after the user approved it and it was read back.
 - Completion checklist:
   - Confirm the workflow target, evidence boundary, and stop condition are named.
   - Report which outputs are prepared, observed, blocked, or missing.
@@ -2340,6 +2343,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Name audience, reporting period, sections, supplied facts, assumptions, and missing data.
   - Keep report packaging independent from reliability review unless explicitly requested.
   - Export only Markdown/JSON outlines unless a separate presentation tool produces a binary deck.
+  - On Hermes, that tool is the bundled `powerpoint` skill, and a deck built from the outline counts as generated only from its read-back (`pptx_read.py --outline`).
+  - The deck counts as render-checked only from a `pptx_render.py` result reading `"rendered": true` whose slide images were each inspected; `"rendered": false` exits 0 yet leaves render QA not observed.
 - Completion checklist:
   - The reporting window, inputs, audience, narrative, and evidence gaps are named.
   - Draft report, generated package, approval, and delivery are separate states.
@@ -2399,6 +2404,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Name audience, source inputs, requested extraction/comparison task, target formats, outline sections, assumptions, missing inputs, and output owner.
   - Attach format-specific QA expectations before preparing a binary-generation handoff.
   - Record binary export, render QA, formula checks, approvals, and delivery only from observed evidence.
+  - On Hermes, a file's QA rung is observed only from the bundled document skill's result for that exact file, judged by its field, not its exit code: `"rendered": false` or `"recalculated": false` exits 0 yet leaves the rung not observed, blocked on the missing tools it names.
+  - Rung sources, when the bundled skill is available: `powerpoint` gives `slide_count` (`pptx_read.py --outline`) and `render_screenshot` (`pptx_render.py`, one image per slide in `files`); `pdf` gives `page_count` (`pdf_read.py --meta`) and `render_preview` (`pdf_page_image.py`); `xlsx` gives `sheet_schema` (`xlsx_read.py --sheets`) and `formula_recalculation` (`xlsx_recalc.py`, then the cached results read back with `xlsx_read.py --formulas`, where an error value is a finding); `docx` gives `section_structure` and `required_clause_check` (`docx_read.py --structure` and `--text`) but no `page_count` or appearance until a converted PDF is rendered, and `docx_validate.py` checks package health, never rendering. Images that exist are not a render pass until each one has been inspected, and a producer's `"ok": true` is never the QA verdict.
 - Completion checklist:
   - The material source, target format, audience, structure, and QA expectation are named.
   - Binary export, rendering, formula recalculation, attachment, and delivery stay observed-only.
@@ -2519,6 +2526,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Show `generate_visual_image` only when wrapper context reports image_generation_capability/v1 as connected, and still treat it as wrapper-owned action rather than evidence.
   - When image_generation_capability/v1 is unknown or prompt_only, ask which image tool to use and route to image_generation_setup/v1 instead of pretending generation can start.
   - For image edits, require a supplied image reference and state preserve, remove, replace, crop, and output constraints without claiming the source image was loaded.
+  - On Hermes, report image_generation_capability/v1 as `connected` when `image_generate` is in your tool list or tool_search finds it, since Hermes offers that tool only while an image backend is configured, and as `prompt_only` otherwise; never infer it from a Hermes version, a provider key, or a model name.
+  - A supplied-image edit goes through that tool only when its own description offers to edit an existing image; when it says text-to-image only, the edit stays a prompt card. A result with `success: true` names the file in `image` and backs one visual_generation_receipt/v1 attempt, with every route field the result does not state left unknown; a generated-image claim still needs visual_observation/v1, and visual QA and delivery stay separate.
 
 ### apple-design
 
@@ -3336,6 +3345,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user needs a broad visual quality rubric before generation; use `design-quality-gate`.
   - The user needs image-card prompt creation; use `img-summary`.
   - The user wants non-visual code tests, CI, or PR review only; use the coding/review workflow.
+  - Open-ended bug-hunting across a web app with no page, state, and viewport matrix or target revision to judge; on Hermes, use the bundled `dogfood` skill when it is available.
 - Strong routing signals: `visual-qa`, `visual qa`, `visual QA`, `visual quality assurance`, `visual check`, `web qa`, `web visual qa`, `screenshot qa`, `screenshot check`, `analyze this screenshot`, `screenshot layout problems`, `ui layout problems`, `pixel diff`, `image diff`, `visual diff`, `render qa`, `render check`, `browser screenshot`, `browser qa`, `browser interaction qa`, `click path`, `click-path audit`, `dead link check`, `console error check`, `network failure check`, `keyboard navigation check`, `viewport check`, `responsive check`, `ui looks wrong`, `looks broken`, `layout broken`, `broken layout`, `text clipping`, `cjk clipping`, `cjk layout`, `tui check`, `terminal ui check`, `スクリーンショットで確認`, `レイアウト崩れ`, `画面崩れ`, `見た目のQA`, `비주얼 qa`, `비주얼QA`, `시각 qa`, `시각 검증`, `화면 검증`, `스크린샷 검증`, `스크린샷 ui 레이아웃`, `스크린샷 UI 레이아웃`, `스크린샷 레이아웃 문제`, `렌더 검증`, `픽셀 diff`, `픽셀 비교`, `화면 깨짐`, `레이아웃 깨짐`, `글자 잘림`, `한글 줄바꿈`, `터미널 ui`, `截图检查`, `页面错位`, `视觉验收`, `布局错乱`
 - Good example:
   - Prompt: visual-qa 이 랜딩페이지가 모바일/데스크톱에서 깨지는지 스크린샷 기준으로 검증해줘.
@@ -3354,6 +3364,10 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Score every round through `references/visual-verdict-contract.md`: integer 0-100 score, PASS/REVISE/BLOCK, and a differences list pairing each observed problem with the smallest fix.
   - Hold 90 as the pass line: under it the verdict is REVISE and the named edits, a recapture of the same pages/states/viewports, and a fresh scored round are owed; rescoring the same captures is not a new round.
   - A host-collected sub-90 baseline needs a changed revision, next round ordinal, and newer same-condition capture; plan caps only tighten.
+  - On Hermes, when `browser_vision` is in your tool list or tool_search finds it, the session takes its own captures: each render_capture_manifest/v1 entry records the `screenshot_path` it returned, the URL, the viewport width the page reported, and the target revision, and an entry missing any of the four is not evidence; otherwise captures come from the wrapper, executor, or user.
+  - Set each required viewport with `browser_cdp` `Emulation.setDeviceMetricsOverride` when `browser_cdp` is in your tool list or tool_search finds it (Hermes offers it only with a CDP endpoint the user configured), then read the width back with `browser_console` (`window.innerWidth`) before the capture; a width that reads back other than the one requested is not that viewport, and without `browser_cdp` every required width the browser does not already report stays a named blocker.
+  - In the same session, read `browser_console` after every navigation and every interaction in scope and record its errors in console_network_health/v1; a clean console read is console evidence only, never network, accessibility, or visual evidence.
+  - Exploratory bug-hunting goes to Hermes' bundled `dogfood` skill when it is available: its issues and screenshots enter this verdict only as observed findings bound to the target lineage, and a report with no issues is not a PASS.
 - Completion checklist:
   - Interaction, console/network, click-path, keyboard/accessibility, diff, hotspot, motion, dual-review evidence, and blocker status are separate fields.
   - The verdict is PASS, REVISE, or BLOCK with concrete evidence IDs and exact missing evidence or fix requirements.
@@ -4583,6 +4597,8 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Name release scope, target environment, health signals, rollback criteria, and evidence owner.
   - Show pre-deploy, deploy decision, monitor, rollback, and post-deploy as distinct stages.
   - Mark health and rollback status unknown until observed evidence arrives.
+  - On Hermes, a watchlist that must keep running after this turn is prepared as a native blueprint through `automation-blueprint` (a cron job whose `monitor` source is a health URL or a script whose output carries no timestamps), activated by the user or Hermes and never by OMH.
+  - The first monitor tick only sets a baseline, a tick that stays silent means the source output did not change and never that the release is healthy, and a source that failed is an error, not a change; what the job finds enters the post-deploy status only from its recorded runs (`hermes cron runs <job_id>`) and its open `hermes cron incidents`.
 - Completion checklist:
   - Confirm the workflow target, evidence boundary, and stop condition are named.
   - Report which outputs are prepared, observed, blocked, or missing.
@@ -4629,11 +4645,12 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
 - Handoff policy: Hermes can design scenarios and report observed results; code fixes discovered by QA should become selected executor/runtime handoffs.
-- Why this exists: `ultraqa` exists to keep `verification` work explicit, evidence-backed, and inside the Hermes/executor boundary instead of relying on ad hoc chat narration.
+- Why this exists: `ultraqa` exists because behavior that passes its own tests can still fail under inputs and conditions nobody wrote down: it turns the changed behavior and known risks into hostile scenarios, records each one's observed pass or fail apart from any proposed fix, and hands fixes to the selected coding executor.
 - Use when: Use when the task needs adversarial test scenarios, verification, and fix loops.
 - Do not use when:
-  - The request is casual chat, a status-only acknowledgement, or another workflow has stronger routing evidence.
-  - The user needs implementation, review, CI, merge, or external publishing evidence that has not been delegated or observed.
+  - Exploratory bug-hunting across a web app with no changed behavior to attack; on Hermes, use the bundled `dogfood` skill when it is available, and bring a finding back here as a scenario to reproduce.
+  - Judging whether a rendered page, image, or terminal frame looks right across viewports and states; use `visual-qa`.
+  - Confirming that a finished change meets its acceptance criteria with the smallest proving check, when no hostile scenarios are wanted; use `verification-gate`.
 - Strong routing signals: `ultraqa`, `$ultraqa`, `adversarial qa`, `hostile scenarios`, `e2e qa`, `real-world qa`, `qa scenario`, `release qa`, `敵対的QA`, `リリース前QA`, `障害シナリオ`, `장애 상황`, `쿠버네티스 장애`, `적절히 진단`, `검증 체크리스트`, `릴리즈 전 gate`, `对抗式测试`, `发布前测试`, `故障场景`
 - Good example:
   - Prompt: $ultraqa test the setup wizard with hostile install paths, stale config, and missing PATH cases.
@@ -4655,6 +4672,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - A check no automation can hold gets a manual test guide, never a done claim: load `references/manual-test-guide.md` for the step shape (setup, do, expect, broken), the four reasons a step may stay manual, and why it stays `prepared_not_observed` until a run records a fresh `observed_check_results/v1`. `code-story` phase `VI. Manual test guide`; rendered surfaces go to `visual-qa`.
   - For probes that must run in Hermes-owned isolation or outlive this session, load `references/board-fanin.md`: one probe row per scenario in its own worktree, one fixer row whose `parents` is every probe, re-verification through the review lane, and findings only through bounded readback.
   - When Hermes owns the coding path, read `hermes_coding_harness/v1` before saying build, verification, review, docs, or PR-prep evidence exists.
+  - On a web app, when `browser_vision` is in your tool list or tool_search finds it, run each hostile scenario through the session's browser tools: read `browser_console` after every navigation and interaction, and keep a failing scenario's `screenshot_path` and console errors as its observed evidence.
 - Completion checklist:
   - The scenario, expected behavior, observed result, and pass/fail basis are named.
   - Proposed fixes are separated from observed QA evidence.
@@ -8788,12 +8806,11 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when the user asks for file deliverable packaging and attachment lifecycle status.
 - Handoff policy: Keep this as Hermes-facing orchestration guidance first. Prepare executor, connector, gateway, or host-runtime handoff only when the user accepts that next step and observed evidence can be recorded.
-- Why this exists: `deliverable-package` exists so Hermes users can ask for this workflow in chat and get a structured, checkable answer instead of an improvised one.
+- Why this exists: `deliverable-package` exists because a requested file moves through prepared, generated, QA-checked, approved, and attached states that no single tool reports together: it tracks each file through them and reports a state only from that state's own evidence, never from an earlier one's.
 - Use when: Use when Hermes should prepare, request generation, QA, and report attachment status for user-visible file deliverables.
 - Do not use when:
-  - The request is already handled by a narrower explicit skill with stronger evidence.
-  - The user asks OMH to secretly run external platforms, connectors, schedulers, file exports, or runtime agents.
-  - The only safe answer is to ask for missing authority, credentials, target, or observed evidence first.
+  - Planning a deck, PDF, workbook, or document from source inputs before any file exists (its outline, target formats, and QA ladder); use `materials-package`.
+  - A text-only report, executive brief, or slide outline with no file to produce; use `report-package`.
 - Strong routing signals: `deliverable-package`, `deliverable mode`, `file attachment`, `attach file`, `attachment status`, `file delivery`, `file deliverable status`, `generated file`, `첨부`, `첨부 상태`, `전달 상태`
 - Good example:
   - Prompt: deliverable-package turn this research into PPT and PDF with attachment status.
@@ -8807,6 +8824,9 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Name the user-facing workflow objective, required context, next action, and stop condition.
   - Separate prepared guidance from observed platform, runtime, connector, file, memory, or delivery evidence.
   - Expose missing tools, credentials, targets, or observations as user-visible gaps.
+  - On Hermes, a file's QA rung is observed only from the bundled document skill's result for that exact file, judged by its field, not its exit code: `"rendered": false` or `"recalculated": false` exits 0 yet leaves the rung not observed, blocked on the missing tools it names.
+  - Rung sources, when the bundled skill is available: `powerpoint` gives `slide_count` (`pptx_read.py --outline`) and `render_screenshot` (`pptx_render.py`, one image per slide in `files`); `pdf` gives `page_count` (`pdf_read.py --meta`) and `render_preview` (`pdf_page_image.py`); `xlsx` gives `sheet_schema` (`xlsx_read.py --sheets`) and `formula_recalculation` (`xlsx_recalc.py`, then the cached results read back with `xlsx_read.py --formulas`, where an error value is a finding); `docx` gives `section_structure` and `required_clause_check` (`docx_read.py --structure` and `--text`) but no `page_count` or appearance until a converted PDF is rendered, and `docx_validate.py` checks package health, never rendering. Images that exist are not a render pass until each one has been inspected, and a producer's `"ok": true` is never the QA verdict.
+  - A file is `generated` only from the producer's read-back of the written file, `approved` only from the person's answer, and `attached` only from the destination's own read-back, never from a reply that names the file.
 - Completion checklist:
   - The deliverable type, audience, source inputs, QA ladder, and delivery boundary are named.
   - Prepared generation, generated file, render QA, approval, attachment, and delivery are separate states.
