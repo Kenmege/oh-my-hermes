@@ -132,6 +132,7 @@ from .keys import (
     ENTER,
     ESCAPE,
     LEFT,
+    MOUSE_REPORT_SECONDS,
     RIGHT,
     TAB,
     UNKNOWN,
@@ -272,12 +273,12 @@ TAIL_POLL_SECONDS = 2.0
 TAIL_MISSES_BEFORE_STOP = 5
 # A call with no answer this long no longer holds the next one back; its answer, if it still comes, is dropped.
 TAIL_ANSWER_SECONDS = 10.0
-# On the way out of a run that had mouse reports on: the terminal acts on the off a moment later, so
-# reports may still be on their way. A cursor position request written after the off is answered after
-# all of them (a terminal handles what it is sent in order), so input is read and dropped up to that
-# answer, `ESC[<row>;<col>R`, instead of landing on the shell's prompt; for at most this long, which a
-# round trip over SSH fits in.
-EXIT_DRAIN_SECONDS = 0.25
+# On the way out while mouse reports may still be on their way (reporting on, or off for less than
+# `keys.MOUSE_REPORT_SECONDS`): a cursor position request written after the off is answered after all of
+# them (a terminal handles what it is sent in order), so input is read and dropped up to that answer,
+# `ESC[<row>;<col>R`, instead of landing on the shell's prompt; for at most this long. The drain stops at
+# the answer, so the bound costs nothing on a fast link and covers a round trip of up to a second.
+EXIT_DRAIN_SECONDS = 1.0
 CURSOR_POSITION_REQUEST = f"{CSI}6n"
 CURSOR_REPORT_START = b"\x1b["
 CURSOR_REPORT_FINAL = b"R"
@@ -823,7 +824,7 @@ class App:
         self.tail_misses: dict[str, int] = {}  # agent id -> answers in a row without a tail
         # The cells a click opens, as last drawn: rows above the status line → the entries on that row.
         self.clickable: dict[int, tuple[Hit, ...]] = {}
-        self.mouse_was_on = False  # mouse reports were on at some point in this run: the exit drains them
+        self.mouse_off_at: float | None = None  # when `_set_mouse` last turned reports off; None before that
         self.dirty = True
         self.last_render = 0.0
 
@@ -969,8 +970,9 @@ class App:
         self._render_when_due()
 
     def _shutdown(self) -> None:
+        reports_may_arrive = self._reports_may_arrive()  # read before the off below starts a new grace period
         self.poller.stop()
-        self.terminal.set_mouse(False)
+        self._set_mouse(False)
         if self.pager is not None:
             self.pager = None
             self.terminal.write(ALT_SCREEN_OFF + SHOW_CURSOR)
@@ -979,21 +981,38 @@ class App:
         if stable:
             self.region.flush_above(stable, cols)
         self.region.clear()
-        if self.mouse_was_on:
+        if reports_may_arrive:
             self._discard_late_reports()
+
+    def _set_mouse(self, enabled: bool) -> None:
+        """Turn mouse reports on or off, noting when they went off: reports sent before the off still arrive after it."""
+        was_on = self.terminal.mouse_reporting
+        self.terminal.set_mouse(enabled)
+        if was_on and not self.terminal.mouse_reporting:
+            self.mouse_off_at = self.clock()
+
+    def _reports_may_arrive(self) -> bool:
+        """Whether a mouse report may still arrive: reporting is on, or went off less than `MOUSE_REPORT_SECONDS` ago."""
+        off_at = self.mouse_off_at
+        return self.terminal.mouse_reporting or (off_at is not None and self.clock() - off_at < MOUSE_REPORT_SECONDS)
 
     def _discard_late_reports(self) -> None:
         """Ask for the cursor position, then read and drop input up to the answer, for at most `EXIT_DRAIN_SECONDS`.
 
-        Mouse reports were on in this run, and the terminal may have sent
-        some before it acted on the off written above. It answers the request
-        only once it has acted on everything sent before it, so every report
-        comes ahead of the answer, and the drain stops the moment the answer
-        is read. Keys typed in that window are discarded with the reports:
-        they are bytes the closing TUI has already read, and it acts on no
-        input any more. A terminal that never answers ends the drain at the
-        bound, as a read that waited out the time left does; an answer that
-        comes later than that reaches the shell, as a late report would.
+        Runs only when a report may still be on its way as the TUI leaves:
+        reporting was on as the shutdown began, or went off less than
+        `MOUSE_REPORT_SECONDS` before it. Otherwise nothing is asked, so no
+        answer can reach the shell. The terminal answers the request only
+        once it has acted on everything sent before it, so every report comes
+        ahead of the answer, and the drain stops the moment the answer is
+        read. Keys typed in that window are discarded with the reports: they
+        are bytes the closing TUI has already read, and it acts on no input
+        any more. A terminal that does not answer within the bound ends the
+        drain there, as a read that waited out the time left does, and its
+        answer, if it comes later, reaches the shell as `ESC[<row>;<col>R`.
+        That takes a round trip over a second just after a click, on a link
+        where the reports the drain exists for would reach the shell too: one
+        late answer is the price of dropping every report ahead of it.
         """
         self.terminal.write(CURSOR_POSITION_REQUEST)
         deadline = self.clock() + EXIT_DRAIN_SECONDS
@@ -2083,7 +2102,7 @@ class App:
         own timeout meanwhile. Nothing is answered for the person either way.
         """
         before = self.size
-        self.terminal.set_mouse(False)  # the strip is not on the picker's screen; the next frame asks again
+        self._set_mouse(False)  # the strip is not on the picker's screen; the next frame asks again
         self.terminal.write(ALT_SCREEN_ON + CURSOR_HOME + HIDE_CURSOR)
         try:
             message = self.pick_model_chains(
@@ -2152,7 +2171,7 @@ class App:
         the old layout reflowed; the settled redraw's frame turns them back
         on if it still has an agent to click.
         """
-        self.terminal.set_mouse(False)
+        self._set_mouse(False)
         self.size = self.terminal.size()
         self.dirty = True
         if self.pager is not None:
@@ -2209,7 +2228,7 @@ class App:
         self._settle_list()
         if self.pager is not None:
             self.clickable = {}
-            self.terminal.set_mouse(False)
+            self._set_mouse(False)
             self._refresh_agent_log()
             self.terminal.write(self.pager.frame(cols, rows, self.theme))
             return
@@ -2314,8 +2333,7 @@ class App:
         elif budget.mode and self._busy() and self.slot is None:
             agents = tuple(hit for hit in hits if hit.subagent_id != MAIN_ID)
             self.clickable = {under: agents} if agents else {}
-        self.terminal.set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
-        self.mouse_was_on = self.mouse_was_on or self.terminal.mouse_reporting
+        self._set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
 
     def _list_available(self) -> bool:
         """Whether the agent list can be shown: agents to list, the mode row it replaces, and nothing else holding the keys."""

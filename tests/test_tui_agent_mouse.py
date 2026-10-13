@@ -45,6 +45,7 @@ from omh.tui.keys import (
     DOWN,
     ENTER,
     ESCAPE,
+    MOUSE_REPORT_SECONDS,
     NO_BUTTON,
     WHEEL_DOWN,
     WHEEL_UP,
@@ -779,12 +780,12 @@ class ExitDrainTests(unittest.TestCase):
                 app._shutdown()
                 self.assertEqual(len(self.reads(terminal)), 2)
 
-    def test_a_terminal_that_never_answers_is_drained_for_a_quarter_second_at_most(self) -> None:
+    def test_a_terminal_that_never_answers_is_drained_for_a_second_at_most(self) -> None:
         terminal = DrainTerminal([], endless=self.REPORT)  # a terminal that never stops sending
         app, client = self.leaving(terminal)
         before = state(app, client)
         app._shutdown()
-        self.assertEqual(EXIT_DRAIN_SECONDS, 0.25)
+        self.assertEqual(EXIT_DRAIN_SECONDS, 1.0)
         self.assertAlmostEqual(terminal.now[0], EXIT_DRAIN_SECONDS)
         waits = self.reads(terminal)
         self.assertTrue(all(0 < wait <= EXIT_DRAIN_SECONDS for wait in waits))
@@ -822,6 +823,22 @@ class ExitDrainTests(unittest.TestCase):
         app._shutdown()
         self.assertEqual(self.writes(terminal)[-1], CURSOR_POSITION_REQUEST)
         self.assertEqual(len(self.reads(terminal)), 2)
+
+    def test_reports_off_for_longer_than_a_report_can_still_arrive_are_not_drained(self) -> None:
+        # Nothing is asked, so no cursor position answer can reach the shell's prompt over a slow link.
+        for since, drained in ((MOUSE_REPORT_SECONDS + 0.01, False), (MOUSE_REPORT_SECONDS - 0.01, True)):
+            with self.subTest(since=since):
+                terminal = DrainTerminal([self.REPORT, self.ANSWER], endless=b"typed for the shell")
+                app, _client = self.leaving(terminal)
+                app.turn_pending = False  # the turn ended: the strip is no longer clickable
+                drawn(app)
+                self.assertFalse(terminal.mouse_reporting)
+                terminal.now[0] += since
+                terminal.log.clear()
+                app._shutdown()
+                written = "".join(self.writes(terminal))
+                self.assertEqual(CURSOR_POSITION_REQUEST in written, drained)
+                self.assertEqual(len(self.reads(terminal)), 2 if drained else 0)
 
     def test_run_drains_on_its_way_out_however_the_loop_ended(self) -> None:
         def poll_nothing() -> list[object]:
