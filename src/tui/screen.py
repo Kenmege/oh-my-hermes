@@ -51,6 +51,8 @@ HIDE_CURSOR = f"{CSI}?25l"
 SHOW_CURSOR = f"{CSI}?25h"
 AUTOWRAP_OFF = f"{CSI}?7l"
 AUTOWRAP_ON = f"{CSI}?7h"
+# Home, erase the screen, erase the scrollback (xterm `CSI 3 J`): the start of a full redraw.
+CLEAR_SCREEN_AND_SCROLLBACK = f"{CSI}H{CSI}2J{CSI}3J"
 
 
 def cursor_up(rows: int) -> str:

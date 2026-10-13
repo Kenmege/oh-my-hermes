@@ -461,10 +461,52 @@ class SessionTests(AppTestCase):
                 drawn = [line for line in screen if line]
                 self.assertEqual(sum(STATUS_MARK in line for line in screen), 1, screen)
                 self.assertEqual(sum(RULE_MARK in line for line in screen), 1, screen)
-                # Only the region is on screen: rule, composer prompt, status, nothing else.
-                self.assertEqual(len(drawn), 3, screen)
+                # The redrawn session (banner + hint) and the region (rule, composer, status), nothing else.
+                self.assertEqual(len(drawn), 5, screen)
+                self.assertTrue(drawn[0].startswith("⚚ OH-MY-HERMES"), screen)
                 self.assertTrue(all(len(line) <= cols for line in screen))
 
+
+    def test_a_settled_resize_redraws_the_session_once_with_no_old_frame_in_scrollback(self) -> None:
+        # A real terminal reflows its rows on a width change, so the region cannot repaint in
+        # place; after the size settles the TUI erases screen and scrollback and prints the
+        # session again at the new width.
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers()),
+            cols=100,
+            env={"HOME": "/fixture"},
+        )
+
+        def settled(rows: int, cols: int) -> Callable[[], bool]:
+            def ready() -> bool:
+                screen = run.terminal.screen
+                return (screen.rows, screen.cols) == (rows, cols) and screen.lines()[rows - 2].startswith(STATUS_MARK)
+
+            return ready
+
+        run.terminal.script(
+            Step(resize=(20, 70), when=run.terminal.idle, label="idle"),
+            Step(resize=(20, 60), when=settled(20, 70), label="the 20x70 frame"),
+            Step(b"\x04", when=settled(20, 60), capture="final", label="the 20x60 frame"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        screen = run.terminal.captures["final"]
+        everything = run.terminal.screen.scrollback + screen
+        self.assertEqual(sum(STATUS_MARK in line for line in everything), 1, everything)
+        self.assertEqual(sum(line.startswith("⚚ OH-MY-HERMES") for line in everything), 1, everything)
+        self.assertTrue(screen[0].startswith("⚚ OH-MY-HERMES"), screen[:2])
+        self.assertTrue(all(len(line) <= 60 for line in everything))
+
+    def test_the_tui_never_turns_on_mouse_reporting_so_drag_selection_stays_native(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="the first frame"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        written = "".join(run.terminal.writes)
+        for mode in ("?1000h", "?1002h", "?1003h", "?1006h", "?1015h"):
+            with self.subTest(mode=mode):
+                self.assertNotIn("\x1b[" + mode, written)
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
 class PromptSlotTests(AppTestCase):

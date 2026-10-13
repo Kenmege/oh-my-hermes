@@ -65,7 +65,7 @@ from .layout import slot_cap
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
 from .prompts import CHOICE_DIGITS, Answer, ImmediateAnswer, PromptSlot, open_request
-from .screen import SHOW_CURSOR, LiveRegion
+from .screen import CLEAR_SCREEN_AND_SCROLLBACK, SHOW_CURSOR, LiveRegion
 from .slash import (
     COMMANDS,
     DROPPED,
@@ -88,6 +88,8 @@ from ..version import __version__
 
 READ_TIMEOUT_SECONDS = 0.05
 TICK_SECONDS = 0.1
+# A window drag sends a burst of SIGWINCH; redraw once the size has held this long.
+RESIZE_SETTLE_SECONDS = 0.15
 EXIT_CONFIRM_SECONDS = 2.0
 STARTUP_TAIL_LINES = 10
 # Closing the gateway on exit: stdin EOF, then terminate, then kill. The live
@@ -420,7 +422,9 @@ class App:
         self.exit_armed_at: float | None = None
         self.exit_code: int | None = None
         self.farewell = ""
-        self.banner_facts: dict[str, str] | None = None  # the header, flushed above the first frame once
+        self.banner_facts: dict[str, str] | None = None  # the header, flushed above the next anchoring frame
+        self.banner_record: dict[str, str] | None = None  # kept, so a full redraw can print it again
+        self.redraw_at: float | None = None  # when a settled resize redraws everything
         self.anchor = True  # the next frame re-anchors the region (first frame, resize, redraw)
         self.dirty = True
         self.last_render = 0.0
@@ -449,6 +453,7 @@ class App:
             "cwd": short_path(cwd, self.environ.get("HOME", "")),
             "resumed": self.stored_id if resume else "",
         }
+        self.banner_record = dict(self.banner_facts)
         if resume:
             self._draw_history(result.get("messages"))
         for entry in result.get("open_requests") or []:
@@ -951,8 +956,7 @@ class App:
         self.transcript.add_notice(f"New session {self.stored_id}.")
 
     def _redraw(self, arg: str) -> None:
-        self.region.clear()
-        self.anchor = True
+        self._full_redraw()
 
     def _history(self, arg: str) -> None:
         lines = self.transcript.history_lines(self.size[0], self.theme, details=True)
@@ -1017,19 +1021,44 @@ class App:
         self.terminal.write(ALT_SCREEN_OFF + SHOW_CURSOR)
         if self.resized_while_paging:
             self.resized_while_paging = False
-            self.region.clear()
-            self.anchor = True
+            self._full_redraw()
 
     # ── drawing ──
 
     def _on_resize(self) -> None:
+        """Note the new size; the redraw waits until the size settles (`_redraw_when_settled`).
+
+        A terminal reflows its own rows when its width changes, so the live
+        region's relative bookkeeping no longer matches the screen and any
+        in-place repaint leaves the old frame behind in scrollback. The only
+        clean answer is a full redraw from the transcript kept in memory.
+        """
         self.size = self.terminal.size()
         self.dirty = True
         if self.pager is not None:
             self.resized_while_paging = True
             return
-        self.region.clear()
+        self.redraw_at = self.clock() + RESIZE_SETTLE_SECONDS
+
+    def _redraw_when_settled(self) -> None:
+        if self.redraw_at is not None and self.clock() >= self.redraw_at:
+            self.redraw_at = None
+            self._full_redraw()
+
+    def _full_redraw(self) -> None:
+        """Erase screen and scrollback, then print the session again at the current width.
+
+        The banner and every transcript line are rendered anew (`Transcript.retake`),
+        so nothing wrapped at the old width survives and no earlier frame is left
+        in scrollback. Scrollback from before the TUI started is erased with it.
+        """
+        self.terminal.write(CLEAR_SCREEN_AND_SCROLLBACK)
+        self.region = LiveRegion(self.terminal.write)
+        self.transcript.retake()
+        if self.banner_record is not None:
+            self.banner_facts = dict(self.banner_record)
         self.anchor = True
+        self.dirty = True
 
     def _take_hud(self) -> None:
         snapshot = self.poller.take()
@@ -1042,6 +1071,9 @@ class App:
         return isinstance(payload, Mapping) and bool(payload.get("active"))
 
     def _render_when_due(self) -> None:
+        self._redraw_when_settled()
+        if self.redraw_at is not None:
+            return  # the screen is mid-reflow; the settled redraw paints it
         now = self.clock()
         due = (self._busy() or self._panel_live()) and now - self.last_render >= TICK_SECONDS
         if not (self.dirty or due):

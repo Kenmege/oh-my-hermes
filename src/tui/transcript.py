@@ -619,6 +619,18 @@ class Transcript:
         self._taken_any = True
         return spacer + rows
 
+    def retake(self) -> None:
+        """Forget which lines were taken: the next `take_stable_lines` returns the transcript from the top.
+
+        For a full redraw at a new width, after the terminal's copy has been
+        erased. Blocks are untouched; only the bookkeeping of what left the live
+        region is reset, so every line is rendered again at the new width.
+        """
+        self._cursor = 0
+        self._cursor_lines = 0
+        self._cursor_state = MarkdownState()
+        self._taken_any = False
+
     def live_lines(self, width: int, theme: Theme) -> list[Line]:
         """Everything not yet taken, as it shows now: the streaming tail, live thinking, running tools."""
         rows: list[Line] = []

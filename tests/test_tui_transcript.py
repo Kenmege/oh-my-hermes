@@ -107,6 +107,19 @@ class SpacingTests(LoopTestCase):
         self.assertEqual(len(self.transcript.blocks), 2)
 
 
+
+class RetakeTests(LoopTestCase):
+    def test_retake_offers_the_whole_transcript_again_at_a_new_width(self) -> None:
+        self.user("first question that is long enough to wrap at a narrow width")
+        self.step(ev("message.start"))
+        self.step(ev("message.delta", text="line one of the answer\nline two is still streaming"))
+        self.transcript.retake()
+        narrow = self.transcript.take_stable_lines(30, THEME)
+        live = self.transcript.live_lines(30, THEME)
+        self.assertEqual(narrow + live, self.transcript.history_lines(30, THEME, details=False))
+        self.assertEqual(self.transcript.take_stable_lines(30, THEME), [], "a retaken line was offered twice")
+        self.assertIn("line two is still streaming", "".join(texts(live)))
+
 class PlainTurnTests(LoopTestCase):
     def test_plain_turn_flushes_per_completed_line_and_fully_at_complete(self) -> None:
         self.assertEqual(self.user("Reply with exactly the word: ok"), ["› Reply with exactly the word: ok"])

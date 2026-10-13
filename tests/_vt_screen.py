@@ -280,6 +280,8 @@ class VTScreen:
         elif mode == 2:
             for row in range(self.rows):
                 self._erase(row, 0, self.cols)
+        elif mode == 3:
+            self.scrollback.clear()  # xterm: erase the saved lines
 
     def _private_mode(self, parameters: str, final: str) -> None:
         if final not in ("h", "l"):
