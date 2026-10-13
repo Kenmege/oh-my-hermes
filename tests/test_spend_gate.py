@@ -322,7 +322,28 @@ class SpendGateRoutingTests(unittest.TestCase):
             ("hermes, pay with my card for the hotel", True),
             ("pay with my card $40 for the refill", True),
             ("pay with my card 40 dollars for the refill", True),
+            ("transfer 40 dollars from my wallet to my landlord", True),
+            ("top up my openai credits by $50 with my card", True),
+            ("pay the 402 challenge with $5 of my credits", True),
             ("buy the cheapest one for me with my card", True),
+            # An amount or "for me" counts only as the spend's object: after
+            # the lead and before "at", "for", "from", "in", "on" or "to"
+            # outside the gate's phrases, and "for me" needs an object of its
+            # own before it.
+            ("pay with my card for $0 orders", False),
+            ("pay with my card on $0 invoices", False),
+            ("pay with my card for me", False),
+            ("pay with my card at checkout for me", False),
+            ("buy it for me for $5 more", False),
+            # "for me" right after one of the gate's phrases does not count,
+            # whether the lead or an object came before the phrase or the
+            # phrase is the lead; after a word of its own since the last
+            # phrase, the lead or an object, it does.
+            ("book with my card for me", False),
+            ("book the flight with my card for me", False),
+            ("use my credit card for me", False),
+            ("pay for me with my card", True),
+            ("buy tickets for me with my card", True),
             # "for me" said as part of the phrase is not a marker.
             ("buy it for me on the product page", False),
             ("buy this for me on amazon", False),
@@ -708,6 +729,21 @@ NOT_SPENDING = (
     "Use my credit card for the demo is what the script says",
     "Pay with my card, not apple pay, is the default",
     "Pay on my behalf to the landlord is a feature request from Q3",
+    # An amount or "for me" after a preposition is not the spend's object.
+    "Pay with my card for $0 orders is broken",
+    "Pay with my card on $0 invoices throws an error",
+    "Pay with my card for me never shows up on android",
+    "Pay with my card at checkout for me is the default",
+    "Buy it for me for $5 more is our upsell copy",
+    # "for me" right after one of the gate's phrases is not the spend's object,
+    # whether the lead is outside the phrase or is the phrase itself.
+    "Book with my card for me never shows up on android",
+    "Order with my card for me is the default",
+    "Buy with my saved card for me is greyed out in safari",
+    "Use my credit card for me never shows up on android",
+    # ... even when an object word comes before the phrase.
+    "Book the flight with my card for me never shows up on android",
+    "Pay the invoice with my card for me is broken in safari",
 )
 OWNERS = (
     ("open the staging checkout url, click login and fill the form", "browser-operator"),

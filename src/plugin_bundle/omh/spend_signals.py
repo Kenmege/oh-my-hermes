@@ -18,8 +18,13 @@ and the like -- only when all of this holds, and "" otherwise:
 - The message is marked as a request outside the gate's own phrase: "please",
   "can you", "could you", "would you", "will you", "go ahead (and)", "i need
   you to", "i want you to" or "hermes" before the lead; "please" in the
-  clause; an amount in the clause; or "for me" in the clause where it is not
-  part of a matched phrase ("buy it for me" says it as part of the phrase).
+  clause; or an amount or "for me" as the spend's object, outside the
+  gate's phrases and before "at", "for", "from", "in", "on" or "to"
+  ("transfer 40 dollars", "pay with my card $40 for the refill", "buy the
+  cheapest one for me", "pay for me with my card") -- not "pay with my card
+  for $0 orders is broken" or "book the flight with my card for me never
+  shows up". "for me" right after one of the gate's phrases, or inside one
+  ("buy it for me"), is not a marker (`_has_request_marker`).
   An unmarked imperative ("pay with my card for the hotel") routes as before
   this skill existed -- an accepted recall cost.
 - The clause opens with a spend addressed to the agent ("buy", "pay",
@@ -57,9 +62,9 @@ _CURRENCY_SYMBOLS = "$€£¥₩"
 _TOKEN = re.compile(rf"[{_CURRENCY_SYMBOLS}]\d[\d.,]*|\w+(?:'\w+)*|[,;:.!?]")
 
 # A request is marked as one, outside the gate's own phrase: one of these in the
-# words before the lead, "please" in the clause, an amount in the clause, or
-# "for me" outside a matched phrase. "Pay with my card in safari is broken"
-# has the phrase and none of these.
+# words before the lead, "please" in the clause, or an amount or "for me" as
+# the spend's object (`_has_request_marker`). "Pay with my card in safari is
+# broken" has the phrase and none of these.
 SPEND_REQUEST_MARKERS = (
     ("please",),
     ("can", "you"),
@@ -160,6 +165,12 @@ _PAY_IDIOMS = (("attention",), ("close", "attention"), ("a", "visit"))
 
 # What may follow a gate phrase inside the request clause.
 _ALLOWED_PREPOSITIONS = frozenset({"at", "for", "from", "in", "on", "to"})
+# Where the spend's object ends for an amount or "for me" to mark a request
+# (`_has_request_marker`). The same six words today, but its own list: what may
+# follow a phrase and where an object ends are separate rules. "with" and "by"
+# do not end it: "pay the 402 challenge with $5 of my credits", "top up my
+# openai credits by $50".
+_MARKER_OBJECT_STOPS = frozenset({"at", "for", "from", "in", "on", "to"})
 _ALLOWED_ADVERBS = (("please",), ("now",), ("right", "away"))
 _OWN_MONEY_AFTER_WITH = (
     ("my", "card"),
@@ -262,14 +273,30 @@ def _has_request_marker(prefix: list[str], clause: list[str], spans: list[tuple[
         return True
     if "please" in clause:
         return True
-    if any(_is_amount(clause[index:]) for index in range(len(clause))):
-        return True
-    # "for me" counts only outside a matched phrase: "buy it for me" says it as
-    # part of the phrase, "buy the cheapest one for me with my card" asks.
-    return any(
-        clause[index : index + 2] == ["for", "me"] and not any(start <= index < end for start, end in spans)
-        for index in range(len(clause) - 1)
-    )
+    # An amount or "for me" marks a request only as the spend's object: read
+    # outside the gate's phrases and before `_MARKER_OBJECT_STOPS` ("transfer
+    # 40 dollars from my wallet", "pay with my card $40 for the refill", "buy
+    # the cheapest one for me with my card") -- not "pay with my card for $0
+    # orders is broken" or "pay with my card at checkout for me is the
+    # default". "for me" counts only after a word of its own since the last
+    # phrase, the lead ("pay for me with my card") or an object ("buy the
+    # cheapest one for me"). Right after a phrase it does not, whatever came
+    # before the phrase ("book the flight with my card for me never shows
+    # up", "use my credit card for me"); inside a phrase ("buy it for me") it is
+    # the phrase's own words.
+    own_words = 0
+    for index in range(len(clause)):
+        if any(start <= index < end for start, end in spans):
+            own_words = 0
+            continue
+        if clause[index : index + 2] == ["for", "me"]:
+            return own_words > 0
+        if clause[index] in _MARKER_OBJECT_STOPS:
+            return False
+        if _is_amount(clause[index:]):
+            return True
+        own_words += 1
+    return False
 
 
 def _request(text: str, phrases: Iterable[str]) -> tuple[str, list[str]]:

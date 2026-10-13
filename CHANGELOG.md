@@ -38,30 +38,35 @@ All notable changes will be documented here.
   reports, product ideas, articles and questions. The gate is offered only
   when the message is marked as a request outside the gate's own phrase:
   "please", "can you", "could you", "would you", "will you", "go ahead", "I
-  need you to", "I want you to", an address to Hermes, an amount, or "for
-  me" where it is not part of the phrase. An imperative with none of these
-  -- "pay with my card for the hotel", "buy it for me" -- routes as before
-  the skill existed: that recall is given up so "Pay with my card in safari
-  is broken" never reaches the gate. A marked message still has to lead with
-  the spend: the sentence's first words after filler, up to the first comma,
-  colon, question mark, "and", "if", "when", "which", "about" and the like,
-  must open with a spend addressed to the agent -- "buy", "pay", "order",
-  "book", "renew", "place the order", "complete the checkout", "use my
-  card", and the like, not an idiom ("pay attention to the spend cap", "pay
-  a visit") -- and one of the gate's phrases must be in that clause, each
-  followed only by the end of the clause or the start of the next ("when it
-  is back in stock"), "for", "on", "at", "from", "to" or "in", "with" the
-  person's own card or an amount, an amount, "please", "now" or "right
-  away"; "or" after the phrase makes a comparison, not a request. "send" and
-  "transfer" also need money, an amount, or the person's own card or wallet;
-  "did the payment go through" counts only when the agent paid. The skill
-  scores only on that clause, there is no boost, and nothing stands down
-  another skill's guard: a spend dispatches only when its clause scores high
-  on the gate's own phrases, otherwise the gate leads a clarify, and every
-  other sentence routes as before the skill existed. The route hint and the
-  awareness markers read the same clause, as whole words. The bare words
-  `spend`, `pay`, `checkout`, `wallet` and their siblings score only inside
-  a complete phrase, and `budget` is not one of the skill's words at all.
+  need you to", "I want you to", an address to Hermes, or an amount or "for
+  me" as the spend's object: outside the gate's phrases and before "at",
+  "for", "from", "in", "on" or "to", and for "for me" after a word of its
+  own since the last phrase ("transfer 40 dollars", "buy the cheapest one
+  for me", "pay for me with my card"; not "pay with my card for $0 orders is
+  broken", not "book the flight with my card for me never shows up", and not
+  the "for me" of "buy it for me"). An imperative with none of these -- "pay
+  with my card for the hotel", "buy it for me" -- routes as before the skill
+  existed: that recall is given up so "Pay with my card in safari is broken"
+  never reaches the gate. A marked message still has to lead with the spend:
+  the sentence's first words after filler, up to the first comma, colon,
+  question mark, "and", "if", "when", "which", "about" and the like, must
+  open with a spend addressed to the agent -- "buy", "pay", "order", "book",
+  "renew", "place the order", "complete the checkout", "use my card", and
+  the like, not an idiom ("pay attention to the spend cap", "pay a visit")
+  -- and one of the gate's phrases must be in that clause, each followed
+  only by the end of the clause or the start of the next ("when it is back
+  in stock"), "for", "on", "at", "from", "to" or "in", "with" the person's
+  own card or an amount, an amount, "please", "now" or "right away"; "or"
+  after the phrase makes a comparison, not a request. "send" and "transfer"
+  also need money, an amount, or the person's own card or wallet; "did the
+  payment go through" counts only when the agent paid. The skill scores only
+  on that clause, there is no boost, and nothing stands down another skill's
+  guard: a spend dispatches only when its clause scores high on the gate's
+  own phrases, otherwise the gate leads a clarify, and every other sentence
+  routes as before the skill existed. The route hint and the awareness
+  markers read the same clause, as whole words. The bare words `spend`,
+  `pay`, `checkout`, `wallet` and their siblings score only inside a
+  complete phrase, and `budget` is not one of the skill's words at all.
   Budget variances, payment failure, checkout, 3DS and crash reports, a
   feature request, browser logins, spend-approval research, checkout test
   failures and issue triage, purchase acceptance criteria and a saved-card

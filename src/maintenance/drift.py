@@ -586,8 +586,17 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # safari is broken", "buy it for me and wishlist are the two
             # CTAs"); the gate now also needs a request marker outside its
             # phrase -- "please", "can you", "go ahead", "hermes", an amount,
-            # or "for me" -- and none of these has one (21).
-            expected=732,
+            # or "for me" -- and none of these has one (21). Its fifth review
+            # adds five where an amount or "for me" follows a preposition
+            # ("pay with my card for $0 orders is broken"); those count as a
+            # marker only as the spend's object now (5). Its sixth review adds
+            # four where "for me" follows one of the gate's phrases ("book with
+            # my card for me never shows up on android"); the object is read
+            # after the lead's own words now, so the lead does not count as one
+            # (4). Its seventh review adds two where an object word comes before
+            # the phrase ("book the flight with my card for me never shows up
+            # on android"); a phrase now starts the object count again (2).
+            expected=743,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
