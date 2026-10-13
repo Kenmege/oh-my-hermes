@@ -35,6 +35,7 @@ from ..host_context import record_active_main_agent_model
 from ..host_observation import observe_plugin_hook_call
 from ..installed_skills import installed_skill_names
 from ..kanban_board_reader import conversation_session_ids, kanban_db_path, read_kanban_lanes
+from ..native_todo import held_native_write_note
 from ..omh_roles import extract_role_marker, role_context_payload
 from ..dispatch_outcomes import unacknowledged_outcomes
 from ..runtime_reader import read_omh_activity, read_omh_hud, read_omh_status, read_omh_todo
@@ -752,6 +753,12 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
         )
         if todo_reminder:
             context_parts.append(todo_reminder)
+        # Once, on the turn after a todo_list write the plan's hold kept out
+        # of the record (`native_todo`): the only place the model learns why
+        # its list and the plan line disagree.
+        held_note = held_native_write_note(session_id)
+        if held_note:
+            context_parts.append(held_note)
         workflow_context = active_workflow_context(
             omh_home, session_id
         )

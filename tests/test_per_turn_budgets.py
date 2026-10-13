@@ -502,6 +502,7 @@ class PreLlmCallScenarioTests(unittest.TestCase):
                     "active_workflow",
                     "running_work_board",
                     "done_unverified_plan",
+                    "held_native_write",
                     "all_surfaces",
                     "all_surfaces_without_section",
                 ]

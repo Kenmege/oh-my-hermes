@@ -902,7 +902,9 @@ def advance_todo_item(
     record this produces is byte-equal to the one `set` produces for the same
     plan. ``source`` is the one field that is not the caller's: the stored
     record's declaring tool is kept, and ``source`` names the writer only for
-    a record that names none.
+    a record that names none. On a record `todo_list` holds, the item's
+    ``state`` is not the caller's either: the advance records its reasons and
+    keeps the state the last `todo_list` write set (`native_todo`).
 
     The template name is read off the stored record and sent back through, so
     a single-item write neither drops it nor escapes it: the phase coverage

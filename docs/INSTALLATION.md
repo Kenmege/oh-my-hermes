@@ -1552,9 +1552,10 @@ on a planning run, the completion dossier, an item's `blocked_reason` and
 the plan's `deferred_reason`; on a plan `todo_list` holds, `todo_list`
 alone sets item states. A planning checklist awaiting acceptance and a
 `code-story` plan stay with `omh_todo` while open, and an accepted plan until
-it goes stale; a native write replaces none of them, and
-`omh_todo action=clear` (or a recorded `deferred_reason`) is how a session
-leaves one for unrelated work. Hermes draws a `todo_list` itself in the modern TUI
+it goes stale; a native write replaces none of them, `omh_todo action=clear`
+is how a session leaves one for unrelated work (a recorded `deferred_reason`
+only pauses it), and the next turn says once when a `todo_list` write was
+not mirrored. Hermes draws a `todo_list` itself in the modern TUI
 (under the latest message, then archived into the transcript) and in Hermes
 Desktop (the composer's status stack), so for a plan `todo_list` holds the
 OMH panel above the prompt and the Desktop pane do not repeat its items: they

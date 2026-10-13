@@ -41,14 +41,17 @@ which binds a finished plan too), held until it goes stale whether or not it
 is finished. A code-story template is a phase shape a native list cannot
 hold, held while it is open. While any of them stands, the native write is
 left unprojected and the plan keeps its record; leaving one for unrelated
-work is `omh_todo action=clear`, or the person's redirect recorded as
-``deferred_reason``. Every other plan is replaced, as an
+work is `omh_todo action=clear`. A recorded ``deferred_reason`` does not
+release it -- the hold never reads it, so the plan keeps its stage, its gate
+and its team binding, and the deferral only stops it naming its next item.
+The next turn says so once (``held_native_write_note``). Every other plan is
+replaced, as an
 `omh_todo action=set` replaces it: the native write is a new declaration, so
 it carries no template and no ``deferred_reason`` (which lapses on any item
 change by design). A native list identical to an `omh_todo`-written one is
-adopted rather than rewritten: the record keeps its items and stamp and
-takes ``source: todo_list``, so the surfaces that leave a todo_list-held
-plan to Hermes' own panel stop drawing it twice.
+adopted rather than rewritten: the record keeps its items, stamp and every
+other field and takes ``source: todo_list``, so OMH's panel stops drawing a
+second copy of a list Hermes' own panel shows.
 
 On a todo_list-held plan `todo_list` alone sets item states: an
 `omh_todo action=advance` there records its reasons and leaves the state as
@@ -61,8 +64,8 @@ as `omh_todo` binds by text, because `todo_list` has no way to say it and the
 next native write would otherwise drop it. It lasts while the item stays
 where it was, and through a pause back from in_progress to pending -- Hermes
 allows one in_progress item, so moving on from a blocked item pauses it and
-does not unblock it. Resuming, completing, cancelling or reopening the item
-ends the reason, so a resumed item is driven again rather than silenced
+does not unblock it. Resuming, completing or reopening the item, or
+cancelling it while it is open, ends the reason, so a resumed item is driven again rather than silenced
 until it completes. The reason OMH writes for a cancelled item is never
 carried, the native status decides it each write; a reason the model
 recorded on an item it had already closed outranks it when that item is
@@ -88,6 +91,7 @@ This module imports nothing from ``omh`` (`tests/test_plugin_bundle_standalone.p
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -99,6 +103,7 @@ from .todo_store import (
     MAX_TODO_TEXT_CHARS,
     TODO_STALE_SECONDS,
     PLAN_STAGE_ACCEPTED,
+    PLAN_STAGE_AWAITING_ACCEPTANCE,
     TODO_PLAN_STAGES,
     _paired_with_prior,
     _remove_todo_file,
@@ -130,6 +135,59 @@ _NATIVE_STATES = {
 # `RuntimeError`), a home that cannot be written, and malformed host data.
 _PROJECTION_FAILURES = (OSError, RuntimeError, ValueError, TypeError)
 _TRUNCATION_MARK = "…"
+
+# The one line a session is told when the hold kept its todo_list write out.
+# Without it the model sees its own list in Hermes' panel while the plan line
+# keeps naming the held plan's next item, and nothing says why. It rides the
+# next turn's `pre_llm_call` once and is gone (``held_native_write_note``);
+# `tool_result` would be the closer seam, but Hermes fires
+# ``transform_tool_result`` for agent-runtime tools such as todo_list only
+# after the plugin's floor.
+HELD_NATIVE_WRITE_NOTE = (
+    "[OMH plan todo] Your last todo_list write was not mirrored: this session's "
+    "{kind} is held in omh_todo. Keep its steps there, or end it with omh_todo "
+    "action=clear before tracking other work in todo_list."
+)
+_HELD_KINDS = {
+    PLAN_STAGE_AWAITING_ACCEPTANCE: "plan awaiting acceptance",
+    PLAN_STAGE_ACCEPTED: "accepted plan",
+}
+# Process memory, the way `code_mode_guidance` keeps its one-shot line: the
+# hooks that write and read it run in the agent's process, and a restart only
+# loses one advisory line. Bounded so a long-lived gateway cannot grow it.
+_HELD_NOTES: dict[str, str] = {}
+_HELD_NOTES_LOCK = threading.Lock()
+_MAX_HELD_NOTES = 64
+
+
+def held_native_write_note(session_ref: str) -> str:
+    """The line for a todo_list write the hold kept out of this session's plan, or ``""``.
+
+    Read once: the next call answers ``""`` until another write is held.
+    """
+    with _HELD_NOTES_LOCK:
+        kind = _HELD_NOTES.pop(str(session_ref or ""), "")
+    return HELD_NATIVE_WRITE_NOTE.format(kind=kind) if kind else ""
+
+
+def _note_held_write(session_ref: str, prior: dict[str, Any]) -> None:
+    kind = _HELD_KINDS.get(str(prior.get("plan_stage", "")), "code-story plan")
+    with _HELD_NOTES_LOCK:
+        _HELD_NOTES.pop(session_ref, None)
+        if len(_HELD_NOTES) >= _MAX_HELD_NOTES:
+            _HELD_NOTES.pop(next(iter(_HELD_NOTES)))
+        _HELD_NOTES[session_ref] = kind
+
+
+def _forget_held_write(session_ref: str) -> None:
+    with _HELD_NOTES_LOCK:
+        _HELD_NOTES.pop(session_ref, None)
+
+
+def _reset_held_notes() -> None:
+    """Test seam: forget every pending held-write line."""
+    with _HELD_NOTES_LOCK:
+        _HELD_NOTES.clear()
 
 
 def project_native_todo(
@@ -174,7 +232,9 @@ def project_native_todo(
     try:
         prior = read_todo_record(home, session_ref) or {}
         if _held_by_omh_todo(prior):
+            _note_held_write(session_ref, prior)
             return "held_by_omh_todo"
+        _forget_held_write(session_ref)
         items = native_todo_items(todos, prior.get("items"))
         if not items:
             # The session's own file and nothing else: `clear_todo` would also

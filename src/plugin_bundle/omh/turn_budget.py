@@ -98,6 +98,11 @@ ROLE_CONTEXT_CHAR_LIMIT = 2600
 # reconciliation clause stopped naming omh_todo and the evidence rule started
 # (one +14, one -14), so the `done_unverified_plan` scenario is unchanged.
 # Re-derived from the producer.
+# 5781 unchanged: the `held_native_write` scenario joins the set so the
+# one-time line a held todo_list write leaves for the next turn is measured
+# beside the plan line (1180). It is under `all_surfaces`, which still sets
+# the maximum, and the fallback maximum is unchanged with it. Re-derived from
+# the producer.
 PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5781
 # The same scenario set on the fallback: a session the awareness section did
 # not render for (a restart resume, a legacy id-rotating compaction, a refused

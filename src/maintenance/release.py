@@ -264,11 +264,11 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # capture, so it stays and the subject gloss was shortened instead. The
 # capture hints (`subject_held_by`, `similar_record_id`) add no schema text.
 # Re-derived from the producer.
-# 64158 -> 64648: `omh_todo` says which ONE tool holds a plan's steps (490): a
+# 64158 -> 64654: `omh_todo` says which ONE tool holds a plan's steps (496): a
 # planning run, an accepted plan or a code-story template keeps them in
-# omh_todo, and leaving one for unrelated work means clearing it or recording a
-# deferred_reason first, since until then todo_list writes are not mirrored
-# over it; otherwise Hermes' native todo_list holds them wherever it is in the
+# omh_todo, and leaving one for unrelated work means clearing it first, since
+# until then todo_list writes are not mirrored over it (a deferred_reason only
+# pauses it); otherwise Hermes' native todo_list holds them wherever it is in the
 # tool list or tool_search finds it, OMH mirrors each write into this plan, and
 # omh_todo is called only for checkpoint/record/recall, blocked_reason,
 # deferred_reason or re-advancing a done item after its check. On the owner's
@@ -276,7 +276,7 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # paraphrased items. The sentence rides the schema the model reads when it
 # reaches for either list; the per-turn alternative would be paid on every
 # turn. Re-derived from the producer.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64648
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # PRE_LLM_CALL_CONTEXT_CHAR_LIMIT, PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT: moved with
 # their history to src/plugin_bundle/omh/turn_budget.py; imported at the top of this file.
 # 340000 -> 349637: three capability-skill sections were added by the domain

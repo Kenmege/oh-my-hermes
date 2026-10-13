@@ -21,13 +21,14 @@ All notable changes will be documented here.
   `blocked_reason` and the plan's `deferred_reason`. On a plan `todo_list`
   holds, `todo_list` alone sets item states, and a recorded reason lasts
   across later `todo_list` writes while the item stays where it was or is
-  paused back to pending; resuming, completing, cancelling or reopening the
-  item ends it. A planning checklist awaiting acceptance and an open
-  `code-story` plan stay with `omh_todo` while they are open, and an
-  accepted plan (the one `omh_team` binds its lanes to) until it goes stale;
-  a `todo_list` write does not replace them, and leaving one for unrelated
-  work is `omh_todo action=clear` or a recorded `deferred_reason`. Where
-  `todo_list` is absent, `omh_todo` is the tracker exactly as before. The
+  paused back to pending; resuming, completing or reopening the item, or
+  cancelling it while open, ends it. A planning checklist awaiting
+  acceptance and an open `code-story` plan stay with `omh_todo` while they
+  are open, and an accepted plan (the one `omh_team` binds its lanes to)
+  until it goes stale; a `todo_list` write does not replace them, leaving
+  one for unrelated work is `omh_todo action=clear` (a recorded
+  `deferred_reason` only pauses it), and the next turn says once when a
+  `todo_list` write was not mirrored. Where `todo_list` is absent, `omh_todo` is the tracker exactly as before. The
   `omh_todo` description, the route hint's checklist line, the plan nudge,
   the `todo-checklist` skill and the `ulw-work` and `ulw-plan` opening steps
   now say to use one tool for the steps, never both. Where Hermes draws its

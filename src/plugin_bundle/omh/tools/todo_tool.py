@@ -87,7 +87,7 @@ OMH_TODO_SCHEMA = {
         "Declare, advance, clear, or read this session's metadata-only plan todo list, which the OMH HUD "
         "renders above the prompt; other sessions neither see nor overwrite it. "
         "Keep steps in ONE tool, never both: a planning run, an accepted plan or a code-story template keeps them here "
-        "(to leave one for unrelated work, clear it or record a deferred_reason first); "
+        "(to leave one for unrelated work, clear it first; a deferred_reason only pauses it); "
         f"otherwise, when {native_tool_presence_clause(NATIVE_TODO_TOOL)}, keep them in {NATIVE_TODO_TOOL} "
         "(OMH mirrors each write into this plan) and call this tool only for checkpoint/record/recall, "
         "blocked_reason, deferred_reason, or advancing a done item again after its check passes. "
@@ -295,7 +295,7 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
         # single-item path is a narrower way to reach one write, never a
         # second way to write a record.
         try:
-            _ = advance_todo_item(
+            advanced = advance_todo_item(
                 default_omh_home(),
                 item=args.get("item"),
                 item_text=args.get("item_text", ""),
@@ -309,6 +309,12 @@ def omh_todo_handler(args: dict[str, Any], **kwargs) -> str:
                 ),
             )
             payload["status"] = "written"
+            # On a plan todo_list holds the store keeps todo_list's state
+            # (`advance_todo_item`); a writer that asked for another one is
+            # told, rather than left to read "written" as the move it wanted.
+            kept = _state_kept(advanced, args.get("item"), args.get("state"))
+            if kept:
+                payload["state_kept"] = kept
         except TodoContendedError as error:
             payload["status"] = "contended"
             payload["error"] = str(error)
@@ -393,6 +399,19 @@ def bind_declared_items(
         now=now,
     )
     return bound, dropped
+
+
+def _state_kept(record: dict[str, Any], item: object, requested: object) -> str:
+    """The note for an advance whose state todo_list kept, or ``""``."""
+    items = record.get("items") if isinstance(record, dict) else None
+    if record.get("source") != NATIVE_TODO_TOOL or not isinstance(items, list):
+        return ""
+    if isinstance(item, bool) or not isinstance(item, int) or not 1 <= item <= len(items):
+        return ""
+    stored = items[item - 1].get("state") if isinstance(items[item - 1], dict) else None
+    if not stored or stored == requested:
+        return ""
+    return f"todo_list sets item states on this plan; item {item} stays {stored}"
 
 
 def _declares_done(items: object) -> bool:

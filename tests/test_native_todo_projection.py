@@ -42,9 +42,11 @@ from omh.plugin_bundle.omh.awareness import PLAN_TODO_DECLARATION_RULE
 from omh.plugin_bundle.omh.engagement_nudges import PLAN_NUDGE_TEXT
 from omh.plugin_bundle.omh.hooks.llm_hooks import _todo_stall_status
 from omh.plugin_bundle.omh.hooks.tool_hooks import post_tool_call
+from omh.plugin_bundle.omh import native_todo
 from omh.plugin_bundle.omh.native_todo import (
     NATIVE_CANCELLED_REASON,
     NATIVE_TODO_SOURCE,
+    held_native_write_note,
     native_todo_items,
     project_native_todo,
 )
@@ -97,6 +99,8 @@ class _NativeTodoHomeTest(unittest.TestCase):
         env.start()
         self.addCleanup(env.stop)
         self._call = 0
+        native_todo._reset_held_notes()
+        self.addCleanup(native_todo._reset_held_notes)
 
     def write_native(self, todos, *, session=SESSION, status="ok", args=None, result=None):
         """One `todo_list` write as Hermes reports it to the registered hook."""
@@ -413,6 +417,42 @@ class OmhTodoOnlyFieldsTest(_NativeTodoHomeTest):
         self.write_native([native("1", "a", "in_progress"), native("2", "b", "pending")])
         self.assertNotIn("blocked_reason", self.todo()["items"][1])
 
+    def test_a_native_cancel_replaces_a_reason_on_an_open_item(self):
+        self.write_native([native("1", "a", "in_progress"), native("2", "b", "pending")])
+        _ = self.omh_todo({"action": "advance", "item": 2, "item_text": "b", "state": "pending", "blocked_reason": "owner review"})
+        self.write_native([native("1", "a", "in_progress"), native("2", "b", "cancelled")])
+        self.assertEqual(self.todo()["items"][1]["blocked_reason"], NATIVE_CANCELLED_REASON)
+
+    def test_an_advance_asking_for_another_state_is_told_todo_list_kept_it(self):
+        self.write_native([native("1", "a", "in_progress"), native("2", "b", "pending")])
+        result = self.omh_todo({"action": "advance", "item": 1, "item_text": "a", "state": "done"})
+        self.assertEqual(result["status"], "written")
+        self.assertEqual(result["state_kept"], "todo_list sets item states on this plan; item 1 stays active")
+        self.assertEqual(self.todo()["items"][0]["state"], "active")
+        # The same advance on an omh_todo plan moves the state and says nothing.
+        declared = self.omh_todo(
+            {"action": "set", "items": [{"text": "a", "state": "active"}, {"text": "b"}]}, session=OTHER_SESSION
+        )
+        self.assertEqual(declared["status"], "written")
+        moved = self.omh_todo({"action": "advance", "item": 1, "item_text": "a", "state": "done"}, session=OTHER_SESSION)
+        self.assertNotIn("state_kept", moved)
+        self.assertEqual(self.todo(OTHER_SESSION)["items"][0]["state"], "done")
+
+    def test_adoption_keeps_every_omh_todo_field(self):
+        # A finished planning plan is not held, so an identical native list
+        # adopts it; the stage and title it carried stay on the record.
+        _ = self.omh_todo(
+            {
+                "action": "set",
+                "title": "Reviewed plan",
+                "items": [{"text": "options and tradeoffs", "state": "done"}],
+                "plan_stage": PLAN_STAGE_AWAITING_ACCEPTANCE,
+            }
+        )
+        self.assertEqual(self.project([native("1", "options and tradeoffs", "completed")]), "adopted")
+        self.assertEqual(self.stored()["plan_stage"], PLAN_STAGE_AWAITING_ACCEPTANCE)
+        self.assertEqual(self.stored()["title"], "Reviewed plan")
+
     def test_an_identical_native_list_adopts_an_omh_todo_plan(self):
         _ = self.omh_todo({"action": "set", "items": [{"text": "land the fix", "state": "active"}, {"text": "open the PR"}]})
         before = self.stored()
@@ -519,6 +559,48 @@ class OmhTodoOnlyFieldsTest(_NativeTodoHomeTest):
         plan["items_digest"] = todo_items_digest(plan.get("items"))
         units = [{"unit_id": "a", "title": "lane a", "verification_command": "make test"}]
         _bind_to_plan(units, plan, plan["items_digest"])
+        self.assertEqual(units[0]["plan_item"], "lane a check: `make test`")
+
+    def test_a_held_plan_is_not_adopted_by_an_identical_native_list(self):
+        # The hold is decided before adoption: an accepted plan whose items a
+        # todo_list write repeats keeps its record and its source.
+        _ = self.omh_todo(
+            {"action": "set", "items": [{"text": "lane a check: `make test`", "state": "active"}], "plan_stage": PLAN_STAGE_ACCEPTED}
+        )
+        before = self.stored()
+        self.assertEqual(self.project([native("1", "lane a check: `make test`", "in_progress")]), "held_by_omh_todo")
+        self.assertEqual(self.stored(), before)
+        self.assertEqual(self.stored()["source"], "omh_todo")
+
+    def test_a_held_write_is_named_once_on_the_next_turn(self):
+        from omh.plugin_bundle.omh.hooks.llm_hooks import pre_llm_call
+
+        _ = self.omh_todo(
+            {"action": "set", "items": [{"text": "lane a check: `make test`", "state": "active"}], "plan_stage": PLAN_STAGE_ACCEPTED}
+        )
+        self.write_native([native("1", "unrelated work", "in_progress")])
+
+        def context() -> str:
+            payload = pre_llm_call(
+                omh_home=str(self.home), hermes_home=str(self.hermes), session_id=SESSION,
+                user_message="continue", is_first_turn=False,
+            )
+            return str((payload or {}).get("context", ""))
+
+        first = context()
+        self.assertIn("Your last todo_list write was not mirrored: this session's accepted plan is held in omh_todo", first)
+        self.assertIn("omh_todo action=clear", first)
+        self.assertNotIn("was not mirrored", context())
+        self.assertEqual(held_native_write_note(OTHER_SESSION), "")
+
+    def test_a_mirrored_write_forgets_an_earlier_held_note(self):
+        _ = self.omh_todo(
+            {"action": "set", "items": [{"text": "lane a check: `make test`", "state": "active"}], "plan_stage": PLAN_STAGE_ACCEPTED}
+        )
+        self.assertEqual(self.project([native("1", "unrelated work", "in_progress")]), "held_by_omh_todo")
+        _ = self.omh_todo({"action": "clear"})
+        self.assertEqual(self.project([native("1", "unrelated work", "in_progress")]), "projected")
+        self.assertEqual(held_native_write_note(SESSION), "")
 
     def test_a_stale_accepted_plan_is_replaced_and_its_acceptance_does_not_transfer(self):
         _ = self.omh_todo(
@@ -703,6 +785,13 @@ class PresenceRuleTest(unittest.TestCase):
             native_tool_presence_clause(NATIVE_TODO_TOOL, code=True),
             "`todo_list` is in your tool list or tool_search finds it",
         )
+
+    def test_the_context_tool_hint_carries_the_carve_out(self):
+        from omh.plugin_bundle.omh.awareness import awareness_primer_payload
+
+        hint = next(line for line in awareness_primer_payload()["tool_hints"] if "plan checklist" in line)
+        self.assertIn("omh_todo for a planning run or an accepted plan", hint)
+        self.assertIn(native_tool_presence_clause(NATIVE_TODO_TOOL), hint)
 
     def test_the_clause_states_another_tool_in_the_same_sentence_shape(self):
         # The shape a later surface (clarify, cronjob_manage, ...) states the
