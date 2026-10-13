@@ -164,7 +164,7 @@ from .slash import (
     parse_slash,
     plan_invocation,
 )
-from .style import Line, Span, Style
+from .style import CSI, Line, Span, Style
 from .subagents import MAIN_ID, RUNNING, Hit, Roster
 from .terminal import Terminal, terminal_supported
 from .theme import DEFAULT_THEME, Theme, build_theme, theme_named
@@ -272,11 +272,15 @@ TAIL_POLL_SECONDS = 2.0
 TAIL_MISSES_BEFORE_STOP = 5
 # A call with no answer this long no longer holds the next one back; its answer, if it still comes, is dropped.
 TAIL_ANSWER_SECONDS = 10.0
-# On the way out, after mouse reports are switched off: the terminal acts on that a moment later,
-# so reports already on their way are read and dropped instead of landing on the shell's prompt.
-# At most `EXIT_DRAIN_READS` reads, each waiting its share of `EXIT_DRAIN_SECONDS`.
-EXIT_DRAIN_SECONDS = 0.05
-EXIT_DRAIN_READS = 5
+# On the way out of a run that had mouse reports on: the terminal acts on the off a moment later, so
+# reports may still be on their way. A cursor position request written after the off is answered after
+# all of them (a terminal handles what it is sent in order), so input is read and dropped up to that
+# answer, `ESC[<row>;<col>R`, instead of landing on the shell's prompt; for at most this long, which a
+# round trip over SSH fits in.
+EXIT_DRAIN_SECONDS = 0.25
+CURSOR_POSITION_REQUEST = f"{CSI}6n"
+CURSOR_REPORT_START = b"\x1b["
+CURSOR_REPORT_FINAL = b"R"
 
 # One BEL when an approval opens, so a terminal in the background can flag the tab or bounce.
 BELL = "\a"
@@ -819,6 +823,7 @@ class App:
         self.tail_misses: dict[str, int] = {}  # agent id -> answers in a row without a tail
         # The cells a click opens, as last drawn: rows above the status line → the entries on that row.
         self.clickable: dict[int, tuple[Hit, ...]] = {}
+        self.mouse_was_on = False  # mouse reports were on at some point in this run: the exit drains them
         self.dirty = True
         self.last_render = 0.0
 
@@ -965,7 +970,6 @@ class App:
 
     def _shutdown(self) -> None:
         self.poller.stop()
-        reporting = self.terminal.mouse_reporting
         self.terminal.set_mouse(False)
         if self.pager is not None:
             self.pager = None
@@ -975,22 +979,35 @@ class App:
         if stable:
             self.region.flush_above(stable, cols)
         self.region.clear()
-        if reporting:
+        if self.mouse_was_on:
             self._discard_late_reports()
 
     def _discard_late_reports(self) -> None:
-        """Read and drop what the terminal still sends after mouse reports were switched off (`EXIT_DRAIN_SECONDS`).
+        """Ask for the cursor position, then read and drop input up to the answer, for at most `EXIT_DRAIN_SECONDS`.
 
-        It stops at the first read that brings nothing. Keys typed in that
-        moment are dropped with the reports: nothing here can tell them apart
-        without acting on them.
+        Mouse reports were on in this run, and the terminal may have sent
+        some before it acted on the off written above. It answers the request
+        only once it has acted on everything sent before it, so every report
+        comes ahead of the answer, and the drain stops the moment the answer
+        is read. Keys typed in that window are discarded with the reports:
+        they are bytes the closing TUI has already read, and it acts on no
+        input any more. A terminal that never answers ends the drain at the
+        bound, as a read that waited out the time left does; an answer that
+        comes later than that reaches the shell, as a late report would.
         """
-        for _ in range(EXIT_DRAIN_READS):
+        self.terminal.write(CURSOR_POSITION_REQUEST)
+        deadline = self.clock() + EXIT_DRAIN_SECONDS
+        seen = b""
+        while (left := deadline - self.clock()) > 0:
             try:
-                if not self.terminal.read(EXIT_DRAIN_SECONDS / EXIT_DRAIN_READS):
-                    return
+                data = self.terminal.read(left)
             except EOFError:
                 return  # the terminal hung up: nothing more is coming
+            if not data:
+                return
+            seen = seen[-32:] + data  # the last read's tail too: an answer can be split across two reads
+            if _holds_cursor_report(seen):
+                return
 
     def _busy(self) -> bool:
         return self.transcript.running or self.turn_pending
@@ -2294,6 +2311,7 @@ class App:
             agents = tuple(hit for hit in hits if hit.subagent_id != MAIN_ID)
             self.clickable = {under: agents} if agents else {}
         self.terminal.set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
+        self.mouse_was_on = self.mouse_was_on or self.terminal.mouse_reporting
 
     def _list_available(self) -> bool:
         """Whether the agent list can be shown: agents to list, the mode row it replaces, and nothing else holding the keys."""
@@ -2567,6 +2585,20 @@ class App:
 
 
 # ── entry point ───────────────────────────────────────────────────────────
+
+
+def _holds_cursor_report(data: bytes) -> bool:
+    """Whether `data` holds a cursor position report: `ESC[`, a row, `;`, a column and `R`."""
+    start = data.find(CURSOR_REPORT_START)
+    while start >= 0:
+        end = data.find(CURSOR_REPORT_FINAL, start)
+        if end < 0:
+            return False
+        row, separator, column = data[start + len(CURSOR_REPORT_START) : end].partition(b";")
+        if separator and row.isdigit() and column.isdigit():
+            return True
+        start = data.find(CURSOR_REPORT_START, start + 1)
+    return False
 
 
 def _exit_on_signal(signum: int, frame: FrameType | None) -> None:

@@ -26,7 +26,7 @@ from test_tui_subagents import FIRST, FRAMES, SECOND
 from omh.tui import terminal as terminal_module
 from omh.tui.app import (
     AGENT_LIST_HINT,
-    EXIT_DRAIN_READS,
+    CURSOR_POSITION_REQUEST,
     EXIT_DRAIN_SECONDS,
     READ_TIMEOUT_SECONDS,
     SLOT_ARM_SECONDS,
@@ -634,12 +634,18 @@ class SplitReportLoopTests(unittest.TestCase):
 
 
 class DrainTerminal(ScriptedTerminal):
-    """A scripted terminal whose reads are a list: each `read` takes the next entry, then nothing comes."""
+    """A scripted terminal whose reads are a list on its own clock: each `read` takes the next entry, then `endless`.
+
+    A read that brings bytes takes `READ_TAKES` of the clock; one that brings nothing waits its whole timeout.
+    """
+
+    READ_TAKES = 0.01
 
     def __init__(self, incoming: list[bytes | type[BaseException]], endless: bytes = b"") -> None:
         super().__init__()
         self.incoming = list(incoming)
         self.endless = endless
+        self.now = [0.0]
         self.log: list[tuple[str, object]] = []  # ("write", text) and ("read", timeout), in order
 
     def write(self, text: str) -> None:
@@ -648,20 +654,20 @@ class DrainTerminal(ScriptedTerminal):
 
     def read(self, timeout: float) -> bytes:
         self.log.append(("read", timeout))
-        if not self.incoming:
-            return self.endless
-        item = self.incoming.pop(0)
-        if isinstance(item, bytes):
-            return item
-        raise item("the terminal hung up")
+        item = self.incoming.pop(0) if self.incoming else self.endless
+        if not isinstance(item, bytes):
+            raise item("the terminal hung up")
+        self.now[0] += min(self.READ_TAKES, timeout) if item else timeout
+        return item
 
 
 class ExitDrainTests(unittest.TestCase):
     REPORT = b"\x1b[<0;30;22M\x1b[<0;30;22m"
+    ANSWER = b"\x1b[24;1R"  # the terminal's answer to the cursor position request
 
     def leaving(self, terminal: DrainTerminal, *, with_reports: bool = True) -> tuple[App, RecordingClient]:
         client = RecordingClient()
-        app = App(terminal, client, {}, poller=FakePoller(), clock=lambda: 0.0)  # type: ignore[arg-type]
+        app = App(terminal, client, {}, poller=FakePoller(), clock=lambda: terminal.now[0])  # type: ignore[arg-type]
         app.sid = SID
         app.turn_pending = True
         if with_reports:
@@ -674,36 +680,58 @@ class ExitDrainTests(unittest.TestCase):
     def reads(self, terminal: DrainTerminal) -> list[float]:
         return [timeout for kind, timeout in terminal.log if kind == "read"]  # type: ignore[misc]
 
-    def test_reports_still_arriving_are_read_and_dropped_for_a_bounded_time(self) -> None:
+    def writes(self, terminal: DrainTerminal) -> list[str]:
+        return [str(what) for kind, what in terminal.log if kind == "write"]
+
+    def test_input_is_dropped_up_to_the_answer_to_a_cursor_position_request_and_no_further(self) -> None:
+        incoming: list[bytes | type[BaseException]] = [
+            self.REPORT,
+            self.REPORT + b"x",  # a key typed meanwhile goes with the reports: the TUI read it and acts on nothing
+            b"\x1b[<0;31;22M" + self.ANSWER,
+        ]
+        terminal = DrainTerminal(incoming, endless=b"typed for the shell")
+        app, client = self.leaving(terminal)
+        before = state(app, client)
+        app._shutdown()
+        self.assertEqual(len(self.reads(terminal)), 3)  # it stopped the moment the answer came
+        self.assertEqual(state(app, client), before)  # nothing read there was acted on
+        self.assertEqual(CURSOR_POSITION_REQUEST, "\x1b[6n")
+        writes = self.writes(terminal)
+        self.assertEqual((writes[0], writes[-1]), (MOUSE_OFF, CURSOR_POSITION_REQUEST))  # asked after the off
+        kinds = [kind for kind, _what in terminal.log]
+        self.assertEqual(set(kinds[kinds.index("read") :]), {"read"})  # nothing is written once the drain began
+
+    def test_an_answer_split_across_reads_ends_it_once_whole(self) -> None:
+        terminal = DrainTerminal([self.REPORT + b"\x1b[2", b"4;", b"1R"], endless=self.REPORT)
+        app, _client = self.leaving(terminal)
+        app._shutdown()
+        self.assertEqual(len(self.reads(terminal)), 3)
+
+    def test_what_only_looks_like_the_answer_does_not_end_it(self) -> None:
+        for lookalike in (b"\x1b[<0;24;1M", b"\x1b[24R", b"\x1b[;1R", b"\x1b[24;R", b"\x1b[1;5A", b"R;1"):
+            with self.subTest(lookalike=lookalike):
+                terminal = DrainTerminal([lookalike, self.ANSWER], endless=self.REPORT)
+                app, _client = self.leaving(terminal)
+                app._shutdown()
+                self.assertEqual(len(self.reads(terminal)), 2)
+
+    def test_a_terminal_that_never_answers_is_drained_for_a_quarter_second_at_most(self) -> None:
         terminal = DrainTerminal([], endless=self.REPORT)  # a terminal that never stops sending
         app, client = self.leaving(terminal)
         before = state(app, client)
         app._shutdown()
+        self.assertEqual(EXIT_DRAIN_SECONDS, 0.25)
+        self.assertAlmostEqual(terminal.now[0], EXIT_DRAIN_SECONDS)
         waits = self.reads(terminal)
-        self.assertEqual(len(waits), EXIT_DRAIN_READS)
-        self.assertLessEqual(sum(waits), EXIT_DRAIN_SECONDS + 1e-9)
-        self.assertLessEqual(EXIT_DRAIN_SECONDS, 0.05)
-        self.assertTrue(all(wait > 0 for wait in waits))
-        self.assertEqual(state(app, client), before)  # nothing read there was acted on
+        self.assertTrue(all(0 < wait <= EXIT_DRAIN_SECONDS for wait in waits))
+        self.assertEqual(state(app, client), before)
 
-    def test_the_drain_starts_after_the_switch_off_and_after_the_screen_is_cleared(self) -> None:
+    def test_a_read_that_waits_out_the_time_left_ends_it(self) -> None:
         terminal = DrainTerminal([self.REPORT])
         app, _client = self.leaving(terminal)
         app._shutdown()
-        kinds = [kind for kind, _what in terminal.log]
-        first_read = kinds.index("read")
-        self.assertEqual(set(kinds[first_read:]), {"read"})  # nothing is written once the drain began
-        written = "".join(str(what) for kind, what in terminal.log[:first_read] if kind == "write")
-        self.assertIn(MOUSE_OFF, written)
-        self.assertEqual(terminal.log[0], ("write", MOUSE_OFF))  # and the switch off is the first thing written
-
-    def test_it_stops_at_the_first_read_that_brings_nothing(self) -> None:
-        for incoming, expected in (([], 1), ([self.REPORT], 2), ([self.REPORT, b"x", self.REPORT], 4)):
-            with self.subTest(arriving=len(incoming)):
-                terminal = DrainTerminal(list(incoming))
-                app, _client = self.leaving(terminal)
-                app._shutdown()
-                self.assertEqual(len(self.reads(terminal)), expected)
+        self.assertEqual(len(self.reads(terminal)), 2)
+        self.assertAlmostEqual(terminal.now[0], EXIT_DRAIN_SECONDS)
 
     def test_a_terminal_that_hung_up_ends_it_quietly(self) -> None:
         terminal = DrainTerminal([self.REPORT, EOFError])
@@ -711,19 +739,32 @@ class ExitDrainTests(unittest.TestCase):
         app._shutdown()
         self.assertEqual(len(self.reads(terminal)), 2)
 
-    def test_nothing_is_read_when_reports_were_not_on_at_exit(self) -> None:
+    def test_nothing_is_asked_or_read_when_reports_were_never_on(self) -> None:
         terminal = DrainTerminal([], endless=b"typed ahead for the shell")
         app, _client = self.leaving(terminal, with_reports=False)
         app._shutdown()
         self.assertEqual(self.reads(terminal), [])
-        self.assertNotIn(MOUSE_OFF, "".join(str(what) for kind, what in terminal.log if kind == "write"))
+        written = "".join(self.writes(terminal))
+        self.assertNotIn(MOUSE_OFF, written)
+        self.assertNotIn(CURSOR_POSITION_REQUEST, written)
+
+    def test_reports_on_earlier_in_the_run_are_drained_though_they_are_off_at_exit(self) -> None:
+        terminal = DrainTerminal([self.REPORT, self.ANSWER], endless=b"typed for the shell")
+        app, _client = self.leaving(terminal)
+        app.turn_pending = False  # the turn ended: the strip is no longer clickable
+        drawn(app)
+        self.assertFalse(terminal.mouse_reporting)
+        terminal.log.clear()
+        app._shutdown()
+        self.assertEqual(self.writes(terminal)[-1], CURSOR_POSITION_REQUEST)
+        self.assertEqual(len(self.reads(terminal)), 2)
 
     def test_run_drains_on_its_way_out_however_the_loop_ended(self) -> None:
-        terminal = DrainTerminal([SystemExit], endless=self.REPORT)  # SIGTERM arrives as SystemExit in a read
+        terminal = DrainTerminal([SystemExit, self.REPORT, self.ANSWER])  # SIGTERM arrives as SystemExit in a read
         app, _client = self.leaving(terminal)
         with self.assertRaises(SystemExit):
             app.run()
-        self.assertEqual(len(self.reads(terminal)), 1 + EXIT_DRAIN_READS)
+        self.assertEqual(len(self.reads(terminal)), 3)
         self.assertFalse(terminal.mouse_reporting)
 
 
