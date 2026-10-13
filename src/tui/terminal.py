@@ -16,6 +16,11 @@ kitty keyboard protocol and xterm modifyOtherKeys, so Ctrl+Enter and
 Shift+Enter arrive as keys of their own (`keyboard_protocol` says whether it
 asked); `OMH_TUI_KEYBOARD=legacy` keeps the plain bytes everywhere.
 
+Mouse reporting is off unless `set_mouse(True)` turns it on, and then only
+clicks and the wheel are reported, in SGR form; motion tracking is never
+asked for. Every exit turns it off again (`mouse_reporting` says whether it
+is on).
+
 Windows has no termios; `terminal_supported` reports that, and the caller
 takes the fallback path instead of entering a `Terminal`.
 """
@@ -47,13 +52,19 @@ KITTY_KEYBOARD_PUSH = f"{CSI}>1u"
 KITTY_KEYBOARD_POP = f"{CSI}<u"
 MODIFY_OTHER_KEYS_ON = f"{CSI}>4;2m"
 MODIFY_OTHER_KEYS_OFF = f"{CSI}>4m"
+# Mouse reports: button presses and releases, the wheel included (xterm mode
+# 1000), sent in SGR form (1006) so any column and row can be reported. Never
+# 1002 or 1003: those report motion too.
+MOUSE_REPORTING_ON = f"{CSI}?1000h{CSI}?1006h"
+MOUSE_REPORTING_OFF = f"{CSI}?1006l{CSI}?1000l"
 # Written on exit even after a crash mid-frame: the screen hides the cursor and
 # turns autowrap off while it paints, and a shell must not inherit either. The
-# key reports are switched off whether or not they were asked for, as Hermes'
-# own TUI does on every exit (hermes-ink `ink.tsx`, its signal-exit path too),
-# so no exit path depends on remembering whether they were asked for.
+# key and mouse reports are switched off whether or not they were asked for, as
+# Hermes' own TUI does on every exit (hermes-ink `ink.tsx`, its signal-exit path
+# too), so no exit path depends on remembering whether they were asked for.
 RESTORE_SEQUENCE = (
-    f"{SGR_RESET}{AUTOWRAP_ON}{SHOW_CURSOR}{MODIFY_OTHER_KEYS_OFF}{KITTY_KEYBOARD_POP}{BRACKETED_PASTE_OFF}"
+    f"{SGR_RESET}{AUTOWRAP_ON}{SHOW_CURSOR}{MODIFY_OTHER_KEYS_OFF}{KITTY_KEYBOARD_POP}"
+    f"{MOUSE_REPORTING_OFF}{BRACKETED_PASTE_OFF}"
 )
 
 # Terminals asked for the richer key reports, by the name Hermes' own TUI gives
@@ -164,6 +175,8 @@ class Terminal:
         self._keyboard_request = keyboard_protocol_request(environ or {})
         # True while the richer key reports were asked for, so Ctrl+Enter can reach the TUI.
         self.keyboard_protocol = False
+        # True while mouse reports are on (`set_mouse`).
+        self.mouse_reporting = False
 
     def __enter__(self) -> Terminal:
         if termios is None:
@@ -199,6 +212,7 @@ class Terminal:
         if saved is None:
             return
         self.keyboard_protocol = False
+        self.mouse_reporting = False
         hung_up = False
         try:
             self.write(RESTORE_SEQUENCE)
@@ -212,6 +226,17 @@ class Terminal:
                     termios.tcsetattr(self._input, termios.TCSANOW, saved)
             finally:
                 self._uninstall_winch()
+
+    def set_mouse(self, enabled: bool) -> None:
+        """Turn mouse reports on or off; writes nothing when they already are.
+
+        Only inside the `with` block: turned on outside it, nothing would turn
+        them off again, and every click would type escape codes into the shell.
+        """
+        if enabled == self.mouse_reporting or (enabled and self._saved is None):
+            return
+        self.write(MOUSE_REPORTING_ON if enabled else MOUSE_REPORTING_OFF)
+        self.mouse_reporting = enabled
 
     def _on_winch(self, signum: int, frame: FrameType | None) -> None:
         self._resized = True

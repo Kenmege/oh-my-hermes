@@ -21,6 +21,7 @@ import unittest
 from unittest.mock import patch
 
 from omh.tui import terminal as terminal_module
+from omh.tui.keys import BUTTON_LEFT, KeyDecoder, Mouse
 from omh.tui.terminal import (
     BRACKETED_PASTE_OFF,
     BRACKETED_PASTE_ON,
@@ -28,6 +29,8 @@ from omh.tui.terminal import (
     KITTY_KEYBOARD_PUSH,
     MODIFY_OTHER_KEYS_OFF,
     MODIFY_OTHER_KEYS_ON,
+    MOUSE_REPORTING_OFF,
+    MOUSE_REPORTING_ON,
     RESTORE_SEQUENCE,
     Terminal,
     keyboard_protocol_request,
@@ -158,6 +161,20 @@ class KeyboardProtocolRequestTests(unittest.TestCase):
         self.assertEqual(BOTH_REPORTS, "\x1b[>1u\x1b[>4;2m")
 
 
+class MouseReportingSequenceTests(unittest.TestCase):
+    def test_clicks_and_the_wheel_in_sgr_form_and_never_motion(self) -> None:
+        self.assertEqual(MOUSE_REPORTING_ON, "\x1b[?1000h\x1b[?1006h")
+        self.assertEqual(MOUSE_REPORTING_OFF, "\x1b[?1006l\x1b[?1000l")
+        for motion_mode in ("?1002", "?1003"):
+            with self.subTest(mode=motion_mode):
+                self.assertNotIn(motion_mode, MOUSE_REPORTING_ON)
+
+    def test_the_restore_sequence_always_switches_mouse_reports_off(self) -> None:
+        # Written on every exit, a crash and a signal included, whether or not they were turned on.
+        self.assertIn(MOUSE_REPORTING_OFF, RESTORE_SEQUENCE)
+        self.assertNotIn(MOUSE_REPORTING_ON, RESTORE_SEQUENCE)
+
+
 @unittest.skipUnless(pty is not None and termios is not None, "needs a POSIX pty")
 class TerminalPtyTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -254,6 +271,68 @@ class TerminalPtyTests(unittest.TestCase):
                 self.assertFalse(term.keyboard_protocol)
                 tail = self.master_output().decode()
                 self.assertIn(MODIFY_OTHER_KEYS_OFF + KITTY_KEYBOARD_POP, tail)
+
+    def test_mouse_reporting_is_off_on_entry_and_set_mouse_writes_only_on_a_change(self) -> None:
+        term = Terminal(self.slave, self.slave)
+        with term:
+            self.assertEqual(self.master_output(), BRACKETED_PASTE_ON.encode())
+            self.assertFalse(term.mouse_reporting)
+            term.set_mouse(False)
+            self.assertEqual(self.master_output(), b"")
+            term.set_mouse(True)
+            self.assertTrue(term.mouse_reporting)
+            self.assertEqual(self.master_output(), MOUSE_REPORTING_ON.encode())
+            term.set_mouse(True)
+            self.assertEqual(self.master_output(), b"")
+            term.set_mouse(False)
+            self.assertFalse(term.mouse_reporting)
+            self.assertEqual(self.master_output(), MOUSE_REPORTING_OFF.encode())
+            term.set_mouse(False)
+            self.assertEqual(self.master_output(), b"")
+            term.set_mouse(True)
+            self.master_output()
+        self.assertFalse(term.mouse_reporting)
+        self.assertTrue(self.master_output().endswith(RESTORE_SEQUENCE.encode()))
+
+    def test_mouse_reports_are_turned_off_when_the_block_raises_or_a_signal_exits(self) -> None:
+        for error in (RuntimeError("boom"), SystemExit(128 + signal.SIGTERM)):
+            with self.subTest(error=type(error).__name__):
+                term = Terminal(self.slave, self.slave)
+                with self.assertRaises(type(error)):
+                    with term:
+                        term.set_mouse(True)
+                        self.master_output()
+                        raise error
+                self.assertFalse(term.mouse_reporting)
+                self.assertIn(MOUSE_REPORTING_OFF, self.master_output().decode())
+
+    def test_set_mouse_outside_the_block_writes_nothing(self) -> None:
+        # Nothing would turn them off again, and every click would type escape codes into the shell.
+        term = Terminal(self.slave, self.slave)
+        term.set_mouse(True)
+        self.assertFalse(term.mouse_reporting)
+        with term:
+            pass
+        self.master_output()
+        term.set_mouse(True)
+        term.set_mouse(False)
+        self.assertFalse(term.mouse_reporting)
+        self.assertEqual(self.master_output(), b"")
+
+    def test_a_mouse_report_arrives_as_bytes_the_decoder_reads(self) -> None:
+        with Terminal(self.slave, self.slave) as term:
+            term.set_mouse(True)
+            self.master_output()
+            report = b"\x1b[<0;12;7M"
+            os.write(self.master, report)
+            self.assertEqual(KeyDecoder().feed(self.read_exactly(term, len(report))), [Mouse(BUTTON_LEFT, 12, 7)])
+
+    def test_leaving_after_a_hangup_with_mouse_reports_on_does_not_raise(self) -> None:
+        term = Terminal(self.slave, self.slave)
+        with term:
+            term.set_mouse(True)
+            self.close(self.master)
+        self.assertFalse(term.mouse_reporting)
 
     def test_attributes_come_back_when_the_block_raises(self) -> None:
         before = termios.tcgetattr(self.slave)

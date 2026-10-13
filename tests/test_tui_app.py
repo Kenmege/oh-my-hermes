@@ -60,7 +60,7 @@ from omh.tui.app import (
     run_model_chain_picker,
 )
 from omh.tui.gateway import GatewayClient, GatewayUnavailable, ServerRequest, gateway_spawn
-from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Paste
+from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
 from omh.tui.launch import FALLBACK_EXIT
 from omh.tui.prompts import open_request
 from omh.tui.theme import DEFAULT_THEME, theme_named
@@ -514,6 +514,19 @@ class SessionTests(AppTestCase):
         )
         self.run_main(run)
         self.assert_clean_run(run)
+        self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
+
+    def test_mouse_reports_the_tui_did_not_ask_for_type_nothing(self) -> None:
+        # A program that died with mouse tracking on leaves the terminal reporting clicks, motion and the wheel.
+        reports = b"\x1b[<0;5;20M\x1b[<0;5;20m\x1b[<35;6;21M\x1b[<64;5;20M\x1b[<65;5;20M\x1b[M !!"
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.terminal.script(
+            Step(reports, when=run.terminal.idle, capture="before", label="idle"),
+            Step(b"\x04", when=run.terminal.idle, capture="after", label="the reports"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual(composer_row(run.terminal.captures["after"]), composer_row(run.terminal.captures["before"]))
         self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
 
     def test_the_default_terminal_reads_the_environment_main_was_given(self) -> None:
@@ -1225,6 +1238,7 @@ class ModelChainPickerTests(unittest.TestCase):
             Key(ESCAPE): "quit", Key(CHAR, "c", ctrl=True): "quit", Key(CHAR, "d", ctrl=True): "quit",
             Key(CHAR, "j"): "down", Key(CHAR, "+"): "plus", Key(CHAR, "d"): "default", Key(CHAR, "q"): "quit",
             Key(CHAR, "x"): "", Key(CHAR, "v", ctrl=True): "", Key(LEFT, alt=True): "", Paste("q"): "",
+            Mouse("left", 1, 1): "",
         }
         for event, token in cases.items():
             with self.subTest(event=event):

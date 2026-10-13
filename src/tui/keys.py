@@ -19,6 +19,12 @@ CSI u (`ESC[99;5u`) or xterm modifyOtherKeys (`ESC[27;5;99~`). Each of those
 decodes to the very `Key` its legacy bytes give, so Ctrl+C, Esc, Tab, Alt+b or
 Shift+a behave the same either way; the reports only add what legacy bytes
 cannot say, such as Ctrl+Enter and Shift+Enter.
+
+While `Terminal.set_mouse(True)` has mouse reporting on, a click arrives as an
+SGR report (`ESC[<b;x;yM` press, `ESC[<b;x;ym` release) and decodes to a
+`Mouse`. A wheel turn or a motion report decodes too, so no byte of a report
+is ever typed as text. A terminal that ignores the SGR request sends the
+legacy `ESC[M` and three payload bytes instead; that is one unknown key.
 """
 
 from __future__ import annotations
@@ -104,6 +110,43 @@ _KEYPAD_TEXT = {57399 + digit: str(digit) for digit in range(10)} | {
 # Besides the letters, the keys whose Ctrl chord a legacy terminal sends as a C0 byte.
 _CTRL_PUNCTUATION = "@[\\]^_ "
 
+# Mouse buttons a `Mouse` names. NO_BUTTON is a release that does not say which
+# button, or motion with none held.
+BUTTON_LEFT = "left"
+BUTTON_MIDDLE = "middle"
+BUTTON_RIGHT = "right"
+NO_BUTTON = "none"
+WHEEL_UP = "wheel-up"
+WHEEL_DOWN = "wheel-down"
+WHEEL_LEFT = "wheel-left"
+WHEEL_RIGHT = "wheel-right"
+
+# SGR mouse report: `ESC[<b;x;yM` press, `ESC[<b;x;ym` release (xterm mode 1006).
+SGR_MOUSE_PREFIX = "<"
+SGR_MOUSE_PRESS = "M"
+SGR_MOUSE_RELEASE = "m"
+# Legacy (X10) mouse report: `ESC[M` and three bytes, each 32 plus a value.
+X10_MOUSE_FINAL = ord("M")
+_X10_MOUSE_PAYLOAD_BYTES = 3
+# The button code: the low two bits pick the button, 64 and 128 move to the
+# wheel and the extra buttons, and these four flags ride on top of any of them.
+_MOUSE_SHIFT_BIT = 4
+_MOUSE_ALT_BIT = 8  # xterm calls it meta; it is the Alt key
+_MOUSE_CTRL_BIT = 16
+_MOUSE_MOTION_BIT = 32
+_MOUSE_FLAG_BITS = _MOUSE_SHIFT_BIT | _MOUSE_ALT_BIT | _MOUSE_CTRL_BIT | _MOUSE_MOTION_BIT
+# Buttons 8 to 11 (code 128 and up) have no name here, so their reports are unknown keys.
+_MOUSE_BUTTONS = {
+    0: BUTTON_LEFT,
+    1: BUTTON_MIDDLE,
+    2: BUTTON_RIGHT,
+    3: NO_BUTTON,
+    64: WHEEL_UP,
+    65: WHEEL_DOWN,
+    66: WHEEL_LEFT,
+    67: WHEEL_RIGHT,
+}
+
 
 @dataclass(frozen=True)
 class Key:
@@ -117,6 +160,27 @@ class Key:
 @dataclass(frozen=True)
 class Paste:
     text: str
+
+
+@dataclass(frozen=True)
+class Mouse:
+    """One SGR mouse report.
+
+    `x` and `y` are 1-based cells, exactly as the terminal reports them: the
+    top-left cell is (1, 1) and the screen's last row is `y == rows`. A wheel
+    turn is a press of WHEEL_UP or WHEEL_DOWN; `motion` marks a report sent
+    because the pointer moved, which only a motion tracking mode produces, so
+    a click is a press that is not motion.
+    """
+
+    button: str
+    x: int
+    y: int
+    pressed: bool = True
+    motion: bool = False
+    shift: bool = False
+    alt: bool = False
+    ctrl: bool = False
 
 
 # Internal marker for ESC[200~; it never leaves the decoder.
@@ -231,7 +295,30 @@ def _protocol_key(code_field: str, modifier_field: str) -> Key:
     return Key(CHAR, text, ctrl=flags["ctrl"], alt=flags["alt"])
 
 
-def _csi_key(parameters: str, final: str) -> Key:
+def _sgr_mouse(parameters: str, pressed: bool) -> Key | Mouse:
+    """`b;x;y` of an SGR mouse report; one unknown key when it is malformed or names a button `Mouse` does not."""
+    fields = parameters.split(";")
+    if len(fields) != 3 or not all(_digits(field) for field in fields):
+        return Key(UNKNOWN)
+    code, x, y = (int(field) for field in fields)
+    button = _MOUSE_BUTTONS.get(code & ~_MOUSE_FLAG_BITS)
+    if button is None or x < 1 or y < 1:
+        return Key(UNKNOWN)
+    return Mouse(
+        button,
+        x,
+        y,
+        pressed=pressed,
+        motion=bool(code & _MOUSE_MOTION_BIT),
+        shift=bool(code & _MOUSE_SHIFT_BIT),
+        alt=bool(code & _MOUSE_ALT_BIT),
+        ctrl=bool(code & _MOUSE_CTRL_BIT),
+    )
+
+
+def _csi_key(parameters: str, final: str) -> Key | Mouse:
+    if parameters.startswith(SGR_MOUSE_PREFIX) and final in (SGR_MOUSE_PRESS, SGR_MOUSE_RELEASE):
+        return _sgr_mouse(parameters[len(SGR_MOUSE_PREFIX) :], final == SGR_MOUSE_PRESS)
     fields = parameters.split(";")
     if final == CSI_U_FINAL and len(fields) <= 2:
         return _protocol_key(fields[0], fields[1] if len(fields) == 2 else "1")
@@ -256,10 +343,29 @@ def _csi_key(parameters: str, final: str) -> Key:
     return Key(name, **flags)
 
 
-def _decode_csi(data: bytes, start: int, final: bool) -> tuple[Key | None, int]:
+def _decode_x10_mouse(data: bytes, start: int, final: bool) -> tuple[Key | None, int]:
+    """`ESC[M` and its three payload bytes as one unknown key, so none of them is typed as text.
+
+    Every payload byte is 32 or more; a control byte among them (an ESC
+    starting the next sequence) means this `ESC[M` carries no payload, and the
+    bytes after it decode on their own, as Hermes' own TUI reads them
+    (hermes-ink `termio/tokenize.ts`).
+    """
+    payload_start = start + 3
+    payload = data[payload_start : payload_start + _X10_MOUSE_PAYLOAD_BYTES]
+    if any(byte < 0x20 for byte in payload):
+        return Key(UNKNOWN), payload_start
+    if len(payload) < _X10_MOUSE_PAYLOAD_BYTES and not final:
+        return None, start
+    return Key(UNKNOWN), payload_start + len(payload)
+
+
+def _decode_csi(data: bytes, start: int, final: bool) -> tuple[Key | Mouse | None, int]:
     index = start + 2  # past ESC [
     while index < len(data):
         byte = data[index]
+        if byte == X10_MOUSE_FINAL and index == start + 2:
+            return _decode_x10_mouse(data, start, final)
         if 0x40 <= byte <= 0x7E:
             return _csi_key(data[start + 2 : index].decode("ascii"), chr(byte)), index + 1
         if not 0x20 <= byte <= 0x3F or index - start >= _MAX_CSI_LENGTH:
@@ -282,7 +388,7 @@ def _decode_ss3(data: bytes, start: int, final: bool) -> tuple[Key | None, int]:
     return (Key(name) if name else Key(UNKNOWN)), start + 3
 
 
-def _decode_escape(data: bytes, start: int, final: bool) -> tuple[Key | None, int]:
+def _decode_escape(data: bytes, start: int, final: bool) -> tuple[Key | Mouse | None, int]:
     if len(data) == start + 1:
         return (Key(ESCAPE), start + 1) if final else (None, start)
     second = data[start + 1]
@@ -307,7 +413,7 @@ def _decode_plain(data: bytes, start: int, final: bool) -> tuple[Key | None, int
     return _decode_utf8(data, start, final)
 
 
-def _decode_one(data: bytes, start: int, final: bool) -> tuple[Key | None, int]:
+def _decode_one(data: bytes, start: int, final: bool) -> tuple[Key | Mouse | None, int]:
     """The key at `start` and the index after it; `(None, start)` means "wait for more"."""
     if data[start] == ESC_BYTE:
         return _decode_escape(data, start, final)
@@ -323,16 +429,16 @@ class KeyDecoder:
         self._pending = bytearray()
         self._paste: bytearray | None = None
 
-    def feed(self, data: bytes) -> list[Key | Paste]:
+    def feed(self, data: bytes) -> list[Key | Paste | Mouse]:
         self._pending.extend(data)
         return self._drain(final=False)
 
-    def flush(self) -> list[Key | Paste]:
+    def flush(self) -> list[Key | Paste | Mouse]:
         """Settle what is held after a silence: a lone ESC becomes `Key("escape")`."""
         return self._drain(final=True)
 
-    def _drain(self, final: bool) -> list[Key | Paste]:
-        events: list[Key | Paste] = []
+    def _drain(self, final: bool) -> list[Key | Paste | Mouse]:
+        events: list[Key | Paste | Mouse] = []
         while True:
             if self._paste is not None:
                 paste = self._take_paste()

@@ -80,7 +80,7 @@ from .gateway import (
     attach_refused,
     gateway_spawn,
 )
-from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, KeyDecoder, Paste
+from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, KeyDecoder, Mouse, Paste
 from .launch import FALLBACK_EXIT
 from .layout import slot_cap
 from .markdown import clean_text
@@ -466,9 +466,9 @@ def _menu_lines(entries: list[tuple[str, str]], index: int, width: int, max_rows
 _PICKER_KEYS = {UP: KEY_UP, DOWN: KEY_DOWN, LEFT: KEY_LEFT, RIGHT: KEY_RIGHT, ENTER: KEY_ENTER, ESCAPE: KEY_QUIT}
 
 
-def picker_key(event: Key | Paste) -> str:
+def picker_key(event: Key | Paste | Mouse) -> str:
     """One decoded key as an OMH picker's key token. Raw mode makes Ctrl+C a key, and it cancels like Esc."""
-    if isinstance(event, Paste) or event.alt:
+    if not isinstance(event, Key) or event.alt:
         return KEY_NONE
     if event.name != CHAR:
         return _PICKER_KEYS.get(event.name, KEY_NONE)
@@ -936,7 +936,9 @@ class App:
     def _set_composer(self, text: str) -> None:
         self.composer.replace(0, len(self.composer.text), text)
 
-    def _on_input(self, event: Key | Paste) -> None:
+    def _on_input(self, event: Key | Paste | Mouse) -> None:
+        if isinstance(event, Mouse):
+            return  # not a key; a report from mouse tracking another program left on must type nothing
         if self.pager is not None:
             if not self.pager.handle_key(event, self.size[1]):
                 self._leave_pager()
@@ -1514,7 +1516,7 @@ class App:
 
     def _picker_reader(self) -> Callable[[], str]:
         """A picker's `read_key` over the TUI's terminal and key decoder; a hung-up terminal cancels."""
-        pending: deque[Key | Paste] = deque()
+        pending: deque[Key | Paste | Mouse] = deque()
 
         def read_key() -> str:
             while not pending:
