@@ -4,12 +4,14 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from _cli_harness import run_cli
 from _local_package import load_local_package
 
 load_local_package()
 from omh.paths import OmhPaths
+from omh.plugin_bundle.omh import runtime_reader
 from omh.workflows.hermes_achievements import (
     filter_badges,
     find_badge,
@@ -25,12 +27,88 @@ class HermesAchievementsTestCase(unittest.TestCase):
         root = Path(self._tmp.name)
         self.omh_home = root / "omh"
         self.hermes_home = root / "hermes"
+        # `plugin_dir` is the legacy install directory; `data_dir` is where the
+        # bundled plugin keeps its files now (Hermes `plugin_data_dir()`).
         self.plugin_dir = self.hermes_home / "plugins" / "hermes-achievements"
+        self.data_dir = self.hermes_home / "plugin-data" / "hermes-achievements"
         self.paths = OmhPaths(omh_home=self.omh_home, hermes_home=self.hermes_home)
 
-    def _write_plugin_file(self, name: str, data: object) -> None:
-        self.plugin_dir.mkdir(parents=True, exist_ok=True)
-        (self.plugin_dir / name).write_text(json.dumps(data), encoding="utf-8")
+    def _write_plugin_file(self, name: str, data: object, *, directory: Path | None = None) -> None:
+        target = self.plugin_dir if directory is None else directory
+        target.mkdir(parents=True, exist_ok=True)
+        (target / name).write_text(json.dumps(data), encoding="utf-8")
+
+    def _write_plugin_data_artifacts(self) -> None:
+        # The wire shape the bundled plugin writes: `progress` is the raw
+        # metric count, `progress_pct` the percent toward the next tier,
+        # tiers are capitalized, timestamps are epoch seconds, and state.json
+        # records the first tier earned as `first_tier`.
+        self._write_plugin_file(
+            "scan_snapshot.json",
+            {
+                "generated_at": 1_760_000_000,
+                "achievements": [
+                    {
+                        "id": "let_him_cook",
+                        "name": "Let Him Cook",
+                        "category": "Agent Autonomy",
+                        "kind": "best_session",
+                        "unlocked": True,
+                        "discovered": True,
+                        "state": "unlocked",
+                        "tier": "Silver",
+                        "progress": 640,
+                        "next_tier": "Gold",
+                        "next_threshold": 1200,
+                        "progress_pct": 20,
+                        "unlocked_at": 1_759_000_000,
+                        "evidence": {"session_id": "s-1", "title": "PRIVATE SESSION TITLE", "value": 640},
+                    },
+                    {
+                        "id": "patch_wizard",
+                        "name": "Patch Wizard",
+                        "category": "Tool Mastery",
+                        "kind": "lifetime",
+                        "unlocked": False,
+                        "discovered": True,
+                        "state": "discovered",
+                        "tier": None,
+                        "progress": 1,
+                        "next_tier": "Copper",
+                        "next_threshold": 250,
+                        "progress_pct": 0,
+                    },
+                    {
+                        "id": "port_3000_taken",
+                        "name": "???",
+                        "category": "Debugging Chaos",
+                        "secret": True,
+                        "unlocked": False,
+                        "discovered": False,
+                        "state": "secret",
+                        "tier": None,
+                        "progress": 0,
+                        "progress_pct": 0,
+                    },
+                ],
+                "sessions": [{"session_id": "s-1", "title": "PRIVATE SESSION TITLE", "tool_call_count": 640}],
+                "unlocked_count": 1,
+                "discovered_count": 1,
+                "secret_count": 1,
+                "total_count": 3,
+            },
+            directory=self.data_dir,
+        )
+        self._write_plugin_file(
+            "state.json",
+            {
+                "unlocks": {
+                    "let_him_cook": {"unlocked_at": 1_759_000_000, "first_tier": "Copper", "evidence": None},
+                    "weekend_warrior": {"unlocked_at": 1_759_500_000, "first_tier": "Copper", "evidence": None},
+                }
+            },
+            directory=self.data_dir,
+        )
 
     def _base_args(self) -> list[str]:
         return ["--omh-home", str(self.omh_home), "--hermes-home", str(self.hermes_home)]
@@ -195,6 +273,240 @@ class ObserveAchievementsTests(HermesAchievementsTestCase):
         self.assertIn("Boundary:", first)
 
 
+class PluginDataLayoutTests(HermesAchievementsTestCase):
+    def test_plugin_data_layout_is_read_with_upstream_field_meanings(self) -> None:
+        self._write_plugin_data_artifacts()
+
+        payload = observe_achievements(self.paths, now=1_760_000_060)
+
+        self.assertEqual(payload["status"], "observed")
+        self.assertEqual(payload["errors"], [])
+        source = payload["source"]
+        self.assertEqual(source["snapshot_location"], "plugin_data")
+        self.assertEqual(source["state_location"], "plugin_data")
+        self.assertEqual(source["snapshot_path"], str(self.data_dir / "scan_snapshot.json"))
+        self.assertEqual(source["state_path"], str(self.data_dir / "state.json"))
+        self.assertEqual(source["data_dir"], str(self.data_dir))
+        self.assertEqual(source["legacy_dir"], str(self.plugin_dir))
+        summary = payload["summary"]
+        self.assertEqual(summary["total_count"], 4)
+        self.assertEqual(summary["unlocked_count"], 2)
+        self.assertEqual(summary["secret_count"], 1)
+        self.assertEqual(summary["top_tier"], "silver")
+        # A raw count of 1 (or 640) is not a fraction or a percent.
+        self.assertEqual(find_badge(payload["badges"], "patch_wizard")["progress_percent"], 0.0)
+        # `first_tier` fills a tier the snapshot does not carry and never lowers one it does.
+        self.assertEqual(find_badge(payload["badges"], "weekend_warrior")["tier"], "copper")
+        self.assertEqual(find_badge(payload["badges"], "let_him_cook")["tier"], "silver")
+        # The unlock floor leaves the snapshot's next-tier progress in place.
+        self.assertEqual(find_badge(payload["badges"], "let_him_cook")["progress_percent"], 20.0)
+        self.assertEqual(find_badge(payload["badges"], "weekend_warrior")["progress_percent"], 100.0)
+        self.assertNotIn("PRIVATE SESSION TITLE", json.dumps(payload))
+
+    def test_staleness_follows_the_plugin_ttl_rule_on_an_injected_clock(self) -> None:
+        self._write_plugin_data_artifacts()
+
+        at_ttl = observe_achievements(self.paths, now=1_760_000_120)["snapshot_freshness"]
+        past_ttl = observe_achievements(self.paths, now=1_760_000_121)["snapshot_freshness"]
+
+        self.assertEqual(at_ttl["generated_at"], 1_760_000_000)
+        self.assertEqual(at_ttl["ttl_seconds"], 120)
+        self.assertEqual(at_ttl["age_seconds"], 120)
+        self.assertFalse(at_ttl["stale"])
+        self.assertEqual(past_ttl["age_seconds"], 121)
+        self.assertTrue(past_ttl["stale"])
+
+    def test_snapshot_without_generated_at_is_stale(self) -> None:
+        self._write_list_shaped_artifacts()
+
+        freshness = observe_achievements(self.paths, now=1_760_000_000)["snapshot_freshness"]
+
+        self.assertIsNone(freshness["generated_at"])
+        self.assertIsNone(freshness["age_seconds"])
+        self.assertTrue(freshness["stale"])
+
+    def test_zero_generated_at_counts_as_missing(self) -> None:
+        # The plugin's own rule treats a non-positive timestamp as no snapshot time.
+        self._write_plugin_file("scan_snapshot.json", {"generated_at": 0, "achievements": []}, directory=self.data_dir)
+
+        freshness = observe_achievements(self.paths, now=1_760_000_000)["snapshot_freshness"]
+
+        self.assertIsNone(freshness["generated_at"])
+        self.assertIsNone(freshness["age_seconds"])
+        self.assertTrue(freshness["stale"])
+
+    def test_numbers_too_large_for_a_float_degrade_instead_of_raising(self) -> None:
+        huge = 10**400
+        self._write_plugin_file(
+            "scan_snapshot.json",
+            {
+                "generated_at": huge,
+                "achievements": [
+                    {"id": "pct", "state": "discovered", "progress": 3, "progress_pct": huge},
+                    {"id": "raw", "state": "discovered", "progress": huge},
+                    {"id": "ratio", "state": "discovered", "progress": {"current": huge, "target": 10}},
+                    {"id": "dict_percent", "state": "discovered", "progress": {"percent": huge}},
+                    {"id": "dict_target", "state": "discovered", "progress": {"current": 1, "target": huge}},
+                ],
+            },
+            directory=self.data_dir,
+        )
+
+        payload = observe_achievements(self.paths, now=1_760_000_000)
+
+        self.assertEqual(payload["status"], "observed")
+        self.assertIsNone(payload["snapshot_freshness"]["generated_at"])
+        self.assertTrue(payload["snapshot_freshness"]["stale"])
+        # An unusable `progress_pct` does not fall back to the raw count.
+        self.assertIsNone(find_badge(payload["badges"], "pct")["progress_percent"])
+        for badge_id in ("raw", "ratio", "dict_percent", "dict_target"):
+            self.assertIsNone(find_badge(payload["badges"], badge_id)["progress_percent"], badge_id)
+        status, stdout, stderr = run_cli([*self._base_args(), "context", "brief", "--json"])
+        self.assertEqual(status, 0, stderr)
+        status, stdout, stderr = run_cli([*self._base_args(), "achievements", "summary"], output_json=False)
+        self.assertEqual(status, 0, stderr)
+
+    def test_nan_and_infinity_degrade_instead_of_raising(self) -> None:
+        # Python's JSON reader accepts these literals, so write them as raw text.
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        (self.data_dir / "scan_snapshot.json").write_text(
+            '{"generated_at": Infinity, "achievements": ['
+            '{"id": "pct", "state": "discovered", "progress": 3, "progress_pct": NaN},'
+            '{"id": "dict_percent", "state": "discovered", "progress": {"percent": Infinity}},'
+            '{"id": "raw", "state": "discovered", "progress": -Infinity}]}',
+            encoding="utf-8",
+        )
+
+        payload = observe_achievements(self.paths, now=1_760_000_000)
+
+        self.assertIsNone(payload["snapshot_freshness"]["generated_at"])
+        self.assertTrue(payload["snapshot_freshness"]["stale"])
+        for badge_id in ("pct", "dict_percent", "raw"):
+            self.assertIsNone(find_badge(payload["badges"], badge_id)["progress_percent"], badge_id)
+        status, _, stderr = run_cli([*self._base_args(), "achievements", "summary"], output_json=False)
+        self.assertEqual(status, 0, stderr)
+        status, _, stderr = run_cli([*self._base_args(), "context", "brief", "--json"])
+        self.assertEqual(status, 0, stderr)
+
+    def test_state_tier_key_raises_a_tier_and_never_lowers_one(self) -> None:
+        self._write_plugin_file(
+            "scan_snapshot.json",
+            {
+                "achievements": [
+                    {"id": "kept", "state": "unlocked", "tier": "Gold"},
+                    {"id": "raised", "state": "unlocked", "tier": "Copper"},
+                    {"id": "filled", "state": "discovered"},
+                ]
+            },
+            directory=self.data_dir,
+        )
+        self._write_plugin_file(
+            "state.json",
+            {
+                "unlocked": {
+                    "kept": {"tier": "copper", "first_tier": "copper"},
+                    "raised": {"tier": "gold"},
+                    "filled": {"tier": "silver", "first_tier": "copper"},
+                }
+            },
+            directory=self.data_dir,
+        )
+
+        badges = observe_achievements(self.paths)["badges"]
+
+        self.assertEqual(find_badge(badges, "kept")["tier"], "gold")
+        self.assertEqual(find_badge(badges, "raised")["tier"], "gold")
+        self.assertEqual(find_badge(badges, "filled")["tier"], "silver")
+
+    def test_legacy_only_install_dir_is_read_and_reported(self) -> None:
+        self._write_list_shaped_artifacts()
+
+        source = observe_achievements(self.paths)["source"]
+
+        self.assertEqual(source["snapshot_location"], "legacy_plugins_dir")
+        self.assertEqual(source["state_location"], "legacy_plugins_dir")
+        self.assertEqual(source["snapshot_path"], str(self.plugin_dir / "scan_snapshot.json"))
+        self.assertEqual(source["state_path"], str(self.plugin_dir / "state.json"))
+
+    def test_plugin_data_wins_over_legacy_per_file(self) -> None:
+        self._write_list_shaped_artifacts()
+        self._write_plugin_file(
+            "scan_snapshot.json",
+            {"generated_at": 1_760_000_000, "achievements": [{"id": "fresh-badge", "state": "discovered"}]},
+            directory=self.data_dir,
+        )
+
+        payload = observe_achievements(self.paths)
+
+        # The plugin migrates file by file, so a state.json not yet copied
+        # forward is still read from the legacy directory.
+        self.assertEqual(payload["source"]["snapshot_location"], "plugin_data")
+        self.assertEqual(payload["source"]["state_location"], "legacy_plugins_dir")
+        self.assertIsNotNone(find_badge(payload["badges"], "fresh-badge"))
+        self.assertIsNone(find_badge(payload["badges"], "let-him-cook"))
+        self.assertEqual(payload["snapshot_freshness"]["generated_at"], 1_760_000_000)
+
+    def test_unreadable_plugin_data_file_does_not_fall_back_to_legacy(self) -> None:
+        self._write_list_shaped_artifacts()
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        (self.data_dir / "scan_snapshot.json").write_text("{not json", encoding="utf-8")
+
+        payload = observe_achievements(self.paths)
+
+        self.assertEqual(payload["source"]["snapshot_location"], "plugin_data")
+        self.assertFalse(payload["source"]["snapshot_observed"])
+        self.assertEqual(len(payload["errors"]), 1)
+        self.assertIsNone(find_badge(payload["badges"], "let-him-cook"))
+
+    def test_markdown_reports_snapshot_freshness(self) -> None:
+        self._write_plugin_data_artifacts()
+
+        document = render_achievements_markdown(observe_achievements(self.paths, now=1_760_000_060))
+
+        self.assertIn(
+            "- Snapshot: fresh by the plugin's 120s rescan rule (generated 2025-10-09T08:53:20Z, age 60s)",
+            document,
+        )
+
+    def test_epoch_timestamps_render_as_utc_and_stay_raw_in_json(self) -> None:
+        self._write_plugin_data_artifacts()
+
+        payload = observe_achievements(self.paths, now=1_760_000_060)
+        document = render_achievements_markdown(payload)
+
+        self.assertEqual(payload["summary"]["last_scan_at"], "1760000000")
+        self.assertEqual(find_badge(payload["badges"], "let_him_cook")["unlocked_at"], "1759000000")
+        self.assertIn("- Last plugin scan: 2025-10-09T08:53:20Z", document)
+        self.assertIn("| Let Him Cook (`let_him_cook`) | silver | unlocked | 20% | 2025-09-27T19:06:40Z |", document)
+        self.assertNotIn("1759000000", document)
+
+    def test_iso_timestamps_render_as_written(self) -> None:
+        self._write_list_shaped_artifacts()
+
+        document = render_achievements_markdown(observe_achievements(self.paths))
+
+        self.assertIn("- Last plugin scan: 2026-07-01T10:00:00Z", document)
+        self.assertIn("| 2026-06-30T09:00:00Z |", document)
+
+    def test_files_saved_with_a_byte_order_mark_are_read(self) -> None:
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        (self.data_dir / "scan_snapshot.json").write_text(
+            "\ufeff" + json.dumps({"generated_at": 1_760_000_000, "achievements": [{"id": "a", "state": "unlocked"}]}),
+            encoding="utf-8",
+        )
+        (self.data_dir / "state.json").write_text(
+            "\ufeff" + json.dumps({"unlocks": {"b": {"unlocked_at": 1_760_000_000}}}),
+            encoding="utf-8",
+        )
+
+        payload = observe_achievements(self.paths)
+
+        self.assertEqual(payload["errors"], [])
+        self.assertTrue(payload["source"]["snapshot_observed"])
+        self.assertTrue(payload["source"]["state_observed"])
+        self.assertEqual(payload["summary"]["unlocked_count"], 2)
+
+
 class AgentProfileTests(HermesAchievementsTestCase):
     def test_profile_derived_from_observed_badges(self) -> None:
         self._write_list_shaped_artifacts()
@@ -207,30 +519,21 @@ class AgentProfileTests(HermesAchievementsTestCase):
         self.assertEqual(profile["strengths"], ["debugging", "lifestyle"])
         self.assertEqual(profile["gaps"], ["toolchain"])
         self.assertEqual(profile["top_tier"], "gold")
-        self.assertFalse(profile["source"]["agent_summary_observed"])
 
-    def test_upstream_agent_summary_takes_precedence(self) -> None:
+    def test_agent_summary_file_is_not_read(self) -> None:
+        # The bundled plugin has no writer for this file, so a leftover copy
+        # in either directory must not stand in for the observed badges.
         self._write_list_shaped_artifacts()
-        self._write_plugin_file(
-            "agent_summary.json",
-            {
-                "strengths": ["autonomous toolchains", "error recovery"],
-                "gaps": ["skill usage", "model variety"],
-                "top_tier": "diamond",
-                "unlocked_count": 12,
-                "total_count": 60,
-            },
-        )
+        stray = {"strengths": ["autonomous toolchains"], "gaps": ["skill usage"], "top_tier": "diamond"}
+        self._write_plugin_file("agent_summary.json", stray)
+        self._write_plugin_file("agent_summary.json", stray, directory=self.data_dir)
 
         profile = observe_achievements(self.paths)["agent_profile"]
 
-        self.assertEqual(profile["derivation"], "upstream_agent_summary")
-        self.assertEqual(profile["strengths"], ["autonomous toolchains", "error recovery"])
-        self.assertEqual(profile["gaps"], ["skill usage", "model variety"])
-        self.assertEqual(profile["top_tier"], "diamond")
-        self.assertEqual(profile["unlocked_count"], 12)
-        self.assertEqual(profile["total_count"], 60)
-        self.assertTrue(profile["source"]["agent_summary_observed"])
+        self.assertEqual(profile["derivation"], "derived_from_observed_badges")
+        self.assertEqual(profile["strengths"], ["debugging", "lifestyle"])
+        self.assertEqual(profile["top_tier"], "gold")
+        self.assertNotIn("source", profile)
 
     def test_profile_without_artifacts_is_unobserved(self) -> None:
         profile = observe_achievements(self.paths)["agent_profile"]
@@ -300,6 +603,34 @@ class AchievementsCliTests(HermesAchievementsTestCase):
         payload = json.loads(stdout)
         self.assertEqual(payload["schema_version"], "hermes_achievements_observation/v1")
         self.assertEqual(payload["status"], "not_observed")
+
+    def test_summary_text_without_artifacts_names_both_directories(self) -> None:
+        status, stdout, stderr = run_cli([*self._base_args(), "achievements", "summary"], output_json=False)
+
+        self.assertEqual(status, 0, stderr)
+        # The CLI resolves `--hermes-home`, so compare resolved paths.
+        self.assertIn(f"Looked in: {self.data_dir.resolve()}, then {self.plugin_dir.resolve()}", stdout)
+
+    def test_summary_text_reports_plugin_data_snapshot_staleness(self) -> None:
+        self._write_plugin_data_artifacts()
+
+        status, stdout, stderr = run_cli([*self._base_args(), "achievements", "summary"], output_json=False)
+
+        self.assertEqual(status, 0, stderr)
+        self.assertIn("Unlocked: 2 / 4", stdout)
+        self.assertIn("Snapshot: stale by the plugin's 120s rescan rule (generated 2025-10-09T08:53:20Z", stdout)
+        self.assertIn("Last plugin scan: 2025-10-09T08:53:20Z", stdout)
+        self.assertIn("- weekend_warrior [copper] (2025-10-03T14:00:00Z)", stdout)
+
+    def test_show_text_renders_unlock_time_as_utc(self) -> None:
+        self._write_plugin_data_artifacts()
+
+        status, stdout, stderr = run_cli(
+            [*self._base_args(), "achievements", "show", "let_him_cook"], output_json=False
+        )
+
+        self.assertEqual(status, 0, stderr)
+        self.assertIn("Unlocked At: 2025-09-27T19:06:40Z", stdout)
 
     def test_summary_text_prints_unlocks_and_boundary(self) -> None:
         self._write_list_shaped_artifacts()
@@ -377,6 +708,179 @@ class AchievementsHudTests(HermesAchievementsTestCase):
         self.assertEqual(payload["achievements"]["unlocked_count"], 2)
         self.assertEqual(payload["achievements"]["total_count"], 3)
         self.assertIn("ach:2/3", payload["display"]["segments"])
+
+    def test_full_preset_hud_reads_plugin_data_layout(self) -> None:
+        self._write_plugin_data_artifacts()
+
+        status, stdout, stderr = run_cli([*self._base_args(), "hud", "--preset", "full", "--json"])
+
+        self.assertEqual(status, 0, stderr)
+        payload = json.loads(stdout)
+        self.assertEqual(
+            payload["achievements"],
+            {"observed": True, "unlocked_count": 2, "total_count": 3, "total_status": "observed"},
+        )
+        self.assertIn("ach:2/3", payload["display"]["segments"])
+
+    def _write_oversized_snapshot(self, *, sessions_first: bool) -> None:
+        # Shaped like the plugin's own file: per-session stats for a long
+        # history make it far larger than the HUD read cap.
+        sessions = [
+            {"session_id": f"s-{index:05d}", "title": f"session {index}", "tool_call_count": index}
+            for index in range(6000)
+        ]
+        badges = [
+            {"id": "let_him_cook", "state": "unlocked", "unlocked": True},
+            {"id": "patch_wizard", "state": "discovered", "unlocked": False},
+            {"id": "port_3000_taken", "state": "secret", "unlocked": False},
+        ]
+        members = {"generated_at": 1_760_000_000, "total_count": 3, "unlocked_count": 1}
+        if sessions_first:
+            text = json.dumps({"sessions": sessions, "achievements": badges, **members}, indent=2)
+        else:
+            text = json.dumps({"achievements": badges, "sessions": sessions, **members}, indent=2, sort_keys=True)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        path = self.data_dir / "scan_snapshot.json"
+        path.write_text(text, encoding="utf-8")
+        self.assertGreater(path.stat().st_size, runtime_reader.MAX_HUD_METADATA_BYTES)
+        self._write_plugin_file(
+            "state.json",
+            {"unlocks": {"let_him_cook": {"unlocked_at": 1}, "weekend_warrior": {"unlocked_at": 2}}},
+            directory=self.data_dir,
+        )
+
+    def test_full_preset_hud_counts_badges_in_a_snapshot_over_the_read_cap(self) -> None:
+        self._write_oversized_snapshot(sessions_first=False)
+
+        status, stdout, stderr = run_cli([*self._base_args(), "hud", "--preset", "full", "--json"])
+
+        self.assertEqual(status, 0, stderr)
+        payload = json.loads(stdout)
+        self.assertEqual(
+            payload["achievements"],
+            {"observed": True, "unlocked_count": 2, "total_count": 3, "total_status": "observed"},
+        )
+        self.assertIn("ach:2/3", payload["display"]["segments"])
+        self.assertNotIn("s-00001", stdout)
+
+    def test_full_preset_hud_reports_an_unreadable_total_as_not_observed(self) -> None:
+        self._write_oversized_snapshot(sessions_first=True)
+
+        status, stdout, stderr = run_cli([*self._base_args(), "hud", "--preset", "full", "--json"])
+
+        self.assertEqual(status, 0, stderr)
+        payload = json.loads(stdout)
+        self.assertEqual(
+            payload["achievements"],
+            {"observed": True, "unlocked_count": 2, "total_count": None, "total_status": "not_observed"},
+        )
+        self.assertIn("ach:2", payload["display"]["segments"])
+        self.assertFalse(any(segment.startswith("ach:2/") for segment in payload["display"]["segments"]))
+
+    def test_hud_reads_a_state_file_saved_with_a_byte_order_mark(self) -> None:
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        (self.data_dir / "state.json").write_text(
+            "\ufeff" + json.dumps({"unlocks": {"a": {}, "b": {}}}), encoding="utf-8"
+        )
+        (self.data_dir / "scan_snapshot.json").write_text(
+            "\ufeff" + json.dumps({"achievements": [{"id": "a"}, {"id": "b"}, {"id": "c"}]}), encoding="utf-8"
+        )
+
+        status, stdout, stderr = run_cli([*self._base_args(), "hud", "--preset", "full", "--json"])
+
+        self.assertEqual(status, 0, stderr)
+        self.assertIn("ach:2/3", json.loads(stdout)["display"]["segments"])
+
+    def test_leading_member_reader_never_takes_a_member_the_cap_cuts_off(self) -> None:
+        path = self.hermes_home / "doc.json"
+        self.hermes_home.mkdir(parents=True, exist_ok=True)
+        text = '{"achievements": [1], "count": 123456789}'
+        path.write_text(text, encoding="utf-8")
+        cut = text.index("123456789") + 5
+
+        with mock.patch.object(runtime_reader, "MAX_HUD_METADATA_BYTES", cut):
+            members = runtime_reader._read_hud_json_leading_members(path, root=self.hermes_home)
+
+        self.assertEqual(members, {"achievements": [1]})
+
+    def test_leading_member_reader_survives_a_cap_inside_a_multibyte_character(self) -> None:
+        path = self.hermes_home / "doc.json"
+        self.hermes_home.mkdir(parents=True, exist_ok=True)
+        raw = '{"achievements": [1], "title": "\u00e9\u00e9"}'.encode("utf-8")
+        cut = raw.index("\u00e9".encode("utf-8")) + 1
+        path.write_bytes(raw)
+
+        with mock.patch.object(runtime_reader, "MAX_HUD_METADATA_BYTES", cut):
+            members = runtime_reader._read_hud_json_leading_members(path, root=self.hermes_home)
+
+        self.assertEqual(members, {"achievements": [1]})
+
+    def test_hud_snapshot_without_a_badge_list_and_no_state_is_not_observed(self) -> None:
+        self._write_plugin_file(
+            "scan_snapshot.json", {"generated_at": 1_760_000_000, "sessions": []}, directory=self.data_dir
+        )
+
+        status, stdout, stderr = run_cli([*self._base_args(), "hud", "--preset", "full", "--json"])
+
+        self.assertEqual(status, 0, stderr)
+        payload = json.loads(stdout)
+        self.assertFalse(payload["achievements"]["observed"])
+        self.assertIsNone(payload["achievements"]["unlocked_count"])
+        self.assertFalse(any(segment.startswith("ach:") for segment in payload["display"]["segments"]))
+
+    def test_hud_survives_a_badge_list_nested_past_the_recursion_limit(self) -> None:
+        depth = 100_000
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        (self.data_dir / "scan_snapshot.json").write_text(
+            '{"achievements": ' + "[" * depth + "]" * depth + "}", encoding="utf-8"
+        )
+
+        summary = runtime_reader._achievements_summary(self.hermes_home)
+
+        self.assertEqual(
+            summary,
+            {"observed": False, "unlocked_count": None, "total_count": None, "total_status": "not_observed"},
+        )
+
+    def test_leading_member_reader_applies_the_hidden_content_filter(self) -> None:
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        path = self.data_dir / "scan_snapshot.json"
+        path.write_text(json.dumps({"achievements": [{"id": "a", "reasoning": "hidden"}]}), encoding="utf-8")
+
+        members = runtime_reader._read_hud_json_leading_members(path, root=self.hermes_home)
+
+        self.assertEqual(members, {})
+
+    def test_leading_member_reader_survives_recursion_in_the_hidden_content_filter(self) -> None:
+        # The filter recurses in Python, so a list the C decoder accepts can
+        # still be too deep for it; how deep depends on the interpreter.
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        path = self.data_dir / "scan_snapshot.json"
+        path.write_text(json.dumps({"achievements": [{"id": "a"}]}), encoding="utf-8")
+
+        with mock.patch.object(runtime_reader, "_has_raw_or_hidden_content", side_effect=RecursionError):
+            members = runtime_reader._read_hud_json_leading_members(path, root=self.hermes_home)
+
+        self.assertEqual(members, {})
+
+    def test_full_preset_hud_prefers_plugin_data_over_legacy(self) -> None:
+        self._write_list_shaped_artifacts()
+        self._write_plugin_file(
+            "scan_snapshot.json",
+            {"generated_at": 1_760_000_000, "achievements": [{"id": "only", "state": "unlocked"}]},
+            directory=self.data_dir,
+        )
+        self._write_plugin_file("state.json", {"unlocks": {"only": {"unlocked_at": 1_760_000_000}}}, directory=self.data_dir)
+
+        status, stdout, stderr = run_cli([*self._base_args(), "hud", "--preset", "full", "--json"])
+
+        self.assertEqual(status, 0, stderr)
+        payload = json.loads(stdout)
+        self.assertEqual(
+            payload["achievements"],
+            {"observed": True, "unlocked_count": 1, "total_count": 1, "total_status": "observed"},
+        )
+        self.assertIn("ach:1/1", payload["display"]["segments"])
 
     def test_focused_preset_hud_omits_achievements_segment(self) -> None:
         self._write_list_shaped_artifacts()

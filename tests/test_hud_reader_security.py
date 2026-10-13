@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
 import unittest
 from unittest.mock import patch
 
@@ -173,10 +174,11 @@ class HudReaderSecurityTests(unittest.TestCase):
                         path: Path,
                         *,
                         root: Path | None = None,
+                        **kwargs: Any,
                     ) -> str | None:
                         if path == target:
                             return None
-                        return original_read(path, root=root)
+                        return original_read(path, root=root, **kwargs)
 
                     def collapsed_exists(path: Path) -> bool:
                         return False if path == target else original_exists(path)
@@ -201,10 +203,10 @@ class HudReaderSecurityTests(unittest.TestCase):
             os.utime(newer_contract, (newer_mtime, newer_mtime))
             original_read = runtime_reader._read_hud_text
 
-            def unreadable(path: Path, *, root: Path | None = None) -> str | None:
+            def unreadable(path: Path, *, root: Path | None = None, **kwargs: Any) -> str | None:
                 if path == newer_contract:
                     return None
-                return original_read(path, root=root)
+                return original_read(path, root=root, **kwargs)
 
             with patch.object(runtime_reader, "_read_hud_text", unreadable):
                 graph = _graph(paths)

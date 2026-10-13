@@ -440,20 +440,18 @@ class OmhPaths:
         return self.hermes_plugins_dir / "omh"
 
     @property
-    def hermes_achievements_plugin_dir(self) -> Path:
+    def hermes_achievements_data_dir(self) -> Path:
+        # Where the bundled hermes-achievements plugin keeps its durable files
+        # (Hermes `plugins/plugin_storage.py`). `hermes_home` already follows
+        # the active profile, as the plugin's own `get_hermes_home()` does.
+        return self.hermes_home / "plugin-data" / "hermes-achievements"
+
+    @property
+    def hermes_achievements_legacy_dir(self) -> Path:
+        # The install directory the plugin wrote before plugin-data existed. The
+        # plugin copies a file forward from here on first read and never writes
+        # here again, so a copy here is current only while plugin-data has none.
         return self.hermes_plugins_dir / "hermes-achievements"
-
-    @property
-    def hermes_achievements_snapshot_path(self) -> Path:
-        return self.hermes_achievements_plugin_dir / "scan_snapshot.json"
-
-    @property
-    def hermes_achievements_state_path(self) -> Path:
-        return self.hermes_achievements_plugin_dir / "state.json"
-
-    @property
-    def hermes_achievements_agent_summary_path(self) -> Path:
-        return self.hermes_achievements_plugin_dir / "agent_summary.json"
 
     @property
     def hermes_agents_dir(self) -> Path:

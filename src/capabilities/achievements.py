@@ -10,8 +10,9 @@ def achievement_evidence_contracts() -> list[dict[str, object]]:
             "id": "hermes_achievements_observation",
             "display_name": "Hermes achievements observation",
             "source": (
-                "Local hermes-achievements plugin artifacts: scan_snapshot.json, state.json, "
-                "and agent_summary.json when the upstream plugin writes it."
+                "Local hermes-achievements plugin artifacts scan_snapshot.json and state.json, each read from "
+                "plugin-data/hermes-achievements/ in the active profile's Hermes home first and the legacy "
+                "plugins/hermes-achievements/ install directory second."
             ),
             "claim_kind": "observed_badge_metadata",
             "claim_fields": [

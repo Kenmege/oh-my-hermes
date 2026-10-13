@@ -1566,8 +1566,11 @@ _FEATURE_SURFACE_SKILLS = (
         phase="telemetry-card",
         next_action="show_achievements_summary",
         boundary=(
-            "An achievements card reflects only locally observed hermes-achievements plugin artifacts; it is not a "
-            "session-history rescan, badge recomputation, unlock proof beyond those artifacts, or productivity evidence."
+            "An achievements card reflects only the hermes-achievements plugin's local files, read from "
+            "`plugin-data/hermes-achievements/` under the active profile's Hermes home first and the legacy "
+            "`plugins/hermes-achievements/` second, as of the snapshot's `generated_at` and stale once older than "
+            "the plugin's rescan window; it is not a session-history rescan, badge recomputation, unlock proof beyond "
+            "those files, or productivity evidence."
         ),
         good_prompt="achievements show my unlocked badges and what is closest to the next tier.",
         bad_prompt="achievements recompute my session history and grant the missing badges.",
