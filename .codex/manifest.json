@@ -181,7 +181,7 @@
     "omh-voice-input/SKILL.md": "d15fab885fb53df39b45466ab376d983a70a204ecba10a809e442c8ce2f7c283",
     "omh-web-research/SKILL.md": "d52ac78758bf8dd79cf02bc86a1b71138d119de1fc75fdeec47a791886a3507a",
     "omh-wiki/SKILL.md": "5d166038d310402a398e81bccbe225b7d5f6843046deb2170dbb87dc39f8bc60",
-    "omh-wiki/references/wiki-blueprint.md": "6f99240689395f0b37cf57e09b4c38d1c134820271dc7cd83c6693e2c8693c5c",
+    "omh-wiki/references/wiki-blueprint.md": "2ff6894489712962ea86e135462c8bdc74039bb2587566d5abec0201c8828c9d",
     "omh-wiki/references/wiki-operations.md": "656b7873c4d9ad4458244bb376d4808dac9af7a520c35b6f22b58cbbe8434528",
     "omh-wiki/references/wiki-patterns.md": "f13fd0b06dde204c10458cabb5d76b1f21351f7b641a73336eb82342d33ff16e",
     "omh-workspace-audit/SKILL.md": "1844186a7a9919f935c74e641e13be7e37618dd84b9aa0ad4204e060bfdc51b7",
@@ -190,10 +190,10 @@
     "ulw-context/references/project-terms.md": "0b6baee554fc8fa813d9b4b86aab55a9858441d2c3b2d90ef0d037a8f12afd45",
     "ulw-interview/SKILL.md": "dd48ecd5054055b33052b0664d9741a9962bf4e60ead032426603fc8d74493aa",
     "ulw-interview/references/ambiguity-taxonomy.md": "af4b13bcfe583b138e9b1de47a851e40e227ce30b0404fcb10bfa16abe297d3a",
-    "ulw-loop/SKILL.md": "207993e4273ef02167f70c4f348d25eb3c20f800ab230d66370fc21dfa58aca9",
+    "ulw-loop/SKILL.md": "cf972cfcdb2a95898b12a4d0b284461205a8f5c4b5e56af884d33182cbb0b513",
     "ulw-loop/references/goal-constraint-discipline.md": "e9755a82604a6b9d363716b6bf33bc980406ea40bce813d763eda9703e1a093f",
     "ulw-loop/references/loop-design-review.md": "c56c960fae8793b2f7932703a824a1baeef9e8cdfaa4cea679da1e4b4735ed9c",
-    "ulw-loop/references/measured-loop-discipline.md": "1c3da401271e023ea21cf5aa0a1cee488cdb9bb8ca966251dc0bca767af00dfb",
+    "ulw-loop/references/measured-loop-discipline.md": "857c7918fd278e8fca1d420c57e9ab4b6e337e44f039dcc6eb5e14ae5204b4fb",
     "ulw-perf/SKILL.md": "4189814b67cd81e446f42dc0dbb0e91168c065d2833b9dbc895539226bb927ad",
     "ulw-plan/SKILL.md": "b4083d2acaca9857391e0212e10f917802a5f77a05a86ecbeb6e3e9f8f08c080",
     "ulw-qa/SKILL.md": "11049ec3a49f47c5b0447cb8faa6b36ade31da65219def1a9d5526d9f535479f",
@@ -318,7 +318,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "84634a703cf8899f6b3b458a696569fad0fe81a3385518afb47f18aaa266c8da",
+  "source_digest": "ac797eafe0fb7a1b7b536137ee2f2d578cda59ac5d36adceb1fac8e98884f119",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

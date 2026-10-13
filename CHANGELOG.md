@@ -4,6 +4,29 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Every shipped skill installs under the Hermes install scanner of every
+  supported Hermes release, not only one.** Hermes changes
+  `tools/skills_guard.py` between releases, and the repo gate ran only the
+  copy Hermes 0.21.6 ships. The scanner in Hermes 0.21.1 through 0.21.3, the
+  `requires_hermes` floor, matches `context_exfil` across a whole line of
+  plain words and inside a word ("A blueprint is prepared design context"
+  reads as `print … context`), so `omh-routing`, `omh-wiki` and `ulw-loop`,
+  and the `agent-skills/` copies of the last two, scanned `caution` there,
+  which blocks a community tap install. Four lines are reworded at their
+  producers with their meaning kept: the omh-routing wrapper reference
+  heading is now "Context Safety For Large Output", the wiki blueprint
+  reference calls a blueprint a prepared design artifact, and ulw-loop's
+  log rule and measured-loop reference speak of logging a cycle to a file.
+  `tests/test_hermes_install_scan.py` now runs the scanners from Hermes
+  0.21.1 (v2), 0.21.6 (v8) and 0.21.7 and upstream main (v10), each
+  vendored verbatim under `tests/_vendor/`, over `skills/` and
+  `agent-skills/`, and pins each version's severity for the sentences that
+  blocked installs (v10 scores a bare `setgid` and a `sudo` in Markdown as
+  informational). The scanner in Hermes 0.21.4 and 0.21.5 (v6) is not
+  vendored: its rule ids all appear in the three, and the test's docstring
+  names the pipe shape only v6 flags. `requires_hermes` is unchanged.
+
+
 - **OMH memory works in messenger DMs and group channels (#2088).** Every
   gateway session was a shared surface, which denies every identity-unbound
   record, so a single user's own Slack DM recalled none of their 33 approved

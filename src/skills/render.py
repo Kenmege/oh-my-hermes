@@ -1104,7 +1104,7 @@ When a handoff is expected to produce more than one commit, plan the commits bef
 
 A commit plan is preparation. Commits, review, CI, and merge stay separately observed.
 
-## Large Output And Context Safety
+## Context Safety For Large Output
 
 Wrappers must keep raw Codex JSONL, tool output, process logs, and oversized
 executor notes out of Hermes chat context. Use `omh chat codex-progress` or the
@@ -2061,7 +2061,7 @@ Route existing `USER.md`/`MEMORY.md` cleanup to `memory-sync`, new durable proje
 - `ecosystem_candidates` — upstream skills worth evaluating first, metadata only.
 - `missing_facts` — what the interview still needs; never guessed.
 
-A blueprint is prepared design context. It is not evidence that a store was created, written to, migrated, or that any page exists.
+A blueprint is a prepared design artifact. It is not evidence that a store was created, written to, migrated, or that any page exists.
 """
 
 
@@ -4692,7 +4692,7 @@ OMH emits no such ledger. It is the loop's own running record and a companion to
 
 Send full command output to a file. Bring only the declared metric line and any error lines into context. Read the whole log only when the status is `crash`.
 
-Context spent re-reading passing output is context not spent on the next attempt: a loop that pastes a green log every cycle exhausts its budget before it exhausts its ideas.
+Context spent re-reading a passing cycle's log is context not spent on the next attempt: a loop that pastes a green log every cycle exhausts its budget before it exhausts its ideas.
 
 ## Idea Exhaustion
 
