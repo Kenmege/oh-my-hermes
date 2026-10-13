@@ -928,6 +928,71 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(app.composer.text, "fix the flaky test\n/learn the build")
 
 
+class ModeChipTests(unittest.TestCase):
+    """Below 10 rows the mode row is not drawn, so the status line says which mode is on."""
+
+    def status(self, mode: str, rows: int, cols: int = 80) -> str:
+        app, _client = make_app(rows=rows, cols=cols)
+        app.mode = mode
+        return status_row_of(drawn(app))
+
+    def test_a_short_terminal_carries_the_mode_on_the_status_line(self) -> None:
+        # From 3 rows: a 2-row terminal has room for the composer alone and draws no status line at all.
+        for rows in (3, 5, 6, 7, 9):
+            with self.subTest(rows=rows):
+                self.assertTrue(self.status(MODE_ACCEPT, rows).rstrip().endswith("⏵⏵ accept │ idle"))
+                self.assertTrue(self.status(MODE_PLAN, rows).rstrip().endswith("⏸ plan │ idle"))
+
+    def test_normal_mode_adds_nothing_to_the_status_line(self) -> None:
+        for rows in (5, 9, 10, 24):
+            with self.subTest(rows=rows):
+                self.assertEqual(self.status(MODE_NORMAL, rows).rstrip(), "⚚ OMH │ idle")
+
+    def test_where_the_mode_row_is_drawn_the_status_line_does_not_repeat_it(self) -> None:
+        for rows in (10, 11, 24, 40):
+            for mode, label in ((MODE_ACCEPT, "⏵⏵ accept all on"), (MODE_PLAN, "⏸ plan mode on")):
+                with self.subTest(rows=rows, mode=mode):
+                    app, _client = make_app(rows=rows)
+                    app.mode = mode
+                    screen = drawn(app)
+                    self.assertEqual(status_row_of(screen).rstrip(), "⚚ OMH │ idle")
+                    self.assertTrue(any(line.startswith(label) for line in screen))
+
+    def test_a_terminal_too_narrow_for_the_mode_row_carries_the_chip_too(self) -> None:
+        # Under 20 columns only composer and status are drawn, whatever the height. At 19 the
+        # chip and the state fill the line, so the brand is what gives way.
+        for mode, expected in ((MODE_ACCEPT, " │ ⏵⏵ accept │ idle"), (MODE_PLAN, " │ ⏸ plan │ idle")):
+            with self.subTest(mode=mode):
+                app, _client = make_app(rows=24, cols=19)
+                app.mode = mode
+                self.assertIn(expected, "\n".join(drawn(app)))
+        wide, _client = make_app(rows=24, cols=20)
+        wide.mode = MODE_ACCEPT
+        self.assertEqual(status_row_of(drawn(wide)).rstrip(), "⚚ OMH │ idle")
+
+    def test_the_chip_outlasts_the_model_and_the_context_when_the_line_is_cut(self) -> None:
+        app, _client = make_app(rows=9, cols=30)
+        app.mode = MODE_ACCEPT
+        app.model, app.context = "a-rather-long-model-name", "ctx 14k/1M 1%"
+        text = line_text(app._status_line(30))
+        self.assertEqual(text.rstrip(), "⚚ OMH │ ⏵⏵ accept │ idle")
+        self.assertEqual(line_width(app._status_line(30)), 30)
+
+    def test_the_chip_takes_the_modes_colour_on_the_bar_and_reads_on_every_palette(self) -> None:
+        from omh.skin_pack import theme_names
+        from omh.tui.theme import TEXT_CONTRAST, contrast_ratio, theme_named
+
+        for name in theme_names():
+            theme = theme_named(name)
+            for mode, colour in ((MODE_ACCEPT, theme.mode_accept), (MODE_PLAN, theme.mode_plan)):
+                with self.subTest(theme=name, mode=mode):
+                    app, _client = make_app(rows=9, theme=theme)
+                    app.mode = mode
+                    chip = next(span for span in app._status_line(80) if span.text in ("⏵⏵ accept", "⏸ plan"))
+                    self.assertEqual((chip.style.fg, chip.style.bg, chip.style.bold), (colour.fg, theme.status.bg, True))
+                    self.assertGreaterEqual(contrast_ratio(chip.style.fg, chip.style.bg), TEXT_CONTRAST)
+
+
 def bells(app_or_terminal: object) -> int:
     terminal = getattr(app_or_terminal, "terminal", app_or_terminal)
     return "".join(terminal.writes).count("\a")  # type: ignore[attr-defined]

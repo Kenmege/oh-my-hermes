@@ -101,7 +101,7 @@ from .gateway import (
 )
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Mouse, Paste
 from .launch import FALLBACK_EXIT
-from .layout import slot_cap
+from .layout import slot_cap, under_composer
 from .markdown import clean_text
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
@@ -164,6 +164,8 @@ ACCEPT_LABEL = "⏵⏵ accept all on"
 ACCEPT_HINT = " · approvals off for this session (⇧⇥ to cycle)"
 PLAN_LABEL = "⏸ plan mode on"
 PLAN_HINT = " (⇧⇥ to cycle)"
+# The mode on the status line, where the terminal is too short for the mode row.
+MODE_CHIPS = {MODE_ACCEPT: "⏵⏵ accept", MODE_PLAN: "⏸ plan"}
 MODE_ROW_GAP = 3
 # The context figure turns warn, then bad, on the status line.
 CONTEXT_WARN_PERCENT = 80
@@ -2055,13 +2057,24 @@ class App:
             return self.theme.status_bad
         return self.theme.status_warn if percent >= CONTEXT_WARN_PERCENT else self.theme.status
 
+    def _mode_chip(self) -> tuple[str, Style]:
+        """The mode in short for the status line: only where the mode row is not drawn and the mode is not normal."""
+        bar = self.theme.status
+        cols, rows = self.size
+        if under_composer(rows, cols)[1] or self.mode not in MODE_CHIPS:
+            return "", bar
+        colour = self.theme.mode_accept if self.mode == MODE_ACCEPT else self.theme.mode_plan
+        return MODE_CHIPS[self.mode], replace(colour, bg=bar.bg, bold=True)
+
     def _status_line(self, cols: int) -> Line:
         """OMH's segments, then model, context and state, on the status bar's background.
 
         The context turns warn from `CONTEXT_WARN_PERCENT` full and bad from
-        `CONTEXT_BAD_PERCENT`. When the line does not fit, the context goes
-        first and the model next; then OMH's segments are cut from their right,
-        so the state (idle / running / waiting on you) is the last thing cut.
+        `CONTEXT_BAD_PERCENT`. A terminal too short for the mode row carries
+        the mode here, before the state, so accept and plan are never
+        invisible. When the line does not fit, the context goes first and the
+        model next; then OMH's segments are cut from their right, so the mode
+        and the state (idle / running / waiting on you) are the last things cut.
         """
         bar = self.theme.status
         payload = self.hud.payload if self.hud is not None else None
@@ -2069,8 +2082,9 @@ class App:
             Span(span.text, replace(span.style, bg=bar.bg)) for span in status_segments(payload, self.theme)
         )
         model, context, state = (self.model, bar), (self.context, self._context_style()), (self._state_text(), bar)
+        chip = self._mode_chip()
         tail: Line = ()
-        for fields in ((model, context, state), (model, state), (state,)):
+        for fields in ((model, context, chip, state), (model, chip, state), (chip, state)):
             tail = tuple(
                 span
                 for text, style in fields

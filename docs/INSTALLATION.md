@@ -312,7 +312,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - The mode row names the input mode, or the keys that matter right now, and
   the reasoning effort when Hermes reports one; both rules take the mode's
   glyph and colour, so the mode reads from the frame as well as the label.
-  A short terminal drops the mode row first, then the lower rule.
+  A short terminal drops the mode row first, then the lower rule; without the
+  mode row the status line names the mode (`⏵⏵ accept`, `⏸ plan`) whenever it
+  is not normal.
 - The composer does not move when the panel grows or shrinks; only its own
   lines move it.
 - When Hermes asks something (an approval, a clarify question, a sudo
