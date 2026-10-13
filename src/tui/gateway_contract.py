@@ -31,7 +31,6 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "client.capabilities": frozenset({"server_requests"}),
     "config.get": frozenset({"key"}),
     "commands.catalog": frozenset(),
-    "complete.slash": frozenset({"text", "session_id"}),
     "complete.path": frozenset({"word", "session_id"}),
     "session.create": frozenset({"cols", "cwd"}),
     "session.resume": frozenset({"session_id", "cols"}),
@@ -46,7 +45,6 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "input.detect_drop": frozenset({"session_id", "text"}),
     "slash.exec": frozenset({"command", "session_id"}),
     "command.dispatch": frozenset({"name", "arg", "session_id"}),
-    "config.set": frozenset({"key", "value", "session_id"}),
 }
 
 # Events the TUI renders. Anything else is ignored, never an error: the gateway

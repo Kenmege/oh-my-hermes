@@ -119,6 +119,7 @@ class GatewaySpawnTests(unittest.TestCase):
         self.assertTrue(attach_refused({**LAUNCHER_ENV, contract.ATTACH_ENV: "ws://127.0.0.1:9/attach"}))
         self.assertFalse(attach_refused(LAUNCHER_ENV))
         self.assertFalse(attach_refused({**LAUNCHER_ENV, contract.ATTACH_ENV: ""}))
+        self.assertFalse(attach_refused({**LAUNCHER_ENV, contract.ATTACH_ENV: " \t\n"}))
 
 
 class FixtureTests(unittest.TestCase):

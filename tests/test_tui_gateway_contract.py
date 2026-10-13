@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
 import unittest
 
 from omh.tui import gateway_contract as contract
@@ -43,6 +45,17 @@ class ClientMethodTests(unittest.TestCase):
     def test_undeclared_params_names_only_the_extra_keys(self) -> None:
         self.assertEqual(contract.undeclared_params("session.create", {"cols": 80, "cwd": "/w"}), [])
         self.assertEqual(contract.undeclared_params("session.create", {"cols": 80, "title": "x"}), ["title"])
+
+    def test_every_declared_method_is_one_the_tui_calls(self) -> None:
+        # CLIENT_METHODS is "the methods the TUI calls": each name appears as a literal in a TUI module.
+        modules = [path for path in Path(contract.__file__).parent.glob("*.py") if path.name != "gateway_contract.py"]
+        literals = {
+            node.value
+            for path in modules
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        }
+        self.assertEqual(sorted(set(contract.CLIENT_METHODS) - literals), [])
 
     def test_every_key_of_an_undeclared_method_is_undeclared(self) -> None:
         self.assertEqual(contract.undeclared_params("voice.toggle", {"on": True}), ["on"])

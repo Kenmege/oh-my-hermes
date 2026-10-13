@@ -78,6 +78,7 @@ from .gateway import (
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, KeyDecoder, Paste
 from .launch import FALLBACK_EXIT
 from .layout import slot_cap
+from .markdown import clean_text
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
 from .prompts import CHOICE_DIGITS, Answer, ImmediateAnswer, PromptSlot, open_request
@@ -138,6 +139,14 @@ PATH_COMPLETE_DEBOUNCE_SECONDS = 0.12
 ATTACH_ICON = "📎"
 ATTACH_HINT = "Backspace removes"
 NO_SESSION_NOTICE = "No session is open yet; try again in a moment."
+CONNECTION_NOTICE = (
+    "Hermes is waiting for an app connection, which only Hermes' Desktop app or `hermes --tui` can complete. "
+    "Esc interrupts the turn."
+)
+YOLO_NOTE = (
+    "Hermes commands go to Hermes as you type them, /yolo included: it turns off Hermes' approval prompts, "
+    "so the OMH TUI then has none to show."
+)
 HELP_KEYS = (
     "Keys: Enter sends · \\ then Enter, Alt+Enter or Ctrl+J adds a line · Tab completes a /command or an @path\n"
     "Esc interrupts a running turn · Ctrl+V attaches the clipboard image (drag & drop works too) · "
@@ -519,6 +528,7 @@ class App:
         self.path_due: float | None = None  # when that call goes out (debounced)
         self.path_seq = 0  # the newest call; an answer to an older one is stale
         self.path_items: list[PathItem] = []
+        self.connection_ops: set[str] = set()  # `connection.request` operations already named in a notice
         self.dirty = True
         self.last_render = 0.0
 
@@ -729,15 +739,20 @@ class App:
         )
 
     def _on_event(self, event: Event) -> None:
+        payload = event.payload
+        if event.type in ("request.cancel", "approval.cancelled"):
+            # Matched by request id whatever the envelope says: a request from a session this TUI is
+            # leaving (a switch, `/new`) stays open here until its withdrawal arrives.
+            self._on_withdrawn(payload)
+            return
         if not event.type.startswith(contract.GATEWAY_SCOPED_EVENT_PREFIX) and event.session_id != self.sid:
             return
-        payload = event.payload
         if event.type == "session.info":
             self._on_session_info(payload)
         elif event.type == "session.usage":
             self.context = context_text(payload.get("usage")) or self.context
-        elif event.type in ("request.cancel", "approval.cancelled"):
-            self._on_withdrawn(payload)
+        elif event.type == "connection.request":
+            self._on_connection_request(payload)
         elif event.type == "error":
             self._on_error_event(_text(payload.get("message")) or "The gateway reported an error.")
         else:
@@ -763,6 +778,14 @@ class App:
         self.transcript.fail_turn(message)
         self.turn_pending = False
         self._drain_queue()
+
+    def _on_connection_request(self, payload: Mapping[str, Any]) -> None:
+        """Hermes waits on an app connection the TUI cannot complete; say so once per operation."""
+        operation = _text(payload.get("op_id"))
+        if operation in self.connection_ops:
+            return
+        self.connection_ops.add(operation)
+        self.transcript.add_notice(CONNECTION_NOTICE, NOTICE_WARN)
 
     def _on_session_info(self, payload: Mapping[str, Any]) -> None:
         self.model = _text(payload.get("model")) or self.model
@@ -804,6 +827,7 @@ class App:
             self.slot_draft = self.composer.text
             self._set_composer("")
             self.composer.masked = opened.masked
+            self.composer.records_history = False  # an answer to Hermes is not a prompt to recall
 
     def _answer(self, answer: Answer) -> None:
         self._respond(answer)
@@ -813,6 +837,7 @@ class App:
         slot, self.slot = self.slot, None
         if slot is not None and slot.wants_text:
             self.composer.masked = False
+            self.composer.records_history = True
             self._set_composer(self.slot_draft)
             self.slot_draft = ""
         while self.slot is None and self.waiting_requests:
@@ -1049,7 +1074,9 @@ class App:
         self._request("prompt.submit", params, lambda result: None, self._on_submit_error)
 
     def _on_submit_error(self, error: dict[str, Any]) -> bool:
+        """A refused prompt.submit: no turn will start, so the next queued prompt goes now, in order."""
         self.turn_pending = False
+        self._drain_queue()
         return False
 
     def _drain_queue(self) -> None:
@@ -1160,35 +1187,51 @@ class App:
         rows += [f"/{command.name:<10} {command.summary}" for command in COMMANDS if command.route == LOCAL]
         names = " ".join(name for name, _summary in self.catalog)
         rows.append(f"Hermes commands ({len(self.catalog)}): {names}" if names else "Hermes commands: none listed.")
+        rows.append(YOLO_NOTE)
         rows.append(HELP_KEYS)
         self.transcript.add_notice("\n".join(rows))
 
     def _quit(self, arg: str) -> None:
+        """Close the session first, so Hermes ends its runtime before the gateway reads end of input."""
+        if self.sid:
+            self._request("session.close", {"session_id": self.sid}, lambda result: None, lambda error: True)
         self.exit_code = 0
 
     def _new_session(self, arg: str) -> None:
+        """Create the new session first; the current one closes only once that worked."""
         if not self.sid:
-            self.transcript.add_notice("No session is open yet; try again in a moment.", NOTICE_WARN)
+            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
-        self._decline_all_requests()
-        old, self.sid = self.sid, ""  # the old session's events are dropped from here on
-        self._request(
-            "session.close",
-            {"session_id": old},
-            lambda result: self._create_session(),
-            lambda error: self._create_session() or True,
-        )
-
-    def _create_session(self) -> None:
-        self._request("session.create", self._create_params(), self._on_new_session)
+        self._request("session.create", self._create_params(), self._on_new_session, self._on_create_refused)
 
     def _on_new_session(self, result: dict[str, Any]) -> None:
+        self._enter_session(result)
+        self.transcript.add_notice(f"New session {self.stored_id}.")
+
+    def _on_create_refused(self, error: dict[str, Any]) -> bool:
+        message = _text(error.get("message")) or "refused"
+        self.transcript.add_notice(
+            f"Could not start a new session ({error.get('code')}): {message}. Still in {self.stored_id}.", NOTICE_WARN
+        )
+        return True
+
+    def _enter_session(self, result: Mapping[str, Any], fallback_stored: str = "") -> None:
+        """Leave the current session for the one `result` opened.
+
+        The old session's open requests are declined and its runtime closed;
+        everything that belonged to it (transcript, queue, sticky prompt,
+        attachments, HUD snapshot) is dropped before the new one is adopted.
+        """
+        old = self.sid
+        self._decline_all_requests()
+        if old and old != _text(result.get("session_id")):
+            self._request("session.close", {"session_id": old}, lambda result: None, lambda error: True)
         self.transcript = Transcript(self.clock)
         self.queued.clear()
         self.sticky = ""
-        self.attachments.clear()  # they were queued in the closed session
-        self._adopt_session(result)
-        self.transcript.add_notice(f"New session {self.stored_id}.")
+        self.attachments.clear()  # the gateway queued them for the session being left
+        self.hud = None
+        self._adopt_session(result, fallback_stored)
 
     # ── switching sessions ──
 
@@ -1230,17 +1273,8 @@ class App:
         )
 
     def _on_session_resumed(self, target: str, result: dict[str, Any]) -> None:
-        """Leave the old session (its requests declined, its runtime closed) and redraw the screen as the new one."""
-        old = self.sid
-        self._decline_all_requests()
-        if old and old != _text(result.get("session_id")):
-            self._request("session.close", {"session_id": old}, lambda result: None, lambda error: True)
-        self.transcript = Transcript(self.clock)
-        self.queued.clear()
-        self.sticky = ""
-        self.attachments.clear()
-        self.hud = None
-        self._adopt_session(result, fallback_stored=target)
+        """Leave the old session and redraw the screen as the resumed one."""
+        self._enter_session(result, fallback_stored=target)
         self._draw_history(result.get("messages"))
         self.banner_record = self._banner_record(result, resumed=self.stored_id)
         self._full_redraw()
@@ -1578,7 +1612,7 @@ def _start_gateway(client: GatewayClient, stderr: TextIO) -> Event | None:
     except GatewayUnavailable as error:
         _say(stderr, f"omh: the Hermes gateway did not start: {error}")
         for line in error.stderr_tail[-STARTUP_TAIL_LINES:]:
-            _say(stderr, f"  {line}")
+            _say(stderr, f"  {clean_text(line)}")  # the gateway's own text: no escape reaches the shell
     except GatewayCallError as error:
         _say(stderr, f"omh: the Hermes gateway refused the OMH TUI: {error}")
     return None

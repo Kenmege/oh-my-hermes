@@ -151,6 +151,19 @@ class ClarifyTests(unittest.TestCase):
     def test_escape_cancels_with_no_answers(self) -> None:
         self.assertEqual(slot("clarify", CLARIFY).handle_key(Key(ESCAPE)).frame, {"result": {}})
 
+    def test_the_hint_says_esc_cancels_because_it_cancels_every_question(self) -> None:
+        text = "\n".join("".join(span.text for span in row) for row in slot("clarify", CLARIFY).lines(80, DEFAULT_THEME, 6))
+        self.assertIn("Esc cancels", text)
+        self.assertNotIn("skips", text)
+
+    def test_a_clarify_with_no_question_is_declined_at_once_with_a_notice(self) -> None:
+        for params in ({}, {"questions": []}, {"questions": [{"question": "no qid"}, "not a dict"]}):
+            with self.subTest(params=params):
+                opened = prompts.open_request("srq-2", "clarify", params)
+                self.assertIsInstance(opened, prompts.ImmediateAnswer)
+                self.assertEqual(opened.answer.frame, {"result": {}})
+                self.assertIn("clarify", opened.notice)
+
     def test_only_the_digits_one_to_nine_pick_a_choice(self) -> None:
         for char in ("²", "٣", "0", "3", "١"):
             with self.subTest(char=char):

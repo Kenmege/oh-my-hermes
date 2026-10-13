@@ -390,6 +390,20 @@ class MaskedTests(unittest.TestCase):
         self.assertEqual(composer.handle(Key(ENTER)), ComposerAction(SUBMIT, "secret"))
         self.assertEqual(composer.history, ["old"])
 
+    def test_repr_shows_masked_text_as_bullets(self) -> None:
+        composer = Composer(masked=True)
+        typed(composer, "hunter2")
+        self.assertNotIn("hunter2", repr(composer))
+        self.assertIn("•••••••", repr(composer))
+        composer.masked = False
+        self.assertIn("hunter2", repr(composer))
+
+    def test_a_submit_with_history_recording_off_stays_out_of_history(self) -> None:
+        composer = Composer(history=["old"], records_history=False)
+        typed(composer, "blue")
+        self.assertEqual(composer.handle(Key(ENTER)), ComposerAction(SUBMIT, "blue"))
+        self.assertEqual(composer.history, ["old"])
+
     def test_masked_input_refuses_newlines(self) -> None:
         composer = Composer(masked=True)
         typed(composer, "a")

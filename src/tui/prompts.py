@@ -245,7 +245,7 @@ class PromptSlot:
             style = theme.menu_current if index == self.selected else theme.text
             rows.append((Span(f"  {index + 1}. ", theme.dim), Span(choice, style)))
         hint = "type an answer and press Enter" if not self._current_choices() else "number or Enter picks; or type an answer"
-        rows.append((Span(f"  {hint} · Esc skips", theme.dim),))
+        rows.append((Span(f"  {hint} · Esc cancels", theme.dim),))
         return rows
 
     def _value_lines(self, width: int, theme: Theme) -> list[Line]:
@@ -280,6 +280,9 @@ def open_request(request_id: str, method: str, params: dict[str, Any]) -> Prompt
         )
         return ImmediateAnswer(_decline(request_id, method), notice)
     slot = PromptSlot(request_id=request_id, method=method, params=dict(params))
+    if method == "clarify" and not slot._questions():
+        # An empty slot would wait on a question nobody can see; answer it now, visibly.
+        return ImmediateAnswer(slot.decline(), "Hermes sent a clarify request with no question in it; declined.")
     if method == "approval":
         # Enter on an untouched approval denies: allowing takes the arrows, then Enter.
         slot.selected = slot.approval_choices().index("deny")

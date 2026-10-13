@@ -15,7 +15,9 @@ three kinds:
 - `dropped`: Ink display preferences and debug widgets that mean nothing here.
 
 Everything else goes to `slash.exec`, and a 4018 refusal from it falls back to
-`command.dispatch`, the order Ink uses.
+`command.dispatch`, the order Ink uses. That includes `/yolo`, which turns off
+Hermes' approval prompts: the person typed it, and the TUI relays what the
+person types (`/help` says so).
 """
 
 from __future__ import annotations

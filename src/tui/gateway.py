@@ -148,7 +148,7 @@ def attach_refused(env: Mapping[str, str]) -> bool:
     The OMH TUI never attaches to a session another runtime owns, so the caller
     exits and names `hermes` instead of spawning.
     """
-    return bool(env.get(contract.ATTACH_ENV))
+    return bool(env.get(contract.ATTACH_ENV, "").strip())  # blank is unset, as Hermes and Ink read it
 
 
 def _protocol_error(line: str) -> ProtocolError:

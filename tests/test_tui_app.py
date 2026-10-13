@@ -322,6 +322,17 @@ class StartupRefusalTests(AppTestCase):
         self.assertEqual(run.clients[0].close(grace=FAST_GRACE), 0)
 
 
+    def test_the_gateway_stderr_printed_at_a_failed_start_carries_no_escape_sequence(self) -> None:
+        run = self.prepare(
+            Scenario("session", (), stderr=("\x1b[31mboom\x1b[0m: no provider\x1b]0;title\x07",), after=EXIT, exit_code=1)
+        )
+        self.run_main(run)
+        self.assertEqual(run.code, FALLBACK_EXIT)
+        printed = run.stderr.getvalue()
+        self.assertIn("  boom: no provider\n", printed)
+        self.assertNotIn("\x1b", printed)
+        self.assertNotIn("\x07", printed)
+
     def test_ctrl_c_while_the_session_opens_exits_130_and_closes_the_gateway(self) -> None:
         # The gateway start and the session call run before the terminal goes raw, where
         # Ctrl+C is still SIGINT; KeyboardInterrupt stands in for it on the first startup call.
@@ -514,6 +525,52 @@ class SessionTests(AppTestCase):
         history = terminal.history()
         self.assertLess(history.index(TURN_CANCELLED), history.index("› second prompt"))
 
+    def test_a_refused_submit_sends_the_next_queued_prompt(self) -> None:
+        answers = (
+            *startup_answers(),
+            ("prompt.submit", {"error": {"code": 4090, "message": "another process owns this session"}}),
+            ("prompt.submit", {"result": {"status": "streaming"}}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            Step(b"first prompt\rsecond prompt\r", when=terminal.idle, label="idle"),
+            Step(b"\x04", when=lambda: len(run.calls("prompt.submit")) == 2, label="the queued prompt sent"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        first, second = run.calls("prompt.submit")
+        self.assertEqual(second["params"], {"session_id": LIVE_ID, "text": "second prompt", "queued": True})
+        self.assertIn("another process owns this session", terminal.history())
+
+    def test_quit_closes_the_session_before_leaving(self) -> None:
+        answers = (*startup_answers(), ("session.close", {"result": {"closed": True}}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        run.terminal.script(self.submit(run, "/quit"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual([frame["params"] for frame in run.calls("session.close")], [{"session_id": LIVE_ID}])
+
+    def test_a_connection_request_is_named_once_per_operation(self) -> None:
+        def event(kind: str, payload: dict) -> str:
+            return json.dumps({"jsonrpc": "2.0", "method": "event",
+                               "params": {"type": kind, "session_id": LIVE_ID, "payload": payload}})
+
+        played = spans("session", "startup", "create")
+        end = sum(stop - start for start, stop in played)
+        request = {"op_id": "op-1", "seq": 1, "deadline_at": 0, "targets": [], "tool_call_id": None}
+        run = self.prepare(Scenario("session", played, answers=startup_answers(), inject=(
+            (end, event("connection.request", request)),
+            (end, event("connection.request", {**request, "seq": 2})),
+            (end, event("error", {"message": "marker after both requests"})),
+        )))
+        run.terminal.script(Step(b"\x04", when=run.terminal.shows("marker after both requests"), label="the marker"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        history = run.terminal.history()
+        self.assertEqual(history.count("waiting for an app connection"), 1, history)
+        self.assertIn("hermes --tui", history)
+
     def test_a_gateway_exit_mid_session_returns_1_with_the_resume_line(self) -> None:
         run = self.prepare(
             Scenario("session", spans("session", "startup", "create"), answers=startup_answers(), after=EXIT)
@@ -695,9 +752,9 @@ class PromptSlotTests(AppTestCase):
         self.assertTrue(run.terminal.history().startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {APPROVAL_STORED_ID}"))
         self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": APPROVAL_STORED_ID})
 
-    def assert_withdrawal_closes_the_slot(self, kind: str, payload: dict) -> None:
+    def assert_withdrawal_closes_the_slot(self, kind: str, payload: dict, envelope: str = "f05e2691") -> None:
         played = (*spans("approval", "startup", "create"), (5, 21))  # the turn up to the approval request
-        withdrawal = {"jsonrpc": "2.0", "method": "event", "params": {"type": kind, "session_id": "f05e2691", "payload": payload}}
+        withdrawal = {"jsonrpc": "2.0", "method": "event", "params": {"type": kind, "session_id": envelope, "payload": payload}}
         position = sum(stop - start for start, stop in played)
         run = self.prepare(
             Scenario("approval", played, inject=((position, json.dumps(withdrawal)),), answers=startup_answers())
@@ -714,6 +771,13 @@ class PromptSlotTests(AppTestCase):
     def test_request_cancel_closes_the_slot_without_answering(self) -> None:
         self.assert_withdrawal_closes_the_slot(
             "request.cancel", {"id": "srq-52e9720342b6", "method": "approval", "reason": "timeout"}
+        )
+
+    def test_a_withdrawal_closes_the_slot_whatever_session_its_envelope_names(self) -> None:
+        # A request from a session being left (a switch, /new) is withdrawn under that session's id.
+        self.assert_withdrawal_closes_the_slot(
+            "request.cancel", {"id": "srq-52e9720342b6", "method": "approval", "reason": "session_closed"},
+            envelope="a-session-being-left",
         )
 
     def test_approval_cancelled_closes_the_slot_by_its_approval_id(self) -> None:
@@ -736,6 +800,23 @@ class PromptSlotTests(AppTestCase):
             self.submit(run, "Ask me red or blue."),
             Step(b"2", when=run.terminal.shows("Which color do you prefer?"), label="the clarify slot"),
             Step(b"\x04", when=run.terminal.idle, label="the end of the turn"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        answers = [frame for frame in run.frames if frame.get("id") == "srq-c7e7e10e23ab"]
+        self.assertEqual(answers, [{"jsonrpc": "2.0", "id": "srq-c7e7e10e23ab", "result": {"answers": {"q0": "blue"}}}])
+
+    def test_a_typed_clarify_answer_never_enters_the_input_history(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "clarify_turn"), answers=startup_answers())
+        )
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "Ask me red or blue."),
+            Step(b"blue\r", when=terminal.shows("Which color do you prefer?"), label="the clarify slot"),
+            Step(b"\x1b[A", when=lambda: terminal.idle() and not terminal.shows("1. red")(), label="idle"),
+            Step(b"\x03\x04", when=lambda: composer_row(terminal.screen.lines()) == "› Ask me red or blue.",
+                 label="the recalled prompt"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
@@ -1065,6 +1146,29 @@ class LocalCommandTests(AppTestCase):
         self.assertEqual(run.poller.sessions, [APPROVAL_STORED_ID, FRESH_STORED_ID])
         self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": FRESH_STORED_ID})
 
+    def test_a_failed_new_session_keeps_the_current_one_usable(self) -> None:
+        answers = (
+            *startup_answers(),
+            ("session.create", recorded_answer("session", "create")),
+            ("session.create", {"error": {"code": 5032, "message": "no provider is configured"}}),
+        )
+        startup, turn = spans("session", "startup", "plain_turn")
+        run = self.prepare(Scenario("session", (startup, turn), answers=answers), cols=200)
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "/new"),
+            Step(b"Reply with exactly the word: ok\r", when=terminal.shows("Could not start a new session"),
+                 label="the notice"),
+            Step(b"\x04", when=self.after_reply(run), label="the reply"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertIn(f"Could not start a new session (5032): no provider is configured. Still in {STORED_ID}.",
+                      terminal.history())
+        self.assertEqual(run.calls("session.close"), [])
+        self.assertEqual(run.calls("prompt.submit")[0]["params"]["session_id"], LIVE_ID)
+        self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": STORED_ID})
+
     def test_copy_sends_the_last_reply_as_an_osc_52_frame(self) -> None:
         run = self.plain_run()
         run.terminal.script(
@@ -1124,6 +1228,7 @@ class LocalCommandTests(AppTestCase):
         self.assertIn("/omh-model  Pick OMH model chains", history)
         self.assertIn("Hermes commands (8): /new /clear /redraw /history /save /retry /prompt /undo", history)
         self.assertIn("Ctrl+D on empty input exits", history)
+        self.assertIn("/yolo included", history)
         self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
 
     def test_queue_lists_what_waits_for_the_running_turn(self) -> None:

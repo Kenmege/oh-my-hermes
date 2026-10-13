@@ -31,8 +31,10 @@ Ctrl+C clears the text and cancels, or reports an interrupt when there is no
 text; Ctrl+D exits on empty input and deletes forward otherwise.
 
 History lives in memory only, oldest first; a submit appends unless the text
-is blank or repeats the newest entry. Masked input (secrets, sudo) draws one
-bullet per cluster, refuses newlines, never browses history and never enters it.
+is blank or repeats the newest entry, or `records_history` is off (the app
+turns it off while the composer answers a question Hermes asked). Masked input
+(secrets, sudo) draws one bullet per cluster, refuses newlines, never browses
+history, never enters it, and is shown as bullets by `repr` too.
 """
 
 from __future__ import annotations
@@ -186,12 +188,17 @@ class Composer:
     history: list[str] = field(default_factory=list)
     history_index: int | None = None
     masked: bool = False
+    records_history: bool = True
     _draft: str = field(default="", init=False, repr=False, compare=False)
     _avail: int | None = field(default=None, init=False, repr=False, compare=False)
     _scroll: int = field(default=0, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self._set(self.text, min(max(self.caret, 0), len(self.text)))
+
+    def __repr__(self) -> str:
+        text = MASK * len(clusters(self.text)) if self.masked else self.text
+        return f"Composer(text={text!r}, caret={self.caret}, masked={self.masked})"
 
     # -- editing primitives ---------------------------------------------------
 
@@ -311,7 +318,7 @@ class Composer:
 
     def _submit(self) -> ComposerAction:
         text = self.text
-        if not self.masked and text.strip() and (not self.history or self.history[-1] != text):
+        if self.records_history and not self.masked and text.strip() and (not self.history or self.history[-1] != text):
             self.history.append(text)
         self._clear()
         return ComposerAction(SUBMIT, text)
