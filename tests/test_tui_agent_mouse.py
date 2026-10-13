@@ -1153,6 +1153,12 @@ class DocumentedMouseTests(unittest.TestCase):
         self.assertIn(f"types nothing if it arrives whole within {whole:g} s of its first byte",
                       self.prose("src/tui/app.py"))
 
+    def test_the_o_continuations_installation_names_are_every_ss3_final(self) -> None:
+        named = {"F1 to F4": b"PQRS", "an arrow": b"ABCD", "Home": b"H", "End": b"F"}
+        self.assertEqual(sorted(b"".join(named.values())), sorted(keys_module._SS3_FINALS))
+        self.assertIn("as is `O` arriving together with the letter that ends F1 to F4, an arrow, Home or End;",
+                      self.prose("docs/INSTALLATION.md"))
+
     def test_no_doc_says_a_split_report_never_types_however_long_the_pause(self) -> None:
         for name in ("src/tui/keys.py", "src/tui/app.py", "docs/INSTALLATION.md", "AGENTS.md"):
             with self.subTest(name=name):

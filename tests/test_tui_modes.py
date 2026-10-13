@@ -404,9 +404,10 @@ class DocumentedApprovalsToggleTests(unittest.TestCase):
         self.assertIn("Leaving a session it turned yolo on for, or whose yolo call is still unanswered", agents)
         self.assertIn(
             "is shown on the composer once Hermes confirms it, or when Hermes confirms neither it nor the switch back "
-            "off, and is switched off again before the TUI leaves the session",
+            "off, and the TUI sends that session an explicit off before it leaves it,",
             changelog,
         )
+        self.assertNotIn("switched off again before the TUI leaves", changelog)  # it sends the off; it does not wait
         self.assertIn("(a steer Hermes does not take waits in the queue for the turn to end)", changelog)
 
 

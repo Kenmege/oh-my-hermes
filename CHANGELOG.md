@@ -31,8 +31,8 @@ All notable changes will be documented here.
   accept all and plan: accept all turns off Hermes' approvals for that session
   only (Hermes' per-session switch, never `approvals.mode`), is shown on the
   composer once Hermes confirms it, or when Hermes confirms neither it nor
-  the switch back off, and is switched off again before the TUI leaves the
-  session, and plan sends each prompt as `/plan <text>`; where Hermes has
+  the switch back off, and the TUI sends that session an explicit off before
+  it leaves it, and plan sends each prompt as `/plan <text>`; where Hermes has
   approvals off on its own, Shift+Tab sends nothing and turns plan on and
   off beside accept all. Ctrl+T or `/effort <level>` sets the session's
   reasoning effort, Ctrl+Enter or `/steer <text>` adds typed text to the
