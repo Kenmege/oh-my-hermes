@@ -551,7 +551,25 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # customer's payment question, slides placed in order, a git
             # checkout, HTTP 402 returned from one's own API, a model-provider
             # cost comparison, and paying attention to a log (11).
-            expected=616,
+            # Its review adds thirty-nine more, each a sentence that dispatched
+            # the gate or produced its route hint while a phrase alone counted:
+            # payment UI, code, tests, docs, prompts and analytics built around
+            # its phrases (a place-the-order button, a buy-it-for-me string, a
+            # flaky saved-card test, a 402 header), questions about how payments
+            # work, procurement purchase orders and requests, someone else's
+            # payment, a pricing comparison, a past card purchase, and a
+            # government's spending (39); and two statements about someone
+            # else's purchase that the gate must not admit: someone placing an
+            # order tomorrow, and a club buying for members (2). Admission then became
+            # lead-anchored (the request, not the topic, must be a spend), and
+            # four topic-shaped sentences pin it: a blog post on paying with a
+            # saved card, a message saying the vendor was paid, a reminder to
+            # pay rent, and which card is best to pay with (4). Only the
+            # sentence's first verb counts, and its object must not end in a
+            # thing being built: a purchase in a second clause after a
+            # transcription, a checkout flow for card payments, and a broken
+            # saved-card toggle (3).
+            expected=664,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -743,13 +761,23 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Hangul (+6, -3).
             # The spend-gate lane adds ten: seven spends that dispatch the
             # pre-spend card without naming it (an HTTP 402 to pay, a booking
-            # paid by card, a cap before the agent buys, a timed-out payment, a
-            # wallet transfer, money spent on the person's behalf, a purchase
-            # under a stated total), and three that keep their owners: a
+            # paid by card, a card purchase under a stated cap, a timed-out
+            # payment the agent made, a wallet transfer, a payment on the
+            # person's behalf, a purchase under a stated total), and three
+            # that keep their owners: a
             # checkout URL login on browser-operator, payment failure reports
             # on feedback-triage, and budget vs actual for marketing spend on
             # finance-analysis (10).
-            expected=762,
+            # Its review adds nine: five spends anchored on the person's own
+            # money (a renewal with their card, tickets on their credit card, a
+            # top-up with an amount, money to a friend, a buy under a stated
+            # limit after a pricing check), and four that keep their owners
+            # (spend-approval best practices on web-research, a checkout Cypress
+            # spec on feedback-triage, purchase acceptance criteria on ralplan,
+            # a saved-card settings toggle on ultrawork) (9). Lead-anchored
+            # admission adds one owner: triaging issues about card payments in
+            # a checkout stays on feedback-triage (1).
+            expected=772,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

@@ -714,10 +714,10 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # 493103 -> 497611: one capability row for the new `data-share-review` skill
 # plus the reciprocal boundary line `legal-compliance-review` gains. Re-derived
 # from the producer.
-# 497611 -> 501558: one capability row for the new `spend-gate` skill, which
+# 497611 -> 501667: one capability row for the new `spend-gate` skill, which
 # gates money the agent moves for the person on any rail; no other row moved.
 # Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 501558
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 501667
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

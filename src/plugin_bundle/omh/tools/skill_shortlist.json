@@ -1657,7 +1657,7 @@
 "situation":"Spending money on the user's behalf -- a card checkout, an HTTP 402 or pay-per-request call, a wallet transfer, a booking, a paid data endpoint",
 "terms":{
 "1":"against approver browser confirm credential deposit first hold ledger metadata move never nobody observ output payee person prov rail refund renewal run term their total user",
-"2":"approv approval call challeng complet cost limit month plac purchas really receipt renew requir retry saved servic sign sure want went",
+"2":"approv approval call challeng click complet cost credit limit month plac purchas really receipt renew requir retry saved send servic sign sure top want went",
 "3":"agent answer befor behalf charg fee",
 "4":"402 book buy cap checkout data endpoint http order paid pay payment pre request through transfer wallet",
 "5":"gate",

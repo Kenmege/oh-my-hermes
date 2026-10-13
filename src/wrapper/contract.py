@@ -2489,8 +2489,9 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS: dict[str, dict[str, object]] = {
         "headline": "I can show what this spend will cost before any money moves.",
         "body": (
             "I will read the payee, the total with fees, and the currency from the quote itself, check it against your cap, "
-            "name the refund terms and whether it can be undone, and wait for your typed yes. I move no money and hold no "
-            "card, and the spend counts as done only once its receipt is observed."
+            "name the refund terms and whether it can be undone, and wait for your typed yes. Money moves only after your "
+            "typed yes, through your own card fill, payment client, or page; I never keep your card details, and the spend "
+            "counts as done only once its receipt is observed."
         ),
         "phase": "pre_spend_card_prepared",
         "next_action": "prepare_pre_spend_card",

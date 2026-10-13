@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 import re
 
+from ..plugin_bundle.omh.spend_signals import spend_frame_withdraws, spend_request_admitted
 from ..skills.catalog import SkillDefinition, builtin_definitions, routable_definitions
 from .domain_signals import (
     DomainOperatorOverride,
@@ -495,12 +496,15 @@ _INTERNAL_AUDIT_EXPLICIT_PHRASES = tuple(
 
 # `spend-gate` holds back every everyday token its phrases are built from.
 # Listed are the phrases that ask the agent to move money for the person, or
-# name the gate itself. Not boosted: the cap and limit phrases (a government
-# has a spending cap), the 402 status phrases (a developer adds HTTP 402 to
-# their own API) and "retry the payment" (a payment service retries on its
-# own); those score as ordinary phrases. "from my wallet" is boosted and also
-# needs a word of money beside it (`EVERYDAY_SENSE_PHRASES`): a photo falls
-# from a wallet.
+# name the gate itself, and even these score only in a sentence the gate
+# admits (`spend_request_admitted`, through `_spend_gate_offers_itself`: a
+# clause that BEGINS with a spend lead addressed to the agent): "the place the
+# order button doesn't respond on safari" says a listed phrase and dispatched
+# here while the phrase alone counted. Not boosted at all: the cap and limit phrases (a government has a
+# spending cap, and an amount beside it still anchors), the 402 status
+# phrases (a developer adds HTTP 402 to their own API) and "retry the payment"
+# (a queue retries a payment job); those score as ordinary phrases. "from my wallet" also needs a word of money beside it
+# (`EVERYDAY_SENSE_PHRASES`): a photo falls from a wallet.
 _SPEND_GATE_EXPLICIT_PHRASES = tuple(
     normalized_phrase(phrase)
     for phrase in (
@@ -522,6 +526,14 @@ _SPEND_GATE_EXPLICIT_PHRASES = tuple(
         "pay with my card",
         "pay with my saved card",
         "with my saved card",
+        "with my card",
+        "with my credit card",
+        "use my card",
+        "use my credit card",
+        "top up my",
+        "send money",
+        "pay again",
+        "click pay again",
         "402 challenge",
         "paid data endpoint",
         "wallet transfer",
@@ -3207,15 +3219,17 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     ),
     # `spend-gate` is built from "spend", "pay", "paid", "payment", "buy",
     # "purchase", "order", "checkout", "card", "wallet", "transfer", "money",
-    # "cap", "limit" and "retry" -- time is spent, attention is paid, a branch
-    # is checked out, imports are put in order, a wallet is lost and a repo is
-    # transferred, and none of those moves money. Only the complete phrases
+    # "cap", "limit", "retry", "use", "top", "send" and "again" -- time is
+    # spent, attention is paid, a branch is checked out, imports are put in
+    # order, a wallet is lost and a repo is transferred, and none of those
+    # moves money. Only the complete phrases
     # score. The two hyphenated names stay creditable: `spend-gate` and
     # `pre-spend` mean nothing else.
     "spend-gate": frozenset(
         {
             "402",
             "approval",
+            "again",
             "approve",
             "behalf",
             "booking",
@@ -3225,7 +3239,9 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "challenge",
             "charge",
             "checkout",
+            "click",
             "complete",
+            "credit",
             "data",
             "did",
             "endpoint",
@@ -3246,10 +3262,14 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "required",
             "retry",
             "saved",
+            "send",
             "spend",
             "spending",
             "through",
+            "top",
             "transfer",
+            "up",
+            "use",
             "wallet",
         }
     ),
@@ -4526,6 +4546,9 @@ def _score_definition(
     if definition.name == "internal-audit" and _internal_audit_explicit_match(normalized_query):
         score += 30
         matched.add("direct:internal_audit")
+    # `_spend_gate_offers_itself` already withdrew the gate from any sentence
+    # `spend_request_admitted` does not admit, so the boost needs no check of
+    # its own.
     if definition.name == "spend-gate" and _spend_gate_explicit_match(normalized_query):
         score += 30
         matched.add("direct:spend_gate")
@@ -5798,70 +5821,28 @@ def _sales_pipeline_review_offers_itself(normalized_query: str, query_tokens: se
     )
 
 
-# `spend-gate` is for money the agent is about to move for the person. The
-# same phrases name payment software someone is building ("our wallet transfer
-# feature needs integration tests", "why is the paid endpoint in our api
-# returning 401"), a payment someone else asked about ("a customer emailed
-# asking did the payment go through") and an ordering of things ("place the
-# order of the slides"); each of those dispatched here at high confidence when
-# measured, and none moves money.
-_SPEND_GATE_NOT_SPENDING_PHRASES = tuple(
-    normalized_phrase(phrase)
-    for phrase in (
-        "our api",
-        "my own api",
-        "our app",
-        "our product",
-        "our store",
-        "our checkout",
-        "our payment",
-        "the payment service",
-        "the payment module",
-        "the order of",
-        "support ticket",
-        "demo copy",
-    )
-)
-_SPEND_GATE_NOT_SPENDING_TOKENS = frozenset(
-    {
-        "401",
-        "500",
-        "customer",
-        "customers",
-        "docs",
-        "documentation",
-        "feature",
-        "features",
-        "figma",
-        "implement",
-        "implementation",
-        "implementing",
-        "integration",
-        "javascript",
-        "mockup",
-        "phrase",
-        "portal",
-        "pricing",
-        "python",
-        "redesign",
-        "returning",
-        "schema",
-        "sdk",
-        "storefront",
-        "testing",
-        "tests",
-        "typescript",
-        "webhook",
-        "webhooks",
-    }
-)
+@lru_cache(maxsize=1)
+def _spend_gate_trigger_phrases() -> tuple[str, ...]:
+    definition = next(item for item in builtin_definitions() if item.name == "spend-gate")
+    return tuple(normalized_phrase(trigger) for trigger in definition.triggers)
 
 
 def _spend_gate_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
-    """Withdraw when the payment is software being built or someone else's, not a spend."""
-    if query_tokens & _SPEND_GATE_NOT_SPENDING_TOKENS:
+    """Offer the gate only on one of its own phrases, in a sentence that asks the agent to spend.
+
+    Without a phrase the skill's description words alone ("the government will
+    spend up to 5 billion dollars on roads" shares `spend`) turned a direct
+    answer into a clarify. Without admission a phrase that is only the topic
+    ("write a blog post on how to pay with my saved card", "schedule a
+    reminder to pay my rent") reached the gate. The admission rule and the
+    frames live in the bundle's `spend_signals`, which the awareness route
+    hint reads too, so every other sentence routes exactly as before this
+    skill existed.
+    """
+    del query_tokens
+    if not any(phrase_is_spoken(normalized_query, phrase) for phrase in _spend_gate_trigger_phrases()):
         return False
-    return not any(phrase_is_spoken(normalized_query, phrase) for phrase in _SPEND_GATE_NOT_SPENDING_PHRASES)
+    return spend_request_admitted(normalized_query) and not spend_frame_withdraws(normalized_query)
 
 
 # Skills that withdraw from the shortlist unless their own precondition holds,

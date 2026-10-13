@@ -21,6 +21,7 @@ from .hermes_session_commands import (
 )
 from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
+from .spend_signals import spend_frame_withdraws, spend_request_admitted
 from .reference_regions import executable_routing_text
 from .degradation import (
     COMPONENT_LOCALIZED_ROUTING_TEXT,
@@ -1602,17 +1603,15 @@ _AWARENESS_MESSAGE_MARKERS = (
     "de-identify",
     "quasi-identifier",
     "residual pii",
-    # Spending on the person's behalf: "spend", "pay", "budget", "checkout" and
-    # "wallet" alone are everyday words, so only spend phrases arm awareness.
+    # Spending the person's money: only the skill's own names and phrases that
+    # make the person the payer arm awareness. "spend", "pay", "checkout" and
+    # "wallet" alone are everyday words, and a substring such as "spending cap"
+    # is also inside "consumer spending capacity is falling".
     "spend-gate",
     "pre-spend",
-    "http 402",
-    "402 payment required",
-    "pay-per-request",
-    "paid data endpoint",
-    "wallet transfer",
     "money on my behalf",
-    "spending cap",
+    "pay with my card",
+    "buy it for me",
     "tech-debt-audit",
     "tech debt",
     "debt ledger",
@@ -4141,29 +4140,28 @@ _ROUTE_HINT_RULES = (
             "payment submitted",
             "receipt observed",
         ),
-        # Only spend phrases, matched as substrings. A bare "spend", "pay",
-        # "budget", "checkout" or "wallet" is absent: time is spent, attention
-        # is paid, a branch is checked out and a wallet is lost; "spend cap"
-        # is absent too, because it is a prefix of "spend capacity".
+        # Only the skill's own names and phrases that make the person the
+        # payer, matched as whole words (`_WHOLE_WORD_ROUTE_HINT_RULES`), and
+        # only in a sentence the router admits too (`spend_request_admitted`
+        # and `spend_frame_withdraws`, in `_rule_suppressed_by_context`). The other trigger phrases are absent:
+        # this table has no anchor, and "complete the checkout", "wallet
+        # transfer", "did the payment go through", "spending cap" and "http 402"
+        # also name a checkout screen, a question about wallets, a customer's
+        # payment, a government budget and a developer's own paywall.
         "phrases": (
             "spend-gate",
+            "spend gate",
             "pre-spend",
-            "spending cap",
-            "spending limit",
-            "complete the purchase",
-            "complete the checkout",
             "pay with my card",
             "pay with my saved card",
-            "http 402",
-            "402 payment required",
-            "402 challenge",
-            "pay-per-request",
-            "pay per request",
-            "paid data endpoint",
-            "wallet transfer",
+            "with my saved card",
+            "use my credit card",
             "money on my behalf",
-            "retry the payment",
-            "did the payment go through",
+            "spend on my behalf",
+            "pay on my behalf",
+            "buy on my behalf",
+            "buy it for me",
+            "buy this for me",
         ),
         "tokens": (),
         "adjacent_workflows": ("browser-operator", "connector-operator", "feedback-triage", "finance-analysis"),
@@ -6229,7 +6227,12 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
                 continue
             if rule["id"] == "build_failure_triage" and fixed_or_pass_verification_context:
                 continue
-            phrase_matches = [phrase for phrase in rule["phrases"] if phrase in routing_normalized]
+            if rule["id"] in _WHOLE_WORD_ROUTE_HINT_RULES:
+                phrase_matches = [
+                    phrase for phrase in rule["phrases"] if _contains_boundary_phrase(routing_normalized, (phrase,))
+                ]
+            else:
+                phrase_matches = [phrase for phrase in rule["phrases"] if phrase in routing_normalized]
             token_matches = [token for token in rule["tokens"] if token in tokens]
             if rule["id"] == "jit_learn" and jit_learn_match and not phrase_matches and not token_matches:
                 phrase_matches = ["guard:jit_learn"]
@@ -6447,6 +6450,11 @@ def _rule_suppressed_by_named_coding_agent_delivery(
     named_coding_agent_delivery: bool,
 ) -> bool:
     return named_coding_agent_delivery and rule.get("id") == "customer_signal"
+
+
+# Rules whose phrases count only as whole words. A substring match is how
+# "spending cap" fired inside "consumer spending capacity is falling".
+_WHOLE_WORD_ROUTE_HINT_RULES = frozenset({"spend_gate"})
 
 
 def _route_hint_rule_matches(
@@ -8296,6 +8304,8 @@ def _rule_suppressed_by_context(rule: dict[str, object], text: str) -> bool:
     rule_id = str(rule.get("id", ""))
     if rule_id == "data_share_review":
         return not data_share_request_admitted(text)
+    if rule_id == "spend_gate":
+        return not spend_request_admitted(text) or spend_frame_withdraws(text)
     visual_markers = (
         "image card",
         "summary card",

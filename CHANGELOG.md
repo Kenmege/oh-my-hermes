@@ -11,27 +11,50 @@ All notable changes will be documented here.
   that charges again. Before money moves the person sees a pre-spend card
   with the payee and its exact origin or address, the item, the total with
   fees and currency, the rail, the cap and what remains of it, the refund
-  terms, whether the spend can be undone, and who approves it, and the
-  person's typed yes in that session is required whether or not Hermes shows
-  an approval prompt of its own. A host prompt that appears is recorded beside
-  that yes; one that did not appear, or an auto-approval, is no
-  confirmation. A run nobody can answer -- a cron job, a webhook, an
-  API-server run, a single-query `hermes chat -q`, a kanban worker, or a
-  delegated subagent -- never spends: it prepares the card for the person's
-  next interactive turn. A quote is not a purchase; only an observed order id,
-  transaction id, or receipt header completes a spend, and an outcome nobody
-  saw is `unknown` and is reconciled before any retry. The cap ledger keeps
-  metadata only. Hermes' saved-card fill, `clarify`, and the optional
-  `stripe-link-cli` and `mpp-agent` skills are used only when present, and a
-  saved card is never typed into a page without the fill tool. OMH moves no
-  money and holds no credential. The skill is guidance only: no hook holds a
-  payment tool call. Spend requests reach it from phrases such as "pay with my
-  card", "buy it for me", "402 challenge" and "from my wallet"; the bare
-  words `spend`, `pay`, `checkout`, `wallet` and their siblings score only
-  inside a complete phrase, `budget` is not one of its words at all, the
-  router withdraws the skill from a sentence that names a customer, a feature
-  or its tests, or the speaker's own API, and budget variances, payment
-  failure reports and browser logins keep their owners.
+  terms, whether the spend can be undone, and who approves it (the person
+  whose money moves), and the person's typed yes in that session is required
+  whether or not Hermes shows an approval prompt of its own. A host prompt
+  that appears is recorded beside that yes; one that did not appear, or an
+  auto-approval, is no confirmation, and a choice picked in `clarify` counts
+  as the typed yes. A run nobody can answer -- a scheduled job, a webhook, an
+  API-server or single-query run, a background worker, or a delegated
+  subagent -- never spends: it prepares the card for the person's next
+  interactive turn, and a script that will pay later gets its card and cap
+  now. A quote is not a purchase; only an observed order id, transaction id,
+  or receipt header completes a spend, an outcome nobody saw is `unknown` and
+  is reconciled before any retry, a payment Hermes holds for approval is
+  never issued twice, and a declined card is not retried. The cap ledger
+  keeps metadata only. Hermes' saved-card fill, `clarify`, and the optional
+  `stripe-link-cli` and `mpp-agent` skills are used only when present;
+  without the fill tool the person enters the card and the agent never types
+  one into a page. OMH moves no money and holds no credential. The skill is
+  guidance only: no hook holds a payment tool call.
+
+  The gate reads the request, not the topic. Only the sentence's first
+  words count, after filler such as "hey", "please", "go ahead and" or "can
+  you", read Unicode-aware so a sentence that opens in another script has no
+  English lead. They must be a spend addressed to the agent: "buy", "pay",
+  "order", "book", "top up", "renew", "place the order", "complete the
+  checkout", "use my card", and the like, whose object does not end in a
+  thing being built or filed ("complete the checkout flow", "pay with my
+  saved card toggle"). "send" and "transfer" also need money, an amount, or
+  the person's own card, wallet or account in the sentence; "did the payment
+  go through" counts only when the agent paid; and naming the gate as a
+  command ("use spend gate") counts. A purchase in a later clause does not:
+  "transcribe this call, then buy it for me" stays with transcription. Every
+  other sentence routes as before the skill existed, so "write a blog post on
+  how to pay with my saved card", "schedule a reminder to pay my rent" and
+  "the place the order button doesn't respond" keep their old route, and the
+  gate never takes a request another skill's guard holds. An admitted
+  sentence that is still about an app being built, procurement, a
+  comparison, a quoted phrase, or "the order of" things withdraws the skill
+  too. The route hint keeps only phrases that make the person the payer or
+  name the skill, matches them as whole words, and reads the same rule. The
+  bare words `spend`, `pay`, `checkout`, `wallet` and their siblings score
+  only inside a complete phrase, and `budget` is not one of the skill's words
+  at all. Budget variances, payment failure reports, browser logins,
+  spend-approval research, checkout test failures and issue triage, purchase
+  acceptance criteria and a saved-card settings toggle keep their owners.
 
 - **A new `data-share-review` skill prepares a dataset, log, ticket export, or
   transcript excerpt to leave the team, and calls it redacted only after the

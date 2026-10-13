@@ -21,17 +21,18 @@ class RoutingPrecisionTests(unittest.TestCase):
         # and `expected=` in src/maintenance/drift.py. Every other count
         # assertion compares against this producer instead of a literal.
         # omh-docs contributes four measured negatives and five measured interventions.
-        self.assertEqual(payload["summary"]["case_count"], 616)
+        self.assertEqual(payload["summary"]["case_count"], 664)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
-        # spend-gate's lunch-budget control is a direct answer (+1).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 199)
+        # spend-gate's lunch-budget control is a direct answer (+1), and four of
+        # its review controls are questions answered directly (+4).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 203)
         self.assertEqual(payload["summary"]["file_lookup_count"], 9)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
         self.assertEqual(payload["summary"]["catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["intervention_case_count"], 762)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 772)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )
