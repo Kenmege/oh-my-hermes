@@ -433,6 +433,18 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "nothing, so an absent surface reads as an idle ledger, never as an observed state.",
     ),
     ClassifiedSite(
+        "src/commands/coding.py",
+        "cmd_coding_fanout_status",
+        INTENTIONAL,
+        "Exit-code boundary for `omh coding fanout status --wait`, whose codes are answers about "
+        "the work: 0 every unit verified, 1 one unit terminal and not verified, 3 stuck, 65 "
+        "journal unreadable, 124 deadline. An escaping exception would exit 1 and read as a unit "
+        "that failed, so with --wait the handler prints the traceback to stderr and returns 70, "
+        "a code no answer uses; stdout stays empty. An OmhError is re-raised ahead of it and stays "
+        "`main`'s exit 2, and a single read re-raises, so its crash stays Python's own. The "
+        "failure is never relabeled as a roster or a verdict.",
+    ),
+    ClassifiedSite(
         "src/commands/docs.py",
         "cmd_docs_skill_lint",
         INTENTIONAL,
@@ -544,8 +556,11 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # 50 -> 51 / 55 -> 56: `memory_provider._guard_digest`, the session digest (a
 # fault costs the digest, is recorded as a write failure, and never fails
 # initialize, a switch, or a render).
-EXPECTED_HANDLER_COUNT = 56
-EXPECTED_ANCHOR_COUNT = 51
+# 51 -> 52 / 56 -> 57: `cmd_coding_fanout_status`, the `--wait` watcher's crash
+# code (a crash exits 70 with its traceback, never 1, which means a unit did
+# not verify).
+EXPECTED_HANDLER_COUNT = 57
+EXPECTED_ANCHOR_COUNT = 52
 
 
 class DerivedSite(NamedTuple):

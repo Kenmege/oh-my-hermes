@@ -1440,6 +1440,10 @@ omh coding fanout validate --units units.json   # also reports spawn_plan_requir
 omh coding fanout show <fanout-id> [--limit 20] [--full]
 omh coding fanout brief [<fanout-id>] [--json]
 omh coding fanout status --fanout-id <fanout-id> [--json]
+omh coding fanout status --fanout-id <fanout-id> --wait [--timeout 600] [--interval 30] [--json]
+  # one bounded watcher: exits 3 on stuck_units, 0 when every unit verified,
+  # 1 when all are terminal and one is not, 65 when all verified but journal
+  # lines were unreadable, 124 when the timeout passes first, 70 on a crash
 omh coding fanout migrate-legacy <fanout-id> \
   [--confirm-contract-sha256 <digest>]  # operator/maintenance only
 omh coding fanout dispatch <fanout-id> --goal-file goal.txt \

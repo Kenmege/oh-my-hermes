@@ -239,22 +239,97 @@ class MaestroObserveToTerminalStateTests(unittest.TestCase):
     command they name parses.
     """
 
-    def test_the_quality_bar_names_the_polling_command_and_its_interval(self) -> None:
-        combined = " ".join(_maestro_definition().quality_bar)
-        self.assertIn("omh coding fanout status --fanout-id <fanout-id> --json", combined)
-        self.assertIn("60 seconds", combined)
+    _WATCHER = "omh coding fanout status --fanout-id <fanout-id> --wait --timeout 600"
 
-    def test_the_polling_command_the_skill_names_actually_parses(self) -> None:
-        # Derived, not asserted from memory: if the verb is ever renamed, the
-        # skill body stops describing a command that exists and this fails.
+    def test_the_quality_bar_names_one_background_watcher_not_a_poll_interval(self) -> None:
+        combined = " ".join(_maestro_definition().quality_bar)
+        self.assertIn(self._WATCHER, combined)
+        self.assertIn("background=true", combined)
+        self.assertIn("notify=true", combined)
+        self.assertIn("omh coding fanout status --fanout-id <fanout-id> --json", combined)
+        # The interval-polling instruction this replaced must not come back
+        # beside it: one run would then carry both instructions.
+        self.assertNotIn("60 seconds", combined)
+        self.assertNotIn("on every poll", combined)
+
+    def test_the_commands_the_skill_names_actually_parse(self) -> None:
+        # Derived, not asserted from memory: if the verb or a flag is ever
+        # renamed, the skill body stops describing a command that exists and
+        # this fails.
         from omh.commands.main import build_parser
 
-        args = build_parser().parse_args(
-            ["coding", "fanout", "status", "--fanout-id", "fanout-0123456789ab", "--json"]
+        parser = build_parser()
+        read = parser.parse_args(["coding", "fanout", "status", "--fanout-id", "fanout-0123456789ab", "--json"])
+        watch = parser.parse_args(
+            self._WATCHER.removeprefix("omh ").replace("<fanout-id>", "fanout-0123456789ab").split()
         )
 
-        self.assertEqual(args.fanout_id, "fanout-0123456789ab")
-        self.assertTrue(args.json)
+        self.assertEqual(read.fanout_id, "fanout-0123456789ab")
+        self.assertTrue(read.json)
+        self.assertTrue(watch.wait)
+        self.assertEqual(watch.timeout, 600)
+
+    def test_the_watcher_timeout_the_skill_names_is_inside_the_commands_bounds(self) -> None:
+        from omh.commands.coding import FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS
+
+        self.assertLessEqual(600, FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS)
+
+    def test_the_exit_codes_the_skill_names_are_the_ones_the_watcher_returns(self) -> None:
+        # Each sentence is graded by the command's own mapper, so a code moved
+        # in the command and left behind in the skill fails here.
+        from omh.coding.fanout_status import (
+            WAIT_OUTCOME_ALL_UNITS_TERMINAL,
+            WAIT_OUTCOME_STUCK_UNITS,
+            WAIT_OUTCOME_TIMED_OUT,
+        )
+        from omh.commands.coding import _fanout_status_wait_exit_code
+
+        def graded(outcome: str, states: list[str], stuck: list[str], journal_errors: list[str] = []) -> int:
+            units = [{"unit_id": f"u{index}", "unit_state": state} for index, state in enumerate(states)]
+            roster = {"units": units, "stuck_units": stuck, "wait": {"outcome": outcome}}
+            if journal_errors:
+                roster["journal_errors"] = journal_errors
+            return _fanout_status_wait_exit_code(roster)
+
+        combined = " ".join(_maestro_definition().quality_bar)
+        cases = (
+            (graded(WAIT_OUTCOME_STUCK_UNITS, ["account_limit"], ["u0"]), "when the roster's own `stuck_units` names a unit"),
+            (graded(WAIT_OUTCOME_ALL_UNITS_TERMINAL, ["verified"], []), "when `all_units_terminal` is true and every unit is `verified`"),
+            (graded(WAIT_OUTCOME_ALL_UNITS_TERMINAL, ["verified", "failed"], []), "when all are terminal and one is not"),
+            (graded(WAIT_OUTCOME_TIMED_OUT, ["running"], []), "when the timeout passed first"),
+            (
+                graded(WAIT_OUTCOME_ALL_UNITS_TERMINAL, ["verified"], [], ["events.jsonl:8: torn"]),
+                "when they all verified but the journal had unreadable lines",
+            ),
+        )
+        for code, clause in cases:
+            with self.subTest(code=code):
+                self.assertIn(f"{code} {clause}", combined)
+        self.assertEqual(len({code for code, _clause in cases}), len(cases))
+        self.assertIn(f"exit {cases[0][0]} is that moment", combined)
+        self.assertIn(f"on exit {cases[3][0]} a unit whose `unit_state` is still `unknown`", combined)
+
+    def test_a_code_the_watcher_did_not_choose_is_still_an_instruction(self) -> None:
+        # A kill, a crash, or an OmhError (an id the journal has not named yet)
+        # ends the watcher with a code none of the sentences above names.
+        combined = " ".join(_maestro_definition().quality_bar)
+        self.assertIn("Any other code means the watcher itself did not finish", combined)
+        self.assertIn("start a fresh watcher only if units are still running", combined)
+
+    def test_a_session_that_cannot_receive_the_completion_waits_before_ending_the_turn(self) -> None:
+        # Hermes drops the notification in sessions that cannot take an async
+        # completion (one-shot runs, cron, kanban workers, stateless HTTP) and
+        # says so in the spawn result; ending the turn there loses the answer.
+        combined = " ".join(_maestro_definition().quality_bar)
+        self.assertIn(
+            "unless the spawn result says this session cannot receive the completion: then wait on that "
+            "process the way the result names before ending the turn",
+            combined,
+        )
+        # The tool that waits is named by the result itself, because its name
+        # differs between Hermes revisions.
+        self.assertNotIn("process(", combined)
+        self.assertNotIn("process_manage", combined)
 
     def test_the_quality_bar_names_the_roster_fields_it_tells_the_agent_to_read(self) -> None:
         from omh.coding.fanout_status import FANOUT_UNIT_STATES
@@ -289,14 +364,14 @@ class MaestroObserveToTerminalStateTests(unittest.TestCase):
             self.assertIn(f'"{key}"', produced)
             self.assertIn(f"`{key}`", combined)
 
-    def test_the_quality_bar_bounds_the_poll_loop_on_a_unit_with_no_evidence(self) -> None:
+    def test_the_quality_bar_bounds_the_watcher_on_a_unit_with_no_evidence(self) -> None:
         # `all_units_terminal` is false for a unit with neither marker nor
         # summary row, which is the safe direction and also an unbounded wait:
-        # without this sentence the poll loop is itself the stall it was added
-        # to catch.
+        # without the deadline the watcher is itself the stall it was added to
+        # catch.
         combined = " ".join(_maestro_definition().quality_bar)
-        self.assertIn("still `unknown` after about ten minutes", combined)
-        self.assertIn("a poll loop with no bound is the stall it was meant to catch", combined)
+        self.assertIn("which is why the watcher has a deadline", combined)
+        self.assertIn("a wait with no bound is the stall it was meant to catch", combined)
 
     def test_the_completion_chain_is_stated_as_one_turns_work(self) -> None:
         combined = " ".join(_maestro_definition().quality_bar)
@@ -316,6 +391,7 @@ class MaestroObserveToTerminalStateTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("omh coding fanout status --fanout-id <fanout-id> --json", body)
+        self.assertIn(self._WATCHER, body)
         self.assertIn("A finished dispatch is an event to act on in the same turn", body)
 
 

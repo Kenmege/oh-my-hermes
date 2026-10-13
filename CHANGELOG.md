@@ -4,6 +4,41 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A Maestro supervisor now waits on a dispatch with one bounded background
+  watcher instead of polling the roster every minute in its own turns.**
+  `omh coding fanout status --wait` re-reads the same read-only roster until
+  the roster itself names a reason to stop, prints only that last roster with
+  a `wait` block, and exits with a code that says which reason it was: 3 at
+  the first read where `stuck_units` names a unit (so a unit waiting on a
+  person, held by a provider limit, blocked on a permission, missing objects,
+  or stalled still stops the wait at the next read), 0 when every unit is
+  terminal and `verified`, 1 when every unit is terminal and one is not, 65
+  when every listed unit verified but the journal had unreadable lines (the
+  roster lists units from the journal, so a torn line can hide one), and 124
+  when `--timeout` passes first. A watcher that raises exits 70 with its
+  traceback, because Python's own 1 already means a unit did not verify. A
+  stuck unit outranks a finished roster, because a unit the dispatch summary
+  recorded at `account_limit` is over and still needs a person. `--timeout`
+  (default 600 seconds, at most 3600) and `--interval` (default 30, between 5
+  and 300) are refused without `--wait`; an unknown fanout id fails on the
+  first read rather than at the deadline; the watcher writes nothing. Without
+  `--wait` the command exits 0 as before. The roster itself now reads a unit
+  whose in-flight marker has no state yet as `unknown` and not terminal when
+  that marker was written after the dispatch summary's row for the unit,
+  instead of falling back to that row: a re-dispatched unit's old
+  `account_limit` read as stuck the moment the new process started. A marker
+  that is not later than the row, such as a reservation marker an early
+  return left behind, leaves the row standing. The `ulw-maestro` skill now
+  starts the watcher once through Hermes' `terminal(background=true,
+  notify=true)` when the tool is present, waits on it in the turn when the
+  spawn result says the session cannot receive the completion, reads the
+  roster once on any exit, and keeps every per-poll intervention rule it had:
+  exit 3 is the moment to intervene, on exit 124 a unit still `unknown` is a
+  missing record to chase while only a unit still `running` gets a fresh
+  watcher, and any code the watcher did not choose gets a fresh watcher only
+  if units are still running.
+
+
 - **OMH no longer steers the model against Hermes' own `clarify`, `/loop`,
   `/goal`, and `/plan`.** `ulw-interview` sends each question's two to four
   candidate answers through Hermes' native `clarify` tool when it is in the
