@@ -21,10 +21,12 @@ All notable changes will be documented here.
   the input mode's glyph and colour, over a mode row that names the mode or
   the keys that matter now; replies open with `⏺`, a diff numbers its lines
   in a gutter, and the status line reads brand, model, context, state.
-  On the terminals Hermes' own TUI trusts with it (iTerm2, kitty, WezTerm,
-  Ghostty, tmux, VS Code, Windows Terminal) it asks for the kitty keyboard
-  protocol and xterm modifyOtherKeys, so Ctrl+Enter and Shift+Enter arrive as
-  keys of their own while every other key decodes as before;
+  On the terminals Hermes' own TUI trusts with it, it asks iTerm2, kitty,
+  WezTerm, tmux, VS Code and Windows Terminal for the kitty keyboard protocol
+  and xterm modifyOtherKeys, and Ghostty for modifyOtherKeys only, so
+  Ctrl+Enter and Shift+Enter arrive as keys of their own, while every key the
+  TUI binds decodes as before and so does each Ctrl chord xterm sends as one
+  control byte (Ctrl+2 a NUL, Ctrl+3 Esc, Ctrl+8 Backspace);
   `OMH_TUI_KEYBOARD=legacy` keeps the plain bytes. Shift+Tab cycles normal,
   accept all and plan: accept all turns off Hermes' approvals for that session
   only (Hermes' per-session switch, never `approvals.mode`) and is shown on

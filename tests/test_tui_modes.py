@@ -1216,6 +1216,22 @@ class QueueTests(unittest.TestCase):
         self.assertEqual([text for text, *_ in app.queued], ["first\nsecond"])
         self.assertEqual(client.calls, [])
 
+    def test_recalled_prompts_go_as_one_text_and_only_a_first_line_command_runs(self) -> None:
+        # What the recall docstring says Enter does with them: one submission, as for anything typed.
+        app, client = make_app(busy=True)
+        app.queued.extend([("plain prompt", "", ""), ("a long skill prompt", "learn: the build", "/learn the build")])
+        app._on_input(Key(UP))
+        app.turn_pending = False
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": "plain prompt\n/learn the build"})])
+
+        app, client = make_app(busy=True)
+        app.queued.extend([("a long skill prompt", "learn: the build", "/learn the build"), ("plain prompt", "", "")])
+        app._on_input(Key(UP))
+        app.turn_pending = False
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [("slash.exec", {"command": "learn the build\nplain prompt", "session_id": SID})])
+
     def test_a_prompt_a_command_built_comes_back_as_what_was_typed(self) -> None:
         # Plan mode wrote /plan around the prompt, so the prompt comes back; a typed command comes back as typed.
         app, client = make_app(busy=True)

@@ -15,10 +15,15 @@ Nothing here raises on input. A sequence it does not know becomes
 `Key("unknown")` and decoding continues with the next byte.
 
 Terminals that `Terminal` asks for richer key reports send some keys as kitty
-CSI u (`ESC[99;5u`) or xterm modifyOtherKeys (`ESC[27;5;99~`). Each of those
-decodes to the very `Key` its legacy bytes give, so Ctrl+C, Esc, Tab, Alt+b or
-Shift+a behave the same either way; the reports only add what legacy bytes
-cannot say, such as Ctrl+Enter and Shift+Enter. A key decoded from either
+CSI u (`ESC[99;5u`) or xterm modifyOtherKeys (`ESC[27;5;99~`). A key xterm's
+legacy bytes can say decodes to the very `Key` those bytes give, so Ctrl+C,
+Esc, Tab, Alt+b or Shift+a behave the same either way, and so does every Ctrl
+chord xterm sends as one control byte: Ctrl with a letter, with `@ [ \ ] ^ _ /`
+or space, or with a digit from 2 to 8 (Ctrl+2 a NUL, Ctrl+3 Esc, Ctrl+8 and
+Ctrl+? DEL, which is Backspace). The reports add what legacy bytes cannot say,
+such as Ctrl+Enter and Shift+Enter. A Ctrl chord xterm has no control byte for
+(Ctrl+1, Ctrl+9, Ctrl+0, Ctrl+comma, ...) stays a Ctrl chord, where a legacy
+terminal may send the bare character instead; the TUI binds none of them. A key decoded from either
 form carries `protocol=True`, and `KeyDecoder.protocol_reported` turns on at
 the first one: the terminal is known to send them only once it has.
 
@@ -109,8 +114,16 @@ _KEYPAD_TEXT = {57399 + digit: str(digit) for digit in range(10)} | {
     57413: "+",
     57415: "=",
 }
-# Besides the letters, the keys whose Ctrl chord a legacy terminal sends as a C0 byte.
-_CTRL_PUNCTUATION = "@[\\]^_ "
+# Besides the letters, the keys whose Ctrl chord legacy xterm sends as one control byte, and that byte.
+_CTRL_BYTES = {
+    "@": 0x00, " ": 0x00, "2": 0x00,
+    "[": ESC_BYTE, "3": ESC_BYTE,
+    "\\": 0x1C, "4": 0x1C,
+    "]": 0x1D, "5": 0x1D,
+    "^": 0x1E, "6": 0x1E,
+    "_": 0x1F, "7": 0x1F, "/": 0x1F,
+    "8": DELETE_BYTE, "?": DELETE_BYTE,
+}
 
 # Mouse buttons a `Mouse` names. NO_BUTTON is a release that does not say which
 # button, or motion with none held.
@@ -280,10 +293,11 @@ def _protocol_key(code_field: str, modifier_field: str) -> Key:
 
     `code_field` is `<code>[:<shifted>[:<base>]]`. Enter, Tab, Esc and
     Backspace keep every modifier, which is how Ctrl+Enter and Shift+Enter
-    exist at all. A Ctrl chord on a letter or on `@[\\]^_` and space is what
-    its C0 byte decodes to (Ctrl+C, Ctrl+J a newline, Ctrl+M Enter, Ctrl+[
-    Esc), and Shift on a printable key is in its character (Shift+a is "A"),
-    as a legacy terminal sends them.
+    exist at all. A Ctrl chord on a letter or on a key in `_CTRL_BYTES` is
+    what the control byte xterm sends for it decodes to (Ctrl+C, Ctrl+J a
+    newline, Ctrl+M Enter, Ctrl+[ and Ctrl+3 Esc, Ctrl+8 Backspace), and Shift
+    on a printable key is in its character (Shift+a is "A"), as a legacy
+    terminal sends them.
     """
     codes = code_field.split(":")
     flags = _protocol_modifiers(modifier_field)
@@ -296,8 +310,9 @@ def _protocol_key(code_field: str, modifier_field: str) -> Key:
     if not text:
         return Key(UNKNOWN)
     lowered = text.lower()
-    if flags["ctrl"] and (lowered.isascii() and lowered.isalpha() or text in _CTRL_PUNCTUATION):
-        control = ord(lowered) & 0x1F
+    main_key = code not in _KEYPAD_TEXT  # xterm's control bytes are the main keys'; a keypad key keeps its Ctrl
+    if flags["ctrl"] and main_key and (lowered.isascii() and lowered.isalpha() or text in _CTRL_BYTES):
+        control = _CTRL_BYTES.get(text, ord(lowered) & 0x1F)
         key = Key(ESCAPE) if control == ESC_BYTE else _single_byte_key(control)
         return replace(key, alt=True) if flags["alt"] else key
     if flags["shift"]:

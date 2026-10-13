@@ -1461,9 +1461,14 @@ class App:
     def _recall_queue(self, event: Key | Paste) -> bool:
         """Up on an empty composer takes every queued prompt back into it, one per line, and empties the queue.
 
-        A prompt a slash command built comes back as the command that was
-        typed, so sending it again runs the command again. With nothing queued
-        Up is the composer's: it walks the input history.
+        Each comes back as what was typed for it: a prompt a slash command
+        built as that command line, a prompt plan mode wrapped as the text
+        typed in plan mode. Enter then submits the composer as one text, as it
+        submits anything typed: if the text starts with a slash command it
+        goes as that command, whose text is everything after the slash, later
+        lines included; otherwise it goes as one prompt (in plan mode as
+        `/plan <text>`), with a command on any later line as plain text in it.
+        With nothing queued Up is the composer's: it walks the input history.
         """
         if not isinstance(event, Key) or event.name != UP or self.composer.text or not self.queued:
             return False

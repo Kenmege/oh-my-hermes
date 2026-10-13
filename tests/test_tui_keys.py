@@ -286,6 +286,27 @@ class KeyboardProtocolTests(unittest.TestCase):
             with self.subTest(name):
                 self.assert_same_key(report, legacy)
 
+    def test_ctrl_with_a_digit_or_punctuation_decodes_as_the_control_byte_xterm_sends(self) -> None:
+        # Ctrl+8 and Ctrl+? are DEL, so Backspace; Ctrl+3 is Esc, so it interrupts as Esc does.
+        cases = {"2": b"\x00", "3": b"\x1b", "4": b"\x1c", "5": b"\x1d", "6": b"\x1e", "7": b"\x1f", "/": b"\x1f",
+                 "8": b"\x7f", "?": b"\x7f"}
+        for typed, legacy in cases.items():
+            for report in (csi_u(ord(typed), CTRL), modify_other_keys(ord(typed), CTRL)):
+                with self.subTest(report=report):
+                    self.assert_same_key(report, legacy)
+        self.assertEqual(decode(csi_u(ord("8"), CTRL)), [Key("backspace")])
+        self.assertEqual(decode(csi_u(ord("3"), CTRL)), [Key("escape")])
+        self.assert_same_key(csi_u(ord("8"), CTRL + 2), b"\x1b\x7f")  # with Alt, as ESC and the byte
+        self.assert_same_key(csi_u(ord("2"), CTRL + 2), b"\x1b\x00")
+
+    def test_a_ctrl_chord_xterm_sends_no_control_byte_for_stays_a_ctrl_chord(self) -> None:
+        for typed in "190,.;'=-":
+            with self.subTest(typed=typed):
+                self.assertEqual(decode(csi_u(ord(typed), CTRL)), [char(typed, ctrl=True)])
+        for code, typed in ((57399 + 2, "2"), (57399 + 8, "8"), (57410, "/")):  # keypad keys keep their Ctrl
+            with self.subTest(keypad=typed):
+                self.assertEqual(decode(csi_u(code, CTRL)), [char(typed, ctrl=True)])
+
     def test_ctrl_enter_and_shift_enter_are_keys_of_their_own(self) -> None:
         for report in (b"\x1b[13;5u", b"\x1b[27;5;13~"):
             with self.subTest(report=report):
