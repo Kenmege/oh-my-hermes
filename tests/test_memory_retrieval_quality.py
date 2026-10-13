@@ -41,6 +41,7 @@ from _credential_fixtures import AWS_ACCESS_KEY_ID, AWS_TEMPORARY_ACCESS_KEY_ID
 from _local_package import load_local_package
 
 load_local_package()
+from omh.plugin_bundle.omh.memory_session_lens import SURFACE_OPERATOR_CONSOLE  # noqa: E402
 from omh.coding_delegation import build_coding_delegation_payload, coding_delegation_record_payload
 from omh.paths import OmhPaths
 from omh.plugin_bundle.omh import memory_admission
@@ -783,10 +784,10 @@ class SubjectPoolTests(unittest.TestCase):
     def test_a_record_the_principal_gate_refuses_never_supersedes_or_appears(self) -> None:
         real = selector_module.principal_recall_decision
 
-        def refuse_new(record, principal, *, shared_surface=False):
+        def refuse_new(record, principal, *, shared_surface=False, channel_scopes=()):
             if record.get("record_id") == "mem_new":
                 return {"allowed": False, "reason_code": "principal_mismatch"}
-            return real(record, principal, shared_surface=shared_surface)
+            return real(record, principal, shared_surface=shared_surface, channel_scopes=channel_scopes)
 
         with patch.object(selector_module, "principal_recall_decision", refuse_new):
             pack = _pack(
@@ -898,7 +899,7 @@ class DelegationRecordTests(unittest.TestCase):
         (project_root / ".git" / "config").write_text('[remote "origin"]\n url = https://example.invalid/memory-fixture.git\n', encoding="utf-8")
         paths = OmhPaths(project_root / ".omh", root / "hermes")
         _seed_retrieval_store(paths, _case("probe", "probe", records=specs, query="deploy branch"))
-        pack = memory_recall_pack_for_handoff(paths, "fix the broken login flow in the deploy branch script", executor_target="codex")
+        pack = memory_recall_pack_for_handoff(paths, "fix the broken login flow in the deploy branch script", executor_target="codex", surface_class=SURFACE_OPERATOR_CONSOLE)
         assert pack is not None
         self.assertEqual([item["record_id"] for item in pack["included_records"]], ["mem_new"])
         message = "fix the broken login flow in src/auth.py and add a regression test"
@@ -926,7 +927,7 @@ class OpaqueLookingStorePathTests(unittest.TestCase):
         paths = OmhPaths(project_root / ".omh", root / "hermes")
         self.assertTrue(contains_credential_like_material(str(paths.memory_dir)))
         _seed_retrieval_store(paths, _case("probe", "probe", records=(_spec("mem_one", "Deploys go from main", approved_at=_YOUNG, tags=("deploy",)),), query="deploy"))
-        pack = memory_recall_pack_for_handoff(paths, "deploy from main", executor_target="codex")
+        pack = memory_recall_pack_for_handoff(paths, "deploy from main", executor_target="codex", surface_class=SURFACE_OPERATOR_CONSOLE)
         assert pack is not None
         self.assertNotIn("store_dir", pack["policy"])
         self.assertEqual(validate_project_memory_recall_pack(pack), [])

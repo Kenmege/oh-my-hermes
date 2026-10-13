@@ -9,6 +9,7 @@ import unittest
 from _local_package import load_local_package
 
 load_local_package()
+from omh.plugin_bundle.omh.memory_session_lens import SURFACE_OPERATOR_CONSOLE  # noqa: E402
 from omh.plugin_bundle.omh import memory_governance
 from omh.memory import (
     approve_project_memory_candidate,
@@ -292,9 +293,9 @@ class RecallSignalTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             paths = resolve_paths(Path(tmp) / ".omh", Path(tmp) / ".hermes")
             _approve_capture(paths, "배포는 금요일에 하지 않는다")
-            stated = memory_recall_pack_for_handoff(paths, "배포 결정", executor_target="codex", query_intent="temporal")
+            stated = memory_recall_pack_for_handoff(paths, "배포 결정", executor_target="codex", query_intent="temporal", surface_class=SURFACE_OPERATOR_CONSOLE)
             self.assertEqual(stated["query_intent"], "temporal")
-            auto = memory_recall_pack_for_handoff(paths, "배포 결정", executor_target="codex")
+            auto = memory_recall_pack_for_handoff(paths, "배포 결정", executor_target="codex", surface_class=SURFACE_OPERATOR_CONSOLE)
             self.assertEqual(auto["query_intent"], "default")
 
     def test_validator_rejects_malformed_query_intent(self) -> None:

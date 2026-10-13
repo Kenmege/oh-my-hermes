@@ -34,6 +34,7 @@ from xml.etree import ElementTree
 from _local_package import load_local_package
 
 load_local_package()
+from omh.plugin_bundle.omh.memory_session_lens import SURFACE_OPERATOR_CONSOLE  # noqa: E402
 from omh.local_store import atomic_write_text
 from omh.maintenance.doctor import run_doctor
 from omh.plugin_bundle.omh.memory_governance import evaluate_memory_replay
@@ -504,7 +505,7 @@ class OpenDeliveryTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             paths = resolve_paths(Path(tmp) / ".omh", Path(tmp) / ".hermes")
             _open_record(paths, "release notes: changelog or commits", days_open=20, tags=["release"])
-            pack = memory_recall_pack_for_handoff(paths, "release notes", executor_target="codex")
+            pack = memory_recall_pack_for_handoff(paths, "release notes", executor_target="codex", surface_class=SURFACE_OPERATOR_CONSOLE)
             assert pack is not None
             self.assertEqual(pack["record_count"], 1)
             self.assertEqual(pack["included_records"][0]["resolution_marker"], "open · 20 days unresolved")

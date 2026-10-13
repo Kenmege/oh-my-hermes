@@ -9,6 +9,7 @@ import unittest
 from _local_package import load_local_package
 
 load_local_package()
+from omh.plugin_bundle.omh.memory_session_lens import SURFACE_OPERATOR_CONSOLE  # noqa: E402
 from omh.workflows.memory_lifecycle import (
     apply_memory_correction,
     apply_memory_reapproval,
@@ -105,12 +106,12 @@ class PerspectiveLensTests(unittest.TestCase):
             codex = _approve_capture(paths, "codex deploy lesson", observed="codex")
             claude = _approve_capture(paths, "claude-code deploy lesson", observed="claude-code")
 
-            codex_pack = memory_recall_pack_for_handoff(paths, "deploy", executor_target="codex")
+            codex_pack = memory_recall_pack_for_handoff(paths, "deploy", executor_target="codex", surface_class=SURFACE_OPERATOR_CONSOLE)
             ids = {item["record_id"] for item in codex_pack["included_records"]}
             self.assertEqual(ids, {unscoped["record_id"], codex["record_id"]})
             self.assertNotIn(claude["record_id"], ids)
 
-            generic_pack = memory_recall_pack_for_handoff(paths, "deploy", executor_target="generic")
+            generic_pack = memory_recall_pack_for_handoff(paths, "deploy", executor_target="generic", surface_class=SURFACE_OPERATOR_CONSOLE)
             ids = {item["record_id"] for item in generic_pack["included_records"]}
             self.assertEqual(ids, {unscoped["record_id"]}, "another executor's lessons stay out of a generic handoff")
 
@@ -133,7 +134,7 @@ class PerspectiveHardeningTests(unittest.TestCase):
             _approve_capture(paths, "codex lesson", observed="codex")
 
             for target in ("choose", ""):
-                pack = memory_recall_pack_for_handoff(paths, "", executor_target=target)
+                pack = memory_recall_pack_for_handoff(paths, "", executor_target=target, surface_class=SURFACE_OPERATOR_CONSOLE)
                 self.assertEqual(
                     [item["record_id"] for item in pack["included_records"]],
                     [unscoped["record_id"]],
@@ -180,7 +181,7 @@ class PerspectiveHardeningTests(unittest.TestCase):
             base = _approve_capture(paths, "base fact")
             _approve_capture(paths, "codex conclusion", observed="codex", derived_from=[base["record_id"]])
 
-            pack = memory_recall_pack_for_handoff(paths, "", executor_target="codex")
+            pack = memory_recall_pack_for_handoff(paths, "", executor_target="codex", surface_class=SURFACE_OPERATOR_CONSOLE)
             compacted = _compact_memory_recall_pack(pack)
 
             self.assertEqual(compacted["perspective"], {"observer": "", "observed": "codex"})

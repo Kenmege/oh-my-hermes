@@ -746,8 +746,10 @@ class ConsoleHandoffRolePackTests(_Homes):
         self.assertEqual(role["record_count"], 2)
 
     def test_a_single_scope_pack_declares_nothing_new(self) -> None:
-        pack = memory_recall_pack_for_handoff(self.seeded(self.repo / ".omh", [("project", self.identity)]), "release checklist fixture paper", session_id="session-a")
-        assert pack is not None
+        # A console's pack: since messenger memory (#2088) a handoff with no
+        # stated surface is shared and carries no identity-unbound record.
+        pack = self.console_pack(self.seeded(self.repo / ".omh", [("project", self.identity)]))
+        self.assertEqual({row["scope"]["kind"] for row in pack["included_records"]}, {"project"})
         self.assertNotIn("scope_allowlist", pack)
         self.assertNotIn("scope_allowlist", self.delegate(pack))
 

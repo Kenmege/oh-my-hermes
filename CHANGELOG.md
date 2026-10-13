@@ -4,6 +4,37 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **OMH memory works in messenger DMs and group channels (#2088).** Every
+  gateway session was a shared surface, which denies every identity-unbound
+  record, so a single user's own Slack DM recalled none of their 33 approved
+  records. The provider now verifies a messenger conversation from the ids
+  Hermes passes (`chat_type`, `chat_id`, `chat_name`, `user_id`, `thread_id`),
+  with one structural check per covered platform (Telegram, Slack, WhatsApp,
+  WhatsApp Cloud, Signal), because `chat_type` alone defaults to `"dm"` and is
+  `"dm"` on the handoff fallback, a relay's default and a Slack group DM. A
+  proven 1:1 DM with the only user Hermes authorizes on the platform
+  (`<PLATFORM>_ALLOWED_USERS`, `GATEWAY_ALLOWED_USERS` entries of that
+  platform's id shape, and the pairing store, read and never written; an open,
+  empty or unlistable set has no owner) is `owner_direct` and reads, writes and
+  gets the pack extras like the CLI. Any other proven DM is `direct`: a
+  principal derived from the platform and the partner's id (WhatsApp's
+  shortest alias), v3 captures bound to it, recall of that person's records
+  only, and `confirm`/`correct`/`retire` on them. A proven group, and every
+  Discord conversation (the relay can label a Discord group DM `"dm"`, and
+  nothing marks a relayed event), is `channel`: a new `channel` scope keyed by
+  platform and `chat_id` (threads share it; Discord threads have their own id),
+  captures and recall confined to it, no blocks, reminder, brief, digest or
+  demote. Every turn is bound again: a bot author or an author other than the
+  DM partner makes that turn shared, also across a session id rotated inside
+  the turn, and the authorized set is re-read (by file stat) so pairing a
+  second person ends the owner's DM at the next turn. Unverified conversations,
+  Slack slash commands and uncovered platforms stay shared. Chat-built coding
+  handoffs read the lens of the session the caller names -- the `omh_interact`
+  tool's own `session_id`, or `HERMES_SESSION_ID` in a command Hermes started,
+  never the process-wide variable in a gateway -- and pass
+  `shared_surface=True` with that session's principal or channel scope, so a
+  chat nothing verified no longer receives a repository's identity-unbound
+  project records.
 - **OMH memory is recalled on the TUI and Desktop, outside a repository, and
   never past Hermes' spill cap.** The memory provider treated every `platform`
   other than `cli` as a shared surface, and a shared surface denies every

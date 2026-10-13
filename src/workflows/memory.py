@@ -35,7 +35,18 @@ from ..plugin_bundle.omh.memory_governance import (
 )
 from ..plugin_bundle.omh.memory_recall_support import normalized_summary_key
 from ..plugin_bundle.omh.memory_records import prefetch_required_scope_kinds, prefetch_scope_allowlist
-from ..plugin_bundle.omh.memory_session_lens import OPERATOR_CONSOLE_PLATFORMS, SURFACE_OPERATOR_CONSOLE, SURFACE_SHARED
+from ..plugin_bundle.omh.memory_session_lens import (
+    OPERATOR_CONSOLE_PLATFORMS,
+    OWNER_SURFACE_CLASSES,
+    SURFACE_CHANNEL,
+    SURFACE_DIRECT,
+    SURFACE_OPERATOR_CONSOLE,
+    SURFACE_OWNER_DIRECT,
+    SURFACE_SHARED,
+    lens_channel_scope,
+    lens_surface_class,
+    read_session_lens,
+)
 from ..plugin_bundle.omh.memory_records import read_served_counts as _read_served_counts
 from ..plugin_bundle.omh.memory_recall_selector import (
     _evaluate_memory_artifact as _shared_evaluate_memory_artifact,
@@ -1271,6 +1282,30 @@ def memory_surface_for_source(source: str) -> str:
     return SURFACE_OPERATOR_CONSOLE if str(source or "") in OPERATOR_CONSOLE_PLATFORMS else SURFACE_SHARED
 
 
+def _handoff_messenger_lens(paths: OmhPaths, hermes_session_id: str) -> tuple[str, dict[str, object] | None, str]:
+    """(class, principal context, channel ref) a chat-built handoff may read: its Hermes session's lens.
+
+    The memory provider publishes each session's verified class under its
+    id (`memory_session_lens`); the caller names the session -- a plugin
+    tool's own `session_id`, or `HERMES_SESSION_ID` in a command Hermes
+    started, whose environment Hermes builds per command from the session's
+    context (`tools/environments/local.py`). Only a messenger class refines
+    a shared surface; any other lens, an unreadable one, or none at all
+    leaves it shared with no principal.
+    """
+    lens = read_session_lens(paths.omh_home, hermes_session_id) if hermes_session_id else None
+    surface_class = lens_surface_class(lens) if lens is not None else SURFACE_SHARED
+    if surface_class == SURFACE_OWNER_DIRECT:
+        return SURFACE_OWNER_DIRECT, None, ""
+    if lens is not None and surface_class == SURFACE_DIRECT:
+        # A direct lens always holds a human principal (`read_session_lens`).
+        return SURFACE_DIRECT, dict(lens["principal_context"]), ""
+    channel = lens_channel_scope(lens) if lens is not None else None
+    if channel is not None:
+        return SURFACE_CHANNEL, None, channel["ref"]
+    return SURFACE_SHARED, None, ""
+
+
 def memory_recall_pack_for_handoff(
     paths: OmhPaths,
     query: str,
@@ -1280,20 +1315,43 @@ def memory_recall_pack_for_handoff(
     limit: int = 5,
     query_intent: str | None = None,
     surface_class: str = SURFACE_SHARED,
+    hermes_session_id: str = "",
 ) -> dict[str, object] | None:
     # The executor target is the handoff's perspective lens: unscoped records
     # pass as always, and records observed for this executor join them --
     # while a record about any other executor stays out of this pack.
     pack_scope = _handoff_pack_scope(paths, scope_kind=None, scope_ref=None)
-    # The live prefetch's allowlist rule for the surface the request came
-    # from. A handoff a chat built can travel back to that chat, so it reads
-    # no user-global record and, with no project resolved, nothing at all; an
-    # operator console's handoff reads user-global and the thread there too.
-    # The caller states the surface; an unstated one is shared.
+    # The live prefetch's rule for the surface the request came from. A
+    # handoff a chat built can travel back to that chat, so it carries only
+    # what that chat may see: a shared surface's lens, which admits no
+    # identity-unbound record. The chat's own Hermes session says more when
+    # its provider verified it (`_handoff_messenger_lens`): the owner's DM
+    # reads like a console, another person's DM reads that person's records
+    # and a group its channel's, each through that one scope. An operator
+    # console's handoff reads user-global and the thread there too. The
+    # caller states the surface and names the Hermes session it serves
+    # (`hermes_session_id`): the tool's own `session_id` in process, never
+    # `HERMES_SESSION_ID`, which in a gateway belongs to whichever agent was
+    # built last. An unstated surface or session is shared.
     project_identity = pack_scope["ref"] if pack_scope["kind"] == "project" else ""
-    console = surface_class == SURFACE_OPERATOR_CONSOLE
-    allowed_scopes = prefetch_scope_allowlist(project_identity=project_identity, session_id=session_id, include_legacy_personal=console)
-    required_scope_kinds = prefetch_required_scope_kinds(project_identity) if console else ("project",)
+    principal_context, channel_ref = None, ""
+    if surface_class != SURFACE_OPERATOR_CONSOLE:
+        surface_class, principal_context, channel_ref = _handoff_messenger_lens(paths, hermes_session_id)
+    console = surface_class in OWNER_SURFACE_CLASSES
+    binding: dict[str, str] | None = None
+    if principal_context is not None:
+        binding = {"kind": "user", "ref": str(principal_context.get("principal", "") or "")}
+        # The selector binds a principal only to the session it names
+        # (`parse_principal_context(expected_session=...)`), so the pack is
+        # selected under that chat session's id.
+        session_id = str(principal_context.get("session_ref", "") or "")
+    elif channel_ref:
+        binding = {"kind": "channel", "ref": channel_ref}
+    if binding is not None:
+        allowed_scopes, required_scope_kinds = [binding], ()
+    else:
+        allowed_scopes = prefetch_scope_allowlist(project_identity=project_identity, session_id=session_id, include_legacy_personal=console)
+        required_scope_kinds = prefetch_required_scope_kinds(project_identity) if console else ("project",)
     pack = build_project_memory_recall_pack(
         paths,
         query,
@@ -1301,6 +1359,8 @@ def memory_recall_pack_for_handoff(
         session_id=session_id,
         allowed_scopes=allowed_scopes,
         required_scope_kinds=required_scope_kinds,
+        principal_context=principal_context,
+        shared_surface=not console,
         inspection=False,
         limit=limit,
         observed=_handoff_perspective_lens(executor_target),
@@ -1312,8 +1372,9 @@ def memory_recall_pack_for_handoff(
     # A pack with no eligible records but a freshness warning still travels.
     # Dropping it here was the silent failure: the handoff went out with no
     # memory and no statement that a stale record had been held back, so the
-    # operator never got the chance to confirm, replace, or retire it.
-    if pack_scope["kind"] == "unresolved":
+    # operator never got the chance to confirm, replace, or retire it. A
+    # bound pack's scope is its binding, whatever the store's project.
+    if pack_scope["kind"] == "unresolved" and binding is None:
         return _declare_scope_allowlist({**pack, "scope": pack_scope}, allowed_scopes, required_scope_kinds)
     if not pack.get("enabled") or not (pack.get("included_records") or pack.get("freshness_warnings")):
         return None
@@ -2987,7 +3048,10 @@ def validate_handoff_context_blocked(value: Any, *, label: str = "context_pack_b
 
 
 # The kinds `prefetch_scope_allowlist` builds an allowlist from.
-_SCOPE_ALLOWLIST_KINDS = ("user-global", "project", "user", "thread")
+_SCOPE_ALLOWLIST_KINDS = ("user-global", "project", "user", "thread", "channel")
+# Kinds an allowlist may name only as the pack's own scope: one repository's
+# records, or one messenger channel's, never beside another's.
+_SCOPE_ALLOWLIST_OWN_KINDS = ("project", "channel")
 
 
 def scope_allowlist_errors(allowlist: Any, scope: Any, label: str) -> list[str]:
@@ -2996,8 +3060,10 @@ def scope_allowlist_errors(allowlist: Any, scope: Any, label: str) -> list[str]:
     The recall pack and the role context pack both hold their declared
     allowlist to this, so neither accepts an audience no selector read
     under: one scope per kind at most, user-global only as
-    `user-global:default`, a project only when it is the pack's own scope
-    (none when the scope is unresolved), and a resolved scope inside the list.
+    `user-global:default`, a project or a messenger channel only when it is
+    the pack's own scope (none when the scope is unresolved), no personal
+    scope (user-global, user) beside a channel, and a resolved scope inside
+    the list.
     """
     if not isinstance(allowlist, list) or not allowlist:
         return [f"{label} must be a non-empty list"]
@@ -3014,8 +3080,13 @@ def scope_allowlist_errors(allowlist: Any, scope: Any, label: str) -> list[str]:
             errors.append(f"{label} must name at most one {kind} scope")
     if any(item["kind"] == "user-global" and item["ref"] != "default" for item in allowlist):
         errors.append(f"{label} must name user-global only as user-global:default")
-    if any(item["kind"] == "project" and item != scope for item in allowlist):
-        errors.append(f"{label} must name no project but the pack's own scope")
+    for kind in _SCOPE_ALLOWLIST_OWN_KINDS:
+        if any(item["kind"] == kind and item != scope for item in allowlist):
+            errors.append(f"{label} must name no {kind} but the pack's own scope")
+    if isinstance(scope, dict) and scope.get("kind") == "channel" and any(item["kind"] in ("user-global", "user") for item in allowlist):
+        # A channel's pack is read by everyone in it; no producer puts a
+        # person's memory beside it.
+        errors.append(f"{label} must name no user-global or user scope beside a channel")
     if isinstance(scope, dict) and scope.get("kind") != "unresolved" and scope not in allowlist:
         errors.append(f"{label} must contain the pack's scope")
     return errors

@@ -11,6 +11,7 @@ from unittest.mock import patch
 from _local_package import load_local_package
 
 load_local_package()
+from omh.plugin_bundle.omh.memory_session_lens import SURFACE_OPERATOR_CONSOLE  # noqa: E402
 from omh.local_store import FileLockTimeout
 from omh.plugin_bundle.omh import memory_governance
 from omh.workflows import memory as memory_workflow
@@ -149,7 +150,7 @@ class RecallUsageBookkeepingTests(unittest.TestCase):
             build_project_memory_recall_pack(paths, "docs gates")
             self.assertEqual(read_recall_usage(paths), {})
 
-            pack = memory_recall_pack_for_handoff(paths, "docs gates")
+            pack = memory_recall_pack_for_handoff(paths, "docs gates", surface_class=SURFACE_OPERATOR_CONSOLE)
             self.assertIsNotNone(pack)
             self.assertEqual(read_recall_usage(paths), {}, "building a handoff pack is speculative, not delivery")
 
@@ -292,7 +293,7 @@ class DerivedFromLineageTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             paths = resolve_paths(Path(tmp) / ".omh", Path(tmp) / ".hermes")
             _approve_capture(paths, "Fact whose delivery bookkeeping fails")
-            pack = memory_recall_pack_for_handoff(paths, "")
+            pack = memory_recall_pack_for_handoff(paths, "", surface_class=SURFACE_OPERATOR_CONSOLE)
             self.assertIsNotNone(pack)
 
             for failure in (FileLockTimeout("lock held"), OSError(30, "read-only file system")):

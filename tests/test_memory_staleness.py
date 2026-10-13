@@ -22,6 +22,7 @@ from unittest.mock import patch
 from _local_package import load_local_package
 
 load_local_package()
+from omh.plugin_bundle.omh.memory_session_lens import SURFACE_OPERATOR_CONSOLE  # noqa: E402
 from omh.local_store import atomic_write_text
 from omh.memory import (
     approve_project_memory_candidate,
@@ -97,7 +98,7 @@ class HandoffFreshnessWarningTests(unittest.TestCase):
                 staleness={"stale_after": PAST, "stale_after_days": None, "review_due_at": PAST},
             )
 
-            pack = memory_recall_pack_for_handoff(paths, "release notes changelog", executor_target="codex")
+            pack = memory_recall_pack_for_handoff(paths, "release notes changelog", executor_target="codex", surface_class=SURFACE_OPERATOR_CONSOLE)
 
             self.assertIsNotNone(pack, "a stale-only pack must still reach the handoff as a warning")
             assert pack is not None
@@ -171,7 +172,7 @@ class HandoffFreshnessWarningTests(unittest.TestCase):
                 revalidation={"deadline": PAST},
                 staleness={"stale_after": PAST, "stale_after_days": None, "review_due_at": PAST},
             )
-            pack = memory_recall_pack_for_handoff(paths, "coverage gate percent", executor_target="codex")
+            pack = memory_recall_pack_for_handoff(paths, "coverage gate percent", executor_target="codex", surface_class=SURFACE_OPERATOR_CONSOLE)
             assert pack is not None
 
             for name, summarize in (("wrapper brief", briefing_pack_summary), ("runtime artifact", artifact_pack_summary)):
@@ -193,7 +194,7 @@ class HandoffFreshnessWarningTests(unittest.TestCase):
             memory_workflow.apply_memory_attention_change(paths, record["record_id"], tier="reference")
 
             self.assertIsNone(
-                memory_recall_pack_for_handoff(paths, "wholly unrelated payment gateway topic"),
+                memory_recall_pack_for_handoff(paths, "wholly unrelated payment gateway topic", surface_class=SURFACE_OPERATOR_CONSOLE),
                 "no records and no warnings means no pack; warnings must not fabricate one",
             )
 

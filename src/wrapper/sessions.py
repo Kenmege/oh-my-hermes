@@ -158,6 +158,7 @@ def create_or_resume_wrapper_session(
     record_provenance: dict[str, object] | None = None,
     platform_context: Mapping[str, Any] | None = None,
     design_direction_iteration_context: Mapping[str, object] | None = None,
+    hermes_session_id: str = "",
     _host_project_binding_factory: HostProjectBindingFactory | None = None,
 ) -> dict[str, object]:
     if source not in CHAT_SOURCES:
@@ -184,6 +185,7 @@ def create_or_resume_wrapper_session(
         paths=paths,
         platform_context=platform_context,
         design_direction_iteration_context=design_direction_iteration_context,
+        hermes_session_id=hermes_session_id,
         _host_project_binding_factory=build_session_project_binding_factory(
             _host_project_binding_factory,
         ),
@@ -550,6 +552,7 @@ def prepare_wrapper_session_handoff(
     retarget: bool = False,
     expected_revision: int | None = None,
     mutation_id: str | None = None,
+    hermes_session_id: str = "",
 ) -> dict[str, object]:
     session = _existing_session(paths, session_id)
     # expected_revision is threaded into every write this call authorizes
@@ -692,6 +695,7 @@ def prepare_wrapper_session_handoff(
                 follow_up=follow_up,
                 expected_revision=guard_revision,
                 mutation_id=mutation_id,
+                hermes_session_id=hermes_session_id,
             ),
             retarget_record,
             paths,
@@ -711,6 +715,7 @@ def prepare_wrapper_session_handoff(
                 follow_up=follow_up,
                 expected_revision=guard_revision,
                 mutation_id=mutation_id,
+                hermes_session_id=hermes_session_id,
             ),
             retarget_record,
             paths,
@@ -767,6 +772,7 @@ def prepare_wrapper_session_handoff(
                 preferred_workflow=follow_up_workflow,
                 preferred_workflow_score=follow_up_score,
                 force_coding_handoff=follow_up,
+                hermes_session_id=hermes_session_id,
             )
         )
         run = lifecycle["run"]
@@ -938,6 +944,7 @@ def _prepare_prompt_only_session_handoff(
     follow_up: bool = False,
     expected_revision: int | None = None,
     mutation_id: str | None = None,
+    hermes_session_id: str = "",
 ) -> dict[str, object]:
     message = extract_message_text(event_or_message)
     metadata = _source_metadata(event_or_message)
@@ -961,6 +968,7 @@ def _prepare_prompt_only_session_handoff(
             executor_target=executor_target,
             session_id=str(session["session_id"]),
             surface_class=memory_surface_for_source(str(session["source"])),
+            hermes_session_id=hermes_session_id,
         ),
         capability_snapshot_directory=_capability_snapshot_directory(paths),
     )
@@ -1059,6 +1067,7 @@ def _prepare_runtime_session_handoff(
     follow_up: bool = False,
     expected_revision: int | None = None,
     mutation_id: str | None = None,
+    hermes_session_id: str = "",
 ) -> dict[str, object]:
     message = extract_message_text(event_or_message)
     metadata = _source_metadata(event_or_message)
@@ -1082,6 +1091,7 @@ def _prepare_runtime_session_handoff(
             executor_target=executor_target,
             session_id=str(session["session_id"]),
             surface_class=memory_surface_for_source(str(session["source"])),
+            hermes_session_id=hermes_session_id,
         ),
         capability_snapshot_directory=_capability_snapshot_directory(paths),
     )

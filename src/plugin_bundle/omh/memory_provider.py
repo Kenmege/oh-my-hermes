@@ -100,7 +100,8 @@ from .memory_dreaming import (
     update_dreaming_state,
 )
 from .memory_eviction import build_eviction_plan
-from .memory_principals import parse_principal_context
+from .memory_messenger import CHANNEL, DIRECT, HermesAuthorization, MessengerConversation, classify_conversation, principal_identity, same_person
+from .memory_principals import PrincipalContractError, build_principal_context, derive_channel_ref, parse_principal_context
 from .project_identity import ProjectIdentityResolution, project_identity_root, resolve_project_identity
 from .memory_prefetch_receipt import (
     build_prefetch_receipt,
@@ -120,8 +121,16 @@ from .memory_session_digest import (
     write_session_close,
 )
 from .memory_session_lens import (
+    BOUND_SURFACE_CLASSES,
+    OPERATOR_CONSOLE_PLATFORMS,
+    OWNER_SURFACE_CLASSES,
+    PRIMARY_AGENT_CONTEXTS,
     SESSION_LENS_STALE_HOURS,
+    SURFACE_CHANNEL,
+    SURFACE_DIRECT,
     SURFACE_OPERATOR_CONSOLE,
+    SURFACE_OWNER_DIRECT,
+    SURFACE_SHARED,
     lens_surface_class,
     memory_surface_class,
     note_session_records,
@@ -236,12 +245,28 @@ class OmhMemoryProvider(_MemoryProviderBase):
         self._turn_ref = ""
         # Decided at `initialize` (`memory_surface_class`). Before it, as for
         # `omh memory dream --evaluate`, the caller is the operator's own CLI.
-        # `_declared_class` is that decision; `_surface_class` is what this
-        # session id is held to, which another provider's tighter lens can
-        # narrow (`_tighten_to`) until the id changes.
+        # `_declared_class` is that decision; `_session_class` is this
+        # provider's own class for the current turn (a messenger conversation
+        # re-derives it at each turn start); `_surface_class` is what this
+        # session id is held to: `_session_class` narrowed by the tightest
+        # lens another provider published under the id (`_foreign_floor`,
+        # `_tighten_to`) until the id changes.
         self._declared_class = SURFACE_OPERATOR_CONSOLE
+        self._session_class = SURFACE_OPERATOR_CONSOLE
+        self._foreign_floor: str | None = None
         self._surface_class = SURFACE_OPERATOR_CONSOLE
         self._tightened_by_foreign_lens = False
+        # A gateway conversation `memory_messenger` verified from Hermes'
+        # kwargs (a 1:1 DM or a group), its channel scope, and the authorized
+        # set the owner's DM is judged by. None everywhere else.
+        self._conversation: MessengerConversation | None = None
+        self._channel_scope: dict[str, str] | None = None
+        self._authorization: HermesAuthorization | None = None
+        self._messenger_profile = "default"
+        # This turn's author as Hermes passed it to `on_turn_start` (id, is a
+        # bot). Kept so a session id rotated mid-turn is bound by the same
+        # author, never by a default that reads as the DM partner.
+        self._turn_author: tuple[str, bool] = ("", False)
         self._shared_surface = False
         # A console nobody is at: a Kanban worker (`_attended`).
         self._unattended = False
@@ -350,13 +375,37 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # Hermes passes `platform` (`cli`, `tui`, `desktop`, a gateway name,
         # `cron`, `subagent`) and `agent_context` (`agent/agent_init.py`,
         # `_memory_provider_init_kwargs`); it never passes `principal_context`.
+        # A gateway also passes the chat's identity (`chat_type`, `chat_id`,
+        # `chat_name`, `user_id`, `thread_id`, each only when set), from which
+        # a 1:1 DM or a group conversation is verified (`memory_messenger`); a
+        # primary gateway session nothing verifies stays shared.
+        platform, agent_context = kwargs.get("platform", ""), kwargs.get("agent_context", "")
+        shared_request = kwargs.get("shared_surface", False)
+        self._conversation, self._channel_scope, self._authorization = None, None, None
+        self._turn_author = ("", False)
+        self._messenger_profile = str(kwargs.get("agent_identity", "") or "default")
+        if str(agent_context or "") in PRIMARY_AGENT_CONTEXTS and not shared_request and str(platform or "") not in OPERATOR_CONSOLE_PLATFORMS:
+            self._conversation = classify_conversation(
+                platform,
+                chat_type=kwargs.get("chat_type"),
+                chat_id=kwargs.get("chat_id"),
+                user_id=kwargs.get("user_id"),
+                thread_id=kwargs.get("thread_id"),
+                chat_name=kwargs.get("chat_name"),
+                hermes_home=self._hermes_home,
+            )
+        if self._conversation is not None:
+            self._authorization = HermesAuthorization(self._hermes_home)
+            if self._conversation.kind == CHANNEL:
+                self._channel_scope = self._derive_channel_scope(self._conversation)
         self._declared_class = memory_surface_class(
-            platform=kwargs.get("platform", ""),
-            agent_context=kwargs.get("agent_context", ""),
-            shared_surface=kwargs.get("shared_surface", False),
+            platform=platform,
+            agent_context=agent_context,
+            shared_surface=shared_request,
+            messenger_class=self._messenger_class() if self._conversation is not None else "",
         )
-        self._surface_class, self._tightened_by_foreign_lens = self._declared_class, False
-        self._shared_surface, self._writes_enabled = surface_flags(self._surface_class)
+        self._session_class, self._foreign_floor = self._declared_class, None
+        self._settle_class()
         # Read where the provider runs: Hermes starts a Kanban worker as its own
         # `hermes -p <profile> --cli ... chat -q` process with these set.
         self._unattended = bool(os.environ.get(KANBAN_WORKER_ENV_TASK)) or (
@@ -369,6 +418,8 @@ class OmhMemoryProvider(_MemoryProviderBase):
         self._profile_ref = str(self._principal_context.get("profile_ref", "")) if self._principal_context is not None else str(kwargs.get("active_profile", "") or "")
         if self._shared_surface:
             self._principal_context = None
+        # A DM's principal is OMH's own, derived from the verified partner.
+        self._bind_conversation()
         cwd = runtime_paths.expand_path(kwargs["cwd"]) if kwargs.get("cwd") else runtime_paths.runtime_cwd()
         self._project_cwd = str(cwd) if cwd is not None else None
         self._project_home = _project_omh_home(cwd) if cwd is not None else None
@@ -406,7 +457,8 @@ class OmhMemoryProvider(_MemoryProviderBase):
                 # conversation, and a real `/new` still reaches
                 # `on_session_switch(reset=True)` from Hermes' worker.
                 self._rebind_session(str(session_id), reset=True)
-            if principal_context is not None:
+            if principal_context is not None and self._conversation is None:
+                # A verified messenger conversation binds its own principal.
                 supplied = parse_principal_context(
                     principal_context,
                     expected_profile=self._profile_ref,
@@ -517,6 +569,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
             "shared_surface": self._shared_surface,
             "writes_enabled": self._writes_enabled,
             "principal_context": self._principal_context,
+            "channel_scope": self._channel_scope if self._surface_class == SURFACE_CHANNEL else None,
             "homes": [str(home) for home in self._record_homes()],
             "project_identity": resolve_project_identity(self._project_cwd).identity if self._project_cwd is not None else "",
             "executor_target": PREFETCH_EXECUTOR_TARGET,
@@ -585,9 +638,12 @@ class OmhMemoryProvider(_MemoryProviderBase):
             self._adopt(on_disk)
 
     def _withholds_less_than(self, lens: dict[str, Any]) -> bool:
-        """True when ``lens`` withholds more than this session's current class."""
-        theirs = lens_surface_class(lens)
-        return tighter_surface_class(theirs, self._surface_class) == theirs and theirs != self._surface_class
+        """True when ``lens`` withholds something this session's current class does not.
+
+        That is a tighter class, or one that withholds different things (a DM
+        and a channel), whose meet is tighter than both.
+        """
+        return tighter_surface_class(lens_surface_class(lens), self._surface_class) != self._surface_class
 
     def _adopt(self, lens: dict[str, Any]) -> None:
         """Become a guest under another instance's lens, taking its class if it is tighter."""
@@ -595,19 +651,101 @@ class OmhMemoryProvider(_MemoryProviderBase):
         self._tighten_to(lens_surface_class(lens))
 
     def _tighten_to(self, surface_class: str) -> None:
-        """Take on a class that withholds more; never one that withholds less. Sticky for this id."""
-        tighter = tighter_surface_class(self._surface_class, surface_class)
-        if tighter != self._surface_class:
-            self._surface_class, self._tightened_by_foreign_lens = tighter, True
-        self._shared_surface, self._writes_enabled = surface_flags(self._surface_class)
-        if self._shared_surface:
+        """Take on a class that withholds more; never one that withholds less. Sticky for this id.
+
+        A DM's principal and a channel's scope belong to the provider that
+        verified them, so under another instance's direct or channel lens this
+        provider is a shared surface: it holds no binding of its own there.
+        """
+        if surface_class in BOUND_SURFACE_CLASSES and surface_class != self._session_class:
+            surface_class = SURFACE_SHARED
+        self._foreign_floor = surface_class if self._foreign_floor is None else tighter_surface_class(self._foreign_floor, surface_class)
+        self._settle_class()
+
+    def _settle_class(self) -> None:
+        """The class this session id is held to: its own, narrowed by the tightest foreign lens it met."""
+        surface_class = self._session_class if self._foreign_floor is None else tighter_surface_class(self._session_class, self._foreign_floor)
+        self._surface_class, self._tightened_by_foreign_lens = surface_class, surface_class != self._session_class
+        self._shared_surface, self._writes_enabled = surface_flags(surface_class)
+        if self._shared_surface and surface_class != SURFACE_DIRECT:
             self._principal_context = None
 
     def _restore_declared_class(self) -> None:
         """A new session id starts from the class `initialize` decided; a tightening belonged to the old id."""
         self._guest = False
-        self._surface_class, self._tightened_by_foreign_lens = self._declared_class, False
-        self._shared_surface, self._writes_enabled = surface_flags(self._surface_class)
+        self._session_class, self._foreign_floor = self._declared_class, None
+        self._settle_class()
+        # A DM's principal names its session; bind one for the new id.
+        self._bind_conversation()
+
+    def _messenger_class(self) -> str:
+        """The class of the verified conversation as Hermes authorizes it right now; shared when unverifiable."""
+        conversation = self._conversation
+        if conversation is None:
+            return SURFACE_SHARED
+        if conversation.kind == CHANNEL:
+            return SURFACE_CHANNEL if self._channel_scope is not None else SURFACE_SHARED
+        if self._authorization is not None and self._authorization.owner(conversation):
+            return SURFACE_OWNER_DIRECT
+        return SURFACE_DIRECT
+
+    def _bind_conversation(self) -> None:
+        """This turn's class for a verified messenger conversation, and the principal a DM binds.
+
+        Re-derived at every turn start, so a second person paired since the
+        last turn ends the owner's DM at the next one, and again whenever the
+        session id moves, by the same turn's author. A turn a bot wrote, or
+        one whose author is not the DM partner, is shared for that turn. An
+        absent author is the partner: a verified 1:1 DM has only two parties,
+        and the bot's own messages do not start turns.
+        """
+        conversation = self._conversation
+        if conversation is None:
+            return
+        author_id, author_is_bot = self._turn_author
+        surface_class = self._messenger_class()
+        if author_is_bot or (
+            conversation.kind == DIRECT and author_id and not same_person(conversation.platform, author_id, conversation.partner, self._hermes_home)
+        ):
+            surface_class = SURFACE_SHARED
+        self._session_class = surface_class
+        self._settle_class()
+        self._principal_context = self._messenger_principal() if self._surface_class == SURFACE_DIRECT else None
+        if self._surface_class == SURFACE_DIRECT and self._principal_context is None:
+            # No principal could be derived: a DM bound to nobody is shared.
+            self._session_class = SURFACE_SHARED
+            self._settle_class()
+
+    def _messenger_principal(self) -> dict[str, object] | None:
+        """The DM partner's principal context for this session and turn; None when it cannot be derived."""
+        conversation = self._conversation
+        if conversation is None or conversation.kind != DIRECT:
+            return None
+        try:
+            return build_principal_context(
+                self._omh_home,
+                profile_ref=self._messenger_profile,
+                surface_ref=conversation.platform,
+                session_ref=self._session_id,
+                turn_ref=self._turn_ref or "turn_0",
+                actor_kind="human",
+                host_identity=principal_identity(conversation, self._hermes_home),
+                identity_evidence_refs=["hermes_gateway_direct_message"],
+            )
+        except (OSError, PrincipalContractError):
+            return None
+
+    def _derive_channel_scope(self, conversation: MessengerConversation) -> dict[str, str] | None:
+        """The channel scope of a group conversation: one per chat id, its threads included."""
+        try:
+            ref = derive_channel_ref(self._omh_home, profile_ref=self._messenger_profile, surface_ref=conversation.platform, channel_identity=conversation.chat_id)
+        except (OSError, PrincipalContractError):
+            return None
+        return {"kind": "channel", "ref": ref}
+
+    def _digest_withheld(self) -> bool:
+        """A messenger session serves the digest only while it is the owner's DM."""
+        return self._conversation is not None and self._surface_class not in OWNER_SURFACE_CLASSES
 
     @property
     def _console_provider(self) -> bool:
@@ -616,16 +754,19 @@ class OmhMemoryProvider(_MemoryProviderBase):
 
     @property
     def _attended(self) -> bool:
-        """An operator console somebody is at.
+        """An operator console somebody is at, or the owner's own DM.
 
         Only there are the open-record reminder and the consolidation brief
         served, the brief raised, and the dreaming counters moved. A shared
         surface or a background run has no operator to answer them. A Kanban
         worker reads as a console (#2088 relies on records in its turns), but
         runs unattended: an ask recorded there would defer the operator's real
-        one, and the brief would ask it to remove Hermes entries.
+        one, and the brief would ask it to remove Hermes entries. The owner's
+        DM is the operator at another keyboard: the brief's demote rows quote
+        the owner's own Hermes memory, to the owner. A guest under another
+        provider's lens is a hygiene or `/compress` agent nobody is at.
         """
-        return self._surface_class == SURFACE_OPERATOR_CONSOLE and not self._unattended
+        return self._surface_class in OWNER_SURFACE_CLASSES and not self._unattended and not self._guest
 
     def queue_prefetch(
         self,
@@ -645,7 +786,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # keeps one render's text from being served with another's count and
         # receipt.
         with self._render_lock:
-            if principal_context is not None:
+            if principal_context is not None and self._conversation is None:
                 self._principal_context = parse_principal_context(
                     principal_context,
                     expected_profile=self._profile_ref,
@@ -712,17 +853,24 @@ class OmhMemoryProvider(_MemoryProviderBase):
         self._principal_context = None
         self._profile_ref = ""
         self._turn_ref = ""
+        self._turn_author = ("", False)
 
     # -- Optional hooks -----------------------------------------------------
 
     def on_turn_start(self, turn_number: int, message: str = "", **kwargs: Any) -> None:
         self._turn_ref = f"turn_{turn_number}"
-        self._principal_context = parse_principal_context(
-            kwargs.get("principal_context"),
-            expected_profile=self._profile_ref,
-            expected_session=self._session_id,
-            expected_turn=self._turn_ref,
-        )
+        if self._conversation is not None:
+            # Hermes passes the turn's author (`agent/turn_context.py`,
+            # `_memory_turn_start_and_prefetch`): this turn is judged by it.
+            self._turn_author = (str(kwargs.get("author_id") or "").strip(), bool(kwargs.get("author_is_bot", False)))
+            self._bind_conversation()
+        else:
+            self._principal_context = parse_principal_context(
+                kwargs.get("principal_context"),
+                expected_profile=self._profile_ref,
+                expected_session=self._session_id,
+                expected_turn=self._turn_ref,
+            )
         self._publish_lens(reset=False, refresh=True)
         # Hermes calls this hook and then `prefetch` inside the SAME turn;
         # `queue_prefetch` only runs after the turn ends. The pack is therefore
@@ -948,7 +1096,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
             else ProjectIdentityResolution(diagnostics=("outside_repository",))
         )
         moment = now or datetime.now(timezone.utc)
-        console = self._surface_class == SURFACE_OPERATOR_CONSOLE
+        console = self._surface_class in OWNER_SURFACE_CLASSES
         blocks = read_memory_blocks(self._omh_home) if console else ()
         selection = self._block_selection(blocks=blocks, now=moment)
         system_blocks = tuple(block for block in blocks if block.tier == SYSTEM_TIER)
@@ -992,7 +1140,10 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # consolidate in this turn, and it never moves the recall count.
         brief = read_latest_consolidation(self._omh_home) if self._attended else None
         # A status, not a memory either: counts only, and never the recall count.
-        digest = self._session_digest_section()
+        # Withheld for a turn that is not the owner's DM: it stays pending,
+        # never spent where it cannot be shown.
+        digest_withheld = self._digest_withheld()
+        digest = "" if digest_withheld else self._session_digest_section()
         fitted = fit_prefetch_pack(
             render_system=lambda budget: render_memory_blocks_within(system_blocks, total_chars=budget, evaluations=selection.evaluations),
             render_index=lambda budget: render_block_index(reference_blocks, evaluations=selection.evaluations, budget_chars=budget),
@@ -1022,7 +1173,10 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # Last, so a render that raised leaves no ids beside the previous pack.
         self._prepared_record_ids = tuple(str(item["record_id"]) for item in prepared.section.rendered)
         # A digest the budget left out stays pending for a later render.
-        self._pack_digest_evaluated, self._pack_digest = self._digest_pending and fitted.digest == digest, fitted.digest
+        self._pack_digest_evaluated, self._pack_digest = (
+            not digest_withheld and self._digest_pending and fitted.digest == digest,
+            fitted.digest,
+        )
         return pack
 
     def _start_session_digest(self, *, initializing: bool) -> None:
@@ -1036,9 +1190,10 @@ class OmhMemoryProvider(_MemoryProviderBase):
         to tell and gets none.
         """
         self._digest_window, self._digest_pending, self._pack_digest_evaluated, self._pack_digest = None, False, False, ""
-        if not self._writes_enabled or self._unattended:
+        if not self._writes_enabled or self._unattended or self._digest_withheld():
             # A Kanban worker has nobody to tell either, and serving the digest
-            # would mark it reported for the operator's next session.
+            # would mark it reported for the operator's next session. A
+            # messenger DM of anyone but the owner, or a group, gets none.
             return
 
         def window() -> tuple[datetime, datetime] | None:
@@ -1087,11 +1242,12 @@ class OmhMemoryProvider(_MemoryProviderBase):
             self._prefetch_scopes(), required_scope_kinds=prefetch_required_scope_kinds(self._project_resolution.identity)
         )
         principal, shared = self._principal_context, self._shared_surface
+        channels = tuple(scope for scope in scopes if scope["kind"] == "channel")
 
         def admits(record: dict[str, Any]) -> bool:
             return (
                 status == "resolved"
-                and bool(principal_recall_decision(record, principal, shared_surface=shared)["allowed"])
+                and bool(principal_recall_decision(record, principal, shared_surface=shared, channel_scopes=channels)["allowed"])
                 and record.get("scope") in scopes
                 and _record_perspective_matches(record, observer=None, observed=PREFETCH_EXECUTOR_TARGET)
             )
@@ -1133,14 +1289,16 @@ class OmhMemoryProvider(_MemoryProviderBase):
         return (self._omh_home,)
 
     def _prefetch_scopes(self) -> list[dict[str, str]]:
-        """One stable project label, or an unresolved, fail-closed allowlist."""
+        """One stable project label, or an unresolved, fail-closed allowlist; a channel names its own scope."""
         identity = self._project_resolution.identity
         principal = str(self._principal_context.get("principal", "")) if self._principal_context is not None else ""
+        channel = self._channel_scope["ref"] if self._surface_class == SURFACE_CHANNEL and self._channel_scope is not None else ""
         return prefetch_scope_allowlist(
             project_identity=identity,
             session_id=self._session_id,
             principal_ref=principal,
             include_legacy_personal=not self._shared_surface,
+            channel_ref=channel,
         )
 
     def consolidation_due(

@@ -65,10 +65,15 @@ def start_codex_delegation_lifecycle(
     preferred_workflow_score: int | None = None,
     force_coding_handoff: bool = False,
     handoff_contract: dict[str, object] | None = None,
+    hermes_session_id: str = "",
 ) -> dict[str, object]:
     if memory_recall_pack is None:
         memory_recall_pack = memory_recall_pack_for_handoff(
-            paths, message, executor_target="codex", surface_class=memory_surface_for_source(source)
+            paths,
+            message,
+            executor_target="codex",
+            surface_class=memory_surface_for_source(source),
+            hermes_session_id=hermes_session_id,
         )
     payload = build_coding_delegation_payload(
         message,

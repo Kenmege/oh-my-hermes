@@ -118,7 +118,14 @@ resolve), an operator console's allowlist is user-global plus the current
 thread and requires no project entry (owner decision 2026-10-13): no project
 record is admitted there, and a capture made outside a repository, which
 defaults to user scope, is recalled where it was stated. A shared surface
-gets an empty allowlist there, as before. This is a record-selection boundary;
+gets an empty allowlist there, as before, unless it names a principal (a
+person's messenger DM, or a wrapper's principal context) or a messenger
+channel: those labels admit only records bound to that principal or scoped to
+that channel, so they need no repository. A `channel` scope admits its
+identity-unbound records on a shared surface only when the allowlist names
+that exact channel (see
+[Messenger conversations](MEMORY.md#messenger-conversations)). This is a
+record-selection boundary;
 separately governed blocks and a consolidation reminder aren't selected by
 this record allowlist, and reach an operator console only (see
 [Surface classes](MEMORY.md#surface-classes)).
@@ -134,10 +141,16 @@ project allowlist; the coding handoff's recall pack uses the project its store
 belongs to. With no project resolved, operator recall follows the live turn's
 console rule (user-global and the thread, no project entry required). A
 handoff follows the rule of the surface it came from: a wrapper's chat-sourced
-handoff (every `CHAT_SOURCES` name) or one whose caller states no surface is
-shared, so it reads no user-global record and nothing outside a repository,
-because the pack can travel back to that chat; it still carries the repository's
-identity-unbound project records, which the live shared pack does not. `omh
+handoff (every `CHAT_SOURCES` name) or one whose caller states no surface
+carries what the chat's own Hermes session may see by its published lens --
+the session the caller names: the `omh_interact` tool's own `session_id` in
+process, and `HERMES_SESSION_ID` only in a command Hermes started (`omh coding
+delegate`, `omh coding lifecycle start`, `omh chat interact`, `omh chat session
+start` and `prepare-handoff`). The owner's messenger DM reads like
+a console, another person's DM reads only that person's records, a group only
+its channel's, and
+anything else is shared (`shared_surface=True`), admitting no
+identity-unbound record, because the pack can travel back to that chat. `omh
 coding delegate` typed at a terminal (both stdin and stdout TTYs) is an
 operator console, unless `HERMES_SESSION_PLATFORM` names a non-console
 platform: Hermes sets it in every child of a gateway session. `omh memory recall-incident` recomputes a receipt's configuration under

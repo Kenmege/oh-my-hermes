@@ -216,12 +216,11 @@ class CanonicalRecallTests(unittest.TestCase):
             self.assertEqual(memory.validate_project_memory_recall_pack(pack), [])
             after = {str(path.relative_to(paths.memory_dir)): path.read_bytes() for path in paths.memory_dir.rglob("*.json")}
             self.assertEqual(before, after, "Selection must not change usage, reviews, pins or records")
-            # A handoff a chat built (or one whose caller names no surface) is
-            # shared: the project and the thread, never the user-global record.
-            chat = memory.memory_recall_pack_for_handoff(paths, "release", executor_target="hermes", session_id="session-a")
-            assert chat is not None
-            chat_ids = {text(mapping(item)["record_id"]) for item in mapping(decode(json.dumps(chat)))["included_records"]}
-            self.assertEqual(chat_ids, set(expected[1:]))
+            # A handoff a chat built (or one whose caller names no surface)
+            # carries only what that chat may see (#2088): a chat nothing
+            # verified is a shared surface, which admits no identity-unbound
+            # record -- user-global, project or thread.
+            self.assertIsNone(memory.memory_recall_pack_for_handoff(paths, "release", executor_target="hermes", session_id="session-a"))
 
     def test_standalone_installed_bundle_never_imports_control_plane(self) -> None:
         bundle = Path(__file__).resolve().parents[1] / "src" / "plugin_bundle"

@@ -78,7 +78,9 @@ SOURCE_CLASSES = frozenset({
 
 # User-global is explicit profile-local authority, never inferred from a
 # record's location or a foreign project ref. Existing scope labels stay valid.
-SCOPE_KINDS = frozenset({"user-global", "user", "project", "target", "thread", "run"})
+# `channel` is one messenger group conversation (`channel:v1:<hmac>`,
+# `memory_principals.derive_channel_ref`), recalled only there.
+SCOPE_KINDS = frozenset({"user-global", "user", "project", "target", "thread", "run", "channel"})
 
 # Default TTL days for retention classes
 DEFAULT_VOLATILE_TTL_DAYS = 7

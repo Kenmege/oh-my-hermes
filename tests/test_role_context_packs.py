@@ -37,6 +37,7 @@ from omh.memory import (
     memory_recall_pack_for_handoff,
 )
 from project_identity_fixture import memory_paths as resolve_paths
+from omh.plugin_bundle.omh.memory_session_lens import SURFACE_OPERATOR_CONSOLE
 from omh.runtime.records import validate_handoff_context_pack_fields
 from omh.workflows.role_context_packs import (
     ROLE_CONTEXT_PACK_ORIGINS,
@@ -65,7 +66,9 @@ def _approve(paths, summary, **kwargs):
 
 
 def _recall_pack(paths, query="verification", executor_target="codex"):
-    pack = memory_recall_pack_for_handoff(paths, query, executor_target=executor_target)
+    # A console's pack: since messenger memory (#2088) a handoff with no stated
+    # surface is shared and carries no identity-unbound record.
+    pack = memory_recall_pack_for_handoff(paths, query, executor_target=executor_target, surface_class=SURFACE_OPERATOR_CONSOLE)
     assert pack is not None, "fixture expected an eligible recall pack"
     return pack
 

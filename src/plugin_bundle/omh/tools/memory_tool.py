@@ -47,11 +47,15 @@ workflow holds, and only when an approved, intact, durable user-global copy
 exists tells the model to remove the original with Hermes' own `memory` tool.
 Token similarity never authorizes that removal.
 
-Both writes read the lens below first: they run on an operator console only.
-A shared surface (a gateway chat) refuses them, because nothing says which
-of its participants stated the fact; a background run and a session with no
-published lens refuse every write. ``blocks`` and ``read`` read the lens too:
-blocks are the operator's own notes, listed and read on a console only.
+Both writes read the lens below first: they run on an operator console or
+the owner's messenger DM. A shared surface (a gateway chat nothing verified)
+refuses them, because nothing says which of its participants stated the
+fact; a background run and a session with no published lens refuse every
+write. Another person's verified DM and a verified group capture inside their
+own binding -- that person's principal, that channel's scope -- and never
+demote the operator's Hermes memory. ``blocks`` and ``read`` read the lens
+too: blocks are the operator's own notes, listed and read on the operator's
+surfaces only.
 
 ``recall``, ``confirm``, ``correct`` and ``retire`` are the rest of the loop,
 which used to exist only as operator verbs (`omh memory recall|confirm|correct|
@@ -106,9 +110,12 @@ from ..memory_admission import (
 )
 from ..memory_principals import principal_recall_decision
 from ..memory_session_lens import (
+    OWNER_SURFACE_CLASSES,
     SURFACE_BACKGROUND,
-    SURFACE_OPERATOR_CONSOLE,
+    SURFACE_CHANNEL,
+    SURFACE_DIRECT,
     SURFACE_SHARED,
+    lens_channel_scope,
     lens_surface_class,
     note_session_records,
     read_session_lens,
@@ -380,10 +387,10 @@ def _surface_read_refusal(lens: "_SessionLens") -> tuple[str, str] | None:
     """
     if not lens.bound:
         return "session_lens_unavailable", "The OMH memory provider has not described this session; nothing was listed or read."
-    if lens.surface_class != SURFACE_OPERATOR_CONSOLE:
+    if lens.surface_class not in OWNER_SURFACE_CLASSES:
         return (
             "shared_surface_reads_refused",
-            "Memory blocks are the operator's own notes and are listed and read on the Hermes CLI, TUI or Desktop only; nothing was listed or read here.",
+            "Memory blocks are the operator's own notes and are listed and read on the Hermes CLI, TUI, Desktop or the owner's direct message only; nothing was listed or read here.",
         )
     return None
 
@@ -449,18 +456,29 @@ def _capture(args: dict, kwargs: dict) -> dict[str, object]:
     refusal = _surface_write_refusal(lens)
     if refusal:
         return _capture_result("refused", reason=refusal[0], next_action="Nothing was saved. " + refusal[1])
-    cwd = _session_cwd(kwargs)
-    identity = resolve_project_identity(cwd) if cwd is not None else None
-    in_project = identity is not None and identity.state == "resolved"
-    scope = str(args.get("scope", "") or ("project" if in_project else "user")).strip().lower()
-    if scope not in CAPTURE_SCOPES:
-        return _capture_result("refused", reason="unsupported_scope", next_action="Use scope 'project' or 'user'.")
-    if scope == "project" and not in_project:
-        return _capture_result(
-            "refused",
-            reason="project_scope_unresolved",
-            next_action="This session is not inside a repository OMH can identify; retry with scope='user'.",
-        )
+    bound = _bound_capture_scope(lens, str(args.get("scope", "") or "").strip().lower())
+    if isinstance(bound, tuple):
+        return _capture_result("refused", reason=bound[0], next_action="Nothing was saved. " + bound[1])
+    if bound is not None:
+        scope_kind, scope_ref, principal_context = str(bound["scope_kind"]), bound["scope_ref"], bound["principal_context"]
+    else:
+        cwd = _session_cwd(kwargs)
+        identity = resolve_project_identity(cwd) if cwd is not None else None
+        in_project = identity is not None and identity.state == "resolved"
+        scope = str(args.get("scope", "") or ("project" if in_project else "user")).strip().lower()
+        if scope not in CAPTURE_SCOPES:
+            return _capture_result("refused", reason="unsupported_scope", next_action="Use scope 'project' or 'user'.")
+        if scope == "project" and not in_project:
+            return _capture_result(
+                "refused",
+                reason="project_scope_unresolved",
+                next_action="This session is not inside a repository OMH can identify; retry with scope='user'.",
+            )
+        # `user` maps to the user-global scope: it needs no acting-principal
+        # context, and recall delivers it beside the project scope.
+        scope_kind = "project" if scope == "project" else "user-global"
+        scope_ref = identity.identity if scope == "project" and identity is not None else None
+        principal_context = None
     try:
         payload = capture_project_memory_candidate(
             lens.lens_home,
@@ -471,10 +489,9 @@ def _capture(args: dict, kwargs: dict) -> dict[str, object]:
             # candidate, so a duplicate names the existing record and writes nothing.
             on_duplicate="skip",
             source=MODEL_CAPTURE_SOURCE,
-            # `user` maps to the user-global scope: it needs no acting-principal
-            # context, and recall delivers it beside the project scope.
-            scope_kind="project" if scope == "project" else "user-global",
-            scope_ref=identity.identity if scope == "project" and identity is not None else None,
+            scope_kind=scope_kind,
+            scope_ref=scope_ref,
+            principal_context=principal_context,
             tags=list(tags),
             subject=subject or "",
             # Hints name only records this session's own lens admits, the
@@ -491,6 +508,26 @@ def _capture(args: dict, kwargs: dict) -> dict[str, object]:
             next_action="Nothing is confirmed saved. Tell the user the capture failed; call action='status' to see what is held.",
         )
     return _map_capture_payload(payload, lens)
+
+
+def _bound_capture_scope(lens: "_SessionLens", requested: str) -> dict[str, object] | tuple[str, str] | None:
+    """Where a messenger DM or channel keeps a capture, or why it will not; None on the owner's surfaces.
+
+    Another person's DM keeps it bound to that person's principal (a v3
+    record recalled only in their DMs) and a group conversation keeps it in
+    the channel's scope, recalled only there. A scope the surface cannot
+    honor is refused rather than quietly moved: the model would otherwise
+    believe it stored a project fact.
+    """
+    direct = lens.surface_class == SURFACE_DIRECT
+    if not direct and lens.surface_class != SURFACE_CHANNEL:
+        return None
+    if requested and not (direct and requested == "user"):
+        where = "for this person only" if direct else "for this channel only"
+        return "scope_unavailable_here", f"In this conversation memory is kept {where}; retry without scope."
+    if direct:
+        return {"scope_kind": "user", "scope_ref": None, "principal_context": lens.principal_context}
+    return {"scope_kind": "channel", "scope_ref": str((lens.channel_scope or {}).get("ref", "")), "principal_context": None}
 
 
 def _summary_refusal(summary: str, tags: object) -> tuple[str, str] | None:
@@ -686,6 +723,13 @@ def _demote(args: dict, kwargs: dict) -> dict[str, object]:
     try:
         lens = _session_lens(kwargs)
         refusal = _surface_write_refusal(lens)
+        if not refusal and lens.surface_class not in OWNER_SURFACE_CLASSES:
+            # Hermes' built-in memory is the operator's; a DM of anyone else or
+            # a group may not move it.
+            refusal = (
+                "demote_owner_only",
+                "Hermes' built-in memory belongs to the operator; it is moved from the Hermes CLI, TUI, Desktop or the owner's direct message.",
+            )
         if refusal:
             return _demote_result("refused", reason=refusal[0], next_action="Keep the Hermes entry; nothing was moved. " + refusal[1])
         return _demote_entry(wanted, lens.lens_home, Path(_home("HERMES_HOME", "~/.hermes")))
@@ -919,6 +963,8 @@ class _SessionLens:
     lens_home: Path
     surface_class: str
     required_scope_kinds: tuple[str, ...]
+    # A group conversation's own scope (`memory_session_lens.lens_channel_scope`).
+    channel_scope: dict[str, str] | None = None
 
 
 def _lifecycle(action: str, args: dict, kwargs: dict) -> dict[str, object]:
@@ -995,11 +1041,13 @@ def _session_lens(kwargs: dict) -> _SessionLens:
     shared, writes = surface_flags(surface_class)
     principal = published.get("principal_context") if isinstance(published.get("principal_context"), dict) else None
     project_identity = str(published.get("project_identity", "") or "")
+    channel = lens_channel_scope(published)
     scopes = prefetch_scope_allowlist(
         project_identity=project_identity,
         session_id=session_id,
         principal_ref=str((principal or {}).get("principal", "") or ""),
         include_legacy_personal=not shared,
+        channel_ref=channel["ref"] if channel is not None else "",
     )
     return _SessionLens(
         True,
@@ -1013,6 +1061,7 @@ def _session_lens(kwargs: dict) -> _SessionLens:
         omh_home,
         surface_class,
         prefetch_required_scope_kinds(project_identity),
+        channel,
     )
 
 
@@ -1021,7 +1070,8 @@ def _surface_write_refusal(lens: _SessionLens) -> tuple[str, str] | None:
 
     The provider's surface class decides (`memory_session_lens`). A shared
     surface does not capture: it is a chat several people write in, and
-    nothing tells OMH which of them stated a fact.
+    nothing tells OMH which of them stated a fact. A verified messenger DM or
+    group writes, inside its own binding (`_bound_capture_scope`).
     """
     if not lens.bound:
         return "session_lens_unavailable", "The OMH memory provider has not described this session, so it cannot write OMH memory; tell the user it was not remembered."
@@ -1118,7 +1168,8 @@ def _in_session_scope(record: dict, lens: _SessionLens) -> bool:
     scopes, status = resolve_scope_allowlist(lens.scopes, required_scope_kinds=lens.required_scope_kinds)
     if status != "resolved":
         return False
-    if not principal_recall_decision(record, lens.principal_context, shared_surface=lens.shared_surface)["allowed"]:
+    channels = tuple(scope for scope in scopes if scope["kind"] == "channel")
+    if not principal_recall_decision(record, lens.principal_context, shared_surface=lens.shared_surface, channel_scopes=channels)["allowed"]:
         return False
     if record.get("scope") not in scopes:
         return False
@@ -1215,9 +1266,26 @@ _CONFIRM_REFUSAL_NEXT_ACTION = {
 }
 
 
+def _lifecycle_schema_supported(record: dict) -> bool:
+    """A reviewed v2 record, or a person's own v3 record: user scope, its subject the only audience.
+
+    A person's DM memory is v3 and bound to that person; the lens already
+    admitted it for this principal alone (`_in_session_scope`). A v3 record
+    shared with an explicit audience is not the actor's to rewrite, and its
+    correction would come back identity-unbound.
+    """
+    schema = record.get("schema_version")
+    if schema == PROJECT_MEMORY_RECORD_SCHEMA_VERSION:
+        return True
+    scope = record.get("scope") if isinstance(record.get("scope"), dict) else {}
+    identity = record.get("identity") if isinstance(record.get("identity"), dict) else {}
+    audience = identity.get("audience") if isinstance(identity.get("audience"), dict) else {}
+    return schema == "project_memory_record/v3" and scope.get("kind") == "user" and audience.get("kind") == "subject_only"
+
+
 def _live_record_refusal(record: dict, moment: datetime) -> str:
     """The refusals every lifecycle write shares with the operator verbs."""
-    if record.get("schema_version") != PROJECT_MEMORY_RECORD_SCHEMA_VERSION:
+    if not _lifecycle_schema_supported(record):
         return "unsupported_record_schema"
     if str(record.get("superseded_by", "") or ""):
         return "superseded"
@@ -1474,7 +1542,7 @@ def _retire(home: Path, located: dict, reason: str, lens: _SessionLens) -> dict[
         record, error = read_json_object_result(source)
         if error or not isinstance(record, dict) or source.is_symlink():
             return _lifecycle_result("retire", "refused", record_id=record_id, reason="record_not_found", next_action="Nothing changed.")
-        if record.get("schema_version") != PROJECT_MEMORY_RECORD_SCHEMA_VERSION:
+        if not _lifecycle_schema_supported(record):
             return _lifecycle_result("retire", "refused", record_id=record_id, reason="unsupported_record_schema", next_action="Nothing changed.")
         expired = str(_record_staleness(record, now=datetime.now(timezone.utc)).get("state", "")) == "expired"
         published = read_session_lens(lens.lens_home, lens.session_id) or {}

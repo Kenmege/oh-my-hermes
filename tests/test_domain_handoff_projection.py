@@ -18,6 +18,7 @@ from omh.memory import (  # noqa: E402
     validate_handoff_context_pack,
 )
 from omh.paths import OmhPaths  # noqa: E402
+from omh.plugin_bundle.omh.memory_session_lens import SURFACE_OPERATOR_CONSOLE  # noqa: E402
 from project_identity_fixture import project_identity, memory_paths as resolve_paths
 from omh.workflows.domain_intelligence import (  # noqa: E402
     approve_domain_candidate,
@@ -200,7 +201,9 @@ class ReviewedDomainHandoffProjectionTests(unittest.TestCase):
             memory_item = next(item for item in handoff["included_context"] if item["item_id"] == record["record_id"])
             role = build_role_context_pack(context_pack=handoff)
             role_record = next(item for item in role["records"] if item["record_id"] == record["record_id"])
-            recall = memory_recall_pack_for_handoff(paths, "focused domain handoff", executor_target="codex")
+            # A console's pack: since messenger memory (#2088) a handoff with no
+            # stated surface is shared and carries no identity-unbound record.
+            recall = memory_recall_pack_for_handoff(paths, "focused domain handoff", executor_target="codex", surface_class=SURFACE_OPERATOR_CONSOLE)
             assert recall is not None
             recall_role = build_role_context_pack(memory_recall_pack=recall)
 
