@@ -40,7 +40,7 @@ from ..coding.model_recommendations import resolve_model_recommendation
 from ..config_adapter import (
     ConfigChange,
     childless_containers,
-    display_edit_refusal,
+    display_read_refusal,
     display_skin_selection,
     ensure_plugin_enabled,
     ensure_plugin_omh_home,
@@ -59,6 +59,7 @@ from ..install.config_reversal import (
     DISPLAY_RELEASED_FIELD,
     DISPLAY_SKIN_KEY,
     MANAGED_CONFIG_WRITES_STATE_KEY,
+    _plain_scalar,
     config_names_key,
     drop_emptied_containers,
     PLUGIN_OMH_HOME_KEY,
@@ -2090,16 +2091,19 @@ def _carry_theme_choice(
 def _selected_skins(config_text: str) -> tuple[str, ...]:
     """The skins a Hermes config still selects: the one `display.skin` names, or every OMH skin when it cannot be read.
 
-    Read only through the editor's own guards (`display_edit_refusal`). In a
-    shape they refuse (flow, duplicate or dotted `display`, a tag or anchor
-    on the value, a quoted key anywhere) the reader can return a value that
-    is not the one Hermes resolves, such as "!!str omh-crimson", so every
-    OMH skin file stays while `display.skin` is named at all.
+    Behind `display_read_refusal`, not the editor's wider guards: a quoted
+    key, an anchor or a BOM elsewhere in the file stops the editor but not
+    this read, and keeping every OMH skin file over one kept all four for
+    good beside a skin of the person's own. In a shape that does make the
+    read unreliable (a flow, duplicate or dotted `display`, a second `skin`
+    in the block, a tag or anchor on the value) the reader can return a
+    value that is not the one Hermes resolves, such as "!!str omh-crimson",
+    so every OMH skin file stays while `display.skin` is named at all.
     """
     if not config_names_key(config_text, DISPLAY_SKIN_KEY):
         return ()
-    named = display_skin_selection(config_text)
-    if named and not display_edit_refusal(config_text, "skin"):
+    named = _plain_scalar(display_skin_selection(config_text))
+    if named and not display_read_refusal(config_text, "skin"):
         return (named,)
     return available_skins()
 

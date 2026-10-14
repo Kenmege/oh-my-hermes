@@ -1397,6 +1397,11 @@ def _locate_display_scalar(lines: list[str], key: str) -> tuple[int, str] | str 
     guard = _display_edit_guard(lines)
     if guard:
         return guard
+    return _locate_display_block_scalar(lines, key)
+
+
+def _locate_display_block_scalar(lines: list[str], key: str) -> tuple[int, str] | str | None:
+    """`_locate_display_scalar` without the guards on the document and on the `display` section's own shape."""
     if any(_references_mapping_key(line, f"display.{key}") for line in lines):
         return f"dotted display.{key} is user-owned; leaving it alone"
     display_indices = [index for index, line in enumerate(lines) if line == "display:"]
@@ -1478,6 +1483,27 @@ def display_edit_refusal(config_text: str, key: str) -> str:
     """
     lines = config_text.splitlines()
     located = _locate_display_sections(lines) if key == "sections" else _locate_display_scalar(lines, key)
+    return located if isinstance(located, str) else ""
+
+
+def display_read_refusal(config_text: str, key: str) -> str:
+    """Why `display.<key>` as the readers return it may not be the value Hermes resolves, or "" when it is.
+
+    Narrower than `display_edit_refusal`. A quoted key, an anchor or a BOM
+    elsewhere in the file stops the editor, which could not keep that
+    syntax if it rewrote a line, but does not change what the reader
+    returns for `display.<key>`. What can change it is in `display`
+    itself: a flow, quoted or duplicate `display`, a dotted
+    `display.<key>`, a second `<key>` in the block (the reader takes the
+    first, Hermes' YAML loader the last), or an empty or non-scalar value.
+    A tag or anchor on the value is not checked here: the readers return
+    it verbatim, and the caller decides what that reads as.
+    """
+    lines = config_text.splitlines()
+    guard = _section_shape_guard(lines, "display")
+    if guard:
+        return guard
+    located = _locate_display_block_scalar(lines, key)
     return located if isinstance(located, str) else ""
 
 

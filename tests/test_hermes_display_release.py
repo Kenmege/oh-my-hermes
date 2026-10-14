@@ -402,9 +402,9 @@ class UpdateReleaseTests(unittest.TestCase):
                 record = home.record()
                 self.assertNotIn("display_released_at", record)
                 self.assertLessEqual({"display.interface", "display.skin", "display.sections"}, set(record["keys"]))  # type: ignore[arg-type]
-                # Under a refused shape the skin reader may misread the name,
-                # so every OMH skin file stays while display.skin is named.
-                self.assertEqual(len(_omh_skin_files(home.hermes_home)), len(SKIN_THEMES))
+                # A shape outside `display` does not change what display.skin
+                # reads, so only the file it names stays.
+                self.assertEqual(_omh_skin_files(home.hermes_home), ["omh-crimson.yaml"])
                 self.assertFalse((home.hermes_home / "tui-widgets" / "omh-status.mjs").exists())
                 self.assertIn("could not release display.skin (", stdout)
                 self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
@@ -416,6 +416,59 @@ class UpdateReleaseTests(unittest.TestCase):
                 self.assertNotIn("display", home.config.read_text(encoding="utf-8"))
                 self.assertIn("display_released_at", home.record())
                 self.assertEqual(_omh_skin_files(home.hermes_home), [])
+
+    def test_a_shape_outside_display_keeps_no_skin_file_for_the_persons_own_skin(self) -> None:
+        # A quoted key, an anchor or a BOM elsewhere in the file stops the
+        # editor, not the read of display.skin. Keeping every OMH skin file
+        # over one left all four behind for good, with nothing printed,
+        # after the person had picked ares.
+        for name, reshape in (
+            ("quoted key", lambda text: text + 'aliases:\n  "fast/model": glm-5.3\n'),
+            ("anchor", lambda text: text + "defaults: &defaults\n  retries: 1\n"),
+            ("BOM", lambda text: "﻿" + text),
+        ):
+            with self.subTest(shape=name), TemporaryDirectory() as tmp:
+                home = _Home(Path(tmp))
+                home.legacy_install(skin="omh-crimson")
+                persons = (
+                    home.config.read_text(encoding="utf-8")
+                    .replace("  skin: omh-crimson\n", "  skin: ares\n")
+                    .replace("  interface: tui\n", "")
+                    .replace("  sections:\n    thinking: collapsed\n    tools: collapsed\n    subagents: collapsed\n", "")
+                )
+                home.config.write_text(reshape(persons), encoding="utf-8", newline="")
+
+                for _ in range(2):
+                    status, _stdout, stderr = home.run("update", output_json=False)
+
+                    self.assertEqual(status, 0, stderr)
+                    self.assertIn("display:\n  skin: ares\n", home.config.read_text(encoding="utf-8"))
+                    self.assertIn("display_released_at", home.record())
+                    self.assertEqual(_omh_skin_files(home.hermes_home), [])
+                    self.assertFalse((home.hermes_home / "skins" / ".omh-skin.manifest.json").exists())
+
+    def test_a_skin_value_display_itself_makes_ambiguous_keeps_every_skin_file(self) -> None:
+        # The reader returns the first `skin` it meets, dotted or not.
+        # Hermes' YAML loader takes the last of duplicate keys and reads a
+        # dotted key as a key of its own, so here the reader says ares while
+        # Hermes resolves omh-crimson: keeping only ares' file would leave
+        # Hermes naming a skin that is not there.
+        for name, reshape in (
+            ("duplicate skin", lambda text: text.replace("  skin: omh-crimson\n", "  skin: ares\n  skin: omh-crimson\n")),
+            ("dotted key", lambda text: "display.skin: ares\n" + text),
+            ("duplicate display", lambda text: "display:\n  skin: ares\n" + text),
+        ):
+            with self.subTest(shape=name), TemporaryDirectory() as tmp:
+                home = _Home(Path(tmp))
+                home.legacy_install(skin="omh-crimson")
+                home.config.write_text(reshape(home.config.read_text(encoding="utf-8")), encoding="utf-8", newline="")
+
+                for _ in range(2):
+                    status, _stdout, stderr = home.run("update", output_json=False)
+
+                    self.assertEqual(status, 0, stderr)
+                    self.assertIn("  skin: omh-crimson\n", home.config.read_text(encoding="utf-8"))
+                    self.assertEqual(len(_omh_skin_files(home.hermes_home)), len(SKIN_THEMES))
 
     def test_a_second_update_changes_nothing_and_keeps_a_skin_chosen_since(self) -> None:
         with TemporaryDirectory() as tmp:
