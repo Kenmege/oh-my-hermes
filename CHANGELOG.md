@@ -14,8 +14,8 @@ All notable changes will be documented here.
   answered for the person: Esc, Ctrl+C, `d` or `n` declines, and allowing a
   command takes the arrows and then Enter. When the TUI cannot start
   (Windows, no `termios`, no Node, an OMH that cannot import itself, gateway
-  drift) it exits 75 and `omh` opens Hermes' own terminal; bare `hermes` is
-  unchanged. The boundary is in CONTEXT.md ("OMH TUI", "Hermes gateway
+  drift) it creates a file `omh` named for that launch and exits 75, and
+  `omh` opens Hermes' own terminal; bare `hermes` is unchanged. The boundary is in CONTEXT.md ("OMH TUI", "Hermes gateway
   protocol"); the gateway slice it relies on is declared in
   `src/tui/gateway_contract.py`. The composer sits between two rules drawn in
   the input mode's glyph and colour, over a mode row that names the mode or
@@ -51,8 +51,8 @@ All notable changes will be documented here.
   reads the command list again, so a skill installed after the TUI started
   (`omh update`, `/skills install`) runs as `/<name>` without a restart. The
   command list is read for each session the TUI opens, so a project's own
-  skills follow its workspace; its warning (skill discovery failed, or skills
-  that run only as `/skill <name>`) shows once; `/help` lists Hermes'
+  skills follow its workspace; its warning (skill, quick-command or plugin
+  discovery failed, or skills that run only as `/skill <name>`) shows once; `/help` lists Hermes'
   commands by category with a count of skill commands and is paged when long;
   and completion also matches part of a name, so `/uml` finds
   `/omh-codebase-uml`. A turn that brings no event the TUI shows, only types
@@ -60,7 +60,7 @@ All notable changes will be documented here.
   check now prints the installed Hermes commit next to the one the TUI was
   declared against. `omh` opens Hermes' own terminal only on exit 75 together
   with a file it named for that launch, so a 75 Hermes returns for a reason
-  of its own no longer opens a second terminal. The HUD's agent panel shows a
+  of its own ends the launch like any other exit code. The HUD's agent panel shows a
   Hermes-native subagent whose session has ended as finished at once, where
   it showed it running for up to 150 seconds. A plan item carrying an escape
   sequence is stored without it, where the sequence's parameters (`[31m`)

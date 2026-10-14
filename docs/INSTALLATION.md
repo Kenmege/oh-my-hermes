@@ -502,7 +502,9 @@ turn that brings no event the TUI shows, only types it does not know (Hermes
 renamed its turn events), gets one notice pointing at `omh doctor`, which
 prints the installed Hermes commit next to the one the TUI was declared
 against; a single renamed event among known ones, such as `message.complete`
-alone, is not detected and shows as a turn that never finishes.
+alone, is not detected, and neither is a renamed `message.*` family that
+arrives behind a known event such as `status.update`, `reasoning.available` or
+`tool.generating`; either shows as a turn that never finishes.
 The gateway, and every tool it runs, inherits the environment `omh`
 set for the frontend, `OMH_HOME` included, so `omh --omh-home <dir>` also picks
 the store the OMH plugin inside that gateway uses when the profile names none.
