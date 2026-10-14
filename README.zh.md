@@ -284,8 +284,8 @@ omh
   </tr>
 </table>
 
-在无法启动 OMH TUI 的环境中(Windows、没有 `termios` 的终端、`OMH_NO_TUI=1`、没有 Node),
-`omh` 会用一行说明原因,改为打开 Hermes 自己的 TUI(`hermes --tui`),没有 Node 时打开 Hermes 的经典终端。`hermes` 以没有 OMH 皮肤和 HUD 的原生 Hermes 打开,OMH 的工具、记忆和技能仍然可用(详见 [The OMH TUI](docs/INSTALLATION.md#the-omh-tui))。
+无法启动 OMH TUI 时,`omh` 会用一行说明原因,改为打开 Hermes 自己的 TUI(`hermes --tui`)(Windows、没有 `termios` 的终端)。
+在 `TERM=dumb`、`OMH_NO_TUI=1` 或没有 Node 的环境中则打开普通的 `hermes`。`hermes` 以没有 OMH 皮肤和 HUD 的原生 Hermes 打开,OMH 的工具、记忆和技能仍然可用(详见 [The OMH TUI](docs/INSTALLATION.md#the-omh-tui))。
 
 OMH 工作流运行时,终端会展示:
 

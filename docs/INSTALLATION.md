@@ -488,12 +488,14 @@ of opening the model picker. The command list is read again for each session
 the TUI opens, so a project's own skills are listed in its workspace, and
 completion also matches a part of a name: `/uml` finds `/omh-codebase-uml`.
 
-When the OMH TUI cannot start — Windows, a terminal without `termios` or with
-`TERM=dumb`, `OMH_NO_TUI=1`, no Node for Hermes' launcher, or a Hermes whose
-gateway no longer speaks what the TUI was built for — `omh` says why in one
-line on stderr and opens Hermes' own TUI (`hermes --tui`) instead, or Hermes'
-classic terminal when no Node is found (Hermes' TUI needs Node too), so you
-lose the OMH screen, never the session. `omh` reopens Hermes' terminal only
+When the OMH TUI cannot start, `omh` says why in one line on stderr and opens
+Hermes instead, so you lose the OMH screen, never the session. For a reason
+that is the OMH TUI's own — Windows or another terminal without `termios`,
+its frontend missing, or a Hermes whose gateway no longer speaks what the TUI
+was built for — that is Hermes' own TUI (`hermes --tui`). With `TERM=dumb`,
+with `OMH_NO_TUI=1`, or with no Node for Hermes' launcher (Hermes' TUI needs
+it too), it is plain `hermes`, which opens what your `display.interface`
+chooses. `omh` reopens Hermes' terminal only
 on the TUI's own request (exit 75 together with a file `omh` named for that
 launch and removes afterwards), so a 75 Hermes returns for a reason of its
 own ends the launch like any other exit code. If the gateway stops accepting a method or a key mid-session, the

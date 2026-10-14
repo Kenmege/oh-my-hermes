@@ -371,10 +371,11 @@ Hermes asked, the composer, and the status line) repaints, and the composer's
 row does not move when the slot grows or shrinks. When it cannot start
 (an OMH that cannot import itself, gateway unavailable, protocol drift at
 startup) it creates the sentinel file `omh` named for that launch and exits
-75; that exit, and a terminal it cannot own or no Node found before anything
-starts, has `omh` say why in one line on stderr and open Hermes' own TUI
-(`hermes --tui`, with none of the OMH TUI's environment) where Node is found,
-or Hermes' classic terminal where it is not. A 75 without that file (Hermes
+75; that exit, and a blocker found before anything starts, has `omh` say why
+in one line on stderr and open Hermes' own TUI (`hermes --tui`, with none of
+the OMH TUI's environment) when the reason is the OMH TUI's own and Node is
+found, or plain `hermes` (`TERM=dumb`, `OMH_NO_TUI=1`, no Node), which follows
+`display.interface`. A 75 without that file (Hermes
 exits 75 on paths of its own) ends the launch like any other code. Bare
 `hermes` is stock Hermes: OMH writes none of its display keys and draws
 nothing in its terminal, while the OMH plugin (tools, hooks, memory, skills)

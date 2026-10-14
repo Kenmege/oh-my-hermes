@@ -291,8 +291,8 @@ omh
   </tr>
 </table>
 
-OMH TUI を起動できない環境(Windows、`termios` のない端末、`OMH_NO_TUI=1`、Node なし)では、
-`omh` は理由を 1 行で示し、Hermes 自身の TUI(`hermes --tui`)を、Node がなければ Hermes の標準ターミナルを開きます。`hermes` は OMH のスキンと HUD のない素の Hermes として開き、OMH のツール・メモリ・スキルはそのまま残ります([The OMH TUI](docs/INSTALLATION.md#the-omh-tui))。
+OMH TUI を起動できないとき、`omh` は理由を 1 行で示して Hermes 自身の TUI(`hermes --tui`)を開きます(Windows、`termios` のない端末)。
+`TERM=dumb`、`OMH_NO_TUI=1`、Node なしの環境では素の `hermes` を開きます。`hermes` は OMH のスキンと HUD のない素の Hermes として開き、OMH のツール・メモリ・スキルはそのまま残ります([The OMH TUI](docs/INSTALLATION.md#the-omh-tui))。
 
 OMH ワークフローの実行中にターミナルが表示するもの:
 

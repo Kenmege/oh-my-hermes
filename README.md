@@ -348,10 +348,9 @@ omh
   </tr>
 </table>
 
-Where the OMH TUI cannot start (Windows, a terminal without `termios`,
-`OMH_NO_TUI=1`, no Node), `omh` says why in one line and opens Hermes' own
-TUI (`hermes --tui`) instead, or Hermes' classic terminal when no Node is
-found. Bare `hermes` is stock Hermes, with no OMH skin or HUD; OMH's tools,
+Where the OMH TUI cannot start, `omh` says why in one line and opens Hermes'
+own TUI (`hermes --tui`) instead (Windows, a terminal without `termios`), or
+plain `hermes` under `TERM=dumb` or `OMH_NO_TUI=1` or without Node. Bare `hermes` is stock Hermes, with no OMH skin or HUD; OMH's tools,
 memory and skills are still there. See
 [The OMH TUI](docs/INSTALLATION.md#the-omh-tui).
 

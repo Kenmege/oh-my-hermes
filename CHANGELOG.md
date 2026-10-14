@@ -89,8 +89,8 @@ All notable changes will be documented here.
   picks afterwards. `omh theme use` now saves to `<omh_home>/tui/theme.json`
   (a profile's own store when it names one) and the OMH TUI opens with it;
   `omh theme repair` is retired. Where the OMH TUI cannot start, `omh` says
-  why in one line and opens `hermes --tui`, or plain `hermes` when no Node
-  is found. The `hermes_tui_*` doctor checks and the post-update `OMH TUI:`
+  why in one line and opens `hermes --tui` for a reason of the OMH TUI's own,
+  or plain `hermes` under `TERM=dumb`, `OMH_NO_TUI=1` or without Node. The `hermes_tui_*` doctor checks and the post-update `OMH TUI:`
   verdict are retired with the surface they judged. See "Returning hermes to
   stock Hermes" in docs/INSTALLATION.md.
 

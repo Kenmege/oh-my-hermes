@@ -13,9 +13,10 @@ falls back.
 
 When the TUI cannot start it creates the file `omh` named in
 `FALLBACK_SENTINEL_ENV` and exits with `FALLBACK_EXIT`, and `omh` opens
-Hermes' own terminal instead (`hermes --tui` where Node is found, plain
-`hermes` where it is not, after one line on stderr saying why), so a failure
-costs the person the OMH surface, never the session. `omh_tui_blocker` is the
+Hermes' own terminal instead (`hermes --tui` where Node is found and the
+reason is the OMH TUI's own, plain `hermes` otherwise; `hermes_tui_fits`),
+after one line on stderr saying why, so a failure costs the person the OMH
+surface, never the session. `omh_tui_blocker` is the
 same choice made before anything starts. Exit 75 without that file (Hermes
 uses 75 on paths of its own), like every other exit code, is the session
 ending and is returned as it is.
@@ -55,9 +56,8 @@ def node_available(environ: Mapping[str, str], hermes_home: Path) -> bool:
     """Whether Hermes' launcher will find Node: `HERMES_NODE`, `node` on PATH, or Hermes' own tools.
 
     Best effort. Hermes resolves Node through its package manager, which can
-    also fetch it; a miss here only means `omh` opens Hermes' classic terminal
-    instead of a TUI (Hermes' own TUI needs Node as well), never that a launch
-    fails.
+    also fetch it; a miss here only means `omh` opens plain `hermes` instead
+    of a TUI (Hermes' own TUI needs Node as well), never that a launch fails.
     """
     explicit = environ.get("HERMES_NODE", "")
     if explicit and os.path.isfile(explicit) and os.access(explicit, os.X_OK):
@@ -88,6 +88,18 @@ def omh_tui_blocker(
     if not node_available(environ, hermes_home):
         return "no Node found for Hermes' launcher (HERMES_NODE, PATH, or Hermes' tools/node-*)"
     return ""
+
+
+def hermes_tui_fits(environ: Mapping[str, str]) -> bool:
+    """Whether the fallback may ask for Hermes' own TUI rather than plain `hermes`.
+
+    Not under `TERM=dumb`, where no TUI draws, and not under `OMH_NO_TUI=1`,
+    the escape every OMH cursor UI honours beside it (the setup menu, the
+    theme picker). Every other reason the OMH TUI does not open is its own:
+    no `termios` (Windows), its frontend missing, its own exit 75. Hermes'
+    TUI runs on Node and shares none of them.
+    """
+    return environ.get("TERM", "") != "dumb" and environ.get("OMH_NO_TUI", "") != "1"
 
 
 def omh_tui_environment(

@@ -788,17 +788,21 @@ def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
 
 
 def _run_hermes_fallback(hermes: str, args: argparse.Namespace, paths, reason: str) -> int:
-    """Hermes' own TUI where Node is found, its classic terminal where it is not.
+    """Hermes' own TUI when only the OMH TUI is ruled out, else plain `hermes`.
 
     Bare `hermes` is stock Hermes and opens whatever `display.interface`
     says, which is the classic REPL unless the person chose otherwise, so
     the TUI has to be asked for: `hermes --tui`, with none of the OMH TUI's
-    environment. Without Node that would exit 1 (Hermes' TUI needs Node as
-    much as the OMH TUI does), so plain `hermes` is the floor. One line on
-    stderr says why the OMH TUI is not the one opening.
+    environment. Only for a reason that is the OMH TUI's own
+    (`hermes_tui_fits`), and only where Node is found: Hermes' TUI exits 1
+    without it, as the OMH TUI would. Otherwise plain `hermes`, which opens
+    what the config chooses. One line on stderr says why the OMH TUI is not
+    the one opening.
     """
-    with_tui = _node_available(paths)
-    target = "Hermes' own TUI (`hermes --tui`)" if with_tui else "Hermes' classic terminal (its TUI needs Node too)"
+    from ..tui.launch import hermes_tui_fits
+
+    with_tui = hermes_tui_fits(os.environ) and _node_available(paths)
+    target = "Hermes' own TUI (`hermes --tui`)" if with_tui else "`hermes`"
     print(f"omh: {reason}; opening {target}.", file=sys.stderr)
     return int(subprocess.run([hermes, *_hermes_passthrough_argv(args, tui=with_tui)]).returncode)
 

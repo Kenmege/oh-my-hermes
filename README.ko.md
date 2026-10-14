@@ -288,8 +288,8 @@ omh
   </tr>
 </table>
 
-OMH TUI를 열 수 없는 환경(Windows, `termios`가 없는 터미널, `OMH_NO_TUI=1`, Node 없음)에서는
-`omh`가 이유를 한 줄로 알리고 Hermes 자체 TUI(`hermes --tui`)를, Node가 없으면 Hermes 기본 터미널을 엽니다. `hermes`는 OMH skin과 HUD가 없는 순정 Hermes로 열리고, OMH의 도구·메모리·스킬은 그대로 남아 있습니다([The OMH TUI](docs/INSTALLATION.md#the-omh-tui)).
+OMH TUI를 열 수 없으면 `omh`가 이유를 한 줄로 알리고 Hermes 자체 TUI(`hermes --tui`)를 엽니다(Windows, `termios`가 없는 터미널).
+`TERM=dumb`, `OMH_NO_TUI=1`, Node가 없는 환경에서는 그냥 `hermes`를 엽니다. `hermes`는 OMH skin과 HUD가 없는 순정 Hermes로 열리고, OMH의 도구·메모리·스킬은 그대로 남아 있습니다([The OMH TUI](docs/INSTALLATION.md#the-omh-tui)).
 
 OMH 워크플로가 도는 동안 터미널이 보여주는 것:
 

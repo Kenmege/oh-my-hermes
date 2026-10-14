@@ -130,7 +130,7 @@ def launched(
     own terminal), everything the launch printed, and the code it
     returned. ``omh_tui`` says whether the OMH TUI can run here, and
     ``blocker`` is the reason given when it cannot; ``node`` says whether
-    Node is found, which picks Hermes' own TUI over its classic terminal for
+    Node is found, which picks Hermes' own TUI over plain `hermes` for
     the fallback. The surface-neutral tests keep both off, so they pin plain
     `hermes`. A list of return codes answers successive children in order,
     ``environments`` (when given) collects the ``env`` each child was started
@@ -627,16 +627,23 @@ class FallbackTargetTests(unittest.TestCase):
     """Where the OMH TUI cannot run, which Hermes terminal opens, and the one line that says why.
 
     Bare `hermes` is stock Hermes, so the fallback asks for Hermes' own TUI
-    where Node is found, and opens the classic terminal where it is not,
-    because Hermes' `--tui` exits 1 without Node.
+    when the reason is the OMH TUI's own and Node is found. A terminal no TUI
+    can use (`TERM=dumb`, `OMH_NO_TUI=1`) and a machine without Node get
+    plain `hermes`, which opens what `display.interface` chooses.
     """
 
     HERMES = "/usr/local/bin/hermes"
 
-    def _fallback(self, **kwargs) -> tuple[list[list[str]], list[dict[str, str] | None], str, int]:
+    def _fallback(
+        self, environ: dict[str, str] | None = None, **kwargs
+    ) -> tuple[list[list[str]], list[dict[str, str] | None], str, int]:
         environments: list[dict[str, str] | None] = []
         errors: list[str] = []
-        with TemporaryDirectory() as tmp:
+        # The runner's own TERM must not decide the target.
+        with TemporaryDirectory() as tmp, patch.dict(os.environ, {}, clear=False):
+            for name in ("TERM", "OMH_NO_TUI"):
+                os.environ.pop(name, None)
+            os.environ.update(environ or {})
             with launched(Path(tmp), kwargs.pop("argv", []), environments=environments, errors=errors,
                           **kwargs) as (recorded, _o, status):
                 pass
@@ -652,11 +659,20 @@ class FallbackTargetTests(unittest.TestCase):
         self.assertEqual(environments, [None])
         self.assertEqual(stderr, f"omh: {reason}; opening Hermes' own TUI (`hermes --tui`).\n")
 
-    def test_a_dumb_terminal_with_node_opens_hermes_own_tui(self) -> None:
+    def test_a_dumb_terminal_opens_plain_hermes_even_with_node(self) -> None:
+        # No TUI draws on TERM=dumb, Hermes' included.
         reason = terminal_blocker(_TtyStream(), _TtyStream(), {"TERM": "dumb"})
-        recorded, _environments, stderr, _status = self._fallback(blocker=reason, node=True, argv=["-p", "work"])
-        self.assertEqual(recorded, [[self.HERMES, "--profile", "work", "--tui"]])
-        self.assertEqual(stderr, f"omh: {reason}; opening Hermes' own TUI (`hermes --tui`).\n")
+        recorded, _environments, stderr, _status = self._fallback(
+            {"TERM": "dumb"}, blocker=reason, node=True, argv=["-p", "work"]
+        )
+        self.assertEqual(recorded, [[self.HERMES, "--profile", "work"]])
+        self.assertEqual(stderr, f"omh: {reason}; opening `hermes`.\n")
+
+    def test_omh_no_tui_opens_plain_hermes_even_with_node(self) -> None:
+        reason = terminal_blocker(_TtyStream(), _TtyStream(), {"OMH_NO_TUI": "1"})
+        recorded, _environments, stderr, _status = self._fallback({"OMH_NO_TUI": "1"}, blocker=reason, node=True)
+        self.assertEqual(recorded, [[self.HERMES]])
+        self.assertEqual(stderr, f"omh: {reason}; opening `hermes`.\n")
 
     def test_the_fallback_code_with_node_opens_hermes_own_tui(self) -> None:
         from omh.tui.launch import FALLBACK_EXIT
@@ -672,14 +688,14 @@ class FallbackTargetTests(unittest.TestCase):
         )
         self.assertEqual(status, 0)
 
-    def test_no_node_opens_the_classic_terminal(self) -> None:
+    def test_no_node_opens_plain_hermes(self) -> None:
         with TemporaryDirectory() as tmp, patch("omh.tui.launch.terminal_supported", return_value=True):
             reason = omh_tui_blocker(_TtyStream(), _TtyStream(), {"PATH": ""}, Path(tmp))
         self.assertIn("no Node found", reason)
         recorded, environments, stderr, _status = self._fallback(blocker=reason, node=False)
         self.assertEqual(recorded, [[self.HERMES]])
         self.assertEqual(environments, [None])
-        self.assertEqual(stderr, f"omh: {reason}; opening Hermes' classic terminal (its TUI needs Node too).\n")
+        self.assertEqual(stderr, f"omh: {reason}; opening `hermes`.\n")
 
     def test_the_session_ending_in_the_omh_tui_prints_no_fallback_line(self) -> None:
         _recorded, _environments, stderr, _status = self._fallback(omh_tui=True, node=True, returncode=[0])
