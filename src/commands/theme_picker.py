@@ -250,7 +250,7 @@ def run_picker(
     """Drive the cursor until Enter or cancel. Returns the choice, or None.
 
     Writes nothing but frames: applying the selection is the caller's job, so
-    a cancelled picker cannot have touched the Hermes config by construction.
+    a cancelled picker cannot have saved a theme by construction.
     """
     if not themes:
         return None

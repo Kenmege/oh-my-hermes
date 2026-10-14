@@ -139,6 +139,25 @@ def write_theme_choice(omh_home: Path, theme: SkinTheme) -> Path:
     return path
 
 
+def effective_theme(omh_home: Path | None, hermes_skin: str) -> tuple[SkinTheme, str]:
+    """The theme the OMH TUI opens with, and which source decided it.
+
+    One order, read by the TUI and reported by `omh theme`: the choice saved
+    under the OMH home (`saved`); else Hermes' own `display.skin` when it
+    names an OMH palette (`hermes_skin`), which is the case on an install the
+    display release has not reached yet, or when the person picked one for
+    Hermes; else the shipped default (`default`). Skin names only, so a
+    foreign skin that happens to be called `amber` is not OMH's amber.
+    """
+    saved = read_theme_choice(omh_home) if omh_home is not None else None
+    if saved is not None:
+        return saved, "saved"
+    named = theme_for_skin_name(hermes_skin)
+    if named is not None:
+        return named, "hermes_skin"
+    return default_theme(), "default"
+
+
 def skin_payload(name: str = SKIN_NAME) -> bytes:
     theme = theme_for_name(name)
     if theme is None:
