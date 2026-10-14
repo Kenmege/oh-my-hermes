@@ -187,9 +187,9 @@ def launched(
     stderr = io.StringIO()
     with terminal_stdio() as stdout, redirect_stderr(stderr), \
             patch("shutil.which", return_value="/usr/local/bin/hermes"), \
-            patch("omh.commands.main._run_startup_update_check"), \
-            patch("omh.commands.main._omh_tui_blocker", return_value="" if omh_tui else blocker), \
-            patch("omh.commands.main._node_available", return_value=node), \
+            patch("omh.commands.bare_launch._run_startup_update_check"), \
+            patch("omh.commands.bare_launch._omh_tui_blocker", return_value="" if omh_tui else blocker), \
+            patch("omh.commands.bare_launch._node_available", return_value=node), \
             patch("omh.commands.main.subprocess.run", side_effect=fake_run), \
             patch("omh.commands.main.subprocess.Popen", side_effect=fake_popen), \
             patch("omh.commands.main.time.time", side_effect=[CHILD_STARTED_AT, CHILD_ENDED_AT]):

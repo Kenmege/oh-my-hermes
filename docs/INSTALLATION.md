@@ -3368,7 +3368,7 @@ By default, `omh`/`hermes` never checks for updates on launch -- OMH's core
 promise is no network calls without an explicit opt-in. `omh update-check`
 turns on a bounded, best-effort comparison against `origin/main` that runs
 right before bare `omh` opens the OMH TUI. This is `omh`'s own launch door
-(`commands/main.py`); bare `hermes` execs your Hermes install directly and
+(`commands/bare_launch.py`); bare `hermes` execs your Hermes install directly and
 never passes through this process, so it never runs this check.
 
 ```sh

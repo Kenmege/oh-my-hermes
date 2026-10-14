@@ -572,7 +572,7 @@ def _profile_theme_home(profile_paths: OmhPaths, profile_dir: Path) -> Path | No
     that chose a store of its own: `omh --hermes-home <profile> theme`
     resolves that profile's `settings.omh_home` (#1680), and so does the
     OMH TUI that `omh --profile <name>` opens (`_tui_omh_home` in
-    `commands/main.py`), so its theme has to land there. One reader,
+    `commands/bare_launch.py`), so its theme has to land there. One reader,
     `configured_omh_home`, for both. A profile that names no store shares
     the primary's.
 

@@ -123,7 +123,9 @@ class ArchitectureLayoutTests(unittest.TestCase):
                 self.assertLessEqual(expected_modules, files)
 
     def test_compatibility_adapters_point_to_deep_modules(self) -> None:
-        self.assertIs(cli.main, command_main.main)
+        # `omh.cli.main` itself reads a bare launch before importing the command tree and hands every other argv
+        # to `command_main.main` (tests/test_bare_launch.py); the rest of the command module is reached through it.
+        self.assertIs(cli.build_parser, command_main.build_parser)
         self.assertIs(chat_router.route_chat_message, routing_chat.route_chat_message)
         self.assertIs(recommend.recommend_skills, routing_recommend.recommend_skills)
         self.assertIs(runtime_artifacts.create_run, runtime_artifacts_module.create_run)
