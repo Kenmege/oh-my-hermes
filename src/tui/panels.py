@@ -554,7 +554,7 @@ def _skipped_clause(counts: Mapping[str, Any]) -> str:
     return f" ({skipped} skipped)" if skipped > 0 else ""
 
 
-def _plan_header(plan: _Plan, now: float, theme: Theme) -> Line:
+def _plan_header(plan: _Plan, now: float, theme: Theme, motion: bool = True) -> Line:
     counts = plan.counts
     title = Span(f" {plan.title}", theme.muted) if plan.title else None
     badge = _shot_badge(plan.shot, now, theme)
@@ -571,7 +571,7 @@ def _plan_header(plan: _Plan, now: float, theme: Theme) -> Line:
         )
     phases = _count(counts.get("phases"))
     has_active = any(item.get("state") == "active" for item in plan.items)
-    pulse = f" {'.' * (1 + (_frame(now) // 3) % 3)}" if has_active and plan.live else ""
+    pulse = f" {'.' * (1 + (_frame(now) // 3) % 3)}" if has_active and plan.live and motion else ""
     return _line(
         Span("[Plan]", theme.heading),
         title,
@@ -601,7 +601,9 @@ def _shimmer(text: str, frame: int, theme: Theme) -> list[Span]:
     return spans
 
 
-def _plan_item(plan: _Plan, item: Mapping[str, Any], indent: str, columns: int, frame: int, theme: Theme) -> Line:
+def _plan_item(
+    plan: _Plan, item: Mapping[str, Any], indent: str, columns: int, frame: int, theme: Theme, motion: bool = True
+) -> Line:
     budget = max(16, columns - 10)
     reason_cells = max(8, min(REASON_CELLS_CEILING, budget - WAITING_CHROME_CELLS - MIN_ITEM_TEXT_CELLS))
     reason = _cut(item.get("blocked_reason"), reason_cells)
@@ -612,8 +614,10 @@ def _plan_item(plan: _Plan, item: Mapping[str, Any], indent: str, columns: int, 
     if state != "active":
         return _line(Span(f"{indent}{marker} {text}", theme.muted if state == "done" else theme.text), waiting)
     style = _bold(theme.ok if plan.live else theme.warn)
-    if plan.live:
+    if plan.live and motion:
         return _line(Span(f"{indent}{marker} ", style), *_shimmer(text, frame, theme), waiting)
+    if plan.live:
+        return _line(Span(f"{indent}{marker} {text}", style), waiting)
     unchanged = Span(f" (unchanged {plan.unchanged})", theme.muted) if plan.unchanged else None
     return _line(Span(f"{indent}{marker} {text}", style), waiting, unchanged)
 
@@ -643,9 +647,9 @@ def plan_text(payload: Any) -> str:
 
 
 def _plan_lines(
-    plan: _Plan, start: int, end: int, collapsed: bool, columns: int, now: float, theme: Theme
+    plan: _Plan, start: int, end: int, collapsed: bool, columns: int, now: float, theme: Theme, motion: bool = True
 ) -> list[Line]:
-    lines = [_plan_header(plan, now, theme)]
+    lines = [_plan_header(plan, now, theme, motion)]
     if plan.status == "all_done" or collapsed:
         return lines
     frame = _frame(now)
@@ -658,7 +662,7 @@ def _plan_lines(
             lines.append(_line(Span(truncate(phase, budget), _bold(tone))))
         for item in items:
             indent = "  " * (_depth(item) + (1 if phase else 0))
-            lines.append(_plan_item(plan, item, indent, columns, frame, theme))
+            lines.append(_plan_item(plan, item, indent, columns, frame, theme, motion))
     if end < len(plan.items):
         lines.append(_fold(len(plan.items) - end, "later", theme))
     return lines
@@ -993,13 +997,14 @@ def _agents_lines(
     now: float,
     extra_seconds: float,
     theme: Theme,
+    motion: bool = True,
 ) -> list[Line]:
     lines = [_agents_header(payload, columns, theme)]
     if layout.graph_on:
         lines += _graph_lines(agents, layout.graph_nodes, columns, theme)
     shown = agents.rows[: layout.rows_shown]
     grid = _grid(shown)
-    frame = _frame(now)
+    frame = _frame(now) if motion else 0
     for index, row in enumerate(shown):
         lines.append(_activity_row(row, index < agents.main_count, grid, columns, frame, extra_seconds, theme))
     hidden = _hidden_rows(agents, layout.rows_shown)
@@ -1086,6 +1091,7 @@ def panel_lines(
     *,
     received_at: float | None = None,
     show_agents: bool = True,
+    motion: bool = True,
 ) -> list[Line]:
     """The panel rows for one HUD payload: never more than `max_rows`, none wider than `width` cells.
 
@@ -1094,7 +1100,8 @@ def panel_lines(
     snapshot's) lets a running agent's elapsed figure tick between polls.
     Without `show_agents` the agents block (and its graph) is left out: the
     app passes that while its own roster shows the agents, so they are drawn
-    once, from one source.
+    once, from one source. Without `motion` (reduced motion) the spinner
+    holds its first frame and the plan neither pulses nor waves.
     """
     if max_rows <= 0 or width <= 0 or not isinstance(payload, Mapping):
         return []
@@ -1121,7 +1128,9 @@ def panel_lines(
     extra = max(0.0, now - received_at) if received_at is not None and _finite(now) and _finite(received_at) else 0.0
     lines: list[Line] = []
     if agents is not None and layout.agents_on:
-        lines += _agents_lines(payload, agents, layout, columns, now, extra, theme)
+        lines += _agents_lines(payload, agents, layout, columns, now, extra, theme, motion)
     if plan is not None and layout.plan_on:
-        lines += _plan_lines(plan, layout.plan_start, layout.plan_end, layout.plan_collapsed, columns, now, theme)
+        lines += _plan_lines(
+            plan, layout.plan_start, layout.plan_end, layout.plan_collapsed, columns, now, theme, motion
+        )
     return [truncate_line(line, width) for line in lines[:max_rows]]

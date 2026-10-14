@@ -443,6 +443,22 @@ run and approval decision stays Hermes'; the screen is OMH's.
   titles it after its first turn) and whether it is idle, running or waiting
   on you; on exit the title you had comes back where the terminal keeps a
   title stack.
+- Motion and colour follow one rule set, so scrollback reads at a glance:
+  - What Hermes said opens with `⏺` in the text colour; what it did (a group
+    of tool calls, or a lone call's row) in the tool colour.
+  - A tool call's mark says its state by glyph as well as colour: `⏺`
+    running, pulsing between the accent and dim every 0.5 s from its own
+    start (parallel calls pulse on their own), `✓` done in green, `✗` failed
+    in red with the error's first line under it in red, `⊘` denied in amber,
+    `▪` cut off, `◌` still being written. Only the live region at the bottom
+    moves; what reaches scrollback is the settled mark, never a frame of a
+    pulse.
+  - The working row's spinner turns and a highlight sweeps across what
+    Hermes is doing, beside the elapsed time and the tokens written.
+  - `OMH_TUI_REDUCED_MOTION=1`, or `NO_COLOR`, stops the motion: no pulse
+    and no sweep, every spinner holds its first frame, and while a turn runs
+    the screen repaints once a second for the elapsed time instead of ten
+    times.
 - Images: drag an image file onto the terminal, press Ctrl+V for an image on
   the clipboard, or type `/image <path>`. Each one shows as a chip on the row
   above the input (`📎 shot.png 1280×720`) and goes with the next message you

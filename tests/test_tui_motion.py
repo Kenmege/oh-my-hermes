@@ -1,0 +1,230 @@
+"""Motion in the OMH TUI: the marks that tell said from done, the running tool's pulse, the working row's sweep.
+
+A reply opens with `⏺` in the text colour and a group of tool calls in the
+tool colour. A running tool's `⏺` alternates the accent and dim every
+`PULSE_SECONDS` from its own start, only in the live region: scrollback
+gets the settled mark. The working row's verb carries a highlight that
+sweeps across it. `OMH_TUI_REDUCED_MOTION=1` (or `NO_COLOR`) stops all of
+it, and the screen then repaints once a second while a turn runs.
+"""
+
+from __future__ import annotations
+
+import unittest
+
+from _tui_lines import line_text
+from test_tui_modes import SID, make_app
+from test_tui_panels import hud_payload
+from omh.tui.app import REDUCED_TICK_SECONDS, SWEEP_CLUSTERS, TICK_SECONDS, App, reduced_motion, working_spans
+from omh.tui.gateway import Event
+from omh.tui.panels import SPINNER_FRAMES, HudSnapshot, panel_lines
+from omh.tui.style import Span
+from omh.tui.theme import DEFAULT_THEME as THEME
+from omh.tui.transcript import (
+    PULSE_SECONDS,
+    TOOL_DENIED,
+    TOOL_ERROR,
+    TOOL_GENERATING,
+    TOOL_INTERRUPTED,
+    TOOL_OK,
+    TOOL_RUNNING,
+    AssistantBlock,
+    ToolGroup,
+    ToolRow,
+    Transcript,
+    block_rows,
+)
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def ev(kind: str, **payload: object) -> Event:
+    return Event(kind, SID, payload)
+
+
+def mark(line: tuple) -> object:
+    """The span of a tool row's mark (after its indent)."""
+    return line[1]
+
+
+class SaidAndDoneTests(unittest.TestCase):
+    def test_a_reply_opens_in_the_text_colour_and_a_tool_group_in_the_tool_colour(self) -> None:
+        reply = block_rows(AssistantBlock("hello", done=True), 40, THEME)[0]
+        self.assertEqual((reply[0].text, reply[0].style), ("⏺ ", THEME.text))
+        group = ToolGroup([ToolRow("a", "read_file", status=TOOL_OK), ToolRow("b", "terminal", status=TOOL_OK)], done=True)
+        header = block_rows(group, 40, THEME)[0]
+        self.assertEqual((header[0].text, header[0].style), ("⏺ ", THEME.tool))
+        self.assertNotEqual(THEME.text, THEME.tool)
+
+    def test_every_tool_state_has_its_own_glyph(self) -> None:
+        glyphs = {}
+        for status in (TOOL_RUNNING, TOOL_OK, TOOL_ERROR, TOOL_DENIED, TOOL_INTERRUPTED, TOOL_GENERATING):
+            row = block_rows(ToolGroup([ToolRow("a", "terminal", status=status)], done=True), 40, THEME)[0]
+            glyphs[status] = mark(row).text
+        self.assertEqual(glyphs[TOOL_RUNNING], "⏺")
+        self.assertEqual(len(set(glyphs.values())), len(glyphs), glyphs)  # told apart without colour
+
+
+class PulseTests(unittest.TestCase):
+    def started(self) -> tuple[Transcript, Clock]:
+        clock = Clock()
+        transcript = Transcript(clock)
+        transcript.apply(ev("message.start"))
+        transcript.apply(ev("tool.start", tool_id="t1", name="terminal", context="sleep 9"))
+        return transcript, clock
+
+    def test_a_running_mark_alternates_accent_and_dim_from_its_own_start(self) -> None:
+        transcript, clock = self.started()
+        styles = []
+        for offset in (0.1, PULSE_SECONDS + 0.1, 2 * PULSE_SECONDS + 0.1):
+            (row,) = transcript.live_lines(80, THEME, now=clock.now + offset)
+            styles.append(mark(row).style)
+        self.assertEqual(styles, [THEME.accent, THEME.dim, THEME.accent])
+
+    def test_calls_side_by_side_pulse_each_on_its_own(self) -> None:
+        transcript, clock = self.started()
+        clock.now += PULSE_SECONDS / 2
+        transcript.apply(ev("tool.start", tool_id="t2", name="read_file", context="a.py"))
+        _header, first, second = transcript.live_lines(80, THEME, now=100.0 + PULSE_SECONDS + 0.1)
+        self.assertEqual((mark(first).style, mark(second).style), (THEME.dim, THEME.accent))
+
+    def test_the_tail_renders_again_only_when_a_mark_turns(self) -> None:
+        transcript, clock = self.started()
+        transcript.live_lines(80, THEME, now=clock.now + 0.1)
+        held = transcript._live_held
+        transcript.live_lines(80, THEME, now=clock.now + 0.2)  # the same half of the pulse
+        self.assertIs(transcript._live_held, held)
+        transcript.live_lines(80, THEME, now=clock.now + PULSE_SECONDS + 0.1)
+        self.assertIsNot(transcript._live_held, held)
+
+    def test_the_apps_live_region_passes_the_clock(self) -> None:
+        clock = Clock()
+        app, _client = make_app(busy=True, clock=clock)
+        app._on_event(ev("message.start"))
+        app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="ls"))
+        clock.now += PULSE_SECONDS + 0.1
+        *_rest, tool, _working = app._tail(80)
+        self.assertEqual(mark(tool).style, THEME.dim)
+
+    def test_without_a_clock_the_mark_holds_the_accent(self) -> None:
+        transcript, clock = self.started()
+        (row,) = transcript.live_lines(80, THEME)
+        self.assertEqual(mark(row).style, THEME.accent)
+
+    def test_scrollback_never_holds_a_frame_of_the_pulse(self) -> None:
+        clock = Clock()
+        app, _client = make_app(clock=clock, rows=12)
+        app._send_prompt("go")
+        app._on_event(ev("message.start"))
+        app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="ls"))
+        app._on_event(ev("tool.start", tool_id="t2", name="read_file", context="a.py"))
+        for step in range(6):  # through both halves of the pulse
+            clock.now += PULSE_SECONDS / 2
+            app._render()
+        app._on_event(ev("tool.complete", tool_id="t1", name="terminal", result={"output": "a.py"}))
+        app._on_event(ev("tool.complete", tool_id="t2", name="read_file", result={"error": "missing"}))
+        app._on_event(ev("message.complete", text="done", status="complete"))
+        app._render()
+        history = app.terminal.screen.history() + app.terminal.screen.lines()  # type: ignore[attr-defined]
+        self.assertTrue(any(line.startswith("  ✓ terminal") for line in history), history)
+        self.assertTrue(any(line.startswith("  ✗ read_file") for line in history), history)
+        self.assertFalse([line for line in history if line.startswith("  ⏺ ")], history)
+
+
+class SweepTests(unittest.TestCase):
+    def test_the_highlight_moves_one_cluster_a_tick_and_the_text_stays(self) -> None:
+        text = "Reading the router"
+        frames = [working_spans(text, frame, THEME) for frame in range(SWEEP_CLUSTERS, SWEEP_CLUSTERS + 3)]
+        for spans in frames:
+            self.assertEqual("".join(span.text for span in spans), text)
+        bright = [next(span for span in spans if span.style.bold) for spans in frames]
+        self.assertEqual([len(span.text) for span in bright], [SWEEP_CLUSTERS] * 3)
+        starts = [text.index(span.text) for span in bright]
+        self.assertEqual(starts, [0, 1, 2])
+        self.assertEqual(working_spans(text, 0, THEME), [Span(text, THEME.muted)])  # the frame reduced motion holds
+
+    def test_the_working_row_sweeps_and_keeps_its_words(self) -> None:
+        clock = Clock()
+        app, _client = make_app(busy=True, clock=clock)
+        app.transcript.status = "Reading the router"
+        rows = []
+        for _ in range(2):
+            clock.now += TICK_SECONDS
+            rows.append(app._tail(80)[-1])
+        self.assertEqual(line_text(rows[0])[2:], line_text(rows[1])[2:])  # past the spinner, the same words
+        self.assertNotEqual(rows[0][2:], rows[1][2:])  # in a different light
+        self.assertEqual(rows[0][0].style, THEME.accent)
+
+
+class ReducedMotionTests(unittest.TestCase):
+    def test_the_setting_and_no_color_reduce_motion_and_zero_does_not(self) -> None:
+        self.assertTrue(reduced_motion({"OMH_TUI_REDUCED_MOTION": "1"}))
+        self.assertTrue(reduced_motion({"NO_COLOR": "1"}))
+        self.assertFalse(reduced_motion({"OMH_TUI_REDUCED_MOTION": "0"}))
+        self.assertFalse(reduced_motion({"NO_COLOR": ""}))
+        self.assertFalse(reduced_motion({}))
+
+    def reduced(self) -> tuple[App, Clock]:
+        clock = Clock()
+        app, _client = make_app(busy=True, clock=clock, environ={"OMH_TUI_REDUCED_MOTION": "1"})
+        app.transcript.status = "Reading the router"
+        app._on_event(ev("message.start"))
+        app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="ls"))
+        return app, clock
+
+    def test_nothing_pulses_sweeps_or_turns(self) -> None:
+        app, clock = self.reduced()
+        seen = set()
+        for _ in range(12):
+            clock.now += PULSE_SECONDS / 2
+            *_rest, tool, working = app._tail(80)
+            seen.add((mark(tool).style, tuple(working)))
+        self.assertEqual(len(seen), 1)  # the same rows at every moment (this turn has no start time to count from)
+        ((style, working),) = seen
+        self.assertEqual(style, THEME.accent)
+        self.assertTrue(line_text(working).startswith(f"{SPINNER_FRAMES[0]} Reading the router (0s"))
+        self.assertFalse([span for span in working if span.style.bold])
+
+    def test_the_screen_repaints_once_a_second_instead_of_ten_times(self) -> None:
+        app, _clock = self.reduced()
+        self.assertEqual(app._tick_seconds(), REDUCED_TICK_SECONDS)
+        moving, _client = make_app(busy=True)
+        self.assertEqual(moving._tick_seconds(), TICK_SECONDS)
+
+    def test_the_panel_holds_still(self) -> None:
+        items = [{"text": "Split the router into two modules", "state": "active"}, {"text": "Run", "state": "pending"}]
+        payload = hud_payload(items)
+        still = {tuple(map(tuple, panel_lines(payload, 80, 6, THEME, now, motion=False))) for now in (0.0, 0.3, 0.6, 0.9)}
+        self.assertEqual(len(still), 1)  # styles too: no wave through the active item
+        (rows,) = still
+        self.assertTrue(line_text(rows[0]).rstrip().endswith("0/2"), rows)  # no pulse dots after the count
+        moving = {tuple(map(tuple, panel_lines(payload, 80, 6, THEME, now))) for now in (0.0, 0.3, 0.6, 0.9)}
+        self.assertGreater(len(moving), 1)
+        wall = [0.0]
+        app, _client = make_app(environ={"OMH_TUI_REDUCED_MOTION": "1"}, wall_clock=lambda: wall[0])
+        app.hud = HudSnapshot(app.stored_id, payload, 0.0)
+        seen = set()
+        for now in (0.0, 0.3, 0.6, 0.9):
+            wall[0] = now
+            seen.add(tuple(map(tuple, app._menu_or_panel_lines(80, 6))))
+        self.assertEqual(len(seen), 1)  # the app tells the panel
+
+
+class DocumentedMotionTests(unittest.TestCase):
+    def test_installation_names_the_pulse_and_the_reduced_cadence_the_code_uses(self) -> None:
+        from pathlib import Path
+
+        prose = " ".join((Path(__file__).resolve().parents[1] / "docs/INSTALLATION.md").read_text(encoding="utf-8").split())
+        self.assertIn(f"pulsing between the accent and dim every {PULSE_SECONDS:g} s from its own start", prose)
+        self.assertIn("`OMH_TUI_REDUCED_MOTION=1`, or `NO_COLOR`, stops the motion", prose)
+        self.assertEqual((TICK_SECONDS, REDUCED_TICK_SECONDS), (0.1, 1.0))  # "once a second ... instead of ten times"
+
+
+if __name__ == "__main__":
+    unittest.main()

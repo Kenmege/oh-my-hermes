@@ -122,7 +122,7 @@ class LiveTailMemoTests(LoopTestCase):
             return real(block, *args, **kwargs)
 
         with patch("omh.tui.transcript.block_rows", counting):
-            self.assertEqual(lines_text(self.transcript.live_lines(WIDTH, THEME, max_rows=1))[-1:], ["  ◔ terminal  ls"])
+            self.assertEqual(lines_text(self.transcript.live_lines(WIDTH, THEME, max_rows=1))[-1:], ["  ⏺ terminal  ls"])
         self.assertEqual(rendered, [self.transcript.blocks[-1]])
 
     def test_only_the_last_block_is_ever_live(self) -> None:
@@ -445,7 +445,7 @@ class PlainTurnTests(LoopTestCase):
         self.assertEqual(self.live(), ["⏺ line one", "  line two", "  partial"])
         self.assertEqual(self.step(), ["⏺ line one", "  line two"])
         self.assertEqual(self.live(), ["  partial"])
-        self.assertEqual(self.taken[0][0], Span("⏺ ", THEME.accent))
+        self.assertEqual(self.taken[0][0], Span("⏺ ", THEME.text))  # what it said, apart from the tool colour
 
     def test_a_trailing_blank_line_waits_for_the_text_after_it(self) -> None:
         self.step(ev("message.start"))
@@ -573,7 +573,7 @@ class ReasoningAndToolTests(LoopTestCase):
             ),
             at=114.3,
         )
-        self.assertEqual(self.live(), ["", "  ◔ terminal  rm -rf ./omh-m0-probe-dir"])
+        self.assertEqual(self.live(), ["", "  ⏺ terminal  rm -rf ./omh-m0-probe-dir"])
         self.step(ev("session.usage", usage={"total": 27946}))
         self.step(
             ev(
@@ -630,7 +630,7 @@ class ReasoningAndToolTests(LoopTestCase):
         self.step(ev("tool.generating", name="read_file"))
         self.step(ev("tool.generating", name="search_files"))
         self.step(ev("tool.start", tool_id="a", name="read_file", context="src/a.py"), at=1.0)
-        self.assertEqual(self.live(), ["⏺ Tool calls (2)", "  ◔ read_file  src/a.py", "  ◌ search_files"])
+        self.assertEqual(self.live(), ["⏺ Tool calls (2)", "  ⏺ read_file  src/a.py", "  ◌ search_files"])
         self.step(ev("tool.start", tool_id="b", name="search_files", args={"pattern": "needle"}), at=1.1)
         self.step(ev("tool.complete", tool_id="a", name="read_file", duration_s=0.5, result={"content": "x"}))
         self.step(ev("tool.complete", tool_id="b", name="search_files", duration_s=0.7, result={"error": "rg failed"}))

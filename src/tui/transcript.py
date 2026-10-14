@@ -108,6 +108,9 @@ TOOL_GROUP_MARK = "⏺ "
 ASSISTANT_MARK = "⏺ "
 ASSISTANT_INDENT = "  "
 TOOL_SUMMARY_MARK = "⎿ "
+# A running tool's mark alternates the accent and dim this often, counted from its own start, so calls that run
+# side by side pulse each on its own. Only the live region is drawn with a clock; scrollback gets the settled mark.
+PULSE_SECONDS = 0.5
 TOOL_ROW_INDENT = "  "
 DETAIL_INDENT = "  "
 COLUMN_GAP = "  "
@@ -465,7 +468,7 @@ def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool)
 
 def _marked(rows: list[Line], opens_block: bool, theme: Theme) -> list[Line]:
     """Assistant rows behind the reply's margin: `⏺ ` on the block's first row, an indent on every other one."""
-    first: Line = (Span(ASSISTANT_MARK, theme.accent),)
+    first: Line = (Span(ASSISTANT_MARK, theme.text),)  # what it said; what it did is in the tool colour
     rest: Line = (Span(ASSISTANT_INDENT),)
     return [(*(first if opens_block and index == 0 else rest), *row) if row else () for index, row in enumerate(rows)]
 
@@ -504,7 +507,14 @@ def _thinking_rows(
     return rows
 
 
-def _tool_mark(status: str, theme: Theme) -> Span:
+def _pulse_dim(tool: ToolRow, now: float | None) -> bool:
+    """Whether a running tool's mark is in its dim half at `now`; never without a clock (scrollback, reduced motion)."""
+    if now is None or tool.started_at is None:
+        return False
+    return int(max(0.0, now - tool.started_at) / PULSE_SECONDS) % 2 == 1
+
+
+def _tool_mark(status: str, theme: Theme, dim: bool = False) -> Span:
     if status == TOOL_OK:
         return Span("✓", theme.ok)
     if status == TOOL_ERROR:
@@ -512,7 +522,7 @@ def _tool_mark(status: str, theme: Theme) -> Span:
     if status == TOOL_DENIED:
         return Span("⊘", theme.warn)
     if status == TOOL_RUNNING:
-        return Span("◔", theme.accent)
+        return Span("⏺", theme.dim if dim else theme.accent)
     if status == TOOL_INTERRUPTED:
         return Span("▪", theme.dim)
     return Span("◌", theme.dim)
@@ -523,9 +533,10 @@ def _is_path(text: str) -> bool:
     return " " not in text and text.startswith(("/", "~/", "./", "../"))
 
 
-def _tool_row(tool: ToolRow, width: int, theme: Theme) -> Line:
-    """One line per tool: mark, name, args summary (cut first), duration."""
-    head: Line = (Span(TOOL_ROW_INDENT), _tool_mark(tool.status, theme), Span(" "), Span(tool.name, theme.tool))
+def _tool_row(tool: ToolRow, width: int, theme: Theme, now: float | None = None) -> Line:
+    """One line per tool: mark (pulsing while it runs, given `now`), name, args summary (cut first), duration."""
+    mark = _tool_mark(tool.status, theme, tool.status == TOOL_RUNNING and _pulse_dim(tool, now))
+    head: Line = (Span(TOOL_ROW_INDENT), mark, Span(" "), Span(tool.name, theme.tool))
     tail: Line = ()
     if tool.duration_s is not None:
         tail = (Span(COLUMN_GAP + _seconds(tool.duration_s), theme.muted),)
@@ -552,7 +563,7 @@ def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> lis
     return rows
 
 
-def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool) -> list[Line]:
+def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: float | None = None) -> list[Line]:
     header = [Span(TOOL_GROUP_MARK, theme.tool), Span(f"Tool calls ({len(group.tools)})", theme.label)]
     if group.parallel > 1:
         header.append(Span(f"{COLUMN_GAP}parallel ×{group.parallel}", theme.accent))
@@ -561,7 +572,7 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool) -> li
     summary_first: Line = (Span(TOOL_ROW_INDENT * 2 + TOOL_SUMMARY_MARK, theme.dim),)
     summary_rest: Line = (Span(" " * (len(TOOL_ROW_INDENT) * 2 + len(TOOL_SUMMARY_MARK))),)
     for tool in group.tools:
-        rows.append(_tool_row(tool, width, theme))
+        rows.append(_tool_row(tool, width, theme, now))
         if expanded and tool.summary:
             rows.extend(wrap_prefixed((Span(tool.summary, theme.muted),), summary_first, summary_rest, width))
         lines = tool.diff_lines(hold=not group.done) if tool.inline_diff else ()
@@ -572,11 +583,14 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool) -> li
     return rows
 
 
-def block_rows(block: Block, width: int, theme: Theme, expanded: bool = False, max_rows: int | None = None) -> list[Line]:
+def block_rows(
+    block: Block, width: int, theme: Theme, expanded: bool = False, max_rows: int | None = None, now: float | None = None
+) -> list[Line]:
     """The rows one block shows at `width`; `expanded` adds thinking text, tool result summaries, whole diffs.
 
     `max_rows` lets a block whose rows end the same either way (thinking
     text) render only its last rows; the rows returned may start lower.
+    `now` pulses running tools' marks; without it every mark is settled.
     """
     width = max(1, width)
     if isinstance(block, UserBlock):
@@ -591,7 +605,7 @@ def block_rows(block: Block, width: int, theme: Theme, expanded: bool = False, m
         return _assistant_rows(block, width, theme)
     if isinstance(block, ThinkingBlock):
         return _thinking_rows(block, width, theme, expanded, max_rows)
-    return _tool_rows(block, width, theme, expanded)
+    return _tool_rows(block, width, theme, expanded, now)
 
 
 # ── the model ─────────────────────────────────────────────────────────────
@@ -618,7 +632,7 @@ class Transcript:
         # Moves with every change to what `live_lines` draws; its last answer is kept with the version, width,
         # row limit and theme it was for, so a frame that changed nothing (a spinner tick) renders nothing.
         self._version = 0
-        self._live_held: tuple[tuple[int, int, int | None], Theme, list[Line]] | None = None
+        self._live_held: tuple[tuple[int, int, int | None, tuple[bool, ...]], Theme, list[Line]] | None = None
         self._handlers: dict[str, Callable[[dict[str, Any]], None]] = {
             "message.start": self._on_message_start,
             "message.delta": self._on_message_delta,
@@ -979,23 +993,35 @@ class Transcript:
         self._left_out = cut + self.dropped
         self._drop_past_cap()  # before the take, so the row names how many /history still holds
 
-    def live_lines(self, width: int, theme: Theme, max_rows: int | None = None) -> list[Line]:
+    def live_lines(self, width: int, theme: Theme, max_rows: int | None = None, now: float | None = None) -> list[Line]:
         """Everything not yet taken, as it shows now: the streaming tail, live thinking, running tools.
 
         With `max_rows`, only the blocks that reach into the last `max_rows`
         rows are rendered, and of live thinking text only its last rows: the
         rows returned end exactly as the whole tail does, and may start below
-        its top. The answer is kept until the
-        transcript changes, so asking again with the same width, limit and
-        theme renders nothing.
+        its top. With `now` a running tool's mark pulses (`PULSE_SECONDS`).
+        The answer is kept until the transcript changes or a mark turns, so
+        asking again with the same width, limit and theme renders nothing.
         """
-        key = (self._version, width, max_rows)
+        key = (self._version, width, max_rows, self._pulses(now))
         held = self._live_held
         if held is None or held[0] != key or held[1] is not theme:
-            held = self._live_held = (key, theme, self._render_live(width, theme, max_rows))
+            held = self._live_held = (key, theme, self._render_live(width, theme, max_rows, now))
         return list(held[2])
 
-    def _render_live(self, width: int, theme: Theme, max_rows: int | None) -> list[Line]:
+    def _pulses(self, now: float | None) -> tuple[bool, ...]:
+        """The pulse half of every running tool not yet taken: what a live render depends on beyond the version."""
+        if now is None:
+            return ()
+        return tuple(
+            _pulse_dim(tool, now)
+            for block in self.blocks[self._cursor :]
+            if isinstance(block, ToolGroup)
+            for tool in block.tools
+            if tool.status == TOOL_RUNNING
+        )
+
+    def _render_live(self, width: int, theme: Theme, max_rows: int | None, now: float | None = None) -> list[Line]:
         """`live_lines` rendered, from the last block up until `max_rows` rows are covered (all of them for None)."""
         rendered: list[tuple[bool, list[Line]]] = []  # (opens a block, its rows), the last block first
         count = 0
@@ -1011,7 +1037,7 @@ class Transcript:
                 opens_block = self._cursor_lines == 0
                 block_lines = _marked(render_lines(rest, self._cursor_state, _reply_width(width), theme)[0], opens_block, theme)
             else:  # only the last block can be live thinking, the one kind the limit shortens, so it gets all of it
-                block_lines = block_rows(block, width, theme, self.details_expanded and not block.done, max_rows)
+                block_lines = block_rows(block, width, theme, self.details_expanded and not block.done, max_rows, now)
             if block_lines:
                 rendered.append((opens_block, block_lines))
                 count += len(block_lines)

@@ -179,7 +179,7 @@ from .transcript import (
     block_rows,
     compact_count,
 )
-from .width import cell_width, line_width, truncate_left, truncate_line
+from .width import cell_width, clusters, line_width, truncate_left, truncate_line
 from ..version import __version__
 
 # While the key decoder holds bytes (a lone ESC, half a sequence, an open paste), the loop reads with this
@@ -188,6 +188,10 @@ from ..version import __version__
 READ_TIMEOUT_SECONDS = 0.05
 FLUSH_SILENCE_SECONDS = 0.04
 TICK_SECONDS = 0.1
+# With reduced motion nothing on screen moves but the elapsed time, which changes once a second.
+REDUCED_TICK_SECONDS = 1.0
+# The highlight that sweeps across what Hermes is doing on the working row, in clusters, one cluster a tick.
+SWEEP_CLUSTERS = 3
 # Nothing due, nothing held: the loop still wakes this often. Gateway news and a new HUD snapshot wake it sooner.
 IDLE_READ_SECONDS = 1.0
 # For this long after a frame the loop does not wake for the gateway: what arrives meanwhile shares the next
@@ -629,6 +633,23 @@ def banner_logo(skin: SkinTheme, background: str | None, width: int, rows: int) 
     return [*logo, ()]
 
 
+def reduced_motion(environ: Mapping[str, str]) -> bool:
+    """`OMH_TUI_REDUCED_MOTION` set to anything but 0, or `NO_COLOR` set: nothing pulses, sweeps or turns."""
+    return environ.get("OMH_TUI_REDUCED_MOTION", "") not in ("", "0") or bool(environ.get("NO_COLOR"))
+
+
+def working_spans(text: str, frame: int, theme: Theme) -> list[Span]:
+    """What Hermes is doing, muted, with a bright highlight `SWEEP_CLUSTERS` wide at `frame`'s place; it sweeps
+    across and starts over after a pause as long as itself. Frame 0 falls in that pause, so the first frame,
+    the one reduced motion holds, shows no highlight."""
+    units = clusters(text)
+    head = frame % (len(units) + SWEEP_CLUSTERS * 2) - SWEEP_CLUSTERS
+    start, end = max(head, 0), max(head + SWEEP_CLUSTERS, 0)
+    parts = (("".join(units[:start]), theme.muted), ("".join(units[start:end]), replace(theme.text, bold=True)),
+             ("".join(units[end:]), theme.muted))
+    return [Span(part, style) for part, style in parts if part]
+
+
 def attachment_from(result: Mapping[str, Any]) -> Attachment | None:
     """The chip for an image the gateway queued (`image.attach`, `clipboard.paste`, an image drop); None without a path."""
     path = as_text(result.get("path"))
@@ -826,6 +847,7 @@ class App(ModesMixin, AgentViewMixin):
         self.terminal = terminal
         self.client = client
         self.environ = environ
+        self.motion = not reduced_motion(environ)
         self.poller = poller
         self.theme = theme
         self.clock = clock
@@ -1203,7 +1225,7 @@ class App(ModesMixin, AgentViewMixin):
         if self.redraw_at is not None:
             due.append(self.redraw_at)
         elif self._busy() or self._panel_live():
-            due.append(self.last_render + TICK_SECONDS)
+            due.append(self.last_render + self._tick_seconds())
         if self.path_due is not None and self.sid:
             due.append(self.path_due)
         tail = self._tail_due_at()
@@ -2875,7 +2897,7 @@ class App(ModesMixin, AgentViewMixin):
         if self.redraw_at is not None:
             return  # the screen is mid-reflow; the settled redraw paints it
         now = self.clock()
-        due = (self._busy() or self._panel_live()) and now - self.last_render >= TICK_SECONDS
+        due = (self._busy() or self._panel_live()) and now - self.last_render >= self._tick_seconds()
         if not (self.dirty or due):
             return
         self.dirty = False
@@ -2979,7 +3001,11 @@ class App(ModesMixin, AgentViewMixin):
     # ── subagents ──
 
     def _spinner_frame(self) -> int:
-        return int(self.clock() / TICK_SECONDS)
+        """The frame every spinner and sweep shows now; the first, always, with reduced motion."""
+        return int(self.clock() / TICK_SECONDS) if self.motion else 0
+
+    def _tick_seconds(self) -> float:
+        return TICK_SECONDS if self.motion else REDUCED_TICK_SECONDS
 
     @property
     def keyboard_protocol(self) -> bool:
@@ -3004,17 +3030,21 @@ class App(ModesMixin, AgentViewMixin):
         return self.flushed_since_prompt > rows - self.region.height
 
     def _tail(self, cols: int) -> list[Line]:
-        lines = self.transcript.live_lines(cols, self.theme, max_rows=self.size[1])  # never more than the screen
+        now = self.clock()
+        # Never more than the screen; running tools' marks pulse unless motion is reduced.
+        lines = self.transcript.live_lines(cols, self.theme, max_rows=self.size[1], now=now if self.motion else None)
         if self._busy():
             text = self.transcript.activity or self.transcript.status or "working…"
-            now = self.clock()
-            spinner = SPINNER_FRAMES[int(now / TICK_SECONDS) % len(SPINNER_FRAMES)]
+            frame = self._spinner_frame()
+            spinner = SPINNER_FRAMES[frame % len(SPINNER_FRAMES)]
             elapsed = elapsed_text(now - (self.busy_since or now))
             tokens = self._turn_tokens()
             written = f" · ↓{compact_count(tokens)} tokens" if tokens else ""
             interrupt = f" · {INTERRUPT_HINT}" if self.slot is None else ""  # a question gives Esc its own meaning
-            row = f"{spinner} {text} ({elapsed}{written}{interrupt})"
-            lines.append(truncate_line((Span(row, self.theme.muted),), cols))
+            doing = working_spans(text, frame, self.theme)
+            row = (Span(spinner, self.theme.accent), Span(" "), *doing,
+                   Span(f" ({elapsed}{written}{interrupt})", self.theme.muted))
+            lines.append(truncate_line(row, cols))
         return lines
 
     def _slot_lines(self, cols: int, rows: int) -> list[Line]:
@@ -3050,6 +3080,7 @@ class App(ModesMixin, AgentViewMixin):
         return panel_lines(
             payload, cols, cap, self.theme, self.wall_clock(), received_at=self.hud.received_at,
             show_agents=not self.roster.agents,  # the strip and the list show them while the roster holds any
+            motion=self.motion,
         )
 
     def _state_text(self) -> str:

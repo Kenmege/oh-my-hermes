@@ -65,6 +65,11 @@ All notable changes will be documented here.
   protocol too, where they did nothing. A start on a terminal of 100 columns
   and 24 rows or more shows the OH-MY-HERMES block logo above the banner, from
   the shipped skin and in its gradient, lifted to read on a light background.
+  Motion follows one rule set: a reply opens with `⏺` in the text colour and
+  a tool group in the tool colour; a running tool's `⏺` pulses (each call on
+  its own clock) and settles to `✓` or `✗` before it reaches scrollback; a
+  highlight sweeps across the working row's verb; `OMH_TUI_REDUCED_MOTION=1`
+  or `NO_COLOR` holds everything still and repaints once a second.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:
