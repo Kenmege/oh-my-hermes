@@ -234,6 +234,46 @@ class RetakeTailTests(LoopTestCase):
         self.assertEqual(self.live(), ["", "⏺ still streaming"])
 
 
+class BlockCapTests(LoopTestCase):
+    """At most `BLOCK_CAP` blocks are held; the oldest ones already printed go first."""
+
+    def test_printed_blocks_past_the_cap_are_dropped_oldest_first(self) -> None:
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(25):  # each printed at once (no `step`: history no longer holds what was dropped)
+                self.transcript.add_notice(f"notice {number}")
+                self.transcript.take_stable_lines(WIDTH, THEME)
+        self.assertEqual(len(self.transcript.blocks), 10)
+        self.assertEqual(self.transcript.dropped, 15)
+        self.assertEqual(self.history()[0], "· notice 15")
+        self.assertEqual(self.live(), [])
+
+    def test_blocks_not_printed_yet_are_never_dropped(self) -> None:
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(25):
+                self.transcript.add_notice(f"notice {number}")
+        self.assertEqual((len(self.transcript.blocks), self.transcript.dropped), (25, 0))
+        taken = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
+        self.assertEqual((taken[0], taken[-1]), ("· notice 0", "· notice 24"))
+
+    def test_a_redraw_after_drops_counts_them_and_says_history_holds_only_the_rest(self) -> None:
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(25):  # each printed at once (no `step`: history no longer holds what was dropped)
+                self.transcript.add_notice(f"notice {number}")
+                self.transcript.take_stable_lines(WIDTH, THEME)
+        self.transcript.retake_tail(WIDTH, THEME, max_rows=4)
+        again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
+        self.assertEqual(again, ["⋯ 23 earlier messages · /history shows the last 10", "", "· notice 23", "", "· notice 24"])
+
+    def test_an_edits_diff_is_kept_as_the_text_hermes_sent(self) -> None:
+        self.transcript.cwd = "/repo"
+        self.step(ev("message.start"))
+        self.step(ev("tool.start", tool_id="e1", name="patch", context="/repo/src/app.py"))
+        self.step(ev("tool.complete", tool_id="e1", name="patch", result={"success": True}, inline_diff=PATCH_INLINE_DIFF))
+        (row,) = self.transcript.blocks[-1].tools
+        self.assertEqual(row.diff_text, PATCH_INLINE_DIFF)
+        self.assertFalse(hasattr(row, "diff"))
+
+
 class ToolPathArgumentTests(LoopTestCase):
     def test_a_path_argument_keeps_its_file_name_when_cut(self) -> None:
         path = "/private/tmp/claude-501/" + "y" * 60 + "/project/hello.py"

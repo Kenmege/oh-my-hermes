@@ -2010,6 +2010,7 @@ class App(ModesMixin, AgentViewMixin):
     def _history(self, arg: str) -> None:
         lines = self.transcript.history_lines(self.size[0], self.theme, details=True)
         if lines:
+            lines = [*self.transcript.dropped_rows(self.size[0], self.theme), *lines]
             self._open_pager("history", lines)
         else:
             self.transcript.add_notice("Nothing in this session's transcript yet.")

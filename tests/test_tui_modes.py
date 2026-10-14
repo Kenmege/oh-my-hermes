@@ -1165,6 +1165,26 @@ class RedrawTailTests(unittest.TestCase):
         prose = " ".join((Path(__file__).resolve().parents[1] / "docs/INSTALLATION.md").read_text(encoding="utf-8").split())
         self.assertIn(f"prints the session's last {REDRAW_TAIL_ROWS:,} rows again", prose)
 
+    def test_installation_names_the_block_cap_the_code_keeps(self) -> None:
+        from pathlib import Path
+
+        from omh.tui.transcript import BLOCK_CAP
+
+        prose = " ".join((Path(__file__).resolve().parents[1] / "docs/INSTALLATION.md").read_text(encoding="utf-8").split())
+        self.assertIn(f"holds a session's last {BLOCK_CAP:,} messages", prose)
+
+    def test_history_opens_with_a_row_counting_the_messages_the_cap_dropped(self) -> None:
+        app, _client = make_app(rows=24, cols=80)
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(25):
+                app.transcript.add_notice(f"notice {number}")
+                drawn(app)  # printed, so the cap may drop it
+        app._history("")
+        assert app.pager is not None
+        shown = [line_text(line) for line in app.pager.lines]
+        self.assertEqual(shown[:3], ["⋯ 15 earlier messages no longer held", "", "· notice 15"])
+        self.assertEqual(shown[-1], "· notice 24")
+
     def test_a_resumed_sessions_history_is_kept_to_the_tail_too(self) -> None:
         app, _client = make_app(rows=24, cols=80)
         messages = [{"role": "user", "text": f"question {number}"} for number in range(40)]
