@@ -959,6 +959,11 @@ def display_skin_selection(config_text: str) -> str:
     return _section_scalar(config_text, "display", "skin")
 
 
+def display_skin_selections(config_text: str) -> list[str]:
+    """Every value `display.skin` is set to, in file order; `display_skin_selection` is the first."""
+    return _section_scalars(config_text, "display", "skin")
+
+
 def display_key_named_twice(config_text: str, key: str) -> bool:
     """Whether `display.<key>` is set in more than one place, so the readers and Hermes can disagree on its value.
 

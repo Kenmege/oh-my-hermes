@@ -993,6 +993,22 @@ class ReleaseManagedDisplayTests(unittest.TestCase):
                 self.assertEqual(released, shaped)
                 self.assertEqual(by_key["display.skin"].status, expected)
 
+    def test_an_omh_skin_set_anywhere_in_a_duplicate_is_refused_without_a_record(self) -> None:
+        """Mutation proof: read first-wins, `ares` before `omh-crimson` was the person's while Hermes resolves omh-crimson."""
+        for text in (
+            "display:\n  skin: ares\n  skin: omh-crimson\n",
+            "display:\n  skin: omh-crimson\n  skin: ares\n",
+            "display.skin: ares\ndisplay:\n  skin: omh-crimson\n",
+        ):
+            with self.subTest(text=text):
+                released, by_key = self._release("version: 1\n" + text, {})
+
+                self.assertEqual(released, "version: 1\n" + text)
+                self.assertEqual(by_key["display.skin"].status, "refused")
+        # No OMH name among the values: still the person's.
+        _released, by_key = self._release("version: 1\ndisplay:\n  skin: ares\n  skin: mytheme\n", {})
+        self.assertEqual(by_key["display.skin"].status, "kept")
+
     def test_an_unreadable_value_no_record_names_is_kept(self) -> None:
         """Mutation proof: refusing it held the release open on a fresh install's own flow `display`."""
         for text in (
