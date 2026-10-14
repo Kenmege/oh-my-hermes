@@ -39,7 +39,9 @@ DRIFT_ERROR_CODES = frozenset({PARAM_REJECTED, METHOD_NOT_FOUND})
 CLIENT_METHODS: dict[str, frozenset[str]] = {
     "client.capabilities": frozenset({"server_requests"}),
     "config.get": frozenset({"key"}),
-    "commands.catalog": frozenset(),
+    # The session binds both to its profile and workspace, so project-local skills are listed and rescanned.
+    "commands.catalog": frozenset({"session_id"}),
+    "skills.reload": frozenset({"session_id"}),
     "complete.path": frozenset({"word", "session_id"}),
     "session.create": frozenset({"cols", "cwd"}),
     "session.resume": frozenset({"session_id", "cols"}),

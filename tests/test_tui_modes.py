@@ -301,7 +301,10 @@ class SteerTests(unittest.TestCase):
                     else:
                         app._on_session_resumed("stored-2", {"session_id": "live-2", "stored_session_id": "stored-2"})
                     app._on_response(Response(steer, result, error))
-                    self.assertEqual([method for method, _params in client.calls[steer:]], ["session.close"])
+                    # The new session's catalog is asked for too; nothing goes to either session for the steer.
+                    self.assertEqual(
+                        [method for method, _params in client.calls[steer:]], ["session.close", "commands.catalog"]
+                    )
                     self.assertEqual(app.composer.text, "keep this")
                     self.assertFalse(app.queued)
                     self.assertIn(app_module.STEER_LEFT_NOTICE, notices(app, NOTICE_WARN))
@@ -961,7 +964,10 @@ class LeavingTurnsYoloOffTests(unittest.TestCase):
         app, client = in_accept()
         app._new_session("")
         answer(app, client, self.NEW)
-        self.assertEqual(client.calls[1:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+        self.assertEqual(
+            client.calls[1:],
+            [YOLO_OFF_CALL, ("session.close", {"session_id": SID}), ("commands.catalog", {"session_id": "live-2"})],
+        )
         self.answer_call(app, client, YOLO_OFF_CALL, result=YOLO_IS_OFF)
         self.assertEqual(notices(app, NOTICE_ERROR), [])
         self.assertEqual((app.sid, app.mode), ("live-2", MODE_NORMAL))
@@ -972,7 +978,7 @@ class LeavingTurnsYoloOffTests(unittest.TestCase):
                 app, client = in_accept()
                 app._switch_session("stored-2")
                 answer(app, client, {**self.NEW, "stored_session_id": "stored-2", "messages": []})
-                self.assertEqual(self.methods(client, 1), ["config.set", "session.close"])
+                self.assertEqual(self.methods(client, 1), ["config.set", "session.close", "commands.catalog"])
                 self.assertEqual(client.calls[1], YOLO_OFF_CALL)
                 self.answer_call(app, client, YOLO_OFF_CALL, **frame)
                 (notice,) = notices(app, NOTICE_ERROR)
@@ -1081,8 +1087,8 @@ class ResumingTheLiveSessionTests(unittest.TestCase):
     def test_a_real_switch_still_turns_off_declines_and_closes(self) -> None:
         app, client = in_accept()
         app._on_server_request(self.APPROVAL)
-        self.assertEqual(self.resume(app, client, "live-2"), ["config.set", "session.close"])
-        self.assertEqual(client.calls[-2:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+        self.assertEqual(self.resume(app, client, "live-2"), ["config.set", "session.close", "commands.catalog"])
+        self.assertEqual(client.calls[-3:-1], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
         self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "deny"}})])
         self.assertEqual((app.sid, app.mode, app.slot), ("live-2", MODE_NORMAL, None))
         self.assertNotIn("Already in session stored-1.", notices(app))

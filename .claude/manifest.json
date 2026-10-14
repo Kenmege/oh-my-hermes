@@ -155,7 +155,7 @@
     "omh-research-brief/SKILL.md": "a74e629bd2e9f0b67e40e7f3c9eb09dc3e5ca8be40128a4320a5ab99e64a5589",
     "omh-rules-distill/SKILL.md": "c83a5310fbc37ba3c2fb276275c4e90b0d61cbff417679b7686b4b73a0e6d586",
     "omh-run-efficiency/SKILL.md": "08e11de99997bdee27acb8ce288b39d1444c24e8176c32b56cfb18553a7ec10d",
-    "omh-running-work-board/SKILL.md": "13973ae264270816f1d86b16146b5193e56f6d381815688d21c8acc87cca49fd",
+    "omh-running-work-board/SKILL.md": "a9f39d48b7e2ca7a9cf04b1a8674749b34db2a396cc266a6ca2d3ef69f7f64a3",
     "omh-rust/SKILL.md": "352b0653b02cc668a70e038e9f57286b1634c56f1945481d6060851c51305f57",
     "omh-rust/references/rust-discipline.md": "7d9b5005213715f4712dac2371fa63699b8ba963e843f360d75789d576c12844",
     "omh-rust/references/ub-escalation.md": "b39328707a4c3e1cf1d152603f0840255d68db3cfda714d6c33d853ebb087768",
@@ -324,7 +324,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "dbc0e02be3a4ab4e741e3db71fd373c892ee6ca7fa90f7f1a1bb259e786de7db",
+  "source_digest": "4a7e1ed8bdc4ca223dafdc8fbc76a27e0bb4a3f8059fef66e41a609138aabd78",
   "targets": {
     "repo": ".claude/skills",
     "user": ".claude/skills"

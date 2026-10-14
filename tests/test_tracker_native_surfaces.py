@@ -89,7 +89,8 @@ CANCEL_REPORTING = (
 SKILL_HERMES_COMMANDS = (
     "Registry search, install, removal of a hub-installed skill, and per-platform hiding are the person's own "
     "`hermes skills search`, `install`, `uninstall`, and `config` in a terminal, with `/skills search` and "
-    "`/skills install` in a CLI or TUI session."
+    "`/skills install` in a CLI or TUI session; after an install, `/reload-skills` in a running session makes the "
+    "new skill available as `/<name>` without a restart."
 )
 SKILL_MANAGED_EDIT = (
     "Never edit or delete an OMH-managed skill (an `omh-*` or `ulw-*` name) with `skill_manage`: OMH generates its "

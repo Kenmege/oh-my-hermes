@@ -169,7 +169,9 @@ from .slash import (
     LOCAL,
     Completion,
     SlashInvocation,
+    catalog_categories,
     catalog_pairs,
+    catalog_skill_count,
     completions,
     dropped_notice,
     hermes_notice,
@@ -319,6 +321,8 @@ BELL_OFF = "0"
 EXIT_HINT = "Ctrl+C again to exit"
 INTERRUPT_HINT = "esc to interrupt"
 OSC52_COPY = "\x1b]52;c;{}\x07"
+# The completion menu's name column: at least this wide, wider for the longest name it lists (OMH skills are
+# `omh-*` and `ulw-*` slugs) up to half the terminal; a name longer than that pushes only its own summary.
 MENU_NAME_CELLS = 16
 SESSION_LIST_LIMIT = 50
 # `complete.path` goes out once the `@` token has held still this long.
@@ -350,6 +354,11 @@ YOLO_NOTE = (
 )
 # The keys themselves are `shortcuts.SHORTCUTS`, drawn by `?` and /keys; /help only points there.
 HELP_KEYS = "Keys: ? on an empty composer, or /keys, lists every key."
+SKILL_COMMANDS_NOTE = "{count} skill commands available: type / and part of a skill's name to find one."
+CATALOG_REFUSED_NOTICE = (
+    "Hermes did not send its command list ({code}: {message}), so completion and /help show only what the "
+    "OMH TUI already knew; Hermes commands still run when typed."
+)
 # A command's long output that arrives while a view has the alternate screen; the output follows it.
 VIEW_OPEN_NOTICE = "/{name}: {lines} lines arrived while a view was open, so they are here instead of in the pager."
 GUIDE_KEY = "?"
@@ -708,12 +717,15 @@ def _menu_lines(entries: list[tuple[str, str]], index: int, width: int, max_rows
     if not entries or max_rows <= 0:
         return []
     start = min(max(index - max_rows + 1, 0), max(len(entries) - max_rows, 0))
+    # Measured over every entry, not only the rows shown, so scrolling never moves the summary column.
+    longest = max(cell_width(label) for label, _summary in entries) + 2
+    name_cells = max(MENU_NAME_CELLS, min(longest, width // 2))
     rows: list[Line] = []
     for number in range(start, min(start + max_rows, len(entries))):
         label, summary = entries[number]
         current = number == index
         style = theme.menu_current if current else theme.menu
-        name = f" {label}".ljust(MENU_NAME_CELLS)
+        name = f" {label}" + " " * max(name_cells - 1 - cell_width(label), 0)
         rows.append(truncate_line((Span(name, style), Span(f" {summary} ", style)), width))
     return rows
 
@@ -827,7 +839,11 @@ class App:
         self.yolo_confirmed_at: float | None = None  # when Hermes confirmed the TUI's on; None once one session.info was held
         self.effort_asked = ""  # the newest effort still waiting for Hermes' answer; the next Ctrl+T steps on from it
         self.busy_mode = BUSY_QUEUE
+        # What `commands.catalog` last said, bound to the live session: completion and `/help` read it.
         self.catalog: list[tuple[str, str]] = []
+        self.catalog_categories: list[tuple[str, list[str]]] = []
+        self.skill_count = 0
+        self.catalog_warning = ""  # the last warning shown, so a re-read repeats none
         self.slot: PromptSlot | None = None
         self.slot_opened_at = 0.0
         self.slot_arm_seconds = SLOT_ARM_SECONDS  # the open slot's arm delay, fixed as it opened
@@ -877,20 +893,23 @@ class App:
     # ── startup ──
 
     def startup(self) -> None:
-        """Read the busy mode and the command catalog, then open or resume the session.
+        """Read the busy mode, open or resume the session, then ask for the command catalog for it.
 
-        Raises `GatewayCallError` (drift on any call, or any error from the
-        session call), `GatewayTimeout` or `GatewayUnavailable`; the caller
-        turns each into `FALLBACK_EXIT`.
+        The catalog is asked for after the session and names it, because
+        Hermes discovers project-local skills for the session's workspace. It
+        is not awaited: its answer, or its failure, is handled in the loop like
+        any call made during the session. Raises `GatewayCallError` (drift on
+        either call here, or any error from the session call), `GatewayTimeout`
+        or `GatewayUnavailable`; the caller turns each into `FALLBACK_EXIT`.
         """
         self.busy_mode = busy_mode(self._optional_call("config.get", {"key": "full"}))
-        self.catalog = catalog_pairs(self._optional_call("commands.catalog", {}))
         resume = self.environ.get("HERMES_TUI_RESUME", "")
         if resume:
             result = self.client.call("session.resume", {"session_id": resume, "cols": self.size[0]})
         else:
             result = self.client.call("session.create", self._create_params())
         self._adopt_session(result, fallback_stored=resume)
+        self._refresh_catalog()
         self.banner_record = self._banner_record(result, resumed=self.stored_id if resume else "")
         self.banner_facts = dict(self.banner_record)
         if resume:
@@ -942,6 +961,44 @@ class App:
             if error.drift:
                 raise
             return {}
+
+    def _catalog_params(self) -> dict[str, Any]:
+        return {"session_id": self.sid} if self.sid else {}
+
+    def _take_catalog(self, result: Mapping[str, Any]) -> None:
+        """Keep what completion and `/help` read from a `commands.catalog` result; a new warning is a notice.
+
+        Hermes' warning says skill, quick-command or plugin discovery failed,
+        or names skills that share a built-in command's name and run only as
+        `/skill <name>`.
+        """
+        self.catalog = catalog_pairs(result)
+        self.catalog_categories = catalog_categories(result)
+        self.skill_count = catalog_skill_count(result)
+        warning = as_text(result.get("warning")).strip()
+        if warning and warning != self.catalog_warning:
+            self.transcript.add_notice(f"Hermes' command catalog: {warning}", NOTICE_WARN)
+        self.catalog_warning = warning
+
+    def _refresh_catalog(self) -> None:
+        """Ask for the command catalog of the live session; an answer for a session since left is dropped.
+
+        A refusal keeps the catalog the TUI has and says so: completion and
+        `/help` then list only what it already knew.
+        """
+        sid = self.sid
+        self._request(
+            "commands.catalog",
+            self._catalog_params(),
+            lambda result: self._take_catalog(result) if sid == self.sid else None,
+            lambda error: self._on_catalog_refused(sid, error),
+        )
+
+    def _on_catalog_refused(self, sid: str, error: dict[str, Any]) -> bool:
+        if sid == self.sid:
+            message = as_text(error.get("message")) or "refused"
+            self.transcript.add_notice(CATALOG_REFUSED_NOTICE.format(code=error.get("code"), message=message), NOTICE_WARN)
+        return True
 
     def _create_params(self) -> dict[str, Any]:
         params: dict[str, Any] = {"cols": self.size[0]}
@@ -1988,20 +2045,45 @@ class App:
             "copy": self._copy,
             "theme": self._theme,
             "omh-model": self._omh_model,
+            "reload-skills": self._reload_skills,
             "sessions": self._sessions,
             "image": self._image,
             "paste": self._paste,
         }
 
     def _help(self, arg: str) -> None:
+        """The TUI's commands, Hermes' by category, and how many skill commands there are; paged when long."""
+        local = [command for command in COMMANDS if command.route == LOCAL]
+        width = max(len(command.name) for command in local)
         rows = ["OMH TUI commands:"]
-        rows += [f"/{command.name:<10} {command.summary}" for command in COMMANDS if command.route == LOCAL]
-        names = " ".join(name for name, _summary in self.catalog)
-        rows.append(f"Hermes commands ({len(self.catalog)}): {names}" if names else "Hermes commands: none listed.")
+        rows += [f"/{command.name:<{width}} {command.summary}" for command in local]
+        if self.catalog_categories:
+            rows.append("Hermes commands:")
+            rows += [f"  {category}: {' '.join(names)}" for category, names in self.catalog_categories]
+        else:
+            rows.append("Hermes commands: none listed.")
+        if self.skill_count:
+            rows.append(SKILL_COMMANDS_NOTE.format(count=self.skill_count))
         rows.append(YOLO_NOTE)
         rows.append(HELP_KEYS)
         rows.append(BARE_HERMES_NOTE)
-        self.transcript.add_notice("\n".join(rows))
+        self._show_output("help", "\n".join(rows))
+
+    def _reload_skills(self, arg: str) -> None:
+        """Hermes re-scans its skills for this session, then the catalog is read again, as Ink's /reload-skills does.
+
+        Runs here rather than through `slash.exec`: Hermes runs those in a
+        separate per-session worker process, and only the gateway's own
+        `skills.reload` clears the skill commands `command.dispatch` reads.
+        """
+        if not self.sid:
+            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
+            return
+        self._request("skills.reload", {"session_id": self.sid}, self._on_skills_reloaded)
+
+    def _on_skills_reloaded(self, result: dict[str, Any]) -> None:
+        self._show_output("reload-skills", as_text(result.get("output")) or "Skills reloaded.")
+        self._refresh_catalog()
 
     def _guide_key(self, event: Key | Paste) -> bool:
         """`?` on an empty composer opens the key list; with anything typed it is a character."""
@@ -2061,6 +2143,7 @@ class App:
         declined = self._enter_session(result)
         self.transcript.add_notice(f"New session {self.stored_id}.")
         self._notice_declined(declined)
+        self._refresh_catalog()
 
     def _on_create_refused(self, error: dict[str, Any]) -> bool:
         message = as_text(error.get("message")) or "refused"
@@ -2155,6 +2238,7 @@ class App:
         self.banner_record = self._banner_record(result, resumed=self.stored_id)
         self._full_redraw()
         self._redeliver(result.get("open_requests"))
+        self._refresh_catalog()  # its workspace may hold project-local skills the last one did not
 
     def _on_resume_refused(self, target: str, error: dict[str, Any]) -> bool:
         message = as_text(error.get("message")) or "refused"

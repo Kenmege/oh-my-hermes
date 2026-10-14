@@ -56,6 +56,13 @@ class RouteTableTests(unittest.TestCase):
         names = [c.name for c in slash.completions("", [])]
         self.assertTrue({"image", "paste", "sessions"} <= set(names))
 
+    def test_reload_skills_runs_in_the_tui_under_both_of_hermes_names(self) -> None:
+        # `slash.exec` would run it in Hermes' per-session worker, whose rescan the gateway never sees.
+        for name in ("reload-skills", "reload_skills"):
+            with self.subTest(name=name):
+                invocation = slash.parse_slash(f"/{name}")
+                self.assertEqual((invocation.command.name, invocation.command.route), ("reload-skills", slash.LOCAL))
+
     def test_the_network_widget_is_dropped(self) -> None:
         self.assertEqual(slash.parse_slash("/weather").command.route, slash.DROPPED)
 
@@ -89,9 +96,16 @@ class CompletionTests(unittest.TestCase):
         names = [c.name for c in slash.completions("omh-model", catalog)]
         self.assertEqual(names, ["omh-model", "omh-model-optimization"])
 
-    def test_prefix_filters_both_sources(self) -> None:
+    def test_names_starting_with_the_prefix_lead_and_names_only_containing_it_follow(self) -> None:
         names = [c.name for c in slash.completions("mo", slash.catalog_pairs(self.CATALOG))]
-        self.assertEqual(names, ["model", "moa"])
+        self.assertEqual(names, ["model", "moa", "omh-model"])
+
+    def test_part_of_a_skill_name_finds_the_skill(self) -> None:
+        # Every OMH skill is `omh-*` or `ulw-*`, so a prefix alone never reaches one by its own word.
+        catalog = [("/omh-codebase-uml", "Draw UML from the code"), ("/ulw-umbrella", "Umbrella"), ("/uml-sketch", "x")]
+        names = [c.name for c in slash.completions("uml", catalog)]
+        self.assertEqual(names, ["uml-sketch", "omh-codebase-uml"])
+        self.assertEqual([c.name for c in slash.completions("", catalog)][-3:], ["omh-codebase-uml", "ulw-umbrella", "uml-sketch"])
 
     def test_catalog_commands_routed_elsewhere_are_not_offered_twice_or_at_all(self) -> None:
         names = [c.name for c in slash.completions("", slash.catalog_pairs(self.CATALOG))]
@@ -101,6 +115,26 @@ class CompletionTests(unittest.TestCase):
     def test_malformed_catalog_rows_are_skipped(self) -> None:
         self.assertEqual(slash.catalog_pairs({"pairs": "nope"}), [])
         self.assertEqual(len(slash.catalog_pairs(self.CATALOG)), 4)
+
+
+class CatalogReaderTests(unittest.TestCase):
+    def test_categories_drop_what_the_tui_runs_routes_or_drops_and_then_empty_categories(self) -> None:
+        catalog = {
+            "categories": [
+                {"name": "Session", "pairs": [["/new", "Start"], ["/retry", "Retry"], ["/save", "Export"]]},
+                {"name": "TUI", "pairs": [["/mouse", "Mouse"], ["/logs", "Logs"]]},
+                {"name": "Info", "pairs": [["/whoami", "Access"], ["bad"]]},
+                {"pairs": [["/x", "nameless"]]},
+                "not a category",
+            ]
+        }
+        self.assertEqual(slash.catalog_categories(catalog), [("Session", ["/retry"]), ("Info", ["/whoami"])])
+        self.assertEqual(slash.catalog_categories({"categories": "nope"}), [])
+
+    def test_the_skill_count_is_a_positive_integer_or_zero(self) -> None:
+        for value, expected in ((144, 144), (0, 0), (-1, 0), (True, 0), ("3", 0), (None, 0)):
+            with self.subTest(value=value):
+                self.assertEqual(slash.catalog_skill_count({"skill_count": value}), expected)
 
 
 if __name__ == "__main__":
