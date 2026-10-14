@@ -537,8 +537,13 @@ arrives behind a known event such as `status.update`, `reasoning.available` or
 The gateway, and every tool it runs, inherits the environment `omh`
 set for the frontend, `OMH_HOME` included, so `omh --omh-home <dir>` also picks
 the store the OMH plugin inside that gateway uses when the profile names none.
-The OMH TUI writes no prompt text,
-transcript, attachment, secret or Hermes question to disk. What it does write
+The OMH TUI writes no transcript, attachment, secret or Hermes question to
+disk, and prompt text in one place only: each line you send from the composer
+is appended to Hermes' own input history, `$HERMES_HOME/.hermes_history`, in
+the format `hermes --tui` reads and writes, so Up and Ctrl+R reach your earlier
+prompts from either terminal. It only appends to that file (creating it mode
+0600), reads at most its last 1 MiB, and never writes an answer to a question
+Hermes asked or a masked value there. Everything else it writes
 is metadata: the launcher's active-session file, which holds the session id,
 what OMH's own HUD reader and model-chain picker write under the OMH home
 (the HUD's fan-out cache, and the chains `/omh-model` saves), and an empty
