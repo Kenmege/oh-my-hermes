@@ -16,6 +16,7 @@ import os
 import subprocess
 import sys
 import time
+from typing import NoReturn
 
 from ..paths import resolve_paths
 
@@ -86,19 +87,34 @@ _TUI_PASSTHROUGH_OPTIONS: tuple[tuple[str, str], ...] = (
 )
 
 
+class _NotBare(Exception):
+    """The small parser refused the argv; `omh.commands.main`'s parser reads it and says why."""
+
+
+class _BareParser(argparse.ArgumentParser):
+    """Raises `_NotBare` where argparse would print an error and exit.
+
+    `exit_on_error=False` is not enough: Python 3.11 reports an ambiguous
+    abbreviation (`omh --p x`) through `error()` itself.
+    """
+
+    def error(self, message: str) -> NoReturn:
+        raise _NotBare(message)
+
+
 def bare_launch_args(argv: list[str]) -> argparse.Namespace | None:
     """The parsed top-level options when `argv` is a bare launch; None for anything `omh.commands.main` must read.
 
     A bare launch is an argv the top-level options account for entirely.
     One that names a subcommand, asks for help or the version, or does not
     parse here is None, and the full parser reads it, errors included, so
-    every message is the one it always was.
+    every message is the one it always was: this parser prints nothing.
     """
-    parser = argparse.ArgumentParser(prog="omh", add_help=False, exit_on_error=False)
+    parser = _BareParser(prog="omh", add_help=False)
     add_top_level_options(parser)
     try:
         args, unknown = parser.parse_known_args(argv)
-    except argparse.ArgumentError:
+    except _NotBare:
         return None
     return None if unknown else args
 

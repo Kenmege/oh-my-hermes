@@ -9,10 +9,13 @@ test process has imported `omh.commands.main` long before.
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stderr
+from unittest.mock import patch
 
 from omh.commands.bare_launch import bare_launch_args
 from omh.commands.main import build_parser
@@ -72,6 +75,17 @@ class BareArgvTests(unittest.TestCase):
         for argv in NOT_BARE:
             with self.subTest(argv=argv):
                 self.assertIsNone(bare_launch_args(argv))
+
+    def test_a_parser_error_on_any_path_defers_to_the_full_parser_silently(self) -> None:
+        # Python 3.11 reports an ambiguous abbreviation through `error()` itself, which `exit_on_error=False`
+        # does not cover; this sends every argv down that path, whatever the interpreter.
+        def through_error(parser: argparse.ArgumentParser, args: object = None, namespace: object = None) -> None:
+            parser.error("ambiguous option: --p could match --pretty, --profile")
+
+        stderr = io.StringIO()
+        with patch.object(argparse.ArgumentParser, "parse_known_args", through_error), redirect_stderr(stderr):
+            self.assertIsNone(bare_launch_args(["--p", "x"]))
+        self.assertEqual(stderr.getvalue(), "")
 
 
 class BareImportTests(unittest.TestCase):
