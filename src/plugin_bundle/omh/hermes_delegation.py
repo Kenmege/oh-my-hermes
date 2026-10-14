@@ -2161,8 +2161,15 @@ def _query_state_db(state_db: Path, *, now: float, session_ref: str | None = Non
                     f"json_extract(model_config, '$._delegate_from') IN ({placeholders}) ELSE 0 END"
                 )
                 parameters.extend(sorted(owners))
+        # `ended_at` is what Hermes' `end_session` stamps when the child's
+        # agent closes; a state.db from before the column reads every child
+        # as unended, which leaves the age rule below to decide.
+        session_columns = {
+            str(row[1]) for row in connection.execute('PRAGMA table_info("sessions")').fetchall()
+        }
+        ended_at_column = "ended_at" if "ended_at" in session_columns else "NULL"
         cursor = connection.execute(
-            "SELECT id, model, model_config, started_at FROM sessions "
+            f"SELECT id, model, model_config, started_at, {ended_at_column} FROM sessions "
             "WHERE model_config LIKE '%_delegate_from%' AND started_at >= ?"
             + owner_filter + " ORDER BY started_at DESC LIMIT 32",
             parameters,
@@ -2170,7 +2177,7 @@ def _query_state_db(state_db: Path, *, now: float, session_ref: str | None = Non
         rows = cursor.fetchall()
         parents_needed: set[str] = set()
         children: list[dict[str, Any]] = []
-        for session_id, model, model_config, started_at in rows:
+        for session_id, model, model_config, started_at, ended_at in rows:
             config: dict[str, Any] = {}
             try:
                 parsed = json.loads(model_config or "{}")
@@ -2193,6 +2200,7 @@ def _query_state_db(state_db: Path, *, now: float, session_ref: str | None = Non
                     "model": _text(model),
                     "effort": effort,
                     "started_at": _finite(started_at) or 0.0,
+                    "ended_at": _finite(ended_at),
                 }
             )
         result["children"] = children
@@ -2410,16 +2418,26 @@ def read_hermes_native_subagents(
         task = matched_tasks.get(child["session_id"], {})
         delegation_id = matched_delegations.get(child["session_id"], "")
         delegation_state = state.get("delegation_states", {}).get(delegation_id, "")
+        ended_at = child.get("ended_at")
         last_activity = max(
             child["started_at"],
             usage.get("last_seen") or 0.0,
             task.get("log_mtime") or 0.0,
+            ended_at or 0.0,
         )
         age = current - last_activity
         if age > COMPLETED_LINGER_SECONDS:
             continue
         if delegation_state in {"completed", "failed", "cancelled"}:
             row_state = "failed" if delegation_state == "failed" else "done"
+        elif ended_at is not None:
+            # The child's session was ended, so it is not running whatever
+            # its age; the session-scoped path has no manifest state to say
+            # so, and without this an ended child spun for the whole recent
+            # window. Hermes ends a child with `agent_close` whether it
+            # succeeded or not, so the end reason says nothing about failure;
+            # the no-usage rule below still does.
+            row_state = "done"
         elif age <= RECENT_ACTIVITY_SECONDS:
             row_state = "running"
         else:
@@ -2531,10 +2549,14 @@ def read_hermes_native_subagents(
             provider_routes,
         )
         session_tail = child["session_id"].rsplit("_", 1)[-1][:8]
-        # A finished child's elapsed is frozen at its last activity: a done
-        # task should not keep aging, and a byte-stable lingering row is what
-        # lets the widget skip repaints so the dock stays drag-copyable.
-        elapsed_until = last_activity if row_state != "running" else current
+        # A finished child's elapsed is frozen at its end, else its last
+        # activity: a done task should not keep aging, and a byte-stable
+        # lingering row is what lets the widget skip repaints so the dock
+        # stays drag-copyable.
+        if ended_at is not None:
+            elapsed_until = ended_at
+        else:
+            elapsed_until = last_activity if row_state != "running" else current
         row: dict[str, Any] = {
             "scope": payload["scope"],
             "state": row_state,
