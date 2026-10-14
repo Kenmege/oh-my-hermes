@@ -123,6 +123,23 @@ class LiveTailMemoTests(LoopTestCase):
             self.assertEqual(lines_text(self.transcript.live_lines(WIDTH, THEME, max_rows=1))[-1:], ["  ◔ terminal  ls"])
         self.assertEqual(rendered, [self.transcript.blocks[-1]])
 
+    def test_only_the_last_block_is_ever_live(self) -> None:
+        # Why `_render_live` gives the whole limit to the block it renders first: live thinking is always that block.
+        self.transcript.add_user("go")
+        for event in (
+            ev("message.start"),
+            ev("reasoning.delta", text="first thought"),
+            ev("tool.start", tool_id="t1", name="terminal", context="ls"),
+            ev("reasoning.delta", text="second thought"),
+            ev("message.delta", text="an answer"),
+        ):
+            self.transcript.apply(event)
+            self.assertEqual([block for block in self.transcript.blocks[:-1] if not block.done], [])
+        self.assertEqual(
+            [type(block).__name__ for block in self.transcript.blocks],
+            ["UserBlock", "ThinkingBlock", "ToolGroup", "ThinkingBlock", "AssistantBlock"],
+        )
+
 
 class LimitedThinkingTests(LoopTestCase):
     def test_expanded_live_thinking_asked_for_its_last_rows_wraps_only_its_last_lines(self) -> None:
