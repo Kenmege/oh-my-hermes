@@ -1456,6 +1456,31 @@ def revert_display_scalar(config_text: str, key: str, expected: str, previous: s
     return ConfigChange(True, f"removed display.{key}", _joined(lines))
 
 
+def _locate_display_sections(lines: list[str]) -> tuple[int, list[tuple[int, str, str]]] | str | None:
+    """`_canonical_display_sections` behind the guards every display mutation shares."""
+    guard = _display_edit_guard(lines)
+    if guard:
+        return guard
+    if any(_references_mapping_key(line, "display.sections") for line in lines):
+        return "dotted display.sections is user-owned; leaving it alone"
+    return _canonical_display_sections(lines)
+
+
+def display_edit_refusal(config_text: str, key: str) -> str:
+    """Why the display removers will not edit `display.<key>` here, or "" when they would.
+
+    The same refusal `revert_display_scalar` and `remove_display_sections`
+    return, read without attempting the edit. A remover that changed
+    nothing says so in one message whether the shape stopped it or the
+    value was not the one it was asked to take back; the display release
+    has to tell those apart, because only the second leaves nothing of
+    OMH's behind.
+    """
+    lines = config_text.splitlines()
+    located = _locate_display_sections(lines) if key == "sections" else _locate_display_scalar(lines, key)
+    return located if isinstance(located, str) else ""
+
+
 def remove_display_sections(config_text: str, keys: list[str], expected: str) -> ConfigChange:
     """Drop the named `display.sections` children that still read `expected`.
 
@@ -1465,12 +1490,7 @@ def remove_display_sections(config_text: str, keys: list[str], expected: str) ->
     reading both sides use -- so this only refuses shapes and removes lines.
     """
     lines = config_text.splitlines()
-    guard = _display_edit_guard(lines)
-    if guard:
-        return ConfigChange(False, guard, config_text)
-    if any(_references_mapping_key(line, "display.sections") for line in lines):
-        return ConfigChange(False, "dotted display.sections is user-owned; leaving it alone", config_text)
-    located = _canonical_display_sections(lines)
+    located = _locate_display_sections(lines)
     if isinstance(located, str):
         return ConfigChange(False, located, config_text)
     if located is None:

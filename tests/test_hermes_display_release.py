@@ -288,6 +288,41 @@ class UpdateReleaseTests(unittest.TestCase):
             self.assertIn("display_released_at", home.record())
             self.assertNotIn("display", home.config.read_text(encoding="utf-8"))
 
+    def test_a_refused_release_is_not_recorded_and_keeps_the_skin_file_it_names(self) -> None:
+        # The display editor refuses a whole file over a quoted key or an
+        # anchor anywhere in it. Recording the release then would make OMH's
+        # keys the person's for good, and removing omh-crimson.yaml would
+        # leave Hermes naming a skin that is not there.
+        for name, extra in (
+            ("quoted key", 'aliases:\n  "fast/model": glm-5.3\n'),
+            ("anchor", "defaults: &defaults\n  retries: 1\n"),
+        ):
+            with self.subTest(shape=name), TemporaryDirectory() as tmp:
+                home = _Home(Path(tmp))
+                home.legacy_install(skin="omh-crimson")
+                shaped = home.config.read_text(encoding="utf-8") + extra
+                home.config.write_text(shaped, encoding="utf-8", newline="")
+
+                status, stdout, stderr = home.run("update", output_json=False)
+
+                self.assertEqual(status, 0, stderr)
+                self.assertEqual(home.config.read_text(encoding="utf-8"), shaped)
+                record = home.record()
+                self.assertNotIn("display_released_at", record)
+                self.assertLessEqual({"display.interface", "display.skin", "display.sections"}, set(record["keys"]))  # type: ignore[arg-type]
+                self.assertEqual(_omh_skin_files(home.hermes_home), ["omh-crimson.yaml"])
+                self.assertFalse((home.hermes_home / "tui-widgets" / "omh-status.mjs").exists())
+                self.assertIn("could not release display.skin (", stdout)
+                self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
+
+                # The person fixes the shape; the next update releases and the file goes.
+                home.config.write_text(shaped.replace(extra, ""), encoding="utf-8", newline="")
+                self.assertEqual(home.run("update")[0], 0)
+
+                self.assertNotIn("display", home.config.read_text(encoding="utf-8"))
+                self.assertIn("display_released_at", home.record())
+                self.assertEqual(_omh_skin_files(home.hermes_home), [])
+
     def test_a_second_update_changes_nothing_and_keeps_a_skin_chosen_since(self) -> None:
         with TemporaryDirectory() as tmp:
             home = _Home(Path(tmp))

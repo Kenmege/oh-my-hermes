@@ -1555,11 +1555,11 @@ uses:
 | An OMH skin, with or without a record (`omh theme use` set one without one) | `display.skin: omh-crimson` | `crimson` saved to `<omh_home>/tui/theme.json` (unless a theme is already saved there), then the key removed |
 | A display key with no record (an install older than the record) | `display.interface: tui`, collapsed sections | kept: nothing says OMH wrote them |
 | Your own skin | `display.skin: ares` | kept |
-| A key in a YAML shape the editor does not handle (quoted, flow, anchors, duplicates) | any | kept byte-for-byte |
+| A key in a YAML shape the editor does not handle (a quoted key or an anchor anywhere in the file, a flow or duplicate `display`, a dotted key, a BOM) | any | left as it is and named in the output; the release is not recorded, so the next setup or update tries again |
 | A `display:` or `display.sections:` OMH created | emptied by the release | removed |
 | The status widget OMH installed | `omh-status.mjs` and its manifest | removed |
 | A widget the manifest cannot vouch for, or a symlinked `tui-widgets/` | — | kept, named in the output |
-| Skin files OMH installed (by manifest, or byte-identical to the shipped file) | `omh*.yaml` and the manifest | removed |
+| Skin files OMH installed (by manifest, or byte-identical to the shipped file) | `omh*.yaml` and the manifest | removed, except the one `display.skin` still names |
 | A skin file you edited | — | kept with its manifest record, named in the output |
 | Everything else OMH writes: skills, `plugins.enabled`, `memory.provider`, compression, `settings.omh_home` | — | untouched |
 
@@ -1567,8 +1567,9 @@ The theme for a bot profile whose `plugins.entries.omh.settings.omh_home`
 names its own store is saved there; one that names none shares the primary
 home's store, where the primary's theme, saved first, wins.
 
-It happens once. The pass records `display_released_at` beside the write
-record in `$OMH_HOME/runtime/state.json`, and from then on no display value
+It happens once, on the first pass that leaves no key in a shape the editor
+refused. That pass records `display_released_at` beside the write record in
+`$OMH_HOME/runtime/state.json`, and from then on no display value
 in that config is read as OMH's: a skin you pick for Hermes later, OMH
 palette or not, stays through every update, and uninstall leaves it too.
 The pass that does something says so, per home:

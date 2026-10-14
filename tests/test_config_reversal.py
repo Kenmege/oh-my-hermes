@@ -915,6 +915,34 @@ class ReleaseManagedDisplayTests(unittest.TestCase):
                 released, _by_key = self._release(text, {})
                 self.assertEqual(released, text)
 
+    def test_a_key_the_editor_refuses_is_refused_not_kept(self) -> None:
+        """Mutation proof: read as `kept`, a refusal let setup record the release with OMH's keys on disk."""
+        before = ""
+        after = _apply_setup_writes(before)
+        record = _record(before, after)
+        for extra in ('aliases:\n  "fast/model": glm-5.3\n', "defaults: &defaults\n  retries: 1\n"):
+            with self.subTest(extra=extra):
+                shaped = after + extra
+
+                released, by_key = self._release(shaped, record)
+
+                self.assertEqual(released, shaped)
+                self.assertEqual({key: row.status for key, row in by_key.items()}, dict.fromkeys(DISPLAY_KEYS, "refused"))
+                self.assertIn("user-owned", by_key["display.skin"].detail)
+
+    def test_a_value_that_reads_as_the_persons_stays_kept_under_a_refused_shape(self) -> None:
+        before = ""
+        after = _apply_setup_writes(before)
+        moved = after.replace("  interface: tui\n", "  interface: cli\n").replace("  skin: omh\n", "  skin: ares\n")
+
+        _released, by_key = self._release(moved + 'aliases:\n  "fast/model": glm-5.3\n', _record(before, after))
+
+        self.assertEqual(by_key["display.interface"].status, "kept")
+        self.assertEqual(by_key["display.skin"].status, "kept")
+        # The sections reader honours the editor's guards, so nothing reads
+        # them as anybody's under this shape.
+        self.assertEqual(by_key["display.sections"].status, "refused")
+
     def test_a_display_section_the_person_had_survives_a_recorded_release(self) -> None:
         before = "version: 1\ndisplay:\n"
         after = _apply_setup_writes(before)

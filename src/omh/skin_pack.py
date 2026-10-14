@@ -9,12 +9,13 @@ Earlier versions also installed every theme file into ``$HERMES_HOME/skins/``
 and selected one through `display.skin`, so bare `hermes` wore it.
 `uninstall_skin` takes those files back: setup and update through the display
 release, uninstall on its own. It removes only a file OMH can prove it wrote,
-by manifest record or by matching the shipped bytes; anything else is the
-person's and stays.
+by manifest record or by matching the shipped bytes, and never the file
+`display.skin` still names; anything else is the person's and stays.
 """
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 import hashlib
 from importlib import resources
@@ -306,7 +307,7 @@ def _is_managed_file(destination: Path, records: dict[str, str], payload: bytes)
     return digest == _sha256(payload)
 
 
-_UNINSTALL_STATUS_ORDER = ("removed", "would_remove", "kept_unmanaged", "absent")
+_UNINSTALL_STATUS_ORDER = ("removed", "would_remove", "kept_unmanaged", "kept_selected", "absent")
 
 
 def _aggregate_status(statuses: list[str], order: tuple[str, ...]) -> str:
@@ -316,12 +317,21 @@ def _aggregate_status(statuses: list[str], order: tuple[str, ...]) -> str:
     return order[-1]
 
 
-def uninstall_skin(hermes_home: Path, *, dry_run: bool = False) -> dict[str, object]:
+def uninstall_skin(
+    hermes_home: Path,
+    *,
+    dry_run: bool = False,
+    keep: Collection[str] = (),
+) -> dict[str, object]:
     """Remove only the theme files OMH owns -- by record, or by being our bytes.
 
     The installer earlier versions ran adopted and refreshed a file on either
     proof, so either proof is what lets this take it away again; a machine
     with a stale manifest would otherwise keep orphaned skin files.
+
+    `keep` names skins the Hermes config still selects. Their files stay
+    (`kept_selected`) with their manifest records, whoever wrote them:
+    removing one would leave Hermes naming a skin that is not there.
     """
     destination_dir = hermes_home / "skins"
     manifest = destination_dir / MANIFEST_FILENAME
@@ -340,6 +350,16 @@ def uninstall_skin(hermes_home: Path, *, dry_run: bool = False) -> dict[str, obj
                     "skin": theme.skin_name,
                     "filename": theme.filename,
                     "status": "absent",
+                    "path": str(destination),
+                }
+            )
+            continue
+        if theme.skin_name in keep:
+            entries.append(
+                {
+                    "skin": theme.skin_name,
+                    "filename": theme.filename,
+                    "status": "kept_selected",
                     "path": str(destination),
                 }
             )

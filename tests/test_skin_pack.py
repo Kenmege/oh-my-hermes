@@ -318,6 +318,23 @@ class SkinRemovalTests(unittest.TestCase):
                 {theme.filename: "removed" for theme in SKIN_THEMES if theme.filename != "omh-mono.yaml"},
             )
 
+    def test_the_skin_the_config_still_names_stays_with_its_record(self) -> None:
+        # Removing it would leave Hermes naming a skin that is not there.
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp).resolve()
+            seed_legacy_skins(home)
+            entries = {
+                entry["filename"]: entry["status"] for entry in uninstall_skin(home, keep=("omh-crimson",))["skins"]
+            }
+            self.assertEqual(entries["omh-crimson.yaml"], "kept_selected")
+            self.assertTrue((home / "skins" / "omh-crimson.yaml").is_file())
+            self.assertEqual(entries[SKIN_FILENAME], "removed")
+            manifest = json.loads((home / "skins" / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+            self.assertEqual(list(manifest["files"]), ["omh-crimson.yaml"])
+            # Once nothing names it, the record still proves it OMH's.
+            entries = {entry["filename"]: entry["status"] for entry in uninstall_skin(home)["skins"]}
+            self.assertEqual(entries["omh-crimson.yaml"], "removed")
+
     @requires_symlinks
     def test_a_symlinked_skins_directory_is_refused_and_its_target_left_alone(self) -> None:
         with TemporaryDirectory() as tmp:

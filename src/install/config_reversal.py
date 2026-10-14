@@ -33,10 +33,12 @@ unrecorded rather than guessed at.
 The three display keys stopped being OMH's to write when bare `hermes` went
 back to stock Hermes: bare `omh` opens the OMH TUI, and nothing OMH ships
 restyles Hermes' own terminal any more. `release_managed_display` is the
-migration. Setup and update run it once per config, with the same per-key
-rules uninstall uses, and the record then says so (`display_released_at`):
-from that point no display value in that config is OMH's, including an
-`omh*` skin name, which only the person can have chosen since.
+migration. Setup and update run it with the same per-key rules uninstall
+uses, and once a pass leaves no key `refused` the record says so
+(`display_released_at`): from that point no display value in that config is
+OMH's, including an `omh*` skin name, which only the person can have chosen
+since. A key the editor would not touch for its YAML shape is `refused`
+instead; it stays OMH's in the record, and the next pass tries again.
 """
 
 from __future__ import annotations
@@ -57,6 +59,7 @@ from .compression_defaults import (
 from .config_adapter import (
     ConfigChange,
     config_container_paths,
+    display_edit_refusal,
     display_interface_selection,
     display_sections_selection,
     display_skin_selection,
@@ -513,6 +516,12 @@ def release_managed_display(
     so a `display.skin: omh-crimson` that appears later is one the person
     chose, and taking it back on every update would undo that choice each
     time (the #1973 shape).
+
+    Except when a row comes back `refused`: the editor would not touch that
+    key for its YAML shape, and nothing reads its value as the person's own.
+    The key may still be OMH's, so the caller must not record the release
+    on that pass, and must keep the key in the record so the next pass asks
+    again.
     """
     owned = load_managed_config_writes(record, config_path=config_path)
     if owned.get(DISPLAY_RELEASED_FIELD):
@@ -528,7 +537,7 @@ def release_managed_display(
         previous = str(restores.get(key) or "") if isinstance(restores, dict) else ""  # type: ignore[union-attr]
         change, row = _reverse_one(text, key, recorded, previous)
         text = change.text
-        rows.append(row)
+        rows.append(_refused_or_kept(text, row, recorded) if row.status == "kept" else row)
     # Only the display containers are candidates: this pass removed nothing
     # else, so no other container can have lost its last child here.
     named = {str(item) for item in containers if str(item) in DISPLAY_CONTAINERS}  # type: ignore[union-attr]
@@ -540,6 +549,37 @@ def release_managed_display(
         return ConfigChange(False, "no display key of OMH's to release", config_text), rows
     message = f"released {', '.join(reversed_keys)}" if reversed_keys else cleanup.message
     return ConfigChange(True, message, text), rows
+
+
+def _refused_or_kept(config_text: str, row: ReversalRow, recorded: object) -> ReversalRow:
+    """A `kept` display row, or `refused` when the shape stopped the edit and nothing says the value is the person's.
+
+    `kept` from the removers covers two different outcomes: the value is no
+    longer the one OMH wrote, or the editor refused the YAML shape before
+    looking (a quoted key anywhere in the file, a dotted or duplicate
+    `display`, anchors, tags, a BOM). Only the first leaves nothing of OMH's
+    behind. The value is read here without the editor's guards, and a value
+    that reads as the person's own keeps the row `kept`; one that reads as
+    OMH's, or cannot be read at all, is `refused`.
+    """
+    refusal = display_edit_refusal(config_text, row.key.rpartition(".")[2])
+    if not refusal or _reads_as_persons(config_text, row.key, recorded):
+        return row
+    return ReversalRow(row.key, "refused", refusal)
+
+
+def _reads_as_persons(config_text: str, key: str, recorded: object) -> bool:
+    if key == DISPLAY_INTERFACE_KEY:
+        current = display_interface_selection(config_text)
+        return bool(current) and current != recorded
+    if key == DISPLAY_SKIN_KEY:
+        current = display_skin_selection(config_text)
+        return bool(current) and not is_omh_skin_name(current)
+    # The sections reader returns nothing under the guards the editor
+    # applies, so a refused sections key never reads as anybody's.
+    current = display_sections_selection(config_text)
+    wanted = [str(name) for name in recorded] if isinstance(recorded, list) else []
+    return bool(current) and not any(current.get(name) == _SECTION_VALUE for name in wanted)
 
 
 def _reverse_one(

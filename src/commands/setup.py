@@ -56,7 +56,9 @@ from ..install.compression_defaults import ensure_compression_defaults
 from ..install.config_reversal import (
     DISPLAY_KEYS,
     DISPLAY_RELEASED_FIELD,
+    DISPLAY_SKIN_KEY,
     MANAGED_CONFIG_WRITES_STATE_KEY,
+    config_names_key,
     drop_emptied_containers,
     PLUGIN_OMH_HOME_KEY,
     load_managed_config_writes,
@@ -123,6 +125,7 @@ from ..release import (
 )
 from ..skin_pack import (
     SkinInstallError,
+    available_skins,
     read_theme_choice,
     theme_for_skin_name,
     theme_store_path,
@@ -771,11 +774,15 @@ def _display_release_lines(label: str, release: object) -> list[str]:
         return []
     details: list[str] = []
     keys = release.get("keys")
-    released = [
-        str(row.get("key")) for row in keys if isinstance(row, dict) and row.get("status") == "reversed"
-    ] if isinstance(keys, list) else []
+    rows = [row for row in keys if isinstance(row, dict)] if isinstance(keys, list) else []
+    released = [str(row.get("key")) for row in rows if row.get("status") == "reversed"]
     if released:
         details.append(f"released {', '.join(released)}")
+    refused = [row for row in rows if row.get("status") == "refused"]
+    for row in refused:
+        details.append(
+            f"could not release {row.get('key')} ({row.get('detail')}); the next `omh setup` or `omh update` tries again"
+        )
     files = release.get("files") if isinstance(release.get("files"), dict) else {}
     widget = files.get("tui_widget") if isinstance(files.get("tui_widget"), dict) else {}  # type: ignore[union-attr]
     skin = files.get("skin") if isinstance(files.get("skin"), dict) else {}  # type: ignore[union-attr]
@@ -788,6 +795,8 @@ def _display_release_lines(label: str, release: object) -> list[str]:
     for entry in skins:
         if entry.get("status") == "kept_unmanaged":
             details.append(f"kept {entry.get('path')}: it differs from what OMH installed, so it is yours")
+        elif entry.get("status") == "kept_selected":
+            details.append(f"kept {entry.get('path')}: display.skin still names it")
     if widget.get("status") == "kept_unmanaged":  # type: ignore[union-attr]
         details.append(f"kept {widget.get('path')}: OMH cannot prove it installed it")  # type: ignore[union-attr]
     for name, outcome in (("status widget", widget), ("skin files", skin)):
@@ -800,7 +809,12 @@ def _display_release_lines(label: str, release: object) -> list[str]:
         )
     if not details:
         return []
-    return [f"{label}: bare `hermes` opens stock Hermes; bare `omh` opens the OMH TUI.", *(f"  {line}" for line in details)]
+    header = (
+        f"{label}: some display keys OMH wrote are still in Hermes' config; bare `omh` opens the OMH TUI."
+        if refused
+        else f"{label}: bare `hermes` opens stock Hermes; bare `omh` opens the OMH TUI."
+    )
+    return [header, *(f"  {line}" for line in details)]
 
 
 def _print_display_release_lines(
@@ -2008,11 +2022,25 @@ def _carry_theme_choice(
     return result
 
 
-def _remove_legacy_display_files(paths: OmhPaths, *, dry_run: bool) -> dict[str, object]:
+def _selected_skins(config_text: str) -> tuple[str, ...]:
+    """The skins a Hermes config still selects: the one `display.skin` names, or every OMH skin when it cannot be read.
+
+    A `display.skin` in a shape the reader does not handle (flow, duplicate
+    `display`) may name an OMH skin, so every OMH skin file stays with it.
+    """
+    named = display_skin_selection(config_text)
+    if named:
+        return (named,)
+    return available_skins() if config_names_key(config_text, DISPLAY_SKIN_KEY) else ()
+
+
+def _remove_legacy_display_files(paths: OmhPaths, *, dry_run: bool, config_text: str) -> dict[str, object]:
     """Remove the status widget and skin files earlier versions installed into this Hermes home.
 
     The manifest-checked uninstallers, so a file OMH cannot prove it wrote
-    (a skin the person edited) stays and is reported `kept_unmanaged`. A
+    (a skin the person edited) stays and is reported `kept_unmanaged`, and
+    the skin `config_text` still selects stays (`kept_selected`), since
+    removing it would leave Hermes naming a skin that is not there. A
     symlinked destination is refused, as uninstall refuses it, and so is a
     file that cannot be unlinked. Either is reported rather than failing the
     setup or update the config release already carried, and rather than
@@ -2024,7 +2052,7 @@ def _remove_legacy_display_files(paths: OmhPaths, *, dry_run: bool) -> dict[str,
     except (TuiWidgetInstallError, OSError) as exc:
         files["tui_widget"] = {"status": "refused", "reason": str(exc)}
     try:
-        files["skin"] = uninstall_skin(paths.hermes_home, dry_run=dry_run)
+        files["skin"] = uninstall_skin(paths.hermes_home, dry_run=dry_run, keep=_selected_skins(config_text))
     except (SkinInstallError, OSError) as exc:
         files["skin"] = {"status": "refused", "reason": str(exc)}
     return files
@@ -2163,17 +2191,25 @@ def _apply_result(
     # leave every value the person has since changed; without it, three of
     # the seven keys are indistinguishable from a personal choice and have to
     # be left behind (#1725).
+    # A key the editor refused for its shape may still be OMH's, so it stays
+    # in the record and the release is not recorded: the next pass asks again.
+    refused = {row["key"] for row in display_rows if row["status"] == "refused"}
     config_writes = managed_config_writes(
         current,
         plugin_omh_home.text,
         config_path=paths.hermes_config_path,
         previous=previous_writes,
-        released=(*DISPLAY_KEYS, *((PLUGIN_OMH_HOME_KEY,) if reclaimed else ())),
-        display_released=True,
+        released=(
+            *(key for key in DISPLAY_KEYS if key not in refused),
+            *((PLUGIN_OMH_HOME_KEY,) if reclaimed else ()),
+        ),
+        display_released=not refused,
     )
-    # After the config, never before: a skin file removed while
-    # `display.skin` still names it would leave Hermes pointing at nothing.
-    legacy_files = _remove_legacy_display_files(paths, dry_run=bool(args.dry_run))
+    # After the config, never before, and keeping the skin the config still
+    # names: removing it would leave Hermes pointing at nothing.
+    legacy_files = _remove_legacy_display_files(
+        paths, dry_run=bool(args.dry_run), config_text=plugin_omh_home.text
+    )
     if not args.dry_run:
         update_state(
             paths,
