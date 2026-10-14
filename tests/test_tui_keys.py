@@ -16,6 +16,7 @@ from omh.tui.keys import (
     BUTTON_RIGHT,
     MOUSE_REPORT_SECONDS,
     NO_BUTTON,
+    PASTE_LATE_SECONDS,
     PASTE_SETTLE_SECONDS,
     WHEEL_DOWN,
     WHEEL_LEFT,
@@ -227,6 +228,38 @@ class BracketedPasteTests(unittest.TestCase):
         self.assertEqual(paused.events, [Paste("partial paste")])
         paused.feed(b"k\x03")  # a key, then Ctrl+C: neither is swallowed as paste text any more
         self.assertEqual(paused.events[1:], [char("k"), char("c", ctrl=True)])
+
+    def test_the_rest_of_a_stalled_paste_never_submits_and_its_late_end_marker_is_swallowed(self) -> None:
+        paused = PausedInput(reporting=False)
+        paused.feed(b"\x1b[200~first line\r")
+        paused.pause(PASTE_SETTLE_SECONDS + READ_SECONDS)  # the watchdog gives the end marker up
+        paused.feed(b"second\r\nthird")  # the rest of the paste, late
+        paused.feed(b"\x03\x1b[201~")  # Ctrl+C is still a key; the end marker closes the window and is no key
+        paused.feed(b"\r")  # after the end marker, Enter is Enter again
+        self.assertEqual(
+            paused.events,
+            [Paste("first line\n"), *map(char, "second"), Paste("\n"), *map(char, "third"), char("c", ctrl=True),
+             Key("enter")],
+        )
+
+    def test_a_rest_that_keeps_arriving_keeps_the_late_window_open(self) -> None:
+        paused = PausedInput(reporting=False)
+        paused.feed(b"\x1b[200~a")
+        paused.pause(PASTE_SETTLE_SECONDS + READ_SECONDS)
+        for chunk in (b"b", b"c", b"d\r"):  # past PASTE_LATE_SECONDS since the settle, never that long without a byte
+            paused.pause(PASTE_LATE_SECONDS * 0.6)
+            paused.feed(chunk)
+        self.assertEqual(paused.events, [Paste("a"), *map(char, "bcd"), Paste("\n")])
+
+    def test_a_carriage_return_after_the_late_window_is_enter(self) -> None:
+        paused = PausedInput(reporting=False)
+        paused.feed(b"\x1b[200~partial")
+        paused.pause(PASTE_SETTLE_SECONDS + READ_SECONDS)
+        paused.feed(b"x\r")  # inside the window: a newline
+        paused.pause(PASTE_LATE_SECONDS + READ_SECONDS)
+        paused.feed(b"\r")  # a second without a byte, and no end marker came: Enter
+        paused.feed(b"\x1b[201~")  # a stray end marker outside the window is the unknown key it always was
+        self.assertEqual(paused.events, [Paste("partial"), char("x"), Paste("\n"), Key("enter"), Key("unknown")])
 
     def test_an_open_paste_with_nothing_in_it_settles_as_nothing(self) -> None:
         paused = PausedInput(reporting=False)
