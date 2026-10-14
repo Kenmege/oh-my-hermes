@@ -864,6 +864,25 @@ class LogViewTests(unittest.TestCase):
             ],
         )
 
+    def test_the_log_rows_are_wrapped_once_per_change_and_only_the_header_follows_the_clock(self) -> None:
+        roster = self._roster()
+        first = roster.log_lines(FIRST, 40, THEME, 25.0)
+        again = roster.log_lines(FIRST, 40, THEME, 26.0)
+        self.assertEqual(lines_text(again)[2], "running · 16s · 1 tool ·")
+        self.assertTrue(all(new is old for new, old in zip(again[5:], first[5:], strict=True)))  # not wrapped again
+        feed(roster, "tool", 27.0, tool_count=2, tool_name="read_file", tool_preview="src/api.py")
+        grown = roster.log_lines(FIRST, 40, THEME, 27.0)
+        self.assertEqual(lines_text(grown)[-1], "⏺ read_file  src/api.py")
+        narrow = roster.log_lines(FIRST, 30, THEME, 27.0)  # a new width wraps again
+        self.assertNotEqual(lines_text(narrow)[5:], lines_text(grown)[5:])
+        self.assertTrue(all(line_width(row) <= 30 for row in narrow))
+        from omh.tui.theme import theme_named
+        amber = theme_named("amber")
+        self.assertEqual(style_of(roster.log_lines(FIRST, 40, THEME, 27.0)[-1], "read_file"), THEME.tool)
+        self.assertEqual(style_of(roster.log_lines(FIRST, 40, amber, 27.0)[-1], "read_file"), amber.tool)
+        roster.ingest_tail(FIRST, "replaced by the tail\n")
+        self.assertEqual(lines_text(roster.log_lines(FIRST, 40, THEME, 28.0))[-1], "replaced by the tail")
+
     def test_the_view_uses_the_theme_roles(self) -> None:
         rows = self._roster().log_lines(FIRST, 120, THEME, 25.0)
         self.assertEqual(style_of(rows[0], "find usages"), THEME.accent)

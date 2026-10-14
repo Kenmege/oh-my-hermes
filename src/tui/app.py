@@ -2106,6 +2106,8 @@ class App(ModesMixin, AgentViewMixin):
         # The clear homes the cursor, so the next first frame starts on the screen's top row: unless a
         # pager is open, when it cleared the alternate screen and the main screen's cursor is where it was.
         self.region = LiveRegion(self.terminal.write, at_top=self.pager is None)
+        if self.pager is not None:
+            self.pager.invalidate()  # the clear took its rows too
         self.transcript.retake()
         if self.banner_record is not None:
             self.banner_facts = dict(self.banner_record)

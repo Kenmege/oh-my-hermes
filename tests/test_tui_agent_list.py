@@ -441,6 +441,21 @@ class AgentLogTests(unittest.TestCase):
         self.assertEqual(paged(app)[1], "completed · 5s · 1 tool · deepseek-v4.1-flash")
         self.assertEqual(paged(app)[-1], "three call sites")
 
+    def test_a_tick_with_nothing_new_repaints_nothing_and_a_full_redraw_under_the_log_paints_it_all(self) -> None:
+        now = [0.0]
+        app, _client = log_open(clock=lambda: now[0])
+        screen = drawn(app)
+        writes = len(app.terminal.writes)  # type: ignore[attr-defined]
+        app._render()
+        self.assertEqual("".join(app.terminal.writes[writes:]), "")  # type: ignore[attr-defined]
+        now[0] = 3.0  # the header's clock moves: that row alone repaints
+        app._render()
+        tick = "".join(app.terminal.writes[writes:])  # type: ignore[attr-defined]
+        self.assertIn(" · 3s · 0 tools", tick)
+        self.assertNotIn("find usages of old_api", tick)
+        app._full_redraw()  # it clears the screen the log is on
+        self.assertEqual(drawn(app)[0], screen[0])
+
     def test_a_log_read_at_its_end_follows_new_rows_and_one_scrolled_up_stays(self) -> None:
         app, _client = agent_app()
         for number in range(60):

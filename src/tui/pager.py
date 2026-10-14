@@ -4,7 +4,9 @@ The pager never touches the live region or the terminal's scrollback. It
 switches to the alternate screen, paints a page of already-rendered lines and
 a footer, and switches back when the person leaves, which restores the main
 screen (live region included) exactly as it was. Nothing it shows is written
-anywhere else.
+anywhere else. After its first frame a pager paints only the rows that changed
+since its last one, until the size changes or `invalidate` says something else
+cleared the screen.
 
 Keys: j / Down one line down, k / Up one line up, Space / PageDown a page
 down, b / PageUp a page up, g / Home the top, G / End the bottom, q / Esc
@@ -14,7 +16,7 @@ leave.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .keys import CHAR, DOWN, END, ESCAPE, HOME, PAGE_DOWN, PAGE_UP, UP, Key, Paste
 from .screen import HIDE_CURSOR, paint_line
@@ -36,6 +38,14 @@ class Pager:
     title: str
     lines: Sequence[Line]
     top: int = 0
+    # What the last frame left on each screen row (the line and its bytes), and the size it was drawn at.
+    _painted: dict[int, tuple[Line, str]] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _size: tuple[int, int] | None = field(default=None, init=False, repr=False, compare=False)
+
+    def invalidate(self) -> None:
+        """Forget what is on the screen: the next frame paints every row."""
+        self._painted = {}
+        self._size = None
 
     def body_rows(self, rows: int) -> int:
         return max(rows - 1, 1)
@@ -69,16 +79,30 @@ class Pager:
         return True
 
     def frame(self, cols: int, rows: int, theme: Theme) -> str:
-        """The whole alternate screen for the current page, footer on the last row."""
+        """The alternate screen's rows for the current page that differ from the last frame, footer on the last row.
+
+        "" when no row changed.
+        """
+        if self._size != (cols, rows):
+            self.invalidate()
+            self._size = (cols, rows)
         body = self.body_rows(rows)
         self.top = min(self.top, self._last_top(rows))
         shown = list(self.lines[self.top : self.top + body])
-        parts = [HIDE_CURSOR]
+        parts: list[str] = []
         for row in range(body):
-            line = shown[row] if row < len(shown) else ()
-            parts.append(_move_to(row) + paint_line(line, cols))
+            self._paint(row, shown[row] if row < len(shown) else (), cols, parts)
         last = min(self.top + body, len(self.lines))
         position = f"{self.top + 1 if self.lines else 0}-{last}/{len(self.lines)}"
         footer: Line = (Span(f" {self.title} · {position} · {FOOTER_KEYS} ", theme.status),)
-        parts.append(_move_to(rows - 1) + paint_line(footer, cols))
-        return "".join(parts)
+        self._paint(rows - 1, footer, cols, parts)
+        return HIDE_CURSOR + "".join(parts) if parts else ""
+
+    def _paint(self, row: int, line: Line, cols: int, parts: list[str]) -> None:
+        """Add screen row `row`'s bytes to `parts`, unless the last frame left this very line there."""
+        held = self._painted.get(row)
+        if held is not None and held[0] == line:
+            return
+        painted = paint_line(line, cols)
+        self._painted[row] = (line, painted)
+        parts.append(_move_to(row) + painted)
