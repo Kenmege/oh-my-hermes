@@ -35,6 +35,16 @@ inserts as is, newlines kept; Tab completes; Esc cancels and keeps the text;
 Ctrl+C clears the text and cancels, or reports an interrupt when there is no
 text; Ctrl+D exits on empty input and deletes forward otherwise.
 
+A paste of more than `PASTE_CHIP_LINES` lines or `PASTE_CHIP_CHARS`
+characters (Claude Code's thresholds) goes in as one chip,
+`[Pasted text #1 +60 lines]`, its text held in `pastes` (memory only, until
+the composer empties). The chip is atomic: the caret steps over it and
+never lands inside, and a deletion that reaches it (Backspace, Delete,
+Ctrl+W, Ctrl+U, Ctrl+K) takes it whole. A submit sends the text with every
+chip expanded where it stands and reports the compact text beside it
+(`ComposerAction.shown`), which is what the transcript shows; history keeps
+the expanded text. Masked input takes a paste as typed.
+
 History is held oldest first, at most `HISTORY_CAP` entries; a submit
 appends unless the text is blank or repeats the newest entry, or
 `records_history` is off (the app turns it off while the composer answers a
@@ -76,6 +86,11 @@ NEWLINE = "\n"
 TAB_CHAR = "\t"
 # The most entries history holds, the oldest leaving first: as many as Hermes' own TUI keeps (ui-tui `history.ts`).
 HISTORY_CAP = 1000
+# A paste longer than this many lines, or this many characters, becomes one chip.
+PASTE_CHIP_LINES = 3
+PASTE_CHIP_CHARS = 800
+PASTE_CHIP = "[Pasted text #{number} +{lines} lines]"
+PASTE_CHIP_ONE_LINE = "[Pasted text #{number} · {chars:,} chars]"
 
 NONE = "none"
 SUBMIT = "submit"
@@ -88,7 +103,8 @@ COMPLETE = "complete"
 @dataclass(frozen=True)
 class ComposerAction:
     kind: str
-    text: str = ""  # the submitted text, for SUBMIT only
+    text: str = ""  # the submitted text, for SUBMIT only, every paste chip expanded
+    shown: str = ""  # the submitted text as the composer showed it, when chips made it differ from `text`
 
 
 NOTHING = ComposerAction(NONE)
@@ -227,6 +243,8 @@ class Composer:
     masked: bool = False
     records_history: bool = True
     on_record: Callable[[str], None] | None = field(default=None, repr=False, compare=False)
+    pastes: dict[str, str] = field(default_factory=dict, repr=False, compare=False)  # chip label -> its text
+    _paste_count: int = field(default=0, init=False, repr=False, compare=False)
     _draft: str = field(default="", init=False, repr=False, compare=False)
     _avail: int | None = field(default=None, init=False, repr=False, compare=False)
     _scroll: int = field(default=0, init=False, repr=False, compare=False)
@@ -266,7 +284,61 @@ class Composer:
         self.caret = bounds[_cluster_index(bounds, min(len(_nfc(text[:caret])), len(full)))]
 
     def _replace(self, start: int, end: int, insert: str = "") -> None:
+        if self.pastes and start < end:  # a deletion that reaches a chip takes it whole
+            for chip_start, chip_end in self._chip_spans():
+                if chip_start < end and chip_end > start:
+                    start, end = min(start, chip_start), max(end, chip_end)
         self._set(self.text[:start] + insert + self.text[end:], start + len(insert))
+        if self.pastes:
+            self.pastes = {label: text for label, text in self.pastes.items() if label in self.text}
+            self._caret_off_chip(forward=True)
+
+    def _chip_spans(self) -> list[tuple[int, int]]:
+        """Every chip's (start, end) in the text, in order."""
+        spans: list[tuple[int, int]] = []
+        for label in self.pastes:
+            index = self.text.find(label)
+            while index >= 0:
+                spans.append((index, index + len(label)))
+                index = self.text.find(label, index + len(label))
+        return sorted(spans)
+
+    def _caret_off_chip(self, forward: bool) -> None:
+        """A caret that fell inside a chip goes to its end (`forward`) or its start."""
+        for start, end in self._chip_spans():
+            if start < self.caret < end:
+                self.caret = end if forward else start
+                return
+
+    def expanded(self, text: str | None = None) -> str:
+        """`text` (the composer's own by default) with every chip replaced by the text it holds."""
+        text = self.text if text is None else text
+        if not self.pastes:
+            return text
+        parts: list[str] = []
+        done = 0
+        for start, end in self._chip_spans() if text == self.text else []:
+            parts.append(text[done:start])
+            parts.append(self.pastes[text[start:end]])
+            done = end
+        parts.append(text[done:])
+        return "".join(parts)
+
+    def _insert_paste(self, text: str) -> None:
+        """A paste: a long one (and not masked) as a chip, anything else as typed."""
+        cleaned = _clean(text, self.masked)
+        lines = len(cleaned.rstrip(NEWLINE).split(NEWLINE))
+        if self.masked or not (lines > PASTE_CHIP_LINES or len(cleaned) > PASTE_CHIP_CHARS):
+            self._insert(text)
+            return
+        self._paste_count += 1
+        label = (
+            PASTE_CHIP.format(number=self._paste_count, lines=lines)
+            if lines > 1
+            else PASTE_CHIP_ONE_LINE.format(number=self._paste_count, chars=len(cleaned))
+        )
+        self.pastes[label] = cleaned
+        self._replace(self.caret, self.caret, label)
 
     def _insert(self, text: str) -> None:
         cleaned = _clean(text, self.masked)
@@ -290,12 +362,14 @@ class Composer:
         self._load("")
         self.history_index = None
         self._draft = ""
+        self.pastes = {}
+        self._paste_count = 0
 
     # -- key handling ---------------------------------------------------------
 
     def handle(self, event: Key | Paste) -> ComposerAction:
         if isinstance(event, Paste):
-            self._insert(event.text)
+            self._insert_paste(event.text)
             return NOTHING
         if event.name == ENTER:
             adds_line = event.alt or event.shift
@@ -333,8 +407,10 @@ class Composer:
             self._replace(self.caret, bounds[index + 1])
         elif key.name == LEFT:
             self.caret = bounds[_word_start(units, index) if by_word else max(index - 1, 0)]
+            self._caret_off_chip(forward=False)
         elif key.name == RIGHT:
             self.caret = bounds[_word_end(units, index) if by_word else min(index + 1, len(units))]
+            self._caret_off_chip(forward=True)
         elif key.name == HOME:
             self.caret = self._line_start()
         elif key.name == END:
@@ -387,10 +463,11 @@ class Composer:
                 self.on_record(text)
 
     def _submit(self) -> ComposerAction:
-        text = self.text
+        shown = self.text
+        text = self.expanded()
         self.record(text)
         self._clear()
-        return ComposerAction(SUBMIT, text)
+        return ComposerAction(SUBMIT, text, shown if shown != text else "")
 
     # -- rows and history -----------------------------------------------------
 
@@ -405,6 +482,7 @@ class Composer:
         target = row + step
         if 0 <= target < len(rows):
             self.caret = bounds[_position_at(rows[target], widths, col)]
+            self._caret_off_chip(forward=True)
         elif step < 0:
             self._history_back()
         else:
@@ -439,8 +517,9 @@ class Composer:
         max_rows: int,
         prompt: str = PROMPT,
         prompt_style: Style = DEFAULT_STYLE,
+        chip_style: Style = DEFAULT_STYLE,
     ) -> tuple[list[Line], tuple[int, int]]:
-        """The visible rows at `width` cells, and the caret as (row, col) within them."""
+        """The visible rows at `width` cells, and the caret as (row, col) within them; paste chips in `chip_style`."""
         prompt_cells = cell_width(prompt)
         avail = max(width - prompt_cells, 1)
         self._avail = avail
@@ -452,9 +531,30 @@ class Composer:
         scroll = max(min(scroll, len(rows) - visible), 0)
         self._scroll = scroll
         indent = Span(" " * prompt_cells)
+        chips = self._chip_spans() if self.pastes and not self.masked else []
         lines: list[Line] = []
         for number in range(scroll, min(len(rows), scroll + visible)):
             lead = Span(prompt, prompt_style) if number == 0 else indent
-            body = "".join(shown[rows[number].start : rows[number].end])
+            start, end = rows[number].start, rows[number].end
+            if chips:
+                body_spans = _chip_styled(shown, shape.bounds, start, end, chips, chip_style)
+                lines.append((lead, *body_spans))
+                continue
+            body = "".join(shown[start:end])
             lines.append((lead, Span(body)) if body else (lead,))
         return lines, (row - scroll, prompt_cells + col)
+
+
+def _chip_styled(
+    shown: Sequence[str], bounds: Sequence[int], start: int, end: int, chips: Sequence[tuple[int, int]], style: Style
+) -> list[Span]:
+    """Clusters `start` to `end` as spans, the ones inside a chip (by str index) in `style`."""
+    spans: list[Span] = []
+    for index in range(start, end):
+        inside = any(chip_start <= bounds[index] < chip_end for chip_start, chip_end in chips)
+        wanted = style if inside else DEFAULT_STYLE
+        if spans and spans[-1].style == wanted:
+            spans[-1] = Span(spans[-1].text + shown[index], wanted)
+        else:
+            spans.append(Span(shown[index], wanted))
+    return spans

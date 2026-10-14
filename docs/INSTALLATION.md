@@ -379,7 +379,12 @@ run and approval decision stays Hermes'; the screen is OMH's.
   Ctrl+L. Until then it leaves the mouse to the terminal, and the keys still
   open the list and the logs.
 - The composer takes a paste whole when the terminal brackets it, as most
-  terminals do. A paste whose end marker never arrives ends after 0.5 s
+  terminals do. A paste of more than 3 lines or 800 characters shows as one
+  chip, `[Pasted text #1 +60 lines]` (or `· 1,204 chars` for one long line):
+  the caret steps over it, Backspace, Delete and the line and word kills take
+  it whole, and sending puts its text back where it stood. The transcript
+  shows the chip, and the input history keeps the whole text; the chip's text
+  is held in memory only. A paste whose end marker never arrives ends after 0.5 s
   without input, as what arrived so far, and the keys after it are keys
   again, Ctrl+C included. Until that end marker arrives late, or for a second
   after the paste ended, a line break in what follows adds a line instead of
@@ -452,7 +457,7 @@ Esc closes it):
 | ↓ | On an empty composer while the mode row shows subagents, opens the agent list under the composer |
 | ← / → | Move by a character; with Ctrl or Alt, by a word |
 | Home / End, Ctrl+A / Ctrl+E | Go to the start or the end of the line |
-| Backspace / Delete | Delete a character; Backspace on an empty composer removes the last attached image |
+| Backspace / Delete | Delete a character, or a paste chip whole; Backspace on an empty composer removes the last attached image |
 | Ctrl+W | Deletes the word before the caret |
 | Ctrl+U / Ctrl+K | Delete to the start or the end of the line |
 | Esc | Closes the `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run); cancels a rewind you picked |

@@ -1603,7 +1603,7 @@ class App(ModesMixin, AgentViewMixin):
             elif steer:
                 self._steer_or_submit(action.text)
             else:
-                self._submit(action.text)
+                self._submit(action.text, action.shown)
         elif action.kind == INTERRUPT:
             self._interrupt_or_exit()
         elif action.kind == EXIT:
@@ -1723,7 +1723,7 @@ class App(ModesMixin, AgentViewMixin):
             self.rewind = Rewind(row.row_id, row.ordinal, before)
             self._set_composer(row.text)
 
-    def _send_rewind(self, text: str) -> None:
+    def _send_rewind(self, text: str, shown: str = "") -> None:
         """Send `text` in place of the picked prompt: Hermes drops it and what came after, and the screen restarts there.
 
         The transcript is rebuilt from the history above the cut (as a resumed
@@ -1739,7 +1739,7 @@ class App(ModesMixin, AgentViewMixin):
             self._set_composer(text)
             return
         self._restart_transcript(list(rewind.before))
-        self._submit_prompt(text, truncate=rewind.row_id)
+        self._submit_prompt(text, shown, truncate=rewind.row_id)
         self._full_redraw()
 
     def _restart_transcript(self, messages: list[dict[str, Any]]) -> None:
@@ -1862,7 +1862,8 @@ class App(ModesMixin, AgentViewMixin):
 
     # ── prompts ──
 
-    def _submit(self, text: str) -> None:
+    def _submit(self, text: str, shown: str = "") -> None:
+        """Send what the composer submitted; `shown` is its compact form (paste chips), which the transcript shows."""
         if not text.strip():
             return
         if text.startswith(SHELL_PREFIX):
@@ -1872,11 +1873,11 @@ class App(ModesMixin, AgentViewMixin):
         if invocation is not None:
             self._run_slash(invocation)  # a picked rewind stays picked under a command
         elif self.rewind is not None:
-            self._send_rewind(text)
+            self._send_rewind(text, shown)
         else:
-            self._send_typed(text)
+            self._send_typed(text, shown=shown)
 
-    def _send_typed(self, text: str, hold: bool = False) -> None:
+    def _send_typed(self, text: str, hold: bool = False, shown: str = "") -> None:
         """A prompt the person typed and sent: in plan mode as `/plan <text>`, the way a typed `/plan` goes.
 
         `hold` keeps it behind a running turn whatever the busy mode (`_send_prompt`).
@@ -1884,7 +1885,7 @@ class App(ModesMixin, AgentViewMixin):
         if self.plan_mode:
             self._run_slash(replace(plan_invocation(text), held=hold))
         else:
-            self._send_prompt(text, hold=hold)
+            self._send_prompt(text, shown=shown, hold=hold)
 
     def _send_prompt(self, text: str, shown: str = "", typed: str = "", hold: bool = False) -> None:
         """Send `text`, or queue it behind the running turn; `typed` is what Up puts back in the composer.

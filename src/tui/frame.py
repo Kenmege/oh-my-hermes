@@ -118,7 +118,7 @@ def build_frame(
     """
     cap = composer_cap(rows)
     chips = [attachments] if attachments is not None and cap >= 2 else []
-    input_lines, (caret_line, caret_col) = composer.render(cols, cap - len(chips), prompt, theme.prompt)
+    input_lines, (caret_line, caret_col) = composer.render(cols, cap - len(chips), prompt, theme.prompt, theme.accent)
     if placeholder and not composer.text and input_lines:
         input_lines[0] = truncate_line((*input_lines[0], Span(placeholder, theme.hint)), cols)
     composer_lines = chips + input_lines

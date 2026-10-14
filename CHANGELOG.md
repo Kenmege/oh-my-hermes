@@ -39,7 +39,9 @@ All notable changes will be documented here.
   A line that starts with `!` runs in Hermes' shell (`shell.exec`, 30 s at
   most, dangerous commands refused) and shows `› !cmd` with its output and
   exit code; it never reaches the model, and during a turn it waits in the
-  queue.
+  queue. A paste of more than 3 lines or 800 characters is one atomic chip,
+  `[Pasted text #1 +60 lines]`, sent whole and shown compact in the
+  transcript.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

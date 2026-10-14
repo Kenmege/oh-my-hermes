@@ -418,6 +418,107 @@ class PasteTests(unittest.TestCase):
         self.assertEqual(caret, (0, 7))
 
 
+class PasteChipTests(unittest.TestCase):
+    """A long paste is one atomic chip in the composer and its whole text when sent (kept in memory only)."""
+
+    SIXTY = "\n".join(f"line {number}" for number in range(60))
+
+    def test_a_paste_of_more_than_three_lines_or_800_characters_is_a_chip(self) -> None:
+        composer = Composer()
+        composer.handle(Paste(self.SIXTY))
+        self.assertEqual(composer.text, "[Pasted text #1 +60 lines]")
+        long_line = Composer()
+        long_line.handle(Paste("x" * 801))
+        self.assertEqual(long_line.text, "[Pasted text #1 · 801 chars]")
+        for text in ("one\ntwo\nthree", "one\ntwo\nthree\n", "x" * 800):
+            with self.subTest(text=text[:20]):
+                small = Composer()
+                small.handle(Paste(text))
+                self.assertEqual(small.text, text)  # short enough to keep as typed
+
+    def test_sending_expands_the_chip_where_it_stands_and_reports_the_compact_text(self) -> None:
+        composer = Composer()
+        typed(composer, "see ")
+        composer.handle(Paste(self.SIXTY))
+        typed(composer, " please")
+        action = press(composer, Key(ENTER))
+        self.assertEqual(action.text, f"see {self.SIXTY} please")
+        self.assertEqual(action.shown, "see [Pasted text #1 +60 lines] please")
+        self.assertEqual(composer.history[-1], f"see {self.SIXTY} please")  # Up gives back what was sent
+        self.assertEqual(composer.pastes, {})
+
+    def test_backspace_and_delete_take_the_chip_whole(self) -> None:
+        composer = Composer()
+        typed(composer, "a ")
+        composer.handle(Paste(self.SIXTY))
+        typed(composer, " b")
+        press(composer, Key(LEFT), Key(LEFT))
+        press(composer, Key(BACKSPACE))
+        self.assertEqual((composer.text, composer.pastes), ("a  b", {}))
+        composer = Composer()
+        composer.handle(Paste(self.SIXTY))
+        press(composer, Key(HOME), Key(DELETE))
+        self.assertEqual(composer.text, "")
+
+    def test_the_caret_steps_over_a_chip_and_never_lands_inside_it(self) -> None:
+        composer = Composer()
+        typed(composer, "a")
+        composer.handle(Paste(self.SIXTY))
+        typed(composer, "b")
+        chip = "[Pasted text #1 +60 lines]"
+        press(composer, Key(LEFT))
+        self.assertEqual(composer.caret, 1 + len(chip))
+        press(composer, Key(LEFT))
+        self.assertEqual(composer.caret, 1)
+        press(composer, Key(RIGHT))
+        self.assertEqual(composer.caret, 1 + len(chip))
+
+    def test_word_and_line_kills_take_a_chip_they_reach_whole(self) -> None:
+        for kill in (ctrl("w"), ctrl("u")):
+            with self.subTest(kill=kill):
+                composer = Composer()
+                composer.handle(Paste(self.SIXTY))
+                press(composer, kill)
+                self.assertEqual((composer.text, composer.pastes), ("", {}))
+
+    def test_chips_are_numbered_and_the_numbers_start_again_with_an_empty_composer(self) -> None:
+        composer = Composer()
+        composer.handle(Paste(self.SIXTY))
+        composer.handle(Paste(self.SIXTY + "\nmore"))
+        self.assertEqual(composer.text, "[Pasted text #1 +60 lines][Pasted text #2 +61 lines]")
+        press(composer, Key(ENTER))
+        composer.handle(Paste(self.SIXTY))
+        self.assertEqual(composer.text, "[Pasted text #1 +60 lines]")
+
+    def test_a_masked_answer_takes_a_paste_as_typed(self) -> None:
+        composer = Composer(masked=True)
+        composer.handle(Paste("x" * 900))
+        self.assertEqual(composer.text, "x" * 900)
+
+    def test_the_chip_is_drawn_in_the_chip_style(self) -> None:
+        composer = Composer()
+        typed(composer, "a ")
+        composer.handle(Paste(self.SIXTY))
+        chip = Style(fg="#00FF00")
+        lines, _caret = composer.render(80, 3, chip_style=chip)
+        styled = [span for span in lines[0] if span.style == chip]
+        self.assertEqual([span.text for span in styled], ["[Pasted text #1 +60 lines]"])
+
+
+class PasteChipAppTests(unittest.TestCase):
+    def test_the_prompt_goes_whole_and_the_transcript_shows_the_chip(self) -> None:
+        from test_tui_modes import SID, make_app
+        from omh.tui.transcript import UserBlock
+
+        app, client = make_app()
+        sixty = PasteChipTests.SIXTY
+        app._on_input(Paste(sixty))
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": sixty})])
+        (user,) = [block for block in app.transcript.blocks if isinstance(block, UserBlock)]
+        self.assertEqual(user.text, "[Pasted text #1 +60 lines]")
+
+
 class MaskedTests(unittest.TestCase):
     def test_masked_input_draws_one_bullet_per_cluster(self) -> None:
         composer = Composer(masked=True)
@@ -528,8 +629,7 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(composer.render(40, 3)[1], (0, 6))
 
     def test_the_window_scrolls_to_keep_the_caret_visible(self) -> None:
-        composer = Composer()
-        composer.handle(Paste("1\n2\n3\n4\n5\n6"))
+        composer = at("1\n2\n3\n4\n5\n6", 11)  # six typed lines (a paste that long is a chip)
         lines, caret = composer.render(40, 3)
         self.assertEqual(lines_text(lines), ["  4", "  5", "  6"])
         self.assertEqual(caret, (2, 3))
@@ -545,8 +645,7 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(caret, (0, 3))
 
     def test_the_window_refills_when_rows_go_away(self) -> None:
-        composer = Composer()
-        composer.handle(Paste("1\n2\n3\n4\n5\n6"))
+        composer = at("1\n2\n3\n4\n5\n6", 11)
         composer.render(40, 3)
         press(composer, Key(BACKSPACE), Key(BACKSPACE))  # drop "\n6"
         lines, caret = composer.render(40, 3)

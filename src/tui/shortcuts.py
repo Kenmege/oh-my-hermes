@@ -37,7 +37,8 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("↓", "On an empty composer while the mode row shows subagents, opens the agent list under the composer"),
     ("← / →", "Move by a character; with Ctrl or Alt, by a word"),
     ("Home / End, Ctrl+A / Ctrl+E", "Go to the start or the end of the line"),
-    ("Backspace / Delete", "Delete a character; Backspace on an empty composer removes the last attached image"),
+    ("Backspace / Delete", "Delete a character, or a paste chip whole; Backspace on an empty composer removes "
+                           "the last attached image"),
     ("Ctrl+W", "Deletes the word before the caret"),
     ("Ctrl+U / Ctrl+K", "Delete to the start or the end of the line"),
     ("Esc", "Closes the @ menu; on an empty composer, interrupts a running turn "
