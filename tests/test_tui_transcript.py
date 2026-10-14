@@ -188,6 +188,52 @@ class RetakeTests(LoopTestCase):
         self.assertIn("line two is still streaming", "".join(lines_text(live)))
 
 
+class RetakeTailTests(LoopTestCase):
+    """A full redraw prints the last rows of the session, from a block boundary, under one row naming what it left out."""
+
+    def session(self, turns: int) -> None:
+        for turn in range(turns):
+            self.user(f"question {turn}")
+            self.step(ev("message.start"))
+            self.step(ev("message.delta", text=f"answer {turn}, line one\nline two\n"))
+            self.step(ev("message.complete", text=f"answer {turn}, line one\nline two", status="complete"))
+
+    def test_only_the_last_blocks_that_fit_are_taken_again_under_a_row_naming_the_rest(self) -> None:
+        self.session(20)  # 40 blocks: a prompt is 2 rows with the blank row above it, a reply 3
+        self.transcript.retake_tail(WIDTH, THEME, max_rows=10)
+        again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
+        self.assertEqual(again[0], "⋯ 36 earlier messages · /history shows all")
+        self.assertEqual(again[1:], self.history(details=False)[-10:])  # the last two turns: 2 + 3 + 2 + 3 rows
+        self.assertEqual(again[2], "› question 18")
+        self.assertEqual(lines_text(self.transcript.take_stable_lines(WIDTH, THEME)), [])
+
+    def test_a_session_that_fits_is_taken_again_whole_with_no_row_above_it(self) -> None:
+        self.session(2)
+        self.transcript.retake_tail(WIDTH, THEME, max_rows=100)
+        self.assertEqual(lines_text(self.transcript.take_stable_lines(WIDTH, THEME)), self.history(details=False))
+
+    def test_the_last_finished_block_is_taken_again_however_tall(self) -> None:
+        self.user("go")
+        self.step(ev("message.start"))
+        reply = "\n".join(f"row {n}" for n in range(30))
+        self.step(ev("message.delta", text=reply + "\n"))
+        self.step(ev("message.complete", text=reply, status="complete"))
+        self.transcript.retake_tail(WIDTH, THEME, max_rows=5)
+        again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
+        self.assertEqual(again[0], "⋯ 1 earlier message · /history shows all")
+        self.assertEqual(len(again), 32)  # the row, a spacer, all 30 rows of the reply
+
+    def test_the_live_block_stays_live_and_is_never_counted_as_left_out(self) -> None:
+        self.session(3)
+        self.user("again")
+        self.step(ev("message.start"))
+        self.step(ev("message.delta", text="still streaming"))
+        self.transcript.retake_tail(WIDTH, THEME, max_rows=3)
+        again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
+        self.assertEqual(again, ["⋯ 6 earlier messages · /history shows all", "", "› again"])
+        self.assertEqual(self.live(), ["", "⏺ still streaming"])
+
+
 class ToolPathArgumentTests(LoopTestCase):
     def test_a_path_argument_keeps_its_file_name_when_cut(self) -> None:
         path = "/private/tmp/claude-501/" + "y" * 60 + "/project/hello.py"

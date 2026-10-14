@@ -168,6 +168,9 @@ IDLE_READ_SECONDS = 1.0
 MIN_FRAME_SECONDS = 0.016
 # A window drag sends a burst of SIGWINCH; redraw once the size has held this long.
 RESIZE_SETTLE_SECONDS = 0.15
+# A full redraw (a resize, Ctrl+L, /redraw, a switch, a resumed session) prints the transcript's last this many
+# rows; the blocks above them are counted on one row instead (`Transcript.retake_tail`) and /history shows them.
+REDRAW_TAIL_ROWS = 3000
 EXIT_CONFIRM_SECONDS = 2.0
 # Every key a prompt slot takes, and the composer's Enter, is ignored when its
 # first byte arrived before the slot opened or less than this long after, so
@@ -782,7 +785,10 @@ class App(ModesMixin, AgentViewMixin):
                 self._on_server_request(ServerRequest(entry["id"], entry["method"], params if isinstance(params, dict) else {}))
 
     def _draw_history(self, messages: object) -> None:
-        """A resumed session's earlier turns as transcript blocks: text only, each tool call one dim row."""
+        """A resumed session's earlier turns as transcript blocks: text only, each tool call one dim row.
+
+        Only the last `REDRAW_TAIL_ROWS` rows of them are printed; /history shows the rest.
+        """
         if not isinstance(messages, list):
             return
         tools: list[str] = []
@@ -805,6 +811,7 @@ class App(ModesMixin, AgentViewMixin):
                 self.transcript.add_assistant(text)
         if tools:
             self.transcript.add_notice("\n".join(tools))
+        self.transcript.retake_tail(self.size[0], self.theme, REDRAW_TAIL_ROWS)
 
     def _take_busy_mode(self, result: dict[str, Any]) -> None:
         """`config.get`'s answer; a refusal other than drift keeps `BUSY_QUEUE` (drift is `_on_response`'s)."""
@@ -2146,9 +2153,12 @@ class App(ModesMixin, AgentViewMixin):
     def _full_redraw(self) -> None:
         """Erase screen and scrollback, then print the session again at the current width.
 
-        The banner and every transcript line are rendered anew (`Transcript.retake`),
-        so nothing wrapped at the old width survives and no earlier frame is left
-        in scrollback. Scrollback from before the TUI started is erased with it.
+        The banner and the transcript's last `REDRAW_TAIL_ROWS` rows are
+        rendered anew (`Transcript.retake_tail`), under one row counting the
+        messages above them, so nothing wrapped at the old width survives, no
+        earlier frame is left in scrollback, and a long session costs a redraw
+        no more than that. Scrollback from before the TUI started is erased
+        with it.
         """
         self.terminal.write(CLEAR_SCREEN_AND_SCROLLBACK)
         # The clear homes the cursor, so the next first frame starts on the screen's top row: unless a
@@ -2156,7 +2166,7 @@ class App(ModesMixin, AgentViewMixin):
         self.region = LiveRegion(self.terminal.write, at_top=self.pager is None)
         if self.pager is not None:
             self.pager.invalidate()  # the clear took its rows too
-        self.transcript.retake()
+        self.transcript.retake_tail(self.size[0], self.theme, REDRAW_TAIL_ROWS)
         if self.banner_record is not None:
             self.banner_facts = dict(self.banner_record)
         self.anchor = True

@@ -73,6 +73,8 @@ NOTICE_ERROR = "error"
 
 INTERRUPTED_NOTICE = "Interrupted."
 FAILED_NOTICE = "The turn ended with an error."
+# The first row a full redraw prints when `retake_tail` left the session's earlier blocks out.
+LEFT_OUT_NOTICE = "⋯ {count} earlier {noun} · /history shows all"
 
 USER_MARK = "› "
 COLLAPSED_MARK = "▸"
@@ -435,6 +437,7 @@ class Transcript:
         self._cursor_lines = 0  # source lines of blocks[_cursor] already taken (assistant text)
         self._cursor_state = MarkdownState()  # markdown state after those lines
         self._taken_any = False  # whether any line has been taken (a spacer goes above the next block)
+        self._left_out = 0  # blocks `retake_tail` left out: the next take opens with LEFT_OUT_NOTICE
         # Moves with every change to what `live_lines` draws; its last answer is kept with the version, width,
         # row limit and theme it was for, so a frame that changed nothing (a spinner tick) renders nothing.
         self._version = 0
@@ -671,6 +674,12 @@ class Transcript:
         """Lines that will never change, each returned once: print them above the live region."""
         taken: list[Line] = []
         start = (self._cursor, self._cursor_lines)
+        if self._left_out:
+            count, self._left_out = self._left_out, 0
+            notice = LEFT_OUT_NOTICE.format(count=count, noun="message" if count == 1 else "messages")
+            taken.append(truncate_line((Span(notice, theme.dim),), width))
+            self._taken_any = True
+            self._version += 1
         while self._cursor < len(self.blocks):
             block = self.blocks[self._cursor]
             if isinstance(block, AssistantBlock):
@@ -714,7 +723,30 @@ class Transcript:
         self._cursor_lines = 0
         self._cursor_state = MarkdownState()
         self._taken_any = False
+        self._left_out = 0
         self._version += 1
+
+    def retake_tail(self, width: int, theme: Theme, max_rows: int) -> None:
+        """`retake`, keeping to the session's last `max_rows` rows at `width`: a full redraw costs that, not the session.
+
+        The blocks are measured from the last finished one up, each with the
+        blank row above it, and the next take starts at the first block that
+        fits, so the cut always falls between blocks (a reply's markdown state
+        starts over there, as it does for every reply). The last finished
+        block is kept however tall it is, and the live block is never left
+        out: it is the live region's. When blocks are left out, the next take
+        opens with one `LEFT_OUT_NOTICE` row counting them.
+        """
+        self.retake()
+        end = len(self.blocks) - (1 if self.blocks and not self.blocks[-1].done else 0)
+        cut, rows = end, 0
+        while cut > 0:
+            height = len(block_rows(self.blocks[cut - 1], width, theme)) + 1
+            if rows + height > max_rows and cut < end:
+                break
+            rows += height
+            cut -= 1
+        self._cursor = self._left_out = cut
 
     def live_lines(self, width: int, theme: Theme, max_rows: int | None = None) -> list[Line]:
         """Everything not yet taken, as it shows now: the streaming tail, live thinking, running tools.

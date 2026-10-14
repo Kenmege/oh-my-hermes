@@ -1143,6 +1143,38 @@ class StartupWaitsOnlyForTheSessionTests(unittest.TestCase):
         self.assertEqual(app.busy_mode, "interrupt")
 
 
+class RedrawTailTests(unittest.TestCase):
+    def test_a_full_redraw_prints_only_the_last_rows_under_a_row_counting_the_rest(self) -> None:
+        app, _client = make_app(rows=24, cols=80)
+        for number in range(40):
+            app.transcript.add_notice(f"notice {number}")
+        drawn(app)
+        with patch("omh.tui.app.REDRAW_TAIL_ROWS", 10):
+            app._full_redraw()
+        drawn(app)
+        shown = "\n".join(app.terminal.screen.history())  # type: ignore[attr-defined]
+        self.assertIn("⋯ 35 earlier messages · /history shows all", shown)
+        self.assertNotIn("notice 34\n", shown)
+        self.assertIn("notice 39", shown)
+
+    def test_installation_names_the_tail_the_code_keeps(self) -> None:
+        from pathlib import Path
+
+        from omh.tui.app import REDRAW_TAIL_ROWS
+
+        prose = " ".join((Path(__file__).resolve().parents[1] / "docs/INSTALLATION.md").read_text(encoding="utf-8").split())
+        self.assertIn(f"prints the session's last {REDRAW_TAIL_ROWS:,} rows again", prose)
+
+    def test_a_resumed_sessions_history_is_kept_to_the_tail_too(self) -> None:
+        app, _client = make_app(rows=24, cols=80)
+        messages = [{"role": "user", "text": f"question {number}"} for number in range(40)]
+        with patch("omh.tui.app.REDRAW_TAIL_ROWS", 6):
+            app._draw_history(messages)
+        taken = [line for line in app.transcript.take_stable_lines(80, DEFAULT_THEME) if line]
+        self.assertEqual(taken[0][0].text, "⋯ 37 earlier messages · /history shows all")
+        self.assertEqual([line[-1].text for line in taken[1:]], ["question 37", "question 38", "question 39"])
+
+
 class ResumingTheLiveSessionTests(unittest.TestCase):
     """Hermes 6c61c3e27d resolves a title to the session already live and answers with its id (`_resume_reuse_live`)."""
 

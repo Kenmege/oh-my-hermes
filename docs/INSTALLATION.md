@@ -301,7 +301,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
 
 - Finished replies, tool summaries and notices go to your terminal's own
   scrollback, so selecting, copying and scrolling back work as they do in any
-  shell. Only the bottom of the screen repaints.
+  shell. Only the bottom of the screen repaints. A full redraw (a resize,
+  Ctrl+L, `/redraw`, switching or resuming a session) prints the session's
+  last 3,000 rows again under one row such as `⋯ 412 earlier messages ·
+  /history shows all`; `/history` pages through the whole session.
 - The bottom region holds, from the top: the prompt you just sent (while the
   turn runs), the tail of the reply that is still streaming, one slot for the
   OMH plan and agents panel (or a question Hermes asked, or the slash-command
