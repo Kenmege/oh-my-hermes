@@ -417,6 +417,39 @@ class UpdateReleaseTests(unittest.TestCase):
                 self.assertIn("display_released_at", home.record())
                 self.assertEqual(_omh_skin_files(home.hermes_home), [])
 
+    def test_a_bom_before_a_first_line_display_holds_the_release_and_every_skin_file(self) -> None:
+        # Hermes' YAML loader skips a leading BOM; OMH's presence check did
+        # not, so a `display:` on the first line read as absent. The release
+        # was recorded, the keys left the record, and omh-crimson.yaml went
+        # while Hermes still resolved omh-crimson.
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install(skin="omh-crimson")
+            text = home.config.read_text(encoding="utf-8")
+            start = text.index("display:")
+            shaped = "\ufeff" + text[start:] + text[:start]
+            home.config.write_text(shaped, encoding="utf-8", newline="")
+
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(home.config.read_text(encoding="utf-8"), shaped)
+            record = home.record()
+            self.assertNotIn("display_released_at", record)
+            self.assertLessEqual({"display.interface", "display.skin", "display.sections"}, set(record["keys"]))  # type: ignore[arg-type]
+            self.assertEqual(len(_omh_skin_files(home.hermes_home)), len(SKIN_THEMES))
+            self.assertIn("could not release display.skin (BOM-prefixed YAML is user-owned; leaving it alone)", stdout)
+            self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
+
+            # Without the BOM the next update releases, carries the theme and removes the files.
+            home.config.write_text(shaped.removeprefix("\ufeff"), encoding="utf-8", newline="")
+            self.assertEqual(home.run("update")[0], 0)
+
+            self.assertNotIn("display", home.config.read_text(encoding="utf-8"))
+            self.assertIn("display_released_at", home.record())
+            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("crimson"))
+            self.assertEqual(_omh_skin_files(home.hermes_home), [])
+
     def test_a_shape_outside_display_keeps_no_skin_file_for_the_persons_own_skin(self) -> None:
         # A quoted key, an anchor or a BOM elsewhere in the file stops the
         # editor, not the read of display.skin. Keeping every OMH skin file

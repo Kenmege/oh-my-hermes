@@ -747,7 +747,13 @@ def config_names_key(config_text: str, key: str, *, name: str = "") -> bool:
     here" and the wrong one for "is anything left". A dotted
     `memory.provider: omh` that the guard refuses is present, and saying so
     is the whole point of the uninstall report.
+
+    A leading BOM is read through. Hermes' YAML loader skips it, so a key
+    on the line right after it is there; the other readers do not see past
+    it, and the editor refuses the whole file for it, so only this answer
+    tells a row that its key is refused rather than absent.
     """
+    config_text = config_text.removeprefix("﻿")
     if key == PLUGINS_ENABLED_KEY:
         if not plugin_enablement_is_readable(config_text):
             # The one answer this row must not give over a node OMH did not

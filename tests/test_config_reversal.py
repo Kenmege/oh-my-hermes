@@ -411,6 +411,10 @@ class RowStatusTests(unittest.TestCase):
             ("version: 1\n", "memory.provider", False),
             ("display:\n  skin: omh\n", "display.skin", True),
             ("display: {skin: omh}\n", "display.skin", True),
+            # Hermes' YAML loader skips a leading BOM, so a key on the line
+            # after it is still there.
+            ("\ufeffdisplay:\n  skin: omh\n", "display.skin", True),
+            ("\ufeffmemory:\n  provider: omh\n", "memory.provider", True),
             ("version: 1\n", "display.skin", False),
             ("plugins:\n  enabled:\n    - omh\n", "plugins.enabled", True),
             ("plugins:\n  enabled:\n    - other\n", "plugins.enabled", False),
