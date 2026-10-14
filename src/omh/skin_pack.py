@@ -1,15 +1,16 @@
-"""Managed OMH identity skins for Hermes.
+"""The OMH themes: the palettes the OMH TUI paints with, and the choice of one.
 
-Mirrors ``tui_widget_pack``: the skins are managed artifacts OMH installs into
-``$HERMES_HOME/skins/`` and may safely refresh because a manifest proves OMH
-wrote them. Hermes' own skin engine is the only consumer — a YAML dropped in
-that directory themes the classic CLI, the Ink TUI, and the desktop GUI at
-once, with no Hermes patching involved. A file at the destination without a
-matching manifest record is user-owned and never touched.
+Each theme is a Hermes skin document shipped in ``omh/skins/``, read straight
+off its YAML (`skin_colors`), so the OMH TUI and the pickers paint with what a
+theme declares. The choice lives under the OMH home (`theme_store_path`) and
+`effective_theme` is the one order every reader follows.
 
-Every shipped theme is installed together, so `omh theme use <name>` is an
-instant, offline config edit rather than a fetch. Only one of them is ever
-selected at a time: selection is Hermes-side, through `display.skin`.
+Earlier versions also installed every theme file into ``$HERMES_HOME/skins/``
+and selected one through `display.skin`, so bare `hermes` wore it.
+`uninstall_skin` takes those files back: setup and update through the display
+release, uninstall on its own. It removes only a file OMH can prove it wrote,
+by manifest record or by matching the shipped bytes; anything else is the
+person's and stays.
 """
 
 from __future__ import annotations
@@ -170,11 +171,10 @@ def colors_from_text(text: str) -> dict[str, str]:
 
     A deliberately narrow reader rather than a YAML dependency: OMH ships with
     zero runtime dependencies, these documents are ours, and the block is a
-    flat two-space mapping of quoted hex strings. The theme picker's preview is
-    one consumer -- it must paint with the palette a theme actually declares,
-    not a copy that drifts from the YAML. `omh theme repair` is the other: it
-    diffs an installed document against the shipped one to say, in palette
-    terms, what accepting the repair would change.
+    flat two-space mapping of quoted hex strings. Every consumer -- the OMH
+    TUI, the theme picker's preview, the model-chain picker -- must paint with
+    the palette a theme actually declares, not a copy that drifts from the
+    YAML.
     """
     colors: dict[str, str] = {}
     inside = False
@@ -292,10 +292,10 @@ def _is_managed_file(destination: Path, records: dict[str, str], payload: bytes)
     reached it.
 
     Matching the current template is a safe second proof precisely because the
-    bytes are ours: adopting the file cannot destroy anything a user wrote,
-    since overwriting it with the template is a no-op. A file that matches
+    bytes are ours: removing the file cannot destroy anything a user wrote,
+    since the package still ships the same bytes. A file that matches
     neither the record nor the template is genuinely user-edited and stays
-    kept_unmanaged, exactly as before.
+    kept_unmanaged.
     """
     try:
         digest = _sha256(destination.read_bytes())
@@ -306,7 +306,6 @@ def _is_managed_file(destination: Path, records: dict[str, str], payload: bytes)
     return digest == _sha256(payload)
 
 
-_INSTALL_STATUS_ORDER = ("installed", "would_install", "unchanged", "kept_unmanaged")
 _UNINSTALL_STATUS_ORDER = ("removed", "would_remove", "kept_unmanaged", "absent")
 
 
@@ -317,76 +316,12 @@ def _aggregate_status(statuses: list[str], order: tuple[str, ...]) -> str:
     return order[-1]
 
 
-def install_skin(hermes_home: Path, *, dry_run: bool = False) -> dict[str, object]:
-    """Install or refresh every shipped theme file under `<hermes_home>/skins`.
-
-    Each theme is decided on its own: a user-authored `omh-mono.yaml` is kept
-    and must not stop `omh.yaml` from being refreshed. The aggregate `status`
-    exists for the setup summary, which reports one line per managed artifact.
-    """
-    destination_dir = hermes_home / "skins"
-    manifest = destination_dir / MANIFEST_FILENAME
-    _reject_symlink_path(hermes_home)
-    _reject_symlink_path(destination_dir)
-    records = _read_manifest_records(manifest)
-    updated = dict(records)
-    entries: list[dict[str, str]] = []
-    wrote_any = False
-    for theme in SKIN_THEMES:
-        destination = destination_dir / theme.filename
-        _reject_symlink_path(destination)
-        if destination.exists() and not destination.is_file():
-            raise SkinInstallError(f"skin destination is not a regular file: {destination}")
-        payload = skin_payload(theme.skin_name)
-        if destination.exists() and not _is_managed_file(destination, records, payload):
-            # A user-authored file wins over ours forever; identity is theirs
-            # to override and update must not undo that.
-            updated.pop(theme.filename, None)
-            entries.append(
-                {
-                    "skin": theme.skin_name,
-                    "filename": theme.filename,
-                    "status": "kept_unmanaged",
-                    "path": str(destination),
-                }
-            )
-            continue
-        status = "unchanged" if destination.exists() and destination.read_bytes() == payload else "installed"
-        if dry_run and status == "installed":
-            status = "would_install"
-        elif status == "installed":
-            destination_dir.mkdir(parents=True, exist_ok=True)
-            _reject_symlink_path(destination_dir)
-            _atomic_write_bytes(destination, payload)
-            wrote_any = True
-        if not dry_run:
-            updated[theme.filename] = _sha256(payload)
-        entries.append(
-            {
-                "skin": theme.skin_name,
-                "filename": theme.filename,
-                "status": status,
-                "path": str(destination),
-            }
-        )
-    if not dry_run and (wrote_any or updated != records) and updated:
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        _reject_symlink_path(manifest)
-        _atomic_write_bytes(manifest, _manifest_document(updated))
-    return {
-        "status": _aggregate_status([entry["status"] for entry in entries], _INSTALL_STATUS_ORDER),
-        "path": str(destination_dir),
-        "skin": SKIN_NAME,
-        "skins": entries,
-    }
-
-
 def uninstall_skin(hermes_home: Path, *, dry_run: bool = False) -> dict[str, object]:
     """Remove only the theme files OMH owns -- by record, or by being our bytes.
 
-    Symmetric with `install_skin` on purpose: a file the installer would adopt
-    and refresh is a file the uninstaller must take away again, or a machine
-    with a stale manifest would keep orphaned skin files after removal.
+    The installer earlier versions ran adopted and refreshed a file on either
+    proof, so either proof is what lets this take it away again; a machine
+    with a stale manifest would otherwise keep orphaned skin files.
     """
     destination_dir = hermes_home / "skins"
     manifest = destination_dir / MANIFEST_FILENAME
@@ -440,150 +375,3 @@ def uninstall_skin(hermes_home: Path, *, dry_run: bool = False) -> dict[str, obj
         "path": str(destination_dir),
         "skins": entries,
     }
-
-
-_REPAIR_STATUS_ORDER = (
-    "repaired",
-    "would_repair",
-    "installed",
-    "would_install",
-    "unmanaged",
-    "missing",
-    "managed",
-)
-
-
-def _palette_changes(before: bytes, after: bytes) -> list[dict[str, str]]:
-    """Which palette tokens differ between an installed document and ours.
-
-    The "what am I accepting?" line the repair command prints BEFORE it
-    overwrites anything. Palette-only on purpose: a colour token moving is the
-    part a person can actually see on screen, and a full text diff of a YAML we
-    ship would bury that single line under comment reflows.
-    """
-    try:
-        current = colors_from_text(before.decode("utf-8"))
-    except UnicodeDecodeError:
-        # A skin file that is not UTF-8 text is not one we can describe in
-        # palette terms; the digest pair still tells the honest story.
-        return []
-    shipped = colors_from_text(after.decode("utf-8"))
-    changes: list[dict[str, str]] = []
-    for key in sorted(set(current) | set(shipped)):
-        old = current.get(key, "")
-        new = shipped.get(key, "")
-        if old != new:
-            changes.append({"key": key, "before": old, "after": new})
-    return changes
-
-
-def repair_skins(
-    hermes_home: Path,
-    *,
-    adopt: frozenset[str] = frozenset(),
-    dry_run: bool = False,
-) -> dict[str, object]:
-    """Report, and on explicit consent adopt, theme files OMH does not own.
-
-    Closes the gap `_is_managed_file`'s self-heal cannot: a manifest that went
-    stale while the shipped template ALSO moved on. The installed file is then
-    ours in origin but matches neither ownership proof, so it reports
-    `unmanaged` and is frozen on its old palette forever -- no later release
-    can ever reach it. Observed exactly that way on the owner's machine, where
-    `omh.yaml` still held the pre-brightening `ui_label`.
-
-    No digest can separate that file from one a person wrote by hand, so the
-    repair is consent-based rather than automatic: `adopt` holds the theme
-    FILENAMES the caller explicitly named, and running the command with them IS
-    the consent. It is empty for the reporting form, which is why the bare
-    command writes nothing and is safe to run twice.
-
-    Never call this from `install_skin`, `omh update`, `omh setup`, or
-    `theme use`. Silently overwriting a skin someone wrote is the one outcome
-    the whole managed-artifact rule exists to prevent.
-    """
-    destination_dir = hermes_home / "skins"
-    manifest = destination_dir / MANIFEST_FILENAME
-    _reject_symlink_path(hermes_home)
-    _reject_symlink_path(destination_dir)
-    records = _read_manifest_records(manifest)
-    updated = dict(records)
-    entries: list[dict[str, object]] = []
-    wrote_any = False
-    for theme in SKIN_THEMES:
-        destination = destination_dir / theme.filename
-        _reject_symlink_path(destination)
-        if destination.exists() and not destination.is_file():
-            raise SkinInstallError(f"skin destination is not a regular file: {destination}")
-        payload = skin_payload(theme.skin_name)
-        present = destination.is_file()
-        current = destination.read_bytes() if present else b""
-        if not present:
-            state = "missing"
-        elif _is_managed_file(destination, records, payload):
-            state = "managed"
-        else:
-            state = "unmanaged"
-        consented = theme.filename in adopt
-        if state == "managed" or not consented:
-            # Reported, never written: `managed` needs nothing, and anything
-            # else without an explicit name is exactly the file we must not
-            # touch.
-            status = "managed" if state == "managed" else state
-        elif dry_run:
-            status = "would_repair" if state == "unmanaged" else "would_install"
-        else:
-            status = "repaired" if state == "unmanaged" else "installed"
-            destination_dir.mkdir(parents=True, exist_ok=True)
-            _reject_symlink_path(destination_dir)
-            _atomic_write_bytes(destination, payload)
-            updated[theme.filename] = _sha256(payload)
-            wrote_any = True
-        entries.append(
-            {
-                "skin": theme.skin_name,
-                "theme": theme.short_name,
-                "filename": theme.filename,
-                "path": str(destination),
-                "state": state,
-                "status": status,
-                "before_sha256": _sha256(current) if present else "",
-                "after_sha256": _sha256(payload),
-                "palette_changes": _palette_changes(current, payload) if present else [],
-            }
-        )
-    if not dry_run and wrote_any:
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        _reject_symlink_path(manifest)
-        _atomic_write_bytes(manifest, _manifest_document(updated))
-    return {
-        "status": _aggregate_status([str(entry["status"]) for entry in entries], _REPAIR_STATUS_ORDER),
-        "path": str(destination_dir),
-        "dry_run": dry_run,
-        "skins": entries,
-    }
-
-
-def installed_skin_report(hermes_home: Path) -> list[dict[str, str]]:
-    """Read-only per-theme install state, for `omh theme list` and `status`."""
-    destination_dir = hermes_home / "skins"
-    records = _read_manifest_records(destination_dir / MANIFEST_FILENAME)
-    report: list[dict[str, str]] = []
-    for theme in SKIN_THEMES:
-        destination = destination_dir / theme.filename
-        if not destination.is_file():
-            state = "missing"
-        elif _is_managed_file(destination, records, skin_payload(theme.skin_name)):
-            state = "managed"
-        else:
-            state = "unmanaged"
-        report.append(
-            {
-                "skin": theme.skin_name,
-                "theme": theme.short_name,
-                "filename": theme.filename,
-                "path": str(destination),
-                "state": state,
-            }
-        )
-    return report

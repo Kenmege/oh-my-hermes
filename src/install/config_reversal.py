@@ -120,10 +120,10 @@ MANAGED_CONTAINERS: tuple[str, ...] = (
 
 _SECTION_VALUE = "collapsed"
 
-# The two keys consent lets OMH write OVER a value the person already had.
-# Everything else it writes is unset-only, so its inverse is a removal;
-# these two need the prior value put back or the person loses a choice they
-# made before they ever installed OMH.
+# The two keys consent let earlier versions write OVER a value the person
+# already had. Everything else OMH writes is unset-only, so its inverse is a
+# removal; these two need the prior value put back or the person loses a
+# choice they made before they ever installed OMH.
 RESTORABLE_KEYS: tuple[str, ...] = (DISPLAY_INTERFACE_KEY, DISPLAY_SKIN_KEY)
 
 # What `release_managed_display` takes back, and the containers it may drop
@@ -217,7 +217,7 @@ def _merged_keys(previous: dict[str, object], written: dict[str, object]) -> dic
     """Carry an earlier run's record forward; a later run only ever adds.
 
     `_apply_result` runs on every `omh setup` AND every `omh update`, and on
-    the second run the writers report "already tui" and change nothing. A
+    the second run the writers report "already enabled" and change nothing. A
     record that only ever held the latest run's writes would therefore erase
     itself on the first update, which is exactly the install that most needs
     it.
@@ -302,10 +302,10 @@ def managed_config_writes(
             if key not in dropped
         },
         # The most recent replacement wins, and a pass that replaced nothing
-        # leaves the entry alone. Only an explicit re-consent replaces a
-        # value at all -- `ensure_tui_interface` refuses anything the person
-        # has set -- so a second entry means they chose something new and
-        # then let OMH migrate them off THAT. Putting back the value from
+        # leaves the entry alone. Only an explicit re-consent replaced a
+        # value at all -- the unset-only default writer earlier versions ran
+        # refused anything the person had set -- so a second entry means
+        # they chose something new and then let OMH migrate them off THAT. Putting back the value from
         # before the first install would hand them a choice they had already
         # abandoned.
         "restores": {key: value for key, value in restores.items() if key not in dropped},

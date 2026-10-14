@@ -12,11 +12,9 @@ from omh.install.compression_defaults import (  # noqa: E402
     ensure_compression_defaults,
     remove_compression_fallback_chain,
 )
+from _legacy_display import activate_display_sections, activate_omh_skin, activate_tui_interface  # noqa: E402
 from omh.config_adapter import (  # noqa: E402
     section_edit_guard,
-    activate_display_sections,
-    activate_omh_skin,
-    activate_tui_interface,
     config_container_paths,
     ensure_external_dir,
     ensure_plugin_enabled,
@@ -45,7 +43,7 @@ CONFIG_PATH = "/tmp/does-not-exist/config.yaml"
 
 
 def _apply_setup_writes(config_text: str, skills_dir: str = "/tmp/omh/skills") -> str:
-    """The same chain of writers `_apply_result` runs, in the same order."""
+    """The chain of writers `_apply_result` ran before the display release, in the same order."""
     text = ensure_external_dir(config_text, skills_dir).text
     text = ensure_compression_defaults(text).text
     text = ensure_plugin_enabled(text, "omh").text
@@ -780,6 +778,67 @@ class ReleaseManagedDisplayTests(unittest.TestCase):
     def _release(self, text: str, stored: object) -> tuple[str, dict[str, object]]:
         change, rows = release_managed_display(text, stored, config_path=CONFIG_PATH)
         return change.text, {row.key: row for row in rows}
+
+    def test_a_shape_the_editor_does_not_understand_is_never_edited(self) -> None:
+        # The guards the consented writers used to apply now stand in front of
+        # the release, which is what still edits `display`. Each of these
+        # names an OMH skin, which the record-less rule takes back in the
+        # canonical shape, so a change here is a guard that let a shape
+        # through. The positive control shows the rule does fire.
+        canonical = "display:\n  skin: omh\n"
+        self.assertNotEqual(self._release(canonical, None)[0], canonical)
+        for original in (
+            '"display":\n  skin: omh\n',
+            "'display':\n  skin: omh\n",
+            'display:\n  "skin": omh\n',
+            "display:\n  'skin': omh\n",
+            '{"display": {"skin": "omh"}}\n',
+            "display: {skin: omh, compact: true}\n",
+            '? "display"\n:\n  skin: omh\n',
+            '"displ\\u0061y":\n  skin: omh\n',
+            'display:\n  "sk\\u0069n": omh\n',
+            "!!str display:\n  skin: omh\n",
+            "display:\n  &key skin: omh\n",
+            "display:\n  !!str skin: omh\n",
+            "display:\n  ? !!str skin\n  : omh\n",
+            "display:\n  *skin_key : omh\n",
+            "display:\n  skin: &current omh\ncopy: *current\n",
+            "current: &current omh\ndisplay:\n  skin: *current\n",
+            'display:\n  - "skin": omh\n',
+            "display:\n  - skin: omh\n",
+            '- "display":\n    skin: omh\n',
+            "model: local\n---\ndisplay:\n  skin: omh\n",
+            "\ufeffdisplay:\n  skin: omh\n",
+            "display:\n  skin: # theme\n    name: omh\n",
+            "display.skin: omh\n",
+            "display:\n  skin: omh\ndisplay:\n  compact: true\n",
+            "display:\n  skin: omh\n  skin: omh-amber\n",
+            "display:\n    skin: omh\n",
+            "display :\n  skin: omh\n",
+        ):
+            with self.subTest(original=original):
+                self.assertEqual(self._release(original, None)[0], original)
+
+    def test_a_sections_shape_the_editor_does_not_understand_is_never_edited(self) -> None:
+        # Same rule one level down, with a record that says OMH wrote all
+        # three sections, so only the guard stands between them and removal.
+        written = activate_display_sections("version: 1\n").text
+        stored = _record("version: 1\n", written)
+        self.assertNotIn("sections", self._release(written, stored)[0])
+        for original in (
+            "display:\n  sections: {}\n",
+            "display:\n  sections: {thinking: collapsed, tools: collapsed, subagents: collapsed}\n",
+            "display:\n  sections: |\n    text\n",
+            "display.sections:\n  tools: collapsed\n",
+            "display:\n  sections:\n    tools:\n      mode: collapsed\n",
+            "display:\n  sections:\n    tools: collapsed\n  sections:\n    thinking: collapsed\n",
+            '"display":\n  sections:\n    tools: collapsed\n',
+            "display:\n  &key sections:\n    tools: collapsed\n",
+            "display:\n  - sections:\n      tools: collapsed\n",
+            "model: local\n---\ndisplay:\n  sections:\n    tools: collapsed\n",
+        ):
+            with self.subTest(original=original):
+                self.assertEqual(self._release("version: 1\n" + original, stored)[0], "version: 1\n" + original)
 
     def test_recorded_display_keys_go_and_the_bytes_before_setup_come_back(self) -> None:
         before = "version: 1\n"
