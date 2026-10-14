@@ -25,6 +25,8 @@ from types import ModuleType, TracebackType
 from typing import Any, Mapping
 from unittest import mock
 
+_ABSENT = object()
+
 
 class patch_modules:
     """`mock.patch.dict(sys.modules, values)`, plus forgetting what the block imported.
@@ -54,7 +56,9 @@ class patch_modules:
                 continue
             parent_name, _, child = name.rpartition(".")
             parent = sys.modules.get(parent_name)
-            if isinstance(parent, ModuleType) and vars(parent).get(child) is module:
+            # A `None` entry blocks an import; `.get(child)` would return
+            # None for the attribute the package never had and match it.
+            if isinstance(parent, ModuleType) and vars(parent).get(child, _ABSENT) is module:
                 delattr(parent, child)
 
     def start(self) -> None:
