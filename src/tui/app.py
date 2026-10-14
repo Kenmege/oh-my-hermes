@@ -86,9 +86,10 @@ starts later and is split right after its `ESC` or `ESC[` is read as keys
 Prompt text, the transcript, attachments, secrets, server-request frames and
 the gateway's stderr stay in memory and on the person's own terminal; nothing
 here writes them anywhere. The files the TUI writes are metadata: that
-session file, and what OMH's HUD reader (`panels.HudPoller`, its fan-out
-cache under `<omh_home>/runtime/`) and the model-chain picker (`/omh-model`'s
-saved chains) write under the OMH home. An attached image is a path the
+session file, what OMH's HUD reader (`panels.HudPoller`, its fan-out cache
+under `<omh_home>/runtime/`) and the model-chain picker (`/omh-model`'s saved
+chains) write under the OMH home, and an empty fallback marker at the path
+`omh` named, which `omh` removes. An attached image is a path the
 gateway resolves and queues itself (`image.attach`, `clipboard.paste`,
 `input.detect_drop`); the TUI keeps only its name for the chip row.
 """
