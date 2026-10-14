@@ -2083,7 +2083,9 @@ class App(ModesMixin, AgentViewMixin):
         if last is None or not last.text.strip():
             self.transcript.add_notice("No reply to copy yet.")
             return
-        encoded = base64.b64encode(last.text.strip().encode("utf-8")).decode("ascii")
+        # "replace", as `Terminal.write` encodes: a lone surrogate (JSON can carry one) is copied as the "?" the
+        # screen shows, not as bytes that are no UTF-8 for the terminal to put on the clipboard.
+        encoded = base64.b64encode(last.text.strip().encode("utf-8", "replace")).decode("ascii")
         self.terminal.write(OSC52_COPY.format(encoded))
         self.transcript.add_notice("Copied the last reply to the clipboard (OSC 52; the terminal must allow it).")
 

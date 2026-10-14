@@ -13,6 +13,7 @@ scenario's answer table in Hermes 6c61c3e27d's shapes.
 from __future__ import annotations
 
 import ast
+import base64
 from pathlib import Path
 import time
 import unittest
@@ -33,7 +34,7 @@ from test_tui_app import (
 from omh.tui import app as app_module
 from omh.tui import gateway_contract as contract
 from omh.tui import modes as modes_module
-from omh.tui.app import ATTACH_LEFT_NOTICE, SLOT_ARM_SECONDS, App, queue_lines
+from omh.tui.app import ATTACH_LEFT_NOTICE, OSC52_COPY, SLOT_ARM_SECONDS, App, queue_lines
 from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, GatewayUnavailable, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder, Paste
@@ -1108,6 +1109,21 @@ class LeftSessionStateTests(unittest.TestCase):
         answer(app, client, self.SHOT)
         self.assertEqual([item.name for item in app.attachments], ["shot.png"])
         self.assertEqual(notices(app), [])
+
+
+class CopyTests(unittest.TestCase):
+    def test_a_reply_with_a_lone_surrogate_is_copied_as_the_screen_draws_it(self) -> None:
+        # JSON can carry an escaped lone surrogate; the terminal write draws it as "?", and so does the copy.
+        reply = "caf\udce9 au lait"
+        app, _client = make_app()
+        app.transcript.blocks.append(AssistantBlock(reply, done=True))
+        type_text(app, "/copy")
+        app._on_input(Key(ENTER))
+        frames = [text for text in app.terminal.writes if text.startswith("\x1b]52;")]  # type: ignore[attr-defined]
+        drawn = reply.encode("utf-8", "replace")  # what Terminal.write sends for the reply
+        self.assertEqual(drawn, b"caf? au lait")
+        self.assertEqual(frames, [OSC52_COPY.format(base64.b64encode(drawn).decode("ascii"))])
+        self.assertIsNone(app.exit_code)
 
 
 class LiveTailTickTests(unittest.TestCase):
