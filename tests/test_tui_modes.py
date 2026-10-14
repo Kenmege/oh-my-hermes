@@ -44,7 +44,7 @@ from omh.tui.pager import Pager
 from omh.tui.session_picker import SessionPicker, SessionRow
 from omh.tui.slash import parse_slash, plan_invocation
 from omh.tui.theme import DEFAULT_THEME
-from omh.tui.transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, NoticeBlock, UserBlock
+from omh.tui.transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, CommandBlock, NoticeBlock, UserBlock
 from omh.tui.width import line_width
 
 SID = "live-1"
@@ -122,11 +122,17 @@ def show_mode(app: App, mode: str) -> None:
 
 
 def notices(app: App, level: str | None = None) -> list[str]:
-    return [
-        block.text
-        for block in app.transcript.blocks
-        if isinstance(block, NoticeBlock) and (level is None or block.level == level)
-    ]
+    """What the transcript said, in order: each notice, and each part of a command's output under its echo."""
+    said: list[str] = []
+    for block in app.transcript.blocks:
+        if isinstance(block, NoticeBlock):
+            parts = [(block.text, block.level)]
+        elif isinstance(block, CommandBlock):
+            parts = block.parts
+        else:
+            continue
+        said += [text for text, kind in parts if level is None or kind == level]
+    return said
 
 
 class SteerTests(unittest.TestCase):

@@ -4,14 +4,19 @@ All notable changes will be documented here.
 
 ## Unreleased
 
-- **The OMH TUI reads on a light terminal.** It asks the terminal for its
-  background colour before the first frame (OSC 11, at most 0.1 s, with
-  `COLORFGBG` as the fallback) and measures its theme against it: prompts and
-  replies are the terminal's own text colour, every coloured word reaches 4.5:1
-  and every rule or mark 3:1 on that background, words that sat on the 3:1
-  decoration colour moved to colours that read, and a light background gets
-  light diff bands. On white the body text measured 1.08 to 1.13:1 before.
-  `/theme auto|light|dark` picks the background for the open session.
+- **The OMH TUI catches up with Claude Code and oh-my-pi.** It reads on a light
+  terminal: it asks the terminal for its background colour before the first
+  frame (OSC 11, at most 0.1 s, with `COLORFGBG` as the fallback) and measures
+  its theme against it, so prompts and replies are the terminal's own text
+  colour, every coloured word reaches 4.5:1 and every rule or mark 3:1 on that
+  background, words that sat on the 3:1 decoration colour moved to colours that
+  read, and a light background gets light diff bands (on white the body text
+  measured 1.08 to 1.13:1 before); `/theme auto|light|dark` picks the background
+  for the open session. A slash command is echoed as `› /name arg` and what it
+  prints stays in the transcript under it, a long output as its first 12 rows
+  and a count of the rest for `/history`; nothing a command prints opens the
+  pager any more, so typed-ahead keys are no longer swallowed and the output is
+  still in scrollback afterwards.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

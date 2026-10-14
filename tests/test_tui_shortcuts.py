@@ -198,7 +198,8 @@ class GuideKeyTests(unittest.TestCase):
         app, _client = make_app()
         type_text(app, "/help")
         app._on_input(Key(ENTER))
-        text = self.paged(app)  # longer than half of the 24 rows, so it is paged
+        self.assertFalse(self.open(app))  # its output is the transcript's, however long
+        text = app.transcript.blocks[-1].parts[0][0]
         self.assertIn("Keys: ? on an empty composer, or /keys, lists every key.", text)
         self.assertIn("/keys ", text)  # and the command is listed with the TUI's own
         self.assertNotIn("Ctrl+D", text)  # the key rows themselves are gone from /help

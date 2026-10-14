@@ -209,8 +209,9 @@ class ScriptedTerminal:
         return lambda: needle in "\n".join(self.screen.lines())
 
     def prompt_foreground(self) -> tuple[int, ...]:
-        """The colour of the composer's `›`, read off the screen."""
-        row = next(index for index, line in enumerate(self.screen.lines()) if line.startswith("› "))
+        """The colour of the composer's `›`, read off the screen: the last row that starts with one."""
+        rows = self.screen.lines()
+        row = next(index for index in range(len(rows) - 1, -1, -1) if rows[index].startswith("› "))
         attrs = self.screen.attrs_at(row, 0)
         start = attrs.index(38)
         return tuple(attrs[start + 2 : start + 5])
@@ -1664,7 +1665,7 @@ class LocalCommandTests(AppTestCase):
         self.assertIn("Theme crimson applies to this session", history)
         self.assertIn("No theme named nope. Available: sky, amber, crimson, mono.", history)
 
-    def test_help_lists_local_commands_the_hermes_catalog_by_category_and_keys_in_the_pager(self) -> None:
+    def test_help_lists_local_commands_the_hermes_catalog_by_category_and_keys_in_the_transcript(self) -> None:
         run = self.prepare(
             Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), rows=40, cols=200
         )
@@ -1673,12 +1674,13 @@ class LocalCommandTests(AppTestCase):
             # The first frame comes before Hermes' catalog does: /help waits until the menu offers Hermes' /undo.
             Step(b"/und", when=terminal.idle, label="idle"),
             Step(b"\x15/help\r", when=terminal.shows("/undo"), label="Hermes' catalog in the menu"),
-            Step(b"q", when=lambda: terminal.screen.alternate, capture="pager", label="the help pager"),
-            Step(b"\x04", when=lambda: not terminal.screen.alternate and terminal.idle(), label="back"),
+            Step(b"\x04", when=lambda: "opens Hermes' own terminal." in terminal.history() and terminal.idle(),
+                 label="the help output"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        pager = "\n".join(terminal.captures["pager"])
+        self.assertFalse(terminal.screen.alternate)  # no pager: the output is the transcript's
+        pager = terminal.history()
         self.assertIn("/omh-model     Pick OMH model chains", pager)
         self.assertIn("/reload-skills Re-scan Hermes' skills", pager)
         # The recorded catalog's categories, without what the TUI runs itself, routes to Hermes' terminal or drops:
@@ -1692,7 +1694,7 @@ class LocalCommandTests(AppTestCase):
         self.assertIn("/yolo included", pager)
         # The banner no longer says it, so /help is where the way back to Hermes' own terminal stays.
         self.assertIn("Bare `hermes` opens Hermes' own terminal.", pager)
-        self.assertIn("/help: 26 lines, shown in the pager.", terminal.history())
+        self.assertIn("› /help\n  ⎿ OMH TUI commands:", terminal.history())
         self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
 
     def test_reload_skills_rescans_in_the_gateway_and_the_new_skill_completes(self) -> None:
@@ -1744,8 +1746,9 @@ class LocalCommandTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         history = terminal.screen.history()
-        listed = history.index("· Queued (sent one at a time as each turn ends):")
-        self.assertEqual(history[listed + 1], "  1. second prompt")
+        listed = history.index("  ⎿ Queued (sent one at a time as each turn ends):")
+        self.assertEqual(history[listed - 1], "› /queue")
+        self.assertEqual(history[listed + 1], "    1. second prompt")
         self.assertIn("› second prompt", history[listed:])
         self.assertLess(history.index("› first prompt"), listed)
 
@@ -1857,7 +1860,7 @@ class AttachmentTests(AppTestCase):
         self.assertEqual(chip[composer - 1], "📎 shot.png 1280×720  Backspace removes")
         self.assertIn(RULE_MARK, chip[composer - 2])
         self.assertEqual(len(run.calls("prompt.submit")), 1)
-        self.assertNotIn("shot.png", "\n".join(terminal.captures["after"]))
+        self.assertNotIn("📎 shot.png", "\n".join(terminal.captures["after"]))  # the echo above still names it
 
     def test_paste_reports_an_empty_clipboard_and_ctrl_v_attaches_its_image(self) -> None:
         answers = (
@@ -1923,7 +1926,7 @@ class AttachmentTests(AppTestCase):
         terminal.script(
             self.submit(run, "/image ./shot.png"),
             Step(b"\x7f", when=terminal.shows("shot.png 1280×720"), label="the chip"),
-            Step(b"\x04", when=lambda: not terminal.shows("shot.png")() and terminal.idle(), capture="gone",
+            Step(b"\x04", when=lambda: not terminal.shows("📎 shot.png")() and terminal.idle(), capture="gone",
                  label="the chip gone"),
         )
         self.run_main(run)

@@ -23,6 +23,13 @@ Assistant text opens with `⏺ ` in the accent on its first row, and every
 later row of that reply, however many flushes it arrives in, is indented to
 match, so a reply reads as one block beside the `› ` of the prompt above it.
 
+A slash command the person runs is a block of its own: `› /name arg` in the
+hint colour, then what it printed under `⎿`, each part in its level's colour
+and, for a warning or an error, its glyph. Its echo stays live while the
+command may still print (`close_command` ends that); a notice that arrives
+meanwhile is the command's output. A long output shows its first
+`OUTPUT_PREVIEW_ROWS` rows and a count of the rest, which `/history` shows.
+
 Flush policy: a user or notice block flushes at once; assistant text flushes
 per completed source line (a trailing blank line waits for the text after it,
 so a reply that ends there leaves nothing to take back) and fully at
@@ -88,6 +95,12 @@ DROPPED_NOTICE = "⋯ {earlier} no longer held"
 BLOCK_CAP = 2000
 
 USER_MARK = "› "
+COMMAND_MARK = "› "  # a command the person ran, echoed in the hint colour above what it printed
+OUTPUT_MARK = "⎿ "
+OUTPUT_INDENT = "  "
+# The rows a command's output shows under its echo; past them one row counts the rest, which /history shows.
+OUTPUT_PREVIEW_ROWS = 12
+OUTPUT_MORE = "… +{count} {noun} · /history shows all"
 COLLAPSED_MARK = "▸"
 EXPANDED_MARK = "▾"
 TOOL_GROUP_MARK = "⏺ "
@@ -110,6 +123,21 @@ class NoticeBlock:
     text: str
     level: str = NOTICE_INFO
     done: bool = True
+
+
+@dataclass
+class CommandBlock:
+    """A command the person ran (`command`, as typed), and what it printed under it, each part with its level.
+
+    Open (`done` False) while the command may still print; the app closes it
+    once the command's calls are answered, and appending any other block
+    closes it too. `whole` keeps the output uncut.
+    """
+
+    command: str
+    parts: list[tuple[str, str]] = field(default_factory=list)
+    whole: bool = False
+    done: bool = False
 
 
 @dataclass
@@ -169,7 +197,7 @@ class ToolGroup:
     parallel: int = 1  # most tools running at the same moment
 
 
-Block = UserBlock | AssistantBlock | ThinkingBlock | ToolGroup | NoticeBlock
+Block = UserBlock | AssistantBlock | ThinkingBlock | ToolGroup | NoticeBlock | CommandBlock
 
 
 # ── payload reading ───────────────────────────────────────────────────────
@@ -355,6 +383,25 @@ def _notice_rows(block: NoticeBlock, width: int, theme: Theme) -> list[Line]:
     return _text_rows(block.text, style, (Span(mark, style),), (Span(" " * len(mark)),), width)
 
 
+_OUTPUT_GLYPHS = {NOTICE_WARN: "⚠ ", NOTICE_ERROR: "✗ "}
+
+
+def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool) -> list[Line]:
+    """`› /name arg`, then each part of its output under `⎿` in its level's colour (and glyph), cut unless `expanded`."""
+    rows = wrap_prefixed((Span(block.command, theme.hint),), (Span(COMMAND_MARK, theme.dim),), (Span("  "),), width)
+    first: Line = (Span(OUTPUT_INDENT), Span(OUTPUT_MARK, theme.dim))
+    rest: Line = (Span(OUTPUT_INDENT + " " * len(OUTPUT_MARK)),)
+    output: list[Line] = []
+    for text, level in block.parts:
+        style = {NOTICE_WARN: theme.warn, NOTICE_ERROR: theme.error}.get(level, theme.text)
+        output.extend(_text_rows(_OUTPUT_GLYPHS.get(level, "") + text, style, rest if output else first, rest, width))
+    if not expanded and not block.whole and len(output) > OUTPUT_PREVIEW_ROWS:
+        hidden = len(output) - OUTPUT_PREVIEW_ROWS
+        more = OUTPUT_MORE.format(count=hidden, noun="line" if hidden == 1 else "lines")
+        output = [*output[:OUTPUT_PREVIEW_ROWS], truncate_line((*rest, Span(more, theme.muted)), width)]
+    return rows + output
+
+
 def _marked(rows: list[Line], opens_block: bool, theme: Theme) -> list[Line]:
     """Assistant rows behind the reply's margin: `⏺ ` on the block's first row, an indent on every other one."""
     first: Line = (Span(ASSISTANT_MARK, theme.accent),)
@@ -458,6 +505,8 @@ def block_rows(block: Block, width: int, theme: Theme, expanded: bool = False, m
         return _user_rows(block, width, theme)
     if isinstance(block, NoticeBlock):
         return _notice_rows(block, width, theme)
+    if isinstance(block, CommandBlock):
+        return _command_rows(block, width, theme, expanded)
     if isinstance(block, AssistantBlock):
         return _assistant_rows(block, width, theme)
     if isinstance(block, ThinkingBlock):
@@ -517,7 +566,39 @@ class Transcript:
         self._append(UserBlock(text))
 
     def add_notice(self, text: str, level: str = NOTICE_INFO) -> None:
+        """A notice; while a command's echo is open (the last block), it is that command's output instead."""
+        command = self._live(CommandBlock)
+        if command is not None:
+            command.parts.append((text, level))
+            self._version += 1
+            return
         self._append(NoticeBlock(text, level))
+
+    def add_command(self, command: str) -> None:
+        """Echo a command the person ran; what it prints lands under it until `close_command`."""
+        self._append(CommandBlock(command))
+
+    def add_output(self, text: str, level: str = NOTICE_INFO, *, command: str = "", whole: bool = False) -> None:
+        """A command's output: under its open echo, or, once that echo has closed, under a repeat of `command`.
+
+        With no echo open and no `command` named, it is a notice.
+        """
+        open_command = self._live(CommandBlock)
+        if open_command is not None:
+            open_command.parts.append((text, level))
+            open_command.whole = open_command.whole or whole
+            self._version += 1
+        elif command:
+            self._append(CommandBlock(command, [(text, level)], whole, done=True))
+        else:
+            self._append(NoticeBlock(text, level))
+
+    def close_command(self) -> None:
+        """The open command is over: its echo and output leave the live region at the next take."""
+        command = self._live(CommandBlock)
+        if command is not None:
+            command.done = True
+            self._version += 1
 
     def add_assistant(self, text: str) -> None:
         """A finished reply (a resumed session's history), rendered like a streamed one."""

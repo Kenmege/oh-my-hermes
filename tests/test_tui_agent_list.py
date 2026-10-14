@@ -28,7 +28,7 @@ from omh.tui.agent_view import (
     TAIL_MISSES_BEFORE_STOP,
     TAIL_POLL_SECONDS,
 )
-from omh.tui.app import SLOT_ARM_SECONDS, VIEW_OPEN_NOTICE, App
+from omh.tui.app import SLOT_ARM_SECONDS, App
 from omh.tui.frame import MODE_NORMAL
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Paste
@@ -533,7 +533,11 @@ class AgentLogTests(unittest.TestCase):
 
 
 class OutputWhileAViewIsOpenTests(unittest.TestCase):
-    """A command's long output answered while a view has the alternate screen: the view stays, the output waits."""
+    """A command's long output answered while a view has the alternate screen: the view stays, the output waits.
+
+    A command's output never opens a pager, so it lands in the transcript,
+    under the command's echo, and shows there once the person leaves the view.
+    """
 
     LONG = "\n".join(f"usage row {number}" for number in range(40))
 
@@ -543,8 +547,7 @@ class OutputWhileAViewIsOpenTests(unittest.TestCase):
 
     def check_waited(self, app: App, view: list[str]) -> None:
         self.assertEqual(drawn(app), view)  # the view is still the one drawn
-        self.assertEqual(notices(app)[-2:], [VIEW_OPEN_NOTICE.format(name="usage", lines=40), self.LONG])
-        self.assertIn("arrived while a view was open", notices(app)[-2])
+        self.assertEqual(notices(app)[-1], self.LONG)
         self.assertEqual("".join(app.terminal.writes).count(ALT_SCREEN_ON), 1)  # type: ignore[attr-defined]
 
     def test_behind_an_agents_log(self) -> None:
@@ -561,7 +564,8 @@ class OutputWhileAViewIsOpenTests(unittest.TestCase):
         app._on_input(Key(ESCAPE))
         drawn(app)
         history = app.terminal.screen.history() + app.terminal.screen.lines()  # type: ignore[attr-defined]
-        self.assertIn("  usage row 39", history)  # in the transcript once the view is left
+        self.assertIn("  ⎿ usage row 0", history)  # in the transcript, under its echo, once the view is left
+        self.assertIn("    … +28 lines · /history shows all", history)
 
     def test_behind_the_key_list(self) -> None:
         app, client = agent_app()
@@ -572,13 +576,13 @@ class OutputWhileAViewIsOpenTests(unittest.TestCase):
         self.check_waited(app, view)
         self.assertIn(" keys · ", view[-1])
 
-    def test_behind_another_commands_output(self) -> None:
+    def test_behind_the_history_pager(self) -> None:
         app, client = agent_app()
-        self.sent(app, "/insights")
         self.sent(app, "/usage")
-        app._on_response(Response(1, {"output": "\n".join(f"insight {n}" for n in range(30))}, None))
+        app.transcript.add_notice("an earlier notice")
+        self.sent(app, "/history")
         view = drawn(app)
-        self.assertIn(" /insights · ", view[-1])
+        self.assertIn(" history · ", view[-1])
         answer(app, client, {"output": self.LONG})
         self.check_waited(app, view)
 

@@ -438,7 +438,7 @@ Esc closes it):
 | ↑ / ↓, Enter, Esc | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; typing leaves it too |
 | Click | On an agent on the mode row's strip while a turn runs, or on a row of the agent list, opens that agent's log (on main, only leaves the list) |
 | ← / →, q or Esc | In an agent's log, show the agent before or after, or go back; the pager's keys scroll it |
-| j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, long command output, an agent's log, this list), move a line, a page, or to either end, or leave |
+| j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, an agent's log, this list), move a line, a page, or to either end, or leave |
 
 Ctrl+Enter and Shift+Enter reach the OMH TUI as keys of their own only where
 the terminal reports them. On start it asks iTerm2, kitty, WezTerm, tmux, VS
@@ -492,6 +492,14 @@ left the session (`/new`, a switch) before Hermes answered, the text comes
 back to the composer and is not sent to the session you are in. The OMH TUI
 steers only with text you typed and sent this way: a queued prompt is never
 turned into a steer.
+
+A slash command you run is echoed in the transcript as `› /name arg`, and
+what it prints stays there, under it after `⎿`, in the terminal's scrollback:
+a long output shows its first 12 rows and a count of the rest
+(`… +K lines · /history shows all`), and `/history` shows all of it. Nothing a
+command prints opens a pager; a pager opens only when you ask for one
+(`/history`, `/keys`, `/logs`, an agent's log), and output that arrives while
+one is open is in the transcript when you leave it.
 
 Slash commands the OMH TUI runs itself: `/help`, `/keys`, `/quit`, `/new`,
 `/sessions`, `/redraw`, `/history` (an in-memory pager over this session),

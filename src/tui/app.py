@@ -160,7 +160,7 @@ from .subagents import Hit, Roster
 from .terminal import Terminal, background_from_colorfgbg, terminal_supported
 from .theme import DEFAULT_THEME, LIGHT_STAND_IN, Theme, build_theme, is_light, theme_named
 from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, as_text, block_rows
-from .width import cell_width, line_width, truncate_left, truncate_line, wrap_line
+from .width import cell_width, line_width, truncate_left, truncate_line
 from ..version import __version__
 
 # While the key decoder holds bytes (a lone ESC, half a sequence, an open paste), the loop reads with this
@@ -319,8 +319,6 @@ CATALOG_REFUSED_NOTICE = (
     "Hermes did not send its command list ({code}: {message}), so completion and /help show only what the "
     "OMH TUI already knew; Hermes commands still run when typed."
 )
-# A command's long output that arrives while a view has the alternate screen; the output follows it.
-VIEW_OPEN_NOTICE = "/{name}: {lines} lines arrived while a view was open, so they are here instead of in the pager."
 GUIDE_KEY = "?"
 
 
@@ -355,6 +353,7 @@ class _Pending:
     on_result: Callable[[dict[str, Any]], None]
     on_error: Callable[[dict[str, Any]], bool] | None = None
     expires_at: float = math.inf  # on the app's clock: `_expire_calls` forgets the call then
+    for_command: bool = False  # made while a command ran: the command's echo stays open until it is answered
 
 
 @dataclass(frozen=True)
@@ -740,6 +739,10 @@ class App(ModesMixin, AgentViewMixin):
         # Every undeclared type a notice has named, for the life of this TUI and its gateway, whatever the session.
         self.unknown_named: set[str] = set()
         self.pending: dict[int, _Pending] = {}
+        # While a slash command the person typed runs (its handler, or the handler of a call it made), a call made
+        # is the command's, and its echo stays open until every such call is answered (`_run_slash`).
+        self.in_command = False
+        self.command_calls = 0
         self.menu_index = 0
         self.pager: Pager | None = None
         self.resized_while_paging = False
@@ -1132,7 +1135,9 @@ class App(ModesMixin, AgentViewMixin):
             self._lose_gateway(str(error))
             return
         expires_at = self.clock() + CALL_ANSWER_SECONDS_BY_METHOD.get(method, CALL_ANSWER_SECONDS)
-        self.pending[request_id] = _Pending(method, on_result, on_error, expires_at)
+        self.pending[request_id] = _Pending(method, on_result, on_error, expires_at, self.in_command)
+        if self.in_command:
+            self.command_calls += 1
 
     def _expire_calls(self) -> None:
         """Forget every call unanswered past its `expires_at`, here and in the client, saying so for most.
@@ -1148,6 +1153,14 @@ class App(ModesMixin, AgentViewMixin):
             if call.method not in QUIET_EXPIRY_METHODS:
                 seconds = CALL_ANSWER_SECONDS_BY_METHOD.get(call.method, CALL_ANSWER_SECONDS)
                 self.transcript.add_notice(CALL_EXPIRED_NOTICE.format(method=call.method, seconds=seconds), NOTICE_WARN)
+            self._command_call_done(call)
+
+    def _command_call_done(self, call: _Pending) -> None:
+        """A command's call is answered or forgotten: once none is left, the command's echo closes."""
+        if call.for_command:
+            self.command_calls = max(self.command_calls - 1, 0)
+            if not self.command_calls:
+                self.transcript.close_command()
 
     def _respond(self, answer: Answer) -> None:
         try:
@@ -1180,6 +1193,14 @@ class App(ModesMixin, AgentViewMixin):
         pending = self.pending.pop(response.id, None)
         if pending is None:
             return
+        outer, self.in_command = self.in_command, pending.for_command  # a call made from here is the command's too
+        try:
+            self._answer_call(pending, response)
+        finally:
+            self.in_command = outer
+            self._command_call_done(pending)
+
+    def _answer_call(self, pending: _Pending, response: Response) -> None:
         if response.error is None:
             pending.on_result(response.result or {})
             return
@@ -1724,6 +1745,26 @@ class App(ModesMixin, AgentViewMixin):
     # ── slash commands ──
 
     def _run_slash(self, invocation: SlashInvocation, depth: int = 0) -> None:
+        """Run a slash command; one the person typed is echoed first, and stays open while its calls are out.
+
+        Everything it says while open (a notice, its output) lands under the
+        echo. A command plan mode wrote around a prompt is no command the
+        person ran, and an alias's target runs under the alias's echo.
+        """
+        echo = depth == 0 and not invocation.for_plan_mode
+        if not echo:
+            self._route_slash(invocation, depth)
+            return
+        self.transcript.add_command(f"/{invocation.text}")
+        outer, self.in_command, self.command_calls = self.in_command, True, 0
+        try:
+            self._route_slash(invocation, depth)
+        finally:
+            self.in_command = outer
+        if not self.command_calls:
+            self.transcript.close_command()
+
+    def _route_slash(self, invocation: SlashInvocation, depth: int) -> None:
         command = invocation.command
         if command is not None and command.route == LOCAL:
             self._local_handlers()[command.name](invocation.arg)
@@ -1758,12 +1799,12 @@ class App(ModesMixin, AgentViewMixin):
             return
         body = as_text(result.get("output")) or f"/{invocation.name}: no output"
         warning = as_text(result.get("warning"))
-        self._show_output(invocation.name, f"warning: {warning}\n{body}" if warning else body)
+        self._show_output(f"/{invocation.text}", f"warning: {warning}\n{body}" if warning else body)
 
     def _on_dispatch(self, invocation: SlashInvocation, result: dict[str, Any], depth: int) -> None:
         kind = as_text(result.get("type"))
         if kind in ("exec", "plugin"):
-            self._show_output(invocation.name, as_text(result.get("output")) or "(no output)")
+            self._show_output(f"/{invocation.text}", as_text(result.get("output")) or "(no output)")
             return
         if kind == "alias":
             target = as_text(result.get("target")).lstrip("/")
@@ -1789,28 +1830,17 @@ class App(ModesMixin, AgentViewMixin):
         else:
             other = as_text(result.get("output")) or as_text(result.get("display"))
             if other:
-                self._show_output(invocation.name, other)
+                self._show_output(f"/{invocation.text}", other)
 
-    def _show_output(self, name: str, text: str) -> None:
-        """A command's output as a notice, or in the pager when it is longer than half the screen.
+    def _show_output(self, command: str, text: str, whole: bool = False) -> None:
+        """A command's output, in the transcript under its echo (`command` repeats the echo once it has closed).
 
-        Output that arrives while a view already has the alternate screen (an
-        agent's log, the key list, another command's output) does not replace
-        it: it goes to the transcript after `VIEW_OPEN_NOTICE`, and shows there
-        once the person leaves the view.
+        However long it is: a long one shows its first rows and a count of the
+        rest, which /history shows, unless `whole`. The pager opens only when
+        the person asks for one, so output answered while a view has the
+        alternate screen waits in the transcript until they leave it.
         """
-        cols, rows = self.size
-        source = text.split("\n")
-        if len(source) <= max(rows // 2, 3):
-            self.transcript.add_notice(text)
-            return
-        if self.pager is not None:
-            self.transcript.add_notice(VIEW_OPEN_NOTICE.format(name=name, lines=len(source)))
-            self.transcript.add_notice(text)
-            return
-        lines = [wrapped for line in source for wrapped in (wrap_line((Span(line),), cols) or [()])]
-        self._open_pager(f"/{name}", lines)
-        self.transcript.add_notice(f"/{name}: {len(source)} lines, shown in the pager.")
+        self.transcript.add_output(text, command=command, whole=whole)
 
     def _local_handlers(self) -> dict[str, Callable[[str], None]]:
         return {
@@ -1850,7 +1880,7 @@ class App(ModesMixin, AgentViewMixin):
         rows.append(YOLO_NOTE)
         rows.append(HELP_KEYS)
         rows.append(BARE_HERMES_NOTE)
-        self._show_output("help", "\n".join(rows))
+        self._show_output("/help", "\n".join(rows), whole=True)
 
     def _reload_skills(self, arg: str) -> None:
         """Hermes re-scans its skills for this session, then the catalog is read again, as Ink's /reload-skills does.
@@ -1865,7 +1895,7 @@ class App(ModesMixin, AgentViewMixin):
         self._request("skills.reload", {"session_id": self.sid}, self._on_skills_reloaded, self._on_reload_refused)
 
     def _on_skills_reloaded(self, result: dict[str, Any]) -> None:
-        self._show_output("reload-skills", as_text(result.get("output")) or "Skills reloaded.")
+        self._show_output("/reload-skills", as_text(result.get("output")) or "Skills reloaded.")
         self._refresh_catalog()
 
     def _on_reload_refused(self, error: dict[str, Any]) -> bool:

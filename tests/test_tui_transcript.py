@@ -20,7 +20,9 @@ from omh.tui.gateway import Event
 from omh.tui.style import Line, Span
 from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.transcript import (
+    OUTPUT_PREVIEW_ROWS,
     AssistantBlock,
+    CommandBlock,
     ThinkingBlock,
     ToolRow,
     Transcript,
@@ -994,3 +996,69 @@ class InlineDiffTests(LoopTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CommandOutputTests(LoopTestCase):
+    """A command the person runs is echoed, and what it prints stays under the echo in the transcript."""
+
+    def test_the_echo_waits_live_and_its_output_lands_under_it(self) -> None:
+        self.transcript.add_command("/model")
+        self.assertEqual(self.step(), [])  # still waiting for the command's output
+        self.assertEqual(self.live(), ["› /model"])
+        self.transcript.add_output("Current model: deepseek/deepseek-v4.1-flash-ultrafast")
+        self.assertEqual(self.step(), [])  # more may come until the command is over
+        self.transcript.close_command()
+        self.assertEqual(self.step(), ["› /model", "  ⎿ Current model: deepseek/deepseek-v4.1-flash-ultrafast"])
+
+    def test_a_notice_while_the_echo_is_open_is_the_commands_output_in_its_level(self) -> None:
+        self.transcript.add_command("/theme nope")
+        self.transcript.add_notice("No theme named nope.", "warn")
+        self.transcript.close_command()
+        self.assertEqual(self.step(), ["› /theme nope", "  ⎿ ⚠ No theme named nope."])  # a glyph, not only a hue
+        self.assertEqual(self.taken[-1][-1].style, THEME.warn)
+
+    def test_several_outputs_stack_under_one_echo_until_it_closes(self) -> None:
+        self.transcript.add_command("/reload-skills")
+        self.transcript.add_output("Skills reloaded.")
+        self.transcript.add_notice("Hermes' command catalog: two skills share a name", "warn")
+        self.transcript.close_command()
+        self.assertEqual(
+            self.step(), ["› /reload-skills", "  ⎿ Skills reloaded.", "    ⚠ Hermes' command catalog: two skills share a name"]
+        )
+
+    def test_an_echo_closed_without_output_flushes_alone_and_the_next_block_follows(self) -> None:
+        self.transcript.add_command("/details")
+        self.transcript.add_user("go on")
+        self.assertEqual(self.step(), ["› /details", "", "› go on"])
+
+    def test_output_that_comes_after_the_echo_closed_repeats_it(self) -> None:
+        self.transcript.add_command("/usage")
+        self.transcript.add_user("next prompt")
+        self.step()
+        self.transcript.add_output("Session cost: $0.01", command="/usage")
+        self.assertEqual(self.step(), ["", "› /usage", "  ⎿ Session cost: $0.01"])
+
+    def test_long_output_shows_its_first_rows_and_counts_the_rest_for_history(self) -> None:
+        self.transcript.add_command("/context")
+        self.transcript.add_output("\n".join(f"row {number}" for number in range(30)))
+        self.transcript.close_command()
+        flushed = self.step()
+        self.assertEqual(len(flushed), 1 + OUTPUT_PREVIEW_ROWS + 1)
+        self.assertEqual(flushed[1], "  ⎿ row 0")
+        self.assertEqual(flushed[OUTPUT_PREVIEW_ROWS], f"    row {OUTPUT_PREVIEW_ROWS - 1}")
+        self.assertEqual(flushed[-1], f"    … +{30 - OUTPUT_PREVIEW_ROWS} lines · /history shows all")
+        self.assertEqual(self.history()[-1], "    row 29")
+
+    def test_whole_output_is_never_cut(self) -> None:
+        self.transcript.add_command("/help")
+        self.transcript.add_output("\n".join(f"row {number}" for number in range(30)), whole=True)
+        self.transcript.close_command()
+        self.assertEqual(len(self.step()), 1 + 30)
+
+    def test_the_block_is_one_command_and_its_output(self) -> None:
+        self.transcript.add_command("/model")
+        self.transcript.add_output("x")
+        self.transcript.close_command()
+        block = self.transcript.blocks[-1]
+        self.assertIsInstance(block, CommandBlock)
+        self.assertEqual((block.command, block.done), ("/model", True))
