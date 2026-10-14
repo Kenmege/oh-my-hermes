@@ -56,9 +56,11 @@ from omh.plugin_bundle.omh.memory_prefetch_receipt import MAX_SUBJECT_SUPERSEDED
 from omh.plugin_bundle.omh.memory_records import prepare_prefetch_records, read_record_store_snapshot
 from omh.plugin_bundle.omh import memory_recall_selector as selector_module
 from omh.plugin_bundle.omh.memory_recall_support import (
+    _QUERY_KOREAN_SUFFIXES,
     _attach_recall_ranking,
     _cut_cjk_function_words,
     _kept_listed_words,
+    _korean_query_stem,
     _record_relevance_fields,
     _memory_index_terms,
     _memory_query_split,
@@ -500,7 +502,7 @@ class QueryFunctionWordTests(unittest.TestCase):
     def test_question_words_neither_score_nor_count_as_overlap(self) -> None:
         self.assertEqual(_memory_query_tokens("how do we deploy?"), ["deploy"])
         self.assertNotIn("누가", _memory_query_tokens("배포 승인은 누가 해?"))
-        self.assertEqual(_memory_query_tokens("배포는 어떻게 해?"), ["배포는", "배포", "포는"])
+        self.assertEqual(_memory_query_tokens("배포는 어떻게 해?"), ["배포"])
         records = [_record("deploy", "Deploy through the release pipeline", tags=("deploy",)), _record("how", "How expenses are filed is documented")]
         relevance = _memory_relevance(records, "how do we deploy?")
         self.assertGreater(relevance.scores[0], 0)
@@ -536,8 +538,11 @@ class QueryFunctionWordTests(unittest.TestCase):
         for ending in ("알려줘", "했지", "해요", "있나요", "인가요"):
             with self.subTest(ending=ending):
                 self.assertEqual(_memory_query_tokens(f"배포 {ending}"), ["배포"])
-        # A longer run that merely contains an ending is a word and stays.
-        self.assertIn("배포했지만", _memory_query_tokens("배포했지만 실패"))
+        # A longer run that merely contains a listed ending is a word: it loses
+        # only the suffix it ends in, never the whole run.
+        tokens = _memory_query_tokens("배포했지만 실패")
+        self.assertIn("배포했지", tokens)
+        self.assertIn("실패", tokens)
 
     def test_japanese_and_chinese_interrogatives_are_cut_out_before_bigrams(self) -> None:
         self.assertEqual(_memory_query_tokens("怎么部署？"), ["部署"])
@@ -589,6 +594,108 @@ class QueryFunctionWordTests(unittest.TestCase):
         # Capitalized at the start of a sentence is ordinary sentence case.
         self.assertEqual(_memory_query_tokens("Can you remind me how we deploy? How?"), ["deploy"])
         self.assertEqual(_kept_listed_words("Notes from Will: Who knows"), frozenset({"will"}))
+
+
+class ColloquialQueryTests(unittest.TestCase):
+    """Particles, endings and chat fillers in a colloquial query only order records.
+
+    Each list below is written out rather than read from the module, so a
+    removed entry fails its own case.
+    """
+
+    _KOREAN_SUFFIXES = (
+        "은", "는", "이", "가", "을", "를", "에", "의", "도", "만", "로", "와", "과", "랑", "요", "좀",
+        "으로", "에서", "에게", "한테", "까지", "부터", "처럼", "보다", "이랑", "이나", "마다", "밖에",
+        "이면", "이라", "인데", "는데", "은데", "인지", "는지", "은지",
+        "해", "해줘", "해주세요", "주세요", "해봐", "해야", "하면", "해서", "하고", "했어", "했는데",
+        "하는데", "하자", "할래", "할게", "돼", "됐어", "됨",
+    )
+
+    def test_every_listed_korean_suffix_comes_off_a_noun_and_off_a_latin_word(self) -> None:
+        self.assertEqual(set(self._KOREAN_SUFFIXES), set(_QUERY_KOREAN_SUFFIXES))
+        for suffix in self._KOREAN_SUFFIXES:
+            with self.subTest(suffix=suffix):
+                # Glued to a Korean noun the suffix comes off; glued to a Latin
+                # word ("main에서") the run is the suffix whole and leaves nothing.
+                self.assertEqual(_memory_query_split(f"배포{suffix}")[0], ["배포"])
+                self.assertEqual(_memory_query_split(f"deploy{suffix}")[0], ["deploy"])
+
+    def test_stripping_keeps_the_stem_matching_and_moves_the_suffix_out_of_coverage(self) -> None:
+        self.assertEqual(_memory_query_split("자동으로"), (["자동"], ["자동으로", "동으", "으로"]))
+        self.assertEqual(_memory_query_tokens("메모리에서는 확인해주세요"), ["메모리", "메모", "모리", "확인"])
+        records = [
+            _record("memory", "메모리 기록은 자동 승인되고 나중에 리뷰할 수 있다", tags=("memory",)),
+            _record("deploy", "배포는 main 머지 후 자동으로 나간다", tags=("deploy",)),
+        ]
+        # 자동으로 used to add 자동으로, 동으 and 으로, and the deploy record tied at 8.
+        self.assertEqual(_memory_relevance(records, "메모리 자동으로 저장돼?").coverage, [8, 2])
+
+    def test_a_run_that_is_wholly_a_listed_ending_leaves_nothing(self) -> None:
+        self.assertEqual(_korean_query_stem("해주세요"), "")
+        self.assertEqual(_memory_query_tokens("확인좀 해주세요 PR"), ["pr", "확인"])
+        records = [_record("bot", "해주세요 봇은 일정 알림을 보낸다", tags=("bot",)), _record("pr", "PR 리뷰는 코드오너 한 명 승인으로 머지한다")]
+        self.assertEqual(_memory_relevance(records, "확인좀 해주세요 PR").coverage, [0, 2])
+
+    def test_two_syllables_always_stay(self) -> None:
+        # 경로 and 평가 end in particle-like syllables and are nouns: the floor
+        # keeps them, whether bare or under a particle.
+        self.assertEqual(_memory_query_split("배포 경로"), (["배포", "경로"], []))
+        self.assertEqual(_memory_query_split("배포 평가"), (["배포", "평가"], []))
+        self.assertEqual(_memory_query_tokens("경로로 평가는"), ["경로", "평가"])
+        self.assertEqual(_korean_query_stem("메모리"), "메모리")
+
+    def test_a_filler_left_after_stripping_is_dropped_too(self) -> None:
+        for query in ("진짜로 배포", "그냥요 배포", "근데요 배포"):
+            with self.subTest(query=query):
+                self.assertEqual(_memory_query_tokens(query), ["배포"])
+
+    def test_stripped_tokens_still_order_records_within_one_coverage(self) -> None:
+        records = [
+            _record("stem", "메모리는 자동 승인된다", tags=("memory",)),
+            _record("inflected", "메모리는 자동으로 저장된다", tags=("memory",)),
+        ]
+        relevance = _memory_relevance(records, "메모리 자동으로")
+        self.assertEqual(relevance.coverage[0], relevance.coverage[1])
+        self.assertGreater(relevance.scores[1], relevance.scores[0])
+
+    def test_a_query_of_only_fillers_and_endings_falls_back_to_every_token(self) -> None:
+        query = "진짜 그냥 해주세요"
+        self.assertEqual(_memory_query_split(query), (_memory_token_list(query), []))
+        records = [_record("bot", "해주세요 봇은 일정 알림을 보낸다"), _record("lunch", "점심은 12시")]
+        # 해주세요, 해주, 주세 and 세요 count again, as they did before any stripping.
+        self.assertEqual(_memory_relevance(records, query).coverage, [8, 0])
+
+    def test_records_keep_their_particles_and_endings(self) -> None:
+        tokens = _memory_token_list("배포는 main 머지 후 자동으로 나간다")
+        for token in ("배포는", "자동으로", "으로"):
+            with self.subTest(token=token):
+                self.assertIn(token, tokens)
+
+    def test_korean_fillers_are_dropped(self) -> None:
+        for filler in (
+            "그냥", "근데", "그런데", "그래서", "일단", "아니", "뭔가",
+            "진짜", "정말", "완전", "너무", "약간", "솔직히", "아마",
+            "그거", "이거", "저거", "그게", "이게", "저게",
+        ):
+            with self.subTest(filler=filler):
+                self.assertEqual(_memory_query_tokens(f"{filler} 배포"), ["배포"])
+
+    def test_english_hedges_and_intensifiers_are_dropped(self) -> None:
+        for filler in ("honestly", "literally", "basically", "actually", "kinda", "sorta", "really", "totally", "anyway", "anyways"):
+            with self.subTest(filler=filler):
+                self.assertEqual(_memory_query_tokens(f"{filler} flaky tests"), ["flaky", "tests"])
+        # Mid-sentence capitals still keep a listed word that names something.
+        self.assertEqual(_memory_query_tokens("ask Really about flaky tests"), ["really", "flaky", "tests"])
+
+    def test_japanese_and_chinese_wrappers_are_cut_out(self) -> None:
+        for wrapper in ("って", "なってる", "なっている", "なってます"):
+            with self.subTest(wrapper=wrapper):
+                self.assertEqual(_memory_query_tokens(f"保存{wrapper}"), ["保存"])
+        for wrapper in ("什么时候", "一般", "通常", "平时"):
+            with self.subTest(wrapper=wrapper):
+                self.assertEqual(_memory_query_tokens(f"发布{wrapper}"), ["发布"])
+        self.assertEqual(_memory_query_tokens("メモリの保存ってどうなってる？"), ["メモリの保存", "メモ", "モリ", "リの", "の保", "保存"])
+        self.assertEqual(_memory_query_tokens("发布一般什么时候？"), ["发布"])
 
 
 class StemmedOnlyOverlapTests(unittest.TestCase):

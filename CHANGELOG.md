@@ -4,6 +4,22 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Memory recall no longer lets a colloquial query's particles, endings and
+  fillers decide which record leads.** A Korean query run loses the particles
+  and request or verb endings it ends in while two syllables stay (자동으로 is
+  scored as 자동, 확인해주세요 as 확인, 경로 stays whole), and a run that is
+  one of them whole (해주세요, 에서 after a Latin word) adds nothing. Korean
+  discourse fillers, intensifiers and demonstratives (그냥, 진짜, 그거 ...),
+  English hedges (honestly, literally, kinda, really ...) and the Japanese and
+  Chinese wrappers って, なってる, 什么时候 and 一般 join the closed query-side
+  lists. All of them still order records of equal coverage; records are
+  tokenized in full. Measured against `origin/main` at 4d3c10141 with the
+  blind-round harness and its lead-record rule (distractor ids sort first, so
+  a tie goes against this change): round 4, 20 cases, 5 wins, 15 ties, 0
+  losses; its tie-flip twin 4 wins, 16 ties, 0 losses; round 3 and its twin
+  0 wins, 20 ties, 0 losses each; the 40-case pre-registered corpus served
+  identical packs.
+
 - **Bare `omh` opens the OMH TUI, OMH's own terminal over Hermes' gateway.**
   `omh` runs `hermes --tui` with OMH's frontend in place of Hermes' Ink app,
   so Hermes' launcher still resolves the profile, the resume target and
