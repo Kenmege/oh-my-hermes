@@ -2567,9 +2567,13 @@ understand internal config keys, topology names, MCP state, state-log entries,
 or plugin manifests. In a real terminal it first asks for setup language, then
 only asks for a simple coding-agent suggestion plus optional tool bridge
 settings when advanced setup is explicitly opened. The same command with `--json` should include install and apply
-steps, an `operator_summary` block, and a `hermes_native_setup/v1` block that
+steps, an `operator_summary` block, and a `hermes_native_setup/v2` block that
 names the equivalent Hermes skill install path, managed skill directory, and
-`skills.external_dirs` registration key.
+`skills.external_dirs` registration key. v2 marks the payload that no longer
+carries the branded-TUI fields v1 did (`tui_verdict`, `steps.tui_widget`,
+`steps.skin`, `steps.hermes_tui_preflight`, and `steps.apply.tui_interface`,
+`skin` and `display_sections`); `steps.apply.display_release` reports what
+the release took back.
 `hermes_native.observed` means the local bootstrap/apply step actually ran; it
 does not prove Hermes has reloaded or used the skill yet.
 `discovery_status: config_registered_reload_required` means restart or refresh

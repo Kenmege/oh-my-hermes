@@ -12488,7 +12488,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertIn("install", payload["steps"])
             self.assertIn("apply", payload["steps"])
             self.assertNotIn("doctor", payload["steps"])
-            self.assertEqual(payload["hermes_native"]["schema_version"], "hermes_native_setup/v1")
+            self.assertEqual(payload["hermes_native"]["schema_version"], "hermes_native_setup/v2")
             self.assertEqual(payload["operator_summary"]["schema_version"], "setup_operator_summary/v1")
             self.assertEqual(payload["operator_summary"]["status"], "configured")
             self.assertEqual(payload["operator_summary"]["state_log"]["entry"], "last_setup")
@@ -12511,7 +12511,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertIn((omh_home / "skills").resolve().as_posix(), (hermes_home / "config.yaml").read_text(encoding="utf-8"))
             state = json.loads((omh_home / "runtime" / "state.json").read_text(encoding="utf-8"))
             self.assertTrue(state["last_setup"]["ok"])
-            self.assertEqual(state["last_setup"]["hermes_native"]["schema_version"], "hermes_native_setup/v1")
+            self.assertEqual(state["last_setup"]["hermes_native"]["schema_version"], "hermes_native_setup/v2")
             self.assertEqual(state["last_setup"]["operator_summary"]["schema_version"], "setup_operator_summary/v1")
             self.assertEqual(state["last_setup"]["hermes_native"]["skills_dir"], str((omh_home / "skills").resolve()))
 

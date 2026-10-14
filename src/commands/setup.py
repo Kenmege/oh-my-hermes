@@ -2917,8 +2917,12 @@ def cmd_setup(args: argparse.Namespace) -> int:
         if args.skip_apply
         else "config_registered_reload_required"
     )
+    # v2: the setup payload no longer carries the branded-TUI fields v1 did
+    # (`tui_verdict`, `steps.tui_widget`, `steps.skin`,
+    # `steps.hermes_tui_preflight`, and `steps.apply.tui_interface`, `.skin`
+    # and `.display_sections`); `steps.apply.display_release` replaces them.
     hermes_native = {
-        "schema_version": "hermes_native_setup/v1",
+        "schema_version": "hermes_native_setup/v2",
         "mode": "omh_bootstrap",
         "dry_run": bool(args.dry_run),
         "observed": not args.dry_run and not args.skip_apply,

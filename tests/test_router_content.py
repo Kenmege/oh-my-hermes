@@ -4120,7 +4120,7 @@ class RouterContentTests(unittest.TestCase):
         self.assertNotIn("Useful local and wrapper-debug commands", readme)
         self.assertIn("Install Path A: Hermes-Native Skill Tap", installation)
         self.assertIn("Agent Install Protocol", installation)
-        self.assertIn("hermes_native_setup/v1", installation)
+        self.assertIn("hermes_native_setup/v2", installation)
         self.assertNotIn("OMH_WITH_PLUGIN=1", installation)
         self.assertIn("omh setup --profile-pack cto-loop --profile-pack startup-delivery", installation)
         self.assertIn("omh setup --default-executor claude-code", installation)
