@@ -347,7 +347,7 @@ def _notice_style(level: str, theme: Theme) -> tuple[str, Style]:
         return "✗ ", theme.error
     if level == NOTICE_WARN:
         return "⚠ ", theme.warn
-    return "· ", theme.dim
+    return "· ", theme.muted
 
 
 def _notice_rows(block: NoticeBlock, width: int, theme: Theme) -> list[Line]:
@@ -388,7 +388,7 @@ def _thinking_rows(
     elif expanded:
         head = (Span(f"{mark} thinking…", theme.thinking),)
     else:
-        head = (Span(f"{mark} thinking… ", theme.thinking), Span(_last_line(block.text), theme.dim))
+        head = (Span(f"{mark} thinking… ", theme.thinking), Span(_last_line(block.text), theme.muted))
     rows = [truncate_line(head, width)]
     if expanded:
         indent: Line = (Span(DETAIL_INDENT),)
@@ -420,12 +420,12 @@ def _tool_row(tool: ToolRow, width: int, theme: Theme) -> Line:
     head: Line = (Span(TOOL_ROW_INDENT), _tool_mark(tool.status, theme), Span(" "), Span(tool.name, theme.tool))
     tail: Line = ()
     if tool.duration_s is not None:
-        tail = (Span(COLUMN_GAP + _seconds(tool.duration_s), theme.dim),)
+        tail = (Span(COLUMN_GAP + _seconds(tool.duration_s), theme.muted),)
     room = width - line_width(head) - line_width(tail) - len(COLUMN_GAP)
     args: Line = ()
     if tool.args_summary and room > 1:
         cut = truncate_left if _is_path(tool.args_summary) else truncate
-        args = (Span(COLUMN_GAP + cut(tool.args_summary, room), theme.dim),)
+        args = (Span(COLUMN_GAP + cut(tool.args_summary, room), theme.muted),)
     return truncate_line((*head, *args, *tail), width)
 
 
@@ -440,7 +440,7 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool) -> li
     for tool in group.tools:
         rows.append(_tool_row(tool, width, theme))
         if expanded and tool.summary:
-            rows.extend(wrap_prefixed((Span(tool.summary, theme.dim),), summary_first, summary_rest, width))
+            rows.extend(wrap_prefixed((Span(tool.summary, theme.muted),), summary_first, summary_rest, width))
         lines = tool.diff_lines(hold=not group.done) if tool.inline_diff else ()
         if lines:
             rows.extend(diff_rows(lines, width, theme, full=expanded))
@@ -733,7 +733,7 @@ class Transcript:
                 if self.dropped
                 else LEFT_OUT_NOTICE.format(earlier=earlier)
             )
-            taken.append(truncate_line((Span(notice, theme.dim),), width))
+            taken.append(truncate_line((Span(notice, theme.muted),), width))
             self._taken_any = True
             self._version += 1
         while self._cursor < len(self.blocks):
@@ -861,7 +861,7 @@ class Transcript:
         count = self.dropped if dropped is None else dropped
         if not count:
             return []
-        return [truncate_line((Span(DROPPED_NOTICE.format(earlier=_earlier(count)), theme.dim),), width), ()]
+        return [truncate_line((Span(DROPPED_NOTICE.format(earlier=_earlier(count)), theme.muted),), width), ()]
 
     def history_lines(self, width: int, theme: Theme, details: bool = True) -> list[Line]:
         """Every block held at `width`; `details` adds full thinking text, tool result summaries, whole diffs."""

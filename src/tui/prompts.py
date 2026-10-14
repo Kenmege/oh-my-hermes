@@ -230,7 +230,7 @@ class PromptSlot:
             hidden = len(command_rows) - kept
             command_rows = command_rows[:kept]
             if room >= 2:
-                command_rows.append((Span(f"  … +{hidden} more line{'s' if hidden != 1 else ''}", theme.dim),))
+                command_rows.append((Span(f"  … +{hidden} more line{'s' if hidden != 1 else ''}", theme.muted),))
         return [header, *command_rows, choices]
 
     def _approval_choice_row(self, width: int, theme: Theme) -> Line:
@@ -243,7 +243,7 @@ class PromptSlot:
                 spans.append(Span(_approval_label(choice, form), style))
                 spans.append(Span(" ", theme.text))
             if hint:
-                spans.append(Span(hint, theme.dim))
+                spans.append(Span(hint, theme.hint))
             row = tuple(spans)
             if line_width(row) <= width:
                 return row
@@ -260,9 +260,9 @@ class PromptSlot:
         )
         for index, choice in enumerate(self._current_choices()):
             style = theme.menu_current if index == self.selected else theme.text
-            rows.append((Span(f"  {index + 1}. ", theme.dim), Span(choice, style)))
+            rows.append((Span(f"  {index + 1}. ", theme.muted), Span(choice, style)))
         hint = "type an answer and press Enter" if not self._current_choices() else "number or Enter picks; or type an answer"
-        rows.append((Span(f"  {hint} · Esc cancels", theme.dim),))
+        rows.append((Span(f"  {hint} · Esc cancels", theme.hint),))
         return rows
 
     def _value_lines(self, width: int, theme: Theme) -> list[Line]:
@@ -274,8 +274,8 @@ class PromptSlot:
         prompt = self.params.get("prompt") or self.params.get("command") or self.params.get("hint") or ""
         rows: list[Line] = [(Span("🔑 " if self.masked else "? ", theme.accent), Span(label, theme.text))]
         if prompt:
-            rows.extend(wrap_line((Span("  " + str(prompt), theme.dim),), width))
-        rows.append((Span("  type it in the composer and press Enter · Esc declines", theme.dim),))
+            rows.extend(wrap_line((Span("  " + str(prompt), theme.muted),), width))
+        rows.append((Span("  type it in the composer and press Enter · Esc declines", theme.hint),))
         return rows
 
 

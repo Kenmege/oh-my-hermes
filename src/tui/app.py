@@ -89,7 +89,15 @@ from ..commands.theme_picker import (
     KEY_UP,
     plain_key,
 )
-from ..skin_pack import default_theme, effective_theme, skin_colors, theme_for_name, theme_for_skin_name, theme_names
+from ..skin_pack import (
+    SkinTheme,
+    default_theme,
+    effective_theme,
+    skin_colors,
+    theme_for_name,
+    theme_for_skin_name,
+    theme_names,
+)
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
 from .frame import MODE_ACCEPT, MODE_PLAN, STATUS_SEPARATOR, build_frame, sticky_line
@@ -149,8 +157,8 @@ from .slash import (
 )
 from .style import CSI, Line, Span, Style
 from .subagents import Hit, Roster
-from .terminal import Terminal, terminal_supported
-from .theme import DEFAULT_THEME, Theme, build_theme, theme_named
+from .terminal import Terminal, background_from_colorfgbg, terminal_supported
+from .theme import DEFAULT_THEME, LIGHT_STAND_IN, Theme, build_theme, is_light, theme_named
 from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, as_text, block_rows
 from .width import cell_width, line_width, truncate_left, truncate_line, wrap_line
 from ..version import __version__
@@ -203,6 +211,13 @@ MODE_CHIPS = {MODE_ACCEPT: "⏵⏵ accept", MODE_PLAN: "⏸ plan"}
 # The context figure turns warn, then bad, on the status line.
 CONTEXT_WARN_PERCENT = 80
 CONTEXT_BAD_PERCENT = 95
+
+# What `/theme auto|light|dark` measures the roles against: the background the terminal reported (auto), or a
+# light or a dark one whatever it reported.
+BACKGROUND_AUTO = "auto"
+BACKGROUND_LIGHT = "light"
+BACKGROUND_DARK = "dark"
+BACKGROUND_MODES = (BACKGROUND_AUTO, BACKGROUND_LIGHT, BACKGROUND_DARK)
 
 BUSY_QUEUE = "queue"
 BUSY_MODES = frozenset({"queue", "steer", "interrupt"})
@@ -315,6 +330,7 @@ class TerminalLike(Protocol):
     def __enter__(self) -> Any: ...
     def __exit__(self, *exc: object) -> Any: ...
     def size(self) -> tuple[int, int]: ...
+    def query_background(self) -> tuple[str | None, bytes]: ...
     def resized(self) -> bool: ...
     def read(self, timeout: float, wake: int | None = None) -> bytes: ...
     def write(self, text: str) -> None: ...
@@ -470,13 +486,13 @@ def banner_lines(*, model: str, cwd: str, resumed: str, theme: Theme, width: int
         shown = [*facts, path] if path else facts
         return (
             Span(BANNER_BRAND, theme.heading),
-            Span(f" v{__version__}", theme.dim),
+            Span(f" v{__version__}", theme.muted),
             *(span for fact in shown for span in (Span(" · ", theme.dim), Span(fact, theme.text))),
         )
 
     room = width - line_width(header("")) - len(" · ")
     path = truncate_left(cwd, room) if cwd and room >= _BANNER_MIN_PATH_CELLS else ""
-    return [truncate_line(header(path), width), truncate_line((Span(BANNER_HINT, theme.dim),), width), ()]
+    return [truncate_line(header(path), width), truncate_line((Span(BANNER_HINT, theme.hint),), width), ()]
 
 
 def attachment_from(result: Mapping[str, Any]) -> Attachment | None:
@@ -492,7 +508,7 @@ def attachment_from(result: Mapping[str, Any]) -> Attachment | None:
 def attachment_line(attachments: Sequence[Attachment], width: int, theme: Theme) -> Line:
     """`📎 shot.png 1280×720 · notes.png  Backspace removes`, cut to `width` (the hint goes first)."""
     labels = " · ".join(f"{item.name} {item.size}".strip() for item in attachments)
-    return truncate_line((Span(f"{ATTACH_ICON} {labels}", theme.accent), Span(f"  {ATTACH_HINT}", theme.dim)), width)
+    return truncate_line((Span(f"{ATTACH_ICON} {labels}", theme.accent), Span(f"  {ATTACH_HINT}", theme.hint)), width)
 
 
 def path_items(result: Mapping[str, Any]) -> list[PathItem]:
@@ -754,6 +770,8 @@ class App(ModesMixin, AgentViewMixin):
         self.mouse_off_at: float | None = None  # when `_set_mouse` last turned reports off; None before that
         self.wake: int | None = None  # the gateway client's wake descriptor, which `run` selects on with the input
         self.input_at = 0.0  # when input last arrived, on `clock`
+        self.background: str | None = None  # the terminal's background as it reported it; None when it did not
+        self.background_mode = BACKGROUND_AUTO
         self.dirty = True
         self.last_render = -math.inf
 
@@ -912,15 +930,36 @@ class App(ModesMixin, AgentViewMixin):
 
     # ── loop ──
 
-    def run(self) -> int:
+    def adopt_background(self, background: str | None) -> None:
+        """The background the terminal reported (None when it did not): the theme is measured against it from now on."""
+        self.background = background
+        self.theme = build_theme(self._skin(), self._surface())
+
+    def _skin(self) -> SkinTheme:
+        return theme_for_name(self.theme.name) or default_theme()
+
+    def _surface(self) -> str | None:
+        """What the theme is measured against: the reported background, or a light or dark one `/theme` forced."""
+        reported = self.background
+        if self.background_mode == BACKGROUND_LIGHT:
+            return reported if reported and is_light(reported) else LIGHT_STAND_IN
+        if self.background_mode == BACKGROUND_DARK:
+            return reported if reported and not is_light(reported) else None  # None: the palette's dark stand-in
+        return reported
+
+    def run(self, typed: bytes = b"") -> int:
         """Run until the person quits or the gateway is gone; the exit code.
 
-        The live region is cleared before this returns; closing the gateway is
-        the caller's, after it has handed the terminal back.
+        `typed` is input that arrived before the loop started (while the
+        background query waited); it is read before the first frame. The live
+        region is cleared before this returns; closing the gateway is the
+        caller's, after it has handed the terminal back.
         """
         self.wake = self.client.wake_fd()
         self.poller.start(self.client.wake)  # a new HUD snapshot wakes the loop as gateway news does
         try:
+            if typed:
+                self._take_input(typed)
             self._render_when_due()  # the first frame does not wait for a first read
             while self.exit_code is None:
                 self._step()
@@ -940,6 +979,21 @@ class App(ModesMixin, AgentViewMixin):
         except EOFError:
             self.exit_code = 0
             return
+        self._take_input(data)
+        if self.exit_code is not None:
+            return
+        self._drain_gateway()
+        if self.exit_code is not None:
+            return
+        self._expire_calls()
+        self._track_path_token()
+        self._ask_path_completion_when_due()
+        self._ask_tail_when_due()
+        self._take_hud()
+        self._render_when_due()
+
+    def _take_input(self, data: bytes) -> None:
+        """Decode `data` and act on each key; an empty read settles held bytes once input has been quiet long enough."""
         if data:
             self.input_at = self.clock()
             events = self.decoder.feed(data)
@@ -953,15 +1007,6 @@ class App(ModesMixin, AgentViewMixin):
             self._on_input(event)
             if self.exit_code is not None:
                 return
-        self._drain_gateway()
-        if self.exit_code is not None:
-            return
-        self._expire_calls()
-        self._track_path_token()
-        self._ask_path_completion_when_due()
-        self._ask_tail_when_due()
-        self._take_hud()
-        self._render_when_due()
 
     def _read_timeout(self) -> float:
         """How long the next read may wait: until the soonest thing the loop has to do without new input.
@@ -2092,13 +2137,39 @@ class App(ModesMixin, AgentViewMixin):
         self.transcript.add_notice("Copied the last reply to the clipboard (OSC 52; the terminal must allow it).")
 
     def _theme(self, arg: str) -> None:
-        if not arg:
-            self.transcript.add_notice(f"Theme {self.theme.name}. Available: {', '.join(theme_names())}.")
+        """`/theme <name>` picks a palette, `/theme auto|light|dark` the background it is measured against; alone, both.
+
+        Either redraws the screen, so the rows above are repainted in it.
+        """
+        choice = arg.strip().lower()
+        if not choice:
+            self.transcript.add_notice(
+                f"Theme {self.theme.name}: {self._background_text()}. /theme <name> picks a palette "
+                f"({', '.join(theme_names())}); /theme auto|light|dark picks the background it is measured against."
+            )
+            return
+        if choice in BACKGROUND_MODES:
+            self.background_mode = choice
         elif theme_for_name(arg) or theme_for_skin_name(arg):
             self.theme = theme_named(arg)
-            self.transcript.add_notice(f"Theme {self.theme.name} applies to this session; `omh theme` keeps it.")
         else:
             self.transcript.add_notice(f"No theme named {arg}. Available: {', '.join(theme_names())}.", NOTICE_WARN)
+            return
+        self.theme = build_theme(self._skin(), self._surface())
+        if choice in BACKGROUND_MODES:
+            self.transcript.add_notice(f"Theme {self.theme.name} {self._background_text()}.")
+        else:
+            self.transcript.add_notice(f"Theme {self.theme.name} applies to this session; `omh theme` keeps it.")
+        self._full_redraw()
+
+    def _background_text(self) -> str:
+        """How the theme's background was chosen, for `/theme`'s notices."""
+        if self.background_mode != BACKGROUND_AUTO:
+            return f"on a {self.background_mode} background for this session; /theme auto follows the terminal again"
+        if self.background is None:
+            return "follows the terminal's background (none reported, so a dark one is assumed)"
+        tone = "light" if is_light(self.background) else "dark"
+        return f"follows the terminal's background ({self.background}, a {tone} one)"
 
     def _omh_model(self, arg: str) -> None:
         """Run the model-chain picker on the alternate screen, over the TUI's own raw terminal.
@@ -2348,7 +2419,7 @@ class App(ModesMixin, AgentViewMixin):
             spinner = SPINNER_FRAMES[int(now / TICK_SECONDS) % len(SPINNER_FRAMES)]
             elapsed = elapsed_text(now - (self.busy_since or now))
             row = f"{spinner} {text} ({elapsed} · {INTERRUPT_HINT})"
-            lines.append(truncate_line((Span(row, self.theme.dim),), cols))
+            lines.append(truncate_line((Span(row, self.theme.muted),), cols))
         return lines
 
     def _slot_lines(self, cols: int, rows: int) -> list[Line]:
@@ -2519,7 +2590,9 @@ def _run(
         _say(stderr, f"omh: the OMH TUI could not open a Hermes session: {error}")
         return request_fallback(environ)
     with terminal:
-        code = app.run()
+        background, typed = terminal.query_background()
+        app.adopt_background(background or background_from_colorfgbg(environ))
+        code = app.run(typed)
     if app.farewell:
         _say(stderr, app.farewell)
     return code

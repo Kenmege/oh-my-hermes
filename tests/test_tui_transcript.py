@@ -798,7 +798,7 @@ class TurnEndTests(LoopTestCase):
         self.transcript.add_notice("approval declined", "warn")
         self.transcript.add_notice("gateway exited", "error")
         self.assertEqual(self.step(), ["· Ctrl+C again to exit", "", "⚠ approval declined", "", "✗ gateway exited"])
-        self.assertEqual([row[0].style for row in self.taken if row], [THEME.dim, THEME.warn, THEME.error])
+        self.assertEqual([row[0].style for row in self.taken if row], [THEME.muted, THEME.warn, THEME.error])
 
     def test_unknown_events_and_bad_payloads_change_nothing(self) -> None:
         self.step(ev("session.info", running=True))
@@ -945,7 +945,7 @@ class InlineDiffTests(LoopTestCase):
         self.assertEqual(len(flushed), 1 + 23 + 1)
         self.assertEqual(flushed[-2].rstrip(), " 22 +row 22")
         self.assertEqual(flushed[-1], "    … +18 lines (/history shows all)")
-        self.assertEqual(self.taken[-1][-1].style, THEME.dim)
+        self.assertEqual(self.taken[-1][-1].style, THEME.muted)
         full = self.history(details=True)
         self.assertEqual(len(full), 1 + 41)
         self.assertEqual(full[-1].rstrip(), " 40 +row 40")

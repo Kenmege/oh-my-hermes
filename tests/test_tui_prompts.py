@@ -149,7 +149,7 @@ class ApprovalTests(unittest.TestCase):
         self.assertIn("script execution", text[0])
         self.assertEqual([unbarred(row) for row in text[1:4]], ['  python3 -c "', "def is_prime(n):", "    if n < 2:"])
         self.assertEqual(unbarred(text[4]), f"  … +{total - 3} more lines")
-        self.assertEqual(rows[4][1].style, DEFAULT_THEME.dim)
+        self.assertEqual(rows[4][1].style, DEFAULT_THEME.muted)
         self.assertIn("deny", text[5])
 
     def test_one_spare_row_shows_the_commands_first_row(self) -> None:

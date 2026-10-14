@@ -134,14 +134,14 @@ class SessionPicker:
         shown = self.visible()
         title = f" Sessions ({len(shown)}/{len(self.rows)})" if self.query else f" Sessions ({len(self.rows)})"
         header = (Span(title, theme.heading), Span(f"  filter: {self.query}" if self.query else "", theme.text),
-                  Span(f"  {HINT}", theme.dim))
+                  Span(f"  {HINT}", theme.hint))
         lines: list[Line] = [truncate_line(header, width)]
         body = max_rows - 1
         self.page = max(body, 1)
         if body <= 0:
             return lines
         if not shown:
-            return [*lines, (Span(" no session matches the filter", theme.dim),)]
+            return [*lines, (Span(" no session matches the filter", theme.muted),)]
         self.index = min(self.index, len(shown) - 1)
         start = min(max(self.index - body + 1, 0), max(len(shown) - body, 0))
         for number in range(start, min(start + body, len(shown))):

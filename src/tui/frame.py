@@ -177,5 +177,5 @@ def rule_line(width: int, theme: Theme = DEFAULT_THEME, mode: str = MODE_NORMAL)
 def sticky_line(prompt_text: str, width: int, theme: Theme = DEFAULT_THEME) -> Line:
     """`↳ you: <first line of the prompt>` cut to `width`, shown while a turn runs."""
     first = prompt_text.strip().split("\n", 1)[0]
-    line = (Span(STICKY_PREFIX, theme.dim), Span(first, theme.user))
+    line = (Span(STICKY_PREFIX, theme.muted), Span(first, theme.user))
     return truncate_line(line, width)

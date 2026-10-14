@@ -427,7 +427,7 @@ def status_segments(payload: Any, theme: Theme) -> Line:
         return _line(*spans)
     chip, stage = _repeat_chip(_mapping(data.get("repeat")))
     if chip:
-        tone = theme.error if stage == "approval" else theme.warn if stage == "blocking" else theme.dim
+        tone = theme.error if stage == "approval" else theme.warn if stage == "blocking" else theme.muted
         spans += [Span(" · ", theme.dim), Span(chip, replace(tone, bold=stage != "watching"))]
     activity = _mapping(data.get("activity"))
     if activity.get("live") and activity.get("post_tool_call_observed"):
@@ -438,7 +438,7 @@ def status_segments(payload: Any, theme: Theme) -> Line:
     if yolo.get("status") == "observed":
         enabled = bool(yolo.get("enabled"))
         spans += [
-            Span(" • yolo mode: ", theme.dim),
+            Span(" • yolo mode: ", theme.muted),
             Span("on" if enabled else "off", _bold(theme.warn if enabled else theme.label)),
         ]
     return _line(*spans)
@@ -540,7 +540,7 @@ def _shot_badge(shot: Mapping[str, Any], now: float, theme: Theme) -> Span | Non
     observed = _epoch(shot.get("observed_at"))
     age = elapsed_text(max(0.0, now - observed)) if observed is not None and _finite(now) else ""
     peak = _count(shot.get("peak_open_count"))
-    return Span(f" · parallel shot ×{peak}{f' ({age} ago)' if age else ''}", theme.dim)
+    return Span(f" · parallel shot ×{peak}{f' ({age} ago)' if age else ''}", theme.muted)
 
 
 def _skipped_clause(counts: Mapping[str, Any]) -> str:
@@ -550,7 +550,7 @@ def _skipped_clause(counts: Mapping[str, Any]) -> str:
 
 def _plan_header(plan: _Plan, now: float, theme: Theme) -> Line:
     counts = plan.counts
-    title = Span(f" {plan.title}", theme.dim) if plan.title else None
+    title = Span(f" {plan.title}", theme.muted) if plan.title else None
     badge = _shot_badge(plan.shot, now, theme)
     total = _count(counts.get("total"))
     if plan.status == "all_done":
@@ -560,7 +560,7 @@ def _plan_header(plan: _Plan, now: float, theme: Theme) -> Line:
             title,
             Span(SEPARATOR, theme.rule),
             Span(f"✓ {worked}/{total}", theme.ok),
-            Span(_skipped_clause(counts), theme.dim),
+            Span(_skipped_clause(counts), theme.muted),
             badge,
         )
     phases = _count(counts.get("phases"))
@@ -571,8 +571,8 @@ def _plan_header(plan: _Plan, now: float, theme: Theme) -> Line:
         title,
         Span(SEPARATOR, theme.rule),
         Span(f"{_count(counts.get('done'))}/{total}", theme.warn),
-        Span(_skipped_clause(counts), theme.dim),
-        Span(f" · {phases} phases", theme.dim) if phases > 1 else None,
+        Span(_skipped_clause(counts), theme.muted),
+        Span(f" · {phases} phases", theme.muted) if phases > 1 else None,
         badge,
         Span(pulse, theme.dim),
     )
@@ -587,7 +587,7 @@ def _shimmer(text: str, frame: int, theme: Theme) -> list[Span]:
     head = frame % cycle
     spans: list[Span] = []
     for index, unit in enumerate(units):
-        style = _bold(theme.dim) if (index - head) % cycle < 3 else _bold(theme.ok)
+        style = _bold(theme.muted) if (index - head) % cycle < 3 else _bold(theme.ok)
         if spans and spans[-1].style == style:
             spans[-1] = Span(spans[-1].text + unit, style)
         else:
@@ -604,16 +604,16 @@ def _plan_item(plan: _Plan, item: Mapping[str, Any], indent: str, columns: int, 
     marker = PLAN_MARKERS.get(str(state), "[ ]")
     waiting = Span(f" ({'skipped' if state == 'done' else 'waiting'}: {reason})", theme.warn) if reason else None
     if state != "active":
-        return _line(Span(f"{indent}{marker} {text}", theme.dim if state == "done" else theme.text), waiting)
+        return _line(Span(f"{indent}{marker} {text}", theme.muted if state == "done" else theme.text), waiting)
     style = _bold(theme.ok if plan.live else theme.warn)
     if plan.live:
         return _line(Span(f"{indent}{marker} ", style), *_shimmer(text, frame, theme), waiting)
-    unchanged = Span(f" (unchanged {plan.unchanged})", theme.dim) if plan.unchanged else None
+    unchanged = Span(f" (unchanged {plan.unchanged})", theme.muted) if plan.unchanged else None
     return _line(Span(f"{indent}{marker} {text}", style), waiting, unchanged)
 
 
 def _fold(count: int, side: str, theme: Theme) -> Line:
-    return _line(Span(f"... ({count} {side} task{'' if count == 1 else 's'})", theme.dim))
+    return _line(Span(f"... ({count} {side} task{'' if count == 1 else 's'})", theme.muted))
 
 
 def _plan_lines(
@@ -628,7 +628,7 @@ def _plan_lines(
         lines.append(_fold(start, "earlier", theme))
     for phase, items in _groups(plan.items[start:end]):
         if phase:
-            tone = theme.label if phase == plan.current_phase else theme.dim
+            tone = theme.label if phase == plan.current_phase else theme.muted
             lines.append(_line(Span(truncate(phase, budget), _bold(tone))))
         for item in items:
             indent = "  " * (_depth(item) + (1 if phase else 0))
@@ -742,11 +742,11 @@ def _agents_header(payload: Mapping[str, Any], columns: int, theme: Theme) -> Li
         Span("[Agents]", theme.heading),
         Span(SEPARATOR, theme.rule),
         Span(f"{'[global] ' if outside else ''}{_state_label(active, agents)}", theme.warn if active else theme.ok),
-        Span(board_tally, theme.dim),
+        Span(board_tally, theme.muted),
         Span(" · dispatcher not observed", theme.warn) if board.get("dispatcher_presence") == "not_observed"
         else None,
-        Span(f"{f' • {cost}' if cost else ''}{f' • {ctx}' if ctx else ''}", theme.dim),
-        Span(f" • {tokens}", theme.dim) if columns >= 100 and tokens else None,
+        Span(f"{f' • {cost}' if cost else ''}{f' • {ctx}' if ctx else ''}", theme.muted),
+        Span(f" • {tokens}", theme.muted) if columns >= 100 and tokens else None,
     )
 
 
@@ -815,7 +815,7 @@ def _route_style(kind: str, theme: Theme) -> Style:
         return theme.label
     if kind in ("route-fallback", "maestro"):
         return theme.warn
-    return theme.accent if kind == "kanban" else theme.dim
+    return theme.accent if kind == "kanban" else theme.muted
 
 
 def _row_marker(state: Any, board: bool, spinner: str, theme: Theme) -> tuple[str, Style, Style]:
@@ -828,13 +828,13 @@ def _row_marker(state: Any, board: bool, spinner: str, theme: Theme) -> tuple[st
         return "✓", theme.accent if board else theme.ok, theme.accent if board else theme.ok
     if state == "queued":
         # A queued task has no worker yet, so it must not spin.
-        return "·", theme.accent if board else theme.dim, theme.accent if board else theme.dim
+        return "·", theme.accent if board else theme.dim, theme.accent if board else theme.muted
     return spinner, theme.accent if board else theme.warn, theme.accent if board else theme.ok
 
 
 def _segment_style(kind: str, theme: Theme) -> Style:
     # The cache figure is the one row segment the owner reads in amber.
-    return theme.warn if kind == "cache" else theme.dim
+    return theme.warn if kind == "cache" else theme.muted
 
 
 def _activity_row(
@@ -903,18 +903,18 @@ def _activity_row(
         optional.pop(shed)
     spinner = SPINNER_FRAMES[(frame if running else 0) % len(SPINNER_FRAMES)]
     marker, marker_style, status_style = _row_marker(raw_state, board, spinner, theme)
-    secondary = _faint(theme.accent) if board else theme.dim
+    secondary = _faint(theme.accent) if board else theme.muted
     segments = [Span(f"{ROW_SEPARATOR}{text}", _segment_style(kind, theme)) for kind, text, _ in optional]
     return _line(
         Span(f"{marker} ", marker_style),
-        Span(scope, _bold(theme.accent if board else theme.dim)),
+        Span(scope, _bold(theme.accent if board else theme.muted)),
         Span(f"{_pad('MAIN', 8) if main else task_id} ", secondary),
         Span(_pad(_cut(row.get("action"), action_width), action_width), theme.accent if board else theme.text),
         Span(route_cell, _route_style(route_kind, theme)),
         Span("  "),
         Span(tail_state, status_style),
         Span(f" · {elapsed_cell}", secondary),
-        Span(tail_tokens, Style(fg=theme.status.fg)),
+        Span(tail_tokens, theme.muted),
         *segments,
     )
 
@@ -951,7 +951,7 @@ def _graph_lines(agents: _Agents, visible: int, columns: int, theme: Theme) -> l
         )
         style = (
             theme.warn if stuck else theme.ok if node.get("in_frontier") else theme.error if marker == "[!]"
-            else theme.dim if marker == "[+]" else theme.text
+            else theme.muted if marker == "[+]" else theme.text
         )
         suffix = f" · blocked_by {' + '.join(_safe_text(item) for item in blocked_by)}" if blocked_by else ""
         text = f"  {marker} {_safe_text(node.get('node_id'))} · {state}{f' ({reason})' if reason else ''}{suffix}"
@@ -978,7 +978,7 @@ def _agents_lines(
         lines.append(_activity_row(row, index < agents.main_count, grid, columns, frame, extra_seconds, theme))
     hidden = _hidden_rows(agents, layout.rows_shown)
     if shown and hidden:
-        lines.append(_line(Span(f"  +{hidden} more", theme.dim)))
+        lines.append(_line(Span(f"  +{hidden} more", theme.muted)))
     return lines
 
 
@@ -1048,7 +1048,7 @@ def _shed(layout: _Layout, plan: _Plan | None, agents: _Agents | None) -> bool:
 
 
 def _notice(payload: Mapping[str, Any], theme: Theme) -> Line:
-    return _line(Span(f"⚚ OMH HUD unavailable: {_safe_text(payload.get('error')) or 'reader error'}", theme.dim))
+    return _line(Span(f"⚚ OMH HUD unavailable: {_safe_text(payload.get('error')) or 'reader error'}", theme.muted))
 
 
 def panel_lines(

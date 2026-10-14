@@ -153,6 +153,24 @@ class EscapeSequenceTests(unittest.TestCase):
         self.assertEqual(decode(b"\x1bOP"), [Key("unknown")])  # F1: not bound
         self.assertEqual(decode(b"\x1b[201~"), [Key("unknown")])  # a paste end with no start
 
+    def test_an_osc_string_the_terminal_sends_is_one_unknown_key(self) -> None:
+        # A background answer (OSC 11) that arrives after the startup query stopped waiting types nothing.
+        for reply in (b"\x1b]11;rgb:ffff/ffff/ffff\x07", b"\x1b]11;rgb:1e1e/1e1e/1e1e\x1b\\"):
+            with self.subTest(reply=reply):
+                self.assertEqual(decode(reply + b"ab"), [Key("unknown"), char("a"), char("b")])
+                whole = decode(reply)
+                for cut in range(2, len(reply)):  # split after its ESC it is Esc and keys (`EscapeWaitTests`)
+                    decoder = KeyDecoder()
+                    events = decoder.feed(reply[:cut]) + decoder.feed(reply[cut:]) + decoder.flush()
+                    self.assertEqual(events, whole, f"split at byte {cut}")
+
+    def test_an_osc_string_that_never_ends_is_dropped_whole(self) -> None:
+        self.assertEqual(decode(b"\x1b]11;rgb:ff"), [Key("unknown")])
+        events = decode(b"\x1b]" + b"1" * 600 + b"\x07x")
+        self.assertEqual(events[0], Key("unknown"))
+        self.assertEqual(events[-1], char("x"))
+        self.assertLess(len(events), 600)  # cut off at its bound, not one key per byte
+
     def test_a_broken_sequence_hands_its_breaking_byte_on(self) -> None:
         self.assertEqual(decode(b"\x1b[1\x03"), [Key("unknown"), char("c", ctrl=True)])
 

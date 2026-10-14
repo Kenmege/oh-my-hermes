@@ -1,6 +1,6 @@
 """The OMH TUI's colours, by role, from the same palettes `omh theme` ships.
 
-Every renderer asks for a role (`theme.dim`, `theme.tool`, `theme.diff_add`,
+Every renderer asks for a role (`theme.muted`, `theme.tool`, `theme.diff_add`,
 `theme.syntax_keyword`) instead of a colour, so a palette change is one lookup
 and no renderer knows a hex value. The palettes are the shipped skin files
 read through `skin_pack.skin_colors`; a key a palette lacks falls back to the
@@ -8,14 +8,21 @@ default palette's value, so a partial skin still paints every role. Keywords
 are bold and comments italic as well as coloured, so the `mono` palette, whose
 keyword and text colours nearly match, still tells them apart.
 
-Three roles are measured rather than looked up. Words a person is meant to
-read off the chrome (`hint`: the mode row, the empty composer's placeholder)
-reach WCAG's 4.5:1 text contrast against the palette's status-bar
-background, a stand-in for the dark terminal behind the TUI; secondary facts
-(`muted`) and the composer rule reach the 3:1 a graphical edge needs. Each
-starts from the palette's own colour (`banner_dim`, `input_rule`) and only
-moves toward `banner_text` as far as that takes, so a palette that already
-clears the bar keeps its colour. `dim` stays for decoration glyphs.
+The terminal's background decides the rest. Body text (`text`, the user's
+prompt mark, the reply) has no colour of its own: it is the terminal's
+default foreground, which is readable on whatever background the person
+chose. Every other role is measured against that background
+(`build_theme(skin, background)`: the colour the terminal reported, or the
+palette's status-bar background, the dark stand-in, when it reported none).
+A role a person reads as text reaches WCAG's 4.5:1 (`TEXT_ROLES`); a role
+drawn only as a glyph or an edge (`dim`, the composer rule and prompt mark)
+reaches the 3:1 a graphical mark needs. Each starts from the palette's own
+colour and only moves toward the ink (the palette's `banner_text` on a dark
+background, black on a light one) as far as that takes, so a palette that
+already clears the background keeps its colour. On a light background the
+diff bands are tints of the palette's word colours over the background, so
+the default foreground stays readable on them. `dim` is for decoration
+glyphs; words go on `muted` or `hint`.
 """
 
 from __future__ import annotations
@@ -28,6 +35,22 @@ from .style import Style
 TEXT_CONTRAST = 4.5  # WCAG 2 body text
 EDGE_CONTRAST = 3.0  # WCAG 2 non-text: a rule, an edge, a secondary mark
 _LIFT_STEPS = 20
+BLACK = "#000000"
+WHITE = "#FFFFFF"
+# The background a forced light theme is measured against when the terminal reported none that is light.
+LIGHT_STAND_IN = WHITE
+# How far a light background's diff tint moves from the word colour toward the background: the line band and the
+# word band inside it.
+LIGHT_BAND_SHARE = 0.82
+LIGHT_WORD_BAND_SHARE = 0.62
+# The roles a person reads as text: each reaches TEXT_CONTRAST against the background. `text` and `user` are not
+# here because they are the terminal's own foreground.
+TEXT_ROLES = (
+    "accent", "label", "ok", "warn", "error", "tool", "thinking", "heading", "code", "link", "quote",
+    "syntax_keyword", "syntax_string", "syntax_number", "syntax_comment", "hint", "muted", "mode_accept", "mode_plan",
+)
+# The roles drawn only as a glyph or an edge: each reaches EDGE_CONTRAST.
+GLYPH_ROLES = ("dim", "rule", "prompt")
 
 
 @dataclass(frozen=True)
@@ -107,36 +130,71 @@ def _palette(skin: SkinTheme) -> dict[str, str]:
     return {**base, **skin_colors(skin.skin_name)}
 
 
-def build_theme(skin: SkinTheme) -> Theme:
-    """Map one shipped palette onto the TUI's roles."""
+def is_light(background: str) -> bool:
+    """Whether dark text reads better than light text on `background` (`#rrggbb`)."""
+    return contrast_ratio(background, BLACK) > contrast_ratio(background, WHITE)
+
+
+def surface_for(skin: SkinTheme, background: str | None) -> str:
+    """What the roles are measured against: `background` when it is a plain hex, else the palette's status-bar background."""
+    return background if background and hex_to_rgb(background) else _palette(skin)["status_bar_bg"]
+
+
+def lifted_colour(colour: str, surface: str, minimum: float, ink: str) -> str:
+    """`colour` moved toward `ink` only as far as reaching `minimum` against `surface` takes."""
+    return _lifted(colour, ink, surface, minimum)
+
+
+def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
+    """Map one shipped palette onto the TUI's roles, measured against `background` (see the module docstring)."""
     c = _palette(skin)
     status_bg = c["status_bar_bg"]
+    surface = surface_for(skin, background)
+    light = is_light(surface)
+    ink = BLACK if light else c["banner_text"]
+
+    def read(key: str) -> str:
+        return _lifted(c[key], ink, surface, TEXT_CONTRAST)
+
+    def mark(key: str) -> str:
+        return _lifted(c[key], ink, surface, EDGE_CONTRAST)
+
+    if light:
+        diff_add = Style(bg=_mix(c["diff_added_word"], surface, LIGHT_BAND_SHARE))
+        diff_add_word = Style(bg=_mix(c["diff_added_word"], surface, LIGHT_WORD_BAND_SHARE), bold=True)
+        diff_remove = Style(bg=_mix(c["diff_removed_word"], surface, LIGHT_BAND_SHARE))
+        diff_remove_word = Style(bg=_mix(c["diff_removed_word"], surface, LIGHT_WORD_BAND_SHARE), bold=True)
+    else:
+        diff_add = Style(bg=c["diff_added"])
+        diff_add_word = Style(fg=c["diff_added_word"], bg=c["diff_added"])
+        diff_remove = Style(bg=c["diff_removed"])
+        diff_remove_word = Style(fg=c["diff_removed_word"], bg=c["diff_removed"])
     return Theme(
         name=skin.short_name,
-        text=Style(fg=c["banner_text"]),
-        dim=Style(fg=c["banner_dim"]),
-        accent=Style(fg=c["ui_accent"]),
-        label=Style(fg=c["ui_label"]),
-        ok=Style(fg=c["ui_ok"]),
-        warn=Style(fg=c["ui_warn"]),
-        error=Style(fg=c["ui_error"]),
-        tool=Style(fg=c["ui_tool"]),
-        thinking=Style(fg=c["ui_thinking"], italic=True),
-        rule=Style(fg=_lifted(c["input_rule"], c["banner_text"], status_bg, EDGE_CONTRAST)),
-        prompt=Style(fg=c["prompt"], bold=True),
-        user=Style(fg=c["session_label"], bold=True),
-        heading=Style(fg=c["banner_title"], bold=True),
-        code=Style(fg=c["syntax_string"]),
-        link=Style(fg=c["ui_label"], underline=True),
-        quote=Style(fg=c["syntax_comment"], italic=True),
-        diff_add=Style(bg=c["diff_added"]),
-        diff_add_word=Style(fg=c["diff_added_word"], bg=c["diff_added"]),
-        diff_remove=Style(bg=c["diff_removed"]),
-        diff_remove_word=Style(fg=c["diff_removed_word"], bg=c["diff_removed"]),
-        syntax_keyword=Style(fg=c["syntax_keyword"], bold=True),
-        syntax_string=Style(fg=c["syntax_string"]),
-        syntax_number=Style(fg=c["syntax_number"]),
-        syntax_comment=Style(fg=c["syntax_comment"], italic=True),
+        text=Style(),
+        dim=Style(fg=mark("banner_dim")),
+        accent=Style(fg=read("ui_accent")),
+        label=Style(fg=read("ui_label")),
+        ok=Style(fg=read("ui_ok")),
+        warn=Style(fg=read("ui_warn")),
+        error=Style(fg=read("ui_error")),
+        tool=Style(fg=read("ui_tool")),
+        thinking=Style(fg=read("ui_thinking"), italic=True),
+        rule=Style(fg=mark("input_rule")),
+        prompt=Style(fg=mark("prompt"), bold=True),
+        user=Style(bold=True),
+        heading=Style(fg=read("banner_title"), bold=True),
+        code=Style(fg=read("syntax_string")),
+        link=Style(fg=read("ui_label"), underline=True),
+        quote=Style(fg=read("syntax_comment"), italic=True),
+        diff_add=diff_add,
+        diff_add_word=diff_add_word,
+        diff_remove=diff_remove,
+        diff_remove_word=diff_remove_word,
+        syntax_keyword=Style(fg=read("syntax_keyword"), bold=True),
+        syntax_string=Style(fg=read("syntax_string")),
+        syntax_number=Style(fg=read("syntax_number")),
+        syntax_comment=Style(fg=read("syntax_comment"), italic=True),
         status=Style(fg=c["status_bar_text"], bg=status_bg),
         status_dim=Style(fg=c["status_bar_dim"], bg=status_bg),
         status_good=Style(fg=c["status_bar_good"], bg=status_bg),
@@ -144,17 +202,17 @@ def build_theme(skin: SkinTheme) -> Theme:
         status_bad=Style(fg=c["status_bar_critical"], bg=status_bg),
         menu=Style(fg=c["banner_text"], bg=c["completion_menu_bg"]),
         menu_current=Style(fg=c["banner_text"], bg=c["completion_menu_current_bg"], bold=True),
-        hint=Style(fg=_lifted(c["banner_dim"], c["banner_text"], status_bg, TEXT_CONTRAST)),
-        muted=Style(fg=_lifted(c["banner_dim"], c["banner_text"], status_bg, EDGE_CONTRAST)),
-        mode_accept=Style(fg=c["ui_warn"]),
-        mode_plan=Style(fg=c["ui_ok"]),
+        hint=Style(fg=read("banner_dim")),
+        muted=Style(fg=read("banner_dim")),
+        mode_accept=Style(fg=read("ui_warn")),
+        mode_plan=Style(fg=read("ui_ok")),
     )
 
 
-def theme_named(value: str) -> Theme:
-    """The theme for a short name (`amber`) or skin name (`omh-amber`); the default for anything else."""
+def theme_named(value: str, background: str | None = None) -> Theme:
+    """The theme for a short name (`amber`) or skin name (`omh-amber`), the default for anything else, against `background`."""
     skin = theme_for_name(value) or theme_for_skin_name(value) or default_theme()
-    return build_theme(skin)
+    return build_theme(skin, background)
 
 
 DEFAULT_THEME = build_theme(default_theme())

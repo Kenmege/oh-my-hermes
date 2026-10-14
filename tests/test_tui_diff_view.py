@@ -103,12 +103,12 @@ class RowTests(unittest.TestCase):
             [
                 (indent, Span("src/app.py", THEME.label)),
                 # the hunk header is no row: its starts number the lines in the dim gutter
-                (Span("  1 ", THEME.dim), Span(" import os", THEME.code)),
-                (Span("  2 ", THEME.dim), Span("-print('hello')" + " " * 21, THEME.diff_remove)),
-                (Span("  2 ", THEME.dim), Span(f"+print('안녕 {EARTH}')" + " " * 19, THEME.diff_add)),  # 17 cells
-                (indent, Span("\\ No newline at end of file", THEME.dim)),
-                (indent, Span("… omitted 12 diff line(s) across 1", THEME.dim)),
-                (indent, Span("additional file(s)/section(s)", THEME.dim)),
+                (Span("  1 ", THEME.muted), Span(" import os", THEME.code)),
+                (Span("  2 ", THEME.muted), Span("-print('hello')" + " " * 21, THEME.diff_remove)),
+                (Span("  2 ", THEME.muted), Span(f"+print('안녕 {EARTH}')" + " " * 19, THEME.diff_add)),  # 17 cells
+                (indent, Span("\\ No newline at end of file", THEME.muted)),
+                (indent, Span("… omitted 12 diff line(s) across 1", THEME.muted)),
+                (indent, Span("additional file(s)/section(s)", THEME.muted)),
             ],
         )
 
@@ -148,7 +148,7 @@ class RowTests(unittest.TestCase):
         self.assertEqual(rows[6], (Span("  ⋮", THEME.dim),))
         # every numbered row's text starts where the indent ends; a band runs from there to the edge
         for row in rows[1:6] + rows[7:]:
-            self.assertEqual((line_width(row[:1]), row[0].style), (4, THEME.dim))
+            self.assertEqual((line_width(row[:1]), row[0].style), (4, THEME.muted))
         for row in (rows[2], rows[3], rows[4], rows[7], rows[8]):
             self.assertEqual(line_width(row), 20)
             self.assertIn(row[1].style, (THEME.diff_add, THEME.diff_remove))
@@ -168,7 +168,7 @@ class RowTests(unittest.TestCase):
         # the file row, the 22 added lines the preview reaches (its hunk header is the gutter), the count
         self.assertEqual(len(rows), 1 + 22 + 1)
         self.assertEqual(lines_text(rows)[22].rstrip(), " 22 +line 22")
-        self.assertEqual(rows[-1], (Span("    "), Span("… +6 lines (/history shows all)", THEME.dim)))
+        self.assertEqual(rows[-1], (Span("    "), Span("… +6 lines (/history shows all)", THEME.muted)))
         full = diff_rows(lines, 60, THEME, full=True)
         self.assertEqual(len(full), 1 + 28)
         self.assertEqual(lines_text(full)[-1].rstrip(), " 28 +line 28")

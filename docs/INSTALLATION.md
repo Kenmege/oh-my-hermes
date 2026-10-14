@@ -551,6 +551,16 @@ fallback marker at the path `omh` named, which `omh` removes.
 
 The OMH TUI opens with the theme `omh theme use` saved under the OMH home
 (see [TUI Themes](#tui-themes)); `/theme <name>` switches the open session only.
+Before its first frame it asks the terminal for its background colour (OSC 11,
+waiting at most 0.1 s; a terminal that does not answer can still say light or
+dark through `COLORFGBG`) and measures the theme against it: your prompts and
+the replies are in the terminal's own text colour, every other colour a word is
+drawn in reaches 4.5:1 contrast on that background and every rule or mark 3:1,
+and on a light background the diff bands are light tints. With no answer the
+background is taken as dark. `/theme light` and `/theme dark` measure against a
+light or a dark background whatever the terminal said, `/theme auto` follows
+the terminal again, and each, like `/theme <name>`, redraws the screen in the
+new colours.
 With `omh --profile <name>` and no `--omh-home`, the OMH home the TUI gets is
 the store that profile's config names in
 `plugins.entries.omh.settings.omh_home`, when it names one, so it opens with
@@ -1701,7 +1711,9 @@ Rules worth knowing:
   else `sky`. `omh theme status` says which of the three decided, and the
   `omh model-chains` picker paints with the same theme. `/theme <name>`
   inside the OMH TUI switches the open session only; `omh theme use` keeps
-  it.
+  it. The palette is measured against the terminal's background as the
+  session opens, and `/theme auto|light|dark` chooses that background for
+  the open session (see [The OMH TUI](#the-omh-tui)).
 - **Bare `hermes` keeps its own skin.** `display.skin` is yours; OMH reads it
   only for the fallback above and never writes it.
 

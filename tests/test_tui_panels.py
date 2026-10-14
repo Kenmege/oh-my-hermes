@@ -143,10 +143,10 @@ class PanelEmptyAndErrorTests(unittest.TestCase):
         foreign = dict(payload, privacy="raw")
         self.assertEqual(panel_lines(with_agents(foreign, [agent_row(0)]), 80, 10, THEME, 0.0), [])
 
-    def test_a_reader_failure_is_one_dim_notice(self) -> None:
+    def test_a_reader_failure_is_one_muted_notice(self) -> None:
         lines = panel_lines({"error": "OperationalError"}, 80, 5, THEME, 0.0)
         self.assertEqual(lines_text(lines), ["⚚ OMH HUD unavailable: OperationalError"])
-        self.assertEqual(lines[0][0].style, THEME.dim)
+        self.assertEqual(lines[0][0].style, THEME.muted)
         self.assertEqual(panel_lines({"error": "OperationalError"}, 80, 0, THEME, 0.0), [])
 
 
@@ -210,7 +210,7 @@ class PlanBlockTests(unittest.TestCase):
         lines = panel_lines(history, 120, 10, THEME, now)
         self.assertIn(" · parallel shot ×2 (5s ago)", line_text(lines[0]))
         badge = next(span for span in lines[0] if "parallel shot" in span.text)
-        self.assertEqual(badge.style, THEME.dim)
+        self.assertEqual(badge.style, THEME.muted)
 
     def test_an_active_item_moves_only_while_work_is_live(self) -> None:
         payload = hud_payload(phased_plan(3, phases=1, active=1))

@@ -125,6 +125,9 @@ class ScriptedTerminal:
         self.exited_at = 0.0
         self.mouse_reporting = False
         self.mouse_calls: list[bool] = []  # every `set_mouse` that changed the state, in order
+        self.background: str | None = None  # what the background query answers
+        self.typed_during_query = b""  # input the query read while it waited
+        self.background_queries = 0
         self._resized = False
         self._quiet = False
 
@@ -143,6 +146,10 @@ class ScriptedTerminal:
 
     def size(self) -> tuple[int, int]:
         return (self.screen.cols, self.screen.rows)
+
+    def query_background(self) -> tuple[str | None, bytes]:
+        self.background_queries += 1
+        return self.background, self.typed_during_query
 
     def resized(self) -> bool:
         resized, self._resized = self._resized, False
@@ -200,6 +207,13 @@ class ScriptedTerminal:
 
     def shows(self, needle: str) -> Callable[[], bool]:
         return lambda: needle in "\n".join(self.screen.lines())
+
+    def prompt_foreground(self) -> tuple[int, ...]:
+        """The colour of the composer's `›`, read off the screen."""
+        row = next(index for index, line in enumerate(self.screen.lines()) if line.startswith("› "))
+        attrs = self.screen.attrs_at(row, 0)
+        start = attrs.index(38)
+        return tuple(attrs[start + 2 : start + 5])
 
     def status_background(self) -> tuple[int, ...]:
         row = next(index for index, line in enumerate(self.screen.lines()) if STATUS_MARK in line)
@@ -1574,6 +1588,64 @@ class LocalCommandTests(AppTestCase):
         self.assertIn("model list prefetched", pager)
         self.assertIn("gateway stderr (memory only)", pager)
         self.assertEqual(run.calls("slash.exec"), [])
+
+    def test_the_theme_is_measured_against_the_background_the_terminal_reports(self) -> None:
+        for background, env, expected in (
+            ("#FFFFFF", {}, "#FFFFFF"),
+            (None, {"COLORFGBG": "0;15"}, "#FFFFFF"),
+            (None, {}, None),
+            ("#1E1E1E", {"COLORFGBG": "0;15"}, "#1E1E1E"),  # an answer outranks the variable
+        ):
+            with self.subTest(background=background, env=env):
+                run = self.prepare(
+                    Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), env=env
+                )
+                run.terminal.background = background
+                seen: list[str | None] = []
+                run.terminal.script(
+                    Step(b"\x04", when=lambda run=run, seen=seen: run.terminal.idle() and not seen.append(
+                        run.terminal.prompt_foreground()), label="the first frame")
+                )
+                self.run_main(run)
+                self.assert_clean_run(run)
+                self.assertEqual(run.terminal.background_queries, 1)
+                prompt = theme_named("sky", expected).prompt.fg
+                self.assertEqual(seen[-1], hex_to_rgb(prompt))
+
+    def test_keys_typed_while_the_background_query_waited_reach_the_composer(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.terminal.typed_during_query = b"hi"
+        run.terminal.script(Step(b"\x15\x04", when=run.terminal.shows("› hi"), label="the early keys"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+
+    def test_theme_light_dark_and_auto_choose_the_background_the_roles_are_measured_against(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        terminal = run.terminal
+        seen: dict[str, tuple[int, ...]] = {}
+
+        def note(name: str, needle: str) -> Callable[[], bool]:
+            def ready() -> bool:
+                if terminal.idle() and needle in terminal.history():
+                    seen[name] = terminal.prompt_foreground()
+                    return True
+                return False
+            return ready
+
+        terminal.script(
+            self.submit(run, "/theme light"),
+            Step(b"/theme amber\r", when=note("light", "on a light background"), label="light"),
+            Step(b"/theme dark\r", when=note("amber", "Theme amber"), label="amber"),
+            Step(b"/theme auto\r", when=note("dark", "on a dark background"), label="dark"),
+            Step(b"/theme\r", when=note("auto", "follows the terminal"), label="auto"),
+            Step(b"\x04", when=terminal.shows("picks the background it is measured"), label="the summary"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual(seen["light"], hex_to_rgb(theme_named("sky", "#FFFFFF").prompt.fg))
+        self.assertEqual(seen["amber"], hex_to_rgb(theme_named("amber", "#FFFFFF").prompt.fg))  # the mode stays
+        self.assertEqual(seen["dark"], hex_to_rgb(theme_named("amber").prompt.fg))
+        self.assertEqual(seen["auto"], hex_to_rgb(theme_named("amber").prompt.fg))  # nothing reported: dark stand-in
 
     def test_theme_switches_for_a_known_name_and_names_the_choices_for_an_unknown_one(self) -> None:
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))

@@ -115,7 +115,7 @@ class FenceTests(unittest.TestCase):
         rows = render("```python\nx = *a* `b` [c](d)\n```")
         self.assertEqual(lines_text(rows), ["python", "x = *a* `b` [c](d)"])
         self.assertEqual(rows[1], (Span("x = *a* `b` [c](d)", THEME.text),))
-        self.assertEqual(rows[0], (Span("python", THEME.dim),))
+        self.assertEqual(rows[0], (Span("python", THEME.muted),))
         self.assertEqual(render("```\nx = *a*\n```"), [(Span("x = *a*", THEME.code),)])
 
     def test_fence_markers_are_never_painted(self) -> None:
@@ -150,7 +150,7 @@ class FenceTests(unittest.TestCase):
     def test_diff_lines_get_full_row_bands(self) -> None:
         rows = render("```diff\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old\n+new\n ctx\n```", width=20)
         self.assertEqual(len(rows), 7)
-        self.assertEqual(rows[0], (Span("diff", THEME.dim),))
+        self.assertEqual(rows[0], (Span("diff", THEME.muted),))
         self.assertEqual(rows[1], (Span("--- a/f", THEME.label),))
         self.assertEqual(rows[2], (Span("+++ b/f", THEME.label),))
         self.assertEqual(rows[3], (Span("@@ -1 +1 @@", THEME.accent),))
@@ -201,7 +201,7 @@ class InlineTests(unittest.TestCase):
         row = render("see [docs](https://example.com).")[0]
         self.assertEqual(lines_text([row]), ["see docs (https://example.com)."])
         self.assertEqual(span_with(row, "docs").style, THEME.link)
-        self.assertEqual(span_with(row, " (https://example.com)").style, THEME.dim)
+        self.assertEqual(span_with(row, " (https://example.com)").style, THEME.muted)
 
     def test_escapes_and_unclosed_markers_are_literal(self) -> None:
         self.assertEqual(lines_text(render("\\*not\\* `open **bold [x](")), ["*not* `open **bold [x]("])
