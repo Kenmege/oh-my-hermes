@@ -1559,7 +1559,7 @@ uses:
 | A value consent replaced | you had `display.interface: cli`, OMH wrote `tui` | `cli` put back |
 | A recorded value you changed since | `display.interface: cli` after OMH wrote `tui`; `tools: expanded` | kept |
 | An OMH skin, with or without a record (`omh theme use` set one without one) | `display.skin: omh-crimson` | `crimson` saved to `<omh_home>/tui/theme.json` (unless a theme is already saved there, which the output then names), then the key removed |
-| The default skin setup wrote by itself (the record names it) | `display.skin: omh` | removed; no theme is saved, since nobody picked it |
+| The default skin, with or without a record | `display.skin: omh` | removed; no theme is saved: an empty store opens with the same sky, and a saved one would beat a theme a bot profile sharing the store picked |
 | A display key with no record (an install older than the record) | `display.interface: tui`, collapsed sections | kept: nothing says OMH wrote them |
 | Your own skin | `display.skin: ares` | kept |
 | A key OMH's record names, or a skin with an OMH name, in a YAML shape the editor does not handle (a quoted key or an anchor anywhere in the file, a flow or duplicate `display`, a dotted key, a tag, a BOM) | `display.skin: !!str omh-crimson` | left as it is and named in the output; the release is not recorded, so the next setup or update tries again |

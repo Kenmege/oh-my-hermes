@@ -126,6 +126,7 @@ from ..release import (
 from ..skin_pack import (
     SkinInstallError,
     available_skins,
+    default_theme,
     read_theme_choice,
     theme_for_skin_name,
     theme_store_path,
@@ -2040,11 +2041,10 @@ def _carry_theme_choice(
 
     Only on a pass that releases the display keys: after the release, an
     `omh*` skin in the config is the person's Hermes choice, not a theme OMH
-    set. Not the skin the record says OMH itself wrote either: setup wrote
-    `omh` as a default nobody picked, and saving it would make sky a choice,
-    one that wins over a theme a bot profile sharing this store did pick
-    (`omh theme use` wrote `display.skin` and left the record alone, so a
-    picked theme reads as different from the record).
+    set. Never the default theme (`omh`, sky), with or without a record:
+    setup wrote it as a default nobody picked, an empty store already opens
+    with it, and saving it would make sky a choice that wins over a theme a
+    bot profile sharing this store did pick.
 
     A theme already saved wins: `omh theme use` saved it, and that command
     writes only the store, or another home sharing the store carried its
@@ -2058,15 +2058,13 @@ def _carry_theme_choice(
     while the registration keys the same pass carries still land.
     """
     owned = load_managed_config_writes(previous_writes, config_path=paths.hermes_config_path)
-    keys = owned.get("keys") if isinstance(owned.get("keys"), dict) else {}
-    current = display_skin_selection(read_config(paths.hermes_config_path))
-    theme = theme_for_skin_name(current)
+    theme = theme_for_skin_name(display_skin_selection(read_config(paths.hermes_config_path)))
     result: dict[str, object] = {
         "status": "none",
         "theme": "",
         "path": str(theme_store_path(theme_home)) if theme_home is not None else "",
     }
-    if owned.get(DISPLAY_RELEASED_FIELD) or theme is None or current == keys.get(DISPLAY_SKIN_KEY):  # type: ignore[union-attr]
+    if owned.get(DISPLAY_RELEASED_FIELD) or theme is None or theme == default_theme():
         return result
     result["theme"] = theme.short_name
     if theme_home is None:

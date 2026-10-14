@@ -627,6 +627,27 @@ class ProfileReleaseTests(unittest.TestCase):
             self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("amber"))
             self.assertEqual(read_theme_choice(split_store), theme_for_name("crimson"))
 
+    def test_a_default_skin_without_a_record_does_not_beat_a_profiles_pick(self) -> None:
+        # Installs older than the record carry no attribution at all, and
+        # their `omh` is still the default nobody picked: saving it as sky
+        # first would block the shared profile's amber.
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            shared = home.hermes_home / "profiles" / "shared"
+            shared.mkdir(parents=True)
+            home.legacy_install()
+            home.brand(shared / "config.yaml", skin="omh-amber")
+            state = json.loads(home.state_path.read_text(encoding="utf-8"))
+            del state[MANAGED_CONFIG_WRITES_STATE_KEY]
+            home.state_path.write_text(json.dumps(state), encoding="utf-8", newline="")
+
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("amber"))
+            self.assertNotIn("kept the saved OMH theme", stdout)
+            self.assertNotIn("skin:", home.config.read_text(encoding="utf-8"))
+
     def test_two_picks_in_one_store_keep_the_first_and_name_the_other(self) -> None:
         with TemporaryDirectory() as tmp:
             home = _Home(Path(tmp))
