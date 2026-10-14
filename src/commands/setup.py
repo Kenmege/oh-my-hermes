@@ -818,6 +818,11 @@ def _display_release_lines(label: str, release: object) -> list[str]:
         details.append(
             f"saved OMH theme {theme.get('theme')} for the OMH TUI; `omh theme use <name>` changes it"  # type: ignore[union-attr]
         )
+    elif theme.get("status") == "failed":  # type: ignore[union-attr]
+        details.append(
+            f"could not save OMH theme {theme.get('theme')} to {theme.get('path')} ({theme.get('reason')}); "  # type: ignore[union-attr]
+            "the display keys and files stay until the next `omh setup` or `omh update` can save it"
+        )
     elif theme.get("status") == "kept_saved":  # type: ignore[union-attr]
         details.append(
             f"kept the saved OMH theme {theme.get('saved')} over {theme.get('theme')}, which display.skin named"  # type: ignore[union-attr]
@@ -826,7 +831,7 @@ def _display_release_lines(label: str, release: object) -> list[str]:
         return []
     header = (
         f"{label}: some display keys OMH wrote are still in Hermes' config; bare `omh` opens the OMH TUI."
-        if refused
+        if refused or theme.get("status") == "failed"  # type: ignore[union-attr]
         else f"{label}: bare `hermes` opens stock Hermes; bare `omh` opens the OMH TUI."
     )
     return [header, *(f"  {line}" for line in details)]
@@ -2021,8 +2026,12 @@ def _carry_theme_choice(
     writes only the store, or another home sharing the store carried its
     own earlier on this run, and one store holds one theme. When it differs
     from this home's skin, the result names both (`kept_saved`) so the
-    output can say which one the OMH TUI opens with. Runs before the config
-    write, so a store that cannot be written leaves `display.skin` in place.
+    output can say which one the OMH TUI opens with.
+
+    Runs before the config write. A store that cannot be written is
+    `failed`, never raised: the caller then holds the whole display release
+    for that pass, so `display.skin` does not go with its theme unsaved,
+    while the registration keys the same pass carries still land.
     """
     owned = load_managed_config_writes(previous_writes, config_path=paths.hermes_config_path)
     keys = owned.get("keys") if isinstance(owned.get("keys"), dict) else {}
@@ -2042,10 +2051,9 @@ def _carry_theme_choice(
         try:
             write_theme_choice(theme_home, theme)
         except OSError as exc:
-            raise OmhError(
-                f"could not save the OMH theme {theme.short_name} to {theme_store_path(theme_home)}: {exc}; "
-                "the Hermes display keys were left in place"
-            ) from exc
+            result["status"] = "failed"
+            result["reason"] = str(exc)
+            return result
         result["status"] = "saved"
     return result
 
@@ -2161,6 +2169,9 @@ def _apply_result(
     theme = _carry_theme_choice(
         paths, previous_writes, theme_home=theme_home or paths.omh_home, dry_run=bool(args.dry_run)
     )
+    # The theme store could not take the theme `display.skin` names, so this
+    # pass leaves every display key and file where it is; the next one retries.
+    release_waits = theme["status"] == "failed"
     display_rows: list[dict[str, str]] = []
 
     def _apply(config_text: str) -> ConfigChange:
@@ -2180,9 +2191,12 @@ def _apply_result(
         # and bare `hermes` is Hermes' own terminal. This takes back the ones
         # earlier versions wrote, once per config; everything else in this
         # pass keeps OMH working inside Hermes.
-        display_release, rows = release_managed_display(
-            plugin_enable.text, previous_writes, config_path=paths.hermes_config_path
-        )
+        if release_waits:
+            display_release, rows = ConfigChange(False, "the OMH theme could not be saved", plugin_enable.text), []
+        else:
+            display_release, rows = release_managed_display(
+                plugin_enable.text, previous_writes, config_path=paths.hermes_config_path
+            )
         display_rows = [row.as_dict() for row in rows]
         # Same reasoning one layer down. OMH's memory provider ships inside the
         # bundle, and a provider Hermes never selects is a provider that never
@@ -2245,21 +2259,22 @@ def _apply_result(
     # be left behind (#1725).
     # A key the editor refused for its shape may still be OMH's, so it stays
     # in the record and the release is not recorded: the next pass asks again.
-    refused = {row["key"] for row in display_rows if row["status"] == "refused"}
+    # A release held for the theme store keeps every display key the same way.
+    held = set(DISPLAY_KEYS) if release_waits else {row["key"] for row in display_rows if row["status"] == "refused"}
     config_writes = managed_config_writes(
         current,
         plugin_omh_home.text,
         config_path=paths.hermes_config_path,
         previous=previous_writes,
         released=(
-            *(key for key in DISPLAY_KEYS if key not in refused),
+            *(key for key in DISPLAY_KEYS if key not in held),
             *((PLUGIN_OMH_HOME_KEY,) if reclaimed else ()),
         ),
-        display_released=not refused,
+        display_released=not held,
     )
     # After the config, never before, and keeping the skin the config still
     # names: removing it would leave Hermes pointing at nothing.
-    legacy_files = _remove_legacy_display_files(
+    legacy_files = {} if release_waits else _remove_legacy_display_files(
         paths,
         dry_run=bool(args.dry_run),
         config_text=plugin_omh_home.text,
@@ -2305,7 +2320,7 @@ def _apply_result(
             "changed": display_release.changed,
             "message": display_release.message,
             # True on the one pass that records `display_released_at`.
-            "recorded": not already_released and not refused,
+            "recorded": not already_released and not held,
             "keys": display_rows,
             "theme": theme,
             "files": legacy_files,

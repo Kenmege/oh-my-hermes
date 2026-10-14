@@ -1568,7 +1568,10 @@ The theme for a bot profile whose `plugins.entries.omh.settings.omh_home`
 names its own store is saved there; one that names none shares the primary
 home's store. One store holds one theme, so the first home on the run that
 carries one keeps it (the primary goes first) and the output names any
-other home's skin it did not carry.
+other home's skin it did not carry. When the theme cannot be saved (the
+store is not writable), that home's release waits: its display keys and
+files stay, the output says why, and the next setup or update tries again,
+while the rest of the pass, registration included, lands as usual.
 
 It happens once, on the first pass that leaves no key in a shape the editor
 refused. That pass records `display_released_at` beside the write record in

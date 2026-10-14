@@ -392,6 +392,42 @@ class UpdateReleaseTests(unittest.TestCase):
                 self.assertEqual(_omh_skin_files(home.hermes_home), ["omh-amber.yaml", "omh-crimson.yaml"])
                 self.assertEqual(home.config.read_text(encoding="utf-8"), chosen)
 
+    def test_a_theme_store_it_cannot_write_holds_only_the_release(self) -> None:
+        # The failure used to raise out of the whole registration pass, and
+        # update swallowed it, so plugin enablement and the memory provider
+        # were silently not carried either.
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install(skin="omh-crimson")
+            (home.omh_home / "tui").write_text("not a directory\n", encoding="utf-8")
+            home.config.write_text(
+                home.config.read_text(encoding="utf-8")
+                .replace("plugins:\n  enabled:\n    - omh\n", "plugins:\n")
+                .replace("memory:\n  provider: omh\n", ""),
+                encoding="utf-8",
+                newline="",
+            )
+
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            config_text = home.config.read_text(encoding="utf-8")
+            _assert_every_managed_key_landed(self, home, config_text)
+            self.assertIn("  skin: omh-crimson\n", config_text)
+            self.assertIn("  interface: tui\n", config_text)
+            self.assertNotIn("display_released_at", home.record())
+            self.assertEqual(len(_omh_skin_files(home.hermes_home)), len(SKIN_THEMES))
+            self.assertTrue((home.hermes_home / "tui-widgets" / "omh-status.mjs").is_file())
+            self.assertIn("could not save OMH theme crimson to", stdout)
+            self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
+
+            (home.omh_home / "tui").unlink()
+            self.assertEqual(home.run("update")[0], 0)
+
+            self.assertNotIn("display", home.config.read_text(encoding="utf-8"))
+            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("crimson"))
+            self.assertEqual(_omh_skin_files(home.hermes_home), [])
+
     def test_a_dry_run_writes_nothing(self) -> None:
         with TemporaryDirectory() as tmp:
             home = _Home(Path(tmp))
