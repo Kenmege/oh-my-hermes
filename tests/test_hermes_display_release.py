@@ -999,6 +999,9 @@ class UnreadableProfileSettingTests(unittest.TestCase):
                     self.assertEqual((status, stderr), (0, ""), command)
                     self.assertIn("Bot profiles: bot (", stdout)
                     self.assertNotIn("bot (failed)", stdout)
+                    bot_config = (bot / "config.yaml").read_text(encoding="utf-8")
+                    self.assertIn((home.omh_home / "skills").resolve().as_posix(), external_dirs(bot_config), command)
+                    self.assertIn("  enabled:\n    - omh\n", bot_config, command)
 
     def test_a_profile_rewritten_to_a_flow_setting_keeps_its_theme_out_of_the_primarys_store(self) -> None:
         with TemporaryDirectory() as tmp:
