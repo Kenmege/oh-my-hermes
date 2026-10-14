@@ -48,7 +48,8 @@ All notable changes will be documented here.
   first three lines of what the tool printed (a failed one its error's first
   line), and Ctrl+O opens the whole transcript with every detail. In the agent
   list, `x` twice interrupts the highlighted agent and `s` steers it with the
-  next line you send.
+  next line you send. The plan panel follows Hermes' `todo.updated` at once
+  instead of waiting 2 to 8 s for the HUD's next poll.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

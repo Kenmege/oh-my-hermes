@@ -216,6 +216,12 @@ class HudPoller:
             self._pending = HudSnapshot(stored_id, None, self._clock())
         self._wake.set()
 
+    def refresh(self) -> None:
+        """Read again now rather than at the next poll, and start the back-off over (Hermes' plan just changed)."""
+        with self._lock:
+            self._interval = HUD_POLL_MIN_SECONDS
+        self._wake.set()
+
     def take(self) -> HudSnapshot | None:
         """The newest snapshot not yet taken, or None. Never blocks on a read."""
         with self._lock:

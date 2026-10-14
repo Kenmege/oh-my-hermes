@@ -141,6 +141,17 @@ class TitleTests(unittest.TestCase):
         self.assertEqual(contract.SESSION_TITLE, "title")
 
 
+class PlanRefreshTests(unittest.TestCase):
+    def test_hermes_todo_snapshot_has_the_hud_read_now_instead_of_at_its_next_poll(self) -> None:
+        app, _client = make_app()
+        (payload,) = [payload for kind, payload in recorded_events("parity") if kind == "todo.updated"]
+        app._on_event(Event("todo.updated", SID, payload))
+        self.assertEqual(app.poller.refreshes, 1)  # type: ignore[attr-defined]
+        app._on_event(Event("todo.updated", "another-session", payload))
+        self.assertEqual(app.poller.refreshes, 1)  # type: ignore[attr-defined]
+        self.assertIn("todo.updated", contract.APP_EVENTS)
+
+
 class DocumentedSignalTests(unittest.TestCase):
     def test_installation_names_the_threshold_the_code_uses(self) -> None:
         from pathlib import Path

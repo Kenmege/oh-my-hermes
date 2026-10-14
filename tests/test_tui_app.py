@@ -244,6 +244,9 @@ class FakePoller:
     def take(self) -> None:
         return None
 
+    def refresh(self) -> None:
+        self.refreshes = getattr(self, "refreshes", 0) + 1
+
 
 @dataclass
 class Run:

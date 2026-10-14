@@ -387,6 +387,7 @@ class PollerLike(Protocol):
     def stop(self) -> None: ...
     def set_session(self, stored_id: str) -> None: ...
     def take(self) -> HudSnapshot | None: ...
+    def refresh(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -1378,6 +1379,10 @@ class App(ModesMixin, AgentViewMixin):
             self._on_error_event(as_text(payload.get("message")) or "The gateway reported an error.")
         elif event.type == "notification.show":
             self.notification = notification_from(payload, self.clock()) or self.notification
+        elif event.type == "todo.updated":
+            # Hermes' plan changed: the OMH plugin projected it into the session's record as the tool finished
+            # (post_tool_call runs before Hermes emits this), so the HUD is read now instead of at its next poll.
+            self.poller.refresh()
         elif event.type == "session.title":
             self.session_title = " ".join(clean_text(as_text(payload.get(contract.SESSION_TITLE))).split())
         elif event.type == "notification.clear":

@@ -489,6 +489,17 @@ class HudPollerTests(unittest.TestCase):
         payloads.append({"privacy": "metadata_only", "rows": [{"state": "done", "elapsed_seconds": 9}]})
         self.assertEqual(poller.poll_once(), HUD_POLL_MIN_SECONDS)
 
+    def test_a_refresh_wakes_the_thread_for_a_read_now_and_restarts_the_back_off(self) -> None:
+        payload = {"privacy": "metadata_only", "rows": []}
+        poller = self.poller(FakeReader(lambda session: copy.deepcopy(payload)))
+        poller.set_session("stored-1")
+        for _ in range(3):
+            poller.poll_once()  # backed off to eight seconds
+        poller._wake.clear()
+        poller.refresh()
+        self.assertTrue(poller._wake.is_set())  # the wait the thread is in ends now
+        self.assertEqual(poller.poll_once(), 4.0)  # the back-off starts over from two seconds
+
     def test_a_reader_failure_is_a_notice_and_backs_off(self) -> None:
         def respond(session: str) -> dict:
             raise sqlite3.OperationalError("database is locked")
@@ -632,3 +643,17 @@ class PunctuationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NativePlanDepthTests(unittest.TestCase):
+    """A `todo_list` plan's subtasks (Hermes' `parent`) keep their depth through the record into the panel."""
+
+    def test_the_recorded_plans_subtasks_are_drawn_under_their_parent(self) -> None:
+        from test_tui_gateway_contract import recorded_events
+        from omh.plugin_bundle.omh.native_todo import native_todo_items
+
+        (todos,) = [payload["todos"] for kind, payload in recorded_events("parity") if kind == "todo.updated"]
+        items = native_todo_items(todos)
+        self.assertEqual([item.get("depth", 0) for item in items], [0, 1, 1])
+        rows = lines_text(panel_lines(hud_payload(items), 80, 10, THEME, 0.0))
+        self.assertEqual(rows[1:4], ["[ ] Ship the change", "  [•] Write the tests", "  [ ] Write the code"])

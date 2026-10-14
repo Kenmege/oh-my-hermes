@@ -123,7 +123,7 @@ SUBAGENT_EVENTS = (
 # and the roster SUBAGENT_EVENTS; `test_tui_gateway_contract` holds each of the three to these names.
 APP_EVENTS = (
     "request.cancel", "approval.cancelled", "session.info", "session.usage", "connection.request", "error",
-    "notification.show", "notification.clear", "session.title",
+    "notification.show", "notification.clear", "session.title", "todo.updated",
 )
 TRANSCRIPT_EVENTS = (
     "message.start", "message.delta", "message.interim", "message.complete", "thinking.delta", "reasoning.delta",
@@ -142,7 +142,7 @@ UNREAD_EVENTS = frozenset({
     "pet.hatch.progress", "platforms.changed", "preview.close", "preview.open", "preview.restart.complete",
     "preview.restart.progress", "projects.changed", "reaction", "review.summary", "session.control.update",
     "session.reclaimed", "session.resume_progress", "sessions.changed", "setup.ready",
-    "skin.changed", "terminal.close", "tip.show", "todo.updated", "tool.output_risk", "voice.interrupted",
+    "skin.changed", "terminal.close", "tip.show", "tool.output_risk", "voice.interrupted",
     "voice.partial", "voice.status", "voice.transcript", "wake.detected",
 })
 

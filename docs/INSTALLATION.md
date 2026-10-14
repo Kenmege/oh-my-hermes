@@ -326,6 +326,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   A short terminal drops the mode row first, then the lower rule; without the
   mode row the status line names the mode (`⏵⏵ accept`, `⏸ plan`) whenever it
   is not normal.
+- The plan in that panel changes the moment Hermes' todo tool changes it
+  (Hermes' `todo.updated` has the HUD read again at once, instead of at its
+  next poll two to eight seconds later), and a subtask keeps its place under
+  its parent.
 - The composer does not move when the panel grows or shrinks; only its own
   lines move it, and the agent list for as long as it is open.
 - A notice Hermes sends outside the transcript (the agent still starting, a
