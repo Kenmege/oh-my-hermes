@@ -3085,7 +3085,8 @@ def _spending_loop_decision(message: str, *, source: str, min_confidence: str) -
     selected_skill = "spend-gate"
     definition = _skill_definition_by_name(selected_skill)
     selected_harness = primary_harness_for_skill(selected_skill)
-    score = 13
+    # The explicit-invocation path's score: the loop's prompt names the spend.
+    score = 12
     recommendation = recommendation_for_definition(
         definition,
         message,

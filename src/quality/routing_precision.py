@@ -13848,6 +13848,15 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_visual_prompt_card",
         "img_summary",
     ),
+    RoutingInterventionCase(
+        "share-card-with-my-card-collection-stays-on-img-summary",
+        "A share card with the person's card collection is still an image card; the card pays nothing",
+        "create a share card with my card collection highlights",
+        "dispatch",
+        "img-summary",
+        "prepare_visual_prompt_card",
+        "img_summary",
+    ),
     # A person typing a blueprint seed's first line, without the fixed line
     # Hermes writes after it, still routes to the blueprint skill.
     RoutingInterventionCase(

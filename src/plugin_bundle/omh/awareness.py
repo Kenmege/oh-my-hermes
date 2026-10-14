@@ -4136,9 +4136,14 @@ _ROUTE_HINT_RULES = (
         # (`_route_hint_phrase_matches`, `spend_request_phrases`). A smaller
         # table here hinted another skill for "go ahead and pay the 402
         # challenge for the dataset", which the router dispatches to the gate.
-        # "complete the checkout", "http 402" or "spending cap" naming a
-        # checkout screen, a developer's own paywall or a government budget
-        # never opens an admitted clause.
+        # A checkout screen, a developer's own paywall or a government budget
+        # said as a topic opens no admitted clause. One gap is known: the
+        # router also withdraws the gate from a cap or wallet phrase with no
+        # word of paying beside it (`EVERYDAY_SENSE_PHRASES` in
+        # `omh.routing.policy`, which the bundle cannot import), and this rule
+        # has no such check, so "can you check out the spending cap for the
+        # city council budget" is admitted and gets this hint while the router
+        # asks about another skill.
         "phrases": SPEND_GATE_PHRASES,
         "tokens": (),
         "adjacent_workflows": ("browser-operator", "connector-operator", "feedback-triage", "finance-analysis"),

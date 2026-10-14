@@ -22,7 +22,7 @@ All notable changes will be documented here.
   subscription, donation or top-up paid "from my wallet" is no longer dropped
   as everyday wording, and paying with the person's card, or reviewing the
   pre-spend card, no longer opens the image-card skill, while an image card of
-  "my card game stats" still does.
+  "my card game stats" or "my card collection" still does.
 
 - **Bare `omh` opens the OMH TUI, OMH's own terminal over Hermes' gateway.**
   `omh` runs `hermes --tui` with OMH's frontend in place of Hermes' Ink app,

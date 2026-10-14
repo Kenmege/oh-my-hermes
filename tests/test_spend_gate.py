@@ -527,17 +527,30 @@ class SpendGateRoutingTests(unittest.TestCase):
             ("the photo fell out from my wallet on the bus", True),
             ("set a spending cap before the agent buys anything", False),
             ("transfer 40 dollars from my wallet to the vendor", False),
-            # The verb a spend request opens with is a word of paying too
-            # (`spend_signals.SPEND_LEADS`): each of these is admitted by the
-            # clause rule, and the gate was withdrawn from them before.
+            # Six spend leads are words of paying too: each of these is
+            # admitted by the clause rule, and the gate was withdrawn from them
+            # before.
             ("please renew the domain from my wallet", False),
             ("please tip the driver from my wallet", False),
             ("please book the hotel from my wallet", False),
             ("please subscribe to the pro plan from my wallet", False),
             ("could you top up my account from my wallet", False),
+            ("please donate $20 to the food bank from my wallet", False),
+            # Only those six verbs: "check out" also asks to look at a thing,
+            # and the clause rule admits each of these.
+            ("can you check out the spending cap for the city council budget", True),
+            ("can you check out the spend cap", True),
+            ("please check out the receipt from my wallet", True),
         ):
             with self.subTest(message=message):
                 self.assertIs(everyday_sense_phrase_unanchored(SKILL, normalized_phrase(message)), withdrawn)
+
+    def test_a_city_budget_cap_is_not_the_persons_spend(self) -> None:
+        # The clause rule admits it ("can you" and the lead "check out"); the
+        # everyday-sense anchor is what keeps the gate away.
+        route = _route("can you check out the spending cap for the city council budget")
+        self.assertNotEqual(route.get("selected_skill"), SKILL)
+        self.assertNotEqual(route.get("candidate_skill"), SKILL)
 
     def test_a_loop_whose_prompt_spends_opens_the_gate(self) -> None:
         # No scheduled run may spend, so a loop that would is the gate's turn
@@ -568,6 +581,17 @@ class SpendGateRoutingTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertEqual(_route(message)["reason"], reason)
                 self.assertNotIn(SKILL, _hinted_workflows(message))
+
+    def test_a_loop_watching_a_card_fault_reaches_the_gate_a_documented_residual(self) -> None:
+        # A documented residual, not a negative control. The loop marks its own
+        # prompt (`spend_signals._request`), so a loop that only watches a
+        # fault reaches the gate. Accepted: the other direction would let a
+        # loop that spends skip the gate, and this one moves no money. Pinned
+        # so that changing it is a decision, not a drift.
+        route = _route("/loop 1h pay with my card on staging returns 500, ping me when it is fixed")
+        self.assertEqual(
+            (route["action"], route["selected_skill"], route["reason"]), ("dispatch", SKILL, SPENDING_LOOP_REASON)
+        )
 
     def test_naming_the_gate_as_a_command_asks_for_it(self) -> None:
         # The command itself is the request; nothing else has to mark it.
@@ -602,10 +626,15 @@ class SpendGateRoutingTests(unittest.TestCase):
                 route = _route(message)
                 self.assertNotEqual(route.get("selected_skill"), "img-summary")
                 self.assertNotEqual(route.get("candidate_skill"), "img-summary")
-        # A bare "my card" is not a payment: an image card of card-game stats
-        # is still one.
-        route = _route("make a share card summarizing my card game stats")
-        self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "img-summary"))
+        # A bare "my card", or "with my card" before a noun, is not a payment:
+        # these are still image cards.
+        for message in (
+            "make a share card summarizing my card game stats",
+            "create a share card with my card collection highlights",
+        ):
+            with self.subTest(message=message):
+                route = _route(message)
+                self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "img-summary"))
 
     def test_only_the_two_hyphenated_names_score_as_bare_tokens(self) -> None:
         prepared = _prepare_definition(_definition(SKILL))

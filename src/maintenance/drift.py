@@ -823,8 +823,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # the person's credit card and shared, asking with the card leading
             # rather than as an image card (1); a share card of card-game stats
             # that stays on img-summary (1); and a /blueprint seed's first line
-            # typed by a person, which stays on automation-blueprint (1).
-            expected=786,
+            # typed by a person, which stays on automation-blueprint (1). Its
+            # review adds a share card with the person's card collection, which
+            # stays on img-summary: "with my card" before a noun pays nothing (1).
+            expected=787,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

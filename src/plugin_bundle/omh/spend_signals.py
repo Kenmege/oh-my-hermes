@@ -49,7 +49,9 @@ Everything else returns to the router's base behaviour: the router withdraws
 the skill (so no phrase or word of it counts) and the route hint and the
 awareness markers stay silent. Nothing here lets the gate take a request
 another skill's guard holds; an admitted clause only lets the skill's own
-phrases score as usual.
+phrases score as usual -- except an admitted loop prompt, for which the chat
+router dispatches the gate before any scoring (`SPENDING_LOOP_REASON` in
+`omh.routing.chat`): a loop that would spend is never answered with `/loop`.
 
 One phrase table, `SPEND_GATE_PHRASES`, is the skill's trigger list: the
 router (`omh.routing.recommend`) passes it to `spend_request_clause`, and the
@@ -361,9 +363,16 @@ def _has_request_marker(prefix: list[str], clause: list[str], spans: list[tuple[
 
 
 def _request(text: str, phrases: Iterable[str]) -> tuple[str, list[str]]:
+    phrases = tuple(phrases)
     admitted = _admitted(text, phrases, marked=False)
     if admitted[0]:
         return admitted
+    # A loop's prompt is marked by the loop itself. That waiver also admits a
+    # loop that only watches a fault ("/loop 1h pay with my card on staging
+    # returns 500, ping me when it is fixed"), which then reaches the gate:
+    # a disclosed residual, accepted because the other direction would let a
+    # loop that spends skip the gate, while this one moves no money. No list
+    # of status words is kept against it; earlier rounds rejected that.
     prompt = native_loop_prompt(text)
     return _admitted(prompt, phrases, marked=True) if prompt else ("", [])
 
@@ -390,6 +399,16 @@ def _admitted(text: str, phrases: Iterable[str], *, marked: bool) -> tuple[str, 
     if not marked and not _has_request_marker(prefix, clause, [(start, end) for _phrase, start, end in found]):
         return "", []
     return " ".join(clause), list(dict.fromkeys(phrase for phrase, _start, _end in found))
+
+
+def spend_phrase_continues_a_request(text: str, phrase: str) -> bool:
+    """Whether `phrase` occurs in `text` followed only by what may follow a request.
+
+    The rule every gate phrase is held to (`_continuation_allowed`): "pay with
+    my card for the report", not "a share card with my card collection".
+    """
+    tokens = _tokens(text.casefold())
+    return any(_continuation_allowed(tokens[end:]) for end in _phrase_ends(tokens, tuple(_tokens(phrase))))
 
 
 def spend_request_clause(text: str, phrases: Iterable[str]) -> str:
