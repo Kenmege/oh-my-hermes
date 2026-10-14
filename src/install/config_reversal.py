@@ -762,7 +762,7 @@ def config_names_key(config_text: str, key: str, *, name: str = "") -> bool:
     it, and the editor refuses the whole file for it, so only this answer
     tells a row that its key is refused rather than absent.
     """
-    config_text = config_text.removeprefix("﻿")
+    config_text = config_text.removeprefix("\ufeff")
     if key == PLUGINS_ENABLED_KEY:
         if not plugin_enablement_is_readable(config_text):
             # The one answer this row must not give over a node OMH did not

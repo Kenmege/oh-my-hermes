@@ -458,7 +458,7 @@ class UpdateReleaseTests(unittest.TestCase):
         for name, reshape in (
             ("quoted key", lambda text: text + 'aliases:\n  "fast/model": glm-5.3\n'),
             ("anchor", lambda text: text + "defaults: &defaults\n  retries: 1\n"),
-            ("BOM", lambda text: "﻿" + text),
+            ("BOM", lambda text: "\ufeff" + text),
         ):
             with self.subTest(shape=name), TemporaryDirectory() as tmp:
                 home = _Home(Path(tmp))
