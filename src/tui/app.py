@@ -2053,11 +2053,13 @@ class App(ModesMixin, AgentViewMixin):
             shown = block_rows(blocks[index], width, theme, expanded=True)
             return [*transcript.dropped_rows(width, theme, dropped), *shown] if index == 0 else shown
 
-        # Stops at the first block with rows, the first one but for a reply that was only a line break.
-        if not any(rows(index, self.size[0], self.theme) for index in range(len(blocks))):
+        pager = HistoryPager("history", count=len(blocks), render=rows)
+        # Stops at the first block with rows, the first one but for a reply that was only a line break, and
+        # keeps what it rendered for the first frame.
+        if pager.shows_nothing(self.size[0], self.theme):
             transcript.add_notice("Nothing in this session's transcript yet.")
             return
-        self._show_pager(HistoryPager("history", count=len(blocks), render=rows))
+        self._show_pager(pager)
 
     def _details(self, arg: str) -> None:
         # No notice: a new block would close the live one, the only block the toggle changes.

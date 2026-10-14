@@ -1222,6 +1222,23 @@ class RedrawTailTests(unittest.TestCase):
             shown = [line.rstrip() for line in drawn(app)]
         self.assertEqual(shown[:3], ["⋯ 15 earlier messages no longer held", "", "· notice 15"])
 
+    def test_history_renders_its_first_block_once_for_the_check_and_the_first_page(self) -> None:
+        app, _client = make_app(rows=24, cols=80)
+        for number in range(3):
+            app.transcript.add_notice(f"notice {number}")
+        first = app.transcript.blocks[0]
+        real = app_module.block_rows
+        rendered: list[object] = []
+
+        def counting(block: object, *args: object, **kwargs: object) -> list:
+            rendered.append(block)
+            return real(block, *args, **kwargs)
+
+        with patch("omh.tui.app.block_rows", counting):
+            app._history("")
+            drawn(app)
+        self.assertEqual(sum(block is first for block in rendered), 1)
+
     def test_history_with_no_row_to_show_says_so_instead_of_opening(self) -> None:
         app, _client = make_app(rows=24, cols=80)
         app.transcript.blocks.append(AssistantBlock("\n", done=True))  # a reply that was only a line break

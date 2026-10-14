@@ -149,8 +149,10 @@ class HistoryPager(Pager):
     _to_end: bool | None = field(default=None, init=False, repr=False, compare=False)
     _kept: dict[int, list[Line]] = field(default_factory=dict, init=False, repr=False, compare=False)
     _drawn: tuple[int, Theme] | None = field(default=None, init=False, repr=False, compare=False)
+    # The width and theme the kept rows, the first block with rows and the last page's top are for.
+    _kept_for: tuple[int, Theme] | None = field(default=None, init=False, repr=False, compare=False)
     _first: int | None = field(default=None, init=False, repr=False, compare=False)
-    # The last page's top, found for (body rows, count) at the width and theme drawn; every frame bounds by it.
+    # The last page's top, found for (body rows, count) at `_kept_for`; every frame bounds by it.
     _last_page: tuple[tuple[int, int], tuple[int, int]] | None = field(default=None, init=False, repr=False, compare=False)
 
     def _scroll(self, step: int, rows: int) -> None:
@@ -184,6 +186,17 @@ class HistoryPager(Pager):
                 del self._kept[next(kept for kept in self._kept if kept != self.count - 1)]
         self._kept[index] = rows
         return rows
+
+    def shows_nothing(self, cols: int, theme: Theme) -> bool:
+        """Whether no block has a row at `cols`; the rows rendered to tell are kept for the first frame."""
+        self._keep_for(cols, theme)
+        return self._first_with_rows(cols, theme) >= self.count
+
+    def _keep_for(self, cols: int, theme: Theme) -> None:
+        """Let go of every kept row and position found at another width or theme."""
+        if self._kept_for is None or self._kept_for[0] != cols or self._kept_for[1] is not theme:
+            self._kept, self._first, self._last_page = {}, None, None
+            self._kept_for = (cols, theme)
 
     def _first_with_rows(self, cols: int, theme: Theme) -> int:
         """The first block with any rows (`count` when none has any), found once per width and theme."""
@@ -227,9 +240,8 @@ class HistoryPager(Pager):
         self.item, self.offset = min((self.item, self.offset), self._last_page_top(body, cols, theme))
 
     def _page(self, cols: int, rows: int, theme: Theme) -> tuple[list[Line], str]:
-        if self._drawn is None or self._drawn[0] != cols or self._drawn[1] is not theme:
-            self._kept, self._first, self._last_page = {}, None, None
-            self._drawn = (cols, theme)
+        self._keep_for(cols, theme)
+        self._drawn = (cols, theme)
         body = self.body_rows(rows)
         self._settle(cols, body, theme)
         shown: list[Line] = []
