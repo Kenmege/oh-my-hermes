@@ -503,6 +503,41 @@ class UpdateReleaseTests(unittest.TestCase):
                     self.assertIn("  skin: omh-crimson\n", home.config.read_text(encoding="utf-8"))
                     self.assertEqual(len(_omh_skin_files(home.hermes_home)), len(SKIN_THEMES))
 
+    def test_a_skin_set_twice_is_never_read_as_the_persons(self) -> None:
+        # The reader took the first `skin`, ares, as the person's, so the
+        # release was recorded with the second, omh-crimson, still in the
+        # file. Hermes' YAML loader keeps the last, so Hermes went on
+        # resolving omh-crimson and OMH never asked again.
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install(skin="omh-crimson")
+            twice = home.config.read_text(encoding="utf-8").replace(
+                "  skin: omh-crimson\n", "  skin: ares\n  skin: omh-crimson\n"
+            )
+            home.config.write_text(twice, encoding="utf-8", newline="")
+
+            for _ in range(2):
+                status, stdout, stderr = home.run("update", output_json=False)
+
+                self.assertEqual(status, 0, stderr)
+                self.assertIn("could not release display.skin (ambiguous display.skin is user-owned; leaving it alone)", stdout)
+                record = home.record()
+                self.assertNotIn("display_released_at", record)
+                self.assertIn("display.skin", record["keys"])  # type: ignore[operator]
+                self.assertIn("  skin: ares\n  skin: omh-crimson\n", home.config.read_text(encoding="utf-8"))
+                self.assertEqual(len(_omh_skin_files(home.hermes_home)), len(SKIN_THEMES))
+
+            # The person drops the duplicate; the next update releases omh-crimson and carries its theme.
+            home.config.write_text(
+                home.config.read_text(encoding="utf-8").replace("  skin: ares\n", ""), encoding="utf-8", newline=""
+            )
+            self.assertEqual(home.run("update")[0], 0)
+
+            self.assertNotIn("skin:", home.config.read_text(encoding="utf-8"))
+            self.assertIn("display_released_at", home.record())
+            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("crimson"))
+            self.assertEqual(_omh_skin_files(home.hermes_home), [])
+
     def test_a_second_update_changes_nothing_and_keeps_a_skin_chosen_since(self) -> None:
         with TemporaryDirectory() as tmp:
             home = _Home(Path(tmp))

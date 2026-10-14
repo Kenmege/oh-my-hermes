@@ -951,6 +951,32 @@ class ReleaseManagedDisplayTests(unittest.TestCase):
                 self.assertEqual(by_key["display.skin"].status, "refused")
                 self.assertEqual(by_key["display.interface"].status, "refused")
 
+    def test_a_key_set_twice_never_reads_as_the_persons(self) -> None:
+        """Mutation proof: the reader takes the first value, Hermes' YAML loader the last."""
+        before = ""
+        after = _apply_setup_writes(before)
+        record = _record(before, after)
+        for name, shaped in (
+            ("second skin in the block", after.replace("  skin: omh\n", "  skin: ares\n  skin: omh\n")),
+            ("dotted key before the block", "display.skin: ares\n" + after),
+            ("second display before the block", "display:\n  skin: ares\n" + after),
+        ):
+            with self.subTest(shape=name):
+                _released, by_key = self._release(shaped, record)
+
+                self.assertEqual(by_key["display.skin"].status, "refused")
+
+    def test_a_key_set_once_in_a_refused_shape_still_reads_as_the_persons(self) -> None:
+        # A dotted key alone is one value: Hermes reads it as a key of its
+        # own and resolves its default skin, so nothing of OMH's is left.
+        before = ""
+        after = _apply_setup_writes(before)
+        shaped = after.replace("  skin: omh\n", "") + "display.skin: ares\n"
+
+        _released, by_key = self._release(shaped, _record(before, after))
+
+        self.assertEqual(by_key["display.skin"].status, "kept")
+
     def test_an_unreadable_value_no_record_names_is_kept(self) -> None:
         """Mutation proof: refusing it held the release open on a fresh install's own flow `display`."""
         for text in (

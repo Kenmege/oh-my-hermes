@@ -62,6 +62,7 @@ from .config_adapter import (
     config_container_paths,
     display_edit_refusal,
     display_interface_selection,
+    display_key_named_twice,
     display_sections_selection,
     display_skin_selection,
     external_dirs,
@@ -563,16 +564,24 @@ def _refused_or_kept(config_text: str, row: ReversalRow, recorded: object) -> Re
 
     With a record naming the key, a value that reads as the person's own
     keeps the row `kept`; one that reads as OMH's, or cannot be read at
-    all, is `refused`. Without one, only an OMH skin name makes it
+    all, is `refused`. A key set in more than one place (a second `skin`
+    in the block, a second `display`, a dotted key beside the block) cannot
+    be read either: the reader returns the first value, and Hermes may
+    resolve another (`display_key_named_twice`), so the first reading as
+    the person's says nothing of the one Hermes uses. Without a record,
+    only an OMH skin name makes it
     `refused`: OMH's writers never wrote the flow, dotted or duplicate
     shapes the editor refuses, so an unreadable value nobody recorded, such
     as a fresh install's `display: {skin: mytheme}`, is the person's.
     """
-    refusal = display_edit_refusal(config_text, row.key.rpartition(".")[2])
+    leaf = row.key.rpartition(".")[2]
+    refusal = display_edit_refusal(config_text, leaf)
     if not refusal:
         return row
     if recorded:
-        may_be_omhs = not _reads_as_persons(config_text, row.key, recorded)
+        may_be_omhs = display_key_named_twice(config_text, leaf) or not _reads_as_persons(
+            config_text, row.key, recorded
+        )
     else:
         may_be_omhs = row.key == DISPLAY_SKIN_KEY and is_omh_skin_name(
             _plain_scalar(display_skin_selection(config_text))

@@ -959,6 +959,18 @@ def display_skin_selection(config_text: str) -> str:
     return _section_scalar(config_text, "display", "skin")
 
 
+def display_key_named_twice(config_text: str, key: str) -> bool:
+    """Whether `display.<key>` is set in more than one place, so the readers and Hermes can disagree on its value.
+
+    The readers return the first value they meet. Hermes' YAML loader keeps
+    the last of duplicate keys, keeps only the last of two `display`
+    sections, and reads a dotted `display.<key>` as a key of its own. Set
+    in one place, the value the readers return is the one Hermes resolves,
+    or one it passes over for its own default.
+    """
+    return len(_section_scalars(config_text, "display", key)) > 1
+
+
 def references_mapping_key(line: str, key: str) -> bool:
     """Whether `line` uses `key` as a mapping key, quoted, dotted or explicit.
 
@@ -1645,19 +1657,29 @@ def _joined(lines: list[str]) -> str:
 def _section_scalar(
     config_text: str, section: str, key: str, *, parse: Callable[[str], str] | None = None
 ) -> str:
+    values = _section_scalars(config_text, section, key, parse=parse)
+    return values[0] if values else ""
+
+
+def _section_scalars(
+    config_text: str, section: str, key: str, *, parse: Callable[[str], str] | None = None
+) -> list[str]:
+    """Every `section.key` value in file order, dotted or in a block; `_section_scalar` takes the first."""
     read = parse or _scalar_value
     dotted = f"{section}.{key}:"
-    for index, line in enumerate(config_text.splitlines()):
+    lines = config_text.splitlines()
+    values: list[str] = []
+    for index, line in enumerate(lines):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
         if stripped.startswith(dotted) and not line.startswith(" "):
-            return read(stripped[len(dotted) :])
-        if line.startswith("  ") and not line.startswith("    "):
+            values.append(read(stripped[len(dotted) :]))
+        elif line.startswith("  ") and not line.startswith("    "):
             candidate, separator, rest = stripped.partition(":")
-            if separator and candidate.strip() == key and _enclosing_section(config_text.splitlines(), index) == section:
-                return read(rest)
-    return ""
+            if separator and candidate.strip() == key and _enclosing_section(lines, index) == section:
+                values.append(read(rest))
+    return values
 
 
 def _enclosing_section(lines: list[str], index: int) -> str:
