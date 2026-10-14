@@ -134,7 +134,7 @@ from .keys import (
     Paste,
 )
 from .launch import request_fallback
-from .agent_view import TAIL_ANSWER_SECONDS, AgentViewMixin
+from .agent_view import STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
 from .layout import slot_cap, under_composer
 from .markdown import clean_text
 from .modes import NO_SESSION_NOTICE, ModesMixin, mode_row_line
@@ -809,6 +809,8 @@ class App(ModesMixin, AgentViewMixin):
         self.rewind_picker: RewindPicker | None = None
         self.rewind_messages: list[dict[str, Any]] = []  # the history the picker was opened over
         self.rewind: Rewind | None = None  # a picked prompt waiting to be sent again
+        self.interrupt_armed: str | None = None  # the agent a first `x` in the list asked about
+        self.agent_steer: str | None = None  # the agent `s` picked: the next line sent is its steer
         self.region = LiveRegion(terminal.write)
         self.decoder = KeyDecoder(clock)
         self.size = terminal.size()
@@ -1723,6 +1725,10 @@ class App(ModesMixin, AgentViewMixin):
         if self.path_items:
             self.path_items = []
             return True
+        if self.agent_steer is not None:
+            self.agent_steer = None
+            self._set_composer("")
+            return True
         if self.rewind is not None:
             self.rewind = None
             self._set_composer("")
@@ -1936,7 +1942,9 @@ class App(ModesMixin, AgentViewMixin):
             return
         invocation = parse_slash(text)
         if invocation is not None:
-            self._run_slash(invocation)  # a picked rewind stays picked under a command
+            self._run_slash(invocation)  # a picked rewind or agent stays picked under a command
+        elif self.agent_steer is not None:
+            self._steer_agent(text)
         elif self.rewind is not None:
             self._send_rewind(text, shown)
         else:
@@ -2828,7 +2836,10 @@ class App(ModesMixin, AgentViewMixin):
         """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's second press)."""
         say, say_style = "", None
         armed = self.escape_armed
-        if self.rewind is not None:
+        steered = self.roster.agents.get(self.agent_steer or "")
+        if steered is not None:
+            say, say_style = STEER_SAY.format(name=steered.name), self.theme.accent
+        elif self.rewind is not None:
             say, say_style = REWIND_SAY.format(ordinal=self.rewind.ordinal), self.theme.warn
         elif armed is not None and self.clock() - armed[1] <= DOUBLE_ESCAPE_SECONDS:
             say = ESCAPE_AGAIN.format(armed[0])

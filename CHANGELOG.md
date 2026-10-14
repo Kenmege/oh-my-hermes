@@ -46,7 +46,9 @@ All notable changes will be documented here.
   notification (OSC 9, OSC 777 or the bell; `OMH_TUI_BELL=0` silences it), and
   the terminal title names the session and its state. A tool row shows the
   first three lines of what the tool printed (a failed one its error's first
-  line), and Ctrl+O opens the whole transcript with every detail.
+  line), and Ctrl+O opens the whole transcript with every detail. In the agent
+  list, `x` twice interrupts the highlighted agent and `s` steers it with the
+  next line you send.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

@@ -349,7 +349,13 @@ run and approval decision stays Hermes'; the screen is OMH's.
   and with fewer rows than agents it scrolls. Enter, or a click on its row,
   opens that agent's log on the alternate screen (its thinking lines, tool
   calls and reply, read-only, refreshed while it runs); Left and Right move
-  between agents and q or Esc goes back.
+  between agents and q or Esc goes back. Two keys in the list act on the
+  highlighted agent and nothing else does: `x` asks
+  (`x again interrupts <agent> · any other key cancels`) and a second `x`
+  interrupts it (`subagent.interrupt`); `s` makes the next line you send that
+  agent's steer (`subagent.steer`), which Hermes hands it at its next tool
+  call, with the mode row saying so until you send it or press Esc. A steer
+  Hermes does not take comes back to the composer.
 - The OMH TUI asks the terminal for click reports only while the agent list
   is open, so during a turn the wheel scrolls and a drag selects as in any
   shell, and the strip is reached with Down; nothing on the strip is
@@ -487,7 +493,8 @@ Esc closes it):
 | 1 to 9 | On a clarify question with choices, pick one; ↑ / ↓ then Enter on an empty answer does too |
 | Esc, Ctrl+C | On a question Hermes asked, decline it (an approval is denied); Ctrl+C first clears an answer being typed |
 | ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions` or `/rewind` list, move, take the highlighted row (switch to that session, or put that prompt in the composer to send again), or close it; typing filters the list |
-| ↑ / ↓, Enter, Esc | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; typing leaves it too |
+| ↑ / ↓, Enter, Esc | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; other typing leaves it too |
+| x, s | In the agent list, on an agent: x twice interrupts it; s steers it with the next line you send (Esc cancels) |
 | Click | On a row of the agent list, opens that agent's log (on main, only leaves the list) |
 | ← / →, q or Esc | In an agent's log, show the agent before or after, or go back; the pager's keys scroll it |
 | j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, an agent's log, this list), move a line, a page, or to either end, or leave |

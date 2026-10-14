@@ -1191,7 +1191,7 @@ class MouseReplayTests(AppTestCase):
             f"\x1b[<0;{x};{y}m\x1b[<0;{x};{y + 1}M\x1b[<0;{x};{y + 2}M".encode("ascii")
         )
         on = lambda: terminal.mouse_reporting  # noqa: E731
-        listed = terminal.shows("↑↓ select · ⏎ view log · esc back")
+        listed = terminal.shows(AGENT_LIST_HINT)
         terminal.script(
             self.submit(run, INTERRUPTED_PROMPT),
             Step(b"\x0c", when=terminal.shows("● main  "), capture="launched", label="the strip"),
@@ -1210,7 +1210,7 @@ class MouseReplayTests(AppTestCase):
         rows = captures["listed"]
         self.assertEqual(status_index(rows), 22)
         self.assertIn("read the diff for risks", rows[y - 1])
-        self.assertEqual(rows[y], "↑↓ select · ⏎ view log · esc back")  # the hint row under it
+        self.assertEqual(rows[y], AGENT_LIST_HINT)  # the hint row under it
         # Wheel, motion, a right press, a release and two near misses (the hint row, the status line): still the
         # list, on the first agent, and nothing typed.
         ignored = captures["ignored"]

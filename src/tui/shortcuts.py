@@ -60,7 +60,9 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
                                              "(switch to that session, or put that prompt in the composer to send "
                                              "again), or close it; typing filters the list"),
     ("↑ / ↓, Enter, Esc", "In the agent list, move, open the highlighted agent's log (on main, only leave), "
-                          "or go back; typing leaves it too"),
+                          "or go back; other typing leaves it too"),
+    ("x, s", "In the agent list, on an agent: x twice interrupts it; s steers it with the next line you send "
+             "(Esc cancels)"),
     ("Click", "On a row of the agent list, opens that agent's log (on main, only leaves the list)"),
     ("← / →, q or Esc", "In an agent's log, show the agent before or after, or go back; the pager's keys scroll it"),
     ("j / k, Space / b, g / G, q or Esc", "In a pager (/history, /logs, an agent's log, this list), "

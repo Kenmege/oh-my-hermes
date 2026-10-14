@@ -34,13 +34,24 @@ from .keys import BUTTON_LEFT, CHAR, DOWN, ENTER, ESCAPE, UNKNOWN, UP, Key, Mous
 from .layout import Budget, under_composer
 from .modes import strip_column
 from .style import Line, Span
-from .subagents import MAIN_ID, RUNNING, Hit
-from .transcript import as_text
+from .subagents import FINISHED_STATUSES, MAIN_ID, RUNNING, Hit
+from .transcript import NOTICE_WARN, as_text
 from .width import truncate_line
 
 # The list Down opens, and one agent's log in the pager.
 AGENT_LIST_ROWS = 7  # main and six agents; a longer roster scrolls
-AGENT_LIST_HINT = "↑↓ select · ⏎ view log · esc back"
+AGENT_LIST_HINT = "↑↓ select · ⏎ log · x interrupt · s steer · esc back"
+INTERRUPT_CONFIRM = "x again interrupts {name} · any other key cancels"
+STEER_SAY = "↪ steering {name}: enter sends it to that agent · esc cancels"
+AGENT_FINISHED_NOTICE = "{name} has finished; there is nothing to {action}."
+AGENT_INTERRUPTED_NOTICE = "Interrupted {name}."
+AGENT_ALREADY_DONE_NOTICE = "{name} had already finished."
+AGENT_INTERRUPT_REFUSED_NOTICE = "Hermes did not interrupt {name}: {reason}."
+AGENT_STEERED_NOTICE = "↪ steer queued for {name}: {text}"
+AGENT_STEER_REFUSED_NOTICE = (
+    "Hermes did not take the steer for {name} (it may have finished, or have no tool call left); "
+    "the text is back in the composer."
+)
 AGENT_LOG_KEYS = "←/→ agents"
 TAIL_POLL_SECONDS = 2.0
 # Hermes answers `available: false` while an agent's log is not there yet, as it starts. Five answers in a row
@@ -76,7 +87,13 @@ class AgentViewMixin:
         lines, listed = self.roster.list_lines(
             cols, self.theme, self.list_selected, self._spinner_frame(), shown, self.clock()
         )
-        return [*lines, truncate_line((Span(AGENT_LIST_HINT, self.theme.hint),), cols)], listed
+        armed = self.roster.agents.get(self.interrupt_armed or "") if self.interrupt_armed == self.list_selected else None
+        hint = (
+            Span(INTERRUPT_CONFIRM.format(name=armed.name), self.theme.warn)
+            if armed is not None
+            else Span(AGENT_LIST_HINT, self.theme.hint)
+        )
+        return [*lines, truncate_line((hint,), cols)], listed
 
     def _take_clickable(self, budget: Budget, listed: Sequence[str]) -> None:
         """Note the agent list's rows a click opens in the frame just drawn, and ask for mouse reports only while it is open.
@@ -123,6 +140,11 @@ class AgentViewMixin:
                 return False
             self.list_selected = next(iter(self.roster.agents))
             return True
+        armed, self.interrupt_armed = self.interrupt_armed, None  # any key ends a question it did not answer
+        action = event.char if isinstance(event, Key) and name == CHAR and not event.ctrl and not event.alt else ""
+        if action in ("x", "s") and self.list_selected != MAIN_ID:
+            self._agent_action(action, self.list_selected, armed)
+            return True
         if name in (UP, DOWN):
             ids = self.roster.ids()
             row = ids.index(self.list_selected) + (-1 if name == UP else 1)
@@ -135,6 +157,65 @@ class AgentViewMixin:
             return True
         self.list_selected = None
         return name in (ENTER, ESCAPE) or event == Key(CHAR, "c", ctrl=True)
+
+    def _agent_action(self, action: str, subagent_id: str, armed: str | None) -> None:
+        """`x` (once a second `x` confirms) interrupts the highlighted agent; `s` makes the next line sent its steer."""
+        agent = self.roster.agents.get(subagent_id)
+        if agent is None:
+            return
+        if agent.status in FINISHED_STATUSES:
+            verb = "interrupt" if action == "x" else "steer"
+            self.transcript.add_notice(AGENT_FINISHED_NOTICE.format(name=agent.name, action=verb))
+        elif action == "s":
+            self.agent_steer = subagent_id
+            self.list_selected = None  # the composer has the keys for the text
+        elif armed == subagent_id:
+            self._interrupt_agent(subagent_id, agent.name)
+        else:
+            self.interrupt_armed = subagent_id
+
+    def _interrupt_agent(self, subagent_id: str, name: str) -> None:
+        if not self.sid:
+            return
+        self._request(
+            "subagent.interrupt",
+            {"session_id": self.sid, "subagent_id": subagent_id},
+            lambda result: self.transcript.add_notice(
+                (AGENT_INTERRUPTED_NOTICE if result.get("found") is True else AGENT_ALREADY_DONE_NOTICE).format(name=name)
+            ),
+            lambda error: self._agent_refused(
+                AGENT_INTERRUPT_REFUSED_NOTICE.format(name=name, reason=(as_text(error.get("message")) or "refused").rstrip("."))
+            ),
+        )
+
+    def _agent_refused(self, notice: str) -> bool:
+        self.transcript.add_notice(notice, NOTICE_WARN)
+        return True
+
+    def _steer_agent(self, text: str) -> None:
+        """Send `text`, the line the person typed after `s`, to the agent they picked; back to the composer if it cannot go."""
+        subagent_id, self.agent_steer = self.agent_steer, None
+        agent = self.roster.agents.get(subagent_id or "")
+        if agent is None or agent.status in FINISHED_STATUSES or not self.sid:
+            name = agent.name if agent is not None else "That agent"
+            self.transcript.add_notice(AGENT_FINISHED_NOTICE.format(name=name, action="steer"), NOTICE_WARN)
+            self._set_composer(text)
+            return
+        name = agent.name
+        self._request(
+            "subagent.steer",
+            {"session_id": self.sid, "subagent_id": agent.subagent_id, "text": text},
+            lambda result: self._on_agent_steered(name, text, result),
+            lambda error: self._on_agent_steered(name, text, {}),
+        )
+
+    def _on_agent_steered(self, name: str, text: str, result: Mapping[str, Any]) -> bool:
+        if as_text(result.get("status")) == contract.STEER_QUEUED:
+            self.transcript.add_notice(AGENT_STEERED_NOTICE.format(name=name, text=text.strip().split("\n", 1)[0]))
+        else:
+            self.transcript.add_notice(AGENT_STEER_REFUSED_NOTICE.format(name=name), NOTICE_WARN)
+            self._set_composer("\n".join(part for part in (self.composer.text, text) if part))
+        return True
 
     def _on_mouse(self, event: Mouse) -> None:
         """A plain left press on an agent's row of the list opens that agent's log; nothing else does anything.
@@ -238,8 +319,9 @@ class AgentViewMixin:
         )
 
     def _clear_roster(self) -> None:
-        """Drop the agents and every piece of tail bookkeeping that names them."""
+        """Drop the agents and every piece of tail bookkeeping and pending action that names them."""
         self.roster.clear()
+        self.interrupt_armed = self.agent_steer = None
         self.tail_misses.clear()
         self._forget_tail_calls()  # an answer still on its way is for an agent no longer listed
         self.tail_asked_at, self.tail_open = None, False

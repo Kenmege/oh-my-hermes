@@ -94,7 +94,7 @@ class ListFocusTests(unittest.TestCase):
         self.assertEqual(rows[0], "  ● main")
         self.assertTrue(rows[1].startswith("▸ ⠋ find usages of old_api in src/"), rows[1])
         self.assertTrue(rows[2].startswith("  ⠋ read the diff for risks"), rows[2])
-        self.assertEqual(rows[-1], "↑↓ select · ⏎ view log · esc back")
+        self.assertEqual(rows[-1], AGENT_LIST_HINT)
         self.assertEqual(client.calls, [])
 
     def test_with_no_agent_down_is_still_the_composers(self) -> None:
@@ -596,6 +596,115 @@ class OutputWhileAViewIsOpenTests(unittest.TestCase):
         self.assertEqual("".join(app.terminal.writes).count(ALT_SCREEN_ON), 1)  # type: ignore[attr-defined]
 
 
+def recorded_parity(segment: str) -> tuple[dict, dict]:
+    """The recorded call's params and its answer's result, from tests/fixtures/tui_gateway/parity.jsonl."""
+    from test_tui_gateway_contract import recorded_rows
+
+    rows = recorded_rows("parity", segment)
+    call = next(row["frame"] for row in rows if row["dir"] == "out")
+    return call["params"], next(row["frame"] for row in rows if row["dir"] == "in")["result"]
+
+
+class AgentActionTests(unittest.TestCase):
+    """`x` interrupts the highlighted agent once a second `x` confirms; `s` steers it with text the person sends."""
+
+    def test_x_asks_once_and_a_second_x_interrupts_the_highlighted_agent(self) -> None:
+        app, client = focused()
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual(client.calls, [])
+        self.assertEqual(under_the_frame(app)[-1], "x again interrupts find usages of · any other key cancels")
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual(client.calls, [("subagent.interrupt", {"session_id": SID, "subagent_id": FIRST})])
+        answer(app, client, {"found": True, "subagent_id": FIRST})
+        self.assertEqual(notices(app)[-1], "Interrupted find usages of.")
+        self.assertEqual(app.list_selected, FIRST)  # the list stays open on it
+
+    def test_an_agent_that_had_already_finished_is_said_so(self) -> None:
+        params, result = recorded_parity("subagent_interrupt")
+        self.assertEqual(set(params), {"session_id", "subagent_id"})
+        app, client = focused()
+        app._on_input(Key(CHAR, "x"))
+        app._on_input(Key(CHAR, "x"))
+        answer(app, client, result)  # Hermes 6c61c3e27d: found false
+        self.assertEqual(notices(app)[-1], "find usages of had already finished.")
+
+    def test_any_other_key_cancels_the_question_and_does_what_it_does(self) -> None:
+        app, client = focused()
+        app._on_input(Key(CHAR, "x"))
+        app._on_input(Key(DOWN))
+        self.assertEqual(app.list_selected, SECOND)
+        app._on_input(Key(CHAR, "x"))
+        self.assertIn("x again interrupts read the diff", under_the_frame(app)[-1])
+        self.assertEqual(client.calls, [])
+        app, client = focused()
+        app._on_input(Key(CHAR, "x"))
+        app._on_input(Key(DOWN))
+        app._on_input(Key(UP))  # back on the first agent: its question ended with the Down
+        self.assertEqual(under_the_frame(app)[-1], AGENT_LIST_HINT)
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual(client.calls, [])  # a first x again, not the second
+
+    def test_on_main_or_a_finished_agent_x_sends_nothing(self) -> None:
+        app, client = focused()
+        app._on_input(Key(UP))  # main
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual((app.list_selected, app.composer.text), (None, "x"))  # typing leaves the list, as before
+        app, client = focused(frames=FRAMES)  # both finished
+        app._on_input(Key(CHAR, "x"))
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual(client.calls, [])
+        self.assertIn("has finished", notices(app)[-1])
+
+    def test_s_steers_the_highlighted_agent_with_the_text_sent_next(self) -> None:
+        app, client = focused()
+        app._on_input(Key(CHAR, "s"))
+        self.assertIsNone(app.list_selected)  # the composer has the keys for the text
+        self.assertIn("steering find usages of", " ".join(under_the_frame(app)))
+        type_text(app, "skip the tests folder")
+        app._on_input(Key(ENTER))
+        self.assertEqual(
+            client.calls,
+            [("subagent.steer", {"session_id": SID, "subagent_id": FIRST, "text": "skip the tests folder"})],
+        )
+        answer(app, client, {"status": "queued", "subagent_id": FIRST, "text": "skip the tests folder"})
+        self.assertEqual(notices(app)[-1], "↪ steer queued for find usages of: skip the tests folder")
+        self.assertIsNone(app.agent_steer)
+
+    def test_a_steer_hermes_rejects_comes_back_to_the_composer(self) -> None:
+        params, result = recorded_parity("subagent_steer")
+        self.assertEqual(set(params), {"session_id", "subagent_id", "text"})
+        app, client = focused()
+        app._on_input(Key(CHAR, "s"))
+        type_text(app, "use the other file")
+        app._on_input(Key(ENTER))
+        answer(app, client, result)  # Hermes 6c61c3e27d: rejected
+        self.assertIn("did not take the steer for find usages of", notices(app)[-1])
+        self.assertEqual(app.composer.text, "use the other file")
+        self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
+
+    def test_esc_cancels_the_steer_and_nothing_is_sent(self) -> None:
+        app, client = focused()
+        app._on_input(Key(CHAR, "s"))
+        type_text(app, "never mind")
+        app._on_input(Key(ESCAPE))
+        self.assertIsNone(app.agent_steer)
+        self.assertEqual(app.composer.text, "")
+        self.assertEqual(client.calls, [])
+
+    def test_the_hint_names_both_keys(self) -> None:
+        app, _client = focused()
+        self.assertEqual(under_the_frame(app)[-1], AGENT_LIST_HINT)
+        self.assertIn("x interrupt", AGENT_LIST_HINT)
+        self.assertIn("s steer", AGENT_LIST_HINT)
+
+    def test_the_contract_declares_both_calls_with_a_session_and_an_agent(self) -> None:
+        self.assertEqual(contract.CLIENT_METHODS["subagent.interrupt"], {"session_id", "subagent_id"})
+        self.assertEqual(contract.CLIENT_METHODS["subagent.steer"], {"session_id", "subagent_id", "text"})
+        self.assertNotEqual(contract.call_problem("subagent.interrupt", {"session_id": SID}), "")
+        self.assertNotEqual(contract.call_problem("subagent.steer", {"session_id": SID, "subagent_id": FIRST, "text": " "}), "")
+        self.assertEqual(contract.call_problem("subagent.steer", recorded_parity("subagent_steer")[0]), "")
+
+
 class TailPollTests(unittest.TestCase):
     def open(self, **options: object) -> tuple[App, RecordingClient, list[float]]:
         now = [50.0]
@@ -937,7 +1046,7 @@ class AgentReplayTests(AppTestCase):
         tail = {"subagent_id": FIRST, "available": True, "text": "TAIL: grepping src/\n", "truncated": False}
         run = self.prepare(delegating_scenario(("subagent.tail", {"result": tail})))
         terminal = run.terminal
-        listed = terminal.shows("↑↓ select · ⏎ view log · esc back")
+        listed = terminal.shows(AGENT_LIST_HINT)
         terminal.script(
             self.submit(run, INTERRUPTED_PROMPT),
             Step(b"\x1b[B", when=terminal.shows("● main  "), capture="strip", label="the strip"),
@@ -959,7 +1068,7 @@ class AgentReplayTests(AppTestCase):
         status = status_index(rows)
         self.assertEqual(rows[status - 4], "  ● main")
         self.assertTrue(rows[status - 3].startswith("▸ ") and "find usages of old_api" in rows[status - 3], rows)
-        self.assertEqual(rows[status - 1], "↑↓ select · ⏎ view log · esc back")
+        self.assertEqual(rows[status - 1], AGENT_LIST_HINT)
         self.assertEqual(composer_index(rows), composer_index(captures["strip"]) - 3)
         self.assertEqual(captures["log"][0], "find usages of old_api in src/ and list every call site")
         self.assertEqual(captures["second"][0], "read the diff for risks")
@@ -991,8 +1100,12 @@ class ContractTests(unittest.TestCase):
             with self.subTest(name):
                 self.assertNotEqual(contract.call_problem("subagent.tail", params), "")
 
-    def test_the_tui_declares_no_call_that_writes_to_a_subagent(self) -> None:
-        self.assertEqual([method for method in contract.CLIENT_METHODS if method.startswith("subagent.")], ["subagent.tail"])
+    def test_the_only_calls_that_act_on_a_subagent_are_the_two_the_boundary_names(self) -> None:
+        # AGENTS.md: `x` (interrupt, confirmed) and `s` (steer with typed text), each on a keypress in the list.
+        self.assertEqual(
+            sorted(method for method in contract.CLIENT_METHODS if method.startswith("subagent.")),
+            ["subagent.interrupt", "subagent.steer", "subagent.tail"],
+        )
 
 
 if __name__ == "__main__":

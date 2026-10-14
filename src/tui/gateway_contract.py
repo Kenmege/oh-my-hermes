@@ -61,6 +61,11 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "session.list": frozenset({"limit"}),
     # Read-only: the last 16 KB of one child's live transcript, for the agent log view. See `call_problem`.
     "subagent.tail": frozenset({"session_id", "subagent_id"}),
+    # The two actions on one subagent, each on the person's keypress in the agent list (AGENTS.md): `x` once a
+    # second `x` confirms, and `s` with text the person then types and sends. Hermes answers `found` (false when
+    # the child had already finished) and, for a steer, `status` (STEER_QUEUED or STEER_REJECTED).
+    "subagent.interrupt": frozenset({"session_id", "subagent_id"}),
+    "subagent.steer": frozenset({"session_id", "subagent_id", "text"}),
     # A rewind (Esc Esc, /rewind) adds both truncation keys; see `call_problem`. Hermes refuses a truncation
     # without `confirm_truncate` (4029) and an ordinal one on a durable session (4004).
     "prompt.submit": frozenset({"session_id", "text", "queued", "truncate_before_row_id", "confirm_truncate"}),
@@ -250,7 +255,8 @@ def call_problem(method: str, params: dict[str, object]) -> str:
     `truncate_before_row_id` and `confirm_truncate: true` (a rewind names the
     row the person picked and says so); a `config.set` that Hermes would apply
     beyond one session (a key or a value outside `CONFIG_SET_VALUES`, or no session id);
-    or a `subagent.tail` that does not name both a session and a subagent.
+    or a `subagent.tail`, `subagent.interrupt` or `subagent.steer` that does
+    not name both a session and a subagent (a steer, its text too).
     Hermes answers a tail without a subagent id as a rejected parameter
     (4000), which the client reads as drift and ends the session over.
     """
@@ -265,9 +271,10 @@ def call_problem(method: str, params: dict[str, object]) -> str:
     if method == "shell.exec":
         command = params.get("command")
         return "" if isinstance(command, str) and command.strip() else "shell.exec needs the command the person typed"
-    if method == "subagent.tail":
-        missing = [key for key in ("session_id", "subagent_id") if not (isinstance(params.get(key), str) and params[key])]
-        return f"subagent.tail needs {' and '.join(missing)}: Hermes rejects the call without" if missing else ""
+    if method in ("subagent.tail", "subagent.interrupt", "subagent.steer"):
+        needed = ("session_id", "subagent_id", "text") if method == "subagent.steer" else ("session_id", "subagent_id")
+        missing = [key for key in needed if not (isinstance(params.get(key), str) and params[key].strip())]
+        return f"{method} needs {' and '.join(missing)}: Hermes rejects the call without" if missing else ""
     if method != "config.set":
         return ""
     key, value, session_id = params.get("key"), params.get("value"), params.get("session_id")
