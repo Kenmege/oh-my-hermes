@@ -579,8 +579,8 @@ def run_model_chain_picker(
 ) -> str:
     """`omh model-chains`' picker, driven through the TUI's own terminal; returns a one-line result.
 
-    The same rows and the same validated save the Hermes widget used
-    (`plugin_bundle/omh/model_chain_picker.py`), painted by the CLI picker.
+    The rows and the validated save of `plugin_bundle/omh/model_chain_picker.py`,
+    the same ones `omh model-chains` uses, painted by the CLI picker.
     `read_key`, `write` and `width` are the picker's seams, so the terminal
     stays in the TUI's raw mode: no terminal setting changes, and Ctrl+C
     reaches the picker as a key that cancels instead of a signal.

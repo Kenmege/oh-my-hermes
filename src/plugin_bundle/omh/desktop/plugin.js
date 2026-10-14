@@ -1,8 +1,8 @@
-// The OMH desktop half: the HUD the modern-TUI widget draws
-// (src/omh/tui_widgets/omh-status.mjs), redrawn for Hermes Desktop as a
-// right-hand pane -- plan checklist, agent rows with their routed model and
-// metrics, the fanout DAG while one is active -- and a compact status-bar
-// item, in the app's own visual language rather than the terminal's.
+// The OMH desktop half: the HUD the OMH TUI draws (src/tui/panels.py),
+// redrawn for Hermes Desktop as a right-hand pane -- plan checklist, agent
+// rows with their routed model and metrics, the fanout DAG while one is
+// active -- and a compact status-bar item, in the app's own visual language
+// rather than the terminal's.
 //
 // Plain ESM, loaded uncompiled through the app's disk-plugin door: only
 // '@hermes/plugin-sdk', 'react' and 'react/jsx-runtime' resolve, and JSX
@@ -65,13 +65,14 @@ function fetchHud(sessionId) {
 }
 
 // ---------------------------------------------------------------------------
-// Formatters, ported from the TUI widget so both surfaces spell one figure
-// the same way: 77.0k, 4m 2s, ~$0.0431, category:architect(model:effort).
+// Formatters ported from the retired Hermes status widget, as the OMH TUI
+// panels' are, so the surfaces spell one figure the same way: 77.0k, 4m 2s,
+// ~$0.0431, category:architect(model:effort).
 // ---------------------------------------------------------------------------
 
 // Parentheses stay in the allowlist because the row identity is SHAPED by
 // them: `category:architect(claude...)` and `turn 3 (12 tools)`.
-// Same rule as the OMH status widget and the OMH TUI panels: whole escape sequences out,
+// Same rule as the OMH TUI panels: whole escape sequences out,
 // then letters, digits and ordinary punctuation in (`person's` must not become `persons`).
 const ESCAPE_SEQUENCE = /\x1b\[[0-?]*[ -\/]*[@-~]?|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[ -\/]*[0-~]?/g
 export const sanitizeText = value => String(value ?? '')

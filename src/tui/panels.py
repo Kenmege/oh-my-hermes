@@ -1,16 +1,17 @@
 """The OMH panels the TUI draws between the streaming tail and the composer.
 
 Two halves. `HudPoller` reads `read_omh_hud` IN PROCESS on a background
-thread -- the Hermes widget had to spawn a Python child every two seconds for
-the same payload -- and hands each new payload to the UI thread through a
+thread -- the retired Hermes status widget had to spawn a Python child every
+two seconds for the same payload -- and hands each new payload to the UI thread through a
 latest-value slot it can poll without blocking. `panel_lines` turns one
 payload into styled rows: the agents block (header, subagent graph, activity
 rows, `+N more`) above the plan block (`[Plan]` header and its checklist), so
 the plan stays directly above the composer where it always sat.
 
-The information design is the widget's (`src/omh/tui_widgets/omh-status.mjs`,
-which `tests/test_tui_widget_pack.py` pins): the same glyphs, labels, colour
-roles, column grid and shed priorities, ported to `Line`s. The widget's
+The information design is that widget's, which this module took over when
+it was deleted: the same glyphs, labels, colour roles, column grid and shed
+priorities, ported to `Line`s, and `tests/test_tui_panels.py` holds the rows
+to the ones the widget drew (`tests/fixtures/tui_panel_rows.json`). The widget's
 `⚚ [OMH] vX` brand (as `⚚ OMH`; the version stays in the banner) and its
 session-wide chips (repeat guard, in-flight tool calls, yolo) move to the
 status line through `status_segments`; the agents

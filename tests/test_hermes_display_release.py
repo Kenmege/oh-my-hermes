@@ -16,10 +16,20 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from _cli_harness import run_cli
-from _legacy_display import brand_legacy_home
+from _legacy_display import brand_legacy_home, seed_legacy_widget
 from _platform_support import requires_posix_permissions, requires_symlinks
+from omh.install.config_adapter import external_dirs, memory_provider_selection, plugin_omh_home_setting
 from omh.install.config_reversal import MANAGED_CONFIG_WRITES_STATE_KEY
 from omh.skin_pack import SKIN_THEMES, read_theme_choice, theme_for_name, write_theme_choice
+
+
+# A config with a fallback provider and a compression provider, so the
+# compression defaults have a chain to write: every key the registration pass
+# manages then lands.
+BEFORE = (
+    "version: 1\nmodel:\n  fallback_providers:\n    - provider: zai\n      model: glm-5.3\n"
+    "auxiliary:\n  compression:\n    provider: og\n"
+)
 
 
 class _Home:
@@ -46,7 +56,7 @@ class _Home:
     def brand(self, config: Path, skin: str = "omh") -> None:
         brand_legacy_home(self.omh_home, config, skin)
 
-    def legacy_install(self, before: str = "version: 1\n", skin: str = "omh") -> None:
+    def legacy_install(self, before: str = BEFORE, skin: str = "omh") -> None:
         self.config.write_text(before, encoding="utf-8", newline="")
         status, _stdout, stderr = self.run("setup", "--with-plugin")
         assert status == 0, stderr
@@ -58,22 +68,52 @@ def _omh_skin_files(hermes_home: Path) -> list[str]:
     return sorted(path.name for path in skins.glob("*.yaml")) if skins.is_dir() else []
 
 
+def _assert_every_managed_key_landed(case: unittest.TestCase, home: _Home, config_text: str) -> None:
+    """Only the screen goes: each non-display key in `_apply_result`'s chain is in the config.
+
+    The chain hands each step the previous step's text, so a step re-linked
+    to the wrong text drops every key written before it.
+    """
+    case.assertIn((home.omh_home / "skills").resolve().as_posix(), external_dirs(config_text))
+    case.assertIn("fallback_chain:", config_text)
+    case.assertIn("  enabled:\n    - omh\n", config_text)
+    case.assertEqual(memory_provider_selection(config_text), "omh")
+    case.assertEqual(Path(plugin_omh_home_setting(config_text)), home.omh_home.resolve())
+
+
 class FreshInstallTests(unittest.TestCase):
     def test_setup_writes_no_display_key_and_installs_no_widget_or_skin(self) -> None:
         with TemporaryDirectory() as tmp:
             home = _Home(Path(tmp))
+            home.config.write_text(BEFORE, encoding="utf-8", newline="")
 
             status, stdout, stderr = home.run("setup", "--with-plugin", "--yes")
 
             self.assertEqual(status, 0, stderr)
             config_text = home.config.read_text(encoding="utf-8")
             self.assertNotIn("display:", config_text)
-            self.assertIn("    - omh\n", config_text)
-            self.assertIn("  provider: omh\n", config_text)
+            _assert_every_managed_key_landed(self, home, config_text)
             self.assertFalse((home.hermes_home / "tui-widgets").exists())
             self.assertFalse((home.hermes_home / "skins").exists())
             self.assertIsNone(read_theme_choice(home.omh_home))
             self.assertNotIn("tui_verdict", json.loads(stdout))
+
+    def test_setup_reports_config_changed_when_only_plugin_enablement_changes(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            self.assertEqual(home.run("setup")[0], 0)
+            home.config.write_text(
+                home.config.read_text(encoding="utf-8").replace("plugins:\n  enabled:\n    - omh\n", "plugins:\n"),
+                encoding="utf-8",
+                newline="",
+            )
+
+            status, stdout, stderr = home.run("setup")
+
+            self.assertEqual(status, 0, stderr)
+            apply = json.loads(stdout)["steps"]["apply"]
+            self.assertTrue(apply["plugin_enabled"]["changed"])
+            self.assertTrue(apply["changed"])
 
     def test_no_omh_tui_is_still_accepted(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -97,9 +137,7 @@ class UpdateReleaseTests(unittest.TestCase):
             self.assertEqual(status, 0, stderr)
             config_text = home.config.read_text(encoding="utf-8")
             self.assertNotIn("display", config_text)
-            # Only the screen goes: OMH's plugin, memory provider and skills stay.
-            self.assertIn("    - omh\n", config_text)
-            self.assertIn("  provider: omh\n", config_text)
+            _assert_every_managed_key_landed(self, home, config_text)
             self.assertFalse((home.hermes_home / "tui-widgets" / "omh-status.mjs").exists())
             self.assertFalse((home.hermes_home / "tui-widgets" / ".omh-status.manifest.json").exists())
             self.assertEqual(_omh_skin_files(home.hermes_home), [])
@@ -309,6 +347,25 @@ class UpdateReleaseTests(unittest.TestCase):
             self.assertEqual(_omh_skin_files(home.hermes_home), [])
             self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("mono"))
             self.assertIn("saved OMH theme mono for the OMH TUI", stdout)
+
+
+class UninstallTests(unittest.TestCase):
+    def test_uninstall_removes_only_the_widget_an_earlier_version_installed(self) -> None:
+        # For an install update never reached: uninstall still takes the
+        # widget back, by its manifest, and leaves a widget of the person's.
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            self.assertEqual(home.run("setup")[0], 0)
+            destination = seed_legacy_widget(home.hermes_home)
+            unrelated = destination.parent / "personal.mjs"
+            unrelated.write_text("personal\n", encoding="utf-8")
+
+            status, stdout, stderr = home.run("uninstall", "--all", "--keep-command")
+
+            self.assertEqual((status, stderr), (0, ""))
+            self.assertFalse(destination.exists())
+            self.assertEqual(unrelated.read_text(encoding="utf-8"), "personal\n")
+            self.assertEqual(json.loads(stdout)["tui_widget"]["status"], "removed")
 
 
 class ProfileReleaseTests(unittest.TestCase):

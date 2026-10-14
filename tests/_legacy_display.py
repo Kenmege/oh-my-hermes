@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-import sys
 
 from omh.install.config_adapter import (
     ConfigChange,
@@ -26,7 +25,7 @@ from omh.install.config_reversal import MANAGED_CONFIG_WRITES_STATE_KEY, managed
 from omh.skin_pack import MANIFEST_FILENAME as SKIN_MANIFEST_FILENAME
 from omh.skin_pack import SKIN_THEMES, skin_payload
 from omh.tui_widget_pack import MANIFEST_FILENAME as WIDGET_MANIFEST_FILENAME
-from omh.tui_widget_pack import WIDGET_FILENAME, widget_payload
+from omh.tui_widget_pack import WIDGET_FILENAME
 
 _COLLAPSED_DISPLAY_SECTIONS: tuple[tuple[str, str], ...] = (
     ("thinking", "collapsed"),
@@ -121,11 +120,17 @@ def _sha256(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+# Stands in for the widget's bytes. Ownership is the manifest's digest of
+# whatever is on disk, so any payload with its own digest recorded reads as
+# OMH's, which is all the remover asks.
+LEGACY_WIDGET_PAYLOAD = b"// omh-status.mjs as an earlier OMH installed it\nexport default function register() {}\n"
+
+
 def seed_legacy_widget(hermes_home: Path) -> Path:
-    """`omh-status.mjs` and its manifest, as `install_tui_widget` wrote them."""
+    """`omh-status.mjs` and its manifest, in the shape `install_tui_widget` wrote them."""
     destination = hermes_home / "tui-widgets" / WIDGET_FILENAME
     destination.parent.mkdir(parents=True, exist_ok=True)
-    payload = widget_payload(Path(sys.executable))
+    payload = LEGACY_WIDGET_PAYLOAD
     destination.write_bytes(payload)
     (destination.parent / WIDGET_MANIFEST_FILENAME).write_text(
         json.dumps(

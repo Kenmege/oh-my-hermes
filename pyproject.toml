@@ -62,7 +62,6 @@ packages = [
   "omh.plugin_bundle.omh.tools",
   "omh.skins",
   "omh.tui",
-  "omh.tui_widgets",
   "omh.profiles",
   "omh.quality",
   "omh.routing",
@@ -105,7 +104,6 @@ packages = [
 [tool.setuptools.package-data]
 "omh.skins" = ["*.yaml"]
 "omh.tui" = ["frontend/dist/*.js"]
-"omh.tui_widgets" = ["*.mjs"]
 "omh.catalogs" = ["*.json"]
 "omh.routing.trigger_packs" = ["*.json"]
 "omh.plugin_bundle.omh" = ["plugin.yaml", "config.yaml", "desktop/*.js"]

@@ -1,12 +1,11 @@
 """The OMH TUI's HUD panels: the poller's session and cadence rules, and the rows under a budget.
 
 Plan payloads come from the real `read_omh_hud` over a temp OMH home seeded
-through the todo store, the way `test_tui_widget_pack.py` seeds the widget's.
-Agent rows and the subagent graph are the reader's documented row shapes laid
-onto that payload, since seeding a Hermes state.db is the reader's own tests'
-job. Where node is available, one case renders the same payloads through the
-shipped widget and requires the same row text, so the port cannot drift from
-the look the widget tests pin.
+through the todo store. Agent rows and the subagent graph are the reader's
+documented row shapes laid onto that payload, since seeding a Hermes state.db
+is the reader's own tests' job. One case compares the rows with the ones the
+Hermes status widget drew for the same payloads, recorded before the widget
+was deleted, so the port keeps the look the widget's tests pinned.
 """
 
 from __future__ import annotations
@@ -15,11 +14,8 @@ from collections.abc import Callable
 import copy
 from datetime import datetime, timezone
 import json
-from importlib import resources
 from pathlib import Path
-import shutil
 import sqlite3
-import subprocess
 from tempfile import TemporaryDirectory
 import threading
 import time
@@ -39,9 +35,7 @@ from omh.tui.panels import (
 )
 from omh.tui.theme import DEFAULT_THEME
 from omh.tui.width import line_width
-from omh.tui_widget_pack import INTERPRETER_MARKER
 
-NODE = shutil.which("node")
 THEME = DEFAULT_THEME
 
 
@@ -509,125 +503,81 @@ class HudPollerTests(unittest.TestCase):
         self.assertFalse(poller._thread.is_alive())
 
 
-WIDGET_HARNESS = r"""
-import { readFileSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
-const [widgetPath, casesPath] = process.argv.slice(2)
-const apps = []
-const sdk = {
-  Box: 'Box', Dialog: 'Dialog', Overlay: 'Overlay', Text: 'Text',
-  h: (type, props, ...children) => (typeof type === 'function' ? type({ ...(props || {}), children }) : { type, props, children }),
-  defineWidgetApp: app => { apps.push(app); return app },
-  openWidget() {}, updateWidget() {},
-}
-const mod = await import(pathToFileURL(widgetPath).href)
-mod.default(sdk)
-const text = node => {
-  if (node === null || node === undefined || node === false) return ''
-  if (Array.isArray(node)) return node.map(text).join('')
-  if (typeof node === 'string') return node
-  if (typeof node === 'object') return text(node.children)
-  return ''
-}
-const lines = node => {
-  if (node === null || node === undefined || node === false) return []
-  if (Array.isArray(node)) return node.flatMap(lines)
-  if (typeof node === 'object' && node.type === 'Box') return lines(node.children)
-  return [node]
-}
-const out = []
-for (const { payload, cols } of JSON.parse(readFileSync(casesPath, 'utf8'))) {
-  const render = id => {
-    const app = apps.find(candidate => candidate.id === id)
-    const state = app.reduce(app.init(''), { kind: 'snapshot', payload })
-    return lines(app.render({ cols, rows: 200, state, t: { color: {} } })).map(text).filter(Boolean)
-  }
-  out.push({ todo: render('omh-todo'), status: render('omh-status') })
-}
-process.stdout.write(JSON.stringify(out))
-"""
+def parity_cases() -> list[dict]:
+    """Three payloads at six widths: a long phased plan with agents and a graph, a small one, and one carrying escapes."""
+    items = [
+        {
+            "text": f"Task number {index} with a fairly long description to truncate",
+            "state": "active" if index == 5 else "done" if index < 5 else "pending",
+            "phase": f"Phase {min(index, 7)}",
+        }
+        for index in range(12)
+    ]
+    items[2]["blocked_reason"] = "not needed"
+    items[7]["blocked_reason"] = "needs the owner's call on the layout of the panel"
+    items.append({"text": "Subtask", "state": "pending", "depth": 1})
+    rows = [
+        agent_row(0, turn_count=3, tool_count=12, cost_usd=0.0431, cost_approximate=True, tokens_per_second=41.6,
+                  cache_hit_percentage=88, context_percentage=40, fallback_count=1),
+        agent_row(1, state="done", category="critic", model="gpt-6.1-sol", effort="xhigh", route_origin="fallback"),
+        agent_row(2, state="queued", lane_backend="kanban", assignee="miku", native_status="ready", model="kimi-k3"),
+        agent_row(3, dispatch_lane="maestro", executor_profile="claude_code", model="claude-fable-5-1"),
+        agent_row(
+            4, state="blocked", action="Blocked worker 한글 제목", category="inherit", cost_usd=0, cost_status="included"
+        ),
+    ]
+    full = with_graph(with_agents(hud_payload(items, title="Parity plan"), rows), 3)
+    full["graph"]["nodes"][2].update(state="failed", blocked_by=["unit0", "unit1"])
+    small = with_agents(hud_payload(items[:3], title="Small plan"), rows[:2])
+    # Escape sequences and ordinary punctuation reaching the renderers: both drop the whole
+    # sequence (not only its ESC byte) and keep the apostrophe, comma and question mark. The
+    # todo record layer already drops ESC bytes, so the raw text is put into the payload the
+    # renderers read, after it was built.
+    raw = [
+        "Ship the \x1b[31mred\x1b[0m fix, it's ready?",
+        "Read \x1b]8;;https://example.test\x07the link\x1b]8;;\x07 then \x1b[2Jstop",
+        "cut \x1b[31",
+    ]
+    escaped = with_agents(
+        hud_payload([{"text": f"item {index}", "state": "active" if index == 0 else "pending"} for index in range(3)],
+                    title="placeholder"),
+        rows[:2],
+    )
+    escaped["todo"]["title"] = "Esc\x1b[1m plan, person's"
+    for key in ("items", "display_items"):
+        for item, text in zip(escaped["todo"][key], raw):
+            item["text"] = text
+    return [
+        {"payload": payload, "cols": cols}
+        for cols in (60, 80, 99, 100, 140, 200)
+        for payload in (full, small, escaped)
+    ]
 
 
-@unittest.skipUnless(NODE, "node renders the widget this panel is a port of")
-class WidgetParityTests(unittest.TestCase):
-    def test_plan_and_agent_rows_read_exactly_as_the_widget_draws_them(self) -> None:
-        items = [
-            {
-                "text": f"Task number {index} with a fairly long description to truncate",
-                "state": "active" if index == 5 else "done" if index < 5 else "pending",
-                "phase": f"Phase {min(index, 7)}",
-            }
-            for index in range(12)
-        ]
-        items[2]["blocked_reason"] = "not needed"
-        items[7]["blocked_reason"] = "needs the owner's call on the layout of the panel"
-        items.append({"text": "Subtask", "state": "pending", "depth": 1})
-        rows = [
-            agent_row(0, turn_count=3, tool_count=12, cost_usd=0.0431, cost_approximate=True, tokens_per_second=41.6,
-                      cache_hit_percentage=88, context_percentage=40, fallback_count=1),
-            agent_row(1, state="done", category="critic", model="gpt-6.1-sol", effort="xhigh", route_origin="fallback"),
-            agent_row(2, state="queued", lane_backend="kanban", assignee="miku", native_status="ready", model="kimi-k3"),
-            agent_row(3, dispatch_lane="maestro", executor_profile="claude_code", model="claude-fable-5-1"),
-            agent_row(
-                4, state="blocked", action="Blocked worker 한글 제목", category="inherit", cost_usd=0, cost_status="included"
-            ),
-        ]
-        full = with_graph(with_agents(hud_payload(items, title="Parity plan"), rows), 3)
-        full["graph"]["nodes"][2].update(state="failed", blocked_by=["unit0", "unit1"])
-        small = with_agents(hud_payload(items[:3], title="Small plan"), rows[:2])
-        # Escape sequences and ordinary punctuation reaching the renderers: both drop the whole
-        # sequence (not only its ESC byte) and keep the apostrophe, comma and question mark. The
-        # todo record layer already drops ESC bytes, so the raw text is put into the payload the
-        # renderers read, after it was built.
-        raw = [
-            "Ship the \x1b[31mred\x1b[0m fix, it's ready?",
-            "Read \x1b]8;;https://example.test\x07the link\x1b]8;;\x07 then \x1b[2Jstop",
-            "cut \x1b[31",
-        ]
-        escaped = with_agents(
-            hud_payload([{"text": f"item {index}", "state": "active" if index == 0 else "pending"} for index in range(3)],
-                        title="placeholder"),
-            rows[:2],
-        )
-        escaped["todo"]["title"] = "Esc\x1b[1m plan, person's"
-        for key in ("items", "display_items"):
-            for item, text in zip(escaped["todo"][key], raw):
-                item["text"] = text
-        cases = [
-            {"payload": payload, "cols": cols}
-            for cols in (60, 80, 99, 100, 140, 200)
-            for payload in (full, small, escaped)
-        ]
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            widget = resources.files("omh.tui_widgets").joinpath("omh-status.mjs").read_text(encoding="utf-8")
-            # No interpreter behind the widget's HUD read: it fails to null and
-            # the frame renders only the payload handed in below.
-            (root / "widget.mjs").write_text(
-                widget.replace(INTERPRETER_MARKER, json.dumps(str(root / "no-interpreter"))), encoding="utf-8"
-            )
-            (root / "harness.mjs").write_text(WIDGET_HARNESS, encoding="utf-8")
-            (root / "cases.json").write_text(json.dumps(cases), encoding="utf-8")
-            completed = subprocess.run(
-                [NODE, str(root / "harness.mjs"), str(root / "widget.mjs"), str(root / "cases.json")],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                timeout=120,
-                cwd=str(root),
-            )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        for case, widget_rows in zip(cases, json.loads(completed.stdout), strict=True):
-            with self.subTest(cols=case["cols"], plan=case["payload"]["todo"]["title"]):
+# The rows the Hermes status widget drew for `parity_cases()`, recorded from
+# `omh-status.mjs` before it was deleted: the panels are its port, and the
+# widget's own tests pinned this look. Deterministic for these payloads (two
+# recordings seconds apart matched), so a difference is the panel changing.
+PANEL_ROWS = Path(__file__).resolve().parent / "fixtures" / "tui_panel_rows.json"
+
+
+class PanelRowsTests(unittest.TestCase):
+    def test_plan_and_agent_rows_read_exactly_as_the_widget_drew_them(self) -> None:
+        cases = parity_cases()
+        recorded = json.loads(PANEL_ROWS.read_text(encoding="utf-8"))
+        self.assertEqual([(row["cols"], row["plan"]) for row in recorded],
+                         [(case["cols"], case["payload"]["todo"]["title"]) for case in cases])
+        for case, rows in zip(cases, recorded, strict=True):
+            with self.subTest(cols=case["cols"], plan=rows["plan"]):
                 mine = [line_text(line).rstrip() for line in panel_lines(case["payload"], case["cols"], 100, THEME, 0.0)]
                 plan_at = next(index for index, row in enumerate(mine) if row.startswith("[Plan]"))
-                # The widget's dock-top ends with the composer rule, and its
-                # dock-bottom opens with a rule and the branded header, which
-                # the TUI's status line and `[Agents]` header replace.
-                self.assertEqual(mine[plan_at:], [row.rstrip() for row in widget_rows["todo"][:-1]])
-                self.assertEqual(mine[1:plan_at], [row.rstrip() for row in widget_rows["status"][2:]])
+                # The widget's dock-top ended with the composer rule, and its
+                # dock-bottom opened with a rule and the branded header, which
+                # the TUI's status line and `[Agents]` header replace; the
+                # recording leaves those out.
+                self.assertEqual(mine[plan_at:], rows["plan_rows"])
+                self.assertEqual(mine[1:plan_at], rows["agent_rows"])
                 self.assertGreater(len(mine[1:plan_at]), 1)
-
 
 
 class PunctuationTests(unittest.TestCase):

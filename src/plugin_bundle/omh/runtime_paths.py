@@ -251,7 +251,7 @@ def _setting(config):
 
 
 # The same setting, read by the standalone lane. A colocated `omh` CLI and the
-# TUI widget's reader spawn have no `hermes_cli.config`, so they cannot load
+# OMH TUI's HUD reader have no `hermes_cli.config`, so they cannot load
 # the effective, managed-overlaid configuration the native lane validates
 # against; the user file is what they can read, and it is the store the
 # profile's own plugin resolves on every ordinary install. Not reading it is

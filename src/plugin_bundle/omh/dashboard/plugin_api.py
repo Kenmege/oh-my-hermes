@@ -126,7 +126,8 @@ def hud_payload(
     ``omh_home`` is left to the reader, which resolves the store from the
     gateway's own Hermes home -- the same ``get_hermes_home()`` this route
     resolves, not the ``hermes_home`` handed in -- through that home's
-    ``plugins.entries.omh.settings.omh_home``, as it does for the TUI widget.
+    ``plugins.entries.omh.settings.omh_home``, as it does for every reader
+    that names no store.
     ``session`` is the focused stored session id the app names, and naming
     one is what makes the plan todo session-scoped rather than a
     most-recent-TUI guess.

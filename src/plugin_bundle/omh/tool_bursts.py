@@ -340,10 +340,10 @@ _HISTORY_TICK_KEY = "s"
 #
 # The predicate itself (`session_attendance.escalation_can_reach_a_person`)
 # reads two process-global maps: the platform `pre_llm_call` recorded and the
-# delegated-child set `subagent_start` recorded. The HUD reader is a separate
-# interpreter -- the TUI widget spawns one every two seconds -- so both maps
-# are empty there and the predicate would answer "attended" for every
-# session, which is precisely the disagreement `_repeat_stage`'s signature
+# delegated-child set `subagent_start` recorded. The HUD reader runs in
+# another process -- the OMH TUI polls it from its own every two seconds, and
+# `omh hud` from the CLI's -- so both maps are empty there and the predicate
+# would answer "attended" for every session, which is precisely the disagreement `_repeat_stage`'s signature
 # exists to prevent. Recording the gate's own answer is what carries that
 # guarantee across the process boundary: there is no second predicate, and no
 # default standing in for one. A row with no recorded answer withholds the
@@ -1016,8 +1016,8 @@ def _repeat_row_projection(
     Built from rows a caller has ALREADY read, never from a read of its
     own. `read_omh_hud` takes one snapshot of this ledger per poll and
     three projections come out of it; a second read here would be a
-    second chance to straddle a concurrent writer, and the HUD reader is
-    spawned every two seconds per TUI.
+    second chance to straddle a concurrent writer, and the OMH TUI reads
+    the HUD every two seconds while a session is open.
 
     Three things this deliberately does not carry, and one it does:
 

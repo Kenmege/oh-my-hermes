@@ -1,26 +1,25 @@
+"""Removing the Hermes status widget earlier versions installed.
+
+OMH used to install `omh-status.mjs` into `$HERMES_HOME/tui-widgets/`, with a
+manifest recording its digest, so bare `hermes` drew the OMH HUD. Bare `omh`
+opens the OMH TUI now and nothing OMH ships draws inside Hermes' terminal, so
+this module only takes the old file back: setup and update through the
+display release, uninstall on its own. Ownership is the manifest's digest
+against the file on disk, never the shipped bytes, so it still decides with
+no widget source in the package.
+"""
+
 from __future__ import annotations
 
-from importlib import resources
 import json
-import os
 from pathlib import Path
-import secrets
 
 WIDGET_FILENAME = "omh-status.mjs"
 MANIFEST_FILENAME = ".omh-status.manifest.json"
-INTERPRETER_MARKER = "__OMH_PYTHON_EXECUTABLE__"
 
 
 class TuiWidgetInstallError(RuntimeError):
     """The managed Hermes widget destination is unsafe."""
-
-
-def widget_payload(python_executable: Path) -> bytes:
-    template = resources.files("omh.tui_widgets").joinpath(WIDGET_FILENAME).read_text(encoding="utf-8")
-    executable = os.path.realpath(python_executable)
-    if not Path(executable).is_file():
-        raise TuiWidgetInstallError("OMH Python executable is not a regular file")
-    return template.replace(INTERPRETER_MARKER, json.dumps(executable)).encode()
 
 
 def _reject_symlink_path(path: Path) -> None:
@@ -31,54 +30,6 @@ def _reject_symlink_path(path: Path) -> None:
         if current == current.parent:
             return
         current = current.parent
-
-
-def _atomic_write_bytes(path: Path, payload: bytes) -> None:
-    temporary = path.with_name(f".{path.name}.{os.getpid()}-{secrets.token_hex(8)}.tmp")
-    try:
-        with temporary.open("xb") as handle:
-            handle.write(payload)
-        os.replace(temporary, path)
-    finally:
-        if temporary.exists() and not temporary.is_symlink():
-            temporary.unlink()
-
-
-def install_tui_widget(hermes_home: Path, *, dry_run: bool = False) -> dict[str, str]:
-    destination_dir = hermes_home / "tui-widgets"
-    destination = destination_dir / WIDGET_FILENAME
-    manifest = destination_dir / MANIFEST_FILENAME
-    _reject_symlink_path(hermes_home)
-    _reject_symlink_path(destination_dir)
-    _reject_symlink_path(destination)
-    if destination.exists() and not destination.is_file():
-        raise TuiWidgetInstallError(f"widget destination is not a regular file: {destination}")
-    payload = widget_payload(Path(os.sys.executable))
-    if destination.exists() and not _is_managed_widget(destination, manifest):
-        raise TuiWidgetInstallError(f"refusing to replace unmanaged widget: {destination}")
-    status = "unchanged" if destination.exists() and destination.read_bytes() == payload else "installed"
-    if dry_run and status == "installed":
-        status = "would_install"
-    elif status == "installed":
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        _reject_symlink_path(destination_dir)
-        _atomic_write_bytes(destination, payload)
-        _atomic_write_bytes(
-            manifest,
-            json.dumps(
-                {
-                    "schema_version": "omh_tui_widget_manifest/v1",
-                    "filename": WIDGET_FILENAME,
-                    "sha256": _sha256(payload),
-                },
-                sort_keys=True,
-            ).encode(),
-        )
-    return {
-        "status": status,
-        "path": str(destination),
-        "extension_point": "hermes_tui_widgets",
-    }
 
 
 def _sha256(payload: bytes) -> str:

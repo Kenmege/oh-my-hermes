@@ -1,7 +1,7 @@
 """The editing model behind the chain picker, shared by its two surfaces.
 
-Bare `omh model-chains` on a terminal and the Modern-TUI `/omh-model` widget
-walk the same rows: one per shipped mixture category, each showing the chain
+Bare `omh model-chains` on a terminal and `/omh-model` in the OMH TUI walk
+the same rows: one per shipped mixture category, each showing the chain
 in effect, whether it is a shipped default or an override, and whether a
 provider this machine holds -- linked to Hermes, or recorded by `omh setup`
 -- serves its head. Left and right step the head
@@ -11,12 +11,12 @@ effort, and a save composes the override document exactly the way
 rules so neither surface carries chain logic of its own; it renders nothing
 and reads no keys.
 
-The widget imports this module from the installed plugin bundle, so it may
-depend only on siblings in this package. Display labels and purpose phrases
-live in the repo's catalog module, which the bundle cannot see; `picker_rows`
-takes them as optional mappings and falls back to the raw alias — the name
-routing actually uses — so a surface without the catalog still shows the
-truth, just less prettily.
+It lives in the plugin bundle, so it may depend only on siblings in this
+package (`tests/test_plugin_bundle_standalone.py`). Display labels and
+purpose phrases live in the repo's catalog module, which the bundle cannot
+see; `picker_rows` takes them as optional mappings and falls back to the raw
+alias — the name routing actually uses — so a surface without the catalog
+still shows the truth, just less prettily.
 """
 
 from __future__ import annotations
