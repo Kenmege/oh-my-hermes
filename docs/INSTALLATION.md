@@ -366,6 +366,15 @@ run and approval decision stays Hermes'; the screen is OMH's.
   once the session's output has reached the bottom of the screen, or after
   Ctrl+L. Until then it leaves the mouse to the terminal and the keys open
   the list.
+- The composer takes a paste whole when the terminal brackets it, as most
+  terminals do. A paste whose end marker never arrives ends after 0.5 s
+  without input, as what arrived so far, and the keys after it are keys
+  again, Ctrl+C included. Until that end marker arrives late, or for a second
+  after the paste ended, a line break in what follows adds a line instead of
+  sending, so the rest of a paste that only stalled stays text. Each read of
+  several keys at once (how the rest of a paste arrives) starts the second
+  again; keys typed one at a time do not, so an Enter typed within the second
+  adds a line and the next one sends.
 - When Hermes asks something (an approval, a clarify question, a sudo
   password), the question takes the slot until you answer. Nothing is answered
   for you: Esc or Ctrl+C declines. An approval offers deny, allow once and

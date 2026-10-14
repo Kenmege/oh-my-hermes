@@ -246,10 +246,22 @@ class BracketedPasteTests(unittest.TestCase):
         paused = PausedInput(reporting=False)
         paused.feed(b"\x1b[200~a")
         paused.pause(PASTE_SETTLE_SECONDS + READ_SECONDS)
-        for chunk in (b"b", b"c", b"d\r"):  # past PASTE_LATE_SECONDS since the settle, never that long without a byte
+        # A paste's rest arrives in chunks of several keys; past PASTE_LATE_SECONDS since the settle, never that
+        # long without a chunk.
+        for chunk in (b"bb", b"cc", b"dd\r"):
             paused.pause(PASTE_LATE_SECONDS * 0.6)
             paused.feed(chunk)
-        self.assertEqual(paused.events, [Paste("a"), *map(char, "bcd"), Paste("\n")])
+        self.assertEqual(paused.events, [Paste("a"), *map(char, "bbccdd"), Paste("\n")])
+
+    def test_keys_typed_one_a_read_do_not_hold_the_late_window_open(self) -> None:
+        paused = PausedInput(reporting=False)
+        paused.feed(b"\x1b[200~pasted text")
+        paused.pause(PASTE_SETTLE_SECONDS + READ_SECONDS)  # settled at 0.5 s: the window runs to 1.5 s
+        for gap, data in ((0.3, b"o"), (0.15, b"k"), (0.15, b"\r"), (0.6, b"\r")):  # typed, one key a read
+            paused.pause(gap)
+            paused.feed(data)
+        # The Enter at 1.15 s is still a line in the paste; the one at 1.75 s sends, though keys kept coming.
+        self.assertEqual(paused.events, [Paste("pasted text"), char("o"), char("k"), Paste("\n"), Key("enter")])
 
     def test_a_carriage_return_after_the_late_window_is_enter(self) -> None:
         paused = PausedInput(reporting=False)

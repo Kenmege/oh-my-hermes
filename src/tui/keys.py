@@ -21,7 +21,8 @@ ends at the terminal's paste-end marker; one whose marker never comes ends at
 the first `flush()` after `PASTE_SETTLE_SECONDS` of silence, as what arrived
 so far, and the bytes after that are keys again, except that a carriage return
 among them is a newline (`Paste("\n")`) until the late end marker arrives,
-which is no key, or `PASTE_LATE_SECONDS` pass without a byte.
+which is no key, or `PASTE_LATE_SECONDS` pass without a read of more than one
+key.
 
 Nothing here raises on input. A sequence it does not know becomes
 `Key("unknown")` and decoding continues with the next byte.
@@ -110,8 +111,9 @@ PASTE_END = b"\x1b[201~"
 # (hermes-ink `App.tsx` PASTE_TIMEOUT); without it every later key, Ctrl+C included, would be paste text.
 PASTE_SETTLE_SECONDS = 0.5
 # After that settle the terminal still owes the paste's rest and its end marker. Until the marker arrives, or this
-# long passes without a byte, a carriage return is a newline in the paste, not Enter: a stalled multi-line paste
-# must not submit its first lines. The marker itself is then no key.
+# long passes without a read that brings more than one key (the rest arrives in chunks; typed keys come one a
+# read and do not count), a carriage return is a newline in the paste, not Enter: a stalled multi-line paste must
+# not submit its first lines. The marker itself is then no key.
 PASTE_LATE_SECONDS = 1.0
 
 # A CSI longer than this without a final byte is garbage, not a slow key; the
@@ -589,8 +591,6 @@ class KeyDecoder:
             self._pending.clear()
         if not self._pending:
             self._held_at = now
-        if now < self._late_paste_until:
-            self._late_paste_until = now + PASTE_LATE_SECONDS  # the paste's rest is still arriving
         self._fed_at = now
         earlier = len(self._pending)  # bytes held from earlier reads, in front of this one's
         self._pending.extend(data)
@@ -610,7 +610,11 @@ class KeyDecoder:
             else:
                 self._settled_start = b""
         held = len(self._pending)
-        events += self._drain(final=False, earlier=earlier)
+        decoded = self._drain(final=False, earlier=earlier)
+        if len(decoded) > 1 and now < self._late_paste_until:
+            # More than one key in a read is the paste's rest still arriving; a person types one key a read.
+            self._late_paste_until = now + PASTE_LATE_SECONDS
+        events += decoded
         if self._pending and len(self._pending) < held:
             self._held_at = now  # what is still held came in this read
         return events
