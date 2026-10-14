@@ -49,7 +49,8 @@ All notable changes will be documented here.
   line), and Ctrl+O opens the whole transcript with every detail. In the agent
   list, `x` twice interrupts the highlighted agent and `s` steers it with the
   next line you send. The plan panel follows Hermes' `todo.updated` at once
-  instead of waiting 2 to 8 s for the HUD's next poll.
+  instead of waiting 2 to 8 s for the HUD's next poll. Every repaint is one
+  synchronized update (DECSET 2026).
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

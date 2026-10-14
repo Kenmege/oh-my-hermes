@@ -33,6 +33,12 @@ repainted. Only the lines beyond the pad push the region down the old way,
 scrolling the screen by exactly as many rows as they add. Either way a region
 whose bottom sits on the screen's last row keeps it there.
 
+Synchronized output: every frame that paints rows is one synchronized
+update (DECSET 2026, `SYNC_BEGIN` ... `SYNC_END`), so a terminal that
+supports it shows the frame whole instead of row by row, and a blinking or
+animated row never flickers; a terminal that does not ignores the mode. A
+frame that only parks the cursor is not wrapped.
+
 Precondition: the region is never taller than the terminal. Cursor-up stops
 at the top of the screen, so a taller region would lose its relative
 bookkeeping; the layout's height budget guarantees this.
@@ -68,6 +74,9 @@ AUTOWRAP_ON = f"{CSI}?7h"
 # Home, erase the screen, erase the scrollback (xterm `CSI 3 J`): the start of a full redraw.
 CURSOR_HOME = f"{CSI}H"
 CLEAR_SCREEN_AND_SCROLLBACK = f"{CSI}H{CSI}2J{CSI}3J"
+# One synchronized update: the terminal holds the screen until the end mark, then shows the frame at once.
+SYNC_BEGIN = f"{CSI}?2026h"
+SYNC_END = f"{CSI}?2026l"
 
 
 def cursor_up(rows: int) -> str:
@@ -212,7 +221,7 @@ class LiveRegion:
         self._parked = target
         if not painted:
             return "".join(park)
-        return "".join([HIDE_CURSOR, AUTOWRAP_OFF, *ops, AUTOWRAP_ON, *park, SHOW_CURSOR])
+        return "".join([SYNC_BEGIN, HIDE_CURSOR, AUTOWRAP_OFF, *ops, AUTOWRAP_ON, *park, SHOW_CURSOR, SYNC_END])
 
     def render(self, lines: Sequence[Line], cursor: tuple[int, int], width: int, pad: int = 0) -> None:
         """Show `lines` as the region and park the cursor at `cursor` = (row, col) within it.

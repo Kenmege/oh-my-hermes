@@ -57,6 +57,37 @@ class Harness:
         self.region.flush_above(lines, self.cols if width is None else width)
 
 
+class SynchronizedOutputTests(unittest.TestCase):
+    """Every frame that paints rows is one synchronized update (DECSET 2026), so a terminal shows it whole."""
+
+    def test_every_painting_frame_is_wrapped_and_a_cursor_only_move_is_not(self) -> None:
+        from omh.tui.screen import SYNC_BEGIN, SYNC_END
+
+        harness = Harness(history=3)
+        harness.render(plain("one", "two"), cursor=(1, 0))
+        harness.render(plain("one", "TWO"), cursor=(1, 0))
+        harness.flush(plain("flushed"))
+        harness.render(plain("one", "TWO"), cursor=(0, 2))  # nothing changed but the caret
+        painting, parking = harness.writes[:3], harness.writes[3]
+        for frame in painting:
+            with self.subTest(frame=frame):
+                self.assertTrue(frame.startswith(SYNC_BEGIN) and frame.endswith(SYNC_END), repr(frame))
+                self.assertEqual((frame.count(SYNC_BEGIN), frame.count(SYNC_END)), (1, 1))
+        self.assertNotIn(SYNC_BEGIN, parking)
+        self.assertEqual(SYNC_BEGIN, "\x1b[?2026h")
+        self.assertEqual(SYNC_END, "\x1b[?2026l")
+
+    def test_a_pager_frame_is_wrapped_too(self) -> None:
+        from omh.tui.pager import Pager
+        from omh.tui.screen import SYNC_BEGIN, SYNC_END
+        from omh.tui.theme import DEFAULT_THEME
+
+        pager = Pager("t", plain("a", "b"))
+        frame = pager.frame(20, 5, DEFAULT_THEME)
+        self.assertTrue(frame.startswith(SYNC_BEGIN) and frame.endswith(SYNC_END))
+        self.assertEqual(pager.frame(20, 5, DEFAULT_THEME), "")  # nothing changed: nothing written
+
+
 class FirstFrameTests(unittest.TestCase):
     def test_first_frame_paints_from_the_cursor_row(self) -> None:
         harness = Harness()
