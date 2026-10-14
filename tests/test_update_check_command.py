@@ -2,7 +2,7 @@
 
 - `omh install`/`omh update` recording a comparable remote identity into
   `state.json` (`release_source_commit`) only when update-check is opted in.
-- The `omh`/`hermes` launch path (`commands/main.py`) acting on the check:
+- The `omh`/`hermes` launch path (`commands/bare_launch.py`) acting on the check:
   a notice line for `notify`, reusing `omh update`'s own code path for
   `auto`, and a non-blocking lock so two launches never auto-update at once.
 
@@ -20,7 +20,7 @@ Auto mode's `_run_auto_update` spawns `omh update --no-interactive` as a real
 subprocess (so its own command-package-update re-entry sees a normal `omh
 update` `sys.argv`, not the bare-launch argv this process actually started
 with -- see the docstring on `_run_auto_update`). Tests here fake that
-subprocess by patching `omh.commands.main.subprocess.run` directly, the same
+subprocess by patching `omh.commands.bare_launch.subprocess.run` directly, the same
 pattern `tests/test_cli.py` already uses for the command-package self-update
 re-entry, rather than letting a real child process spawn.
 """
@@ -40,6 +40,7 @@ from unittest.mock import patch
 
 from _cli_harness import run_cli
 
+from omh.commands import bare_launch as bare_launch_module
 from omh.commands import main as main_module
 from omh.local_store import atomic_write_json, read_json_object
 from omh.maintenance.update_check import (
@@ -304,7 +305,7 @@ class StartupCheckLaunchIntegrationTests(unittest.TestCase):
 
             with (
                 patch(_RUN_CURL_TARGET, _fake_curl("b" * 40)),
-                patch.object(main_module.subprocess, "run", side_effect=fake_run) as run,
+                patch.object(bare_launch_module.subprocess, "run", side_effect=fake_run) as run,
                 contextlib.redirect_stdout(buffer),
             ):
                 main_module._run_startup_update_check(args)
@@ -351,7 +352,7 @@ class StartupCheckLaunchIntegrationTests(unittest.TestCase):
 
             with (
                 patch(_RUN_CURL_TARGET, _fake_curl("b" * 40)),
-                patch.object(main_module.subprocess, "run", side_effect=failing_run),
+                patch.object(bare_launch_module.subprocess, "run", side_effect=failing_run),
                 contextlib.redirect_stdout(out_buffer),
                 contextlib.redirect_stderr(err_buffer),
             ):
@@ -414,7 +415,7 @@ class StartupCheckLaunchIntegrationTests(unittest.TestCase):
             buffer = io.StringIO()
             with (
                 patch(_RUN_CURL_TARGET, _fake_curl_rewritten("b" * 40)),
-                patch.object(main_module.subprocess, "run") as run,
+                patch.object(bare_launch_module.subprocess, "run") as run,
                 contextlib.redirect_stdout(buffer),
             ):
                 main_module._run_startup_update_check(args)

@@ -1,6 +1,6 @@
 """Name the Hermes session that closed when OMH's own TUI launch exited.
 
-Bare ``omh`` runs the user's ``hermes`` as a child (``commands/main.py``,
+Bare ``omh`` runs the user's ``hermes`` as a child (``commands/bare_launch.py``,
 ``_launch_hermes_tui``), so control returns to this process when the TUI
 exits. Hermes prints its own epilogue first and that epilogue names the other
 binary -- ``hermes --tui --resume <id>`` -- so someone who came in through
