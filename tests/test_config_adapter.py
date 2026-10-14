@@ -9,6 +9,8 @@ from _local_package import load_local_package
 
 load_local_package()
 from omh.config_adapter import (
+    display_key_named_twice,
+    display_skin_selection,
     external_dir_registered,
     ensure_external_dir,
     external_dirs,
@@ -158,6 +160,22 @@ class ConfigAdapterTests(unittest.TestCase):
                 self.assertEqual(external_dirs(original), [])
                 with self.assertRaises(ValueError):
                     remove_external_dir(original, "/tmp/omh/skills")
+
+    def test_a_display_key_set_twice_is_named_twice_and_read_first(self) -> None:
+        # The release decides a value set in two places by
+        # `display_key_named_twice`, never by which one the reader returns,
+        # and the reader keeps returning the first value it always did.
+        for text in (
+            "display:\n  skin: ares\n  skin: omh-crimson\n",
+            "display.skin: ares\ndisplay:\n  skin: omh-crimson\n",
+            "display:\n  skin: ares\ndisplay:\n  skin: omh-crimson\n",
+        ):
+            with self.subTest(text=text):
+                self.assertTrue(display_key_named_twice(text, "skin"))
+                self.assertEqual(display_skin_selection(text), "ares")
+        for text in ("display:\n  skin: ares\n", "display.skin: ares\n", "display:\n  interface: cli\n"):
+            with self.subTest(text=text):
+                self.assertFalse(display_key_named_twice(text, "skin"))
 
 
 if __name__ == "__main__":
