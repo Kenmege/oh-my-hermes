@@ -138,6 +138,7 @@ class ToolRow:
     # An edit's `inline_diff` as Hermes sent it, UTF-8 encoded, parsed when drawn (`diff_lines`). Encoded, because
     # a str holding one character past Latin-1 (every Hermes diff has `┊` and `→`) takes two bytes for each of
     # its characters, which made the diff held as a str larger than the parsed lines; as bytes it is about half.
+    # `surrogatepass` both ways: JSON can carry a lone surrogate, which plain UTF-8 refuses to encode.
     inline_diff: bytes = b""
     diff_root: str = ""  # the session's working directory, which the diff's file names are shown relative to
 
@@ -147,7 +148,7 @@ class ToolRow:
             DiffLine(line.kind, FILE_ARROW.join(_relative(self.diff_root, side) for side in line.text.split(FILE_ARROW)))
             if line.kind == DIFF_FILE
             else line
-            for line in parse_inline_diff(self.inline_diff.decode("utf-8"))
+            for line in parse_inline_diff(self.inline_diff.decode("utf-8", "surrogatepass"))
         )
 
 
@@ -690,7 +691,7 @@ class Transcript:
         row.status = tool_result_status(payload.get("result"))
         row.duration_s = _duration(payload, row, self._clock())
         row.summary = _result_summary(payload)
-        row.inline_diff, row.diff_root = as_text(payload.get("inline_diff")).encode("utf-8"), self.cwd
+        row.inline_diff, row.diff_root = as_text(payload.get("inline_diff")).encode("utf-8", "surrogatepass"), self.cwd
 
     def _display_args(self, summary: str) -> str:
         return _relative(self.cwd, summary) if _is_path(summary) else summary

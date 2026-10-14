@@ -306,6 +306,17 @@ class BlockCapTests(LoopTestCase):
         self.assertEqual(row.inline_diff, PATCH_INLINE_DIFF.encode("utf-8"))
         self.assertFalse(hasattr(row, "diff"))
 
+    def test_an_edits_diff_with_a_lone_surrogate_is_kept_and_drawn(self) -> None:
+        # JSON can carry an escaped lone surrogate ("\udce9", a byte surrogateescape left in a file's text).
+        diff = PATCH_INLINE_DIFF + "\n\x1b[38;2;255;255;255;48;2;20;90;20m+name = 'caf\udce9'\x1b[0m"
+        self.transcript.cwd = "/repo"
+        self.step(ev("message.start"))
+        self.step(ev("tool.start", tool_id="e1", name="patch", context="/repo/src/app.py"))
+        self.step(ev("tool.complete", tool_id="e1", name="patch", result={"success": True}, inline_diff=diff))
+        (row,) = self.transcript.blocks[-1].tools
+        self.assertTrue(any("caf\udce9" in line.text for line in row.diff_lines()))
+        self.assertTrue(any("caf\udce9" in text for text in self.history()))
+
     def test_an_edits_diff_is_held_in_less_memory_than_its_parsed_lines(self) -> None:
         import sys
 
