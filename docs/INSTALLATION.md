@@ -1552,7 +1552,8 @@ uses:
 | A display key OMH's record says it wrote, unchanged since | `display.interface: tui`, `display.skin: omh`, `display.sections.*: collapsed` | removed |
 | A value consent replaced | you had `display.interface: cli`, OMH wrote `tui` | `cli` put back |
 | A recorded value you changed since | `display.interface: cli` after OMH wrote `tui`; `tools: expanded` | kept |
-| An OMH skin, with or without a record (`omh theme use` set one without one) | `display.skin: omh-crimson` | `crimson` saved to `<omh_home>/tui/theme.json` (unless a theme is already saved there), then the key removed |
+| An OMH skin, with or without a record (`omh theme use` set one without one) | `display.skin: omh-crimson` | `crimson` saved to `<omh_home>/tui/theme.json` (unless a theme is already saved there, which the output then names), then the key removed |
+| The default skin setup wrote by itself (the record names it) | `display.skin: omh` | removed; no theme is saved, since nobody picked it |
 | A display key with no record (an install older than the record) | `display.interface: tui`, collapsed sections | kept: nothing says OMH wrote them |
 | Your own skin | `display.skin: ares` | kept |
 | A key in a YAML shape the editor does not handle (a quoted key or an anchor anywhere in the file, a flow or duplicate `display`, a dotted key, a BOM) | any | left as it is and named in the output; the release is not recorded, so the next setup or update tries again |
@@ -1565,7 +1566,9 @@ uses:
 
 The theme for a bot profile whose `plugins.entries.omh.settings.omh_home`
 names its own store is saved there; one that names none shares the primary
-home's store, where the primary's theme, saved first, wins.
+home's store. One store holds one theme, so the first home on the run that
+carries one keeps it (the primary goes first) and the output names any
+other home's skin it did not carry.
 
 It happens once, on the first pass that leaves no key in a shape the editor
 refused. That pass records `display_released_at` beside the write record in

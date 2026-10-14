@@ -164,10 +164,13 @@ def brand_legacy_home(omh_home: Path, config: Path, skin: str = "omh") -> None:
     The branded display keys go into the config, the write record names them
     (and loses the release marker today's setup recorded), and the widget and
     skin files go in beside the config with their manifests.
+
+    Setup only ever wrote `omh`; any other `skin` is a theme `omh theme use`
+    picked afterwards, which rewrote `display.skin` and left the record
+    naming `omh`, the shape the v3.0.2 fixture recorded from a real run.
     """
     current = config.read_text(encoding="utf-8")
-    branded = legacy_branded_display(current, skin)
-    config.write_text(branded, encoding="utf-8", newline="")
+    branded = legacy_branded_display(current)
     state_path = omh_home / "runtime" / "state.json"
     state = json.loads(state_path.read_text(encoding="utf-8"))
     stored = state[MANAGED_CONFIG_WRITES_STATE_KEY]
@@ -177,5 +180,8 @@ def brand_legacy_home(omh_home: Path, config: Path, skin: str = "omh") -> None:
         current, branded, config_path=key, previous=stored, now="2026-10-01T00:00:00Z"
     )
     state_path.write_text(json.dumps(state), encoding="utf-8", newline="")
+    if skin != "omh":
+        branded = activate_omh_skin(branded, skin).text
+    config.write_text(branded, encoding="utf-8", newline="")
     seed_legacy_widget(config.parent)
     seed_legacy_skins(config.parent)

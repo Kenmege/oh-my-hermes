@@ -142,7 +142,8 @@ class UpdateReleaseTests(unittest.TestCase):
             self.assertFalse((home.hermes_home / "tui-widgets" / ".omh-status.manifest.json").exists())
             self.assertEqual(_omh_skin_files(home.hermes_home), [])
             self.assertFalse((home.hermes_home / "skins" / ".omh-skin.manifest.json").exists())
-            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("sky"))
+            # The `omh` setup wrote by itself is not a theme anybody picked.
+            self.assertIsNone(read_theme_choice(home.omh_home))
             record = home.record()
             self.assertEqual(record["restores"], {})
             self.assertFalse({"display.interface", "display.skin", "display.sections"} & set(record["keys"]))  # type: ignore[arg-type]
@@ -366,7 +367,7 @@ class UpdateReleaseTests(unittest.TestCase):
             self.assertEqual(status, 0, stderr)
             self.assertEqual(home.config.read_text(encoding="utf-8"), chosen)
             self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
-            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("sky"))
+            self.assertIsNone(read_theme_choice(home.omh_home))
 
     def test_a_skin_file_copied_back_after_the_release_survives_later_updates(self) -> None:
         # The release removed every OMH skin file and its manifest. A copy of
@@ -485,10 +486,25 @@ class ProfileReleaseTests(unittest.TestCase):
                     self.assertFalse((profile / "tui-widgets" / "omh-status.mjs").exists())
                     self.assertEqual(_omh_skin_files(profile), [])
                     self.assertIn("display_released_at", home.record(profile / "config.yaml"))
-            # The primary's `omh` reached the shared store first; the
-            # profile's amber does not overwrite a saved choice.
-            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("sky"))
+            # The primary's `omh` is the default setup wrote, not a pick, so
+            # the amber the shared profile picked is what its store keeps.
+            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("amber"))
             self.assertEqual(read_theme_choice(split_store), theme_for_name("crimson"))
+
+    def test_two_picks_in_one_store_keep_the_first_and_name_the_other(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            shared = home.hermes_home / "profiles" / "shared"
+            shared.mkdir(parents=True)
+            home.legacy_install(skin="omh-crimson")
+            home.brand(shared / "config.yaml", skin="omh-amber")
+
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("crimson"))
+            self.assertIn("saved OMH theme crimson for the OMH TUI", stdout)
+            self.assertIn("kept the saved OMH theme crimson over amber, which display.skin named", stdout)
 
     @requires_symlinks
     def test_a_widget_it_must_refuse_to_remove_costs_no_profile_its_registration(self) -> None:

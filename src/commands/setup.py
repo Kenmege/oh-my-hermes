@@ -813,6 +813,10 @@ def _display_release_lines(label: str, release: object) -> list[str]:
         details.append(
             f"saved OMH theme {theme.get('theme')} for the OMH TUI; `omh theme use <name>` changes it"  # type: ignore[union-attr]
         )
+    elif theme.get("status") == "kept_saved":  # type: ignore[union-attr]
+        details.append(
+            f"kept the saved OMH theme {theme.get('saved')} over {theme.get('theme')}, which display.skin named"  # type: ignore[union-attr]
+        )
     if not details:
         return []
     header = (
@@ -2000,20 +2004,33 @@ def _carry_theme_choice(
 ) -> dict[str, object]:
     """Save an OMH theme `display.skin` names into the OMH store, before the release removes it.
 
-    Only on the pass that releases the display keys: after it, an `omh*`
-    skin in the config is the person's Hermes choice, not a theme OMH set.
-    A theme already saved wins, because `omh theme use` writes only the
-    store and so is always the newer choice. Runs before the config write,
-    so a store that cannot be written leaves `display.skin` in place.
+    Only on a pass that releases the display keys: after the release, an
+    `omh*` skin in the config is the person's Hermes choice, not a theme OMH
+    set. Not the skin the record says OMH itself wrote either: setup wrote
+    `omh` as a default nobody picked, and saving it would make sky a choice,
+    one that wins over a theme a bot profile sharing this store did pick
+    (`omh theme use` wrote `display.skin` and left the record alone, so a
+    picked theme reads as different from the record).
+
+    A theme already saved wins: `omh theme use` saved it, and that command
+    writes only the store, or another home sharing the store carried its
+    own earlier on this run, and one store holds one theme. When it differs
+    from this home's skin, the result names both (`kept_saved`) so the
+    output can say which one the OMH TUI opens with. Runs before the config
+    write, so a store that cannot be written leaves `display.skin` in place.
     """
     owned = load_managed_config_writes(previous_writes, config_path=paths.hermes_config_path)
-    theme = theme_for_skin_name(display_skin_selection(read_config(paths.hermes_config_path)))
+    keys = owned.get("keys") if isinstance(owned.get("keys"), dict) else {}
+    current = display_skin_selection(read_config(paths.hermes_config_path))
+    theme = theme_for_skin_name(current)
     result: dict[str, object] = {"status": "none", "theme": "", "path": str(theme_store_path(theme_home))}
-    if owned.get(DISPLAY_RELEASED_FIELD) or theme is None:
+    if owned.get(DISPLAY_RELEASED_FIELD) or theme is None or current == keys.get(DISPLAY_SKIN_KEY):  # type: ignore[union-attr]
         return result
     result["theme"] = theme.short_name
-    if read_theme_choice(theme_home) is not None:
-        result["status"] = "already_saved"
+    saved = read_theme_choice(theme_home)
+    if saved is not None:
+        result["status"] = "already_saved" if saved == theme else "kept_saved"
+        result["saved"] = saved.short_name
     elif dry_run:
         result["status"] = "would_save"
     else:
