@@ -736,6 +736,13 @@ def _tui_omh_home(args: argparse.Namespace, paths):
     plugin binds, so the TUI opens with that profile's theme, and its HUD
     and `/omh-model` read the same store. A profile that names none keeps
     the resolved home, which is the store setup gave it.
+
+    So does a profile whose setting OMH cannot read (a shape the standalone
+    scan refuses, such as a flow `entries: {omh: ...}`), so its TUI opens
+    on the primary's store. That is deliberate: OMH cannot tell which store
+    such a setting names and does not guess one, and setup saves no theme
+    for that profile (`store_unknown`) rather than put it in the primary's
+    store.
     """
     from ..maintenance.hermes_resume import hermes_profile_home
     from ..paths import configured_omh_home
