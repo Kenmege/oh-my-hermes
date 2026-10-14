@@ -930,6 +930,23 @@ class ReleaseManagedDisplayTests(unittest.TestCase):
                 self.assertEqual({key: row.status for key, row in by_key.items()}, dict.fromkeys(DISPLAY_KEYS, "refused"))
                 self.assertIn("user-owned", by_key["display.skin"].detail)
 
+    def test_a_tag_or_anchor_on_the_value_is_refused_not_read_as_the_persons(self) -> None:
+        """Mutation proof: the reader returns "!!str omh-crimson" verbatim, which is no OMH skin name."""
+        before = ""
+        after = _apply_setup_writes(before)
+        record = _record(before, after)
+        for prefix in ("!!str ", "&s "):
+            with self.subTest(prefix=prefix):
+                shaped = after.replace("  skin: omh\n", f"  skin: {prefix}omh-crimson\n").replace(
+                    "  interface: tui\n", f"  interface: {prefix}tui\n"
+                )
+
+                released, by_key = self._release(shaped, record)
+
+                self.assertEqual(released, shaped)
+                self.assertEqual(by_key["display.skin"].status, "refused")
+                self.assertEqual(by_key["display.interface"].status, "refused")
+
     def test_a_value_that_reads_as_the_persons_stays_kept_under_a_refused_shape(self) -> None:
         before = ""
         after = _apply_setup_writes(before)

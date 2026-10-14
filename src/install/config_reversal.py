@@ -568,12 +568,23 @@ def _refused_or_kept(config_text: str, row: ReversalRow, recorded: object) -> Re
     return ReversalRow(row.key, "refused", refusal)
 
 
+def _plain_scalar(value: str) -> str:
+    """`value`, or "" when it opens with a YAML node property or alias the readers return verbatim.
+
+    `skin: !!str omh-crimson` and `skin: &s omh-crimson` read as
+    "!!str omh-crimson" and "&s omh-crimson", which match no OMH skin name
+    while Hermes resolves the skin `omh-crimson`. Such a value cannot be
+    read here at all, so it never counts as the person's own.
+    """
+    return "" if value.startswith(("&", "!", "*")) else value
+
+
 def _reads_as_persons(config_text: str, key: str, recorded: object) -> bool:
     if key == DISPLAY_INTERFACE_KEY:
-        current = display_interface_selection(config_text)
+        current = _plain_scalar(display_interface_selection(config_text))
         return bool(current) and current != recorded
     if key == DISPLAY_SKIN_KEY:
-        current = display_skin_selection(config_text)
+        current = _plain_scalar(display_skin_selection(config_text))
         return bool(current) and not is_omh_skin_name(current)
     # The sections reader returns nothing under the guards the editor
     # applies, so a refused sections key never reads as anybody's.

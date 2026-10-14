@@ -340,7 +340,9 @@ class UpdateReleaseTests(unittest.TestCase):
                 record = home.record()
                 self.assertNotIn("display_released_at", record)
                 self.assertLessEqual({"display.interface", "display.skin", "display.sections"}, set(record["keys"]))  # type: ignore[arg-type]
-                self.assertEqual(_omh_skin_files(home.hermes_home), ["omh-crimson.yaml"])
+                # Under a refused shape the skin reader may misread the name,
+                # so every OMH skin file stays while display.skin is named.
+                self.assertEqual(len(_omh_skin_files(home.hermes_home)), len(SKIN_THEMES))
                 self.assertFalse((home.hermes_home / "tui-widgets" / "omh-status.mjs").exists())
                 self.assertIn("could not release display.skin (", stdout)
                 self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
@@ -368,6 +370,27 @@ class UpdateReleaseTests(unittest.TestCase):
             self.assertEqual(home.config.read_text(encoding="utf-8"), chosen)
             self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
             self.assertIsNone(read_theme_choice(home.omh_home))
+
+    def test_a_tag_or_anchor_on_the_skin_value_keeps_every_skin_file_and_the_release_open(self) -> None:
+        # Read verbatim, "!!str omh-crimson" matched no OMH skin name: the
+        # row read as the person's, the release was recorded, and
+        # omh-crimson.yaml went while Hermes still resolved omh-crimson.
+        for prefix in ("!!str ", "&s "):
+            with self.subTest(prefix=prefix), TemporaryDirectory() as tmp:
+                home = _Home(Path(tmp))
+                home.legacy_install(skin="omh-crimson")
+                shaped = home.config.read_text(encoding="utf-8").replace(
+                    "  skin: omh-crimson\n", f"  skin: {prefix}omh-crimson\n"
+                )
+                home.config.write_text(shaped, encoding="utf-8", newline="")
+
+                status, stdout, stderr = home.run("update", output_json=False)
+
+                self.assertEqual(status, 0, stderr)
+                self.assertIn(f"  skin: {prefix}omh-crimson\n", home.config.read_text(encoding="utf-8"))
+                self.assertIn("could not release display.skin (", stdout)
+                self.assertNotIn("display_released_at", home.record())
+                self.assertEqual(len(_omh_skin_files(home.hermes_home)), len(SKIN_THEMES))
 
     def test_a_skin_file_copied_back_after_the_release_survives_later_updates(self) -> None:
         # The release removed every OMH skin file and its manifest. A copy of

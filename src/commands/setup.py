@@ -40,6 +40,7 @@ from ..coding.model_recommendations import resolve_model_recommendation
 from ..config_adapter import (
     ConfigChange,
     childless_containers,
+    display_edit_refusal,
     display_skin_selection,
     ensure_plugin_enabled,
     ensure_plugin_omh_home,
@@ -2092,13 +2093,18 @@ def _carry_theme_choice(
 def _selected_skins(config_text: str) -> tuple[str, ...]:
     """The skins a Hermes config still selects: the one `display.skin` names, or every OMH skin when it cannot be read.
 
-    A `display.skin` in a shape the reader does not handle (flow, duplicate
-    `display`) may name an OMH skin, so every OMH skin file stays with it.
+    Read only through the editor's own guards (`display_edit_refusal`). In a
+    shape they refuse (flow, duplicate or dotted `display`, a tag or anchor
+    on the value, a quoted key anywhere) the reader can return a value that
+    is not the one Hermes resolves, such as "!!str omh-crimson", so every
+    OMH skin file stays while `display.skin` is named at all.
     """
+    if not config_names_key(config_text, DISPLAY_SKIN_KEY):
+        return ()
     named = display_skin_selection(config_text)
-    if named:
+    if named and not display_edit_refusal(config_text, "skin"):
         return (named,)
-    return available_skins() if config_names_key(config_text, DISPLAY_SKIN_KEY) else ()
+    return available_skins()
 
 
 def _remove_legacy_display_files(
