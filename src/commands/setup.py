@@ -579,14 +579,24 @@ def _profile_theme_home(profile_paths: OmhPaths, profile_dir: Path) -> Path | No
     None when the profile chose a store OMH cannot read: a setting in a
     shape the standalone scan refuses, or an `OMH_HOME` in its `.env`,
     whose value OMH never reads. Saving into the primary's store then
-    would hand the primary that profile's theme.
+    would hand the primary that profile's theme. That includes a setting
+    OMH wrote before the `.env` named a store: the same pass takes it back
+    (`reclaim_plugin_omh_home`, asked here with the record `_apply_result`
+    reads), so the store it names is no longer the profile's.
     """
+    config_text = read_config(profile_paths.hermes_config_path)
+    env_names_store = _profile_env_names_omh_home(profile_dir)
+    if env_names_store:
+        state, _state_error = read_state_result(profile_paths)
+        record = (state or {}).get(MANAGED_CONFIG_WRITES_STATE_KEY)
+        if reclaim_plugin_omh_home(config_text, record, config_path=profile_paths.hermes_config_path).changed:
+            return None
     configured = configured_omh_home(profile_paths.hermes_home)
     if configured is not None:
         return configured
-    if config_names_key(read_config(profile_paths.hermes_config_path), PLUGIN_OMH_HOME_KEY):
+    if config_names_key(config_text, PLUGIN_OMH_HOME_KEY):
         return None
-    return None if _profile_env_names_omh_home(profile_dir) else profile_paths.omh_home
+    return None if env_names_store else profile_paths.omh_home
 
 
 def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:

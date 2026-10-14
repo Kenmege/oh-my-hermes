@@ -782,6 +782,58 @@ class ProfileReleaseTests(unittest.TestCase):
             self.assertIn("did not save OMH theme amber: this profile names its OMH home where OMH cannot read it", stdout)
             self.assertNotIn("display", (bot / "config.yaml").read_text(encoding="utf-8"))
 
+    def test_an_env_store_named_after_setup_gets_no_theme_from_the_setting_this_pass_takes_back(self) -> None:
+        # Setup gave the bot the primary's store; its `.env` names one of its
+        # own afterwards. The theme was read from the setting the same pass
+        # takes back, so the bot's amber landed in the primary's store and
+        # the primary's OMH TUI opened with it.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            home = _Home(root)
+            bot = home.hermes_home / "profiles" / "bot"
+            bot.mkdir(parents=True)
+            home.legacy_install()
+            config = bot / "config.yaml"
+            self.assertEqual(Path(plugin_omh_home_setting(config.read_text(encoding="utf-8"))), home.omh_home)
+            home.brand(config, skin="omh-amber")
+            (bot / ".env").write_text(f"OMH_HOME={(root / 'env-store').as_posix()}\n", encoding="utf-8")
+
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual((status, stderr), (0, ""))
+            self.assertIn("Bot profile bot: removed plugins.entries.omh.settings.omh_home", stdout)
+            self.assertEqual(plugin_omh_home_setting(config.read_text(encoding="utf-8")), "")
+            self.assertIsNone(read_theme_choice(home.omh_home))
+            self.assertNotIn("saved OMH theme amber", stdout)
+            self.assertIn("did not save OMH theme amber: this profile names its OMH home where OMH cannot read it", stdout)
+            self.assertNotIn("display", config.read_text(encoding="utf-8"))
+
+    def test_a_setting_of_the_persons_own_beside_an_env_store_takes_the_theme(self) -> None:
+        # The setting outranks the `.env` in the plugin's resolver, and one
+        # OMH never wrote is not taken back, so its store is the profile's.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            home = _Home(root)
+            bot = home.hermes_home / "profiles" / "bot"
+            bot.mkdir(parents=True)
+            own_store = root / "own-store"
+            config = bot / "config.yaml"
+            config.write_text(
+                f"plugins:\n  entries:\n    omh:\n      settings:\n        omh_home: {own_store.as_posix()}\n",
+                encoding="utf-8",
+                newline="",
+            )
+            (bot / ".env").write_text(f"OMH_HOME={(root / 'env-store').as_posix()}\n", encoding="utf-8")
+            home.legacy_install()
+            home.brand(config, skin="omh-amber")
+
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual((status, stderr), (0, ""))
+            self.assertEqual(Path(plugin_omh_home_setting(config.read_text(encoding="utf-8"))), own_store)
+            self.assertEqual(read_theme_choice(own_store), theme_for_name("amber"))
+            self.assertIsNone(read_theme_choice(home.omh_home))
+
     def test_a_home_left_unregistered_keeps_its_config_and_loses_the_old_files(self) -> None:
         # Registering is what carries the config release, so an opted-out
         # home keeps its config byte for byte. The widget and the skins its

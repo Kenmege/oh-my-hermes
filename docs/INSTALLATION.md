@@ -1576,7 +1576,9 @@ The theme for a bot profile whose `plugins.entries.omh.settings.omh_home`
 names its own store is saved there; one that names none shares the primary
 home's store. A profile that names its store only in its `.env` (`OMH_HOME`),
 or in a setting shape OMH's reader refuses (a flow `entries: {omh: ...}`, a
-`<<:` merge key, a tab), gets none carried: OMH reads the names in a `.env`,
+`<<:` merge key, a tab), gets none carried. That includes a profile whose
+`.env` named a store after setup wrote the primary's into its setting: the
+same pass takes that setting back. OMH reads the names in a `.env`,
 never the values, so it cannot tell which store that is, and the output
 gives the `omh --omh-home <that home> theme use <name>` that saves it there. One
 store holds one theme, so the first home on the run that
