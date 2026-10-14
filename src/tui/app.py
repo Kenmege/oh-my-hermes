@@ -2226,7 +2226,7 @@ class App(ModesMixin, AgentViewMixin):
         return self.flushed_since_prompt > rows - self.region.height
 
     def _tail(self, cols: int) -> list[Line]:
-        lines = list(self.transcript.live_lines(cols, self.theme))
+        lines = self.transcript.live_lines(cols, self.theme, max_rows=self.size[1])  # never more than the screen
         if self._busy():
             text = self.transcript.activity or self.transcript.status or "working…"
             now = self.clock()

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import unicodedata
 import unittest
+from unittest.mock import patch
 
 from _tui_lines import lines_text
 from omh.tui.gateway import Event
@@ -68,6 +69,8 @@ class LoopTestCase(unittest.TestCase):
         self.taken.extend(fresh)
         live = self.transcript.live_lines(width, THEME)
         self.assertEqual(self.taken + live, self.transcript.history_lines(width, THEME, details=False))
+        for rows in (1, 2, 5):  # asked for its last rows only, the tail ends exactly as the whole one does
+            self.assertEqual(self.transcript.live_lines(width, THEME, max_rows=rows)[-rows:], live[-rows:])
         return lines_text(fresh)
 
     def user(self, text: str) -> list[str]:
@@ -79,6 +82,43 @@ class LoopTestCase(unittest.TestCase):
 
     def history(self, details: bool = True) -> list[str]:
         return lines_text(self.transcript.history_lines(WIDTH, THEME, details=details))
+
+
+class LiveTailMemoTests(LoopTestCase):
+    """The live tail is rendered again only when the transcript changed: a spinner tick re-renders nothing."""
+
+    def no_render(self, *args: object, **kwargs: object) -> list:
+        raise AssertionError("the live tail was rendered again")
+
+    def test_an_unchanged_tail_is_not_rendered_again_and_any_change_is(self) -> None:
+        self.user("go")
+        self.step(ev("message.start"))
+        self.step(ev("message.delta", text="a paragraph that has not ended yet " * 20))
+        self.step(ev("reasoning.delta", text="still thinking"))
+        before = self.transcript.live_lines(WIDTH, THEME)
+        with patch("omh.tui.transcript.render_lines", self.no_render), patch("omh.tui.transcript.block_rows", self.no_render):
+            self.assertEqual(self.transcript.live_lines(WIDTH, THEME), before)
+        self.step(ev("reasoning.delta", text=" and more"))
+        self.assertIn("▸ thinking… still thinking and more", self.live())
+        self.transcript.toggle_details()
+        self.assertEqual(self.live()[-1], "  still thinking and more")
+        self.assertEqual(lines_text(self.transcript.live_lines(14, THEME))[-3:], ["  still", "  thinking and", "  more"])
+
+    def test_a_tail_asked_for_fewer_rows_renders_only_the_blocks_it_needs(self) -> None:
+        self.user("go")
+        self.step(ev("message.start"))
+        self.step(ev("reasoning.delta", text="first thought"))
+        self.step(ev("tool.start", tool_id="t1", name="terminal", context="ls"))
+        rendered: list[object] = []
+        real = __import__("omh.tui.transcript", fromlist=["block_rows"]).block_rows
+
+        def counting(block: object, *args: object, **kwargs: object) -> list:
+            rendered.append(block)
+            return real(block, *args, **kwargs)
+
+        with patch("omh.tui.transcript.block_rows", counting):
+            self.assertEqual(lines_text(self.transcript.live_lines(WIDTH, THEME, max_rows=1))[-1:], ["  ◔ terminal  ls"])
+        self.assertEqual(rendered, [self.transcript.blocks[-1]])
 
 
 class SpacingTests(LoopTestCase):

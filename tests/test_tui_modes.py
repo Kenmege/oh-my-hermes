@@ -16,6 +16,7 @@ import ast
 from pathlib import Path
 import time
 import unittest
+from unittest.mock import patch
 
 from _tui_gateway_replay import Scenario, spans
 from _tui_lines import line_text
@@ -1092,6 +1093,21 @@ class LeftSessionStateTests(unittest.TestCase):
         answer(app, client, self.SHOT)
         self.assertEqual([item.name for item in app.attachments], ["shot.png"])
         self.assertEqual(notices(app), [])
+
+
+class LiveTailTickTests(unittest.TestCase):
+    def test_a_spinner_tick_with_nothing_new_renders_no_transcript_row_again(self) -> None:
+        now = [100.0]
+        app, _client = make_app(busy=True, clock=lambda: now[0])
+        app._on_event(Event("message.start", SID, {}))
+        app._on_event(Event("message.delta", SID, {"text": "a paragraph that is still streaming " * 12}))
+        first = drawn(app)
+        now[0] += 0.15  # the next spinner frame
+        fail = AssertionError("the live tail was rendered again")
+        with patch("omh.tui.transcript.render_lines", side_effect=fail), patch("omh.tui.transcript.block_rows", side_effect=fail):
+            ticked = drawn(app)
+        self.assertNotEqual(ticked, first)  # the spinner moved
+        self.assertEqual([row for row in ticked if "streaming" in row], [row for row in first if "streaming" in row])
 
 
 class ResumingTheLiveSessionTests(unittest.TestCase):

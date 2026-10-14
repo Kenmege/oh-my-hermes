@@ -418,6 +418,10 @@ class Transcript:
         self._cursor_lines = 0  # source lines of blocks[_cursor] already taken (assistant text)
         self._cursor_state = MarkdownState()  # markdown state after those lines
         self._taken_any = False  # whether any line has been taken (a spacer goes above the next block)
+        # Moves with every change to what `live_lines` draws; its last answer is kept with the version, width,
+        # row limit and theme it was for, so a frame that changed nothing (a spinner tick) renders nothing.
+        self._version = 0
+        self._live_held: tuple[tuple[int, int, int | None], Theme, list[Line]] | None = None
         self._handlers: dict[str, Callable[[dict[str, Any]], None]] = {
             "message.start": self._on_message_start,
             "message.delta": self._on_message_delta,
@@ -439,6 +443,7 @@ class Transcript:
         handler = self._handlers.get(event.type)
         if handler is not None:
             handler(event.payload if isinstance(event.payload, dict) else {})
+            self._version += 1
 
     def add_user(self, text: str) -> None:
         self._append(UserBlock(text))
@@ -466,6 +471,7 @@ class Transcript:
     def toggle_details(self) -> bool:
         """Expand or collapse the live block's details; blocks already taken never repaint."""
         self.details_expanded = not self.details_expanded
+        self._version += 1
         return self.details_expanded
 
     # ── block bookkeeping ──
@@ -491,6 +497,7 @@ class Transcript:
     def _append(self, block: Block) -> None:
         self._close_live()
         self.blocks.append(block)
+        self._version += 1
 
     def _tool_group(self) -> ToolGroup:
         group = self._live(ToolGroup)
@@ -646,6 +653,7 @@ class Transcript:
     def take_stable_lines(self, width: int, theme: Theme) -> list[Line]:
         """Lines that will never change, each returned once: print them above the live region."""
         taken: list[Line] = []
+        start = (self._cursor, self._cursor_lines)
         while self._cursor < len(self.blocks):
             block = self.blocks[self._cursor]
             if isinstance(block, AssistantBlock):
@@ -657,6 +665,8 @@ class Transcript:
             self._cursor += 1
             self._cursor_lines = 0
             self._cursor_state = MarkdownState()
+        if (self._cursor, self._cursor_lines) != start:
+            self._version += 1
         return taken
 
     def _take_assistant(self, block: AssistantBlock, width: int, theme: Theme) -> list[Line]:
@@ -687,26 +697,50 @@ class Transcript:
         self._cursor_lines = 0
         self._cursor_state = MarkdownState()
         self._taken_any = False
+        self._version += 1
 
-    def live_lines(self, width: int, theme: Theme) -> list[Line]:
-        """Everything not yet taken, as it shows now: the streaming tail, live thinking, running tools."""
-        rows: list[Line] = []
-        seen = self._taken_any
-        for index in range(self._cursor, len(self.blocks)):
+    def live_lines(self, width: int, theme: Theme, max_rows: int | None = None) -> list[Line]:
+        """Everything not yet taken, as it shows now: the streaming tail, live thinking, running tools.
+
+        With `max_rows`, only the blocks that reach into the last `max_rows`
+        rows are rendered: the rows returned end exactly as the whole tail
+        does, and may start below its top. The answer is kept until the
+        transcript changes, so asking again with the same width, limit and
+        theme renders nothing.
+        """
+        key = (self._version, width, max_rows)
+        held = self._live_held
+        if held is None or held[0] != key or held[1] is not theme:
+            held = self._live_held = (key, theme, self._render_live(width, theme, max_rows))
+        return list(held[2])
+
+    def _render_live(self, width: int, theme: Theme, max_rows: int | None) -> list[Line]:
+        """`live_lines` rendered, from the last block up until `max_rows` rows are covered (all of them for None)."""
+        rendered: list[tuple[bool, list[Line]]] = []  # (opens a block, its rows), the last block first
+        count = 0
+        whole = True
+        for index in range(len(self.blocks) - 1, self._cursor - 1, -1):
+            if max_rows is not None and count >= max_rows:
+                whole = False  # the blocks above are above the rows asked for
+                break
             block = self.blocks[index]
             opens_block = True
             if index == self._cursor and isinstance(block, AssistantBlock):
                 rest = _display_lines(block.text)[self._cursor_lines :]
                 opens_block = self._cursor_lines == 0
-                rendered = render_lines(rest, self._cursor_state, _reply_width(width), theme)[0]
-                block_lines = _marked(rendered, opens_block, theme)
+                block_lines = _marked(render_lines(rest, self._cursor_state, _reply_width(width), theme)[0], opens_block, theme)
             else:
                 block_lines = block_rows(block, width, theme, expanded=self.details_expanded and not block.done)
             if block_lines:
-                if opens_block and seen:
-                    rows.append(())
-                rows.extend(block_lines)
-                seen = True
+                rendered.append((opens_block, block_lines))
+                count += len(block_lines)
+        rows: list[Line] = []
+        seen = self._taken_any if whole else True  # a spacer above the first block shown is past the limit
+        for opens_block, block_lines in reversed(rendered):
+            if opens_block and seen:
+                rows.append(())
+            rows.extend(block_lines)
+            seen = True
         return rows
 
     def history_lines(self, width: int, theme: Theme, details: bool = True) -> list[Line]:
