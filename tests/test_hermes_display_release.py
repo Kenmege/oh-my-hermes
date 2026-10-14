@@ -481,6 +481,35 @@ class UpdateReleaseTests(unittest.TestCase):
                 self.assertIn("display_released_at", home.record())
                 self.assertEqual(_omh_skin_files(home.hermes_home), [])
 
+    def test_an_omh_skin_after_a_bom_is_refused_with_or_without_a_record(self) -> None:
+        # The release reads the value past the BOM for the named-twice check
+        # and for the record-less OMH-name check too; read BOM-blind, both
+        # saw no value, and each of these released as the person's.
+        for name, block, recorded, kept in (
+            ("omh-crimson, no record", "display:\n  skin: omh-crimson\n", False, ["omh-crimson.yaml"]),
+            ("ares then omh-crimson, recorded", "display:\n  skin: ares\n  skin: omh-crimson\n", True, None),
+            ("ares then omh-crimson, no record", "display:\n  skin: ares\n  skin: omh-crimson\n", False, None),
+        ):
+            with self.subTest(case=name), TemporaryDirectory() as tmp:
+                home = _Home(Path(tmp))
+                home.legacy_install(skin="omh-crimson")
+                if not recorded:
+                    state = json.loads(home.state_path.read_text(encoding="utf-8"))
+                    del state[MANAGED_CONFIG_WRITES_STATE_KEY]
+                    home.state_path.write_text(json.dumps(state), encoding="utf-8", newline="")
+                text = home.config.read_text(encoding="utf-8")
+                shaped = "\ufeff" + block + text[: text.index("display:")]
+                home.config.write_text(shaped, encoding="utf-8", newline="")
+
+                status, stdout, stderr = home.run("update", output_json=False)
+
+                self.assertEqual(status, 0, stderr)
+                self.assertIn("could not release display.skin (BOM-prefixed YAML is user-owned; leaving it alone)", stdout)
+                self.assertEqual(home.config.read_text(encoding="utf-8"), shaped)
+                self.assertNotIn("display_released_at", home.record())
+                files = _omh_skin_files(home.hermes_home)
+                self.assertEqual(files, kept if kept is not None else sorted(theme.filename for theme in SKIN_THEMES))
+
     def test_a_shape_outside_display_keeps_no_skin_file_for_the_persons_own_skin(self) -> None:
         # A quoted key, an anchor or a BOM elsewhere in the file stops the
         # editor, not the read of display.skin. Keeping every OMH skin file

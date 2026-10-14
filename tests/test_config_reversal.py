@@ -992,6 +992,16 @@ class ReleaseManagedDisplayTests(unittest.TestCase):
 
                 self.assertEqual(released, shaped)
                 self.assertEqual(by_key["display.skin"].status, expected)
+        # Past the BOM, a key set twice is seen as twice, and without a record
+        # an OMH name among the values is seen.
+        twice = "\ufeffdisplay:\n  skin: ares\n  skin: omh-crimson\n" + after[:start]
+        for stored in (record, {}):
+            with self.subTest(recorded=bool(stored)):
+                _released, by_key = self._release(twice, stored)
+
+                self.assertEqual(by_key["display.skin"].status, "refused")
+        _released, by_key = self._release("\ufeffdisplay:\n  skin: omh-crimson\n" + after[:start], {})
+        self.assertEqual(by_key["display.skin"].status, "refused")
 
     def test_an_omh_skin_set_anywhere_in_a_duplicate_is_refused_without_a_record(self) -> None:
         """Mutation proof: read first-wins, `ares` before `omh-crimson` was the person's while Hermes resolves omh-crimson."""
