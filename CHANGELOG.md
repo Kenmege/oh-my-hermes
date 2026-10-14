@@ -47,6 +47,25 @@ All notable changes will be documented here.
   loss is a query whose topic record shared the particle form (모델로) that
   now only orders records.
 
+- **`omh quality-evidence agent-skills` reports Agent Skills host evidence
+  per host and scope.** For every Agent Skills host adapter, in repo and user
+  scope, it records five stages (installed, discovered, nominated, loaded,
+  executed) and never infers one from another. `installed` is observed by
+  OMH: it reads the host's scan path under `--project-root` or `--user-home`
+  and compares every file with the `omh_host_adapter/v1` manifest; the read
+  writes nothing. The later four stages stay `not_observed` with each host's
+  `probe_unsupported` reason, since OMH has verified no credential-free,
+  non-interactive listing command, makes no model call, and starts no host
+  session. The only host process it runs is the readiness module's approved
+  `--version` probe, for a CLI in that probe's set; it runs whenever such a
+  CLI is on PATH, where readiness ran `pi` and `opencode` only as omo hosts.
+  Each `omh_agent_skills_discovery/v1` receipt binds that host version, the
+  OS, the scan path, the manifest's `source_digest`, and the pack
+  `catalog_revision`; the parser rejects a receipt that fails the checks
+  docs/AGENT-SKILLS.md lists. `--receipts` compares an earlier `--json` run
+  with the current pack and host versions; an unreadable scan path exits 3,
+  and a missing root is refused. Built on the stage model, host descriptors
+  and fixture tests @blrain3 contributed in #2093.
 - **Bare `omh` opens the OMH TUI, OMH's own terminal over Hermes' gateway.**
   `omh` runs `hermes --tui` with OMH's frontend in place of Hermes' Ink app,
   so Hermes' launcher still resolves the profile, the resume target and
