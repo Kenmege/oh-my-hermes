@@ -1070,8 +1070,8 @@ def _profile_paths(paths: OmhPaths, profile_dir: Path) -> OmhPaths:
     """A bot profile's homes the way the setup sync resolves them.
 
     The profile's own Hermes home, the primary's OMH store: every profile
-    shares the primary's store for the managed skills, widget and skin, and
-    the registration candidates the sync scores are the primary's too.
+    shares the primary's store for the managed skills, and the registration
+    candidates the sync scores are the primary's too.
     """
     return OmhPaths(
         omh_home=paths.omh_home,
@@ -2569,8 +2569,8 @@ def _profile_omh_home_binding_checks(paths: OmhPaths) -> list[Check]:
     `settings.omh_home` nor an `.env` `OMH_HOME` its plugin is refused in a
     multiplexed process (#2037), and under a primary whose store is not
     `~/.omh` it binds `~/.omh` when the profile runs as its own Hermes
-    process while its managed skills, widget and skin come from the
-    primary's store (#1967).
+    process while its managed skills come from the primary's store
+    (#1967).
 
     A profile whose `.env` names `OMH_HOME` beside a `settings.omh_home` OMH
     did not write, under any primary: the setting outranks the `.env` in the
