@@ -112,6 +112,7 @@ def launched(
     returncode: int | list[int] = 0,
     omh_tui: bool = False,
     environments: list[dict[str, str] | None] | None = None,
+    signal_fallback: bool = False,
 ):
     """Run the bare launch with a faked `hermes` child.
 
@@ -120,8 +121,12 @@ def launched(
     returned. ``omh_tui`` says whether the OMH TUI can run here; the
     surface-neutral tests keep it off, so they pin Hermes' own door. A list of
     return codes answers successive children in order, and ``environments``
-    (when given) collects the ``env`` each child was started with.
+    (when given) collects the ``env`` each child was started with. With
+    ``signal_fallback``, a child started with a fallback sentinel name creates
+    that file, as the OMH TUI does before it exits 75.
     """
+    from omh.tui.launch import FALLBACK_SENTINEL_ENV
+
     recorded: list[list[str]] = []
     codes = list(returncode) if isinstance(returncode, list) else None
 
@@ -131,8 +136,11 @@ def launched(
 
     def fake_run(command, *args, **kwargs):
         recorded.append(list(command))
+        env = kwargs.get("env")
         if environments is not None:
-            environments.append(kwargs.get("env"))
+            environments.append(env)
+        if signal_fallback and env and FALLBACK_SENTINEL_ENV in env:
+            Path(env[FALLBACK_SENTINEL_ENV]).touch()
         return _Completed(codes.pop(0) if codes is not None else returncode)
 
     parsed = build_parser().parse_args(["--hermes-home", str(hermes_home), *argv])
@@ -458,17 +466,42 @@ class OmhTuiDoorTests(unittest.TestCase):
         self.assertEqual(environment["OMH_TUI_PYTHON"], sys.executable)
         self.assertEqual(Path(environment["OMH_HOME"]).name, "omh")
 
-    def test_the_fallback_code_reopens_hermes_own_terminal(self) -> None:
+    def test_the_fallback_code_with_its_sentinel_reopens_hermes_own_terminal(self) -> None:
         from omh.tui.launch import FALLBACK_EXIT
 
         with TemporaryDirectory() as tmp:
-            with launched(Path(tmp), ["-c"], returncode=[FALLBACK_EXIT, 0], omh_tui=True) as (recorded, _o, status):
+            with launched(Path(tmp), ["-c"], returncode=[FALLBACK_EXIT, 0], omh_tui=True,
+                          signal_fallback=True) as (recorded, _o, status):
                 pass
         self.assertEqual(
             recorded,
             [["/usr/local/bin/hermes", "--tui", "--continue"], ["/usr/local/bin/hermes", "--continue"]],
         )
         self.assertEqual(status, 0)
+
+    def test_the_fallback_code_without_its_sentinel_is_an_ordinary_exit(self) -> None:
+        # Hermes exits 75 (EX_TEMPFAIL) on paths of its own; that must not open a second terminal.
+        from omh.tui.launch import FALLBACK_EXIT
+
+        with TemporaryDirectory() as tmp:
+            with launched(Path(tmp), ["-c"], returncode=[FALLBACK_EXIT, 0], omh_tui=True) as (recorded, _o, status):
+                pass
+        self.assertEqual(recorded, [["/usr/local/bin/hermes", "--tui", "--continue"]])
+        self.assertEqual(status, FALLBACK_EXIT)
+
+    def test_the_sentinel_and_its_directory_are_gone_after_the_launch(self) -> None:
+        from omh.tui.launch import FALLBACK_EXIT, FALLBACK_SENTINEL_ENV
+
+        for codes, signal_fallback in (([FALLBACK_EXIT, 0], True), ([FALLBACK_EXIT], False), ([0], False)):
+            with self.subTest(codes=codes, signal_fallback=signal_fallback), TemporaryDirectory() as tmp:
+                environments: list[dict[str, str] | None] = []
+                with launched(Path(tmp), [], returncode=list(codes), omh_tui=True, environments=environments,
+                              signal_fallback=signal_fallback) as (_r, _o, _s):
+                    pass
+                sentinel = Path(environments[0][FALLBACK_SENTINEL_ENV])
+                self.assertFalse(sentinel.parent.exists())
+                # Hermes' own terminal, when it opens, is started without the name.
+                self.assertTrue(all(env is None for env in environments[1:]))
 
     def test_any_other_code_ends_the_launch_without_a_second_terminal(self) -> None:
         with TemporaryDirectory() as tmp:

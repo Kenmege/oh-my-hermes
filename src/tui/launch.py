@@ -11,18 +11,22 @@ on its import path. `-E` also ignores `PYTHONUSERBASE`: an OMH installed under
 a custom user base cannot import itself there, and the shim exits 75 so `omh`
 falls back.
 
-When the TUI cannot start it exits with `FALLBACK_EXIT`, and `omh` opens
+When the TUI cannot start it creates the file `omh` named in
+`FALLBACK_SENTINEL_ENV` and exits with `FALLBACK_EXIT`, and `omh` opens
 Hermes' own terminal instead, so a failure costs the person the OMH surface,
-never the session. Every other exit code is the person's session ending and is
-returned as it is.
+never the session. Exit 75 without that file (Hermes uses 75 on paths of its
+own), like every other exit code, is the session ending and is returned as it
+is.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 import os
 from pathlib import Path
 import shutil
+import tempfile
 from typing import TextIO
 
 from .terminal import terminal_supported
@@ -30,6 +34,12 @@ from .terminal import terminal_supported
 # EX_TEMPFAIL. Not 0/1/2/130 (ordinary exits) and not 42, which Hermes'
 # launcher reads as "relaunch as `hermes update`".
 FALLBACK_EXIT = 75
+# The file that makes a `FALLBACK_EXIT` a fallback request: Hermes exits 75
+# (EX_TEMPFAIL) on paths of its own, so `omh` reopens Hermes' terminal only
+# when the TUI also created this file. `omh` names a path in a private
+# directory it creates and removes; `gateway_spawn` drops every `OMH_TUI_`
+# name, so the gateway and its tools never see it.
+FALLBACK_SENTINEL_ENV = "OMH_TUI_FALLBACK_SENTINEL"
 
 FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
 FRONTEND_ENTRY = FRONTEND_DIR / "dist" / "entry.js"
@@ -64,7 +74,9 @@ def omh_tui_available(
     )
 
 
-def omh_tui_environment(environ: Mapping[str, str], *, python: str, omh_home: Path) -> dict[str, str]:
+def omh_tui_environment(
+    environ: Mapping[str, str], *, python: str, omh_home: Path, fallback_sentinel: Path
+) -> dict[str, str]:
     """The environment `hermes --tui` runs with when it should start the OMH TUI.
 
     `OMH_HOME` carries the home this `omh` resolved (including `--omh-home` and
@@ -75,4 +87,37 @@ def omh_tui_environment(environ: Mapping[str, str], *, python: str, omh_home: Pa
     env["HERMES_TUI_DIR"] = str(FRONTEND_DIR)
     env["OMH_TUI_PYTHON"] = python
     env["OMH_HOME"] = str(omh_home)
+    env[FALLBACK_SENTINEL_ENV] = str(fallback_sentinel)
     return env
+
+
+@contextmanager
+def fallback_sentinel() -> Iterator[Path]:
+    """A path where no file is yet, in a new private directory removed with everything in it on the way out."""
+    directory = Path(tempfile.mkdtemp(prefix="omh-tui-"))
+    try:
+        yield directory / "fallback"
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def fallback_requested(returncode: int, sentinel: Path) -> bool:
+    """Whether the TUI asked `omh` to open Hermes' own terminal: `FALLBACK_EXIT` and the file it was named."""
+    return returncode == FALLBACK_EXIT and os.path.lexists(sentinel)
+
+
+def request_fallback(environ: Mapping[str, str]) -> int:
+    """Create the file named in `FALLBACK_SENTINEL_ENV`, if any, and return `FALLBACK_EXIT`.
+
+    The TUI returns `FALLBACK_EXIT` only through this; the frontend shim and
+    its import bootstrap create the file the same way before they exit 75.
+    When the file cannot be created, `omh` passes the 75 on as an exit code
+    instead of opening Hermes' terminal.
+    """
+    path = environ.get(FALLBACK_SENTINEL_ENV, "")
+    if path:
+        try:
+            os.close(os.open(path, os.O_WRONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600))
+        except OSError:
+            pass
+    return FALLBACK_EXIT

@@ -365,8 +365,11 @@ transcript lines go to the terminal's own scrollback; only a bottom region
 Hermes asked, the composer, and the status line) repaints, and the composer's
 row does not move when the slot grows or shrinks. When it cannot start
 (unsupported terminal, Windows, no Node for the launcher, an OMH that cannot
-import itself, gateway unavailable, protocol drift at startup) it exits 75
-and `omh` opens Hermes' own terminal instead. Bare `hermes` is unaffected.
+import itself, gateway unavailable, protocol drift at startup) it creates the
+sentinel file `omh` named for that launch and exits 75, and `omh` opens
+Hermes' own terminal instead; a 75 without that file (Hermes exits 75 on
+paths of its own) ends the launch like any other code. Bare `hermes` is
+unaffected.
 _Avoid_: Modern TUI (Hermes' Ink app), OMH status widget (an extension of
 Hermes' TUI), a Hermes patch or fork, an execution surface
 

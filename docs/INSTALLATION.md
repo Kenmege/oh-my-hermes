@@ -483,7 +483,10 @@ When the OMH TUI cannot start — Windows, a terminal without `termios` or with
 `TERM=dumb`, `OMH_NO_TUI=1`, no Node for Hermes' launcher, or a Hermes whose
 gateway no longer speaks what the TUI was built for — it says why and `omh`
 opens Hermes' own terminal instead, so you lose the OMH screen, never the
-session. If the gateway stops accepting a method or a key mid-session, the
+session. `omh` reopens Hermes' terminal only on the TUI's own request (exit
+75 together with a file `omh` named for that launch and removes afterwards),
+so a 75 Hermes returns for a reason of its own ends the launch like any other
+exit code. If the gateway stops accepting a method or a key mid-session, the
 TUI leaves with the command that reopens the same session in `hermes`; an
 event Hermes renames is not detected yet, and shows as a turn that never
 finishes. The gateway, and every tool it runs, inherits the environment `omh`

@@ -61,7 +61,7 @@ from omh.tui.app import (
 )
 from omh.tui.gateway import GatewayClient, GatewayUnavailable, ServerRequest, gateway_spawn
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
-from omh.tui.launch import FALLBACK_EXIT
+from omh.tui.launch import FALLBACK_EXIT, FALLBACK_SENTINEL_ENV
 from omh.tui.prompts import open_request
 from omh.tui.theme import DEFAULT_THEME, theme_named
 from omh.tui.width import line_width
@@ -246,6 +246,10 @@ class Run:
     def active_session_file(self) -> Path:
         return Path(self.environ["HERMES_TUI_ACTIVE_SESSION_FILE"])
 
+    @property
+    def fallback_sentinel(self) -> Path:
+        return Path(self.environ[FALLBACK_SENTINEL_ENV])
+
 
 class AppTestCase(unittest.TestCase):
     def prepare(self, scenario: Scenario, *, rows: int = 24, cols: int = 80, env: dict | None = None) -> Run:
@@ -256,6 +260,7 @@ class AppTestCase(unittest.TestCase):
             "HERMES_TUI_ACTIVE_SESSION_FILE": str(root / "active-session.json"),
             "HERMES_TUI_CWD": "/fixture/project",
             "TERM": "xterm-256color",
+            FALLBACK_SENTINEL_ENV: str(root / "fallback"),
             **(env or {}),
         }
         environ.pop("OMH_NO_TUI", None)
@@ -287,6 +292,12 @@ class AppTestCase(unittest.TestCase):
         self.assertEqual(run.code, code, run.stderr.getvalue())
         tails = [line for client in run.clients for line in client.stderr_tail()]
         self.assertFalse([line for line in tails if line.startswith("replay:")], tails)
+        self.assertFalse(run.fallback_sentinel.exists(), "a session that ran asked for the fallback")
+
+    def assert_fell_back(self, run: Run) -> None:
+        """Exit 75 and the sentinel `omh` named: without the file, `omh` passes the 75 on instead."""
+        self.assertEqual(run.code, FALLBACK_EXIT, run.stderr.getvalue())
+        self.assertTrue(run.fallback_sentinel.exists(), "exited 75 without creating the fallback sentinel")
 
     def submit(self, run: Run, text: str) -> Step:
         return Step(text.encode("utf-8") + b"\r", when=run.terminal.idle, label="the idle status line")
@@ -305,7 +316,7 @@ class StartupRefusalTests(AppTestCase):
             make_client=self.make_client(run),
             make_poller=lambda omh_home, hermes_home: run.poller,
         )
-        self.assertEqual(run.code, FALLBACK_EXIT)
+        self.assert_fell_back(run)
         self.assertIn("cannot run the OMH TUI", run.stderr.getvalue())
         self.assertEqual(run.clients, [])
         self.assertEqual(run.terminal.writes, [])
@@ -314,7 +325,7 @@ class StartupRefusalTests(AppTestCase):
         run = self.prepare(Scenario("session", spans("session", "startup")))
         del run.environ["HERMES_PYTHON"]
         self.run_main(run)
-        self.assertEqual(run.code, FALLBACK_EXIT)
+        self.assert_fell_back(run)
         self.assertIn("HERMES_PYTHON", run.stderr.getvalue())
         self.assertEqual(run.terminal.entered, 0)
 
@@ -325,6 +336,7 @@ class StartupRefusalTests(AppTestCase):
         )
         self.run_main(run)
         self.assertEqual(run.code, 1)
+        self.assertFalse(run.fallback_sentinel.exists())
         self.assertIn("hermes --tui --resume 20261013_000000_abc", run.stderr.getvalue())
         self.assertEqual(run.clients, [])
         self.assertEqual(run.terminal.entered, 0)
@@ -334,7 +346,7 @@ class StartupRefusalTests(AppTestCase):
         drift = recorded_answer("session", "drift_reply")
         run = self.prepare(Scenario("session", spans("session", "startup"), answers=(("config.get", drift),)))
         self.run_main(run)
-        self.assertEqual(run.code, FALLBACK_EXIT)
+        self.assert_fell_back(run)
         self.assertIn("-32601", run.stderr.getvalue())
         self.assertEqual(run.terminal.entered, 0)
         self.assertEqual(run.clients[0].close(grace=FAST_GRACE), 0)
@@ -345,7 +357,7 @@ class StartupRefusalTests(AppTestCase):
             Scenario("session", (), stderr=("\x1b[31mboom\x1b[0m: no provider\x1b]0;title\x07",), after=EXIT, exit_code=1)
         )
         self.run_main(run)
-        self.assertEqual(run.code, FALLBACK_EXIT)
+        self.assert_fell_back(run)
         printed = run.stderr.getvalue()
         self.assertIn("  boom: no provider\n", printed)
         self.assertNotIn("\x1b", printed)

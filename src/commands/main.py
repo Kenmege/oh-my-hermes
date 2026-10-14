@@ -698,8 +698,8 @@ def _launch_hermes_tui(args: argparse.Namespace) -> int | None:
     background dispatch. When the OMH TUI can run here (`_run_terminal`), the
     launch adds `--tui` to those flags and `HERMES_TUI_DIR` to the
     environment, so Hermes' launcher starts the OMH frontend in place of its
-    own; when it cannot, or it exits with
-    `FALLBACK_EXIT`, the launch walks through Hermes' own door exactly as it
+    own; when it cannot, or it asks for the fallback (`FALLBACK_EXIT` and the
+    sentinel file), the launch walks through Hermes' own door exactly as it
     did before the OMH TUI existed. No terminal or no Hermes install means
     there is nothing to launch, and the caller falls back to the welcome text.
 
@@ -735,19 +735,25 @@ def _omh_tui_available(paths) -> bool:
 def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
     """Run the OMH TUI through `hermes --tui`, or Hermes' own terminal when it cannot start.
 
-    Only `FALLBACK_EXIT` reopens Hermes' terminal: it is the OMH TUI saying it
-    never got going (it has already said why). Any other code is the person's
-    session ending and is returned as it is, so a session the person closed is
-    never followed by a second terminal.
+    Only `FALLBACK_EXIT` together with the sentinel file this launch named
+    reopens Hermes' terminal: it is the OMH TUI saying it never got going (it
+    has already said why). Any other code, and 75 without the file (Hermes
+    exits 75 on paths of its own), is the person's session ending and is
+    returned as it is, so a session the person closed is never followed by a
+    second terminal.
     """
-    from ..tui.launch import FALLBACK_EXIT, omh_tui_environment
+    from ..tui.launch import fallback_requested, fallback_sentinel, omh_tui_environment
 
     if _omh_tui_available(paths):
-        environment = omh_tui_environment(os.environ, python=sys.executable, omh_home=paths.omh_home)
-        returncode = int(
-            subprocess.run([hermes, *_hermes_passthrough_argv(args, omh_tui=True)], env=environment).returncode
-        )
-        if returncode != FALLBACK_EXIT:
+        with fallback_sentinel() as sentinel:
+            environment = omh_tui_environment(
+                os.environ, python=sys.executable, omh_home=paths.omh_home, fallback_sentinel=sentinel
+            )
+            returncode = int(
+                subprocess.run([hermes, *_hermes_passthrough_argv(args, omh_tui=True)], env=environment).returncode
+            )
+            fell_back = fallback_requested(returncode, sentinel)
+        if not fell_back:
             return returncode
     return int(subprocess.run([hermes, *_hermes_passthrough_argv(args)]).returncode)
 

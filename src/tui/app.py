@@ -2,10 +2,11 @@
 
 `main` is what `python -m omh.tui` runs once Hermes' launcher has handed the
 frontend its environment. Everything that can stop the TUI from starting is
-settled before the first byte is drawn, and each such failure exits with
-`FALLBACK_EXIT`, so `omh` opens Hermes' own terminal instead: a terminal that
-cannot run the TUI, a gateway that does not start, and a startup call this
-Hermes no longer understands. An attach hand-off is refused with exit 1 and a
+settled before the first byte is drawn, and each such failure exits through
+`request_fallback` (the file `omh` named, then `FALLBACK_EXIT`), so `omh`
+opens Hermes' own terminal instead: a terminal that cannot run the TUI, a
+gateway that does not start, and a startup call this Hermes no longer
+understands. An attach hand-off is refused with exit 1 and a
 line naming `hermes --tui --resume <id>` (0 would make `omh` print a resume
 hint for a session this TUI never opened). SIGTERM and SIGHUP leave through
 `SystemExit(128 + signum)`, so the terminal is restored and the gateway reaped
@@ -152,7 +153,7 @@ from .keys import (
     Mouse,
     Paste,
 )
-from .launch import FALLBACK_EXIT
+from .launch import request_fallback
 from .layout import Budget, slot_cap, under_composer
 from .markdown import clean_text
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
@@ -2831,7 +2832,7 @@ def _run(
     """Start the gateway, open the session, then run the loop on the raw terminal; the exit code."""
     ready = _start_gateway(client, stderr)
     if ready is None:
-        return FALLBACK_EXIT
+        return request_fallback(environ)
     terminal = open_terminal()
     app = App(
         terminal,
@@ -2844,7 +2845,7 @@ def _run(
         app.startup()
     except (GatewayCallError, GatewayTimeout, GatewayUnavailable) as error:
         _say(stderr, f"omh: the OMH TUI could not open a Hermes session: {error}")
-        return FALLBACK_EXIT
+        return request_fallback(environ)
     with terminal:
         code = app.run()
     if app.farewell:
@@ -2868,7 +2869,7 @@ def main(
     stderr = sys.stderr if stderr is None else stderr
     if not terminal_supported(stdin, stdout, environ):
         _say(stderr, "omh: this terminal cannot run the OMH TUI; opening Hermes' own terminal instead.")
-        return FALLBACK_EXIT
+        return request_fallback(environ)
     if attach_refused(environ):
         _say(stderr, attach_message(environ))
         return 1
@@ -2876,7 +2877,7 @@ def main(
         client = make_client(gateway_spawn(environ))
     except GatewayUnavailable as error:
         _say(stderr, f"omh: the Hermes gateway did not start: {error}")
-        return FALLBACK_EXIT
+        return request_fallback(environ)
     previous_handlers = _install_exit_signals()
     try:
         # The terminal picks its key reports from the environment the TUI was given (TERM_PROGRAM and kin).
