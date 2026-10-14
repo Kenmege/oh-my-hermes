@@ -26,6 +26,8 @@ All notable changes will be documented here.
   the list hold agents (the panel said "2 running" minutes after both had
   finished), agents whose goals start alike are numbered on the strip, and the
   status line says `idle · 2 agents running` while agents outlive the turn.
+  Mouse reports are on only while the agent list is open, so during a turn the
+  wheel scrolls and a drag selects; the strip is reached with Down.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

@@ -2447,7 +2447,7 @@ class App(ModesMixin, AgentViewMixin):
         self.flushed_since_prompt += len(stable)
         previous = 0 if anchoring else self.region.height
         self.anchor = False
-        strip, hits = self._agent_strip(cols)
+        strip, _hits = self._agent_strip(cols)
         listed: tuple[str, ...] = ()
 
         def agent_list(room: int) -> list[Line]:
@@ -2488,7 +2488,7 @@ class App(ModesMixin, AgentViewMixin):
             # (the banner, a resumed history) would be pushed off the top before anyone
             # saw them; flushed after it, they land in those pad rows instead.
             self.region.flush_above(stable, cols)
-        self._take_clickable(frame.budget, hits, listed)
+        self._take_clickable(frame.budget, listed)
 
     # ── subagents ──
 

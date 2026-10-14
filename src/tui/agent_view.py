@@ -8,11 +8,11 @@ gives the keys to a list of them (the one thing that moves the composer: see
 read-only: `subagent.tail` is asked for the open agent while it runs, at most
 every `TAIL_POLL_SECONDS`, and no more once `TAIL_MISSES_BEFORE_STOP` answers
 in a row had no tail, until that agent sends a frame; nothing is ever sent to
-a subagent. Mouse reports are on only while a click has an agent to land on
-and the row it would land on is certain: a turn running with agents named on
-the strip, or the list open. A plain left click on one of those cells opens
-that agent's log, or on the list's main row leaves the list; every other
-report does nothing. Reports the terminal sent before it acted on an off
+a subagent. Mouse reports are on only while the agent list is open and the
+row a click would land on is certain (the owner's decision of 2026-10-14:
+during a turn the wheel scrolls and a drag selects, and Down opens the list
+from the keyboard). A plain left click on a list row opens that agent's log,
+or on the list's main row leaves the list; every other report does nothing. Reports the terminal sent before it acted on an off
 arrive after it, so `_set_mouse` notes when reporting went off and the
 decoder is told: a report that starts arriving while reporting is on, or
 within `keys.MOUSE_REPORT_SECONDS` after the off, types nothing if it
@@ -78,22 +78,16 @@ class AgentViewMixin:
         )
         return [*lines, truncate_line((Span(AGENT_LIST_HINT, self.theme.hint),), cols)], listed
 
-    def _take_clickable(self, budget: Budget, hits: Sequence[Hit], listed: Sequence[str]) -> None:
-        """Note the cells of the frame just drawn that a click opens, and ask for mouse reports only while there are some.
+    def _take_clickable(self, budget: Budget, listed: Sequence[str]) -> None:
+        """Note the agent list's rows a click opens in the frame just drawn, and ask for mouse reports only while it is open.
 
-        A list row is clickable from edge to edge. The strip's agents are
-        clickable while a turn runs and no question is open; its `main` entry
-        opens nothing. Reports stay off while the region's place on the screen
-        is not certain, since no click could be read then.
+        A list row is clickable from edge to edge; nothing else is, the strip
+        included. Reports stay off while the region's place on the screen is
+        not certain, since no click could be read then.
         """
         cols, rows = self.size
         under = budget.status + budget.mode - 1  # rows above the status line of the mode block's first row
-        self.clickable = {}
-        if listed:
-            self.clickable = {under - index: (Hit(0, cols, row_id),) for index, row_id in enumerate(listed[: budget.mode])}
-        elif budget.mode and self._busy() and self.slot is None:
-            agents = tuple(hit for hit in hits if hit.subagent_id != MAIN_ID)
-            self.clickable = {under: agents} if agents else {}
+        self.clickable = {under - index: (Hit(0, cols, row_id),) for index, row_id in enumerate(listed[: budget.mode])}
         self._set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
 
     def _list_available(self) -> bool:
@@ -143,7 +137,7 @@ class AgentViewMixin:
         return name in (ENTER, ESCAPE) or event == Key(CHAR, "c", ctrl=True)
 
     def _on_mouse(self, event: Mouse) -> None:
-        """A plain left press on an agent, on the strip or in the list, opens that agent's log; nothing else does anything.
+        """A plain left press on an agent's row of the list opens that agent's log; nothing else does anything.
 
         The one other thing a click does is leave the list, from its main
         row, which has no log. `clickable` holds the cells of the last frame

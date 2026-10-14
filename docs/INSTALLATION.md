@@ -346,22 +346,20 @@ run and approval decision stays Hermes'; the screen is OMH's.
   open and returns to its row when it closes. The list never pushes the screen
   up: it takes the blank rows above the composer first, then rows of what is
   drawn above it (the streaming reply, the prompt being answered, the panel),
-  and with fewer rows than agents it scrolls. Enter, or a click, opens that
-  agent's log on the alternate screen (its thinking lines, tool calls and
-  reply, read-only, refreshed while it runs); Left and Right move between
-  agents and q or Esc goes back.
-- While the strip is clickable (a turn running with agents named on it and no
-  question open, or the list open), the OMH TUI asks the terminal for click
-  reports, so a plain drag no longer selects text in most terminals and the
-  wheel does not scroll. To select anyway, hold Fn while dragging in
-  Terminal.app (or turn off View → Allow Mouse Reporting), Option in iTerm2,
-  Shift in most other terminals. Selection and the wheel come back as soon as
-  neither holds: once the turn has ended and the list is closed, while a
-  question is open, while the strip is too narrow to name an agent
-  (`● 2 agents ↓`), while a view such as an agent's log has the screen, and
-  while the window is being resized. Closing the list while the turn still
-  runs does not bring them back, since the strip is clickable again. While
-  click reports are on, and for 0.5 s after they go off, an Esc pressed on
+  and with fewer rows than agents it scrolls. Enter, or a click on its row,
+  opens that agent's log on the alternate screen (its thinking lines, tool
+  calls and reply, read-only, refreshed while it runs); Left and Right move
+  between agents and q or Esc goes back.
+- The OMH TUI asks the terminal for click reports only while the agent list
+  is open, so during a turn the wheel scrolls and a drag selects as in any
+  shell, and the strip is reached with Down; nothing on the strip is
+  clickable. While the list is open a plain drag no longer selects text in
+  most terminals and the wheel does not scroll. To select anyway, hold Fn
+  while dragging in Terminal.app (or turn off View → Allow Mouse Reporting),
+  Option in iTerm2, Shift in most other terminals. Selection and the wheel
+  come back as soon as the list closes, and while a question is open, while a
+  view such as an agent's log has the screen, and while the window is being
+  resized. While click reports are on, and for 0.5 s after they go off, an Esc pressed on
   its own acts after 0.3 s, the time a click report split by a slow
   connection has to arrive whole. Another key typed within that time ends
   the wait, and both keys act, except `[`, which is read as the rest of a
@@ -378,8 +376,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   takes more than 0.8 s to arrive whole.
   A click is read only where the OMH TUI can tell which row it landed on:
   once the session's output has reached the bottom of the screen, or after
-  Ctrl+L. Until then it leaves the mouse to the terminal and the keys open
-  the list.
+  Ctrl+L. Until then it leaves the mouse to the terminal, and the keys still
+  open the list and the logs.
 - The composer takes a paste whole when the terminal brackets it, as most
   terminals do. A paste whose end marker never arrives ends after 0.5 s
   without input, as what arrived so far, and the keys after it are keys
@@ -447,7 +445,7 @@ Esc closes it):
 | Esc, Ctrl+C | On a question Hermes asked, decline it (an approval is denied); Ctrl+C first clears an answer being typed |
 | ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions` list, move, switch to the highlighted session, or close it; typing filters the list |
 | ↑ / ↓, Enter, Esc | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; typing leaves it too |
-| Click | On an agent on the mode row's strip while a turn runs, or on a row of the agent list, opens that agent's log (on main, only leaves the list) |
+| Click | On a row of the agent list, opens that agent's log (on main, only leaves the list) |
 | ← / →, q or Esc | In an agent's log, show the agent before or after, or go back; the pager's keys scroll it |
 | j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, an agent's log, this list), move a line, a page, or to either end, or leave |
 
