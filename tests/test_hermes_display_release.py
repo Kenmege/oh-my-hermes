@@ -20,7 +20,7 @@ from _legacy_display import brand_legacy_home, seed_legacy_widget
 from _platform_support import requires_posix_permissions, requires_symlinks
 from omh.install.config_adapter import external_dirs, memory_provider_selection, plugin_omh_home_setting
 from omh.install.config_reversal import MANAGED_CONFIG_WRITES_STATE_KEY
-from omh.skin_pack import SKIN_THEMES, read_theme_choice, theme_for_name, write_theme_choice
+from omh.skin_pack import SKIN_THEMES, read_theme_choice, skin_payload, theme_for_name, write_theme_choice
 
 
 # A config with a fallback provider and a compression provider, so the
@@ -440,6 +440,123 @@ class ProfileReleaseTests(unittest.TestCase):
             self.assertNotIn("display", config_text)
             self.assertTrue((profile / "plugins" / "omh" / "plugin.yaml").is_file())
             self.assertTrue((elsewhere / "omh-status.mjs").is_file())
+
+
+# The on-disk state the last release left, recorded from a real run of its own
+# `omh setup` and `omh theme use` (the fixture names the tag, the commit and
+# the commands), with the scratch root templated as `{ROOT}`. The widget
+# bytes are not in it: the real file embeds the installing interpreter's
+# absolute path. Ownership is the manifest's digest of whatever is on disk,
+# so a stand-in with its own digest recorded takes the same branch.
+UPGRADE_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "upgrade_from_v3_0_2.json"
+
+
+class UpgradeFromLastReleaseTests(unittest.TestCase):
+    """A machine set up by v3.0.2, primary home and two bot profiles, comes through update clean."""
+
+    PRIMARY = "hermes/config.yaml"
+    BOT = "hermes/profiles/bot/config.yaml"
+    SHARED = "hermes/profiles/shared/config.yaml"
+
+    def _restore_v3_0_2(self, root: Path) -> dict[str, object]:
+        fixture = json.loads(UPGRADE_FIXTURE.read_text(encoding="utf-8"))
+
+        def text(value: str) -> str:
+            return value.replace("{ROOT}", root.as_posix())
+
+        for rel, body in fixture["configs_before_setup"].items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text(body), encoding="utf-8", newline="")
+        # Today's setup lays down what the configs point at (the bundle and
+        # the skills); then every home is put back exactly as v3.0.2 left it.
+        status, _stdout, stderr = run_cli(
+            ["--omh-home", str(root / "omh"), "--hermes-home", str(root / "hermes"), "setup", "--with-plugin"]
+        )
+        assert status == 0, stderr
+        for rel, body in fixture["configs"].items():
+            (root / rel).write_text(text(body), encoding="utf-8", newline="")
+        state_path = root / "omh" / "runtime" / "state.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state[MANAGED_CONFIG_WRITES_STATE_KEY] = {
+            str((root / rel).resolve()): json.loads(text(json.dumps(record)))
+            for rel, record in fixture["hermes_config_writes"].items()
+        }
+        state_path.write_text(json.dumps(state), encoding="utf-8", newline="")
+        for home in (root / "hermes", root / "hermes" / "profiles" / "bot", root / "hermes" / "profiles" / "shared"):
+            seed_legacy_widget(home)
+            skins = home / "skins"
+            skins.mkdir(parents=True, exist_ok=True)
+            for theme in SKIN_THEMES:
+                (skins / theme.filename).write_bytes(skin_payload(theme.skin_name))
+            (skins / ".omh-skin.manifest.json").write_text(json.dumps(fixture["skin_manifest"]), encoding="utf-8")
+        return fixture
+
+    def test_update_releases_every_home_keeps_omh_working_and_a_second_run_changes_nothing(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            fixture = self._restore_v3_0_2(root)
+            base = ["--omh-home", str(root / "omh"), "--hermes-home", str(root / "hermes")]
+
+            status, stdout, stderr = run_cli([*base, "update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            primary = (root / self.PRIMARY).read_text(encoding="utf-8")
+            bot = (root / self.BOT).read_text(encoding="utf-8")
+            shared = (root / self.SHARED).read_text(encoding="utf-8")
+            self.assertNotIn("display", primary)
+            self.assertNotIn("display", bot)
+            # The values consent replaced in the shared profile come back.
+            self.assertIn("display:\n  interface: cli\n  skin: ares\n", shared)
+            self.assertNotIn("collapsed", shared)
+            # Only the screen goes: everything else v3.0.2 wrote is still there.
+            for rel, after in ((self.PRIMARY, primary), (self.BOT, bot), (self.SHARED, shared)):
+                with self.subTest(home=rel):
+                    before = fixture["configs"][rel].replace("{ROOT}", root.as_posix())
+                    self.assertEqual(external_dirs(after), external_dirs(before))
+                    self.assertEqual(memory_provider_selection(after), "omh")
+                    self.assertIn("  enabled:\n    - omh\n", after)
+                    self.assertEqual(plugin_omh_home_setting(after), plugin_omh_home_setting(before))
+                    home = (root / rel).parent
+                    self.assertFalse((home / "tui-widgets" / "omh-status.mjs").exists())
+                    self.assertFalse((home / "tui-widgets" / ".omh-status.manifest.json").exists())
+                    self.assertEqual(_omh_skin_files(home), [])
+                    self.assertFalse((home / "skins" / ".omh-skin.manifest.json").exists())
+            self.assertIn("fallback_chain:", primary)
+            # Each theme `omh theme use` set lands in the store its home reads.
+            self.assertEqual(read_theme_choice(root / "omh"), theme_for_name("crimson"))
+            self.assertEqual(read_theme_choice(root / "bot-store"), theme_for_name("amber"))
+            self.assertEqual(stdout.count("bare `hermes` opens stock Hermes"), 3)
+            state = json.loads((root / "omh" / "runtime" / "state.json").read_text(encoding="utf-8"))
+            for rel in (self.PRIMARY, self.BOT, self.SHARED):
+                with self.subTest(record=rel):
+                    record = state[MANAGED_CONFIG_WRITES_STATE_KEY][str((root / rel).resolve())]
+                    self.assertIn("display_released_at", record)
+                    self.assertEqual(record["restores"], {})
+                    self.assertFalse({"display.interface", "display.skin", "display.sections"} & set(record["keys"]))
+
+            configs = {rel: (root / rel).read_bytes() for rel in (self.PRIMARY, self.BOT, self.SHARED)}
+            status, stdout, stderr = run_cli([*base, "update"], output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual({rel: (root / rel).read_bytes() for rel in configs}, configs)
+            self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
+
+    def test_uninstall_after_the_upgrade_neither_refuses_nor_needs_force(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            fixture = self._restore_v3_0_2(root)
+            base = ["--omh-home", str(root / "omh"), "--hermes-home", str(root / "hermes")]
+            self.assertEqual(run_cli([*base, "update"])[0], 0)
+
+            status, stdout, stderr = run_cli([*base, "uninstall", "--keep-command"])
+
+            self.assertEqual((status, stderr), (0, ""))
+            for rel, before in fixture["configs_before_setup"].items():
+                with self.subTest(home=rel):
+                    self.assertEqual(
+                        (root / rel).read_text(encoding="utf-8"), before.replace("{ROOT}", root.as_posix())
+                    )
+            self.assertFalse((root / "hermes" / "plugins" / "omh").exists())
 
 
 if __name__ == "__main__":
