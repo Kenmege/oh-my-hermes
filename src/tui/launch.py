@@ -26,6 +26,7 @@ from contextlib import contextmanager
 import os
 from pathlib import Path
 import shutil
+import signal
 import tempfile
 from typing import TextIO
 
@@ -37,9 +38,12 @@ FALLBACK_EXIT = 75
 # The file that makes a `FALLBACK_EXIT` a fallback request: Hermes exits 75
 # (EX_TEMPFAIL) on paths of its own, so `omh` reopens Hermes' terminal only
 # when the TUI also created this file. `omh` names a path in a private
-# directory it creates and removes; `gateway_spawn` drops every `OMH_TUI_`
-# name, so the gateway and its tools never see it.
+# directory it creates, and removes the directory when the launch ends
+# (`fallback_sentinel`); `gateway_spawn` drops every `OMH_TUI_` name, so the
+# gateway and its tools never see it.
 FALLBACK_SENTINEL_ENV = "OMH_TUI_FALLBACK_SENTINEL"
+# Signals that end `omh` while the TUI runs: closing the terminal window sends SIGHUP.
+EXIT_SIGNALS = ("SIGTERM", "SIGHUP")
 
 FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
 FRONTEND_ENTRY = FRONTEND_DIR / "dist" / "entry.js"
@@ -93,12 +97,47 @@ def omh_tui_environment(
 
 @contextmanager
 def fallback_sentinel() -> Iterator[Path]:
-    """A path where no file is yet, in a new private directory removed with everything in it on the way out."""
+    """A path where no file is yet, in a new private directory (mode 0700, under the temp directory).
+
+    The directory and whatever is in it are removed when the block exits,
+    by return or by exception. A signal ends the process without that
+    unless it is turned into an exception first: SIGHUP and SIGTERM are,
+    while `exit_on_signals` is in force around this block (bare `omh` keeps
+    it in force while the TUI runs). SIGKILL leaves the directory behind.
+    """
     directory = Path(tempfile.mkdtemp(prefix="omh-tui-"))
     try:
         yield directory / "fallback"
     finally:
         shutil.rmtree(directory, ignore_errors=True)
+
+
+def _exit_on_signal(signum: int, frame: object) -> None:
+    raise SystemExit(128 + signum)
+
+
+@contextmanager
+def exit_on_signals() -> Iterator[None]:
+    """While the block runs, `EXIT_SIGNALS` raise `SystemExit(128 + signum)`; the handlers they replace come back after.
+
+    Left to their default action they end `omh` at once and no `finally`
+    runs. A signal the platform does not have is skipped, and off the main
+    thread nothing is installed, as `omh.tui.app` does for the same pair.
+    """
+    previous: dict[int, object] = {}
+    for name in EXIT_SIGNALS:
+        signum = getattr(signal, name, None)
+        if signum is None:
+            continue
+        try:
+            previous[signum] = signal.signal(signum, _exit_on_signal)
+        except ValueError:
+            break  # handlers can only be installed from the main thread
+    try:
+        yield
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler if handler is not None else signal.SIG_DFL)
 
 
 def fallback_requested(returncode: int, sentinel: Path) -> bool:

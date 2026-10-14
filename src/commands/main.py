@@ -741,17 +741,22 @@ def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
     exits 75 on paths of its own), is the person's session ending and is
     returned as it is, so a session the person closed is never followed by a
     second terminal.
+
+    While the TUI runs, SIGHUP and SIGTERM end `omh` through SystemExit, so
+    the sentinel's directory is removed on the way out. The child is waited
+    on with `Popen.wait`, not `subprocess.run`, which kills its child when the
+    wait is interrupted: the terminal's SIGHUP reaches Hermes' launcher on its
+    own, and a SIGTERM sent to `omh` alone leaves it running, as before.
     """
-    from ..tui.launch import fallback_requested, fallback_sentinel, omh_tui_environment
+    from ..tui.launch import exit_on_signals, fallback_requested, fallback_sentinel, omh_tui_environment
 
     if _omh_tui_available(paths):
-        with fallback_sentinel() as sentinel:
+        with exit_on_signals(), fallback_sentinel() as sentinel:
             environment = omh_tui_environment(
                 os.environ, python=sys.executable, omh_home=paths.omh_home, fallback_sentinel=sentinel
             )
-            returncode = int(
-                subprocess.run([hermes, *_hermes_passthrough_argv(args, omh_tui=True)], env=environment).returncode
-            )
+            child = subprocess.Popen([hermes, *_hermes_passthrough_argv(args, omh_tui=True)], env=environment)
+            returncode = int(child.wait())
             fell_back = fallback_requested(returncode, sentinel)
         if not fell_back:
             return returncode

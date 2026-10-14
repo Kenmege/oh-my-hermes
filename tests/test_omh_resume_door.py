@@ -28,6 +28,8 @@ the argv, never about an end-to-end exit on a real machine.
 from __future__ import annotations
 
 import io
+import os
+import signal
 import sqlite3
 import sys
 import unittest
@@ -113,17 +115,22 @@ def launched(
     omh_tui: bool = False,
     environments: list[dict[str, str] | None] | None = None,
     signal_fallback: bool = False,
+    while_tui_runs=None,
+    killed: list[str] | None = None,
 ):
     """Run the bare launch with a faked `hermes` child.
 
     Yields ``(recorded, stdout, status)``: the argv handed to
-    ``subprocess.run``, everything the launch printed, and the code it
+    ``subprocess.Popen`` (the OMH TUI attempt) or ``subprocess.run`` (Hermes'
+    own terminal), everything the launch printed, and the code it
     returned. ``omh_tui`` says whether the OMH TUI can run here; the
     surface-neutral tests keep it off, so they pin Hermes' own door. A list of
     return codes answers successive children in order, and ``environments``
     (when given) collects the ``env`` each child was started with. With
     ``signal_fallback``, a child started with a fallback sentinel name creates
-    that file, as the OMH TUI does before it exits 75.
+    that file, as the OMH TUI does before it exits 75. ``while_tui_runs`` is
+    called while the OMH TUI attempt is being waited on, and ``killed``
+    collects a note for each kill, terminate or signal sent to that child.
     """
     from omh.tui.launch import FALLBACK_SENTINEL_ENV
 
@@ -143,12 +150,37 @@ def launched(
             Path(env[FALLBACK_SENTINEL_ENV]).touch()
         return _Completed(codes.pop(0) if codes is not None else returncode)
 
+    class _Child:
+        def __init__(self, code: int) -> None:
+            self.code = code
+
+        def wait(self, timeout: float | None = None) -> int:
+            if while_tui_runs is not None:
+                while_tui_runs()
+            return self.code
+
+        def kill(self) -> None:
+            if killed is not None:
+                killed.append("kill")
+
+        def terminate(self) -> None:
+            if killed is not None:
+                killed.append("terminate")
+
+        def send_signal(self, signum: int) -> None:
+            if killed is not None:
+                killed.append(f"signal {signum}")
+
+    def fake_popen(command, *args, **kwargs):
+        return _Child(fake_run(command, *args, **kwargs).returncode)
+
     parsed = build_parser().parse_args(["--hermes-home", str(hermes_home), *argv])
     with terminal_stdio() as stdout, \
             patch("shutil.which", return_value="/usr/local/bin/hermes"), \
             patch("omh.commands.main._run_startup_update_check"), \
             patch("omh.commands.main._omh_tui_available", return_value=omh_tui), \
             patch("omh.commands.main.subprocess.run", side_effect=fake_run), \
+            patch("omh.commands.main.subprocess.Popen", side_effect=fake_popen), \
             patch("omh.commands.main.time.time", side_effect=[CHILD_STARTED_AT, CHILD_ENDED_AT]):
         status = _launch_hermes_tui(parsed)
     yield recorded, stdout.getvalue(), status
@@ -511,6 +543,33 @@ class OmhTuiDoorTests(unittest.TestCase):
                         pass
                     self.assertEqual(len(recorded), 1)
                     self.assertEqual(status, code)
+
+    @unittest.skipIf(os.name == "nt", "SIGHUP is POSIX-only, and the OMH TUI is never attempted on Windows")
+    def test_a_hangup_or_terminate_while_the_tui_runs_removes_the_sentinel_directory_and_leaves_the_child(self) -> None:
+        # Closing the terminal window sends SIGHUP; left to its default action it ended `omh` before any `finally`.
+        from omh.tui.launch import FALLBACK_SENTINEL_ENV
+
+        for name in ("SIGHUP", "SIGTERM"):
+            signum = getattr(signal, name)
+            before = signal.getsignal(signum)
+            with self.subTest(signal=name), TemporaryDirectory() as tmp:
+                environments: list[dict[str, str] | None] = []
+                killed: list[str] = []
+                seen: list[bool] = []
+
+                def deliver() -> None:
+                    seen.append(Path(environments[0][FALLBACK_SENTINEL_ENV]).parent.is_dir())
+                    os.kill(os.getpid(), signum)
+
+                with self.assertRaises(SystemExit) as raised:
+                    with launched(Path(tmp), [], omh_tui=True, environments=environments,
+                                  while_tui_runs=deliver, killed=killed) as (_r, _o, _s):
+                        pass
+                self.assertEqual(raised.exception.code, 128 + signum)
+                self.assertEqual(seen, [True])
+                self.assertFalse(Path(environments[0][FALLBACK_SENTINEL_ENV]).parent.exists())
+                self.assertEqual(killed, [])  # Hermes' launcher deals with the signal itself, as before
+                self.assertIs(signal.getsignal(signum), before)
 
     def test_without_the_omh_tui_hermes_own_door_runs_unchanged(self) -> None:
         environments: list[dict[str, str] | None] = []
