@@ -69,7 +69,13 @@ All notable changes will be documented here.
   a tool group in the tool colour; a running tool's `⏺` pulses (each call on
   its own clock) and settles to `✓` or `✗` before it reaches scrollback; a
   highlight sweeps across the working row's verb; `OMH_TUI_REDUCED_MOTION=1`
-  or `NO_COLOR` holds everything still and repaints once a second.
+  or `NO_COLOR` holds everything still and repaints once a second. Your
+  prompt sits on a tinted band to the right edge (an erase in that background,
+  so a copy picks up no spaces), a prompt the queue sent says `⧗ from queue`,
+  and a steer shows as `↪ steer · <text>` under what is running until Hermes
+  answers; its row then lands at the next block boundary. A steer answered
+  while a tool ran used to close the tool group and mark the running call
+  `▪` cut off, and one answered mid-reply split the reply in two.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

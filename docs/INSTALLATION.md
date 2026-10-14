@@ -455,6 +455,12 @@ run and approval decision stays Hermes'; the screen is OMH's.
     pulse.
   - The working row's spinner turns and a highlight sweeps across what
     Hermes is doing, beside the elapsed time and the tokens written.
+  - Your prompt sits on a tinted band behind `›` that reaches the right edge
+    (painted by the terminal's erase, so a copy picks up no trailing
+    spaces); a prompt the queue sent says `⧗ from queue`.
+  - A steer shows as `↪ steer · <text>` under what is running until Hermes
+    answers, then becomes `↪ steer queued by Hermes · <text>`, or the amber
+    refusal, at the next boundary in the transcript (see below).
   - `OMH_TUI_REDUCED_MOTION=1`, or `NO_COLOR`, stops the motion: no pulse
     and no sweep, every spinner holds its first frame, and while a turn runs
     the screen repaints once a second for the elapsed time instead of ten
@@ -577,11 +583,16 @@ A steer adds what you typed to the turn that is running, without interrupting
 it: Hermes reads it after its next tool call, or, while it is compressing the
 context, queues it and sends it as the next prompt once compression is done.
 Hermes gives the same answer for both, so the transcript notes
-`↪ steer queued by Hermes:` for either. If Hermes does not take the steer
+`↪ steer queued by Hermes` for either. Until Hermes answers, the steer shows
+as `↪ steer · <text>` under what is running, and its row is written into the
+transcript at the next boundary after the answer, never inside a running tool
+group or a streaming reply. If Hermes does not take the steer
 while the turn still runs (an agent still starting, or one that takes no
 steer), the text joins the OMH TUI's own queue (`⧗`) and goes when the turn
 ends, whatever `display.busy_input_mode` says, so it never interrupts the
-turn; if the turn had already ended, it goes as an ordinary prompt. If you
+turn; if the turn had already ended, it goes as an ordinary prompt. Either
+way the steer's row says so in amber (`⧗ queued — Hermes refused the steer
+(<why>) · <text>`). If you
 left the session (`/new`, a switch) before Hermes answered, the text comes
 back to the composer and is not sent to the session you are in. The OMH TUI
 steers only with text you typed and sent this way: a queued prompt is never

@@ -60,7 +60,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from .escapes import strip_escapes
-from .style import CSI, SGR_RESET, Line, Span
+from .style import CSI, SGR_RESET, Line, Span, is_fill
 from .width import is_unpainted, line_width, truncate_line
 
 CARRIAGE_RETURN = "\r"
@@ -109,15 +109,19 @@ def paint_line(line: Line, width: int) -> str:
     Styled spans end in an SGR reset, so the row leaves default attributes
     behind. A row shorter than `width` ends with erase-to-end-of-line; a full
     row does not, because on a terminal that keeps the cursor on the last
-    column, erasing from there would delete the row's last glyph.
+    column, erasing from there would delete the row's last glyph. A row whose
+    last span is empty and has a background (`style.fill`) erases with that
+    background, which a terminal paints to the right edge (background colour
+    erase), so a band reaches the edge without trailing spaces to copy.
     """
+    fill = line[-1].style if line and is_fill(line[-1]) else None
     clipped = truncate_line(_without_controls(line), width, ellipsis="")
     parts: list[str] = []
     for span in clipped:
         sgr = span.style.sgr()
         parts.append(f"{sgr}{span.text}{SGR_RESET}" if sgr else span.text)
     if line_width(clipped) < width:
-        parts.append(ERASE_TO_LINE_END)
+        parts.append(f"{fill.sgr()}{ERASE_TO_LINE_END}{SGR_RESET}" if fill is not None else ERASE_TO_LINE_END)
     return "".join(parts)
 
 

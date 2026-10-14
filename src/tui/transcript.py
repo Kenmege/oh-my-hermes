@@ -59,7 +59,7 @@ Nothing here is written to disk.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import time
 from typing import Any
 
@@ -67,7 +67,7 @@ from ..plugin_bundle.omh.hud_text import elapsed_text
 from .diff_view import DIFF_FILE, FILE_ARROW, DiffLine, diff_rows, parse_inline_diff
 from .gateway import Event
 from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
-from .style import Line, Span, Style
+from .style import Line, Span, Style, fill
 from .theme import Theme
 from .width import line_width, truncate, truncate_left, truncate_line
 
@@ -96,6 +96,14 @@ DROPPED_NOTICE = "⋯ {earlier} no longer held"
 BLOCK_CAP = 2000
 
 USER_MARK = "› "
+FROM_QUEUE_TAG = "⧗ from queue"  # on a prompt the queue sent once the turn before it ended
+# A steer the person sent: SENT until Hermes answers, then QUEUED (Hermes took it: it reads it after its next
+# tool call, or sends it as the next prompt while compressing, and says the same for both) or REFUSED.
+STEER_MARK = "↪ "
+STEER_SENT = "sent"
+STEER_QUEUED = "queued"
+STEER_REFUSED = "refused"
+STEER_REFUSED_MARK = "⧗ "
 COMMAND_MARK = "› "  # a command the person ran, echoed in the hint colour above what it printed
 OUTPUT_MARK = "⎿ "
 OUTPUT_INDENT = "  "
@@ -119,6 +127,17 @@ COLUMN_GAP = "  "
 @dataclass
 class UserBlock:
     text: str
+    done: bool = True
+    from_queue: bool = False
+
+
+@dataclass
+class SteerBlock:
+    """A steer the person sent (`text`) and what came of it (`state`; for STEER_REFUSED, `outcome` says what)."""
+
+    text: str
+    state: str = STEER_SENT
+    outcome: str = ""
     done: bool = True
 
 
@@ -215,7 +234,7 @@ class ToolGroup:
     parallel: int = 1  # most tools running at the same moment
 
 
-Block = UserBlock | AssistantBlock | ThinkingBlock | ToolGroup | NoticeBlock | CommandBlock | TurnSummaryBlock
+Block = UserBlock | AssistantBlock | ThinkingBlock | ToolGroup | NoticeBlock | CommandBlock | TurnSummaryBlock | SteerBlock
 
 
 # ── payload reading ───────────────────────────────────────────────────────
@@ -420,7 +439,23 @@ def _text_rows(
 
 
 def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
-    return _text_rows(block.text, theme.text, (Span(USER_MARK, theme.user),), (Span(" " * len(USER_MARK)),), width)
+    """Your prompt behind `›` on its band, which every row fills to the right edge; `⧗ from queue` when the queue sent it."""
+    rows = _text_rows(block.text, theme.text, (Span(USER_MARK, theme.user),), (Span(" " * len(USER_MARK)),), width)
+    if block.from_queue and rows:
+        tag: Line = (Span(COLUMN_GAP + FROM_QUEUE_TAG, theme.muted),)
+        if line_width(rows[0]) + line_width(tag) <= width:
+            rows[0] = (*rows[0], *tag)
+    band = theme.user_band
+    return [(*(Span(span.text, replace(span.style, bg=band.bg)) for span in row), fill(band)) for row in rows]
+
+
+def _steer_rows(block: SteerBlock, width: int, theme: Theme) -> list[Line]:
+    """`↪ steer · <text>` while it waits for Hermes, `↪ steer queued by Hermes · <text>` once taken, or the refusal."""
+    text = _first_line(block.text)
+    if block.state == STEER_REFUSED:
+        return [truncate_line((Span(f"{STEER_REFUSED_MARK}{block.outcome} · {text}", theme.warn),), width)]
+    words = "steer queued by Hermes · " if block.state == STEER_QUEUED else "steer · "
+    return [truncate_line((Span(STEER_MARK, theme.accent), Span(words, theme.muted), Span(text, theme.text)), width)]
 
 
 def _notice_style(level: str, theme: Theme) -> tuple[str, Style]:
@@ -601,6 +636,8 @@ def block_rows(
         return _command_rows(block, width, theme, expanded)
     if isinstance(block, TurnSummaryBlock):
         return _summary_rows(block, width, theme)
+    if isinstance(block, SteerBlock):
+        return _steer_rows(block, width, theme)
     if isinstance(block, AssistantBlock):
         return _assistant_rows(block, width, theme)
     if isinstance(block, ThinkingBlock):
@@ -629,6 +666,7 @@ class Transcript:
         self._taken_any = False  # whether any line has been taken (a spacer goes above the next block)
         self._left_out = 0  # blocks `retake_tail` left out: the next take opens with LEFT_OUT_NOTICE
         self.dropped = 0  # blocks BLOCK_CAP dropped from the front
+        self._held: list[SteerBlock] = []  # steers waiting for Hermes' answer or a block boundary (`add_steer`)
         # Moves with every change to what `live_lines` draws; its last answer is kept with the version, width,
         # row limit and theme it was for, so a frame that changed nothing (a spinner tick) renders nothing.
         self._version = 0
@@ -656,8 +694,29 @@ class Transcript:
             handler(event.payload if isinstance(event.payload, dict) else {})
             self._version += 1
 
-    def add_user(self, text: str) -> None:
-        self._append(UserBlock(text))
+    def add_user(self, text: str, from_queue: bool = False) -> None:
+        self._append(UserBlock(text, from_queue=from_queue))
+
+    def add_steer(self, text: str) -> SteerBlock:
+        """A steer the person just sent, held until Hermes answers and the transcript reaches a block boundary.
+
+        A steer never closes a live block (closing a tool group would mark its
+        running calls cut off, and a streaming reply would split): it is shown
+        under the live blocks and written into the transcript at the next
+        boundary after Hermes answered, which for a steer Hermes reads after
+        its next tool call is where it reads it. Change its `state` with
+        `steer_answered`.
+        """
+        block = SteerBlock(text)
+        self._held.append(block)
+        self._write_held()
+        self._version += 1
+        return block
+
+    def steer_answered(self, block: SteerBlock, state: str, outcome: str = "") -> None:
+        block.state, block.outcome = state, outcome
+        self._write_held()
+        self._version += 1
 
     def add_notice(self, text: str, level: str = NOTICE_INFO) -> None:
         """A notice; while a command's echo is open (the last block), it is that command's output instead."""
@@ -697,6 +756,7 @@ class Transcript:
         command = self._live(CommandBlock)
         if command is not None:
             command.done = True
+            self._write_held()  # a steer sent with /steer goes under its echo
             self._version += 1
 
     def add_assistant(self, text: str) -> None:
@@ -744,9 +804,19 @@ class Transcript:
 
     def _append(self, block: Block) -> None:
         self._close_live()
+        self._write_held()
         self.blocks.append(block)
         self._version += 1
         self._drop_past_cap()
+
+    def _write_held(self) -> None:
+        """The held steers Hermes has answered, into the transcript, when its last block is no longer live."""
+        if self.blocks and not self.blocks[-1].done:
+            return
+        answered = [block for block in self._held if block.state != STEER_SENT]
+        if answered:
+            self._held = [block for block in self._held if block.state == STEER_SENT]
+            self.blocks.extend(answered)
 
     def _drop_past_cap(self) -> None:
         """Past `BLOCK_CAP`, drop the oldest blocks already taken (or left out); one not taken yet stays until it is.
@@ -1024,7 +1094,9 @@ class Transcript:
     def _render_live(self, width: int, theme: Theme, max_rows: int | None, now: float | None = None) -> list[Line]:
         """`live_lines` rendered, from the last block up until `max_rows` rows are covered (all of them for None)."""
         rendered: list[tuple[bool, list[Line]]] = []  # (opens a block, its rows), the last block first
-        count = 0
+        held = [(True, _steer_rows(block, width, theme)) for block in reversed(self._held)]  # under the live blocks
+        rendered.extend(held)
+        count = sum(len(rows) for _opens, rows in held)
         whole = True
         for index in range(len(self.blocks) - 1, self._cursor - 1, -1):
             if max_rows is not None and count >= max_rows:

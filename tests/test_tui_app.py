@@ -1772,7 +1772,7 @@ class LocalCommandTests(AppTestCase):
         listed = history.index("  ⎿ Queued (sent one at a time as each turn ends):")
         self.assertEqual(history[listed - 1], "› /queue")
         self.assertEqual(history[listed + 1], "    1. second prompt")
-        self.assertIn("› second prompt", history[listed:])
+        self.assertIn("› second prompt  ⧗ from queue", history[listed:])  # the queue sent it once the turn ended
         self.assertLess(history.index("› first prompt"), listed)
 
     def test_steer_and_interrupt_modes_send_input_during_a_turn_at_once(self) -> None:

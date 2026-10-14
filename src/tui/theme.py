@@ -52,6 +52,8 @@ LIGHT_STAND_IN = WHITE
 # word band inside it.
 LIGHT_BAND_SHARE = 0.82
 LIGHT_WORD_BAND_SHARE = 0.62
+# Your prompt's band: the background moved this far toward the ink, a tint the default foreground still reads on.
+USER_BAND_SHARE = 0.08
 # The roles a person reads as text: each reaches TEXT_CONTRAST against the background. `text` and `user` are not
 # here because they are the terminal's own foreground.
 TEXT_ROLES = (
@@ -100,6 +102,7 @@ class Theme:
     muted: Style
     mode_accept: Style
     mode_plan: Style
+    user_band: Style  # the background behind your prompt in the transcript
 
 
 def _channel(value: int) -> float:
@@ -215,6 +218,7 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         muted=Style(fg=read("banner_dim")),
         mode_accept=Style(fg=read("ui_warn")),
         mode_plan=Style(fg=read("ui_ok")),
+        user_band=Style(bg=_mix(surface, ink, USER_BAND_SHARE)),
     )
 
 

@@ -172,8 +172,11 @@ from .theme import DEFAULT_THEME, LIGHT_STAND_IN, Theme, build_theme, is_light, 
 from .transcript import (
     NOTICE_ERROR,
     NOTICE_WARN,
+    STEER_QUEUED,
+    STEER_REFUSED,
     AssistantBlock,
     NoticeBlock,
+    SteerBlock,
     Transcript,
     as_text,
     block_rows,
@@ -282,11 +285,12 @@ QUEUE_EDIT_HINT = "↑ edit"
 QUEUE_HINT_GAP = 2
 
 # Hermes answers `queued` both when the running turn takes the steer (at its next tool call) and when it
-# queues the text as the next prompt because it is compressing the context; the notice is true of both.
-STEERED_NOTICE = "↪ steer queued by Hermes: {}"
-STEER_REFUSED_NOTICE = "Hermes did not take the steer ({code}): {message}. {fallback}"
-STEER_HELD = "It waits in the queue and goes when the turn ends."
-STEER_SENT = "Sent as a prompt instead."
+# queues the text as the next prompt because it is compressing the context; the transcript's
+# `↪ steer queued by Hermes` is true of both. A steer it refuses says what became of the text instead.
+STEER_REFUSED_OUTCOME = "{fallback} — Hermes refused the steer ({reason})"
+STEER_FALLBACK_QUEUED = "queued"  # a turn still runs: the text waits in the TUI's queue for it to end
+STEER_FALLBACK_SENT = "sent as a prompt"
+STEER_REJECTED_REASON = "its turn had ended"  # Hermes' `rejected`: the agent was idle
 STEER_USAGE = "Usage: /steer <text to add to the running turn>"
 STEER_LEFT_NOTICE = (
     "Hermes answered a steer after you left its session. "
@@ -2109,8 +2113,8 @@ class App(ModesMixin, AgentViewMixin):
         self._submit_prompt(text, shown)
 
     def _submit_prompt(self, text: str, shown: str = "", queued: bool = False, truncate: int | None = None) -> None:
-        """Send one prompt; `truncate` names the row a rewind cuts the session before."""
-        self.transcript.add_user(shown or text)
+        """Send one prompt; `truncate` names the row a rewind cuts the session before; `queued`, the queue sent it."""
+        self.transcript.add_user(shown or text, from_queue=queued)
         self.sticky = shown or text
         self.flushed_since_prompt = 0
         self._clear_roster()  # the agents shown were the last turn's
@@ -2238,37 +2242,39 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
         sid = self.sid
+        block = self.transcript.add_steer(text)  # `↪ steer · <text>` under the live blocks, until Hermes answers
         self._request(
             "session.steer",
             {"session_id": sid, "text": text},
-            lambda result: self._on_steered(sid, text, result),
-            lambda error: self._on_steer_refused(sid, text, error),
+            lambda result: self._on_steered(sid, block, result),
+            lambda error: self._on_steer_refused(sid, block, error),
         )
 
-    def _on_steered(self, sid: str, text: str, result: dict[str, Any]) -> None:
+    def _on_steered(self, sid: str, block: SteerBlock, result: dict[str, Any]) -> None:
         if sid != self.sid:
-            self._steer_back(text)
+            self._steer_back(block.text)
         elif as_text(result.get("status")) == contract.STEER_REJECTED:
-            self._send_typed(text, hold=True)  # the next prompt: after the turn, if one still runs here
+            self._steer_refused(block, STEER_REJECTED_REASON)
         else:
-            self.transcript.add_notice(STEERED_NOTICE.format(first_line(text)))
+            self.transcript.steer_answered(block, STEER_QUEUED)
 
-    def _on_steer_refused(self, sid: str, text: str, error: dict[str, Any]) -> bool:
-        """Hermes could not steer (an agent still starting, or one that takes no steer): the text is the next prompt.
+    def _on_steer_refused(self, sid: str, block: SteerBlock, error: dict[str, Any]) -> bool:
+        """Hermes could not steer (an agent still starting, or one that takes no steer): the text is the next prompt."""
+        if sid != self.sid:
+            self._steer_back(block.text)
+            return True
+        self._steer_refused(block, f"{error.get('code')}: {as_text(error.get('message')) or 'refused'}")
+        return True
+
+    def _steer_refused(self, block: SteerBlock, reason: str) -> None:
+        """The steer says what became of its text, which goes as the next prompt.
 
         While a turn runs it waits in the TUI's queue, whatever the busy mode;
         only an idle session gets it as a prompt at once.
         """
-        if sid != self.sid:
-            self._steer_back(text)
-            return True
-        fallback = STEER_HELD if self._busy() else STEER_SENT
-        message = as_text(error.get("message")) or "refused"
-        self.transcript.add_notice(
-            STEER_REFUSED_NOTICE.format(code=error.get("code"), message=message, fallback=fallback), NOTICE_WARN
-        )
-        self._send_typed(text, hold=True)
-        return True
+        fallback = STEER_FALLBACK_QUEUED if self._busy() else STEER_FALLBACK_SENT
+        self.transcript.steer_answered(block, STEER_REFUSED, STEER_REFUSED_OUTCOME.format(fallback=fallback, reason=reason))
+        self._send_typed(block.text, hold=True)
 
     def _steer_back(self, text: str) -> None:
         """A steer answered after its session was left: the text returns to the person, never to the live session.
