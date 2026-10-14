@@ -9,7 +9,7 @@ from _vt_screen import VTScreen
 from omh.tui.keys import CHAR, Key
 from omh.tui.pager import HISTORY_BLOCKS_KEPT, HistoryPager, Pager
 from omh.tui.style import Line, Span
-from omh.tui.theme import DEFAULT_THEME as THEME
+from omh.tui.theme import DEFAULT_THEME as THEME, theme_named
 
 
 def rows(*texts: str) -> list[Line]:
@@ -141,6 +141,22 @@ class HistoryPagerTests(unittest.TestCase):
         pager.frame(80, 10, THEME)
         pager.frame(60, 10, THEME)
         self.assertEqual({width for index, width in calls if index == 0}, {80, 60})
+
+    def test_a_new_theme_renders_the_blocks_again_in_it(self) -> None:
+        items = items_of([2] * 50)
+        themes: list[object] = []
+
+        def render(index: int, width: int, theme: object) -> list[Line]:
+            if index == 0:
+                themes.append(theme)
+            return items[index]
+
+        pager = HistoryPager("history", count=len(items), render=render)
+        crimson = theme_named("crimson")
+        pager.frame(80, 10, THEME)
+        pager.frame(80, 10, crimson)
+        self.assertEqual(len(themes), 2)
+        self.assertIs(themes[1], crimson)
 
     def test_a_move_asked_for_before_the_first_frame_is_made_at_it(self) -> None:
         pager = self.history(items_of([3] * 100))
