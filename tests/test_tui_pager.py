@@ -6,7 +6,8 @@ import random
 import unittest
 
 from _vt_screen import VTScreen
-from omh.tui.pager import Pager
+from omh.tui.keys import CHAR, Key
+from omh.tui.pager import HISTORY_BLOCKS_KEPT, HistoryPager, Pager
 from omh.tui.style import Line, Span
 from omh.tui.theme import DEFAULT_THEME as THEME
 
@@ -59,6 +60,95 @@ class PagerFrameTests(unittest.TestCase):
                 screen.feed(pager.frame(24, 8, THEME))
                 with self.subTest(trial=trial, step=_step):
                     self.assertEqual(screen.lines(), fresh_screen(pager, 24, 8))
+
+
+def key(char: str) -> Key:
+    return Key(CHAR, char=char)
+
+
+def items_of(heights: list[int]) -> list[list[Line]]:
+    return [rows(*(f"block {index} row {row}" for row in range(height))) for index, height in enumerate(heights)]
+
+
+def flattened(items: list[list[Line]]) -> list[Line]:
+    """The blocks as `/history` used to build them all at once: a blank row between blocks."""
+    lines: list[Line] = []
+    for item in items:
+        if item:
+            lines.extend([()] if lines else [])
+            lines.extend(item)
+    return lines
+
+
+class HistoryPagerTests(unittest.TestCase):
+    """`/history` renders a block only when a page reaches it, and pages exactly as a pager over every row would."""
+
+    def history(self, items: list[list[Line]], calls: list[tuple[int, int]] | None = None) -> HistoryPager:
+        def render(index: int, width: int, theme: object) -> list[Line]:
+            if calls is not None:
+                calls.append((index, width))
+            return items[index]
+
+        return HistoryPager("history", count=len(items), render=render)
+
+    def test_every_key_shows_the_page_a_pager_over_all_the_rows_shows(self) -> None:
+        generator = random.Random(11)
+        for trial in range(40):
+            items = items_of([generator.randrange(1, 7) for _ in range(generator.randrange(1, 30))])
+            lazy, eager = self.history(items), Pager("history", flattened(items))
+            lazy_screen, eager_screen = VTScreen(8, 30), VTScreen(8, 30)
+            lazy_screen.feed(lazy.frame(30, 8, THEME))
+            eager_screen.feed(eager.frame(30, 8, THEME))
+            for step in range(25):
+                chars = "".join(generator.choice("jjjkk bgG") for _ in range(generator.randrange(1, 4)))
+                for pager, screen in ((lazy, lazy_screen), (eager, eager_screen)):
+                    for char in chars:  # several keys between two frames: each is a move of its own
+                        pager.handle_key(key(char), 8)
+                    screen.feed(pager.frame(30, 8, THEME))
+                with self.subTest(trial=trial, step=step, keys=chars):
+                    self.assertEqual(lazy_screen.lines()[:-1], eager_screen.lines()[:-1])
+
+    def test_opening_and_jumping_to_either_end_render_only_the_blocks_those_pages_reach(self) -> None:
+        calls: list[tuple[int, int]] = []
+        pager = self.history(items_of([3] * 2000), calls)
+        first = VTScreen(24, 80)
+        first.feed(pager.frame(80, 24, THEME))
+        self.assertEqual(first.lines()[0].rstrip(), "block 0 row 0")
+        self.assertIn("history · 1-6/2000 messages", first.lines()[-1])
+        self.assertLess(len(calls), 20)  # the first page and the last one, 6 blocks each
+        pager.handle_key(key("G"), 24)
+        last = VTScreen(24, 80)
+        last.feed(pager.frame(80, 24, THEME))
+        self.assertEqual(last.lines()[-2].rstrip(), "block 1999 row 2")
+        pager.handle_key(key("g"), 24)
+        pager.frame(80, 24, THEME)
+        self.assertLess(len(calls), 20)  # both ends were kept
+
+    def test_paging_through_every_block_keeps_only_the_most_recent_ones(self) -> None:
+        calls: list[tuple[int, int]] = []
+        pager = self.history(items_of([3] * 2000), calls)
+        pager.frame(80, 24, THEME)
+        for _ in range(2000 * 4 // 23 + 1):
+            pager.handle_key(key(" "), 24)
+            pager.frame(80, 24, THEME)
+        self.assertEqual(pager.item, 1994)  # the last page's top: 23 rows end with block 1999's last
+        self.assertLessEqual(len(pager._kept), HISTORY_BLOCKS_KEPT)
+        self.assertEqual(len(calls), 2000)  # each block rendered once on the way down
+
+    def test_a_new_width_renders_the_blocks_again_at_it(self) -> None:
+        calls: list[tuple[int, int]] = []
+        pager = self.history(items_of([2] * 50), calls)
+        pager.frame(80, 10, THEME)
+        pager.frame(60, 10, THEME)
+        self.assertEqual({width for index, width in calls if index == 0}, {80, 60})
+
+    def test_a_move_asked_for_before_the_first_frame_is_made_at_it(self) -> None:
+        pager = self.history(items_of([3] * 100))
+        pager.handle_key(key("G"), 10)
+        pager.handle_key(key("k"), 10)
+        screen = VTScreen(10, 40)
+        screen.feed(pager.frame(40, 10, THEME))
+        self.assertEqual(screen.lines()[-2].rstrip(), "block 99 row 1")
 
 
 if __name__ == "__main__":

@@ -1180,10 +1180,10 @@ class RedrawTailTests(unittest.TestCase):
                 app.transcript.add_notice(f"notice {number}")
                 drawn(app)  # printed, so the cap may drop it
         app._history("")
-        assert app.pager is not None
-        shown = [line_text(line) for line in app.pager.lines]
+        shown = [line.rstrip() for line in drawn(app)]
         self.assertEqual(shown[:3], ["⋯ 15 earlier messages no longer held", "", "· notice 15"])
-        self.assertEqual(shown[-1], "· notice 24")
+        self.assertEqual(shown[20:23], ["· notice 24", "", ""])  # the row, a blank, then the 10 notices held, spaced
+        self.assertIn("history · 1-10/10 messages", shown[-1])
 
     def test_a_resumed_sessions_history_is_kept_to_the_tail_too(self) -> None:
         app, _client = make_app(rows=24, cols=80)
@@ -1193,6 +1193,29 @@ class RedrawTailTests(unittest.TestCase):
         taken = [line for line in app.transcript.take_stable_lines(80, DEFAULT_THEME) if line]
         self.assertEqual(taken[0][0].text, "⋯ 37 earlier messages · /history shows all")
         self.assertEqual([line[-1].text for line in taken[1:]], ["question 37", "question 38", "question 39"])
+
+
+class LazyHistoryTests(unittest.TestCase):
+    def test_history_renders_only_the_blocks_its_pages_reach_with_their_details(self) -> None:
+        from omh.tui import transcript as transcript_module
+
+        app, _client = make_app(rows=24, cols=80)
+        for number in range(500):
+            app.transcript.add_notice(f"notice {number}")
+        drawn(app)
+        rendered: list[object] = []
+
+        def counting(block: object, *args: object, **kwargs: object) -> object:
+            rendered.append(kwargs.get("expanded"))
+            return transcript_module.block_rows(block, *args, **kwargs)  # type: ignore[arg-type]
+
+        with patch("omh.tui.app.block_rows", side_effect=counting):
+            app._history("")
+            shown = [line.rstrip() for line in drawn(app)]
+        self.assertEqual(shown[0], "· notice 0")
+        self.assertIn("history · 1-12/500 messages", shown[-1])
+        self.assertLess(len(rendered), 30)  # the first page and the last, not 500 blocks
+        self.assertEqual(set(rendered), {True})  # thinking text, result summaries and whole diffs
 
 
 class ResumingTheLiveSessionTests(unittest.TestCase):

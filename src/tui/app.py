@@ -125,7 +125,7 @@ from .agent_view import AgentViewMixin
 from .layout import slot_cap, under_composer
 from .markdown import clean_text
 from .modes import NO_SESSION_NOTICE, ModesMixin, mode_row_line
-from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
+from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
 from .prompts import CHOICE_DIGITS, Answer, ImmediateAnswer, PromptSlot, open_request
 from .screen import CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
@@ -151,7 +151,7 @@ from .style import CSI, Line, Span, Style
 from .subagents import Hit, Roster
 from .terminal import Terminal, terminal_supported
 from .theme import DEFAULT_THEME, Theme, build_theme, theme_named
-from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, as_text
+from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, as_text, block_rows
 from .width import cell_width, line_width, truncate_left, truncate_line, wrap_line
 from ..version import __version__
 
@@ -2008,12 +2008,18 @@ class App(ModesMixin, AgentViewMixin):
         self._full_redraw()
 
     def _history(self, arg: str) -> None:
-        lines = self.transcript.history_lines(self.size[0], self.theme, details=True)
-        if lines:
-            lines = [*self.transcript.dropped_rows(self.size[0], self.theme), *lines]
-            self._open_pager("history", lines)
-        else:
+        """The blocks held now in a pager that renders each one, details shown, only when a page reaches it."""
+        blocks = list(self.transcript.blocks)
+        if not blocks:
             self.transcript.add_notice("Nothing in this session's transcript yet.")
+            return
+        transcript = self.transcript
+
+        def rows(index: int, width: int, theme: Theme) -> list[Line]:
+            shown = block_rows(blocks[index], width, theme, expanded=True)
+            return [*transcript.dropped_rows(width, theme), *shown] if index == 0 else shown
+
+        self._show_pager(HistoryPager("history", count=len(blocks), render=rows))
 
     def _details(self, arg: str) -> None:
         # No notice: a new block would close the live one, the only block the toggle changes.
@@ -2106,7 +2112,11 @@ class App(ModesMixin, AgentViewMixin):
     # ── pager ──
 
     def _open_pager(self, title: str, lines: list[Line]) -> None:
-        """`lines` on the alternate screen; a pager already open is replaced without switching to that screen again.
+        """`lines` in a pager on the alternate screen (`_show_pager`)."""
+        self._show_pager(Pager(title, lines))
+
+    def _show_pager(self, pager: Pager) -> None:
+        """`pager` on the alternate screen; a pager already open is replaced without switching to that screen again.
 
         A second `ALT_SCREEN_ON` would save the main screen's cursor over the
         one saved on the way in. It is no agent's log: `_open_agent_log` names
@@ -2114,7 +2124,7 @@ class App(ModesMixin, AgentViewMixin):
         """
         if self.pager is None:
             self.terminal.write(ALT_SCREEN_ON)
-        self.pager = Pager(title, lines)
+        self.pager = pager
         self.log_agent = ""
 
     def _leave_pager(self) -> None:

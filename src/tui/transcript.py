@@ -8,9 +8,10 @@ repaints. So the model answers three questions for the app loop:
   once and then belongs to the terminal.
 - `live_lines`: everything not yet taken, as it looks now (painted inside the
   live region every frame).
-- `history_lines`: every block held, for the in-memory pager. At most
-  `BLOCK_CAP` blocks are held; past it the oldest ones already taken are
-  dropped (`dropped` counts them).
+- `history_lines`: every block held, as `/history` shows them (its pager
+  renders them a page at a time, with `block_rows`). At most `BLOCK_CAP`
+  blocks are held; past it the oldest ones already taken are dropped
+  (`dropped` counts them).
 
 The invariant the tests hold: at any moment, the lines already taken followed
 by `live_lines()` equal `history_lines(details=False)` at the same width
@@ -31,8 +32,8 @@ a tool group flushes when the next block arrives (message text, thinking) or
 at `message.complete`, as "⏺ Tool calls (N)" (plus "parallel ×K" when K tools
 ran at once) and one line per tool; a group of one call is that one line. An edit tool whose `tool.complete` carries
 an `inline_diff` shows that diff under its row (`diff_view.py`): the first
-`PREVIEW_LINES` diff lines and a count of the rest, which `history_lines` with
-details shows in full. Lines rendered at one width stay as they were taken; a
+`PREVIEW_LINES` diff lines and a count of the rest, which `/history` (and
+`history_lines` with details) shows in full. Lines rendered at one width stay as they were taken; a
 resize changes only what has not been taken yet.
 
 Two events do not mean what their names suggest, measured against Hermes

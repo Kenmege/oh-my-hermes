@@ -8,6 +8,10 @@ anywhere else. After its first frame a pager paints only the rows that changed
 since its last one, until the size changes or `invalidate` says something else
 cleared the screen.
 
+`Pager` shows lines rendered beforehand. `HistoryPager` (`/history`) renders
+the transcript's blocks only as a page reaches them, so a long session opens
+at the cost of one page.
+
 Keys: j / Down one line down, k / Up one line up, Space / PageDown a page
 down, b / PageUp a page up, g / Home the top, G / End the bottom, q / Esc
 leave.
@@ -15,7 +19,7 @@ leave.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from .keys import CHAR, DOWN, END, ESCAPE, HOME, PAGE_DOWN, PAGE_UP, UP, Key, Paste
@@ -26,6 +30,8 @@ from .theme import Theme
 ALT_SCREEN_ON = f"{CSI}?1049h"
 ALT_SCREEN_OFF = f"{CSI}?1049l"
 FOOTER_KEYS = "j/k line · space/b page · g/G ends · q leaves"
+# The most blocks a `HistoryPager` keeps rendered; one scrolled back to after it left is rendered again.
+HISTORY_BLOCKS_KEPT = 256
 
 
 def _move_to(row: int) -> str:
@@ -62,21 +68,32 @@ class Pager:
         if event.name == ESCAPE or char == "q":
             return False
         if event.name == DOWN or char == "j":
-            step = 1
+            self._scroll(1, rows)
         elif event.name == UP or char == "k":
-            step = -1
+            self._scroll(-1, rows)
         elif event.name == PAGE_DOWN or char == " ":
-            step = page
+            self._scroll(page, rows)
         elif event.name == PAGE_UP or char == "b":
-            step = -page
+            self._scroll(-page, rows)
         elif event.name == HOME or char == "g":
-            step = -len(self.lines)
+            self._scroll_to_end(False, rows)
         elif event.name == END or char == "G":
-            step = len(self.lines)
-        else:
-            return True
-        self.top = min(max(self.top + step, 0), self._last_top(rows))
+            self._scroll_to_end(True, rows)
         return True
+
+    def _scroll(self, step: int, rows: int) -> None:
+        self.top = min(max(self.top + step, 0), self._last_top(rows))
+
+    def _scroll_to_end(self, bottom: bool, rows: int) -> None:
+        self.top = self._last_top(rows) if bottom else 0
+
+    def _page(self, cols: int, rows: int, theme: Theme) -> tuple[list[Line], str]:
+        """The body rows of the current page, and the footer's position text."""
+        body = self.body_rows(rows)
+        self.top = min(self.top, self._last_top(rows))
+        last = min(self.top + body, len(self.lines))
+        position = f"{self.top + 1 if self.lines else 0}-{last}/{len(self.lines)}"
+        return list(self.lines[self.top : self.top + body]), position
 
     def frame(self, cols: int, rows: int, theme: Theme) -> str:
         """The alternate screen's rows for the current page that differ from the last frame, footer on the last row.
@@ -86,14 +103,10 @@ class Pager:
         if self._size != (cols, rows):
             self.invalidate()
             self._size = (cols, rows)
-        body = self.body_rows(rows)
-        self.top = min(self.top, self._last_top(rows))
-        shown = list(self.lines[self.top : self.top + body])
+        shown, position = self._page(cols, rows, theme)
         parts: list[str] = []
-        for row in range(body):
+        for row in range(self.body_rows(rows)):
             self._paint(row, shown[row] if row < len(shown) else (), cols, parts)
-        last = min(self.top + body, len(self.lines))
-        position = f"{self.top + 1 if self.lines else 0}-{last}/{len(self.lines)}"
         footer: Line = (Span(f" {self.title} · {position} · {FOOTER_KEYS} ", theme.status),)
         self._paint(rows - 1, footer, cols, parts)
         return HIDE_CURSOR + "".join(parts) if parts else ""
@@ -106,3 +119,95 @@ class Pager:
         painted = paint_line(line, cols)
         self._painted[row] = (line, painted)
         parts.append(_move_to(row) + painted)
+
+
+def _no_rows(index: int, width: int, theme: Theme) -> list[Line]:
+    return []
+
+
+@dataclass
+class HistoryPager(Pager):
+    """`/history`: the transcript's blocks, each rendered only when a page reaches it.
+
+    `render(index, width, theme)` gives block `index`'s rows; a blank row goes
+    above each block but the first, when the block has rows. The page's top
+    is a block and a row inside it (`item`, `offset`), so opening, moving and
+    jumping to either end render only the blocks the page and the last page
+    reach, at the frame's width. A move asked for before the first frame is
+    made at it; after that each move is made at once, as `Pager` makes it.
+    The footer counts messages (blocks), not rows. At most
+    `HISTORY_BLOCKS_KEPT` blocks' rows are kept, for one width and theme.
+    """
+
+    lines: Sequence[Line] = ()
+    count: int = 0
+    render: Callable[[int, int, Theme], list[Line]] = _no_rows
+    item: int = 0
+    offset: int = 0
+    _step: int = field(default=0, init=False, repr=False, compare=False)
+    _to_end: bool | None = field(default=None, init=False, repr=False, compare=False)
+    _kept: dict[int, list[Line]] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _drawn: tuple[int, Theme] | None = field(default=None, init=False, repr=False, compare=False)
+
+    def _scroll(self, step: int, rows: int) -> None:
+        self._step += step
+        self._settle_if_drawn(rows)
+
+    def _scroll_to_end(self, bottom: bool, rows: int) -> None:
+        self._step, self._to_end = 0, bottom
+        self._settle_if_drawn(rows)
+
+    def _settle_if_drawn(self, rows: int) -> None:
+        if self._drawn is not None:
+            self._settle(self._drawn[0], self.body_rows(rows), self._drawn[1])
+
+    def _rows(self, index: int, cols: int, theme: Theme) -> list[Line]:
+        """Block `index`'s rows at `cols`, the blank row above it included, rendered once while kept.
+
+        The block used longest ago leaves first.
+        """
+        rows = self._kept.pop(index, None)
+        if rows is None:
+            rendered = self.render(index, cols, theme)
+            rows = [(), *rendered] if index and rendered else rendered
+            if len(self._kept) >= HISTORY_BLOCKS_KEPT:
+                del self._kept[next(iter(self._kept))]
+        self._kept[index] = rows
+        return rows
+
+    def _last_page_top(self, body: int, cols: int, theme: Theme) -> tuple[int, int]:
+        """Where the page starts when its last row is the last block's last row (the top, for less than a page)."""
+        index, total = self.count, 0
+        while index > 0 and total < body:
+            index -= 1
+            total += len(self._rows(index, cols, theme))
+        return index, max(total - body, 0)
+
+    def _settle(self, cols: int, body: int, theme: Theme) -> None:
+        """Make the moves asked for, then keep the top a real row no lower than the last page's."""
+        if self._to_end is not None:
+            self.item, self.offset = self._last_page_top(body, cols, theme) if self._to_end else (0, 0)
+        self.offset += self._step
+        self._step, self._to_end = 0, None
+        while self.offset < 0 and self.item > 0:
+            self.item -= 1
+            self.offset += len(self._rows(self.item, cols, theme))
+        self.offset = max(self.offset, 0)
+        while self.item < self.count - 1 and self.offset >= len(self._rows(self.item, cols, theme)):
+            self.offset -= len(self._rows(self.item, cols, theme))
+            self.item += 1
+        self.item, self.offset = min((self.item, self.offset), self._last_page_top(body, cols, theme))
+
+    def _page(self, cols: int, rows: int, theme: Theme) -> tuple[list[Line], str]:
+        if self._drawn is None or self._drawn[0] != cols or self._drawn[1] is not theme:
+            self._kept = {}
+            self._drawn = (cols, theme)
+        body = self.body_rows(rows)
+        self._settle(cols, body, theme)
+        shown: list[Line] = []
+        index, skip = self.item, self.offset
+        while index < self.count and len(shown) < body:
+            shown.extend(self._rows(index, cols, theme)[skip:])
+            index, skip = index + 1, 0
+        first = self.item + 1 if self.count else 0
+        return shown[:body], f"{first}-{index}/{self.count} messages"
