@@ -33,7 +33,7 @@ from typing import Any
 from . import gateway_contract as contract
 from .frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
 from .keys import CHAR, TAB, Key, Paste
-from .style import Line, Span
+from .style import Line, Span, Style
 from .theme import Theme
 from .transcript import NOTICE_ERROR, NOTICE_WARN, as_text
 from .width import cell_width, line_width, truncate_line
@@ -113,16 +113,22 @@ def mode_row_line(
     width: int,
     theme: Theme,
     strip: Line = (),
+    say: str = "",
+    say_style: Style | None = None,
 ) -> Line:
     """The row under the composer frame: the mode's label (accept, plan), the agent strip, the keys that matter now, the effort.
 
     `strip` is the roster's strip while it holds an agent, drawn from cell
-    `strip_column(mode, theme)` on. The label always survives, and the strip
+    `strip_column(mode, theme)` on. `say`, when given, is what the next key
+    will do (a rewind waiting to be sent, Esc's second press) and stands in
+    for the hint, in `say_style`. The label always survives, and the strip
     after it: the hint is cut from its end first, and the effort on the right
     goes only when even the label and the strip beside it do not fit.
     """
     label = mode_label(mode, theme)
-    if mode == MODE_ACCEPT:
+    if say:
+        hint = say if not label else STRIP_SEPARATOR + say
+    elif mode == MODE_ACCEPT:
         hint = ACCEPT_HINT
     elif mode in (MODE_PLAN, MODE_ACCEPT_PLAN):
         hint = PLAN_HINT
@@ -138,7 +144,7 @@ def mode_row_line(
     room = width - line_width(label) - (line_width(right) + MODE_ROW_GAP if right else 0)
     if room < 0:
         right, room = (), width - line_width(label)
-    left = truncate_line(label, width) + truncate_line((Span(hint, theme.hint),), max(room, 0))
+    left = truncate_line(label, width) + truncate_line((Span(hint, say_style or theme.hint),), max(room, 0))
     if not right:
         return left
     return (*left, Span(" " * (width - line_width(left) - line_width(right))), *right)

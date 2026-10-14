@@ -55,6 +55,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
                  ("switch", "session", "resume")),
     SlashCommand("redraw", LOCAL, "Repaint the screen"),
     SlashCommand("history", LOCAL, "Page through this session's transcript"),
+    SlashCommand("rewind", LOCAL, "Go back to an earlier prompt, edit it, and send it again (also Esc Esc)"),
     SlashCommand("details", LOCAL, "Show or hide thinking and tool details", ("detail",)),
     SlashCommand("queue", LOCAL, "Show messages waiting for the current turn", ("q",)),
     SlashCommand("steer", LOCAL, "Add a message to the running turn (/steer <text>; Ctrl+Enter where it is a key)",

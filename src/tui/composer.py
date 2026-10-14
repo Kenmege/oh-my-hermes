@@ -374,12 +374,16 @@ class Composer:
         end = self.text.find(NEWLINE, self.caret)
         return len(self.text) if end < 0 else end
 
-    def record(self, text: str) -> None:
-        """Keep `text` as the newest history entry, unless it is blank, repeats the newest, or nothing may be recorded."""
+    def record(self, text: str, sent: bool = True) -> None:
+        """Keep `text` as the newest history entry, unless it is blank, repeats the newest, or nothing may be recorded.
+
+        Only a `sent` line goes on to `on_record`; a draft the person cleared
+        stays in this session's history alone.
+        """
         if self.records_history and not self.masked and text.strip() and (not self.history or self.history[-1] != text):
             self.history.append(text)
             del self.history[:-HISTORY_CAP]
-            if self.on_record is not None:
+            if sent and self.on_record is not None:
                 self.on_record(text)
 
     def _submit(self) -> ComposerAction:

@@ -404,6 +404,17 @@ run and approval decision stays Hermes'; the screen is OMH's.
   send; Backspace on an empty composer removes the last one. Hermes reads and
   queues the file; the OMH TUI keeps only its name. Dropping a file that is not
   an image types Hermes' reference to it instead.
+- Esc twice (within 0.8 s) on an empty composer between turns, or `/rewind`,
+  lists this session's prompts, newest first; the one you take comes back
+  into the composer, and the mode row says that sending it replaces that
+  prompt and everything after it. Send it (edited or not) and Hermes drops
+  that prompt and what followed (`prompt.submit` with
+  `truncate_before_row_id` and `confirm_truncate`), and the screen is redrawn
+  from the cut with your prompt under it; Esc instead cancels and empties the
+  composer. A rewind goes as a plain prompt, never through plan mode, and if
+  Hermes refuses it the screen is redrawn as Hermes still has the session.
+  Esc twice with text clears it, keeping it in this session's input history
+  (not in Hermes' history file, since it was never sent).
 - `/sessions` (also `/resume`, `/switch`, `/session`) lists your stored
   sessions in the slot, newest first, with the current one marked; type to
   filter, Up/Down or PageUp/PageDown to move, Enter to switch, Esc to close.
@@ -434,7 +445,8 @@ Esc closes it):
 | Backspace / Delete | Delete a character; Backspace on an empty composer removes the last attached image |
 | Ctrl+W | Deletes the word before the caret |
 | Ctrl+U / Ctrl+K | Delete to the start or the end of the line |
-| Esc | Closes the `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run) |
+| Esc | Closes the `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run); cancels a rewind you picked |
+| Esc Esc | With text, clears it and keeps it in this session's history; on an empty composer between turns, lists your prompts to rewind to (`/rewind` does too) |
 | Ctrl+V | Attaches the clipboard image |
 | Ctrl+O | Shows or hides thinking and tool detail |
 | Ctrl+L | Redraws the screen |
@@ -444,7 +456,7 @@ Esc closes it):
 | `d`, `n` | On an approval, deny |
 | 1 to 9 | On a clarify question with choices, pick one; ↑ / ↓ then Enter on an empty answer does too |
 | Esc, Ctrl+C | On a question Hermes asked, decline it (an approval is denied); Ctrl+C first clears an answer being typed |
-| ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions` list, move, switch to the highlighted session, or close it; typing filters the list |
+| ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions` or `/rewind` list, move, take the highlighted row (switch to that session, or put that prompt in the composer to send again), or close it; typing filters the list |
 | ↑ / ↓, Enter, Esc | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; typing leaves it too |
 | Click | On a row of the agent list, opens that agent's log (on main, only leaves the list) |
 | ← / →, q or Esc | In an agent's log, show the agent before or after, or go back; the pager's keys scroll it |

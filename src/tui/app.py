@@ -142,6 +142,8 @@ from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_
 from .prompts import CHOICE_DIGITS, Answer, ImmediateAnswer, PromptSlot, open_request
 from .screen import CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
 from .session_picker import PICK, SessionPicker, session_rows
+from .rewind_picker import PICK as REWIND_PICK
+from .rewind_picker import RewindPicker, rewind_rows
 from .shortcuts import shortcut_lines
 from .slash import (
     COMMANDS,
@@ -184,6 +186,16 @@ RESIZE_SETTLE_SECONDS = 0.15
 # rows; the blocks above them are counted on one row instead (`Transcript.retake_tail`) and /history shows them.
 REDRAW_TAIL_ROWS = 3000
 EXIT_CONFIRM_SECONDS = 2.0
+# Esc pressed twice within this long: with text, clears it into this session's history; on an empty composer
+# between turns, opens the rewind picker. The mode row says what the second press will do.
+DOUBLE_ESCAPE_SECONDS = 0.8
+ESCAPE_CLEAR = "clear"
+ESCAPE_REWIND = "rewind"
+ESCAPE_AGAIN = "esc again to {}"
+REWIND_SAY = "⏪ rewind: sending replaces prompt #{ordinal} and everything after it · esc cancels"
+REWIND_BUSY_NOTICE = "Rewind works between turns: let this one end, or interrupt it with Esc."
+REWIND_NONE_NOTICE = "No prompt to rewind to in this session yet."
+REWIND_REFUSED_NOTICE = "Hermes did not rewind: {reason}. The screen shows the session as Hermes still has it."
 # Every key a prompt slot takes, and the composer's Enter, is ignored when its
 # first byte arrived before the slot opened or less than this long after, so
 # Enter, Esc, an arrow or a digit typed for the composer as the request arrives
@@ -370,6 +382,15 @@ class _Pending:
     on_error: Callable[[dict[str, Any]], bool] | None = None
     expires_at: float = math.inf  # on the app's clock: `_expire_calls` forgets the call then
     for_command: bool = False  # made while a command ran: the command's echo stays open until it is answered
+
+
+@dataclass(frozen=True)
+class Rewind:
+    """A prompt picked to go back to: sending the composer truncates the session before `row_id`."""
+
+    row_id: int
+    ordinal: int
+    before: tuple[dict[str, Any], ...]  # the history's messages before it: what the redraw shows above the new prompt
 
 
 @dataclass(frozen=True)
@@ -762,6 +783,10 @@ class App(ModesMixin, AgentViewMixin):
             self.composer.history = load_history(self.history_file)
             self.composer.on_record = self._remember
         self.search: HistorySearch | None = None  # Ctrl+R's search, while it has the keys
+        self.escape_armed: tuple[str, float] | None = None  # (what a second Esc does, when the first came)
+        self.rewind_picker: RewindPicker | None = None
+        self.rewind_messages: list[dict[str, Any]] = []  # the history the picker was opened over
+        self.rewind: Rewind | None = None  # a picked prompt waiting to be sent again
         self.region = LiveRegion(terminal.write)
         self.decoder = KeyDecoder(clock)
         self.size = terminal.size()
@@ -984,6 +1009,7 @@ class App(ModesMixin, AgentViewMixin):
         self.mode_request_open = False
         self.yolo_reported = None
         self.notification = None  # Hermes' notices are the session's
+        self.rewind = self.rewind_picker = None  # a rewind names a row of the session being left
         self.approvals_off = self.yolo_by_tui = self.hermes_approvals_said = False
         self.effort_asked = ""
         self.effort = ""
@@ -1056,6 +1082,7 @@ class App(ModesMixin, AgentViewMixin):
             return
         self._expire_calls()
         self._expire_notification()
+        self._expire_escape()
         self._track_path_token()
         self._ask_path_completion_when_due()
         self._ask_tail_when_due()
@@ -1102,6 +1129,8 @@ class App(ModesMixin, AgentViewMixin):
             due.append(tail)
         if self.notification is not None and self.notification.expires_at < math.inf:
             due.append(self.notification.expires_at)
+        if self.escape_armed is not None:
+            due.append(self.escape_armed[1] + DOUBLE_ESCAPE_SECONDS)
         return max(min(due) - now, 0.0)
 
     def _expire_notification(self) -> None:
@@ -1497,6 +1526,9 @@ class App(ModesMixin, AgentViewMixin):
         if self.slot is None and self.search is not None:
             self._search_key(event)
             return
+        if self.slot is None and self.rewind_picker is not None:
+            self._rewind_picker_key(event)
+            return
         if self.slot is None and self._agent_list_key(event):
             return
         if self.slot is None and (
@@ -1610,16 +1642,131 @@ class App(ModesMixin, AgentViewMixin):
         return False
 
     def _escape(self, event: Key | Paste) -> bool:
-        """Esc closes the `@` path menu, or interrupts a running turn when the composer is empty."""
+        """Esc: closes the `@` path menu, cancels a rewind, interrupts a running turn on an empty composer.
+
+        Otherwise it arms a second press within `DOUBLE_ESCAPE_SECONDS`: with
+        text, the second clears it into this session's history (a draft is no
+        line sent, so it stays out of Hermes' history file); on an empty
+        composer between turns, the second opens the rewind picker.
+        """
         if not isinstance(event, Key) or event.name != ESCAPE:
             return False
         if self.path_items:
             self.path_items = []
             return True
+        if self.rewind is not None:
+            self.rewind = None
+            self._set_composer("")
+            return True
         if not self.composer.text and self._busy():
             self._interrupt()
             return True
-        return False
+        kind = ESCAPE_CLEAR if self.composer.text else ESCAPE_REWIND
+        armed, now = self.escape_armed, self.clock()
+        if armed is None or armed[0] != kind or now - armed[1] > DOUBLE_ESCAPE_SECONDS:
+            self.escape_armed = (kind, now)
+            return True
+        self.escape_armed = None
+        if kind == ESCAPE_CLEAR:
+            self.composer.record(self.composer.text, sent=False)
+            self._set_composer("")
+        else:
+            self._rewind("")
+        return True
+
+    def _expire_escape(self) -> None:
+        """Forget a first Esc once the second can no longer come, so the mode row stops naming it."""
+        if self.escape_armed is not None and self.clock() - self.escape_armed[1] > DOUBLE_ESCAPE_SECONDS:
+            self.escape_armed = None
+            self.dirty = True
+
+    # ── rewind ──
+
+    def _rewind(self, arg: str) -> None:
+        """`/rewind` (and Esc Esc): between turns, list this session's prompts to go back to."""
+        if self._busy():
+            self.transcript.add_notice(REWIND_BUSY_NOTICE, NOTICE_WARN)
+        elif not self.sid:
+            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
+        else:
+            sid = self.sid
+            self._request("session.history", {"session_id": sid}, lambda result: self._open_rewind_picker(sid, result))
+
+    def _open_rewind_picker(self, sid: str, result: dict[str, Any]) -> None:
+        if sid != self.sid:
+            return
+        rows = rewind_rows(result)
+        if not rows:
+            self.transcript.add_notice(REWIND_NONE_NOTICE)
+            return
+        messages = result.get("messages")
+        self.rewind_messages = [message for message in messages if isinstance(message, dict)] if isinstance(messages, list) else []
+        self.rewind_picker = RewindPicker(rows)
+        self._settle_list()
+
+    def _rewind_picker_key(self, event: Key | Paste | Mouse) -> None:
+        """A key for the open rewind picker: the prompt picked comes back into the composer, to edit and send."""
+        picker = self.rewind_picker
+        if picker is None or isinstance(event, Mouse):
+            return
+        action = picker.handle_key(event)
+        if action is None:
+            return
+        self.rewind_picker = None
+        if action.kind == REWIND_PICK and action.row is not None:
+            row = action.row
+            before = tuple(self.rewind_messages[: row.index]) if row.index <= len(self.rewind_messages) else ()
+            self.rewind = Rewind(row.row_id, row.ordinal, before)
+            self._set_composer(row.text)
+
+    def _send_rewind(self, text: str) -> None:
+        """Send `text` in place of the picked prompt: Hermes drops it and what came after, and the screen restarts there.
+
+        The transcript is rebuilt from the history above the cut (as a resumed
+        session's is drawn), the new prompt goes as `prompt.submit` with
+        `truncate_before_row_id` and `confirm_truncate`, and the screen is
+        redrawn. Plan mode does not wrap it: a truncation is a `prompt.submit`.
+        """
+        rewind, self.rewind = self.rewind, None
+        if rewind is None:
+            return
+        if self._busy():  # a turn started meanwhile: the row it names may be gone by its end
+            self.transcript.add_notice(REWIND_BUSY_NOTICE, NOTICE_WARN)
+            self._set_composer(text)
+            return
+        self._restart_transcript(list(rewind.before))
+        self._submit_prompt(text, truncate=rewind.row_id)
+        self._full_redraw()
+
+    def _restart_transcript(self, messages: list[dict[str, Any]]) -> None:
+        """A fresh transcript holding `messages` as a resumed session's history is drawn."""
+        cwd = self.transcript.cwd
+        self.transcript = Transcript(self.clock)
+        self.transcript.cwd = cwd
+        self._draw_history(messages)
+
+    def _on_rewind_refused(self, sid: str, error: dict[str, Any]) -> bool:
+        """Hermes kept its history: the turn never starts, and the screen is redrawn from what Hermes has."""
+        self._on_submit_error(error)
+        reason = (as_text(error.get("message")) or "refused").strip().rstrip(".")
+        notice = REWIND_REFUSED_NOTICE.format(reason=reason)
+        self._request(
+            "session.history",
+            {"session_id": sid},
+            lambda result: self._redraw_from_history(sid, result, notice),
+            lambda history_error: self._redraw_from_history(sid, {}, notice),
+        )
+        return True
+
+    def _redraw_from_history(self, sid: str, result: Mapping[str, Any], notice: str) -> bool:
+        if sid != self.sid:
+            return True
+        messages = result.get("messages")
+        if isinstance(messages, list):
+            self._restart_transcript([message for message in messages if isinstance(message, dict)])
+            self._full_redraw()
+        self.transcript.add_notice(notice, NOTICE_WARN)
+        return True
 
     def _interrupt(self) -> None:
         if self.sid:
@@ -1679,7 +1826,7 @@ class App(ModesMixin, AgentViewMixin):
 
     def _track_path_token(self) -> None:
         """Schedule `complete.path` for the `@` token at the caret once it holds still; drop the menu without one."""
-        open_composer = self.slot is None and self.picker is None and self.search is None
+        open_composer = self.slot is None and self.picker is None and self.search is None and self.rewind_picker is None
         word = at_token(self.composer.text, self.composer.caret)[1] if open_composer else ""
         if word == self.path_word:
             return
@@ -1716,7 +1863,9 @@ class App(ModesMixin, AgentViewMixin):
             return
         invocation = parse_slash(text)
         if invocation is not None:
-            self._run_slash(invocation)
+            self._run_slash(invocation)  # a picked rewind stays picked under a command
+        elif self.rewind is not None:
+            self._send_rewind(text)
         else:
             self._send_typed(text)
 
@@ -1743,7 +1892,8 @@ class App(ModesMixin, AgentViewMixin):
             return
         self._submit_prompt(text, shown)
 
-    def _submit_prompt(self, text: str, shown: str = "", queued: bool = False) -> None:
+    def _submit_prompt(self, text: str, shown: str = "", queued: bool = False, truncate: int | None = None) -> None:
+        """Send one prompt; `truncate` names the row a rewind cuts the session before."""
         self.transcript.add_user(shown or text)
         self.sticky = shown or text
         self.flushed_since_prompt = 0
@@ -1755,6 +1905,11 @@ class App(ModesMixin, AgentViewMixin):
         params: dict[str, Any] = {"session_id": self.sid, "text": text}
         if queued:
             params["queued"] = True  # the busy path holds a drained prompt; it never redirects or steers it
+        if truncate is not None:
+            params.update(truncate_before_row_id=truncate, confirm_truncate=True)  # the person picked this row
+            sid = self.sid
+            self._request("prompt.submit", params, lambda result: None, lambda error: self._on_rewind_refused(sid, error))
+            return
         self._request("prompt.submit", params, lambda result: None, self._on_submit_error)
 
     def _on_submit_error(self, error: dict[str, Any]) -> bool:
@@ -1963,6 +2118,7 @@ class App(ModesMixin, AgentViewMixin):
             "new": self._new_session,
             "redraw": self._redraw,
             "history": self._history,
+            "rewind": self._rewind,
             "details": self._details,
             "queue": self._show_queue,
             "steer": self._steer_command,
@@ -2506,17 +2662,8 @@ class App(ModesMixin, AgentViewMixin):
             if self.attachments and self.slot is None
             else None,
             mode=self.mode,
-            mode_row=mode_row_line(
-                mode=self.mode,
-                busy=self._busy(),
-                queued=len(self.queued),
-                keyboard_protocol=self.keyboard_protocol,
-                effort=self.effort,
-                width=cols,
-                theme=self.theme,
-                strip=strip,
-            ),
-            placeholder=PLACEHOLDER if self.slot is None and self.picker is None and self.search is None else "",
+            mode_row=self._mode_row_line(cols, strip),
+            placeholder=PLACEHOLDER if self._composer_open() else "",
             agent_list=agent_list if self.list_selected is not None else None,
         )
         self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad)
@@ -2526,6 +2673,31 @@ class App(ModesMixin, AgentViewMixin):
             # saw them; flushed after it, they land in those pad rows instead.
             self.region.flush_above(stable, cols)
         self._take_clickable(frame.budget, listed)
+
+    def _composer_open(self) -> bool:
+        """Whether the composer takes the keys for a prompt: no question, picker or search has them."""
+        return self.slot is None and self.picker is None and self.search is None and self.rewind_picker is None
+
+    def _mode_row_line(self, cols: int, strip: Line | None = None) -> Line:
+        """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's second press)."""
+        say, say_style = "", None
+        armed = self.escape_armed
+        if self.rewind is not None:
+            say, say_style = REWIND_SAY.format(ordinal=self.rewind.ordinal), self.theme.warn
+        elif armed is not None and self.clock() - armed[1] <= DOUBLE_ESCAPE_SECONDS:
+            say = ESCAPE_AGAIN.format(armed[0])
+        return mode_row_line(
+            mode=self.mode,
+            busy=self._busy(),
+            queued=len(self.queued),
+            keyboard_protocol=self.keyboard_protocol,
+            effort=self.effort,
+            width=cols,
+            theme=self.theme,
+            strip=self._agent_strip(cols)[0] if strip is None else strip,
+            say=say,
+            say_style=say_style,
+        )
 
     # ── subagents ──
 
@@ -2575,6 +2747,8 @@ class App(ModesMixin, AgentViewMixin):
             return self.picker.lines(cols, self.theme, cap, self.wall_clock())
         if self.search is not None:
             return self.search.lines(cols, self.theme, cap)
+        if self.rewind_picker is not None:
+            return self.rewind_picker.lines(cols, self.theme, cap, self.wall_clock())
         # Nothing has the keys: the queued prompts take the slot's last rows, right above the composer's
         # top rule, Hermes' notification the row above them, and the menu or the panel gets the rows left. A
         # question or the picker hides them, since Up then does not edit the queue.

@@ -226,6 +226,15 @@ class AppHistoryTests(unittest.TestCase):
         self.assertEqual(load_history(self.path), ["ls -la", "first line\nsecond line", "a new prompt", "/usage"])
         self.assertNotIn("hunter2", self.path.read_text(encoding="utf-8"))
 
+    def test_a_draft_cleared_with_esc_esc_stays_out_of_the_file(self) -> None:
+        from test_tui_modes import type_text
+
+        type_text(self.app, "a draft never sent")
+        self.app._on_input(Key(ESCAPE))
+        self.app._on_input(Key(ESCAPE))
+        self.assertEqual(self.app.composer.history[-1], "a draft never sent")  # Up still has it
+        self.assertEqual(self.path.read_text(encoding="utf-8"), INK_FILE)
+
     def test_ctrl_r_searches_and_enter_takes_the_match_into_the_composer(self) -> None:
         from test_tui_modes import type_text
 

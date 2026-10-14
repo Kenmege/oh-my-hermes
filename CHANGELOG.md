@@ -31,7 +31,11 @@ All notable changes will be documented here.
   new Ctrl+R search reach earlier sessions' prompts: the TUI reads Hermes' own
   input history (`$HERMES_HOME/.hermes_history`, the file `hermes --tui`
   keeps) and appends each line you send to it in that file's format, opened
-  append-only and without following a symlink, created mode 0600.
+  append-only and without following a symlink, created mode 0600. Esc twice
+  clears a draft into the session's history, or, on an empty composer between
+  turns (and `/rewind`), lists your prompts: the one you take comes back to
+  edit, and sending it truncates the session before it (`prompt.submit` with
+  `truncate_before_row_id` and `confirm_truncate`) and redraws from the cut.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

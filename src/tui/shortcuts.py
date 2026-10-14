@@ -39,7 +39,9 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+W", "Deletes the word before the caret"),
     ("Ctrl+U / Ctrl+K", "Delete to the start or the end of the line"),
     ("Esc", "Closes the @ menu; on an empty composer, interrupts a running turn "
-            "(the activity row shows how long it has run)"),
+            "(the activity row shows how long it has run); cancels a rewind you picked"),
+    ("Esc Esc", "With text, clears it and keeps it in this session's history; on an empty composer between turns, "
+                "lists your prompts to rewind to (/rewind does too)"),
     ("Ctrl+V", "Attaches the clipboard image"),
     ("Ctrl+O", "Shows or hides thinking and tool detail"),
     ("Ctrl+L", "Redraws the screen"),
@@ -50,8 +52,9 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("1 to 9", "On a clarify question with choices, pick one; ↑ / ↓ then Enter on an empty answer does too"),
     ("Esc, Ctrl+C", "On a question Hermes asked, decline it (an approval is denied); "
                     "Ctrl+C first clears an answer being typed"),
-    ("↑ / ↓, PageUp / PageDown, Enter, Esc", "In the /sessions list, move, switch to the highlighted session, "
-                                             "or close it; typing filters the list"),
+    ("↑ / ↓, PageUp / PageDown, Enter, Esc", "In the /sessions or /rewind list, move, take the highlighted row "
+                                             "(switch to that session, or put that prompt in the composer to send "
+                                             "again), or close it; typing filters the list"),
     ("↑ / ↓, Enter, Esc", "In the agent list, move, open the highlighted agent's log (on main, only leave), "
                           "or go back; typing leaves it too"),
     ("Click", "On a row of the agent list, opens that agent's log (on main, only leaves the list)"),

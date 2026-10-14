@@ -61,7 +61,11 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "session.list": frozenset({"limit"}),
     # Read-only: the last 16 KB of one child's live transcript, for the agent log view. See `call_problem`.
     "subagent.tail": frozenset({"session_id", "subagent_id"}),
-    "prompt.submit": frozenset({"session_id", "text", "queued"}),
+    # A rewind (Esc Esc, /rewind) adds both truncation keys; see `call_problem`. Hermes refuses a truncation
+    # without `confirm_truncate` (4029) and an ordinal one on a durable session (4004).
+    "prompt.submit": frozenset({"session_id", "text", "queued", "truncate_before_row_id", "confirm_truncate"}),
+    # The durable display transcript with row ids: what the rewind picker lists and redraws from.
+    "session.history": frozenset({"session_id"}),
     # Attachments: the gateway resolves and queues the file; the TUI sends a path, never bytes.
     "image.attach": frozenset({"session_id", "path"}),
     "image.detach": frozenset({"session_id", "path"}),
@@ -235,8 +239,10 @@ def undeclared_params(method: str, params: dict[str, object]) -> list[str]:
 def call_problem(method: str, params: dict[str, object]) -> str:
     """Why the TUI must not send this call; "" when it may.
 
-    An undeclared key; a `config.set` that Hermes would apply beyond one
-    session (a key or a value outside `CONFIG_SET_VALUES`, or no session id);
+    An undeclared key; a `prompt.submit` that truncates without both an int
+    `truncate_before_row_id` and `confirm_truncate: true` (a rewind names the
+    row the person picked and says so); a `config.set` that Hermes would apply
+    beyond one session (a key or a value outside `CONFIG_SET_VALUES`, or no session id);
     or a `subagent.tail` that does not name both a session and a subagent.
     Hermes answers a tail without a subagent id as a rejected parameter
     (4000), which the client reads as drift and ends the session over.
@@ -244,6 +250,11 @@ def call_problem(method: str, params: dict[str, object]) -> str:
     undeclared = undeclared_params(method, params)
     if undeclared:
         return f"{method} does not declare {', '.join(undeclared)} in the gateway contract"
+    if method == "prompt.submit" and ("truncate_before_row_id" in params or "confirm_truncate" in params):
+        row_id = params.get("truncate_before_row_id")
+        if not isinstance(row_id, int) or isinstance(row_id, bool) or params.get("confirm_truncate") is not True:
+            return "prompt.submit truncates only with an int truncate_before_row_id and confirm_truncate true"
+        return ""
     if method == "subagent.tail":
         missing = [key for key in ("session_id", "subagent_id") if not (isinstance(params.get(key), str) and params[key])]
         return f"subagent.tail needs {' and '.join(missing)}: Hermes rejects the call without" if missing else ""
