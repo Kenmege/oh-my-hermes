@@ -766,9 +766,14 @@ def _print_registration_migrations(
 def _display_release_lines(label: str, release: object) -> list[str]:
     """What one home's display release did, or nothing when it did nothing.
 
-    Said once, on the pass that does it: a person who opens `hermes` after
-    this update and finds stock Hermes should already have read why, and
-    where their OMH theme went.
+    A person who opens `hermes` after this update and finds stock Hermes
+    should already have read why, and where their OMH theme went. Keys taken
+    back, files removed and a theme saved are said on the pass that does
+    them; a key the editor refused is said on every pass that tries it. A
+    file left in place (`kept_*`, `refused`) is said only on the pass that
+    records the release (`recorded`): every later setup and update looks at
+    the same file again, and repeating it under the "stock Hermes" header
+    each time is noise.
     """
     if not isinstance(release, dict):
         return []
@@ -792,16 +797,17 @@ def _display_release_lines(label: str, release: object) -> list[str]:
         removed.insert(0, "the OMH status widget")
     if removed:
         details.append(f"removed {', '.join(removed)}")
-    for entry in skins:
-        if entry.get("status") == "kept_unmanaged":
-            details.append(f"kept {entry.get('path')}: it differs from what OMH installed, so it is yours")
-        elif entry.get("status") == "kept_selected":
-            details.append(f"kept {entry.get('path')}: display.skin still names it")
-    if widget.get("status") == "kept_unmanaged":  # type: ignore[union-attr]
-        details.append(f"kept {widget.get('path')}: OMH cannot prove it installed it")  # type: ignore[union-attr]
-    for name, outcome in (("status widget", widget), ("skin files", skin)):
-        if outcome.get("status") == "refused":  # type: ignore[union-attr]
-            details.append(f"left the {name} in place: {outcome.get('reason')}")  # type: ignore[union-attr]
+    if release.get("recorded"):
+        for entry in skins:
+            if entry.get("status") == "kept_unmanaged":
+                details.append(f"kept {entry.get('path')}: it differs from what OMH installed, so it is yours")
+            elif entry.get("status") == "kept_selected":
+                details.append(f"kept {entry.get('path')}: display.skin still names it")
+        if widget.get("status") == "kept_unmanaged":  # type: ignore[union-attr]
+            details.append(f"kept {widget.get('path')}: OMH cannot prove it installed it")  # type: ignore[union-attr]
+        for name, outcome in (("status widget", widget), ("skin files", skin)):
+            if outcome.get("status") == "refused":  # type: ignore[union-attr]
+                details.append(f"left the {name} in place: {outcome.get('reason')}")  # type: ignore[union-attr]
     theme = release.get("theme") if isinstance(release.get("theme"), dict) else {}
     if theme.get("status") == "saved":  # type: ignore[union-attr]
         details.append(
@@ -2263,6 +2269,8 @@ def _apply_result(
         "display_release": {
             "changed": display_release.changed,
             "message": display_release.message,
+            # True on the one pass that records `display_released_at`.
+            "recorded": not already_released and not refused,
             "keys": display_rows,
             "theme": theme,
             "files": legacy_files,

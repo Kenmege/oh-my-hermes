@@ -1557,10 +1557,10 @@ uses:
 | Your own skin | `display.skin: ares` | kept |
 | A key in a YAML shape the editor does not handle (a quoted key or an anchor anywhere in the file, a flow or duplicate `display`, a dotted key, a BOM) | any | left as it is and named in the output; the release is not recorded, so the next setup or update tries again |
 | A `display:` or `display.sections:` OMH created | emptied by the release | removed |
-| The status widget OMH installed | `omh-status.mjs` and its manifest | removed |
-| A widget the manifest cannot vouch for, or a symlinked `tui-widgets/` | — | kept, named in the output |
+| The status widget OMH installed | `omh-status.mjs` and its manifest | removed (a manifest left without its widget goes too) |
+| A widget the manifest cannot vouch for, or a symlinked `tui-widgets/` | — | kept, named once, in the output of the pass that records the release |
 | Skin files OMH installed (by manifest, or byte-identical to the shipped file) | `omh*.yaml` and the manifest | removed, except the one `display.skin` still names |
-| A skin file you edited | — | kept with its manifest record, named in the output |
+| A skin file you edited | — | kept with its manifest record, named once, in the output of the pass that records the release |
 | Everything else OMH writes: skills, `plugins.enabled`, `memory.provider`, compression, `settings.omh_home` | — | untouched |
 
 The theme for a bot profile whose `plugins.entries.omh.settings.omh_home`

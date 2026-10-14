@@ -59,7 +59,11 @@ def uninstall_tui_widget(hermes_home: Path, *, dry_run: bool = False) -> dict[st
     _reject_symlink_path(destination_dir)
     _reject_symlink_path(destination)
     _reject_symlink_path(manifest)
-    if not destination.exists() and not manifest.exists():
+    if not destination.exists():
+        # A manifest left without its widget describes nothing; it is OMH's
+        # own record, so it goes, and there is no widget to report as kept.
+        if manifest.exists() and not dry_run:
+            manifest.unlink()
         return {"status": "absent", "path": str(destination)}
     if not _is_managed_widget(destination, manifest):
         return {"status": "kept_unmanaged", "path": str(destination)}

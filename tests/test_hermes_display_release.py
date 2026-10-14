@@ -254,6 +254,28 @@ class UpdateReleaseTests(unittest.TestCase):
             self.assertIn(f"kept {edited.resolve()}", stdout)
             self.assertIn("bare `hermes` opens stock Hermes", stdout)
 
+            # Said on the pass that records the release, not on every later one.
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertTrue(edited.is_file())
+            self.assertNotIn(str(edited.resolve()), stdout)
+            self.assertNotIn("Hermes display:", stdout)
+
+    def test_a_widget_manifest_left_without_its_widget_goes_without_a_kept_line(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install()
+            widget = home.hermes_home / "tui-widgets" / "omh-status.mjs"
+            widget.unlink()
+
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertFalse((widget.parent / ".omh-status.manifest.json").exists())
+            self.assertNotIn(str(widget.resolve()), stdout)
+            self.assertNotIn("the OMH status widget", stdout)
+
     def test_a_widget_of_the_persons_own_beside_ours_stays(self) -> None:
         with TemporaryDirectory() as tmp:
             home = _Home(Path(tmp))
@@ -287,6 +309,13 @@ class UpdateReleaseTests(unittest.TestCase):
             self.assertTrue((widgets / "omh-status.mjs").is_file())
             self.assertIn("display_released_at", home.record())
             self.assertNotIn("display", home.config.read_text(encoding="utf-8"))
+
+            # Once the directory is writable again, the next update removes it and says so.
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertFalse((widgets / "omh-status.mjs").exists())
+            self.assertIn("removed the OMH status widget", stdout)
 
     def test_a_refused_release_is_not_recorded_and_keeps_the_skin_file_it_names(self) -> None:
         # The display editor refuses a whole file over a quoted key or an
