@@ -13,10 +13,12 @@ falls back.
 
 When the TUI cannot start it creates the file `omh` named in
 `FALLBACK_SENTINEL_ENV` and exits with `FALLBACK_EXIT`, and `omh` opens
-Hermes' own terminal instead, so a failure costs the person the OMH surface,
-never the session. Exit 75 without that file (Hermes uses 75 on paths of its
-own), like every other exit code, is the session ending and is returned as it
-is.
+Hermes' own terminal instead (`hermes --tui` where Node is found, plain
+`hermes` where it is not, after one line on stderr saying why), so a failure
+costs the person the OMH surface, never the session. `omh_tui_blocker` is the
+same choice made before anything starts. Exit 75 without that file (Hermes
+uses 75 on paths of its own), like every other exit code, is the session
+ending and is returned as it is.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ import signal
 import tempfile
 from typing import TextIO
 
-from .terminal import terminal_supported
+from .terminal import terminal_blocker, terminal_supported
 
 # EX_TEMPFAIL. Not 0/1/2/130 (ordinary exits) and not 42, which Hermes'
 # launcher reads as "relaunch as `hermes update`".
@@ -53,8 +55,9 @@ def node_available(environ: Mapping[str, str], hermes_home: Path) -> bool:
     """Whether Hermes' launcher will find Node: `HERMES_NODE`, `node` on PATH, or Hermes' own tools.
 
     Best effort. Hermes resolves Node through its package manager, which can
-    also fetch it; a miss here only means `omh` opens Hermes' terminal instead
-    of the OMH TUI, never that a launch fails.
+    also fetch it; a miss here only means `omh` opens Hermes' classic terminal
+    instead of a TUI (Hermes' own TUI needs Node as well), never that a launch
+    fails.
     """
     explicit = environ.get("HERMES_NODE", "")
     if explicit and os.path.isfile(explicit) and os.access(explicit, os.X_OK):
@@ -71,11 +74,20 @@ def omh_tui_available(
     stdin: TextIO | None, stdout: TextIO | None, environ: Mapping[str, str], hermes_home: Path
 ) -> bool:
     """Whether bare `omh` should try the OMH TUI before Hermes' own terminal."""
-    return (
-        terminal_supported(stdin, stdout, environ)
-        and FRONTEND_ENTRY.is_file()
-        and node_available(environ, hermes_home)
-    )
+    return not omh_tui_blocker(stdin, stdout, environ, hermes_home)
+
+
+def omh_tui_blocker(
+    stdin: TextIO | None, stdout: TextIO | None, environ: Mapping[str, str], hermes_home: Path
+) -> str:
+    """Why bare `omh` cannot try the OMH TUI here, in one line, or "" when it can."""
+    if not terminal_supported(stdin, stdout, environ):
+        return terminal_blocker(stdin, stdout, environ) or "this terminal cannot host the OMH TUI"
+    if not FRONTEND_ENTRY.is_file():
+        return f"the OMH TUI frontend is missing from this install ({FRONTEND_ENTRY})"
+    if not node_available(environ, hermes_home):
+        return "no Node found for Hermes' launcher (HERMES_NODE, PATH, or Hermes' tools/node-*)"
+    return ""
 
 
 def omh_tui_environment(

@@ -98,20 +98,27 @@ class _TtyProbe(Protocol):
 
 def terminal_supported(stdin: _TtyProbe | None, stdout: _TtyProbe | None, environ: Mapping[str, str]) -> bool:
     """True only when the OMH TUI can own this terminal; False means take the fallback."""
+    return not terminal_blocker(stdin, stdout, environ)
+
+
+def terminal_blocker(stdin: _TtyProbe | None, stdout: _TtyProbe | None, environ: Mapping[str, str]) -> str:
+    """Why the OMH TUI cannot own this terminal, in one line, or "" when it can."""
     if termios is None:
-        return False
-    if environ.get("TERM", "") == "dumb" or environ.get("OMH_NO_TUI", "") == "1":
-        return False
+        return "the OMH TUI needs termios, which this platform does not have"
+    if environ.get("TERM", "") == "dumb":
+        return "TERM=dumb cannot draw the OMH TUI"
+    if environ.get("OMH_NO_TUI", "") == "1":
+        return "OMH_NO_TUI=1 turns the OMH TUI off"
     for stream in (stdin, stdout):
         if stream is None:
-            return False
+            return "stdin or stdout is not a terminal"
         try:
             if not stream.isatty():
-                return False
+                return "stdin or stdout is not a terminal"
         except (OSError, ValueError):
             # A closed or detached stream is not a terminal.
-            return False
-    return True
+            return "stdin or stdout is not a terminal"
+    return ""
 
 
 def terminal_name(environ: Mapping[str, str]) -> str:

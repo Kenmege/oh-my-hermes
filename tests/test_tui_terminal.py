@@ -34,6 +34,7 @@ from omh.tui.terminal import (
     RESTORE_SEQUENCE,
     Terminal,
     keyboard_protocol_request,
+    terminal_blocker,
     terminal_supported,
 )
 
@@ -97,6 +98,25 @@ class TerminalSupportedTests(unittest.TestCase):
     def test_no_termios_means_no_tui(self) -> None:
         with patch.object(terminal_module, "termios", None):
             self.assertFalse(terminal_supported(_Stream(), _Stream(), {}))
+
+    def test_each_reason_is_named_in_one_line(self) -> None:
+        # What bare `omh` prints on stderr before opening Hermes' own terminal.
+        with patch.object(terminal_module, "termios", object()):
+            for (stdin, stdout, environ), expected in (
+                ((_Stream(), _Stream(), {"TERM": "dumb"}), "TERM=dumb cannot draw the OMH TUI"),
+                ((_Stream(), _Stream(), {"OMH_NO_TUI": "1"}), "OMH_NO_TUI=1 turns the OMH TUI off"),
+                ((_Stream(tty=False), _Stream(), {}), "stdin or stdout is not a terminal"),
+                ((_Stream(), _Stream(error=OSError("bad descriptor")), {}), "stdin or stdout is not a terminal"),
+                ((None, _Stream(), {}), "stdin or stdout is not a terminal"),
+                ((_Stream(), _Stream(), {}), ""),
+            ):
+                with self.subTest(expected=expected):
+                    self.assertEqual(terminal_blocker(stdin, stdout, environ), expected)
+        with patch.object(terminal_module, "termios", None):
+            self.assertEqual(
+                terminal_blocker(_Stream(), _Stream(), {"TERM": "dumb"}),
+                "the OMH TUI needs termios, which this platform does not have",
+            )
 
 
 BOTH_REPORTS = KITTY_KEYBOARD_PUSH + MODIFY_OTHER_KEYS_ON

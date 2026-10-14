@@ -66,6 +66,24 @@ class AvailabilityTests(unittest.TestCase):
             node = _executable(Path(tmp) / "node", "#!/bin/sh\n")
             self.assertTrue(launch.omh_tui_available(_Tty(), _Tty(), {"HERMES_NODE": str(node)}, Path(tmp)))
 
+    def test_each_blocker_is_named_and_none_when_the_attempt_goes_ahead(self) -> None:
+        with TemporaryDirectory() as tmp:
+            node = _executable(Path(tmp) / "node", "#!/bin/sh\n")
+            with patch.object(launch, "terminal_supported", return_value=False), \
+                    patch.object(launch, "terminal_blocker", return_value="TERM=dumb cannot draw the OMH TUI"):
+                self.assertEqual(
+                    launch.omh_tui_blocker(_Tty(), _Tty(), {"HERMES_NODE": str(node)}, Path(tmp)),
+                    "TERM=dumb cannot draw the OMH TUI",
+                )
+            with patch.object(launch, "terminal_supported", return_value=True):
+                with patch.object(launch, "FRONTEND_ENTRY", Path(tmp) / "missing" / "entry.js"):
+                    self.assertIn(
+                        "the OMH TUI frontend is missing",
+                        launch.omh_tui_blocker(_Tty(), _Tty(), {"HERMES_NODE": str(node)}, Path(tmp)),
+                    )
+                self.assertIn("no Node found", launch.omh_tui_blocker(_Tty(), _Tty(), {"PATH": ""}, Path(tmp)))
+                self.assertEqual(launch.omh_tui_blocker(_Tty(), _Tty(), {"HERMES_NODE": str(node)}, Path(tmp)), "")
+
     def test_the_shim_ships_where_hermes_looks_for_it(self) -> None:
         self.assertTrue(launch.FRONTEND_ENTRY.is_file())
         self.assertEqual(launch.FRONTEND_ENTRY, launch.FRONTEND_DIR / "dist" / "entry.js")

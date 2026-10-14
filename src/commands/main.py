@@ -614,20 +614,19 @@ def _reject_tui_passthrough_with_subcommand(args: argparse.Namespace) -> None:
             )
 
 
-def _hermes_passthrough_argv(args: argparse.Namespace, *, omh_tui: bool = False) -> list[str]:
+def _hermes_passthrough_argv(args: argparse.Namespace, *, tui: bool = False) -> list[str]:
     """The bare-launch flags forwarded to `hermes`, in one fixed order.
 
     Every value is its own argv element: nothing is interpolated into a string
-    and nothing goes through a shell. `--tui` is added only for the OMH TUI
-    attempt, right after the profile that selects the home; Hermes' own
-    terminal stays Hermes' `display.interface` decision, for the reason the
-    launcher's docstring records.
+    and nothing goes through a shell. `--tui` goes right after the profile
+    that selects the home, for the OMH TUI attempt and for the fallback to
+    Hermes' own TUI (`_run_hermes_fallback`).
     """
     argv: list[str] = []
     profile = getattr(args, "tui_profile", None)
     if profile:
         argv += ["--profile", profile]
-    if omh_tui:
+    if tui:
         argv.append("--tui")
     resume = getattr(args, "tui_resume", None)
     if resume:
@@ -694,9 +693,9 @@ def _launch_hermes_tui(args: argparse.Namespace) -> int | None:
     launch adds `--tui` to those flags and `HERMES_TUI_DIR` to the
     environment, so Hermes' launcher starts the OMH frontend in place of its
     own; when it cannot, or it asks for the fallback (`FALLBACK_EXIT` and the
-    sentinel file), the launch walks through Hermes' own door exactly as it
-    did before the OMH TUI existed. No terminal or no Hermes install means
-    there is nothing to launch, and the caller falls back to the welcome text.
+    sentinel file), the launch opens Hermes' own terminal instead
+    (`_run_hermes_fallback`). No terminal or no Hermes install means there is
+    nothing to launch, and the caller falls back to the welcome text.
 
     The child's start and end wall-clock times are recorded because they are
     the only handle OMH has on which session closed with it: see
@@ -721,10 +720,16 @@ def _launch_hermes_tui(args: argparse.Namespace) -> int | None:
     return returncode
 
 
-def _omh_tui_available(paths) -> bool:
-    from ..tui.launch import omh_tui_available
+def _omh_tui_blocker(paths) -> str:
+    from ..tui.launch import omh_tui_blocker
 
-    return omh_tui_available(sys.stdin, sys.stdout, os.environ, paths.hermes_home)
+    return omh_tui_blocker(sys.stdin, sys.stdout, os.environ, paths.hermes_home)
+
+
+def _node_available(paths) -> bool:
+    from ..tui.launch import node_available
+
+    return node_available(os.environ, paths.hermes_home)
 
 
 def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
@@ -745,17 +750,35 @@ def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
     """
     from ..tui.launch import exit_on_signals, fallback_requested, fallback_sentinel, omh_tui_environment
 
-    if _omh_tui_available(paths):
+    blocker = _omh_tui_blocker(paths)
+    if not blocker:
         with exit_on_signals(), fallback_sentinel() as sentinel:
             environment = omh_tui_environment(
                 os.environ, python=sys.executable, omh_home=paths.omh_home, fallback_sentinel=sentinel
             )
-            child = subprocess.Popen([hermes, *_hermes_passthrough_argv(args, omh_tui=True)], env=environment)
+            child = subprocess.Popen([hermes, *_hermes_passthrough_argv(args, tui=True)], env=environment)
             returncode = int(child.wait())
             fell_back = fallback_requested(returncode, sentinel)
         if not fell_back:
             return returncode
-    return int(subprocess.run([hermes, *_hermes_passthrough_argv(args)]).returncode)
+        blocker = "the OMH TUI did not start (its reason is above)"
+    return _run_hermes_fallback(hermes, args, paths, blocker)
+
+
+def _run_hermes_fallback(hermes: str, args: argparse.Namespace, paths, reason: str) -> int:
+    """Hermes' own TUI where Node is found, its classic terminal where it is not.
+
+    Bare `hermes` is stock Hermes and opens whatever `display.interface`
+    says, which is the classic REPL unless the person chose otherwise, so
+    the TUI has to be asked for: `hermes --tui`, with none of the OMH TUI's
+    environment. Without Node that would exit 1 (Hermes' TUI needs Node as
+    much as the OMH TUI does), so plain `hermes` is the floor. One line on
+    stderr says why the OMH TUI is not the one opening.
+    """
+    with_tui = _node_available(paths)
+    target = "Hermes' own TUI (`hermes --tui`)" if with_tui else "Hermes' classic terminal (its TUI needs Node too)"
+    print(f"omh: {reason}; opening {target}.", file=sys.stderr)
+    return int(subprocess.run([hermes, *_hermes_passthrough_argv(args, tui=with_tui)]).returncode)
 
 
 def main(argv: list[str] | None = None) -> int:

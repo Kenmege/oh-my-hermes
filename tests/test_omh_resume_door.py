@@ -33,13 +33,15 @@ import signal
 import sqlite3
 import sys
 import unittest
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from _cli_harness import run_cli
 from omh.commands.main import _launch_hermes_tui, build_parser
+from omh.tui.launch import omh_tui_blocker
+from omh.tui.terminal import terminal_blocker
 from omh.maintenance.hermes_resume import (
     RESUME_END_PROXIMITY_SECONDS,
     hermes_state_db_path,
@@ -113,24 +115,31 @@ def launched(
     *,
     returncode: int | list[int] = 0,
     omh_tui: bool = False,
+    blocker: str = "TERM=dumb cannot draw the OMH TUI",
+    node: bool = False,
     environments: list[dict[str, str] | None] | None = None,
     signal_fallback: bool = False,
     while_tui_runs=None,
     killed: list[str] | None = None,
+    errors: list[str] | None = None,
 ):
     """Run the bare launch with a faked `hermes` child.
 
     Yields ``(recorded, stdout, status)``: the argv handed to
     ``subprocess.Popen`` (the OMH TUI attempt) or ``subprocess.run`` (Hermes'
     own terminal), everything the launch printed, and the code it
-    returned. ``omh_tui`` says whether the OMH TUI can run here; the
-    surface-neutral tests keep it off, so they pin Hermes' own door. A list of
-    return codes answers successive children in order, and ``environments``
-    (when given) collects the ``env`` each child was started with. With
-    ``signal_fallback``, a child started with a fallback sentinel name creates
-    that file, as the OMH TUI does before it exits 75. ``while_tui_runs`` is
-    called while the OMH TUI attempt is being waited on, and ``killed``
-    collects a note for each kill, terminate or signal sent to that child.
+    returned. ``omh_tui`` says whether the OMH TUI can run here, and
+    ``blocker`` is the reason given when it cannot; ``node`` says whether
+    Node is found, which picks Hermes' own TUI over its classic terminal for
+    the fallback. The surface-neutral tests keep both off, so they pin plain
+    `hermes`. A list of return codes answers successive children in order,
+    ``environments`` (when given) collects the ``env`` each child was started
+    with, and ``errors`` (when given) collects what the launch wrote to stderr.
+    With ``signal_fallback``, a child started with a fallback sentinel name
+    creates that file, as the OMH TUI does before it exits 75.
+    ``while_tui_runs`` is called while the OMH TUI attempt is being waited on,
+    and ``killed`` collects a note for each kill, terminate or signal sent to
+    that child.
     """
     from omh.tui.launch import FALLBACK_SENTINEL_ENV
 
@@ -175,14 +184,18 @@ def launched(
         return _Child(fake_run(command, *args, **kwargs).returncode)
 
     parsed = build_parser().parse_args(["--hermes-home", str(hermes_home), *argv])
-    with terminal_stdio() as stdout, \
+    stderr = io.StringIO()
+    with terminal_stdio() as stdout, redirect_stderr(stderr), \
             patch("shutil.which", return_value="/usr/local/bin/hermes"), \
             patch("omh.commands.main._run_startup_update_check"), \
-            patch("omh.commands.main._omh_tui_available", return_value=omh_tui), \
+            patch("omh.commands.main._omh_tui_blocker", return_value="" if omh_tui else blocker), \
+            patch("omh.commands.main._node_available", return_value=node), \
             patch("omh.commands.main.subprocess.run", side_effect=fake_run), \
             patch("omh.commands.main.subprocess.Popen", side_effect=fake_popen), \
             patch("omh.commands.main.time.time", side_effect=[CHILD_STARTED_AT, CHILD_ENDED_AT]):
         status = _launch_hermes_tui(parsed)
+    if errors is not None:
+        errors.append(stderr.getvalue())
     yield recorded, stdout.getvalue(), status
 
 
@@ -571,13 +584,77 @@ class OmhTuiDoorTests(unittest.TestCase):
                 self.assertEqual(killed, [])  # Hermes' launcher deals with the signal itself, as before
                 self.assertIs(signal.getsignal(signum), before)
 
-    def test_without_the_omh_tui_hermes_own_door_runs_unchanged(self) -> None:
+    def test_without_the_omh_tui_and_without_node_plain_hermes_runs(self) -> None:
         environments: list[dict[str, str] | None] = []
         with TemporaryDirectory() as tmp:
             with launched(Path(tmp), [], omh_tui=False, environments=environments) as (recorded, _o, _s):
                 pass
         self.assertEqual(recorded, [["/usr/local/bin/hermes"]])
         self.assertEqual(environments, [None])
+
+
+class FallbackTargetTests(unittest.TestCase):
+    """Where the OMH TUI cannot run, which Hermes terminal opens, and the one line that says why.
+
+    Bare `hermes` is stock Hermes, so the fallback asks for Hermes' own TUI
+    where Node is found, and opens the classic terminal where it is not,
+    because Hermes' `--tui` exits 1 without Node.
+    """
+
+    HERMES = "/usr/local/bin/hermes"
+
+    def _fallback(self, **kwargs) -> tuple[list[list[str]], list[dict[str, str] | None], str, int]:
+        environments: list[dict[str, str] | None] = []
+        errors: list[str] = []
+        with TemporaryDirectory() as tmp:
+            with launched(Path(tmp), kwargs.pop("argv", []), environments=environments, errors=errors,
+                          **kwargs) as (recorded, _o, status):
+                pass
+        return recorded, environments, errors[0], status
+
+    def test_no_termios_with_node_opens_hermes_own_tui(self) -> None:
+        with patch("omh.tui.terminal.termios", None):
+            reason = terminal_blocker(_TtyStream(), _TtyStream(), {})
+        self.assertIn("termios", reason)
+        recorded, environments, stderr, _status = self._fallback(blocker=reason, node=True)
+        self.assertEqual(recorded, [[self.HERMES, "--tui"]])
+        # Hermes' own TUI, not the OMH frontend: no OMH environment at all.
+        self.assertEqual(environments, [None])
+        self.assertEqual(stderr, f"omh: {reason}; opening Hermes' own TUI (`hermes --tui`).\n")
+
+    def test_a_dumb_terminal_with_node_opens_hermes_own_tui(self) -> None:
+        reason = terminal_blocker(_TtyStream(), _TtyStream(), {"TERM": "dumb"})
+        recorded, _environments, stderr, _status = self._fallback(blocker=reason, node=True, argv=["-p", "work"])
+        self.assertEqual(recorded, [[self.HERMES, "--profile", "work", "--tui"]])
+        self.assertEqual(stderr, f"omh: {reason}; opening Hermes' own TUI (`hermes --tui`).\n")
+
+    def test_the_fallback_code_with_node_opens_hermes_own_tui(self) -> None:
+        from omh.tui.launch import FALLBACK_EXIT
+
+        recorded, environments, stderr, status = self._fallback(
+            omh_tui=True, node=True, returncode=[FALLBACK_EXIT, 0], argv=["-c"], signal_fallback=True
+        )
+        self.assertEqual(recorded, [[self.HERMES, "--tui", "--continue"], [self.HERMES, "--tui", "--continue"]])
+        self.assertIsNotNone(environments[0])
+        self.assertIsNone(environments[1])
+        self.assertEqual(
+            stderr, "omh: the OMH TUI did not start (its reason is above); opening Hermes' own TUI (`hermes --tui`).\n"
+        )
+        self.assertEqual(status, 0)
+
+    def test_no_node_opens_the_classic_terminal(self) -> None:
+        with TemporaryDirectory() as tmp, patch("omh.tui.launch.terminal_supported", return_value=True):
+            reason = omh_tui_blocker(_TtyStream(), _TtyStream(), {"PATH": ""}, Path(tmp))
+        self.assertIn("no Node found", reason)
+        recorded, environments, stderr, _status = self._fallback(blocker=reason, node=False)
+        self.assertEqual(recorded, [[self.HERMES]])
+        self.assertEqual(environments, [None])
+        self.assertEqual(stderr, f"omh: {reason}; opening Hermes' classic terminal (its TUI needs Node too).\n")
+
+    def test_the_session_ending_in_the_omh_tui_prints_no_fallback_line(self) -> None:
+        _recorded, _environments, stderr, _status = self._fallback(omh_tui=True, node=True, returncode=[0])
+        self.assertEqual(stderr, "")
+
 
 class LaunchExitTests(unittest.TestCase):
     """What the launch prints, and what it returns, once the child is gone."""
