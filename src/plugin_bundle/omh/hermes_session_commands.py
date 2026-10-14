@@ -9,11 +9,11 @@ a fixed template. The CLI and the TUI write none of these rows with a
 `display_kind`. The messaging gateway stamps its `/loop` wakeups
 `internal_notification` (in the floor release and on main) and, since 0.21.4,
 its heartbeats too, which `turn_authorship.host_synthesized_turn` already
-reads; its `/plan` and `/learn` turns (the command's own event text rewritten)
-and `/goal` continuations (a synthetic event that is not internal) stay
-unstamped. Where no stamp exists, the template's own opening is the only
-record of who wrote the turn. Each frame is verbatim from upstream, all
-present in the floor release (`v2026.9.7`) except `/initiate-setup`, which
+reads; its `/plan`, `/learn` and `/blueprint` turns (the command's own event
+text rewritten) and `/goal` continuations (a synthetic event that is not
+internal) stay unstamped. Where no stamp exists, the template's own opening is
+the only record of who wrote the turn. Each frame is verbatim from upstream,
+all present in the floor release (`v2026.9.7`) except `/initiate-setup`, which
 only newer hosts send (a frame match needs no version check: an older host
 never writes it):
 
@@ -28,13 +28,18 @@ never writes it):
   `KANBAN_GOAL_*_TEMPLATE`, same file;
 - a `/heartbeat` firing -- `HEARTBEAT_PROMPT_TEMPLATE`, `hermes_cli/heartbeat.py`;
 - `/learn` -- `build_learn_prompt`, `agent/learn_prompt.py`;
-- `/initiate-setup` -- `HEADER`, `agent/initiate_setup_prompt.py`.
+- `/initiate-setup` -- `HEADER`, `agent/initiate_setup_prompt.py`;
+- the `/blueprint` seed that asks for a matched blueprint's settings --
+  `build_blueprint_seed`, `hermes_cli/blueprint_cmd.py`.
 
 Such a turn already carries the host's instruction for itself, so it is not a
 request for OMH to route. A frame counts only as the template writes it: the
 turn's first line is the frame line (or, where the template continues it with
-a tick or an interval, starts with it and closes with `]`), and the next
-non-blank line opens with the template's next fixed text. A heartbeat's next
+a tick or an interval, starts with it and closes with `]`; or, where it fills
+in values mid-line, starts with it and holds the fixed text between them),
+and the next non-blank line opens with the template's next fixed text. A
+person who types only a blueprint seed's first line wrote no such next line,
+and routes as before. A heartbeat's next
 line is the person's own recurring instruction, so a person who types under a
 pasted heartbeat frame cannot be told from the host there. On a messaging
 gateway Hermes may put its own material before the frame
@@ -83,7 +88,9 @@ have been the goal loop). Every surface that has to decide -- the chat
 router's early answer, the loop guard in the scorer, the route hint and the
 candidate line -- takes the verdict from this one function, read on the
 turn's executable routing text (`reference_regions`), so none of them keeps
-word lists of its own for it.
+word lists of its own for it. `native_loop_prompt` is that loop's prompt,
+which `spend_signals` reads: a loop whose prompt spends the person's money is
+`spend-gate`'s turn, not one answered with `/loop`.
 
 Text is folded with NFKC and a case fold, as the router's `normalized_phrase`
 does, with the Unicode hyphens folded to `-`.
@@ -105,13 +112,15 @@ class HostFrame:
 
     `opening` is the whole first line, or its fixed start when `open_ended`
     (the template continues the line with a tick or an interval and closes it
-    with `]`). `next_line` is "" where the template's next line is the
-    person's own words.
+    with `]`) or when `holds` is set (the template fills values into the line
+    and writes `holds` between them; no `]` closes it). `next_line` is ""
+    where the template's next line is the person's own words.
     """
 
     opening: str
     next_line: str = ""
     open_ended: bool = False
+    holds: str = ""
 
 
 # Verbatim from upstream; see the module docstring for each template's source.
@@ -131,6 +140,12 @@ HOST_COMMAND_TURN_FRAMES = (
     # The template's body is a SKILL.md file, whose first line is the
     # frontmatter fence and nothing else.
     HostFrame("[/initiate-setup]", "---\n"),
+    # The blueprint's title, then its key, then its description fill the line.
+    HostFrame(
+        "Set up the '",
+        "Ask me for each of these, one at a time, offering the default in brackets if I don't have a preference:",
+        holds="' automation for me (automation blueprint '",
+    ),
 )
 
 # The four verdicts on a loop beside a timer.
@@ -304,7 +319,8 @@ def _fold(text: str) -> str:
 
 
 _FOLDED_FRAMES = tuple(
-    HostFrame(_fold(frame.opening), _fold(frame.next_line), frame.open_ended) for frame in HOST_COMMAND_TURN_FRAMES
+    HostFrame(_fold(frame.opening), _fold(frame.next_line), frame.open_ended, _fold(frame.holds))
+    for frame in HOST_COMMAND_TURN_FRAMES
 )
 _FOLDED_HOST_BLOCK_OPENERS = tuple(_fold(opener) for opener in _HOST_BLOCK_OPENERS)
 _FOLDED_BACKFILL_SEPARATOR = _fold(_BACKFILL_SEPARATOR)
@@ -315,7 +331,9 @@ def _opens_with_frame(text: str) -> bool:
     first = first.rstrip()
     rest = rest.lstrip("\n")
     for frame in _FOLDED_FRAMES:
-        if frame.open_ended:
+        if frame.holds:
+            opens = first.startswith(frame.opening) and frame.holds in first[len(frame.opening):]
+        elif frame.open_ended:
             opens = first.startswith(frame.opening) and first.endswith("]")
         else:
             opens = first == frame.opening
@@ -401,17 +419,29 @@ def _korean_loop_request(text: str) -> bool:
     return bool(_KOREAN_LOOP_REQUEST.search(clause)) and not any(word in clause for word in _KOREAN_CONNECTIVES)
 
 
-def _loop_is_the_request(lead: str) -> bool:
-    """Whether `lead` opens with a loop command and its cadence (see the module docstring)."""
+def _prompt(words: list[str]) -> str:
+    """The loop's prompt: the words after its cadence, less a joining "and" or "then"."""
+    if words and _bare(words[0]) in ("and", "then"):
+        words = words[1:]
+    return " ".join(words)
+
+
+def _loop_request_prompt(lead: str) -> str | None:
+    """The prompt after `lead`'s loop command and cadence, or None when `lead` opens with neither.
+
+    See the module docstring for the shapes. A Korean request's prompt is not
+    read, and is "".
+    """
     words = lead.split()
     if not words:
-        return False
+        return None
     # The native command's own syntax, `/loop [interval] <prompt>`, or the
     # cadence spelled out after it.
-    if _bare(words[0]) in ("loop", "/loop") and (
-        (len(words) > 1 and _interval_term(_bare(words[1]))) or _past_cadence(words, 1)
-    ):
-        return True
+    if _bare(words[0]) in ("loop", "/loop"):
+        if len(words) > 1 and _interval_term(_bare(words[1])):
+            return _prompt(words[2:])
+        if cadence_end := _past_cadence(words, 1):
+            return _prompt(words[cadence_end:])
     korean = _KOREAN_CADENCE_LEAD.match(lead)
     past = _past_cadence(words, 0)
     if past > 2 and _bare(words[past - 1]) in _SINGULAR_UNITS and words[past - 2].isdigit() and int(words[past - 2]) > 1:
@@ -421,7 +451,7 @@ def _loop_is_the_request(lead: str) -> bool:
     elif past:
         rest = " ".join(words[past:])
     else:
-        return False
+        return None
     # The cadence came first; `loop` has to be the very next word and its verb,
     # in a sentence that does not ask why or how.
     after = rest.split(maxsplit=2)
@@ -435,9 +465,9 @@ def _loop_is_the_request(lead: str) -> bool:
         # "loop." or "loop:" closes the clause; otherwise the next word tells
         # a verb from a noun.
         if len(after) == 1 or after[0] != "loop" or _bare(after[1]) in _LOOP_VERB_CONTINUATIONS:
-            return True
+            return _prompt(rest.split()[1:])
     # A Korean cadence, and running the loop closes its first clause.
-    return bool(korean) and _korean_loop_request(rest)
+    return "" if korean and _korean_loop_request(rest) else None
 
 
 def _asks_for_a_construct_on_a_timer(lead: str) -> bool:
@@ -480,28 +510,29 @@ def _carries_goal(folded: str) -> bool:
 
 
 @lru_cache(maxsize=1024)
-def _loop_timer_reading(text: str) -> tuple[str, bool]:
-    """The verdict on `text`, and whether a typed `/loop` overrode a goal-loop verdict to reach it."""
+def _loop_timer_reading(text: str) -> tuple[str, bool, str]:
+    """The verdict on `text`, whether a typed `/loop` overrode a goal-loop verdict to reach it, and the loop's prompt."""
     folded = _fold(text).strip()
     # A turn Hermes wrote is no request at all, whatever its template says.
     if _host_command_turn(folded):
-        return LOOP_TIMER_NONE, False
+        return LOOP_TIMER_NONE, False, ""
     # Only the person's current message is read: not the backfill, and not a
     # host block that never closed, which still holds whatever follows it.
     message = _after_gateway_material(folded)
     if message.startswith(_FOLDED_HOST_BLOCK_OPENERS):
-        return LOOP_TIMER_NONE, False
+        return LOOP_TIMER_NONE, False, ""
     sender = _SENDER_PREFIX.match(message)
     lead = _after_courtesy(message[sender.end():] if sender else message)
     # OMH's names stand where the loop word would: "/ulw-loop every 5m ..." has
     # the same shape as "/loop every 5m ...", and is OMH's.
     plain = _OMH_LOOP_NAME.sub("loop", _OMH_LOOP_LEAD_SIGIL.sub("", lead, count=1))
-    if _loop_is_the_request(plain):
+    prompt = _loop_request_prompt(plain)
+    if prompt is not None:
         shape = LOOP_TIMER_NATIVE
     elif _asks_for_a_construct_on_a_timer(plain):
-        shape = LOOP_TIMER_CONSTRUCT
+        shape, prompt = LOOP_TIMER_CONSTRUCT, ""
     else:
-        return LOOP_TIMER_NONE, False
+        return LOOP_TIMER_NONE, False, ""
     # The name is read on the whole message, so a bracketed `[ulw-loop]` that
     # the sender-prefix strip took for a display name still counts.
     goal = bool(
@@ -513,8 +544,8 @@ def _loop_timer_reading(text: str) -> tuple[str, bool]:
     # Typed out with its cadence, the native command is the native command,
     # whatever its prompt mentions.
     if lead.startswith("/loop ") and shape == LOOP_TIMER_NATIVE:
-        return LOOP_TIMER_NATIVE, goal
-    return (LOOP_TIMER_GOAL if goal else shape), False
+        return LOOP_TIMER_NATIVE, goal, prompt
+    return (LOOP_TIMER_GOAL if goal else shape), False, prompt
 
 
 def loop_timer_verdict(text: str) -> str:
@@ -533,3 +564,14 @@ def typed_loop_sets_goal(text: str) -> bool:
     say how OMH's goal loop is started instead.
     """
     return _loop_timer_reading(text)[1]
+
+
+def native_loop_prompt(text: str) -> str:
+    """The person's prompt to a loop whose verdict is `native_loop`, or "" for any other verdict.
+
+    The words after the loop and its cadence ("buy the tickets with my card if
+    they drop under $50" in "/loop 1h buy the tickets ..."), less a joining
+    "and" or "then". A Korean request's prompt is not read.
+    """
+    verdict, _typed_goal, prompt = _loop_timer_reading(text)
+    return prompt if verdict == LOOP_TIMER_NATIVE else ""

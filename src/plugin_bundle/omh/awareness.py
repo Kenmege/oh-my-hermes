@@ -21,7 +21,7 @@ from .hermes_session_commands import (
 )
 from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
-from .spend_signals import spend_request_phrases
+from .spend_signals import SPEND_GATE_PHRASES, spend_request_phrases
 from .reference_regions import executable_routing_text
 from .degradation import (
     COMPONENT_LOCALIZED_ROUTING_TEXT,
@@ -4131,29 +4131,20 @@ _ROUTE_HINT_RULES = (
             "payment submitted",
             "receipt observed",
         ),
-        # Only the skill's own names and phrases that make the person the
-        # payer, matched as whole words inside the request clause the router
-        # admits too (`_route_hint_phrase_matches`, `spend_request_phrases`).
-        # The other trigger phrases are absent:
-        # this table has no anchor, and "complete the checkout", "wallet
-        # transfer", "did the payment go through", "spending cap" and "http 402"
-        # also name a checkout screen, a question about wallets, a customer's
-        # payment, a government budget and a developer's own paywall.
-        "phrases": (
-            "spend-gate",
-            "spend gate",
-            "pre-spend",
-            "pay with my card",
-            "pay with my saved card",
-            "with my saved card",
-            "use my credit card",
-            "money on my behalf",
-            "spend on my behalf",
-            "pay on my behalf",
-            "buy on my behalf",
-            "buy it for me",
-            "buy this for me",
-        ),
+        # The skill's own trigger table, the one the router reads, matched as
+        # whole words inside the request clause the router admits too
+        # (`_route_hint_phrase_matches`, `spend_request_phrases`). A smaller
+        # table here hinted another skill for "go ahead and pay the 402
+        # challenge for the dataset", which the router dispatches to the gate.
+        # A checkout screen, a developer's own paywall or a government budget
+        # said as a topic opens no admitted clause. One gap is known: the
+        # router also withdraws the gate from a cap or wallet phrase with no
+        # word of paying beside it (`EVERYDAY_SENSE_PHRASES` in
+        # `omh.routing.policy`, which the bundle cannot import), and this rule
+        # has no such check, so "can you check out the spending cap for the
+        # city council budget" is admitted and gets this hint while the router
+        # asks about another skill.
+        "phrases": SPEND_GATE_PHRASES,
         "tokens": (),
         "adjacent_workflows": ("browser-operator", "connector-operator", "feedback-triage", "finance-analysis"),
     },
@@ -6025,14 +6016,12 @@ def _awareness_context_matches_message_cached(message: str) -> tuple[bool, str]:
 
 
 # Spending the person's money arms awareness only through the request clause
-# the router admits (`spend_request_phrases`), as whole words: "consumer spending
-# capacity is falling" and "check out this thread about agents that buy it for
-# me" are not spends.
-_SPEND_AWARENESS_MARKERS = ("spend-gate", "spend gate", "money on my behalf", "pay with my card", "buy it for me")
-
-
+# the router admits, on the router's own phrase table (`spend_request_phrases`,
+# `SPEND_GATE_PHRASES`), as whole words: "consumer spending capacity is
+# falling" and "check out this thread about agents that buy it for me" are not
+# spends.
 def _spend_awareness_marked(text: str) -> bool:
-    return bool(spend_request_phrases(text, _SPEND_AWARENESS_MARKERS))
+    return bool(spend_request_phrases(text, SPEND_GATE_PHRASES))
 
 
 def awareness_route_hint(message: str, *, max_hints: int = 2) -> dict[str, object]:

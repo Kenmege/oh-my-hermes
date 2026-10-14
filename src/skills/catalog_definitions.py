@@ -26,6 +26,7 @@ from ..paper_learning import (
 from ..plugin_bundle.omh.domain_signals import SPECIALIST_DOMAIN_TRIGGERS
 from ..plugin_bundle.omh.data_share_cues import DATA_SHARE_REVIEW_PHRASES
 from ..plugin_bundle.omh.native_tools import NATIVE_CRON_TOOL, NATIVE_TODO_TOOL, native_tool_presence_clause
+from ..plugin_bundle.omh.spend_signals import SPEND_GATE_PHRASES
 from ..routing.materials_cues import (
     OFFICE_FILE_MATERIAL_CATALOG_TRIGGERS,
 )
@@ -11490,56 +11491,7 @@ _DEFINITIONS.append(
     SkillDefinition(
         "spend-gate",
         "Spending money on the user's behalf -- a card checkout, an HTTP 402 or pay-per-request call, a wallet transfer, a booking, a paid data endpoint: show a pre-spend card (payee, total with fees, cap, refund terms, approver) first, and call it done only on an observed receipt.",
-        (
-            "spend-gate",
-            "spend gate",
-            "pre-spend",
-            "pre-spend card",
-            "spend cap",
-            "spending cap",
-            "spend limit",
-            "spending limit",
-            "spend request",
-            "spend approval",
-            "approve the spend",
-            "approve this purchase",
-            "approve the purchase",
-            "complete the purchase",
-            "complete the checkout",
-            "buy this for me",
-            "buy it for me",
-            "place the order",
-            "place an order",
-            "pay with my card",
-            "pay with my saved card",
-            "with my saved card",
-            "with my card",
-            "with my credit card",
-            "use my card",
-            "use my credit card",
-            "send money",
-            "pay again",
-            "click pay again",
-            "http 402",
-            "402 payment required",
-            "402 challenge",
-            "pay per request",
-            "pay-per-request",
-            "paid endpoint",
-            "paid data endpoint",
-            "wallet transfer",
-            "from my wallet",
-            "money on my behalf",
-            "spend on my behalf",
-            "pay on my behalf",
-            "buy on my behalf",
-            "retry the payment",
-            "retry the purchase",
-            "retry the charge",
-            "did the payment go through",
-            "did the charge go through",
-            "pay for the booking",
-        ),
+        SPEND_GATE_PHRASES,
         (
             "Use before the agent moves money on any rail: a card checkout in the browser, an HTTP 402 or pay-per-request "
             "call, a wallet transfer, a booking or deposit, a paid data endpoint, or a renewal that charges again. The output is a "

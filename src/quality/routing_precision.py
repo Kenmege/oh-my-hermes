@@ -4179,6 +4179,21 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "toolbelt-readiness",
     ),
+    # Hermes' `/blueprint` rewrites the turn to a seed that asks for the
+    # blueprint's settings and then creates the cron job itself. Before, every
+    # seed in the catalog dispatched a file, toolbelt or observability skill.
+    RoutingPrecisionCase(
+        "hermes-blueprint-seed-turn-is-host-owned",
+        "A Hermes /blueprint seed turn is not routed",
+        "Set up the 'Morning check-in' automation for me (automation blueprint 'morning-checkin'). A short daily "
+        "check-in with your calendar.\n\nAsk me for each of these, one at a time, offering the default in brackets "
+        "if I don't have a preference:\n- What time? (time) [default: 08:00]\n- Where to deliver? (deliver) "
+        "[default: origin]\n\nOnce you have my answers, create the job by calling the cronjob tool with "
+        "action='create'.",
+        "answer_directly",
+        "direct_answer",
+        "toolbelt-readiness",
+    ),
     # A messaging gateway puts its own material before the frame: a shared
     # session's sender prefix, a Discord trigger note, a reply pointer. Before,
     # each of these still routed (ultrawork for the plan, github-event-ops for
@@ -4280,6 +4295,15 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "please review the diff on kanban card t_123",
         "answer_clarification",
         "",
+    ),
+    # Nor is the pre-spend card, which dispatched the image card before.
+    RoutingPrecisionCase(
+        "pre-spend-card-review-is-not-an-image-card",
+        "Reviewing the pre-spend card before confirming is not an image card",
+        "please review the pre-spend card before I confirm",
+        "answer_clarification",
+        "",
+        "img-summary",
     ),
     RoutingPrecisionCase(
         "aws-architecture-svg-is-not-codebase-uml",
@@ -6109,6 +6133,25 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "Pay the invoice with my card for me is broken in safari",
         "answer_clarification",
         "",
+        "spend-gate",
+    ),
+    # A loop on a timer whose prompt checks a price or a payment spends
+    # nothing: it stays Hermes' native /loop. Only a prompt that spends opens
+    # the spend gate.
+    RoutingPrecisionCase(
+        "loop-checking-a-price-is-not-a-spend",
+        "A loop that checks a ticket price on a timer is Hermes' /loop, not a spend",
+        "loop every 10 minutes and check whether the concert tickets dropped under $50",
+        "answer_directly",
+        "direct_answer",
+        "spend-gate",
+    ),
+    RoutingPrecisionCase(
+        "typed-loop-checking-a-card-payment-is-not-a-spend",
+        "A typed /loop that checks whether a card payment went through is Hermes' /loop, not a spend",
+        "/loop 30m check whether the payment from my card went through",
+        "answer_directly",
+        "direct_answer",
         "spend-gate",
     ),
 )
@@ -13722,6 +13765,108 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "finance-analysis",
         "prepare_finance_analysis",
         "finance_analysis",
+    ),
+    # A loop on a timer whose prompt spends the person's money: no scheduled
+    # run may spend, so the card, the typed yes and the cap come now. Before,
+    # both were answered with Hermes' /loop.
+    RoutingInterventionCase(
+        "loop-that-buys-with-my-card-reaches-spend-gate",
+        "A loop on a timer that buys with the person's card reaches the pre-spend card",
+        "loop every hour and buy the concert tickets for me with my card if they drop under $50",
+        "dispatch",
+        "spend-gate",
+        "prepare_pre_spend_card",
+        "pre_spend_card",
+    ),
+    RoutingInterventionCase(
+        "typed-loop-that-buys-with-my-card-reaches-spend-gate",
+        "A typed /loop whose prompt buys with the person's card reaches the pre-spend card",
+        "/loop 1h buy the concert tickets with my card if they drop under $50",
+        "dispatch",
+        "spend-gate",
+        "prepare_pre_spend_card",
+        "pre_spend_card",
+    ),
+    # Every verb a spend request opens with anchors the wallet phrase; before,
+    # renewing or topping up from the person's wallet left the gate out.
+    RoutingInterventionCase(
+        "domain-renewal-from-my-wallet-reaches-spend-gate",
+        "A renewal paid from the person's wallet reaches the pre-spend card",
+        "please renew the domain from my wallet",
+        "dispatch",
+        "spend-gate",
+        "prepare_pre_spend_card",
+        "pre_spend_card",
+    ),
+    RoutingInterventionCase(
+        "account-top-up-from-my-wallet-reaches-spend-gate",
+        "A top-up paid from the person's wallet reaches the pre-spend card",
+        "could you top up my account from my wallet",
+        "dispatch",
+        "spend-gate",
+        "prepare_pre_spend_card",
+        "pre_spend_card",
+    ),
+    # Naming the gate as a command asks for it; before, it clarified on an
+    # unrelated skill while the route hint named the gate.
+    RoutingInterventionCase(
+        "use-spend-gate-reaches-spend-gate",
+        "Naming the spend gate as a command reaches the pre-spend card",
+        "use spend gate",
+        "dispatch",
+        "spend-gate",
+        "prepare_pre_spend_card",
+        "pre_spend_card",
+    ),
+    # Paying with the person's card is not an image card (both dispatched it
+    # before), and an image card of card-game stats still is.
+    RoutingInterventionCase(
+        "card-payment-for-a-report-reaches-spend-gate",
+        "Paying with the person's card for a report reaches the pre-spend card, not an image card",
+        "please pay with my card for the summary report",
+        "dispatch",
+        "spend-gate",
+        "prepare_pre_spend_card",
+        "pre_spend_card",
+    ),
+    RoutingInterventionCase(
+        "credit-card-tickets-to-share-lead-with-spend-gate",
+        "Tickets bought with the person's credit card and shared with someone ask with the pre-spend card leading",
+        "can you use my credit card to buy the concert tickets and share them with my wife",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "spend-gate",
+    ),
+    RoutingInterventionCase(
+        "share-card-of-card-game-stats-stays-on-img-summary",
+        "A share card of card-game stats is still an image card",
+        "make a share card summarizing my card game stats",
+        "dispatch",
+        "img-summary",
+        "prepare_visual_prompt_card",
+        "img_summary",
+    ),
+    RoutingInterventionCase(
+        "share-card-with-my-card-collection-stays-on-img-summary",
+        "A share card with the person's card collection is still an image card; the card pays nothing",
+        "create a share card with my card collection highlights",
+        "dispatch",
+        "img-summary",
+        "prepare_visual_prompt_card",
+        "img_summary",
+    ),
+    # A person typing a blueprint seed's first line, without the fixed line
+    # Hermes writes after it, still routes to the blueprint skill.
+    RoutingInterventionCase(
+        "typed-blueprint-seed-line-stays-on-automation-blueprint",
+        "A person typing a /blueprint seed's first line alone still opens automation blueprint",
+        "Set up the 'Morning briefing' automation for me (automation blueprint 'morning-brief'). A short daily briefing.",
+        "dispatch",
+        "automation-blueprint",
+        "prepare_scheduled_ops_blueprint",
+        "automation_blueprint",
     ),
 )
 

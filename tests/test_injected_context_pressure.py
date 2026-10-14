@@ -885,6 +885,14 @@ KANBAN_FINALIZE_BODY = (
     "Reason: the PR is open and CI is green\n\nIf the task is genuinely done, call kanban_complete now "
     "with a short summary of what you did."
 )
+# A `/blueprint` seed (`build_blueprint_seed`, `hermes_cli/blueprint_cmd.py`):
+# Hermes asks for the blueprint's settings and creates the cron job itself.
+BLUEPRINT_SEED = (
+    "Set up the 'Morning briefing' automation for me (automation blueprint 'morning-brief'). A short daily "
+    "briefing: today's calendar and anything urgent.\n\nAsk me for each of these, one at a time, offering the "
+    "default in brackets if I don't have a preference:\n- What time? (time) [default: 08:00]\n\n"
+    "Once you have my answers, create the job by calling the cronjob tool with action='create'."
+)
 
 
 class NoRoutingOnHostCommandTurnsTest(_InjectionTestCase):
@@ -924,6 +932,18 @@ class NoRoutingOnHostCommandTurnsTest(_InjectionTestCase):
             with self.subTest(frame=frame.strip()):
                 self.assertNotIn("[OMH Route Hint]", self._turn(frame + body, session=f"command-{index}"))
                 self.assertIn("[OMH Route Hint]", self._turn(body, session=f"typed-{index}"))
+
+    def test_a_blueprint_seed_gets_no_route_hint_and_no_candidate_line(self):
+        for first in (True, False):
+            with self.subTest(first_turn=first):
+                context = self._turn(BLUEPRINT_SEED, session=f"blueprint-{first}", is_first_turn=first)
+                self.assertNotIn("[OMH Route Hint]", context)
+                self.assertNotIn("Skills that may fit this request:", context)
+        # The same request in a person's words is still routed.
+        self.assertIn(
+            "[OMH Route Hint]",
+            self._turn("set up a morning briefing automation for me every day at 8", session="typed-blueprint"),
+        )
 
     def test_a_gateway_prefix_before_the_frame_does_not_reopen_routing(self):
         # A messaging gateway puts a shared session's `[<name>] ` sender

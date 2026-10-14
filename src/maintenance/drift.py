@@ -596,7 +596,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # (4). Its seventh review adds two where an object word comes before
             # the phrase ("book the flight with my card for me never shows up
             # on android"); a phrase now starts the object count again (2).
-            expected=743,
+            # The final review of the upstream skill audit adds four: a Hermes
+            # /blueprint seed, which is a host turn (1); the pre-spend card
+            # under review, which is not an image card (1); and a loop on a
+            # timer that checks a ticket price or a card payment, which spends
+            # nothing and stays Hermes' /loop (2).
+            expected=747,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -810,7 +815,18 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # review adds three that keep their base dispatch: a 3DS failure
             # report and a crash report on feedback-triage, and a feature
             # request on plan (3).
-            expected=777,
+            # The final review of the upstream skill audit adds nine: a loop on
+            # a timer and a typed /loop whose prompt buys with the person's
+            # card (2), a renewal and a top-up paid from the person's wallet
+            # (2), the gate named as a command (1), and a card payment for a
+            # report (1), all reaching the pre-spend card; tickets bought with
+            # the person's credit card and shared, asking with the card leading
+            # rather than as an image card (1); a share card of card-game stats
+            # that stays on img-summary (1); and a /blueprint seed's first line
+            # typed by a person, which stays on automation-blueprint (1). Its
+            # review adds a share card with the person's card collection, which
+            # stays on img-summary: "with my card" before a noun pays nothing (1).
+            expected=787,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
