@@ -8784,7 +8784,7 @@ _DEFINITIONS = [
     ),
     SkillDefinition(
         "parallel-tools",
-        "Parallel tool-call capability in doubt: report the version and whether MCP parallel tool calls are enabled, then apply that as a diff only after approval; an update only on request.",
+        "Parallel tool-call capability in doubt: report the version and whether MCP parallel tool calls are enabled, then apply the diff for parallel tool calls only after approval; an update only on request.",
         (
             "parallel-tools",
             "parallel tools",
@@ -8796,10 +8796,9 @@ _DEFINITIONS = [
             "check hermes version for parallel tools",
         ),
         (
-            "Use when the user wants to check the parallel-tool capability status, whether Hermes tool calls run in "
-            "parallel, or whether the version is current for parallel tool calls: report the version and whether MCP "
-            "parallel tool calls are enabled, then apply that as a diff only after approval, following the shared "
-            "prerequisite-check, diagnose, guide, diff-approved apply, and verify contract; an update only on request."
+            "Use when the user wants to check the parallel-tool capability status, if Hermes tool calls run in parallel, "
+            "or if the version is current for parallel tool calls, following the shared prerequisite-check, diagnose, "
+            "guide, diff-approved apply, and verify contract."
         ),
         category="hermes-setup",
         phase="setup",

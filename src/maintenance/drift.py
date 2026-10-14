@@ -600,8 +600,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # /blueprint seed, which is a host turn (1); the pre-spend card
             # under review, which is not an image card (1); and a loop on a
             # timer that checks a ticket price or a card payment, which spends
-            # nothing and stays Hermes' /loop (2).
-            expected=747,
+            # nothing and stays Hermes' /loop (2). Its follow-up adds one: a
+            # version question about another tool ("what version of node
+            # supports fetch"), which that audit's first parallel-tools wording
+            # moved from a direct answer to a clarify naming parallel-tools (1).
+            expected=748,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

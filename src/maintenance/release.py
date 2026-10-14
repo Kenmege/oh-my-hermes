@@ -738,7 +738,12 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # clarify. The flag is applied as a diff only after approval, and the version
 # clause names parallel tool calls. `automation-blueprint`'s reworded spend
 # line sits past its row's bounds. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 501984
+# 501984 -> 502002: `parallel-tools` (+18). Its description applies "the diff
+# for parallel tool calls" instead of "that as a diff", whose "that" could
+# read as the report; no router word is added. Its use_when drops what
+# repeated the description and says "if" for "whether"; the row does not
+# carry use_when. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 502002
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

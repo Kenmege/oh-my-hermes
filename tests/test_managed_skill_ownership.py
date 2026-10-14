@@ -80,7 +80,7 @@ from omh.plugin_bundle.omh.hooks.tool_hooks import pre_tool_call
 from omh.skill_pack import builtin_skill_reference_templates, builtin_skill_templates
 from omh.skills.catalog import canonical_skill_for_label, omh_skill_display_name
 from omh.skills.catalog_types import OMH_MANAGED_SKILL_CLAUSE, OMH_SKILL_NAME_PREFIX, ULW_SKILL_NAME_PREFIX
-from omh.skills.render import agent_skill_templates
+from omh.skills.render import agent_skill_reference_templates, agent_skill_templates
 
 SESSION = "20261013_101010_abc123"
 # A core skill that ships reference files, so a supporting-file write has a
@@ -2318,12 +2318,16 @@ class OwnershipWordingTests(unittest.TestCase):
         )
 
     def test_no_body_writes_an_omh_or_ulw_wildcard(self) -> None:
-        """No body, portable body, or reference writes `omh-*` or `ulw-*`, the old prefix rule's shape."""
+        """No body or reference, Hermes or portable, writes `omh-*` or `ulw-*`, the old prefix rule's shape."""
         prefix_rule = re.compile(r"\b(?:omh|ulw)-\*")
         bodies = [
             *((f"hermes:{template.name}", template.content) for template in builtin_skill_templates()),
             *((f"portable:{template.name}", template.content) for template in agent_skill_templates()),
             *((f"reference:{t.skill_name}/{t.relative_path}", t.content) for t in builtin_skill_reference_templates()),
+            *(
+                (f"portable-reference:{t.skill_name}/{t.relative_path}", t.content)
+                for t in agent_skill_reference_templates()
+            ),
         ]
         self.assertEqual(sorted(name for name, content in bodies if prefix_rule.search(content)), [])
 

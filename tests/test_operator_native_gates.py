@@ -342,19 +342,18 @@ class HeldCommandTests(unittest.TestCase):
 class ParallelToolsSwitchTests(unittest.TestCase):
     """The per-server flag is the switch; an update is offered only on request."""
 
-    def test_the_description_use_and_example_offer_the_flag(self) -> None:
+    def test_the_description_and_use_when_read_as_written_and_the_example_offers_the_flag(self) -> None:
         definition = {d.name: d for d in builtin_definitions()}["parallel-tools"]
         self.assertEqual(
             definition.description,
             "[omh] Parallel tool-call capability in doubt: report the version and whether MCP parallel tool calls are "
-            "enabled, then apply that as a diff only after approval; an update only on request.",
+            "enabled, then apply the diff for parallel tool calls only after approval; an update only on request.",
         )
         self.assertEqual(
             definition.use_when,
-            "Use when the user wants to check the parallel-tool capability status, whether Hermes tool calls run in "
-            "parallel, or whether the version is current for parallel tool calls: report the version and whether MCP "
-            "parallel tool calls are enabled, then apply that as a diff only after approval, following the shared "
-            "prerequisite-check, diagnose, guide, diff-approved apply, and verify contract; an update only on request.",
+            "Use when the user wants to check the parallel-tool capability status, if Hermes tool calls run in "
+            "parallel, or if the version is current for parallel tool calls, following the shared prerequisite-check, "
+            "diagnose, guide, diff-approved apply, and verify contract.",
         )
         self.assertEqual(
             definition.good_example.why,

@@ -1,6 +1,6 @@
 ---
 name: "omh-parallel-tools"
-description: "[omh] Parallel tool-call capability in doubt: report the version and whether MCP parallel tool calls are enabled, then apply that as a diff only after approval; an update only on request. Use when the user says: parallel-tools, parallel tools, hermes parallel tools setup, update hermes for parallel tools, check parallel tool support, enable parallel tool calls, verify parallel tools capability, check hermes version for parallel tools."
+description: "[omh] Parallel tool-call capability in doubt: report the version and whether MCP parallel tool calls are enabled, then apply the diff for parallel tool calls only after approval; an update only on request. Use when the user says: parallel-tools, parallel tools, hermes parallel tools setup, update hermes for parallel tools, check parallel tool support, enable parallel tool calls, verify parallel tools capability, check hermes version for parallel tools."
 license: MIT
 author: "oh-my-hermes maintainers"
 metadata:
@@ -60,7 +60,7 @@ Bad example:
 
 ## When to Use
 
-Use when the user wants to check the parallel-tool capability status, whether Hermes tool calls run in parallel, or whether the version is current for parallel tool calls: report the version and whether MCP parallel tool calls are enabled, then apply that as a diff only after approval, following the shared prerequisite-check, diagnose, guide, diff-approved apply, and verify contract; an update only on request.
+Use when the user wants to check the parallel-tool capability status, if Hermes tool calls run in parallel, or if the version is current for parallel tool calls, following the shared prerequisite-check, diagnose, guide, diff-approved apply, and verify contract.
 
     Strong routing signals: `parallel-tools`, `parallel tools`, `hermes parallel tools setup`, `update hermes for parallel tools`, `check parallel tool support`, `enable parallel tool calls`, `verify parallel tools capability`, `check hermes version for parallel tools`, `헤르메스 업데이트 확인해줘`, `병렬 도구 설정`, `병렬 툴 확인`, `헤르메스 병렬 도구`
 
