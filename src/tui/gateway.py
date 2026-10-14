@@ -304,6 +304,15 @@ class GatewayClient:
                     self._signal_wake()
             return self._wake[0]
 
+    def wake(self) -> None:
+        """Make `wake_fd` readable from any thread, for news that is not an item (a new HUD snapshot).
+
+        `poll` empties it as it does for an item. Nothing happens before
+        `wake_fd` was first asked for or after `close`.
+        """
+        with self._inbox_ready:
+            self._signal_wake()
+
     def poll(self, timeout: float = 0.0) -> list[Inbound]:
         """Every queued inbound item, waiting up to `timeout` for the first one."""
         deadline = self._clock() + timeout

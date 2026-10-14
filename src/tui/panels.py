@@ -158,7 +158,9 @@ class HudPoller:
     discarded.
 
     The interval starts at two seconds and doubles to eight while the payload
-    is unchanged apart from `VOLATILE_KEYS`; any other change resets it.
+    is unchanged apart from `VOLATILE_KEYS`; any other change resets it. A read
+    that keeps a new snapshot calls `on_snapshot` (the wake `start` was given),
+    so the UI loop takes it at once instead of at its next idle wake-up.
     """
 
     def __init__(
@@ -185,8 +187,11 @@ class HudPoller:
         self._last_full = ""
         self._last_structural = ""
         self._interval = HUD_POLL_MIN_SECONDS
+        self.on_snapshot: Callable[[], None] | None = None
 
-    def start(self) -> None:
+    def start(self, wake: Callable[[], None] | None = None) -> None:
+        """Start the reading thread; `wake` is called, on that thread, after each read that keeps a new snapshot."""
+        self.on_snapshot = wake
         if self._thread is not None:
             return
         self._thread = threading.Thread(target=self._run, name="omh-hud-poller", daemon=True)
@@ -229,7 +234,8 @@ class HudPoller:
         with self._lock:
             if generation != self._generation:
                 return HUD_POLL_MIN_SECONDS
-            if full != self._last_full:
+            fresh = full != self._last_full
+            if fresh:
                 self._last_full = full
                 self._pending = HudSnapshot(session, payload, self._clock())
             if structural != self._last_structural:
@@ -237,7 +243,11 @@ class HudPoller:
                 self._interval = HUD_POLL_MIN_SECONDS
             else:
                 self._interval = min(self._interval * 2, HUD_POLL_MAX_SECONDS)
-            return self._interval
+            interval = self._interval
+        wake = self.on_snapshot
+        if fresh and wake is not None:
+            wake()
+        return interval
 
     def _read(self, session: str) -> Mapping[str, Any]:
         try:

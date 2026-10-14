@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import threading
 import time
 import unittest
 from unittest.mock import patch
@@ -329,6 +330,17 @@ class GatewayWakeTests(ReplayTestCase):
         (answer,) = client.poll()
         self.assertIsInstance(answer, Response)
         self.assertFalse(self.readable(wake))
+
+    def test_wake_from_another_thread_is_emptied_by_poll(self) -> None:
+        client = self.started(Scenario("session", spans("session", "startup")))
+        descriptor = client.wake_fd()
+        self.assertFalse(self.readable(descriptor))
+        waker = threading.Thread(target=client.wake)  # the HUD poller's thread, with a new snapshot
+        waker.start()
+        waker.join()
+        self.assertTrue(self.readable(descriptor))
+        self.assertEqual(client.poll(), [])
+        self.assertFalse(self.readable(descriptor))
 
     def test_items_queued_before_the_first_ask_wake_at_once(self) -> None:
         garbage = "not json"

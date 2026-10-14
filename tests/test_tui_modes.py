@@ -76,6 +76,9 @@ class RecordingClient:
     def wake_fd(self) -> None:
         return None  # nothing to select on: a test drives the loop's reads itself
 
+    def wake(self) -> None:
+        pass  # no descriptor to make readable
+
     def request(self, method: str, params: dict) -> int:
         problem = contract.call_problem(method, params)
         if problem:

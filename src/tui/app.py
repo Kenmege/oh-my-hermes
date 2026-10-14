@@ -161,7 +161,7 @@ from ..version import __version__
 READ_TIMEOUT_SECONDS = 0.05
 FLUSH_SILENCE_SECONDS = 0.04
 TICK_SECONDS = 0.1
-# Nothing due, nothing held: the loop still wakes this often, for the HUD poller's snapshots, which do not wake it.
+# Nothing due, nothing held: the loop still wakes this often. Gateway news and a new HUD snapshot wake it sooner.
 IDLE_READ_SECONDS = 1.0
 # For this long after a frame the loop does not wake for the gateway: what arrives meanwhile shares the next
 # frame. Input still wakes it at once.
@@ -322,7 +322,7 @@ class TerminalLike(Protocol):
 
 
 class PollerLike(Protocol):
-    def start(self) -> None: ...
+    def start(self, wake: Callable[[], None] | None = None) -> None: ...
     def stop(self) -> None: ...
     def set_session(self, stored_id: str) -> None: ...
     def take(self) -> HudSnapshot | None: ...
@@ -918,8 +918,8 @@ class App(ModesMixin, AgentViewMixin):
         The live region is cleared before this returns; closing the gateway is
         the caller's, after it has handed the terminal back.
         """
-        self.poller.start()
         self.wake = self.client.wake_fd()
+        self.poller.start(self.client.wake)  # a new HUD snapshot wakes the loop as gateway news does
         try:
             self._render_when_due()  # the first frame does not wait for a first read
             while self.exit_code is None:

@@ -213,9 +213,11 @@ class FakePoller:
         self.sessions: list[str] = []
         self.started = False
         self.stopped = False
+        self.wake: object = None
 
-    def start(self) -> None:
+    def start(self, wake: object = None) -> None:
         self.started = True
+        self.wake = wake
 
     def stop(self, timeout: float = 1.0) -> None:
         self.stopped = True
@@ -474,6 +476,7 @@ class SessionTests(AppTestCase):
         self.assertEqual(stat.S_IMODE(os.stat(run.active_session_file).st_mode), 0o600)
         self.assertEqual(run.poller.sessions, [STORED_ID])
         self.assertTrue(run.poller.started and run.poller.stopped)
+        self.assertEqual(run.poller.wake, run.clients[0].wake)  # a new HUD snapshot wakes the loop as gateway news does
         self.assertEqual((run.terminal.entered, run.terminal.exited), (1, 1))
         # The region is gone after exit; nothing of it is left on the screen.
         self.assertNotIn(STATUS_MARK, run.terminal.history())

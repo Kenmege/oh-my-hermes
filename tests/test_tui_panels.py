@@ -504,6 +504,26 @@ class HudPollerTests(unittest.TestCase):
         )
         self.assertEqual(poller.poll_once(), 4.0)
 
+    def test_a_new_snapshot_wakes_the_loop_and_an_unchanged_one_does_not(self) -> None:
+        payloads = iter([{"session": "stored-1", "n": 1}, {"session": "stored-1", "n": 1}, {"session": "stored-1", "n": 2}])
+        poller = self.poller(FakeReader(lambda session: next(payloads)))
+        woken: list[None] = []
+        poller.on_snapshot = lambda: woken.append(None)
+        poller.set_session("stored-1")
+        poller.take()
+        for _ in range(3):
+            poller.poll_once()
+        self.assertEqual(len(woken), 2)  # the first payload and the changed third, not the repeat
+
+    def test_start_hands_the_thread_the_loops_wake(self) -> None:
+        woken = threading.Event()
+        poller = HudPoller("/omh", "/hermes", reader=FakeReader())
+        poller.start(wake=woken.set)
+        self.addCleanup(poller.stop)
+        poller.set_session("stored-1")
+        self.assertTrue(woken.wait(2.0), "the first snapshot of a session wakes the loop")
+        self.assertEqual(poller.take().payload["session"], "stored-1")
+
     def test_the_thread_waits_for_a_session_delivers_and_stops_promptly(self) -> None:
         reader = FakeReader()
         poller = HudPoller("/omh", "/hermes", reader=reader)
