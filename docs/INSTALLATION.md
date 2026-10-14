@@ -1562,7 +1562,8 @@ uses:
 | The default skin setup wrote by itself (the record names it) | `display.skin: omh` | removed; no theme is saved, since nobody picked it |
 | A display key with no record (an install older than the record) | `display.interface: tui`, collapsed sections | kept: nothing says OMH wrote them |
 | Your own skin | `display.skin: ares` | kept |
-| A key in a YAML shape the editor does not handle (a quoted key or an anchor anywhere in the file, a flow or duplicate `display`, a dotted key, a BOM) | any | left as it is and named in the output; the release is not recorded, so the next setup or update tries again |
+| A key OMH's record names, or a skin with an OMH name, in a YAML shape the editor does not handle (a quoted key or an anchor anywhere in the file, a flow or duplicate `display`, a dotted key, a tag, a BOM) | `display.skin: !!str omh-crimson` | left as it is and named in the output; the release is not recorded, so the next setup or update tries again |
+| Any other value in such a shape (no record names it, and it is not an OMH skin name) | `display: {skin: mytheme}` | kept |
 | A `display:` or `display.sections:` OMH created | emptied by the release | removed |
 | The status widget OMH installed | `omh-status.mjs` and its manifest | removed (a manifest left without its widget goes too) |
 | A widget the manifest cannot vouch for, or a symlinked `tui-widgets/` | — | kept, named once, in the output of the pass that records the release |

@@ -98,6 +98,22 @@ class FreshInstallTests(unittest.TestCase):
             self.assertIsNone(read_theme_choice(home.omh_home))
             self.assertNotIn("tui_verdict", json.loads(stdout))
 
+    def test_a_fresh_install_with_its_own_flow_display_releases_quietly(self) -> None:
+        # OMH never wrote this shape and no record names it, so it is the
+        # person's: nothing is held open, nothing is printed, and the
+        # release is recorded on the first pass.
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.config.write_text(BEFORE + "display: {skin: mytheme}\n", encoding="utf-8", newline="")
+
+            for command in ("setup", "update", "update"):
+                status, stdout, stderr = home.run(command, output_json=False)
+
+                self.assertEqual(status, 0, stderr)
+                self.assertNotIn("Hermes display", stdout)
+            self.assertIn("display: {skin: mytheme}\n", home.config.read_text(encoding="utf-8"))
+            self.assertIn("display_released_at", home.record())
+
     def test_setup_reports_config_changed_when_only_plugin_enablement_changes(self) -> None:
         with TemporaryDirectory() as tmp:
             home = _Home(Path(tmp))

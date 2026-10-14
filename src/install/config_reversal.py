@@ -37,8 +37,9 @@ migration. Setup and update run it with the same per-key rules uninstall
 uses, and once a pass leaves no key `refused` the record says so
 (`display_released_at`): from that point no display value in that config is
 OMH's, including an `omh*` skin name, which only the person can have chosen
-since. A key the editor would not touch for its YAML shape is `refused`
-instead; it stays OMH's in the record, and the next pass tries again.
+since. A key the editor would not touch for its YAML shape, and that the
+record or the OMH skin name says may be OMH's, is `refused` instead; it
+stays OMH's in the record, and the next pass tries again.
 """
 
 from __future__ import annotations
@@ -518,10 +519,10 @@ def release_managed_display(
     time (the #1973 shape).
 
     Except when a row comes back `refused`: the editor would not touch that
-    key for its YAML shape, and nothing reads its value as the person's own.
-    The key may still be OMH's, so the caller must not record the release
-    on that pass, and must keep the key in the record so the next pass asks
-    again.
+    key for its YAML shape, and the record or the OMH skin name says its
+    value may still be OMH's (`_refused_or_kept`). The caller must not
+    record the release on that pass, and must keep the key in the record so
+    the next pass asks again.
     """
     owned = load_managed_config_writes(record, config_path=config_path)
     if owned.get(DISPLAY_RELEASED_FIELD):
@@ -552,20 +553,31 @@ def release_managed_display(
 
 
 def _refused_or_kept(config_text: str, row: ReversalRow, recorded: object) -> ReversalRow:
-    """A `kept` display row, or `refused` when the shape stopped the edit and nothing says the value is the person's.
+    """A `kept` display row, or `refused` when the shape stopped the edit and the value may still be OMH's.
 
     `kept` from the removers covers two different outcomes: the value is no
     longer the one OMH wrote, or the editor refused the YAML shape before
     looking (a quoted key anywhere in the file, a dotted or duplicate
     `display`, anchors, tags, a BOM). Only the first leaves nothing of OMH's
-    behind. The value is read here without the editor's guards, and a value
-    that reads as the person's own keeps the row `kept`; one that reads as
-    OMH's, or cannot be read at all, is `refused`.
+    behind. The value is read here without the editor's guards.
+
+    With a record naming the key, a value that reads as the person's own
+    keeps the row `kept`; one that reads as OMH's, or cannot be read at
+    all, is `refused`. Without one, only an OMH skin name makes it
+    `refused`: OMH's writers never wrote the flow, dotted or duplicate
+    shapes the editor refuses, so an unreadable value nobody recorded, such
+    as a fresh install's `display: {skin: mytheme}`, is the person's.
     """
     refusal = display_edit_refusal(config_text, row.key.rpartition(".")[2])
-    if not refusal or _reads_as_persons(config_text, row.key, recorded):
+    if not refusal:
         return row
-    return ReversalRow(row.key, "refused", refusal)
+    if recorded:
+        may_be_omhs = not _reads_as_persons(config_text, row.key, recorded)
+    else:
+        may_be_omhs = row.key == DISPLAY_SKIN_KEY and is_omh_skin_name(
+            _plain_scalar(display_skin_selection(config_text))
+        )
+    return ReversalRow(row.key, "refused", refusal) if may_be_omhs else row
 
 
 def _plain_scalar(value: str) -> str:

@@ -947,6 +947,22 @@ class ReleaseManagedDisplayTests(unittest.TestCase):
                 self.assertEqual(by_key["display.skin"].status, "refused")
                 self.assertEqual(by_key["display.interface"].status, "refused")
 
+    def test_an_unreadable_value_no_record_names_is_kept(self) -> None:
+        """Mutation proof: refusing it held the release open on a fresh install's own flow `display`."""
+        for text in (
+            "display: {skin: mytheme}\n",
+            "display: {skin: omh-crimson}\n",
+            "display:\n  skin: !!str omh-crimson\n",
+        ):
+            with self.subTest(text=text):
+                released, by_key = self._release("version: 1\n" + text, {})
+
+                self.assertEqual(released, "version: 1\n" + text)
+                self.assertEqual(by_key["display.skin"].status, "kept")
+        # An OMH skin name OMH can read is still OMH's without a record.
+        _released, by_key = self._release("version: 1\ndisplay.skin: omh-crimson\n", {})
+        self.assertEqual(by_key["display.skin"].status, "refused")
+
     def test_a_value_that_reads_as_the_persons_stays_kept_under_a_refused_shape(self) -> None:
         before = ""
         after = _apply_setup_writes(before)
