@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import threading
 import time
@@ -403,6 +405,26 @@ class FakeReader:
         self.calls.append((args, kwargs))
         self.called.set()
         return self.respond(kwargs["session_ref"])
+
+
+class HudReaderImportTests(unittest.TestCase):
+    def test_the_tui_imports_the_hud_reader_only_when_the_poller_first_reads(self) -> None:
+        # A fresh interpreter: this process imported runtime_reader long ago.
+        probe = (
+            "import sys, tempfile\n"
+            "import omh.tui.app\n"
+            "from omh.tui.panels import HudPoller\n"
+            "name = 'omh.plugin_bundle.omh.runtime_reader'\n"
+            "print('after import:', name in sys.modules)\n"
+            "with tempfile.TemporaryDirectory() as omh, tempfile.TemporaryDirectory() as hermes:\n"
+            "    poller = HudPoller(omh, hermes)\n"
+            "    poller.set_session('20261014_000000_aaaaaa')\n"
+            "    poller.poll_once()\n"
+            "print('after a read:', name in sys.modules)\n"
+        )
+        done = subprocess.run([sys.executable, "-P", "-c", probe], capture_output=True, text=True, timeout=120)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.splitlines(), ["after import: False", "after a read: True"])
 
 
 class HudPollerTests(unittest.TestCase):

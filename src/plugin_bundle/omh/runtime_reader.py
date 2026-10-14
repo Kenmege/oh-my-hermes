@@ -78,6 +78,10 @@ from .run_records import (
     WRAPPER_FILE,
 )
 from .todo_evidence import valid_evidence
+# Moved to `hud_text`, which formats without importing this reader; still importable from here.
+from .hud_text import TODO_UNCHANGED_STATUSES as TODO_UNCHANGED_STATUSES
+from .hud_text import elapsed_text as elapsed_text
+from .hud_text import todo_unchanged_text
 from .todo_store import (
     MAX_TODO_BLOCKED_REASON_CHARS,
     MAX_TODO_DEFERRED_REASON_CHARS,
@@ -123,9 +127,6 @@ TODO_BLOCKED_REASON_DISPLAY_CHARS = 48
 # explained by one long tool call this install observed. Deriving it from that
 # constant keeps the two rules from drifting apart.
 TODO_UNCHANGED_SECONDS = TOOL_CALL_OPEN_TTL_SECONDS
-# The two statuses that ARE the finding; every other value is a way of being
-# silent. Named once so a caller cannot cover one and miss the other.
-TODO_UNCHANGED_STATUSES: frozenset[str] = frozenset({"unchanged", "unchanged_while_busy"})
 # The statuses that mean this session has a plan record to show: one with work
 # left, and one finished and still lingering. Named once for the same reason as
 # the pair above -- a caller that covered `established` and missed `all_done`
@@ -2208,21 +2209,6 @@ def default_omh_home() -> Path:
     return _default_omh_home()
 
 
-def elapsed_text(seconds: float) -> str:
-    """``12s`` / ``4m 3s`` / ``2h 01m``.
-
-    Byte-identical to the widget's own ``elapsedText``, so the same elapsed
-    figure reads the same whether it arrives through the TUI panel, the text
-    HUD line, or the per-turn reminder.
-    """
-    total = max(0, int(seconds))
-    if total < 60:
-        return f"{total}s"
-    if total < 3600:
-        return f"{total // 60}m {total % 60}s"
-    return f"{total // 3600}h {total // 60 % 60:02d}m"
-
-
 def _todo_stall(activity: dict[str, Any] | None, age: float | None) -> dict[str, Any]:
     """Whether an established plan's checklist has visibly stopped moving.
 
@@ -2274,25 +2260,6 @@ def _todo_stall(activity: dict[str, Any] | None, age: float | None) -> dict[str,
         "threshold_seconds": TODO_UNCHANGED_SECONDS,
         "claim_boundary": TODO_STALL_CLAIM_BOUNDARY,
     }
-
-
-def todo_unchanged_text(todo: dict[str, Any]) -> str:
-    """How long this checklist has been unchanged, when that is the finding.
-
-    Empty for every other stall status, so a caller renders the hint by
-    appending this and nothing else; the projection's own status stays the
-    single place the rule lives.
-    """
-    stall = todo.get("stall")
-    # Both findings carry the age. `unchanged_while_busy` is the same fact with
-    # calls running, and dropping it here would have silently reinstated the
-    # liveness suppression the status split exists to remove.
-    if not isinstance(stall, dict) or stall.get("status") not in TODO_UNCHANGED_STATUSES:
-        return ""
-    seconds = todo.get("updated_age_seconds")
-    if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
-        return ""
-    return elapsed_text(seconds)
 
 
 def todo_blocked_reason_display(item: dict[str, Any]) -> str:

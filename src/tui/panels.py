@@ -1,12 +1,13 @@
 """The OMH panels the TUI draws between the streaming tail and the composer.
 
-Two halves. `HudPoller` reads `read_omh_hud` IN PROCESS on a background
-thread -- the retired Hermes status widget had to spawn a Python child every
-two seconds for the same payload -- and hands each new payload to the UI thread through a
-latest-value slot it can poll without blocking. `panel_lines` turns one
-payload into styled rows: the agents block (header, subagent graph, activity
-rows, `+N more`) above the plan block (`[Plan]` header and its checklist), so
-the plan stays directly above the composer where it always sat.
+Two halves. `HudPoller` reads `read_omh_hud` IN PROCESS on a background thread
+-- the retired Hermes status widget had to spawn a Python child every two
+seconds for the same payload -- importing the HUD reader there on its first
+read rather than with this module, and hands each new payload to the UI thread
+through a latest-value slot it can poll without blocking. `panel_lines` turns
+one payload into styled rows: the agents block (header, subagent graph,
+activity rows, `+N more`) above the plan block (`[Plan]` header and its
+checklist), so the plan stays directly above the composer where it always sat.
 
 The information design is that widget's, which this module took over when
 it was deleted: the same glyphs, labels, colour roles, column grid and shed
@@ -35,7 +36,7 @@ import time
 from typing import Any
 import unicodedata
 
-from ..plugin_bundle.omh.runtime_reader import elapsed_text, read_omh_hud, todo_unchanged_text
+from ..plugin_bundle.omh.hud_text import elapsed_text, todo_unchanged_text
 from ..version import __version__
 from .escapes import strip_escapes
 from .style import Line, Span, Style
@@ -166,7 +167,7 @@ class HudPoller:
         hermes_home: Any,
         *,
         package_version: str = __version__,
-        reader: HudReader = read_omh_hud,
+        reader: HudReader | None = None,  # None: `runtime_reader.read_omh_hud`, imported on the first read
         clock: Callable[[], float] = time.time,
     ) -> None:
         self._omh_home = omh_home
@@ -240,7 +241,10 @@ class HudPoller:
 
     def _read(self, session: str) -> Mapping[str, Any]:
         try:
-            return self._reader(
+            reader = self._reader
+            if reader is None:  # on the poller's thread, so the UI thread never waits for this import
+                from ..plugin_bundle.omh.runtime_reader import read_omh_hud as reader
+            return reader(
                 self._omh_home,
                 self._hermes_home,
                 session_ref=session,

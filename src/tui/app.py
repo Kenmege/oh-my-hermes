@@ -78,7 +78,7 @@ import time
 from types import FrameType
 from typing import Any, Protocol, TextIO
 
-from ..plugin_bundle.omh.runtime_reader import elapsed_text
+from ..plugin_bundle.omh.hud_text import elapsed_text
 from ..commands.theme_picker import (
     KEY_DOWN,
     KEY_ENTER,

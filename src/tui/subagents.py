@@ -61,7 +61,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
-from ..plugin_bundle.omh.runtime_reader import elapsed_text
+from ..plugin_bundle.omh.hud_text import elapsed_text
 from . import gateway_contract as contract
 from .markdown import clean_text, wrap_prefixed
 from .panels import SPINNER_FRAMES
