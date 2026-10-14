@@ -105,10 +105,12 @@ class LiveTailMemoTests(LoopTestCase):
         self.assertEqual(lines_text(self.transcript.live_lines(14, THEME))[-3:], ["  still", "  thinking and", "  more"])
 
     def test_a_tail_asked_for_fewer_rows_renders_only_the_blocks_it_needs(self) -> None:
-        self.user("go")
-        self.step(ev("message.start"))
-        self.step(ev("reasoning.delta", text="first thought"))
-        self.step(ev("tool.start", tool_id="t1", name="terminal", context="ls"))
+        # Nothing taken yet (no frame between the events), so every block is still in the live tail.
+        self.transcript.add_user("go")
+        self.transcript.apply(ev("message.start"))
+        self.transcript.apply(ev("reasoning.delta", text="first thought"))
+        self.transcript.apply(ev("tool.start", tool_id="t1", name="terminal", context="ls"))
+        self.assertEqual(len(lines_text(self.transcript.live_lines(WIDTH, THEME))), 5)
         rendered: list[object] = []
         real = __import__("omh.tui.transcript", fromlist=["block_rows"]).block_rows
 
@@ -119,6 +121,36 @@ class LiveTailMemoTests(LoopTestCase):
         with patch("omh.tui.transcript.block_rows", counting):
             self.assertEqual(lines_text(self.transcript.live_lines(WIDTH, THEME, max_rows=1))[-1:], ["  ◔ terminal  ls"])
         self.assertEqual(rendered, [self.transcript.blocks[-1]])
+
+
+class LimitedThinkingTests(LoopTestCase):
+    def test_expanded_live_thinking_asked_for_its_last_rows_wraps_only_its_last_lines(self) -> None:
+        self.step(ev("message.start"))
+        self.step(ev("reasoning.delta", text="\n".join(f"thought number {n} goes on for a while" for n in range(200))))
+        self.transcript.toggle_details()  # expanded, the live block is no longer what history shows: no `step` now
+        whole = self.transcript.live_lines(WIDTH, THEME)
+        wrapped: list[object] = []
+        real = __import__("omh.tui.transcript", fromlist=["wrap_prefixed"]).wrap_prefixed
+
+        def counting(*args: object, **kwargs: object) -> list:
+            wrapped.append(args[0])
+            return real(*args, **kwargs)
+
+        with patch("omh.tui.transcript.wrap_prefixed", counting):
+            last = self.transcript.live_lines(WIDTH, THEME, max_rows=4)
+        self.assertEqual(last[-4:], whole[-4:])
+        self.assertEqual(lines_text(last)[-1], "  thought number 199 goes on for a while")
+        self.assertEqual(len(wrapped), 4)  # one source line per row here, not all 200
+
+    def test_any_limit_ends_as_the_whole_expanded_thinking_does(self) -> None:
+        text = "\n\nfirst line\n\n" + "a long line that wraps over several rows at this width " * 4 + "\nlast\n\n"
+        self.step(ev("message.start"))
+        self.step(ev("reasoning.delta", text=text))
+        self.transcript.toggle_details()
+        whole = self.transcript.live_lines(30, THEME)
+        for rows in range(1, len(whole) + 2):
+            with self.subTest(rows=rows):
+                self.assertEqual(self.transcript.live_lines(30, THEME, max_rows=rows)[-rows:], whole[-rows:])
 
 
 class SpacingTests(LoopTestCase):

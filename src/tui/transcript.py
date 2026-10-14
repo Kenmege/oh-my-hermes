@@ -266,17 +266,28 @@ def _drafted_row(group: ToolGroup, name: str) -> ToolRow | None:
 # ── rendering ─────────────────────────────────────────────────────────────
 
 
-def _text_rows(text: str, style: Style, first: Line, rest: Line, width: int) -> list[Line]:
-    """Plain text (no markdown), each source line wrapped, `first` before the very first row."""
-    rows: list[Line] = []
+def _text_rows(
+    text: str, style: Style, first: Line, rest: Line, width: int, max_rows: int | None = None
+) -> list[Line]:
+    """Plain text (no markdown), each source line wrapped, `first` before the very first row.
+
+    Each source line wraps on its own, so with `max_rows` only the last lines
+    that cover that many rows are wrapped; the rows end as all of them would.
+    """
+    wrapped: list[list[Line]] = []  # each source line's rows, the last line first
+    count = 0
     lines = _without_trailing_blanks(_source_lines(text))
-    for source in lines:
+    for index in range(len(lines) - 1, -1, -1):
+        if max_rows is not None and count >= max_rows:
+            break
+        source = lines[index]
         if _is_blank(source):
-            rows.append(())  # never the first row: leading blank lines were dropped
-            continue
-        prefix = first if not rows else rest
-        rows.extend(wrap_prefixed((Span(clean_text(source), style),), prefix, rest, width))
-    return rows
+            rows: list[Line] = [()]  # never the first row: leading blank lines were dropped
+        else:
+            rows = wrap_prefixed((Span(clean_text(source), style),), first if index == 0 else rest, rest, width)
+        wrapped.append(rows)
+        count += len(rows)
+    return [row for rows in reversed(wrapped) for row in rows]
 
 
 def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
@@ -317,7 +328,9 @@ def _seconds(value: float) -> str:
     return f"{value:.1f}s"
 
 
-def _thinking_rows(block: ThinkingBlock, width: int, theme: Theme, expanded: bool) -> list[Line]:
+def _thinking_rows(
+    block: ThinkingBlock, width: int, theme: Theme, expanded: bool, max_rows: int | None = None
+) -> list[Line]:
     mark = EXPANDED_MARK if expanded else COLLAPSED_MARK
     if block.done:
         header = f"{mark} thought"
@@ -331,7 +344,7 @@ def _thinking_rows(block: ThinkingBlock, width: int, theme: Theme, expanded: boo
     rows = [truncate_line(head, width)]
     if expanded:
         indent: Line = (Span(DETAIL_INDENT),)
-        rows.extend(_text_rows(block.text, theme.thinking, indent, indent, width))
+        rows.extend(_text_rows(block.text, theme.thinking, indent, indent, width, max_rows))
     return rows
 
 
@@ -385,8 +398,12 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool) -> li
     return rows
 
 
-def block_rows(block: Block, width: int, theme: Theme, expanded: bool = False) -> list[Line]:
-    """The rows one block shows at `width`; `expanded` adds thinking text, tool result summaries, whole diffs."""
+def block_rows(block: Block, width: int, theme: Theme, expanded: bool = False, max_rows: int | None = None) -> list[Line]:
+    """The rows one block shows at `width`; `expanded` adds thinking text, tool result summaries, whole diffs.
+
+    `max_rows` lets a block whose rows end the same either way (thinking
+    text) render only its last rows; the rows returned may start lower.
+    """
     width = max(1, width)
     if isinstance(block, UserBlock):
         return _user_rows(block, width, theme)
@@ -395,7 +412,7 @@ def block_rows(block: Block, width: int, theme: Theme, expanded: bool = False) -
     if isinstance(block, AssistantBlock):
         return _assistant_rows(block, width, theme)
     if isinstance(block, ThinkingBlock):
-        return _thinking_rows(block, width, theme, expanded)
+        return _thinking_rows(block, width, theme, expanded, max_rows)
     return _tool_rows(block, width, theme, expanded)
 
 
@@ -703,8 +720,9 @@ class Transcript:
         """Everything not yet taken, as it shows now: the streaming tail, live thinking, running tools.
 
         With `max_rows`, only the blocks that reach into the last `max_rows`
-        rows are rendered: the rows returned end exactly as the whole tail
-        does, and may start below its top. The answer is kept until the
+        rows are rendered, and of live thinking text only its last rows: the
+        rows returned end exactly as the whole tail does, and may start below
+        its top. The answer is kept until the
         transcript changes, so asking again with the same width, limit and
         theme renders nothing.
         """
@@ -729,8 +747,8 @@ class Transcript:
                 rest = _display_lines(block.text)[self._cursor_lines :]
                 opens_block = self._cursor_lines == 0
                 block_lines = _marked(render_lines(rest, self._cursor_state, _reply_width(width), theme)[0], opens_block, theme)
-            else:
-                block_lines = block_rows(block, width, theme, expanded=self.details_expanded and not block.done)
+            else:  # only the last block can be live thinking, the one kind the limit shortens, so it gets all of it
+                block_lines = block_rows(block, width, theme, self.details_expanded and not block.done, max_rows)
             if block_lines:
                 rendered.append((opens_block, block_lines))
                 count += len(block_lines)
