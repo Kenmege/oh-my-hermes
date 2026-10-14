@@ -62,7 +62,9 @@ All notable changes will be documented here.
   before), and `/export` first says that Hermes exports a profile archive, not
   the transcript. Alt+Backspace (and Ctrl+Backspace) deletes the word before
   the caret, and Alt+B and Alt+F move by a word under the kitty keyboard
-  protocol too, where they did nothing.
+  protocol too, where they did nothing. A start on a terminal of 100 columns
+  and 24 rows or more shows the OH-MY-HERMES block logo above the banner, from
+  the shipped skin and in its gradient, lifted to read on a light background.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

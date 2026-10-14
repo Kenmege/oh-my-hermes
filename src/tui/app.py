@@ -168,7 +168,7 @@ from .slash import (
 from .style import CSI, Line, Span, Style
 from .subagents import Hit, Roster
 from .terminal import Terminal, background_from_colorfgbg, terminal_name, terminal_supported
-from .theme import DEFAULT_THEME, LIGHT_STAND_IN, Theme, build_theme, is_light, theme_named
+from .theme import DEFAULT_THEME, LIGHT_STAND_IN, Theme, build_theme, is_light, logo_lines, theme_named
 from .transcript import (
     NOTICE_ERROR,
     NOTICE_WARN,
@@ -242,6 +242,9 @@ TERMINATE_GRACE_SECONDS = 2.0
 EXIT_SIGNALS = ("SIGTERM", "SIGHUP")
 
 BANNER_BRAND = "⚚ OH-MY-HERMES"
+# The block logo goes above the banner from this many rows (and as many columns as it is wide): its six rows and
+# the blank under it leave the composer region its room there.
+LOGO_MIN_ROWS = 24
 # A fresh session says where the last one is (`session.list`), while nothing has been sent yet.
 LAST_SESSION_LIMIT = 3
 LAST_SESSION_NOTICE = "↺ last session: {label} · /resume {id} reopens it"
@@ -618,6 +621,14 @@ def banner_lines(*, cwd: str, resumed: str, theme: Theme, width: int) -> list[Li
     return [truncate_line(header(path), width), ()]
 
 
+def banner_logo(skin: SkinTheme, background: str | None, width: int, rows: int) -> list[Line]:
+    """The skin's block logo and a blank row, for above the banner; nothing narrower than the logo or under LOGO_MIN_ROWS."""
+    logo = logo_lines(skin, background)
+    if not logo or rows < LOGO_MIN_ROWS or width < max(line_width(row) for row in logo):
+        return []
+    return [*logo, ()]
+
+
 def attachment_from(result: Mapping[str, Any]) -> Attachment | None:
     """The chip for an image the gateway queued (`image.attach`, `clipboard.paste`, an image drop); None without a path."""
     path = as_text(result.get("path"))
@@ -891,6 +902,8 @@ class App(ModesMixin, AgentViewMixin):
         self.farewell = ""
         self.banner_facts: dict[str, str] | None = None  # the header, flushed above the next anchoring frame
         self.banner_record: dict[str, str] | None = None  # kept, so a full redraw can print it again
+        self.logo_due = False  # the block logo goes above the banner flushed next
+        self.in_launch_session = True  # the logo is the start's: it is not repeated for /new or a switch
         self.redraw_at: float | None = None  # when a settled resize redraws everything
         self.anchor = True  # the next frame re-anchors the region (first frame, resize, redraw)
         self.busy_since = 0.0  # when the running turn (or the prompt still waiting for it) started
@@ -948,6 +961,7 @@ class App(ModesMixin, AgentViewMixin):
             self._ask_last_session()
         self.banner_record = self._banner_record(result, resumed=self.stored_id if resume else "")
         self.banner_facts = dict(self.banner_record)
+        self.logo_due = True
         if resume:
             self._draw_history(result.get("messages"))
         self._redeliver(result.get("open_requests"))
@@ -2461,6 +2475,7 @@ class App(ModesMixin, AgentViewMixin):
         The caller says so in the new transcript, after its own notice.
         """
         old = self.sid
+        self.in_launch_session = False
         declined = self._decline_all_requests()
         if old and old != as_text(result.get("session_id")):
             self._turn_off_yolo_set_here(old)
@@ -2840,6 +2855,8 @@ class App(ModesMixin, AgentViewMixin):
         self.transcript.retake_tail(self.size[0], self.theme, REDRAW_TAIL_ROWS)
         if self.banner_record is not None:
             self.banner_facts = dict(self.banner_record)
+            # The logo comes back only on top of the whole session it opened, never above a cut.
+            self.logo_due = self.in_launch_session and not self.transcript.left_out
         self.anchor = True
         self.dirty = True
 
@@ -2877,7 +2894,8 @@ class App(ModesMixin, AgentViewMixin):
             return
         stable = self.transcript.take_stable_lines(cols, self.theme)
         if self.banner_facts is not None:
-            stable = banner_lines(**self.banner_facts, theme=self.theme, width=cols) + stable
+            logo = banner_logo(self._skin(), self._surface(), cols, rows) if self.logo_due else []
+            stable = logo + banner_lines(**self.banner_facts, theme=self.theme, width=cols) + stable
             self.banner_facts = None
         anchoring = self.anchor
         if stable and not anchoring:

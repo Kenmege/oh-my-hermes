@@ -202,6 +202,39 @@ def skin_colors(name: str = SKIN_NAME) -> dict[str, str]:
     return colors_from_text(skin_payload(name).decode("utf-8"))
 
 
+def logo_from_text(text: str) -> list[tuple[str, str, bool]]:
+    """The `banner_logo:` block of one skin document: per row its text, its `#RRGGBB` (or ""), and whether it is bold.
+
+    Each row is Rich markup for Hermes' banner, an opening tag such as
+    `[bold #B8F4FF]`, the row, then `[/]`, and the markup is taken off here.
+    As narrow a reader as `colors_from_text`: the block is a `|-` literal of
+    two-space-indented rows, and a row without a tag keeps its text whole,
+    with no colour. The text is returned as the file has it; a reader that
+    writes it to a terminal takes out what is not printable.
+    """
+    rows: list[tuple[str, str, bool]] = []
+    inside = False
+    for line in text.splitlines():
+        if not line.startswith(" "):
+            inside = line.startswith("banner_logo:")
+            continue
+        if not inside or not line.startswith("  "):
+            continue
+        row, colour, bold = line[2:], "", False
+        if row.startswith("[") and "]" in row:
+            tag, row = row[1:].split("]", 1)
+            words = tag.split()
+            colour = next((word for word in words if word.startswith("#") and hex_to_rgb(word)), "")
+            bold = "bold" in words
+        rows.append((row.removesuffix("[/]"), colour, bold))
+    return rows
+
+
+def skin_logo(name: str = SKIN_NAME) -> list[tuple[str, str, bool]]:
+    """The block logo of one shipped theme, read straight off its YAML."""
+    return logo_from_text(skin_payload(name).decode("utf-8"))
+
+
 def hex_to_rgb(value: str) -> tuple[int, int, int] | None:
     """`#RRGGBB` -> channel triple, or None when the token is not a plain hex."""
     text = value.strip().lstrip("#")

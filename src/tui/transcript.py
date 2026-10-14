@@ -950,6 +950,11 @@ class Transcript:
         self._left_out = 0
         self._version += 1
 
+    @property
+    def left_out(self) -> int:
+        """How many blocks the next take counts in its opening row instead of showing (`retake_tail`)."""
+        return self._left_out
+
     def retake_tail(self, width: int, theme: Theme, max_rows: int) -> None:
         """`retake`, keeping to the session's last `max_rows` rows at `width`: a full redraw costs that, not the session.
 

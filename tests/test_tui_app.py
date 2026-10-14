@@ -47,11 +47,12 @@ from _tui_gateway_replay import (
 from _tui_lines import line_text
 from _vt_screen import VTScreen
 from omh.tui import terminal as terminal_module
-from omh.skin_pack import hex_to_rgb, theme_for_name, write_theme_choice
+from omh.skin_pack import default_theme, hex_to_rgb, theme_for_name, write_theme_choice
 from omh.tui.app import (
     EXIT_HINT,
     SLOT_ARM_SECONDS,
     App,
+    banner_logo,
     initial_theme,
     main,
     mode_row_line,
@@ -79,6 +80,9 @@ UNDER_COMPOSER = 2
 # are listed for its workspace; a fresh session then asks for the stored sessions, to name the last one.
 STARTUP_METHODS = ["client.capabilities", "session.create", "config.get", "commands.catalog", "session.list"]
 NO_TERMIOS = terminal_module.termios is None
+# The block logo a start shows above the banner on these 24-row terminals from 100 columns: six rows and a blank.
+LOGO = [line_text(row) for row in banner_logo(default_theme(), None, 100, 24)]
+LOGO_ROWS = len(LOGO)
 TURN_CANCELLED = "Turn cancelled before the agent was ready"
 
 
@@ -770,10 +774,12 @@ class SessionTests(AppTestCase):
                 drawn = [line for line in screen if line]
                 self.assertEqual(sum(STATUS_MARK in line for line in screen), 1, screen)
                 self.assertEqual(sum(RULE_MARK in line for line in screen), 2, screen)
-                # The redrawn session (the banner) and the region (rule, composer, rule, mode row, status),
-                # nothing else.
-                self.assertEqual(len(drawn), 6, screen)
-                self.assertTrue(drawn[0].startswith("⚚ OH-MY-HERMES"), screen)
+                # The redrawn session (the banner, and at 100 columns the logo above it, since the whole session
+                # fits the redraw) and the region (rule, composer, rule, mode row, status), nothing else.
+                logo = LOGO[:-1] if cols >= 100 else []
+                self.assertEqual(drawn[: len(logo)], logo, screen)
+                self.assertEqual(len(drawn), 6 + len(logo), screen)
+                self.assertTrue(drawn[len(logo)].startswith("⚚ OH-MY-HERMES"), screen)
                 self.assertTrue(all(len(line) <= cols for line in screen))
 
 
@@ -1381,9 +1387,11 @@ class OpeningTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         history = run.terminal.screen.history()
-        # One row: the model is the status line's and the keys the mode row's.
-        self.assertEqual(history[0], f"⚚ OH-MY-HERMES v{__version__} · ~/project")
-        self.assertEqual([row for row in history[1:] if row], [])
+        # At 100 columns the block logo comes first. The banner is one row: the model is the status line's and the
+        # keys the mode row's.
+        self.assertEqual(history[:LOGO_ROWS], LOGO)
+        self.assertEqual(history[LOGO_ROWS], f"⚚ OH-MY-HERMES v{__version__} · ~/project")
+        self.assertEqual([row for row in history[LOGO_ROWS + 1 :] if row], [])
 
     def test_the_banner_is_on_screen_at_the_first_frame_not_pushed_into_scrollback(self) -> None:
         # The first frame fills the screen with pad rows; the banner must land in them.
@@ -1396,8 +1404,9 @@ class OpeningTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         screen = run.terminal.captures["first"]
-        self.assertTrue(screen[0].startswith("⚚ OH-MY-HERMES"), screen[:3])
-        self.assertEqual(screen[1], "")
+        self.assertEqual(screen[:LOGO_ROWS], LOGO)
+        self.assertTrue(screen[LOGO_ROWS].startswith("⚚ OH-MY-HERMES"), screen[: LOGO_ROWS + 2])
+        self.assertEqual(screen[LOGO_ROWS + 1], "")
         self.assertEqual(run.terminal.screen.scrollback, [])
 
     def test_the_banner_stays_one_row_and_keeps_the_end_of_a_long_path(self) -> None:
@@ -1462,10 +1471,11 @@ class OpeningTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         history = run.terminal.screen.history()
-        self.assertTrue(history[0].startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {STORED_ID}"))
+        self.assertEqual(history[:LOGO_ROWS], LOGO)  # a resumed launch is a start too
+        self.assertTrue(history[LOGO_ROWS].startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {STORED_ID}"))
         self.assertEqual(run.calls("session.list"), [])  # a resumed session needs no pointer to the last one
         self.assertEqual(
-            history[2:12],
+            history[LOGO_ROWS + 2 : LOGO_ROWS + 12],
             [
                 "› What is in this repo?",
                 "",

@@ -324,7 +324,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   session is one row: the brand, the version, the session it resumed and the
   working directory. A fresh session says under it where the last one is
   (`↺ last session: <title> · /resume <id> reopens it`) until you send
-  something.
+  something. On a terminal at least as wide as the OH-MY-HERMES block logo
+  (100 columns) and 24 rows tall, the start shows the logo above the banner,
+  each row in the theme's gradient made to read on the terminal's
+  background; `/new` and a switched session do not repeat it, and a full
+  redraw shows it again only on top of the whole session.
 - The mode row names the input mode, or the keys that matter right now, and
   the reasoning effort when Hermes reports one. While Hermes asks something
   it names that question's keys (`←→ pick · enter confirms · d or esc

@@ -29,8 +29,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..skin_pack import SkinTheme, default_theme, hex_to_rgb, skin_colors, theme_for_name, theme_for_skin_name
-from .style import Style
+from ..skin_pack import (
+    SkinTheme,
+    default_theme,
+    hex_to_rgb,
+    skin_colors,
+    skin_logo,
+    theme_for_name,
+    theme_for_skin_name,
+)
+from .escapes import strip_escapes
+from .style import Line, Span, Style
 
 TEXT_CONTRAST = 4.5  # WCAG 2 body text
 EDGE_CONTRAST = 3.0  # WCAG 2 non-text: a rule, an edge, a secondary mark
@@ -207,6 +216,26 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         mode_accept=Style(fg=read("ui_warn")),
         mode_plan=Style(fg=read("ui_ok")),
     )
+
+
+def logo_lines(skin: SkinTheme, background: str | None = None) -> list[Line]:
+    """The skin's block logo (`skin_pack.skin_logo`), each row in its own colour, measured against `background`.
+
+    A row keeps the skin's gradient colour where it reaches the 3:1 a
+    graphical mark needs and moves toward the ink only as far as that takes,
+    as every glyph role does; a row the skin gives no colour takes
+    `banner_title`. Escape sequences and control characters are taken out of
+    the text, so a skin file never writes to the terminal.
+    """
+    c = _palette(skin)
+    surface = surface_for(skin, background)
+    ink = BLACK if is_light(surface) else c["banner_text"]
+    lines: list[Line] = []
+    for text, colour, bold in skin_logo(skin.skin_name):
+        shown = "".join(char for char in strip_escapes(text) if char.isprintable())
+        fg = _lifted(colour if hex_to_rgb(colour) else c["banner_title"], ink, surface, EDGE_CONTRAST)
+        lines.append((Span(shown, Style(fg=fg, bold=bold)),))
+    return lines
 
 
 def theme_named(value: str, background: str | None = None) -> Theme:
