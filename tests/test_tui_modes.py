@@ -32,10 +32,10 @@ from test_tui_app import (
 from omh.tui import app as app_module
 from omh.tui import gateway_contract as contract
 from omh.tui import modes as modes_module
-from omh.tui.app import SLOT_ARM_SECONDS, App, queue_lines
+from omh.tui.app import ATTACH_LEFT_NOTICE, SLOT_ARM_SECONDS, App, queue_lines
 from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, GatewayUnavailable, Response, ServerRequest
-from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder
+from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder, Paste
 from omh.tui.layout import slot_cap
 from omh.tui.modes import EFFORT_CYCLE
 from omh.tui.pager import Pager
@@ -1039,6 +1039,59 @@ class LeavingTurnsYoloOffTests(unittest.TestCase):
         client.request = gone  # type: ignore[method-assign]
         app._shutdown()
         self.assertEqual(app.exit_code, 1)
+
+
+class LeftSessionStateTests(unittest.TestCase):
+    """What the session being left still has on its way, or kept, after `/new` or a switch."""
+
+    NEW = {"session_id": "live-2", "stored_session_id": "stored-2", "info": {"model": "m2", "cwd": "/p"}}
+    SHOT = {"attached": True, "path": "/h/images/shot.png", "name": "shot.png", "width": 4, "height": 3}
+
+    def left_with_call(self, start: object) -> tuple[App, RecordingClient, int]:
+        """`start(app)` sends a call in the first session; `/new` opens another before the call's answer."""
+        app, client = make_app()
+        start(app)
+        pending = len(client.calls)
+        app._new_session("")
+        answer(app, client, self.NEW)
+        self.assertEqual(app.sid, "live-2")
+        return app, client, pending
+
+    def test_a_new_session_after_a_resumed_launch_no_longer_says_resumed(self) -> None:
+        app, client = make_app()
+        app.stored_id = "stored-old"
+        app.banner_record = {"model": "m", "cwd": "~/p", "resumed": "stored-old"}
+        app._new_session("")
+        answer(app, client, self.NEW)
+        self.assertEqual(app.banner_record, {"model": "m2", "cwd": "/p", "resumed": ""})
+        app._redraw("")
+        self.assertEqual(app.banner_facts, {"model": "m2", "cwd": "/p", "resumed": ""})
+
+    def test_an_image_attached_in_the_session_left_is_no_chip_here_and_says_so(self) -> None:
+        for start, result in (
+            (lambda app: app._image("shot.png what is this?"), {**self.SHOT, "remainder": "what is this?"}),
+            (lambda app: app._paste(""), self.SHOT),
+            (lambda app: app._on_input(Paste("/h/shot.png")), {**self.SHOT, "matched": True, "is_image": True}),
+        ):
+            with self.subTest(result=result):
+                app, client, pending = self.left_with_call(start)
+                app._on_response(Response(pending, result, None))
+                self.assertEqual(app.attachments, [])
+                self.assertEqual(notices(app, NOTICE_WARN)[-1], ATTACH_LEFT_NOTICE.format(name="shot.png"))
+                # The question typed after the path is the person's own words: it comes back to the composer.
+                self.assertEqual(app.composer.text, result.get("remainder", ""))
+
+    def test_a_dropped_path_that_is_no_image_still_types_its_text_after_a_switch(self) -> None:
+        app, client, pending = self.left_with_call(lambda app: app._on_input(Paste("/h/notes.txt")))
+        app._on_response(Response(pending, {"matched": True, "is_image": False, "text": "[file: notes.txt]"}, None))
+        self.assertEqual((app.composer.text, app.attachments), ("[file: notes.txt]", []))
+
+    def test_in_the_same_session_the_image_is_a_chip_as_before(self) -> None:
+        app, client = make_app()
+        app._image("shot.png")
+        answer(app, client, self.SHOT)
+        self.assertEqual([item.name for item in app.attachments], ["shot.png"])
+        self.assertEqual(notices(app), [])
 
 
 class ResumingTheLiveSessionTests(unittest.TestCase):

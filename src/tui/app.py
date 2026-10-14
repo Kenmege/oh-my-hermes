@@ -237,6 +237,8 @@ SESSION_LIST_LIMIT = 50
 PATH_COMPLETE_DEBOUNCE_SECONDS = 0.12
 ATTACH_ICON = "📎"
 ATTACH_HINT = "Backspace removes"
+# An image Hermes queued for a session the TUI has since left: the gateway holds it there, so no chip shows here.
+ATTACH_LEFT_NOTICE = "Hermes queued {name} in the session you left, so it is not attached here."
 CONNECTION_NOTICE = (
     "Hermes is waiting for an app connection, which only Hermes' Desktop app or `hermes --tui` can complete. "
     "Esc interrupts the turn."
@@ -1319,10 +1321,11 @@ class App(ModesMixin, AgentViewMixin):
         if isinstance(event, Paste):
             if "\n" in event.text or not event.text.strip() or not self.sid:
                 return False
+            sid = self.sid
             self._request(
                 "input.detect_drop",
-                {"session_id": self.sid, "text": event.text},
-                lambda result: self._on_drop(event.text, result),
+                {"session_id": sid, "text": event.text},
+                lambda result: self._on_drop(sid, event.text, result),
                 lambda error: self._on_drop_refused(event.text),
             )
             return True
@@ -1762,6 +1765,7 @@ class App(ModesMixin, AgentViewMixin):
 
     def _on_new_session(self, result: dict[str, Any]) -> None:
         declined = self._enter_session(result)
+        self.banner_record = self._banner_record(result, resumed="")  # a later full redraw names this session
         self.transcript.add_notice(f"New session {self.stored_id}.")
         self._notice_declined(declined)
         self._refresh_catalog()
@@ -1876,10 +1880,11 @@ class App(ModesMixin, AgentViewMixin):
         elif not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
         else:
+            sid = self.sid
             self._request(
                 "image.attach",
-                {"session_id": self.sid, "path": arg},
-                self._on_image_attached,
+                {"session_id": sid, "path": arg},
+                lambda result: self._on_image_attached(sid, result),
                 lambda error: self._attach_failed("/image", error),
             )
 
@@ -1887,41 +1892,54 @@ class App(ModesMixin, AgentViewMixin):
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
+        sid = self.sid
         self._request(
             "clipboard.paste",
-            {"session_id": self.sid},
-            self._on_clipboard_pasted,
+            {"session_id": sid},
+            lambda result: self._on_clipboard_pasted(sid, result),
             lambda error: self._attach_failed("/paste", error),
         )
 
-    def _on_image_attached(self, result: dict[str, Any]) -> None:
+    def _take_attachment(self, sid: str, attachment: Attachment) -> None:
+        """A chip for an image Hermes queued for `sid`; for a session since left, a notice instead."""
+        if sid == self.sid:
+            self.attachments.append(attachment)
+        else:
+            self.transcript.add_notice(ATTACH_LEFT_NOTICE.format(name=attachment.name), NOTICE_WARN)
+
+    def _on_image_attached(self, sid: str, result: dict[str, Any]) -> None:
         attachment = attachment_from(result) if result.get("attached") is True else None
         if attachment is None:
             self.transcript.add_notice("/image: Hermes did not attach the file.", NOTICE_WARN)
             return
-        self.attachments.append(attachment)
+        self._take_attachment(sid, attachment)
         remainder = as_text(result.get("remainder")).strip()
         if remainder:  # `/image shot.png what is this?` keeps the question for the person to send
             self.composer.handle(Paste(remainder))
 
-    def _on_clipboard_pasted(self, result: dict[str, Any]) -> None:
+    def _on_clipboard_pasted(self, sid: str, result: dict[str, Any]) -> None:
         attachment = attachment_from(result) if result.get("attached") is True else None
         if attachment is None:
             self.transcript.add_notice(as_text(result.get("message")) or "No image found in the clipboard.")
         else:
-            self.attachments.append(attachment)
+            self._take_attachment(sid, attachment)
 
     def _attach_failed(self, command: str, error: dict[str, Any]) -> bool:
         message = as_text(error.get("message")) or "not attached"
         self.transcript.add_notice(f"{command}: {message} ({error.get('code')}).", NOTICE_WARN)
         return True
 
-    def _on_drop(self, text: str, result: dict[str, Any]) -> None:
-        """An image drop is already queued (a chip, nothing typed); a file drop types its reference; else the paste."""
+    def _on_drop(self, sid: str, text: str, result: dict[str, Any]) -> None:
+        """An image drop is already queued (a chip, nothing typed); a file drop types its reference; else the paste.
+
+        Text goes to the composer whichever session is live: it is the
+        person's paste, sent nowhere yet. An image Hermes queued for a session
+        since left is a notice (`_take_attachment`).
+        """
         if result.get("matched") is True and result.get("is_image") is True:
             attachment = attachment_from(result)
             if attachment is not None:
-                self.attachments.append(attachment)
+                self._take_attachment(sid, attachment)
             return
         if result.get("matched") is True and as_text(result.get("text")):
             text = as_text(result.get("text"))
