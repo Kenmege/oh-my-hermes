@@ -30,8 +30,8 @@ from omh.tui.width import line_width
 
 STARTS = FRAMES[:2]  # both recorded agents started, neither finished
 SPIN = SPINNER_FRAMES[0]  # a clock at 0 draws the spinner's first frame
-STRIP = f"● main  {SPIN} find usages of  {SPIN} read the diff  ↓"
-DONE_STRIP = "● main  ○ find usages of  ✗ read the diff  ↓"
+STRIP = f"● main  {SPIN} find usages of  {SPIN} read the diff  ↓ agents"
+DONE_STRIP = "● main  ○ find usages of  ✗ read the diff  ↓ agents"
 BUSY_HINT = "esc interrupt · /steer <text> steers"
 IDLE_HINT = "? shortcuts · ⇧⇥ mode · ctrl+t effort"
 
@@ -198,7 +198,7 @@ class StripTests(unittest.TestCase):
         app, _client = make_app(busy=True, cols=120, clock=lambda: 0.0)
         self.assertEqual(mode_row(app), BUSY_HINT)
         relay(app, STARTS[:1])
-        self.assertEqual(mode_row(app), f"● main  {SPIN} find usages of  ↓ · {BUSY_HINT}")
+        self.assertEqual(mode_row(app), f"● main  {SPIN} find usages of  ↓ agents · {BUSY_HINT}")
         relay(app, STARTS[1:])
         self.assertEqual(mode_row(app), f"{STRIP} · {BUSY_HINT}")
         app.turn_pending = False
@@ -212,7 +212,7 @@ class StripTests(unittest.TestCase):
 
     def test_at_eighty_columns_two_agents_leave_the_hint_cut_and_the_strip_whole(self) -> None:
         app, _client = agent_app()
-        self.assertEqual(mode_row(app), f"{STRIP} · esc interrupt · /steer <text> st…")
+        self.assertEqual(mode_row(app), f"{STRIP} · esc interrupt · /steer <t…")
 
     def test_the_spinner_turns_with_the_clock(self) -> None:
         now = [0.0]
@@ -233,12 +233,12 @@ class StripTests(unittest.TestCase):
                 self.assertEqual(mode_row(app), row)
 
     def test_the_effort_stays_on_the_right_while_the_strip_leaves_it_room(self) -> None:
-        app, _client = agent_app(cols=100)
+        app, _client = agent_app(cols=110)
         app.effort = "high"
         row = mode_row(app)
         self.assertTrue(row.startswith(f"{STRIP} · {BUSY_HINT}"), row)
         self.assertTrue(row.endswith("effort high"), row)
-        self.assertEqual(len(row), 100)
+        self.assertEqual(len(row), 110)
 
     def test_cut_short_the_hint_goes_first_then_the_effort_then_the_strip_and_never_the_label(self) -> None:
         roster = Roster()
@@ -270,17 +270,17 @@ class StripTests(unittest.TestCase):
                 if "2 agents ↓" in row:
                     seen.add("collapsed")
         self.assertEqual(seen, {"strip", "effort", "hint", "collapsed"})
-        # Two widths where the rules show. At 68 the strip is whole, the hint is cut to a letter and the
-        # effort has no room; five cells narrower the strip no longer fits, counts its agents, and the
-        # room that frees goes to the effort and what is left of the hint.
+        # Two widths where the rules show. At 75 the strip is whole, the hint is cut to a letter and the
+        # effort has no room; at 62 the strip no longer fits, counts its agents, and the room that frees
+        # goes to the effort and what is left of the hint.
         rows = {}
-        for width in (68, 62):
+        for width in (75, 62):
             strip = roster.strip_line(width - strip_column(MODE_ACCEPT, DEFAULT_THEME), DEFAULT_THEME, 0)[0]
             rows[width] = line_text(
                 mode_row_line(mode=MODE_ACCEPT, busy=True, queued=0, keyboard_protocol=False, effort="xhigh",
                               width=width, theme=DEFAULT_THEME, strip=strip)
             )
-        self.assertEqual(rows[68], f"{label} · {STRIP} · a…")
+        self.assertEqual(rows[75], f"{label} · {STRIP} · a…")
         self.assertEqual(rows[62], f"{label} · ● 2 agents ↓ · approvals of…   effort xhigh")
 
     def test_the_strip_starts_right_after_the_label_and_at_the_edge_without_one(self) -> None:

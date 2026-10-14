@@ -1083,12 +1083,12 @@ class LeftSessionStateTests(unittest.TestCase):
     def test_a_new_session_after_a_resumed_launch_no_longer_says_resumed(self) -> None:
         app, client = make_app()
         app.stored_id = "stored-old"
-        app.banner_record = {"model": "m", "cwd": "~/p", "resumed": "stored-old"}
+        app.banner_record = {"cwd": "~/p", "resumed": "stored-old"}
         app._new_session("")
         answer(app, client, self.NEW)
-        self.assertEqual(app.banner_record, {"model": "m2", "cwd": "/p", "resumed": ""})
+        self.assertEqual(app.banner_record, {"cwd": "/p", "resumed": ""})
         app._redraw("")
-        self.assertEqual(app.banner_facts, {"model": "m2", "cwd": "/p", "resumed": ""})
+        self.assertEqual(app.banner_facts, {"cwd": "/p", "resumed": ""})
 
     def test_an_image_attached_in_the_session_left_is_no_chip_here_and_says_so(self) -> None:
         for start, result in (
@@ -1164,7 +1164,7 @@ class StartupWaitsOnlyForTheSessionTests(unittest.TestCase):
         app = App(ScriptedTerminal(), client, {}, poller=FakePoller())  # type: ignore[arg-type]
         app.startup()
         self.assertEqual(client.awaited, ["session.create"])
-        self.assertEqual([method for method, _params in client.calls], ["config.get", "commands.catalog"])
+        self.assertEqual([method for method, _params in client.calls], ["config.get", "commands.catalog", "session.list"])
         self.assertEqual(app.busy_mode, "queue")  # Hermes' own default, until config.get answers
         type_text(app, "/")
         self.assertTrue(app._menu_rows())  # no catalog yet: the TUI's own commands still complete

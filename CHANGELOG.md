@@ -50,7 +50,12 @@ All notable changes will be documented here.
   list, `x` twice interrupts the highlighted agent and `s` steers it with the
   next line you send. The plan panel follows Hermes' `todo.updated` at once
   instead of waiting 2 to 8 s for the HUD's next poll. Every repaint is one
-  synchronized update (DECSET 2026).
+  synchronized update (DECSET 2026). While Hermes asks something, the mode row
+  names that question's keys and the working row no longer offers Esc for an
+  interrupt; the strip ends with `↓ agents`; a narrow approval keeps a key hint
+  and a wrapped command its indent; the banner is one row (the model is on the
+  status line, the keys on the mode row) and a fresh session names the last one
+  with its `/resume` command.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

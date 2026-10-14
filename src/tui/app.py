@@ -166,7 +166,16 @@ from .style import CSI, Line, Span, Style
 from .subagents import Hit, Roster
 from .terminal import Terminal, background_from_colorfgbg, terminal_name, terminal_supported
 from .theme import DEFAULT_THEME, LIGHT_STAND_IN, Theme, build_theme, is_light, theme_named
-from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, as_text, block_rows, compact_count
+from .transcript import (
+    NOTICE_ERROR,
+    NOTICE_WARN,
+    AssistantBlock,
+    NoticeBlock,
+    Transcript,
+    as_text,
+    block_rows,
+    compact_count,
+)
 from .width import cell_width, line_width, truncate_left, truncate_line
 from ..version import __version__
 
@@ -223,7 +232,9 @@ TERMINATE_GRACE_SECONDS = 2.0
 EXIT_SIGNALS = ("SIGTERM", "SIGHUP")
 
 BANNER_BRAND = "⚚ OH-MY-HERMES"
-BANNER_HINT = "/ commands · @ files · ? shortcuts · ⇧⇥ modes"
+# A fresh session says where the last one is (`session.list`), while nothing has been sent yet.
+LAST_SESSION_LIMIT = 3
+LAST_SESSION_NOTICE = "↺ last session: {label} · /resume {id} reopens it"
 PLACEHOLDER = "Ask Hermes anything"
 BARE_HERMES_NOTE = "Bare `hermes` opens Hermes' own terminal."
 
@@ -573,15 +584,16 @@ def short_path(path: str, home: str) -> str:
 _BANNER_MIN_PATH_CELLS = 12
 
 
-def banner_lines(*, model: str, cwd: str, resumed: str, theme: Theme, width: int) -> list[Line]:
-    """The header flushed to scrollback once, before the first frame, and the hint under it.
+def banner_lines(*, cwd: str, resumed: str, theme: Theme, width: int) -> list[Line]:
+    """The header flushed to scrollback once, before the first frame, and a blank row under it.
 
-    The header is one row at `width`: the working directory is shortened from
-    the left to what is left over (and dropped when that is too little), and
-    whatever still overflows is cut at the edge rather than wrapped.
+    The header is one row at `width`: the brand, the version, the session it
+    resumed and the working directory, shortened from the left to what is
+    left over (and dropped when that is too little); whatever still
+    overflows is cut at the edge rather than wrapped. The model is the status
+    line's, and the keys the mode row's.
     """
     facts = [f"resumed {resumed}"] if resumed else []
-    facts += [model] if model else []
 
     def header(path: str) -> Line:
         shown = [*facts, path] if path else facts
@@ -593,7 +605,7 @@ def banner_lines(*, model: str, cwd: str, resumed: str, theme: Theme, width: int
 
     room = width - line_width(header("")) - len(" · ")
     path = truncate_left(cwd, room) if cwd and room >= _BANNER_MIN_PATH_CELLS else ""
-    return [truncate_line(header(path), width), truncate_line((Span(BANNER_HINT, theme.hint),), width), ()]
+    return [truncate_line(header(path), width), ()]
 
 
 def attachment_from(result: Mapping[str, Any]) -> Attachment | None:
@@ -920,16 +932,29 @@ class App(ModesMixin, AgentViewMixin):
         self._adopt_session(result, fallback_stored=resume)
         self._request("config.get", {"key": "full"}, self._take_busy_mode, self._on_settings_refused)
         self._refresh_catalog()
+        if not resume:
+            self._ask_last_session()
         self.banner_record = self._banner_record(result, resumed=self.stored_id if resume else "")
         self.banner_facts = dict(self.banner_record)
         if resume:
             self._draw_history(result.get("messages"))
         self._redeliver(result.get("open_requests"))
 
+    def _ask_last_session(self) -> None:
+        """Ask for the stored sessions, to say under the banner where the last one is; a refusal says nothing."""
+        self._request("session.list", {"limit": LAST_SESSION_LIMIT}, self._on_last_session, lambda error: True)
+
+    def _on_last_session(self, result: Mapping[str, Any]) -> None:
+        """Name the newest other session that has messages, unless the person has started already."""
+        started = any(not isinstance(block, NoticeBlock) for block in self.transcript.blocks)
+        row = next((row for row in session_rows(result) if row.id != self.stored_id and row.message_count > 0), None)
+        if row is not None and not started:
+            self.transcript.add_notice(LAST_SESSION_NOTICE.format(label=row.label, id=row.id))
+
     def _banner_record(self, result: Mapping[str, Any], resumed: str) -> dict[str, str]:
         info = result.get("info")
         cwd = (as_text(info.get("cwd")) if isinstance(info, dict) else "") or self._create_params().get("cwd", "")
-        return {"model": self.model, "cwd": short_path(cwd, self.environ.get("HOME", "")), "resumed": resumed}
+        return {"cwd": short_path(cwd, self.environ.get("HOME", "")), "resumed": resumed}
 
     def _redeliver(self, open_requests: object) -> None:
         """A resumed session's open requests, delivered as live ones."""
@@ -2842,7 +2867,9 @@ class App(ModesMixin, AgentViewMixin):
         say, say_style = "", None
         armed = self.escape_armed
         steered = self.roster.agents.get(self.agent_steer or "")
-        if steered is not None:
+        if self.slot is not None:
+            say = self.slot.keys
+        elif steered is not None:
             say, say_style = STEER_SAY.format(name=steered.name), self.theme.accent
         elif self.rewind is not None:
             say, say_style = REWIND_SAY.format(ordinal=self.rewind.ordinal), self.theme.warn
@@ -2897,7 +2924,8 @@ class App(ModesMixin, AgentViewMixin):
             elapsed = elapsed_text(now - (self.busy_since or now))
             tokens = self._turn_tokens()
             written = f" · ↓{compact_count(tokens)} tokens" if tokens else ""
-            row = f"{spinner} {text} ({elapsed}{written} · {INTERRUPT_HINT})"
+            interrupt = f" · {INTERRUPT_HINT}" if self.slot is None else ""  # a question gives Esc its own meaning
+            row = f"{spinner} {text} ({elapsed}{written}{interrupt})"
             lines.append(truncate_line((Span(row, self.theme.muted),), cols))
         return lines
 

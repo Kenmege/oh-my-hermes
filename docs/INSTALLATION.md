@@ -320,10 +320,16 @@ run and approval decision stays Hermes'; the screen is OMH's.
   menu), the prompts queued behind the running turn (`⧗`, up to three named
   and the rest counted), the composer framed by a rule above and below it, a
   mode row, and a status line with the model, context use (warn from 80 %
-  full, bad from 95 %) and what the session is doing. The version is on the
-  banner.
+  full, bad from 95 %) and what the session is doing. The banner above the
+  session is one row: the brand, the version, the session it resumed and the
+  working directory. A fresh session says under it where the last one is
+  (`↺ last session: <title> · /resume <id> reopens it`) until you send
+  something.
 - The mode row names the input mode, or the keys that matter right now, and
-  the reasoning effort when Hermes reports one; both rules take the mode's
+  the reasoning effort when Hermes reports one. While Hermes asks something
+  it names that question's keys (`←→ pick · enter confirms · d or esc
+  denies`) and the working row stops offering Esc for an interrupt, so Esc
+  means one thing on the screen. Both rules take the mode's
   glyph and colour, so the mode reads from the frame as well as the label.
   A short terminal drops the mode row first, then the lower rule; without the
   mode row the status line names the mode (`⏵⏵ accept`, `⏸ plan`) whenever it
@@ -344,7 +350,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - While a turn has delegated work, the mode row carries a strip of its
   subagents, each named by the first words of its goal, numbered (`1·`, `2·`)
   when two goals start alike
-  (`● main  ⠹ find usages of  ○ read the diff  ↓`), and the status line says
+  (`● main  ⠹ find usages of  ○ read the diff  ↓ agents`, or
+  `● 2 agents ↓` where the names do not fit), and the status line says
   `idle · 2 agents running` while agents outlive the turn. The strip and the
   list are the one place agents show while they hold any: the HUD panel's
   `[Agents]` block steps aside for them and the plan keeps its rows. Down on an empty composer
@@ -410,6 +417,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   allow this session, in that order, with deny selected; allowing takes the
   Right arrow and then Enter (Left and Right stop at either end, Up and Down
   do nothing), `d` or `n` denies, and Enter on an untouched approval denies.
+  A narrow terminal shortens the labels and keeps a key hint (`d denies`); a
+  long command wraps under its own indent.
   Keys pressed in the first moment after any question appears are ignored,
   Enter included, so typing that was meant for the composer cannot answer it.
   Approving a command permanently stays a choice for `hermes --tui`. The

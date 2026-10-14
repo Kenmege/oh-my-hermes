@@ -100,7 +100,8 @@ DONE_MARK = "○"
 FAILED_MARK = "✗"
 QUEUED_MARK = "◌"
 INTERRUPTED_MARK = "▪"
-OPEN_MARK = "↓"
+OPEN_MARK = "↓ agents"  # what Down opens, at the end of the strip
+COLLAPSED_OPEN_MARK = "↓"  # after `2 agents`, which already says it
 NUMBER_MARK = "·"  # between the number and the name of agents whose names match on the strip
 SELECTED_MARK = "▸ "
 UNSELECTED_MARK = "  "
@@ -416,7 +417,7 @@ class Roster:
         }
 
     def strip_line(self, width: int, theme: Theme, spinner_frame: int) -> tuple[Line, tuple[Hit, ...]]:
-        """`● main  ⠹ explore  ○ review  ↓`, and the cells each entry covers on it.
+        """`● main  ⠹ explore  ○ review  ↓ agents`, and the cells each entry covers on it.
 
         A running agent shows frame `spinner_frame` of the spinner, a finished
         one `○`, a failed one `✗`. Agents whose names match are numbered
@@ -448,7 +449,7 @@ class Roster:
     def _collapsed_strip(self, width: int, theme: Theme) -> Line:
         count = len(self.agents)
         more = "+" if self.evicted else ""
-        label = f"{count}{more} agent{'' if count == 1 else 's'} {OPEN_MARK}"
+        label = f"{count}{more} agent{'' if count == 1 else 's'} {COLLAPSED_OPEN_MARK}"
         return truncate_line((Span(f"{MAIN_MARK} ", theme.accent), Span(label, theme.hint)), width)
 
     def list_lines(

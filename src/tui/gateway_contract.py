@@ -38,7 +38,8 @@ DRIFT_ERROR_CODES = frozenset({PARAM_REJECTED, METHOD_NOT_FOUND})
 # made during a session it ends the session (`App._on_response`). An older Hermes (0250c8bcae: SkillsReloadParams
 # takes no field) rejects `skills.reload {session_id}` with 4000, which must not cost the person their session.
 # `config.get` is answered after the first frame and only sets the busy mode, which has a default (queue).
-OPTIONAL_METHODS = frozenset({"commands.catalog", "config.get", "skills.reload"})
+# `session.list` is asked unprompted at the start of a fresh session, only to name the last one.
+OPTIONAL_METHODS = frozenset({"commands.catalog", "config.get", "session.list", "skills.reload"})
 
 # Methods the TUI calls, with the only keys it ever sends. Sending a key outside
 # this map is a bug: a Hermes that does not know it rejects the whole call.

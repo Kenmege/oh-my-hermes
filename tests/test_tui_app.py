@@ -49,7 +49,6 @@ from _vt_screen import VTScreen
 from omh.tui import terminal as terminal_module
 from omh.skin_pack import hex_to_rgb, theme_for_name, write_theme_choice
 from omh.tui.app import (
-    BANNER_HINT,
     EXIT_HINT,
     SLOT_ARM_SECONDS,
     App,
@@ -77,8 +76,8 @@ RULE_MARK = "────"
 # Between the composer and the status line on these 24-row terminals: the bottom rule and the mode row.
 UNDER_COMPOSER = 2
 # Only the session call is awaited. The catalog is read after the session, naming it, so project-local skills
-# are listed for its workspace.
-STARTUP_METHODS = ["client.capabilities", "session.create", "config.get", "commands.catalog"]
+# are listed for its workspace; a fresh session then asks for the stored sessions, to name the last one.
+STARTUP_METHODS = ["client.capabilities", "session.create", "config.get", "commands.catalog", "session.list"]
 NO_TERMIOS = terminal_module.termios is None
 TURN_CANCELLED = "Turn cancelled before the agent was ready"
 
@@ -87,6 +86,8 @@ def startup_answers() -> tuple[tuple[str, dict], ...]:
     return (
         ("config.get", {"result": {"config": {}}}),
         ("commands.catalog", recorded_answer("session", "commands_catalog")),
+        # The last-session lookup a fresh session makes: the recording lists only the session itself.
+        ("session.list", recorded_answer("session", "session_list")),
     )
 
 
@@ -379,7 +380,11 @@ class StartupRefusalTests(AppTestCase):
     def test_drift_on_the_busy_mode_call_is_a_notice_and_the_session_goes_on(self) -> None:
         # config.get is answered after the first frame, and the busy mode has a default: its drift costs nothing.
         drift = recorded_answer("session", "drift_reply")
-        answers = (("config.get", drift), ("commands.catalog", recorded_answer("session", "commands_catalog")))
+        answers = (
+            ("config.get", drift),
+            ("commands.catalog", recorded_answer("session", "commands_catalog")),
+            ("session.list", recorded_answer("session", "session_list")),
+        )
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
         run.terminal.script(
             Step(b"\x04", when=lambda: "did not send its settings" in run.terminal.history() and run.terminal.idle(),
@@ -765,9 +770,9 @@ class SessionTests(AppTestCase):
                 drawn = [line for line in screen if line]
                 self.assertEqual(sum(STATUS_MARK in line for line in screen), 1, screen)
                 self.assertEqual(sum(RULE_MARK in line for line in screen), 2, screen)
-                # The redrawn session (banner + hint) and the region (rule, composer, rule, mode row, status),
+                # The redrawn session (the banner) and the region (rule, composer, rule, mode row, status),
                 # nothing else.
-                self.assertEqual(len(drawn), 7, screen)
+                self.assertEqual(len(drawn), 6, screen)
                 self.assertTrue(drawn[0].startswith("⚚ OH-MY-HERMES"), screen)
                 self.assertTrue(all(len(line) <= cols for line in screen))
 
@@ -1330,6 +1335,7 @@ def busy_mode_answers(mode: str) -> tuple[tuple[str, dict], ...]:
     return (
         ("config.get", {"result": {"config": {"display": {"busy_input_mode": mode}}}}),
         ("commands.catalog", recorded_answer("session", "commands_catalog")),
+        ("session.list", recorded_answer("session", "session_list")),
     )
 
 
@@ -1375,9 +1381,9 @@ class OpeningTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         history = run.terminal.screen.history()
-        self.assertEqual(
-            history[:2], [f"⚚ OH-MY-HERMES v{__version__} · deepseek/deepseek-v4.1-flash-ultrafast · ~/project", BANNER_HINT]
-        )
+        # One row: the model is the status line's and the keys the mode row's.
+        self.assertEqual(history[0], f"⚚ OH-MY-HERMES v{__version__} · ~/project")
+        self.assertEqual([row for row in history[1:] if row], [])
 
     def test_the_banner_is_on_screen_at_the_first_frame_not_pushed_into_scrollback(self) -> None:
         # The first frame fills the screen with pad rows; the banner must land in them.
@@ -1391,7 +1397,7 @@ class OpeningTests(AppTestCase):
         self.assert_clean_run(run)
         screen = run.terminal.captures["first"]
         self.assertTrue(screen[0].startswith("⚚ OH-MY-HERMES"), screen[:3])
-        self.assertEqual(screen[1], BANNER_HINT)
+        self.assertEqual(screen[1], "")
         self.assertEqual(run.terminal.screen.scrollback, [])
 
     def test_the_banner_stays_one_row_and_keeps_the_end_of_a_long_path(self) -> None:
@@ -1400,17 +1406,15 @@ class OpeningTests(AppTestCase):
         cwd = "/private/tmp/claude-501/a-very-long-scratch-directory-name/session/scratchpad/m9/project"
         for width in (40, 60, 80, 110, 200):
             with self.subTest(width=width):
-                header, hint, _blank = banner_lines(model="deepseek/deepseek-v4.1-flash-ultrafast", cwd=cwd,
-                                                    resumed="", theme=DEFAULT_THEME, width=width)
+                header, _blank = banner_lines(cwd=cwd, resumed="", theme=DEFAULT_THEME, width=width)
                 text = line_text(header)
                 self.assertLessEqual(line_width(header), width)
-                self.assertLessEqual(line_width(hint), width)
                 if "…" in text and "m9/project" not in text and width >= 110:
                     self.fail(f"the path lost its end at width {width}: {text}")
-        wide = line_text(banner_lines(model="m", cwd=cwd, resumed="", theme=DEFAULT_THEME, width=110)[0])
+        wide = line_text(banner_lines(cwd=cwd, resumed="", theme=DEFAULT_THEME, width=110)[0])
         self.assertTrue(wide.endswith("m9/project"), wide)
-        narrow = line_text(banner_lines(model="a-long-model-name-that-fills-the-row", cwd=cwd,
-                                        resumed="", theme=DEFAULT_THEME, width=60)[0])
+        narrow = line_text(banner_lines(cwd=cwd, resumed="a-long-session-id-that-fills-the-row-and-more", theme=DEFAULT_THEME,
+                                        width=60)[0])
         self.assertNotIn("/private", narrow)
 
     def test_the_recorded_default_skin_paints_sky_and_an_omh_skin_paints_its_theme(self) -> None:
@@ -1459,8 +1463,9 @@ class OpeningTests(AppTestCase):
         self.assert_clean_run(run)
         history = run.terminal.screen.history()
         self.assertTrue(history[0].startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {STORED_ID}"))
+        self.assertEqual(run.calls("session.list"), [])  # a resumed session needs no pointer to the last one
         self.assertEqual(
-            history[3:13],
+            history[2:12],
             [
                 "› What is in this repo?",
                 "",
@@ -1974,8 +1979,8 @@ class SessionSwitchTests(AppTestCase):
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        (listing,) = run.calls("session.list")
-        self.assertEqual(listing["params"], {"limit": 50})
+        startup, listing = run.calls("session.list")  # the fresh session's last-session lookup, then /sessions
+        self.assertEqual((startup["params"], listing["params"]), ({"limit": 3}, {"limit": 50}))
         picker = "\n".join(terminal.captures["picker"])
         self.assertIn("● Reply with ok", picker)
         self.assertIn("2 messages", picker)
@@ -2008,7 +2013,8 @@ class SessionSwitchTests(AppTestCase):
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        self.assertEqual(run.calls("session.list"), [])
+        # Only the fresh session's last-session lookup: an id needs no listing.
+        self.assertEqual([call["params"] for call in run.calls("session.list")], [{"limit": 3}])
         (resume,) = run.calls("session.resume")
         self.assertEqual(resume["params"], {"session_id": OTHER_STORED_ID, "cols": 80})
         self.assertEqual(run.calls("session.close")[0]["params"], {"session_id": LIVE_ID})

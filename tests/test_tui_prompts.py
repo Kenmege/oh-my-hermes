@@ -147,7 +147,7 @@ class ApprovalTests(unittest.TestCase):
         total = command.count("\n") + 1
         self.assertEqual(len(rows), 6)
         self.assertIn("script execution", text[0])
-        self.assertEqual([unbarred(row) for row in text[1:4]], ['  python3 -c "', "def is_prime(n):", "    if n < 2:"])
+        self.assertEqual([unbarred(row) for row in text[1:4]], ['  python3 -c "', "  def is_prime(n):", "      if n < 2:"])
         self.assertEqual(unbarred(text[4]), f"  … +{total - 3} more lines")
         self.assertEqual(rows[4][1].style, DEFAULT_THEME.muted)
         self.assertIn("deny", text[5])
@@ -161,7 +161,7 @@ class ApprovalTests(unittest.TestCase):
     def test_a_command_that_fits_is_shown_whole_with_no_marker(self) -> None:
         approval = slot("approval", {**APPROVAL, "command": "one\ntwo"})
         text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=6))
-        self.assertEqual([unbarred(row) for row in text[1:3]], ["  one", "two"])
+        self.assertEqual([unbarred(row) for row in text[1:3]], ["  one", "  two"])
         self.assertEqual(len(text), 4)
         self.assertFalse(any("more line" in row for row in text))
 
@@ -181,7 +181,8 @@ class ApprovalTests(unittest.TestCase):
         for width in range(18, 120):
             with self.subTest(width=width):
                 # The labels only: the hint after them names `d`, which does deny.
-                labels = unbarred(line_text(approval.lines(width, DEFAULT_THEME, max_rows=4)[-1])).split("←→")[0].split()
+                row = unbarred(line_text(approval.lines(width, DEFAULT_THEME, max_rows=4)[-1]))
+                labels = row.split("←→")[0].split("  d denies")[0].split()
                 self.assertFalse([word for word in labels if len(word) == 1 and word.isalpha()], labels)
 
     def test_every_row_hangs_off_a_warn_bar_and_the_command_reads_as_code(self) -> None:

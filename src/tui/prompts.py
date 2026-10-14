@@ -32,6 +32,7 @@ from typing import Any
 
 from . import gateway_contract as contract
 from .keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Paste
+from .markdown import wrap_prefixed
 from .style import Line, Span
 from .theme import Theme
 from .width import line_width, truncate_line, wrap_line
@@ -50,6 +51,11 @@ _DENY_KEYS = frozenset("dn")
 # The keys that pick a clarify choice. `str.isdigit` also admits "²" or "٣", which `int` rejects.
 CHOICE_DIGITS = "123456789"
 SLOT_BAR = "▌ "
+# Each question's keys, for the mode row while it is open: Esc then has one meaning on the screen.
+APPROVAL_KEYS = "←→ pick · enter confirms · d or esc denies"
+CLARIFY_CHOICE_KEYS = "1-9 or ↑↓ enter picks · or type an answer · esc cancels"
+CLARIFY_TEXT_KEYS = "type an answer · enter sends · esc cancels"
+VALUE_KEYS = "type it · enter sends · esc declines"
 
 _DECLINE_NOTICES = {
     "vault.unlock_prompt": "Hermes asked to unlock a password vault. Vault prompts run in `hermes --tui`; declined.",
@@ -96,6 +102,15 @@ class PromptSlot:
     def wants_text(self) -> bool:
         """Whether submitted composer text answers this slot (clarify free text, value prompts)."""
         return self.method != "approval"
+
+    @property
+    def keys(self) -> str:
+        """The keys this question takes, said on the mode row."""
+        if self.method == "approval":
+            return APPROVAL_KEYS
+        if self.method == "clarify":
+            return CLARIFY_CHOICE_KEYS if self._current_choices() else CLARIFY_TEXT_KEYS
+        return VALUE_KEYS
 
     def decline(self) -> Answer:
         return _decline(self.request_id, self.method)
@@ -223,7 +238,8 @@ class PromptSlot:
         choices = self._approval_choice_row(width, theme)
         if max_rows <= 1:
             return [choices]
-        command_rows = wrap_line((Span("  " + command, theme.code),), width) if command else []
+        indent: Line = (Span("  ", theme.code),)  # every row of the command under one indent
+        command_rows = wrap_prefixed((Span(command, theme.code),), indent, indent, width) if command else []
         room = max_rows - 2
         if len(command_rows) > room:
             kept = room - 1 if room >= 2 else room
@@ -236,7 +252,9 @@ class PromptSlot:
     def _approval_choice_row(self, width: int, theme: Theme) -> Line:
         """The choices on one row, deny first; shorter labels when the long ones would not all fit."""
         keys = "  ←→ then Enter · d or Esc denies"
-        for form, hint in (("long", keys), ("short", keys), ("short", ""), ("narrow", "")):
+        short = "  ←→ ⏎ · d denies"
+        ladder = (("long", keys), ("short", keys), ("short", short), ("narrow", short), ("narrow", "  d denies"), ("narrow", ""))
+        for form, hint in ladder:
             spans: list[Span] = [Span("  ", theme.text)]
             for index, choice in enumerate(self.approval_choices()):
                 style = theme.menu_current if index == self.selected else theme.text
