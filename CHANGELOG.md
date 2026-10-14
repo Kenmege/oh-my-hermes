@@ -52,6 +52,20 @@ All notable changes will be documented here.
   leaving `[31m` behind as text. The widget, the Desktop pane and the OMH TUI's
   panels now share one allowlist and one escape rule and render the same text.
 
+- **Temp directories, RFC 4122 UUID directories and Hermes session ids no
+  longer read as credentials.** The opaque-value check took the hyphens of a
+  UUID, a run of Python `tempfile` names, or a numbered temp directory among
+  words for a secret split into fragments, and a path segment that opened with
+  `_` or `-` (`_temp`, `-Users-name-project`) or held an uppercase UUID made a
+  whole path suspect. A memory capture whose `source_ref` was such a path
+  stored it as `[redacted]` and went to review instead of auto-approval, and
+  work-resume items and completion summaries carrying one became `[redacted]`.
+  Over 2,000 generated paths per shape, a UUID directory went from 100%
+  flagged to 0%, three chained `tempfile` names from 51.8% to 0%, a Hermes
+  request dump name from 7.8% to 0%, and a Hermes session directory from 1.7%
+  to 0%. A value split into fragments beside one of these names is still
+  caught at the rate the same value is caught with nothing beside it, and
+  detection over 25,000 generated split secrets moved from 17,571 to 17,568.
 - **A new `spend-gate` skill shows what a spend will cost before the agent
   moves any money, and calls it done only on a receipt.** It covers every
   rail: a card checkout in a page, an HTTP 402 or pay-per-request call, a

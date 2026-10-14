@@ -702,6 +702,24 @@ class MemoryContractTests(unittest.TestCase):
                 self.assertEqual(captured["candidate"]["summary"], value)
                 self.assertEqual(captured["record"]["summary"], value)
 
+    def test_generated_temp_and_session_paths_stay_visible_as_capture_source_refs(self) -> None:
+        source_refs = (
+            "/tmp/6513270e-269e-4d37-b2a7-4de452e6b438/scratchpad/notes.md",
+            "/tmp/omh-shard-worker-1-p8ix4ea4/tmpq9om4894/fixture-checkout/.omh/memory",
+            "~/.hermes/sessions/20261202_120231_a3f9b8/transcript.jsonl",
+        )
+        for source_ref in source_refs:
+            with self.subTest(source_ref=source_ref), TemporaryDirectory() as tmp:
+                paths = resolve_paths(Path(tmp) / ".omh", Path(tmp) / ".hermes")
+                write_setup_profile(paths, memory_mode="auto-safe")
+
+                captured = capture_project_memory_candidate(
+                    paths, "Release notes live in docs/RELEASE.md", source_ref=source_ref
+                )
+
+                self.assertTrue(captured["auto_approved"])
+                self.assertEqual(captured["candidate"]["source_ref"], source_ref)
+
     def test_recall_pack_validator_rejects_credential_shaped_mapping_keys(self) -> None:
         credential = "gh" + "u_" + "a" * 36
         with TemporaryDirectory() as tmp:

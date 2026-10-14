@@ -624,6 +624,59 @@ class SafetyAndEvaluationTests(unittest.TestCase):
             with self.subTest(ordinary=ordinary):
                 self.assertEqual(governance.classify_memory_admission(ordinary)["status"], "safe")
 
+    def test_generated_temp_and_session_names_in_paths_are_safe(self) -> None:
+        for path in (
+            # An RFC 4122 UUID directory, lowercase and uppercase.
+            "/tmp/6513270e-269e-4d37-b2a7-4de452e6b438/scratchpad/notes.md",
+            "/home/runner/work/temp/9D40C482-7020-4F2E-9C50-65D22D209719/store",
+            # Python tempfile default names, alone and beside a prefixed temp directory.
+            "/tmp/tmp4thx4smx/tmpx500zn61/tmprr85sf0l/x",
+            "/tmp/omh-shard-worker-1-p8ix4ea4/tmpq9om4894/fixture-checkout/.omh/memory",
+            # One numbered segment among words.
+            "/tmp/omh-memory-retrieval-9o9uv9z1/memory/store.jsonl",
+            # A Hermes session id, as a directory and in a request dump name.
+            "~/.hermes/sessions/20261202_120231_a3f9b8/transcript.jsonl",
+            "~/.hermes/sessions/request_dump_20260816_105228_d9e7ac_20260816_105234_124851.json",
+            # Segments that open with "_" or "-".
+            "/home/runner/work/_temp/Release2026/notes",
+            "/var/folders/_w/1qvskb0n0f37qcm84fmrn6mc0000gn/T/tmpzw5fekk3/repo/.omh",
+            "/private/tmp/claude-501/-Users-alice-proj/6513270e-269e-4d37-b2a7-4de452e6b438/scratchpad/notes.md",
+            "/private/tmp/claude-501/-Users-alice-Desktop-proj42/scratchpad/notes.md",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(governance.classify_memory_admission(path)["status"], "safe")
+                self.assertFalse(governance.contains_credential_like_material(path))
+
+    def test_split_values_beside_generated_names_still_need_review(self) -> None:
+        split = "a9b8c7d6/e5f4g3h2/j1k0m9n8/p7q6r5s4"
+        for content in (
+            f"/tmp/6513270e-269e-4d37-b2a7-4de452e6b438/{split}/x",
+            f"{split}/6513270e-269e-4d37-b2a7-4de452e6b438",
+            f"/tmp/tmp4thx4smx/{split}/x",
+            f"~/.hermes/sessions/20261202_120231_a3f9b8/{split}",
+            f"/safe/tmp{split}/artifact.txt",
+            # A tempfile name counts only as a whole segment or word, and a
+            # UUID only when no letter or digit touches it.
+            "/safe/tmpk2j3h4g5.abcdefgh.q1w2e3r4.zxcvbnml",
+            "/x/aaaa6513270e-269e-4d37-b2a7-4de452e6b438-k2j3h4g5-q1w2e3r4",
+            # Digits in two fragments are still a split value's signal.
+            "/safe/k2j3h4g5/abcdefgh/q1w2e3r4/zxcvbnml/artifact.txt",
+            "k2j3h4g5.abcdefgh.q1w2e3r4.zxcvbnml",
+            # A leading "_" or "-" does not exempt what follows it, in a
+            # POSIX or a Windows path (alone or as a word of a segment), nor a
+            # split fragment that opens with it and mixes case with digits.
+            "/safe/_Ab3dEf4Gh5_Ij6Kl7Mn8Op9Qr0/artifact.txt",
+            "C:\\Users\\alice\\AppData\\Local\\app\\_hafcfgwpbbbw43jflha65pe83ef6cr9et4wrpm37",
+            "C:\\Users\\alice\\AppData\\Local\\app\\-hafcfgwpbbbw43jflha65pe83ef6cr9et4wrpm37",
+            "C:\\Users\\alice\\AppData\\Local\\app\\_r8ysx4llopaaprby9ismblmk6x5qmt5kbp59iu7b notes",
+            "C:\\Users\\alice\\AppData\\Local\\app\\notes _r8ysx4llopaaprby9ismblmk6x5qmt5kbp59iu7b",
+            "/home/alice/app/Ab3dEf4Gh5/_Ij6Kl7Mn8Op9/Qr0St1Uv2W",
+            "C:\\Users\\alice\\app\\Ab3dEf4Gh5\\_Ij6Kl7Mn8Op9\\Qr0St1Uv2W",
+        ):
+            with self.subTest(content=content):
+                self.assertEqual(governance.classify_memory_admission(content)["status"], "needs_review")
+                self.assertTrue(governance.contains_credential_like_material(content))
+
     def test_plan_handoff_accepts_literal_windows_paths_without_weakening_credential_checks(self) -> None:
         artifact = {
             "schema_version": "hermes_plan/v1",

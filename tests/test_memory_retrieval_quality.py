@@ -917,11 +917,13 @@ class DelegationRecordTests(unittest.TestCase):
 
 class OpaqueLookingStorePathTests(unittest.TestCase):
     def test_a_store_under_an_opaque_looking_path_still_attaches_to_a_handoff(self) -> None:
-        # The CI shard runner's temp root plus tempfile's name: two random
-        # directory names beside "fixture" and "checkout". Before the pack
-        # dropped `store_dir`, the attach scan refused it as a split credential.
+        # Four random alphanumeric directory names, which the opaque-value
+        # check still reads as one value split at "/". Before the pack dropped
+        # `store_dir`, the attach scan refused such a store as a split
+        # credential. (The CI shard temp root this case first used is no
+        # longer flagged: tempfile names are generated names now.)
         root = Path(self.enterContext(TemporaryDirectory()))
-        project_root = root / "omh-shard-worker-1-2j7b1b0n" / "tmpxmoc4esc" / PARITY_PROJECT_IDENTITY
+        project_root = root / "k2j3h4g5" / "q1w2e3r4" / "z9x8c7v6" / "m5n4b3v2" / PARITY_PROJECT_IDENTITY
         (project_root / ".git").mkdir(parents=True)
         (project_root / ".git" / "config").write_text('[remote "origin"]\n url = https://example.invalid/memory-fixture.git\n', encoding="utf-8")
         paths = OmhPaths(project_root / ".omh", root / "hermes")
