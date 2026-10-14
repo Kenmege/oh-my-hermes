@@ -539,8 +539,8 @@ def _contains_symlink(path: Path, *, root: Path) -> bool:
     return root.is_symlink()
 
 
-def _child_files(directory: Path, *relative: str) -> list[Path]:
-    """Return every existing `directory/<child>/*relative` file.
+def _child_names(directory: Path) -> list[str]:
+    """The names of `directory`'s children that are not symlinks.
 
     `Path.glob` is tolerant by design: it swallows the `OSError` `os.scandir`
     raises on an unreadable directory and yields nothing, so a directory the
@@ -557,10 +557,14 @@ def _child_files(directory: Path, *relative: str) -> list[Path]:
     """
     try:
         with os.scandir(directory) as entries:
-            names = [entry.name for entry in entries if not entry.is_symlink()]
+            return [entry.name for entry in entries if not entry.is_symlink()]
     except (FileNotFoundError, NotADirectoryError):
         return []
-    candidates = [directory.joinpath(name, *relative) for name in names]
+
+
+def _child_files(directory: Path, *relative: str) -> list[Path]:
+    """Return every existing `directory/<child>/*relative` file (children read by `_child_names`)."""
+    candidates = [directory.joinpath(name, *relative) for name in _child_names(directory)]
     return [
         candidate
         for candidate in candidates
@@ -584,19 +588,15 @@ def _within_hud_cap(path: Path) -> bool:
 def _newest_hud_child_files(directory: Path, *relative: str, limit: int) -> list[Path]:
     """The first `limit` of `_hud_child_files` in reverse path order, checking only the children it gets to.
 
-    The names are read as `_child_files` reads them (an unreadable directory
-    raises) and sorted first, so a directory of thousands of runs costs the
-    HUD the newest few, not every one. Same result as `sorted(_hud_child_files(...), reverse=True)[:limit]`:
-    the paths sort the same way, and a child that is not a file within the
-    cap is passed over as it was dropped there.
+    The names are read by `_child_names`, as `_child_files` reads them (an
+    unreadable directory raises), and sorted first, so a directory of
+    thousands of runs costs the HUD the newest few, not every one. Same result
+    as `sorted(_hud_child_files(...), reverse=True)[:limit]`: the paths sort
+    the same way, and a child that is not a file within the cap is passed over
+    as it was dropped there.
     """
-    try:
-        with os.scandir(directory) as entries:
-            names = [entry.name for entry in entries if not entry.is_symlink()]
-    except (FileNotFoundError, NotADirectoryError):
-        return []
     found: list[Path] = []
-    for candidate in sorted((directory.joinpath(name, *relative) for name in names), reverse=True):
+    for candidate in sorted((directory.joinpath(name, *relative) for name in _child_names(directory)), reverse=True):
         if len(found) >= limit:
             break
         if not _contains_symlink(candidate, root=directory) and candidate.is_file() and _within_hud_cap(candidate):
