@@ -14,6 +14,7 @@ from omh.tui.style import Span, Style
 from omh.tui.width import (
     cell_width,
     char_width,
+    cluster_width,
     clusters,
     line_width,
     truncate,
@@ -96,6 +97,33 @@ class ClusterTests(unittest.TestCase):
 
     def test_a_control_never_absorbs_a_mark(self) -> None:
         self.assertEqual(clusters("\ń"), ["\n", "́"])
+
+
+class AsciiTests(unittest.TestCase):
+    """ASCII text skips normalizing and segmenting; each of its 128 code points must still measure as before."""
+
+    def test_every_ascii_code_point(self) -> None:
+        for code_point in range(128):
+            ch = chr(code_point)
+            cells = 0 if code_point < 0x20 or code_point == 0x7F else 1  # C0 controls and DEL draw nothing
+            with self.subTest(code_point=code_point):
+                self.assertEqual(clusters(ch), [ch])
+                self.assertEqual(cluster_width(ch), cells)
+                self.assertEqual(cell_width(ch), cells)
+                self.assertEqual(char_width(ch), cells)
+
+    def test_ascii_text_with_and_without_controls(self) -> None:
+        every = "".join(map(chr, range(128)))
+        self.assertEqual(clusters(every), list(every))
+        self.assertEqual(cell_width(every), 95)
+        self.assertEqual(cell_width("a\tb\x1bc\r\nd"), 4)
+        self.assertEqual(cell_width("plain words"), 11)
+        self.assertEqual(cluster_width("ab\x7f"), 2)
+
+    def test_a_mark_after_ascii_still_joins_its_letter(self) -> None:
+        self.assertEqual(clusters("e\u0301x"), ["é", "x"])
+        self.assertEqual(clusters(Q_ACUTE + "x"), [Q_ACUTE, "x"])
+        self.assertEqual(cell_width(Q_ACUTE + "x"), 2)
 
 
 class TruncateTests(unittest.TestCase):
