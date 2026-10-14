@@ -1130,19 +1130,38 @@ the same store and query always score the same. It has two keys:
   closed and only the query is split; records keep every word:
   - English interrogatives, auxiliaries, pronouns, articles and common
     prepositions (`_QUERY_FUNCTION_WORDS`);
-  - chat fillers such as remind, quick, question, anyone, tell and know
-    (`_QUERY_CHAT_FILLERS`);
-  - Korean bare verb endings and colloquial fillers (어케, 어캐, 어떡해, 혹시)
-    matched as whole runs (`_QUERY_FUNCTION_RUNS`);
+  - chat fillers such as remind, quick, question, anyone, tell and know, and
+    hedges and intensifiers such as honestly, literally, basically, actually,
+    kinda and really (`_QUERY_CHAT_FILLERS`);
+  - Korean bare verb endings, colloquial and discourse fillers (어케, 어캐,
+    어떡해, 혹시, 그냥, 근데, 일단), intensifiers and hedges (진짜, 정말, 완전,
+    약간, 아마), and demonstratives (그거, 이게) matched as whole runs
+    (`_QUERY_FUNCTION_RUNS`);
   - any Korean run that starts with an interrogative (언제, 어떻게, 누가, 누구,
     어디, 뭐, 무슨, 몇, 왜) or with the stem of "tell me" or "teach me" (알려,
     가르쳐; `_QUERY_FUNCTION_RUN_PREFIXES`), so 언제쯤이야, 누가요 and
     알려주세요 go too;
-  - Japanese and Chinese interrogatives and request fillers (どう, 何, いつ,
-    誰, すれば, ですか, いい, 教えて, ください, 怎么, 什么, 谁, 请问, 一下, 怎么弄,
-    搞 ...; `_QUERY_FUNCTION_CJK`), cut out of a run before it is split into
-    bigrams, so "デプロイってどうすればいいですか" adds no coverage from its
-    request words.
+  - the particles and request or verb endings a Korean run ends in (은, 는,
+    이, 가, 으로, 에서, 이면, 인지 ...; 해, 해줘, 주세요, 해야, 하면, 돼, 됨 ...;
+    `_QUERY_KOREAN_SUFFIXES`). The longest listed suffix comes off, again
+    and again, while at least two syllables stay, and the query scores the
+    stem: 자동으로 as 자동, 확인해주세요 as 확인, while 경로 and 평가 stay
+    whole. A run that is one of them whole (해주세요, or 에서 in "main에서")
+    leaves nothing, and a stem that is itself a filler goes too (진짜로). The
+    stem's bigrams are a subset of the run's, so within the run the strip
+    adds no match: it moves the inflected run, the bigram that crosses into
+    the suffix and the suffix's own bigrams from coverage to ordering. The
+    suffixes are spelled, not parsed, so a noun of three or more syllables
+    that ends in a listed syllable is cut too (재시도 scores as 재시, 게이트웨이
+    as 게이트웨, 응답속도 as 응답속, each losing its last bigram and its whole
+    run to ordering), and a run that reduces to a stem which is itself a
+    listed suffix leaves nothing (인지도, like 해야돼; 인지 alone goes the
+    same way);
+  - Japanese and Chinese interrogatives, request fillers and wrappers (どう,
+    何, いつ, 誰, すれば, ですか, いい, 教えて, ください, って, なってる, 怎么, 什么,
+    什么时候, 谁, 请问, 一下, 怎么弄, 搞, 一般, 通常 ...; `_QUERY_FUNCTION_CJK`),
+    cut out of a run before it is split into bigrams, so
+    "デプロイってどうすればいいですか" adds no coverage from its request words.
 
   Listed words never make a record match and never add coverage: "how do we
   deploy?" once ranked "How expenses are filed ..." above every deploy record.
@@ -1153,7 +1172,13 @@ the same store and query always score the same. It has two keys:
   "CAN logger"; the check reads the raw string before lowercasing), and every
   listed word is content when no content word longer than two Latin letters is
   left: "what is it?" is scored on "what", and "where do thanks go?" on
-  "thanks" as well as "go". A two-character CJK word counts as a word there.
+  "thanks" as well as "go". A two-character CJK word counts as a word there,
+  and so does a two-letter word written in capitals (PR, CI, DB, but not the
+  interjections OK, HI, PS), which the same case rule reads as a name: "what
+  about CI" is scored on CI. The Korean suffix strip never causes the
+  fallback: when the stripped content collapses, the content without the
+  strip is tried first, so "pr 어떻게 해야돼" keeps 해야돼 as content, as
+  before the strip, and 어떻게 stays listed.
   A word not listed is content, and that is what coverage and the missing idf
   are for.
 - How the pieces were chosen, by measurement against the old scorer on the
@@ -1170,6 +1195,20 @@ the same store and query always score the same. It has two keys:
     none does.
   - Listed words ordering within a band is what serves the quick start guide;
     without it, standups and the guide tie and the record id decides.
+  - The Korean suffixes, the colloquial fillers in all four languages and the
+    Japanese and Chinese wrappers were measured against the scorer before
+    them on the pre-registered corpus and on the round-3 and round-4 blind
+    sets with their tie-flip twins. The pre-registered corpus served the same
+    packs; round 3 kept every verdict (one pack stopped serving a distractor
+    that matched only "basically"); round 4 gained five cases and its
+    tie-flip twin four; no case in those sets lost. Those sets were seen
+    while writing the change. Two later rounds were frozen by a writer who
+    never saw the code (24 owner-style cases each): 2 wins, 21 ties, 1 loss,
+    and 2 wins, 22 ties, 0 losses. The loss is a query whose topic record
+    shared the particle form (모델로) that now only orders records. Two
+    round-4 cases stay wrong: 피알 for PR is a transliteration no list covers,
+    and a request verb (확인) is a word, so "확인좀 해주세요 PR" ties the PR
+    record with a record about 확인 and the record id decides.
 - There are three fields. A summary hit is the unit and a tag hit weighs 2;
   the weighted counts saturate together, so a word in both the summary and a
   tag outranks a tag-only hit, which outranks a summary-only hit. The record

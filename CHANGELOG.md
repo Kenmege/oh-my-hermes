@@ -23,6 +23,29 @@ All notable changes will be documented here.
   as everyday wording, and paying with the person's card, or reviewing the
   pre-spend card, no longer opens the image-card skill, while an image card of
   "my card game stats" or "my card collection" still does.
+- **Memory recall no longer lets a colloquial query's particles, endings and
+  fillers decide which record leads.** A Korean query run loses the particles
+  and request or verb endings it ends in while two syllables stay (자동으로 is
+  scored as 자동, 확인해주세요 as 확인, 경로 stays whole), and a run that is
+  one of them whole (해주세요, 에서 after a Latin word) adds nothing. Korean
+  discourse fillers, intensifiers and demonstratives (그냥, 진짜, 그거 ...),
+  English hedges (honestly, literally, kinda, really ...) and the Japanese and
+  Chinese wrappers って, なってる, 什么时候 and 一般 join the closed query-side
+  lists. All of them still order records of equal coverage; records are
+  tokenized in full. The strip never makes a query fall back to every word
+  (which would promote 어떻게 or "what" to content): the unstripped content
+  is tried first, and a two-letter word written in capitals (PR, CI, DB) is
+  scored as a name, so "what about CI" no longer falls back either.
+  Measured against `origin/main` at 4d3c10141 with the
+  blind-round harness and its lead-record rule (distractor ids sort first, so
+  a tie goes against this change): round 4, 20 cases, 5 wins, 15 ties, 0
+  losses; its tie-flip twin 4 wins, 16 ties, 0 losses; round 3 and its twin
+  0 wins, 20 ties, 0 losses each; the 40-case pre-registered corpus served
+  identical packs. Those rounds were seen while writing the change. On two
+  rounds frozen by a writer who never saw the code (24 owner-style cases
+  each), it scored 2 wins, 21 ties, 1 loss and 2 wins, 22 ties, 0 losses. The
+  loss is a query whose topic record shared the particle form (모델로) that
+  now only orders records.
 
 - **Bare `omh` opens the OMH TUI, OMH's own terminal over Hermes' gateway.**
   `omh` runs `hermes --tui` with OMH's frontend in place of Hermes' Ink app,
