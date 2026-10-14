@@ -1118,6 +1118,31 @@ class LiveTailTickTests(unittest.TestCase):
         self.assertEqual([row for row in ticked if "streaming" in row], [row for row in first if "streaming" in row])
 
 
+class StartupWaitsOnlyForTheSessionTests(unittest.TestCase):
+    """The first frame needs the session alone: the busy mode and the catalog are answered in the loop."""
+
+    def test_only_the_session_call_is_awaited(self) -> None:
+        class Blocking(RecordingClient):
+            def __init__(self) -> None:
+                super().__init__()
+                self.awaited: list[str] = []
+
+            def call(self, method: str, params: dict, timeout: float = 30.0) -> dict:
+                self.awaited.append(method)
+                return {"session_id": SID, "stored_session_id": "stored-1", "info": {"model": "m"}}
+
+        client = Blocking()
+        app = App(ScriptedTerminal(), client, {}, poller=FakePoller())  # type: ignore[arg-type]
+        app.startup()
+        self.assertEqual(client.awaited, ["session.create"])
+        self.assertEqual([method for method, _params in client.calls], ["config.get", "commands.catalog"])
+        self.assertEqual(app.busy_mode, "queue")  # Hermes' own default, until config.get answers
+        type_text(app, "/")
+        self.assertTrue(app._menu_rows())  # no catalog yet: the TUI's own commands still complete
+        app._on_response(Response(1, {"config": {"display": {"busy_input_mode": "interrupt"}}}, None))
+        self.assertEqual(app.busy_mode, "interrupt")
+
+
 class ResumingTheLiveSessionTests(unittest.TestCase):
     """Hermes 6c61c3e27d resolves a title to the session already live and answers with its id (`_resume_reuse_live`)."""
 

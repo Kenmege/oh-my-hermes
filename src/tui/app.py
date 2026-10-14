@@ -5,8 +5,10 @@ frontend its environment. Everything that can stop the TUI from starting is
 settled before the first byte is drawn, and each such failure exits through
 `request_fallback` (the file `omh` named, then `FALLBACK_EXIT`), so `omh`
 opens Hermes' own terminal instead: a terminal that cannot run the TUI, a
-gateway that does not start, and a startup call this Hermes no longer
-understands. An attach hand-off is refused with exit 1 and a
+gateway that does not start, and a session call (create or resume) this
+Hermes refuses or no longer understands. The busy mode and the command
+catalog are asked for without waiting; drift in either is met in the loop,
+as drift in any call is. An attach hand-off is refused with exit 1 and a
 line naming `hermes --tui --resume <id>` (0 would make `omh` print a resume
 hint for a session this TUI never opened). SIGTERM and SIGHUP leave through
 `SystemExit(128 + signum)`, so the terminal is restored and the gateway reaped
@@ -742,22 +744,24 @@ class App(ModesMixin, AgentViewMixin):
     # ── startup ──
 
     def startup(self) -> None:
-        """Read the busy mode, open or resume the session, then ask for the command catalog for it.
+        """Open or resume the session, then ask for the busy mode and for the session's command catalog.
 
-        The catalog is asked for after the session and names it, because
-        Hermes discovers project-local skills for the session's workspace. It
-        is not awaited: its answer, or its failure, is handled in the loop like
-        any call made during the session. Raises `GatewayCallError` (drift on
-        either call here, or any error from the session call), `GatewayTimeout`
-        or `GatewayUnavailable`; the caller turns each into `FALLBACK_EXIT`.
+        Only the session call is awaited: the first frame needs nothing else.
+        The busy mode (`config.get`) and the catalog (asked for after the
+        session and naming it, because Hermes discovers project-local skills
+        for the session's workspace) are answered in the loop like any call
+        made during the session; until the busy mode arrives it is
+        `BUSY_QUEUE`, Hermes' own default. Raises `GatewayCallError`,
+        `GatewayTimeout` or `GatewayUnavailable` from the session call; the
+        caller turns each into `FALLBACK_EXIT`.
         """
-        self.busy_mode = busy_mode(self._optional_call("config.get", {"key": "full"}))
         resume = self.environ.get("HERMES_TUI_RESUME", "")
         if resume:
             result = self.client.call("session.resume", {"session_id": resume, "cols": self.size[0]})
         else:
             result = self.client.call("session.create", self._create_params())
         self._adopt_session(result, fallback_stored=resume)
+        self._request("config.get", {"key": "full"}, self._take_busy_mode, lambda error: True)
         self._refresh_catalog()
         self.banner_record = self._banner_record(result, resumed=self.stored_id if resume else "")
         self.banner_facts = dict(self.banner_record)
@@ -802,14 +806,9 @@ class App(ModesMixin, AgentViewMixin):
         if tools:
             self.transcript.add_notice("\n".join(tools))
 
-    def _optional_call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        """A startup call the TUI can do without, except when the answer is drift."""
-        try:
-            return self.client.call(method, params)
-        except GatewayCallError as error:
-            if error.drift:
-                raise
-            return {}
+    def _take_busy_mode(self, result: dict[str, Any]) -> None:
+        """`config.get`'s answer; a refusal other than drift keeps `BUSY_QUEUE` (drift is `_on_response`'s)."""
+        self.busy_mode = busy_mode(result)
 
     def _catalog_params(self) -> dict[str, Any]:
         return {"session_id": self.sid} if self.sid else {}
