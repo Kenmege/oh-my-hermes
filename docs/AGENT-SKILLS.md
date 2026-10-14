@@ -247,12 +247,12 @@ every workflow or a guarantee about other versions.
 
 | Host | Repo scan path | User installation | Discovery and caveats | Evidence class |
 | --- | --- | --- | --- | --- |
-| Claude Code | `.claude/skills/` mirror (observed 2.1.270) | `~/.claude/skills/` mirror | Repo `.agents/skills/` not discovered in two isolated runs; `.claude/skills/` discovery observed | `installed` read by OMH; later stages `probe_unsupported` (model session only) |
-| Codex | `.agents/skills/` | `~/.agents/skills/` | Model-selected progressive disclosure; standard-path contract | `installed` read by OMH; later stages `probe_unsupported` (model session only) |
-| Cursor | `.agents/skills/` | `~/.agents/skills/` | Standard-path support; user-scope scanning not independently verified | `installed` read by OMH; later stages `probe_unsupported` (no documented command) |
-| opencode | `.agents/skills/` | `~/.agents/skills/` | Permission-gated `skill` tool, implicit nomination; description must be 1-1024 characters | `installed` read by OMH; later stages `probe_unsupported` (model session only) |
-| OpenClaw | `.agents/skills/` | `~/.agents/skills/` with default state root | Implicit and `/skill <name>`/`$name`; workspace `skills/` can outrank this pack | `installed` read by OMH; later stages `probe_unsupported` (no documented command) |
-| pi | `.agents/skills/` | `~/.agents/skills/` | Trusted projects only; implicit and `/skill:name`; first duplicate name wins | `installed` read by OMH; later stages `probe_unsupported` (no documented command) |
+| Claude Code | `.claude/skills/` mirror (observed 2.1.270) | `~/.claude/skills/` mirror | Repo `.agents/skills/` not discovered in two isolated runs; `.claude/skills/` discovery observed | `installed` read by OMH; later stages `probe_unsupported` (a model session lists them; no verified credential-free command) |
+| Codex | `.agents/skills/` | `~/.agents/skills/` | Model-selected progressive disclosure; standard-path contract | `installed` read by OMH; later stages `probe_unsupported` (a model session lists them; no verified credential-free command) |
+| Cursor | `.agents/skills/` | `~/.agents/skills/` | Standard-path support; user-scope scanning not independently verified | `installed` read by OMH; later stages `probe_unsupported` (no verified credential-free command) |
+| opencode | `.agents/skills/` | `~/.agents/skills/` | Permission-gated `skill` tool, implicit nomination; description must be 1-1024 characters | `installed` read by OMH; later stages `probe_unsupported` (a model session lists them; no verified credential-free command) |
+| OpenClaw | `.agents/skills/` | `~/.agents/skills/` with default state root | Implicit and `/skill <name>`/`$name`; workspace `skills/` can outrank this pack | `installed` read by OMH; later stages `probe_unsupported` (no verified credential-free command) |
+| pi | `.agents/skills/` | `~/.agents/skills/` | Trusted projects only; implicit and `/skill:name`; first duplicate name wins | `installed` read by OMH; later stages `probe_unsupported` (no verified credential-free command) |
 
 OpenClaw **skips `~/.agents/skills/` when `OPENCLAW_STATE_DIR` points elsewhere**.
 No extra OpenClaw target is installed in v1. Its injected discovery summary is
@@ -272,58 +272,83 @@ Maintainer and operator command, not a normal user step:
 
 ```sh
 omh quality-evidence agent-skills [--scope repo|user] [--project-root DIR] [--user-home DIR] [--json]
-omh quality-evidence agent-skills --receipts earlier-evidence.json [--json]
+omh quality-evidence agent-skills --receipts earlier-evidence.json [--scope repo|user] [--json]
 ```
 
 It reports five evidence stages for every row of the host support matrix in
 both scopes: `installed`, `discovered`, `nominated`, `loaded`, and `executed`.
-No stage is inferred from another.
+No stage is inferred from another. OMH starts no host session and makes no
+model call; the only host process the command runs is the version probe
+described below.
 
 - **installed** is observed by OMH itself. It reads the host's scan path, repo
-  scope under `--project-root` (default: the current directory, as the
-  host-selected installers use) and user scope under `--user-home` (default:
+  scope under `--project-root` and user scope under `--user-home` (default:
   your home), and compares every file's bytes with that host's
-  `omh_host_adapter/v1` manifest. `observed` means every pack file matches,
-  `not_observed` means the pack is absent, and `hold` means a partial or edited
-  pack, an unreadable path, or a symlink in the scan path (the installers refuse
-  to write through one). Nothing is written and no host is started.
+  `omh_host_adapter/v1` manifest. The read writes nothing and runs no host
+  process. `--project-root` defaults to the current directory, as the
+  host-selected installers use; an install made without `--host` writes at
+  the repository root, so pass that root when running from a subdirectory.
+  The outcome carries a closed `reason`: `observed` / `match` when every pack
+  file is present and byte-identical, `not_observed` / `absent` when the pack
+  is not there, and `hold` with `partial` (files missing), `modified` (files
+  differ), `symlink` (a symlink in the scan path, which the installers refuse
+  to write through), or `unreadable`. Files beside the pack, including ones a
+  newer pack retired, are not checked.
 - **discovered, nominated, loaded, executed** stay `not_observed` for every
-  host, with that host's `probe_unsupported` reason. OMH knows of no
+  host, with that host's `probe_unsupported` reason. OMH has verified no
   credential-free, non-interactive host command that lists the skills a host
-  discovered. For Claude Code, Codex, and opencode the known listing surface is
-  a model session (`claude -p`, `codex exec`, `opencode run`) that needs
-  provider credentials, and OMH makes no model call. `probe_unsupported` is not
-  a claim that a host cannot discover Agent Skills. The 2026-09-13 Claude Code
-  observation above was a manual model-session run, not a receipt of this
-  layer.
+  discovered. Claude Code, Codex, and opencode can list them in a model
+  session (`claude -p`, `codex exec`, `opencode run`), which needs provider
+  credentials, and OMH makes no model call. `probe_unsupported` is not a claim
+  that a host cannot discover Agent Skills, nor that no such command exists.
+  The 2026-09-13 Claude Code observation above was a manual model-session run,
+  not a receipt of this layer.
 - **Host version** comes only from the readiness module's approved
-  `<cli> --version` probe, for a CLI that probe already runs
-  (`version_probed_agent_clis()` in `src/coding/executor_readiness.py`). Only
-  the version token is kept. Any other host is recorded as `no_approved_probe`,
-  and a missing binary as `executable_missing`.
+  `<cli> --version` probe, for a CLI in that probe's set
+  (`version_probed_agent_clis()` in `src/coding/executor_readiness.py`). The
+  set is unchanged, but the trigger is wider: this command runs the probe for
+  every such CLI on PATH, where readiness ran `pi` only for omo-runtime and
+  `opencode` only when neither `pi` nor `senpi` was on PATH. Only the version
+  token is kept. Any other host is recorded as `no_approved_probe`,
+  and a missing binary as `executable_missing`. What a `--version` child writes
+  for itself is neither prevented nor observed.
 
 Each `omh_agent_skills_discovery/v1` receipt records the host, scope, operating
 system, scan path relative to its root, adapter schema version, transform, the
 manifest's own `source_digest`, the pack `catalog_revision`, the host version
-and its status, the version command, whether discovery would need credentials,
-`probe_unsupported`, observation timestamps, cleanup (`nothing_created`), and
-exactly the five stages in order. It carries no absolute path and no host
-output. The parser rejects unknown or missing fields, values outside each
-enumeration, a `credential_required` that is not a JSON boolean, a host
-version that disagrees with its status, missing or reordered stages, any stage
-after `installed` that is not `not_observed`, and credential-like text. The
-command builds every receipt through that parser.
+and its status, the version command, `credential_required` (OMH's conservative
+assumption that discovery would need credentials, `true` for every host),
+`probe_unsupported`, observation timestamps, cleanup (`nothing_created`: OMH
+creates nothing), and exactly the five stages in order, each with an outcome,
+a reason, and a detail. A receipt this command produces carries no absolute
+path and no host output beyond the version token. The parser rejects unknown
+or missing fields, values outside each enumeration, a `credential_required`
+that is not a JSON boolean, a host version that disagrees with its status, a
+version probe for a CLI outside the approved set, missing or reordered stages,
+a reason that does not fit its outcome, any stage after `installed` that is
+not `not_observed`, and credential-like text. The command builds every receipt
+through that parser. The parser does not compare free-text details with the
+disk or the descriptor table, so a hand-edited receipt can still claim what no
+run observed.
 
 The matrix has one row per host and scope, sorted by host and then scope. A
 row's `evidence_class` is `observed_through_<stage>`, `hold`, `not_observed`,
 or `no_receipt` (a receipts file without that host and scope). `freshness` is
 `current` only when the receipt's `source_digest`, `catalog_revision`, scan
-path, and host version all match now; any mismatch is `stale`, and a host
-version not observed on either side is `version_unverified`. With
-`--receipts`, the command reads an earlier `--json` payload instead of the scan
-paths and compares its receipts with the current pack and the host versions
-observed now; a receipt that fails validation is an error, never a row. Exit 0
-means the matrix was produced, not that any stage was observed.
+path, operating system, and host version all match now; any mismatch is
+`stale`, and a host version not observed on either side is
+`version_unverified`. Freshness compares the operating system but does not
+identify the machine. With `--receipts`, the command reads no scan path: it
+validates an earlier `--json` payload (UTF-8, UTF-16, or UTF-32, as a shell
+redirect wrote it) and compares its receipts with the current pack and the
+host versions observed now. A receipt that fails validation is an error, never
+a row.
+
+Exit status: 0 when every scan path the run had to read was read, whatever it
+found; 3 when a scan path could not be read (`unread_scan_paths` names it, and
+the matrix is still printed); 2 for an error, such as a `--project-root` or
+`--user-home` that is not a directory (refused rather than reported as an
+absent pack) or a receipts file that fails validation.
 
 No receipt corpus is checked in. A receipt describes one machine's
 installation and host versions at one time, and does not hold for a later host

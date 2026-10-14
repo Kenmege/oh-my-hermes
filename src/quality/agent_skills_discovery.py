@@ -5,21 +5,27 @@ Evidence layer for the host-adapter surface (#1525). For every host in
 discovered, nominated, loaded, executed -- and never infers one stage from
 another. A receipt binds what it saw to the host version, the operating
 system, the scan path, the adapter manifest's ``source_digest``, and the pack
-``catalog_revision``; a missing, malformed, or contradictory receipt raises
-instead of passing.
+``catalog_revision``. ``parse_receipt`` raises on a receipt that fails any check
+it makes (field set, enumerations, host-version agreement, stage order and
+reasons, credential-like text) instead of passing it; it cannot check free-text
+details against the disk.
 
-OMH observes ``installed`` itself and starts no host to do it: it reads the
-host's scan path under the project root (repo scope) or under the home it is
-given (user scope) and compares every file with the ``omh_host_adapter/v1``
-manifest. It writes nothing. OMH knows of no credential-free,
+OMH observes ``installed`` itself, with no subprocess: it reads the host's
+scan path under the project root (repo scope) or under the home it is given
+(user scope) and compares every file with the ``omh_host_adapter/v1``
+manifest. OMH writes nothing. OMH has verified no credential-free,
 non-interactive command in any supported host that lists the skills the host
-discovered, and OMH makes no model call, so the four later stages are
+discovered, and it makes no model call, so the four later stages are
 ``not_observed`` and the receipt carries the host's ``probe_unsupported``
 reason. That reason is not a claim that the host cannot discover Agent Skills.
 
 The host version comes from the readiness module's approved
-``<cli> --version`` probe, and only for a CLI that probe already runs; any
-other host's version is recorded as not observed, with the reason.
+``<cli> --version`` probe, and only for a CLI in that probe's set; that
+``--version`` run is the only host process this module causes. The set is the
+readiness probe's, but the trigger is wider: this runs the probe for every
+such CLI on PATH, where readiness ran pi only for omo-runtime and opencode only
+when neither pi nor senpi was on PATH. Any other host's version is recorded as
+not observed, with the reason.
 """
 
 from __future__ import annotations
@@ -29,8 +35,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path, PurePosixPath
-import platform
 import re
+import stat
+import sys
 from typing import Final
 
 from ..install.agent_skills_projection import _checked_path, agent_skill_files, agent_skills_manifest
@@ -46,14 +53,25 @@ STAGES: Final = ("installed", "discovered", "nominated", "loaded", "executed")
 HOSTS: Final = tuple(sorted(adapter.host for adapter in HOST_ADAPTERS))
 SCOPES: Final = ("repo", "user")
 OUTCOMES: Final = ("observed", "not_observed", "hold")
+# Why `installed` has the outcome it has, as a closed vocabulary so a reader
+# never parses `detail` to tell an unreadable path from an edited pack.
+INSTALLED_REASONS: Final[Mapping[str, str]] = {
+    "match": "observed",
+    "absent": "not_observed",
+    "partial": "hold",
+    "modified": "hold",
+    "symlink": "hold",
+    "unreadable": "hold",
+}
+LATER_STAGE_REASON: Final = "probe_unsupported"
 OPERATING_SYSTEMS: Final = ("darwin", "linux", "other", "windows")
 TRANSFORMS: Final = ("copy-only",)
 # What observed the stages after `installed`. `none` is the only value because
 # no probe for them exists; a new value lands with the first probe that emits
 # it, never ahead of it.
 DISCOVERY_MECHANISMS: Final = ("none",)
-# Nothing is created, so there is nothing to clean up; the receipt says so
-# rather than leaving the field out.
+# OMH creates no file, directory or session, so it has nothing to clean up.
+# What a `--version` child writes for itself is neither prevented nor observed.
 CLEANUP_RESULTS: Final = ("nothing_created",)
 HOST_VERSION_STATUSES: Final = (
     "observed",
@@ -63,31 +81,39 @@ HOST_VERSION_STATUSES: Final = (
     "output_unrecognized",
 )
 MAX_TEXT: Final = 240
-CLAIM_BOUNDARY: Final = (
-    "OMH read each host scan path and compared its bytes with the adapter manifest; it started no host "
-    "and made no model call. `installed` is the only stage this command observes. Discovered, nominated, "
-    "loaded and executed stay not_observed (probe_unsupported) and are never inferred from installation. "
-    "A receipt holds only for the host version, adapter digest and catalog revision it recorded."
+OBSERVED_CLAIM_BOUNDARY: Final = (
+    "OMH read each host scan path and compared its bytes with the adapter manifest, writing nothing itself. "
+    "It started no host session and made no model call; the only host process it ran is `<cli> --version`, "
+    "for a CLI in the readiness probe's set. `installed` is the only stage this command observes. "
+    "Discovered, nominated, loaded and executed stay not_observed (probe_unsupported) and are never inferred "
+    "from installation. A receipt holds only for the host version, OS, scan path, adapter digest and catalog "
+    "revision it recorded."
+)
+STORED_CLAIM_BOUNDARY: Final = (
+    "OMH read no scan path: it validated stored receipts and compared them with the current pack and the host "
+    "versions observed now, through `<cli> --version` only, for a CLI in the readiness probe's set. It "
+    "started no host session and made no model call. A stored receipt is evidence from the run that recorded "
+    "it, not from this one."
 )
 
 # Why no stage after `installed` is probed, per host. None of these is a claim
 # that the host cannot discover Agent Skills.
 PROBE_UNSUPPORTED: Final[Mapping[str, str]] = {
     "claude": (
-        "no known credential-free, non-interactive command lists discovered skills; the known listing "
-        "surface is a model session (claude -p), which needs provider credentials and which OMH does not start"
+        "OMH has verified no credential-free, non-interactive command that lists discovered skills; a "
+        "model session (claude -p) could list them but needs provider credentials, and OMH does not start one"
     ),
     "codex": (
-        "no known credential-free, non-interactive command lists discovered skills; the known listing "
-        "surface is a model session (codex exec), which needs provider credentials and which OMH does not start"
+        "OMH has verified no credential-free, non-interactive command that lists discovered skills; a "
+        "model session (codex exec) could list them but needs provider credentials, and OMH does not start one"
     ),
     "opencode": (
-        "no known credential-free, non-interactive command lists discovered skills; the known listing "
-        "surface is a model session (opencode run), which needs provider credentials and which OMH does not start"
+        "OMH has verified no credential-free, non-interactive command that lists discovered skills; a "
+        "model session (opencode run) could list them but needs provider credentials, and OMH does not start one"
     ),
-    "cursor": "no documented credential-free, non-interactive command lists discovered skills",
-    "openclaw": "no documented credential-free, non-interactive command lists discovered skills",
-    "pi": "no documented credential-free, non-interactive command lists discovered skills",
+    "cursor": "OMH has verified no credential-free, non-interactive command that lists discovered skills",
+    "openclaw": "OMH has verified no credential-free, non-interactive command that lists discovered skills",
+    "pi": "OMH has verified no credential-free, non-interactive command that lists discovered skills",
 }
 
 RECEIPT_KEYS: Final = frozenset(
@@ -113,7 +139,7 @@ RECEIPT_KEYS: Final = frozenset(
         "stages",
     }
 )
-STAGE_KEYS: Final = frozenset({"stage", "outcome", "detail"})
+STAGE_KEYS: Final = frozenset({"stage", "outcome", "reason", "detail"})
 
 _HEX_64: Final = re.compile(r"[0-9a-f]{64}")
 _VERSION: Final = re.compile(r"[0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]{1,32})?")
@@ -125,8 +151,8 @@ class DiscoveryEvidenceError(ValueError):
     """Raised when a descriptor or receipt violates the evidence contract."""
 
 
-def _member(value: object, allowed: tuple[str, ...], *, field: str) -> str:
-    if not isinstance(value, str) or value not in allowed:
+def _member(value: object, allowed: Iterable[str], *, field: str) -> str:
+    if not isinstance(value, str) or value not in tuple(allowed):
         raise DiscoveryEvidenceError(f"invalid {field}: {value!r}")
     return value
 
@@ -164,14 +190,23 @@ def _stamp(value: object, *, field: str) -> datetime:
         raise DiscoveryEvidenceError(f"invalid {field}") from exc
 
 
+def _version_probed() -> frozenset[str]:
+    from ..coding.executor_readiness import version_probed_agent_clis
+
+    return version_probed_agent_clis()
+
+
 @dataclass(frozen=True, slots=True)
 class ProbeDescriptor:
     """Checked-in description of what OMH may observe for one host and scope.
 
     Host, scan path and transform come from ``HOST_ADAPTERS``; nothing here
-    re-types them. ``version_command`` is set only for a CLI the readiness
-    probe already runs ``--version`` on. ``probe_unsupported`` says why the
-    stages after ``installed`` are not probed.
+    re-types them. ``probe_descriptors`` sets ``version_command`` only for a
+    CLI in the readiness probe's ``--version`` set, and ``parse_receipt``
+    rejects a version probe for any other host. ``credential_required`` is
+    OMH's conservative assumption, not an observation: OMH has verified no
+    credential-free listing command for any host. ``probe_unsupported`` says
+    why the stages after ``installed`` are not probed.
     """
 
     host: str
@@ -198,11 +233,7 @@ class ProbeDescriptor:
 
 def probe_descriptors(version_probed: Iterable[str] | None = None) -> tuple[ProbeDescriptor, ...]:
     """One descriptor per host and scope, derived from ``HOST_ADAPTERS``, sorted."""
-    if version_probed is None:
-        from ..coding.executor_readiness import version_probed_agent_clis
-
-        version_probed = version_probed_agent_clis()
-    probed = frozenset(version_probed)
+    probed = _version_probed() if version_probed is None else frozenset(version_probed)
     return tuple(
         ProbeDescriptor(
             host=adapter.host,
@@ -223,15 +254,20 @@ def probe_descriptors(version_probed: Iterable[str] | None = None) -> tuple[Prob
 class StageRecord:
     stage: str
     outcome: str
+    reason: str
     detail: str
 
     def to_json(self) -> dict[str, str]:
-        return {"stage": self.stage, "outcome": self.outcome, "detail": self.detail}
+        return {"stage": self.stage, "outcome": self.outcome, "reason": self.reason, "detail": self.detail}
 
 
 @dataclass(frozen=True, slots=True)
 class ProbeReceipt:
-    """One host and scope, bound to host version and adapter digest. Build it with ``parse_receipt``."""
+    """One host and scope, bound to host version and adapter digest.
+
+    The dataclass validates nothing itself; ``parse_receipt`` is the only
+    validation, so construct receipts through it.
+    """
 
     host: str
     scope: str
@@ -301,18 +337,29 @@ def _parse_stages(value: object, *, discovery_mechanism: str) -> tuple[StageReco
             StageRecord(
                 stage=expected,
                 outcome=_member(item["outcome"], OUTCOMES, field=f"{expected} outcome"),
+                reason=_text(item["reason"], field=f"{expected} reason"),
                 detail=_text(item["detail"], field=f"{expected} detail"),
             )
         )
+    installed = stages[0]
+    if INSTALLED_REASONS.get(installed.reason) != installed.outcome:
+        raise DiscoveryEvidenceError(f"installed reason {installed.reason!r} does not fit outcome {installed.outcome!r}")
     if discovery_mechanism == "none":
         for record in stages[1:]:
             if record.outcome != "not_observed":
                 raise DiscoveryEvidenceError(f"{record.stage} cannot be {record.outcome} without a probe that observes it")
+            if record.reason != LATER_STAGE_REASON:
+                raise DiscoveryEvidenceError(f"{record.stage} reason must be {LATER_STAGE_REASON}")
     return tuple(stages)
 
 
 def parse_receipt(payload: object) -> ProbeReceipt:
-    """Fail-closed receipt parser: anything malformed or contradictory raises, never passes."""
+    """Fail-closed receipt parser: a receipt that fails any check below raises, never passes.
+
+    It does not compare free-text ``detail`` or ``probe_unsupported`` with the
+    disk or the descriptor table, so a hand-written receipt can still say
+    something no run observed; only receipts this module builds are vouched for.
+    """
     if not isinstance(payload, Mapping):
         raise DiscoveryEvidenceError("receipt must be an object")
     if set(payload) != RECEIPT_KEYS:
@@ -323,6 +370,10 @@ def parse_receipt(payload: object) -> ProbeReceipt:
         raise DiscoveryEvidenceError("wrong adapter schema")
     host = _member(payload["host"], HOSTS, field="host")
     status = _member(payload["host_version_status"], HOST_VERSION_STATUSES, field="host_version_status")
+    if (status == "no_approved_probe") == (host in _version_probed()):
+        raise DiscoveryEvidenceError(
+            f"host_version_status {status} contradicts the approved version probe set for {host}"
+        )
     version = payload["host_version"]
     if status == "observed":
         if not isinstance(version, str) or not _VERSION.fullmatch(version):
@@ -362,34 +413,71 @@ def parse_receipt(payload: object) -> ProbeReceipt:
     )
 
 
+def _kind(path: Path) -> str:
+    """``absent``, ``dir``, ``file`` or ``other``; any other ``OSError`` propagates.
+
+    ``Path.is_dir`` and ``Path.is_file`` return False on any ``OSError`` on
+    Python 3.14, which would report an unreadable path as an absent one;
+    3.11 to 3.13 raise. Stat explicitly so every version behaves the same.
+    """
+    try:
+        mode = path.stat().st_mode
+    except (FileNotFoundError, NotADirectoryError):
+        return "absent"
+    if stat.S_ISDIR(mode):
+        return "dir"
+    return "file" if stat.S_ISREG(mode) else "other"
+
+
 def _installed_stage(root: Path, target_path: str, expected: Mapping[str, str]) -> StageRecord:
-    """Compare the scan path's bytes with the adapter manifest; read-only."""
-    target = root.joinpath(*PurePosixPath(target_path).parts)
+    """Compare the scan path's bytes with the adapter manifest; read-only.
+
+    Files beside the pack, including ones a newer pack retired, are not
+    checked: ``match`` means every pack file is present and byte-identical.
+    """
+    target = root.absolute().joinpath(*PurePosixPath(target_path).parts)
     total = len(expected)
+    unreadable = StageRecord("installed", "hold", "unreadable", f"scan path unreadable at {target_path}")
     try:
         # The installers' own rule: no symlink anywhere from the scan path's
-        # parent down to a file, since a symlink could point the host elsewhere.
+        # parent down to a file, since a symlink could point the host
+        # elsewhere. Manifest paths are OMH's own, so the unsafe-path refusal
+        # that shares this ValueError cannot fire here.
         paths = [(_checked_path(target, relative), digest) for relative, digest in sorted(expected.items())]
-        if not target.is_dir():
-            return StageRecord("installed", "not_observed", f"no scan directory at {target_path}")
-        missing = sum(1 for path, _digest_value in paths if not path.is_file())
-        differ = sum(1 for path, digest in paths if path.is_file() and sha256_file(path) != digest)
     except ValueError:
-        return StageRecord(
-            "installed", "hold", f"symlink in the scan path at {target_path}; the installers refuse to write through one"
-        )
-    except OSError:
-        return StageRecord("installed", "hold", f"scan path unreadable at {target_path}")
-    if missing == total:
-        return StageRecord("installed", "not_observed", f"none of the {total} pack files are present at {target_path}")
-    if missing or differ:
-        matched = total - missing - differ
         return StageRecord(
             "installed",
             "hold",
-            f"{matched} of {total} pack files match at {target_path}; {missing} missing, {differ} differ",
+            "symlink",
+            f"symlink in the scan path at {target_path}; the installers refuse to write through one",
         )
-    return StageRecord("installed", "observed", f"all {total} pack files match the adapter manifest at {target_path}")
+    except OSError:
+        return unreadable
+    try:
+        if _kind(target) != "dir":
+            return StageRecord("installed", "not_observed", "absent", f"no scan directory at {target_path}")
+        missing = differ = 0
+        for path, digest in paths:
+            if _kind(path) != "file":
+                missing += 1
+            elif sha256_file(path) != digest:
+                differ += 1
+    except OSError:
+        return unreadable
+    if missing == total:
+        return StageRecord(
+            "installed", "not_observed", "absent", f"none of the {total} pack files are present at {target_path}"
+        )
+    if missing or differ:
+        return StageRecord(
+            "installed",
+            "hold",
+            "partial" if missing else "modified",
+            f"{total - missing - differ} of {total} pack files match at {target_path}; {missing} missing, {differ} differ",
+        )
+    return StageRecord(
+        "installed", "observed", "match", f"all {total} pack files match the adapter manifest at {target_path}"
+    )
 
 
 def _utc_now() -> datetime:
@@ -397,8 +485,30 @@ def _utc_now() -> datetime:
 
 
 def _os_name() -> str:
-    name = platform.system().lower()
-    return name if name in OPERATING_SYSTEMS else "other"
+    # `sys.platform`, not `platform.system()`: on Windows with Python 3.11 the
+    # latter shells out to `ver`.
+    if sys.platform == "win32":
+        return "windows"
+    if sys.platform == "darwin":
+        return "darwin"
+    return "linux" if sys.platform.startswith("linux") else "other"
+
+
+InstalledRead = tuple[StageRecord, datetime, datetime]
+
+
+def read_installed(
+    root: Path, target_path: str, adapter_manifest: Mapping[str, object], clock: Callable[[], datetime] = _utc_now
+) -> InstalledRead:
+    """The ``installed`` stage under ``root`` with the window that bracketed the read."""
+    files = adapter_manifest["files"]
+    if not isinstance(files, Mapping):
+        raise DiscoveryEvidenceError("adapter manifest has no file inventory")
+    started = clock().astimezone(timezone.utc)
+    installed = _installed_stage(root, target_path, files)
+    # A wall-clock step backwards between the two reads must not void the run.
+    ended = max(clock().astimezone(timezone.utc), started)
+    return installed, started, ended
 
 
 def observe_receipt(
@@ -409,16 +519,21 @@ def observe_receipt(
     catalog_revision: str,
     host_version: tuple[str, str | None],
     clock: Callable[[], datetime] = _utc_now,
+    read: InstalledRead | None = None,
 ) -> ProbeReceipt:
-    """Observe ``installed`` under ``root`` and return a receipt ``parse_receipt`` accepted."""
-    files = adapter_manifest["files"]
-    if not isinstance(files, Mapping):
-        raise DiscoveryEvidenceError("adapter manifest has no file inventory")
-    started = clock().astimezone(timezone.utc)
-    installed = _installed_stage(root, descriptor.target_path, files)
-    ended = clock().astimezone(timezone.utc)
+    """A parsed receipt for ``read``, or for a fresh read under ``root`` when none is given.
+
+    Hosts that share a scan path pass the one read, so every receipt's window
+    is the window that bracketed the read it reports.
+    """
+    if read is None:
+        read = read_installed(root, descriptor.target_path, adapter_manifest, clock)
+    installed, started, ended = read
     status, version = host_version
-    later = [StageRecord(stage, "not_observed", "probe_unsupported") for stage in STAGES[1:]]
+    later = [
+        StageRecord(stage, "not_observed", LATER_STAGE_REASON, "no OMH probe observes this stage")
+        for stage in STAGES[1:]
+    ]
     payload = {
         "schema_version": RECEIPT_SCHEMA_VERSION,
         "host": descriptor.host,
@@ -447,11 +562,12 @@ def observe_receipt(
 
 @dataclass(frozen=True, slots=True)
 class CurrentPack:
-    """What a receipt must still match to be current: pack, scan path, host version."""
+    """What a receipt must still match to be current: pack, scan path, OS, host version."""
 
     catalog_revision: str
     source_digests: Mapping[str, str]
     target_paths: Mapping[tuple[str, str], str]
+    os: str
     host_versions: Mapping[str, str | None]
 
 
@@ -462,6 +578,7 @@ class MatrixRow:
     evidence_class: str
     highest_observed_stage: str | None
     installed: str
+    installed_reason: str
     installed_detail: str | None
     host_version: str | None
     host_version_status: str
@@ -478,6 +595,7 @@ class MatrixRow:
             "evidence_class": self.evidence_class,
             "highest_observed_stage": self.highest_observed_stage,
             "installed": self.installed,
+            "installed_reason": self.installed_reason,
             "installed_detail": self.installed_detail,
             "host_version": self.host_version,
             "host_version_status": self.host_version_status,
@@ -490,10 +608,12 @@ class MatrixRow:
 
 
 def _freshness(receipt: ProbeReceipt, current: CurrentPack) -> str:
+    # OS is compared, but freshness does not identify the machine.
     if (
         receipt.source_digest != current.source_digests[receipt.host]
         or receipt.catalog_revision != current.catalog_revision
         or receipt.target_path != current.target_paths[(receipt.host, receipt.scope)]
+        or receipt.os != current.os
     ):
         return "stale"
     now = current.host_versions.get(receipt.host)
@@ -532,6 +652,7 @@ def summarize_receipts(
                         evidence_class="no_receipt",
                         highest_observed_stage=None,
                         installed="no_receipt",
+                        installed_reason="no_receipt",
                         installed_detail=None,
                         host_version=None,
                         host_version_status="no_receipt",
@@ -543,14 +664,16 @@ def summarize_receipts(
                     )
                 )
                 continue
+            installed = receipt.stage("installed")
             rows.append(
                 MatrixRow(
                     host=host,
                     scope=scope,
                     evidence_class=_evidence_class(receipt),
                     highest_observed_stage=receipt.highest_observed_stage(),
-                    installed=receipt.stage("installed").outcome,
-                    installed_detail=receipt.stage("installed").detail,
+                    installed=installed.outcome,
+                    installed_reason=installed.reason,
+                    installed_detail=installed.detail,
                     host_version=receipt.host_version,
                     host_version_status=receipt.host_version_status,
                     source_digest=receipt.source_digest,
@@ -564,8 +687,12 @@ def summarize_receipts(
 
 
 def load_evidence_receipts(path: Path) -> tuple[ProbeReceipt, ...]:
-    """Receipts from an earlier ``--json`` payload; one malformed entry fails the load."""
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    """Receipts from an earlier ``--json`` payload; one malformed entry fails the load.
+
+    Read as bytes, so ``json`` detects UTF-8 (with or without a BOM), UTF-16,
+    or UTF-32, whichever encoding the shell redirect wrote.
+    """
+    payload = json.loads(path.read_bytes())
     if not isinstance(payload, Mapping) or payload.get("schema_version") != EVIDENCE_SCHEMA_VERSION:
         raise DiscoveryEvidenceError(f"{path.name} is not an {EVIDENCE_SCHEMA_VERSION} payload")
     receipts = payload.get("receipts")
@@ -576,8 +703,8 @@ def load_evidence_receipts(path: Path) -> tuple[ProbeReceipt, ...]:
 
 def build_agent_skills_evidence(
     *,
-    project_root: Path,
-    user_home: Path,
+    project_root: Path | None = None,
+    user_home: Path | None = None,
     scopes: Iterable[str] = SCOPES,
     stored_receipts: Iterable[ProbeReceipt] | None = None,
     version_probe: Callable[[str], tuple[str, str | None]] | None = None,
@@ -586,11 +713,19 @@ def build_agent_skills_evidence(
     """The host evidence matrix, observed now or read from stored receipts.
 
     Without ``stored_receipts`` it observes ``installed`` for every host in
-    each scope (repo under ``project_root``, user under ``user_home``). With
-    them it observes nothing on disk and reports how each stored receipt
-    compares with the current pack and the host version observed now.
+    each scope (repo under ``project_root``, user under ``user_home``; both
+    required). With them it reads no scan path and reports how each stored
+    receipt compares with the current pack and the host version observed now.
     """
     wanted = tuple(sorted({_member(scope, SCOPES, field="scope") for scope in scopes}))
+    observing = stored_receipts is None
+    if observing:
+        if project_root is None or user_home is None:
+            raise DiscoveryEvidenceError("observing scan paths needs both a project root and a user home")
+        # A mistyped root would otherwise report every pack as absent.
+        for label, root in (("project root", project_root), ("user home", user_home)):
+            if _kind(root) != "dir":
+                raise DiscoveryEvidenceError(f"{label} is not a directory: {root}")
     if version_probe is None:
         from ..coding.executor_readiness import agent_cli_version
 
@@ -598,39 +733,48 @@ def build_agent_skills_evidence(
     files = agent_skill_files()
     catalog_revision = agent_skills_manifest(files)["catalog_revision"]
     manifests = {host: host_adapter_manifest(host, files) for host in HOSTS}
-    descriptors = tuple(descriptor for descriptor in probe_descriptors() if descriptor.scope in wanted)
-    commands = {descriptor.host: descriptor.version_command for descriptor in descriptors}
-    versions = {
-        host: version_probe(host) if commands.get(host) else ("no_approved_probe", None)
-        for host in HOSTS
-    }
+    all_descriptors = probe_descriptors()
+    probed = {descriptor.host for descriptor in all_descriptors if descriptor.version_command}
+    versions = {host: version_probe(host) if host in probed else ("no_approved_probe", None) for host in HOSTS}
+    descriptors = tuple(descriptor for descriptor in all_descriptors if descriptor.scope in wanted)
     current = CurrentPack(
         catalog_revision=catalog_revision,
         source_digests={host: manifests[host]["source_digest"] for host in HOSTS},
         target_paths={(descriptor.host, descriptor.scope): descriptor.target_path for descriptor in descriptors},
+        os=_os_name(),
         host_versions={host: version for host, (_status, version) in versions.items()},
     )
-    if stored_receipts is None:
-        receipts = tuple(
-            observe_receipt(
-                descriptor,
-                root=project_root if descriptor.scope == "repo" else user_home,
-                adapter_manifest=manifests[descriptor.host],
-                catalog_revision=catalog_revision,
-                host_version=versions[descriptor.host],
-                clock=clock,
+    if observing:
+        # Hosts that share a scan path read the same pack bytes once, and
+        # every receipt for that path carries that read's window.
+        reads: dict[tuple[str, str], InstalledRead] = {}
+        receipts_list = []
+        for descriptor in descriptors:
+            root = project_root if descriptor.scope == "repo" else user_home
+            key = (descriptor.scope, descriptor.target_path)
+            if key not in reads:
+                reads[key] = read_installed(root, descriptor.target_path, manifests[descriptor.host], clock)
+            receipts_list.append(
+                observe_receipt(
+                    descriptor,
+                    root=root,
+                    adapter_manifest=manifests[descriptor.host],
+                    catalog_revision=catalog_revision,
+                    host_version=versions[descriptor.host],
+                    read=reads[key],
+                )
             )
-            for descriptor in descriptors
-        )
+        receipts = tuple(receipts_list)
     else:
         receipts = tuple(receipt for receipt in stored_receipts if receipt.scope in wanted)
     matrix = summarize_receipts(receipts, current=current, scopes=wanted)
     return {
         "schema_version": EVIDENCE_SCHEMA_VERSION,
-        "receipt_source": "observed" if stored_receipts is None else "stored",
+        "receipt_source": "observed" if observing else "stored",
         "scopes": list(wanted),
         "current": {
             "catalog_revision": catalog_revision,
+            "os": current.os,
             "hosts": {
                 host: {
                     "source_digest": manifests[host]["source_digest"],
@@ -640,9 +784,16 @@ def build_agent_skills_evidence(
                 for host in HOSTS
             },
         },
+        # Scan paths this run could not read; empty with stored receipts,
+        # whose reads happened in the run that recorded them.
+        "unread_scan_paths": [
+            {"host": row.host, "scope": row.scope}
+            for row in matrix
+            if observing and row.installed_reason == "unreadable"
+        ],
         "receipts": [receipt.to_json() for receipt in receipts],
         "matrix": [row.to_json() for row in matrix],
-        "claim_boundary": CLAIM_BOUNDARY,
+        "claim_boundary": OBSERVED_CLAIM_BOUNDARY if observing else STORED_CLAIM_BOUNDARY,
     }
 
 
