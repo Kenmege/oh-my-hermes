@@ -2046,16 +2046,17 @@ class App(ModesMixin, AgentViewMixin):
 
     def _history(self, arg: str) -> None:
         """The blocks held now in a pager that renders each one, details shown, only when a page reaches it."""
-        blocks = list(self.transcript.blocks)
-        if not blocks:
-            self.transcript.add_notice("Nothing in this session's transcript yet.")
-            return
         transcript = self.transcript
+        blocks, dropped = list(transcript.blocks), transcript.dropped  # what the pager holds, as it opens
 
         def rows(index: int, width: int, theme: Theme) -> list[Line]:
             shown = block_rows(blocks[index], width, theme, expanded=True)
-            return [*transcript.dropped_rows(width, theme), *shown] if index == 0 else shown
+            return [*transcript.dropped_rows(width, theme, dropped), *shown] if index == 0 else shown
 
+        # Stops at the first block with rows, the first one but for a reply that was only a line break.
+        if not any(rows(index, self.size[0], self.theme) for index in range(len(blocks))):
+            transcript.add_notice("Nothing in this session's transcript yet.")
+            return
         self._show_pager(HistoryPager("history", count=len(blocks), render=rows))
 
     def _details(self, arg: str) -> None:

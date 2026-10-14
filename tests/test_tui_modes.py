@@ -43,7 +43,7 @@ from omh.tui.pager import Pager
 from omh.tui.session_picker import SessionPicker, SessionRow
 from omh.tui.slash import parse_slash, plan_invocation
 from omh.tui.theme import DEFAULT_THEME
-from omh.tui.transcript import NOTICE_ERROR, NOTICE_WARN, NoticeBlock, UserBlock
+from omh.tui.transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, NoticeBlock, UserBlock
 from omh.tui.width import line_width
 
 SID = "live-1"
@@ -1191,6 +1191,27 @@ class RedrawTailTests(unittest.TestCase):
         self.assertEqual(shown[:3], ["⋯ 15 earlier messages no longer held", "", "· notice 15"])
         self.assertEqual(shown[20:23], ["· notice 24", "", ""])  # the row, a blank, then the 10 notices held, spaced
         self.assertIn("history · 1-10/10 messages", shown[-1])
+
+    def test_a_drop_while_history_is_open_leaves_its_count_as_it_opened(self) -> None:
+        app, _client = make_app(rows=24, cols=80)
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(25):
+                app.transcript.add_notice(f"notice {number}")
+                drawn(app)
+            app._history("")
+            for number in range(25, 30):  # five more printed under the pager: the cap drops five more
+                app.transcript.add_notice(f"notice {number}")
+                app.transcript.take_stable_lines(80, DEFAULT_THEME)
+            self.assertEqual(app.transcript.dropped, 20)
+            shown = [line.rstrip() for line in drawn(app)]
+        self.assertEqual(shown[:3], ["⋯ 15 earlier messages no longer held", "", "· notice 15"])
+
+    def test_history_with_no_row_to_show_says_so_instead_of_opening(self) -> None:
+        app, _client = make_app(rows=24, cols=80)
+        app.transcript.blocks.append(AssistantBlock("\n", done=True))  # a reply that was only a line break
+        app._history("")
+        self.assertIsNone(app.pager)
+        self.assertEqual(app.transcript.blocks[-1].text, "Nothing in this session's transcript yet.")
 
     def test_a_resumed_sessions_history_is_kept_to_the_tail_too(self) -> None:
         app, _client = make_app(rows=24, cols=80)
