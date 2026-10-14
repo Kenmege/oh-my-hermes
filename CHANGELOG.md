@@ -4,6 +4,54 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Bare `omh` opens the OMH TUI, OMH's own terminal over Hermes' gateway.**
+  `omh` runs `hermes --tui` with OMH's frontend in place of Hermes' Ink app,
+  so Hermes' launcher still resolves the profile, the resume target and
+  session ownership, and every model call, tool run and approval decision
+  stays Hermes'. Finished lines go to the terminal's own scrollback and only
+  a bottom region repaints; the composer does not move when the plan and
+  agents panel, or a question Hermes asked, grows or shrinks. Nothing is
+  answered for the person: Esc, Ctrl+C, `d` or `n` declines, and allowing a
+  command takes the arrows and then Enter. When the TUI cannot start
+  (Windows, no `termios`, no Node, an OMH that cannot import itself, gateway
+  drift) it exits 75 and `omh` opens Hermes' own terminal; bare `hermes` is
+  unchanged. The boundary is in CONTEXT.md ("OMH TUI", "Hermes gateway
+  protocol"); the gateway slice it relies on is declared in
+  `src/tui/gateway_contract.py`. The composer sits between two rules drawn in
+  the input mode's glyph and colour, over a mode row that names the mode or
+  the keys that matter now; replies open with `⏺`, a diff numbers its lines
+  in a gutter, and the status line reads brand, model, context, state.
+  On the terminals Hermes' own TUI trusts with it, it asks iTerm2, kitty,
+  WezTerm, tmux, VS Code and Windows Terminal for the kitty keyboard protocol
+  and xterm modifyOtherKeys, and Ghostty for modifyOtherKeys only, so
+  Ctrl+Enter and Shift+Enter arrive as keys of their own, while every key the
+  TUI binds decodes as before and so does each Ctrl chord xterm sends as one
+  control byte (Ctrl+2 a NUL, Ctrl+3 Esc, Ctrl+8 Backspace);
+  `OMH_TUI_KEYBOARD=legacy` keeps the plain bytes. Shift+Tab cycles normal,
+  accept all and plan: accept all turns off Hermes' approvals for that session
+  only (Hermes' per-session switch, never `approvals.mode`), is shown on the
+  composer once Hermes confirms it, or when Hermes confirms neither it nor
+  the switch back off, and the TUI sends that session an explicit off before
+  it leaves it, and plan sends each prompt as `/plan <text>`; where Hermes has
+  approvals off on its own, Shift+Tab sends nothing and turns plan on and
+  off beside accept all. Ctrl+T or `/effort <level>` sets the session's
+  reasoning effort, Ctrl+Enter or `/steer <text>` adds typed text to the
+  running turn (a steer Hermes does not take waits in the queue for the turn
+  to end), queued prompts are listed above the composer and Up takes them
+  back to edit, `?` or `/keys` lists every key from the table the docs are
+  held to, and an approval rings the terminal bell once (`OMH_TUI_BELL=0`
+  silences it).
+  A turn's subagents show as a strip on the mode row; Down opens them as a
+  list, and Enter or a click opens one agent's read-only log, with mouse
+  reports on only while an agent is there to click.
+
+- **The OMH status widget and the Hermes Desktop pane keep ordinary
+  punctuation and drop whole escape sequences.** Their character allowlists
+  dropped apostrophes, commas, question marks and quotes, so a plan item
+  `person's` rendered as `persons`, and they removed only an escape's ESC byte,
+  leaving `[31m` behind as text. The widget, the Desktop pane and the OMH TUI's
+  panels now share one allowlist and one escape rule and render the same text.
+
 - **A new `spend-gate` skill shows what a spend will cost before the agent
   moves any money, and calls it done only on a receipt.** It covers every
   rail: a card checkout in a page, an HTTP 402 or pay-per-request call, a

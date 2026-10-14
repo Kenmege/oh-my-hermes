@@ -60,8 +60,15 @@ export default function register(sdk) {
   // them: `category:architect(anthropic/claude...)`, `(codex/maestro ...)`,
   // and `turn 3 (12 tools)` all lost their brackets here and rendered as
   // one run-on token (`architectanthropic/c...`, the owner's report).
+  // Ordinary punctuation (an apostrophe, a comma, a question mark) is kept too:
+  // dropping it turned a plan item's `person's` into `persons`. Controls and
+  // escape bytes are what this guards against, and they stay out: a whole
+  // escape sequence (CSI, OSC, a two-byte escape) goes first, so `[31m` is not
+  // left behind as text once its ESC byte is dropped.
+  const ESCAPE_SEQUENCE = /\x1b\[[0-?]*[ -\/]*[@-~]?|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[ -\/]*[0-~]?/g
   const sanitizeText = value => String(value ?? '')
-    .replace(/[^\p{L}\p{N} .:/_·|+()\[\]!\-]/gu, '')
+    .replace(ESCAPE_SEQUENCE, '')
+    .replace(/[^\p{L}\p{N} .:/_·|+()\[\]!\-',;?"#%&=@~]/gu, '')
   const safeText = value => sanitizeText(value).slice(0, 96)
 
   // Text, not chrome. The owner's direction after living with the bordered

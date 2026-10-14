@@ -71,7 +71,12 @@ function fetchHud(sessionId) {
 
 // Parentheses stay in the allowlist because the row identity is SHAPED by
 // them: `category:architect(claude...)` and `turn 3 (12 tools)`.
-export const sanitizeText = value => String(value ?? '').replace(/[^\p{L}\p{N} .:/_·|+()\[\]!\-]/gu, '')
+// Same rule as the OMH status widget and the OMH TUI panels: whole escape sequences out,
+// then letters, digits and ordinary punctuation in (`person's` must not become `persons`).
+const ESCAPE_SEQUENCE = /\x1b\[[0-?]*[ -\/]*[@-~]?|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[ -\/]*[0-~]?/g
+export const sanitizeText = value => String(value ?? '')
+  .replace(ESCAPE_SEQUENCE, '')
+  .replace(/[^\p{L}\p{N} .:/_·|+()\[\]!\-',;?"#%&=@~]/gu, '')
 export const safeText = value => sanitizeText(value).slice(0, 96)
 // The reader caps an action title at 140 characters; the row's tooltip is
 // the one place that shows it whole, so it takes a longer cut than safeText.

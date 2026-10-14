@@ -268,8 +268,8 @@ omh setup
 
 ### Open the terminal, and come back to a session
 
-Bare `omh` opens the same OH-MY-HERMES terminal that bare `hermes` does, and
-three Hermes session flags pass straight through on that bare launch:
+Bare `omh` opens the OMH TUI (described below), and three Hermes session flags
+pass straight through on that bare launch:
 
 ```sh
 omh --resume <session-id>    # reopen one session by id (short form: -r)
@@ -288,6 +288,215 @@ you launched with a profile, since a profile has its own `state.db`. OMH
 reads only the session id, from the Hermes state database it launched
 against, and prints nothing whenever more than one session could be the one
 that closed.
+
+### The OMH TUI
+
+The OMH TUI is OMH's own terminal over your Hermes install. Bare `omh` runs
+your `hermes --tui` with `HERMES_TUI_DIR` pointing at a small frontend OMH
+ships, so Hermes' launcher still resolves the profile, the session to resume,
+the working directory and whether the session is already open somewhere else,
+and then starts the OMH frontend in place of its own. Every model call, tool
+run and approval decision stays Hermes'; the screen is OMH's.
+
+- Finished replies, tool summaries and notices go to your terminal's own
+  scrollback, so selecting, copying and scrolling back work as they do in any
+  shell. Only the bottom of the screen repaints.
+- The bottom region holds, from the top: the prompt you just sent (while the
+  turn runs), the tail of the reply that is still streaming, one slot for the
+  OMH plan and agents panel (or a question Hermes asked, or the slash-command
+  menu), the prompts queued behind the running turn (`⧗`, up to three named
+  and the rest counted), the composer framed by a rule above and below it, a
+  mode row, and a status line with the model, context use (warn from 80 %
+  full, bad from 95 %) and what the session is doing. The version is on the
+  banner.
+- The mode row names the input mode, or the keys that matter right now, and
+  the reasoning effort when Hermes reports one; both rules take the mode's
+  glyph and colour, so the mode reads from the frame as well as the label.
+  A short terminal drops the mode row first, then the lower rule; without the
+  mode row the status line names the mode (`⏵⏵ accept`, `⏸ plan`) whenever it
+  is not normal.
+- The composer does not move when the panel grows or shrinks; only its own
+  lines move it, and the agent list for as long as it is open.
+- While a turn has delegated work, the mode row carries a strip of its
+  subagents, each named by the first words of its goal
+  (`● main  ⠹ find usages of  ○ read the diff  ↓`); Down on an empty composer
+  opens them as a list under the composer, which sits higher while the list is
+  open and returns to its row when it closes. The list never pushes the screen
+  up: it takes the blank rows above the composer first, then rows of what is
+  drawn above it (the streaming reply, the prompt being answered, the panel),
+  and with fewer rows than agents it scrolls. Enter, or a click, opens that
+  agent's log on the alternate screen (its thinking lines, tool calls and
+  reply, read-only, refreshed while it runs); Left and Right move between
+  agents and q or Esc goes back.
+- While the strip is clickable (a turn running with agents named on it and no
+  question open, or the list open), the OMH TUI asks the terminal for click
+  reports, so a plain drag no longer selects text in most terminals and the
+  wheel does not scroll. To select anyway, hold Fn while dragging in
+  Terminal.app (or turn off View → Allow Mouse Reporting), Option in iTerm2,
+  Shift in most other terminals. Selection and the wheel come back as soon as
+  neither holds: once the turn has ended and the list is closed, while a
+  question is open, while the strip is too narrow to name an agent
+  (`● 2 agents ↓`), while a view such as an agent's log has the screen, and
+  while the window is being resized. Closing the list while the turn still
+  runs does not bring them back, since the strip is clickable again. While
+  click reports are on, and for 0.5 s after they go off, an Esc pressed on
+  its own acts after 0.3 s, the time a click report split by a slow
+  connection has to arrive whole. Another key typed within that time ends
+  the wait, and both keys act, except `[`, which is read as the rest of a
+  sequence, as is `O` arriving together with the letter that ends F1 to F4,
+  an arrow, Home or End; a key the terminal sends in the same burst as the
+  Esc is Alt with that key. A report that starts later than 0.5 s after
+  they went off, split by the connection right after its first byte or two,
+  can still type its rest, and so can any report that takes more than 0.8 s
+  to arrive whole.
+  A click is read only where the OMH TUI can tell which row it landed on:
+  once the session's output has reached the bottom of the screen, or after
+  Ctrl+L. Until then it leaves the mouse to the terminal and the keys open
+  the list.
+- When Hermes asks something (an approval, a clarify question, a sudo
+  password), the question takes the slot until you answer. Nothing is answered
+  for you: Esc or Ctrl+C declines. An approval offers deny, allow once and
+  allow this session, in that order, with deny selected; allowing takes the
+  Right arrow and then Enter (Left and Right stop at either end, Up and Down
+  do nothing), `d` or `n` denies, and Enter on an untouched approval denies.
+  Keys pressed in the first moment after any question appears are ignored,
+  Enter included, so typing that was meant for the composer cannot answer it.
+  Approving a command permanently stays a choice for `hermes --tui`. The
+  terminal bell rings once as an approval opens, so a terminal in the
+  background can flag it; `OMH_TUI_BELL=0` keeps it quiet.
+- Images: drag an image file onto the terminal, press Ctrl+V for an image on
+  the clipboard, or type `/image <path>`. Each one shows as a chip on the row
+  above the input (`📎 shot.png 1280×720`) and goes with the next message you
+  send; Backspace on an empty composer removes the last one. Hermes reads and
+  queues the file; the OMH TUI keeps only its name. Dropping a file that is not
+  an image types Hermes' reference to it instead.
+- `/sessions` (also `/resume`, `/switch`, `/session`) lists your stored
+  sessions in the slot, newest first, with the current one marked; type to
+  filter, Up/Down or PageUp/PageDown to move, Enter to switch, Esc to close.
+  `/sessions <id or exact title>` switches directly. The screen is redrawn as
+  the session you picked, with its earlier turns; the one you left closes only
+  after the new one opened, so a session that cannot be opened (for example
+  one another process holds) leaves you where you were.
+
+Keys (`?` on an empty composer, or `/keys`, shows this list in the TUI; q or
+Esc closes it):
+
+| Key | Does |
+| --- | --- |
+| Enter | Sends the composer |
+| `\` then Enter, Alt+Enter, Shift+Enter, Ctrl+J | Adds a line |
+| Ctrl+Enter | Steers a running turn with the composer's text, on a terminal that tells it from Enter (`/steer <text>` steers on any terminal); idle, sends it as Enter does |
+| Tab | Completes a slash command, or the `@` reference being typed |
+| Shift+Tab | Cycles the input mode: normal, accept all, plan; while Hermes itself has approvals off, turns plan on and off |
+| Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max |
+| `@` | Starts a file or folder reference; Hermes offers matches above the composer |
+| `?` | On an empty composer, shows this list; `/keys` does too |
+| ↑ / ↓ | Move between the composer's rows, walk the input history at its first and last row, or move through an open completion menu |
+| ↑ | On an empty composer with prompts queued, takes them all back into the composer to edit |
+| ↓ | On an empty composer while the mode row shows subagents, opens the agent list under the composer |
+| ← / → | Move by a character; with Ctrl or Alt, by a word |
+| Home / End, Ctrl+A / Ctrl+E | Go to the start or the end of the line |
+| Backspace / Delete | Delete a character; Backspace on an empty composer removes the last attached image |
+| Ctrl+W | Deletes the word before the caret |
+| Ctrl+U / Ctrl+K | Delete to the start or the end of the line |
+| Esc | Closes the `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run) |
+| Ctrl+V | Attaches the clipboard image |
+| Ctrl+O | Shows or hides thinking and tool detail |
+| Ctrl+L | Redraws the screen |
+| Ctrl+C | Clears the composer, interrupts a running turn, or (twice when idle) exits |
+| Ctrl+D | On an empty composer, exits; with text, deletes the character ahead |
+| ← / → then Enter | On an approval, picks allow once or allow this session; Enter alone denies |
+| `d`, `n` | On an approval, deny |
+| 1 to 9 | On a clarify question with choices, pick one; ↑ / ↓ then Enter on an empty answer does too |
+| Esc, Ctrl+C | On a question Hermes asked, decline it (an approval is denied); Ctrl+C first clears an answer being typed |
+| ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions` list, move, switch to the highlighted session, or close it; typing filters the list |
+| ↑ / ↓, Enter, Esc | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; typing leaves it too |
+| Click | On an agent on the mode row's strip while a turn runs, or on a row of the agent list, opens that agent's log (on main, only leaves the list) |
+| ← / →, q or Esc | In an agent's log, show the agent before or after, or go back; the pager's keys scroll it |
+| j / k, Space / b, g / G, q or Esc | In a pager (`/history`, `/logs`, long command output, an agent's log, this list), move a line, a page, or to either end, or leave |
+
+Ctrl+Enter and Shift+Enter reach the OMH TUI as keys of their own only where
+the terminal reports them. On start it asks iTerm2, kitty, WezTerm, tmux, VS
+Code's terminal and Windows Terminal (under WSL) for the kitty keyboard
+protocol and xterm modifyOtherKeys, and Ghostty for modifyOtherKeys only: the
+terminals Hermes' own TUI asks, recognised as Hermes recognises them, from
+`TERM_PROGRAM`, `TERM`, `TMUX`, `KITTY_WINDOW_ID` or `WT_SESSION`. Both are
+switched off on exit, a crash, SIGTERM and SIGHUP included. Elsewhere,
+Terminal.app among them, both keys send what Enter sends, so there
+`/steer <text>` steers and `\` then Enter, Alt+Enter or Ctrl+J adds a line.
+A terminal on the list can ignore the request too (tmux with
+`extended-keys off`), so the mode row names `/steer <text>` until a key has
+arrived in one of those reports, and `ctrl+enter steer` from then on.
+`OMH_TUI_KEYBOARD=legacy` stops the request on any terminal.
+
+Shift+Tab cycles three input modes, and both composer rules and the mode row
+show the one that is on. Accept all turns off Hermes' approval prompts for that
+session only. The OMH TUI sets Hermes' per-session switch, the one Shift+Tab
+sets in Hermes' own terminal, and never `approvals.mode`; it shows the mode
+only once Hermes confirms the switch for this session (or, when Hermes confirms
+neither a switch on nor the switch back off after it, shows accept all, since
+approvals may then be off), and switches it back off when you leave the mode,
+and before it leaves the session (`/new`, a switch, `/quit`, any exit), since
+Hermes keeps it through closing a session a messaging gateway started. A new
+or resumed session starts from what Hermes
+reports for it, and when Hermes reports approvals off for its own reasons
+(`approvals.mode` is off, it was started with `--yolo`, or `/yolo` turned them
+off) the composer shows accept all as well. Those approvals are not the OMH
+TUI's to turn back on: Shift+Tab then sends nothing and turns plan mode on and
+off beside accept all, and the transcript says so once per session. In plan
+mode each prompt you send goes to Hermes as `/plan <text>`, its prompt for a
+written plan instead of the work; that is an
+instruction to the model, not a restriction on its tools. An answer to a
+question Hermes asked is sent as typed in every mode.
+
+Ctrl+T steps this session's reasoning effort, and `/effort <level>` sets any
+level Hermes takes (`none`, `minimal` and `ultra` as well). The mode row shows
+the level once Hermes confirms it; a level Hermes refuses leaves the row as it
+was and says so.
+
+A steer adds what you typed to the turn that is running, without interrupting
+it: Hermes reads it after its next tool call, or, while it is compressing the
+context, queues it and sends it as the next prompt once compression is done.
+Hermes gives the same answer for both, so the transcript notes
+`↪ steer queued by Hermes:` for either. If Hermes does not take the steer
+while the turn still runs (an agent still starting, or one that takes no
+steer), the text joins the OMH TUI's own queue (`⧗`) and goes when the turn
+ends, whatever `display.busy_input_mode` says, so it never interrupts the
+turn; if the turn had already ended, it goes as an ordinary prompt. If you
+left the session (`/new`, a switch) before Hermes answered, the text comes
+back to the composer and is not sent to the session you are in. The OMH TUI
+steers only with text you typed and sent this way: a queued prompt is never
+turned into a steer.
+
+Slash commands the OMH TUI runs itself: `/help`, `/keys`, `/quit`, `/new`,
+`/sessions`, `/redraw`, `/history` (an in-memory pager over this session),
+`/details` (show or hide thinking and tool detail on the live block),
+`/queue`, `/steer <text>`, `/effort <level>`, `/logs` (the gateway's recent
+stderr, kept in memory only), `/copy`, `/image`, `/paste` (the clipboard
+image), `/theme`, and `/omh-model`.
+Commands whose screen exists only in Hermes' own terminal (`/voice`, `/pet`,
+`/agents`, the billing flows, `/save`, `/prompt`, ...) say so and name
+`hermes --tui`. Everything else goes to Hermes as it would from Hermes'
+terminal.
+
+When the OMH TUI cannot start — Windows, a terminal without `termios` or with
+`TERM=dumb`, `OMH_NO_TUI=1`, no Node for Hermes' launcher, or a Hermes whose
+gateway no longer speaks what the TUI was built for — it says why and `omh`
+opens Hermes' own terminal instead, so you lose the OMH screen, never the
+session. If the gateway stops accepting a method or a key mid-session, the
+TUI leaves with the command that reopens the same session in `hermes`; an
+event Hermes renames is not detected yet, and shows as a turn that never
+finishes. The gateway, and every tool it runs, inherits the environment `omh`
+set for the frontend, `OMH_HOME` included, so `omh --omh-home <dir>` also picks
+the store the OMH plugin inside that gateway uses when the profile names none.
+The OMH TUI writes no prompt text,
+transcript, attachment, secret or Hermes question to disk. What it does write
+is metadata: the launcher's active-session file, which holds the session id,
+and what OMH's own HUD reader and model-chain picker write under the OMH home
+(the HUD's fan-out cache, and the chains `/omh-model` saves).
+
+Bare `hermes` is unchanged: it opens Hermes' own terminal, which still shows
+the OMH skin and status widget when the branded-TUI choice below is active.
 
 ### Keep every installed layer current
 
@@ -1251,6 +1460,7 @@ exist to make a safety claim that Windows cannot back:
 | Cross-harness benchmark sandbox | Linux `bwrap` process confinement | Reports `unsupported`; no real runs |
 | `0600` / `0700` artifact permissions | POSIX mode bits | `chmod` is close to a no-op on NTFS; private artifacts are not enforced private |
 | macOS menu bar helper | Darwin + `swiftc` | Skipped, and says so |
+| OMH TUI (bare `omh`) | `termios` raw mode | Not attempted; bare `omh` opens Hermes' own terminal |
 
 Generic record locking is **not** on that list: `local_store` uses
 `msvcrt.locking` on Windows, so shared-record updates get a real OS lock with
@@ -1277,9 +1487,10 @@ OMH's setup footprint is intentionally bounded:
 - Interactive `omh setup` and `omh update` offer a default-Yes branded-TUI
   choice when the canonical config is not already
   `display.interface: tui` plus `display.skin: omh`. Accepting it (or passing
-  `--yes`) sets those two and a collapsed `display.sections`, so bare `omh`
-  and `hermes` open the same OH-MY-HERMES TUI and a long run does not bury
-  the conversation. An already-active install does not ask, so an install
+  `--yes`) sets those two and a collapsed `display.sections`, so bare `hermes`
+  opens Hermes' Modern TUI wearing the OMH skin and status widget and a long
+  run does not bury the conversation. (Bare `omh` opens the OMH TUI; it lands
+  on that same Hermes terminal only when the OMH TUI cannot start.) An already-active install does not ask, so an install
   branded before `display.sections` joined the bundle keeps its current
   sections until it runs with `--yes`. No or `--no-omh-tui` preserves the
   current values. JSON suppresses
@@ -3119,7 +3330,7 @@ Live Windows behavior under real file locking remains **Not-tested**.
 By default, `omh`/`hermes` never checks for updates on launch -- OMH's core
 promise is no network calls without an explicit opt-in. `omh update-check`
 turns on a bounded, best-effort comparison against `origin/main` that runs
-right before bare `omh` opens the TUI. This is `omh`'s own launch door
+right before bare `omh` opens the OMH TUI. This is `omh`'s own launch door
 (`commands/main.py`); bare `hermes` execs your Hermes install directly and
 never passes through this process, so it never runs this check.
 

@@ -537,6 +537,16 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
         "Without that the only evidence would be a `delegated_session` decline that never "
         "happens, which cancels against the failure that caused it and leaves no trace.",
     ),
+    ClassifiedSite(
+        "src/tui/panels.py",
+        "_read",
+        INTENTIONAL,
+        "The OMH TUI's HUD poll thread calls `read_omh_hud` in process. A reader failure becomes a "
+        "payload carrying only `error` (the exception class name) and no `privacy` or `display` "
+        "keys, which `panel_lines` renders as a one-line `OMH HUD unavailable: <class>` notice, so it "
+        "is never mistaken for an empty or healthy HUD; catching it here is what keeps the thread "
+        "alive and keeps a traceback from being printed over the TUI's own screen.",
+    ),
 )
 
 # Ruff reports one hit per handler; the inventory is keyed per enclosing
@@ -559,8 +569,10 @@ CLASSIFIED_SITES: tuple[ClassifiedSite, ...] = (
 # 51 -> 52 / 56 -> 57: `cmd_coding_fanout_status`, the `--wait` watcher's crash
 # code (a crash exits 70 with its traceback, never 1, which means a unit did
 # not verify).
-EXPECTED_HANDLER_COUNT = 57
-EXPECTED_ANCHOR_COUNT = 52
+# 57 -> 58 / 52 -> 53: `tui/panels._read`, the OMH TUI's in-process HUD poll (a
+# reader failure is a visible notice, never an empty panel or a dead thread).
+EXPECTED_HANDLER_COUNT = 58
+EXPECTED_ANCHOR_COUNT = 53
 
 
 class DerivedSite(NamedTuple):

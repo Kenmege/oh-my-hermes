@@ -237,8 +237,14 @@ PROCESS_SPAWN_ALLOWLIST: dict[str, str] = {
         "to resolve the base commit before the fanout bridge above runs."
     ),
     "src/commands/main.py": (
-        "bare `omh` with a tty -- the operator's own launch of `hermes`, the same "
-        "door as typing it themselves; never reached from any prepared-handoff path."
+        "bare `omh` with a tty -- the operator's own launch of `hermes` (as `hermes --tui` "
+        "with the OMH frontend when it can run, then Hermes' own door on its fallback exit), "
+        "the same door as typing it themselves; never reached from any prepared-handoff path."
+    ),
+    "src/tui/gateway.py": (
+        "the OMH TUI's single gateway child: Hermes' own `tui_gateway`, spawned with the interpreter "
+        "and import path Hermes' launcher handed the frontend, inside a foreground terminal the "
+        "person launched; never reached from a prepared-handoff path."
     ),
     "src/commands/setup.py": (
         "`omh setup` / `omh update` -- pip self-update, CLI re-entry after update, and the "

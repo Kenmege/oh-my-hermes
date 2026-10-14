@@ -1,0 +1,2020 @@
+"""The OMH TUI's loop and entry point, driven end to end.
+
+Each test runs `omh.tui.app.main` (or the `App` it builds) with a scripted
+terminal whose output lands in the VT screen model, a fake HUD poller, and the
+real `GatewayClient` talking to the replay gateway, which plays recorded Hermes
+6c61c3e27d frames and checks every frame the TUI sends against the recording.
+The TUI's startup differs from the recording client's (it asks `config.get`
+and `commands.catalog` before `session.create`), so those two are answered
+from the scenario's answer table: the catalog with its recorded answer, the
+config with an empty one.
+
+A script step waits for a condition on what the screen shows, then delivers
+its bytes (or a resize); one silent read follows every step, so a lone Esc
+settles as the Escape key. A step that never becomes ready ends the run with
+EOF after a deadline and is reported by its label.
+"""
+
+from __future__ import annotations
+
+import base64
+from collections import deque
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
+import io
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import stat
+import time
+import unittest
+from unittest.mock import patch
+
+from _test_temp_root import make_test_tempdir
+from _tui_gateway_replay import (
+    EXIT,
+    HANG,
+    Scenario,
+    client_frames,
+    load_fixture,
+    materialize,
+    recorded_answer,
+    replay_env,
+    spans,
+)
+from _tui_lines import line_text
+from _vt_screen import VTScreen
+from omh.tui import terminal as terminal_module
+from omh.skin_pack import hex_to_rgb
+from omh.tui.app import (
+    BANNER_HINT,
+    EXIT_HINT,
+    SLOT_ARM_SECONDS,
+    App,
+    initial_theme,
+    main,
+    mode_row_line,
+    picker_key,
+    run_model_chain_picker,
+)
+from omh.tui.gateway import GatewayClient, GatewayUnavailable, ServerRequest, gateway_spawn
+from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
+from omh.tui.launch import FALLBACK_EXIT
+from omh.tui.prompts import open_request
+from omh.tui.theme import DEFAULT_THEME, theme_named
+from omh.tui.width import line_width
+from omh.version import __version__
+
+FAST_GRACE = 0.3
+STORED_ID = "20261013_115656_e709ea"
+LIVE_ID = "b6af062a"
+APPROVAL_STORED_ID = "20261013_115811_9850e7"
+ROTATED_ID = "20261013_130000_rotated"
+STATUS_MARK = "⚚ OMH"
+RULE_MARK = "────"
+# Between the composer and the status line on these 24-row terminals: the bottom rule and the mode row.
+UNDER_COMPOSER = 2
+STARTUP_METHODS = ["client.capabilities", "config.get", "commands.catalog", "session.create"]
+NO_TERMIOS = terminal_module.termios is None
+TURN_CANCELLED = "Turn cancelled before the agent was ready"
+
+
+def startup_answers() -> tuple[tuple[str, dict], ...]:
+    return (
+        ("config.get", {"result": {"config": {}}}),
+        ("commands.catalog", recorded_answer("session", "commands_catalog")),
+    )
+
+
+class TtyStream(io.StringIO):
+    def __init__(self, tty: bool = True) -> None:
+        super().__init__()
+        self._tty = tty
+
+    def isatty(self) -> bool:
+        return self._tty
+
+
+@dataclass
+class Step:
+    data: bytes = b""
+    when: Callable[[], bool] | None = None
+    resize: tuple[int, int] | None = None  # (rows, cols)
+    capture: str = ""  # save the screen under this name when the step fires
+    label: str = ""
+
+
+class ScriptedTerminal:
+    """What `App` needs from a terminal: scripted input, output fed to a VT screen, a scriptable size."""
+
+    def __init__(self, rows: int = 24, cols: int = 80, timeout: float = 20.0) -> None:
+        self.screen = VTScreen(rows, cols)
+        self.steps: deque[Step] = deque()
+        self.timeout = timeout
+        self.deadline = 0.0
+        self.stalled = ""
+        self.captures: dict[str, list[str]] = {}
+        self.writes: list[str] = []
+        self.entered = 0
+        self.exited = 0
+        self.fired: dict[str, float] = {}  # label -> when that step fired
+        self.exited_at = 0.0
+        self.mouse_reporting = False
+        self.mouse_calls: list[bool] = []  # every `set_mouse` that changed the state, in order
+        self._resized = False
+        self._quiet = False
+
+    def script(self, *steps: Step) -> None:
+        self.steps.extend(steps)
+
+    def __enter__(self) -> ScriptedTerminal:
+        self.entered += 1
+        if not self.deadline:
+            self.deadline = time.monotonic() + self.timeout
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.exited += 1
+        self.exited_at = time.monotonic()
+
+    def size(self) -> tuple[int, int]:
+        return (self.screen.cols, self.screen.rows)
+
+    def resized(self) -> bool:
+        resized, self._resized = self._resized, False
+        return resized
+
+    def write(self, text: str) -> None:
+        self.writes.append(text)
+        self.screen.feed(text)
+
+    def set_mouse(self, enabled: bool) -> None:
+        """As `Terminal.set_mouse`: the mode switch is written only when the state changes."""
+        if enabled == self.mouse_reporting:
+            return
+        self.mouse_reporting = enabled
+        self.mouse_calls.append(enabled)
+        self.write(terminal_module.MOUSE_REPORTING_ON if enabled else terminal_module.MOUSE_REPORTING_OFF)
+
+    def _wait(self, what: str) -> bytes:
+        if time.monotonic() > self.deadline:
+            self.stalled = what
+            raise EOFError(what)
+        time.sleep(0.005)
+        return b""
+
+    def read(self, timeout: float) -> bytes:
+        if self._quiet:
+            self._quiet = False
+            return self._wait("the silence after a step")
+        if not self.steps:
+            return self._wait("the script ran out before the TUI exited")
+        step = self.steps[0]
+        if step.when is not None and not step.when():
+            return self._wait(step.label or f"step {step!r}")
+        self.steps.popleft()
+        self._quiet = True
+        if step.label:
+            self.fired[step.label] = time.monotonic()
+        if step.capture:
+            self.captures[step.capture] = self.screen.lines()
+        if step.resize is not None:
+            self.screen.resize(*step.resize)
+            self._resized = True
+        return step.data
+
+    # -- reading the screen --
+
+    def status_row(self) -> str:
+        return next((line for line in self.screen.lines() if STATUS_MARK in line), "")
+
+    def history(self) -> str:
+        return "\n".join(self.screen.history())
+
+    def idle(self) -> bool:
+        return self.status_row().rstrip().endswith("idle")
+
+    def shows(self, needle: str) -> Callable[[], bool]:
+        return lambda: needle in "\n".join(self.screen.lines())
+
+    def status_background(self) -> tuple[int, ...]:
+        row = next(index for index, line in enumerate(self.screen.lines()) if STATUS_MARK in line)
+        attrs = self.screen.attrs_at(row, self.screen.cols - 1)  # a filler cell: background only
+        start = attrs.index(48)
+        return tuple(attrs[start + 2 : start + 5])
+
+
+class FakePoller:
+    def __init__(self) -> None:
+        self.sessions: list[str] = []
+        self.started = False
+        self.stopped = False
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self, timeout: float = 1.0) -> None:
+        self.stopped = True
+
+    def set_session(self, stored_id: str) -> None:
+        self.sessions.append(stored_id)
+
+    def take(self) -> None:
+        return None
+
+
+@dataclass
+class Run:
+    root: Path
+    environ: dict[str, str]
+    terminal: ScriptedTerminal
+    poller: FakePoller = field(default_factory=FakePoller)
+    stderr: io.StringIO = field(default_factory=io.StringIO)
+    clients: list[GatewayClient] = field(default_factory=list)
+    code: int | None = None
+
+    @property
+    def frames(self) -> list[dict]:
+        return client_frames(self.root)
+
+    def calls(self, method: str) -> list[dict]:
+        return [frame for frame in self.frames if frame.get("method") == method]
+
+    @property
+    def active_session_file(self) -> Path:
+        return Path(self.environ["HERMES_TUI_ACTIVE_SESSION_FILE"])
+
+
+class AppTestCase(unittest.TestCase):
+    def prepare(self, scenario: Scenario, *, rows: int = 24, cols: int = 80, env: dict | None = None) -> Run:
+        root = Path(self.enterContext(make_test_tempdir("omh-tui-app-")))
+        materialize(root, scenario)
+        environ = {
+            **replay_env(root),
+            "HERMES_TUI_ACTIVE_SESSION_FILE": str(root / "active-session.json"),
+            "HERMES_TUI_CWD": "/fixture/project",
+            "TERM": "xterm-256color",
+            **(env or {}),
+        }
+        environ.pop("OMH_NO_TUI", None)
+        return Run(root, environ, ScriptedTerminal(rows, cols))
+
+    def make_client(self, run: Run) -> Callable[..., GatewayClient]:
+        def build(spawn: object) -> GatewayClient:
+            client = GatewayClient(spawn)  # type: ignore[arg-type]
+            run.clients.append(client)
+            self.addCleanup(client.close, FAST_GRACE)
+            return client
+
+        return build
+
+    def run_main(self, run: Run) -> Run:
+        run.code = main(
+            run.environ,
+            stdin=TtyStream(),
+            stdout=TtyStream(),
+            stderr=run.stderr,
+            open_terminal=lambda: run.terminal,
+            make_client=self.make_client(run),
+            make_poller=lambda omh_home, hermes_home: run.poller,
+        )
+        return run
+
+    def assert_clean_run(self, run: Run, code: int = 0) -> None:
+        self.assertEqual(run.terminal.stalled, "", f"the script stalled; screen:\n{run.terminal.history()}")
+        self.assertEqual(run.code, code, run.stderr.getvalue())
+        tails = [line for client in run.clients for line in client.stderr_tail()]
+        self.assertFalse([line for line in tails if line.startswith("replay:")], tails)
+
+    def submit(self, run: Run, text: str) -> Step:
+        return Step(text.encode("utf-8") + b"\r", when=run.terminal.idle, label="the idle status line")
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class StartupRefusalTests(AppTestCase):
+    def test_an_unsupported_terminal_falls_back_before_anything_starts(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup")))
+        run.code = main(
+            run.environ,
+            stdin=TtyStream(tty=False),
+            stdout=TtyStream(),
+            stderr=run.stderr,
+            open_terminal=lambda: run.terminal,
+            make_client=self.make_client(run),
+            make_poller=lambda omh_home, hermes_home: run.poller,
+        )
+        self.assertEqual(run.code, FALLBACK_EXIT)
+        self.assertIn("cannot run the OMH TUI", run.stderr.getvalue())
+        self.assertEqual(run.clients, [])
+        self.assertEqual(run.terminal.writes, [])
+
+    def test_a_missing_interpreter_falls_back_naming_it(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup")))
+        del run.environ["HERMES_PYTHON"]
+        self.run_main(run)
+        self.assertEqual(run.code, FALLBACK_EXIT)
+        self.assertIn("HERMES_PYTHON", run.stderr.getvalue())
+        self.assertEqual(run.terminal.entered, 0)
+
+    def test_an_attach_hand_off_exits_1_naming_hermes_resume(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup")),
+            env={"HERMES_TUI_GATEWAY_URL": "ws://127.0.0.1:9/attach", "HERMES_TUI_RESUME": "20261013_000000_abc"},
+        )
+        self.run_main(run)
+        self.assertEqual(run.code, 1)
+        self.assertIn("hermes --tui --resume 20261013_000000_abc", run.stderr.getvalue())
+        self.assertEqual(run.clients, [])
+        self.assertEqual(run.terminal.entered, 0)
+
+    def test_drift_on_a_startup_call_falls_back_and_reaps_the_gateway(self) -> None:
+        # Hermes 6c61c3e27d's real -32601 answer, served for config.get.
+        drift = recorded_answer("session", "drift_reply")
+        run = self.prepare(Scenario("session", spans("session", "startup"), answers=(("config.get", drift),)))
+        self.run_main(run)
+        self.assertEqual(run.code, FALLBACK_EXIT)
+        self.assertIn("-32601", run.stderr.getvalue())
+        self.assertEqual(run.terminal.entered, 0)
+        self.assertEqual(run.clients[0].close(grace=FAST_GRACE), 0)
+
+
+    def test_the_gateway_stderr_printed_at_a_failed_start_carries_no_escape_sequence(self) -> None:
+        run = self.prepare(
+            Scenario("session", (), stderr=("\x1b[31mboom\x1b[0m: no provider\x1b]0;title\x07",), after=EXIT, exit_code=1)
+        )
+        self.run_main(run)
+        self.assertEqual(run.code, FALLBACK_EXIT)
+        printed = run.stderr.getvalue()
+        self.assertIn("  boom: no provider\n", printed)
+        self.assertNotIn("\x1b", printed)
+        self.assertNotIn("\x07", printed)
+
+    def test_ctrl_c_while_the_session_opens_exits_130_and_closes_the_gateway(self) -> None:
+        # The gateway start and the session call run before the terminal goes raw, where
+        # Ctrl+C is still SIGINT; KeyboardInterrupt stands in for it on the first startup call.
+        run = self.prepare(Scenario("session", spans("session", "startup"), answers=startup_answers()))
+        build = self.make_client(run)
+
+        def interrupted(spawn: object) -> GatewayClient:
+            client = build(spawn)
+            call = client.call
+
+            def call_or_interrupt(method: str, params: dict, timeout: float = 30.0) -> dict:
+                if method == "config.get":
+                    raise KeyboardInterrupt
+                return call(method, params, timeout)
+
+            client.call = call_or_interrupt  # type: ignore[method-assign]
+            return client
+
+        run.code = main(
+            run.environ,
+            stdin=TtyStream(),
+            stdout=TtyStream(),
+            stderr=run.stderr,
+            open_terminal=lambda: run.terminal,
+            make_client=interrupted,
+            make_poller=lambda omh_home, hermes_home: run.poller,
+        )
+        self.assertEqual(run.code, 130)
+        self.assertIn("interrupted", run.stderr.getvalue())
+        self.assertNotIn("Traceback", run.stderr.getvalue())
+        self.assertEqual(run.terminal.entered, 0)
+        with self.assertRaises(GatewayUnavailable):  # its input was closed: the child is being reaped
+            run.clients[0].request("session.list", {"limit": 1})
+
+
+class SignalledTerminal(ScriptedTerminal):
+    """Raises `signum` in this process from inside the loop, the first time the TUI is idle."""
+
+    def __init__(self, signum: int) -> None:
+        super().__init__()
+        self.signum = signum
+
+    def read(self, timeout: float) -> bytes:
+        if self.signum and self.idle():
+            signum, self.signum = self.signum, 0
+            signal.raise_signal(signum)
+        return super().read(timeout)
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class ExitSignalTests(AppTestCase):
+    def test_sigterm_and_sighup_restore_the_terminal_reap_the_gateway_and_put_the_handler_back(self) -> None:
+        for name in ("SIGTERM", "SIGHUP"):
+            with self.subTest(signal=name):
+                signum = getattr(signal, name)
+                caught: list[int] = []
+
+                def outer(number: int, frame: object) -> None:
+                    caught.append(number)  # only reached if the TUI installed no handler of its own
+
+                # The handler the TUI must restore, and a guard: a TUI that installs none
+                # leaves this runner alive and the script below exits it.
+                self.addCleanup(signal.signal, signum, signal.signal(signum, outer))
+                run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+                run.terminal = SignalledTerminal(signum)
+                run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="the first frame"))
+                with self.assertRaises(SystemExit) as raised:
+                    self.run_main(run)
+                self.assertEqual(raised.exception.code, 128 + signum)
+                self.assertEqual(caught, [])
+                self.assertEqual((run.terminal.entered, run.terminal.exited), (1, 1))
+                with self.assertRaises(GatewayUnavailable):  # its input was closed: the child is being reaped
+                    run.clients[0].request("session.list", {"limit": 1})
+                self.assertIs(signal.getsignal(signum), outer)
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class SessionTests(AppTestCase):
+    def test_startup_draws_status_and_composer_and_writes_the_active_session_file(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, capture="ready", label="the first frame"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        screen = run.terminal.captures["ready"]
+        status = next(index for index, line in enumerate(screen) if STATUS_MARK in line)
+        self.assertIn("deepseek/deepseek-v4.1-flash-ultrafast", screen[status])
+        composer = status - 1 - UNDER_COMPOSER
+        self.assertEqual(screen[composer], "› Ask Hermes anything", screen)
+        self.assertIn(RULE_MARK, screen[composer - 1])
+        self.assertIn(RULE_MARK, screen[composer + 1])
+        self.assertEqual(screen[status - 1], "? shortcuts · ⇧⇥ mode · ctrl+t effort", screen)
+        self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
+        self.assertEqual(run.calls("config.get")[0]["params"], {"key": "full"})
+        self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": STORED_ID})
+        self.assertEqual(stat.S_IMODE(os.stat(run.active_session_file).st_mode), 0o600)
+        self.assertEqual(run.poller.sessions, [STORED_ID])
+        self.assertTrue(run.poller.started and run.poller.stopped)
+        self.assertEqual((run.terminal.entered, run.terminal.exited), (1, 1))
+        # The region is gone after exit; nothing of it is left on the screen.
+        self.assertNotIn(STATUS_MARK, run.terminal.history())
+
+    def test_a_typed_prompt_is_submitted_and_the_reply_lands_in_scrollback(self) -> None:
+        prompt = "Reply with exactly the word: ok"
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers())
+        )
+        run.terminal.script(
+            self.submit(run, prompt),
+            Step(b"\x04", when=lambda: "later." in run.terminal.history() and run.terminal.idle(), label="reply"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (submitted,) = run.calls("prompt.submit")
+        self.assertEqual(submitted["params"], {"session_id": LIVE_ID, "text": prompt})
+        history = run.terminal.history()
+        self.assertIn(f"› {prompt}", history)
+        self.assertIn("I'm Hermes, your agent", history)
+        self.assertLess(history.index(f"› {prompt}"), history.index("I'm Hermes"))
+
+    def test_input_during_a_turn_is_queued_and_sent_when_the_turn_ends(self) -> None:
+        run = self.prepare(
+            Scenario(
+                "session",
+                spans("session", "startup", "create", "plain_turn", "smart_approved_turn"),
+                answers=startup_answers(),
+            )
+        )
+        run.terminal.script(
+            # One read: the second Enter lands while the first prompt's turn is pending.
+            Step(b"first prompt\rsecond prompt\r", when=run.terminal.idle, label="idle"),
+            Step(b"\x04", when=lambda: "cleanly)." in run.terminal.history() and run.terminal.idle(), label="turn 2"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        first, second = run.calls("prompt.submit")
+        self.assertEqual(first["params"], {"session_id": LIVE_ID, "text": "first prompt"})
+        self.assertEqual(second["params"], {"session_id": LIVE_ID, "text": "second prompt", "queued": True})
+        history = run.terminal.history()
+        self.assertLess(history.index("› first prompt"), history.index("later."))
+        self.assertLess(history.index("later."), history.index("› second prompt"))
+
+    def test_ctrl_c_during_a_turn_sends_session_interrupt(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "interrupted_turn"), answers=startup_answers())
+        )
+        run.terminal.script(
+            self.submit(run, "Write the numbers from 1 to 300, one per line, nothing else."),
+            Step(b"\x03", when=lambda: run.terminal.status_row().rstrip().endswith("running"), label="running"),
+            Step(b"\x04", when=lambda: "Interrupted." in run.terminal.history() and run.terminal.idle(), label="end"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (interrupt,) = run.calls("session.interrupt")
+        self.assertEqual(interrupt["params"], {"session_id": LIVE_ID})
+
+    def test_ctrl_c_twice_while_idle_exits_0(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.terminal.script(
+            Step(b"\x03", when=run.terminal.idle, label="idle"),
+            Step(b"\x03", when=run.terminal.shows(EXIT_HINT), label="the exit hint"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
+
+    def test_ctrl_c_as_kitty_and_modify_other_keys_reports_exits_like_the_byte(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.terminal.script(
+            Step(b"\x1b[99;5u", when=run.terminal.idle, label="idle"),
+            Step(b"\x1b[27;5;99~", when=run.terminal.shows(EXIT_HINT), label="the exit hint"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
+
+    def test_mouse_reports_the_tui_did_not_ask_for_type_nothing(self) -> None:
+        # A program that died with mouse tracking on leaves the terminal reporting clicks, motion and the wheel.
+        reports = b"\x1b[<0;5;20M\x1b[<0;5;20m\x1b[<35;6;21M\x1b[<64;5;20M\x1b[<65;5;20M\x1b[M !!"
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.terminal.script(
+            Step(reports, when=run.terminal.idle, capture="before", label="idle"),
+            Step(b"\x04", when=run.terminal.idle, capture="after", label="the reports"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual(composer_row(run.terminal.captures["after"]), composer_row(run.terminal.captures["before"]))
+        self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
+
+    def test_the_default_terminal_reads_the_environment_main_was_given(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers()),
+            env={"TERM_PROGRAM": "iTerm.app"},
+        )
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="the first frame"))
+        given: list[object] = []
+
+        def build_terminal(*, environ: object) -> ScriptedTerminal:
+            given.append(environ)
+            return run.terminal
+
+        with patch("omh.tui.app.Terminal", build_terminal):
+            run.code = main(
+                run.environ,
+                stdin=TtyStream(),
+                stdout=TtyStream(),
+                stderr=run.stderr,
+                make_client=self.make_client(run),
+                make_poller=lambda omh_home, hermes_home: run.poller,
+            )
+        self.assert_clean_run(run)
+        self.assertEqual(given, [run.environ])
+
+    def test_a_new_stored_id_rewrites_the_session_file_and_repoints_the_poller(self) -> None:
+        rotated = {
+            "jsonrpc": "2.0",
+            "method": "event",
+            "params": {
+                "type": "session.info",
+                "session_id": LIVE_ID,
+                "payload": {"model": "deepseek/deepseek-v4.1-flash-ultrafast", "stored_session_id": ROTATED_ID},
+            },
+        }
+        foreign = {**rotated, "params": {**rotated["params"], "session_id": "someone-else"}}
+        foreign["params"]["payload"] = {"stored_session_id": "20261013_999999_foreign"}
+        played = spans("session", "startup", "create")
+        position = sum(stop - start for start, stop in played)
+        run = self.prepare(
+            Scenario(
+                "session",
+                played,
+                inject=((position, json.dumps(foreign)), (position, json.dumps(rotated))),
+                answers=startup_answers(),
+            )
+        )
+        run.terminal.script(Step(b"\x04", when=lambda: run.poller.sessions[-1:] == [ROTATED_ID], label="rotation"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        # The event for another session id was dropped; only the live session's rotation counted.
+        self.assertEqual(run.poller.sessions, [STORED_ID, ROTATED_ID])
+        self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": ROTATED_ID})
+        self.assertEqual(stat.S_IMODE(os.stat(run.active_session_file).st_mode), 0o600)
+
+    def error_run(self, *, submits: int) -> Run:
+        """A session whose prompt.submit is answered `streaming` and then ended by a bare `error` event.
+
+        Hermes 6c61c3e27d does this when it cancels a turn before the agent is ready
+        (`tui_gateway/methods_prompt.py`): no `message.start`, no `message.complete`.
+        """
+        submit = (5, 7)  # the recorded prompt.submit and its `streaming` answer
+        played = (*spans("session", "startup", "create"), *([submit] * submits))
+        position = sum(stop - start for start, stop in played[:3])
+        error = {"jsonrpc": "2.0", "method": "event", "params": {
+            "type": "error", "session_id": LIVE_ID, "payload": {"message": TURN_CANCELLED}}}
+        return self.prepare(Scenario("session", played, inject=((position, json.dumps(error)),), answers=startup_answers()))
+
+    def test_a_turn_ended_by_an_error_event_leaves_the_tui_idle_so_ctrl_c_twice_exits(self) -> None:
+        run = self.error_run(submits=1)
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "first prompt"),
+            Step(b"\x03", when=lambda: TURN_CANCELLED in terminal.history() and terminal.idle(), label="idle again"),
+            Step(b"\x03", when=terminal.shows(EXIT_HINT), label="the exit hint"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual(run.calls("session.interrupt"), [])
+
+    def test_a_turn_ended_by_an_error_event_sends_the_next_queued_prompt(self) -> None:
+        run = self.error_run(submits=2)
+        terminal = run.terminal
+        terminal.script(
+            # One read: the second prompt queues behind the first, whose turn the error ends.
+            Step(b"first prompt\rsecond prompt\r", when=terminal.idle, label="idle"),
+            Step(b"\x04", when=lambda: len(run.calls("prompt.submit")) == 2, label="the queued prompt sent"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        first, second = run.calls("prompt.submit")
+        self.assertEqual(first["params"], {"session_id": LIVE_ID, "text": "first prompt"})
+        self.assertEqual(second["params"], {"session_id": LIVE_ID, "text": "second prompt", "queued": True})
+        history = terminal.history()
+        self.assertLess(history.index(TURN_CANCELLED), history.index("› second prompt"))
+
+    def test_a_refused_submit_sends_the_next_queued_prompt(self) -> None:
+        answers = (
+            *startup_answers(),
+            ("prompt.submit", {"error": {"code": 4090, "message": "another process owns this session"}}),
+            ("prompt.submit", {"result": {"status": "streaming"}}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            Step(b"first prompt\rsecond prompt\r", when=terminal.idle, label="idle"),
+            Step(b"\x04", when=lambda: len(run.calls("prompt.submit")) == 2, label="the queued prompt sent"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        first, second = run.calls("prompt.submit")
+        self.assertEqual(second["params"], {"session_id": LIVE_ID, "text": "second prompt", "queued": True})
+        self.assertIn("another process owns this session", terminal.history())
+
+    def test_quit_closes_the_session_before_leaving(self) -> None:
+        answers = (*startup_answers(), ("session.close", {"result": {"closed": True}}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        run.terminal.script(self.submit(run, "/quit"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual([frame["params"] for frame in run.calls("session.close")], [{"session_id": LIVE_ID}])
+
+    def test_a_connection_request_is_named_once_per_operation(self) -> None:
+        def event(kind: str, payload: dict) -> str:
+            return json.dumps({"jsonrpc": "2.0", "method": "event",
+                               "params": {"type": kind, "session_id": LIVE_ID, "payload": payload}})
+
+        played = spans("session", "startup", "create")
+        end = sum(stop - start for start, stop in played)
+        request = {"op_id": "op-1", "seq": 1, "deadline_at": 0, "targets": [], "tool_call_id": None}
+        run = self.prepare(Scenario("session", played, answers=startup_answers(), inject=(
+            (end, event("connection.request", request)),
+            (end, event("connection.request", {**request, "seq": 2})),
+            (end, event("error", {"message": "marker after both requests"})),
+        )))
+        run.terminal.script(Step(b"\x04", when=run.terminal.shows("marker after both requests"), label="the marker"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        history = run.terminal.history()
+        self.assertEqual(history.count("waiting for an app connection"), 1, history)
+        self.assertIn("hermes --tui", history)
+
+    def test_a_gateway_exit_mid_session_returns_1_with_the_resume_line(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers(), after=EXIT)
+        )
+        self.run_main(run)
+        self.assertEqual(run.terminal.stalled, "")
+        self.assertEqual(run.code, 1)
+        self.assertIn(f"hermes --tui --resume {STORED_ID}", run.stderr.getvalue())
+        self.assertIn("exited", run.terminal.history())
+        self.assertEqual((run.terminal.entered, run.terminal.exited), (1, 1))
+
+    def test_a_resize_repaints_without_ghost_rows(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+
+        def settled(rows: int, cols: int) -> Callable[[], bool]:
+            def ready() -> bool:
+                screen = run.terminal.screen
+                return (screen.rows, screen.cols) == (rows, cols) and screen.lines()[rows - 2].startswith(STATUS_MARK)
+
+            return ready
+
+        run.terminal.script(
+            Step(resize=(16, 60), when=run.terminal.idle, label="idle"),
+            Step(resize=(30, 100), when=settled(16, 60), capture="narrow", label="the 16x60 frame"),
+            Step(b"\x04", when=settled(30, 100), capture="wide", label="the 30x100 frame"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        for name, rows, cols in (("narrow", 16, 60), ("wide", 30, 100)):
+            with self.subTest(size=name):
+                screen = run.terminal.captures[name]
+                self.assertEqual(len(screen), rows)
+                drawn = [line for line in screen if line]
+                self.assertEqual(sum(STATUS_MARK in line for line in screen), 1, screen)
+                self.assertEqual(sum(RULE_MARK in line for line in screen), 2, screen)
+                # The redrawn session (banner + hint) and the region (rule, composer, rule, mode row, status),
+                # nothing else.
+                self.assertEqual(len(drawn), 7, screen)
+                self.assertTrue(drawn[0].startswith("⚚ OH-MY-HERMES"), screen)
+                self.assertTrue(all(len(line) <= cols for line in screen))
+
+
+    def test_a_settled_resize_redraws_the_session_once_with_no_old_frame_in_scrollback(self) -> None:
+        # A real terminal reflows its rows on a width change, so the region cannot repaint in
+        # place; after the size settles the TUI erases screen and scrollback and prints the
+        # session again at the new width.
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers()),
+            cols=100,
+            env={"HOME": "/fixture"},
+        )
+
+        def settled(rows: int, cols: int) -> Callable[[], bool]:
+            def ready() -> bool:
+                screen = run.terminal.screen
+                return (screen.rows, screen.cols) == (rows, cols) and screen.lines()[rows - 2].startswith(STATUS_MARK)
+
+            return ready
+
+        run.terminal.script(
+            Step(resize=(20, 70), when=run.terminal.idle, label="idle"),
+            Step(resize=(20, 60), when=settled(20, 70), label="the 20x70 frame"),
+            Step(b"\x04", when=settled(20, 60), capture="final", label="the 20x60 frame"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        screen = run.terminal.captures["final"]
+        everything = run.terminal.screen.scrollback + screen
+        self.assertEqual(sum(STATUS_MARK in line for line in everything), 1, everything)
+        self.assertEqual(sum(line.startswith("⚚ OH-MY-HERMES") for line in everything), 1, everything)
+        self.assertTrue(screen[0].startswith("⚚ OH-MY-HERMES"), screen[:2])
+        self.assertTrue(all(len(line) <= 60 for line in everything))
+
+    def test_a_session_without_subagents_never_turns_on_mouse_reporting_so_drag_selection_stays_native(self) -> None:
+        # With agents to click it does, for as long as they are clickable: `test_tui_agent_mouse`.
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="the first frame"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        written = "".join(run.terminal.writes)
+        for mode in ("?1000h", "?1002h", "?1003h", "?1006h", "?1015h"):
+            with self.subTest(mode=mode):
+                self.assertNotIn("\x1b[" + mode, written)
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class PromptSlotTests(AppTestCase):
+    def approval_run(self) -> Run:
+        return self.prepare(
+            Scenario("approval", spans("approval", "startup", "create", "approval_turn"), answers=startup_answers())
+        )
+
+    def assert_denied(self, run: Run) -> None:
+        self.assert_clean_run(run)
+        answers = [frame for frame in run.frames if frame.get("id") == "srq-52e9720342b6"]
+        self.assertEqual(answers, [{"jsonrpc": "2.0", "id": "srq-52e9720342b6", "result": {"choice": "deny"}}])
+        self.assertIn("It was blocked", run.terminal.history())
+
+    def armed(self, run: Run, label: str) -> Callable[[], bool]:
+        """Ready once the slot that step `label` saw has been open past the arm delay."""
+        return lambda: time.monotonic() - run.terminal.fired[label] > SLOT_ARM_SECONDS + 0.05
+
+    def test_an_approval_opens_a_slot_and_d_sends_the_explicit_deny(self) -> None:
+        run = self.approval_run()
+        run.terminal.script(
+            self.submit(run, "Run rm -rf ./omh-m0-probe-dir"),
+            Step(when=run.terminal.shows("Hermes asks to run"), capture="slot", label="the approval slot"),
+            Step(b"d", when=self.armed(run, "the approval slot"), label="armed"),
+            Step(b"\x04", when=lambda: "proceed." in run.terminal.history() and run.terminal.idle(), label="end"),
+        )
+        self.run_main(run)
+        self.assert_denied(run)
+        slot = "\n".join(run.terminal.captures["slot"])
+        self.assertIn("rm -rf ./omh-m0-probe-dir", slot)
+        self.assertIn("waiting on you", slot)
+        self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": APPROVAL_STORED_ID})
+
+    def test_esc_on_an_approval_sends_the_explicit_deny(self) -> None:
+        run = self.approval_run()
+        run.terminal.script(
+            self.submit(run, "Run rm -rf ./omh-m0-probe-dir"),
+            Step(when=run.terminal.shows("Hermes asks to run"), label="the approval slot"),
+            Step(b"\x1b", when=self.armed(run, "the approval slot"), label="armed"),
+            Step(b"\x04", when=lambda: "proceed." in run.terminal.history() and run.terminal.idle(), label="end"),
+        )
+        self.run_main(run)
+        self.assert_denied(run)
+
+    def test_up_then_enter_on_an_armed_approval_still_denies(self) -> None:
+        # Up then Enter is the composer's recall-and-resend. On an approval Up moves nothing,
+        # so the Enter answers the default deny; the replay accepts only the deny.
+        run = self.approval_run()
+        run.terminal.script(
+            self.submit(run, "Run rm -rf ./omh-m0-probe-dir"),
+            Step(when=run.terminal.shows("Hermes asks to run"), label="the approval slot"),
+            Step(b"\x1b[A\r", when=self.armed(run, "the approval slot"), label="armed"),
+            Step(b"\x04", when=lambda: "proceed." in run.terminal.history() and run.terminal.idle(), label="end"),
+        )
+        self.run_main(run)
+        self.assert_denied(run)
+
+    def test_keys_that_arrive_as_an_approval_opens_are_ignored(self) -> None:
+        # Right, Enter would allow once. Typed for the composer as the request lands, they
+        # reach the slot inside the arm delay and do nothing; the replay accepts only the deny.
+        run = self.approval_run()
+        terminal = run.terminal
+        now = [100.0]
+        client = self.make_client(run)(gateway_spawn(run.environ))
+        client.start(ready_timeout=10.0)
+        app = App(terminal, client, run.environ, poller=run.poller, clock=lambda: now[0])
+        app.startup()
+        terminal.script(
+            self.submit(run, "Run rm -rf ./omh-m0-probe-dir"),
+            Step(b"\x1b[C\r", when=terminal.shows("Hermes asks to run"), label="the approval slot"),
+            Step(when=lambda: not now.__setitem__(0, 100.0 + SLOT_ARM_SECONDS / 2), label="half the delay"),
+            Step(b"\r", when=terminal.shows("Hermes asks to run"), label="still arming"),
+            Step(when=lambda: not now.__setitem__(0, 100.0 + SLOT_ARM_SECONDS), label="the delay passed"),
+            Step(b"d", when=terminal.shows("Hermes asks to run"), label="armed"),
+            Step(b"\x04", when=lambda: "proceed." in terminal.history() and terminal.idle(), label="end"),
+        )
+        with terminal:
+            run.code = app.run()
+        self.assert_denied(run)
+
+    def test_a_resumed_sessions_open_request_is_redelivered_as_a_slot(self) -> None:
+        # The recorded approval request, handed back by session.resume as an open request; the
+        # replay then expects the recorded deny for it and plays the rest of the recorded turn.
+        request = load_fixture("approval")[1][20]["frame"]
+        resumed = {
+            "result": {
+                "session_id": "f05e2691",
+                "stored_session_id": APPROVAL_STORED_ID,
+                "message_count": 1,
+                "messages": [],
+                "info": {"model": "deepseek/deepseek-v4.1-flash-ultrafast"},
+                "running": True,
+                "open_requests": [{"id": request["id"], "method": request["method"], "params": request["params"]}],
+            }
+        }
+        startup = spans("approval", "startup")
+        run = self.prepare(
+            Scenario("approval", (*startup, (21, 47)), answers=(*startup_answers(), ("session.resume", resumed))),
+            env={"HERMES_TUI_RESUME": APPROVAL_STORED_ID},
+        )
+        run.terminal.script(
+            Step(when=run.terminal.shows("Hermes asks to run"), label="the re-delivered approval"),
+            Step(b"d", when=self.armed(run, "the re-delivered approval"), label="armed"),
+            Step(b"\x04", when=lambda: "proceed." in run.terminal.history() and run.terminal.idle(), label="end"),
+        )
+        self.run_main(run)
+        self.assert_denied(run)
+        (resume,) = run.calls("session.resume")
+        self.assertEqual(resume["params"], {"session_id": APPROVAL_STORED_ID, "cols": 80})
+        self.assertEqual(run.calls("session.create"), [])
+        self.assertTrue(run.terminal.history().startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {APPROVAL_STORED_ID}"))
+        self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": APPROVAL_STORED_ID})
+
+    def assert_withdrawal_closes_the_slot(self, kind: str, payload: dict, envelope: str = "f05e2691") -> None:
+        played = (*spans("approval", "startup", "create"), (5, 21))  # the turn up to the approval request
+        withdrawal = {"jsonrpc": "2.0", "method": "event", "params": {"type": kind, "session_id": envelope, "payload": payload}}
+        position = sum(stop - start for start, stop in played)
+        run = self.prepare(
+            Scenario("approval", played, inject=((position, json.dumps(withdrawal)),), answers=startup_answers())
+        )
+        run.terminal.script(
+            self.submit(run, "Run rm -rf ./omh-m0-probe-dir"),
+            Step(b"\x04", when=run.terminal.shows("withdrew its approval request"), label="the withdrawal notice"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual([frame for frame in run.frames if frame.get("id") == "srq-52e9720342b6"], [])
+        self.assertNotIn("Hermes asks to run", "\n".join(run.terminal.screen.lines()))
+
+    def test_request_cancel_closes_the_slot_without_answering(self) -> None:
+        self.assert_withdrawal_closes_the_slot(
+            "request.cancel", {"id": "srq-52e9720342b6", "method": "approval", "reason": "timeout"}
+        )
+
+    def test_a_withdrawal_closes_the_slot_whatever_session_its_envelope_names(self) -> None:
+        # A request from a session being left (a switch, /new) is withdrawn under that session's id.
+        self.assert_withdrawal_closes_the_slot(
+            "request.cancel", {"id": "srq-52e9720342b6", "method": "approval", "reason": "session_closed"},
+            envelope="a-session-being-left",
+        )
+
+    def test_approval_cancelled_closes_the_slot_by_its_approval_id(self) -> None:
+        self.assert_withdrawal_closes_the_slot(
+            "approval.cancelled",
+            {
+                "session_id": "f05e2691",
+                "stored_session_id": APPROVAL_STORED_ID,
+                "reason": "interrupt",
+                "cancelled_count": 1,
+                "request_ids": ["421ace443ef640baa09f80731226646e"],
+            },
+        )
+
+    def test_a_clarify_choice_is_picked_by_its_number(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "clarify_turn"), answers=startup_answers())
+        )
+        run.terminal.script(
+            self.submit(run, "Ask me red or blue."),
+            Step(when=run.terminal.shows("Which color do you prefer?"), label="the clarify slot"),
+            Step(b"2", when=self.armed(run, "the clarify slot"), label="armed"),
+            Step(b"\x04", when=run.terminal.idle, label="the end of the turn"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        answers = [frame for frame in run.frames if frame.get("id") == "srq-c7e7e10e23ab"]
+        self.assertEqual(answers, [{"jsonrpc": "2.0", "id": "srq-c7e7e10e23ab", "result": {"answers": {"q0": "blue"}}}])
+
+    def test_keys_and_an_enter_that_arrive_as_a_clarify_opens_answer_nothing(self) -> None:
+        # Enter would pick the highlighted `red`, and so would `1`. Typed for the composer as the
+        # question lands, they reach it inside the arm delay and do nothing; the replay records `blue`.
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "clarify_turn"), answers=startup_answers())
+        )
+        terminal = run.terminal
+        now = [100.0]
+        client = self.make_client(run)(gateway_spawn(run.environ))
+        client.start(ready_timeout=10.0)
+        app = App(terminal, client, run.environ, poller=run.poller, clock=lambda: now[0])
+        app.startup()
+        question = terminal.shows("Which color do you prefer?")
+        terminal.script(
+            self.submit(run, "Ask me red or blue."),
+            Step(b"\r", when=question, label="the clarify slot"),
+            Step(when=lambda: not now.__setitem__(0, 100.0 + SLOT_ARM_SECONDS / 2), label="half the delay"),
+            Step(b"1", when=question, label="still arming"),
+            Step(when=lambda: not now.__setitem__(0, 100.0 + SLOT_ARM_SECONDS), label="the delay passed"),
+            Step(b"2", when=question, label="armed"),
+            Step(b"\x04", when=terminal.idle, label="the end of the turn"),
+        )
+        with terminal:
+            run.code = app.run()
+        self.assert_clean_run(run)
+        answers = [frame for frame in run.frames if frame.get("id") == "srq-c7e7e10e23ab"]
+        self.assertEqual(answers, [{"jsonrpc": "2.0", "id": "srq-c7e7e10e23ab", "result": {"answers": {"q0": "blue"}}}])
+
+    def test_a_typed_clarify_answer_never_enters_the_input_history(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "clarify_turn"), answers=startup_answers())
+        )
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "Ask me red or blue."),
+            Step(when=terminal.shows("Which color do you prefer?"), label="the clarify slot"),
+            Step(b"blue\r", when=self.armed(run, "the clarify slot"), label="armed"),
+            Step(b"\x1b[A", when=lambda: terminal.idle() and not terminal.shows("1. red")(), label="idle"),
+            Step(b"\x03\x04", when=lambda: composer_row(terminal.screen.lines()) == "› Ask me red or blue.",
+                 label="the recalled prompt"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        answers = [frame for frame in run.frames if frame.get("id") == "srq-c7e7e10e23ab"]
+        self.assertEqual(answers, [{"jsonrpc": "2.0", "id": "srq-c7e7e10e23ab", "result": {"answers": {"q0": "blue"}}}])
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class SlashCommandTests(AppTestCase):
+    def test_a_hermes_only_command_shows_its_door_and_sends_nothing(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.terminal.script(
+            self.submit(run, "/voice"),
+            Step(b"\x04", when=run.terminal.shows("hermes --tui"), label="the hermes notice"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertIn("/voice runs in Hermes' own terminal", run.terminal.history())
+        self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
+
+    def test_an_unknown_command_goes_to_slash_exec_then_command_dispatch_on_4018(self) -> None:
+        answers = (
+            *startup_answers(),
+            ("slash.exec", {"error": {"code": 4018, "message": "not a slash.exec command"}}),
+            ("command.dispatch", {"result": {"type": "exec", "output": "xyz ran through command.dispatch"}}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        run.terminal.script(
+            self.submit(run, "/xyz"),
+            Step(b"\x04", when=run.terminal.shows("xyz ran through"), label="the dispatch output"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (slash,) = run.calls("slash.exec")
+        self.assertEqual(slash["params"], {"command": "xyz", "session_id": LIVE_ID})
+        (dispatch,) = run.calls("command.dispatch")
+        self.assertEqual(dispatch["params"], {"name": "xyz", "arg": "", "session_id": LIVE_ID})
+
+    def test_a_drift_reply_mid_session_ends_it_with_the_line_that_reopens_it_in_hermes(self) -> None:
+        # 4000 (a key this Hermes does not know) or -32601 (a method it does not have) during a
+        # session means the gateway no longer speaks the declared contract: leave, name hermes.
+        for code, message in ((4000, "extra fields not permitted"), (-32601, "unknown method: slash.exec")):
+            with self.subTest(code=code):
+                answers = (*startup_answers(), ("slash.exec", {"error": {"code": code, "message": message}}))
+                run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+                run.terminal.script(self.submit(run, "/xyz"))
+                self.run_main(run)
+                self.assertEqual(run.terminal.stalled, "")
+                self.assertEqual(run.code, 1)
+                self.assertIn(f"hermes --tui --resume {STORED_ID}", run.stderr.getvalue())
+                self.assertEqual(run.calls("command.dispatch"), [])
+                self.assertEqual((run.terminal.entered, run.terminal.exited), (1, 1))
+
+    def test_tab_completes_a_local_command_and_history_pages_on_the_alternate_screen(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers())
+        )
+        terminal = run.terminal
+        run.terminal.script(
+            self.submit(run, "Reply with exactly the word: ok"),
+            Step(b"/hist", when=lambda: "later." in terminal.history() and terminal.idle(), label="reply"),
+            Step(b"\t", when=terminal.shows("/history"), capture="menu", label="the completion menu"),
+            Step(b"\r", when=terminal.shows("› /history"), label="the completed command"),
+            Step(b"q", when=lambda: terminal.screen.alternate, capture="pager", label="the pager"),
+            Step(b"\x04", when=lambda: not terminal.screen.alternate and terminal.idle(), capture="back", label="back"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertTrue(any("Page through this session's transcript" in line for line in terminal.captures["menu"]))
+        pager = "\n".join(terminal.captures["pager"])
+        self.assertIn("I'm Hermes, your agent", pager)
+        self.assertIn("history · ", pager)
+        back = "\n".join(terminal.captures["back"])
+        self.assertIn(STATUS_MARK, back)
+        self.assertNotIn("history · ", back)
+        self.assertEqual(run.calls("slash.exec"), [])
+
+    def test_omh_model_reads_the_picker_keys_from_the_raw_terminal_and_ctrl_c_cancels(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        terminal = run.terminal
+        keys: list[str] = []
+
+        def picker(environ: object, theme: object, *, read_key, write, width: int) -> str:
+            write("picker frame\nsecond row\n")
+            while not keys or keys[-1] not in ("quit", "enter"):
+                keys.append(read_key())
+            return "Cancelled; the model chains were not changed."
+
+        client = self.make_client(run)(gateway_spawn(run.environ))
+        client.start(ready_timeout=10.0)
+        app = App(terminal, client, run.environ, poller=run.poller, pick_model_chains=picker)
+        app.startup()
+        terminal.script(
+            self.submit(run, "/omh-model"),
+            Step(b"\x1b[Bj\x03", when=terminal.shows("second row"), label="the picker frame"),
+            Step(b"\x04", when=terminal.shows("Cancelled; the model chains"), label="the picker result"),
+        )
+        with terminal:
+            run.code = app.run()
+        self.assert_clean_run(run)
+        # Ctrl+C reached the picker as a key (raw mode keeps it from being a signal).
+        self.assertEqual(keys, ["down", "down", "quit"])
+        # The terminal stayed in the TUI's raw mode: never handed back and re-entered.
+        self.assertEqual((terminal.entered, terminal.exited), (1, 1))
+        self.assertIn("picker frame\r\nsecond row\r\n", "".join(terminal.writes))
+        # Drawn on the alternate screen: nothing of the picker is left on the main screen or in scrollback.
+        self.assertIn("\x1b[?1049h", "".join(terminal.writes))
+        self.assertNotIn("picker frame", "\n".join(terminal.screen.scrollback + terminal.screen.lines()))
+
+
+class StatusLineTests(unittest.TestCase):
+    def test_the_state_is_the_last_thing_cut(self) -> None:
+        # 20 cells: since the version left the brand, brand and state alone fit 24.
+        app = App(ScriptedTerminal(rows=24, cols=20), None, {}, poller=FakePoller())  # type: ignore[arg-type]
+        app.model, app.context = "a-model", "ctx 4%"
+        app.slot = open_request("srq-1", "approval", {"command": "ls"})  # type: ignore[assignment]
+        line = app._status_line(20)
+        self.assertTrue(line_text(line).startswith("⚚"), line_text(line))
+        self.assertTrue(line_text(line).endswith(" │ waiting on you"), line_text(line))
+        self.assertEqual(line_width(line), 20)
+
+    def test_the_order_is_brand_model_context_state_with_no_version(self) -> None:
+        app = App(ScriptedTerminal(rows=24, cols=80), None, {}, poller=FakePoller())  # type: ignore[arg-type]
+        app.model, app.context = "a-model", "ctx 14k/1M 1%"
+        self.assertEqual(line_text(app._status_line(80)).rstrip(), "⚚ OMH │ a-model │ ctx 14k/1M 1% │ idle")
+
+    def test_the_context_turns_warn_then_bad_as_it_fills(self) -> None:
+        app = App(ScriptedTerminal(rows=24, cols=80), None, {}, poller=FakePoller())  # type: ignore[arg-type]
+        theme = app.theme
+        for percent, style in ((None, theme.status), (79.9, theme.status), (80, theme.status_warn),
+                               (94.9, theme.status_warn), (95, theme.status_bad), (100, theme.status_bad)):
+            with self.subTest(percent=percent):
+                app._take_usage({"context_used": 1, "context_max": 2, "context_percent": percent}
+                                if percent is not None else {"context_used": 1, "context_max": 1_000_000})
+                span = next(span for span in app._status_line(80) if span.text.startswith("ctx"))
+                self.assertEqual(span.style, style)
+
+
+
+class ModeRowTests(unittest.TestCase):
+    def row(self, width: int = 80, **facts: object) -> str:
+        defaults: dict[str, object] = {"mode": "normal", "busy": False, "queued": 0, "keyboard_protocol": False, "effort": ""}
+        return line_text(mode_row_line(**{**defaults, **facts}, width=width, theme=DEFAULT_THEME))  # type: ignore[arg-type]
+
+    def test_normal_mode_names_the_keys_that_matter_now(self) -> None:
+        self.assertEqual(self.row(), "? shortcuts · ⇧⇥ mode · ctrl+t effort")
+        self.assertEqual(self.row(busy=True), "esc interrupt · /steer <text> steers")
+        self.assertEqual(self.row(busy=True, keyboard_protocol=True), "esc interrupt · ctrl+enter steer")
+        self.assertEqual(self.row(busy=True, queued=2), "esc interrupt · /steer <text> steers · ↑ edit queued")
+
+    def test_ctrl_enter_is_named_only_where_the_terminal_tells_it_from_enter(self) -> None:
+        for busy in (False, True):
+            with self.subTest(busy=busy):
+                self.assertNotIn("ctrl+enter", self.row(busy=busy, keyboard_protocol=False))
+
+    def test_accept_and_plan_say_so_in_their_own_colour(self) -> None:
+        accept = mode_row_line(mode="accept", busy=False, queued=0, keyboard_protocol=False, effort="", width=80,
+                               theme=DEFAULT_THEME)
+        self.assertEqual(line_text(accept), "⏵⏵ accept all on · approvals off for this session (⇧⇥ to cycle)")
+        self.assertEqual(accept[0].style, replace(DEFAULT_THEME.mode_accept, bold=True))
+        plan = mode_row_line(mode="plan", busy=True, queued=1, keyboard_protocol=True, effort="", width=80,
+                             theme=DEFAULT_THEME)
+        self.assertEqual(line_text(plan), "⏸ plan mode on (⇧⇥ to cycle)")
+        self.assertEqual(plan[0].style, replace(DEFAULT_THEME.mode_plan, bold=True))
+
+    def test_the_effort_sits_on_the_right_only_when_known(self) -> None:
+        self.assertNotIn("effort high", self.row())
+        row = self.row(effort="high")
+        self.assertTrue(row.endswith("effort high"), row)
+        self.assertEqual(len(row), 80)
+        self.assertTrue(row.startswith("? shortcuts"), row)
+
+    def test_the_hint_is_cut_from_its_end_and_the_label_survives(self) -> None:
+        for width in range(18, 70):
+            with self.subTest(width=width):
+                row = self.row(width, mode="accept", effort="xhigh")
+                self.assertTrue(row.startswith("⏵⏵ accept all on"), row)
+                self.assertLessEqual(len(row), width)
+                if "effort" in row:
+                    self.assertTrue(row.endswith("effort xhigh"), row)
+        self.assertEqual(self.row(40, effort="high"), "? shortcuts · ⇧⇥ mode · c…   effort high")
+        # Too narrow for the label and the effort together: the effort goes, the label stays whole.
+        self.assertEqual(self.row(20, mode="accept", effort="xhigh"), "⏵⏵ accept all on · …")
+
+
+class LeaveSessionDeclineTests(unittest.TestCase):
+    def test_every_request_of_the_session_being_left_is_declined_and_counted(self) -> None:
+        from types import SimpleNamespace
+
+        sent: list[tuple[str, dict]] = []
+        client = SimpleNamespace(respond=lambda request_id, frame: sent.append((request_id, frame)))
+        app = App(ScriptedTerminal(), client, {}, poller=FakePoller())  # type: ignore[arg-type]
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+        app._on_server_request(ServerRequest("srq-2", "vault.unlock_prompt", {}))  # never shown
+        app._on_server_request(ServerRequest("srq-3", "sudo", {"command": "apt install x"}))
+        self.assertEqual(app._decline_all_requests(), 3)
+        self.assertEqual(sorted(request_id for request_id, _ in sent), ["srq-1", "srq-2", "srq-3"])
+        self.assertIn(("srq-1", {"result": {"choice": "deny"}}), sent)
+        self.assertIsNone(app.slot)
+        self.assertFalse(app.waiting_requests)
+
+
+class SlotArmingTests(unittest.TestCase):
+    """Every slot, not only an approval, ignores its keys and the composer's Enter while it arms."""
+
+    def open_slot(self, method: str, params: dict) -> tuple[App, list[float], list[tuple[str, dict]]]:
+        from types import SimpleNamespace
+
+        now = [100.0]
+        sent: list[tuple[str, dict]] = []
+        client = SimpleNamespace(respond=lambda request_id, frame: sent.append((request_id, frame)))
+        app = App(ScriptedTerminal(), client, {}, poller=FakePoller(), clock=lambda: now[0])  # type: ignore[arg-type]
+        app._on_server_request(ServerRequest("srq-1", method, params))
+        return app, now, sent
+
+    def test_an_enter_inside_the_delay_sends_no_value(self) -> None:
+        for method, params in (("sudo", {"command": "apt install x"}), ("secret", {"env_var": "TOKEN_X"}),
+                               ("vault.code", {})):
+            with self.subTest(method=method):
+                app, now, sent = self.open_slot(method, params)
+                app._on_input(Key(ENTER))
+                self.assertEqual(sent, [])
+                self.assertIsNotNone(app.slot)
+                now[0] += SLOT_ARM_SECONDS
+                app._on_input(Key(ENTER))
+                self.assertEqual(sent, [("srq-1", {"result": {"value": ""}})])
+
+    def test_a_clarify_ignores_digits_escape_and_enter_inside_the_delay(self) -> None:
+        params = {"questions": [{"qid": "q0", "question": "Which?", "choices": ["red", "blue"]}]}
+        app, now, sent = self.open_slot("clarify", params)
+        for key in (Key(CHAR, "1"), Key(ESCAPE), Key(DOWN), Key(ENTER)):
+            app._on_input(key)
+        self.assertEqual(sent, [])
+        now[0] += SLOT_ARM_SECONDS
+        app._on_input(Key(CHAR, "2"))
+        self.assertEqual(sent, [("srq-1", {"result": {"answers": {"q0": "blue"}}})])
+
+
+
+class ShellLineTests(unittest.TestCase):
+    def test_a_line_printed_after_the_terminal_is_restored_carries_no_escape_sequence(self) -> None:
+        import io
+
+        from omh.tui.app import _say
+
+        stream = io.StringIO()
+        _say(stream, "gateway said: \x1b[31mboom\x1b[0m \x1b]8;;http://x\x07link\x1b]8;;\x07")
+        self.assertEqual(stream.getvalue(), "gateway said: boom link\n")
+
+class StickyPromptTests(unittest.TestCase):
+    """The sent prompt is echoed above the composer only once it has scrolled off the screen."""
+
+    def app(self, flushed: int, busy: bool = True) -> App:
+        from types import SimpleNamespace
+
+        app = App(ScriptedTerminal(rows=20, cols=60), None, {}, poller=FakePoller())  # type: ignore[arg-type]
+        app.sticky = "what changed in the build?"
+        app.turn_pending = busy
+        app.region = SimpleNamespace(height=8)  # type: ignore[assignment]  # 12 transcript rows above it
+        app.flushed_since_prompt = flushed
+        return app
+
+    def test_no_echo_while_the_prompt_is_still_on_screen(self) -> None:
+        self.assertFalse(self.app(flushed=12)._sticky_needed(20))
+
+    def test_the_echo_appears_once_the_prompt_has_scrolled_off(self) -> None:
+        self.assertTrue(self.app(flushed=13)._sticky_needed(20))
+
+    def test_no_echo_when_no_turn_is_running(self) -> None:
+        self.assertFalse(self.app(flushed=99, busy=False)._sticky_needed(20))
+
+class ModelChainPickerTests(unittest.TestCase):
+    def test_tui_keys_map_to_picker_tokens_and_ctrl_c_ctrl_d_esc_cancel(self) -> None:
+        cases = {
+            Key(UP): "up", Key(DOWN): "down", Key(LEFT): "left", Key(RIGHT): "right", Key(ENTER): "enter",
+            Key(ESCAPE): "quit", Key(CHAR, "c", ctrl=True): "quit", Key(CHAR, "d", ctrl=True): "quit",
+            Key(CHAR, "j"): "down", Key(CHAR, "+"): "plus", Key(CHAR, "d"): "default", Key(CHAR, "q"): "quit",
+            Key(CHAR, "x"): "", Key(CHAR, "v", ctrl=True): "", Key(LEFT, alt=True): "", Paste("q"): "",
+            Mouse("left", 1, 1): "",
+        }
+        for event, token in cases.items():
+            with self.subTest(event=event):
+                self.assertEqual(picker_key(event), token)
+
+    def test_a_cancelled_picker_writes_its_frame_through_the_seam_and_saves_nothing(self) -> None:
+        root = Path(self.enterContext(make_test_tempdir("omh-tui-picker-")))
+        environ = {"OMH_HOME": str(root / "omh"), "HERMES_HOME": str(root / "hermes"), "NO_COLOR": "1"}
+        keys = iter(["down", "right", "quit"])
+        written: list[str] = []
+        message = run_model_chain_picker(
+            environ, DEFAULT_THEME, read_key=lambda: next(keys), write=written.append, width=100
+        )
+        self.assertTrue(message.startswith("Cancelled;"), message)
+        self.assertIn("Model chains", written[0])
+        self.assertEqual(list(root.iterdir()), [])
+
+
+FRESH_LIVE_ID = "fresh01"
+FRESH_STORED_ID = "20261013_140000_fresh"
+
+
+def turn_rows(fixture: str, index: int) -> dict:
+    return load_fixture(fixture)[1][index]["frame"]
+
+
+def busy_mode_answers(mode: str) -> tuple[tuple[str, dict], ...]:
+    return (
+        ("config.get", {"result": {"config": {"display": {"busy_input_mode": mode}}}}),
+        ("commands.catalog", recorded_answer("session", "commands_catalog")),
+    )
+
+
+class InitialThemeTests(unittest.TestCase):
+    def test_an_omh_skin_name_picks_that_theme_and_anything_else_is_sky(self) -> None:
+        cases = {
+            "omh-amber": "amber",
+            "omh-crimson": "crimson",
+            "omh": "sky",
+            "default": "sky",  # Hermes' own default skin
+            "amber": "sky",  # a foreign skin that only shares a short name
+            "": "sky",
+        }
+        for skin, theme in cases.items():
+            with self.subTest(skin=skin):
+                self.assertEqual(initial_theme({"skin": {"name": skin}}).name, theme)
+        self.assertEqual(initial_theme({}).name, "sky")
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class OpeningTests(AppTestCase):
+    def test_a_fresh_session_opens_with_the_banner_in_scrollback(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers()),
+            cols=100,
+            env={"HOME": "/fixture"},
+        )
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="the first frame"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        history = run.terminal.screen.history()
+        self.assertEqual(
+            history[:2], [f"⚚ OH-MY-HERMES v{__version__} · deepseek/deepseek-v4.1-flash-ultrafast · ~/project", BANNER_HINT]
+        )
+
+    def test_the_banner_is_on_screen_at_the_first_frame_not_pushed_into_scrollback(self) -> None:
+        # The first frame fills the screen with pad rows; the banner must land in them.
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers()),
+            cols=100,
+            env={"HOME": "/fixture"},
+        )
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, capture="first", label="the first frame"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        screen = run.terminal.captures["first"]
+        self.assertTrue(screen[0].startswith("⚚ OH-MY-HERMES"), screen[:3])
+        self.assertEqual(screen[1], BANNER_HINT)
+        self.assertEqual(run.terminal.screen.scrollback, [])
+
+    def test_the_banner_stays_one_row_and_keeps_the_end_of_a_long_path(self) -> None:
+        from omh.tui.app import banner_lines
+
+        cwd = "/private/tmp/claude-501/a-very-long-scratch-directory-name/session/scratchpad/m9/project"
+        for width in (40, 60, 80, 110, 200):
+            with self.subTest(width=width):
+                header, hint, _blank = banner_lines(model="deepseek/deepseek-v4.1-flash-ultrafast", cwd=cwd,
+                                                    resumed="", theme=DEFAULT_THEME, width=width)
+                text = line_text(header)
+                self.assertLessEqual(line_width(header), width)
+                self.assertLessEqual(line_width(hint), width)
+                if "…" in text and "m9/project" not in text and width >= 110:
+                    self.fail(f"the path lost its end at width {width}: {text}")
+        wide = line_text(banner_lines(model="m", cwd=cwd, resumed="", theme=DEFAULT_THEME, width=110)[0])
+        self.assertTrue(wide.endswith("m9/project"), wide)
+        narrow = line_text(banner_lines(model="a-long-model-name-that-fills-the-row", cwd=cwd,
+                                        resumed="", theme=DEFAULT_THEME, width=60)[0])
+        self.assertNotIn("/private", narrow)
+
+    def test_the_recorded_default_skin_paints_sky_and_an_omh_skin_paints_its_theme(self) -> None:
+        ready = turn_rows("session", 0)
+        crimson = {**ready, "params": {**ready["params"], "payload": {"skin": {"name": "omh-crimson"}}}}
+        for name, inject in (("sky", ()), ("crimson", ((0, json.dumps(crimson)),))):
+            with self.subTest(theme=name):
+                run = self.prepare(
+                    Scenario("session", spans("session", "startup", "create"), inject=inject, answers=startup_answers())
+                )
+                seen: list[tuple[int, ...]] = []
+                run.terminal.script(
+                    Step(b"\x04", when=lambda run=run, seen=seen: run.terminal.idle() and not seen.append(
+                        run.terminal.status_background()), label="the first frame")
+                )
+                self.run_main(run)
+                self.assert_clean_run(run)
+                self.assertEqual(seen[-1], hex_to_rgb(theme_named(name).status.bg))
+
+    def test_a_resumed_session_draws_its_earlier_turns_before_the_first_frame(self) -> None:
+        messages = [
+            {"role": "user", "text": "What is in this repo?", "row_id": 1},
+            {"role": "assistant", "text": "Let me look.", "row_id": 2},
+            {"role": "tool", "name": "terminal", "context": "ls -la", "tool_call_id": "c1"},
+            {"role": "tool", "name": "read_file", "context": "README.md", "tool_call_id": "c2"},
+            {"role": "assistant", "text": "It is **oh-my-hermes**.", "reasoning": "private chain of thought"},
+            {"role": "system", "text": "[System: model switched]"},
+            {"role": "user", "text": "Thanks"},
+        ]
+        resumed = {
+            "result": {
+                "session_id": LIVE_ID,
+                "stored_session_id": STORED_ID,
+                "message_count": len(messages),
+                "messages": messages,
+                "info": {"model": "deepseek/deepseek-v4.1-flash-ultrafast", "cwd": "/fixture/project"},
+            }
+        }
+        run = self.prepare(
+            Scenario("session", spans("session", "startup"), answers=(*startup_answers(), ("session.resume", resumed))),
+            cols=160,
+            env={"HERMES_TUI_RESUME": STORED_ID},
+        )
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="the first frame"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+        history = run.terminal.screen.history()
+        self.assertTrue(history[0].startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {STORED_ID}"))
+        self.assertEqual(
+            history[3:13],
+            [
+                "› What is in this repo?",
+                "",
+                "⏺ Let me look.",
+                "",
+                "· terminal  ls -la",
+                "  read_file  README.md",
+                "",
+                "⏺ It is oh-my-hermes.",
+                "",
+                "› Thanks",
+            ],
+        )
+        text = "\n".join(history)
+        self.assertNotIn("private chain of thought", text)
+        self.assertNotIn("[System", text)
+
+    def test_exit_settles_the_screen_at_once_and_reaps_a_slow_gateway_quickly(self) -> None:
+        # The fake keeps running past stdin EOF, as the real gateway often does for 10 s and more.
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers(), after=HANG)
+        )
+        run.terminal.script(Step(b"\x04", when=run.terminal.idle, label="exit"))
+        self.run_main(run)
+        returned = time.monotonic()
+        self.assert_clean_run(run)
+        pressed = run.terminal.fired["exit"]
+        self.assertLess(run.terminal.exited_at - pressed, 0.5)
+        self.assertLess(returned - pressed, 1.5)
+        self.assertNotIn(STATUS_MARK, run.terminal.history())
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class LocalCommandTests(AppTestCase):
+    def plain_run(self, **scenario: object) -> Run:
+        return self.prepare(
+            Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers(), **scenario)
+        )
+
+    def after_reply(self, run: Run) -> Callable[[], bool]:
+        return lambda: "later." in run.terminal.history() and run.terminal.idle()
+
+    def test_new_declines_open_requests_and_opens_a_fresh_session(self) -> None:
+        create = recorded_answer("approval", "create")
+        fresh = {
+            "result": {
+                "session_id": FRESH_LIVE_ID,
+                "stored_session_id": FRESH_STORED_ID,
+                "message_count": 0,
+                "messages": [],
+                "info": {"model": "deepseek/deepseek-v4.1-flash-ultrafast"},
+            }
+        }
+        answers = (
+            *startup_answers(),
+            ("session.create", create),
+            ("session.create", fresh),
+            ("session.close", {"result": {"closed": True}}),
+            # An alias answered while the approval is open: the one way /new runs with a request pending.
+            ("slash.exec", {"result": {"type": "alias", "target": "new"}}),
+        )
+        startup, turn = spans("approval", "startup", "approval_turn")
+        run = self.prepare(Scenario("approval", (startup, turn), answers=answers))
+        run.terminal.script(
+            Step(b"Run rm -rf ./omh-m0-probe-dir\r/fresh\r", when=run.terminal.idle, label="idle"),
+            Step(b"\x04", when=run.terminal.shows(f"New session {FRESH_STORED_ID}."), label="the new session"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        denied = [frame for frame in run.frames if frame.get("id") == "srq-52e9720342b6"]
+        self.assertEqual(denied, [{"jsonrpc": "2.0", "id": "srq-52e9720342b6", "result": {"choice": "deny"}}])
+        (closed,) = run.calls("session.close")
+        self.assertEqual(closed["params"], {"session_id": "f05e2691"})
+        self.assertEqual(len(run.calls("session.create")), 2)
+        self.assertEqual(run.calls("slash.exec")[0]["params"], {"command": "fresh", "session_id": "f05e2691"})
+        # The closed session's remaining events never reach the fresh transcript.
+        self.assertNotIn("It was blocked", run.terminal.history())
+        # The decline was the TUI's, not the person's: the fresh transcript says so.
+        self.assertIn("Declined 1 open request from the session you left.", run.terminal.history())
+        self.assertEqual(run.poller.sessions, [APPROVAL_STORED_ID, FRESH_STORED_ID])
+        self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": FRESH_STORED_ID})
+
+    def test_a_failed_new_session_keeps_the_current_one_usable(self) -> None:
+        answers = (
+            *startup_answers(),
+            ("session.create", recorded_answer("session", "create")),
+            ("session.create", {"error": {"code": 5032, "message": "no provider is configured"}}),
+        )
+        startup, turn = spans("session", "startup", "plain_turn")
+        run = self.prepare(Scenario("session", (startup, turn), answers=answers), cols=200)
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "/new"),
+            Step(b"Reply with exactly the word: ok\r", when=terminal.shows("Could not start a new session"),
+                 label="the notice"),
+            Step(b"\x04", when=self.after_reply(run), label="the reply"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertIn(f"Could not start a new session (5032): no provider is configured. Still in {STORED_ID}.",
+                      terminal.history())
+        self.assertEqual(run.calls("session.close"), [])
+        self.assertEqual(run.calls("prompt.submit")[0]["params"]["session_id"], LIVE_ID)
+        self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": STORED_ID})
+
+    def test_copy_sends_the_last_reply_as_an_osc_52_frame(self) -> None:
+        run = self.plain_run()
+        run.terminal.script(
+            self.submit(run, "Reply with exactly the word: ok"),
+            Step(b"/copy\r", when=self.after_reply(run), label="reply"),
+            Step(b"\x04", when=run.terminal.shows("Copied the last reply"), label="the copy notice"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        reply = turn_rows("session", 44)["params"]["payload"]["text"].strip()
+        self.assertEqual(run.terminal.screen.osc, ["52;c;" + base64.b64encode(reply.encode("utf-8")).decode("ascii")])
+        self.assertNotIn("52;c;", run.terminal.history())
+
+    def test_logs_pages_the_gateway_stderr_and_q_leaves(self) -> None:
+        run = self.plain_run(stderr=("gateway warming up", "model list prefetched"))
+        terminal = run.terminal
+        terminal.script(
+            Step(b"/logs\r", when=terminal.idle, label="idle"),
+            Step(b"q", when=lambda: terminal.screen.alternate, capture="pager", label="the pager"),
+            Step(b"\x04", when=lambda: not terminal.screen.alternate and terminal.idle(), label="back"),
+        )
+        self.run_main(run)
+        self.assertEqual(terminal.stalled, "")
+        self.assertEqual(run.code, 0)
+        pager = "\n".join(terminal.captures["pager"])
+        self.assertIn("gateway warming up", pager)
+        self.assertIn("model list prefetched", pager)
+        self.assertIn("gateway stderr (memory only)", pager)
+        self.assertEqual(run.calls("slash.exec"), [])
+
+    def test_theme_switches_for_a_known_name_and_names_the_choices_for_an_unknown_one(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        terminal = run.terminal
+        seen: list[tuple[int, ...]] = []
+        terminal.script(
+            self.submit(run, "/theme crimson"),
+            Step(b"/theme nope\r", when=lambda: terminal.idle() and "applies to this session" in terminal.history()
+                 and not seen.append(terminal.status_background()), label="the switch notice"),
+            Step(b"\x04", when=terminal.shows("No theme named nope"), label="the unknown-theme notice"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual(seen[-1], hex_to_rgb(theme_named("crimson").status.bg))
+        history = terminal.history()
+        self.assertIn("Theme crimson applies to this session", history)
+        self.assertIn("No theme named nope. Available: sky, amber, crimson, mono.", history)
+
+    def test_help_lists_local_commands_the_hermes_catalog_and_keys(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), cols=200)
+        run.terminal.script(
+            self.submit(run, "/help"),
+            Step(b"\x04", when=lambda: "Keys:" in run.terminal.history(), label="the help notice"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        history = run.terminal.history()
+        self.assertIn("/omh-model  Pick OMH model chains", history)
+        self.assertIn("Hermes commands (8): /new /clear /redraw /history /save /retry /prompt /undo", history)
+        # The keys live in one table that ? and /keys draw; /help points there.
+        self.assertIn("Keys: ? on an empty composer, or /keys, lists every key.", history)
+        self.assertIn("/yolo included", history)
+        # The banner no longer says it, so /help is where the way back to Hermes' own terminal stays.
+        self.assertIn("Bare `hermes` opens Hermes' own terminal.", history)
+        self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
+
+    def test_queue_lists_what_waits_for_the_running_turn(self) -> None:
+        run = self.prepare(
+            Scenario(
+                "session",
+                spans("session", "startup", "create", "plain_turn", "smart_approved_turn"),
+                answers=startup_answers(),
+            )
+        )
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "/queue"),
+            Step(b"first prompt\rsecond prompt\r/queue\r", when=terminal.shows("Nothing is queued."), label="empty"),
+            Step(b"\x04", when=lambda: "cleanly)." in terminal.history() and terminal.idle(), label="turn 2"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        history = terminal.screen.history()
+        listed = history.index("· Queued (sent one at a time as each turn ends):")
+        self.assertEqual(history[listed + 1], "  1. second prompt")
+        self.assertIn("› second prompt", history[listed:])
+        self.assertLess(history.index("› first prompt"), listed)
+
+    def test_steer_and_interrupt_modes_send_input_during_a_turn_at_once(self) -> None:
+        for mode in ("steer", "interrupt"):
+            with self.subTest(mode=mode):
+                run = self.prepare(
+                    Scenario(
+                        "session",
+                        spans("session", "startup", "create", "plain_turn", "smart_approved_turn"),
+                        answers=busy_mode_answers(mode),
+                    )
+                )
+                terminal = run.terminal
+                terminal.script(
+                    Step(b"first prompt\rsecond prompt\r", when=terminal.idle, label="idle"),
+                    Step(b"\x04", when=lambda terminal=terminal: "cleanly)." in terminal.history() and terminal.idle(),
+                         label="turn 2"),
+                )
+                self.run_main(run)
+                self.assert_clean_run(run)
+                first, second = run.calls("prompt.submit")
+                self.assertEqual(first["params"], {"session_id": LIVE_ID, "text": "first prompt"})
+                # Sent while the first turn was pending, with no `queued`: Hermes applies its own mode.
+                self.assertEqual(second["params"], {"session_id": LIVE_ID, "text": "second prompt"})
+                self.assertNotIn("queued", terminal.history())
+
+SHOT = {
+    "attached": True,
+    "path": "/fixture/project/shot.png",
+    "count": 1,
+    "remainder": "",
+    "text": "[User attached image: shot.png]",
+    "name": "shot.png",
+    "width": 1280,
+    "height": 720,
+    "token_estimate": 510,
+}
+CLIP = {
+    "attached": True,
+    "path": "/fixture/hermes-home/images/clip_20261013_120000_1.png",
+    "count": 1,
+    "name": "clip_20261013_120000_1.png",
+    "width": 640,
+    "height": 480,
+    "token_estimate": 85,
+}
+OTHER_STORED_ID = "20261012_090000_router"
+OTHER_LIVE_ID = "c0ffee01"
+INTERRUPT_ROW = re.compile(r"\(\d+s · esc to interrupt\)")
+
+
+def bracketed(text: str) -> bytes:
+    return b"\x1b[200~" + text.encode("utf-8") + b"\x1b[201~"
+
+
+def status_index(screen: list[str]) -> int:
+    return next(index for index, line in enumerate(screen) if STATUS_MARK in line)
+
+
+def status_row_of(screen: list[str]) -> str:
+    return screen[status_index(screen)]
+
+
+def composer_row(screen: list[str]) -> str:
+    """The row of a one-row composer: above the bottom rule and the mode row."""
+    return screen[status_index(screen) - 1 - UNDER_COMPOSER]
+
+
+def resumed_other(messages: list[dict] | None = None) -> dict:
+    return {
+        "result": {
+            "session_id": OTHER_LIVE_ID,
+            "stored_session_id": OTHER_STORED_ID,
+            "message_count": len(messages or []),
+            "messages": messages or [],
+            "info": {"model": "deepseek/deepseek-v4.1-flash-ultrafast", "cwd": "/fixture/project"},
+        }
+    }
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class AttachmentTests(AppTestCase):
+    def test_image_shows_a_chip_above_the_composer_and_the_submit_that_sends_it_clears_it(self) -> None:
+        answers = (*startup_answers(), ("image.attach", {"result": SHOT}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            Step(b"/image ./shot.png\r", when=terminal.idle, capture="before", label="idle"),
+            Step(b"Reply with exactly the word: ok\r", when=terminal.shows("shot.png 1280×720"), capture="chip",
+                 label="the chip"),
+            Step(b"\x04", when=lambda: "later." in terminal.history() and terminal.idle(), capture="after",
+                 label="the reply"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (attach,) = run.calls("image.attach")
+        self.assertEqual(attach["params"], {"session_id": LIVE_ID, "path": "./shot.png"})
+        before, chip = terminal.captures["before"], terminal.captures["chip"]
+        status = status_index(chip)
+        # The chip row sits between the rule and the input; the input row did not move.
+        self.assertEqual(status, status_index(before))
+        composer = status - 1 - UNDER_COMPOSER
+        self.assertTrue(chip[composer].startswith("›"), chip)
+        self.assertEqual(chip[composer - 1], "📎 shot.png 1280×720  Backspace removes")
+        self.assertIn(RULE_MARK, chip[composer - 2])
+        self.assertEqual(len(run.calls("prompt.submit")), 1)
+        self.assertNotIn("shot.png", "\n".join(terminal.captures["after"]))
+
+    def test_paste_reports_an_empty_clipboard_and_ctrl_v_attaches_its_image(self) -> None:
+        answers = (
+            *startup_answers(),
+            ("clipboard.paste", {"result": {"attached": False, "message": "No image found in clipboard"}}),
+            ("clipboard.paste", {"result": CLIP}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "/paste"),
+            Step(b"\x16", when=terminal.shows("No image found in clipboard"), label="the empty-clipboard notice"),
+            Step(b"\x04", when=terminal.shows("clip_20261013_120000_1.png 640×480"), label="the clipboard chip"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual([frame["params"] for frame in run.calls("clipboard.paste")], [{"session_id": LIVE_ID}] * 2)
+
+    def test_a_one_line_paste_is_offered_to_detect_drop_first(self) -> None:
+        answers = (
+            *startup_answers(),
+            ("input.detect_drop", {"result": {
+                "matched": True, "is_image": True, "path": "/fixture/project/drop.png", "count": 1,
+                "text": "[User attached image: drop.png]", "name": "drop.png", "width": 800, "height": 600,
+                "token_estimate": 340}}),
+            ("input.detect_drop", {"result": {
+                "matched": True, "is_image": False, "path": "/fixture/project/notes.txt", "name": "notes.txt",
+                "text": "[User attached file: /fixture/project/notes.txt]"}}),
+            ("input.detect_drop", {"result": {"matched": False}}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        file_ref = "[User attached file: /fixture/project/notes.txt]"
+        terminal.script(
+            Step(bracketed("/fixture/project/drop.png"), when=terminal.idle, label="idle"),
+            Step(bracketed("/fixture/project/notes.txt"), when=terminal.shows("drop.png 800×600"), capture="image",
+                 label="the image chip"),
+            Step(bracketed(" and hello"), when=terminal.shows(f"› {file_ref}"), label="the file reference"),
+            Step(bracketed("line one\nline two"), when=terminal.shows("and hello"), capture="typed",
+                 label="the unmatched paste"),
+            Step(b"\x03\x04", when=terminal.shows("line two"), label="the multi-line paste"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        sent = [frame["params"] for frame in run.calls("input.detect_drop")]
+        self.assertEqual(sent, [
+            {"session_id": LIVE_ID, "text": "/fixture/project/drop.png"},
+            {"session_id": LIVE_ID, "text": "/fixture/project/notes.txt"},
+            {"session_id": LIVE_ID, "text": " and hello"},
+        ])
+        # An image drop is queued by the gateway: a chip, and nothing typed (the placeholder is drawn, not typed).
+        self.assertEqual(composer_row(terminal.captures["image"]), "› Ask Hermes anything")
+        self.assertEqual(composer_row(terminal.captures["typed"]), f"› {file_ref} and hello")
+
+    def test_backspace_on_an_empty_composer_detaches_the_last_image(self) -> None:
+        answers = (
+            *startup_answers(),
+            ("image.attach", {"result": SHOT}),
+            ("image.detach", {"result": {"detached": True, "count": 0}}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "/image ./shot.png"),
+            Step(b"\x7f", when=terminal.shows("shot.png 1280×720"), label="the chip"),
+            Step(b"\x04", when=lambda: not terminal.shows("shot.png")() and terminal.idle(), capture="gone",
+                 label="the chip gone"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (detach,) = run.calls("image.detach")
+        self.assertEqual(detach["params"], {"session_id": LIVE_ID, "path": "/fixture/project/shot.png"})
+        self.assertTrue(composer_row(terminal.captures["gone"]).startswith("›"))
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class SessionSwitchTests(AppTestCase):
+    def test_sessions_opens_a_picker_and_enter_switches_to_the_picked_session(self) -> None:
+        listed = recorded_answer("session", "session_list")
+        recorded_row = listed["result"]["sessions"][0]
+        listed["result"]["sessions"].append(
+            {**recorded_row, "id": OTHER_STORED_ID, "title": "Refactor the router", "preview": "Split the router",
+             "started_at": recorded_row["started_at"] - 86400, "message_count": 2, "source": "cli"}
+        )
+        history = [
+            {"role": "user", "text": "Split the router in two"},
+            {"role": "assistant", "text": "Done: chat.py and recommend.py."},
+        ]
+        answers = (
+            *startup_answers(),
+            ("session.list", listed),
+            ("session.resume", resumed_other(history)),
+            ("session.close", {"result": {"closed": True}}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=answers),
+                           env={"HOME": "/fixture"})
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "Reply with exactly the word: ok"),
+            Step(b"/sessions\r", when=lambda: "later." in terminal.history() and terminal.idle(), label="the reply"),
+            Step(b"\x1b[B\r", when=terminal.shows("Refactor the router"), capture="picker", label="the picker"),
+            Step(b"\x04", when=lambda: f"resumed {OTHER_STORED_ID}" in terminal.history() and terminal.idle(),
+                 label="the switch"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (listing,) = run.calls("session.list")
+        self.assertEqual(listing["params"], {"limit": 50})
+        picker = "\n".join(terminal.captures["picker"])
+        self.assertIn("● Reply with ok", picker)
+        self.assertIn("2 messages", picker)
+        methods = [frame.get("method") for frame in run.frames]
+        (resume,) = run.calls("session.resume")
+        self.assertEqual(resume["params"], {"session_id": OTHER_STORED_ID, "cols": 80})
+        (close,) = run.calls("session.close")
+        self.assertEqual(close["params"], {"session_id": LIVE_ID})
+        # The old session closes only once the new one is open: a refused resume leaves it untouched.
+        self.assertLess(methods.index("session.resume"), methods.index("session.close"))
+        shown = terminal.history()
+        self.assertTrue(shown.startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {OTHER_STORED_ID}"), shown[:200])
+        self.assertIn("› Split the router in two", shown)
+        self.assertIn("Done: chat.py and recommend.py.", shown)
+        self.assertNotIn("I'm Hermes, your agent", shown)  # the old transcript went with the redraw
+        self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": OTHER_STORED_ID})
+        self.assertEqual(run.poller.sessions, [STORED_ID, OTHER_STORED_ID])
+
+    def test_sessions_with_an_id_switches_directly(self) -> None:
+        answers = (
+            *startup_answers(),
+            ("session.resume", resumed_other()),
+            ("session.close", {"result": {"closed": True}}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        run.terminal.script(
+            self.submit(run, f"/resume {OTHER_STORED_ID}"),
+            Step(b"\x04", when=lambda: f"resumed {OTHER_STORED_ID}" in run.terminal.history() and run.terminal.idle(),
+                 label="the switch"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual(run.calls("session.list"), [])
+        (resume,) = run.calls("session.resume")
+        self.assertEqual(resume["params"], {"session_id": OTHER_STORED_ID, "cols": 80})
+        self.assertEqual(run.calls("session.close")[0]["params"], {"session_id": LIVE_ID})
+
+    def test_a_refused_resume_keeps_the_current_session(self) -> None:
+        refused = {"error": {"code": 4090, "message": "the session is open in another process"}}
+        answers = (*startup_answers(), ("session.resume", refused))
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=answers), cols=200
+        )
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, f"/sessions {OTHER_STORED_ID}"),
+            Step(b"Reply with exactly the word: ok\r", when=terminal.shows("Could not switch"), label="the notice"),
+            Step(b"\x04", when=lambda: "later." in terminal.history() and terminal.idle(), label="the reply"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertIn(f"Could not switch to {OTHER_STORED_ID} (4090): the session is open in another process. "
+                      f"Still in {STORED_ID}.", terminal.history())
+        self.assertEqual(run.calls("session.close"), [])
+        self.assertEqual(run.calls("prompt.submit")[0]["params"]["session_id"], LIVE_ID)
+        self.assertEqual(json.loads(run.active_session_file.read_text(encoding="utf-8")), {"session_id": STORED_ID})
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class KeyTests(AppTestCase):
+    def interrupted_run(self) -> Run:
+        return self.prepare(
+            Scenario("session", spans("session", "startup", "create", "interrupted_turn"), answers=startup_answers())
+        )
+
+    def running(self, run: Run) -> Callable[[], bool]:
+        return lambda: run.terminal.status_row().rstrip().endswith("running")
+
+    def test_esc_on_an_empty_composer_interrupts_and_with_text_keeps_the_draft(self) -> None:
+        run = self.interrupted_run()
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "Write the numbers from 1 to 300, one per line, nothing else."),
+            Step(b"draft", when=self.running(run), capture="running", label="running"),
+            Step(b"\x1b", when=terminal.shows("› draft"), label="the draft"),
+            # The replay holds the turn open until it sees session.interrupt, so a turn still running
+            # well after that Esc proves the Esc sent nothing.
+            Step(b"\x15", when=lambda: terminal.shows("› draft")() and time.monotonic() - terminal.fired["the draft"] > 0.4,
+                 capture="after the first esc", label="the draft after Esc"),
+            Step(b"\x1b", when=lambda: not terminal.shows("› draft")(), label="the empty composer"),
+            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(), label="end"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (interrupt,) = run.calls("session.interrupt")
+        self.assertEqual(interrupt["params"], {"session_id": LIVE_ID})
+        self.assertTrue(status_row_of(terminal.captures["after the first esc"]).rstrip().endswith("running"))
+        activity = [line for line in terminal.captures["running"] if INTERRUPT_ROW.search(line)]
+        self.assertEqual(len(activity), 1, terminal.captures["running"])
+
+    def test_the_activity_row_counts_the_seconds_since_the_prompt(self) -> None:
+        run = self.interrupted_run()
+        terminal = run.terminal
+        two_seconds = re.compile(r"\(2s · esc to interrupt\)")
+        terminal.script(
+            self.submit(run, "Write the numbers from 1 to 300, one per line, nothing else."),
+            Step(b"\x03", when=lambda: any(two_seconds.search(line) for line in terminal.screen.lines()),
+                 label="two seconds in"),
+            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(), label="end"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        pressed = terminal.fired["the idle status line"]
+        self.assertGreaterEqual(terminal.fired["two seconds in"] - pressed, 2.0)
+
+    def test_at_completion_asks_complete_path_and_tab_replaces_the_token(self) -> None:
+        items = {"items": [
+            {"text": "@file:src/app.py", "display": "app.py", "meta": ""},
+            {"text": "@folder:src/", "display": "src/", "meta": "dir"},
+        ]}
+        answers = (*startup_answers(), ("complete.path", {"result": items}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            Step(b"look at @sr", when=terminal.idle, label="idle"),
+            Step(b"\t", when=terminal.shows(" app.py"), capture="menu", label="the path menu"),
+            # Past the debounce, so a re-ask for the accepted file would have gone out by now.
+            Step(b"\x03\x04", when=lambda: terminal.shows("› look at @file:src/app.py")()
+                 and time.monotonic() - terminal.fired["the path menu"] > 0.5, capture="accepted",
+                 label="the accepted path"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        # One call for the whole typed word (debounced), none for the accepted file.
+        (asked,) = run.calls("complete.path")
+        self.assertEqual(asked["params"], {"word": "@sr", "session_id": LIVE_ID})
+        menu = terminal.captures["menu"]
+        status = status_index(menu)
+        rule = status - 2 - UNDER_COMPOSER
+        self.assertTrue(menu[rule - 2].startswith(" app.py"), menu)
+        self.assertTrue(menu[rule - 1].startswith(" src/"), menu)
+        self.assertIn("dir", menu[rule - 1])
+        accepted = terminal.captures["accepted"]
+        self.assertFalse(any(line.startswith(" src/") for line in accepted), accepted)
+
+    def test_path_completion_waits_for_the_token_to_hold_still_and_drops_a_stale_answer(self) -> None:
+        items = {"items": [{"text": "@file:src/app.py", "display": "app.py", "meta": ""}]}
+        answers = (*startup_answers(), ("complete.path", {"result": items}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        now = [100.0]
+        client = self.make_client(run)(gateway_spawn(run.environ))
+        client.start(ready_timeout=10.0)
+        app = App(terminal, client, run.environ, poller=run.poller, clock=lambda: now[0])
+        app.startup()
+        terminal.script(
+            Step(b"look at @s", when=terminal.idle, label="idle"),
+            Step(b"r", when=lambda: True, label="the next key, no time later"),
+            Step(b"", when=lambda: not now.__setitem__(0, 101.0), label="the token held still"),
+            Step(b"\x03\x04", when=terminal.shows(" app.py"), label="the path menu"),
+        )
+        with terminal:
+            run.code = app.run()
+        self.assert_clean_run(run)
+        self.assertEqual([frame["params"] for frame in run.calls("complete.path")],
+                         [{"word": "@sr", "session_id": LIVE_ID}])
+        # An answer for a word the composer has moved on from is dropped.
+        app.composer.handle(Paste("@srx"))
+        app._track_path_token()
+        app.path_items = []
+        app._on_path_items(app.path_seq, "@sr", items)
+        self.assertEqual(app.path_items, [])
+
+    def test_ctrl_o_toggles_details(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        terminal = run.terminal
+        client = self.make_client(run)(gateway_spawn(run.environ))
+        client.start(ready_timeout=10.0)
+        app = App(terminal, client, run.environ, poller=run.poller)
+        app.startup()
+        seen: list[bool] = []
+        terminal.script(
+            Step(b"\x0f", when=terminal.idle, label="idle"),
+            Step(b"\x0f", when=lambda: app.transcript.details_expanded and not seen.append(True), label="expanded"),
+            Step(b"\x04", when=lambda: not app.transcript.details_expanded, label="collapsed"),
+        )
+        with terminal:
+            run.code = app.run()
+        self.assert_clean_run(run)
+        self.assertEqual(seen, [True])
+
+    def test_ctrl_l_redraws_the_session_from_memory(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers())
+        )
+        terminal = run.terminal
+        cleared = "\x1b[3J"
+        terminal.script(
+            self.submit(run, "Reply with exactly the word: ok"),
+            Step(b"\x0c", when=lambda: "later." in terminal.history() and terminal.idle(), label="the reply"),
+            Step(b"\x04", when=lambda: cleared in "".join(terminal.writes) and terminal.idle(), capture="redrawn",
+                 label="the redraw"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        everything = terminal.screen.scrollback + terminal.captures["redrawn"]
+        self.assertEqual(sum(line.startswith("⚚ OH-MY-HERMES") for line in everything), 1, everything)
+        self.assertEqual(sum("I'm Hermes, your agent" in line for line in everything), 1, everything)
+
+    def test_a_backslash_before_enter_adds_a_line_instead_of_sending(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers())
+        )
+        terminal = run.terminal
+        terminal.script(
+            Step(b"line one\\\rline two\r", when=terminal.idle, label="idle"),
+            Step(b"\x04", when=lambda: "later." in terminal.history() and terminal.idle(), label="the reply"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (submitted,) = run.calls("prompt.submit")
+        self.assertEqual(submitted["params"], {"session_id": LIVE_ID, "text": "line one\nline two"})
+
+
+if __name__ == "__main__":
+    unittest.main()

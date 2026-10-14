@@ -491,6 +491,7 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
     checks.append(_flat_skill_layout_check(paths))
     checks.append(_plugin_ulw_lifecycle_check(paths))
     checks.extend(_hermes_tui_checks(paths))
+    checks.append(_omh_tui_check(paths))
     checks.append(_hermes_model_routing_check(paths))
     checks.append(_provider_entitlements_check(paths))
     checks.append(_jev_sidekick_check(paths))
@@ -712,19 +713,22 @@ def _hermes_tui_checks(paths: OmhPaths) -> list[Check]:
     )
     if interface["explicit"] and interface["value"] not in ("", "tui"):
         message = (
-            f"display.interface is {interface['value']!r} — bare `omh` and `hermes` both open the classic REPL, "
-            "which loads no OMH HUD widget"
+            f"display.interface is {interface['value']!r} — bare `hermes` opens the classic REPL, "
+            "which loads no OMH HUD widget (bare `omh` opens the OMH TUI when it can run)"
         )
         interface_severity = "ok"
         interface_action = hud_hint
     elif interface["explicit"]:
-        message = "display.interface is 'tui' — bare `omh` and `hermes` both open the modern TUI, where the OMH HUD renders"
+        message = (
+            "display.interface is 'tui' — bare `hermes` opens the modern TUI, where the OMH HUD widget renders "
+            "(bare `omh` opens the OMH TUI when it can run)"
+        )
         interface_severity = "ok"
         interface_action = ""
     else:
         message = (
-            "display.interface is unset, so bare `omh` and `hermes` both open Hermes' default classic REPL, "
-            "which loads no OMH HUD widget"
+            "display.interface is unset, so bare `hermes` opens Hermes' default classic REPL, "
+            "which loads no OMH HUD widget (bare `omh` opens the OMH TUI when it can run)"
         )
         interface_severity = "ok"
         interface_action = hud_hint
@@ -785,6 +789,55 @@ def _hermes_tui_checks(paths: OmhPaths) -> list[Check]:
             )
         )
     return checks
+
+
+def _omh_tui_check(paths: OmhPaths) -> Check:
+    """Can bare `omh` open the OMH TUI here, or will it open Hermes' own terminal?
+
+    Read-only and static: the shim OMH ships, Node for Hermes' launcher, and
+    the two Hermes files the path relies on (`HERMES_TUI_DIR` in the launcher,
+    the gateway entry). A miss is never an error, because bare `omh` falls back
+    to Hermes' own terminal; ok stays True like the `hermes_tui_*` checks and
+    the severity says whether the OMH TUI is reachable. Whether the gateway
+    still speaks the declared protocol is judged at launch, not here.
+    """
+    from ..system.hermes_install import hermes_install_dir, read_bounded_text
+    from ..tui.launch import FRONTEND_ENTRY, node_available
+
+    fallback = "bare `omh` opens Hermes' own terminal until then"
+    if os.name == "nt":
+        return Check(
+            "omh_tui_support", True,
+            "Windows: the OMH TUI needs termios, so bare `omh` opens Hermes' own terminal",
+        )
+    if not FRONTEND_ENTRY.is_file():
+        return Check(
+            "omh_tui_support", True, f"the OMH TUI shim is missing ({FRONTEND_ENTRY})",
+            severity="warning", next_action=f"reinstall OMH with `omh update`; {fallback}",
+        )
+    install_dir = hermes_install_dir(paths.hermes_home)
+    if not install_dir.is_dir():
+        return Check(
+            "omh_tui_support", True, f"Hermes install not found at {install_dir}; OMH TUI check skipped",
+            observed=False,
+        )
+    launcher = read_bounded_text(install_dir / "hermes_cli" / "main_tui_launch.py") or ""
+    if "HERMES_TUI_DIR" not in launcher or not (install_dir / "tui_gateway" / "entry.py").is_file():
+        return Check(
+            "omh_tui_support", True,
+            "this Hermes has no HERMES_TUI_DIR launcher hook or no tui_gateway entry, which the OMH TUI needs",
+            severity="warning", next_action=f"update Hermes; {fallback}",
+        )
+    if not node_available(os.environ, paths.hermes_home):
+        return Check(
+            "omh_tui_support", True,
+            "no Node found for Hermes' launcher (HERMES_NODE, PATH, or Hermes' tools/node-*)",
+            severity="warning", next_action=f"install Node (Hermes' modern TUI needs it too); {fallback}",
+        )
+    return Check(
+        "omh_tui_support", True,
+        "bare `omh` can open the OMH TUI: shim installed, Hermes launcher hook and gateway present, Node found",
+    )
 
 
 def _hermes_model_routing_check(paths: OmhPaths) -> Check:

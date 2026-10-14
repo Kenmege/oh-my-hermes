@@ -268,8 +268,11 @@ OMH のコーディング面は 3 つの動きだ。モデルごとにプロン�
 
 ## OH-MY-HERMES ターミナル
 
-`omh` と入力するだけで、`hermes` と同じ入口から、OMH のアイデンティティをまとった
-Hermes が開きます:
+`omh` と入力するだけで OMH TUI が開きます。インストール済みの Hermes の上で動く、OMH
+専用のターミナルです。モデル呼び出し、ツール実行、承認はこれまでどおり Hermes が行い、
+画面は OMH が描きます。終わった応答はターミナルのスクロールバックへ流れ、plan と agent の
+パネルはプロンプトのすぐ上に置かれ、パネルが伸び縮みしてもプロンプトの位置は動きません。
+`hermes` はこれまでどおり Hermes 自身のターミナルを開きます:
 
 ```sh
 omh
@@ -278,15 +281,18 @@ omh
 <table align="center">
   <tr>
     <td width="50%" align="center">
-      <img src="assets/omh-terminal-boot-hud.png" alt="The OH-MY-HERMES boot"><br>
-      <sub><b>OH-MY-HERMES の起動画面。</b></sub>
+      <img src="assets/omh-tui-turn.png" alt="The OMH TUI: an edit with its diff, highlighted code, and the plan panel above the composer"><br>
+      <sub><b>編集とその diff、プロンプトの上の plan。</b></sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/omh-terminal-ulw-work-session.png" alt="An ulw-work run"><br>
-      <sub><b><code>ulw-work</code> 実行中。</b></sub>
+      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete, with deny selected by default"><br>
+      <sub><b>Hermes が尋ね、人が決める。既定は拒否。</b></sub>
     </td>
   </tr>
 </table>
+
+OMH TUI を起動できない環境(Windows、`termios` のない端末、`OMH_NO_TUI=1`、Node なし)では、
+`omh` は Hermes 自身のターミナルを開きます([The OMH TUI](docs/INSTALLATION.md#the-omh-tui))。
 
 OMH ワークフローの実行中にターミナルが表示するもの:
 

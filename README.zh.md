@@ -262,7 +262,10 @@ OMH 的编码面有三步：按模型调整提示（03），把工作拆成并�
 
 ## OH-MY-HERMES 终端
 
-只需输入 `omh`,即可从与 `hermes` 相同的入口,打开带有 OMH 标识的 Hermes:
+只需输入 `omh`,即可打开 OMH TUI:运行在已安装 Hermes 之上的 OMH 专属终端。模型调用、
+工具执行和审批仍由 Hermes 完成,画面由 OMH 绘制:已完成的回复进入终端自身的滚动缓冲区,
+plan 与 agent 面板紧贴在提示符上方,面板伸缩时提示符的位置不会移动。`hermes` 仍然打开
+Hermes 自己的终端:
 
 ```sh
 omh
@@ -271,15 +274,18 @@ omh
 <table align="center">
   <tr>
     <td width="50%" align="center">
-      <img src="assets/omh-terminal-boot-hud.png" alt="The OH-MY-HERMES boot"><br>
-      <sub><b>OH-MY-HERMES 启动画面。</b></sub>
+      <img src="assets/omh-tui-turn.png" alt="The OMH TUI: an edit with its diff, highlighted code, and the plan panel above the composer"><br>
+      <sub><b>一次编辑及其 diff,以及提示符上方的 plan。</b></sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/omh-terminal-ulw-work-session.png" alt="An ulw-work run"><br>
-      <sub><b><code>ulw-work</code> 运行中。</b></sub>
+      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete, with deny selected by default"><br>
+      <sub><b>Hermes 询问,由人决定。默认拒绝。</b></sub>
     </td>
   </tr>
 </table>
+
+在无法启动 OMH TUI 的环境中(Windows、没有 `termios` 的终端、`OMH_NO_TUI=1`、没有 Node),
+`omh` 会改为打开 Hermes 自己的终端(详见 [The OMH TUI](docs/INSTALLATION.md#the-omh-tui))。
 
 OMH 工作流运行时,终端会展示:
 

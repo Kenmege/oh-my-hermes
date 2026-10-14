@@ -325,8 +325,11 @@ through: `🧠 OMH — recalled 2 memories`.
 
 ## The OH-MY-HERMES terminal
 
-Bare `omh` opens Hermes — the same door as `hermes` — wearing the OMH
-identity:
+Bare `omh` opens the OMH TUI: OMH's own terminal over your Hermes install.
+Hermes still runs every model call, tool and approval; OMH owns the screen —
+finished replies go to your terminal's scrollback, the plan and agents panel
+sits right above the prompt, and the prompt does not move when that panel
+grows or shrinks. Bare `hermes` keeps opening Hermes' own terminal:
 
 ```sh
 omh
@@ -335,15 +338,19 @@ omh
 <table align="center">
   <tr>
     <td width="50%" align="center">
-      <img src="assets/omh-terminal-boot-hud.png" alt="The OH-MY-HERMES boot"><br>
-      <sub><b>The OH-MY-HERMES boot.</b></sub>
+      <img src="assets/omh-tui-turn.png" alt="The OMH TUI: an edit with its diff, highlighted code, and the plan panel above the composer"><br>
+      <sub><b>An edit, its diff, and the plan above the prompt.</b></sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/omh-terminal-ulw-work-session.png" alt="An ulw-work run"><br>
-      <sub><b>An <code>ulw-work</code> run.</b></sub>
+      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete, with deny selected by default"><br>
+      <sub><b>Hermes asks; you decide. Deny is the default.</b></sub>
     </td>
   </tr>
 </table>
+
+Where the OMH TUI cannot start (Windows, a terminal without `termios`,
+`OMH_NO_TUI=1`, no Node), `omh` opens Hermes' own terminal instead; see
+[The OMH TUI](docs/INSTALLATION.md#the-omh-tui).
 
 What the terminal shows while OMH workflows run:
 

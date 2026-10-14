@@ -1,0 +1,1795 @@
+"""Steering, input modes, effort, the queue rows, the key guide and the approval bell.
+
+Two harnesses. Most cases drive an `App` whose gateway client only records:
+the test sends keys through `App._on_input`, reads the calls the app made, and
+hands back the answer it wants through `App._on_response`, so a refusal, a
+wrong scope or a late answer is one line. Every recorded call is checked
+against the gateway contract the way `GatewayClient` checks it before a byte
+is written. The end-to-end cases run `main` against the replay gateway from
+`test_tui_app`, with `session.steer` and `config.set` answered from the
+scenario's answer table in Hermes 6c61c3e27d's shapes.
+"""
+
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+import time
+import unittest
+
+from _tui_gateway_replay import Scenario, spans
+from _tui_lines import line_text
+from test_tui_app import (
+    LIVE_ID,
+    NO_TERMIOS,
+    AppTestCase,
+    FakePoller,
+    ScriptedTerminal,
+    Step,
+    startup_answers,
+    status_row_of,
+)
+from omh.tui import app as app_module
+from omh.tui import gateway_contract as contract
+from omh.tui.app import EFFORT_CYCLE, SLOT_ARM_SECONDS, App, queue_lines
+from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
+from omh.tui.gateway import Event, GatewayUnavailable, Response, ServerRequest
+from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder
+from omh.tui.layout import slot_cap
+from omh.tui.pager import Pager
+from omh.tui.session_picker import SessionPicker, SessionRow
+from omh.tui.slash import parse_slash, plan_invocation
+from omh.tui.theme import DEFAULT_THEME
+from omh.tui.transcript import NOTICE_ERROR, NOTICE_WARN, NoticeBlock, UserBlock
+from omh.tui.width import line_width
+
+SID = "live-1"
+CTRL_ENTER = Key(ENTER, ctrl=True)
+CTRL_ENTER_BYTES = b"\x1b[13;5u"  # kitty CSI u; modifyOtherKeys sends ESC[27;5;13~
+SHIFT_TAB = Key(TAB, shift=True)
+SHIFT_TAB_BYTES = b"\x1b[Z"
+# Hermes 6c61c3e27d's answers to the per-session switch (`_set_yolo`, methods_config_set.py).
+YOLO_IS_ON = {"key": "yolo", "value": "1", "scope": "session"}
+YOLO_IS_OFF = {"key": "yolo", "value": "0", "scope": "session"}
+YOLO_ON_CALL = ("config.set", {"key": "yolo", "session_id": SID, "value": "on"})
+YOLO_OFF_CALL = ("config.set", {"key": "yolo", "session_id": SID, "value": "off"})
+CTRL_T = Key(CHAR, "t", ctrl=True)
+PLAN_PROMPT = "[/plan — plan mode]\n\nFor this turn, you are in PLAN MODE.\n\nTask to plan:\nfix the flaky test\n"
+
+
+class RecordingClient:
+    """What `App` needs from a gateway client, kept in memory; nothing is spawned."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+        self.answers: list[tuple[str, dict]] = []
+
+    def request(self, method: str, params: dict) -> int:
+        problem = contract.call_problem(method, params)
+        if problem:
+            raise ValueError(problem)
+        self.calls.append((method, params))
+        return len(self.calls)
+
+    def respond(self, request_id: str, frame: dict) -> None:
+        self.answers.append((request_id, frame))
+
+    def named(self, method: str) -> list[dict]:
+        return [params for name, params in self.calls if name == method]
+
+
+def make_app(*, busy: bool = False, rows: int = 24, cols: int = 80, **options: object) -> tuple[App, RecordingClient]:
+    client = RecordingClient()
+    app = App(ScriptedTerminal(rows, cols), client, options.pop("environ", {}), poller=FakePoller(), **options)  # type: ignore[arg-type]
+    app.sid = SID
+    app.turn_pending = busy
+    return app, client
+
+
+def type_text(app: App, text: str) -> None:
+    for char in text:
+        app._on_input(Key(CHAR, char))
+
+
+def answer(app: App, client: RecordingClient, result: dict | None = None, error: dict | None = None) -> None:
+    """Answer the newest call."""
+    app._on_response(Response(len(client.calls), result, error))
+
+
+def show_mode(app: App, mode: str) -> None:
+    """Put `app` in `mode` as the composer shows it: accept (approvals off), plan (the TUI's flag), or both."""
+    app.approvals_off = mode in (MODE_ACCEPT, MODE_ACCEPT_PLAN)
+    app.plan_mode = mode in (MODE_PLAN, MODE_ACCEPT_PLAN)
+
+
+def notices(app: App, level: str | None = None) -> list[str]:
+    return [
+        block.text
+        for block in app.transcript.blocks
+        if isinstance(block, NoticeBlock) and (level is None or block.level == level)
+    ]
+
+
+class SteerTests(unittest.TestCase):
+    def test_ctrl_enter_during_a_turn_steers_with_the_typed_text(self) -> None:
+        app, client = make_app(busy=True)
+        type_text(app, "use the other file")
+        app._on_input(CTRL_ENTER)
+        self.assertEqual(client.calls, [("session.steer", {"session_id": SID, "text": "use the other file"})])
+        self.assertEqual(app.composer.text, "")
+        self.assertEqual(notices(app), [])  # nothing is claimed before Hermes answers
+        answer(app, client, {"status": "queued", "text": "use the other file"})
+        self.assertEqual(notices(app), ["↪ steer queued by Hermes: use the other file"])
+        self.assertEqual(client.named("prompt.submit"), [])
+        self.assertFalse(app.queued)
+
+    def test_the_steered_notice_names_only_the_first_line(self) -> None:
+        app, client = make_app(busy=True)
+        type_text(app, "first line")
+        app._on_input(Key(ENTER, shift=True))
+        type_text(app, "second line")
+        app._on_input(CTRL_ENTER)
+        self.assertEqual(client.named("session.steer"), [{"session_id": SID, "text": "first line\nsecond line"}])
+        answer(app, client, {"status": "queued", "text": "first line\nsecond line"})
+        self.assertEqual(notices(app), ["↪ steer queued by Hermes: first line"])
+
+    def test_ctrl_enter_while_idle_is_enter(self) -> None:
+        sent = []
+        for key in (Key(ENTER), CTRL_ENTER):
+            app, client = make_app()
+            type_text(app, "a prompt")
+            app._on_input(key)
+            sent.append(client.calls)
+        self.assertEqual(sent[0], [("prompt.submit", {"session_id": SID, "text": "a prompt"})])
+        self.assertEqual(sent[1], sent[0])
+
+    def test_a_rejected_steer_goes_as_a_normal_prompt(self) -> None:
+        # The turn ended before the text arrived: idle by the time the answer is read, so it is sent now.
+        app, client = make_app(busy=True)
+        type_text(app, "too late")
+        app._on_input(CTRL_ENTER)
+        app.turn_pending = False
+        answer(app, client, {"status": "rejected", "text": "too late"})
+        self.assertEqual(client.calls[1:], [("prompt.submit", {"session_id": SID, "text": "too late"})])
+        self.assertEqual(notices(app), [])
+
+    def test_a_rejected_steer_while_the_tui_still_waits_on_a_turn_joins_the_queue(self) -> None:
+        app, client = make_app(busy=True)
+        type_text(app, "too early")
+        app._on_input(CTRL_ENTER)
+        answer(app, client, {"status": "rejected", "text": "too early"})
+        self.assertEqual([text for text, *_ in app.queued], ["too early"])
+        self.assertEqual(client.named("prompt.submit"), [])
+
+    def test_a_steer_hermes_cannot_take_is_not_lost(self) -> None:
+        # 4010: the agent is still starting, or takes no steer.
+        app, client = make_app(busy=True)
+        type_text(app, "keep this")
+        app._on_input(CTRL_ENTER)
+        answer(app, client, error={"code": 4010, "message": "agent does not support steer"})
+        self.assertEqual([text for text, *_ in app.queued], ["keep this"])
+        (warning,) = notices(app, NOTICE_WARN)
+        self.assertIn("4010", warning)
+        self.assertIn("It waits in the queue and goes when the turn ends", warning)
+
+    def test_a_steer_hermes_does_not_take_never_interrupts_the_turn_whatever_the_busy_mode(self) -> None:
+        # Under `interrupt` (Hermes' default) or `steer`, a prompt.submit mid-turn redirects the turn.
+        refusals = {"rejected": {"result": {"status": "rejected", "text": "and the docs"}},
+                    "4010": {"error": {"code": 4010, "message": "agent does not support steer"}}}
+        for mode in ("interrupt", "steer", "queue"):
+            for name, frame in refusals.items():
+                with self.subTest(mode=mode, refusal=name):
+                    app, client = make_app(busy=True)
+                    app.busy_mode = mode
+                    type_text(app, "and the docs")
+                    app._on_input(CTRL_ENTER)
+                    app._on_response(Response(1, frame.get("result"), frame.get("error")))
+                    self.assertEqual(client.named("prompt.submit"), [])
+                    self.assertEqual([text for text, *_ in app.queued], ["and the docs"])
+                    app._on_event(Event("message.complete", SID, {"text": "done"}))  # the turn ends: it goes now
+                    self.assertEqual(
+                        client.named("prompt.submit"), [{"session_id": SID, "text": "and the docs", "queued": True}]
+                    )
+
+    def test_a_steer_refused_once_the_session_is_idle_goes_as_a_prompt_at_once(self) -> None:
+        for mode in ("interrupt", "queue"):
+            with self.subTest(mode=mode):
+                app, client = make_app(busy=True)
+                app.busy_mode = mode
+                type_text(app, "too late")
+                app._on_input(CTRL_ENTER)
+                app.turn_pending = False
+                answer(app, client, error={"code": 4010, "message": "agent does not support steer"})
+                self.assertEqual(client.named("prompt.submit"), [{"session_id": SID, "text": "too late"}])
+                self.assertIn("Sent as a prompt instead", notices(app, NOTICE_WARN)[0])
+
+    def test_in_plan_mode_the_refused_steer_waits_as_the_plan_prompt(self) -> None:
+        app, client = make_app(busy=True)
+        app.busy_mode = "interrupt"
+        show_mode(app, MODE_PLAN)
+        type_text(app, "fix the flaky test")
+        app._on_input(CTRL_ENTER)
+        answer(app, client, {"status": "rejected", "text": "fix the flaky test"})
+        self.assertEqual(client.calls[-1], ("slash.exec", {"command": "plan fix the flaky test", "session_id": SID}))
+        answer(app, client, {"type": "send", "message": PLAN_PROMPT})
+        self.assertEqual(client.named("prompt.submit"), [])
+        self.assertEqual([text for text, *_ in app.queued], [PLAN_PROMPT])
+
+    def test_the_notice_for_a_taken_steer_is_true_of_both_things_hermes_means_by_queued(self) -> None:
+        # Hermes 6c61c3e27d answers {"status": "queued", "text": ...} when the turn takes the steer
+        # (_apply_correction) and when it queues the text as the next prompt during compression.
+        app, client = make_app(busy=True)
+        type_text(app, "check the tests too")
+        app._on_input(CTRL_ENTER)
+        answer(app, client, {"status": "queued", "text": "check the tests too"})
+        (notice,) = notices(app)
+        self.assertEqual(notice, "↪ steer queued by Hermes: check the tests too")
+        self.assertNotIn("steered", notice)
+
+    def test_ctrl_enter_with_nothing_typed_sends_nothing(self) -> None:
+        app, client = make_app(busy=True)
+        app._on_input(CTRL_ENTER)
+        type_text(app, "   ")
+        app._on_input(CTRL_ENTER)
+        self.assertEqual(client.calls, [])
+
+    def test_ctrl_enter_on_a_slash_command_runs_the_command(self) -> None:
+        app, client = make_app(busy=True)
+        type_text(app, "/queue")
+        app._on_input(CTRL_ENTER)
+        self.assertEqual(client.calls, [])
+        self.assertEqual(notices(app), ["Nothing is queued."])
+
+    def test_ctrl_enter_answers_an_open_question_instead_of_steering(self) -> None:
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        app._on_server_request(ServerRequest("srq-1", "vault.code", {}))
+        now[0] += SLOT_ARM_SECONDS
+        type_text(app, "123456")
+        app._on_input(CTRL_ENTER)
+        self.assertEqual(client.answers, [("srq-1", {"result": {"value": "123456"}})])
+        self.assertEqual(client.calls, [])
+
+    def test_the_steer_command_steers_a_running_turn_and_sends_a_prompt_when_idle(self) -> None:
+        app, client = make_app(busy=True)
+        type_text(app, "/steer check the tests too")
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [("session.steer", {"session_id": SID, "text": "check the tests too"})])
+        answer(app, client, {"status": "queued", "text": "check the tests too"})
+        self.assertEqual(notices(app), ["↪ steer queued by Hermes: check the tests too"])
+
+        app, client = make_app()
+        type_text(app, "/steer check the tests too")
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": "check the tests too"})])
+
+    def test_the_steer_command_without_text_says_how_and_sends_nothing(self) -> None:
+        for busy in (True, False):
+            with self.subTest(busy=busy):
+                app, client = make_app(busy=busy)
+                type_text(app, "/steer")
+                app._on_input(Key(ENTER))
+                self.assertEqual(client.calls, [])
+                self.assertEqual(notices(app, NOTICE_WARN), ["Usage: /steer <text to add to the running turn>"])
+
+    def test_a_queued_prompt_is_sent_as_a_prompt_never_as_a_steer(self) -> None:
+        app, client = make_app(busy=True)
+        type_text(app, "wait for the turn")
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [])
+        app.turn_pending = False
+        app._drain_queue()
+        self.assertEqual(
+            client.calls, [("prompt.submit", {"session_id": SID, "text": "wait for the turn", "queued": True})]
+        )
+
+    def test_a_steer_answered_after_its_session_was_left_comes_back_to_the_composer(self) -> None:
+        answers = {
+            "rejected": ({"status": "rejected", "text": "keep this"}, None),
+            "refused": (None, {"code": 4010, "message": "agent does not support steer"}),
+            "taken": ({"status": "queued", "text": "keep this"}, None),
+        }
+        for name, (result, error) in answers.items():
+            for leave in ("new", "switch"):
+                with self.subTest(answer=name, leave=leave):
+                    app, client = make_app(busy=True)
+                    type_text(app, "keep this")
+                    app._on_input(CTRL_ENTER)
+                    steer = len(client.calls)
+                    if leave == "new":
+                        app._on_new_session({"session_id": "live-2", "stored_session_id": "stored-2"})
+                    else:
+                        app._on_session_resumed("stored-2", {"session_id": "live-2", "stored_session_id": "stored-2"})
+                    app._on_response(Response(steer, result, error))
+                    self.assertEqual([method for method, _params in client.calls[steer:]], ["session.close"])
+                    self.assertEqual(app.composer.text, "keep this")
+                    self.assertFalse(app.queued)
+                    self.assertIn(app_module.STEER_LEFT_NOTICE, notices(app, NOTICE_WARN))
+                    self.assertFalse(any("queued by Hermes" in text for text in notices(app)))
+
+    def test_a_steer_that_comes_back_never_lands_in_an_answer_or_over_a_draft(self) -> None:
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        type_text(app, "keep this")
+        app._on_input(CTRL_ENTER)
+        steer = len(client.calls)
+        app._on_new_session({"session_id": "live-2", "stored_session_id": "stored-2"})
+        type_text(app, "a draft")
+        app._on_server_request(ServerRequest("srq-1", "sudo", {"command": "apt install x"}))
+        app._on_response(Response(steer, {"status": "rejected", "text": "keep this"}, None))
+        self.assertEqual(app.composer.text, "")  # the composer holds the answer to the question now
+        now[0] += SLOT_ARM_SECONDS
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.answers, [("srq-1", {"result": {"value": ""}})])
+        self.assertEqual(app.composer.text, "a draft\nkeep this")
+
+        app, client = make_app(busy=True)  # no question open: the text goes after the draft being typed
+        type_text(app, "keep this")
+        app._on_input(CTRL_ENTER)
+        steer = len(client.calls)
+        app._on_new_session({"session_id": "live-2", "stored_session_id": "stored-2"})
+        type_text(app, "a draft")
+        app._on_response(Response(steer, None, {"code": 4010, "message": "agent does not support steer"}))
+        self.assertEqual(app.composer.text, "a draft\nkeep this")
+
+    def test_the_mode_row_names_ctrl_enter_only_once_the_terminal_has_sent_a_report(self) -> None:
+        app, _client = make_app(busy=True)
+        app.terminal.keyboard_protocol = True  # type: ignore[attr-defined]  # asked, as on an allowlisted terminal
+
+        def hint() -> str:
+            row = next(line for line in drawn(app) if line.startswith("esc interrupt"))
+            return row.strip()
+
+        self.assertEqual(hint(), "esc interrupt · /steer <text> steers")
+        for event in app.decoder.feed(b"x\r"):  # a terminal that ignored the request: Ctrl+Enter comes as Enter
+            app._on_input(event)
+        self.assertEqual(hint(), "esc interrupt · /steer <text> steers · ↑ edit queued")
+        for event in app.decoder.feed(b"\x1b[27u"):  # Esc, as kitty reports it
+            app._on_input(event)
+        self.assertEqual(hint(), "esc interrupt · ctrl+enter steer · ↑ edit queued")
+
+    def test_only_ctrl_enter_and_the_steer_command_can_steer(self) -> None:
+        # Steer text is what the person typed and sent, so `session.steer` has one sender with two callers.
+        tree = ast.parse(Path(app_module.__file__).read_text(encoding="utf-8"))
+        callers: set[str] = set()
+        senders: set[str] = set()
+        for function in ast.walk(tree):
+            if not isinstance(function, ast.FunctionDef):
+                continue
+            for node in ast.walk(function):
+                if isinstance(node, ast.Constant) and node.value == "session.steer":
+                    senders.add(function.name)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "_steer":
+                    callers.add(function.name)
+        self.assertEqual(senders, {"_steer"})
+        self.assertEqual(callers, {"_steer_or_submit", "_steer_command"})
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class DocumentedSteerTests(unittest.TestCase):
+    """What INSTALLATION and the AGENTS.md boundary say a steer does, held to the code."""
+
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def prose(self, name: str) -> str:
+        return " ".join((self.ROOT / name).read_text(encoding="utf-8").split())
+
+    def test_the_label_and_the_fallback_are_the_ones_the_code_uses(self) -> None:
+        installation = self.prose("docs/INSTALLATION.md")
+        self.assertIn(f"`{app_module.STEERED_NOTICE.format('').rstrip()}`", installation)
+        self.assertIn("joins the OMH TUI's own queue (`⧗`) and goes when the turn ends, whatever "
+                      "`display.busy_input_mode` says, so it never interrupts the turn", installation)
+        self.assertNotIn("`↪ steered:`", installation)
+        self.assertIn("A steer Hermes does not take waits in the TUI's own queue for the running turn to end, whatever "
+                      "the busy mode, so it never interrupts that turn.", self.prose("AGENTS.md"))
+
+
+class DocumentedApprovalsToggleTests(unittest.TestCase):
+    """CONTEXT.md's OMH TUI entry names the one switch the TUI sets in Hermes, and how far it reaches."""
+
+    def test_the_glossary_entry_names_the_per_session_toggle(self) -> None:
+        text = " ".join((Path(__file__).resolve().parents[1] / "CONTEXT.md").read_text(encoding="utf-8").split())
+        entry = text[text.index("**OMH TUI**:") : text.index("**Hermes gateway protocol**:")]
+        self.assertIn(
+            "Shift+Tab may turn on Hermes' per-session yolo, so Hermes stops asking for approvals in that one session "
+            "(a `config.set` naming the session, never `approvals.mode`), and the TUI sends that session an explicit "
+            "off before it leaves it.",
+            entry,
+        )
+
+    def test_the_boundary_and_the_changelog_say_when_accept_shows_and_when_the_off_goes(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        agents = " ".join((root / "AGENTS.md").read_text(encoding="utf-8").split())
+        changelog = " ".join((root / "CHANGELOG.md").read_text(encoding="utf-8").split())
+        self.assertIn("Leaving a session it turned yolo on for, or whose yolo call is still unanswered", agents)
+        self.assertIn(
+            "is shown on the composer once Hermes confirms it, or when Hermes confirms neither it nor the switch back "
+            "off, and the TUI sends that session an explicit off before it leaves it,",
+            changelog,
+        )
+        self.assertNotIn("switched off again before the TUI leaves", changelog)  # it sends the off; it does not wait
+        self.assertIn("(a steer Hermes does not take waits in the queue for the turn to end)", changelog)
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class SteerReplayTests(AppTestCase):
+    def steer_run(self, status: str, *segments: str) -> object:
+        answers = (*startup_answers(), ("session.steer", {"result": {"status": status, "text": "second prompt"}}))
+        return self.prepare(Scenario("session", spans("session", "startup", "create", *segments), answers=answers))
+
+    def test_ctrl_enter_as_a_key_report_steers_and_the_notice_lands(self) -> None:
+        run = self.steer_run("queued", "plain_turn")
+        terminal = run.terminal
+        terminal.script(
+            # One read: Ctrl+Enter lands while the first prompt's turn is pending.
+            Step(b"first prompt\rsecond prompt" + CTRL_ENTER_BYTES, when=terminal.idle, label="idle"),
+            Step(b"\x04", when=lambda: "↪ steer queued by Hermes: second prompt" in terminal.history() and terminal.idle(), label="steered"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (steer,) = run.calls("session.steer")
+        self.assertEqual(steer["params"], {"session_id": LIVE_ID, "text": "second prompt"})
+        self.assertEqual(len(run.calls("prompt.submit")), 1)
+
+    def test_a_rejected_steer_is_submitted_once_the_turn_is_over(self) -> None:
+        run = self.steer_run("rejected", "plain_turn", "smart_approved_turn")
+        terminal = run.terminal
+        terminal.script(
+            Step(b"first prompt\rsecond prompt" + CTRL_ENTER_BYTES, when=terminal.idle, label="idle"),
+            Step(b"\x04", when=lambda: "cleanly)." in terminal.history() and terminal.idle(), label="turn 2"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        first, second = run.calls("prompt.submit")
+        self.assertEqual(first["params"], {"session_id": LIVE_ID, "text": "first prompt"})
+        self.assertEqual(second["params"], {"session_id": LIVE_ID, "text": "second prompt"})
+        self.assertNotIn("queued by Hermes", terminal.history())
+
+
+def session_info(app: App, **payload: object) -> None:
+    app._on_event(Event("session.info", app.sid, dict(payload)))
+
+
+def in_accept(**options: object) -> tuple[App, RecordingClient]:
+    """An app Hermes confirmed accept for, with the calls so far forgotten."""
+    app, client = make_app(**options)
+    app._on_input(SHIFT_TAB)
+    answer(app, client, YOLO_IS_ON)
+    client.calls.clear()
+    return app, client
+
+
+class ModeCycleTests(unittest.TestCase):
+    def test_shift_tab_cycles_normal_accept_plan_normal(self) -> None:
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [YOLO_ON_CALL])
+        self.assertEqual(app.mode, MODE_NORMAL)  # accept is shown once Hermes confirms it, not before
+        answer(app, client, YOLO_IS_ON)
+        self.assertEqual(app.mode, MODE_ACCEPT)
+
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])
+        self.assertEqual(app.mode, MODE_ACCEPT)  # plan waits for the off to be confirmed
+        answer(app, client, YOLO_IS_OFF)
+        self.assertEqual(app.mode, MODE_PLAN)
+
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(app.mode, MODE_NORMAL)
+        self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])  # plan is the TUI's flag: no call
+        self.assertEqual(notices(app), [])
+
+    def test_a_yolo_answer_that_is_not_this_session_only_is_a_failure(self) -> None:
+        refusals = {
+            "scope global": {"key": "yolo", "value": "1", "scope": "global"},
+            "no scope": {"key": "yolo", "value": "1"},
+            "value off": {"key": "yolo", "value": "0", "scope": "session"},
+            "value missing": {"key": "yolo", "scope": "session"},
+            "value true": {"key": "yolo", "value": True, "scope": "session"},
+        }
+        for name, result in refusals.items():
+            with self.subTest(name):
+                app, client = make_app()
+                app._on_input(SHIFT_TAB)
+                answer(app, client, result)
+                self.assertEqual(app.mode, MODE_NORMAL)
+                self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])  # the explicit off
+                (notice,) = notices(app, NOTICE_ERROR)
+                self.assertIn("Accept all stays off", notice)
+                answer(app, client, YOLO_IS_OFF)
+                self.assertEqual(len(notices(app)), 1)
+                self.assertEqual(len(client.calls), 2)
+
+    def test_a_failed_on_returns_to_normal_even_after_a_session_info_said_on(self) -> None:
+        # Whatever Hermes reported meanwhile, a call that did not confirm "this session only" shows nothing on.
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        session_info(app, yolo=True)
+        answer(app, client, {"key": "yolo", "value": "1", "scope": "global"})
+        self.assertEqual(app.mode, MODE_NORMAL)
+        self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])
+
+    def test_the_answer_cannot_show_the_switch_stayed_on_one_session_so_the_call_must(self) -> None:
+        # Hermes 6c61c3e27d's sessionless branch sets HERMES_YOLO_MODE for the gateway process and answers
+        # exactly what the session branch answers, so the answer check passes it; the guards are on the call.
+        sessionless_answer = {"key": "yolo", "value": "1", "scope": "session"}
+        self.assertEqual(app_module.yolo_answer_problem(sessionless_answer, True), "")
+        self.assertIn("session id", contract.call_problem("config.set", {"key": "yolo", "value": "on"}))
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [("config.set", {"key": "yolo", "session_id": SID, "value": "on"})])
+
+    def test_an_error_answer_to_accept_is_a_failure_too(self) -> None:
+        # 5001 can follow a switch that was already flipped, so the explicit off still goes out.
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        answer(app, client, error={"code": 5001, "message": "boom"})
+        self.assertEqual(app.mode, MODE_NORMAL)
+        self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])
+        (notice,) = notices(app, NOTICE_ERROR)
+        self.assertIn("5001: boom", notice)
+
+    def test_a_switch_back_hermes_does_not_confirm_is_said_and_not_retried(self) -> None:
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        answer(app, client, {"key": "yolo", "value": "1", "scope": "global"})
+        answer(app, client, {"key": "yolo", "value": "1", "scope": "session"})
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(len(notices(app, NOTICE_ERROR)), 2)
+        self.assertIn("did not confirm the switch back", notices(app)[-1])
+
+    def test_a_switch_back_that_fails_shows_accept_again_the_safe_way(self) -> None:
+        failures = {
+            "an error": {"error": {"code": 5001, "message": "boom"}},
+            "an unconfirmed answer": {"result": {"key": "yolo", "value": "1", "scope": "session"}},
+        }
+        for name, frame in failures.items():
+            with self.subTest(name):
+                app, client = make_app()
+                app._on_input(SHIFT_TAB)
+                answer(app, client, {"key": "yolo", "value": "1", "scope": "global"})
+                self.assertEqual(app.mode, MODE_NORMAL)
+                app._on_response(Response(2, frame.get("result"), frame.get("error")))
+                self.assertEqual(app.mode, MODE_ACCEPT)
+                notice = notices(app, NOTICE_ERROR)[-1]
+                self.assertIn("did not confirm the switch back", notice)
+                self.assertNotIn("config.set failed", " ".join(notices(app)))  # handled, not the generic error
+                sent = len(client.calls)
+                app._on_input(SHIFT_TAB)  # and the key asks for the off again
+                self.assertEqual(client.calls[sent:], [YOLO_OFF_CALL])
+
+    def test_a_switch_back_answered_after_the_session_was_left_changes_nothing_shown(self) -> None:
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        answer(app, client, {"key": "yolo", "value": "1", "scope": "global"})
+        app._adopt_session({"session_id": "live-2", "info": {}})
+        said = notices(app)
+        app._on_response(Response(2, None, {"code": 5001, "message": "boom"}))
+        self.assertEqual(app.mode, MODE_NORMAL)
+        self.assertEqual(notices(app), said)  # and says nothing: "accept all is shown again" is not true here
+
+    def test_shift_tab_waits_for_the_switch_back_as_for_any_yolo_call(self) -> None:
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        answer(app, client, {"key": "yolo", "value": "1", "scope": "global"})
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])
+        answer(app, client, YOLO_IS_OFF)
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL, YOLO_ON_CALL])
+
+    def test_without_a_session_nothing_is_sent(self) -> None:
+        app, client = make_app()
+        app.sid = ""
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [])
+        self.assertEqual(app.mode, MODE_NORMAL)
+        self.assertEqual(len(notices(app, NOTICE_WARN)), 1)
+        self.assertFalse(app.mode_request_open)
+
+    def test_an_off_hermes_does_not_confirm_leaves_accept_shown(self) -> None:
+        for name, result, error in (
+            ("still on", YOLO_IS_ON, None),
+            ("scope global", {"key": "yolo", "value": "0", "scope": "global"}, None),
+            ("error", None, {"code": 4001, "message": "session not found"}),
+        ):
+            with self.subTest(name):
+                app, client = in_accept()
+                app._on_input(SHIFT_TAB)
+                answer(app, client, result, error)
+                self.assertEqual(app.mode, MODE_ACCEPT)
+                self.assertEqual(client.calls, [YOLO_OFF_CALL])  # no loop of further calls
+                (notice,) = notices(app, NOTICE_ERROR)
+                self.assertIn("may still be on", notice)
+
+    def test_an_off_while_hermes_still_reports_approvals_off_keeps_accept_beside_plan(self) -> None:
+        # approvals.mode off, or --yolo: the session switch is off and Hermes still asks nothing.
+        app, client = in_accept()
+        app._on_input(SHIFT_TAB)
+        session_info(app, yolo=True)
+        answer(app, client, YOLO_IS_OFF)
+        self.assertEqual(app.mode, MODE_ACCEPT_PLAN)  # the press reached plan, and approvals off stays shown
+        (notice,) = notices(app, NOTICE_WARN)
+        self.assertIn("Hermes itself has approvals off", notice)
+        # From here the approvals are Hermes' own: the key moves plan alone, sends nothing, says nothing more.
+        for expected in (MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_ACCEPT):
+            app._on_input(SHIFT_TAB)
+            self.assertEqual(app.mode, expected)
+        self.assertEqual(client.calls, [YOLO_OFF_CALL])
+        self.assertEqual(len(notices(app)), 1)
+
+    def test_the_session_info_that_precedes_a_confirmed_off_does_not_cost_plan(self) -> None:
+        app, client = in_accept()
+        app._on_input(SHIFT_TAB)
+        session_info(app, yolo=False)  # Hermes emits it before it answers the call
+        self.assertEqual(app.mode, MODE_NORMAL)
+        answer(app, client, YOLO_IS_OFF)
+        self.assertEqual(app.mode, MODE_PLAN)
+        self.assertEqual(notices(app), [])
+
+    def test_a_second_shift_tab_waits_for_the_first_answer(self) -> None:
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [YOLO_ON_CALL])
+        answer(app, client, YOLO_IS_ON)
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])
+
+    def test_shift_tab_does_nothing_while_something_else_has_the_keys(self) -> None:
+        def approval(app: App) -> None:
+            app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+
+        def question(app: App) -> None:
+            app._on_server_request(ServerRequest("srq-1", "sudo", {"command": "apt install x"}))
+
+        def menu(app: App) -> None:
+            type_text(app, "/he")
+
+        def picker(app: App) -> None:
+            app.picker = SessionPicker([SessionRow("stored-1", "a title", "", 0.0, 1)], current="")
+
+        def pager(app: App) -> None:
+            app.pager = Pager("history", [])
+
+        for opened in (approval, question, menu, picker, pager):
+            with self.subTest(opened.__name__):
+                now = [100.0]
+                app, client = make_app(clock=lambda: now[0])
+                opened(app)
+                now[0] += SLOT_ARM_SECONDS
+                app._on_input(SHIFT_TAB)
+                self.assertEqual(client.calls, [])
+                self.assertEqual(client.answers, [])
+                self.assertEqual(app.mode, MODE_NORMAL)
+
+    def test_only_shift_tab_itself_cycles_a_ctrl_or_alt_chord_on_it_does_nothing(self) -> None:
+        # Kitty CSI u and xterm modifyOtherKeys forms of Ctrl+Shift+Tab, Alt+Shift+Tab and Ctrl+Alt+Shift+Tab.
+        for chord in (b"\x1b[9;6u", b"\x1b[27;6;9~", b"\x1b[9;4u", b"\x1b[27;4;9~", b"\x1b[9;8u"):
+            with self.subTest(chord=chord):
+                app, client = make_app()
+                (key,) = KeyDecoder().feed(chord)
+                self.assertEqual((key.name, key.shift, key.ctrl or key.alt), (TAB, True, True))
+                app._on_input(key)
+                self.assertEqual(client.calls, [])
+                self.assertEqual(app.mode, MODE_NORMAL)
+        for plain in (SHIFT_TAB_BYTES, b"\x1b[9;2u", b"\x1b[27;2;9~"):
+            with self.subTest(plain=plain):
+                app, client = make_app()
+                (key,) = KeyDecoder().feed(plain)
+                app._on_input(key)
+                self.assertEqual(client.calls, [YOLO_ON_CALL])
+
+    def test_every_call_the_mode_and_effort_scenarios_send_passes_the_contract_check(self) -> None:
+        # The recording client checks each call as GatewayClient does and raises; this one only records,
+        # so a call the check would refuse reaches the assertion below instead of stopping the scenario.
+        class Unchecked(RecordingClient):
+            def request(self, method: str, params: dict) -> int:
+                self.calls.append((method, dict(params)))
+                return len(self.calls)
+
+        def cycle(app: App, client: RecordingClient, now: list[float]) -> None:
+            app._on_input(SHIFT_TAB)
+            session_info(app, yolo=True)
+            answer(app, client, YOLO_IS_ON)
+            now[0] += 0.5
+            session_info(app, yolo=False)  # held: within the settle window of the confirmed on
+            app._on_input(SHIFT_TAB)
+            session_info(app, yolo=False)
+            answer(app, client, YOLO_IS_OFF)
+            app._on_input(SHIFT_TAB)
+
+        def refused_on(app: App, client: RecordingClient, now: list[float]) -> None:
+            app._on_input(SHIFT_TAB)
+            answer(app, client, {"key": "yolo", "value": "1", "scope": "global"})
+            answer(app, client, {"key": "yolo", "value": "1", "scope": "session"})  # the switch back fails too
+            app._on_input(SHIFT_TAB)
+            answer(app, client, error={"code": 5001, "message": "boom"})
+
+        def stuck_off(app: App, client: RecordingClient, now: list[float]) -> None:
+            app._on_input(SHIFT_TAB)
+            answer(app, client, YOLO_IS_ON)
+            app._on_input(SHIFT_TAB)
+            answer(app, client, error={"code": 4001, "message": "session not found"})
+            app._on_input(SHIFT_TAB)
+            session_info(app, yolo=True)
+            answer(app, client, YOLO_IS_OFF)
+            for _ in range(3):
+                app._on_input(SHIFT_TAB)  # Hermes' own approvals from here: plan alone
+
+        def hermes_own(app: App, client: RecordingClient, now: list[float]) -> None:
+            session_info(app, yolo=True)
+            for _ in range(3):
+                app._on_input(SHIFT_TAB)
+            session_info(app, yolo=False)
+            app._on_input(SHIFT_TAB)
+            app._on_input(SHIFT_TAB)
+
+        def left_mid_call(app: App, client: RecordingClient, now: list[float]) -> None:
+            app._on_input(SHIFT_TAB)
+            app._on_input(CTRL_T)
+            app._adopt_session({"session_id": "live-2", "info": {"yolo": False}})
+            app._on_response(Response(1, YOLO_IS_ON, None))
+            app._on_response(Response(2, effort_set("low"), None))
+            app._on_input(SHIFT_TAB)
+            app._on_input(CTRL_T)
+
+        def effort(app: App, client: RecordingClient, now: list[float]) -> None:
+            for _ in range(3):
+                app._on_input(CTRL_T)
+                answer(app, client, effort_set(client.calls[-1][1]["value"]))
+            for level in ("ultra", "none", "minimal", "show", "high --global"):
+                type_text(app, f"/effort {level}")
+                app._on_input(Key(ENTER))
+
+        sent: list[tuple[str, dict]] = []
+        for scenario in (cycle, refused_on, stuck_off, hermes_own, left_mid_call, effort):
+            with self.subTest(scenario=scenario.__name__):
+                now = [100.0]
+                client = Unchecked()
+                app = App(ScriptedTerminal(24, 80), client, {}, poller=FakePoller(), clock=lambda: now[0])  # type: ignore[arg-type]
+                app.sid = SID
+                scenario(app, client, now)
+                for method, params in client.calls:
+                    self.assertEqual(contract.call_problem(method, params), "", (method, params))
+                sent += client.calls
+        configs = [params for method, params in sent if method == "config.set"]
+        self.assertEqual(
+            {(params["key"], params["value"]) for params in configs},
+            {("yolo", "on"), ("yolo", "off"), ("reasoning", "low"), ("reasoning", "medium"), ("reasoning", "high"),
+             ("reasoning", "ultra"), ("reasoning", "none"), ("reasoning", "minimal")},
+        )
+        self.assertEqual({params["session_id"] for params in configs}, {SID, "live-2"})
+
+
+class HermesOwnApprovalsTests(unittest.TestCase):
+    """Approvals Hermes turned off on its own: accept stays shown, and Shift+Tab moves plan alone."""
+
+    def test_shift_tab_turns_plan_on_and_off_and_sends_nothing(self) -> None:
+        app, client = make_app()
+        session_info(app, yolo=True)  # approvals.mode off, --yolo, or a /yolo typed to Hermes
+        self.assertEqual(app.mode, MODE_ACCEPT)
+        for expected in (MODE_ACCEPT_PLAN, MODE_ACCEPT, MODE_ACCEPT_PLAN):
+            app._on_input(SHIFT_TAB)
+            self.assertEqual(app.mode, expected)
+        self.assertEqual(client.calls, [])
+        (notice,) = notices(app)
+        self.assertEqual(notice, app_module.HERMES_APPROVALS_NOTICE)
+        type_text(app, "fix the flaky test")
+        app._on_input(Key(ENTER))  # plan is on, so the prompt goes as /plan
+        self.assertEqual(client.calls, [("slash.exec", {"command": "plan fix the flaky test", "session_id": SID})])
+
+    def test_the_notice_is_said_once_per_session(self) -> None:
+        app, _client = make_app()
+        session_info(app, yolo=True)
+        for _ in range(4):
+            app._on_input(SHIFT_TAB)
+        app._adopt_session({"session_id": "live-2", "info": {"yolo": True}})
+        app._on_input(SHIFT_TAB)
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(notices(app), [app_module.HERMES_APPROVALS_NOTICE] * 2)
+
+    def test_approvals_turned_back_on_and_off_again_without_the_tui_are_hermes_own(self) -> None:
+        # The TUI's on, then a /yolo typed to Hermes turns approvals on, and another turns them off again.
+        now = [100.0]
+        app, client = make_app(clock=lambda: now[0])
+        app._on_input(SHIFT_TAB)
+        answer(app, client, YOLO_IS_ON)
+        now[0] += 10
+        session_info(app, yolo=False)
+        session_info(app, yolo=True)
+        app._on_input(SHIFT_TAB)
+        self.assertEqual((app.mode, client.calls), (MODE_ACCEPT_PLAN, [YOLO_ON_CALL]))
+
+    def test_once_hermes_turns_them_back_on_the_cycle_is_the_tuis_again(self) -> None:
+        app, client = make_app()
+        session_info(app, yolo=True)
+        app._on_input(SHIFT_TAB)
+        session_info(app, yolo=False)  # approvals.mode set back, or /yolo again
+        self.assertEqual(app.mode, MODE_PLAN)
+        app._on_input(SHIFT_TAB)
+        self.assertEqual((app.mode, client.calls), (MODE_NORMAL, []))
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [YOLO_ON_CALL])
+
+    def test_approvals_the_tui_turned_off_are_still_the_tuis_to_turn_back_on(self) -> None:
+        # Hermes emits session.info with yolo true before it answers the call that turned it on.
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        session_info(app, yolo=True)
+        answer(app, client, YOLO_IS_ON)
+        session_info(app, yolo=True)
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls, [YOLO_ON_CALL, YOLO_OFF_CALL])
+        self.assertEqual(notices(app), [])
+
+    def test_both_labels_show_on_the_mode_row_and_both_chips_on_a_short_terminal(self) -> None:
+        app, _client = make_app()
+        session_info(app, yolo=True)
+        app._on_input(SHIFT_TAB)
+        screen = drawn(app)
+        self.assertTrue(any(line.startswith("⏵⏵ accept all on · ⏸ plan mode on (⇧⇥ to cycle)") for line in screen))
+        rules = [line for line in screen if line and set(line) == {"━"}]
+        self.assertEqual(len(rules), 2)  # approvals off is what the rules keep showing
+        short, _client = make_app(rows=9)
+        session_info(short, yolo=True)
+        short._on_input(SHIFT_TAB)
+        self.assertTrue(status_row_of(drawn(short)).rstrip().endswith("⏵⏵ accept │ ⏸ plan │ idle"))
+
+
+class StaleSessionInfoTests(unittest.TestCase):
+    """A session.info Hermes built before a confirmed on, written after its answer, cannot show normal by itself."""
+
+    def confirmed_on(self) -> tuple[App, RecordingClient, list[float]]:
+        now = [100.0]
+        app, client = make_app(clock=lambda: now[0])
+        app._on_input(SHIFT_TAB)
+        session_info(app, yolo=True)  # the one Hermes emits inside the call, before it answers
+        answer(app, client, YOLO_IS_ON)
+        return app, client, now
+
+    def test_one_saying_on_within_two_seconds_waits_for_the_next_and_asks_nothing(self) -> None:
+        self.assertEqual(app_module.YOLO_SETTLE_SECONDS, 2.0)
+        app, client, now = self.confirmed_on()
+        now[0] += 1.9
+        session_info(app, yolo=False)
+        self.assertEqual(app.mode, MODE_ACCEPT)
+        self.assertEqual(client.calls, [YOLO_ON_CALL])  # Hermes has no per-session read to ask
+        session_info(app, yolo=False)  # the next one decides
+        self.assertEqual(app.mode, MODE_NORMAL)
+        app._on_input(SHIFT_TAB)  # and nothing is left on: the next press turns approvals off again
+        self.assertEqual(client.calls[-1], YOLO_ON_CALL)
+
+    def test_a_snapshot_agreeing_with_the_switch_does_not_use_the_hold_up(self) -> None:
+        app, _client, now = self.confirmed_on()
+        now[0] += 0.5
+        session_info(app, yolo=True)
+        session_info(app, yolo=False)
+        self.assertEqual(app.mode, MODE_ACCEPT)
+
+    def test_from_two_seconds_on_a_session_info_decides_at_once(self) -> None:
+        app, _client, now = self.confirmed_on()
+        now[0] += 2.0
+        session_info(app, yolo=False)
+        self.assertEqual(app.mode, MODE_NORMAL)
+
+    def test_after_a_confirmed_off_approvals_off_is_shown_at_once(self) -> None:
+        app, client, now = self.confirmed_on()
+        now[0] += 3
+        app._on_input(SHIFT_TAB)
+        answer(app, client, YOLO_IS_OFF)
+        self.assertEqual(app.mode, MODE_PLAN)
+        now[0] += 0.5
+        session_info(app, yolo=True)  # in doubt the composer shows accept
+        self.assertEqual(app.mode, MODE_ACCEPT_PLAN)
+
+    def test_the_off_a_press_sends_is_not_held_against_the_on_before_it(self) -> None:
+        app, client, now = self.confirmed_on()
+        now[0] += 0.5
+        app._on_input(SHIFT_TAB)
+        session_info(app, yolo=False)  # the off's own session.info, before its answer
+        self.assertEqual(app.mode, MODE_NORMAL)
+        answer(app, client, YOLO_IS_OFF)
+        self.assertEqual(app.mode, MODE_PLAN)
+
+
+class ModeFollowsHermesTests(unittest.TestCase):
+    def test_session_info_decides_whether_accept_is_shown(self) -> None:
+        app, _client = make_app()
+        session_info(app, yolo=True)
+        self.assertEqual(app.mode, MODE_ACCEPT)
+        session_info(app, yolo=False)
+        self.assertEqual(app.mode, MODE_NORMAL)
+        show_mode(app, MODE_PLAN)
+        session_info(app, yolo=False)
+        self.assertEqual(app.mode, MODE_PLAN)
+        session_info(app, yolo=True)  # approvals off is shown, and the TUI's own plan flag stays on beside it
+        self.assertEqual(app.mode, MODE_ACCEPT_PLAN)
+        session_info(app, yolo=False)
+        self.assertEqual(app.mode, MODE_PLAN)
+
+    def test_a_session_info_without_a_yolo_word_changes_nothing(self) -> None:
+        for payload in ({}, {"yolo": None}, {"yolo": "1"}, {"yolo": 1}):
+            for mode in (MODE_NORMAL, MODE_ACCEPT, MODE_PLAN):
+                with self.subTest(payload=payload, mode=mode):
+                    app, _client = make_app()
+                    show_mode(app, mode)
+                    session_info(app, **payload)
+                    self.assertEqual(app.mode, mode)
+
+    def test_another_sessions_info_is_not_this_sessions_mode(self) -> None:
+        app, _client = make_app()
+        app._on_event(Event("session.info", "someone-else", {"yolo": True}))
+        self.assertEqual(app.mode, MODE_NORMAL)
+
+    def test_a_new_session_starts_from_what_its_own_info_says(self) -> None:
+        for info, expected in (({}, MODE_NORMAL), ({"yolo": False}, MODE_NORMAL), ({"yolo": True}, MODE_ACCEPT)):
+            with self.subTest(info=info):
+                app, _client = in_accept()
+                app._adopt_session({"session_id": "live-2", "info": info})
+                self.assertEqual(app.mode, expected)
+
+    def test_plan_stays_on_across_a_new_session(self) -> None:
+        app, _client = make_app()
+        show_mode(app, MODE_PLAN)
+        app._adopt_session({"session_id": "live-2", "info": {}})
+        self.assertEqual(app.mode, MODE_PLAN)
+
+    def test_an_answer_for_a_session_already_left_changes_nothing(self) -> None:
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)
+        app._adopt_session({"session_id": "live-2", "info": {}})
+        answer(app, client, YOLO_IS_ON)
+        self.assertEqual(app.mode, MODE_NORMAL)
+        self.assertEqual(notices(app), [])
+        app._on_input(SHIFT_TAB)  # and the new session's key is not stuck behind the old call
+        self.assertEqual(client.calls[-1], ("config.set", {"key": "yolo", "session_id": "live-2", "value": "on"}))
+
+
+class LeavingTurnsYoloOffTests(unittest.TestCase):
+    """Hermes keeps a messaging-gateway session's yolo through session.close, so the TUI turns off what it set."""
+
+    NEW = {"session_id": "live-2", "info": {}}
+
+    def methods(self, client: RecordingClient, start: int = 0) -> list[str]:
+        return [method for method, _params in client.calls[start:]]
+
+    def answer_call(self, app: App, client: RecordingClient, call: tuple[str, dict], **frame: object) -> None:
+        app._on_response(Response(client.calls.index(call) + 1, frame.get("result"), frame.get("error")))
+
+    def test_a_new_session_sends_off_for_the_old_one_before_closing_it(self) -> None:
+        app, client = in_accept()
+        app._new_session("")
+        answer(app, client, self.NEW)
+        self.assertEqual(client.calls[1:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+        self.answer_call(app, client, YOLO_OFF_CALL, result=YOLO_IS_OFF)
+        self.assertEqual(notices(app, NOTICE_ERROR), [])
+        self.assertEqual((app.sid, app.mode), ("live-2", MODE_NORMAL))
+
+    def test_a_switch_does_too_and_an_off_hermes_does_not_confirm_is_a_notice_in_the_new_transcript(self) -> None:
+        for frame in ({"error": {"code": 5001, "message": "boom"}}, {"result": YOLO_IS_ON}, {"result": {"value": "0"}}):
+            with self.subTest(frame=frame):
+                app, client = in_accept()
+                app._switch_session("stored-2")
+                answer(app, client, {**self.NEW, "stored_session_id": "stored-2", "messages": []})
+                self.assertEqual(self.methods(client, 1), ["config.set", "session.close"])
+                self.assertEqual(client.calls[1], YOLO_OFF_CALL)
+                self.answer_call(app, client, YOLO_OFF_CALL, **frame)
+                (notice,) = notices(app, NOTICE_ERROR)
+                self.assertIn("the session you left", notice)
+                self.assertEqual(app.sid, "live-2")  # the switch was never held up
+
+    def test_a_yolo_call_still_out_gets_an_off_after_it(self) -> None:
+        for on in (True, False):
+            with self.subTest(on=on):
+                app, client = in_accept() if not on else make_app()
+                app._on_input(SHIFT_TAB)  # on from normal, off from accept; no answer yet
+                app._enter_session(self.NEW)
+                self.assertEqual(client.calls[-2:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+
+    def test_a_switch_back_still_out_counts_as_possibly_on_and_its_answer_lands_nowhere(self) -> None:
+        unconfirmed = {"key": "yolo", "value": "1", "scope": "session"}
+        for frame in ({"error": {"code": 5001, "message": "boom"}}, {"result": unconfirmed}, {"result": YOLO_IS_OFF}):
+            with self.subTest(frame=frame):
+                app, client = make_app()
+                app._on_input(SHIFT_TAB)
+                answer(app, client, {"key": "yolo", "value": "1", "scope": "global"})  # refused: the switch-back goes out
+                app._enter_session(self.NEW)
+                self.assertEqual(client.calls[2:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+                app._on_response(Response(2, frame.get("result"), frame.get("error")))  # the switch-back's answer
+                self.assertEqual(notices(app), [])
+                self.assertEqual((app.sid, app.mode), ("live-2", MODE_NORMAL))
+
+    def test_nothing_is_sent_for_yolo_the_tui_did_not_set(self) -> None:
+        for hermes_own in (False, True):
+            with self.subTest(hermes_own=hermes_own):
+                app, client = make_app()
+                if hermes_own:
+                    session_info(app, yolo=True)  # approvals off for Hermes' own reasons
+                app._enter_session(self.NEW)
+                self.assertEqual(self.methods(client), ["session.close"])
+
+    def test_quit_sends_off_before_the_close_and_the_exit_does_not_send_it_again(self) -> None:
+        app, client = in_accept()
+        app._quit("")
+        app._shutdown()
+        self.assertEqual(client.calls, [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+
+    def test_any_other_exit_sends_off_for_the_open_session_and_waits_for_no_answer(self) -> None:
+        app, client = in_accept()
+        app.exit_code = 0  # Ctrl+D, Ctrl+C twice, SIGTERM: the loop ends without /quit
+        app._shutdown()
+        self.assertEqual(client.calls, [YOLO_OFF_CALL])
+
+    def test_an_exit_with_the_gateway_gone_still_ends(self) -> None:
+        app, client = in_accept()
+        app.exit_code = 1
+
+        def gone(method: str, params: dict) -> int:
+            raise GatewayUnavailable("the gateway stopped reading its input")
+
+        client.request = gone  # type: ignore[method-assign]
+        app._shutdown()
+        self.assertEqual(app.exit_code, 1)
+
+
+class ResumingTheLiveSessionTests(unittest.TestCase):
+    """Hermes 6c61c3e27d resolves a title to the session already live and answers with its id (`_resume_reuse_live`)."""
+
+    APPROVAL = ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"})
+
+    def resume(self, app: App, client: RecordingClient, session_id: str) -> list[str]:
+        """`/sessions <title>` answered with `session_id`; the methods it sent after the resume."""
+        app.stored_id = "stored-1"
+        app._switch_session("my title")
+        sent = len(client.calls)
+        answer(app, client, {"session_id": session_id, "stored_session_id": "stored-1", "messages": [], "info": {}})
+        return [method for method, _params in client.calls[sent:]]
+
+    def test_it_is_no_switch_and_shift_tab_still_turns_off_the_yolo_the_tui_set(self) -> None:
+        app, client = in_accept()
+        self.assertEqual(self.resume(app, client, SID), [])
+        self.assertEqual(notices(app)[-1], "Already in session stored-1.")
+        self.assertEqual((app.sid, app.mode, app.yolo_by_tui), (SID, MODE_ACCEPT, True))
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls[-1], YOLO_OFF_CALL)
+
+    def test_quit_then_sends_the_off_before_the_close(self) -> None:
+        app, client = in_accept()
+        self.resume(app, client, SID)
+        sent = len(client.calls)
+        app._quit("")
+        self.assertEqual(client.calls[sent:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+
+    def test_a_yolo_call_still_out_still_holds_shift_tab(self) -> None:
+        app, client = make_app()
+        app._on_input(SHIFT_TAB)  # on, unanswered
+        self.resume(app, client, SID)
+        self.assertTrue(app.mode_request_open)
+        sent = len(client.calls)
+        app._on_input(SHIFT_TAB)
+        self.assertEqual(client.calls[sent:], [])
+
+    def test_an_open_approval_in_that_session_is_not_declined(self) -> None:
+        app, client = make_app()
+        app._on_server_request(self.APPROVAL)
+        self.resume(app, client, SID)
+        self.assertEqual(client.answers, [])
+        self.assertIsNotNone(app.slot)
+        self.assertEqual(app.slot.request_id, "srq-1")  # type: ignore[union-attr]
+
+    def test_a_real_switch_still_turns_off_declines_and_closes(self) -> None:
+        app, client = in_accept()
+        app._on_server_request(self.APPROVAL)
+        self.assertEqual(self.resume(app, client, "live-2"), ["config.set", "session.close"])
+        self.assertEqual(client.calls[-2:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+        self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "deny"}})])
+        self.assertEqual((app.sid, app.mode, app.slot), ("live-2", MODE_NORMAL, None))
+        self.assertNotIn("Already in session stored-1.", notices(app))
+
+
+class PlanModeTests(unittest.TestCase):
+    def plan_app(self, busy: bool = False) -> tuple[App, RecordingClient]:
+        app, client = make_app(busy=busy)
+        show_mode(app, MODE_PLAN)
+        return app, client
+
+    def test_a_prompt_goes_as_slash_plan_through_the_slash_command_path(self) -> None:
+        app, client = self.plan_app()
+        type_text(app, "fix the flaky test")
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [("slash.exec", {"command": "plan fix the flaky test", "session_id": SID})])
+        answer(app, client, error={"code": contract.NOT_MINE, "message": "pending-input command"})
+        self.assertEqual(
+            client.calls[1], ("command.dispatch", {"name": "plan", "arg": "fix the flaky test", "session_id": SID})
+        )
+        answer(app, client, {"type": "send", "message": PLAN_PROMPT})
+        self.assertEqual(client.calls[2], ("prompt.submit", {"session_id": SID, "text": PLAN_PROMPT}))
+        shown = [block.text for block in app.transcript.blocks if isinstance(block, UserBlock)]
+        self.assertEqual(shown, ["/plan fix the flaky test"])
+
+    def test_a_typed_slash_plan_in_normal_mode_keeps_showing_what_hermes_built(self) -> None:
+        app, client = make_app()
+        type_text(app, "/plan fix the flaky test")
+        app._on_input(Key(ENTER))
+        answer(app, client, error={"code": contract.NOT_MINE, "message": "pending-input command"})
+        answer(app, client, {"type": "send", "message": PLAN_PROMPT})
+        shown = [block.text for block in app.transcript.blocks if isinstance(block, UserBlock)]
+        self.assertEqual(shown, [PLAN_PROMPT])
+
+    def test_normal_and_accept_send_the_prompt_as_typed(self) -> None:
+        for mode in (MODE_NORMAL, MODE_ACCEPT):
+            with self.subTest(mode=mode):
+                app, client = make_app()
+                show_mode(app, mode)
+                type_text(app, "fix the flaky test")
+                app._on_input(Key(ENTER))
+                self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": "fix the flaky test"})])
+
+    def test_a_slash_command_typed_in_plan_mode_is_not_wrapped(self) -> None:
+        app, client = self.plan_app()
+        type_text(app, "/queue")
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [])
+        self.assertEqual(notices(app), ["Nothing is queued."])
+
+    def test_an_answer_to_a_question_is_never_wrapped(self) -> None:
+        requests = (
+            ("clarify", {"questions": [{"qid": "q0", "question": "Which?", "choices": []}]},
+             {"result": {"answers": {"q0": "the blue one"}}}),
+            ("sudo", {"command": "apt install x"}, {"result": {"value": "the blue one"}}),
+            ("secret", {"env_var": "TOKEN_X"}, {"result": {"value": "the blue one"}}),
+            ("vault.code", {}, {"result": {"value": "the blue one"}}),
+        )
+        for method, params, expected in requests:
+            with self.subTest(method=method):
+                now = [100.0]
+                app, client = make_app(clock=lambda: now[0])
+                show_mode(app, MODE_PLAN)
+                app._on_server_request(ServerRequest("srq-1", method, params))
+                now[0] += SLOT_ARM_SECONDS
+                type_text(app, "the blue one")
+                app._on_input(Key(ENTER))
+                self.assertEqual(client.answers, [("srq-1", expected)])
+                self.assertEqual(client.calls, [])
+
+    def test_a_steer_in_plan_mode_is_sent_as_typed_and_its_fallback_is_a_plan_prompt(self) -> None:
+        app, client = self.plan_app(busy=True)
+        type_text(app, "also the docs")
+        app._on_input(CTRL_ENTER)
+        self.assertEqual(client.calls, [("session.steer", {"session_id": SID, "text": "also the docs"})])
+        app.turn_pending = False
+        answer(app, client, {"status": "rejected", "text": "also the docs"})
+        self.assertEqual(client.calls[1], ("slash.exec", {"command": "plan also the docs", "session_id": SID}))
+
+    def test_slash_plan_is_a_command_hermes_runs_not_one_the_tui_turns_away(self) -> None:
+        for invocation in (parse_slash("/plan fix it"), plan_invocation("fix it")):
+            with self.subTest(invocation=invocation):
+                self.assertIsNotNone(invocation)
+                self.assertIsNone(invocation.command)  # unrouted: it goes to slash.exec
+                self.assertEqual(invocation.text, "plan fix it")
+        self.assertEqual(plan_invocation("  two\nlines \n").shown, "/plan two\nlines")
+
+
+def effort_call(level: str, sid: str = SID) -> tuple[str, dict]:
+    return ("config.set", {"key": "reasoning", "session_id": sid, "value": level})
+
+
+def effort_set(level: str) -> dict:
+    """Hermes 6c61c3e27d's answer to a session effort (`_set_reasoning`): the word it took."""
+    return {"key": "reasoning", "value": level}
+
+
+class EffortTests(unittest.TestCase):
+    def test_ctrl_t_steps_the_effort_and_shows_it_once_hermes_confirms(self) -> None:
+        app, client = make_app()
+        seen = []
+        for _ in range(len(EFFORT_CYCLE) + 1):
+            app._on_input(CTRL_T)
+            asked = client.calls[-1][1]["value"]
+            self.assertNotEqual(app.effort, asked)  # shown only once Hermes answers
+            answer(app, client, effort_set(asked))
+            self.assertEqual(app.effort, asked)
+            seen.append(asked)
+        self.assertEqual(seen, ["low", "medium", "high", "xhigh", "max", "low"])
+        self.assertEqual(client.calls, [effort_call(level) for level in seen])
+        self.assertEqual(notices(app), [])
+
+    def test_a_level_outside_the_cycle_steps_to_low(self) -> None:
+        for level in ("", "none", "minimal", "ultra", "something-new"):
+            with self.subTest(level=level):
+                app, client = make_app()
+                app.effort = level
+                app._on_input(CTRL_T)
+                self.assertEqual(client.calls, [effort_call("low")])
+
+    def test_presses_before_the_answer_step_on_from_what_was_asked(self) -> None:
+        app, client = make_app()
+        app.effort = "low"
+        app._on_input(CTRL_T)
+        app._on_input(CTRL_T)
+        self.assertEqual(client.calls, [effort_call("medium"), effort_call("high")])
+        app._on_response(Response(1, effort_set("medium"), None))
+        self.assertEqual(app.effort, "medium")
+        app._on_response(Response(2, effort_set("high"), None))
+        self.assertEqual(app.effort, "high")
+        app._on_input(CTRL_T)
+        self.assertEqual(client.calls[-1], effort_call("xhigh"))
+
+    def test_a_refused_effort_says_so_and_leaves_the_display(self) -> None:
+        refusals = (
+            ("an error", None, {"code": 4002, "message": "unknown reasoning value: low"}),
+            ("another level", effort_set("medium"), None),
+            ("no value", {"key": "reasoning"}, None),
+        )
+        for name, result, error in refusals:
+            with self.subTest(name):
+                app, client = make_app()
+                app.effort = "high"
+                app._on_input(CTRL_T)
+                answer(app, client, result, error)
+                self.assertEqual(app.effort, "high")
+                (notice,) = notices(app, NOTICE_WARN)
+                self.assertIn("did not set the reasoning effort to xhigh", notice)
+                app._on_input(CTRL_T)  # and the next press asks for the same step again
+                self.assertEqual(client.calls[-1], effort_call("xhigh"))
+
+    def test_ctrl_t_does_nothing_while_a_question_is_open_or_without_a_session(self) -> None:
+        for method, params in (("approval", {"command": "rm -rf ./x"}), ("sudo", {"command": "apt install x"})):
+            with self.subTest(method=method):
+                now = [100.0]
+                app, client = make_app(clock=lambda: now[0])
+                app._on_server_request(ServerRequest("srq-1", method, params))
+                now[0] += SLOT_ARM_SECONDS
+                app._on_input(CTRL_T)
+                self.assertEqual((client.calls, client.answers), ([], []))
+                self.assertEqual(app.composer.text, "")
+        app, client = make_app()
+        app.sid = ""
+        app._on_input(CTRL_T)
+        self.assertEqual(client.calls, [])
+        self.assertEqual(len(notices(app, NOTICE_WARN)), 1)
+
+    def test_session_info_is_where_the_shown_effort_comes_from(self) -> None:
+        app, _client = make_app()
+        session_info(app, reasoning_effort="high")
+        self.assertEqual(app.effort, "high")
+        session_info(app, reasoning_effort="none", yolo=False)
+        self.assertEqual(app.effort, "none")
+        for payload in ({}, {"reasoning_effort": None}, {"reasoning_effort": 3}):
+            session_info(app, **payload)
+            self.assertEqual(app.effort, "none")
+        session_info(app, reasoning_effort="")  # Hermes' word for the provider's default
+        self.assertEqual(app.effort, "")
+
+    def test_a_new_session_shows_its_own_effort(self) -> None:
+        app, client = make_app()
+        app.effort = "high"
+        app._on_input(CTRL_T)
+        app._adopt_session({"session_id": "live-2", "info": {}})
+        self.assertEqual(app.effort, "")
+        answer(app, client, effort_set("xhigh"))  # the session left answers late
+        self.assertEqual(app.effort, "")
+        app._adopt_session({"session_id": "live-3", "info": {"reasoning_effort": "max"}})
+        self.assertEqual(app.effort, "max")
+        app._on_input(CTRL_T)
+        self.assertEqual(client.calls[-1], effort_call("low", "live-3"))
+
+    def test_the_effort_command_takes_any_hermes_level(self) -> None:
+        for level in contract.REASONING_LEVELS:
+            with self.subTest(level=level):
+                app, client = make_app()
+                type_text(app, f"/effort {level.upper()}")
+                app._on_input(Key(ENTER))
+                self.assertEqual(client.calls, [effort_call(level)])
+                answer(app, client, effort_set(level))
+                self.assertEqual(app.effort, level)
+
+    def test_the_effort_command_sends_nothing_that_is_not_a_level(self) -> None:
+        # show, hide, on, off, full and clamp are display settings under the same Hermes key.
+        for word in ("show", "hide", "on", "off", "full", "clamp", "hgih", "high --global"):
+            with self.subTest(word=word):
+                app, client = make_app()
+                type_text(app, f"/effort {word}")
+                app._on_input(Key(ENTER))
+                self.assertEqual(client.calls, [])
+                (notice,) = notices(app, NOTICE_WARN)
+                self.assertIn("none, minimal, low, medium, high, xhigh, max, ultra", notice)
+
+    def test_the_effort_command_alone_names_the_level_shown(self) -> None:
+        app, client = make_app()
+        app.effort = "high"
+        type_text(app, "/effort")
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [])
+        (notice,) = notices(app)
+        self.assertIn("Reasoning effort high.", notice)
+
+
+def drawn(app: App) -> list[str]:
+    """The screen after one repaint."""
+    app._render()
+    return app.terminal.screen.lines()  # type: ignore[attr-defined]
+
+
+def composer_index(screen: list[str]) -> int:
+    """The composer's first row: the one under the upper of the frame's two rules (terminals of 7 rows or more)."""
+    rules = [index for index, line in enumerate(screen) if line.strip() and set(line.strip()) <= set("─━┄")]
+    return rules[-2] + 1
+
+
+def queue(app: App, *prompts: str) -> None:
+    for prompt in prompts:
+        app.queued.append((prompt, "", ""))
+
+
+class QueueLinesTests(unittest.TestCase):
+    def rows(self, prompts: list[str], width: int = 40, max_rows: int = 8) -> list[str]:
+        return [line_text(line) for line in queue_lines(prompts, width, max_rows, DEFAULT_THEME)]
+
+    def test_nothing_queued_draws_nothing(self) -> None:
+        self.assertEqual(self.rows([]), [])
+        self.assertEqual(self.rows(["a prompt"], max_rows=0), [])
+
+    def test_each_prompt_is_one_row_and_the_last_ends_with_the_edit_key(self) -> None:
+        self.assertEqual(self.rows(["fix the failing test"]), ["⧗ fix the failing test" + " " * 12 + "↑ edit"])
+        rows = self.rows(["fix the failing test", "then update the changelog"])
+        self.assertEqual(rows, ["⧗ fix the failing test", "⧗ then update the changelog" + " " * 7 + "↑ edit"])
+
+    def test_the_glyph_is_muted_the_prompt_is_text_and_the_key_is_a_hint(self) -> None:
+        (line,) = queue_lines(["fix it"], 40, 8, DEFAULT_THEME)
+        self.assertEqual(
+            [(span.text.strip(), span.style) for span in line if span.text.strip()],
+            [("⧗", DEFAULT_THEME.muted), ("fix it", DEFAULT_THEME.text), ("↑ edit", DEFAULT_THEME.hint)],
+        )
+
+    def test_more_than_three_are_counted_on_a_last_row(self) -> None:
+        rows = self.rows(["one", "two", "three", "four", "five"])
+        self.assertEqual(rows[:3], ["⧗ one", "⧗ two", "⧗ three"])
+        self.assertEqual(rows[3], "+2 more" + " " * 27 + "↑ edit")
+        self.assertEqual(len(self.rows(["one", "two", "three"])), 3)  # exactly three need no count
+
+    def test_only_the_first_line_of_a_prompt_is_named(self) -> None:
+        self.assertEqual(self.rows(["\nfirst line\nsecond line"], width=30), ["⧗ first line" + " " * 12 + "↑ edit"])
+
+    def test_a_short_slot_names_fewer_and_counts_the_rest(self) -> None:
+        prompts = ["one", "two", "three", "four"]
+        self.assertEqual([row.split("  ")[0] for row in self.rows(prompts, max_rows=3)], ["⧗ one", "⧗ two", "+2 more"])
+        self.assertEqual([row.split("  ")[0] for row in self.rows(prompts[:3], max_rows=2)], ["⧗ one", "+2 more"])
+        self.assertEqual([row.split("  ")[0] for row in self.rows(prompts[:2], max_rows=2)], ["⧗ one", "⧗ two"])
+        self.assertEqual([row.split("  ")[0] for row in self.rows(prompts, max_rows=1)], ["+4 more"])
+
+    def test_no_row_is_wider_than_the_terminal_and_the_key_survives_a_long_prompt(self) -> None:
+        prompts = ["a prompt that goes on for a good while longer than any terminal here is wide. " * 2] * 5
+        for width in range(20, 121):
+            lines = queue_lines(prompts, width, 8, DEFAULT_THEME)
+            with self.subTest(width=width):
+                self.assertTrue(all(line_width(line) <= width for line in lines))
+                self.assertEqual(line_width(lines[-1]), width)
+                self.assertTrue(line_text(lines[-1]).endswith("↑ edit"))
+                self.assertTrue(line_text(lines[0]).endswith("…"))
+
+    def test_text_hermes_built_cannot_carry_an_escape_onto_the_row(self) -> None:
+        (row,) = self.rows(["\x1b[31mred\x1b[0m \x07alert\ttab"], width=40)
+        self.assertTrue(row.startswith("⧗ red alert"))
+        self.assertNotIn("\x1b", row)
+
+
+class QueueTests(unittest.TestCase):
+    def test_queued_prompts_never_move_the_composer(self) -> None:
+        for rows, cols in ((7, 40), (9, 40), (10, 80), (12, 80), (24, 80), (40, 120)):
+            for menu in (False, True):
+                with self.subTest(rows=rows, cols=cols, menu=menu):
+                    app, _client = make_app(busy=True, rows=rows, cols=cols)
+                    empty = composer_index(drawn(app))
+                    seen = []
+                    for count in (1, 2, 3, 6):
+                        app.queued.clear()
+                        queue(app, *(f"prompt {number}" for number in range(count)))
+                        if menu:
+                            app.composer.replace(0, len(app.composer.text), "/")
+                        seen.append(composer_index(drawn(app)))
+                    self.assertEqual(seen, [empty] * 4)
+
+    def test_the_rows_sit_right_above_the_composers_top_rule(self) -> None:
+        app, _client = make_app(busy=True)
+        queue(app, "fix the failing test", "then update the changelog")
+        screen = drawn(app)
+        top = composer_index(screen)
+        self.assertEqual(set(screen[top - 1]), {"─"})
+        self.assertEqual(screen[top - 3].rstrip(), "⧗ fix the failing test")
+        self.assertTrue(screen[top - 2].startswith("⧗ then update the changelog"))
+        self.assertTrue(screen[top - 2].rstrip().endswith("↑ edit"))
+        self.assertIn("esc to interrupt", screen[top - 4])  # the turn's activity row stays above them
+
+    def test_a_completion_menu_keeps_the_rows_left_and_stays_above_the_queue(self) -> None:
+        app, _client = make_app(busy=True, rows=24)
+        queue(app, "one", "two", "three", "four")
+        type_text(app, "/")
+        lines = [line_text(line) for line in app._slot_lines(80, 24)]
+        self.assertEqual(len(lines), slot_cap(24, 80))
+        self.assertTrue(all(line.lstrip().startswith("/") for line in lines[:4]), lines)
+        self.assertEqual([line.split("  ")[0] for line in lines[4:]], ["⧗ one", "⧗ two", "⧗ three", "+1 more"])
+
+    def test_a_question_or_the_session_picker_hides_the_rows(self) -> None:
+        app, _client = make_app(busy=True)
+        queue(app, "fix the failing test")
+        self.assertIn("⧗ fix the failing test", "\n".join(drawn(app)))
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+        self.assertNotIn("⧗", "\n".join(drawn(app)))
+        app._answer(app.slot.decline())  # type: ignore[union-attr]
+        app.picker = SessionPicker([SessionRow("stored-1", "a title", "", 0.0, 1)], current="")
+        self.assertNotIn("⧗", "\n".join(drawn(app)))
+
+    def test_up_on_an_empty_composer_takes_every_queued_prompt_back(self) -> None:
+        app, client = make_app(busy=True)
+        queue(app, "fix the failing test", "then update\nthe changelog", "and push")
+        app._on_input(Key(UP))
+        self.assertEqual(app.composer.text, "fix the failing test\nthen update\nthe changelog\nand push")
+        self.assertFalse(app.queued)
+        self.assertEqual(client.calls, [])
+        self.assertNotIn("⧗", "\n".join(drawn(app)))
+
+    def test_up_with_nothing_queued_still_walks_the_input_history(self) -> None:
+        app, _client = make_app()
+        type_text(app, "an earlier prompt")
+        app._on_input(Key(ENTER))
+        self.assertEqual(app.composer.text, "")
+        app._on_input(Key(UP))
+        self.assertEqual(app.composer.text, "an earlier prompt")
+
+    def test_up_with_text_in_the_composer_leaves_the_queue_alone(self) -> None:
+        app, _client = make_app(busy=True)
+        queue(app, "queued")
+        type_text(app, "a draft")
+        app._on_input(Key(UP))
+        self.assertEqual([text for text, *_ in app.queued], ["queued"])
+        self.assertNotIn("queued", app.composer.text)
+
+    def test_down_and_other_keys_do_not_take_the_queue_back(self) -> None:
+        app, _client = make_app(busy=True)
+        queue(app, "queued")
+        for key in (Key(DOWN), Key(TAB), Key(CHAR, "k", ctrl=True)):
+            app._on_input(key)
+        self.assertEqual((len(app.queued), app.composer.text), (1, ""))
+
+    def test_up_does_nothing_to_the_queue_while_something_else_has_the_keys(self) -> None:
+        def approval(app: App) -> None:
+            app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+
+        def question(app: App) -> None:
+            choices = {"questions": [{"qid": "q0", "question": "Which?", "choices": ["red", "blue"]}]}
+            app._on_server_request(ServerRequest("srq-1", "clarify", choices))
+
+        def picker(app: App) -> None:
+            app.picker = SessionPicker([SessionRow("stored-1", "a title", "", 0.0, 1)], current="")
+
+        def pager(app: App) -> None:
+            app.pager = Pager("history", [])
+
+        for opened in (approval, question, picker, pager):
+            with self.subTest(opened.__name__):
+                now = [100.0]
+                app, client = make_app(busy=True, clock=lambda: now[0])
+                queue(app, "queued")
+                opened(app)
+                now[0] += SLOT_ARM_SECONDS
+                app._on_input(Key(UP))
+                self.assertEqual([text for text, *_ in app.queued], ["queued"])
+                self.assertEqual(app.composer.text, "")
+                self.assertEqual((client.calls, client.answers), ([], []))
+
+    def test_up_then_enter_on_an_approval_with_prompts_queued_still_denies(self) -> None:
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        queue(app, "queued")
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+        now[0] += SLOT_ARM_SECONDS
+        app._on_input(Key(UP))
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "deny"}})])
+        self.assertEqual(len(app.queued), 1)
+
+    def test_up_then_enter_puts_the_prompts_back_in_the_queue_as_one(self) -> None:
+        app, client = make_app(busy=True)
+        queue(app, "first", "second")
+        app._on_input(Key(UP))
+        app._on_input(Key(ENTER))
+        self.assertEqual([text for text, *_ in app.queued], ["first\nsecond"])
+        self.assertEqual(client.calls, [])
+
+    def test_recalled_prompts_go_as_one_text_and_only_a_first_line_command_runs(self) -> None:
+        # What the recall docstring says Enter does with them: one submission, as for anything typed.
+        app, client = make_app(busy=True)
+        app.queued.extend([("plain prompt", "", ""), ("a long skill prompt", "learn: the build", "/learn the build")])
+        app._on_input(Key(UP))
+        app.turn_pending = False
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": "plain prompt\n/learn the build"})])
+
+        app, client = make_app(busy=True)
+        app.queued.extend([("a long skill prompt", "learn: the build", "/learn the build"), ("plain prompt", "", "")])
+        app._on_input(Key(UP))
+        app.turn_pending = False
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [("slash.exec", {"command": "learn the build\nplain prompt", "session_id": SID})])
+
+    def test_a_prompt_a_command_built_comes_back_as_what_was_typed(self) -> None:
+        # Plan mode wrote /plan around the prompt, so the prompt comes back; a typed command comes back as typed.
+        app, client = make_app(busy=True)
+        show_mode(app, MODE_PLAN)
+        type_text(app, "fix the flaky test")
+        app._on_input(Key(ENTER))
+        answer(app, client, error={"code": contract.NOT_MINE, "message": "pending-input command"})
+        answer(app, client, {"type": "send", "message": PLAN_PROMPT})
+        show_mode(app, MODE_NORMAL)
+        type_text(app, "/learn the build")
+        app._on_input(Key(ENTER))
+        answer(app, client, error={"code": contract.NOT_MINE, "message": "pending-input command"})
+        answer(app, client, {"type": "skill", "message": "a long skill prompt", "display": "learn: the build"})
+        self.assertEqual(
+            list(app.queued),
+            [
+                (PLAN_PROMPT, "/plan fix the flaky test", "fix the flaky test"),
+                ("a long skill prompt", "learn: the build", "/learn the build"),
+            ],
+        )
+        rows = [line_text(line) for line in app._slot_lines(80, 24)]
+        self.assertEqual(rows[0], "⧗ /plan fix the flaky test")
+        self.assertTrue(rows[1].startswith("⧗ learn: the build"))
+        app._on_input(Key(UP))
+        self.assertEqual(app.composer.text, "fix the flaky test\n/learn the build")
+
+
+class ModeChipTests(unittest.TestCase):
+    """Below 10 rows the mode row is not drawn, so the status line says which mode is on."""
+
+    def status(self, mode: str, rows: int, cols: int = 80) -> str:
+        app, _client = make_app(rows=rows, cols=cols)
+        show_mode(app, mode)
+        return status_row_of(drawn(app))
+
+    def test_a_short_terminal_carries_the_mode_on_the_status_line(self) -> None:
+        # From 3 rows: a 2-row terminal has room for the composer alone and draws no status line at all.
+        for rows in (3, 5, 6, 7, 9):
+            with self.subTest(rows=rows):
+                self.assertTrue(self.status(MODE_ACCEPT, rows).rstrip().endswith("⏵⏵ accept │ idle"))
+                self.assertTrue(self.status(MODE_PLAN, rows).rstrip().endswith("⏸ plan │ idle"))
+
+    def test_normal_mode_adds_nothing_to_the_status_line(self) -> None:
+        for rows in (5, 9, 10, 24):
+            with self.subTest(rows=rows):
+                self.assertEqual(self.status(MODE_NORMAL, rows).rstrip(), "⚚ OMH │ idle")
+
+    def test_where_the_mode_row_is_drawn_the_status_line_does_not_repeat_it(self) -> None:
+        for rows in (10, 11, 24, 40):
+            for mode, label in ((MODE_ACCEPT, "⏵⏵ accept all on"), (MODE_PLAN, "⏸ plan mode on")):
+                with self.subTest(rows=rows, mode=mode):
+                    app, _client = make_app(rows=rows)
+                    show_mode(app, mode)
+                    screen = drawn(app)
+                    self.assertEqual(status_row_of(screen).rstrip(), "⚚ OMH │ idle")
+                    self.assertTrue(any(line.startswith(label) for line in screen))
+
+    def test_a_terminal_too_narrow_for_the_mode_row_carries_the_chip_too(self) -> None:
+        # Under 20 columns only composer and status are drawn, whatever the height. At 19 the
+        # chip and the state fill the line, so the brand is what gives way.
+        for mode, expected in ((MODE_ACCEPT, " │ ⏵⏵ accept │ idle"), (MODE_PLAN, " │ ⏸ plan │ idle")):
+            with self.subTest(mode=mode):
+                app, _client = make_app(rows=24, cols=19)
+                show_mode(app, mode)
+                self.assertIn(expected, "\n".join(drawn(app)))
+        wide, _client = make_app(rows=24, cols=20)
+        show_mode(wide, MODE_ACCEPT)
+        self.assertEqual(status_row_of(drawn(wide)).rstrip(), "⚚ OMH │ idle")
+
+    def test_the_chip_outlasts_the_model_and_the_context_when_the_line_is_cut(self) -> None:
+        app, _client = make_app(rows=9, cols=30)
+        show_mode(app, MODE_ACCEPT)
+        app.model, app.context = "a-rather-long-model-name", "ctx 14k/1M 1%"
+        text = line_text(app._status_line(30))
+        self.assertEqual(text.rstrip(), "⚚ OMH │ ⏵⏵ accept │ idle")
+        self.assertEqual(line_width(app._status_line(30)), 30)
+
+    def test_the_chip_takes_the_modes_colour_on_the_bar_and_reads_on_every_palette(self) -> None:
+        from omh.skin_pack import theme_names
+        from omh.tui.theme import TEXT_CONTRAST, contrast_ratio, theme_named
+
+        for name in theme_names():
+            theme = theme_named(name)
+            for mode, colour in ((MODE_ACCEPT, theme.mode_accept), (MODE_PLAN, theme.mode_plan)):
+                with self.subTest(theme=name, mode=mode):
+                    app, _client = make_app(rows=9, theme=theme)
+                    show_mode(app, mode)
+                    chip = next(span for span in app._status_line(80) if span.text in ("⏵⏵ accept", "⏸ plan"))
+                    self.assertEqual((chip.style.fg, chip.style.bg, chip.style.bold), (colour.fg, theme.status.bg, True))
+                    self.assertGreaterEqual(contrast_ratio(chip.style.fg, chip.style.bg), TEXT_CONTRAST)
+
+
+def bells(app_or_terminal: object) -> int:
+    terminal = getattr(app_or_terminal, "terminal", app_or_terminal)
+    return "".join(terminal.writes).count("\a")  # type: ignore[attr-defined]
+
+
+class BellTests(unittest.TestCase):
+    APPROVAL = ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"})
+
+    def test_an_approval_opening_rings_once(self) -> None:
+        app, _client = make_app(busy=True)
+        self.assertEqual(bells(app), 0)
+        app._on_server_request(self.APPROVAL)
+        self.assertEqual(bells(app), 1)
+        for _ in range(3):  # repaints of the open slot ring nothing more
+            drawn(app)
+        self.assertEqual(bells(app), 1)
+
+    def test_omh_tui_bell_0_keeps_it_quiet_and_nothing_else_does(self) -> None:
+        for value, expected in (("0", 0), ("1", 1), ("", 1), ("off", 1), ("00", 1)):
+            with self.subTest(value=value):
+                app, _client = make_app(busy=True, environ={"OMH_TUI_BELL": value})
+                app._on_server_request(self.APPROVAL)
+                self.assertEqual(bells(app), expected)
+                self.assertIsNotNone(app.slot)  # quiet or not, the approval is shown
+
+    def test_other_questions_and_requests_the_tui_cannot_show_do_not_ring(self) -> None:
+        requests = (
+            ("clarify", {"questions": [{"qid": "q0", "question": "Which?", "choices": ["red", "blue"]}]}),
+            ("sudo", {"command": "apt install x"}),
+            ("secret", {"env_var": "TOKEN_X"}),
+            ("vault.code", {}),
+            ("vault.unlock_prompt", {}),
+            ("terminal.read", {}),
+        )
+        for method, params in requests:
+            with self.subTest(method=method):
+                app, _client = make_app(busy=True)
+                app._on_server_request(ServerRequest("srq-1", method, params))
+                self.assertEqual(bells(app), 0)
+
+    def test_an_approval_waiting_behind_another_rings_when_its_own_slot_opens(self) -> None:
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        app._on_server_request(self.APPROVAL)
+        app._on_server_request(ServerRequest("srq-2", "approval", {"command": "rm -rf ./y"}))
+        self.assertEqual(bells(app), 1)
+        now[0] += SLOT_ARM_SECONDS
+        app._on_input(Key(CHAR, "d"))
+        self.assertEqual([request_id for request_id, _frame in client.answers], ["srq-1"])
+        self.assertEqual(bells(app), 2)
+
+    def test_a_withdrawn_approval_rings_nothing_more(self) -> None:
+        app, _client = make_app(busy=True)
+        app._on_server_request(self.APPROVAL)
+        app._on_event(Event("request.cancel", app.sid, {"id": "srq-1", "reason": "timeout"}))
+        self.assertIsNone(app.slot)
+        self.assertEqual(bells(app), 1)
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class BellReplayTests(AppTestCase):
+    def test_the_recorded_approval_rings_once_and_omh_tui_bell_0_not_at_all(self) -> None:
+        for env, expected in (({}, 1), ({"OMH_TUI_BELL": "0"}, 0)):
+            with self.subTest(env=env):
+                run = self.prepare(
+                    Scenario("approval", spans("approval", "startup", "create", "approval_turn"), answers=startup_answers()),
+                    env=env,
+                )
+                terminal = run.terminal
+                terminal.script(
+                    Step(b"Run rm -rf ./omh-m0-probe-dir\r", when=terminal.idle, label="idle"),
+                    Step(when=terminal.shows("Hermes asks to run"), label="the approval slot"),
+                    Step(
+                        b"d",
+                        when=lambda terminal=terminal: time.monotonic() - terminal.fired["the approval slot"]
+                        > SLOT_ARM_SECONDS + 0.05,
+                        label="armed",
+                    ),
+                    Step(b"\x04", when=lambda terminal=terminal: "proceed." in terminal.history() and terminal.idle(),
+                         label="end"),
+                )
+                self.run_main(run)
+                self.assert_clean_run(run)
+                self.assertEqual(bells(terminal), expected)
+
+
+@unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
+class ModeReplayTests(AppTestCase):
+    def test_queued_prompts_show_above_the_rule_and_up_takes_them_back_unsent(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "interrupted_turn"), answers=startup_answers())
+        )
+        terminal = run.terminal
+
+        def running() -> bool:
+            return terminal.status_row().rstrip().endswith("running")
+
+        terminal.script(
+            Step(b"Write the numbers from 1 to 300, one per line, nothing else.\r", when=terminal.idle,
+                 capture="idle", label="idle"),
+            # The replay holds this turn open until it sees session.interrupt.
+            Step(b"second prompt\rthird prompt\r", when=running, label="running"),
+            Step(b"\x1b[A", when=terminal.shows("⧗ third prompt"), capture="queued", label="queued"),
+            Step(b"\x03", when=terminal.shows("› second prompt"), capture="recalled", label="recalled"),
+            Step(b"\x03", when=lambda: not terminal.shows("third prompt")(), label="cleared"),
+            Step(b"\x04", when=lambda: "Interrupted." in terminal.history() and terminal.idle(), label="end"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)  # a prompt.submit for either queued prompt would be a replay mismatch
+        self.assertEqual(len(run.calls("prompt.submit")), 1)
+        idle, queued, recalled = (terminal.captures[name] for name in ("idle", "queued", "recalled"))
+        top = composer_index(queued)
+        self.assertEqual(top, composer_index(idle))
+        self.assertEqual(queued[top - 3].rstrip(), "⧗ second prompt")
+        self.assertTrue(queued[top - 2].startswith("⧗ third prompt"))
+        self.assertTrue(queued[top - 2].rstrip().endswith("↑ edit"))
+        self.assertIn("queued 2", status_row_of(queued))
+        self.assertNotIn("⧗", "\n".join(recalled))
+        self.assertEqual(recalled[composer_index(recalled) + 1].strip(), "third prompt")
+        self.assertNotIn("queued", status_row_of(recalled))
+
+    def test_ctrl_t_shows_the_effort_hermes_confirmed_on_the_mode_row(self) -> None:
+        answers = (*startup_answers(), ("config.set", {"result": effort_set("low")}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            Step(b"\x14", when=terminal.idle, capture="before", label="idle"),
+            Step(b"\x04", when=terminal.shows("effort low"), label="the effort"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (call,) = run.calls("config.set")
+        self.assertEqual(call["params"], {"key": "reasoning", "session_id": LIVE_ID, "value": "low"})
+        # "ctrl+t effort" is the hint; the level itself is absent until Hermes names one.
+        self.assertNotIn("effort low", "\n".join(terminal.captures["before"]))
+
+    def test_shift_tab_walks_the_modes_and_the_frame_shows_each(self) -> None:
+        answers = (*startup_answers(), ("config.set", {"result": YOLO_IS_ON}), ("config.set", {"result": YOLO_IS_OFF}))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            Step(SHIFT_TAB_BYTES, when=terminal.idle, capture="normal", label="idle"),
+            Step(SHIFT_TAB_BYTES, when=terminal.shows("⏵⏵ accept all on"), capture="accept", label="accept"),
+            Step(SHIFT_TAB_BYTES, when=terminal.shows("⏸ plan mode on"), capture="plan", label="plan"),
+            Step(b"\x04", when=terminal.shows("? shortcuts"), label="normal again"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual(
+            [frame["params"] for frame in run.calls("config.set")],
+            [
+                {"key": "yolo", "session_id": LIVE_ID, "value": "on"},
+                {"key": "yolo", "session_id": LIVE_ID, "value": "off"},
+            ],
+        )
+        for name, glyph in (("normal", "─"), ("accept", "━"), ("plan", "┄")):
+            rules = [line for line in terminal.captures[name] if line and set(line) == {glyph}]
+            self.assertEqual(len(rules), 2, terminal.captures[name])
+
+    def test_a_plan_mode_prompt_reaches_hermes_as_the_prompt_slash_plan_builds(self) -> None:
+        answers = (
+            *startup_answers(),
+            ("config.set", {"result": YOLO_IS_ON}),
+            ("config.set", {"result": YOLO_IS_OFF}),
+            ("slash.exec", {"error": {"code": 4018, "message": "pending-input command"}}),
+            ("command.dispatch", {"result": {"type": "send", "message": PLAN_PROMPT}}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            Step(SHIFT_TAB_BYTES, when=terminal.idle, label="idle"),
+            Step(SHIFT_TAB_BYTES, when=terminal.shows("⏵⏵ accept all on"), label="accept"),
+            Step(b"fix the flaky test\r", when=terminal.shows("⏸ plan mode on"), label="plan"),
+            Step(b"\x04", when=lambda: "later." in terminal.history() and terminal.idle(), label="the reply"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        (dispatch,) = run.calls("command.dispatch")
+        self.assertEqual(dispatch["params"], {"name": "plan", "arg": "fix the flaky test", "session_id": LIVE_ID})
+        (submitted,) = run.calls("prompt.submit")
+        self.assertEqual(submitted["params"], {"session_id": LIVE_ID, "text": PLAN_PROMPT})
+        self.assertIn("› /plan fix the flaky test", terminal.history())
+        self.assertNotIn("PLAN MODE", terminal.history())
+
+
+if __name__ == "__main__":
+    unittest.main()

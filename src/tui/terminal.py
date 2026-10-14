@@ -1,0 +1,303 @@
+"""The real terminal: raw mode, bracketed paste, key reports, size, resize signal, and byte IO.
+
+This is the only module of the OMH TUI that touches a tty. Everything above it
+works on bytes in (`read`) and text out (`write`), so it runs in tests against
+a pipe, a pty, or a list.
+
+Raw mode here is full raw, not the cbreak mode `omh theme` uses: ISIG is off so
+Ctrl+C arrives as a key the composer can bind (the gateway ignores SIGINT
+anyway), IXON is off so Ctrl+S/Ctrl+Q reach it too, ICRNL is off so Enter
+reads as CR and Ctrl+J as LF, and OPOST is off so "\\n" is a bare line feed:
+the screen writes "\\r\\n" itself and owns every cursor move. Attributes are
+put back on exit whether the block ended normally or by an exception.
+
+On the terminals Hermes' own TUI trusts with them, entering also asks for the
+kitty keyboard protocol and xterm modifyOtherKeys, so Ctrl+Enter and
+Shift+Enter can arrive as keys of their own; `OMH_TUI_KEYBOARD=legacy` keeps
+the plain bytes everywhere. `keyboard_protocol` says only that it asked: a
+terminal on the list can ignore the request (tmux with `extended-keys off`),
+and then Ctrl+Enter arrives as Enter. Whether the reports really come is
+`KeyDecoder.protocol_reported`, which turns on at the first key that arrives
+as one.
+
+Mouse reporting is off unless `set_mouse(True)` turns it on, and then only
+clicks and the wheel are reported, in SGR form; motion tracking is never
+asked for. Every exit turns it off again (`mouse_reporting` says whether it
+is on).
+
+Windows has no termios; `terminal_supported` reports that, and the caller
+takes the fallback path instead of entering a `Terminal`.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+import errno
+import os
+import select
+import signal
+import sys
+from types import FrameType, TracebackType
+from typing import Protocol
+
+from .screen import AUTOWRAP_ON, SHOW_CURSOR
+from .style import CSI, SGR_RESET
+
+try:  # pragma: no cover - exercised by platform, not by a branch test
+    import termios
+except ImportError:  # pragma: no cover - Windows ships no termios
+    termios = None  # type: ignore[assignment]
+
+BRACKETED_PASTE_ON = f"{CSI}?2004h"
+BRACKETED_PASTE_OFF = f"{CSI}?2004l"
+# Richer key reports, so Ctrl+Enter and Shift+Enter differ from Enter: the kitty
+# keyboard protocol (push flag 1, "disambiguate") and xterm modifyOtherKeys level 2.
+KITTY_KEYBOARD_PUSH = f"{CSI}>1u"
+KITTY_KEYBOARD_POP = f"{CSI}<u"
+MODIFY_OTHER_KEYS_ON = f"{CSI}>4;2m"
+MODIFY_OTHER_KEYS_OFF = f"{CSI}>4m"
+# Mouse reports: button presses and releases, the wheel included (xterm mode
+# 1000), sent in SGR form (1006) so any column and row can be reported. Never
+# 1002 or 1003: those report motion too.
+MOUSE_REPORTING_ON = f"{CSI}?1000h{CSI}?1006h"
+MOUSE_REPORTING_OFF = f"{CSI}?1006l{CSI}?1000l"
+# Written on exit even after a crash mid-frame: the screen hides the cursor and
+# turns autowrap off while it paints, and a shell must not inherit either. The
+# key and mouse reports are switched off whether or not they were asked for, as
+# Hermes' own TUI does on every exit (hermes-ink `ink.tsx`, its signal-exit path
+# too), so no exit path depends on remembering whether they were asked for.
+RESTORE_SEQUENCE = (
+    f"{SGR_RESET}{AUTOWRAP_ON}{SHOW_CURSOR}{MODIFY_OTHER_KEYS_OFF}{KITTY_KEYBOARD_POP}"
+    f"{MOUSE_REPORTING_OFF}{BRACKETED_PASTE_OFF}"
+)
+
+# Terminals asked for the richer key reports, by the name Hermes' own TUI gives
+# them (hermes-ink `ink/terminal.ts` EXTENDED_KEYS_TERMINALS, an allowlist
+# because some terminals honour the request and then send codes a parser does
+# not expect). Ghostty's kitty mode drops Alt from Backspace, so it gets
+# modifyOtherKeys only.
+KEYBOARD_PROTOCOL_TERMINALS = frozenset({"iTerm.app", "kitty", "WezTerm", "ghostty", "tmux", "windows-terminal", "vscode"})
+MODIFY_OTHER_KEYS_ONLY_TERMINALS = frozenset({"ghostty"})
+# OMH_TUI_KEYBOARD=legacy keeps the plain key bytes on any terminal.
+KEYBOARD_OPT_OUT = "legacy"
+
+READ_CHUNK_BYTES = 4096
+FALLBACK_SIZE = (80, 24)
+
+# Indices into the list termios.tcgetattr returns.
+_IFLAG = 0
+_OFLAG = 1
+_CFLAG = 2
+_LFLAG = 3
+_CC = 6
+
+
+class _TtyProbe(Protocol):
+    def isatty(self) -> bool: ...
+
+
+def terminal_supported(stdin: _TtyProbe | None, stdout: _TtyProbe | None, environ: Mapping[str, str]) -> bool:
+    """True only when the OMH TUI can own this terminal; False means take the fallback."""
+    if termios is None:
+        return False
+    if environ.get("TERM", "") == "dumb" or environ.get("OMH_NO_TUI", "") == "1":
+        return False
+    for stream in (stdin, stdout):
+        if stream is None:
+            return False
+        try:
+            if not stream.isatty():
+                return False
+        except (OSError, ValueError):
+            # A closed or detached stream is not a terminal.
+            return False
+    return True
+
+
+def terminal_name(environ: Mapping[str, str]) -> str:
+    """The terminal's name, read the way Hermes' own TUI reads it (hermes-ink `utils/env.ts` detectTerminal)."""
+    term = environ.get("TERM", "")
+    if environ.get("CURSOR_TRACE_ID"):
+        return "cursor"
+    if term == "xterm-ghostty":
+        return "ghostty"
+    if "kitty" in term:
+        return "kitty"
+    if environ.get("TERM_PROGRAM"):
+        return environ["TERM_PROGRAM"]
+    if environ.get("TMUX"):
+        return "tmux"
+    if environ.get("STY"):
+        return "screen"
+    if environ.get("KITTY_WINDOW_ID"):
+        return "kitty"
+    if environ.get("WT_SESSION"):
+        return "windows-terminal"
+    return term
+
+
+def keyboard_protocol_request(environ: Mapping[str, str]) -> str:
+    """What `Terminal` writes on entry to ask for the richer key reports; "" when it does not ask."""
+    if environ.get("OMH_TUI_KEYBOARD", "") == KEYBOARD_OPT_OUT:
+        return ""
+    name = terminal_name(environ)
+    if name not in KEYBOARD_PROTOCOL_TERMINALS:
+        return ""
+    if name in MODIFY_OTHER_KEYS_ONLY_TERMINALS:
+        return MODIFY_OTHER_KEYS_ON
+    return KITTY_KEYBOARD_PUSH + MODIFY_OTHER_KEYS_ON
+
+
+def raw_attributes(saved: list) -> list:
+    """`saved` with raw mode applied (what `tty.cfmakeraw` does on 3.12+, kept for 3.11)."""
+    mode = list(saved)
+    mode[_IFLAG] &= ~(termios.BRKINT | termios.ICRNL | termios.INPCK | termios.ISTRIP | termios.IXON)
+    mode[_OFLAG] &= ~termios.OPOST
+    mode[_CFLAG] = (mode[_CFLAG] & ~(termios.CSIZE | termios.PARENB)) | termios.CS8
+    mode[_LFLAG] &= ~(termios.ECHO | termios.ICANON | termios.IEXTEN | termios.ISIG)
+    special = list(mode[_CC])
+    special[termios.VMIN] = 1
+    special[termios.VTIME] = 0
+    mode[_CC] = special
+    return mode
+
+
+class Terminal:
+    def __init__(
+        self,
+        input_fd: int | None = None,
+        output_fd: int | None = None,
+        *,
+        environ: Mapping[str, str] | None = None,
+    ) -> None:
+        self._input = input_fd if input_fd is not None else sys.stdin.fileno()
+        self._output = output_fd if output_fd is not None else sys.stdout.fileno()
+        self._saved: list | None = None
+        self._previous_winch: object = None
+        self._winch_installed = False
+        self._resized = False
+        self._keyboard_request = keyboard_protocol_request(environ or {})
+        # True while the richer key reports are asked for. Asked, not reported: see the module docstring.
+        self.keyboard_protocol = False
+        # True while mouse reports are on (`set_mouse`).
+        self.mouse_reporting = False
+
+    def __enter__(self) -> Terminal:
+        if termios is None:
+            raise RuntimeError("the OMH TUI needs termios; check terminal_supported() first")
+        saved = termios.tcgetattr(self._input)
+        # TCSANOW, not TCSAFLUSH: flushing would throw away keys typed before start.
+        termios.tcsetattr(self._input, termios.TCSANOW, raw_attributes(saved))
+        self._saved = saved
+        entered = False
+        try:
+            self._install_winch()
+            self.write(BRACKETED_PASTE_ON + self._keyboard_request)
+            self.keyboard_protocol = bool(self._keyboard_request)
+            entered = True
+        finally:
+            if not entered:  # __exit__ never runs for a failed __enter__
+                self._restore()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self._restore()
+
+    def _restore(self) -> None:
+        # A hung-up terminal (window closed) refuses the write with EIO, and it
+        # has no screen to reset and no shell to hand attributes back to:
+        # leaving it must not turn into a traceback on exit.
+        saved, self._saved = self._saved, None
+        if saved is None:
+            return
+        self.keyboard_protocol = False
+        self.mouse_reporting = False
+        hung_up = False
+        try:
+            self.write(RESTORE_SEQUENCE)
+        except OSError as error:
+            if error.errno != errno.EIO:
+                raise
+            hung_up = True
+        finally:
+            try:
+                if not hung_up:
+                    termios.tcsetattr(self._input, termios.TCSANOW, saved)
+            finally:
+                self._uninstall_winch()
+
+    def set_mouse(self, enabled: bool) -> None:
+        """Turn mouse reports on or off; writes nothing when they already are.
+
+        Only inside the `with` block: turned on outside it, nothing would turn
+        them off again, and every click would type escape codes into the shell.
+        """
+        if enabled == self.mouse_reporting or (enabled and self._saved is None):
+            return
+        self.write(MOUSE_REPORTING_ON if enabled else MOUSE_REPORTING_OFF)
+        self.mouse_reporting = enabled
+
+    def _on_winch(self, signum: int, frame: FrameType | None) -> None:
+        self._resized = True
+
+    def _install_winch(self) -> None:
+        winch = getattr(signal, "SIGWINCH", None)
+        if winch is None:
+            return
+        try:
+            self._previous_winch = signal.signal(winch, self._on_winch)
+        except ValueError:
+            # Handlers can only be installed from the main thread; the caller
+            # still sees a resize through size() on its next frame.
+            return
+        self._winch_installed = True
+
+    def _uninstall_winch(self) -> None:
+        if not self._winch_installed:
+            return
+        previous = self._previous_winch if self._previous_winch is not None else signal.SIG_DFL
+        signal.signal(signal.SIGWINCH, previous)
+        self._winch_installed = False
+
+    def resized(self) -> bool:
+        """True once per SIGWINCH since the last call."""
+        resized, self._resized = self._resized, False
+        return resized
+
+    def size(self) -> tuple[int, int]:
+        """(cols, rows); a terminal that reports nothing usable gets 80x24."""
+        try:
+            size = os.get_terminal_size(self._output)
+        except OSError:
+            return FALLBACK_SIZE
+        return (size.columns or FALLBACK_SIZE[0], size.lines or FALLBACK_SIZE[1])
+
+    def read(self, timeout: float) -> bytes:
+        """Whatever input arrives within `timeout` seconds, b"" if none.
+
+        Raises EOFError when the terminal hung up, so a closed window ends the
+        session instead of spinning on empty reads.
+        """
+        ready, _, _ = select.select([self._input], [], [], max(timeout, 0.0))
+        if not ready:
+            return b""
+        try:
+            data = os.read(self._input, READ_CHUNK_BYTES)
+        except OSError as error:
+            if error.errno != errno.EIO:  # Linux reports a hung-up pty as EIO
+                raise
+            raise EOFError("the terminal hung up") from error
+        if not data:  # macOS reports it as end of file
+            raise EOFError("the terminal hung up")
+        return data
+
+    def write(self, text: str) -> None:
+        data = text.encode("utf-8", "replace")
+        while data:
+            written = os.write(self._output, data)
+            data = data[written:]
