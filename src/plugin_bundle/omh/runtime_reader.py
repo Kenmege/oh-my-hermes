@@ -233,7 +233,8 @@ HUD_FANOUT_CACHE_LOCK_SECONDS = 1.0
 # identity (inode, mtime, ctime, size) and the binding's `updated_at`, or None when it is not a valid binding.
 # The cut is by `updated_at`, so every binding file is still listed and stat'ed, but a reader that polls (the
 # OMH TUI's) opens only the files written since and the ones that survive the cut. Each read replaces the map
-# with the files it saw.
+# with the files it saw. A coarse mtime does not hide a rewrite: `write_progress_binding` replaces the file
+# atomically (a temp file renamed over it), so each version is a new inode while the old one is still live.
 _hud_binding_orders: dict[Path, tuple[tuple[int, int, int, int], str | None]] = {}
 
 
