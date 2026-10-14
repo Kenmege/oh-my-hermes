@@ -211,6 +211,31 @@ class UpdateReleaseTests(unittest.TestCase):
 
             self.assertEqual(read_theme_choice(home.omh_home), mono)
 
+    def test_a_theme_not_carried_is_said_once_on_the_recording_pass(self) -> None:
+        # While the release stays refused, every update carries again; the
+        # "kept the saved theme" line would repeat on each one.
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install(skin="omh-crimson")
+            mono = theme_for_name("mono")
+            assert mono is not None
+            write_theme_choice(home.omh_home, mono)
+            unshaped = home.config.read_text(encoding="utf-8")
+            home.config.write_text(unshaped + 'aliases:\n  "fast/model": glm-5.3\n', encoding="utf-8", newline="")
+
+            for _ in range(2):
+                status, stdout, stderr = home.run("update", output_json=False)
+
+                self.assertEqual(status, 0, stderr)
+                self.assertIn("could not release display.skin (", stdout)
+                self.assertNotIn("kept the saved OMH theme", stdout)
+
+            home.config.write_text(unshaped, encoding="utf-8", newline="")
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertIn("kept the saved OMH theme mono over crimson, which display.skin named", stdout)
+
     def test_update_puts_back_the_display_values_consent_replaced(self) -> None:
         with TemporaryDirectory() as tmp:
             home = _Home(Path(tmp))

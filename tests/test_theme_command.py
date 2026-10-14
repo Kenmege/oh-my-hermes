@@ -114,9 +114,18 @@ class ThemeCommandTests(unittest.TestCase):
 
     def test_repair_is_retired_and_still_exits_zero(self) -> None:
         with TemporaryDirectory() as tmp:
-            status, out, err = run_cli([*self._homes(tmp), "theme", "repair"], output_json=False)
-            self.assertEqual((status, out), (0, ""))
-            self.assertIn("`omh theme repair` is retired", err)
+            homes = self._homes(tmp)
+            for argv in (["theme", "repair"], ["theme", "repair", "crimson", "--dry-run"], ["theme", "repair", "--all"]):
+                with self.subTest(argv=argv):
+                    status, out, err = run_cli([*homes, *argv], output_json=False)
+                    self.assertEqual((status, out), (0, ""))
+                    self.assertIn("`omh theme repair` is retired", err)
+            status, out, _err = run_cli([*homes, "theme", "repair", "--json"])
+            self.assertEqual(status, 0)
+            payload = json.loads(out)
+            self.assertEqual(payload["schema_version"], "omh_theme_repair/v2")
+            self.assertTrue(payload["retired"])
+            self.assertFalse(payload["changed"])
             self.assertEqual(self._hermes_home_entries(tmp), [])
 
     def test_an_invalid_name_fails_and_names_the_valid_ones(self) -> None:

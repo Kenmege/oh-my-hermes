@@ -791,11 +791,12 @@ def _display_release_lines(label: str, release: object) -> list[str]:
     A person who opens `hermes` after this update and finds stock Hermes
     should already have read why, and where their OMH theme went. Keys taken
     back, files removed and a theme saved are said on the pass that does
-    them; a key the editor refused is said on every pass that tries it. A
-    file left in place (`kept_*`, `refused`) is said only on the pass that
-    records the release (`recorded`): every later setup and update looks at
-    the same file again, and repeating it under the "stock Hermes" header
-    each time is noise.
+    them, and so is a theme store that could not be written, which holds the
+    release; a key the editor refused is said on every pass that tries it.
+    A file left in place (`kept_unmanaged`, `refused`) and a theme not
+    carried (`kept_saved`, `store_unknown`) are said only on the pass that
+    records the release (`recorded`): a pass that does not record it runs
+    again on the next update and would repeat them each time.
     """
     if not isinstance(release, dict):
         return []
@@ -823,8 +824,6 @@ def _display_release_lines(label: str, release: object) -> list[str]:
         for entry in skins:
             if entry.get("status") == "kept_unmanaged":
                 details.append(f"kept {entry.get('path')}: it differs from what OMH installed, so it is yours")
-            elif entry.get("status") == "kept_selected":
-                details.append(f"kept {entry.get('path')}: display.skin still names it")
         if widget.get("status") == "kept_unmanaged":  # type: ignore[union-attr]
             details.append(f"kept {widget.get('path')}: OMH cannot prove it installed it")  # type: ignore[union-attr]
         for name, outcome in (("status widget", widget), ("skin files", skin)):
@@ -840,13 +839,13 @@ def _display_release_lines(label: str, release: object) -> list[str]:
             f"could not save OMH theme {theme.get('theme')} to {theme.get('path')} ({theme.get('reason')}); "  # type: ignore[union-attr]
             "the display keys and files stay until the next `omh setup` or `omh update` can save it"
         )
-    elif theme.get("status") == "store_unknown":  # type: ignore[union-attr]
+    elif theme.get("status") == "store_unknown" and release.get("recorded"):  # type: ignore[union-attr]
         details.append(
             f"did not save OMH theme {theme.get('theme')}: this profile names its OMH home where OMH cannot read it "  # type: ignore[union-attr]
             "(its .env, or a setting shape the reader refuses); "
             f"`omh --omh-home <that home> theme use {theme.get('theme')}` saves it there"  # type: ignore[union-attr]
         )
-    elif theme.get("status") == "kept_saved":  # type: ignore[union-attr]
+    elif theme.get("status") == "kept_saved" and release.get("recorded"):  # type: ignore[union-attr]
         details.append(
             f"kept the saved OMH theme {theme.get('saved')} over {theme.get('theme')}, which display.skin named"  # type: ignore[union-attr]
         )

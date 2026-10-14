@@ -47,6 +47,7 @@ from .quickstart import _color, _use_color
 THEME_LIST_SCHEMA_VERSION = "omh_theme_list/v2"
 THEME_CHANGE_SCHEMA_VERSION = "omh_theme_change/v2"
 THEME_STATUS_SCHEMA_VERSION = "omh_theme_status/v2"
+THEME_REPAIR_SCHEMA_VERSION = "omh_theme_repair/v2"
 
 
 def _language(args: argparse.Namespace) -> str:
@@ -182,11 +183,17 @@ def _apply_theme(args: argparse.Namespace, theme: SkinTheme, *, dry_run: bool) -
 
 
 def cmd_theme_repair(args: argparse.Namespace) -> int:
-    """Retired with the skin files it reinstalled; scripts that still call it exit 0, as retired flags do."""
-    print(
-        "omh: `omh theme repair` is retired; OMH installs no skin files into Hermes, so there is nothing to repair.",
-        file=sys.stderr,
-    )
+    """Retired with the skin files it reinstalled; scripts that still call it exit 0, as retired flags do.
+
+    The old name, `--all` and `--dry-run` are still accepted and ignored.
+    `--json` gets a retirement object, so a caller parsing the output reads
+    "retired" rather than failing on plain text.
+    """
+    message = "`omh theme repair` is retired; OMH installs no skin files into Hermes, so there is nothing to repair."
+    if _wants_json(args):
+        _print_json({"schema_version": THEME_REPAIR_SCHEMA_VERSION, "retired": True, "changed": False, "message": message})
+    else:
+        print(f"omh: {message}", file=sys.stderr)
     return 0
 
 
@@ -277,7 +284,10 @@ def _add_theme_commands(sub) -> None:
     theme_status.set_defaults(func=cmd_theme_status)
 
     theme_repair = theme_sub.add_parser("repair", help="Retired: OMH installs no skin files into Hermes. Does nothing.")
-    _add_shared_theme_arguments(theme_repair, "Accepted for compatibility.")
+    theme_repair.add_argument("name", nargs="?", help="Accepted for compatibility and ignored.")
+    theme_repair.add_argument("--all", action="store_true", help="Accepted for compatibility and ignored.")
+    theme_repair.add_argument("--dry-run", action="store_true", help="Accepted for compatibility and ignored.")
+    _add_shared_theme_arguments(theme_repair, "Print the retirement notice as JSON.")
     theme_repair.set_defaults(func=cmd_theme_repair)
 
 
