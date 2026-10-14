@@ -26,6 +26,8 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
                   "turns plan on and off"),
     ("Ctrl+T", "Steps the reasoning effort: low, medium, high, xhigh, max"),
     ("@", "Starts a file or folder reference; Hermes offers matches above the composer"),
+    ("!", "At the start of a line, makes it a shell command Hermes runs when you send it (30 s at most); "
+          "it and its output are not sent to the model"),
     ("?", "On an empty composer, shows this list; /keys does too"),
     ("↑ / ↓", "Move between the composer's rows, walk the input history at its first and last row "
               "(earlier sessions' too, shared with hermes --tui), or move through an open completion menu"),

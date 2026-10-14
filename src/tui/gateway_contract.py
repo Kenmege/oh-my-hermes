@@ -72,6 +72,9 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     "clipboard.paste": frozenset({"session_id"}),
     "input.detect_drop": frozenset({"session_id", "text"}),
     "slash.exec": frozenset({"command", "session_id"}),
+    # The person's own `!command` (AGENTS.md: nothing else goes this way). Hermes runs it with a 30 s limit,
+    # refuses dangerous and hardline commands (4005), keeps it out of the model's context, and redacts the output.
+    "shell.exec": frozenset({"command"}),
     "command.dispatch": frozenset({"name", "arg", "session_id"}),
 }
 
@@ -255,6 +258,9 @@ def call_problem(method: str, params: dict[str, object]) -> str:
         if not isinstance(row_id, int) or isinstance(row_id, bool) or params.get("confirm_truncate") is not True:
             return "prompt.submit truncates only with an int truncate_before_row_id and confirm_truncate true"
         return ""
+    if method == "shell.exec":
+        command = params.get("command")
+        return "" if isinstance(command, str) and command.strip() else "shell.exec needs the command the person typed"
     if method == "subagent.tail":
         missing = [key for key in ("session_id", "subagent_id") if not (isinstance(params.get(key), str) and params[key])]
         return f"subagent.tail needs {' and '.join(missing)}: Hermes rejects the call without" if missing else ""

@@ -31,7 +31,7 @@ import json
 from typing import Any
 
 from . import gateway_contract as contract
-from .frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
+from .frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN, MODE_SHELL
 from .keys import CHAR, TAB, Key, Paste
 from .style import Line, Span, Style
 from .theme import Theme
@@ -52,6 +52,8 @@ ACCEPT_LABEL = "⏵⏵ accept all on"
 ACCEPT_HINT = " · approvals off for this session (⇧⇥ to cycle)"
 PLAN_LABEL = "⏸ plan mode on"
 PLAN_HINT = " (⇧⇥ to cycle)"
+SHELL_LABEL = "! shell (not sent to the model)"
+SHELL_HINT = " · enter runs it in Hermes' shell, 30 s at most"
 MODE_ROW_GAP = 3
 STRIP_SEPARATOR = " · "  # between the mode's label, the agent strip and the hint on the mode row
 
@@ -94,6 +96,8 @@ def mode_label(mode: str, theme: Theme) -> Line:
     plan: Line = (Span(PLAN_LABEL, replace(theme.mode_plan, bold=True)),)
     if mode == MODE_ACCEPT_PLAN:
         return (*accept, Span(STRIP_SEPARATOR, theme.hint), *plan)
+    if mode == MODE_SHELL:
+        return (Span(SHELL_LABEL, replace(theme.accent, bold=True)),)
     return {MODE_ACCEPT: accept, MODE_PLAN: plan}.get(mode, ())
 
 
@@ -128,6 +132,8 @@ def mode_row_line(
     label = mode_label(mode, theme)
     if say:
         hint = say if not label else STRIP_SEPARATOR + say
+    elif mode == MODE_SHELL:
+        hint = SHELL_HINT
     elif mode == MODE_ACCEPT:
         hint = ACCEPT_HINT
     elif mode in (MODE_PLAN, MODE_ACCEPT_PLAN):

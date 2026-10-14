@@ -404,6 +404,15 @@ run and approval decision stays Hermes'; the screen is OMH's.
   send; Backspace on an empty composer removes the last one. Hermes reads and
   queues the file; the OMH TUI keeps only its name. Dropping a file that is not
   an image types Hermes' reference to it instead.
+- A line that starts with `!` is a shell command: while the composer holds
+  one, its rules turn `╌` in the accent and the mode row says
+  `! shell (not sent to the model)`. Sending it runs it through Hermes'
+  `shell.exec` (Hermes' own limit of 30 s, its refusal of dangerous commands,
+  and its redaction of what the command printed) and shows `› !command`
+  with what it printed and its exit code when that is not 0, or Hermes'
+  reason for refusing it. Neither the command nor its output goes to the
+  model. During a turn it waits in the queue and runs when the turn ends; a
+  prompt queued behind it waits for its output.
 - Esc twice (within 0.8 s) on an empty composer between turns, or `/rewind`,
   lists this session's prompts, newest first; the one you take comes back
   into the composer, and the mode row says that sending it replaces that
@@ -435,6 +444,7 @@ Esc closes it):
 | Shift+Tab | Cycles the input mode: normal, accept all, plan; while Hermes itself has approvals off, turns plan on and off |
 | Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max |
 | `@` | Starts a file or folder reference; Hermes offers matches above the composer |
+| `!` | At the start of a line, makes it a shell command Hermes runs when you send it (30 s at most); it and its output are not sent to the model |
 | `?` | On an empty composer, shows this list; `/keys` does too |
 | ↑ / ↓ | Move between the composer's rows, walk the input history at its first and last row (earlier sessions' too, shared with `hermes --tui`), or move through an open completion menu |
 | Ctrl+R | Searches the input history; Ctrl+R again finds an older match, Enter puts it in the composer, Esc leaves the composer as it was |

@@ -103,7 +103,7 @@ from ..skin_pack import (
 )
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
-from .frame import MODE_ACCEPT, MODE_PLAN, STATUS_SEPARATOR, build_frame, sticky_line
+from .frame import MODE_ACCEPT, MODE_PLAN, MODE_SHELL, STATUS_SEPARATOR, build_frame, sticky_line
 from .history import SEARCH_ACCEPT, SEARCH_CANCEL, HistorySearch, append_entry, history_path, load_history
 from .gateway import (
     Event,
@@ -194,6 +194,10 @@ ESCAPE_REWIND = "rewind"
 ESCAPE_AGAIN = "esc again to {}"
 REWIND_SAY = "⏪ rewind: sending replaces prompt #{ordinal} and everything after it · esc cancels"
 REWIND_BUSY_NOTICE = "Rewind works between turns: let this one end, or interrupt it with Esc."
+# A composer line that starts with this is the person's own shell command (`shell.exec`), never a prompt.
+SHELL_PREFIX = "!"
+SHELL_USAGE = "Usage: !<command> runs it in Hermes' shell (30 s at most); its output is not sent to the model."
+SHELL_REFUSED = 4005  # Hermes' answer to a dangerous or hardline command
 REWIND_NONE_NOTICE = "No prompt to rewind to in this session yet."
 REWIND_REFUSED_NOTICE = "Hermes did not rewind: {reason}. The screen shows the session as Hermes still has it."
 # Every key a prompt slot takes, and the composer's Enter, is ignored when its
@@ -1861,6 +1865,9 @@ class App(ModesMixin, AgentViewMixin):
     def _submit(self, text: str) -> None:
         if not text.strip():
             return
+        if text.startswith(SHELL_PREFIX):
+            self._shell_line(text)
+            return
         invocation = parse_slash(text)
         if invocation is not None:
             self._run_slash(invocation)  # a picked rewind stays picked under a command
@@ -1919,9 +1926,65 @@ class App(ModesMixin, AgentViewMixin):
         return False
 
     def _drain_queue(self) -> None:
+        """Send the next queued line: a prompt starts the next turn; a `!` line runs, and the one after waits for it."""
         if self.queued and self.sid:
             text, shown, _typed = self.queued.popleft()
-            self._submit_prompt(text, shown, queued=True)
+            if text.startswith(SHELL_PREFIX):
+                self._run_shell(text[len(SHELL_PREFIX) :].strip(), drain_after=True)
+            else:
+                self._submit_prompt(text, shown, queued=True)
+
+    # ── `!` shell lines ──
+
+    def _shell_line(self, text: str) -> None:
+        """A `!command` the person sent: run it now, or after the running turn, as a command waits in Claude Code."""
+        command = text[len(SHELL_PREFIX) :].strip()
+        if not command:
+            self.transcript.add_notice(SHELL_USAGE, NOTICE_WARN)
+        elif self._busy():
+            self.queued.append((text, "", ""))
+        else:
+            self._run_shell(command)
+
+    def _run_shell(self, command: str, drain_after: bool = False) -> None:
+        """`shell.exec` with the command the person typed, echoed as `› !command`; its output lands under the echo.
+
+        `drain_after` sends the next queued line once Hermes answered, so a
+        prompt queued behind it does not start a turn under its output.
+        """
+        echo = f"{SHELL_PREFIX}{command}"
+
+        def run() -> None:
+            self._request(
+                "shell.exec",
+                {"command": command},
+                lambda result: self._on_shell_result(echo, result, drain_after),
+                lambda error: self._on_shell_refused(echo, error, drain_after),
+            )
+
+        self._as_command(echo, run)
+
+    def _on_shell_result(self, echo: str, result: Mapping[str, Any], drain_after: bool) -> None:
+        """What it printed (stdout, then stderr), then its exit code when it failed or printed nothing."""
+        printed = [text for text in (as_text(result.get("stdout")), as_text(result.get("stderr"))) if text.strip()]
+        for text in printed:
+            self.transcript.add_output(text.rstrip("\n"), command=echo)
+        code = result.get("code")
+        code = code if isinstance(code, int) and not isinstance(code, bool) else None
+        if code != 0:
+            self.transcript.add_output(f"exit {code if code is not None else '?'}", NOTICE_ERROR, command=echo)
+        elif not printed:
+            self.transcript.add_output("exit 0", command=echo)
+        if drain_after:
+            self._drain_queue()
+
+    def _on_shell_refused(self, echo: str, error: Mapping[str, Any], drain_after: bool) -> bool:
+        """Hermes' own words: a refusal of a dangerous command (4005) is a warning, a timeout or failure an error."""
+        level = NOTICE_WARN if error.get("code") == SHELL_REFUSED else NOTICE_ERROR
+        self.transcript.add_output(plain_sentence(as_text(error.get("message"))), level, command=echo)
+        if drain_after:
+            self._drain_queue()
+        return True
 
     def _recall_queue(self, event: Key | Paste) -> bool:
         """Up on an empty composer takes every queued prompt back into it, one per line, and empties the queue.
@@ -1945,7 +2008,7 @@ class App(ModesMixin, AgentViewMixin):
 
     def _steer_or_submit(self, text: str) -> None:
         """Ctrl+Enter: steer the running turn with the typed text. Idle, or on a slash command, it is Enter."""
-        if self._busy() and text.strip() and parse_slash(text) is None:
+        if self._busy() and text.strip() and parse_slash(text) is None and not text.startswith(SHELL_PREFIX):
             self._steer(text)
         else:
             self._submit(text)
@@ -2019,14 +2082,17 @@ class App(ModesMixin, AgentViewMixin):
         echo. A command plan mode wrote around a prompt is no command the
         person ran, and an alias's target runs under the alias's echo.
         """
-        echo = depth == 0 and not invocation.for_plan_mode
-        if not echo:
+        if depth or invocation.for_plan_mode:
             self._route_slash(invocation, depth)
             return
-        self.transcript.add_command(f"/{invocation.text}")
+        self._as_command(f"/{invocation.text}", lambda: self._route_slash(invocation, depth))
+
+    def _as_command(self, echo: str, run: Callable[[], None]) -> None:
+        """Echo `echo` and run `run` as that command: its calls keep the echo open until they are answered."""
+        self.transcript.add_command(echo)
         outer, self.in_command, self.command_calls = self.in_command, True, 0
         try:
-            self._route_slash(invocation, depth)
+            run()
         finally:
             self.in_command = outer
         if not self.command_calls:
@@ -2661,7 +2727,7 @@ class App(ModesMixin, AgentViewMixin):
             attachments=attachment_line(self.attachments, cols, self.theme)
             if self.attachments and self.slot is None
             else None,
-            mode=self.mode,
+            mode=self._display_mode(),
             mode_row=self._mode_row_line(cols, strip),
             placeholder=PLACEHOLDER if self._composer_open() else "",
             agent_list=agent_list if self.list_selected is not None else None,
@@ -2673,6 +2739,12 @@ class App(ModesMixin, AgentViewMixin):
             # saw them; flushed after it, they land in those pad rows instead.
             self.region.flush_above(stable, cols)
         self._take_clickable(frame.budget, listed)
+
+    def _display_mode(self) -> str:
+        """What the composer's frame shows: the shell while it holds a `!` line for Hermes' shell, else the input mode."""
+        if self._composer_open() and self.composer.text.startswith(SHELL_PREFIX):
+            return MODE_SHELL
+        return self.mode
 
     def _composer_open(self) -> bool:
         """Whether the composer takes the keys for a prompt: no question, picker or search has them."""
@@ -2687,7 +2759,7 @@ class App(ModesMixin, AgentViewMixin):
         elif armed is not None and self.clock() - armed[1] <= DOUBLE_ESCAPE_SECONDS:
             say = ESCAPE_AGAIN.format(armed[0])
         return mode_row_line(
-            mode=self.mode,
+            mode=self._display_mode(),
             busy=self._busy(),
             queued=len(self.queued),
             keyboard_protocol=self.keyboard_protocol,

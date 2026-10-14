@@ -36,6 +36,10 @@ All notable changes will be documented here.
   turns (and `/rewind`), lists your prompts: the one you take comes back to
   edit, and sending it truncates the session before it (`prompt.submit` with
   `truncate_before_row_id` and `confirm_truncate`) and redraws from the cut.
+  A line that starts with `!` runs in Hermes' shell (`shell.exec`, 30 s at
+  most, dangerous commands refused) and shows `› !cmd` with its output and
+  exit code; it never reaches the model, and during a turn it waits in the
+  queue.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:
