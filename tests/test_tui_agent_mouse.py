@@ -1143,7 +1143,8 @@ class DocumentedMouseTests(unittest.TestCase):
         installation = self.prose("docs/INSTALLATION.md")
         self.assertIn(f"for {grace:g} s after they go off, an Esc pressed on its own acts after {seconds:g} s", installation)
         self.assertIn("Another key typed within that time ends the wait, and both keys act, except `[`", installation)
-        self.assertIn("a key the terminal sends in the same burst as the Esc is Alt with that key", installation)
+        self.assertIn("A key the terminal sends in the same burst as the Esc is Alt with that key", installation)
+        self.assertIn("the Esc is lost and a character still types", installation)
         self.assertIn(f"A report that starts later than {grace:g} s after they went off", installation)
         self.assertIn(f"so can any report that takes more than {whole:g} s to arrive whole", installation)
         agents = self.prose("AGENTS.md")
@@ -1156,7 +1157,7 @@ class DocumentedMouseTests(unittest.TestCase):
     def test_the_o_continuations_installation_names_are_every_ss3_final(self) -> None:
         named = {"F1 to F4": b"PQRS", "an arrow": b"ABCD", "Home": b"H", "End": b"F"}
         self.assertEqual(sorted(b"".join(named.values())), sorted(keys_module._SS3_FINALS))
-        self.assertIn("as is `O` arriving together with the letter that ends F1 to F4, an arrow, Home or End;",
+        self.assertIn("as is `O` arriving together with the letter that ends F1 to F4, an arrow, Home or End.",
                       self.prose("docs/INSTALLATION.md"))
 
     def test_no_doc_says_a_split_report_never_types_however_long_the_pause(self) -> None:

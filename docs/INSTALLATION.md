@@ -345,11 +345,14 @@ run and approval decision stays Hermes'; the screen is OMH's.
   connection has to arrive whole. Another key typed within that time ends
   the wait, and both keys act, except `[`, which is read as the rest of a
   sequence, as is `O` arriving together with the letter that ends F1 to F4,
-  an arrow, Home or End; a key the terminal sends in the same burst as the
-  Esc is Alt with that key. A report that starts later than 0.5 s after
-  they went off, split by the connection right after its first byte or two,
-  can still type its rest, and so can any report that takes more than 0.8 s
-  to arrive whole.
+  an arrow, Home or End. A key the terminal sends in the same burst as the
+  Esc is Alt with that key, with click reports off too (tmux before 3.5
+  holds an Esc for half a second and sends a key typed meanwhile that way):
+  the Esc is lost and a character still types, while Enter and the arrows
+  keep their Alt meaning, a new line and a word. A report that starts later
+  than 0.5 s after they went off, split by the connection right after its
+  first byte or two, can still type its rest, and so can any report that
+  takes more than 0.8 s to arrive whole.
   A click is read only where the OMH TUI can tell which row it landed on:
   once the session's output has reached the bottom of the screen, or after
   Ctrl+L. Until then it leaves the mouse to the terminal and the keys open

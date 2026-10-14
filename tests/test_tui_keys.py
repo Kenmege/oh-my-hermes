@@ -138,7 +138,8 @@ class EscapeSequenceTests(unittest.TestCase):
         self.assertEqual(decode("\x1b한".encode()), [char("한", alt=True)])
 
     def test_every_split_of_an_escape_sequence_agrees(self) -> None:
-        for data in (b"\x1b[1;5C", b"\x1b[3~", b"\x1bOA", b"\x1b[Z", "\x1b한".encode(), b"x\x1b[Ay"):
+        # Not an Alt chord: split right after its ESC it is Esc and the key (`EscapeWaitTests`).
+        for data in (b"\x1b[1;5C", b"\x1b[3~", b"\x1bOA", b"\x1b[Z", b"x\x1b[Ay"):
             with self.subTest(data=data):
                 decode_split_everywhere(self, data)
 
@@ -756,7 +757,7 @@ class ReportsAfterTheOffTests(unittest.TestCase):
         paused.now = 0.6
         paused.feed(b"x\x1b")
         paused.pause(0.05)
-        self.assertEqual(paused.events, [char("x", alt=True), Key("escape")])
+        self.assertEqual(paused.events, [Key("escape"), char("x"), Key("escape")])
 
     def test_a_report_that_starts_after_the_grace_and_splits_before_its_marker_is_keys(self) -> None:
         events = self.split(1, 0.06, MOUSE_REPORT_SECONDS)
@@ -831,10 +832,15 @@ class EscapeWaitTests(unittest.TestCase):
                 paused.feed(rest)
                 self.assertEqual(paused.events, [Key("escape"), *(char(c) for c in rest.decode())])
 
-    def test_without_a_silence_an_escape_split_from_its_key_is_still_the_alt_chord(self) -> None:
-        # The wait ends early only after it began: a read that follows before any silence goes on as before.
-        decoder = KeyDecoder()
-        self.assertEqual(decoder.feed(b"\x1b") + decoder.feed(b"n"), [char("n", alt=True)])
+    def test_without_a_silence_an_escape_split_from_its_key_is_esc_and_the_key(self) -> None:
+        # Esc, then a key read before the loop's next silence: both act, whether or not a flush ran between.
+        cases = {b"n": [Key("escape"), char("n")], b"/x": [Key("escape"), char("/"), char("x")],
+                 b"\r": [Key("escape"), Key("enter")],  # an Alt+Enter the kernel split this way is Esc and Enter
+                 b"[A": [Key("up")], b"OA": [Key("up")]}  # a read that goes on with a sequence still does
+        for rest, keys in cases.items():
+            with self.subTest(rest=rest):
+                decoder = KeyDecoder()
+                self.assertEqual(decoder.feed(b"\x1b") + decoder.feed(rest), keys)
 
 
 class ArrivalTests(unittest.TestCase):

@@ -19,7 +19,9 @@ edge. Continuation rows are indented by the prompt's width. When the input
 needs more than `max_rows` rows, the visible window scrolls just enough to
 keep the caret row inside it.
 
-Keys: printable text inserts; Enter submits, except right after a backslash,
+Keys: printable text inserts, with Alt too unless the chord came as a kitty or
+modifyOtherKeys report (the legacy bytes `ESC x` are also Esc then x arriving in
+one read, and the x is not lost with the Esc); Enter submits, except right after a backslash,
 which it turns into a newline; Alt+Enter, Shift+Enter and Ctrl+J insert a
 newline (Ctrl+Enter is Enter here; the app decides what its submit means);
 Backspace/Delete remove one cluster; Left/Right move one cluster,
@@ -254,7 +256,7 @@ class Composer:
         if event.name == CHAR:
             if event.ctrl:
                 return self._control(event.char)
-            if not event.alt:
+            if not (event.alt and event.protocol):
                 self._insert(event.char)
             return NOTHING
         if event.name == TAB:

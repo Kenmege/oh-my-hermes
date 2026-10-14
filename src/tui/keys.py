@@ -12,8 +12,12 @@ silence, and what is held settles only once the silence since its last byte,
 read from the decoder's clock, is long enough for it: a lone ESC becomes
 `Key("escape")` at once, or after `REPORTING_ESCAPE_SECONDS` while a mouse
 report may still arrive (the caller says whether reporting is on, and when it
-last went off). A paste is not settled by `flush()`: it ends only at the
-terminal's paste-end marker.
+last went off). A lone ESC held from an earlier read also settles at the next
+read that cannot go on with a sequence (see `_continues_escape`), silence or
+not: it is Esc, and that read's bytes are keys of their own. So an Alt chord is
+an ESC and its key in one read; split across two reads it is Esc and the key,
+which is what Esc and then a key typed before the next silence send. A paste is
+not settled by `flush()`: it ends only at the terminal's paste-end marker.
 
 Nothing here raises on input. A sequence it does not know becomes
 `Key("unknown")` and decoding continues with the next byte.
@@ -524,7 +528,7 @@ def _report_length(data: bytes) -> int:
 
 
 def _continues_escape(data: bytes) -> bool:
-    """Whether a read after a lone ESC that waited goes on with its sequence: a CSI's `[`, or an SS3 key's `O` and final.
+    """Whether a read after a lone ESC held from an earlier read goes on with its sequence: a CSI's `[`, or an SS3 key's `O` and final.
 
     A read that is a lone `O`, or `O` and a byte no SS3 key ends with, is a
     capital O typed after Esc. An SS3 key split again right after its `O` is
@@ -544,7 +548,6 @@ class KeyDecoder:
         self._paste: bytearray | None = None
         self._fed_at = 0.0  # when the last byte arrived
         self._held_at = 0.0  # when the first byte of what is held arrived
-        self._escape_waited = False  # a lone ESC held through a silence, waiting to see whether a sequence follows
         # The start of a report `flush` settled, and until when the bytes that would finish it are dropped.
         self._settled_start = b""
         self._drop_until = 0.0
@@ -556,10 +559,9 @@ class KeyDecoder:
         now = self._clock()
         if self._settled_start and now >= self._drop_until:
             self._close_drop_window()
-        # An ESC that waited through a silence for a report's `[`: a read that does not go on with a sequence
-        # ends the wait. It was Esc.
-        escape = self._escape_waited and self._pending == bytes((ESC_BYTE,)) and not _continues_escape(data)
-        self._escape_waited = False
+        # A lone ESC held from an earlier read, whether or not a silence passed since: a read that does not go
+        # on with a sequence ends the wait. It was Esc, and this read's keys are keys of their own.
+        escape = self._pending == bytes((ESC_BYTE,)) and not _continues_escape(data)
         events: list[Key | Paste | Mouse] = [Key(ESCAPE, arrived_at=self._held_at)] if escape else []
         if escape:
             self._pending.clear()
@@ -614,7 +616,6 @@ class KeyDecoder:
         in_flight = reporting or (off_at is not None and self._held_at - off_at < MOUSE_REPORT_SECONDS)
         if in_flight and _report_started(held):
             if silence < REPORTING_ESCAPE_SECONDS:
-                self._escape_waited = len(held) == 1
                 return []
             return self._settle_start(held, Key(ESCAPE) if len(held) == 1 else Key(UNKNOWN), now)
         return self._drain(final=True, earlier=len(held))

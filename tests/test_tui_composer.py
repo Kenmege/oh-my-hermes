@@ -40,6 +40,7 @@ from omh.tui.keys import (
     UNKNOWN,
     UP,
     Key,
+    KeyDecoder,
     Paste,
 )
 from omh.tui.style import Style
@@ -87,9 +88,24 @@ class InsertTests(unittest.TestCase):
         self.assertEqual(composer.text, HANGUL + FAMILY)
         self.assertEqual(composer.caret, len(HANGUL + FAMILY))
 
-    def test_alt_chords_and_unbound_ctrl_keys_change_nothing(self) -> None:
+    def test_alt_with_a_printable_character_types_the_character(self) -> None:
+        # `ESC x` is also what Esc then x send when both arrive in one read: the x is not lost with the Esc.
+        for char, text in (("x", "axbc"), ("/", "a/bc"), ("한", "a한bc"), (" ", "a bc")):
+            with self.subTest(char=char):
+                composer = at("abc", 1)
+                self.assertEqual(composer.handle(Key(CHAR, char, alt=True)), ComposerAction(NONE))
+                self.assertEqual((composer.text, composer.caret), (text, 1 + len(char)))
+
+    def test_esc_then_a_command_in_one_read_types_the_command(self) -> None:
+        composer = Composer()
+        for key in KeyDecoder().feed(b"\x1b/quit"):
+            composer.handle(key)
+        self.assertEqual(composer.text, "/quit")
+
+    def test_reported_alt_chords_and_unbound_ctrl_keys_change_nothing(self) -> None:
+        # A kitty or modifyOtherKeys report says Alt was held: no Esc can hide in it, so it types nothing.
         composer = at("abc", 1)
-        for key in (Key(CHAR, "x", alt=True), ctrl("q"), Key(INSERT), Key(PAGE_UP), Key(UNKNOWN)):
+        for key in (Key(CHAR, "x", alt=True, protocol=True), ctrl("q"), Key(INSERT), Key(PAGE_UP), Key(UNKNOWN)):
             with self.subTest(key=key):
                 self.assertEqual(composer.handle(key), ComposerAction(NONE))
                 self.assertEqual((composer.text, composer.caret), ("abc", 1))

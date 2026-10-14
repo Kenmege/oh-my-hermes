@@ -31,7 +31,7 @@ from omh.tui.agent_view import (
 from omh.tui.app import SLOT_ARM_SECONDS, VIEW_OPEN_NOTICE, App
 from omh.tui.frame import MODE_NORMAL
 from omh.tui.gateway import Event, Response, ServerRequest
-from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, Paste
+from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Paste
 from omh.tui.pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from omh.tui.session_picker import SessionPicker, SessionRow
 from omh.tui.style import Span
@@ -306,6 +306,13 @@ class ListLeaveTests(unittest.TestCase):
         app, client = focused()
         type_text(app, "hi")
         self.assertEqual((app.list_selected, app.composer.text, client.calls), (None, "hi", []))
+
+    def test_esc_then_a_command_in_one_read_leaves_the_list_and_types_the_command(self) -> None:
+        # The bytes are Alt+/ and then the rest: the chord leaves the list, then the composer types its `/`.
+        app, client = focused()
+        for event in KeyDecoder().feed(b"\x1b/quit"):
+            app._on_input(event)
+        self.assertEqual((app.list_selected, app.composer.text, client.calls), (None, "/quit", []))
 
     def test_a_paste_leaves_the_list_and_is_pasted(self) -> None:
         app, _client = focused()
