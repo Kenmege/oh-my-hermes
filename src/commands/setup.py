@@ -5167,6 +5167,9 @@ def _print_apply_summary(payload: dict[str, object]) -> None:
     print(f"  Status: {status}")
     if message:
         print(f"  Detail: {message}")
+    if not dry_run:
+        for line in _display_release_lines("Hermes display", payload.get("display_release")):
+            print(f"  {line}")
     print(_color("Next", "1;32", use_color))
     print("  Restart or reload Hermes Agent before expecting chat to see new skills.")
     print(f"  {tr('en', 'machine_readable')}")
@@ -6008,7 +6011,10 @@ def _add_top_level_commands(sub) -> None:
     setup.add_argument(
         "--no-omh-tui",
         action="store_true",
-        help="Accepted for compatibility and ignored: OMH no longer changes Hermes' display.",
+        help=(
+            "Accepted for compatibility and ignored: OMH writes no Hermes display key, "
+            "and this run still takes back any an earlier version wrote."
+        ),
     )
     setup.add_argument("--skip-apply", action="store_true", help="Install skills without registering them in Hermes config.")
     setup.add_argument(
@@ -6140,7 +6146,10 @@ def _add_top_level_commands(sub) -> None:
     update.add_argument(
         "--no-omh-tui",
         action="store_true",
-        help="Accepted for compatibility and ignored: OMH no longer changes Hermes' display.",
+        help=(
+            "Accepted for compatibility and ignored: OMH writes no Hermes display key, "
+            "and this run still takes back any an earlier version wrote."
+        ),
     )
     update.set_defaults(func=cmd_update)
 

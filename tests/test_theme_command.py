@@ -112,6 +112,13 @@ class ThemeCommandTests(unittest.TestCase):
             self.assertFalse(self._store(tmp).exists())
             self.assertEqual(self._hermes_home_entries(tmp), [])
 
+    def test_repair_is_retired_and_still_exits_zero(self) -> None:
+        with TemporaryDirectory() as tmp:
+            status, out, err = run_cli([*self._homes(tmp), "theme", "repair"], output_json=False)
+            self.assertEqual((status, out), (0, ""))
+            self.assertIn("`omh theme repair` is retired", err)
+            self.assertEqual(self._hermes_home_entries(tmp), [])
+
     def test_an_invalid_name_fails_and_names_the_valid_ones(self) -> None:
         with TemporaryDirectory() as tmp:
             status, out, _ = run_cli([*self._homes(tmp), "theme", "use", "ultraviolet"], output_json=False)

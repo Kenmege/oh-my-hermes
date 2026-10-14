@@ -21,6 +21,7 @@ polled surface in this package.
 from __future__ import annotations
 
 import argparse
+import sys
 
 from ..installer import OmhError
 from ..install.config_adapter import display_skin_selection, read_config
@@ -180,6 +181,15 @@ def _apply_theme(args: argparse.Namespace, theme: SkinTheme, *, dry_run: bool) -
     }
 
 
+def cmd_theme_repair(args: argparse.Namespace) -> int:
+    """Retired with the skin files it reinstalled; scripts that still call it exit 0, as retired flags do."""
+    print(
+        "omh: `omh theme repair` is retired; OMH installs no skin files into Hermes, so there is nothing to repair.",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def _active_line(payload: dict[str, object]) -> str:
     theme = payload.get("active_theme", "")
     source = payload.get("active_source")
@@ -265,6 +275,10 @@ def _add_theme_commands(sub) -> None:
     )
     _add_shared_theme_arguments(theme_status, "Print the full machine-readable status payload.")
     theme_status.set_defaults(func=cmd_theme_status)
+
+    theme_repair = theme_sub.add_parser("repair", help="Retired: OMH installs no skin files into Hermes. Does nothing.")
+    _add_shared_theme_arguments(theme_repair, "Accepted for compatibility.")
+    theme_repair.set_defaults(func=cmd_theme_repair)
 
 
 def _add_shared_theme_arguments(parser: argparse.ArgumentParser, json_help: str) -> None:

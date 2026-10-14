@@ -77,22 +77,29 @@ All notable changes will be documented here.
   (`--no-omh-tui` is accepted and does nothing). The OMH plugin stays loaded
   in `hermes`, so its tools, hooks, memory and skills still work there; the
   HUD and `/omh-model` are the OMH TUI's. An install an earlier version
-  styled is migrated by the next `omh setup` or `omh update`, once per
-  config, primary home and every bot profile: a display key OMH's record
-  says it wrote goes (or goes back to the value consent replaced), an `omh*`
-  skin goes with or without a record after its theme is saved under the OMH
-  home, a value the person changed or OMH cannot attribute stays, and the
-  widget and skin files go where a manifest proves OMH wrote them while an
-  edited one stays and is named. `plugins.enabled`, `memory.provider` and
-  the registration are never touched by it, and `display_released_at` in
-  the write record keeps a later update from taking back a skin the person
-  picks afterwards. `omh theme use` now saves to `<omh_home>/tui/theme.json`
-  (a profile's own store when it names one) and the OMH TUI opens with it;
-  `omh theme repair` is retired. Where the OMH TUI cannot start, `omh` says
-  why in one line and opens `hermes --tui` for a reason of the OMH TUI's own,
-  or plain `hermes` under `TERM=dumb`, `OMH_NO_TUI=1` or without Node. The `hermes_tui_*` doctor checks and the post-update `OMH TUI:`
-  verdict are retired with the surface they judged. See "Returning hermes to
-  stock Hermes" in docs/INSTALLATION.md.
+  styled is migrated by the next `omh setup`, `omh update` or `omh apply`,
+  primary home and every bot profile: a display key OMH's record says it
+  wrote goes (or goes back to the value consent replaced), an `omh*` skin
+  goes with or without a record after a theme the person picked is saved
+  under the OMH home, and a value the person changed or OMH cannot
+  attribute stays. The widget and skin files go where a manifest (or, before
+  the release, the shipped bytes) proves OMH wrote them; an edited one, and
+  the skin the config still names, stay. A key in a YAML shape the editor
+  refuses holds the release, and is named, until a later pass can take it;
+  once a pass leaves none, `display_released_at` in the write record keeps
+  later updates from taking back a skin, or a skin file, the person picks
+  afterwards. `plugins.enabled`, `memory.provider` and the registration are
+  never touched by it. A home left unregistered keeps its config and loses
+  only the old files. `omh theme use` now saves to
+  `<omh_home>/tui/theme.json` (a profile's own store when it names one) and
+  the OMH TUI opens with it, `omh --profile <name>` included; `omh theme
+  repair` is retired (it says so and exits 0). Where the OMH TUI cannot
+  start, `omh` says why in one line and opens `hermes --tui` for a reason of
+  the OMH TUI's own, or plain `hermes` under `TERM=dumb`, `OMH_NO_TUI=1` or
+  without Node. The `hermes_tui_*` doctor checks and the post-update
+  `OMH TUI:` verdict are retired with the surface they judged, and
+  `omh setup --json` moves to `hermes_native_setup/v2`. See "Returning
+  hermes to stock Hermes" in docs/INSTALLATION.md.
 
 - **`omh quality-evidence agent-skills` reports Agent Skills host evidence
   per host and scope.** For every Agent Skills host adapter, in repo and user

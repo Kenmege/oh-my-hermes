@@ -472,6 +472,18 @@ class UpdateReleaseTests(unittest.TestCase):
             self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("mono"))
             self.assertIn("saved OMH theme mono for the OMH TUI", stdout)
 
+    def test_apply_runs_the_same_release_and_says_so(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install(skin="omh-mono")
+
+            status, stdout, stderr = home.run("apply", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertNotIn("display", home.config.read_text(encoding="utf-8"))
+            self.assertIn("Hermes display: bare `hermes` opens stock Hermes", stdout)
+            self.assertIn("saved OMH theme mono for the OMH TUI", stdout)
+
 
 class UninstallTests(unittest.TestCase):
     def test_uninstall_removes_only_the_widget_an_earlier_version_installed(self) -> None:
@@ -690,7 +702,16 @@ UPGRADE_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "upgrade_from_v
 
 
 class UpgradeFromLastReleaseTests(unittest.TestCase):
-    """A machine set up by v3.0.2, primary home and two bot profiles, comes through update clean."""
+    """A machine set up by v3.0.2, primary home and two bot profiles, comes through update clean.
+
+    v3.0.2's, from the fixture: every config before and after its setup and
+    `omh theme use`, the per-config write records, and the skin manifest.
+    Today's: the plugin bundle and managed skills the configs point at (laid
+    down by today's setup before the configs are put back), the rest of
+    `state.json` around the records, the skin files (today's shipped bytes,
+    beside v3.0.2's manifest), and the widget, a stand-in recorded under
+    v3.0.2's widget manifest schema.
+    """
 
     PRIMARY = "hermes/config.yaml"
     BOT = "hermes/profiles/bot/config.yaml"
