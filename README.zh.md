@@ -131,7 +131,7 @@ omh doctor
 
 ```sh
 # 按工作类别设置模型（方向键：类别，←→ head 模型，-/+ effort）；
-# 在 Hermes TUI 中 /omh-model 打开同一个选择器：
+# 在 OMH TUI（omh）中 /omh-model 打开同一个选择器：
 omh model
 # 如需接入新的模型家族，请在 Hermes 中使用此技能：
 /omh-model-setup
@@ -285,7 +285,7 @@ omh
 </table>
 
 在无法启动 OMH TUI 的环境中(Windows、没有 `termios` 的终端、`OMH_NO_TUI=1`、没有 Node),
-`omh` 会改为打开 Hermes 自己的终端(详见 [The OMH TUI](docs/INSTALLATION.md#the-omh-tui))。
+`omh` 会用一行说明原因,改为打开 Hermes 自己的 TUI(`hermes --tui`),没有 Node 时打开 Hermes 的经典终端。`hermes` 以没有 OMH 皮肤和 HUD 的原生 Hermes 打开,OMH 的工具、记忆和技能仍然可用(详见 [The OMH TUI](docs/INSTALLATION.md#the-omh-tui))。
 
 OMH 工作流运行时,终端会展示:
 
@@ -294,7 +294,7 @@ OMH 工作流运行时,终端会展示:
   强度;每个活动行都带有 `category:name(model:effort)`,路由清晰可见。被
   拒绝的路由沿类别链 fallback。
 - **Parallel Tool Calling** — 批量工具调用在 Hermes 中并发执行,刚发生的
-  并发批次会在 `[OMH]` 行标注为 `parallel shot ×N`。
+  并发批次会在计划标题行标注为 `parallel shot ×N`。
 - **Parallel Evals** — 评审与验证 lane 作为独立子代理调度,交叉核验而非
   自我批准,每条 lane 都是一个带 turn、cost、cache 指标的 HUD 行。
 - **Phase-structured TODO** — 工作在开始前以 phase 和 task 声明
@@ -329,7 +329,7 @@ OMH 工作流运行时,终端会展示:
 ## 推荐模型
 
 <p align="center">
-  <img src="assets/omh-model-tui.png" alt="Hermes Modern TUI 中的 /omh-model：每个类别一行，显示 head 模型、effort 条和状态；光标行显示左右与 -/+ 手柄" width="820">
+  <img src="assets/omh-model-tui.png" alt="/omh-model 链选择器：每个类别一行，显示 head 模型、effort 条和状态；光标行显示左右与 -/+ 手柄" width="820">
 </p>
 OMH 随附以下可编辑的有序 recommendation chain。guided model setup 只会依据用户确认 active 的 candidate 来解析 chain。结果是已准备的 routing config，不是 provider availability、credential、dispatch 或 execution 证据。
 
@@ -378,7 +378,7 @@ $ cat ~/.omh/routing/model-chains.json
 }
 ```
 
-当前生效的 chain 可用 `omh model-chains show` 查看。不想手动编辑文件的话，在终端运行 `omh model-chains`（或 `omh model`）会打开方向键选择器——上下选类别，左右换 head 模型，`-`/`+` 调 effort——在 Modern TUI 里 `/omh-model` 打开同一个选择器。脚本化的写法是 `omh model-chains set quick "kimi-k3-ultrafast:low, glm-5.3-ultrafast:low"`，同一个文件会被直接修改。
+当前生效的 chain 可用 `omh model-chains show` 查看。不想手动编辑文件的话，在终端运行 `omh model-chains`（或 `omh model`）会打开方向键选择器——上下选类别，左右换 head 模型，`-`/`+` 调 effort——在 OMH TUI 里 `/omh-model` 打开同一个选择器。脚本化的写法是 `omh model-chains set quick "kimi-k3-ultrafast:low, glm-5.3-ultrafast:low"`，同一个文件会被直接修改。
 如果 alias 需要 provider 专用的 wire ID，请在 `~/.omh/routing/model-providers.json` 中按 `model_provider_routes/v1` 映射一次。此后 `set`、`status`、fallback 和 HUD 都会显示完整的 alias/provider/wire model route。OMH 只保存 provider ID，不保存 credential。
 
 每个账号都不一样，所以 OMH 会自行读取 Hermes 已绑定了哪些 provider——一次 `hermes auth` 登录、Hermes 配置里的一个 `providers:` 条目或 `model.provider`、`$HERMES_HOME/.env` 里的一个 API-key 变量名——并自己统计：每条链会重排，让已绑定 provider 能服务的条目排在前面，选择器会标记其余条目，不删除任何东西，也不会去调用任何东西来核实。只读取 id 和变量名，从不读取密钥或 token。交互式 `omh setup` 仍会询问，已绑定的行会预先勾选，这样你可以纠正某一种类、取消勾选一个你其实用不了的已绑定 provider、添加一个 OMH 无法定位的，或说明你是否订阅了 Claude Code；它的回答会写入 `~/.omh/routing/providers.json`（`provider_entitlements/v1`），并优先于自动检测。Claude Code 订阅只会为 Maestro 通道预置 Claude Code 的 `--model` 偏好，因为 Hermes 本身无法消费它。

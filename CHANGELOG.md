@@ -70,6 +70,29 @@ All notable changes will be documented here.
   each), it scored 2 wins, 21 ties, 1 loss and 2 wins, 22 ties, 0 losses. The
   loss is a query whose topic record shared the particle form (모델로) that
   now only orders records.
+- **Bare `hermes` is stock Hermes again.** With bare `omh` opening the OMH
+  TUI, OMH stops styling Hermes' own terminal: setup and update write no
+  `display.interface`, `display.skin` or `display.sections`, install no
+  status widget and no skin files, and ask no display question
+  (`--no-omh-tui` is accepted and does nothing). The OMH plugin stays loaded
+  in `hermes`, so its tools, hooks, memory and skills still work there; the
+  HUD and `/omh-model` are the OMH TUI's. An install an earlier version
+  styled is migrated by the next `omh setup` or `omh update`, once per
+  config, primary home and every bot profile: a display key OMH's record
+  says it wrote goes (or goes back to the value consent replaced), an `omh*`
+  skin goes with or without a record after its theme is saved under the OMH
+  home, a value the person changed or OMH cannot attribute stays, and the
+  widget and skin files go where a manifest proves OMH wrote them while an
+  edited one stays and is named. `plugins.enabled`, `memory.provider` and
+  the registration are never touched by it, and `display_released_at` in
+  the write record keeps a later update from taking back a skin the person
+  picks afterwards. `omh theme use` now saves to `<omh_home>/tui/theme.json`
+  (a profile's own store when it names one) and the OMH TUI opens with it;
+  `omh theme repair` is retired. Where the OMH TUI cannot start, `omh` says
+  why in one line and opens `hermes --tui`, or plain `hermes` when no Node
+  is found. The `hermes_tui_*` doctor checks and the post-update `OMH TUI:`
+  verdict are retired with the surface they judged. See "Returning hermes to
+  stock Hermes" in docs/INSTALLATION.md.
 
 - **`omh quality-evidence agent-skills` reports Agent Skills host evidence
   per host and scope.** For every Agent Skills host adapter, in repo and user
@@ -101,7 +124,7 @@ All notable changes will be documented here.
   command takes the arrows and then Enter. When the TUI cannot start
   (Windows, no `termios`, no Node, an OMH that cannot import itself, gateway
   drift) it creates a file `omh` named for that launch and exits 75, and
-  `omh` opens Hermes' own terminal; bare `hermes` is unchanged. The boundary is in CONTEXT.md ("OMH TUI", "Hermes gateway
+  `omh` opens Hermes' own terminal. The boundary is in CONTEXT.md ("OMH TUI", "Hermes gateway
   protocol"); the gateway slice it relies on is declared in
   `src/tui/gateway_contract.py`. The composer sits between two rules drawn in
   the input mode's glyph and colour, over a mode row that names the mode or

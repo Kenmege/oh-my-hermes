@@ -330,8 +330,7 @@ class StartupCheckLaunchIntegrationTests(unittest.TestCase):
             # The launch is held for the whole update, so it says what it is
             # doing and what it landed on. The completion version is read
             # back from the record the update just rewrote -- this process is
-            # still running the pre-update package -- and that same record is
-            # what the TUI HUD footer renders.
+            # still running the pre-update package.
             output = buffer.getvalue()
             self.assertIn("OMH Auto Update: aaaaaaa -> bbbbbbb (preview channel)", output)
             self.assertIn("OMH Auto Update complete: omh 9.9.9 is installed.", output)

@@ -40,7 +40,7 @@ runtime state never gets committed as if it were OMH's.
 | --- | --- | --- |
 | `.omh/` | **oh-my-hermes** (this product) | Repo-local artifacts, described above |
 | `~/.omh/` | oh-my-hermes user scope | Skills, runtime state, HUD/todo stores |
-| `~/.hermes/` | **Hermes Agent** (the host) | Hermes' own home: `config.yaml`, `state.db`, `plugins/`, `tui-widgets/`. The installed OMH **plugin** lives at `~/.hermes/plugins/omh/` and the OMH TUI widget at `~/.hermes/tui-widgets/omh-status.mjs` — both are OMH-managed installs *into* Hermes' home, refreshed only through `omh update`, never by hand-copying. OMH never patches Hermes itself (`~/.hermes/hermes-agent/`). |
+| `~/.hermes/` | **Hermes Agent** (the host) | Hermes' own home: `config.yaml`, `state.db`, `plugins/`. The installed OMH **plugin** lives at `~/.hermes/plugins/omh/` — an OMH-managed install *into* Hermes' home, refreshed only through `omh update`, never by hand-copying. OMH installs nothing into Hermes' terminal (`tui-widgets/`, `skins/`) any more; setup and update remove what earlier versions put there. OMH never patches Hermes itself (`~/.hermes/hermes-agent/`). |
 | `.hermes/` (repo-local) | Hermes Agent | Rare repo-scoped Hermes state; not OMH's |
 | `.omc/` | oh-my-claudecode | That wrapper's own state when a Claude Code session works on this repo — fine locally, gitignored; OMH never writes here |
 | `.omo/` | oh-my-opencode | That wrapper's own state when an OpenCode session works on this repo — fine locally, gitignored. OMH only *reads* `~/.omo/omo.json[c]` to import category model preferences |

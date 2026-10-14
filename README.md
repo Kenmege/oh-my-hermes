@@ -137,7 +137,7 @@ omh doctor
 
 ```sh
 # Set the model per work category (arrow keys: category, ←→ head model, -/+ effort);
-# the same picker opens inside the Hermes TUI as /omh-model:
+# the same picker opens inside the OMH TUI (bare omh) as /omh-model:
 omh model
 # To onboard a new model family, use this skill in Hermes:
 /omh-model-setup
@@ -349,7 +349,10 @@ omh
 </table>
 
 Where the OMH TUI cannot start (Windows, a terminal without `termios`,
-`OMH_NO_TUI=1`, no Node), `omh` opens Hermes' own terminal instead; see
+`OMH_NO_TUI=1`, no Node), `omh` says why in one line and opens Hermes' own
+TUI (`hermes --tui`) instead, or Hermes' classic terminal when no Node is
+found. Bare `hermes` is stock Hermes, with no OMH skin or HUD; OMH's tools,
+memory and skills are still there. See
 [The OMH TUI](docs/INSTALLATION.md#the-omh-tui).
 
 What the terminal shows while OMH workflows run:
@@ -360,8 +363,8 @@ What the terminal shows while OMH workflows run:
   carries its `category:name(model:effort)` so the routing is visible, and
   rejected routes fall back along the category chain.
 - **Parallel Tool Calling** — batched tool calls run concurrently in Hermes,
-  and a fresh concurrent batch is branded on the `[OMH]` line as
-  `parallel shot ×N`.
+  and a fresh concurrent batch is marked `parallel shot ×N` on the plan
+  header.
 - **Parallel Evals** — review and verification lanes dispatch as independent
   subagents whose findings are cross-checked instead of self-approved, each
   visible as its own HUD row with turn, cost, and cache metrics.
@@ -398,7 +401,7 @@ What the terminal shows while OMH workflows run:
 ## Recommended models
 
 <p align="center">
-  <img src="assets/omh-model-tui.png" alt="/omh-model in the Hermes Modern TUI: one row per category with its head model, effort bar and state; the cursor row shows the left/right and -/+ handles" width="820">
+  <img src="assets/omh-model-tui.png" alt="The /omh-model chain picker: one row per category with its head model, effort bar and state; the cursor row shows the left/right and -/+ handles" width="820">
 </p>
 
 OMH ships with these editable, ordered recommendation chains. Guided model
@@ -460,7 +463,7 @@ Check the chains currently in effect with `omh model-chains show`. If you
 would rather not edit the file by hand, bare `omh model-chains` (or
 `omh model`) opens an arrow-key picker — up/down picks a category, left/right
 steps its head model, `-`/`+` its effort — `/omh-model` opens the same picker
-inside the Modern TUI, and the scriptable form makes the same change from the
+inside the OMH TUI, and the scriptable form makes the same change from the
 command line:
 `omh model-chains set quick "kimi-k3-ultrafast:low, glm-5.3-ultrafast:low"`.
 When an alias uses a provider-specific wire ID, map it once in

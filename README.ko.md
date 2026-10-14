@@ -134,7 +134,7 @@ omh doctor
 
 ```sh
 # 작업 카테고리별 모델 설정 (화살표: 카테고리, ←→ head 모델, -/+ effort);
-# Hermes TUI 안에서는 /omh-model이 같은 피커를 엽니다:
+# OMH TUI(omh) 안에서는 /omh-model이 같은 피커를 엽니다:
 omh model
 # 새 모델 패밀리를 온보딩하려면 Hermes에서 이 스킬을 사용하세요:
 /omh-model-setup
@@ -289,7 +289,7 @@ omh
 </table>
 
 OMH TUI를 열 수 없는 환경(Windows, `termios`가 없는 터미널, `OMH_NO_TUI=1`, Node 없음)에서는
-`omh`가 Hermes 자체 터미널을 엽니다([The OMH TUI](docs/INSTALLATION.md#the-omh-tui)).
+`omh`가 이유를 한 줄로 알리고 Hermes 자체 TUI(`hermes --tui`)를, Node가 없으면 Hermes 기본 터미널을 엽니다. `hermes`는 OMH skin과 HUD가 없는 순정 Hermes로 열리고, OMH의 도구·메모리·스킬은 그대로 남아 있습니다([The OMH TUI](docs/INSTALLATION.md#the-omh-tui)).
 
 OMH 워크플로가 도는 동안 터미널이 보여주는 것:
 
@@ -298,7 +298,7 @@ OMH 워크플로가 도는 동안 터미널이 보여주는 것:
   단위로 적용되고, 각 활동 행에 `category:name(model:effort)`가 표시되어
   라우팅이 눈에 보입니다. 거부된 라우트는 카테고리 체인을 따라 fallback합니다.
 - **Parallel Tool Calling** — 배치된 툴 호출은 Hermes에서 동시 실행되며,
-  방금 발생한 동시 배치는 `[OMH]` 줄에 `parallel shot ×N`으로 표시됩니다.
+  방금 발생한 동시 배치는 계획 헤더에 `parallel shot ×N`으로 표시됩니다.
 - **Parallel Evals** — 리뷰·검증 lane은 독립 서브에이전트로 dispatch되어
   자기승인 없이 교차 검증되고, 각 lane이 turn·cost·cache 지표가 붙은 HUD
   행으로 보입니다.
@@ -334,7 +334,7 @@ OMH 워크플로가 도는 동안 터미널이 보여주는 것:
 ## 권장 모델
 
 <p align="center">
-  <img src="assets/omh-model-tui.png" alt="Hermes Modern TUI의 /omh-model: 카테고리마다 head 모델, effort 바, 상태를 한 행으로 보여주고, 커서 행에는 좌우와 -/+ 핸들이 표시됩니다" width="820">
+  <img src="assets/omh-model-tui.png" alt="/omh-model 체인 피커: 카테고리마다 head 모델, effort 바, 상태를 한 행으로 보여주고, 커서 행에는 좌우와 -/+ 핸들이 표시됩니다" width="820">
 </p>
 OMH에는 다음과 같이 편집 가능한 순서형 recommendation chain이 포함되어 있습니다. guided model setup은 사용자가 active라고 확인한 candidate만 기준으로 chain을 해석합니다. 그 결과는 준비된 routing config이며 provider availability, credential, dispatch, execution evidence가 아닙니다.
 
@@ -383,7 +383,7 @@ $ cat ~/.omh/routing/model-chains.json
 }
 ```
 
-현재 적용 중인 chain은 `omh model-chains show`로 확인할 수 있습니다. 파일을 직접 고치는 대신 바꾸고 싶다면 터미널에서 `omh model-chains`(또는 `omh model`)를 치면 화살표 피커가 열립니다 — 위아래로 카테고리, 좌우로 head 모델, `-`/`+`로 effort — 그리고 Modern TUI 안에서는 `/omh-model`이 같은 피커를 엽니다. 스크립트용 형태는 `omh model-chains set quick "kimi-k3-ultrafast:low, glm-5.3-ultrafast:low"`처럼 실행하면 이 파일이 그대로 수정됩니다.
+현재 적용 중인 chain은 `omh model-chains show`로 확인할 수 있습니다. 파일을 직접 고치는 대신 바꾸고 싶다면 터미널에서 `omh model-chains`(또는 `omh model`)를 치면 화살표 피커가 열립니다 — 위아래로 카테고리, 좌우로 head 모델, `-`/`+`로 effort — 그리고 OMH TUI 안에서는 `/omh-model`이 같은 피커를 엽니다. 스크립트용 형태는 `omh model-chains set quick "kimi-k3-ultrafast:low, glm-5.3-ultrafast:low"`처럼 실행하면 이 파일이 그대로 수정됩니다.
 alias에 provider 전용 wire ID가 필요하면 `model_provider_routes/v1` 형식의 `~/.omh/routing/model-providers.json`에 한 번 매핑하세요. 이후 `set`, `status`, fallback, HUD가 alias/provider/wire model 전체 route를 표시합니다. OMH는 provider ID만 저장하며 credential은 저장하지 않습니다.
 
 계정마다 상황이 다르므로 OMH는 Hermes가 이미 연결해 둔 provider를 스스로 읽습니다 — `hermes auth` 로그인, Hermes 설정의 `providers:` 항목이나 `model.provider`, `$HERMES_HOME/.env`의 API-key 변수 이름 — 그리고 스스로 셉니다. 각 체인은 연결된 provider가 다룰 수 있는 항목이 앞에 오도록 재정렬되고, 피커는 나머지를 표시만 하며, 아무것도 지우지 않고 확인을 위해 아무것도 호출하지 않습니다. 읽는 것은 id와 변수 이름뿐이며 키나 token은 읽지 않습니다. 대화형 `omh setup`은 계속 묻고, 연결된 행은 미리 체크되어 있어 종류를 고치거나, 실제로 쓸 수 없는 연결 provider의 체크를 해제하거나, OMH가 못 찾은 것을 추가하거나, Claude Code 구독 여부를 말할 수 있습니다. 그 답은 `~/.omh/routing/providers.json`(`provider_entitlements/v1`)에 들어가며 자동 탐지보다 우선합니다. Claude Code 구독은 Maestro 레인용 Claude Code `--model` 선호만 시드합니다. Hermes 자체는 그것을 소비할 수 없기 때문입니다.

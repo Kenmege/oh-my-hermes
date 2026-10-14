@@ -193,8 +193,8 @@ def route_write_lock(omh_home: str | Path | None = None, *, timeout_seconds: flo
 
     `write_route_with_baseline` serializes on the restore record because the
     route write and its bookkeeping have to be one act. A `config.yaml`
-    write from `omh setup`, `omh theme`, `omh memory`, self-update or
-    `system/targets` can land in the middle of that, so it takes the same
+    write from `omh setup`, `omh memory`, self-update or `system/targets`
+    can land in the middle of that, so it takes the same
     lock rather than a second one of its own (#1742).
 
     The default wait is longer than the telemetry budget the lock ships

@@ -502,9 +502,9 @@ def _auto_update_complete_line(paths) -> str:
     The version comes from the record `omh update` just rewrote
     (`commands/setup.py`), not from this process: this process is still
     running the pre-update package, and its own `__version__` would report
-    the version the update just replaced. That record is also what the TUI
-    HUD renders (`plugin_bundle/omh/runtime_reader.py:_package_version`), so
-    the line names exactly the version the terminal is about to show.
+    the version the update just replaced. The OMH TUI the launch opens next
+    is a new process that imports the updated package, so the line names
+    the version its banner is about to show.
     """
     from ..maintenance.update_check_state import read_runtime_state
 
