@@ -211,6 +211,16 @@ class HistoryPagerTests(unittest.TestCase):
             screen.feed(pager.frame(80, 10, THEME))
         self.assertEqual(screen.lines()[-2].rstrip(), "block 49 row 1")  # its last row, as the pager first drew it
 
+    def test_a_cache_of_one_block_still_pages_holding_the_last_block(self) -> None:
+        pager = self.history(items_of([2] * 5))
+        with patch("omh.tui.pager.HISTORY_BLOCKS_KEPT", 1):
+            pager.frame(80, 10, THEME)  # the last block is kept first, by the walk to the last page's top
+            for char in "jjG":
+                pager.handle_key(key(char), 10)
+                pager.frame(80, 10, THEME)
+        self.assertIn(4, pager._kept)
+        self.assertLessEqual(len(pager._kept), 2)  # the last block, and the one block the cap allows besides it
+
     def test_the_block_used_longest_ago_leaves_first(self) -> None:
         calls: list[tuple[int, int]] = []
         pager = self.history(items_of([1] * 10), calls)
