@@ -75,7 +75,8 @@ All notable changes will be documented here.
   and a steer shows as `↪ steer · <text>` under what is running until Hermes
   answers; its row then lands at the next block boundary. A steer answered
   while a tool ran used to close the tool group and mark the running call
-  `▪` cut off, and one answered mid-reply split the reply in two. Each turn's
+  `▪` cut off, and one answered mid-reply split the reply in two; `/steer` is
+  no longer echoed as a command either, since that echo did the same. Each turn's
   done line sits on a thin rule to the edge, and the answer you gave an
   approval is written above the call it was about, `✓ allowed once ·
   <command>` in green or `✗ denied · <command>` in red.

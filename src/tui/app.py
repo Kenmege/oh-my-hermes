@@ -2316,7 +2316,7 @@ class App(ModesMixin, AgentViewMixin):
         echo. A command plan mode wrote around a prompt is no command the
         person ran, and an alias's target runs under the alias's echo.
         """
-        if depth or invocation.for_plan_mode:
+        if depth or invocation.for_plan_mode or (invocation.command is not None and not invocation.command.echo):
             self._route_slash(invocation, depth)
             return
         self._as_command(f"/{invocation.text}", lambda: self._route_slash(invocation, depth))

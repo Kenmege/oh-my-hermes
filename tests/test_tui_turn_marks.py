@@ -112,6 +112,19 @@ class SteerPlacementTests(unittest.TestCase):
         self.assertEqual(app.transcript.blocks[0].tools[0].status, TOOL_OK)
         self.assertEqual(app.transcript.blocks[1].state, STEER_QUEUED)
 
+    def test_the_steer_command_is_its_own_echo_and_leaves_a_running_tool_running(self) -> None:
+        # Found live: `› /steer ...` echoed as a command closed the tool group and marked the running call `▪`.
+        app, client = make_app(busy=True)
+        app._on_event(ev("message.start"))
+        app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="sleep 6"))
+        type_text(app, "/steer also echo steered")
+        app._on_input(Key(ENTER))
+        answer(app, client, {"status": "queued", "text": "also echo steered"})
+        (group,) = app.transcript.blocks
+        self.assertEqual(group.tools[0].status, TOOL_RUNNING)
+        self.assertEqual(lines_text(app.transcript.live_lines(80, THEME))[-1], "↪ steer queued by Hermes · also echo steered")
+        self.assertEqual(app.composer.history[-1], "/steer also echo steered")  # Up still finds what was typed
+
     def test_a_steer_during_a_streaming_reply_does_not_split_it(self) -> None:
         app, client = make_app(busy=True)
         app._on_event(ev("message.start"))

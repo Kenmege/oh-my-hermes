@@ -49,6 +49,9 @@ class SlashCommand:
     summary: str
     aliases: tuple[str, ...] = ()
     target: str = ""  # RENAMED: the Hermes command it runs
+    # Whether the transcript echoes it as `› /name arg`. A command whose own row says what it did (the steer, or
+    # the prompt it sends) is not echoed: during a turn the echo would close the running tool group or reply.
+    echo: bool = True
 
 
 COMMANDS: tuple[SlashCommand, ...] = (
@@ -68,7 +71,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("details", LOCAL, "Show or hide thinking and tool details", ("detail",)),
     SlashCommand("queue", LOCAL, "Show messages waiting for the current turn", ("q",)),
     SlashCommand("steer", LOCAL, "Add a message to the running turn (/steer <text>; Ctrl+Enter where it is a key)",
-                 ("s",)),
+                 ("s",), echo=False),
     SlashCommand("effort", LOCAL, "Set this session's reasoning effort (/effort <level>; Ctrl+T steps through it)"),
     SlashCommand("logs", LOCAL, "Show the gateway's recent stderr (kept in memory only)"),
     SlashCommand("copy", LOCAL, "Copy the last reply to the clipboard"),
