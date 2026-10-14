@@ -98,6 +98,17 @@ class InsertTests(unittest.TestCase):
                 self.assertEqual(composer.handle(Key(CHAR, char, alt=True)), ComposerAction(NONE))
                 self.assertEqual((composer.text, composer.caret), (text, 1 + len(char)))
 
+    def test_option_arrows_from_terminal_app_move_by_a_word(self) -> None:
+        # Terminal.app sends Option+Left and Option+Right as `ESC b` and `ESC f`, readline's word moves.
+        for data, arrow in ((b"\x1bb", LEFT), (b"\x1bf", RIGHT)):
+            with self.subTest(data=data):
+                composer, by_arrow = at("one two three", 5), at("one two three", 5)
+                by_arrow.handle(Key(arrow, alt=True))
+                for key in KeyDecoder().feed(data):
+                    composer.handle(key)
+                self.assertNotEqual(by_arrow.caret, 5)
+                self.assertEqual((composer.text, composer.caret), ("one two three", by_arrow.caret))
+
     def test_esc_then_a_command_in_one_read_types_the_command(self) -> None:
         composer = Composer()
         for key in KeyDecoder().feed(b"\x1b/quit"):
@@ -107,7 +118,8 @@ class InsertTests(unittest.TestCase):
     def test_reported_alt_chords_and_unbound_ctrl_keys_change_nothing(self) -> None:
         # A kitty or modifyOtherKeys report says Alt was held: no Esc can hide in it, so it types nothing.
         composer = at("abc", 1)
-        for key in (Key(CHAR, "x", alt=True, protocol=True), ctrl("q"), Key(INSERT), Key(PAGE_UP), Key(UNKNOWN)):
+        reported = [Key(CHAR, char, alt=True, protocol=True) for char in "xbf"]
+        for key in (*reported, ctrl("q"), Key(INSERT), Key(PAGE_UP), Key(UNKNOWN)):
             with self.subTest(key=key):
                 self.assertEqual(composer.handle(key), ComposerAction(NONE))
                 self.assertEqual((composer.text, composer.caret), ("abc", 1))

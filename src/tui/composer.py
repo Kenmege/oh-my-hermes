@@ -21,7 +21,9 @@ keep the caret row inside it.
 
 Keys: printable text inserts, with Alt too unless the chord came as a kitty or
 modifyOtherKeys report (the legacy bytes `ESC x` are also Esc then x arriving in
-one read, and the x is not lost with the Esc); Enter submits, except right after a backslash,
+one read, and the x is not lost with the Esc), except the legacy `ESC b` and
+`ESC f`, which move a word back and forward as readline's Alt+B and Alt+F do
+(Terminal.app sends Option+Left/Right that way); Enter submits, except right after a backslash,
 which it turns into a newline; Alt+Enter, Shift+Enter and Ctrl+J insert a
 newline (Ctrl+Enter is Enter here; the app decides what its submit means);
 Backspace/Delete remove one cluster; Left/Right move one cluster,
@@ -89,6 +91,9 @@ class ComposerAction:
 
 
 NOTHING = ComposerAction(NONE)
+
+# Readline's Alt+B and Alt+F, and what stock macOS Terminal.app sends for Option+Left and Option+Right.
+LEGACY_ALT_WORD_MOVES = {"b": LEFT, "f": RIGHT}
 
 
 @dataclass(frozen=True)
@@ -302,7 +307,9 @@ class Composer:
         if event.name == CHAR:
             if event.ctrl:
                 return self._control(event.char)
-            if not (event.alt and event.protocol):
+            if event.alt and not event.protocol and event.char in LEGACY_ALT_WORD_MOVES:
+                self._move_or_delete(Key(LEGACY_ALT_WORD_MOVES[event.char], alt=True))
+            elif not (event.alt and event.protocol):
                 self._insert(event.char)
             return NOTHING
         if event.name == TAB:

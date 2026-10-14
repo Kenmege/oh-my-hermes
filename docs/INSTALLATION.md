@@ -356,7 +356,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   Esc is Alt with that key, with click reports off too (tmux before 3.5
   holds an Esc for half a second and sends a key typed meanwhile that way):
   the Esc is lost and a character still types, while Enter and the arrows
-  keep their Alt meaning, a new line and a word. A report that starts later
+  keep their Alt meaning, a new line and a word, and so do `b` and `f`,
+  which move back and forward a word (readline's Alt+B and Alt+F, and what
+  macOS Terminal.app sends for Option+← and Option+→). A report that starts later
   than 0.5 s after they went off, split by the connection right after its
   first byte or two, can still type its rest, and so can any report that
   takes more than 0.8 s to arrive whole.
