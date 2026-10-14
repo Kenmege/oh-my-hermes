@@ -18,6 +18,7 @@ from omh.tui.composer import (
     CANCEL,
     COMPLETE,
     EXIT,
+    HISTORY_CAP,
     INTERRUPT,
     NONE,
     SUBMIT,
@@ -142,6 +143,13 @@ class NewlineAndSubmitTests(unittest.TestCase):
             typed(composer, text)
             press(composer, Key(ENTER))
         self.assertEqual(composer.history, ["one", "two", "one"])
+
+    def test_history_keeps_its_newest_entries_up_to_the_cap(self) -> None:
+        composer = Composer(history=[f"old {number}" for number in range(HISTORY_CAP)])
+        typed(composer, "newest")
+        press(composer, Key(ENTER))
+        self.assertEqual(len(composer.history), HISTORY_CAP)
+        self.assertEqual((composer.history[0], composer.history[-1]), ("old 1", "newest"))
 
     def test_alt_enter_and_ctrl_j_insert_a_newline(self) -> None:
         composer = Composer()

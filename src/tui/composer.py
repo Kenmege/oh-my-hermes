@@ -33,11 +33,12 @@ inserts as is, newlines kept; Tab completes; Esc cancels and keeps the text;
 Ctrl+C clears the text and cancels, or reports an interrupt when there is no
 text; Ctrl+D exits on empty input and deletes forward otherwise.
 
-History lives in memory only, oldest first; a submit appends unless the text
-is blank or repeats the newest entry, or `records_history` is off (the app
-turns it off while the composer answers a question Hermes asked). Masked input
-(secrets, sudo) draws one bullet per cluster, refuses newlines, never browses
-history, never enters it, and is shown as bullets by `repr` too.
+History lives in memory only, oldest first, at most `HISTORY_CAP` entries; a
+submit appends unless the text is blank or repeats the newest entry, or
+`records_history` is off (the app turns it off while the composer answers a
+question Hermes asked). Masked input (secrets, sudo) draws one bullet per
+cluster, refuses newlines, never browses history, never enters it, and is
+shown as bullets by `repr` too.
 """
 
 from __future__ import annotations
@@ -70,6 +71,8 @@ PROMPT = "› "
 MASK = "•"
 NEWLINE = "\n"
 TAB_CHAR = "\t"
+# The most entries history holds, the oldest leaving first: as many as Hermes' own TUI keeps (ui-tui `history.ts`).
+HISTORY_CAP = 1000
 
 NONE = "none"
 SUBMIT = "submit"
@@ -366,6 +369,7 @@ class Composer:
         text = self.text
         if self.records_history and not self.masked and text.strip() and (not self.history or self.history[-1] != text):
             self.history.append(text)
+            del self.history[:-HISTORY_CAP]
         self._clear()
         return ComposerAction(SUBMIT, text)
 
