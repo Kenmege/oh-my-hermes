@@ -98,13 +98,12 @@ NON_SKILL_BACKTICKS = frozenset(
         # A Rust language keyword, backticked as code in `backend` and
         # `native-debugging`'s do_not_use_when, never a skill name.
         "unsafe",
-        # Hermes' own session commands, their flags, and its cron tool, named
-        # in `loop`'s do_not_use_when where a request belongs to the host's
-        # timer, schedule, or single-objective driver rather than a sibling.
+        # Hermes' own session commands and their flags, named in `loop`'s
+        # do_not_use_when where a request belongs to the host's timer or
+        # single-objective driver rather than a sibling.
         "/loop",
         "--until",
         "--times",
-        "cronjob_manage",
         "/goal",
         "/goal draft",
     }
@@ -293,8 +292,13 @@ NON_SKILL_BACKTICKS = frozenset(
 # `spend-gate` defers to `browser-operator`, `feedback-triage`,
 # `finance-analysis`, and `provider-profile-posture`; no sibling gains a
 # statement pointing back. Four cases, four pairs, one owner.
-EXPECTED_DEFERENCE_CASES = 381
-EXPECTED_DEFERENCE_PAIRS = 396
+# `automation-blueprint` (a recurring job that would move money) and
+# `browser-operator` (a page step that moves money) now point at
+# `spend-gate`, and `loop`'s unattended-schedule statement points at
+# `automation-blueprint` instead of naming Hermes' cron tool. Three cases,
+# three pairs, no new owner.
+EXPECTED_DEFERENCE_CASES = 384
+EXPECTED_DEFERENCE_PAIRS = 399
 EXPECTED_DEFERRING_OWNERS = 112
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
@@ -336,6 +340,26 @@ KNOWN_INVERSIONS: dict[tuple[str, tuple[str, ...]], str] = {
         "cleanup words; the removal vocabulary keeps the declining skill on top."
     ),
 }
+
+
+# Recorded unreachable siblings, keyed (owner, sibling). `spend-gate` admits a
+# request only when a spend leads its clause (#2121), so an owner's statement
+# that hands a spend to it ("...; use `spend-gate`") never surfaces it, and
+# the owner then outranks it by default. The router is not bent to fit the
+# prose; each pair is recorded here with its reason, a recorded pair that
+# becomes reachable fails, and `EXPECTED_UNREACHABLE_COUNT` makes growing the
+# list a deliberate edit.
+KNOWN_UNREACHABLE: dict[tuple[str, str], str] = {
+    ("automation-blueprint", "spend-gate"): (
+        "A recurring job that would move money belongs to spend-gate, whose admission reads only a clause "
+        "that leads with a spend; the statement describes the job, so the router leaves spend-gate out."
+    ),
+    ("browser-operator", "spend-gate"): (
+        "A page step that moves money belongs to spend-gate, whose admission reads only a clause that leads "
+        "with a spend; the statement describes the page step, so the router leaves spend-gate out."
+    ),
+}
+EXPECTED_UNREACHABLE_COUNT = 2
 
 
 def _deference_cases() -> list[tuple[str, tuple[str, ...], str]]:
@@ -442,11 +466,29 @@ class CatalogDeferenceGraphTests(unittest.TestCase):
             for sibling in siblings
             if sibling not in _routed_field(statement)
         ]
+        found = {(owner, sibling) for owner, sibling, _ in unreachable}
         self.assertEqual(
-            [(owner, sibling) for owner, sibling, _ in unreachable],
+            sorted(set(KNOWN_UNREACHABLE) - found),
+            [],
+            "a recorded unreachable sibling is reachable now; drop it from KNOWN_UNREACHABLE",
+        )
+        self.assertEqual(
+            [(owner, sibling) for owner, sibling, _ in unreachable if (owner, sibling) not in KNOWN_UNREACHABLE],
             [],
             f"a skill hands a request to a sibling the router does not surface within the top "
             f"{FIELD_LIMIT}; the deference boundary is unreachable, not merely out-ranked",
+        )
+
+    def test_every_recorded_unreachable_sibling_carries_a_rationale(self) -> None:
+        thin = sorted(
+            key for key, rationale in KNOWN_UNREACHABLE.items() if len(rationale.strip()) < MINIMUM_RATIONALE_LENGTH
+        )
+        self.assertEqual(thin, [], "a recorded unreachable sibling carries no real reason")
+        self.assertEqual(
+            len(KNOWN_UNREACHABLE),
+            EXPECTED_UNREACHABLE_COUNT,
+            "the recorded-unreachable list changed size; growing it must be a deliberate edit to "
+            "EXPECTED_UNREACHABLE_COUNT",
         )
 
     def test_every_recorded_inversion_carries_a_rationale(self) -> None:
@@ -469,6 +511,9 @@ class CatalogDeferenceGraphTests(unittest.TestCase):
     def test_no_skill_outranks_the_sibling_it_defers_to(self) -> None:
         inversions: dict[tuple[str, tuple[str, ...]], str] = {}
         for owner, siblings, statement in _deference_cases():
+            if all((owner, sibling) in KNOWN_UNREACHABLE for sibling in siblings):
+                # Unreachable, which the test above records; it outranks nothing it can see.
+                continue
             field = _routed_field(statement)
             # `min` is the lenient reading for the 12 statements naming more than
             # one sibling: the best-placed sibling must beat the owner, not all

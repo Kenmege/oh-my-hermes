@@ -14,7 +14,9 @@ from .catalog_types import (
     DOCUMENT_PRODUCER_QA_RULE,
     DOCUMENT_PRODUCER_RUNGS_RULE,
     EXECUTION_WAIT_DISCIPLINE_RULE,
+    HERMES_PENDING_APPROVAL_CLAUSE,
     HERMES_USAGE_SURFACES_CLAUSE,
+    OMH_MANAGED_SKILL_CLAUSE,
     HermesReferenceLine,
     HermesSkillLine,
     _GENERAL_RECOVERY_NOTES,
@@ -23,7 +25,8 @@ from .catalog_types import (
 
 # A run with nobody to answer the chat confirmation cannot satisfy it, so the
 # gated action does not run there; "marked missing" never means "ran without
-# it". One sentence, stated in each operator skill's completion checklist.
+# it". One sentence, stated in the completion checklist of the four operator
+# skills that act for the person: browser, workspace file, command, connector.
 _UNATTENDED_GATE = (
     "With nobody to answer the confirmation (a scheduled job, a one-shot run, a webhook run), an irreversible or "
     "externally visible action is not run: it is handed to a person's turn and its confirmation is recorded as missing."
@@ -536,10 +539,11 @@ _FEATURE_SURFACE_SKILLS = (
         ),
         final_checklist=(
             "Specify URL, allowed/prohibited actions, auth boundary, stop condition.",
-            "Gate credentials/login/payment/purchase/destruction/scraping/export; observed traces only.",
+            "Gate credentials/login/destruction/scraping/export; a payment or purchase step waits for `omh-spend-gate`'s card and typed yes; observed traces only.",
+            _UNATTENDED_GATE,
             "Host request admission (not enablement/adapter presence) gates schemas/context/callbacks/writes. Refuse foreign/stale/expired/released/ambiguous targets; no index fallback.",
             "omh_browser blocks native browser_*; inert by default. Opted-in effects need exact approval: docs/BROWSER-EFFECTS.md.",
-            f"Sign-ins, one-time codes, and saved cards go through `browser_vault` when {native_tool_presence_clause('browser_vault', code=True)} (`list` first; `fill` for a saved login, card, or address; `enter_code` for a one-time code after the password; `save_login` when nothing is saved for the site, so the user types it into Hermes' masked prompt; Hermes asks the user before it fills a card and refuses that in a headless run): no password, card number, card security code, or one-time code is asked for, typed, or echoed in chat; record only its `success` and `filled_fields`, and never retry a `payment_declined`. Without it, the sign-in is the user's own step and a named gap.",
+            f"Sign-ins, one-time codes, and saved cards go through `browser_vault` when {native_tool_presence_clause('browser_vault', code=True)} (`list` first; `fill` for a saved login, card, or address; `enter_code` for a one-time code after the password; `save_login` when nothing is saved for the site, so the user types it into Hermes' masked prompt; Hermes asks the user before it fills a card and refuses that in a headless run, and that answer sits beside `omh-spend-gate`'s typed yes, never in place of it): no password, card number, card security code, or one-time code is asked for, typed, or echoed in chat; record only its `success` and `filled_fields`, and never retry a `payment_declined`. Without it, the sign-in is the user's own step and a named gap.",
         ),
         recovery_notes=(
             "Missing target/confirmation: ask; visual correctness: visual-qa.",
@@ -565,6 +569,7 @@ _FEATURE_SURFACE_SKILLS = (
             "An ordinary read of a public page with no sign-in, form, or purchase; use the native browser tools directly unless OMH's browser adapter bridge is enabled, which blocks them.",
             "The question is whether a page looks right at each viewport; use `visual-qa`.",
             "A web lookup or a cited answer rather than an interaction with a page; use `web-research`.",
+            "A page step that moves money -- a checkout, a payment, a booking deposit, a top-up; use `spend-gate`, which shows the pre-spend card and takes the person's typed yes even when Hermes prompts on its own.",
         ),
     ),
     _feature_surface_skill(
@@ -715,7 +720,7 @@ _FEATURE_SURFACE_SKILLS = (
         recovery_notes=(
             "If command text or working directory is missing, ask for the smallest missing scope needed before preparing the command task.",
             "If the command is irreversible or externally visible, require an explicit confirmation gate in chat before the run, whether or not the host flags it: deleting or overwriting user data, discarding history or force-pushing, deleting a remote branch, dropping, deleting from, truncating, or flushing a database, a credentialed or networked mutation, device actuation, an install, a deploy, a production change, or an external send.",
-            "On Hermes, record the terminal result's `approval` note beside that confirmation as additional evidence, never in place of it: a note that the command \"was approved by the user\" is the person's answer to Hermes' own prompt for that command, while \"auto-approved by smart approval\" or no note at all is not a person's consent, and a `pending_approval` status means the command has not run yet and waits for the person's `/approve` or `/deny`, so it is never re-run or reworded.",
+            f"On Hermes, record the terminal result's `approval` note beside that confirmation as additional evidence, never in place of it: a note that the command \"was approved by the user\" is the person's answer to Hermes' own prompt for that command, while \"auto-approved by smart approval\" or no note at all is not a person's consent, and a `pending_approval` status means the command has not run and will not run on its own ({HERMES_PENDING_APPROVAL_CLAUSE}), so it is never re-run or reworded and goes to a person's turn.",
             "On Hermes, a cron job, a one-shot `-q` run, or a webhook run denies a flagged command by default (`approvals.cron_mode`, `approvals.single_query_mode`, `approvals.unattended_mode`): record the block as the gate's outcome and hand the command to a person's turn, never rephrase it to get past the gate. Nobody can answer the chat confirmation in those runs either, so an irreversible or externally visible command that Hermes does not flag is not run: it is handed to a person's turn and its confirmation is recorded as missing.",
             "If the user supplied failed command output and asks for root cause, route to build-failure-triage or agent-debug instead of preparing a fresh command.",
         ),
@@ -2170,7 +2175,7 @@ _FEATURE_SURFACE_SKILLS = (
             "Install/setup health is routed to doctor; catalog operations are routed to skill; failure retrospectives are routed to workflow-learning.",
             "No skill, prompt, doc, memory, or model behavior is claimed changed until a reviewed implementation records evidence.",
             "Never present use, view, or load counts, `.usage.json` included, as a health, prune, archive, or retire signal: a rarely used skill is not an unhealthy one, and no health card recommends removing, archiving, or pruning a skill for being used little.",
-            "On Hermes, read the skill audit ledger read-only (that skill's entries in `skills/.curator_ledger.jsonl` under the active profile's Hermes home, or `hermes curator ledger --skill <name> --limit <n>`, which lists only the 20 newest by default): an entry against an `omh-*` skill means Hermes changed that managed copy outside OMH, so it may no longer match its generated body; report it as drift with the entry's `action` and `actor` (`agent`, `user`, or `curator`, which covers Hermes' curator and its background review). An empty ledger is unknown, not clean, because `skills.ledger: false` turns it off.",
+            f"On Hermes, read the skill audit ledger read-only (that skill's entries in `skills/.curator_ledger.jsonl` under the active profile's Hermes home, or `hermes curator ledger --skill <name> --limit <n>`, which lists only the 20 newest by default): an entry against an OMH-managed skill means Hermes changed that managed copy outside OMH, so it may no longer match its generated body; report it as drift with the entry's `action` and `actor` (`agent`, `user`, or `curator`, which covers Hermes' curator and its background review). {OMH_MANAGED_SKILL_CLAUSE} An empty ledger is unknown, not clean, because `skills.ledger: false` turns it off.",
             "On Hermes, record an authoring finding only from the `lint_warnings` a `skill_manage` write returned, which are advisory and never proof a skill works; only some writes return them (an `edit` never does), so a write without them is not a clean lint. Record an available update for a hub-installed skill only from `hermes skills check` output that was seen; that hub request is Hermes' own, not OMH's.",
         ),
         recovery_notes=(

@@ -50,11 +50,12 @@ the file and structure to edit.
   siblings fill the Hermes frontmatter's `metadata.hermes.related_skills`;
   `tests/test_loadable_sibling_names.py` holds both. When a skill Hermes
   bundles shares the new skill's job, add one `HermesSkillLine` to
-  `do_not_use_when` saying which request belongs to the bundled skill. It
-  renders wherever that skill's `## Do Not Use When` renders: the Hermes body,
-  or for a progressive-disclosure skill only `references/full-contract.md`,
-  since the compact body has no such section. The Agent Skills projection
-  drops it.
+  `do_not_use_when` saying which request belongs to the bundled skill; a
+  `_feature_surface_skill` takes it in `extra_do_not_use_when`, because that
+  shape's `do_not_use_when` replaces its generic lines. It renders wherever
+  that skill's `## Do Not Use When` renders: the Hermes body, or for a
+  progressive-disclosure skill only `references/full-contract.md`, since the
+  compact body has no such section. The Agent Skills projection drops it.
 
 ## 2. Hand-authored surfaces (curated order and UX copy)
 

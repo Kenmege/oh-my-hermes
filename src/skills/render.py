@@ -3163,7 +3163,7 @@ Do not declare one for work that is a single step, work already finished, or a q
 
 Hermes has a checklist tool of its own, `{NATIVE_TODO_TOOL}`. When {presence}, it holds the steps: write the list there and move its states there. OMH mirrors each of those writes into this plan todo, so the HUD and the plan's continuation and stall checks read it with no second copy. Writing the same list to `omh_todo` as well doubles every update and is never needed. Without `{NATIVE_TODO_TOOL}`, `omh_todo` holds the steps and everything below applies to it directly.
 
-Three kinds of plan keep their steps in `omh_todo` even when `{NATIVE_TODO_TOOL}` is there, because what they depend on exists only on `omh_todo`: a planning run, whose `plan_stage` the edit gate reads; an accepted plan, whose `plan_stage=accepted` and `check:` items `omh_team` binds its lanes to; and a `{CODE_STORY_TEMPLATE}` template, whose phases a native list cannot carry. A plan awaiting acceptance and a template hold while they are open, and an accepted plan until it goes stale, finished or not; while one holds, a `{NATIVE_TODO_TOOL}` write is not mirrored over it. To leave one for unrelated work, end it first with `omh_todo action=clear`; until then a `{NATIVE_TODO_TOOL}` write is not mirrored. Recording the person's redirect as `deferred_reason` instead keeps the plan, its stage and its gate, and pauses it: the plan line stops asking for its next item and the turn-end drive stops until the item list changes.
+Three kinds of plan keep their steps in `omh_todo` even when `{NATIVE_TODO_TOOL}` is there, because what they depend on exists only on `omh_todo`: a planning run, whose `plan_stage` the edit gate reads; an accepted plan, whose `plan_stage=accepted` and `check:` items `omh_team` binds its lanes to; and a `{CODE_STORY_TEMPLATE}` template, whose phases a native list cannot carry. A plan awaiting acceptance and a template hold while they are open, and an accepted plan until it goes stale, finished or not; while one holds, a `{NATIVE_TODO_TOOL}` write is not mirrored over it. To leave one for unrelated work, end it first with `omh_todo action=clear`. Recording the person's redirect as `deferred_reason` instead keeps the plan, its stage and its gate, and pauses it: the plan line stops asking for its next item and the turn-end drive stops until the item list changes.
 
 With `{NATIVE_TODO_TOOL}` holding the steps, call `omh_todo` only for what it alone records:
 
@@ -4054,7 +4054,7 @@ def _data_share_review_reference() -> str:
 
     return """# Data Share Method
 
-Load this while preparing a file to leave the team. OMH prepares; the scan runs where the user or the session's tools run, and the file stays `prepared` until its scan counts are observed. Where a team or regulator rule is stricter than this page, that rule governs; say which one was used.
+Load this while preparing a file to leave the team. OMH prepares; the scan runs where the user or the session's tools run, and the file's verdict stays `not_observed` until its scan counts are observed. Where a team or regulator rule is stricter than this page, that rule governs; say which one was used.
 
 ## 1. Field classes
 
@@ -4116,7 +4116,7 @@ def _spend_gate_reference() -> str:
     clarify = native_tool_presence_clause("clarify", code=True)
     return f"""# Spend Rails
 
-Load this before money moves. OMH prepares the card and checks the receipt; the person's own payment surface moves the money, and every spend stays `quoted` until a receipt is observed. The card's fields and the confirmation rule are in the skill body; this page holds what differs by rail.
+Load this before money moves. OMH prepares the card and checks the receipt; the person's own payment surface moves the money, and no spend is `charged` until a receipt is observed. The card's fields and the confirmation rule are in the skill body; this page holds what differs by rail.
 
 ## 1. Rails
 
@@ -4143,7 +4143,7 @@ Each surface below is used only when it is present, and none replaces the person
 
 ## 3. Unknown outcomes
 
-An outcome nobody saw -- a timeout, a dropped connection, a page that reloaded, a server error after submit, a client that exited without a result -- is `unknown`, not failed. It is the rule `llm-app-dev` applies to an ambiguous public post: reconcile before any retry.
+An outcome nobody saw -- a timeout, a dropped connection, a page that reloaded, a server error after submit, a client that exited without a result -- is `unknown`, not failed. It is the rule `omh-llm-app-dev` applies to an ambiguous public post: reconcile before any retry.
 
 1. Mark the spend `unknown` in the ledger with what is known: payee, amount, time, and rail.
 2. Look for the charge where it would show: the merchant's order history, the confirmation message, the card or wallet activity, the payment client's status, the provider's usage record.

@@ -429,6 +429,27 @@ HERMES_USAGE_SURFACES_CLAUSE = (
     "the omh_run_summary tool relays this conversation's recorded tokens and cost"
 )
 
+# Which skills are OMH's: the ones its installer rendered, under a label the
+# catalog writes into `name:` (`canonical_skill_for_label`), never a name
+# prefix, because a companion a person or an agent creates may start with
+# `omh-` or `ulw-` too. One copy for the three skills that treat OMH's skills
+# apart (`skill`, `rules-distill`, `skill-health`).
+OMH_MANAGED_SKILL_CLAUSE = (
+    "An OMH-managed skill is one OMH installed, under a label OMH's catalog renders such as `omh-plan` or "
+    "`ulw-work`; a companion skill the person or an agent created is theirs, whatever its name."
+)
+
+# What becomes of a command Hermes answers with `pending_approval`, read in
+# `tools/approval.py` and `gateway/slash_commands.py` at v2026.9.7 and on
+# upstream main (63d0b94120): `_pending_result` stores it with
+# `submit_pending`, which nothing reads back to run, and the gateway-only
+# `/approve` resumes only a thread `has_blocking_approval` finds waiting.
+# One copy for the two skills that meet that status (`command-operator`,
+# `spend-gate`).
+HERMES_PENDING_APPROVAL_CLAUSE = (
+    "Hermes stores it without running it, and `/approve` resumes only a run that is still waiting on an approval"
+)
+
 # Follow-on engine gate: finishing one workflow (an accepted plan, a clarified
 # brief, a routing recommendation) is planning evidence, never permission to
 # start the next engine. Planning-lane skills compose the fit-recommendation

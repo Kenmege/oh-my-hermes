@@ -778,10 +778,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # with GitHub event ops (labeling, closing, reviewing, triaging,
             # a workflow, a rerun) and web research (a blog post) (9). Its
             # second review adds four: a crash log redacted before a public
-            # GitHub issue, which must dispatch it, and three requests that
-            # only mention redaction, which stay with GitHub event ops, the
-            # connector operator, and the gateway intent card (4). Its third
-            # review removes the skill's boost and guard stand-downs, so it
+            # GitHub issue, pinned then to dispatch it and since the third
+            # review to GitHub event ops, which holds the issue, and three
+            # requests that only mention redaction, which stay with GitHub
+            # event ops, the connector operator, and the gateway intent card
+            # (4). Its third review removes the skill's boost and guard
+            # stand-downs, so it
             # drops the three interventions only the boost dispatched (a vendor
             # ticket export with the PII to strip, one with the customer
             # details to take out, and a CSV redacted before a vendor gets

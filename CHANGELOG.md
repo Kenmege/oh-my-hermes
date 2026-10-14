@@ -4,6 +4,29 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Skill text decides which skills are OMH's by the installed label, and the
+  spend, browser, schedule, and parallel-tool skills say what Hermes does.**
+  `skill`, `rules-distill`, and `skill-health` no longer treat any `omh-*` or
+  `ulw-*` name as OMH's: one shared sentence says an OMH-managed skill is one
+  OMH installed under a label its catalog renders, and a companion the person
+  or an agent created is theirs whatever its name. The `skill_manage` refusal
+  suggests a companion name without OMH's prefix (`plan-notes` for
+  `omh-plan`). `parallel-tools` reads each MCP server's
+  `supports_parallel_tool_calls` and offers that flag, with an update only on
+  request, instead of describing a version-currency check. A recurring job or
+  a page step that would move money goes from `automation-blueprint` or
+  `browser-operator` to `spend-gate`; `loop` sends an unattended schedule
+  through `automation-blueprint` instead of straight to Hermes' cron tool; and
+  `browser-operator` carries the unattended-run rule the other operator skills
+  state, with Hermes' card prompt recorded beside the spend gate's typed yes.
+  `command-operator` and `spend-gate` say what Hermes does with a
+  `pending_approval` command at v2026.9.7 and on upstream main: it is stored
+  and never run, and `/approve` resumes only a run still waiting on an
+  approval. `spend-gate`'s portable body drops its Hermes- and OMH-only lines,
+  prose that named a sibling by its catalog name now writes the label
+  `skill_view` loads, and the spend and data-share references name only states
+  their skills keep.
+
 - **A `/blueprint` seed is Hermes' turn, and a spend is spend-gate's wherever
   it is asked.** When `/blueprint` matches, Hermes rewrites the turn to a seed
   that asks for the blueprint's settings and then creates the cron job
@@ -217,6 +240,16 @@ All notable changes will be documented here.
   failures and issue triage, purchase acceptance criteria and a saved-card
   settings toggle keep their owners.
 
+- **Session usage and the skill-draft check recognize an OMH skill by its
+  catalog label, not by the `[omh] ` description prefix (#2120).**
+  `canonical_skill_for_label` answers from every label the catalog renders or
+  rendered, retired skills included, and `omh quality-evidence session-usage`
+  reads it for a SKILL.md load, a reference-file load, a compaction
+  placeholder, and a frontmatter name line. A prefixed description still
+  counts under a name the catalog does not render, so no session that counted
+  before stops counting. The 3.0.0 entry for session usage, which names the
+  `[omh] ` prefix as the OMH-skill signal, no longer describes it.
+
 - **A new `data-share-review` skill prepares a dataset, log, ticket export, or
   transcript excerpt to leave the team, and calls it redacted only after the
   file that leaves was scanned.** It asks where the file goes and what that
@@ -281,7 +314,6 @@ All notable changes will be documented here.
   `ask` takes only the invocation from the bundled `claude-code`, `codex`, or
   `opencode` skill for a CLI advisor the user named, with no CLI as the
   default.
-
 
 - **Generated skills follow more of Hermes' own skill-authoring
   conventions.** Every Hermes skill body now opens its trigger section with
@@ -382,7 +414,6 @@ All notable changes will be documented here.
   order. The seven feature-surface skills among these state their own Why
   and Do-Not-Use.
 
-
 - **The run-efficiency report now carries what Hermes itself recorded for a
   named session, and the tracker skills point at Hermes' own usage, compaction,
   tool, agent, stop, and skill surfaces.** `omh runtime efficiency-report
@@ -419,7 +450,6 @@ All notable changes will be documented here.
   place. `capability-toggle` sends hiding one skill on one platform to Hermes'
   own `hermes skills config`.
 
-
 - **Hermes' background review and `/btw` side question no longer use up the
   once-per-session OMH lines meant for the person's next turn.** On Hermes
   0.21.1, the plugin's floor, both run as a fork of the live agent that keeps
@@ -438,7 +468,6 @@ All notable changes will be documented here.
   child, which names its parent's id, and a turn that names no parent are
   unchanged. The held-write line's own fork check moves to that one place.
   Other hooks a fork reaches are unchanged.
-
 
 - **A Hermes edit to an OMH-managed skill is redirected, kept, and reported
   instead of breaking the next update.** Hermes' background self-improvement
@@ -616,7 +645,6 @@ All notable changes will be documented here.
   Records, index caches, and saved recurring intents written under the old
   id stay readable and valid.
 
-
 - **A Maestro supervisor now waits on a dispatch with one bounded background
   watcher instead of polling the roster every minute in its own turns.**
   `omh coding fanout status --wait` re-reads the same read-only roster until
@@ -650,7 +678,6 @@ All notable changes will be documented here.
   missing record to chase while only a unit still `running` gets a fresh
   watcher, and any code the watcher did not choose gets a fresh watcher only
   if units are still running.
-
 
 - **OMH no longer steers the model against Hermes' own `clarify`, `/loop`,
   `/goal`, and `/plan`.** `ulw-interview` sends each question's two to four
@@ -726,7 +753,6 @@ All notable changes will be documented here.
   plugin's per-turn hook renders no route hint, vocabulary match, or candidate
   line on them, as it already did for rows Hermes stamps with a
   `display_kind`.
-
 
 - **The operator skills now record what Hermes' own approval, checkpoint,
   vault, and connection surfaces answered, beside the confirmations they keep,
@@ -866,8 +892,6 @@ All notable changes will be documented here.
   their own triggers, such as a "citation check" on a draft, still opens the
   OMH skill first, which then hands it over.
 
-
-
 - **The shipped model chains move to the 2026-10-13 table, and Claude Haiku
   5.5 is onboarded.** Every category chain, the `main` role suggestion, the
   public tables (`docs/INSTALLATION.md` regenerated, the four READMEs and two
@@ -945,7 +969,6 @@ All notable changes will be documented here.
   record rides in the row's `detail` for `--json` readers. OMH reads the
   config and the logs and writes none of them.
 
-
 - **A plan has one checklist: Hermes' `todo_list` and `omh_todo` no longer
   ask for the same list twice.** Hermes ships its own checklist tool,
   `todo_list`, and OMH told the model to declare every plan with `omh_todo`
@@ -982,7 +1005,6 @@ All notable changes will be documented here.
   recorded, the stall finding, and in the TUI the parallel-shot badge), and
   nothing otherwise.
 
-
 - **`websearch-setup` configures the web search settings Hermes actually
   reads, and OMH stops treating the removed auxiliary web-extract slot as
   configuration.** The guide's second step used to assign a model to the
@@ -1018,7 +1040,6 @@ All notable changes will be documented here.
   unpinned auxiliary slots names the same slots without a fixed count and no
   longer counts a leftover `web_extract` pin as routing.
 
-
 - **Achievements are read from where the bundled Hermes plugin keeps them
   now.** The hermes-achievements plugin stores `scan_snapshot.json` and
   `state.json` under `plugin-data/hermes-achievements/` in the active
@@ -1052,7 +1073,6 @@ All notable changes will be documented here.
   accept a file saved with a byte-order mark, as current Hermes (0.21.6 and
   later) does.
 
-
 - **The `frontend` design contract now uses Google's DESIGN.md format, so it
   no longer contradicts Hermes' bundled `design-md` skill.** Both install by
   default and both describe a project-root `DESIGN.md`, but OMH's contract
@@ -1082,7 +1102,6 @@ All notable changes will be documented here.
   section they mean instead of a section number, and `docs/SKILL-SOURCES.md`
   records both upstreams with closure receipts.
 
-
 - **Every shipped skill passes the Hermes install scanner of every
   supported Hermes release, not only one.** Hermes changes
   `tools/skills_guard.py` between releases, and the repo gate ran only the
@@ -1111,7 +1130,6 @@ All notable changes will be documented here.
   only v6 flags, a pipe into a word that starts with `zsh`, `ksh` or `dash`
   such as `| dashboard`, so the v6 copy is not redundant. Canary builds are
   not gated. `requires_hermes` is unchanged.
-
 
 - **OMH memory works in messenger DMs and group channels (#2088).** Every
   gateway session was a shared surface, which denies every identity-unbound
