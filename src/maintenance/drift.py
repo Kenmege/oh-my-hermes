@@ -544,7 +544,59 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # before a later clause (23). Its fourth review adds two: a lead verb
             # that is being defined ("de-identify means what exactly ...?",
             # "de-identify is the term we use ..."), which is not a command (2).
-            expected=605,
+            # The spend-gate lane adds eleven sentences that use its words and
+            # move no money for the person, none of which may name the gate:
+            # rent already paid, a lunch budget, a government's spending cap, a
+            # photo from a wallet, tests for a wallet-transfer feature, a
+            # customer's payment question, slides placed in order, a git
+            # checkout, HTTP 402 returned from one's own API, a model-provider
+            # cost comparison, and paying attention to a log (11).
+            # Its review adds thirty-nine more, each a sentence that dispatched
+            # the gate or produced its route hint while a phrase alone counted:
+            # payment UI, code, tests, docs, prompts and analytics built around
+            # its phrases (a place-the-order button, a buy-it-for-me string, a
+            # flaky saved-card test, a 402 header), questions about how payments
+            # work, procurement purchase orders and requests, someone else's
+            # payment, a pricing comparison, a past card purchase, and a
+            # government's spending (39); and two statements about someone
+            # else's purchase that the gate must not admit: someone placing an
+            # order tomorrow, and a club buying for members (2). Admission then became
+            # lead-anchored (the request, not the topic, must be a spend), and
+            # four topic-shaped sentences pin it: a blog post on paying with a
+            # saved card, a message saying the vendor was paid, a reminder to
+            # pay rent, and which card is best to pay with (4). Only the
+            # sentence's first verb counts, and its object must not end in a
+            # thing being built: a purchase in a second clause after a
+            # transcription, a checkout flow for card payments, and a broken
+            # saved-card toggle (3). Its second review adds thirty-one that
+            # dispatched or got the hint while the first word alone was read:
+            # a lead used as a noun or idiom ("check out this article", "pay
+            # attention", "tip:", "order 5512:", "order of events", "pay
+            # stubs", "pay-per-request", "buy-side"), a phrase after the request
+            # clause, a question, a statement about a feature ("pay with my
+            # saved card returns a 500 error"), a UI label ("buy it for me
+            # buttons", "my card toggle"), and test or seed data (31). Its
+            # third review adds sixteen that a list of forbidden verbs missed,
+            # each a phrase followed by something no request has after it: a
+            # verb of another tense ("stopped working", "broke", "went live"),
+            # a modal ("would be nice", "could confuse", "might be"), "or" (a
+            # comparison), a noun ("card issuer", "option"), or an idiom ("buy
+            # time", "pay a visit") (16). Its fourth review adds twenty-one
+            # that an allowed first word let through ("pay with my card in
+            # safari is broken", "buy it for me and wishlist are the two
+            # CTAs"); the gate now also needs a request marker outside its
+            # phrase -- "please", "can you", "go ahead", "hermes", an amount,
+            # or "for me" -- and none of these has one (21). Its fifth review
+            # adds five where an amount or "for me" follows a preposition
+            # ("pay with my card for $0 orders is broken"); those count as a
+            # marker only as the spend's object now (5). Its sixth review adds
+            # four where "for me" follows one of the gate's phrases ("book with
+            # my card for me never shows up on android"); the object is read
+            # after the lead's own words now, so the lead does not count as one
+            # (4). Its seventh review adds two where an object word comes before
+            # the phrase ("book the flight with my card for me never shows up
+            # on android"); a phrase now starts the object count again (2).
+            expected=743,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -734,7 +786,31 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # residual-scan one with an export de-identified for a researcher,
             # and adds six requests other skills hold, three of them opening in
             # Hangul (+6, -3).
-            expected=752,
+            # The spend-gate lane adds ten: seven spends that dispatch the
+            # pre-spend card, or ask with it leading, without naming it (an
+            # HTTP 402 to pay, a booking paid by card, a card purchase under a
+            # stated cap, a timed-out payment the agent made, a wallet
+            # transfer, a payment on the person's behalf, a purchase under a
+            # stated total), and three that keep their owners: a checkout URL
+            # login on browser-operator, payment failure reports on
+            # feedback-triage, and budget vs actual for marketing spend on
+            # finance-analysis (10).
+            # Its review adds nine: five spends of the person's own money that
+            # ask with the pre-spend card leading (a renewal with their card,
+            # tickets on their credit card, a top-up with an amount, money to a
+            # friend, a buy under a stated limit with a pricing check), and
+            # four that keep their owners
+            # (spend-approval best practices on web-research, a checkout Cypress
+            # spec on feedback-triage, purchase acceptance criteria on ralplan,
+            # a saved-card settings toggle on ultrawork) (9). Lead-anchored
+            # admission adds one owner: triaging issues about card payments in
+            # a checkout stays on feedback-triage (1). Its second review adds
+            # two more checkout failure reports that stay on feedback-triage,
+            # where the noun "checkout" was read as the verb (2). Its fourth
+            # review adds three that keep their base dispatch: a 3DS failure
+            # report and a crash report on feedback-triage, and a feature
+            # request on plan (3).
+            expected=777,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -744,8 +820,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             describe="Installable workflow skills quoted in reference surfaces",
             live=_installable_skill_count,
             # The current workflow additions are part of the installable catalog.
-            # `data-share-review` adds one.
-            expected=143,
+            # `data-share-review` adds one. `spend-gate` adds one.
+            expected=144,
             sites=(
                 "docs/README.md",
                 # The docs index quotes the count in prose and

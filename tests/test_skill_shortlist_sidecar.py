@@ -285,8 +285,12 @@ class AdmissionTests(unittest.TestCase):
         # "setup" keeps the admitting skill fourth. `websearch-setup` used to
         # lead this ranking on its auxiliary "model routing" wording; once that
         # wording left the catalog the admitting skill rose to third, and
-        # "tool calls" puts `parallel-tools` back above it.
-        message = "The provider changed how their model handles tool calls; adapt our routing setup to it."
+        # "tool calls" puts `parallel-tools` back above it. Once `spend-gate`
+        # joined the skills that say "call" (a pay-per-request call),
+        # `parallel-tools` fell 0.003 under the admitting skill; "update"
+        # instead of "adapt" ranks it third again and keeps the admitting
+        # skill fourth.
+        message = "The provider changed how their model handles tool calls; update our routing setup to it."
         self.assertEqual(bundle.skill_candidates(message), ())
         with mock.patch.object(bundle, "ADMISSION_HEAD", bundle.ADMISSION_HEAD + 2):
             self.assertTrue(bundle.skill_candidates(message))

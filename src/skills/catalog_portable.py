@@ -127,6 +127,8 @@ _PORTABILITY: dict[str, str] = {
     'omh-internal-audit': PORTABILITY_PORTABLE,
     # required_inputs: the file about to leave, its destination and need, the header or schema, a local place for any pseudonym mapping; expected_outputs: a field inventory, minimization plan, residual scan, and metadata-only share record prepared for the operator, so no Hermes runtime is needed.
     'omh-data-share-review': PORTABILITY_PORTABLE,
+    # required_inputs: the payee, the item, the quote, the cap, the refund terms; expected_outputs: a pre-spend card, a typed confirmation, an observed receipt and a metadata-only ledger; native Hermes surfaces are named behind the presence rule, so no Hermes runtime is needed.
+    'omh-spend-gate': PORTABILITY_PORTABLE,
     # required_inputs: changes, release mechanism, health signals, rollback mechanism; expected_outputs: a release plan with a rollback trigger and a readiness verdict; the host or CI executes, so no Hermes runtime is needed.
     'omh-release-cut': PORTABILITY_PORTABLE,
     # required_inputs: target app, page, route, component, or design system; expected_outputs: accessibility_audit_plan/v1; final_checklist requires evidence/approval, not a native runtime.
@@ -400,6 +402,7 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'mobile-release/references/mobile-release-method.md',
     'internal-audit/references/control-audit-method.md',
     'data-share-review/references/data-share-method.md',
+    'spend-gate/references/spend-rails.md',
     'release-cut/references/release-and-rollback-method.md',
     'application-threat-model/references/threat-model-method.md',
     'live-incident-response/references/incident-command-method.md',

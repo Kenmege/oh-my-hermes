@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 import re
 
+from ..plugin_bundle.omh.spend_signals import spend_request_clause
 from ..skills.catalog import SkillDefinition, builtin_definitions, routable_definitions
 from .domain_signals import (
     DomainOperatorOverride,
@@ -492,6 +493,7 @@ _INTERNAL_AUDIT_EXPLICIT_PHRASES = tuple(
         "segregation of duties",
     )
 )
+
 
 # `mobile-release` holds back every everyday token its phrases are built from.
 # Listed are the phrases that name releasing through a store. A bare "play
@@ -1249,6 +1251,19 @@ _SKILL_POLICIES = {
             "Prepare field_inventory/v1 with each field's class; minimization_plan/v1 with one action per field and the "
             "local path of any pseudonym mapping; residual_scan/v1 with observed counts per class on the shipped file, "
             "or not_observed; and the metadata-only share_record/v1."
+        ),
+    ),
+    "spend-gate": RecommendationPolicy(
+        next_action="prepare_pre_spend_card",
+        evidence_boundary=(
+            "A pre-spend card is not a confirmation, a payment, or a charge; a spend is done only on an observed order id, "
+            "transaction id, or receipt header, and OMH moves no money and holds no credential."
+        ),
+        wrapper_guidance=(
+            "Prepare pre_spend_card/v1 from the quote's own source with payee, total with fees and currency, rail, cap, "
+            "refund terms, reversibility, and approver; spend_confirmation/v1 from the person's typed yes in this session; "
+            "spend_receipt/v1 from an observed receipt; and a metadata-only spend_cap_ledger/v1. Never spend in a run nobody "
+            "can answer, and reconcile an unknown outcome before any retry."
         ),
     ),
     "mobile-release": RecommendationPolicy(
@@ -3149,6 +3164,60 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
             "these",
         }
     ),
+    # `spend-gate` is built from "spend", "pay", "paid", "payment", "buy",
+    # "purchase", "order", "checkout", "card", "wallet", "transfer", "money",
+    # "cap", "limit", "retry", "use", "send" and "again" -- time is
+    # spent, attention is paid, a branch is checked out, imports are put in
+    # order, a wallet is lost and a repo is transferred, and none of those
+    # moves money. Only the complete phrases
+    # score. The two hyphenated names stay creditable: `spend-gate` and
+    # `pre-spend` mean nothing else.
+    "spend-gate": frozenset(
+        {
+            "402",
+            "approval",
+            "again",
+            "approve",
+            "behalf",
+            "booking",
+            "buy",
+            "cap",
+            "card",
+            "challenge",
+            "charge",
+            "checkout",
+            "click",
+            "complete",
+            "credit",
+            "data",
+            "did",
+            "endpoint",
+            "from",
+            "gate",
+            "http",
+            "limit",
+            "money",
+            "order",
+            "paid",
+            "pay",
+            "pay-per",
+            "payment",
+            "per",
+            "place",
+            "pre",
+            "purchase",
+            "required",
+            "retry",
+            "saved",
+            "send",
+            "spend",
+            "spending",
+            "through",
+            "transfer",
+            "use",
+            "wallet",
+        }
+    ),
     # `mobile-release` is built from "app", "store", "play", "google",
     # "release", "code", "signing", "privacy", "data", "safety", "form",
     # "review", "track" and "android" -- a phone's store app, a gift card, a
@@ -4288,15 +4357,24 @@ def _score_definition(
     ):
         self_name = ""
 
+    # `spend-gate` scores only on the request clause it admitted
+    # (`_spend_gate_offers_itself`) -- its phrases and its words alike:
+    # "check out this thread about agents that buy it for me automatically"
+    # says one of them as a topic, and words after the clause are not the
+    # request either.
+    trigger_text = normalized_query
+    if definition.name == "spend-gate":
+        trigger_text = _spend_gate_clause(normalized_query)
+        query_tokens = routing_tokens(trigger_text)
     for trigger_phrase in prepared.plain_trigger_phrases:
         if trigger_phrase == self_name:
             continue
-        if _trigger_phrase_match(normalized_query, trigger_phrase):
+        if _trigger_phrase_match(trigger_text, trigger_phrase):
             score += 6
             matched.add(f"trigger:{trigger_phrase}")
 
     for trigger_phrase in prepared.command_trigger_phrases:
-        if _command_trigger_match(normalized_query, trigger_phrase):
+        if _command_trigger_match(trigger_text, trigger_phrase):
             score += 6
             matched.add(f"trigger:{trigger_phrase}")
 
@@ -5687,6 +5765,35 @@ def _sales_pipeline_review_offers_itself(normalized_query: str, query_tokens: se
     )
 
 
+@lru_cache(maxsize=1)
+def _spend_gate_trigger_phrases() -> tuple[str, ...]:
+    definition = next(item for item in builtin_definitions() if item.name == "spend-gate")
+    return tuple(normalized_phrase(trigger) for trigger in definition.triggers)
+
+
+def _spend_gate_clause(normalized_query: str) -> str:
+    return spend_request_clause(normalized_query, _spend_gate_trigger_phrases())
+
+
+def _spend_gate_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
+    """Offer the gate only when its request clause asks the agent to spend through one of its phrases.
+
+    Routing is deliberately conservative. The gate competes only in ordinary
+    scoring, through phrases held to whole-phrase matches, on the request
+    clause `spend_request_clause` returns (the bundle's `spend_signals`,
+    which the awareness route hint and markers read too): a message marked as
+    a request outside the gate's own phrase ("please", "can you", an address
+    to Hermes, an amount, ...), whose clause opens with a spend addressed to
+    the agent, where every one of the gate's phrases is followed only by what
+    may follow a request. Every other sentence -- an unmarked imperative, a
+    phrase used as a topic, a subject, a label, a later clause -- routes
+    exactly as before this skill existed, and nothing here stands down another
+    skill's guard.
+    """
+    del query_tokens
+    return bool(_spend_gate_clause(normalized_query))
+
+
 # Skills that withdraw from the shortlist unless their own precondition holds,
 # checked in `_score_definition`. An explicit invocation always overrides this:
 # naming a skill outright is the user overruling its self-assessment.
@@ -5718,4 +5825,5 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     # An LLM wiki is the pattern Hermes' bundled `llm-wiki` skill builds.
     "wiki": lambda normalized_query, query_tokens: not llm_wiki_request(normalized_query),
     "data-share-review": data_share_review_offers_itself,
+    "spend-gate": _spend_gate_offers_itself,
 }

@@ -168,7 +168,9 @@ CONCEPTUAL_AWARENESS_SURFACES = ("request-to-handoff", "executor selection", "co
 # name and the visible description window. Re-derived from the producer.
 # 12464 -> 12554: one index line for the new `data-share-review` skill; the
 # name and the visible description window. Re-derived from the producer.
-SKILL_INDEX_CHAR_LIMIT = 12554
+# 12554 -> 12637: one index line for the new `spend-gate` skill; the name and
+# the visible description window. Re-derived from the producer.
+SKILL_INDEX_CHAR_LIMIT = 12637
 # The longest single skill line in that index. Every description is already cut
 # to 60 characters, so what moves this is a longer skill name.
 SKILL_INDEX_LINE_CHAR_LIMIT = 100
@@ -712,7 +714,10 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # 493103 -> 497611: one capability row for the new `data-share-review` skill
 # plus the reciprocal boundary line `legal-compliance-review` gains. Re-derived
 # from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 497611
+# 497611 -> 501668: one capability row for the new `spend-gate` skill, which
+# gates money the agent moves for the person on any rail; no other row moved.
+# Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 501668
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -802,7 +807,9 @@ FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # `data-share-review` skill plus the reciprocal boundary line
 # `legal-compliance-review` gains; warranted growth. Re-derived from the
 # producer.
-STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 135119
+# 135119 -> 136056: one standalone capability row for the new `spend-gate`
+# skill; no sibling row moved. Re-derived from the producer.
+STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 136056
 STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # ULW fold context ceiling (issue #954, PR D). The limit is the pre-D measured
 # value of the full profile's `skill_body` chars on `main` @ acb9a060, in the
@@ -1894,10 +1901,11 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # removes. So it takes the same policy: the measurement plus
 # `FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT`, rounded UP to the next multiple
 # of `FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS` (10,000, about a
-# tenth of the measurement). On that tree the producer reads 112,977, so the
-# 7,023 chars left under 120,000 hold about five median lane members, while a
-# renderer change that stamps one more shared sentence longer than about 49
-# chars into every one of the 142 bodies, or a few skills that copy other
+# tenth of the measurement). On that tree the producer reads 112,977; with
+# `data-share-review` and `spend-gate` added it reads 113,986, so the 6,014
+# chars left under 120,000 hold about four median lane members, while a
+# renderer change that stamps one more shared sentence longer than about 41
+# chars into every one of the 144 bodies, or a few skills that copy other
 # skills' own sections, still fails.
 #
 # The measurement is also a floor: `tests/test_per_turn_budgets.py` fails when

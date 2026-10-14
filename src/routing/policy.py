@@ -2180,6 +2180,21 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
             }
         ),
     ),
+    # "congress raised the spending cap again", "the speed and spending limit
+    # rules in this city" and "the photo fell out from my wallet" move no money
+    # for the person; each phrase keeps this route only beside a word of paying
+    # or buying. "agent" and "hermes" are not anchors: the tokenizer drops both.
+    "spend-gate": (
+        ("spend cap", "spending cap", "spend limit", "spending limit", "from my wallet"),
+        frozenset(
+            {
+                "402", "api", "approve", "bot", "buy", "buying", "buys", "card", "charge", "charged",
+                "checkout", "credits", "dollars", "endpoint", "euros", "funds", "money", "order",
+                "orders", "pay", "paying", "payment", "payments", "purchase", "purchases", "send",
+                "subscription", "transfer", "usd",
+            }
+        ),
+    ),
     # "the play store on my phone will not open", "my google play gift card did
     # not work" and "the app store keeps asking for my password" are a phone's
     # store app, not a release; each phrase keeps this route only beside a word

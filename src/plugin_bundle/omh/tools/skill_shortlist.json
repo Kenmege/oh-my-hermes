@@ -1138,7 +1138,7 @@
 }
 },
 {
-"anchors":"benchmark bill bottleneck ci cloud cost databas don footprint goal grow hot hotspot inferenc investigation jank janky know latency leak long perf performanc pipelin profil query render slow storag take throughput token ultraperf ulw went",
+"anchors":"benchmark bill bottleneck ci cloud databas don footprint goal grow hot hotspot inferenc investigation jank janky know latency leak long perf performanc pipelin profil query render slow storag take throughput token ultraperf ulw went",
 "hangul":"누수 느려 려진 메모 모리 병목 성능 원인 전반 점검",
 "hangul_anchors":"누수 느려 려진 메모 모리 병목 성능 원인 전반 점검",
 "label":"ulw-perf",
@@ -1649,6 +1649,23 @@
 }
 },
 {
+"anchors":"fee month really renew sign sure went",
+"hangul":"",
+"hangul_anchors":"",
+"label":"omh-spend-gate",
+"name":"spend-gate",
+"situation":"Spending money on the user's behalf -- a card checkout, an HTTP 402 or pay-per-request call, a wallet transfer, a booking, a paid data endpoint",
+"terms":{
+"1":"against approver browser confirm credential deposit first hold ledger metadata move never nobody observ output payee person prov rail refund renewal run term their total user",
+"2":"approv approval call challeng click complet cost credit limit month plac purchas really receipt renew requir retry saved send servic sign sure want went",
+"3":"agent answer befor behalf charg fee",
+"4":"402 book buy cap checkout data endpoint http order paid pay payment pre request through transfer wallet",
+"5":"gate",
+"6":"card money",
+"7":"spend"
+}
+},
+{
 "anchors":"assumption choic concept disposabl experiment feasibility library performanc prob proof prototyp quick quickly risky small solution spik throwaway timing try uncertain",
 "hangul":"",
 "hangul_anchors":"",
@@ -2035,7 +2052,7 @@
 }
 },
 {
-"anchors":"adopt adoption affordabl agentchat agy antigravity assistant audio auth auto awar backend barg behavior blockchain bridg chainlink chat clawsocial cli comparison composio control cost crustocean crypto cryptocurrency demo devic discovery enough evaluat gateway genai generat generation graph handl home identity integration integrity keychain maco mailbox matrix messag microsoft minivers multimodal nextcloud oauth oci onequery oracl pair peer platform plugin privat real realtim receipt reliabl safety screenshot smart social solana spoken sql stack transaction trial universal video voic weather websocket windy windymail wire workspac wxtrain xmr",
+"anchors":"adopt adoption affordabl agentchat agy antigravity assistant audio auth auto awar backend barg behavior blockchain bridg chainlink chat clawsocial cli comparison composio control crustocean crypto cryptocurrency demo devic discovery enough evaluat gateway genai generat generation graph handl home identity integration integrity keychain maco mailbox matrix messag microsoft minivers multimodal nextcloud oauth oci onequery oracl pair peer platform plugin privat real realtim receipt reliabl safety screenshot smart social solana spoken sql stack transaction trial universal video voic weather websocket windy windymail wire workspac wxtrain xmr",
 "hangul":"그인 기기 기준 넥터 데모 도입 라우 러그 리스 마트 멀티 모달 비도 비용 생성 스마 스크 스턴 시스 어시 연동 영상 외부 우팅 인증 자동 제어 제품 준비 채택 커넥 턴트 트홈 티모 플러 홈어",
 "hangul_anchors":"그인 기기 기준 넥터 데모 도입 라우 러그 리스 마트 멀티 모달 비도 비용 생성 스마 스크 스턴 시스 어시 연동 영상 외부 우팅 인증 자동 제어 제품 채택 커넥 턴트 트홈 티모 플러 홈어",
 "label":"omh-external-connector-readiness",
@@ -2172,7 +2189,7 @@
 }
 },
 {
-"anchors":"board card cost dashboard grafana health history latency metric mode monitor number observability ops overview prometheus rate slo spend telemetry token uptim",
+"anchors":"board card dashboard grafana health history latency metric mode monitor number observability ops overview prometheus rate slo spend telemetry token uptim",
 "hangul":"관측 그라 라파 로메 메테 메트 비스 비용 서비 시간 연시 우스 운영 지연 지휘 측성 테우 토큰 트릭 파나 품질 프로 휘판",
 "hangul_anchors":"관측 그라 라파 로메 메테 메트 비스 비용 서비 시간 연시 우스 운영 지연 지휘 측성 테우 토큰 트릭 파나 품질 휘판",
 "label":"omh-ops-observability-card",

@@ -21,6 +21,7 @@ from .hermes_session_commands import (
 )
 from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
+from .spend_signals import spend_request_phrases
 from .reference_regions import executable_routing_text
 from .degradation import (
     COMPONENT_LOCALIZED_ROUTING_TEXT,
@@ -1304,6 +1305,7 @@ _WORKFLOW_CONTEXT_CARD_BY_WORKFLOW = {
     "workspace-file-operator": "automation_and_status",
     "command-operator": "automation_and_status",
     "connector-operator": "automation_and_status",
+    "spend-gate": "automation_and_status",
     "live-info-operator": "automation_and_status",
     "external-connector-readiness": "automation_and_status",
     "prompt-import-readiness": "automation_and_status",
@@ -4118,6 +4120,44 @@ _ROUTE_HINT_RULES = (
         "adjacent_workflows": ("gateway-intent-card", "deep-interview", "toolbelt-readiness"),
     },
     {
+        "id": "spend_gate",
+        "workflow": "spend-gate",
+        "lane": "automation_and_status",
+        "next_action": "prepare_pre_spend_card",
+        "reason": "Money is about to move on the person's behalf -- a card checkout, an HTTP 402 or pay-per-request call, a wallet transfer, a booking, or a paid data endpoint; show the pre-spend card, wait for the person's typed yes, and call it done only on an observed receipt.",
+        "fallback_action": "ask_for_the_payee_the_total_with_fees_and_the_cap",
+        "not_evidence_yet": (
+            "spend confirmed",
+            "payment submitted",
+            "receipt observed",
+        ),
+        # Only the skill's own names and phrases that make the person the
+        # payer, matched as whole words inside the request clause the router
+        # admits too (`_route_hint_phrase_matches`, `spend_request_phrases`).
+        # The other trigger phrases are absent:
+        # this table has no anchor, and "complete the checkout", "wallet
+        # transfer", "did the payment go through", "spending cap" and "http 402"
+        # also name a checkout screen, a question about wallets, a customer's
+        # payment, a government budget and a developer's own paywall.
+        "phrases": (
+            "spend-gate",
+            "spend gate",
+            "pre-spend",
+            "pay with my card",
+            "pay with my saved card",
+            "with my saved card",
+            "use my credit card",
+            "money on my behalf",
+            "spend on my behalf",
+            "pay on my behalf",
+            "buy on my behalf",
+            "buy it for me",
+            "buy this for me",
+        ),
+        "tokens": (),
+        "adjacent_workflows": ("browser-operator", "connector-operator", "feedback-triage", "finance-analysis"),
+    },
+    {
         "id": "browser_operator",
         "workflow": "browser-operator",
         "lane": "automation_and_status",
@@ -5971,8 +6011,10 @@ def _awareness_context_matches_message_cached(message: str) -> tuple[bool, str]:
     localized_text = unicodedata.normalize("NFKC", _localized_routing_text(message, degraded)).casefold()
     text = f"{raw_text} {localized_text}"
     tokens = set(re.findall(r"[a-z0-9][a-z0-9_-]*", text))
-    result = bool(tokens & _AWARENESS_TOKEN_MARKERS) or any(
-        marker in text for marker in _AWARENESS_MESSAGE_MARKERS
+    result = (
+        bool(tokens & _AWARENESS_TOKEN_MARKERS)
+        or any(marker in text for marker in _AWARENESS_MESSAGE_MARKERS)
+        or _spend_awareness_marked(raw_text)
     )
     # `degraded[0][1]` is lossless here because the `_localized_routing_text`
     # call above is the sole guarded call in this function body, so the
@@ -5980,6 +6022,17 @@ def _awareness_context_matches_message_cached(message: str) -> tuple[bool, str]:
     # here, widen this accessor (and `awareness_context_match_degradation`) to
     # carry the whole list instead of the first error type.
     return (result, degraded[0][1] if degraded else "")
+
+
+# Spending the person's money arms awareness only through the request clause
+# the router admits (`spend_request_phrases`), as whole words: "consumer spending
+# capacity is falling" and "check out this thread about agents that buy it for
+# me" are not spends.
+_SPEND_AWARENESS_MARKERS = ("spend-gate", "spend gate", "money on my behalf", "pay with my card", "buy it for me")
+
+
+def _spend_awareness_marked(text: str) -> bool:
+    return bool(spend_request_phrases(text, _SPEND_AWARENESS_MARKERS))
 
 
 def awareness_route_hint(message: str, *, max_hints: int = 2) -> dict[str, object]:
@@ -6178,7 +6231,7 @@ def _awareness_route_hint_cached(message: str, max_hints: int) -> dict[str, obje
                 continue
             if rule["id"] == "build_failure_triage" and fixed_or_pass_verification_context:
                 continue
-            phrase_matches = [phrase for phrase in rule["phrases"] if phrase in routing_normalized]
+            phrase_matches = _route_hint_phrase_matches(rule, routing_normalized)
             token_matches = [token for token in rule["tokens"] if token in tokens]
             if rule["id"] == "jit_learn" and jit_learn_match and not phrase_matches and not token_matches:
                 phrase_matches = ["guard:jit_learn"]
@@ -6398,6 +6451,11 @@ def _rule_suppressed_by_named_coding_agent_delivery(
     return named_coding_agent_delivery and rule.get("id") == "customer_signal"
 
 
+# Rules whose phrases count only as whole words. A substring match is how
+# "spending cap" fired inside "consumer spending capacity is falling".
+_WHOLE_WORD_ROUTE_HINT_RULES = frozenset({"spend_gate"})
+
+
 def _route_hint_rule_matches(
     rule_id: str,
     routing_normalized: str,
@@ -6410,10 +6468,20 @@ def _route_hint_rule_matches(
     for rule in _ROUTE_HINT_RULES:
         if rule.get("id") != rule_id:
             continue
-        return any(phrase in routing_normalized for phrase in rule["phrases"]) or any(
+        return bool(_route_hint_phrase_matches(rule, routing_normalized)) or any(
             token in tokens for token in rule["tokens"]
         )
     return False
+
+
+def _route_hint_phrase_matches(rule: dict[str, object], routing_normalized: str) -> list[str]:
+    phrases = [str(phrase) for phrase in rule["phrases"]]
+    if rule["id"] not in _WHOLE_WORD_ROUTE_HINT_RULES:
+        return [phrase for phrase in phrases if phrase in routing_normalized]
+    # `spend_gate`: whole words inside the request clause the router admits
+    # too, each followed only by what may follow a request
+    # (`spend_request_phrases`).
+    return spend_request_phrases(routing_normalized, phrases)
 
 
 def _route_hint_rule_by_id(rule_id: str) -> dict[str, object] | None:
@@ -6998,6 +7066,7 @@ def awareness_primer_payload() -> dict[str, object]:
                 "prompt-import-readiness",
                 "physical-device-readiness",
                 "connector-operator",
+                "spend-gate",
                 "live-info-operator",
                 "toolbelt-readiness",
                 "harness-session-inventory",
@@ -7486,6 +7555,7 @@ _DIRECT_WORKFLOW_NEXT_ACTIONS = {
     "finance-analysis": "prepare_finance_analysis",
     "internal-audit": "prepare_control_test_plan",
     "data-share-review": "prepare_data_share_review",
+    "spend-gate": "prepare_pre_spend_card",
     "people-ops": "prepare_people_ops_brief",
     "legal-compliance-review": "prepare_legal_compliance_review",
     "support-operations": "prepare_support_operations",

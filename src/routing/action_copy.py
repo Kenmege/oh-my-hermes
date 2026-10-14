@@ -100,6 +100,8 @@ NEXT_ACTION_LABELS: dict[str, str] = {
     "show_severity_grade": "showing the criteria behind the severity grade",
     "prepare_data_share_review": "preparing a data share review",
     "show_residual_scan": "showing the residual scan counts by class",
+    "prepare_pre_spend_card": "preparing a pre-spend card",
+    "show_spend_ledger": "showing the spend ledger against the cap",
     "prepare_release_plan": "preparing a release plan",
     "show_release_readiness": "showing the release readiness verdict",
     "prepare_accessibility_audit": "preparing an accessibility audit",

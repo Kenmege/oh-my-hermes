@@ -4,6 +4,74 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A new `spend-gate` skill shows what a spend will cost before the agent
+  moves any money, and calls it done only on a receipt.** It covers every
+  rail: a card checkout in a page, an HTTP 402 or pay-per-request call, a
+  wallet transfer, a booking or deposit, a paid data endpoint, and a renewal
+  that charges again. Before money moves the person sees a pre-spend card
+  with the payee and its exact origin or address, the item, the total with
+  fees and currency, the rail, the cap and what remains of it, the refund
+  terms, whether the spend can be undone, and who approves it (the person
+  whose money moves), and the person's typed yes in that session is required
+  whether or not Hermes shows an approval prompt of its own. A host prompt
+  that appears is recorded beside that yes; one that did not appear, or an
+  auto-approval, is no confirmation, and a choice picked in `clarify` counts
+  as the typed yes. A run nobody can answer -- a scheduled job, a webhook, an
+  API-server or single-query run, a background worker, or a delegated
+  subagent -- never spends: it prepares the card for the person's next
+  interactive turn. A payment set up to recur without the agent (a
+  subscription, a standing order, a capped auto top-up, a script with no
+  agent in it) gets its card, typed yes and cap now. A quote is not a
+  purchase; only an observed order id, transaction id, or receipt header
+  completes a spend, an outcome nobody saw is `unknown` and is reconciled
+  before any retry, a payment Hermes holds for approval (it never runs on its
+  own) is never re-run or reworded and is recorded as not submitted, and a
+  declined card is not retried. The cap ledger
+  keeps metadata only. Hermes' saved-card fill, `clarify`, and the optional
+  `stripe-link-cli` and `mpp-agent` skills are used only when present;
+  without the fill tool the person enters the card and the agent never types
+  one into a page. OMH moves no money and holds no credential. The skill is
+  guidance only: no hook holds a payment tool call.
+
+  Routing is deliberately conservative and closed-world, because the gate's
+  phrases are everyday words that also name payment features, labels, bug
+  reports, product ideas, articles and questions. The gate is offered only
+  when the message is marked as a request outside the gate's own phrase:
+  "please", "can you", "could you", "would you", "will you", "go ahead", "I
+  need you to", "I want you to", an address to Hermes, or an amount or "for
+  me" as the spend's object: outside the gate's phrases and before "at",
+  "for", "from", "in", "on" or "to", and for "for me" after a word of its
+  own since the last phrase ("transfer 40 dollars", "buy the cheapest one
+  for me", "pay for me with my card"; not "pay with my card for $0 orders is
+  broken", not "book the flight with my card for me never shows up", and not
+  the "for me" of "buy it for me"). An imperative with none of these -- "pay
+  with my card for the hotel", "buy it for me" -- routes as before the skill
+  existed: that recall is given up so "Pay with my card in safari is broken"
+  never reaches the gate. A marked message still has to lead with the spend:
+  the sentence's first words after filler, up to the first comma, colon,
+  question mark, "and", "if", "when", "which", "about" and the like, must
+  open with a spend addressed to the agent -- "buy", "pay", "order", "book",
+  "renew", "place the order", "complete the checkout", "use my card", and
+  the like, not an idiom ("pay attention to the spend cap", "pay a visit")
+  -- and one of the gate's phrases must be in that clause, each followed
+  only by the end of the clause or the start of the next ("when it is back
+  in stock"), "for", "on", "at", "from", "to" or "in", "with" the person's
+  own card or an amount, an amount, "please", "now" or "right away"; "or"
+  after the phrase makes a comparison, not a request. "send" and "transfer"
+  also need money, an amount, or the person's own card or wallet; "did the
+  payment go through" counts only when the agent paid. The skill scores only
+  on that clause, there is no boost, and nothing stands down another skill's
+  guard: a spend dispatches only when its clause scores high on the gate's
+  own phrases, otherwise the gate leads a clarify, and every other sentence
+  routes as before the skill existed. The route hint and the awareness
+  markers read the same clause, as whole words. The bare words `spend`,
+  `pay`, `checkout`, `wallet` and their siblings score only inside a
+  complete phrase, and `budget` is not one of the skill's words at all.
+  Budget variances, payment failure, checkout, 3DS and crash reports, a
+  feature request, browser logins, spend-approval research, checkout test
+  failures and issue triage, purchase acceptance criteria and a saved-card
+  settings toggle keep their owners.
+
 - **A new `data-share-review` skill prepares a dataset, log, ticket export, or
   transcript excerpt to leave the team, and calls it redacted only after the
   file that leaves was scanned.** It asks where the file goes and what that
@@ -558,7 +626,6 @@ All notable changes will be documented here.
   tool_search finds it" rule, never a version. The feature-surface skills
   among these state their own Why and Do-Not-Use instead of the shape's
   shared lines, through a per-skill override that later skills can reuse.
-
 
 - **Review and verification skills use the contracts Hermes already enforces,
   and a failing check now says whether the change caused it.** `code-review`
