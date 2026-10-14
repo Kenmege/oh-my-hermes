@@ -13,6 +13,7 @@ from __future__ import annotations
 import random
 import re
 import unittest
+from unittest.mock import patch
 
 from _vt_screen import VTOverflow, VTScreen
 
@@ -121,6 +122,35 @@ class RepaintTests(unittest.TestCase):
         self.harness.region.clear()
         finals = {final for text in self.harness.writes for _, final in _CSI.findall(text)}
         self.assertLessEqual(finals, {"A", "B", "C", "K", "J", "m", "h", "l"})
+
+
+class PaintReuseTests(unittest.TestCase):
+    """A row whose line and width are what the last frame painted keeps its bytes: nothing paints it again."""
+
+    def test_unchanged_lines_are_not_painted_again(self) -> None:
+        harness = Harness(rows=10, history=9)
+        harness.render(plain("alpha", "beta", "gamma"), cursor=(2, 0))
+        painted: list[Line] = []
+
+        def counting(line: Line, width: int) -> str:
+            painted.append(line)
+            return paint_line(line, width)
+
+        with patch("omh.tui.screen.paint_line", counting):
+            harness.render(plain("alpha", "BETA", "gamma"), cursor=(2, 0))
+            self.assertEqual(painted, plain("BETA"))
+            harness.render(plain("alpha", "BETA", "gamma", "delta"), cursor=(3, 0))  # a row added at the end
+            self.assertEqual(painted, plain("BETA", "delta"))
+            harness.render(plain("alpha", "BETA", "gamma", "delta"), cursor=(3, 0), width=12)
+            self.assertEqual(painted[2:], plain("alpha", "BETA", "gamma", "delta"))
+        self.assertEqual(harness.screen.lines()[-4:], ["alpha", "BETA", "gamma", "delta"])
+
+    def test_after_a_flush_past_the_pad_every_row_is_painted_again(self) -> None:
+        harness = Harness(rows=10, history=9)
+        harness.render(plain("alpha", "beta"), cursor=(1, 0))
+        harness.flush(plain("done one", "done two", "done three"))
+        harness.render(plain("alpha", "beta"), cursor=(1, 0))
+        self.assertEqual(harness.screen.lines()[-5:], ["done one", "done two", "done three", "alpha", "beta"])
 
 
 class HeightChangeTests(unittest.TestCase):

@@ -166,10 +166,19 @@ class LiveRegion:
         self._row = row
 
     def _compose(self, lines: Sequence[Line], cursor: tuple[int, int], width: int, ops: list[str]) -> str:
-        """The frame's bytes, appended to `ops` already queued; "" when nothing changed."""
+        """The frame's bytes, appended to `ops` already queued; "" when nothing changed.
+
+        A row whose line and width are the ones the last frame painted keeps
+        that frame's bytes instead of being painted again.
+        """
         width = max(width, 1)
-        rows = [paint_line(line, width) for line in lines]
         repaint_all = width != self._width
+        last_rows, last_lines = self._rows, self._lines
+        kept = 0 if repaint_all else min(len(last_rows), len(last_lines))
+        rows = [
+            last_rows[index] if index < kept and line == last_lines[index] else paint_line(line, width)
+            for index, line in enumerate(lines)
+        ]
         held = max(len(self._rows), 1)  # the row the cursor is on is the region's first row
         if not self._first_height:
             self._first_height = len(rows)
