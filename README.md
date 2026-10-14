@@ -263,8 +263,8 @@ environment all match.
 
 ### 05 · The Oh-My-Hermes interface, and Hermes Agent workflows
 
-The interface is the Hermes terminal with an OMH dock under the prompt and a
-phase todo above it; the workflows are the `ulw-*` engines and every `omh-*`
+The interface is the OMH TUI bare `omh` opens, with the agent rows and a
+phase todo above the prompt; the workflows are the `ulw-*` engines and every `omh-*`
 skill, routed from chat. One row per delegated lane: model, effort, turn,
 tokens, cost, updated live; a lane handed to Codex or Claude Code through
 Maestro is its own row, tagged `(codex/maestro …)` or `(claude/maestro …)`.
@@ -639,7 +639,7 @@ live in [Workflow Reference](docs/WORKFLOWS.md).
 | 🧭 **Mixture-of-models routing** | Every delegated lane lands on a category (model + reasoning effort) at dispatch time. Chains fall through when a provider rejects a model, and a child that did no work shows `failed`, never a green row. |
 | 🎛️ **Per-family calibration** | Prompting is tuned per model family and generation — GPT-6 Astra, GPT-5.6, Claude 5.1, GLM 5.3, Kimi, Gemini, Qwen, DeepSeek and more — and each tune is kept only while the benchmark pair says it helps. |
 | 🗂️ **Categories you own** | Twelve shipped categories per executor, with `omh model-chains set` to reorder, an entitlement interview that reorders chains per machine, and a live view of what a request would route to before it runs. |
-| 🖥️ **Native TUI surface** | The OMH HUD (live rows with category, turns, cost, cache), the phase todo above the prompt, `parallel shot ×N`, full-row diff bands, and managed skins — installed beside Hermes, never patching it. |
+| 🖥️ **Native TUI surface** | The OMH HUD (live rows with category, turns, cost, cache), the phase todo above the prompt, `parallel shot ×N`, full-row diff bands, and a theme of your own — in the OMH TUI bare `omh` opens, never patching Hermes. |
 | ⚡ **Observed parallel work** | Independent work splits into fanout units with disjoint file ownership, admission control under provider pressure, typed result sidecars, and verification gates that read what came back. |
 | 🎼 **Maestro handoffs** | An explicit second lane for Codex, Claude Code, or another CLI: readiness probes, capability snapshots, owner-fit reports, and per-run model and effort — opt-in, and never the default path. |
 | 💸 **Priced cost telemetry** | Token counts and dollar figures on every HUD row and run summary, priced from a rate table that cites its source; an unpriceable run reads `unknown`, never `$0`. |

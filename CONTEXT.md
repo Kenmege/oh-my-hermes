@@ -191,10 +191,10 @@ one, and a recorded `deferred_reason` only pauses it (the hold never reads
 it). Only a whole-list write re-declares a record's `source`: an `omh_todo`
 set, or a mirrored `todo_list` write (replacing the plan, or adopting an
 identical one). Where Hermes draws
-its own todo list — the modern TUI and Hermes Desktop — the OMH dock and pane
-leave a `todo_list`-held plan's items to it and show only what it cannot: a
-reason `omh_todo` recorded on an open item, the stall finding, and in the TUI
-dock the parallel-shot badge.
+its own todo list — Hermes Desktop — the OMH pane leaves a `todo_list`-held
+plan's items to it and shows only what it cannot: a reason `omh_todo`
+recorded on an open item and the stall finding. The OMH TUI's plan panel
+draws the items whichever tool holds them.
 
 One field on this record refuses work rather than describing it, which is why
 it is named here: a planning run stamps `plan_stage: awaiting_acceptance` when

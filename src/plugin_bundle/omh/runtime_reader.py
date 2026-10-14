@@ -1126,8 +1126,8 @@ def _hud_local_fanout_record(
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], str, str] | str | None:
     """The fanout record, shared across concurrent readers of one home (#2030).
 
-    Every TUI's status widget spawns its own reader every few seconds, and
-    this record does not depend on the reading session, so N TUIs used to
+    Every open OMH TUI and Desktop pane reads the HUD every few seconds, and
+    this record does not depend on the reading session, so N readers used to
     recompute the same scan N times. The first reader to miss computes it
     under the bundle's lock and stores it; the rest read that entry.
 

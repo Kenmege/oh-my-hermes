@@ -228,7 +228,7 @@ OMH 的编码面有三步：按模型调整提示（03），把工作拆成并�
 
 ### 05 · Oh-My-Hermes 界面与 Hermes Agent 工作流
 
-界面是 Hermes 终端：提示符下方带 OMH dock、上方带阶段待办；工作流是 `ulw-*` 引擎与每一个 `omh-*` 技能，从聊天中路由。每条委派通道一行：模型、effort、轮次、token、成本，实时更新。经 Maestro 交给 Codex 或 Claude Code 的通道有自己的一行，标为 `(codex/maestro …)` 或 `(claude/maestro …)`。成本为零只在主机确认时才显示；无法定价的调用显示 `unknown`，而不是 `$0`。进程存在之前是 `Plan · not run`，执行器自称完成时是 `Code · reported done`，只有门禁通过后才是 `Test · verified`。提示框上方的阶段待办是这次运行自己的清单，不是事后写的摘要。
+界面是 `omh` 打开的 OMH TUI：提示符上方是代理行与阶段待办；工作流是 `ulw-*` 引擎与每一个 `omh-*` 技能，从聊天中路由。每条委派通道一行：模型、effort、轮次、token、成本，实时更新。经 Maestro 交给 Codex 或 Claude Code 的通道有自己的一行，标为 `(codex/maestro …)` 或 `(claude/maestro …)`。成本为零只在主机确认时才显示；无法定价的调用显示 `unknown`，而不是 `$0`。进程存在之前是 `Plan · not run`，执行器自称完成时是 `Code · reported done`，只有门禁通过后才是 `Test · verified`。提示框上方的阶段待办是这次运行自己的清单，不是事后写的摘要。
 
 <p align="center">
   <img src="assets/showcase-05-hud.svg" alt="OMH HUD：每条通道的模型、effort、轮次、token、成本来源、证据状态，以及阶段待办" width="1080">
@@ -515,7 +515,7 @@ Hermes Agent 已经在跑循环。OMH 决定往循环里放什么：每条 lane 
 | 🧭 **Mixture-of-models 路由** | 每条委派 lane 在 dispatch 时落到一个类别（模型 + 推理强度）。provider 拒绝模型时沿 chain 下落，没做事的子任务显示 `failed`，而不是一行绿色。 |
 | 🎛️ **按模型家族校准** | 按家族和代次调校提示词：GPT-6 Astra、GPT-5.6、Claude 5.1、GLM 5.3、Kimi、Gemini、Qwen、DeepSeek 等，只在基准对照证明有效时才保留。 |
 | 🗂️ **你自己掌控的类别** | 每个 executor 九个内置类别，`omh model-chains set` 调整顺序，按机器重排 chain 的 entitlement 访谈，以及运行前就能看到请求会路由到哪里的实时视图。 |
-| 🖥️ **原生 TUI 界面** | OMH HUD（带类别、轮次、成本、缓存的实时行）、提示符上方的 phase todo、`parallel shot ×N`、整行 diff 色带与托管皮肤，安装在 Hermes 旁边，绝不打补丁。 |
+| 🖥️ **原生 TUI 界面** | OMH HUD（带类别、轮次、成本、缓存的实时行）、提示符上方的 phase todo、`parallel shot ×N`、整行 diff 色带与自选主题，显示在 `omh` 打开的 OMH TUI 中，绝不给 Hermes 打补丁。 |
 | ⚡ **可观测的并行工作** | 把独立工作拆成文件归属互不重叠的 fanout unit，带 provider 压力下的 admission control、有类型的结果 sidecar，以及读取返回结果的 verification gate。 |
 | 🎼 **Maestro 交接** | 为 Codex、Claude Code 或其他 CLI 准备的显式第二 lane：readiness 探测、capability 快照、owner-fit 报告、按次指定模型与强度。需要主动开启，从不是默认路径。 |
 | 💸 **带价格的成本遥测** | 每一行 HUD 和 run summary 都显示 token 数与美元金额，按注明来源的价目表计算；无法计价的 run 显示 `unknown`，而不是 `$0`。 |

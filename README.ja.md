@@ -234,7 +234,7 @@ OMH のコーディング面は 3 つの動きだ。モデルごとにプロン�
 
 ### 05 · Oh-My-Hermes インターフェースと Hermes Agent ワークフロー
 
-インターフェースは Hermes ターミナルです。プロンプト下に OMH dock、上に phase todo。ワークフローは `ulw-*` エンジンとすべての `omh-*` スキルで、チャットからルーティングされます。委譲レーンごとに 1 行: モデル、effort、ターン、トークン、コスト、ライブ更新。Maestro 経由で Codex や Claude Code に渡したレーンは `(codex/maestro …)`、`(claude/maestro …)` のタグ付きで自分の行を持つ。コスト 0 はホストが確認したときだけ表示され、価格不明の呼び出しは `$0` ではなく `unknown` と言う。プロセスが存在するまでは `Plan · not run`、エグゼキュータが完了を告げれば `Code · reported done`、ゲートを通過して初めて `Test · verified`。プロンプト上の phase todo は後から書いた要約ではなく、その実行自身のチェックリストだ。
+インターフェースは `omh` が開く OMH TUI です。プロンプト上にエージェント行と phase todo。ワークフローは `ulw-*` エンジンとすべての `omh-*` スキルで、チャットからルーティングされます。委譲レーンごとに 1 行: モデル、effort、ターン、トークン、コスト、ライブ更新。Maestro 経由で Codex や Claude Code に渡したレーンは `(codex/maestro …)`、`(claude/maestro …)` のタグ付きで自分の行を持つ。コスト 0 はホストが確認したときだけ表示され、価格不明の呼び出しは `$0` ではなく `unknown` と言う。プロセスが存在するまでは `Plan · not run`、エグゼキュータが完了を告げれば `Code · reported done`、ゲートを通過して初めて `Test · verified`。プロンプト上の phase todo は後から書いた要約ではなく、その実行自身のチェックリストだ。
 
 <p align="center">
   <img src="assets/showcase-05-hud.svg" alt="OMH HUD: レーンごとのモデル・effort・ターン・トークン・コスト出所・証拠状態と phase todo" width="1080">
@@ -531,7 +531,7 @@ Hermes Agent はすでにループを回しています。OMH はそのループ
 | 🧭 **Mixture-of-models ルーティング** | 委譲される lane ごとに、dispatch 時点でカテゴリ（モデル + 推論強度）が付きます。provider がモデルを拒否すれば chain を下り、仕事をしなかった子は緑の行ではなく `failed` と表示されます。 |
 | 🎛️ **モデル系列ごとのキャリブレーション** | GPT-6 Astra、GPT-5.6、Claude 5.1、GLM 5.3、Kimi、Gemini、Qwen、DeepSeek など、系列と世代ごとにプロンプティングを調整し、ベンチマークのペアが効果を示す間だけ維持します。 |
 | 🗂️ **自分で所有するカテゴリ** | executor ごとに十二の標準カテゴリ、`omh model-chains set` による並べ替え、マシンごとに chain を並べ替える entitlement インタビュー、実行前にリクエストがどこへルーティングされるかを示すライブビュー。 |
-| 🖥️ **ネイティブ TUI サーフェス** | OMH HUD（カテゴリ・ターン・コスト・キャッシュ付きのライブ行）、プロンプト上の phase todo、`parallel shot ×N`、full-row diff バンド、管理されたスキン。Hermes の隣にインストールされ、Hermes にパッチは当てません。 |
+| 🖥️ **ネイティブ TUI サーフェス** | OMH HUD（カテゴリ・ターン・コスト・キャッシュ付きのライブ行）、プロンプト上の phase todo、`parallel shot ×N`、full-row diff バンド、自分で選ぶテーマ。`omh` が開く OMH TUI に表示され、Hermes にパッチは当てません。 |
 | ⚡ **観測できる並列作業** | 独立した作業を、ファイル所有権が重ならない fanout unit に分割し、provider 負荷に応じた admission control、型付きの結果 sidecar、返ってきた結果を読む verification gate を付けます。 |
 | 🎼 **Maestro handoff** | Codex、Claude Code、その他の CLI のための明示的な第二 lane。readiness probe、capability snapshot、owner-fit レポート、実行ごとのモデルと強度の指定。opt-in であり、既定の経路ではありません。 |
 | 💸 **価格付きコストテレメトリ** | すべての HUD 行と run summary にトークン数とドル金額を表示します。出典を明記した料金表で計算し、計算できない run は `$0` ではなく `unknown` と読めます。 |

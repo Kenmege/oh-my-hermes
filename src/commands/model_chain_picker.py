@@ -67,7 +67,8 @@ LEFT_MARK = "◂"
 RIGHT_MARK = "▸"
 STATE_GLYPHS = {"edited": "●", "override": "◆", "default": "·"}
 # Palette token per state word and per effort rung; the palette itself is
-# the active skin's, so the picker follows `omh theme` like the TUI does.
+# the OMH theme's (`effective_theme`), so the picker follows `omh theme` like
+# the TUI does.
 STATE_TONES = {"edited": "ui_warn", "override": "ui_accent", "default": "banner_dim"}
 EFFORT_TONES = {"low": "banner_dim", "medium": "ui_ok", "high": "ui_warn", "xhigh": "ui_accent", "max": "banner_title"}
 _PROVIDERS_LABEL_WIDTH = 11

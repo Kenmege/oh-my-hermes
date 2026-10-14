@@ -1045,8 +1045,8 @@ def check_turn_budget_loop_exposure(hermes_home: str | Path | None = None) -> Ad
     about the value that produced the incident would be the wrong silence.
 
     Report-only, as the whole advisory lane is. It names the key and the
-    observed value and changes nothing; `CONTEXT.md` keeps config rewriting to
-    the one consented branded-TUI exception.
+    observed value and changes nothing; `CONTEXT.md` (Hermes user-config
+    fault) leaves a user-owned key to the person.
     """
     home = _resolve_hermes_home(hermes_home)
     config_path = home / "config.yaml"
