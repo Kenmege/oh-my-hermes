@@ -98,13 +98,12 @@ NON_SKILL_BACKTICKS = frozenset(
         # A Rust language keyword, backticked as code in `backend` and
         # `native-debugging`'s do_not_use_when, never a skill name.
         "unsafe",
-        # Hermes' own session commands, their flags, and its cron tool, named
-        # in `loop`'s do_not_use_when where a request belongs to the host's
-        # timer, schedule, or single-objective driver rather than a sibling.
+        # Hermes' own session commands and their flags, named in `loop`'s
+        # do_not_use_when where a request belongs to the host's timer or
+        # single-objective driver rather than a sibling.
         "/loop",
         "--until",
         "--times",
-        "cronjob_manage",
         "/goal",
         "/goal draft",
     }
@@ -293,8 +292,13 @@ NON_SKILL_BACKTICKS = frozenset(
 # `spend-gate` defers to `browser-operator`, `feedback-triage`,
 # `finance-analysis`, and `provider-profile-posture`; no sibling gains a
 # statement pointing back. Four cases, four pairs, one owner.
-EXPECTED_DEFERENCE_CASES = 381
-EXPECTED_DEFERENCE_PAIRS = 396
+# `automation-blueprint` (a recurring job that would move money) and
+# `browser-operator` (a page step that moves money) now point at
+# `spend-gate`, and `loop`'s unattended-schedule statement points at
+# `automation-blueprint` instead of naming Hermes' cron tool. Three cases,
+# three pairs, no new owner.
+EXPECTED_DEFERENCE_CASES = 384
+EXPECTED_DEFERENCE_PAIRS = 399
 EXPECTED_DEFERRING_OWNERS = 112
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
@@ -302,9 +306,12 @@ EXPECTED_DEFERRING_OWNERS = 112
 EXPECTED_INVERSION_COUNT = 4
 
 # How much of the ranked field an inversion is judged against. Wide enough that
-# a deferred-to sibling is never merely off the end - it holds in 128/128 cases
-# today, which `test_every_deferred_to_sibling_is_reachable` pins - and narrow
-# enough that "outranks" still means something among 103 routable skills.
+# a deferred-to sibling is never merely off the end: every pair surfaces within
+# it except those in `DELIBERATELY_UNREACHABLE`, whose sibling the router does
+# not return for that statement at all, so no wider field would reach it.
+# `test_every_deferred_to_sibling_is_reachable` holds both: the other pairs
+# inside this field, the listed ones outside it. Narrow enough that "outranks"
+# still means something among the routable skills.
 FIELD_LIMIT = 25
 
 # A rationale short enough to be a label rather than a verdict defeats the point
@@ -336,6 +343,26 @@ KNOWN_INVERSIONS: dict[tuple[str, tuple[str, ...]], str] = {
         "cleanup words; the removal vocabulary keeps the declining skill on top."
     ),
 }
+
+
+# Siblings that are unreachable by design, keyed (owner, sibling). This is not
+# routing debt: the router offers the sibling only to a shape of request that a
+# Do-Not-Use statement is not, so the statement cannot surface it, and the owner
+# then outranks it by default. Each pair carries its reason; a pair that becomes
+# reachable fails until its entry is deleted, the rule `docs navigation --check`
+# applies to a reachable page still marked exempt; and
+# `EXPECTED_DELIBERATELY_UNREACHABLE_COUNT` makes growing the list a deliberate
+# edit.
+_SPEND_GATE_BY_DESIGN = (
+    "by design (#2121): spend-gate is offered only to a request clause that leads with a spend and carries a "
+    "request marker; a Do-Not-Use line is not such a request, so it cannot surface spend-gate. A person's "
+    "marked request ('please pay ... with my card') reaches it."
+)
+DELIBERATELY_UNREACHABLE: dict[tuple[str, str], str] = {
+    ("automation-blueprint", "spend-gate"): _SPEND_GATE_BY_DESIGN,
+    ("browser-operator", "spend-gate"): _SPEND_GATE_BY_DESIGN,
+}
+EXPECTED_DELIBERATELY_UNREACHABLE_COUNT = 2
 
 
 def _deference_cases() -> list[tuple[str, tuple[str, ...], str]]:
@@ -433,7 +460,8 @@ class CatalogDeferenceGraphTests(unittest.TestCase):
         a statement where NEITHER the owner nor its sibling appears scores as a
         tie and reports no inversion - compliance by absence. Routing neither
         party for a sentence describing a real request is arguably worse than an
-        inversion, so it is asserted here instead of being absorbed there.
+        inversion, so it is asserted here instead of being absorbed there. A pair
+        in `DELIBERATELY_UNREACHABLE` is exempt only while it stays unreachable.
         """
 
         unreachable = [
@@ -442,11 +470,47 @@ class CatalogDeferenceGraphTests(unittest.TestCase):
             for sibling in siblings
             if sibling not in _routed_field(statement)
         ]
+        found = {(owner, sibling) for owner, sibling, _ in unreachable}
         self.assertEqual(
-            [(owner, sibling) for owner, sibling, _ in unreachable],
+            sorted(set(DELIBERATELY_UNREACHABLE) - found),
+            [],
+            "a pair listed in DELIBERATELY_UNREACHABLE is reachable now, or no longer a deference pair; delete "
+            "its entry so the list keeps describing live behaviour",
+        )
+        self.assertEqual(
+            [(owner, sibling) for owner, sibling, _ in unreachable if (owner, sibling) not in DELIBERATELY_UNREACHABLE],
             [],
             f"a skill hands a request to a sibling the router does not surface within the top "
             f"{FIELD_LIMIT}; the deference boundary is unreachable, not merely out-ranked",
+        )
+
+    def test_every_deliberately_unreachable_pair_says_why(self) -> None:
+        thin = sorted(
+            key
+            for key, rationale in DELIBERATELY_UNREACHABLE.items()
+            if len(rationale.strip()) < MINIMUM_RATIONALE_LENGTH or not rationale.startswith("by design")
+        )
+        self.assertEqual(thin, [], "a deliberately unreachable pair must say why it is unreachable by design")
+        self.assertEqual(
+            len(DELIBERATELY_UNREACHABLE),
+            EXPECTED_DELIBERATELY_UNREACHABLE_COUNT,
+            "the deliberately-unreachable list changed size; growing it must be a deliberate edit to "
+            "EXPECTED_DELIBERATELY_UNREACHABLE_COUNT",
+        )
+
+    def test_each_deliberately_unreachable_pair_comes_from_one_statement(self) -> None:
+        """The exemption is keyed by pair, so a second statement naming the same pair would inherit it unreviewed."""
+
+        statements: dict[tuple[str, str], list[str]] = {key: [] for key in DELIBERATELY_UNREACHABLE}
+        for owner, siblings, statement in _deference_cases():
+            for sibling in siblings:
+                if (owner, sibling) in statements:
+                    statements[(owner, sibling)].append(statement)
+        self.assertEqual(
+            {key: len(found) for key, found in statements.items() if len(found) != 1},
+            {},
+            "a DELIBERATELY_UNREACHABLE pair is named by other than exactly one statement; review the new statement "
+            "on its own instead of letting it share the exemption",
         )
 
     def test_every_recorded_inversion_carries_a_rationale(self) -> None:
@@ -469,6 +533,9 @@ class CatalogDeferenceGraphTests(unittest.TestCase):
     def test_no_skill_outranks_the_sibling_it_defers_to(self) -> None:
         inversions: dict[tuple[str, tuple[str, ...]], str] = {}
         for owner, siblings, statement in _deference_cases():
+            if all((owner, sibling) in DELIBERATELY_UNREACHABLE for sibling in siblings):
+                # Unreachable by design, which the reachability test holds; there is no rank to compare.
+                continue
             field = _routed_field(statement)
             # `min` is the lenient reading for the 12 statements naming more than
             # one sibling: the best-placed sibling must beat the owner, not all

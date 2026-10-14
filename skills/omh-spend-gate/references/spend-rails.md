@@ -1,6 +1,6 @@
 # Spend Rails
 
-Load this before money moves. OMH prepares the card and checks the receipt; the person's own payment surface moves the money, and every spend stays `quoted` until a receipt is observed. The card's fields and the confirmation rule are in the skill body; this page holds what differs by rail.
+Load this before money moves. OMH prepares the card and checks the receipt; the person's own payment surface moves the money, and no spend is `charged` until a receipt is observed. The card's fields and the confirmation rule are in the skill body; this page holds what differs by rail.
 
 ## 1. Rails
 
@@ -27,7 +27,7 @@ Each surface below is used only when it is present, and none replaces the person
 
 ## 3. Unknown outcomes
 
-An outcome nobody saw -- a timeout, a dropped connection, a page that reloaded, a server error after submit, a client that exited without a result -- is `unknown`, not failed. It is the rule `llm-app-dev` applies to an ambiguous public post: reconcile before any retry.
+An outcome nobody saw -- a timeout, a dropped connection, a page that reloaded, a server error after submit, a client that exited without a result -- is `unknown`, not failed. It is the rule `omh-llm-app-dev` applies to an ambiguous public post: reconcile before any retry.
 
 1. Mark the spend `unknown` in the ledger with what is known: payee, amount, time, and rail.
 2. Look for the charge where it would show: the merchant's order history, the confirmation message, the card or wallet activity, the payment client's status, the provider's usage record.

@@ -29,7 +29,7 @@ from _local_package import load_local_package
 load_local_package()
 from omh.plugin_bundle.omh.native_tools import native_tool_presence_clause
 from omh.skills.catalog import builtin_definitions, builtin_harnesses, omh_skill_display_name
-from omh.skills.catalog_types import _feature_surface_skill
+from omh.skills.catalog_types import HERMES_PENDING_APPROVAL_CLAUSE, _feature_surface_skill
 from omh.skills.packaging import builtin_skill_templates
 from omh.skills.render import agent_skill_templates
 
@@ -68,8 +68,9 @@ COMMAND_NATIVE_NOTE = (
     "On Hermes, record the terminal result's `approval` note beside that confirmation as additional evidence, never "
     "in place of it: a note that the command \"was approved by the user\" is the person's answer to Hermes' own "
     "prompt for that command, while \"auto-approved by smart approval\" or no note at all is not a person's consent, "
-    "and a `pending_approval` status means the command has not run yet and waits for the person's `/approve` or "
-    "`/deny`, so it is never re-run or reworded."
+    "and a `pending_approval` status means the command has not run and will not run on its own (Hermes stores it "
+    "without running it, and `/approve` resumes only a run that is still waiting on an approval), so it is never "
+    "re-run or reworded and goes to a person's turn."
 )
 CONNECTOR_CONFIRMATION = (
     "If the external app action would create, send, invite, mutate, or delete provider state, require an explicit "
@@ -87,7 +88,7 @@ UNATTENDED_GATE = (
     "externally visible action is not run: it is handed to a person's turn and its confirmation is recorded as "
     "missing."
 )
-UNATTENDED_GATE_SKILLS = ("command-operator", "workspace-file-operator", "connector-operator")
+UNATTENDED_GATE_SKILLS = ("command-operator", "workspace-file-operator", "connector-operator", "browser-operator")
 COMMAND_UNATTENDED = (
     "Nobody can answer the chat confirmation in those runs either, so an irreversible or externally visible command "
     "that Hermes does not flag is not run: it is handed to a person's turn and its confirmation is recorded as "
@@ -130,6 +131,12 @@ NATIVE_GATE_CLAUSES = {
         "OMH's own hook blocks every native `browser_*` tool, the credential vault included: report the vault as "
         "blocked by the bound `omh_browser` lifecycle and never fall back to credentials in chat.",
         "use the native browser tools directly unless OMH's browser adapter bridge is enabled, which blocks them.",
+        "a payment or purchase step waits for `omh-spend-gate`'s card and typed yes",
+        # Hermes' own card prompt is evidence beside the spend gate's typed yes.
+        "Hermes asks the user before it fills a card and refuses that in a headless run, and that answer sits "
+        "beside `omh-spend-gate`'s typed yes, never in place of it",
+        "A page step that moves money -- a checkout, a payment, a booking deposit, a top-up; use `omh-spend-gate`, "
+        "which shows the pre-spend card and takes the person's typed yes even when Hermes prompts on its own.",
     ),
     "connector-operator": (
         f"when {native_tool_presence_clause('manage_connections', code=True)}, use it for the app the user named",
@@ -277,12 +284,16 @@ class NativeGateClauseTests(unittest.TestCase):
     def test_an_unattended_run_does_not_run_the_gated_action(self) -> None:
         hermes = {template.name: template.content for template in builtin_skill_templates()}
         portable = {template.name: template.content for template in agent_skill_templates()}
+        # `browser-operator` is Hermes-only, so only its Hermes body is read.
+        self.assertNotIn(omh_skill_display_name("browser-operator"), portable)
         for name in UNATTENDED_GATE_SKILLS:
-            with self.subTest(skill=name):
-                self.assertIn(UNATTENDED_GATE, hermes[name])
-                self.assertIn(UNATTENDED_GATE, portable[omh_skill_display_name(name)])
-                self.assertNotIn("gated or marked missing", hermes[name])
-                self.assertNotIn("gated or marked missing", portable[omh_skill_display_name(name)])
+            bodies = {"hermes": hermes[name]}
+            if name != "browser-operator":
+                bodies["portable"] = portable[omh_skill_display_name(name)]
+            for projection, body in bodies.items():
+                with self.subTest(skill=name, projection=projection):
+                    self.assertIn(UNATTENDED_GATE, body)
+                    self.assertNotIn("gated or marked missing", body)
 
     def test_checkpoint_availability_is_recorded_before_the_destructive_confirmation(self) -> None:
         ladder = {harness.name: harness for harness in builtin_harnesses()}["workspace-file-operator"].evidence_ladder
@@ -290,6 +301,71 @@ class NativeGateClauseTests(unittest.TestCase):
             ladder.index("checkpoint_availability_recorded_when_destructive"),
             ladder.index("confirmation_recorded_when_destructive"),
         )
+
+
+class HeldCommandTests(unittest.TestCase):
+    """What Hermes does with a `pending_approval` command, stated once for both skills that meet it.
+
+    At v2026.9.7 and 63d0b94120, `tools/approval.py::_pending_result` stores
+    the command with `submit_pending`, which nothing reads back to run, and
+    the gateway-only `/approve` resumes only a thread `has_blocking_approval`
+    finds waiting (`gateway/slash_commands.py`).
+    """
+
+    def test_the_clause_reads_as_written(self) -> None:
+        self.assertEqual(
+            HERMES_PENDING_APPROVAL_CLAUSE,
+            "Hermes stores it without running it, and `/approve` resumes only a run that is still waiting on an "
+            "approval",
+        )
+
+    def test_both_skills_that_meet_the_status_state_it(self) -> None:
+        hermes = {template.name: template.content for template in builtin_skill_templates()}
+        for name in ("command-operator", "spend-gate"):
+            with self.subTest(skill=name):
+                self.assertEqual(hermes[name].count(f"will not run on its own ({HERMES_PENDING_APPROVAL_CLAUSE})"), 1)
+
+    def test_no_pending_approval_sentence_says_the_command_waits_for_a_reply(self) -> None:
+        """No sentence naming `pending_approval` says "waits for", as the old `/approve` claim did."""
+        held = [
+            (f"{projection}:{name}", sentence)
+            for projection, name, content in _bodies()
+            for sentence in _sentences(content)
+            if "pending_approval" in sentence
+        ]
+        self.assertTrue(held, "no body names `pending_approval`; the check below would be vacuous")
+        for label, sentence in held:
+            with self.subTest(body=label, sentence=sentence[:80]):
+                self.assertNotIn("waits for", sentence)
+
+
+class ParallelToolsSwitchTests(unittest.TestCase):
+    """The per-server flag is the switch; an update is offered only on request."""
+
+    def test_the_description_and_use_when_read_as_written_and_the_example_offers_the_flag(self) -> None:
+        definition = {d.name: d for d in builtin_definitions()}["parallel-tools"]
+        self.assertEqual(
+            definition.description,
+            "[omh] Parallel tool-call capability in doubt: report the version and whether MCP parallel tool calls are "
+            "enabled, then apply the diff for parallel tool calls only after approval; an update only on request.",
+        )
+        self.assertEqual(
+            definition.use_when,
+            "Use when the user wants to check the parallel-tool capability status, if Hermes tool calls run in "
+            "parallel, or if the version is current for parallel tool calls, following the shared prerequisite-check, "
+            "diagnose, guide, diff-approved apply, and verify contract.",
+        )
+        self.assertEqual(
+            definition.good_example.why,
+            "Whether tools run in parallel turns on each MCP server's flag, not on the version, so the version is "
+            "read and reported and the flag is what is offered.",
+        )
+
+    def test_no_part_of_the_body_makes_the_version_the_switch(self) -> None:
+        body = {template.name: template.content for template in builtin_skill_templates()}["parallel-tools"]
+        for phrase in ("version currency", "version-currency", "apply an update only after diff approval"):
+            with self.subTest(phrase=phrase):
+                self.assertNotIn(phrase, body)
 
 
 class PresenceRuleTests(unittest.TestCase):

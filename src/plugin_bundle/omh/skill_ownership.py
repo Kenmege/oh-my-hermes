@@ -366,14 +366,21 @@ def managed_skill_edit_message(
     lane = "OMH's workflow-learning lane"
     if workflow_learning:
         lane += f" (skill_view name='{workflow_learning}')"
+    # Every label OMH renders starts with one of these, so the suggested
+    # companion leaves it off: a name wearing it reads as OMH's to anyone who
+    # goes by the name.
+    companion = f"{label.removeprefix('omh-').removeprefix('ulw-')}-notes"
     if action == "delete":
         consequence = "so deleting it here does not last: the next update renders it again or reports it missing"
     else:
-        consequence = f"so a {action} here would hold it back from later updates or be left behind in a retired install"
+        article = "an" if action.startswith(("a", "e", "i", "o", "u")) else "a"
+        consequence = (
+            f"so {article} {action} here would hold it back from later updates or be left behind in a retired install"
+        )
     return (
         f"Refused: '{label}' is an oh-my-hermes skill that OMH re-renders from its catalog on every update, "
         f"{consequence}. Keep any lesson in a skill OMH does not manage: skill_manage action=create with a "
-        f"different name, such as '{label}-notes', holding a short companion that names '{label}' and the case it "
+        f"different name, such as '{companion}', holding a short companion that names '{label}' and the case it "
         f"adds rather than a copy of it (it lands in {create_target}), or record it through {lane}. "
         f"Do not retry this {action} on '{label}'."
     )

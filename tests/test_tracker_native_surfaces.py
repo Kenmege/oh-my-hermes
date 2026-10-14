@@ -26,6 +26,7 @@ from _local_package import load_local_package
 load_local_package()
 from omh.plugin_bundle.omh.native_tools import native_tool_presence_clause
 from omh.skills.catalog import builtin_definitions, omh_skill_display_name
+from omh.skills.catalog_types import OMH_MANAGED_SKILL_CLAUSE
 from omh.skills.packaging import builtin_skill_templates
 from omh.skills.render import agent_skill_templates
 
@@ -93,9 +94,10 @@ SKILL_HERMES_COMMANDS = (
     "new skill available as `/<name>` without a restart."
 )
 SKILL_MANAGED_EDIT = (
-    "Never edit or delete an OMH-managed skill (an `omh-*` or `ulw-*` name) with `skill_manage`: OMH generates its "
-    "body from its catalog, so the change does not carry into the next generation; put the lesson in a separately "
-    "named skill instead."
+    "Never edit or delete an OMH-managed skill with `skill_manage`: OMH generates its body from its catalog, so "
+    "the change does not carry into the next generation; put the lesson in a separately named skill instead. "
+    "An OMH-managed skill is one OMH installed, under a label OMH's catalog renders such as `omh-plan` or "
+    "`ulw-work`; a companion skill the person or an agent created is theirs, whatever its name."
 )
 
 # Clauses stated in the Hermes body and, for a projected skill, in the
@@ -252,7 +254,12 @@ class HostActionTests(unittest.TestCase):
 
     def test_no_skill_sentence_edits_an_omh_managed_skill_in_place(self) -> None:
         for projection, content in _projections("skill").items():
-            naming = [sentence for sentence in _sentences(content) if "OMH-managed" in sentence]
+            # The shared definition says which skills are OMH's; it edits nothing.
+            naming = [
+                sentence
+                for sentence in _sentences(content)
+                if "OMH-managed" in sentence and sentence != OMH_MANAGED_SKILL_CLAUSE
+            ]
             self.assertTrue(naming, "no sentence names an OMH-managed skill; the check below would be vacuous")
             for sentence in naming:
                 with self.subTest(projection=projection, sentence=sentence[:80]):

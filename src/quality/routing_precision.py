@@ -1102,6 +1102,20 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "answer_directly",
         "direct_answer",
     ),
+    # A version question about another tool. `version` is a trigger word and
+    # a routing word of parallel-tools, so this sentence scores 4 for it and
+    # is answered directly; one more shared word makes it 5, a clarify. The
+    # upstream skill audit's first parallel-tools wording added "supports" to
+    # that skill's routing words and moved this sentence to a clarify naming
+    # parallel-tools. No `forbidden_candidate`: the scored handoff of a
+    # fallback still lists parallel-tools at 4, so the claim is the action.
+    RoutingPrecisionCase(
+        "plain-version-question-is-not-parallel-tools",
+        "A version question about another tool stays a direct answer, not a parallel-tool check",
+        "what version of node supports fetch",
+        "answer_directly",
+        "direct_answer",
+    ),
     RoutingPrecisionCase(
         "project-glossary-definition-only",
         "A glossary definition is content, not a workflow request",

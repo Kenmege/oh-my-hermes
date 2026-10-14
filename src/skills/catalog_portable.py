@@ -127,7 +127,7 @@ _PORTABILITY: dict[str, str] = {
     'omh-internal-audit': PORTABILITY_PORTABLE,
     # required_inputs: the file about to leave, its destination and need, the header or schema, a local place for any pseudonym mapping; expected_outputs: a field inventory, minimization plan, residual scan, and metadata-only share record prepared for the operator, so no Hermes runtime is needed.
     'omh-data-share-review': PORTABILITY_PORTABLE,
-    # required_inputs: the payee, the item, the quote, the cap, the refund terms; expected_outputs: a pre-spend card, a typed confirmation, an observed receipt and a metadata-only ledger; native Hermes surfaces are named behind the presence rule, so no Hermes runtime is needed.
+    # required_inputs: the payee, the item, the quote, the cap, the refund terms; expected_outputs: a pre-spend card, a typed confirmation, an observed receipt and a metadata-only ledger; portable_overrides drop the Hermes- and OMH-only lines and keep native tools behind the presence rule, so no Hermes runtime is needed.
     'omh-spend-gate': PORTABILITY_PORTABLE,
     # required_inputs: changes, release mechanism, health signals, rollback mechanism; expected_outputs: a release plan with a rollback trigger and a readiness verdict; the host or CI executes, so no Hermes runtime is needed.
     'omh-release-cut': PORTABILITY_PORTABLE,

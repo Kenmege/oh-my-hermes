@@ -138,11 +138,14 @@ class SpendGateContractTests(unittest.TestCase):
             "the page.",
             _bodies(),
         )
-        self.assertInBoth(
+        bodies = _bodies()
+        self.assertIn(
             "OMH's browser adapter (`omh_browser`), when enabled, blocks every native `browser_*` tool, "
             "the saved-card fill included, so that fill is absent there too.",
-            _bodies(),
+            bodies["hermes"],
         )
+        # Another host has no OMH browser adapter to name.
+        self.assertNotIn("omh_browser", bodies["portable"])
         self.assertInBoth(
             "When it is absent, or OMH's browser adapter blocks the native `browser_*` tools, stop at the payment "
             "step: the person enters the card, and never type a card the person gives you into the page.",
@@ -150,12 +153,20 @@ class SpendGateContractTests(unittest.TestCase):
         )
 
     def test_a_run_nobody_can_answer_never_spends(self) -> None:
-        self.assertInBoth(
+        bodies = _bodies()
+        self.assertIn(
             "Never spend from a run nobody can answer -- a scheduled job, a webhook, an API-server or single-query run "
             "(`hermes chat -q` on Hermes), a background or kanban worker, or a delegated subagent; prepare the card and "
             "hand it to the person's next interactive turn.",
-            _bodies(),
+            bodies["hermes"],
         )
+        self.assertIn(
+            "Never spend from a run nobody can answer -- a scheduled job, a webhook, an API-server or single-query run, "
+            "a background or kanban worker, or a delegated subagent; prepare the card and hand it to the person's next "
+            "interactive turn.",
+            bodies["portable"],
+        )
+        self.assertNotIn("hermes chat -q", bodies["portable"])
         self.assertTrue(_definition(SKILL).opening_steps[0].startswith("Check that a person can answer in this session"))
 
     def test_a_payment_that_recurs_without_the_agent_is_gated_now(self) -> None:
@@ -173,11 +184,23 @@ class SpendGateContractTests(unittest.TestCase):
         )
 
     def test_a_held_payment_command_is_never_run_again(self) -> None:
-        self.assertInBoth(
-            "A payment command Hermes holds as `pending_approval` has not run and will not run on its own: never "
-            "re-run or reword it; hand it to the person's turn and record the spend as not submitted.",
-            _bodies(),
+        # Hermes stores a `pending_approval` command and nothing runs it later;
+        # its gateway-only `/approve` resumes only a thread still blocked on an
+        # approval (tools/approval.py, gateway/slash_commands.py at v2026.9.7
+        # and 63d0b94120).
+        bodies = _bodies()
+        self.assertIn(
+            "A payment command Hermes holds as `pending_approval` has not run and will not run on its own (Hermes "
+            "stores it without running it, and `/approve` resumes only a run that is still waiting on an approval): "
+            "never re-run or reword it; hand it to the person's turn and record the spend as not submitted.",
+            bodies["hermes"],
         )
+        self.assertIn(
+            "A payment command the host holds for an approval nobody has given has not run: never re-run or reword "
+            "it; hand it to the person's turn and record the spend as not submitted.",
+            bodies["portable"],
+        )
+        self.assertNotIn("pending_approval", bodies["portable"])
         self.assertInBoth("Never retry a declined card fill or a `payment_declined` result; ask the person instead.", _bodies())
 
     def test_only_an_observed_receipt_completes_a_spend(self) -> None:
@@ -273,6 +296,65 @@ class SpendGateContractTests(unittest.TestCase):
         for other in ("browser-operator", "feedback-triage", "finance-analysis", "provider-profile-posture"):
             with self.subTest(sibling=other):
                 self.assertEqual(len([text for text in mine if f"`{other}`" in text]), 1)
+
+
+class SpendGateSiblingTextTests(unittest.TestCase):
+    """Siblings that meet a spend hand it here, and this skill's prose names siblings by a loadable label."""
+
+    def _hermes(self) -> dict[str, str]:
+        return {template.name: template.content for template in builtin_skill_templates()}
+
+    def test_a_recurring_job_or_a_page_step_that_moves_money_comes_here(self) -> None:
+        lines = {
+            "automation-blueprint": (
+                "The recurring job would move money -- a purchase, a renewal, a top-up, or a transfer; use "
+                "`spend-gate`, because an agent run on a schedule never spends, and a no-agent script that pays is a "
+                "spend set up now: its card, typed yes, and cap come before the job exists."
+            ),
+            "browser-operator": (
+                "A page step that moves money -- a checkout, a payment, a booking deposit, a top-up; use `spend-gate`, "
+                "which shows the pre-spend card and takes the person's typed yes even when Hermes prompts on its own."
+            ),
+        }
+        hermes = self._hermes()
+        for owner, line in lines.items():
+            with self.subTest(owner=owner):
+                self.assertIn(line, _definition(owner).do_not_use_when)
+                self.assertIn(f"- {line.replace('`spend-gate`', '`omh-spend-gate`')}\n", hermes[owner])
+                self.assertIn("omh-spend-gate", hermes[owner].split("---", 2)[1])
+
+    def test_an_unattended_schedule_goes_through_the_blueprint_first(self) -> None:
+        line = (
+            "The work must run unattended on a schedule that outlives this session, such as hourly or nightly; use "
+            "`automation-blueprint`, which settles overlap, missed runs, retries, and failure pauses before a Hermes "
+            "cron job is created."
+        )
+        self.assertIn(line, _definition("loop").do_not_use_when)
+        self.assertIn(line.replace("`automation-blueprint`", "`omh-automation-blueprint`"), self._hermes()["loop"])
+
+    def test_prose_names_siblings_by_the_label_skill_view_loads(self) -> None:
+        self.assertInBoth(
+            "`omh-browser` gates payment only inside a page, and `omh-provider-profile-posture` claims no payment at all.",
+            _bodies(),
+        )
+        self.assertInBoth(
+            "It is the rule `omh-llm-app-dev` applies to an ambiguous public post: reconcile before any retry.",
+            _references(),
+        )
+
+    def test_the_reference_names_a_state_the_skill_keeps(self) -> None:
+        self.assertInBoth(
+            "the person's own payment surface moves the money, and no spend is `charged` until a receipt is observed.",
+            _references(),
+        )
+        for projection, reference in _references().items():
+            with self.subTest(projection=projection):
+                self.assertNotIn("stays `quoted`", reference)
+
+    def assertInBoth(self, clause: str, texts: dict[str, str]) -> None:
+        for projection, text in texts.items():
+            with self.subTest(projection=projection, clause=clause[:60]):
+                self.assertIn(clause, text)
 
 
 class SpendGateRoutingTests(unittest.TestCase):

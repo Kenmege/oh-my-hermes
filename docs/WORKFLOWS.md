@@ -196,7 +196,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The goal depends mainly on external waiting, adoption, revenue, or community response without observable local next actions.
   - The permission profile does not allow repeated research, handoff, queue, or feedback cycles.
   - The request is a check repeated on a timer inside this session, such as polling CI, a deploy, or a queue every few minutes until it changes; that is Hermes' native `/loop` (an interval plus `--until` or `--times`), which only the user can start, so name the command instead of opening a goal loop.
-  - The work must run unattended on a schedule that outlives this session, such as hourly or nightly; schedule it as a Hermes cron job through `cronjob_manage` (in the tool list or tool search).
+  - The work must run unattended on a schedule that outlives this session, such as hourly or nightly; use `automation-blueprint`, which settles overlap, missed runs, retries, and failure pauses before a Hermes cron job is created.
   - The request is one objective with a stated done condition that needs no interviewer, planner, researcher, or reviewer cycles; native `/goal` keeps the session on it (`/goal draft` writes its completion contract), and this skill keeps the long-horizon loop engineering.
 - Strong routing signals: `loop`, `./loop`, `$loop`, `goal loop`, `long horizon goal`, `never stop`, `research plan goal feedback`, `token exhaustion resume`, `permission profile`, `star 10k`, `10k star`, `loop engineering`, `keep running until done`, `루프`, `목표 루프`, `장기 목표`, `끝까지`, `토큰 고갈`, `피드백 루프`, `끝날 때까지 계속`, `계속 돌려줘`
 - Good example:
@@ -3867,7 +3867,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Do not silently mutate skills, prompts, AGENTS.md, docs, memory, or catalog data from a distillation result.
   - Do not promote one-off preferences, weak anecdotes, or stale traces into global rules.
   - Keep observed sources, inferred principles, candidate wording, review state, and implementation patches separate.
-  - On Hermes, when the destination is the user's own Hermes skills, an approved candidate lands through `skill_manage`: report it landed only from a result that succeeded without `staged: true`, with the matching skill audit ledger entry as its record while the ledger is on, and report a staged write as waiting in `/skills pending` for the person's own `/skills approve <id>` under their `skills.write_approval` setting. OMH-managed `omh-*` skills are generated from OMH's catalog and are never the destination; a lesson about one goes to `workflow-learning`.
+  - On Hermes, when the destination is the user's own Hermes skills, an approved candidate lands through `skill_manage`: report it landed only from a result that succeeded without `staged: true`, with the matching skill audit ledger entry as its record while the ledger is on, and report a staged write as waiting in `/skills pending` for the person's own `/skills approve <id>` under their `skills.write_approval` setting. OMH-managed skills are generated from OMH's catalog and are never the destination; a lesson about one goes to `omh-workflow-learning`. An OMH-managed skill is one OMH installed, under a label OMH's catalog renders such as `omh-plan` or `ulw-work`; a companion skill the person or an agent created is theirs, whatever its name.
 
 ### codebase-onboarding
 
@@ -4253,6 +4253,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user asks to review incident metrics once; use `reliability-review`.
   - The user needs actual code changes; prepare a selected executor/runtime handoff after the blueprint or plan is accepted.
   - The person is inside Hermes' own /blueprint setup for one of its catalog automations; answer the questions that flow asks and let it create the job instead of preparing a second blueprint.
+  - The recurring job would move money -- a purchase, a renewal, a top-up, or a transfer; use `spend-gate`, because an agent run on a schedule never spends, and a no-agent script that pays is a spend set up now: its card, typed yes, and cap come before the job exists.
 - Strong routing signals: `automation-blueprint`, `scheduled ops`, `scheduled operation`, `scheduled operations`, `automation blueprint`, `cron blueprint`, `cron-ready`, `recurring ops`, `recurring workflow`, `keep watching`, `keep monitoring`, `watch continuously`, `monitor continuously`, `every morning`, `every day`, `daily digest`, `weekly digest`, `automate this`, `automate workflow`, `send to slack`, `send to discord`, `post to telegram`, `only if changed`, `silent if nothing changed`, `schedule this`, `ずっと監視`, `監視し続け`, `継続的に監視`, `매일`, `매주`, `정기`, `예약`, `반복`, `자동화`, `자동화해줘`, `스케줄`, `슬랙`, `디스코드`, `텔레그램`, `보내`, `공유`, `변화 없으면`, `조용히`, `계속 감시`, `계속 모니터링`, `계속 지켜봐`, `持续监控`, `持續監控`, `一直监控`
 - Good example:
   - Prompt: automation-blueprint every weekday run an uptime check and send a Slack digest only if status changes.
@@ -5662,7 +5663,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Read skills with Hermes' own tools: `skills_list` to list them and `skill_view` to read a skill or one of its files.
   - Create, edit, or delete a skill of the person's own with `skill_manage` when `skill_manage` is in your tool list or tool_search finds it; otherwise hand the person the exact change.
   - Registry search, install, removal of a hub-installed skill, and per-platform hiding are the person's own `hermes skills search`, `install`, `uninstall`, and `config` in a terminal, with `/skills search` and `/skills install` in a CLI or TUI session; after an install, `/reload-skills` in a running session makes the new skill available as `/<name>` without a restart.
-  - Never edit or delete an OMH-managed skill (an `omh-*` or `ulw-*` name) with `skill_manage`: OMH generates its body from its catalog, so the change does not carry into the next generation; put the lesson in a separately named skill instead.
+  - Never edit or delete an OMH-managed skill with `skill_manage`: OMH generates its body from its catalog, so the change does not carry into the next generation; put the lesson in a separately named skill instead. An OMH-managed skill is one OMH installed, under a label OMH's catalog renders such as `omh-plan` or `ulw-work`; a companion skill the person or an agent created is theirs, whatever its name.
 - Completion checklist:
   - Every listed or read skill came from `skills_list` or `skill_view`, not a guessed path.
   - Each create, edit, or delete is reported from `skill_manage`'s result, and no OMH-managed skill was edited.
@@ -6002,7 +6003,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### parallel-tools
 
-[omh] Parallel tool-call capability in doubt: check version currency and parallel-tool capability status, then apply an update only after diff approval.
+[omh] Parallel tool-call capability in doubt: report the version and whether MCP parallel tool calls are enabled, then apply the diff for parallel tool calls only after approval; an update only on request.
 
 - Category: `hermes-setup`
 - Phase: `setup`
@@ -6017,7 +6018,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
 - Handoff policy: Run diagnosis and reporting directly in Hermes for parallel-tool capability. Diagnosis reads non-secret metadata only; no writes. Show redacted placeholders in the config or `.env` diff; apply only after the user explicitly approves. Never ask the user to paste secrets into chat. Use Hermes-native secure entry or user-side OAuth/token setup; if unavailable, stop credential application and guide user-side setup. Use only a user-authorized credential store or local configuration; disclose destination and scope first. Keep secrets out of chat, previews, logs and evidence. Do not promise chat or platform non-retention. Delegate to a selected coding executor only if the user needs a change outside a local version/config check.
 - Why this exists: `parallel-tools` exists to give a read-first answer to whether tools run in parallel and to name the one setting a user controls: built-in read-only tools already run concurrently, and an MCP server's tools do only when its `supports_parallel_tool_calls` is true.
-- Use when: Use when the user wants Hermes to check whether parallel tool calls are current and enabled, run a version-currency check, or report capability status, following the shared prerequisite-check, diagnose, guide, diff-approved apply, and verify contract.
+- Use when: Use when the user wants to check the parallel-tool capability status, if Hermes tool calls run in parallel, or if the version is current for parallel tool calls, following the shared prerequisite-check, diagnose, guide, diff-approved apply, and verify contract.
 - Do not use when:
   - The user wants a general Hermes update unrelated to parallel-tool capability.
   - No version or capability question has been asked yet.
@@ -6026,10 +6027,10 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Good example:
   - Prompt: update hermes for parallel tools — can you check if I'm on a current enough version?
   - Expected behavior: Report the installed version and each MCP server's `supports_parallel_tool_calls` value, say that built-in read-only tools already run concurrently, and offer the per-server flag as one diff only for a server whose calls cannot interfere with one another.
-  - Why: The request is a version-currency and capability check, the core of this skill.
+  - Why: Whether tools run in parallel turns on each MCP server's flag, not on the version, so the version is read and reported and the flag is what is offered.
 - Bad example:
   - Prompt: parallel-tools: update your memory with what we discussed.
-  - Expected behavior: Route to a memory workflow instead of a version-currency check.
+  - Expected behavior: Route to a memory workflow instead of a parallel-tool capability check.
   - Why: Memory update is unrelated to parallel-tool capability or Hermes version.
 - Quality bar:
   - Prerequisite check: confirm required access; mark unmet prerequisites "not applicable" and skip them.
@@ -7490,7 +7491,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
 - Handoff policy: Keep the field inventory, minimization plan, residual scan result, and share record in Hermes. Field classes come from the header, the schema, and per-column shape counts; scan counts come only from an observed scan of the exact file that leaves; OMH uploads nothing, stores no raw value, and keeps no pseudonym mapping.
-- Why this exists: `data-share-review` exists because data leaving the team had no owner: Hermes redacts identifiers in gateway chat and secrets in tool output, `security-safety-review` reviews an agent's own exposure, and `legal-compliance-review` reads the obligations, while nothing minimized a file's fields, kept its pseudonym mapping local, and refused to call it redacted before a scan of what actually leaves.
+- Why this exists: `data-share-review` exists because data leaving the team had no owner: Hermes redacts identifiers in gateway chat and secrets in tool output, `omh-security-safety-review` reviews an agent's own exposure, and `omh-legal-compliance-review` reads the obligations, while nothing minimized a file's fields, kept its pseudonym mapping local, and refused to call it redacted before a scan of what actually leaves.
 - First steps:
   - Ask where the file goes and what the destination needs it for before touching a field.
   - Inventory the fields from the header and the schema before planning any masking.
@@ -7539,7 +7540,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Artifact expectations:
   - field_inventory/v1 lists every column, key, and free-text field with its class -- direct identifier, quasi-identifier, secret, free text, or not personal -- and the evidence for the class
   - minimization_plan/v1 gives each field one action -- drop, generalize, mask, or pseudonymize -- with the destination's need for the fields it keeps, and names the local path that holds any pseudonym mapping outside the shipped file
-  - residual_scan/v1 records, for the exact file that leaves, the scan method and an observed count per class with zero hits or each remaining hit accepted by name, and its verdict: redacted, or not_observed when no scan ran
+  - residual_scan/v1 records, for the exact file that leaves, the scan method and an observed count per class with zero hits or each remaining hit accepted by name, and its verdict: redacted, not redacted with the counts while a hit remains unaccepted, or not_observed when no scan ran
   - share_record/v1 is metadata only -- destination, date, fields shipped, row count, and the sha256 digest of the shipped file -- and holds no value from it
 - Safety rules:
   - Call the output redacted only after an observed residual scan of the exact file that leaves, counted per class; without one the state is not_observed, whatever the masking step reported.
@@ -7641,7 +7642,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Lifecycle stage: `canonical`
 - Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
 - Handoff policy: Keep the pre-spend card, the confirmation, the receipt check, and the cap ledger in Hermes. Money moves only through the person's own payment surface -- a saved-card fill, a payment client they installed, a page they submit -- after their typed confirmation in this session; OMH never submits a payment, stores a card, or reads a wallet key.
-- Why this exists: `spend-gate` exists because money movement had at most one native guard, on one rail: where Hermes' saved-card fill is present it asks before filling a card and refuses when nobody can confirm, while an HTTP 402 call, a wallet transfer, a booking, or a paid data endpoint had no pre-spend check, no receipt rule, and no cap. `browser-operator` gates payment only inside a page, and `provider-profile-posture` claims no payment at all.
+- Why this exists: `spend-gate` exists because money movement had at most one native guard, on one rail: where Hermes' saved-card fill is present it asks before filling a card and refuses when nobody can confirm, while an HTTP 402 call, a wallet transfer, a booking, or a paid data endpoint had no pre-spend check, no receipt rule, and no cap. `omh-browser` gates payment only inside a page, and `omh-provider-profile-posture` claims no payment at all.
 - First steps:
   - Check that a person can answer in this session; in a scheduled, webhook, API-server, single-query, background-worker, or subagent run, prepare the card and stop before any payment surface.
   - Read the quote from its source and fill the pre-spend card from it, the cap included, before anything is submitted.
@@ -7698,7 +7699,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Show the pre-spend card and get the person's typed confirmation before any money moves, whether or not Hermes shows an approval prompt of its own; a host prompt is additional evidence, never a replacement, and a prompt that did not appear is no confirmation.
   - Never spend from a run nobody can answer -- a scheduled job, a webhook, an API-server or single-query run (`hermes chat -q` on Hermes), a background or kanban worker, or a delegated subagent; prepare the card and hand it to the person's next interactive turn.
   - A payment set up to recur without the agent -- a subscription, a standing order, or a capped auto top-up on the payee's own surface, or a script with no agent in it -- is a spend set up now: show the card for what it may spend, get the typed yes now, give it a cap it cannot pass, and never put card details in it. An agent run on a schedule still never spends; it only prepares a card for the person's next turn.
-  - A payment command Hermes holds as `pending_approval` has not run and will not run on its own: never re-run or reword it; hand it to the person's turn and record the spend as not submitted.
+  - A payment command Hermes holds as `pending_approval` has not run and will not run on its own (Hermes stores it without running it, and `/approve` resumes only a run that is still waiting on an approval): never re-run or reword it; hand it to the person's turn and record the spend as not submitted.
   - Never retry a declined card fill or a `payment_declined` result; ask the person instead.
   - A quote is not a purchase and a confirmation is not a charge; call a spend done only on an observed receipt -- an order id, a transaction id, or a receipt header -- with the amount charged.
   - Treat an outcome nobody saw -- a timeout, a dropped connection, a page that reloaded -- as unknown, not failed; find the charge or show it absent before any retry, and a retry is a new spend with a new card.
@@ -9118,6 +9119,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - An ordinary read of a public page with no sign-in, form, or purchase; use the native browser tools directly unless OMH's browser adapter bridge is enabled, which blocks them.
   - The question is whether a page looks right at each viewport; use `visual-qa`.
   - A web lookup or a cited answer rather than an interaction with a page; use `web-research`.
+  - A page step that moves money -- a checkout, a payment, a booking deposit, a top-up; use `spend-gate`, which shows the pre-spend card and takes the person's typed yes even when Hermes prompts on its own.
 - Strong routing signals: `browser-operator`, `browser operator`, `browser task`, `browser operation`, `browser automation`, `browser session`, `webpage operation`, `web page operation`, `open url`, `open the url`, `open page`, `open the page`, `visit url`, `visit page`, `navigate url`, `navigate page`, `click page`, `click this page`, `click button`, `click login`, `login page`, `fill form`, `fill the form`, `submit form`, `checkout url`, `capture blockers`, `page blockers`, `interactive page`, `browser trace`, `browser observation`, `playwright task`, `웹페이지`, `웹 페이지`, `브라우저`, `브라우저 작업`, `브라우저 조작`, `페이지 열고`, `url 열고`, `링크 열고`, `클릭`, `로그인`, `로그인 폼`, `폼 작성`, `폼 입력`, `캡처`, `막히는 부분`
 - Good example:
   - Prompt: browser-operator open the staging checkout URL, click login, fill the form, and capture blockers.
@@ -9133,10 +9135,11 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Expose missing tools, credentials, targets, or observations as user-visible gaps.
 - Completion checklist:
   - Specify URL, allowed/prohibited actions, auth boundary, stop condition.
-  - Gate credentials/login/payment/purchase/destruction/scraping/export; observed traces only.
+  - Gate credentials/login/destruction/scraping/export; a payment or purchase step waits for `omh-spend-gate`'s card and typed yes; observed traces only.
+  - With nobody to answer the confirmation (a scheduled job, a one-shot run, a webhook run), an irreversible or externally visible action is not run: it is handed to a person's turn and its confirmation is recorded as missing.
   - Host request admission (not enablement/adapter presence) gates schemas/context/callbacks/writes. Refuse foreign/stale/expired/released/ambiguous targets; no index fallback.
   - omh_browser blocks native browser_*; inert by default. Opted-in effects need exact approval: docs/BROWSER-EFFECTS.md.
-  - Sign-ins, one-time codes, and saved cards go through `browser_vault` when `browser_vault` is in your tool list or tool_search finds it (`list` first; `fill` for a saved login, card, or address; `enter_code` for a one-time code after the password; `save_login` when nothing is saved for the site, so the user types it into Hermes' masked prompt; Hermes asks the user before it fills a card and refuses that in a headless run): no password, card number, card security code, or one-time code is asked for, typed, or echoed in chat; record only its `success` and `filled_fields`, and never retry a `payment_declined`. Without it, the sign-in is the user's own step and a named gap.
+  - Sign-ins, one-time codes, and saved cards go through `browser_vault` when `browser_vault` is in your tool list or tool_search finds it (`list` first; `fill` for a saved login, card, or address; `enter_code` for a one-time code after the password; `save_login` when nothing is saved for the site, so the user types it into Hermes' masked prompt; Hermes asks the user before it fills a card and refuses that in a headless run, and that answer sits beside `omh-spend-gate`'s typed yes, never in place of it): no password, card number, card security code, or one-time code is asked for, typed, or echoed in chat; record only its `success` and `filled_fields`, and never retry a `payment_declined`. Without it, the sign-in is the user's own step and a named gap.
 - Recovery notes:
   - Missing target/confirmation: ask; visual correctness: visual-qa.
   - Refresh stale state once; never replay unknown work. Reuse acquisitions; only owner adapter/version reaps. Release needs observed cleanup, not mutation approval.
@@ -9283,7 +9286,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Recovery notes:
   - If command text or working directory is missing, ask for the smallest missing scope needed before preparing the command task.
   - If the command is irreversible or externally visible, require an explicit confirmation gate in chat before the run, whether or not the host flags it: deleting or overwriting user data, discarding history or force-pushing, deleting a remote branch, dropping, deleting from, truncating, or flushing a database, a credentialed or networked mutation, device actuation, an install, a deploy, a production change, or an external send.
-  - On Hermes, record the terminal result's `approval` note beside that confirmation as additional evidence, never in place of it: a note that the command "was approved by the user" is the person's answer to Hermes' own prompt for that command, while "auto-approved by smart approval" or no note at all is not a person's consent, and a `pending_approval` status means the command has not run yet and waits for the person's `/approve` or `/deny`, so it is never re-run or reworded.
+  - On Hermes, record the terminal result's `approval` note beside that confirmation as additional evidence, never in place of it: a note that the command "was approved by the user" is the person's answer to Hermes' own prompt for that command, while "auto-approved by smart approval" or no note at all is not a person's consent, and a `pending_approval` status means the command has not run and will not run on its own (Hermes stores it without running it, and `/approve` resumes only a run that is still waiting on an approval), so it is never re-run or reworded and goes to a person's turn.
   - On Hermes, a cron job, a one-shot `-q` run, or a webhook run denies a flagged command by default (`approvals.cron_mode`, `approvals.single_query_mode`, `approvals.unattended_mode`): record the block as the gate's outcome and hand the command to a person's turn, never rephrase it to get past the gate. Nobody can answer the chat confirmation in those runs either, so an irreversible or externally visible command that Hermes does not flag is not run: it is handed to a person's turn and its confirmation is recorded as missing.
   - If the user supplied failed command output and asks for root cause, route to build-failure-triage or agent-debug instead of preparing a fresh command.
 - Required inputs:
@@ -10514,7 +10517,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - Install/setup health is routed to doctor; catalog operations are routed to skill; failure retrospectives are routed to workflow-learning.
   - No skill, prompt, doc, memory, or model behavior is claimed changed until a reviewed implementation records evidence.
   - Never present use, view, or load counts, `.usage.json` included, as a health, prune, archive, or retire signal: a rarely used skill is not an unhealthy one, and no health card recommends removing, archiving, or pruning a skill for being used little.
-  - On Hermes, read the skill audit ledger read-only (that skill's entries in `skills/.curator_ledger.jsonl` under the active profile's Hermes home, or `hermes curator ledger --skill <name> --limit <n>`, which lists only the 20 newest by default): an entry against an `omh-*` skill means Hermes changed that managed copy outside OMH, so it may no longer match its generated body; report it as drift with the entry's `action` and `actor` (`agent`, `user`, or `curator`, which covers Hermes' curator and its background review). An empty ledger is unknown, not clean, because `skills.ledger: false` turns it off.
+  - On Hermes, read the skill audit ledger read-only (that skill's entries in `skills/.curator_ledger.jsonl` under the active profile's Hermes home, or `hermes curator ledger --skill <name> --limit <n>`, which lists only the 20 newest by default): an entry against an OMH-managed skill means Hermes changed that managed copy outside OMH, so it may no longer match its generated body; report it as drift with the entry's `action` and `actor` (`agent`, `user`, or `curator`, which covers Hermes' curator and its background review). An OMH-managed skill is one OMH installed, under a label OMH's catalog renders such as `omh-plan` or `ulw-work`; a companion skill the person or an agent created is theirs, whatever its name. An empty ledger is unknown, not clean, because `skills.ledger: false` turns it off.
   - On Hermes, record an authoring finding only from the `lint_warnings` a `skill_manage` write returned, which are advisory and never proof a skill works; only some writes return them (an `edit` never does), so a write without them is not a clean lint. Record an available update for a hub-installed skill only from `hermes skills check` output that was seen; that hub request is Hermes' own, not OMH's.
 - Recovery notes:
   - If the request is about OMH setup, install, stale package paths, or command availability, route to doctor.

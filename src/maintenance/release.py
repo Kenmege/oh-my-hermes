@@ -695,10 +695,11 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # feature-surface skills (`memory-sync`, `external-connector-readiness`,
 # `prompt-import-readiness`, `instinct-ledger`, `skill-scout`, `skill-health`,
 # `workflow-learning`) now state their own Do-Not-Use, so each row's one
-# `do_not_use_when` entry is that skill's first boundary, shorter than the
-# shape's shared generic line. The pending-write, provider-slot, ledger, scan,
-# import-preview, and usage-count rules sit past the rows' bounds and move
-# nothing here. Re-derived from the producer.
+# `do_not_use_when` entry is that skill's first boundary in place of the
+# shape's shared generic line: six rows got shorter and
+# `prompt-import-readiness`'s grew (3,353 -> 3,360). The pending-write,
+# provider-slot, ledger, scan, import-preview, and usage-count rules sit past
+# the rows' bounds and move nothing here. Re-derived from the producer.
 # 492655 -> 492654: `research-department`'s handoff policy maps Scout to the
 # lanes its prepared plan emits, `research`/`web-research`, instead of
 # `research`/`source-finder`; the row is one character shorter. Re-derived
@@ -711,9 +712,9 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # the row's first four. The `ultrawork`, `plan`, `app-debugging`, and
 # `decision-prototype` additions sit past the row's bounds, in the compact
 # body, or in references, and move nothing here. Re-derived from the producer.
-# 493103 -> 497611: one capability row for the new `data-share-review` skill
-# plus the reciprocal boundary line `legal-compliance-review` gains. Re-derived
-# from the producer.
+# 493103 -> 497611: one capability row for the new `data-share-review` skill.
+# The reciprocal boundary line `legal-compliance-review` gains sits past its
+# row's bounds and moves nothing here. Re-derived from the producer.
 # 497611 -> 501668: one capability row for the new `spend-gate` skill, which
 # gates money the agent moves for the person on any rail; no other row moved.
 # Re-derived from the producer.
@@ -722,7 +723,27 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # `/<name>` without a restart (the OMH TUI now runs it in the gateway). The
 # `running-work-board` and `model-setup` edits of the same change sit outside
 # the rows and move nothing here. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 501786
+# 501786 -> 501991: two rows. `skill`'s ownership line (+163) says an
+# OMH-managed skill is one OMH installed under a label its catalog renders,
+# and a companion the person or an agent created is theirs whatever its
+# name, in place of deciding by an `omh-`/`ulw-` prefix; `parallel-tools`
+# (+42) describes reading each MCP server's `supports_parallel_tool_calls`
+# and offering that flag, with an update only when asked, instead of a
+# version-currency check. Every other edit sits past the rows' bounds.
+# Re-derived from the producer.
+# 501991 -> 501984: `parallel-tools` (-7) after review. Its description and
+# use_when go back to the router words the row had before, plus `mcp` and
+# minus `currency`: words such as `installed`, `supports`, `server`, and
+# `runs` had moved ordinary version questions from a direct answer to a
+# clarify. The flag is applied as a diff only after approval, and the version
+# clause names parallel tool calls. `automation-blueprint`'s reworded spend
+# line sits past its row's bounds. Re-derived from the producer.
+# 501984 -> 502002: `parallel-tools` (+18). Its description applies "the diff
+# for parallel tool calls" instead of "that as a diff", whose "that" could
+# read as the report; no router word is added. Its use_when drops what
+# repeated the description and says "if" for "whether"; the row does not
+# carry use_when. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 502002
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three
@@ -809,9 +830,9 @@ FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # skill (#1569) plus its siblings' reciprocal boundary lines; warranted
 # growth. Re-derived from the producer.
 # 134172 -> 135119: one standalone capability row for the new
-# `data-share-review` skill plus the reciprocal boundary line
-# `legal-compliance-review` gains; warranted growth. Re-derived from the
-# producer.
+# `data-share-review` skill; the reciprocal boundary line
+# `legal-compliance-review` gains moves no standalone row. Warranted growth.
+# Re-derived from the producer.
 # 135119 -> 136056: one standalone capability row for the new `spend-gate`
 # skill; no sibling row moved. Re-derived from the producer.
 STANDALONE_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 136056
@@ -1874,11 +1895,15 @@ STANDALONE_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 2200
 # 1,129,901 plus 10%, rounded up to the next 50,000, is 1,250,000.
 # 1129901 -> 1225209 (measured; the ceiling 1250000 -> 1350000): stacked on
 # the research citation-ledger bodies (#2104, +9,204 over 2a8d3bca8) and the
-# review-contract bodies (#2105, +4,311), the operator skills' own
-# Do-Not-Use and native-gate notes (+8,374 here) took the pack to 1,225,209,
-# where `test_one_more_ordinary_lane_member_fits_every_body_budget` found
-# that the largest lane-mate copy (`ultrawork`, +26,353) no longer fits.
-# 1,225,209 plus 10%, rounded up to the next 50,000, is 1,350,000.
+# review-contract bodies (#2105, +4,311), the first commit of the operator
+# skills' own Do-Not-Use and native-gate notes (#2106, c5a2c26a2, +8,374)
+# took the pack to 1,225,209, where
+# `test_one_more_ordinary_lane_member_fits_every_body_budget` found that the
+# largest lane-mate copy (`ultrawork`, +26,353) no longer fits. 1,225,209
+# plus 10%, rounded up to the next 50,000, is 1,350,000. That change's two
+# review commits added +1,749 and +940, so its merge (d56aa8e7a) reads
+# 1,227,898, above this measurement; the measurement was not re-taken there,
+# because a floor the producer reads above fires neither re-derive signal.
 FULL_PROFILE_SKILL_BODY_MEASURED_CHARS = 1225209
 FULL_PROFILE_SKILL_BODY_HEADROOM_PERCENT = 10
 FULL_PROFILE_SKILL_BODY_CEILING_STEP_CHARS = 50000
@@ -1969,6 +1994,15 @@ FULL_PROFILE_SKILL_BODY_REVIEWED_EXCEPTION_CHARS = 0
 # their sections stop being copies of a shared boundary, and `plan`'s, which
 # only `wiki`'s matched, stops having a twin. 108,465 plus 10%, rounded up
 # to the next 10,000, is still 120,000.
+# 120,000 -> 120,000 (reading 108,465 -> 112,977; the measurement stays
+# 108,465): the router skill's reference pointers in the shared
+# `## Workflow Lane`, `## Runtime Evidence`, and `## Structural Code Search`
+# sections became `skill_view(name='omh-routing', file_path=...)` calls
+# (b2e27ad1b, #2116), longer in every copy: +3,968, +512, and +32. The
+# reading sits above the floor and one worst-case ordinary lane member still
+# fits under 120,000, so neither re-derive signal fired and the measurement
+# was not moved. `data-share-review` (#2118, +497) and `spend-gate` (#2121,
+# +512) then took the reading to 113,986.
 FULL_PROFILE_SKILL_BODY_REPEATED_MEASURED_CHARS = 108465
 FULL_PROFILE_SKILL_BODY_REPEATED_CEILING_STEP_CHARS = 10000
 FULL_PROFILE_SKILL_BODY_REPEATED_CHAR_LIMIT = 120000

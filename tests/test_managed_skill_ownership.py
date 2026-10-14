@@ -40,6 +40,7 @@ import contextlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import stat
@@ -77,6 +78,9 @@ from omh.plugin_bundle.omh import skill_ownership
 from omh.plugin_bundle.omh.hooks import nudge_budget, session_attendance
 from omh.plugin_bundle.omh.hooks.tool_hooks import pre_tool_call
 from omh.skill_pack import builtin_skill_reference_templates, builtin_skill_templates
+from omh.skills.catalog import canonical_skill_for_label, omh_skill_display_name
+from omh.skills.catalog_types import OMH_MANAGED_SKILL_CLAUSE, OMH_SKILL_NAME_PREFIX, ULW_SKILL_NAME_PREFIX
+from omh.skills.render import agent_skill_reference_templates, agent_skill_templates
 
 SESSION = "20261013_101010_abc123"
 # A core skill that ships reference files, so a supporting-file write has a
@@ -205,7 +209,10 @@ class HookRedirectTests(_Home):
         message = directive["message"]
         # A differently named companion the fork can create with the one tool it has...
         self.assertIn("skill_manage action=create with a different name", message)
-        self.assertIn(f"'{self.label}-notes'", message)
+        # ...under a name without OMH's label prefix (`omh-routing` here).
+        self.assertEqual(self.label, "omh-routing")
+        self.assertIn("such as 'routing-notes', holding a short companion that names 'omh-routing'", message)
+        self.assertNotIn(f"'{self.label}-notes'", message)
         self.assertIn("rather than a copy of it", message)
         # ...or the workflow-learning lane. A core install does not carry that
         # skill, so the lane is named without a skill_view call that would fail.
@@ -2238,6 +2245,91 @@ class CaseVariantRenderDirectoryTests(_Home):
     def test_two_paths_that_cannot_be_read_are_not_the_same_directory(self) -> None:
         self.assertFalse(same_directory(self.root / "absent-a", self.root / "absent-b"))
         self.assertTrue(same_directory(self.root, self.root / "."))
+
+
+class CompanionNameTests(unittest.TestCase):
+    """The refusal suggests a companion name nothing would read as OMH's."""
+
+    def test_the_suggestion_drops_the_label_prefix(self) -> None:
+        message = skill_ownership.managed_skill_edit_message("omh-plan", "patch", "omh-workflow-learning")
+        self.assertIn(
+            "skill_manage action=create with a different name, such as 'plan-notes', holding a short companion "
+            "that names 'omh-plan' and the case it adds rather than a copy of it",
+            message,
+        )
+        self.assertIn(
+            "such as 'work-notes', holding a short companion that names 'ulw-work'",
+            skill_ownership.managed_skill_edit_message("ulw-work", "edit"),
+        )
+
+    def test_no_installed_label_gets_a_suggestion_that_reads_as_omh_s(self) -> None:
+        prefixes = (OMH_SKILL_NAME_PREFIX, ULW_SKILL_NAME_PREFIX)
+        labels = [omh_skill_display_name(template.name) for template in builtin_skill_templates()]
+        self.assertEqual({label.split("-", 1)[0] + "-" for label in labels}, set(prefixes))
+        for label in labels:
+            message = skill_ownership.managed_skill_edit_message(label, "patch")
+            companion = message.split("such as '", 1)[1].split("'", 1)[0]
+            with self.subTest(label=label, companion=companion):
+                self.assertTrue(companion.endswith("-notes"))
+                self.assertFalse(companion.startswith(prefixes))
+                self.assertEqual(canonical_skill_for_label(companion), "")
+
+
+class RefusalArticleTests(unittest.TestCase):
+    def test_each_refused_action_takes_its_article(self) -> None:
+        expected = {
+            "edit": "so an edit here",
+            "patch": "so a patch here",
+            "write_file": "so a write_file here",
+            "remove_file": "so a remove_file here",
+        }
+        self.assertEqual(set(expected) | {"delete"}, set(skill_ownership.GUARDED_ACTIONS))
+        for action, phrase in expected.items():
+            with self.subTest(action=action):
+                self.assertIn(phrase, skill_ownership.managed_skill_edit_message("omh-plan", action))
+
+
+class OwnershipWordingTests(unittest.TestCase):
+    """Skill text decides OMH ownership by the installed label, never by a name prefix."""
+
+    OWNERS = ("skill", "rules-distill", "skill-health")
+
+    def test_the_clause_reads_as_written(self) -> None:
+        self.assertEqual(
+            OMH_MANAGED_SKILL_CLAUSE,
+            "An OMH-managed skill is one OMH installed, under a label OMH's catalog renders such as `omh-plan` or "
+            "`ulw-work`; a companion skill the person or an agent created is theirs, whatever its name.",
+        )
+
+    def test_each_skill_that_treats_omh_skills_apart_states_the_clause(self) -> None:
+        hermes = {template.name: template.content for template in builtin_skill_templates()}
+        portable = {template.name: template.content for template in agent_skill_templates()}
+        for name in self.OWNERS:
+            bodies = {"hermes": hermes[name]}
+            if omh_skill_display_name(name) in portable:
+                bodies["portable"] = portable[omh_skill_display_name(name)]
+            for projection, body in bodies.items():
+                with self.subTest(skill=name, projection=projection):
+                    self.assertEqual(body.count(OMH_MANAGED_SKILL_CLAUSE), 1)
+        # `skill` is Hermes-only; the other two are projected too.
+        self.assertEqual(
+            sorted(name for name in self.OWNERS if omh_skill_display_name(name) in portable),
+            ["rules-distill", "skill-health"],
+        )
+
+    def test_no_body_writes_an_omh_or_ulw_wildcard(self) -> None:
+        """No body or reference, Hermes or portable, writes `omh-*` or `ulw-*`, the old prefix rule's shape."""
+        prefix_rule = re.compile(r"\b(?:omh|ulw)-\*")
+        bodies = [
+            *((f"hermes:{template.name}", template.content) for template in builtin_skill_templates()),
+            *((f"portable:{template.name}", template.content) for template in agent_skill_templates()),
+            *((f"reference:{t.skill_name}/{t.relative_path}", t.content) for t in builtin_skill_reference_templates()),
+            *(
+                (f"portable-reference:{t.skill_name}/{t.relative_path}", t.content)
+                for t in agent_skill_reference_templates()
+            ),
+        ]
+        self.assertEqual(sorted(name for name, content in bodies if prefix_rule.search(content)), [])
 
 
 class ConfigScalarTests(unittest.TestCase):

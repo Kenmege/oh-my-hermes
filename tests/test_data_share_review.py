@@ -71,8 +71,8 @@ class DataShareReviewCatalogTests(unittest.TestCase):
         self.assertEqual(
             scan,
             "residual_scan/v1 records, for the exact file that leaves, the scan method and an observed count per class "
-            "with zero hits or each remaining hit accepted by name, and its verdict: redacted, or not_observed when no "
-            "scan ran",
+            "with zero hits or each remaining hit accepted by name, and its verdict: redacted, not redacted with the "
+            "counts while a hit remains unaccepted, or not_observed when no scan ran",
         )
 
     def test_the_mapping_stays_local_and_the_record_holds_no_value(self) -> None:
@@ -145,6 +145,20 @@ class DataShareReviewCatalogTests(unittest.TestCase):
         )
         self.assertEqual(first_cells(scan), ["direct identifier", "secret", "quasi-identifier", "free text"])
         self.assertIn(REFERENCE_PATH, _body())
+
+    def test_the_reference_and_the_why_use_the_skills_own_words(self) -> None:
+        # A state or a sibling the model cannot use is a pointer it cannot follow.
+        self.assertIn(
+            "OMH prepares; the scan runs where the user or the session's tools run, and the file's verdict stays "
+            "`not_observed` until its scan counts are observed.",
+            _reference(),
+        )
+        self.assertNotIn("`prepared`", _reference())
+        self.assertIn(
+            "`omh-security-safety-review` reviews an agent's own exposure, and `omh-legal-compliance-review` reads "
+            "the obligations",
+            _body(),
+        )
 
     def test_siblings_are_named_once_each_and_legal_points_back(self) -> None:
         mine = _definition(SKILL).do_not_use_when
