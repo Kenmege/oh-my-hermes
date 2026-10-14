@@ -578,13 +578,16 @@ def _refused_or_kept(config_text: str, row: ReversalRow, recorded: object) -> Re
     refusal = display_edit_refusal(config_text, leaf)
     if not refusal:
         return row
+    # The value is read past a leading BOM, as Hermes' YAML loader and
+    # `config_names_key` read it; the editor's refusal of the file stands.
+    readable = config_text.removeprefix("\ufeff")
     if recorded:
-        may_be_omhs = display_key_named_twice(config_text, leaf) or not _reads_as_persons(
-            config_text, row.key, recorded
+        may_be_omhs = display_key_named_twice(readable, leaf) or not _reads_as_persons(
+            readable, row.key, recorded
         )
     else:
         may_be_omhs = row.key == DISPLAY_SKIN_KEY and is_omh_skin_name(
-            _plain_scalar(display_skin_selection(config_text))
+            _plain_scalar(display_skin_selection(readable))
         )
     return ReversalRow(row.key, "refused", refusal) if may_be_omhs else row
 
@@ -758,9 +761,9 @@ def config_names_key(config_text: str, key: str, *, name: str = "") -> bool:
     is the whole point of the uninstall report.
 
     A leading BOM is read through. Hermes' YAML loader skips it, so a key
-    on the line right after it is there; the other readers do not see past
-    it, and the editor refuses the whole file for it, so only this answer
-    tells a row that its key is refused rather than absent.
+    on the line right after it is there. The editor refuses the whole file
+    for it, and the strict readers do not see past it, so the release reads
+    the value past it too (`_refused_or_kept`, setup's `_selected_skins`).
     """
     config_text = config_text.removeprefix("\ufeff")
     if key == PLUGINS_ENABLED_KEY:

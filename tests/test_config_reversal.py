@@ -977,6 +977,22 @@ class ReleaseManagedDisplayTests(unittest.TestCase):
 
         self.assertEqual(by_key["display.skin"].status, "kept")
 
+    def test_a_value_after_a_bom_is_read_past_it(self) -> None:
+        """Mutation proof: read through the BOM-blind reader, the person's value came back empty, so possibly OMH's."""
+        before = ""
+        after = _apply_setup_writes(before)
+        record = _record(before, after)
+        start = after.index("display:")
+        for value, expected in (("ares", "kept"), ("omh-crimson", "refused")):
+            with self.subTest(value=value):
+                block = "display:\n  skin: " + value + "\n"
+                shaped = "\ufeff" + block + after[:start]
+
+                released, by_key = self._release(shaped, record)
+
+                self.assertEqual(released, shaped)
+                self.assertEqual(by_key["display.skin"].status, expected)
+
     def test_an_unreadable_value_no_record_names_is_kept(self) -> None:
         """Mutation proof: refusing it held the release open on a fresh install's own flow `display`."""
         for text in (

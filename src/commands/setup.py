@@ -2119,8 +2119,9 @@ def _selected_skins(config_text: str) -> tuple[str, ...]:
 
     Behind `display_read_refusal`, not the editor's wider guards: a quoted
     key, an anchor or a BOM elsewhere in the file stops the editor but not
-    this read, and keeping every OMH skin file over one kept all four for
-    good beside a skin of the person's own. In a shape that does make the
+    this read, which reads past a leading BOM as Hermes does, and keeping
+    every OMH skin file over one kept all four for good beside a skin of
+    the person's own. In a shape that does make the
     read unreliable (a flow, duplicate or dotted `display`, a second `skin`
     in the block, a tag or anchor on the value) the reader can return a
     value that is not the one Hermes resolves, such as "!!str omh-crimson",
@@ -2128,8 +2129,10 @@ def _selected_skins(config_text: str) -> tuple[str, ...]:
     """
     if not config_names_key(config_text, DISPLAY_SKIN_KEY):
         return ()
-    named = _plain_scalar(display_skin_selection(config_text))
-    if named and not display_read_refusal(config_text, "skin"):
+    # Past a leading BOM, as Hermes' YAML loader reads the file.
+    readable = config_text.removeprefix("\ufeff")
+    named = _plain_scalar(display_skin_selection(readable))
+    if named and not display_read_refusal(readable, "skin"):
         return (named,)
     return available_skins()
 

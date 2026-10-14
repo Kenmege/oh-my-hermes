@@ -417,7 +417,7 @@ class UpdateReleaseTests(unittest.TestCase):
                 self.assertIn("display_released_at", home.record())
                 self.assertEqual(_omh_skin_files(home.hermes_home), [])
 
-    def test_a_bom_before_a_first_line_display_holds_the_release_and_every_skin_file(self) -> None:
+    def test_a_bom_before_a_first_line_display_holds_the_release_and_the_skin_it_names(self) -> None:
         # Hermes' YAML loader skips a leading BOM; OMH's presence check did
         # not, so a `display:` on the first line read as absent. The release
         # was recorded, the keys left the record, and omh-crimson.yaml went
@@ -437,7 +437,10 @@ class UpdateReleaseTests(unittest.TestCase):
             record = home.record()
             self.assertNotIn("display_released_at", record)
             self.assertLessEqual({"display.interface", "display.skin", "display.sections"}, set(record["keys"]))  # type: ignore[arg-type]
-            self.assertEqual(len(_omh_skin_files(home.hermes_home)), len(SKIN_THEMES))
+            # A BOM is a document-wide shape: Hermes reads past it, so the
+            # value read past it is the one Hermes resolves, and only its
+            # file stays.
+            self.assertEqual(_omh_skin_files(home.hermes_home), ["omh-crimson.yaml"])
             self.assertIn("could not release display.skin (BOM-prefixed YAML is user-owned; leaving it alone)", stdout)
             self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
 
@@ -449,6 +452,34 @@ class UpdateReleaseTests(unittest.TestCase):
             self.assertIn("display_released_at", home.record())
             self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("crimson"))
             self.assertEqual(_omh_skin_files(home.hermes_home), [])
+
+    def test_a_bom_before_a_first_line_display_leaves_the_persons_skin_and_releases(self) -> None:
+        # Once the presence check read past the BOM, the person's own `ares`
+        # was read by a reader that did not: it came back empty, counted as
+        # possibly OMH's, and held the release on every update with all
+        # four OMH skin files kept.
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install(skin="omh-crimson")
+            text = (
+                home.config.read_text(encoding="utf-8")
+                .replace("  skin: omh-crimson\n", "  skin: ares\n")
+                .replace("  interface: tui\n", "")
+                .replace("  sections:\n    thinking: collapsed\n    tools: collapsed\n    subagents: collapsed\n", "")
+            )
+            start = text.index("display:")
+            shaped = "\ufeff" + text[start:] + text[:start]
+            self.assertTrue(shaped.startswith("\ufeffdisplay:\n  skin: ares\n"))
+            home.config.write_text(shaped, encoding="utf-8", newline="")
+
+            for _ in range(2):
+                status, stdout, stderr = home.run("update", output_json=False)
+
+                self.assertEqual(status, 0, stderr)
+                self.assertNotIn("could not release", stdout)
+                self.assertEqual(home.config.read_text(encoding="utf-8"), shaped)
+                self.assertIn("display_released_at", home.record())
+                self.assertEqual(_omh_skin_files(home.hermes_home), [])
 
     def test_a_shape_outside_display_keeps_no_skin_file_for_the_persons_own_skin(self) -> None:
         # A quoted key, an anchor or a BOM elsewhere in the file stops the
