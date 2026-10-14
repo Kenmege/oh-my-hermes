@@ -2,10 +2,7 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import sys
-import time
 
 from ..version import __version__
 from ..maintenance.build_identity import build_identity_summary, probe_build_identity

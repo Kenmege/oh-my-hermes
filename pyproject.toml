@@ -165,6 +165,3 @@ select = ["F"]
 "src/workflows/workflow_learning.py" = ["F401"]
 "src/conformance/contract.py" = ["F401"]
 "src/omh/dynamic_workflow.py" = ["F401"]
-# `main` is defined via `from ..commands.main import *` immediately above;
-# F405 can't see through the star import it is itself asked to ignore.
-"src/omh/cli/__init__.py" = ["F405"]

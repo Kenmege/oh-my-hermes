@@ -192,7 +192,7 @@ def launched(
             patch("omh.commands.bare_launch._node_available", return_value=node), \
             patch("omh.commands.bare_launch.subprocess.run", side_effect=fake_run), \
             patch("omh.commands.bare_launch.subprocess.Popen", side_effect=fake_popen), \
-            patch("omh.commands.main.time.time", side_effect=[CHILD_STARTED_AT, CHILD_ENDED_AT]):
+            patch("omh.commands.bare_launch.time.time", side_effect=[CHILD_STARTED_AT, CHILD_ENDED_AT]):
         status = _launch_hermes_tui(parsed)
     if errors is not None:
         errors.append(stderr.getvalue())
