@@ -1600,11 +1600,14 @@ The pass that does something says so, per home:
     saved OMH theme crimson for the OMH TUI; `omh theme use <name>` changes it
 ```
 
-`--dry-run` previews it and writes nothing. A home `--skip-apply` left
-unregistered, and a home or bot profile that opted out with
-`omh uninstall --registration-only`, are not touched, since registering is
-what carries the release; for the primary home, `omh setup` registers it
-again and runs the release in the same write.
+`--dry-run` previews it and writes nothing. A home that is not registered
+(one `--skip-apply` left that way, or a home or bot profile that opted out
+with `omh uninstall --registration-only`) keeps its config as it is, since
+registering is what carries the release. `omh update` still removes the
+widget and skin files there under the same rules, keeping the skin its
+config names, and so does `omh setup` for such a bot profile; for the
+primary home, `omh setup` registers it again and runs the release in the
+same write.
 
 ### TUI Themes
 

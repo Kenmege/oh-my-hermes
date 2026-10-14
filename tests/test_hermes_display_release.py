@@ -611,6 +611,36 @@ class ProfileReleaseTests(unittest.TestCase):
             self.assertIn("did not save OMH theme amber: this home's .env names its OMH home", stdout)
             self.assertNotIn("display", (bot / "config.yaml").read_text(encoding="utf-8"))
 
+    def test_a_home_left_unregistered_keeps_its_config_and_loses_the_old_files(self) -> None:
+        # Registering is what carries the config release, so an opted-out
+        # home keeps its config byte for byte. The widget and the skins its
+        # config does not name are OMH's own files and still go, primary and
+        # profile alike.
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            bot = home.hermes_home / "profiles" / "bot"
+            bot.mkdir(parents=True)
+            home.legacy_install(skin="omh-crimson")
+            home.brand(bot / "config.yaml", skin="omh-amber")
+            skills = (home.omh_home / "skills").resolve().as_posix()
+            for config in (home.config, bot / "config.yaml"):
+                config.write_text(
+                    config.read_text(encoding="utf-8").replace(f"    - {skills}\n", ""), encoding="utf-8", newline=""
+                )
+            before = {config: config.read_bytes() for config in (home.config, bot / "config.yaml")}
+
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertIn("Bot profiles: bot (left unregistered)", stdout)
+            self.assertEqual({config: config.read_bytes() for config in before}, before)
+            for hermes_home, kept in ((home.hermes_home, "omh-crimson.yaml"), (bot, "omh-amber.yaml")):
+                with self.subTest(home=hermes_home.name):
+                    self.assertFalse((hermes_home / "tui-widgets" / "omh-status.mjs").exists())
+                    self.assertEqual(_omh_skin_files(hermes_home), [kept])
+            self.assertIn("this home is not registered, so its config is left as it is", stdout)
+            self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
+
     @requires_symlinks
     def test_a_widget_it_must_refuse_to_remove_costs_no_profile_its_registration(self) -> None:
         # Removing the widget refuses a symlinked destination, as uninstall

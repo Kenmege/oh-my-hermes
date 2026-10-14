@@ -603,7 +603,14 @@ def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
             for candidate in _managed_workflow_dir_candidates(profile_paths)
         )
         if profile_paths.hermes_plugin_dir.is_dir() and not registered:
-            results.append({"profile": name, "status": "unregistered_kept", "registration": "unchanged"})
+            results.append(
+                {
+                    "profile": name,
+                    "status": "unregistered_kept",
+                    "registration": "unchanged",
+                    "display_release": _unregistered_display_release(profile_paths, args),
+                }
+            )
             continue
         entry: dict[str, object] = {
             "profile": name,
@@ -831,11 +838,12 @@ def _display_release_lines(label: str, release: object) -> list[str]:
         )
     if not details:
         return []
-    header = (
-        f"{label}: some display keys OMH wrote are still in Hermes' config; bare `omh` opens the OMH TUI."
-        if refused or theme.get("status") == "failed"  # type: ignore[union-attr]
-        else f"{label}: bare `hermes` opens stock Hermes; bare `omh` opens the OMH TUI."
-    )
+    if release.get("unregistered"):
+        header = f"{label}: this home is not registered, so its config is left as it is; files OMH installed:"
+    elif refused or theme.get("status") == "failed":  # type: ignore[union-attr]
+        header = f"{label}: some display keys OMH wrote are still in Hermes' config; bare `omh` opens the OMH TUI."
+    else:
+        header = f"{label}: bare `hermes` opens stock Hermes; bare `omh` opens the OMH TUI."
     return [header, *(f"  {line}" for line in details)]
 
 
@@ -1072,7 +1080,8 @@ def _refresh_hermes_registration(args: argparse.Namespace) -> dict[str, object] 
     Only for an install that is already registered -- the skills directory is
     already in `skills.external_dirs`. Registering a fresh one stays setup's
     job, and someone who deliberately unregistered OMH must not have update
-    put it back.
+    put it back. Such a home still loses the widget and skin files an
+    earlier version left (`_unregistered_display_release`).
     """
     paths = _paths(args)
     config_text = read_config(paths.hermes_config_path)
@@ -1083,7 +1092,7 @@ def _refresh_hermes_registration(args: argparse.Namespace) -> dict[str, object] 
         _external_dir_registered(config_text, candidate)
         for candidate in _managed_workflow_dir_candidates(paths)
     ):
-        return None
+        return {"display_release": _unregistered_display_release(paths, args)}
     try:
         return _apply_result(args)
     except OmhError:
@@ -2111,6 +2120,25 @@ def _remove_legacy_display_files(
     except (SkinInstallError, OSError) as exc:
         files["skin"] = {"status": "refused", "reason": str(exc), "path": str(paths.hermes_home / "skins")}
     return files
+
+
+def _unregistered_display_release(paths: OmhPaths, args: argparse.Namespace) -> dict[str, object]:
+    """The widget and skin files an earlier version left in a home that stays unregistered.
+
+    Registering is what carries the config release, so a home that opted out
+    keeps its config as it is. The files are OMH's own, though, and the
+    widget drew the OMH HUD inside Hermes' terminal; they go under the same
+    rules as on a registered home, so the skin the config still names stays.
+    """
+    return {
+        "unregistered": True,
+        "files": _remove_legacy_display_files(
+            paths,
+            dry_run=bool(args.dry_run),
+            config_text=read_config(paths.hermes_config_path),
+            released=_display_released(_managed_config_record(paths), paths),
+        ),
+    }
 
 
 def _display_released(record: object, paths: OmhPaths) -> bool:
