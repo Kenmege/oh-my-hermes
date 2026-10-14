@@ -4,6 +4,26 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A `/blueprint` seed is Hermes' turn, and a spend is spend-gate's wherever
+  it is asked.** When `/blueprint` matches, Hermes rewrites the turn to a seed
+  that asks for the blueprint's settings and then creates the cron job
+  itself; OMH now reads that seed's frame as a host turn, so it gets no route,
+  no route hint and no candidate line, where before it dispatched a file,
+  toolbelt or observability skill. A person typing the seed's first line alone
+  still routes to automation-blueprint. A loop on a timer whose prompt spends
+  the person's money ("loop every hour and buy the tickets for me with my card
+  if they drop under $50", or the same as a typed `/loop 1h ...`) opens
+  spend-gate instead of being answered with Hermes' `/loop`, since a scheduled
+  run never spends; Hermes' own `/loop` wakeup turn is unchanged. Naming the
+  gate as a command ("use spend gate") now asks for it. The router, the route
+  hint and the awareness markers read one phrase table for the gate, so "go
+  ahead and pay the 402 challenge for the dataset" no longer hints a research
+  skill while the router opens the gate. A renewal, tip, booking,
+  subscription, donation or top-up paid "from my wallet" is no longer dropped
+  as everyday wording, and paying with the person's card, or reviewing the
+  pre-spend card, no longer opens the image-card skill, while an image card of
+  "my card game stats" still does.
+
 - **Bare `omh` opens the OMH TUI, OMH's own terminal over Hermes' gateway.**
   `omh` runs `hermes --tui` with OMH's frontend in place of Hermes' Ink app,
   so Hermes' launcher still resolves the profile, the resume target and

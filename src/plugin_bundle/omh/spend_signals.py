@@ -26,7 +26,12 @@ and the like -- only when all of this holds, and "" otherwise:
   shows up". "for me" right after one of the gate's phrases, or inside one
   ("buy it for me"), is not a marker (`_has_request_marker`).
   An unmarked imperative ("pay with my card for the hotel") routes as before
-  this skill existed -- an accepted recall cost.
+  this skill existed -- an accepted recall cost. Two clauses are marked
+  without one: naming the gate as a command ("use spend gate") asks for it
+  outright, and the prompt of a loop on a timer
+  (`hermes_session_commands.native_loop_prompt`, read when the sentence's own
+  clause is not admitted) is an instruction the loop runs ("/loop 1h buy the
+  tickets with my card if they drop under $50").
 - The clause opens with a spend addressed to the agent ("buy", "pay",
   "order", "book", "renew", "place the order", "complete the checkout", "use
   my card", ...), not an idiom ("pay attention to the spend cap", "pay a
@@ -46,15 +51,71 @@ awareness markers stay silent. Nothing here lets the gate take a request
 another skill's guard holds; an admitted clause only lets the skill's own
 phrases score as usual.
 
-The router (`omh.routing.recommend`) passes the skill's triggers to
-`spend_request_clause`; the awareness route hint (`awareness.py`) passes its
-own phrase table and its markers to `spend_request_phrases`. Stdlib only.
+One phrase table, `SPEND_GATE_PHRASES`, is the skill's trigger list: the
+router (`omh.routing.recommend`) passes it to `spend_request_clause`, and the
+awareness route hint and its markers (`awareness.py`) pass it to
+`spend_request_phrases`, so a request one of them admits the others admit too.
+Stdlib only.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+
+from .hermes_session_commands import native_loop_prompt
+
+# `spend-gate`'s trigger list, word for word (the catalog reads it from here).
+SPEND_GATE_PHRASES = (
+    "spend-gate",
+    "spend gate",
+    "pre-spend",
+    "pre-spend card",
+    "spend cap",
+    "spending cap",
+    "spend limit",
+    "spending limit",
+    "spend request",
+    "spend approval",
+    "approve the spend",
+    "approve this purchase",
+    "approve the purchase",
+    "complete the purchase",
+    "complete the checkout",
+    "buy this for me",
+    "buy it for me",
+    "place the order",
+    "place an order",
+    "pay with my card",
+    "pay with my saved card",
+    "with my saved card",
+    "with my card",
+    "with my credit card",
+    "use my card",
+    "use my credit card",
+    "send money",
+    "pay again",
+    "click pay again",
+    "http 402",
+    "402 payment required",
+    "402 challenge",
+    "pay per request",
+    "pay-per-request",
+    "paid endpoint",
+    "paid data endpoint",
+    "wallet transfer",
+    "from my wallet",
+    "money on my behalf",
+    "spend on my behalf",
+    "pay on my behalf",
+    "buy on my behalf",
+    "retry the payment",
+    "retry the purchase",
+    "retry the charge",
+    "did the payment go through",
+    "did the charge go through",
+    "pay for the booking",
+)
 
 _CURRENCY_SYMBOLS = "$€£¥₩"
 # Unicode-aware words with apostrophes kept, amounts with their currency
@@ -300,6 +361,14 @@ def _has_request_marker(prefix: list[str], clause: list[str], spans: list[tuple[
 
 
 def _request(text: str, phrases: Iterable[str]) -> tuple[str, list[str]]:
+    admitted = _admitted(text, phrases, marked=False)
+    if admitted[0]:
+        return admitted
+    prompt = native_loop_prompt(text)
+    return _admitted(prompt, phrases, marked=True) if prompt else ("", [])
+
+
+def _admitted(text: str, phrases: Iterable[str], *, marked: bool) -> tuple[str, list[str]]:
     folded = text.casefold().strip()
     every = _tokens(folded)
     tokens = _without_filler(every)
@@ -307,6 +376,7 @@ def _request(text: str, phrases: Iterable[str]) -> tuple[str, list[str]]:
     clause = _clause(tokens)
     if not _spend_lead(tokens, folded):
         return "", []
+    marked = marked or any(_starts_with(tokens, lead) for lead in SPEND_GATE_NAME_LEADS)
     # Phrases are found in the clause; what follows each is read past the
     # clause's end, so "or" right after a phrase is still seen.
     found = [
@@ -317,7 +387,7 @@ def _request(text: str, phrases: Iterable[str]) -> tuple[str, list[str]]:
     ]
     if not found or not all(_continuation_allowed(tokens[end:]) for _phrase, _start, end in found):
         return "", []
-    if not _has_request_marker(prefix, clause, [(start, end) for _phrase, start, end in found]):
+    if not marked and not _has_request_marker(prefix, clause, [(start, end) for _phrase, start, end in found]):
         return "", []
     return " ".join(clause), list(dict.fromkeys(phrase for phrase, _start, _end in found))
 

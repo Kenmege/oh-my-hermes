@@ -48,6 +48,7 @@ from ..plugin_bundle.omh.hermes_session_commands import (
     typed_loop_sets_goal,
 )
 from ..plugin_bundle.omh.route_question_mode import ROUTE_QUESTION_MODE_OFF, route_question_mode_fields
+from ..plugin_bundle.omh.spend_signals import SPEND_GATE_PHRASES, spend_request_clause
 from .intent import classify_workflow_intent, scrub_diagnostic_status_text
 from .reference_regions import executable_routing_text, reference_regions
 from .localization import normalized_phrase, prepare_routing_text, routing_tokens
@@ -144,6 +145,12 @@ TYPED_LOOP_GOAL_REASON = (
     "names OMH's loop or sets it a goal, and OMH's goal loop starts from ./loop <goal>, not from /loop. "
     "Answer directly: say /loop repeats its prompt as written and offer ./loop <goal> for the goal loop, "
     "instead of opening an OMH workflow."
+)
+# A loop on a timer whose prompt spends the person's money (`spend_signals`) is
+# not answered with /loop: it opens the spend gate.
+SPENDING_LOOP_REASON = (
+    "A loop on a timer whose prompt spends the person's money: a scheduled run never spends, so the "
+    "pre-spend card, the person's typed confirmation, and the cap come now, before the loop is set up."
 )
 # The same timer on a programming or media loop: a question, not a request to repeat a check.
 LOOP_CONSTRUCT_REASON = (
@@ -2069,9 +2076,14 @@ def _route_chat_message_cached(
     # The same text and the same function the route hint reads, so the two
     # surfaces reach one verdict on a loop beside a timer. A skill the person
     # invoked by name still gets the turn: "loop every 5 minutes and check CI,
-    # use ulw-plan" is a request for that skill.
+    # use ulw-plan" is a request for that skill. A loop whose prompt spends the
+    # person's money ("loop every hour and buy the tickets for me with my card
+    # if they drop under $50") is the spend gate's: `spend_signals` admits the
+    # loop's prompt as a request, read on the same text as the verdict.
     loop_timer = loop_timer_verdict(executable_message)
     if loop_timer in LOOP_TIMERS_ANSWERED_DIRECTLY and explicit_skill_invocation(routing_message) in (None, "loop"):
+        if spend_request_clause(executable_message, SPEND_GATE_PHRASES):
+            return _spending_loop_decision(message, source=source, min_confidence=min_confidence).to_dict()
         if loop_timer != LOOP_TIMER_NATIVE:
             reason = LOOP_CONSTRUCT_REASON
         elif typed_loop_sets_goal(executable_message):
@@ -3066,6 +3078,42 @@ def _explicit_skill_fast_path_decision(
         learning_candidate_card=None,
         recommendations=(recommendation,),
         route_next_action=route_next_action,
+    )
+
+
+def _spending_loop_decision(message: str, *, source: str, min_confidence: str) -> ChatRouteDecision:
+    selected_skill = "spend-gate"
+    definition = _skill_definition_by_name(selected_skill)
+    selected_harness = primary_harness_for_skill(selected_skill)
+    score = 13
+    recommendation = recommendation_for_definition(
+        definition,
+        message,
+        matched=("spending_loop", "native_loop_prompt"),
+        score=score,
+        why=SPENDING_LOOP_REASON,
+    )
+    return ChatRouteDecision(
+        schema_version=1,
+        source=source,
+        action="dispatch",
+        selected_skill=selected_skill,
+        selected_harness=selected_harness,
+        candidate_skill=selected_skill,
+        candidate_harness=selected_harness,
+        confidence="high",
+        score=score,
+        threshold=min_confidence,
+        explicit=False,
+        ambiguous=False,
+        reason=SPENDING_LOOP_REASON,
+        clarification="",
+        routing_prompt=_routing_prompt("dispatch", selected_skill, selected_skill, SPENDING_LOOP_REASON, message),
+        task_card=None,
+        workflow_route_plan=None,
+        learning_candidate_card=None,
+        recommendations=(recommendation,),
+        route_next_action="",
     )
 
 

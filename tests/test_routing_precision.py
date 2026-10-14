@@ -21,20 +21,22 @@ class RoutingPrecisionTests(unittest.TestCase):
         # and `expected=` in src/maintenance/drift.py. Every other count
         # assertion compares against this producer instead of a literal.
         # omh-docs contributes four measured negatives and five measured interventions.
-        self.assertEqual(payload["summary"]["case_count"], 743)
+        self.assertEqual(payload["summary"]["case_count"], 747)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
         # spend-gate's lunch-budget control is a direct answer (+1), four of
         # its review controls are questions answered directly (+4), and one
         # third-review control is a report answered directly (+1), and so is
-        # one fourth-review control (+1).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 205)
+        # one fourth-review control (+1). The upstream skill audit's final
+        # review adds a /blueprint seed host turn and two loops on a timer
+        # that spend nothing, each answered directly (+3).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 208)
         self.assertEqual(payload["summary"]["file_lookup_count"], 9)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
         self.assertEqual(payload["summary"]["catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["intervention_case_count"], 777)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 786)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

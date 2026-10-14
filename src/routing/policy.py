@@ -32,6 +32,7 @@ from .jev_addressing import jev_addressed_skill
 from .localization import normalized_phrase, phrase_is_spoken, routing_terms, routing_tokens
 from .materials_cues import OFFICE_FILE_MATERIAL_PHRASES
 from ..plugin_bundle.omh.data_share_cues import data_share_request_admitted
+from ..plugin_bundle.omh.spend_signals import SPEND_LEADS
 from .missed_route import has_normalized_missed_omh_workflow_context
 from .omh_help import is_omh_docs_question
 from .visual_qa_cues import BROWSER_VISUAL_QA_PHRASES, CUSTOMER_SYMPTOM_REPORT_PHRASES
@@ -808,6 +809,18 @@ _VISUAL_SUMMARY_SHORT_REQUEST_PHRASES = frozenset(
 # otherwise this guard's image-card shape. Matched as spoken phrases, so
 # `board card` is not found inside "dashboard card" or "storyboard card".
 _WORK_ITEM_CARD_PHRASES = ("kanban card", "board card", "task card", "trello card", "jira card", "칸반 카드")
+# Nor is a card that pays, or the card spend-gate shows before a payment: "pay
+# with my card for the summary report", "review the pre-spend card before I
+# confirm". A bare "my card" is not one: "a share card summarizing my card game
+# stats" is an image card.
+_PAYMENT_CARD_PHRASES = (
+    "with my card",
+    "use my card",
+    "my credit card",
+    "my debit card",
+    "my saved card",
+    "pre-spend card",
+)
 _VISUAL_SUMMARY_NON_VISUAL_WORK_TOKENS = _normalized_token_set(
     {
         "classifier",
@@ -2184,6 +2197,9 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
     # rules in this city" and "the photo fell out from my wallet" move no money
     # for the person; each phrase keeps this route only beside a word of paying
     # or buying. "agent" and "hermes" are not anchors: the tokenizer drops both.
+    # The verb of every lead the gate's request clause opens with is one too
+    # (`spend_signals.SPEND_LEADS`), so "please renew the domain from my wallet"
+    # keeps the route the clause rule admitted it to.
     "spend-gate": (
         ("spend cap", "spending cap", "spend limit", "spending limit", "from my wallet"),
         frozenset(
@@ -2193,7 +2209,8 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
                 "orders", "pay", "paying", "payment", "payments", "purchase", "purchases", "send",
                 "subscription", "transfer", "usd",
             }
-        ),
+        )
+        | routing_tokens(" ".join(lead[0] for lead in SPEND_LEADS)),
     ),
     # "the play store on my phone will not open", "my google play gift card did
     # not work" and "the app store keeps asking for my password" are a phone's
@@ -10097,7 +10114,10 @@ def _visual_summary_guard_applies(normalized_query: str, query_tokens: set[str])
     if (
         _VISUAL_SUMMARY_CARD_TOKENS & query_tokens
         and _VISUAL_SUMMARY_OUTPUT_CONTEXT_TOKENS & query_tokens
-        and not any(phrase_is_spoken(normalized_query, normalized_phrase(phrase)) for phrase in _WORK_ITEM_CARD_PHRASES)
+        and not any(
+            phrase_is_spoken(normalized_query, normalized_phrase(phrase))
+            for phrase in (*_WORK_ITEM_CARD_PHRASES, *_PAYMENT_CARD_PHRASES)
+        )
     ):
         return True
     if _VISUAL_SUMMARY_NON_VISUAL_WORK_TOKENS & query_tokens:

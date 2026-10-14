@@ -6,9 +6,16 @@ from _local_package import load_local_package
 
 load_local_package()
 
-from omh.plugin_bundle.omh.awareness import _route_hint_rule_matches, _spend_awareness_marked, awareness_route_hint
+from omh.plugin_bundle.omh.awareness import (
+    _ROUTE_HINT_RULES,
+    _route_hint_rule_matches,
+    _spend_awareness_marked,
+    awareness_route_hint,
+)
 from omh.plugin_bundle.omh.native_tools import native_tool_presence_clause
+from omh.plugin_bundle.omh.spend_signals import SPEND_GATE_PHRASES
 from omh.quality.routing_precision import ROUTING_PRECISION_CASES
+from omh.routing.chat import HOST_COMMAND_TURN_REASON, NATIVE_LOOP_CADENCE_REASON, SPENDING_LOOP_REASON
 from omh.routing.localization import normalized_phrase
 from omh.routing.policy import everyday_sense_phrase_unanchored
 from omh.routing.recommend import _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS, _prepare_definition, _spend_gate_clause
@@ -520,9 +527,85 @@ class SpendGateRoutingTests(unittest.TestCase):
             ("the photo fell out from my wallet on the bus", True),
             ("set a spending cap before the agent buys anything", False),
             ("transfer 40 dollars from my wallet to the vendor", False),
+            # The verb a spend request opens with is a word of paying too
+            # (`spend_signals.SPEND_LEADS`): each of these is admitted by the
+            # clause rule, and the gate was withdrawn from them before.
+            ("please renew the domain from my wallet", False),
+            ("please tip the driver from my wallet", False),
+            ("please book the hotel from my wallet", False),
+            ("please subscribe to the pro plan from my wallet", False),
+            ("could you top up my account from my wallet", False),
         ):
             with self.subTest(message=message):
                 self.assertIs(everyday_sense_phrase_unanchored(SKILL, normalized_phrase(message)), withdrawn)
+
+    def test_a_loop_whose_prompt_spends_opens_the_gate(self) -> None:
+        # No scheduled run may spend, so a loop that would is the gate's turn
+        # now, not one answered with Hermes' /loop.
+        for message in (
+            "loop every hour and buy the concert tickets for me with my card if they drop under $50",
+            "/loop 1h buy the concert tickets with my card if they drop under $50",
+            "every hour loop and buy it for me when it is back in stock",
+            "loop every hour: please renew the domain from my wallet",
+        ):
+            with self.subTest(message=message):
+                route = _route(message)
+                self.assertEqual(
+                    (route["action"], route["selected_skill"], route["reason"]), ("dispatch", SKILL, SPENDING_LOOP_REASON)
+                )
+                self.assertEqual(awareness_route_hint(message)["selected_workflow"], SKILL)
+                self.assertTrue(_spend_awareness_marked(message))
+        # A loop that spends nothing stays Hermes' /loop, and Hermes' own
+        # wakeup turn stays the host's whatever its prompt says.
+        for message, reason in (
+            ("loop every 10 minutes and check whether the concert tickets dropped under $50", NATIVE_LOOP_CADENCE_REASON),
+            ("/loop 30m check whether the payment from my card went through", NATIVE_LOOP_CADENCE_REASON),
+            (
+                "[/loop wakeup #3, every 1h]\nRecurring task: buy the concert tickets with my card if they drop under $50",
+                HOST_COMMAND_TURN_REASON,
+            ),
+        ):
+            with self.subTest(message=message):
+                self.assertEqual(_route(message)["reason"], reason)
+                self.assertNotIn(SKILL, _hinted_workflows(message))
+
+    def test_naming_the_gate_as_a_command_asks_for_it(self) -> None:
+        # The command itself is the request; nothing else has to mark it.
+        for message in ("use spend gate", "run spend gate", "use spend gate for the hotel booking"):
+            with self.subTest(message=message):
+                route = _route(message)
+                self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", SKILL))
+                self.assertEqual(awareness_route_hint(message)["selected_workflow"], SKILL)
+        # What follows the name is still read: a verb after it makes it a label.
+        self.assertEqual(_spend_gate_clause(normalized_phrase("use spend gate is greyed out in settings")), "")
+
+    def test_the_router_the_hint_and_the_markers_read_one_phrase_table(self) -> None:
+        self.assertEqual(_definition(SKILL).triggers, SPEND_GATE_PHRASES)
+        rule = next(rule for rule in _ROUTE_HINT_RULES if rule["id"] == "spend_gate")
+        self.assertIs(rule["phrases"], SPEND_GATE_PHRASES)
+        # Before, the router dispatched the first to the gate while the hint
+        # named source-finder, and clarified the second while the hint named
+        # the gate.
+        for message in ("go ahead and pay the 402 challenge for the dataset", "use spend gate"):
+            with self.subTest(message=message):
+                self.assertEqual(_route(message)["selected_skill"], SKILL)
+                self.assertEqual(awareness_route_hint(message)["selected_workflow"], SKILL)
+                self.assertTrue(_spend_awareness_marked(message))
+
+    def test_a_card_that_pays_is_not_an_image_card(self) -> None:
+        for message in (
+            "please pay with my card for the summary report",
+            "please review the pre-spend card before I confirm",
+            "can you use my credit card to buy the concert tickets and share them with my wife",
+        ):
+            with self.subTest(message=message):
+                route = _route(message)
+                self.assertNotEqual(route.get("selected_skill"), "img-summary")
+                self.assertNotEqual(route.get("candidate_skill"), "img-summary")
+        # A bare "my card" is not a payment: an image card of card-game stats
+        # is still one.
+        route = _route("make a share card summarizing my card game stats")
+        self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", "img-summary"))
 
     def test_only_the_two_hyphenated_names_score_as_bare_tokens(self) -> None:
         prepared = _prepare_definition(_definition(SKILL))
@@ -597,6 +680,11 @@ DISPATCHES = (
     "please pay the invoice from acme with my card",
     "Please pay with my card for the hotel",
     "Pay with my card $40 for the refill",
+    "please renew the domain from my wallet",
+    "please tip the driver from my wallet",
+    "please book the hotel from my wallet",
+    "please subscribe to the pro plan from my wallet",
+    "could you top up my account from my wallet",
 )
 LEADS = (
     "buy the trip supplies for me with my card, up to $200",

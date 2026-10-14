@@ -32,6 +32,7 @@ from omh.plugin_bundle.omh.hermes_session_commands import (
     NATIVE_LOOP_CADENCE_HINT_KEY,
     host_command_turn,
     loop_timer_verdict,
+    native_loop_prompt,
     typed_loop_sets_goal,
 )
 from omh.plugin_bundle.omh.skill_shortlist import skill_candidates_for_turn
@@ -100,6 +101,14 @@ HOST_TURNS = {
         "[/initiate-setup]\n\n",
         "---\nname: initiate-setup\ndescription: Run the first-run setup chat.\n---\n\n"
         "Guide the user through first-run setup: pick a model provider, connect accounts, and install plugins.",
+    ),
+    # The blueprint's title, key and description fill the frame line.
+    "blueprint": (
+        "Set up the 'Morning check-in' automation for me (automation blueprint 'morning-checkin'). "
+        "A short daily check-in with your calendar.\n\n",
+        "Ask me for each of these, one at a time, offering the default in brackets if I don't have a preference:\n"
+        "- What time? (time) [default: 08:00]\n- Where to deliver? (deliver) [default: origin]\n\n"
+        "Once you have my answers, create the job by calling the cronjob tool with action='create'.",
     ),
 }
 
@@ -489,6 +498,15 @@ class HostCommandTurnTest(unittest.TestCase):
             # own line, not with any text that starts with dashes.
             "[/initiate-setup]\n\n--- it hangs on the first card",
             "[/initiate-setup]\n\n----- separator -----\nset up memory and the toolbelt",
+            # A person asking for a blueprint in its own words, or typing only
+            # the seed's first line, wrote no fixed next line, nor the
+            # blueprint's key between title and description.
+            "set up the 'x' automation for me",
+            "Set up the 'Morning check-in' automation for me (automation blueprint 'morning-checkin'). A check-in.",
+            "Set up the 'Morning check-in' automation for me (automation blueprint 'morning-checkin').\n\n"
+            "ask me what time works best",
+            "Set up the 'Morning check-in' automation for me, every weekday at 8.\n\n"
+            "Ask me for each of these, one at a time, offering the default in brackets if I don't have a preference:",
         ):
             with self.subTest(message=message):
                 self.assertFalse(host_command_turn(message))
@@ -506,6 +524,20 @@ class HostCommandTurnTest(unittest.TestCase):
         # way this fails, which routes as it did before the gate existed.
         self.assertFalse(host_command_turn('[Replying to: "x ]\n\nfoo"]\n\n' + _PLAN))
 
+    def test_a_blueprint_seed_is_the_hosts_whatever_it_fills_in(self):
+        # Titles with an apostrophe, a plugin's `<plugin>:<key>`, an empty
+        # description, and a gateway prefix before the seed.
+        next_line = "Ask me for each of these, one at a time, offering the default in brackets if I don't have a preference:"
+        for first in (
+            "Set up the 'Bills & renewals reminder' automation for me (automation blueprint 'bill-renewal-watch'). x",
+            "Set up the 'Bob's weekly report' automation for me (automation blueprint 'bob-report'). A recap.",
+            "Set up the 'Daily sync' automation for me (automation blueprint 'acme:daily-sync'). ",
+            "[alice] Set up the 'Daily sync' automation for me (automation blueprint 'daily-sync'). A sync.",
+        ):
+            with self.subTest(first=first):
+                self.assertTrue(host_command_turn(f"{first}\n\n{next_line}\n- What time? (time)"))
+                self.assertTrue(host_command_turn(_NOTE + f"{first}\n\n{next_line}"))
+
     def test_a_heartbeat_frame_cannot_tell_who_typed_the_next_line(self):
         # The heartbeat's next line is the person's own recurring instruction,
         # so a person typing under a pasted frame reads as the host. Pinned so
@@ -518,6 +550,25 @@ class LoopTimerVerdictTest(unittest.TestCase):
         for sentence, verdict in {**TIMED_LOOP_FORMS, **VERDICTS}.items():
             with self.subTest(sentence=sentence):
                 self.assertEqual(loop_timer_verdict(sentence), verdict)
+
+    def test_a_native_loops_prompt_is_the_words_after_its_cadence(self):
+        for message, prompt in {
+            "/loop 1h buy the tickets with my card": "buy the tickets with my card",
+            "loop every 5 minutes and check whether CI is green": "check whether ci is green",
+            "loop: every 5 minutes check CI": "check ci",
+            "please loop every hour, then pay the invoice": "pay the invoice",
+            "every 2 hours loop and make the test suite faster": "make the test suite faster",
+            "every hour, loop over the queue": "over the queue",
+            _NOTE + _SENDER + "/loop 30m buy it for me": "buy it for me",
+            # A Korean prompt is not read; nor is any verdict but the native loop.
+            "5분마다 CI가 초록색인지 확인하는 루프 돌려줘": "",
+            "loop every hour and improve the docs": "",
+            "write a bash loop that pings the server every 10 seconds": "",
+            "please buy the tickets with my card": "",
+            "".join(HOST_TURNS["loop wakeup"]): "",
+        }.items():
+            with self.subTest(message=message):
+                self.assertEqual(native_loop_prompt(message), prompt)
 
     def test_a_gateway_prefix_never_changes_the_verdict(self):
         # A Discord or Slack thread is a shared session by default, so every
