@@ -10,7 +10,7 @@ marker, the status widget and every skin file with their manifests.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 import shutil
 from tempfile import TemporaryDirectory
 import unittest
@@ -19,7 +19,7 @@ from _cli_harness import run_cli
 from _legacy_display import brand_legacy_home, seed_legacy_widget
 from _platform_support import requires_posix_permissions, requires_symlinks
 from omh.install.config_adapter import external_dirs, memory_provider_selection, plugin_omh_home_setting
-from omh.install.config_reversal import MANAGED_CONFIG_WRITES_STATE_KEY
+from omh.install.config_reversal import MANAGED_CONFIG_WRITES_STATE_KEY, load_managed_config_writes
 from omh.skin_pack import SKIN_THEMES, read_theme_choice, skin_payload, theme_for_name, write_theme_choice
 
 
@@ -1108,6 +1108,22 @@ class UnreadableProfileSettingTests(unittest.TestCase):
 UPGRADE_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "upgrade_from_v3_0_2.json"
 
 
+def _v3_0_2_write_records(fixture: dict[str, object], root: PurePath) -> dict[str, object]:
+    """The fixture's write records under `root`, keyed the way v3.0.2's writer keyed them.
+
+    v3.0.2 keyed each record, and set its `config_path`, by `str(config_path)`
+    (`managed_config_writes` at 117f67a23): native separators, backslashes on
+    Windows. The values it recorded are the config's own, which it wrote in
+    POSIX form (`_normalize`), so `{ROOT}` inside them is a POSIX root.
+    """
+    records: dict[str, object] = {}
+    for rel, record in fixture["hermes_config_writes"].items():  # type: ignore[attr-defined]
+        restored = json.loads(json.dumps(record).replace("{ROOT}", root.as_posix()))
+        restored["config_path"] = str(root / rel)
+        records[restored["config_path"]] = restored
+    return records
+
+
 class UpgradeFromLastReleaseTests(unittest.TestCase):
     """A machine set up by v3.0.2, primary home and two bot profiles, comes through update clean.
 
@@ -1143,10 +1159,7 @@ class UpgradeFromLastReleaseTests(unittest.TestCase):
             (root / rel).write_text(text(body), encoding="utf-8", newline="")
         state_path = root / "omh" / "runtime" / "state.json"
         state = json.loads(state_path.read_text(encoding="utf-8"))
-        state[MANAGED_CONFIG_WRITES_STATE_KEY] = {
-            str((root / rel).resolve()): json.loads(text(json.dumps(record)))
-            for rel, record in fixture["hermes_config_writes"].items()
-        }
+        state[MANAGED_CONFIG_WRITES_STATE_KEY] = _v3_0_2_write_records(fixture, root)
         state_path.write_text(json.dumps(state), encoding="utf-8", newline="")
         for home in (root / "hermes", root / "hermes" / "profiles" / "bot", root / "hermes" / "profiles" / "shared"):
             seed_legacy_widget(home)
@@ -1156,6 +1169,30 @@ class UpgradeFromLastReleaseTests(unittest.TestCase):
                 (skins / theme.filename).write_bytes(skin_payload(theme.skin_name))
             (skins / ".omh-skin.manifest.json").write_text(json.dumps(fixture["skin_manifest"]), encoding="utf-8")
         return fixture
+
+    def test_the_records_are_keyed_the_way_v3_0_2_keyed_them_on_windows(self) -> None:
+        # CI's Windows shard failed the update test below: the records'
+        # `config_path` was templated in POSIX form, the loader drops an
+        # entry whose `config_path` is not its key, and the key is native.
+        # v3.0.2 wrote both as `str(config_path)`, so on Windows both carry
+        # backslashes, while the values it recorded are the config's own,
+        # which it wrote in POSIX form.
+        fixture = json.loads(UPGRADE_FIXTURE.read_text(encoding="utf-8"))
+        root = PureWindowsPath("C:/Users/runner/AppData/Local/Temp/omh")
+
+        records = _v3_0_2_write_records(fixture, root)
+
+        for rel in fixture["hermes_config_writes"]:
+            with self.subTest(config=rel):
+                native = str(root / rel)
+                self.assertIn("\\", native)
+                self.assertEqual(records[native]["config_path"], native)  # type: ignore[index]
+                self.assertTrue(load_managed_config_writes(records, config_path=root / rel))
+        primary = load_managed_config_writes(records, config_path=root / self.PRIMARY)
+        self.assertEqual(
+            primary["keys"]["skills.external_dirs"],  # type: ignore[index]
+            ["C:/Users/runner/AppData/Local/Temp/omh/omh/skills"],
+        )
 
     def test_update_releases_every_home_keeps_omh_working_and_a_second_run_changes_nothing(self) -> None:
         with TemporaryDirectory() as tmp:
