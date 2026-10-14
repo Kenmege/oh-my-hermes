@@ -297,11 +297,31 @@ class TurnDriftNoticeTests(unittest.TestCase):
         self.assertIn("(message.begin, message.chunk)", notice)
         self.assertIn("Esc interrupts the turn", notice)
 
-    def test_each_submitted_turn_is_watched_on_its_own(self) -> None:
+    def test_types_already_named_say_nothing_on_a_later_turn_and_a_new_type_does(self) -> None:
+        # A Hermes that streams the same new type ahead of every turn names it once, not on every turn.
         app = self.run_turn([(name, {}) for name in self.RENAMED])
         app.turn_pending = False  # the person interrupted it; nothing Hermes sent ended it
         self.run_turn([(name, {}) for name in self.RENAMED], app)
-        self.assertEqual(len(self.drift_notices(app)), 2)
+        self.assertEqual(len(self.drift_notices(app)), 1)
+        app.turn_pending = False
+        self.run_turn([("message.begin", {}), ("message.chunk", {}), ("message.flush", {})], app)
+        (_first, second) = self.drift_notices(app)
+        self.assertIn("(message.begin, message.chunk, message.flush)", second)
+
+    def test_the_count_starts_again_with_each_turn(self) -> None:
+        app = self.run_turn([("message.begin", {}), ("message.begin", {})])
+        app.turn_pending = False
+        self.run_turn([("message.chunk", {}), ("message.chunk", {})], app)
+        self.assertEqual(self.drift_notices(app), [])
+
+    def test_a_session_change_ends_the_watch(self) -> None:
+        # The new session's turn is running, so only `_adopt_session` can end the old turn's watch.
+        app = self.run_turn([("message.begin", {}), ("message.chunk", {})])
+        app._adopt_session({"session_id": "live-2", "running": True, "info": {}})
+        from omh.tui.gateway import Event
+
+        app._on_event(Event("message.chunk", "live-2", {}))
+        self.assertEqual(self.drift_notices(app), [])
 
     def test_a_refused_submit_ends_the_watch(self) -> None:
         from test_tui_modes import SID, answer, make_app

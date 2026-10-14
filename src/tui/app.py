@@ -241,12 +241,14 @@ CONNECTION_NOTICE = (
     "Esc interrupts the turn."
 )
 # The events that show a submitted turn is one the TUI can follow: the first of them ends the drift watch
-# (`App._watch_turn`). `session.info` and `session.usage` are left out: Hermes sends `session.info` ahead of
-# every recorded turn, renamed turn events or not.
+# (`App._watch_turn`). `session.info` and `session.usage` are left out: Hermes sends `session.info` after each
+# `message.complete`, and on a session's first turn one also arrives after the prompt and before
+# `message.start`, so it says nothing about whether this Hermes still sends the turn events the TUI reads.
 TURN_PROGRESS_EVENTS = frozenset((*contract.TRANSCRIPT_EVENTS, *contract.SUBAGENT_EVENTS, "error"))
 # Events of types the gateway contract does not declare that a submitted turn may bring, before any of
-# TURN_PROGRESS_EVENTS, without a word; the next one shows UNKNOWN_EVENTS_NOTICE. Two, so one or two events of
-# a new type that Hermes sends ahead of the usual ones say nothing.
+# TURN_PROGRESS_EVENTS, without a word; the next one shows UNKNOWN_EVENTS_NOTICE, unless every type the turn
+# brought was named in an earlier notice of this run. Two, so one or two events of a new type that Hermes sends
+# ahead of the usual ones say nothing.
 UNKNOWN_EVENTS_BEFORE_NOTICE = 2
 UNKNOWN_EVENT_NAME_CHARS = 40
 UNKNOWN_EVENTS_NOTICE = (
@@ -684,6 +686,8 @@ class App(ModesMixin, AgentViewMixin):
         # before the first prompt, once the watch ends, and after the notice (`_watch_turn`).
         self.turn_unknown: list[str] | None = None
         self.turn_unknown_count = 0
+        # Every undeclared type a notice has named, for the life of this TUI and its gateway, whatever the session.
+        self.unknown_named: set[str] = set()
         self.pending: dict[int, _Pending] = {}
         self.menu_index = 0
         self.pager: Pager | None = None
@@ -842,6 +846,7 @@ class App(ModesMixin, AgentViewMixin):
         cwd = as_text(info.get("cwd")) if isinstance(info, dict) else ""
         self.transcript.cwd = cwd or str(self._create_params().get("cwd", ""))
         self.turn_pending = bool(result.get("running"))
+        self.turn_unknown = None  # the drift watch was for a turn of the session being left
         self.busy_since = self.clock()
         # Accept belongs to the session being left; this one says its own, here or in its first session.info.
         # Plan is the TUI's flag and stays as it was.
@@ -1085,10 +1090,13 @@ class App(ModesMixin, AgentViewMixin):
         """Say once when a submitted turn has brought no event it shows, only types the contract does not declare.
 
         The first of TURN_PROGRESS_EVENTS ends the watch for the turn, and so
-        does a turn that is no longer pending (refused, or the session
-        changed); any other declared type, and a gateway-scoped one, neither
-        counts nor ends it. A turn whose events Hermes renamed would otherwise
-        only look like one that never finishes.
+        does a turn that is no longer pending (refused) and a session change
+        (`_adopt_session`); any other declared type, and a gateway-scoped one,
+        neither counts nor ends it. The count starts again with every turn,
+        but a turn whose undeclared types were all named before says nothing:
+        a Hermes that streams a new harmless type ahead of every turn would
+        otherwise repeat the notice on each one. A turn whose events Hermes
+        renamed would otherwise only look like one that never finishes.
         """
         unknown = self.turn_unknown
         if unknown is None or event_type.startswith(contract.GATEWAY_SCOPED_EVENT_PREFIX):
@@ -1102,8 +1110,10 @@ class App(ModesMixin, AgentViewMixin):
             unknown.append(event_type)
         self.turn_unknown_count += 1
         if self.turn_unknown_count > UNKNOWN_EVENTS_BEFORE_NOTICE:
-            types = ", ".join(clean_text(name)[:UNKNOWN_EVENT_NAME_CHARS] for name in unknown)
-            self.transcript.add_notice(UNKNOWN_EVENTS_NOTICE.format(types=types), NOTICE_WARN)
+            if not self.unknown_named.issuperset(unknown):
+                types = ", ".join(clean_text(name)[:UNKNOWN_EVENT_NAME_CHARS] for name in unknown)
+                self.transcript.add_notice(UNKNOWN_EVENTS_NOTICE.format(types=types), NOTICE_WARN)
+                self.unknown_named.update(unknown)
             self.turn_unknown = None
 
     def _on_error_event(self, message: str) -> None:
