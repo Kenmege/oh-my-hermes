@@ -353,16 +353,18 @@ class StartupRefusalTests(AppTestCase):
         self.assertEqual(run.terminal.entered, 0)
         self.assertEqual(run.clients[0].close(grace=FAST_GRACE), 0)
 
-    def test_drift_on_the_busy_mode_call_ends_the_session_in_the_loop(self) -> None:
-        # config.get is no longer awaited before the first frame, so its drift is met like drift in any call.
+    def test_drift_on_the_busy_mode_call_is_a_notice_and_the_session_goes_on(self) -> None:
+        # config.get is answered after the first frame, and the busy mode has a default: its drift costs nothing.
         drift = recorded_answer("session", "drift_reply")
         answers = (("config.get", drift), ("commands.catalog", recorded_answer("session", "commands_catalog")))
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        run.terminal.script(
+            Step(b"\x04", when=lambda: "did not send its settings" in run.terminal.history() and run.terminal.idle(),
+                 label="the settings notice")
+        )
         self.run_main(run)
-        self.assertEqual(run.code, 1, run.stderr.getvalue())
-        self.assertIn("this Hermes refused config.get (-32601)", run.stderr.getvalue())
-        self.assertIn("hermes --tui --resume", run.stderr.getvalue())
-        self.assertEqual((run.terminal.entered, run.terminal.exited), (1, 1))
+        self.assert_clean_run(run)
+        self.assertNotIn("this Hermes refused config.get", run.stderr.getvalue())
 
     def test_the_gateway_stderr_printed_at_a_failed_start_carries_no_escape_sequence(self) -> None:
         run = self.prepare(

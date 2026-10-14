@@ -296,6 +296,10 @@ RELOAD_REFUSED_NOTICE = (
     "Hermes did not rescan its skills ({code}: {message}); a skill installed since the OMH TUI started runs as "
     "/<name> once it is restarted."
 )
+SETTINGS_REFUSED_NOTICE = (
+    "Hermes did not send its settings ({code}: {message}), so a prompt sent during a turn queues until the turn "
+    "ends (busy_input_mode queue, Hermes' default)."
+)
 CATALOG_REFUSED_NOTICE = (
     "Hermes did not send its command list ({code}: {message}), so completion and /help show only what the "
     "OMH TUI already knew; Hermes commands still run when typed."
@@ -773,7 +777,7 @@ class App(ModesMixin, AgentViewMixin):
         else:
             result = self.client.call("session.create", self._create_params())
         self._adopt_session(result, fallback_stored=resume)
-        self._request("config.get", {"key": "full"}, self._take_busy_mode, lambda error: True)
+        self._request("config.get", {"key": "full"}, self._take_busy_mode, self._on_settings_refused)
         self._refresh_catalog()
         self.banner_record = self._banner_record(result, resumed=self.stored_id if resume else "")
         self.banner_facts = dict(self.banner_record)
@@ -823,8 +827,14 @@ class App(ModesMixin, AgentViewMixin):
         self.transcript.retake_tail(self.size[0], self.theme, REDRAW_TAIL_ROWS)
 
     def _take_busy_mode(self, result: dict[str, Any]) -> None:
-        """`config.get`'s answer; a refusal other than drift keeps `BUSY_QUEUE` (drift is `_on_response`'s)."""
+        """`config.get`'s answer: the busy mode Hermes is set to."""
         self.busy_mode = busy_mode(result)
+
+    def _on_settings_refused(self, error: dict[str, Any]) -> bool:
+        """A refused `config.get`, drift included (`contract.OPTIONAL_METHODS`): `BUSY_QUEUE` stays, and a notice says so."""
+        message = as_text(error.get("message")) or "refused"
+        self.transcript.add_notice(SETTINGS_REFUSED_NOTICE.format(code=error.get("code"), message=message), NOTICE_WARN)
+        return True
 
     def _catalog_params(self) -> dict[str, Any]:
         return {"session_id": self.sid} if self.sid else {}
