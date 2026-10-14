@@ -50,7 +50,7 @@ def _token_metadata(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _add_hud_commands(sub) -> None:
-    hud = sub.add_parser("hud", help="Print the compact OMH status line that Hermes TUI/plugin surfaces can render.")
+    hud = sub.add_parser("hud", help="Print the compact OMH status line that the OMH TUI and plugin surfaces can render.")
     hud.add_argument("--preset", choices=("minimal", "focused", "full"), default="focused")
     hud.add_argument("--limit", type=int, default=3, help="Maximum recent runtime runs to inspect.")
     hud.add_argument("--tokens-remaining", type=float, default=None, help="Optional host-provided token metadata.")
