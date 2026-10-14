@@ -25,6 +25,10 @@ clicks and the wheel are reported, in SGR form; motion tracking is never
 asked for. Every exit turns it off again (`mouse_reporting` says whether it
 is on).
 
+`read` waits on the input and, when the caller names one, a wake descriptor
+(the gateway client's), and a resize signal ends its wait too, so the loop can
+sleep until there is input, news from the gateway, or a new size.
+
 Windows has no termios; `terminal_supported` reports that, and the caller
 takes the fallback path instead of entering a `Terminal`.
 """
@@ -182,6 +186,7 @@ class Terminal:
         self._saved: list | None = None
         self._previous_winch: object = None
         self._winch_installed = False
+        self._winch_pipe: tuple[int, int] | None = None  # the resize signal writes here to end a `read`'s wait
         self._resized = False
         self._keyboard_request = keyboard_protocol_request(environ or {})
         # True while the richer key reports are asked for. Asked, not reported: see the module docstring.
@@ -251,16 +256,26 @@ class Terminal:
 
     def _on_winch(self, signum: int, frame: FrameType | None) -> None:
         self._resized = True
+        if self._winch_pipe is not None:
+            try:
+                os.write(self._winch_pipe[1], b"\0")
+            except BlockingIOError:  # full: a wait ends already
+                pass
 
     def _install_winch(self) -> None:
         winch = getattr(signal, "SIGWINCH", None)
         if winch is None:
             return
+        read_end, write_end = os.pipe()
+        os.set_blocking(read_end, False)
+        os.set_blocking(write_end, False)
+        self._winch_pipe = (read_end, write_end)
         try:
             self._previous_winch = signal.signal(winch, self._on_winch)
         except ValueError:
             # Handlers can only be installed from the main thread; the caller
             # still sees a resize through size() on its next frame.
+            self._close_winch_pipe()
             return
         self._winch_installed = True
 
@@ -270,6 +285,12 @@ class Terminal:
         previous = self._previous_winch if self._previous_winch is not None else signal.SIG_DFL
         signal.signal(signal.SIGWINCH, previous)
         self._winch_installed = False
+        self._close_winch_pipe()
+
+    def _close_winch_pipe(self) -> None:
+        pipe, self._winch_pipe = self._winch_pipe, None
+        for descriptor in pipe or ():
+            os.close(descriptor)
 
     def resized(self) -> bool:
         """True once per SIGWINCH since the last call."""
@@ -284,14 +305,25 @@ class Terminal:
             return FALLBACK_SIZE
         return (size.columns or FALLBACK_SIZE[0], size.lines or FALLBACK_SIZE[1])
 
-    def read(self, timeout: float) -> bytes:
+    def read(self, timeout: float, wake: int | None = None) -> bytes:
         """Whatever input arrives within `timeout` seconds, b"" if none.
 
-        Raises EOFError when the terminal hung up, so a closed window ends the
-        session instead of spinning on empty reads.
+        The wait also ends, with b"", when `wake` becomes readable (the caller
+        empties it) or a resize signal arrives. Raises EOFError when the
+        terminal hung up, so a closed window ends the session instead of
+        spinning on empty reads.
         """
-        ready, _, _ = select.select([self._input], [], [], max(timeout, 0.0))
-        if not ready:
+        waits = [self._input, *(() if wake is None else (wake,))]
+        if self._winch_pipe is not None:
+            waits.append(self._winch_pipe[0])
+        ready, _, _ = select.select(waits, [], [], max(timeout, 0.0))
+        if self._winch_pipe is not None and self._winch_pipe[0] in ready:
+            try:
+                while os.read(self._winch_pipe[0], 64):
+                    pass
+            except BlockingIOError:
+                pass
+        if self._input not in ready:
             return b""
         try:
             data = os.read(self._input, READ_CHUNK_BYTES)

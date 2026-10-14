@@ -17,6 +17,7 @@ import os
 import select
 import signal
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -373,6 +374,31 @@ class TerminalPtyTests(unittest.TestCase):
     def test_read_returns_nothing_when_nothing_arrives(self) -> None:
         with Terminal(self.slave, self.slave) as term:
             self.assertEqual(term.read(0.05), b"")
+
+    def test_a_readable_wake_descriptor_ends_the_wait_with_nothing_read(self) -> None:
+        wake, waker = os.pipe()
+        self._open.update((wake, waker))
+        self.addCleanup(self.close, wake)
+        self.addCleanup(self.close, waker)
+        with Terminal(self.slave, self.slave) as term:
+            os.write(waker, b"\0")
+            started = time.monotonic()
+            self.assertEqual(term.read(_READ_WATCHDOG_SECONDS, wake), b"")
+            self.assertLess(time.monotonic() - started, _READ_WATCHDOG_SECONDS / 2)
+            os.write(self.master, b"x")  # input waiting too: the input is what a read returns
+            self.assertEqual(term.read(_READ_WATCHDOG_SECONDS, wake), b"x")
+
+    @unittest.skipUnless(threading.current_thread() is threading.main_thread(), "signal handlers need the main thread")
+    def test_a_resize_signal_ends_a_wait(self) -> None:
+        with Terminal(self.slave, self.slave) as term:
+            timer = threading.Timer(0.1, os.kill, (os.getpid(), signal.SIGWINCH))
+            started = time.monotonic()
+            timer.start()
+            self.assertEqual(term.read(_READ_WATCHDOG_SECONDS), b"")
+            timer.join()
+            self.assertLess(time.monotonic() - started, _READ_WATCHDOG_SECONDS / 2)
+            self.assertTrue(term.resized())
+            self.assertEqual(term.read(0.05), b"")  # the signal's wake-up was used up by the read it ended
 
     def test_output_is_not_post_processed(self) -> None:
         with Terminal(self.slave, self.slave) as term:

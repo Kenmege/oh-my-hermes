@@ -31,7 +31,7 @@ from omh.tui.agent_view import (
 from omh.tui.app import SLOT_ARM_SECONDS, VIEW_OPEN_NOTICE, App
 from omh.tui.frame import MODE_NORMAL
 from omh.tui.gateway import Event, Response, ServerRequest
-from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, Paste
+from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Paste
 from omh.tui.pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from omh.tui.session_picker import SessionPicker, SessionRow
 from omh.tui.style import Span
@@ -307,6 +307,13 @@ class ListLeaveTests(unittest.TestCase):
         type_text(app, "hi")
         self.assertEqual((app.list_selected, app.composer.text, client.calls), (None, "hi", []))
 
+    def test_esc_then_a_command_in_one_read_leaves_the_list_and_types_the_command(self) -> None:
+        # The bytes are Alt+/ and then the rest: the chord leaves the list, then the composer types its `/`.
+        app, client = focused()
+        for event in KeyDecoder().feed(b"\x1b/quit"):
+            app._on_input(event)
+        self.assertEqual((app.list_selected, app.composer.text, client.calls), (None, "/quit", []))
+
     def test_a_paste_leaves_the_list_and_is_pasted(self) -> None:
         app, _client = focused()
         app._on_input(Paste("two\nlines"))
@@ -433,6 +440,21 @@ class AgentLogTests(unittest.TestCase):
         drawn(app)
         self.assertEqual(paged(app)[1], "completed · 5s · 1 tool · deepseek-v4.1-flash")
         self.assertEqual(paged(app)[-1], "three call sites")
+
+    def test_a_tick_with_nothing_new_repaints_nothing_and_a_full_redraw_under_the_log_paints_it_all(self) -> None:
+        now = [0.0]
+        app, _client = log_open(clock=lambda: now[0])
+        screen = drawn(app)
+        writes = len(app.terminal.writes)  # type: ignore[attr-defined]
+        app._render()
+        self.assertEqual("".join(app.terminal.writes[writes:]), "")  # type: ignore[attr-defined]
+        now[0] = 3.0  # the header's clock moves: that row alone repaints
+        app._render()
+        tick = "".join(app.terminal.writes[writes:])  # type: ignore[attr-defined]
+        self.assertIn(" · 3s · 0 tools", tick)
+        self.assertNotIn("find usages of old_api", tick)
+        app._full_redraw()  # it clears the screen the log is on
+        self.assertEqual(drawn(app)[0], screen[0])
 
     def test_a_log_read_at_its_end_follows_new_rows_and_one_scrolled_up_stays(self) -> None:
         app, _client = agent_app()
@@ -751,11 +773,13 @@ class TailPollTests(unittest.TestCase):
     def test_a_timed_out_call_is_forgotten_when_the_next_goes_out(self) -> None:
         app, client, now = self.open()
         app._ask_tail_when_due()
+        first = len(client.calls)
         now[0] += TAIL_ANSWER_SECONDS
         app._ask_tail_when_due()
         self.assertEqual(len(tails(client)), 2)
         waiting = [call for call in app.pending.values() if call.method == "subagent.tail"]
         self.assertEqual(len(waiting), 1)  # a gateway that never answers cannot grow `pending`
+        self.assertEqual(client.forgotten, [first])  # nor the client's own record of what it waits for
 
     def test_a_new_turn_drops_every_piece_of_tail_bookkeeping(self) -> None:
         app, client, now = self.open()
@@ -763,10 +787,12 @@ class TailPollTests(unittest.TestCase):
         answer(app, client, NO_TAIL)
         now[0] += TAIL_POLL_SECONDS
         app._ask_tail_when_due()  # a second call, still out
+        second = len(client.calls)
         self.assertTrue(app.tail_misses)
         app._submit_prompt("next task")
         self.assertEqual(app.tail_misses, {})
         self.assertEqual([call for call in app.pending.values() if call.method == "subagent.tail"], [])
+        self.assertEqual(client.forgotten, [second])
         self.assertEqual((app.tail_asked_at, app.tail_open), (None, False))
 
     def test_a_tail_in_between_starts_the_count_again_and_the_count_is_each_agents(self) -> None:

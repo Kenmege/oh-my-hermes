@@ -99,12 +99,8 @@ from .todo_evidence import (
 # one eviction policy, one key derivation, one reset seam a new test has to
 # remember (`reset_nudge_budget`).
 from .hooks.nudge_budget import plan_line_turns_on_record
-from .runtime_reader import (
-    DECLARED_TODO_STATUSES,
-    TODO_UNCHANGED_STATUSES,
-    read_omh_todo,
-    todo_unchanged_text,
-)
+from .hud_text import TODO_UNCHANGED_STATUSES, todo_unchanged_text
+from .runtime_reader import DECLARED_TODO_STATUSES, read_omh_todo
 # Who opened the turn moved to `turn_authorship` when the route hint became
 # its second reader (#1741): a routing surface importing a turn-authorship
 # predicate from the plan-checklist module reads wrong, and the alternative

@@ -5,9 +5,9 @@ terminal whose output lands in the VT screen model, a fake HUD poller, and the
 real `GatewayClient` talking to the replay gateway, which plays recorded Hermes
 6c61c3e27d frames and checks every frame the TUI sends against the recording.
 The TUI's startup differs from the recording client's (it asks `config.get`
-before `session.create` and `commands.catalog` after it), so those two are answered
-from the scenario's answer table: the catalog with its recorded answer, the
-config with an empty one.
+and `commands.catalog` after `session.create`, without waiting for either), so
+those two are answered from the scenario's answer table: the catalog with its
+recorded answer, the config with an empty one.
 
 A script step waits for a condition on what the screen shows, then delivers
 its bytes (or a resize); one silent read follows every step, so a lone Esc
@@ -76,8 +76,9 @@ STATUS_MARK = "⚚ OMH"
 RULE_MARK = "────"
 # Between the composer and the status line on these 24-row terminals: the bottom rule and the mode row.
 UNDER_COMPOSER = 2
-# The catalog is read after the session, naming it, so project-local skills are listed for its workspace.
-STARTUP_METHODS = ["client.capabilities", "config.get", "session.create", "commands.catalog"]
+# Only the session call is awaited. The catalog is read after the session, naming it, so project-local skills
+# are listed for its workspace.
+STARTUP_METHODS = ["client.capabilities", "session.create", "config.get", "commands.catalog"]
 NO_TERMIOS = terminal_module.termios is None
 TURN_CANCELLED = "Turn cancelled before the agent was ready"
 
@@ -166,7 +167,7 @@ class ScriptedTerminal:
         time.sleep(0.005)
         return b""
 
-    def read(self, timeout: float) -> bytes:
+    def read(self, timeout: float, wake: int | None = None) -> bytes:
         if self._quiet:
             self._quiet = False
             return self._wait("the silence after a step")
@@ -212,9 +213,11 @@ class FakePoller:
         self.sessions: list[str] = []
         self.started = False
         self.stopped = False
+        self.wake: object = None
 
-    def start(self) -> None:
+    def start(self, wake: object = None) -> None:
         self.started = True
+        self.wake = wake
 
     def stop(self, timeout: float = 1.0) -> None:
         self.stopped = True
@@ -342,16 +345,28 @@ class StartupRefusalTests(AppTestCase):
         self.assertEqual(run.clients, [])
         self.assertEqual(run.terminal.entered, 0)
 
-    def test_drift_on_a_startup_call_falls_back_and_reaps_the_gateway(self) -> None:
-        # Hermes 6c61c3e27d's real -32601 answer, served for config.get.
+    def test_drift_on_the_session_call_falls_back_and_reaps_the_gateway(self) -> None:
+        # Hermes 6c61c3e27d's real -32601 answer, served for session.create.
         drift = recorded_answer("session", "drift_reply")
-        run = self.prepare(Scenario("session", spans("session", "startup"), answers=(("config.get", drift),)))
+        run = self.prepare(Scenario("session", spans("session", "startup"), answers=(("session.create", drift),)))
         self.run_main(run)
         self.assert_fell_back(run)
         self.assertIn("-32601", run.stderr.getvalue())
         self.assertEqual(run.terminal.entered, 0)
         self.assertEqual(run.clients[0].close(grace=FAST_GRACE), 0)
 
+    def test_drift_on_the_busy_mode_call_is_a_notice_and_the_session_goes_on(self) -> None:
+        # config.get is answered after the first frame, and the busy mode has a default: its drift costs nothing.
+        drift = recorded_answer("session", "drift_reply")
+        answers = (("config.get", drift), ("commands.catalog", recorded_answer("session", "commands_catalog")))
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        run.terminal.script(
+            Step(b"\x04", when=lambda: "did not send its settings" in run.terminal.history() and run.terminal.idle(),
+                 label="the settings notice")
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertNotIn("this Hermes refused config.get", run.stderr.getvalue())
 
     def test_the_gateway_stderr_printed_at_a_failed_start_carries_no_escape_sequence(self) -> None:
         run = self.prepare(
@@ -375,7 +390,7 @@ class StartupRefusalTests(AppTestCase):
             call = client.call
 
             def call_or_interrupt(method: str, params: dict, timeout: float = 30.0) -> dict:
-                if method == "config.get":
+                if method == "session.create":
                     raise KeyboardInterrupt
                 return call(method, params, timeout)
 
@@ -406,11 +421,11 @@ class SignalledTerminal(ScriptedTerminal):
         super().__init__()
         self.signum = signum
 
-    def read(self, timeout: float) -> bytes:
+    def read(self, timeout: float, wake: int | None = None) -> bytes:
         if self.signum and self.idle():
             signum, self.signum = self.signum, 0
             signal.raise_signal(signum)
-        return super().read(timeout)
+        return super().read(timeout, wake)
 
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
@@ -461,6 +476,7 @@ class SessionTests(AppTestCase):
         self.assertEqual(stat.S_IMODE(os.stat(run.active_session_file).st_mode), 0o600)
         self.assertEqual(run.poller.sessions, [STORED_ID])
         self.assertTrue(run.poller.started and run.poller.stopped)
+        self.assertEqual(run.poller.wake, run.clients[0].wake)  # a new HUD snapshot wakes the loop as gateway news does
         self.assertEqual((run.terminal.entered, run.terminal.exited), (1, 1))
         # The region is gone after exit; nothing of it is left on the screen.
         self.assertNotIn(STATUS_MARK, run.terminal.history())
@@ -1582,7 +1598,9 @@ class LocalCommandTests(AppTestCase):
         )
         terminal = run.terminal
         terminal.script(
-            self.submit(run, "/help"),
+            # The first frame comes before Hermes' catalog does: /help waits until the menu offers Hermes' /undo.
+            Step(b"/und", when=terminal.idle, label="idle"),
+            Step(b"\x15/help\r", when=terminal.shows("/undo"), label="Hermes' catalog in the menu"),
             Step(b"q", when=lambda: terminal.screen.alternate, capture="pager", label="the help pager"),
             Step(b"\x04", when=lambda: not terminal.screen.alternate and terminal.idle(), label="back"),
         )
@@ -1671,7 +1689,11 @@ class LocalCommandTests(AppTestCase):
                 )
                 terminal = run.terminal
                 terminal.script(
-                    Step(b"first prompt\rsecond prompt\r", when=terminal.idle, label="idle"),
+                    # The busy mode is read without holding up the first frame, and input sent while a turn runs
+                    # before its answer queues (Hermes' default). The replay answers in the order it was asked,
+                    # config.get before the catalog, so once the menu offers Hermes' /undo the mode has arrived.
+                    Step(b"/und", when=terminal.idle, label="idle"),
+                    Step(b"\x15first prompt\rsecond prompt\r", when=terminal.shows("/undo"), label="the mode read"),
                     Step(b"\x04", when=lambda terminal=terminal: "cleanly)." in terminal.history() and terminal.idle(),
                          label="turn 2"),
                 )

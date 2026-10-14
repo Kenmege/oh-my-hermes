@@ -6,8 +6,10 @@ import json
 import os
 from pathlib import Path
 import signal
+import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from _test_temp_root import make_test_tempdir
 from _tui_gateway_replay import EXIT, HANG, Scenario, load_fixture, materialize, replay_env, spans
@@ -295,6 +297,56 @@ class GatewayTurnTests(ReplayTestCase):
         self.assertIsInstance(answer, Response)
         self.assertEqual(answer.id, request_id)
         self.assertEqual(answer.result["sessions"][0]["id"], "20261013_115656_e709ea")
+
+
+class GatewayForgetTests(unittest.TestCase):
+    def test_an_answer_to_a_forgotten_request_is_dropped(self) -> None:
+        client = GatewayClient(gateway_spawn(LAUNCHER_ENV))
+        with patch.object(client, "_write"):  # nothing spawned: the request is only recorded as waited for
+            kept, forgotten = client.request("session.list", {}), client.request("session.list", {})
+        client.forget(forgotten)
+        client._deliver(Response(forgotten, {"sessions": []}, None))  # what the reader thread does with a line
+        client._deliver(Response(kept, {"sessions": []}, None))
+        self.assertEqual([item.id for item in client.poll()], [kept])  # type: ignore[union-attr]
+
+
+@unittest.skipIf(os.name == "nt", "select() waits on sockets only on Windows, and the TUI's loop is POSIX-only")
+class GatewayWakeTests(ReplayTestCase):
+    """`wake_fd` is readable while an item waits for `poll`, so the loop can sleep until the gateway has something."""
+
+    def readable(self, fd: int, timeout: float = 0.0) -> bool:
+        import select
+
+        return bool(select.select([fd], [], [], timeout)[0])
+
+    def test_an_item_for_poll_wakes_and_poll_empties_the_wake(self) -> None:
+        client = self.started(Scenario("session", spans("session", "startup", "create", "session_list")))
+        wake = client.wake_fd()
+        self.assertFalse(self.readable(wake))
+        client.call("session.create", {"cols": 100, "cwd": "/fixture/project"})
+        self.assertFalse(self.readable(wake, 0.2))  # a blocking call's answer goes to its caller, not to poll
+        client.request("session.list", {})
+        self.assertTrue(self.readable(wake, 10.0))
+        (answer,) = client.poll()
+        self.assertIsInstance(answer, Response)
+        self.assertFalse(self.readable(wake))
+
+    def test_wake_from_another_thread_is_emptied_by_poll(self) -> None:
+        client = self.started(Scenario("session", spans("session", "startup")))
+        descriptor = client.wake_fd()
+        self.assertFalse(self.readable(descriptor))
+        waker = threading.Thread(target=client.wake)  # the HUD poller's thread, with a new snapshot
+        waker.start()
+        waker.join()
+        self.assertTrue(self.readable(descriptor))
+        self.assertEqual(client.poll(), [])
+        self.assertFalse(self.readable(descriptor))
+
+    def test_items_queued_before_the_first_ask_wake_at_once(self) -> None:
+        garbage = "not json"
+        client = self.started(Scenario("session", spans("session", "startup"), inject=((0, garbage),)))
+        self.assertTrue(self.readable(client.wake_fd()))
+        self.assertEqual(client.wake_fd(), client.wake_fd())
 
 
 class GatewayErrorTests(ReplayTestCase):

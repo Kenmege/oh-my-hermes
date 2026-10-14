@@ -78,6 +78,10 @@ from .run_records import (
     WRAPPER_FILE,
 )
 from .todo_evidence import valid_evidence
+# Moved to `hud_text`, which formats without importing this reader; still importable from here.
+from .hud_text import TODO_UNCHANGED_STATUSES as TODO_UNCHANGED_STATUSES
+from .hud_text import elapsed_text as elapsed_text
+from .hud_text import todo_unchanged_text
 from .todo_store import (
     MAX_TODO_BLOCKED_REASON_CHARS,
     MAX_TODO_DEFERRED_REASON_CHARS,
@@ -123,9 +127,6 @@ TODO_BLOCKED_REASON_DISPLAY_CHARS = 48
 # explained by one long tool call this install observed. Deriving it from that
 # constant keeps the two rules from drifting apart.
 TODO_UNCHANGED_SECONDS = TOOL_CALL_OPEN_TTL_SECONDS
-# The two statuses that ARE the finding; every other value is a way of being
-# silent. Named once so a caller cannot cover one and miss the other.
-TODO_UNCHANGED_STATUSES: frozenset[str] = frozenset({"unchanged", "unchanged_while_busy"})
 # The statuses that mean this session has a plan record to show: one with work
 # left, and one finished and still lingering. Named once for the same reason as
 # the pair above -- a caller that covered `established` and missed `all_done`
@@ -228,6 +229,13 @@ HUD_FANOUT_CACHE_FILE = "hud-fanout-cache.json"
 HUD_FANOUT_CACHE_SCHEMA_VERSION = "omh_hud_fanout_cache/v1"
 HUD_FANOUT_CACHE_TTL_SECONDS = 3.0
 HUD_FANOUT_CACHE_LOCK_SECONDS = 1.0
+# What the last HUD read of this process learned from each executor-progress binding file, by path: the file's
+# identity (inode, mtime, ctime, size) and the binding's `updated_at`, or None when it is not a valid binding.
+# The cut is by `updated_at`, so every binding file is still listed and stat'ed, but a reader that polls (the
+# OMH TUI's) opens only the files written since and the ones that survive the cut. Each read replaces the map
+# with the files it saw. A coarse mtime does not hide a rewrite: `write_progress_binding` replaces the file
+# atomically (a temp file renamed over it), so each version is a new inode while the old one is still live.
+_hud_binding_orders: dict[Path, tuple[tuple[int, int, int, int], str | None]] = {}
 
 
 def _expand_path(value: str | Path) -> Path:
@@ -532,8 +540,8 @@ def _contains_symlink(path: Path, *, root: Path) -> bool:
     return root.is_symlink()
 
 
-def _child_files(directory: Path, *relative: str) -> list[Path]:
-    """Return every existing `directory/<child>/*relative` file.
+def _child_names(directory: Path) -> list[str]:
+    """The names of `directory`'s children that are not symlinks.
 
     `Path.glob` is tolerant by design: it swallows the `OSError` `os.scandir`
     raises on an unreadable directory and yields nothing, so a directory the
@@ -550,10 +558,14 @@ def _child_files(directory: Path, *relative: str) -> list[Path]:
     """
     try:
         with os.scandir(directory) as entries:
-            names = [entry.name for entry in entries if not entry.is_symlink()]
+            return [entry.name for entry in entries if not entry.is_symlink()]
     except (FileNotFoundError, NotADirectoryError):
         return []
-    candidates = [directory.joinpath(name, *relative) for name in names]
+
+
+def _child_files(directory: Path, *relative: str) -> list[Path]:
+    """Return every existing `directory/<child>/*relative` file (children read by `_child_names`)."""
+    candidates = [directory.joinpath(name, *relative) for name in _child_names(directory)]
     return [
         candidate
         for candidate in candidates
@@ -564,14 +576,33 @@ def _child_files(directory: Path, *relative: str) -> list[Path]:
 
 def _hud_child_files(directory: Path, *relative: str) -> list[Path]:
     files = _child_files(directory, *relative)
-    safe: list[Path] = []
-    for path in files:
-        try:
-            if path.stat().st_size <= MAX_HUD_METADATA_BYTES:
-                safe.append(path)
-        except OSError:
-            continue
-    return safe
+    return [path for path in files if _within_hud_cap(path)]
+
+
+def _within_hud_cap(path: Path) -> bool:
+    try:
+        return path.stat().st_size <= MAX_HUD_METADATA_BYTES
+    except OSError:
+        return False
+
+
+def _newest_hud_child_files(directory: Path, *relative: str, limit: int) -> list[Path]:
+    """The first `limit` of `_hud_child_files` in reverse path order, checking only the children it gets to.
+
+    The names are read by `_child_names`, as `_child_files` reads them (an
+    unreadable directory raises), and sorted first, so a directory of
+    thousands of runs costs the HUD the newest few, not every one. Same result
+    as `sorted(_hud_child_files(...), reverse=True)[:limit]`: the paths sort
+    the same way, and a child that is not a file within the cap is passed over
+    as it was dropped there.
+    """
+    found: list[Path] = []
+    for candidate in sorted((directory.joinpath(name, *relative) for name in _child_names(directory)), reverse=True):
+        if len(found) >= limit:
+            break
+        if not _contains_symlink(candidate, root=directory) and candidate.is_file() and _within_hud_cap(candidate):
+            found.append(candidate)
+    return found
 
 
 def _bool_from_record(record: dict[str, Any], key: str = "observed") -> bool:
@@ -2208,21 +2239,6 @@ def default_omh_home() -> Path:
     return _default_omh_home()
 
 
-def elapsed_text(seconds: float) -> str:
-    """``12s`` / ``4m 3s`` / ``2h 01m``.
-
-    Byte-identical to the widget's own ``elapsedText``, so the same elapsed
-    figure reads the same whether it arrives through the TUI panel, the text
-    HUD line, or the per-turn reminder.
-    """
-    total = max(0, int(seconds))
-    if total < 60:
-        return f"{total}s"
-    if total < 3600:
-        return f"{total // 60}m {total % 60}s"
-    return f"{total // 3600}h {total // 60 % 60:02d}m"
-
-
 def _todo_stall(activity: dict[str, Any] | None, age: float | None) -> dict[str, Any]:
     """Whether an established plan's checklist has visibly stopped moving.
 
@@ -2274,25 +2290,6 @@ def _todo_stall(activity: dict[str, Any] | None, age: float | None) -> dict[str,
         "threshold_seconds": TODO_UNCHANGED_SECONDS,
         "claim_boundary": TODO_STALL_CLAIM_BOUNDARY,
     }
-
-
-def todo_unchanged_text(todo: dict[str, Any]) -> str:
-    """How long this checklist has been unchanged, when that is the finding.
-
-    Empty for every other stall status, so a caller renders the hint by
-    appending this and nothing else; the projection's own status stays the
-    single place the rule lives.
-    """
-    stall = todo.get("stall")
-    # Both findings carry the age. `unchanged_while_busy` is the same fact with
-    # calls running, and dropping it here would have silently reinstated the
-    # liveness suppression the status split exists to remove.
-    if not isinstance(stall, dict) or stall.get("status") not in TODO_UNCHANGED_STATUSES:
-        return ""
-    seconds = todo.get("updated_age_seconds")
-    if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
-        return ""
-    return elapsed_text(seconds)
 
 
 def todo_blocked_reason_display(item: dict[str, Any]) -> str:
@@ -3198,10 +3195,7 @@ def _read_omh_hud_status(home: Path, *, limit: int) -> dict[str, Any]:
     json_reader = partial(_read_hud_json, root=runtime_dir)
     coding_reader = partial(_read_hud_coding_projection, root=runtime_dir)
     runs: list[dict[str, Any]] = []
-    for run_json in sorted(
-        _hud_child_files(runtime_dir / "runs", RUN_FILE),
-        reverse=True,
-    )[:limit]:
+    for run_json in _newest_hud_child_files(runtime_dir / "runs", RUN_FILE, limit=limit):
         run = json_reader(run_json)
         if run:
             runs.append(
@@ -3291,7 +3285,7 @@ def _progress_bindings(
     limit: int,
     hud_safe: bool = False,
 ) -> list[dict[str, Any]]:
-    candidates: list[tuple[dict[str, Any], Path]] = []
+    candidates: list[tuple[str, dict[str, Any] | None, Path, str]] = []  # (updated_at, binding read now, path, type)
     roots = (
         (runtime_dir / "runs", "run"),
         (runtime_dir / "wrapper_sessions", "wrapper_session"),
@@ -3307,18 +3301,32 @@ def _progress_bindings(
         if hud_safe
         else _read_jsonl
     )
+    seen: dict[Path, tuple[tuple[int, int, int, int], str | None]] = {}
     for root, target_type in roots:
         for binding_path in sorted(child_files(root, "executor_progress", EXECUTOR_PROGRESS_BINDING_FILE), reverse=True):
-            binding = json_reader(binding_path)
-            if not _valid_progress_binding(binding, target_type):
-                continue
-            candidates.append((binding, binding_path.parent))
+            if hud_safe:
+                order, binding = _hud_binding_order(binding_path, target_type, json_reader, seen)
+                if order is None:
+                    continue
+            else:
+                binding = json_reader(binding_path)
+                if not _valid_progress_binding(binding, target_type):
+                    continue
+                order = str(binding.get("updated_at", ""))
+            candidates.append((order, binding, binding_path, target_type))
+    if hud_safe:
+        _hud_binding_orders.clear()
+        _hud_binding_orders.update(seen)
     # The order and the cut depend on the binding alone, so the event and
     # report logs -- the bulk of this read -- are opened only for the bindings
     # that survive the cut (#2030).
-    candidates.sort(key=lambda candidate: str(candidate[0].get("updated_at", "")), reverse=True)
+    candidates.sort(key=lambda candidate: candidate[0], reverse=True)
     items: list[dict[str, Any]] = []
-    for binding, progress_dir in candidates[:limit]:
+    for _order, read, binding_path, target_type in candidates[:limit]:
+        binding = read if read is not None else json_reader(binding_path)
+        if read is None and not _valid_progress_binding(binding, target_type):
+            continue  # its file changed after it was stat'ed
+        progress_dir = binding_path.parent
         events = jsonl_reader(progress_dir / EVENTS_FILE)
         reports = jsonl_reader(progress_dir / EXECUTOR_PROGRESS_REPORTS_FILE)
         binding_id = str(binding.get("binding_id", ""))
@@ -3333,6 +3341,33 @@ def _progress_bindings(
             }
         )
     return items
+
+
+def _hud_binding_order(
+    path: Path,
+    target_type: str,
+    json_reader: Callable[[Path], dict[str, Any]],
+    seen: dict[Path, tuple[tuple[int, int, int, int], str | None]],
+) -> tuple[str | None, dict[str, Any] | None]:
+    """The binding file's `updated_at` (None when it holds no valid binding), and the binding when it was read now.
+
+    While the file is the one the last read saw (`_hud_binding_orders`), its
+    order comes from there and it is not opened. What this read learned goes
+    into `seen`.
+    """
+    try:
+        status = os.stat(path)
+    except OSError:
+        return None, None
+    identity = (status.st_ino, status.st_mtime_ns, status.st_ctime_ns, status.st_size)
+    held = _hud_binding_orders.get(path)
+    if held is not None and held[0] == identity:
+        seen[path] = held
+        return held[1], None
+    binding = json_reader(path)
+    order = str(binding.get("updated_at", "")) if _valid_progress_binding(binding, target_type) else None
+    seen[path] = (identity, order)
+    return order, binding if order is not None else None
 
 
 def _projected_binding_state(runtime_dir: Path, binding: dict[str, Any]) -> str:

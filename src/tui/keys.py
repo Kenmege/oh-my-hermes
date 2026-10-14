@@ -12,8 +12,17 @@ silence, and what is held settles only once the silence since its last byte,
 read from the decoder's clock, is long enough for it: a lone ESC becomes
 `Key("escape")` at once, or after `REPORTING_ESCAPE_SECONDS` while a mouse
 report may still arrive (the caller says whether reporting is on, and when it
-last went off). A paste is not settled by `flush()`: it ends only at the
-terminal's paste-end marker.
+last went off). A lone ESC held from an earlier read also settles at the next
+read that cannot go on with a sequence (see `_continues_escape`), silence or
+not: it is Esc, and that read's bytes are keys of their own. So an Alt chord is
+an ESC and its key in one read; split across two reads it is Esc and the key,
+which is what Esc and then a key typed before the next silence send. A paste
+ends at the terminal's paste-end marker; one whose marker never comes ends at
+the first `flush()` after `PASTE_SETTLE_SECONDS` of silence, as what arrived
+so far, and the bytes after that are keys again, except that a carriage return
+among them is a newline (`Paste("\n")`) until the late end marker arrives,
+which is no key, or `PASTE_LATE_SECONDS` pass without a read of more than one
+key.
 
 Nothing here raises on input. A sequence it does not know becomes
 `Key("unknown")` and decoding continues with the next byte.
@@ -96,7 +105,16 @@ HORIZONTAL_TAB = 0x09
 BACKSPACE_BYTE = 0x08
 DELETE_BYTE = 0x7F
 PASTE_START_PARAMETER = "200"
+PASTE_END_PARAMETER = "201"
 PASTE_END = b"\x1b[201~"
+# An open paste this long without a byte is over though its end marker never came, as Hermes' own TUI rules
+# (hermes-ink `App.tsx` PASTE_TIMEOUT); without it every later key, Ctrl+C included, would be paste text.
+PASTE_SETTLE_SECONDS = 0.5
+# After that settle the terminal still owes the paste's rest and its end marker. Until the marker arrives, or this
+# long passes without a read that brings more than one key (the rest arrives in chunks; typed keys come one a
+# read and do not count), a carriage return is a newline in the paste, not Enter: a stalled multi-line paste must
+# not submit its first lines. The marker itself is then no key.
+PASTE_LATE_SECONDS = 1.0
 
 # A CSI longer than this without a final byte is garbage, not a slow key; the
 # bound keeps a hostile or broken stream from growing the held tail forever.
@@ -261,8 +279,9 @@ class Mouse:
     ctrl: bool = False
 
 
-# Internal marker for ESC[200~; it never leaves the decoder.
+# Internal markers for ESC[200~ and ESC[201~ outside a paste; neither leaves the decoder.
 _PASTE_START = Key("paste-start")
+_PASTE_END = Key("paste-end")
 
 
 def _single_byte_key(byte: int) -> Key:
@@ -415,6 +434,8 @@ def _csi_key(parameters: str, final: str) -> Key | Mouse:
     if final == "~":
         if parameters == PASTE_START_PARAMETER:
             return _PASTE_START
+        if parameters == PASTE_END_PARAMETER:
+            return _PASTE_END
         name = _CSI_TILDE_KEYS.get(fields[0])
     elif final == "Z" and not parameters:
         return Key(TAB, shift=True)
@@ -524,7 +545,7 @@ def _report_length(data: bytes) -> int:
 
 
 def _continues_escape(data: bytes) -> bool:
-    """Whether a read after a lone ESC that waited goes on with its sequence: a CSI's `[`, or an SS3 key's `O` and final.
+    """Whether a read after a lone ESC held from an earlier read goes on with its sequence: a CSI's `[`, or an SS3 key's `O` and final.
 
     A read that is a lone `O`, or `O` and a byte no SS3 key ends with, is a
     capital O typed after Esc. An SS3 key split again right after its `O` is
@@ -543,8 +564,9 @@ class KeyDecoder:
         self._pending = bytearray()
         self._paste: bytearray | None = None
         self._fed_at = 0.0  # when the last byte arrived
+        # Until when a carriage return is a newline of a paste `flush` settled without its end marker.
+        self._late_paste_until = float("-inf")
         self._held_at = 0.0  # when the first byte of what is held arrived
-        self._escape_waited = False  # a lone ESC held through a silence, waiting to see whether a sequence follows
         # The start of a report `flush` settled, and until when the bytes that would finish it are dropped.
         self._settled_start = b""
         self._drop_until = 0.0
@@ -552,14 +574,18 @@ class KeyDecoder:
         # send them, so Ctrl+Enter reaches the caller apart from Enter. Asking for them proves nothing.
         self.protocol_reported = False
 
+    @property
+    def holding(self) -> bool:
+        """Whether bytes wait to be decided (part of a key, an open paste, a settled report's rest): `flush` has work."""
+        return bool(self._pending) or self._paste is not None or bool(self._settled_start)
+
     def feed(self, data: bytes) -> list[Key | Paste | Mouse]:
         now = self._clock()
         if self._settled_start and now >= self._drop_until:
             self._close_drop_window()
-        # An ESC that waited through a silence for a report's `[`: a read that does not go on with a sequence
-        # ends the wait. It was Esc.
-        escape = self._escape_waited and self._pending == bytes((ESC_BYTE,)) and not _continues_escape(data)
-        self._escape_waited = False
+        # A lone ESC held from an earlier read, whether or not a silence passed since: a read that does not go
+        # on with a sequence ends the wait. It was Esc, and this read's keys are keys of their own.
+        escape = self._pending == bytes((ESC_BYTE,)) and not _continues_escape(data)
         events: list[Key | Paste | Mouse] = [Key(ESCAPE, arrived_at=self._held_at)] if escape else []
         if escape:
             self._pending.clear()
@@ -584,7 +610,11 @@ class KeyDecoder:
             else:
                 self._settled_start = b""
         held = len(self._pending)
-        events += self._drain(final=False, earlier=earlier)
+        decoded = self._drain(final=False, earlier=earlier)
+        if len(decoded) > 1 and now < self._late_paste_until:
+            # More than one key in a read is the paste's rest still arriving; a person types one key a read.
+            self._late_paste_until = now + PASTE_LATE_SECONDS
+        events += decoded
         if self._pending and len(self._pending) < held:
             self._held_at = now  # what is still held came in this read
         return events
@@ -599,10 +629,17 @@ class KeyDecoder:
         `MOUSE_REPORT_SECONDS` and then is one unknown key; while a report may
         still arrive, `ESC` and `ESC[` wait for `REPORTING_ESCAPE_SECONDS` and
         then are Esc and one unknown key (a lone ESC's wait also ends at the
-        next read that does not go on with a sequence: see `feed`). Anything else
-        held settles now: a lone ESC becomes `Key("escape")`.
+        next read that does not go on with a sequence: see `feed`). An open
+        paste ends after `PASTE_SETTLE_SECONDS`, as what it holds, and opens
+        the `PASTE_LATE_SECONDS` window for its rest. Anything
+        else held settles now: a lone ESC becomes `Key("escape")`.
         """
         now = self._clock()
+        if self._paste is not None:
+            if now - self._fed_at < PASTE_SETTLE_SECONDS:
+                return []
+            self._late_paste_until = now + PASTE_LATE_SECONDS
+            return self._settle_paste()
         if self._settled_start:
             if now < self._drop_until:
                 return []
@@ -614,10 +651,16 @@ class KeyDecoder:
         in_flight = reporting or (off_at is not None and self._held_at - off_at < MOUSE_REPORT_SECONDS)
         if in_flight and _report_started(held):
             if silence < REPORTING_ESCAPE_SECONDS:
-                self._escape_waited = len(held) == 1
                 return []
             return self._settle_start(held, Key(ESCAPE) if len(held) == 1 else Key(UNKNOWN), now)
         return self._drain(final=True, earlier=len(held))
+
+    def _settle_paste(self) -> list[Key | Paste | Mouse]:
+        """The open paste as it stands, its end marker given up on; nothing when it holds nothing."""
+        body = bytes(self._paste or b"") + bytes(self._pending)
+        self._paste = None
+        self._pending.clear()
+        return [Paste(_paste_text(body))] if body else []
 
     def _settle_start(self, held: bytes, key: Key, now: float) -> list[Key | Paste | Mouse]:
         """`key` for the start of a report held too long, and the window in which the rest of it is dropped."""
@@ -647,14 +690,25 @@ class KeyDecoder:
                 events.append(paste)
             data = bytes(self._pending)
             index = 0
+            late = self._fed_at < self._late_paste_until
             while index < len(data) and self._paste is None:
                 key, end = _decode_one(data, index, final)
                 if key is None:
                     break
                 arrived_at = self._held_at if index < earlier else self._fed_at
-                index = end
+                start, index = index, end
                 if key is _PASTE_START:
                     self._paste = bytearray()
+                elif key is _PASTE_END:
+                    if late:  # the end of a paste `flush` settled: nothing more is owed
+                        self._late_paste_until = float("-inf")
+                        late = False
+                    else:
+                        events.append(Key(UNKNOWN, arrived_at=arrived_at))
+                elif late and data[start] == CARRIAGE_RETURN:
+                    if data[index : index + 1] == bytes((LINE_FEED,)):
+                        index += 1  # CR LF is one newline, as in a paste
+                    events.append(Paste("\n"))
                 elif isinstance(key, Key):
                     self.protocol_reported = self.protocol_reported or key.protocol
                     events.append(replace(key, arrived_at=arrived_at))

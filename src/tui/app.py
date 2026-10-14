@@ -5,20 +5,25 @@ frontend its environment. Everything that can stop the TUI from starting is
 settled before the first byte is drawn, and each such failure exits through
 `request_fallback` (the file `omh` named, then `FALLBACK_EXIT`), so `omh`
 opens Hermes' own terminal instead: a terminal that cannot run the TUI, a
-gateway that does not start, and a startup call this Hermes no longer
-understands. An attach hand-off is refused with exit 1 and a
+gateway that does not start, and a session call (create or resume) this
+Hermes refuses or no longer understands. The busy mode and the command
+catalog are asked for without waiting; drift in either is met in the loop,
+as drift in any call is. An attach hand-off is refused with exit 1 and a
 line naming `hermes --tui --resume <id>` (0 would make `omh` print a resume
 hint for a session this TUI never opened). SIGTERM and SIGHUP leave through
 `SystemExit(128 + signum)`, so the terminal is restored and the gateway reaped
 as on any other exit.
 
-`App` is the loop. One thread owns the terminal and every model: it reads
-input with a short timeout, routes keys (the pager while it is open, then
+`App` is the loop. One thread owns the terminal and every model: it waits
+for input, a wake-up from the gateway client or a resize (`_read_timeout`
+says until when), routes keys (the pager while it is open, then
 Ctrl+O and Ctrl+L, an open prompt slot, the session picker, the agent list,
 the mode, effort and key-list keys, the attachment keys and Esc, the
 completion menu, the queue's Up, then the composer), takes everything the
 gateway sent since the last step, takes the newest HUD snapshot, and
-repaints when something changed or a spinner is due. Calls made from the
+repaints when something changed or a spinner is due. For `MIN_FRAME_SECONDS`
+after a frame it does not wait on the gateway, so a burst of events shares
+the next frame while a key still draws at once. Calls made from the
 loop go out with `GatewayClient.request` and their answers come back through
 `poll`, so a slow slash command never freezes the screen.
 
@@ -64,6 +69,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 import errno
 import json
+import math
 import os
 from pathlib import Path
 import signal
@@ -72,7 +78,7 @@ import time
 from types import FrameType
 from typing import Any, Protocol, TextIO
 
-from ..plugin_bundle.omh.runtime_reader import elapsed_text
+from ..plugin_bundle.omh.hud_text import elapsed_text
 from ..commands.theme_picker import (
     KEY_DOWN,
     KEY_ENTER,
@@ -115,11 +121,11 @@ from .keys import (
     Paste,
 )
 from .launch import request_fallback
-from .agent_view import AgentViewMixin
+from .agent_view import TAIL_ANSWER_SECONDS, AgentViewMixin
 from .layout import slot_cap, under_composer
 from .markdown import clean_text
 from .modes import NO_SESSION_NOTICE, ModesMixin, mode_row_line
-from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
+from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
 from .prompts import CHOICE_DIGITS, Answer, ImmediateAnswer, PromptSlot, open_request
 from .screen import CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
@@ -145,14 +151,26 @@ from .style import CSI, Line, Span, Style
 from .subagents import Hit, Roster
 from .terminal import Terminal, terminal_supported
 from .theme import DEFAULT_THEME, Theme, build_theme, theme_named
-from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, as_text
+from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, as_text, block_rows
 from .width import cell_width, line_width, truncate_left, truncate_line, wrap_line
 from ..version import __version__
 
+# While the key decoder holds bytes (a lone ESC, half a sequence, an open paste), the loop reads with this
+# timeout, and an empty read settles what is held only once input has been quiet for `FLUSH_SILENCE_SECONDS`:
+# a wake-up for the gateway right after an ESC must not decide it before the rest of its sequence arrives.
 READ_TIMEOUT_SECONDS = 0.05
+FLUSH_SILENCE_SECONDS = 0.04
 TICK_SECONDS = 0.1
+# Nothing due, nothing held: the loop still wakes this often. Gateway news and a new HUD snapshot wake it sooner.
+IDLE_READ_SECONDS = 1.0
+# For this long after a frame the loop does not wake for the gateway: what arrives meanwhile shares the next
+# frame. Input still wakes it at once.
+MIN_FRAME_SECONDS = 0.016
 # A window drag sends a burst of SIGWINCH; redraw once the size has held this long.
 RESIZE_SETTLE_SECONDS = 0.15
+# A full redraw (a resize, Ctrl+L, /redraw, a switch, a resumed session) prints the transcript's last this many
+# rows; the blocks above them are counted on one row instead (`Transcript.retake_tail`) and /history shows them.
+REDRAW_TAIL_ROWS = 3000
 EXIT_CONFIRM_SECONDS = 2.0
 # Every key a prompt slot takes, and the composer's Enter, is ignored when its
 # first byte arrived before the slot opened or less than this long after, so
@@ -218,6 +236,14 @@ STEER_LEFT_NOTICE = (
 # the answer, so the bound costs nothing on a fast link and covers a round trip of up to a second.
 EXIT_DRAIN_SECONDS = 1.0
 CURSOR_POSITION_REQUEST = f"{CSI}6n"
+# How long a call made from the loop is waited for: Hermes' own TUI gives every request 120 s
+# (`HERMES_TUI_RPC_TIMEOUT_MS`), and a `subagent.tail` is asked again after `TAIL_ANSWER_SECONDS` anyway. Past
+# it the call is forgotten (`App._expire_calls`) and an answer that still comes is dropped. Only the calls in
+# QUIET_EXPIRY_METHODS, which a person never waits on, are forgotten without a notice.
+CALL_ANSWER_SECONDS = 120.0
+CALL_ANSWER_SECONDS_BY_METHOD = {"subagent.tail": TAIL_ANSWER_SECONDS}
+QUIET_EXPIRY_METHODS = frozenset({"subagent.tail", "complete.path", "config.get"})
+CALL_EXPIRED_NOTICE = "Hermes has not answered {method} in {seconds:g} s; the OMH TUI stopped waiting for it."
 CURSOR_REPORT_START = b"\x1b["
 CURSOR_REPORT_FINAL = b"R"
 
@@ -237,6 +263,8 @@ SESSION_LIST_LIMIT = 50
 PATH_COMPLETE_DEBOUNCE_SECONDS = 0.12
 ATTACH_ICON = "📎"
 ATTACH_HINT = "Backspace removes"
+# An image Hermes queued for a session the TUI has since left: the gateway holds it there, so no chip shows here.
+ATTACH_LEFT_NOTICE = "Hermes queued {name} in the session you left, so it is not attached here."
 CONNECTION_NOTICE = (
     "Hermes is waiting for an app connection, which only Hermes' Desktop app or `hermes --tui` can complete. "
     "Esc interrupts the turn."
@@ -268,6 +296,10 @@ RELOAD_REFUSED_NOTICE = (
     "Hermes did not rescan its skills ({code}: {message}); a skill installed since the OMH TUI started runs as "
     "/<name> once it is restarted."
 )
+SETTINGS_REFUSED_NOTICE = (
+    "Hermes did not send its settings ({code}: {message}), so a prompt sent during a turn queues until the turn "
+    "ends (busy_input_mode queue, Hermes' default)."
+)
 CATALOG_REFUSED_NOTICE = (
     "Hermes did not send its command list ({code}: {message}), so completion and /help show only what the "
     "OMH TUI already knew; Hermes commands still run when typed."
@@ -284,13 +316,13 @@ class TerminalLike(Protocol):
     def __exit__(self, *exc: object) -> Any: ...
     def size(self) -> tuple[int, int]: ...
     def resized(self) -> bool: ...
-    def read(self, timeout: float) -> bytes: ...
+    def read(self, timeout: float, wake: int | None = None) -> bytes: ...
     def write(self, text: str) -> None: ...
     def set_mouse(self, enabled: bool) -> None: ...
 
 
 class PollerLike(Protocol):
-    def start(self) -> None: ...
+    def start(self, wake: Callable[[], None] | None = None) -> None: ...
     def stop(self) -> None: ...
     def set_session(self, stored_id: str) -> None: ...
     def take(self) -> HudSnapshot | None: ...
@@ -306,6 +338,7 @@ class _Pending:
     method: str
     on_result: Callable[[dict[str, Any]], None]
     on_error: Callable[[dict[str, Any]], bool] | None = None
+    expires_at: float = math.inf  # on the app's clock: `_expire_calls` forgets the call then
 
 
 @dataclass(frozen=True)
@@ -719,28 +752,32 @@ class App(ModesMixin, AgentViewMixin):
         # The cells a click opens, as last drawn: rows above the status line → the entries on that row.
         self.clickable: dict[int, tuple[Hit, ...]] = {}
         self.mouse_off_at: float | None = None  # when `_set_mouse` last turned reports off; None before that
+        self.wake: int | None = None  # the gateway client's wake descriptor, which `run` selects on with the input
+        self.input_at = 0.0  # when input last arrived, on `clock`
         self.dirty = True
-        self.last_render = 0.0
+        self.last_render = -math.inf
 
     # ── startup ──
 
     def startup(self) -> None:
-        """Read the busy mode, open or resume the session, then ask for the command catalog for it.
+        """Open or resume the session, then ask for the busy mode and for the session's command catalog.
 
-        The catalog is asked for after the session and names it, because
-        Hermes discovers project-local skills for the session's workspace. It
-        is not awaited: its answer, or its failure, is handled in the loop like
-        any call made during the session. Raises `GatewayCallError` (drift on
-        either call here, or any error from the session call), `GatewayTimeout`
-        or `GatewayUnavailable`; the caller turns each into `FALLBACK_EXIT`.
+        Only the session call is awaited: the first frame needs nothing else.
+        The busy mode (`config.get`) and the catalog (asked for after the
+        session and naming it, because Hermes discovers project-local skills
+        for the session's workspace) are answered in the loop like any call
+        made during the session; until the busy mode arrives it is
+        `BUSY_QUEUE`, Hermes' own default. Raises `GatewayCallError`,
+        `GatewayTimeout` or `GatewayUnavailable` from the session call; the
+        caller turns each into `FALLBACK_EXIT`.
         """
-        self.busy_mode = busy_mode(self._optional_call("config.get", {"key": "full"}))
         resume = self.environ.get("HERMES_TUI_RESUME", "")
         if resume:
             result = self.client.call("session.resume", {"session_id": resume, "cols": self.size[0]})
         else:
             result = self.client.call("session.create", self._create_params())
         self._adopt_session(result, fallback_stored=resume)
+        self._request("config.get", {"key": "full"}, self._take_busy_mode, self._on_settings_refused)
         self._refresh_catalog()
         self.banner_record = self._banner_record(result, resumed=self.stored_id if resume else "")
         self.banner_facts = dict(self.banner_record)
@@ -761,7 +798,10 @@ class App(ModesMixin, AgentViewMixin):
                 self._on_server_request(ServerRequest(entry["id"], entry["method"], params if isinstance(params, dict) else {}))
 
     def _draw_history(self, messages: object) -> None:
-        """A resumed session's earlier turns as transcript blocks: text only, each tool call one dim row."""
+        """A resumed session's earlier turns as transcript blocks: text only, each tool call one dim row.
+
+        Only the last `REDRAW_TAIL_ROWS` rows of them are printed; /history shows the rest.
+        """
         if not isinstance(messages, list):
             return
         tools: list[str] = []
@@ -784,15 +824,17 @@ class App(ModesMixin, AgentViewMixin):
                 self.transcript.add_assistant(text)
         if tools:
             self.transcript.add_notice("\n".join(tools))
+        self.transcript.retake_tail(self.size[0], self.theme, REDRAW_TAIL_ROWS)
 
-    def _optional_call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        """A startup call the TUI can do without, except when the answer is drift."""
-        try:
-            return self.client.call(method, params)
-        except GatewayCallError as error:
-            if error.drift:
-                raise
-            return {}
+    def _take_busy_mode(self, result: dict[str, Any]) -> None:
+        """`config.get`'s answer: the busy mode Hermes is set to."""
+        self.busy_mode = busy_mode(result)
+
+    def _on_settings_refused(self, error: dict[str, Any]) -> bool:
+        """A refused `config.get`, drift included (`contract.OPTIONAL_METHODS`): `BUSY_QUEUE` stays, and a notice says so."""
+        message = as_text(error.get("message")) or "refused"
+        self.transcript.add_notice(SETTINGS_REFUSED_NOTICE.format(code=error.get("code"), message=message), NOTICE_WARN)
+        return True
 
     def _catalog_params(self) -> dict[str, Any]:
         return {"session_id": self.sid} if self.sid else {}
@@ -876,8 +918,10 @@ class App(ModesMixin, AgentViewMixin):
         The live region is cleared before this returns; closing the gateway is
         the caller's, after it has handed the terminal back.
         """
-        self.poller.start()
+        self.wake = self.client.wake_fd()
+        self.poller.start(self.client.wake)  # a new HUD snapshot wakes the loop as gateway news does
         try:
+            self._render_when_due()  # the first frame does not wait for a first read
             while self.exit_code is None:
                 self._step()
         finally:
@@ -887,15 +931,23 @@ class App(ModesMixin, AgentViewMixin):
     def _step(self) -> None:
         if self.terminal.resized():
             self._on_resize()
+        timeout, pace = self._read_timeout(), self.last_render + MIN_FRAME_SECONDS - self.clock()
         try:
-            data = self.terminal.read(READ_TIMEOUT_SECONDS)
+            if pace > 0:  # a frame was just drawn: gateway news waits out the interval, input does not
+                data = self.terminal.read(min(timeout, pace))
+            else:
+                data = self.terminal.read(timeout, self.wake)
         except EOFError:
             self.exit_code = 0
             return
         if data:
+            self.input_at = self.clock()
             events = self.decoder.feed(data)
-        else:  # a report the terminal sent before an off may still be on its way: the decoder waits for it
+        elif self.clock() - self.input_at >= FLUSH_SILENCE_SECONDS:
+            # A report the terminal sent before an off may still be on its way: the decoder waits for it.
             events = self.decoder.flush(self.terminal.mouse_reporting, self.mouse_off_at)
+        else:
+            events = []
         for event in events:
             self.dirty = True
             self._on_input(event)
@@ -904,11 +956,36 @@ class App(ModesMixin, AgentViewMixin):
         self._drain_gateway()
         if self.exit_code is not None:
             return
+        self._expire_calls()
         self._track_path_token()
         self._ask_path_completion_when_due()
         self._ask_tail_when_due()
         self._take_hud()
         self._render_when_due()
+
+    def _read_timeout(self) -> float:
+        """How long the next read may wait: until the soonest thing the loop has to do without new input.
+
+        Input, a wake-up from the gateway client and a resize end the wait
+        sooner. Held key bytes, a spinner tick while a turn runs or the panel
+        is live, the settled resize, the debounced path completion and the
+        next agent tail call each set a deadline; without one it is
+        `IDLE_READ_SECONDS`.
+        """
+        now = self.clock()
+        due = [now + IDLE_READ_SECONDS]
+        if self.decoder.holding:
+            due.append(now + READ_TIMEOUT_SECONDS)
+        if self.redraw_at is not None:
+            due.append(self.redraw_at)
+        elif self._busy() or self._panel_live():
+            due.append(self.last_render + TICK_SECONDS)
+        if self.path_due is not None and self.sid:
+            due.append(self.path_due)
+        tail = self._tail_due_at()
+        if tail is not None:
+            due.append(tail)
+        return max(min(due) - now, 0.0)
 
     def _shutdown(self) -> None:
         """Hand the screen back to the shell, then stop the HUD poller and turn off yolo the TUI set.
@@ -972,7 +1049,8 @@ class App(ModesMixin, AgentViewMixin):
         are bytes the closing TUI has already read, and it acts on no input
         any more. A terminal that does not answer within the bound ends the
         drain there, as a read that waited out the time left does, and its
-        answer, if it comes later, reaches the shell as `ESC[<row>;<col>R`.
+        answer, if it comes later, reaches the shell as `ESC[<row>;<col>R`. A
+        read a resize signal ends early with nothing read does not end it.
         That takes a round trip over a second just after a click, on a link
         where the reports the drain exists for would reach the shell too: one
         late answer is the price of dropping every report ahead of it.
@@ -986,7 +1064,7 @@ class App(ModesMixin, AgentViewMixin):
             except EOFError:
                 return  # the terminal hung up: nothing more is coming
             if not data:
-                return
+                continue  # waited out (the loop ends) or ended early by a resize signal (it reads on)
             seen = seen[-32:] + data  # the last read's tail too: an answer can be split across two reads
             if _holds_cursor_report(seen):
                 return
@@ -1008,7 +1086,23 @@ class App(ModesMixin, AgentViewMixin):
         except GatewayUnavailable as error:
             self._lose_gateway(str(error))
             return
-        self.pending[request_id] = _Pending(method, on_result, on_error)
+        expires_at = self.clock() + CALL_ANSWER_SECONDS_BY_METHOD.get(method, CALL_ANSWER_SECONDS)
+        self.pending[request_id] = _Pending(method, on_result, on_error, expires_at)
+
+    def _expire_calls(self) -> None:
+        """Forget every call unanswered past its `expires_at`, here and in the client, saying so for most.
+
+        Neither of its handlers runs: an answer that never came is not a
+        refusal, and state that waits on one (a yolo call still unanswered)
+        stays as it was.
+        """
+        now = self.clock()
+        for request_id, call in [(rid, call) for rid, call in self.pending.items() if now >= call.expires_at]:
+            del self.pending[request_id]
+            self.client.forget(request_id)
+            if call.method not in QUIET_EXPIRY_METHODS:
+                seconds = CALL_ANSWER_SECONDS_BY_METHOD.get(call.method, CALL_ANSWER_SECONDS)
+                self.transcript.add_notice(CALL_EXPIRED_NOTICE.format(method=call.method, seconds=seconds), NOTICE_WARN)
 
     def _respond(self, answer: Answer) -> None:
         try:
@@ -1319,10 +1413,11 @@ class App(ModesMixin, AgentViewMixin):
         if isinstance(event, Paste):
             if "\n" in event.text or not event.text.strip() or not self.sid:
                 return False
+            sid = self.sid
             self._request(
                 "input.detect_drop",
-                {"session_id": self.sid, "text": event.text},
-                lambda result: self._on_drop(event.text, result),
+                {"session_id": sid, "text": event.text},
+                lambda result: self._on_drop(sid, event.text, result),
                 lambda error: self._on_drop_refused(event.text),
             )
             return True
@@ -1762,6 +1857,7 @@ class App(ModesMixin, AgentViewMixin):
 
     def _on_new_session(self, result: dict[str, Any]) -> None:
         declined = self._enter_session(result)
+        self.banner_record = self._banner_record(result, resumed="")  # a later full redraw names this session
         self.transcript.add_notice(f"New session {self.stored_id}.")
         self._notice_declined(declined)
         self._refresh_catalog()
@@ -1876,10 +1972,11 @@ class App(ModesMixin, AgentViewMixin):
         elif not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
         else:
+            sid = self.sid
             self._request(
                 "image.attach",
-                {"session_id": self.sid, "path": arg},
-                self._on_image_attached,
+                {"session_id": sid, "path": arg},
+                lambda result: self._on_image_attached(sid, result),
                 lambda error: self._attach_failed("/image", error),
             )
 
@@ -1887,41 +1984,54 @@ class App(ModesMixin, AgentViewMixin):
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
+        sid = self.sid
         self._request(
             "clipboard.paste",
-            {"session_id": self.sid},
-            self._on_clipboard_pasted,
+            {"session_id": sid},
+            lambda result: self._on_clipboard_pasted(sid, result),
             lambda error: self._attach_failed("/paste", error),
         )
 
-    def _on_image_attached(self, result: dict[str, Any]) -> None:
+    def _take_attachment(self, sid: str, attachment: Attachment) -> None:
+        """A chip for an image Hermes queued for `sid`; for a session since left, a notice instead."""
+        if sid == self.sid:
+            self.attachments.append(attachment)
+        else:
+            self.transcript.add_notice(ATTACH_LEFT_NOTICE.format(name=attachment.name), NOTICE_WARN)
+
+    def _on_image_attached(self, sid: str, result: dict[str, Any]) -> None:
         attachment = attachment_from(result) if result.get("attached") is True else None
         if attachment is None:
             self.transcript.add_notice("/image: Hermes did not attach the file.", NOTICE_WARN)
             return
-        self.attachments.append(attachment)
+        self._take_attachment(sid, attachment)
         remainder = as_text(result.get("remainder")).strip()
         if remainder:  # `/image shot.png what is this?` keeps the question for the person to send
             self.composer.handle(Paste(remainder))
 
-    def _on_clipboard_pasted(self, result: dict[str, Any]) -> None:
+    def _on_clipboard_pasted(self, sid: str, result: dict[str, Any]) -> None:
         attachment = attachment_from(result) if result.get("attached") is True else None
         if attachment is None:
             self.transcript.add_notice(as_text(result.get("message")) or "No image found in the clipboard.")
         else:
-            self.attachments.append(attachment)
+            self._take_attachment(sid, attachment)
 
     def _attach_failed(self, command: str, error: dict[str, Any]) -> bool:
         message = as_text(error.get("message")) or "not attached"
         self.transcript.add_notice(f"{command}: {message} ({error.get('code')}).", NOTICE_WARN)
         return True
 
-    def _on_drop(self, text: str, result: dict[str, Any]) -> None:
-        """An image drop is already queued (a chip, nothing typed); a file drop types its reference; else the paste."""
+    def _on_drop(self, sid: str, text: str, result: dict[str, Any]) -> None:
+        """An image drop is already queued (a chip, nothing typed); a file drop types its reference; else the paste.
+
+        Text goes to the composer whichever session is live: it is the
+        person's paste, sent nowhere yet. An image Hermes queued for a session
+        since left is a notice (`_take_attachment`).
+        """
         if result.get("matched") is True and result.get("is_image") is True:
             attachment = attachment_from(result)
             if attachment is not None:
-                self.attachments.append(attachment)
+                self._take_attachment(sid, attachment)
             return
         if result.get("matched") is True and as_text(result.get("text")):
             text = as_text(result.get("text"))
@@ -1935,11 +2045,21 @@ class App(ModesMixin, AgentViewMixin):
         self._full_redraw()
 
     def _history(self, arg: str) -> None:
-        lines = self.transcript.history_lines(self.size[0], self.theme, details=True)
-        if lines:
-            self._open_pager("history", lines)
-        else:
-            self.transcript.add_notice("Nothing in this session's transcript yet.")
+        """The blocks held now in a pager that renders each one, details shown, only when a page reaches it."""
+        transcript = self.transcript
+        blocks, dropped = list(transcript.blocks), transcript.dropped  # what the pager holds, as it opens
+
+        def rows(index: int, width: int, theme: Theme) -> list[Line]:
+            shown = block_rows(blocks[index], width, theme, expanded=True)
+            return [*transcript.dropped_rows(width, theme, dropped), *shown] if index == 0 else shown
+
+        pager = HistoryPager("history", count=len(blocks), render=rows)
+        # Stops at the first block with rows, the first one but for a reply that was only a line break, and
+        # keeps what it rendered for the first frame.
+        if pager.shows_nothing(self.size[0], self.theme):
+            transcript.add_notice("Nothing in this session's transcript yet.")
+            return
+        self._show_pager(pager)
 
     def _details(self, arg: str) -> None:
         # No notice: a new block would close the live one, the only block the toggle changes.
@@ -1965,7 +2085,9 @@ class App(ModesMixin, AgentViewMixin):
         if last is None or not last.text.strip():
             self.transcript.add_notice("No reply to copy yet.")
             return
-        encoded = base64.b64encode(last.text.strip().encode("utf-8")).decode("ascii")
+        # "replace", as `Terminal.write` encodes: a lone surrogate (JSON can carry one) is copied as the "?" the
+        # screen shows, not as bytes that are no UTF-8 for the terminal to put on the clipboard.
+        encoded = base64.b64encode(last.text.strip().encode("utf-8", "replace")).decode("ascii")
         self.terminal.write(OSC52_COPY.format(encoded))
         self.transcript.add_notice("Copied the last reply to the clipboard (OSC 52; the terminal must allow it).")
 
@@ -2011,7 +2133,10 @@ class App(ModesMixin, AgentViewMixin):
         """A picker's `read_key` over the TUI's terminal and key decoder; a hung-up terminal cancels.
 
         The decoder is told what the loop tells it, so a report sent before
-        the picker's off still types nothing and its ESC does not cancel.
+        the picker's off still types nothing and its ESC does not cancel. As
+        in the loop, an empty read settles held bytes only once input has been
+        quiet for `FLUSH_SILENCE_SECONDS`: a resize signal ends a read early
+        with nothing read, and must not turn an arrow's ESC into Esc.
         """
         pending: deque[Key | Paste | Mouse] = deque()
 
@@ -2022,8 +2147,9 @@ class App(ModesMixin, AgentViewMixin):
                 except EOFError:
                     return KEY_QUIT
                 if data:
+                    self.input_at = self.clock()
                     pending.extend(self.decoder.feed(data))
-                else:
+                elif self.clock() - self.input_at >= FLUSH_SILENCE_SECONDS:
                     pending.extend(self.decoder.flush(self.terminal.mouse_reporting, self.mouse_off_at))
             return picker_key(pending.popleft())
 
@@ -2032,7 +2158,11 @@ class App(ModesMixin, AgentViewMixin):
     # ── pager ──
 
     def _open_pager(self, title: str, lines: list[Line]) -> None:
-        """`lines` on the alternate screen; a pager already open is replaced without switching to that screen again.
+        """`lines` in a pager on the alternate screen (`_show_pager`)."""
+        self._show_pager(Pager(title, lines))
+
+    def _show_pager(self, pager: Pager) -> None:
+        """`pager` on the alternate screen; a pager already open is replaced without switching to that screen again.
 
         A second `ALT_SCREEN_ON` would save the main screen's cursor over the
         one saved on the way in. It is no agent's log: `_open_agent_log` names
@@ -2040,7 +2170,7 @@ class App(ModesMixin, AgentViewMixin):
         """
         if self.pager is None:
             self.terminal.write(ALT_SCREEN_ON)
-        self.pager = Pager(title, lines)
+        self.pager = pager
         self.log_agent = ""
 
     def _leave_pager(self) -> None:
@@ -2080,15 +2210,20 @@ class App(ModesMixin, AgentViewMixin):
     def _full_redraw(self) -> None:
         """Erase screen and scrollback, then print the session again at the current width.
 
-        The banner and every transcript line are rendered anew (`Transcript.retake`),
-        so nothing wrapped at the old width survives and no earlier frame is left
-        in scrollback. Scrollback from before the TUI started is erased with it.
+        The banner and the transcript's last `REDRAW_TAIL_ROWS` rows are
+        rendered anew (`Transcript.retake_tail`), under one row counting the
+        messages above them, so nothing wrapped at the old width survives, no
+        earlier frame is left in scrollback, and a long session costs a redraw
+        no more than that. Scrollback from before the TUI started is erased
+        with it.
         """
         self.terminal.write(CLEAR_SCREEN_AND_SCROLLBACK)
         # The clear homes the cursor, so the next first frame starts on the screen's top row: unless a
         # pager is open, when it cleared the alternate screen and the main screen's cursor is where it was.
         self.region = LiveRegion(self.terminal.write, at_top=self.pager is None)
-        self.transcript.retake()
+        if self.pager is not None:
+            self.pager.invalidate()  # the clear took its rows too
+        self.transcript.retake_tail(self.size[0], self.theme, REDRAW_TAIL_ROWS)
         if self.banner_record is not None:
             self.banner_facts = dict(self.banner_record)
         self.anchor = True
@@ -2206,7 +2341,7 @@ class App(ModesMixin, AgentViewMixin):
         return self.flushed_since_prompt > rows - self.region.height
 
     def _tail(self, cols: int) -> list[Line]:
-        lines = list(self.transcript.live_lines(cols, self.theme))
+        lines = self.transcript.live_lines(cols, self.theme, max_rows=self.size[1])  # never more than the screen
         if self._busy():
             text = self.transcript.activity or self.transcript.status or "working…"
             now = self.clock()

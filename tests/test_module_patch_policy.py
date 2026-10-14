@@ -101,6 +101,14 @@ class ModulePatchTests(unittest.TestCase):
         self.assertNotIn("_module_patch_probe_host", sys.modules)
         self.assertTrue(self._patch_reaches_the_tool())
 
+    def test_a_blocked_submodule_the_package_never_imported_leaves_without_error(self) -> None:
+        # `None` blocks an import. The package has no such attribute, and a
+        # missing attribute must not read as one that holds the `None`.
+        with patch_modules({f"{PACKAGE}.absent": None}):
+            with self.assertRaises(ImportError):
+                __import__(f"{PACKAGE}.absent")
+        self.assertNotIn(f"{PACKAGE}.absent", sys.modules)
+
     def test_every_sys_modules_patch_in_the_suite_goes_through_patch_modules(self) -> None:
         self.assertEqual(
             plain_sys_modules_patches(),

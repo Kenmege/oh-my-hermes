@@ -236,7 +236,7 @@ PROCESS_SPAWN_ALLOWLIST: dict[str, str] = {
         "`git rev-parse <base-ref>` inside the operator-invoked `coding fanout dispatch` command, "
         "to resolve the base commit before the fanout bridge above runs."
     ),
-    "src/commands/main.py": (
+    "src/commands/bare_launch.py": (
         "bare `omh` with a tty -- the operator's own launch of `hermes` (as `hermes --tui` "
         "with the OMH frontend when it can run, otherwise Hermes' own `hermes --tui`, or plain "
         "`hermes` without Node), the same launch as typing it themselves; never reached from any "

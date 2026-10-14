@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import unicodedata
 import unittest
+from unittest.mock import patch
 
 from _tui_lines import lines_text
 from omh.tui.gateway import Event
@@ -21,6 +22,7 @@ from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.transcript import (
     AssistantBlock,
     ThinkingBlock,
+    ToolRow,
     Transcript,
     tool_result_status,
 )
@@ -68,6 +70,8 @@ class LoopTestCase(unittest.TestCase):
         self.taken.extend(fresh)
         live = self.transcript.live_lines(width, THEME)
         self.assertEqual(self.taken + live, self.transcript.history_lines(width, THEME, details=False))
+        for rows in (1, 2, 5):  # asked for its last rows only, the tail ends exactly as the whole one does
+            self.assertEqual(self.transcript.live_lines(width, THEME, max_rows=rows)[-rows:], live[-rows:])
         return lines_text(fresh)
 
     def user(self, text: str) -> list[str]:
@@ -79,6 +83,92 @@ class LoopTestCase(unittest.TestCase):
 
     def history(self, details: bool = True) -> list[str]:
         return lines_text(self.transcript.history_lines(WIDTH, THEME, details=details))
+
+
+class LiveTailMemoTests(LoopTestCase):
+    """The live tail is rendered again only when the transcript changed: a spinner tick re-renders nothing."""
+
+    def no_render(self, *args: object, **kwargs: object) -> list:
+        raise AssertionError("the live tail was rendered again")
+
+    def test_an_unchanged_tail_is_not_rendered_again_and_any_change_is(self) -> None:
+        self.user("go")
+        self.step(ev("message.start"))
+        self.step(ev("message.delta", text="a paragraph that has not ended yet " * 20))
+        self.step(ev("reasoning.delta", text="still thinking"))
+        before = self.transcript.live_lines(WIDTH, THEME)
+        with patch("omh.tui.transcript.render_lines", self.no_render), patch("omh.tui.transcript.block_rows", self.no_render):
+            self.assertEqual(self.transcript.live_lines(WIDTH, THEME), before)
+        self.step(ev("reasoning.delta", text=" and more"))
+        self.assertIn("▸ thinking… still thinking and more", self.live())
+        self.transcript.toggle_details()
+        self.assertEqual(self.live()[-1], "  still thinking and more")
+        self.assertEqual(lines_text(self.transcript.live_lines(14, THEME))[-3:], ["  still", "  thinking and", "  more"])
+
+    def test_a_tail_asked_for_fewer_rows_renders_only_the_blocks_it_needs(self) -> None:
+        # Nothing taken yet (no frame between the events), so every block is still in the live tail.
+        self.transcript.add_user("go")
+        self.transcript.apply(ev("message.start"))
+        self.transcript.apply(ev("reasoning.delta", text="first thought"))
+        self.transcript.apply(ev("tool.start", tool_id="t1", name="terminal", context="ls"))
+        self.assertEqual(len(lines_text(self.transcript.live_lines(WIDTH, THEME))), 5)
+        rendered: list[object] = []
+        real = __import__("omh.tui.transcript", fromlist=["block_rows"]).block_rows
+
+        def counting(block: object, *args: object, **kwargs: object) -> list:
+            rendered.append(block)
+            return real(block, *args, **kwargs)
+
+        with patch("omh.tui.transcript.block_rows", counting):
+            self.assertEqual(lines_text(self.transcript.live_lines(WIDTH, THEME, max_rows=1))[-1:], ["  ◔ terminal  ls"])
+        self.assertEqual(rendered, [self.transcript.blocks[-1]])
+
+    def test_only_the_last_block_is_ever_live(self) -> None:
+        # Why `_render_live` gives the whole limit to the block it renders first: live thinking is always that block.
+        self.transcript.add_user("go")
+        for event in (
+            ev("message.start"),
+            ev("reasoning.delta", text="first thought"),
+            ev("tool.start", tool_id="t1", name="terminal", context="ls"),
+            ev("reasoning.delta", text="second thought"),
+            ev("message.delta", text="an answer"),
+        ):
+            self.transcript.apply(event)
+            self.assertEqual([block for block in self.transcript.blocks[:-1] if not block.done], [])
+        self.assertEqual(
+            [type(block).__name__ for block in self.transcript.blocks],
+            ["UserBlock", "ThinkingBlock", "ToolGroup", "ThinkingBlock", "AssistantBlock"],
+        )
+
+
+class LimitedThinkingTests(LoopTestCase):
+    def test_expanded_live_thinking_asked_for_its_last_rows_wraps_only_its_last_lines(self) -> None:
+        self.step(ev("message.start"))
+        self.step(ev("reasoning.delta", text="\n".join(f"thought number {n} goes on for a while" for n in range(200))))
+        self.transcript.toggle_details()  # expanded, the live block is no longer what history shows: no `step` now
+        whole = self.transcript.live_lines(WIDTH, THEME)
+        wrapped: list[object] = []
+        real = __import__("omh.tui.transcript", fromlist=["wrap_prefixed"]).wrap_prefixed
+
+        def counting(*args: object, **kwargs: object) -> list:
+            wrapped.append(args[0])
+            return real(*args, **kwargs)
+
+        with patch("omh.tui.transcript.wrap_prefixed", counting):
+            last = self.transcript.live_lines(WIDTH, THEME, max_rows=4)
+        self.assertEqual(last[-4:], whole[-4:])
+        self.assertEqual(lines_text(last)[-1], "  thought number 199 goes on for a while")
+        self.assertEqual(len(wrapped), 4)  # one source line per row here, not all 200
+
+    def test_any_limit_ends_as_the_whole_expanded_thinking_does(self) -> None:
+        text = "\n\nfirst line\n\n" + "a long line that wraps over several rows at this width " * 4 + "\nlast\n\n"
+        self.step(ev("message.start"))
+        self.step(ev("reasoning.delta", text=text))
+        self.transcript.toggle_details()
+        whole = self.transcript.live_lines(30, THEME)
+        for rows in range(1, len(whole) + 2):
+            with self.subTest(rows=rows):
+                self.assertEqual(self.transcript.live_lines(30, THEME, max_rows=rows)[-rows:], whole[-rows:])
 
 
 class SpacingTests(LoopTestCase):
@@ -114,6 +204,164 @@ class RetakeTests(LoopTestCase):
         self.assertEqual(narrow + live, self.transcript.history_lines(30, THEME, details=False))
         self.assertEqual(self.transcript.take_stable_lines(30, THEME), [], "a retaken line was offered twice")
         self.assertIn("line two is still streaming", "".join(lines_text(live)))
+
+
+class RetakeTailTests(LoopTestCase):
+    """A full redraw prints the last rows of the session, from a block boundary, under one row naming what it left out."""
+
+    def session(self, turns: int) -> None:
+        for turn in range(turns):
+            self.user(f"question {turn}")
+            self.step(ev("message.start"))
+            self.step(ev("message.delta", text=f"answer {turn}, line one\nline two\n"))
+            self.step(ev("message.complete", text=f"answer {turn}, line one\nline two", status="complete"))
+
+    def test_only_the_last_blocks_that_fit_are_taken_again_under_a_row_naming_the_rest(self) -> None:
+        self.session(20)  # 40 blocks: a prompt is 2 rows with the blank row above it, a reply 3
+        self.transcript.retake_tail(WIDTH, THEME, max_rows=10)
+        again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
+        self.assertEqual(again[0], "⋯ 36 earlier messages · /history shows all")
+        self.assertEqual(again[1:], self.history(details=False)[-10:])  # the last two turns: 2 + 3 + 2 + 3 rows
+        self.assertEqual(again[2], "› question 18")
+        self.assertEqual(lines_text(self.transcript.take_stable_lines(WIDTH, THEME)), [])
+
+    def test_a_session_that_fits_is_taken_again_whole_with_no_row_above_it(self) -> None:
+        self.session(2)
+        self.transcript.retake_tail(WIDTH, THEME, max_rows=100)
+        self.assertEqual(lines_text(self.transcript.take_stable_lines(WIDTH, THEME)), self.history(details=False))
+
+    def test_the_last_finished_block_is_taken_again_however_tall(self) -> None:
+        self.user("go")
+        self.step(ev("message.start"))
+        reply = "\n".join(f"row {n}" for n in range(30))
+        self.step(ev("message.delta", text=reply + "\n"))
+        self.step(ev("message.complete", text=reply, status="complete"))
+        self.transcript.retake_tail(WIDTH, THEME, max_rows=5)
+        again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
+        self.assertEqual(again[0], "⋯ 1 earlier message · /history shows all")
+        self.assertEqual(len(again), 32)  # the row, a spacer, all 30 rows of the reply
+
+    def test_the_live_block_stays_live_and_is_never_counted_as_left_out(self) -> None:
+        self.session(3)
+        self.user("again")
+        self.step(ev("message.start"))
+        self.step(ev("message.delta", text="still streaming"))
+        self.transcript.retake_tail(WIDTH, THEME, max_rows=3)
+        again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
+        self.assertEqual(again, ["⋯ 6 earlier messages · /history shows all", "", "› again"])
+        self.assertEqual(self.live(), ["", "⏺ still streaming"])
+
+
+class BlockCapTests(LoopTestCase):
+    """At most `BLOCK_CAP` blocks are held; the oldest ones already printed go first."""
+
+    def test_printed_blocks_past_the_cap_are_dropped_oldest_first(self) -> None:
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(25):  # each printed at once (no `step`: history no longer holds what was dropped)
+                self.transcript.add_notice(f"notice {number}")
+                self.transcript.take_stable_lines(WIDTH, THEME)
+        self.assertEqual(len(self.transcript.blocks), 10)
+        self.assertEqual(self.transcript.dropped, 15)
+        self.assertEqual(self.history()[0], "· notice 15")
+        self.assertEqual(self.live(), [])
+
+    def test_blocks_not_printed_yet_are_never_dropped(self) -> None:
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(25):
+                self.transcript.add_notice(f"notice {number}")
+        self.assertEqual((len(self.transcript.blocks), self.transcript.dropped), (25, 0))
+        taken = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
+        self.assertEqual((taken[0], taken[-1]), ("· notice 0", "· notice 24"))
+
+    def test_a_redraw_after_drops_counts_them_and_says_history_holds_only_the_rest(self) -> None:
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(25):  # each printed at once (no `step`: history no longer holds what was dropped)
+                self.transcript.add_notice(f"notice {number}")
+                self.transcript.take_stable_lines(WIDTH, THEME)
+        self.transcript.retake_tail(WIDTH, THEME, max_rows=4)
+        again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
+        self.assertEqual(again, ["⋯ 23 earlier messages · /history shows the last 10", "", "· notice 23", "", "· notice 24"])
+
+    def test_blocks_past_the_cap_go_once_printed_without_waiting_for_a_new_block(self) -> None:
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(25):  # none printed yet, as a resumed session's history arrives
+                self.transcript.add_notice(f"notice {number}")
+            self.transcript.take_stable_lines(WIDTH, THEME)
+            self.assertEqual((len(self.transcript.blocks), self.transcript.dropped), (10, 15))
+
+    def test_a_redraw_of_blocks_past_the_cap_counts_them_and_holds_only_the_cap(self) -> None:
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(25):
+                self.transcript.add_notice(f"notice {number}")
+            self.transcript.retake_tail(WIDTH, THEME, max_rows=4)
+            again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
+        self.assertEqual(again, ["⋯ 23 earlier messages · /history shows the last 10", "", "· notice 23", "", "· notice 24"])
+        self.assertEqual(len(self.transcript.blocks), 10)
+
+    def test_a_turns_answer_is_still_known_after_its_own_blocks_push_older_ones_out(self) -> None:
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(8):
+                self.transcript.add_notice(f"notice {number}")
+                self.transcript.take_stable_lines(WIDTH, THEME)
+            self.transcript.apply(ev("message.start"))
+            self.transcript.apply(ev("message.delta", text="the answer"))
+            for number in range(5):  # the turn's own blocks, each printed: four of the oldest go
+                self.transcript.add_notice(f"turn notice {number}")
+                self.transcript.take_stable_lines(WIDTH, THEME)
+            self.assertEqual(self.transcript.dropped, 4)
+            self.transcript.apply(ev("message.complete", text="the answer"))
+        answers = [block.text for block in self.transcript.blocks if isinstance(block, AssistantBlock)]
+        self.assertEqual(answers, ["the answer"])
+
+    def test_an_edits_diff_is_kept_as_the_text_hermes_sent_encoded(self) -> None:
+        self.transcript.cwd = "/repo"
+        self.step(ev("message.start"))
+        self.step(ev("tool.start", tool_id="e1", name="patch", context="/repo/src/app.py"))
+        self.step(ev("tool.complete", tool_id="e1", name="patch", result={"success": True}, inline_diff=PATCH_INLINE_DIFF))
+        (row,) = self.transcript.blocks[-1].tools
+        self.assertEqual(row.inline_diff, PATCH_INLINE_DIFF.encode("utf-8"))
+        self.assertFalse(hasattr(row, "diff"))
+
+    def test_a_live_groups_diff_is_parsed_once_and_let_go_when_the_group_is_done(self) -> None:
+        real = __import__("omh.tui.transcript", fromlist=["parse_inline_diff"]).parse_inline_diff
+        parsed: list[str] = []
+
+        def counting(text: str) -> object:
+            parsed.append(text)
+            return real(text)
+
+        self.transcript.cwd = "/repo"
+        self.step(ev("message.start"))
+        self.step(ev("tool.start", tool_id="e1", name="patch", context="/repo/src/app.py"))
+        with patch("omh.tui.transcript.parse_inline_diff", counting):
+            self.step(ev("tool.complete", tool_id="e1", name="patch", result={"success": True}, inline_diff=PATCH_INLINE_DIFF))
+            self.step(ev("tool.start", tool_id="t2", name="terminal", context="ls"))  # the live group changes twice
+            self.step(ev("tool.start", tool_id="t3", name="terminal", context="pwd"))
+        self.assertEqual(len(parsed), 1)
+        self.step(ev("message.complete", text="done"))
+        self.assertIsNone(self.transcript.blocks[-2].tools[0].held_lines)
+
+    def test_an_edits_diff_with_a_lone_surrogate_is_kept_and_drawn(self) -> None:
+        # JSON can carry an escaped lone surrogate ("\udce9", a byte surrogateescape left in a file's text).
+        diff = PATCH_INLINE_DIFF + "\n\x1b[38;2;255;255;255;48;2;20;90;20m+name = 'caf\udce9'\x1b[0m"
+        self.transcript.cwd = "/repo"
+        self.step(ev("message.start"))
+        self.step(ev("tool.start", tool_id="e1", name="patch", context="/repo/src/app.py"))
+        self.step(ev("tool.complete", tool_id="e1", name="patch", result={"success": True}, inline_diff=diff))
+        (row,) = self.transcript.blocks[-1].tools
+        self.assertTrue(any("caf\udce9" in line.text for line in row.diff_lines()))
+        self.assertTrue(any("caf\udce9" in text for text in self.history()))
+
+    def test_an_edits_diff_is_held_in_less_memory_than_its_parsed_lines(self) -> None:
+        import sys
+
+        rows = "\n".join(f"\x1b[38;2;255;255;255;48;2;20;90;20m+    value_{n} = compute(row_{n})\x1b[0m" for n in range(200))
+        diff = f"  ┊ review diff\n\x1b[38;2;180;160;255ma/src/app.py → b/src/app.py\x1b[0m\n{rows}"
+        row = ToolRow(tool_id="e1", name="patch", inline_diff=diff.encode("utf-8"))
+        parsed = row.diff_lines()
+        held = sys.getsizeof(row.inline_diff)
+        self.assertLess(held, sys.getsizeof(diff))  # the str is widened to two bytes a character by `┊` and `→`
+        self.assertLess(held, sum(sys.getsizeof(line) + sys.getsizeof(line.text) for line in parsed))
 
 
 class ToolPathArgumentTests(LoopTestCase):

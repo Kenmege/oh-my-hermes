@@ -225,5 +225,119 @@ class ExecutorProgressLogReadTests(unittest.TestCase):
             self.assertTrue(all(item["latest_event"] for item in bindings))
 
 
+class HudScanTests(unittest.TestCase):
+    """A HUD read lists every run and binding file, but opens only what it can show or has not seen."""
+
+    def setUp(self) -> None:
+        runtime_reader._hud_binding_orders.clear()
+        self.addCleanup(runtime_reader._hud_binding_orders.clear)
+
+    def test_the_run_list_checks_only_the_newest_runs_it_shows(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            runs = home / "runtime" / "runs"
+            for index in range(50):
+                (runs / f"run-{index:03d}").mkdir(parents=True)
+                (runs / f"run-{index:03d}" / "run.json").write_text(json.dumps({"run_id": f"run-{index:03d}"}), encoding="utf-8")
+            (runs / "run-999").mkdir()  # the newest name, with no run.json: passed over
+            with patch.object(runtime_reader, "_contains_symlink", wraps=runtime_reader._contains_symlink) as checked:
+                status = runtime_reader._read_omh_hud_status(home, limit=5)
+            self.assertEqual([run["run_id"] for run in status["runs"]], [f"run-{index:03d}" for index in range(49, 44, -1)])
+            # The run list's own checks (the binding scan, and an open where no dir_fd exists, check theirs).
+            scanned = [
+                call.args[0] for call in checked.call_args_list
+                if call.args[0].name == "run.json" and call.kwargs.get("root") == runs
+            ]
+            self.assertEqual(len(scanned), 6)  # run-999 and the five shown, not all 51
+
+    def test_the_newest_children_are_the_ones_a_sort_of_every_child_keeps(self) -> None:
+        with TemporaryDirectory() as tmp:
+            runs = Path(tmp) / "runs"
+            for name in ("a", "a-b", "a.b", "a b", "b", "C", "b0"):
+                (runs / name).mkdir(parents=True)
+                (runs / name / "run.json").write_text("{}", encoding="utf-8")
+            (runs / "z").mkdir()  # the newest name, over the size cap
+            (runs / "z" / "run.json").write_text(" " * (runtime_reader.MAX_HUD_METADATA_BYTES + 1), encoding="utf-8")
+            (runs / "y").mkdir()  # the next newest, its run.json a symlink
+            try:
+                (runs / "y" / "run.json").symlink_to(runs / "a" / "run.json")
+            except OSError:  # no symlink privilege (Windows): the size case still runs
+                pass
+            for limit in range(1, 11):
+                with self.subTest(limit=limit):
+                    self.assertEqual(
+                        runtime_reader._newest_hud_child_files(runs, "run.json", limit=limit),
+                        sorted(runtime_reader._hud_child_files(runs, "run.json"), reverse=True)[:limit],
+                    )
+
+    def test_a_second_read_opens_only_binding_files_written_since_and_the_survivors(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+            now = datetime.now(timezone.utc)
+
+            def write(index: int, age: int) -> None:
+                stamp = (now - timedelta(seconds=age)).isoformat().replace("+00:00", "Z")
+                write_progress_binding(
+                    paths, build_progress_binding(target_type="run", target_id=f"run-{index}", executor_profile="codex", now=stamp)
+                )
+
+            for index in range(20):
+                write(index, age=10 + index)
+            runtime_dir = paths.omh_home.resolve() / "runtime"
+
+            def read() -> tuple[list[str], int]:
+                with patch.object(runtime_reader, "_read_hud_json", wraps=runtime_reader._read_hud_json) as reader:
+                    bindings = runtime_reader._progress_bindings(runtime_dir, limit=2, hud_safe=True)
+                opened = [call.args[0] for call in reader.call_args_list if call.args[0].name == "binding.json"]
+                return [item["binding"]["target_id"] for item in bindings], len(opened)
+
+            self.assertEqual(read(), (["run-0", "run-1"], 20))
+            self.assertEqual(read(), (["run-0", "run-1"], 2))  # only the two survivors, for their content
+            write(15, age=0)  # rewritten: now the newest
+            self.assertEqual(read(), (["run-15", "run-0"], 2))  # the rewritten file, then run-0
+            runtime_reader._hud_binding_orders.clear()
+            self.assertEqual(read(), (["run-15", "run-0"], 20))  # the same cut as a read that remembers nothing
+
+    def test_each_read_remembers_only_the_binding_files_it_saw(self) -> None:
+        with TemporaryDirectory() as tmp:
+            runtime_dir = self._bindings(Path(tmp), 3)
+            files = sorted(runtime_dir.rglob("binding.json"))
+            runtime_reader._progress_bindings(runtime_dir, limit=2, hud_safe=True)
+            self.assertEqual(sorted(runtime_reader._hud_binding_orders), files)
+            files[0].unlink()
+            runtime_reader._progress_bindings(runtime_dir, limit=2, hud_safe=True)
+            self.assertEqual(sorted(runtime_reader._hud_binding_orders), files[1:])
+
+    def test_a_survivor_whose_file_changed_after_its_stat_is_left_out(self) -> None:
+        with TemporaryDirectory() as tmp:
+            runtime_dir = self._bindings(Path(tmp), 3)
+            runtime_reader._progress_bindings(runtime_dir, limit=2, hud_safe=True)  # every order remembered
+            newest = next(
+                path for path in runtime_dir.rglob("binding.json")
+                if json.loads(path.read_text(encoding="utf-8"))["target_id"] == "run-0"
+            )
+            real = runtime_reader._read_hud_json
+
+            def rewritten_after_its_stat(path: Path, **kwargs: object) -> dict[str, object]:
+                return {} if path == newest else real(path, **kwargs)
+
+            with patch.object(runtime_reader, "_read_hud_json", side_effect=rewritten_after_its_stat):
+                bindings = runtime_reader._progress_bindings(runtime_dir, limit=2, hud_safe=True)
+            self.assertEqual([item["binding"]["target_id"] for item in bindings], ["run-1"])
+
+    @staticmethod
+    def _bindings(root: Path, count: int) -> Path:
+        """`count` run bindings, run-0 the newest; the runtime directory that holds them."""
+        paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+        now = datetime.now(timezone.utc)
+        for index in range(count):
+            stamp = (now - timedelta(seconds=10 + index)).isoformat().replace("+00:00", "Z")
+            write_progress_binding(
+                paths, build_progress_binding(target_type="run", target_id=f"run-{index}", executor_profile="codex", now=stamp)
+            )
+        return paths.omh_home.resolve() / "runtime"
+
+
 if __name__ == "__main__":
     unittest.main()

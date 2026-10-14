@@ -61,7 +61,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
-from ..plugin_bundle.omh.runtime_reader import elapsed_text
+from ..plugin_bundle.omh.hud_text import elapsed_text
 from . import gateway_contract as contract
 from .markdown import clean_text, wrap_prefixed
 from .panels import SPINNER_FRAMES
@@ -151,6 +151,7 @@ class Agent:
     dropped: int = 0  # rows the cap pushed out of `log`
     tail_cut: bool = False  # `log` was seeded from a tail that had already lost its beginning
     seen: int = 0  # the roster's count of frames when one last named this agent; the lowest was seen longest ago
+    log_gen: int = 0  # moves whenever `log`, `dropped` or `tail_cut` changes, so the wrapped log is redone only then
 
     @property
     def name(self) -> str:
@@ -222,6 +223,7 @@ def _push(agent: Agent, kind: str, text: str, detail: str = "") -> None:
     if len(agent.log) == LOG_ROW_CAP:
         agent.dropped += 1
     agent.log.append(LogRow(kind, _cut(text, ROW_CHARS), detail))
+    agent.log_gen += 1
 
 
 # ── rendering ─────────────────────────────────────────────────────────────
@@ -273,6 +275,9 @@ class Roster:
         self.agents: dict[str, Agent] = {}
         self.evicted = 0  # agents the cap pushed out since the last `clear`
         self._frames = 0  # frames that named a held agent, for `Agent.seen`
+        # Each agent's log rows as `log_lines` last wrapped them, with the agent, log generation, width and theme
+        # they were wrapped for: a log view repaints every tick, and its log changes far less often.
+        self._wrapped: dict[str, tuple[Agent, int, int, Theme, list[Line]]] = {}
         self._handlers: dict[str, Callable[[str, dict[str, Any], float], None]] = {
             contract.SUBAGENT_SPAWN_REQUESTED: self._on_spawn_requested,
             contract.SUBAGENT_START: self._on_alive,
@@ -306,6 +311,7 @@ class Roster:
     def clear(self) -> None:
         """Drop every agent: the app calls this when a new turn starts and when it leaves a session."""
         self.agents.clear()
+        self._wrapped.clear()
         self.evicted = 0
 
     def ingest_tail(self, subagent_id: str, text: str, truncated: bool = False) -> None:
@@ -330,13 +336,16 @@ class Roster:
         agent.log = deque((LogRow(LOG_TEXT, _cut(row, ROW_CHARS)) for row in rows), maxlen=LOG_ROW_CAP)
         agent.dropped = max(0, len(rows) - LOG_ROW_CAP)
         agent.tail_cut = cut
+        agent.log_gen += 1
 
     def _make_room(self) -> None:
         """Keep the roster under its cap: a finished agent leaves first, else the one seen longest ago."""
         if len(self.agents) < ROSTER_CAP:
             return
         finished = next((key for key, agent in self.agents.items() if agent.status in FINISHED_STATUSES), None)
-        del self.agents[finished if finished is not None else min(self.agents, key=lambda key: self.agents[key].seen)]
+        evicted = finished if finished is not None else min(self.agents, key=lambda key: self.agents[key].seen)
+        del self.agents[evicted]
+        self._wrapped.pop(evicted, None)
         self.evicted += 1
 
     def _live(self, subagent_id: str, payload: dict[str, Any], now: float, status: str) -> Agent | None:
@@ -475,7 +484,9 @@ class Roster:
 
         Everything is wrapped to `width`. A log that lost rows opens by saying
         so; an empty one says `no output yet`. An id the roster does not hold
-        (`MAIN_ID` included) has no rows.
+        (`MAIN_ID` included) has no rows. The rows under the header are
+        wrapped again only when the log, the width or the theme changed since
+        the last call; the header, whose elapsed time moves, every time.
         """
         agent = self.agents.get(subagent_id)
         if agent is None:
@@ -483,11 +494,19 @@ class Roster:
         facts = [elapsed_text(agent.elapsed(now)), _tools_text(agent.tool_count), agent.model]
         status = Span(agent.status, _mark(agent, theme, 0).style)
         rest = Span("".join(f"{FACT_SEPARATOR}{fact}" for fact in facts if fact), theme.muted)
-        rows: list[Line] = [
+        header: list[Line] = [
             *wrap_line((Span(agent.goal or UNNAMED, theme.accent),), width),
             *wrap_line((status, rest), width),
             (),
         ]
+        return header + self._wrapped_log(agent, width, theme)
+
+    def _wrapped_log(self, agent: Agent, width: int, theme: Theme) -> list[Line]:
+        """The rows under the log view's header, from `_wrapped` while nothing they depend on has changed."""
+        held = self._wrapped.get(agent.subagent_id)
+        if held is not None and held[0] is agent and held[1:3] == (agent.log_gen, width) and held[3] is theme:
+            return held[4]
+        rows: list[Line] = []
         notice = _dropped_text(agent)
         if notice:
             rows.append(truncate_line((Span(notice, theme.muted),), width))
@@ -495,4 +514,5 @@ class Roster:
             rows.append(truncate_line((Span(NO_OUTPUT, theme.muted),), width))
         for row in agent.log:
             rows.extend(_log_row(row, width, theme))
+        self._wrapped[agent.subagent_id] = (agent, agent.log_gen, width, theme, rows)
         return rows

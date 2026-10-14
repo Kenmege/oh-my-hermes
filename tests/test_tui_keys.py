@@ -16,6 +16,8 @@ from omh.tui.keys import (
     BUTTON_RIGHT,
     MOUSE_REPORT_SECONDS,
     NO_BUTTON,
+    PASTE_LATE_SECONDS,
+    PASTE_SETTLE_SECONDS,
     WHEEL_DOWN,
     WHEEL_LEFT,
     WHEEL_RIGHT,
@@ -138,7 +140,8 @@ class EscapeSequenceTests(unittest.TestCase):
         self.assertEqual(decode("\x1b한".encode()), [char("한", alt=True)])
 
     def test_every_split_of_an_escape_sequence_agrees(self) -> None:
-        for data in (b"\x1b[1;5C", b"\x1b[3~", b"\x1bOA", b"\x1b[Z", "\x1b한".encode(), b"x\x1b[Ay"):
+        # Not an Alt chord: split right after its ESC it is Esc and the key (`EscapeWaitTests`).
+        for data in (b"\x1b[1;5C", b"\x1b[3~", b"\x1bOA", b"\x1b[Z", b"x\x1b[Ay"):
             with self.subTest(data=data):
                 decode_split_everywhere(self, data)
 
@@ -205,11 +208,77 @@ class BracketedPasteTests(unittest.TestCase):
         events = decode_split_everywhere(self, data)
         self.assertEqual(events, [Paste("줄 하나\n줄 둘"), char("k")])
 
-    def test_flush_does_not_end_an_open_paste(self) -> None:
+    def test_a_flush_before_the_paste_has_been_silent_long_does_not_end_it(self) -> None:
         decoder = KeyDecoder()
         self.assertEqual(decoder.feed(b"\x1b[200~par"), [])
         self.assertEqual(decoder.flush(), [])
         self.assertEqual(decoder.feed(b"tial\x1b[201~"), [Paste("partial")])
+        paused = PausedInput(reporting=False)
+        paused.feed(b"\x1b[200~one ")
+        paused.pause(PASTE_SETTLE_SECONDS - READ_SECONDS)
+        paused.feed(b"two\x1b[201~")
+        self.assertEqual(paused.events, [Paste("one two")])
+
+    def test_a_paste_whose_end_marker_never_comes_settles_after_a_silence_and_keys_come_back(self) -> None:
+        paused = PausedInput(reporting=False)
+        paused.feed(b"\x1b[200~partial paste")
+        paused.pause(PASTE_SETTLE_SECONDS - READ_SECONDS)
+        self.assertEqual(paused.events, [])
+        paused.pause(READ_SECONDS)
+        self.assertEqual(paused.events, [Paste("partial paste")])
+        paused.feed(b"k\x03")  # a key, then Ctrl+C: neither is swallowed as paste text any more
+        self.assertEqual(paused.events[1:], [char("k"), char("c", ctrl=True)])
+
+    def test_the_rest_of_a_stalled_paste_never_submits_and_its_late_end_marker_is_swallowed(self) -> None:
+        paused = PausedInput(reporting=False)
+        paused.feed(b"\x1b[200~first line\r")
+        paused.pause(PASTE_SETTLE_SECONDS + READ_SECONDS)  # the watchdog gives the end marker up
+        paused.feed(b"second\r\nthird")  # the rest of the paste, late
+        paused.feed(b"\x03\x1b[201~")  # Ctrl+C is still a key; the end marker closes the window and is no key
+        paused.feed(b"\r")  # after the end marker, Enter is Enter again
+        self.assertEqual(
+            paused.events,
+            [Paste("first line\n"), *map(char, "second"), Paste("\n"), *map(char, "third"), char("c", ctrl=True),
+             Key("enter")],
+        )
+
+    def test_a_rest_that_keeps_arriving_keeps_the_late_window_open(self) -> None:
+        paused = PausedInput(reporting=False)
+        paused.feed(b"\x1b[200~a")
+        paused.pause(PASTE_SETTLE_SECONDS + READ_SECONDS)
+        # A paste's rest arrives in chunks of several keys; past PASTE_LATE_SECONDS since the settle, never that
+        # long without a chunk.
+        for chunk in (b"bb", b"cc", b"dd\r"):
+            paused.pause(PASTE_LATE_SECONDS * 0.6)
+            paused.feed(chunk)
+        self.assertEqual(paused.events, [Paste("a"), *map(char, "bbccdd"), Paste("\n")])
+
+    def test_keys_typed_one_a_read_do_not_hold_the_late_window_open(self) -> None:
+        paused = PausedInput(reporting=False)
+        paused.feed(b"\x1b[200~pasted text")
+        paused.pause(PASTE_SETTLE_SECONDS + READ_SECONDS)  # settled at 0.5 s: the window runs to 1.5 s
+        for gap, data in ((0.3, b"o"), (0.15, b"k"), (0.15, b"\r"), (0.6, b"\r")):  # typed, one key a read
+            paused.pause(gap)
+            paused.feed(data)
+        # The Enter at 1.15 s is still a line in the paste; the one at 1.75 s sends, though keys kept coming.
+        self.assertEqual(paused.events, [Paste("pasted text"), char("o"), char("k"), Paste("\n"), Key("enter")])
+
+    def test_a_carriage_return_after_the_late_window_is_enter(self) -> None:
+        paused = PausedInput(reporting=False)
+        paused.feed(b"\x1b[200~partial")
+        paused.pause(PASTE_SETTLE_SECONDS + READ_SECONDS)
+        paused.feed(b"x\r")  # inside the window: a newline
+        paused.pause(PASTE_LATE_SECONDS + READ_SECONDS)
+        paused.feed(b"\r")  # a second without a byte, and no end marker came: Enter
+        paused.feed(b"\x1b[201~")  # a stray end marker outside the window is the unknown key it always was
+        self.assertEqual(paused.events, [Paste("partial"), char("x"), Paste("\n"), Key("enter"), Key("unknown")])
+
+    def test_an_open_paste_with_nothing_in_it_settles_as_nothing(self) -> None:
+        paused = PausedInput(reporting=False)
+        paused.feed(b"\x1b[200~")
+        paused.pause(PASTE_SETTLE_SECONDS + READ_SECONDS)
+        paused.feed(b"a")
+        self.assertEqual(paused.events, [char("a")])
 
     def test_an_empty_paste(self) -> None:
         self.assertEqual(decode(b"\x1b[200~\x1b[201~"), [Paste("")])
@@ -756,7 +825,7 @@ class ReportsAfterTheOffTests(unittest.TestCase):
         paused.now = 0.6
         paused.feed(b"x\x1b")
         paused.pause(0.05)
-        self.assertEqual(paused.events, [char("x", alt=True), Key("escape")])
+        self.assertEqual(paused.events, [Key("escape"), char("x"), Key("escape")])
 
     def test_a_report_that_starts_after_the_grace_and_splits_before_its_marker_is_keys(self) -> None:
         events = self.split(1, 0.06, MOUSE_REPORT_SECONDS)
@@ -831,10 +900,15 @@ class EscapeWaitTests(unittest.TestCase):
                 paused.feed(rest)
                 self.assertEqual(paused.events, [Key("escape"), *(char(c) for c in rest.decode())])
 
-    def test_without_a_silence_an_escape_split_from_its_key_is_still_the_alt_chord(self) -> None:
-        # The wait ends early only after it began: a read that follows before any silence goes on as before.
-        decoder = KeyDecoder()
-        self.assertEqual(decoder.feed(b"\x1b") + decoder.feed(b"n"), [char("n", alt=True)])
+    def test_without_a_silence_an_escape_split_from_its_key_is_esc_and_the_key(self) -> None:
+        # Esc, then a key read before the loop's next silence: both act, whether or not a flush ran between.
+        cases = {b"n": [Key("escape"), char("n")], b"/x": [Key("escape"), char("/"), char("x")],
+                 b"\r": [Key("escape"), Key("enter")],  # an Alt+Enter the kernel split this way is Esc and Enter
+                 b"[A": [Key("up")], b"OA": [Key("up")]}  # a read that goes on with a sequence still does
+        for rest, keys in cases.items():
+            with self.subTest(rest=rest):
+                decoder = KeyDecoder()
+                self.assertEqual(decoder.feed(b"\x1b") + decoder.feed(rest), keys)
 
 
 class ArrivalTests(unittest.TestCase):

@@ -111,11 +111,20 @@ def _segment(text: str) -> list[str]:
 
 def clusters(text: str) -> list[str]:
     """The NFC text split into the units a cursor steps over and a cut may fall between."""
+    if text.isascii():  # already NFC, and no ASCII character joins another
+        return list(text)
     return _segment(unicodedata.normalize("NFC", text))
+
+
+def _ascii_width(text: str) -> int:
+    """Cells of ASCII text: one per printable character, none for a control or DEL."""
+    return len(text) if text.isprintable() else sum(1 for ch in text if ch.isprintable())
 
 
 def cluster_width(cluster: str) -> int:
     """Cells one cluster from `clusters()` occupies."""
+    if cluster.isascii():
+        return _ascii_width(cluster)
     if VS16 in cluster:
         return 2
     if ZWJ in cluster and sum(1 for ch in cluster if not _is_zero_width(ch)) > 1:
@@ -129,6 +138,8 @@ def cluster_width(cluster: str) -> int:
 
 
 def cell_width(text: str) -> int:
+    if text.isascii():
+        return _ascii_width(text)
     return sum(cluster_width(cluster) for cluster in clusters(text))
 
 

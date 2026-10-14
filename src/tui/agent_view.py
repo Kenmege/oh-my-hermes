@@ -200,6 +200,17 @@ class AgentViewMixin:
         if to_end or at_end:
             self.pager.top = len(self.pager.lines)  # past the end: the pager shows the last full page
 
+    def _tail_due_at(self) -> float | None:
+        """When `_ask_tail_when_due` may next send a call, on the app's clock; None while it sends none."""
+        agent = self.roster.agents.get(self.log_agent) if self.pager is not None else None
+        if agent is None or agent.status != RUNNING or not self.sid:
+            return None
+        if self.tail_misses.get(agent.subagent_id, 0) >= TAIL_MISSES_BEFORE_STOP:
+            return None
+        if self.tail_asked_at is None:
+            return self.clock()
+        return self.tail_asked_at + (TAIL_ANSWER_SECONDS if self.tail_open else TAIL_POLL_SECONDS)
+
     def _ask_tail_when_due(self) -> None:
         """`subagent.tail` for the agent whose log is open, while it runs: at most one call every `TAIL_POLL_SECONDS`.
 
@@ -240,9 +251,10 @@ class AgentViewMixin:
         self.tail_asked_at, self.tail_open = None, False
 
     def _forget_tail_calls(self) -> None:
-        """Drop the `subagent.tail` calls still waiting for an answer, so a gateway that never answers cannot grow `pending`."""
+        """Drop the `subagent.tail` calls still waiting for an answer, here and in the client, so neither grows."""
         for request_id in [rid for rid, call in self.pending.items() if call.method == "subagent.tail"]:
             del self.pending[request_id]
+            self.client.forget(request_id)
 
     def _on_tail(self, sid: str, subagent_id: str, result: Mapping[str, Any]) -> bool:
         """A `subagent.tail` answer: read only when Hermes has a tail, for an agent still running in this session.

@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import unicodedata
 import unittest
+from unittest.mock import patch
 
 from _tui_lines import lines_text
 from omh.tui.composer import (
     CANCEL,
     COMPLETE,
     EXIT,
+    HISTORY_CAP,
     INTERRUPT,
     NONE,
     SUBMIT,
@@ -40,6 +42,7 @@ from omh.tui.keys import (
     UNKNOWN,
     UP,
     Key,
+    KeyDecoder,
     Paste,
 )
 from omh.tui.style import Style
@@ -87,9 +90,36 @@ class InsertTests(unittest.TestCase):
         self.assertEqual(composer.text, HANGUL + FAMILY)
         self.assertEqual(composer.caret, len(HANGUL + FAMILY))
 
-    def test_alt_chords_and_unbound_ctrl_keys_change_nothing(self) -> None:
+    def test_alt_with_a_printable_character_types_the_character(self) -> None:
+        # `ESC x` is also what Esc then x send when both arrive in one read: the x is not lost with the Esc.
+        for char, text in (("x", "axbc"), ("/", "a/bc"), ("한", "a한bc"), (" ", "a bc")):
+            with self.subTest(char=char):
+                composer = at("abc", 1)
+                self.assertEqual(composer.handle(Key(CHAR, char, alt=True)), ComposerAction(NONE))
+                self.assertEqual((composer.text, composer.caret), (text, 1 + len(char)))
+
+    def test_option_arrows_from_terminal_app_move_by_a_word(self) -> None:
+        # Terminal.app sends Option+Left and Option+Right as `ESC b` and `ESC f`, readline's word moves.
+        for data, arrow in ((b"\x1bb", LEFT), (b"\x1bf", RIGHT)):
+            with self.subTest(data=data):
+                composer, by_arrow = at("one two three", 5), at("one two three", 5)
+                by_arrow.handle(Key(arrow, alt=True))
+                for key in KeyDecoder().feed(data):
+                    composer.handle(key)
+                self.assertNotEqual(by_arrow.caret, 5)
+                self.assertEqual((composer.text, composer.caret), ("one two three", by_arrow.caret))
+
+    def test_esc_then_a_command_in_one_read_types_the_command(self) -> None:
+        composer = Composer()
+        for key in KeyDecoder().feed(b"\x1b/quit"):
+            composer.handle(key)
+        self.assertEqual(composer.text, "/quit")
+
+    def test_reported_alt_chords_and_unbound_ctrl_keys_change_nothing(self) -> None:
+        # A kitty or modifyOtherKeys report says Alt was held: no Esc can hide in it, so it types nothing.
         composer = at("abc", 1)
-        for key in (Key(CHAR, "x", alt=True), ctrl("q"), Key(INSERT), Key(PAGE_UP), Key(UNKNOWN)):
+        reported = [Key(CHAR, char, alt=True, protocol=True) for char in "xbf"]
+        for key in (*reported, ctrl("q"), Key(INSERT), Key(PAGE_UP), Key(UNKNOWN)):
             with self.subTest(key=key):
                 self.assertEqual(composer.handle(key), ComposerAction(NONE))
                 self.assertEqual((composer.text, composer.caret), ("abc", 1))
@@ -125,6 +155,13 @@ class NewlineAndSubmitTests(unittest.TestCase):
             typed(composer, text)
             press(composer, Key(ENTER))
         self.assertEqual(composer.history, ["one", "two", "one"])
+
+    def test_history_keeps_its_newest_entries_up_to_the_cap(self) -> None:
+        composer = Composer(history=[f"old {number}" for number in range(HISTORY_CAP)])
+        typed(composer, "newest")
+        press(composer, Key(ENTER))
+        self.assertEqual(len(composer.history), HISTORY_CAP)
+        self.assertEqual((composer.history[0], composer.history[-1]), ("old 1", "newest"))
 
     def test_alt_enter_and_ctrl_j_insert_a_newline(self) -> None:
         composer = Composer()
@@ -426,6 +463,31 @@ class MaskedTests(unittest.TestCase):
         press(composer, Key(ENTER, alt=True), ctrl("j"))
         composer.handle(Paste("b\nc\n"))
         self.assertEqual(composer.text, "abc")
+
+
+class MeasureOnceTests(unittest.TestCase):
+    """The text is split into clusters and measured once per value; moving the caret and redrawing reuse that."""
+
+    def test_moving_the_caret_and_redrawing_never_measure_the_text_again(self) -> None:
+        composer = Composer()
+        composer.handle(Paste(f"{HANGUL} line one\nline two runs longer than the width\nthree"))
+        composer.render(20, 5)
+        keys = (Key(LEFT), Key(UP), Key(RIGHT, ctrl=True), Key(DOWN), Key(HOME), Key(END), Key(UP), Key(UP))
+        with patch("omh.tui.composer.clusters", side_effect=AssertionError("the text was measured again")):
+            for key in keys:
+                composer.handle(key)
+                composer.render(20, 5)
+        # The walk ends on the second line's first row, 5 cells in, the start of `two` (counted by hand).
+        self.assertEqual(composer.caret, len(f"{HANGUL} line one\nline "))
+
+    def test_a_new_text_a_new_mask_or_a_new_width_is_laid_out_again(self) -> None:
+        composer = at("abcdef", 6)
+        self.assertEqual(lines_text(composer.render(20, 3)[0]), ["› abcdef"])
+        composer.masked = True
+        self.assertEqual(lines_text(composer.render(20, 3)[0]), ["› ••••••"])
+        typed(composer, "g")
+        self.assertEqual(lines_text(composer.render(20, 3)[0]), ["› •••••••"])
+        self.assertEqual(lines_text(composer.render(6, 3)[0]), ["› ••••", "  •••"])
 
 
 class RenderTests(unittest.TestCase):

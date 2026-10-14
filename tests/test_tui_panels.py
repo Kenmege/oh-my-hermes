@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import threading
 import time
@@ -405,6 +407,26 @@ class FakeReader:
         return self.respond(kwargs["session_ref"])
 
 
+class HudReaderImportTests(unittest.TestCase):
+    def test_the_tui_imports_the_hud_reader_only_when_the_poller_first_reads(self) -> None:
+        # A fresh interpreter: this process imported runtime_reader long ago.
+        probe = (
+            "import sys, tempfile\n"
+            "import omh.tui.app\n"
+            "from omh.tui.panels import HudPoller\n"
+            "name = 'omh.plugin_bundle.omh.runtime_reader'\n"
+            "print('after import:', name in sys.modules)\n"
+            "with tempfile.TemporaryDirectory() as omh, tempfile.TemporaryDirectory() as hermes:\n"
+            "    poller = HudPoller(omh, hermes)\n"
+            "    poller.set_session('20261014_000000_aaaaaa')\n"
+            "    poller.poll_once()\n"
+            "print('after a read:', name in sys.modules)\n"
+        )
+        done = subprocess.run([sys.executable, "-P", "-c", probe], capture_output=True, text=True, timeout=120)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.splitlines(), ["after import: False", "after a read: True"])
+
+
 class HudPollerTests(unittest.TestCase):
     def poller(self, reader: FakeReader) -> HudPoller:
         return HudPoller("/omh", "/hermes", package_version="9.9.9", reader=reader, clock=lambda: 50.0)
@@ -481,6 +503,26 @@ class HudPollerTests(unittest.TestCase):
             lines_text(panel_lines(snapshot.payload, 80, 4, THEME, 0.0)), ["⚚ OMH HUD unavailable: OperationalError"]
         )
         self.assertEqual(poller.poll_once(), 4.0)
+
+    def test_a_new_snapshot_wakes_the_loop_and_an_unchanged_one_does_not(self) -> None:
+        payloads = iter([{"session": "stored-1", "n": 1}, {"session": "stored-1", "n": 1}, {"session": "stored-1", "n": 2}])
+        poller = self.poller(FakeReader(lambda session: next(payloads)))
+        woken: list[None] = []
+        poller.on_snapshot = lambda: woken.append(None)
+        poller.set_session("stored-1")
+        poller.take()
+        for _ in range(3):
+            poller.poll_once()
+        self.assertEqual(len(woken), 2)  # the first payload and the changed third, not the repeat
+
+    def test_start_hands_the_thread_the_loops_wake(self) -> None:
+        woken = threading.Event()
+        poller = HudPoller("/omh", "/hermes", reader=FakeReader())
+        poller.start(wake=woken.set)
+        self.addCleanup(poller.stop)
+        poller.set_session("stored-1")
+        self.assertTrue(woken.wait(2.0), "the first snapshot of a session wakes the loop")
+        self.assertEqual(poller.take().payload["session"], "stored-1")
 
     def test_the_thread_waits_for_a_session_delivers_and_stops_promptly(self) -> None:
         reader = FakeReader()

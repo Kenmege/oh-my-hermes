@@ -25,7 +25,7 @@ from test_tui_agent_strip import STARTS, agent_app, relay
 from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, FakePoller, ScriptedTerminal, Step, status_index
 from test_tui_modes import SID, RecordingClient, composer_index, drawn, make_app, show_mode, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND
-from omh.commands.theme_picker import KEY_DOWN, KEY_NONE
+from omh.commands.theme_picker import KEY_DOWN, KEY_NONE, KEY_QUIT
 from omh.tui import keys as keys_module
 from omh.tui import terminal as terminal_module
 from omh.tui.agent_view import AGENT_LIST_HINT
@@ -251,7 +251,7 @@ class MouseStateTests(unittest.TestCase):
         self.assertTrue(reporting(app))
         reads = [(0.0, b"\x1b"), *[(READ_TIMEOUT_SECONDS, b"")] * 3, (READ_TIMEOUT_SECONDS, b"[<0;5;5m"), (0.0, b"j")]
 
-        def read(timeout: float) -> bytes:
+        def read(timeout: float, wake: int | None = None) -> bytes:
             delay, data = reads.pop(0)
             now[0] += delay
             return data
@@ -260,6 +260,31 @@ class MouseStateTests(unittest.TestCase):
         type_text(app, "/omh-model")
         app._on_input(Key(ENTER))
         self.assertEqual(keys, [KEY_NONE, KEY_DOWN])  # the report is no key, and the picker is still open for j
+
+    def test_a_resize_right_after_an_escape_does_not_cancel_the_model_chain_picker(self) -> None:
+        # Reports never on: only the silence after the ESC tells it from an arrow, and a resize signal ends a
+        # read at once with nothing read, before any silence.
+        for gap, expected in ((0.0, [KEY_DOWN]), (READ_TIMEOUT_SECONDS, [KEY_QUIT])):
+            with self.subTest(gap=gap):
+                now = [100.0]
+                keys: list[str] = []
+
+                def pick(environ: object, theme: object, *, read_key, write: object, width: int) -> str:
+                    keys.append(read_key())
+                    return "Cancelled; nothing was changed."
+
+                app, _client = make_app(clock=lambda: now[0], pick_model_chains=pick)
+                reads = [(0.0, b"\x1b"), (gap, b""), (0.0, b"[B")]
+
+                def read(timeout: float, wake: int | None = None) -> bytes:
+                    delay, data = reads.pop(0)
+                    now[0] += delay
+                    return data
+
+                app.terminal.read = read  # type: ignore[method-assign]
+                type_text(app, "/omh-model")
+                app._on_input(Key(ENTER))
+                self.assertEqual(keys, expected)  # an arrow's rest after a resize; a real silence is Esc
 
     def test_shutdown_turns_them_off_before_the_screen_is_handed_back(self) -> None:
         for paging in (False, True):
@@ -319,7 +344,7 @@ class FailingShutdownTests(unittest.TestCase):
     def test_a_hang_up_with_reports_on_leaves_by_the_signal_not_a_traceback(self) -> None:
         app, client, terminal = self.leaving()
 
-        def hang_up(timeout: float) -> bytes:
+        def hang_up(timeout: float, wake: int | None = None) -> bytes:
             terminal.refusal = errno.EIO
             raise SystemExit(128 + 1)  # SIGHUP, as _exit_on_signal raises it
 
@@ -715,7 +740,7 @@ def step_through(app: App, now: list[float], reads: list[tuple[float, bytes]]) -
     """Run the loop one step per read: each read takes its time on the app's clock, then hands back its bytes."""
     queue = list(reads)
 
-    def read(timeout: float) -> bytes:
+    def read(timeout: float, wake: int | None = None) -> bytes:
         delay, data = queue.pop(0)
         now[0] += delay
         return data
@@ -972,7 +997,7 @@ class DrainTerminal(ScriptedTerminal):
         self.log.append(("write", text))
         super().write(text)
 
-    def read(self, timeout: float) -> bytes:
+    def read(self, timeout: float, wake: int | None = None) -> bytes:
         self.log.append(("read", timeout))
         item = self.incoming.pop(0) if self.incoming else self.endless
         if not isinstance(item, bytes):
@@ -1052,6 +1077,23 @@ class ExitDrainTests(unittest.TestCase):
         app._shutdown()
         self.assertEqual(len(self.reads(terminal)), 2)
         self.assertAlmostEqual(terminal.now[0], EXIT_DRAIN_SECONDS)
+
+    def test_a_resize_signal_does_not_end_it_early(self) -> None:
+        terminal = DrainTerminal([self.REPORT, self.ANSWER], endless=b"typed for the shell")
+        app, _client = self.leaving(terminal)
+        real = terminal.read
+        first = [True]
+
+        def read(timeout: float, wake: int | None = None) -> bytes:
+            if first:  # the first read ends at once with nothing read, as a resize signal ends it
+                first.clear()
+                terminal.log.append(("read", timeout))
+                return b""
+            return real(timeout, wake)
+
+        terminal.read = read  # type: ignore[method-assign]
+        app._shutdown()
+        self.assertEqual(len(self.reads(terminal)), 3)  # the empty read, the report, the answer
 
     def test_a_terminal_that_hung_up_ends_it_quietly(self) -> None:
         terminal = DrainTerminal([self.REPORT, EOFError])
@@ -1143,7 +1185,8 @@ class DocumentedMouseTests(unittest.TestCase):
         installation = self.prose("docs/INSTALLATION.md")
         self.assertIn(f"for {grace:g} s after they go off, an Esc pressed on its own acts after {seconds:g} s", installation)
         self.assertIn("Another key typed within that time ends the wait, and both keys act, except `[`", installation)
-        self.assertIn("a key the terminal sends in the same burst as the Esc is Alt with that key", installation)
+        self.assertIn("A key the terminal sends in the same burst as the Esc is Alt with that key", installation)
+        self.assertIn("the Esc is lost and a character still types", installation)
         self.assertIn(f"A report that starts later than {grace:g} s after they went off", installation)
         self.assertIn(f"so can any report that takes more than {whole:g} s to arrive whole", installation)
         agents = self.prose("AGENTS.md")
@@ -1156,7 +1199,7 @@ class DocumentedMouseTests(unittest.TestCase):
     def test_the_o_continuations_installation_names_are_every_ss3_final(self) -> None:
         named = {"F1 to F4": b"PQRS", "an arrow": b"ABCD", "Home": b"H", "End": b"F"}
         self.assertEqual(sorted(b"".join(named.values())), sorted(keys_module._SS3_FINALS))
-        self.assertIn("as is `O` arriving together with the letter that ends F1 to F4, an arrow, Home or End;",
+        self.assertIn("as is `O` arriving together with the letter that ends F1 to F4, an arrow, Home or End.",
                       self.prose("docs/INSTALLATION.md"))
 
     def test_no_doc_says_a_split_report_never_types_however_long_the_pause(self) -> None:

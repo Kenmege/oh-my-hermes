@@ -301,7 +301,14 @@ run and approval decision stays Hermes'; the screen is OMH's.
 
 - Finished replies, tool summaries and notices go to your terminal's own
   scrollback, so selecting, copying and scrolling back work as they do in any
-  shell. Only the bottom of the screen repaints.
+  shell. Only the bottom of the screen repaints. A full redraw (a resize,
+  Ctrl+L, `/redraw`, switching or resuming a session) prints the session's
+  last 3,000 rows again under one row such as `⋯ 412 earlier messages ·
+  /history shows all`; `/history` pages through the whole session. The OMH
+  TUI holds a session's last 2,000 messages (a prompt, a reply, its
+  thinking, a group of tool calls and a notice are one each); older ones are
+  left to the terminal's scrollback until a full redraw clears it, and from
+  then on that row says how many `/history` still shows.
 - The bottom region holds, from the top: the prompt you just sent (while the
   turn runs), the tail of the reply that is still streaming, one slot for the
   OMH plan and agents panel (or a question Hermes asked, or the slash-command
@@ -345,15 +352,29 @@ run and approval decision stays Hermes'; the screen is OMH's.
   connection has to arrive whole. Another key typed within that time ends
   the wait, and both keys act, except `[`, which is read as the rest of a
   sequence, as is `O` arriving together with the letter that ends F1 to F4,
-  an arrow, Home or End; a key the terminal sends in the same burst as the
-  Esc is Alt with that key. A report that starts later than 0.5 s after
-  they went off, split by the connection right after its first byte or two,
-  can still type its rest, and so can any report that takes more than 0.8 s
-  to arrive whole.
+  an arrow, Home or End. A key the terminal sends in the same burst as the
+  Esc is Alt with that key, with click reports off too (tmux before 3.5
+  holds an Esc for half a second and sends a key typed meanwhile that way):
+  the Esc is lost and a character still types, while Enter and the arrows
+  keep their Alt meaning, a new line and a word, and so do `b` and `f`,
+  which move back and forward a word (readline's Alt+B and Alt+F, and what
+  macOS Terminal.app sends for Option+← and Option+→). A report that starts later
+  than 0.5 s after they went off, split by the connection right after its
+  first byte or two, can still type its rest, and so can any report that
+  takes more than 0.8 s to arrive whole.
   A click is read only where the OMH TUI can tell which row it landed on:
   once the session's output has reached the bottom of the screen, or after
   Ctrl+L. Until then it leaves the mouse to the terminal and the keys open
   the list.
+- The composer takes a paste whole when the terminal brackets it, as most
+  terminals do. A paste whose end marker never arrives ends after 0.5 s
+  without input, as what arrived so far, and the keys after it are keys
+  again, Ctrl+C included. Until that end marker arrives late, or for a second
+  after the paste ended, a line break in what follows adds a line instead of
+  sending, so the rest of a paste that only stalled stays text. Each read of
+  several keys at once (how the rest of a paste arrives) starts the second
+  again; keys typed one at a time do not, so an Enter typed within the second
+  adds a line and the next one sends.
 - When Hermes asks something (an approval, a clarify question, a sudo
   password), the question takes the slot until you answer. Nothing is answered
   for you: Esc or Ctrl+C declines. An approval offers deny, allow once and
@@ -500,7 +521,8 @@ on the TUI's own request (exit 75 together with a file `omh` named for that
 launch and removes afterwards), so a 75 Hermes returns for a reason of its
 own ends the launch like any other exit code. If the gateway stops accepting a method or a key mid-session, the
 TUI leaves with the command that reopens the same session in `hermes`; on the
-two calls a session does without, reading the command list and the
+three calls a session does without, reading Hermes' settings (for the busy
+mode, which then stays `queue`), reading the command list and the
 `/reload-skills` rescan, it says so instead and the session goes on. A
 turn that brings no event the TUI shows, only types it does not know (Hermes
 renamed its turn events), gets one notice pointing at `omh doctor`, which
@@ -3365,7 +3387,7 @@ By default, `omh`/`hermes` never checks for updates on launch -- OMH's core
 promise is no network calls without an explicit opt-in. `omh update-check`
 turns on a bounded, best-effort comparison against `origin/main` that runs
 right before bare `omh` opens the OMH TUI. This is `omh`'s own launch door
-(`commands/main.py`); bare `hermes` execs your Hermes install directly and
+(`commands/bare_launch.py`); bare `hermes` execs your Hermes install directly and
 never passes through this process, so it never runs this check.
 
 ```sh

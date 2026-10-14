@@ -8,13 +8,16 @@ repaints. So the model answers three questions for the app loop:
   once and then belongs to the terminal.
 - `live_lines`: everything not yet taken, as it looks now (painted inside the
   live region every frame).
-- `history_lines`: the whole transcript, for the in-memory pager.
+- `history_lines`: every block held, as `/history` shows them (its pager
+  renders them a page at a time, with `block_rows`). At most `BLOCK_CAP`
+  blocks are held; past it the oldest ones already taken are dropped
+  (`dropped` counts them).
 
 The invariant the tests hold: at any moment, the lines already taken followed
 by `live_lines()` equal `history_lines(details=False)` at the same width
-(unless `toggle_details` expanded the live block). Only the LAST block can
-still change; appending any block first closes the one before it, so a block
-is flushed only after every block above it.
+(unless `toggle_details` expanded the live block, or the cap dropped blocks).
+Only the LAST block can still change; appending any block first closes the
+one before it, so a block is flushed only after every block above it.
 
 Assistant text opens with `⏺ ` in the accent on its first row, and every
 later row of that reply, however many flushes it arrives in, is indented to
@@ -29,8 +32,8 @@ a tool group flushes when the next block arrives (message text, thinking) or
 at `message.complete`, as "⏺ Tool calls (N)" (plus "parallel ×K" when K tools
 ran at once) and one line per tool; a group of one call is that one line. An edit tool whose `tool.complete` carries
 an `inline_diff` shows that diff under its row (`diff_view.py`): the first
-`PREVIEW_LINES` diff lines and a count of the rest, which `history_lines` with
-details shows in full. Lines rendered at one width stay as they were taken; a
+`PREVIEW_LINES` diff lines and a count of the rest, which `/history` (and
+`history_lines` with details) shows in full. Lines rendered at one width stay as they were taken; a
 resize changes only what has not been taken yet.
 
 Two events do not mean what their names suggest, measured against Hermes
@@ -73,6 +76,16 @@ NOTICE_ERROR = "error"
 
 INTERRUPTED_NOTICE = "Interrupted."
 FAILED_NOTICE = "The turn ended with an error."
+# The first row a full redraw prints when `retake_tail` left the session's earlier blocks out; once the cap
+# below has dropped blocks, /history no longer holds them all, and the row says how many it does.
+LEFT_OUT_NOTICE = "⋯ {earlier} · /history shows all"
+LEFT_OUT_DROPPED_NOTICE = "⋯ {earlier} · /history shows the last {held}"
+# /history's first row once the cap below has dropped blocks.
+DROPPED_NOTICE = "⋯ {earlier} no longer held"
+# The most blocks a transcript holds (Hermes' own TUI keeps 800 messages). Past it the oldest blocks already
+# printed are dropped: they stay in the terminal's scrollback until a full redraw clears it, and /history no
+# longer has them.
+BLOCK_CAP = 2000
 
 USER_MARK = "› "
 COLLAPSED_MARK = "▸"
@@ -122,7 +135,31 @@ class ToolRow:
     started_at: float | None = None
     duration_s: float | None = None
     summary: str = ""
-    diff: tuple[DiffLine, ...] = ()  # an edit's inline diff, colour stripped and classified
+    # An edit's `inline_diff` as Hermes sent it, UTF-8 encoded, parsed when drawn (`diff_lines`). Encoded, because
+    # a str holding one character past Latin-1 (every Hermes diff has `┊` and `→`) takes two bytes for each of
+    # its characters, which made the diff held as a str larger than the parsed lines; as bytes it is about half.
+    # `surrogatepass` both ways: JSON can carry a lone surrogate, which plain UTF-8 refuses to encode.
+    inline_diff: bytes = b""
+    diff_root: str = ""  # the session's working directory, which the diff's file names are shown relative to
+    # The parsed diff, kept while the row's group is live (it is drawn again on every change); None otherwise.
+    held_lines: tuple[DiffLine, ...] | None = field(default=None, repr=False, compare=False)
+
+    def diff_lines(self, hold: bool = False) -> tuple[DiffLine, ...]:
+        """The diff colour-stripped and classified, its file names relative to `diff_root`.
+
+        With `hold` the lines are kept for the next call that holds; without,
+        any kept lines are let go and the diff is parsed from its bytes.
+        """
+        if hold and self.held_lines is not None:
+            return self.held_lines
+        lines = tuple(
+            DiffLine(line.kind, FILE_ARROW.join(_relative(self.diff_root, side) for side in line.text.split(FILE_ARROW)))
+            if line.kind == DIFF_FILE
+            else line
+            for line in parse_inline_diff(self.inline_diff.decode("utf-8", "surrogatepass"))
+        )
+        self.held_lines = lines if hold else None
+        return lines
 
 
 @dataclass
@@ -248,6 +285,17 @@ def _duration(payload: dict[str, Any], row: ToolRow, now: float) -> float | None
     return None
 
 
+def _earlier(count: int) -> str:
+    return f"{count} earlier {'message' if count == 1 else 'messages'}"
+
+
+def _relative(root: str, path: str) -> str:
+    """`path` relative to the directory `root` when it lies inside it."""
+    root = root.rstrip("/")
+    prefix = root + "/" if root else ""  # "/" itself is no prefix: every absolute path stays absolute
+    return path[len(prefix):] if prefix and path.startswith(prefix) and len(path) > len(prefix) else path
+
+
 def _find_row(group: ToolGroup, tool_id: str) -> ToolRow | None:
     for row in group.tools:
         if tool_id and row.tool_id == tool_id:
@@ -266,17 +314,28 @@ def _drafted_row(group: ToolGroup, name: str) -> ToolRow | None:
 # ── rendering ─────────────────────────────────────────────────────────────
 
 
-def _text_rows(text: str, style: Style, first: Line, rest: Line, width: int) -> list[Line]:
-    """Plain text (no markdown), each source line wrapped, `first` before the very first row."""
-    rows: list[Line] = []
+def _text_rows(
+    text: str, style: Style, first: Line, rest: Line, width: int, max_rows: int | None = None
+) -> list[Line]:
+    """Plain text (no markdown), each source line wrapped, `first` before the very first row.
+
+    Each source line wraps on its own, so with `max_rows` only the last lines
+    that cover that many rows are wrapped; the rows end as all of them would.
+    """
+    wrapped: list[list[Line]] = []  # each source line's rows, the last line first
+    count = 0
     lines = _without_trailing_blanks(_source_lines(text))
-    for source in lines:
+    for index in range(len(lines) - 1, -1, -1):
+        if max_rows is not None and count >= max_rows:
+            break
+        source = lines[index]
         if _is_blank(source):
-            rows.append(())  # never the first row: leading blank lines were dropped
-            continue
-        prefix = first if not rows else rest
-        rows.extend(wrap_prefixed((Span(clean_text(source), style),), prefix, rest, width))
-    return rows
+            rows: list[Line] = [()]  # never the first row: leading blank lines were dropped
+        else:
+            rows = wrap_prefixed((Span(clean_text(source), style),), first if index == 0 else rest, rest, width)
+        wrapped.append(rows)
+        count += len(rows)
+    return [row for rows in reversed(wrapped) for row in rows]
 
 
 def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
@@ -317,7 +376,9 @@ def _seconds(value: float) -> str:
     return f"{value:.1f}s"
 
 
-def _thinking_rows(block: ThinkingBlock, width: int, theme: Theme, expanded: bool) -> list[Line]:
+def _thinking_rows(
+    block: ThinkingBlock, width: int, theme: Theme, expanded: bool, max_rows: int | None = None
+) -> list[Line]:
     mark = EXPANDED_MARK if expanded else COLLAPSED_MARK
     if block.done:
         header = f"{mark} thought"
@@ -331,7 +392,7 @@ def _thinking_rows(block: ThinkingBlock, width: int, theme: Theme, expanded: boo
     rows = [truncate_line(head, width)]
     if expanded:
         indent: Line = (Span(DETAIL_INDENT),)
-        rows.extend(_text_rows(block.text, theme.thinking, indent, indent, width))
+        rows.extend(_text_rows(block.text, theme.thinking, indent, indent, width, max_rows))
     return rows
 
 
@@ -380,13 +441,18 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool) -> li
         rows.append(_tool_row(tool, width, theme))
         if expanded and tool.summary:
             rows.extend(wrap_prefixed((Span(tool.summary, theme.dim),), summary_first, summary_rest, width))
-        if tool.diff:
-            rows.extend(diff_rows(tool.diff, width, theme, full=expanded))
+        lines = tool.diff_lines(hold=not group.done) if tool.inline_diff else ()
+        if lines:
+            rows.extend(diff_rows(lines, width, theme, full=expanded))
     return rows
 
 
-def block_rows(block: Block, width: int, theme: Theme, expanded: bool = False) -> list[Line]:
-    """The rows one block shows at `width`; `expanded` adds thinking text, tool result summaries, whole diffs."""
+def block_rows(block: Block, width: int, theme: Theme, expanded: bool = False, max_rows: int | None = None) -> list[Line]:
+    """The rows one block shows at `width`; `expanded` adds thinking text, tool result summaries, whole diffs.
+
+    `max_rows` lets a block whose rows end the same either way (thinking
+    text) render only its last rows; the rows returned may start lower.
+    """
     width = max(1, width)
     if isinstance(block, UserBlock):
         return _user_rows(block, width, theme)
@@ -395,7 +461,7 @@ def block_rows(block: Block, width: int, theme: Theme, expanded: bool = False) -
     if isinstance(block, AssistantBlock):
         return _assistant_rows(block, width, theme)
     if isinstance(block, ThinkingBlock):
-        return _thinking_rows(block, width, theme, expanded)
+        return _thinking_rows(block, width, theme, expanded, max_rows)
     return _tool_rows(block, width, theme, expanded)
 
 
@@ -418,6 +484,12 @@ class Transcript:
         self._cursor_lines = 0  # source lines of blocks[_cursor] already taken (assistant text)
         self._cursor_state = MarkdownState()  # markdown state after those lines
         self._taken_any = False  # whether any line has been taken (a spacer goes above the next block)
+        self._left_out = 0  # blocks `retake_tail` left out: the next take opens with LEFT_OUT_NOTICE
+        self.dropped = 0  # blocks BLOCK_CAP dropped from the front
+        # Moves with every change to what `live_lines` draws; its last answer is kept with the version, width,
+        # row limit and theme it was for, so a frame that changed nothing (a spinner tick) renders nothing.
+        self._version = 0
+        self._live_held: tuple[tuple[int, int, int | None], Theme, list[Line]] | None = None
         self._handlers: dict[str, Callable[[dict[str, Any]], None]] = {
             "message.start": self._on_message_start,
             "message.delta": self._on_message_delta,
@@ -439,6 +511,7 @@ class Transcript:
         handler = self._handlers.get(event.type)
         if handler is not None:
             handler(event.payload if isinstance(event.payload, dict) else {})
+            self._version += 1
 
     def add_user(self, text: str) -> None:
         self._append(UserBlock(text))
@@ -466,6 +539,7 @@ class Transcript:
     def toggle_details(self) -> bool:
         """Expand or collapse the live block's details; blocks already taken never repaint."""
         self.details_expanded = not self.details_expanded
+        self._version += 1
         return self.details_expanded
 
     # ── block bookkeeping ──
@@ -491,6 +565,22 @@ class Transcript:
     def _append(self, block: Block) -> None:
         self._close_live()
         self.blocks.append(block)
+        self._version += 1
+        self._drop_past_cap()
+
+    def _drop_past_cap(self) -> None:
+        """Past `BLOCK_CAP`, drop the oldest blocks already taken (or left out); one not taken yet stays until it is.
+
+        Runs after an append, a take and a retake, so a resumed session's
+        history longer than the cap goes as soon as it is printed.
+        """
+        drop = min(len(self.blocks) - BLOCK_CAP, self._cursor)
+        if drop > 0:
+            del self.blocks[:drop]
+            self._cursor -= drop
+            self._turn_start = max(self._turn_start - drop, 0)
+            self.dropped += drop
+            self._version += 1
 
     def _tool_group(self) -> ToolGroup:
         group = self._live(ToolGroup)
@@ -619,22 +709,11 @@ class Transcript:
         row.status = tool_result_status(payload.get("result"))
         row.duration_s = _duration(payload, row, self._clock())
         row.summary = _result_summary(payload)
-        row.diff = tuple(
-            DiffLine(line.kind, self._display_header(line.text)) if line.kind == DIFF_FILE else line
-            for line in parse_inline_diff(as_text(payload.get("inline_diff")))
-        )
-
-    def _relative(self, path: str) -> str:
-        """`path` relative to the session's working directory when it lies inside it."""
-        root = self.cwd.rstrip("/")
-        prefix = root + "/" if root else ""  # "/" itself is no prefix: every absolute path stays absolute
-        return path[len(prefix):] if prefix and path.startswith(prefix) and len(path) > len(prefix) else path
+        row.inline_diff, row.diff_root = as_text(payload.get("inline_diff")).encode("utf-8", "surrogatepass"), self.cwd
+        row.held_lines = None
 
     def _display_args(self, summary: str) -> str:
-        return self._relative(summary) if _is_path(summary) else summary
-
-    def _display_header(self, text: str) -> str:
-        return FILE_ARROW.join(self._relative(side) for side in text.split(FILE_ARROW))
+        return _relative(self.cwd, summary) if _is_path(summary) else summary
 
     def _on_status_update(self, payload: dict[str, Any]) -> None:
         text = _first_line(as_text(payload.get("text")))
@@ -646,6 +725,17 @@ class Transcript:
     def take_stable_lines(self, width: int, theme: Theme) -> list[Line]:
         """Lines that will never change, each returned once: print them above the live region."""
         taken: list[Line] = []
+        start = (self._cursor, self._cursor_lines)
+        if self._left_out:
+            earlier, self._left_out = _earlier(self._left_out), 0
+            notice = (
+                LEFT_OUT_DROPPED_NOTICE.format(earlier=earlier, held=len(self.blocks))
+                if self.dropped
+                else LEFT_OUT_NOTICE.format(earlier=earlier)
+            )
+            taken.append(truncate_line((Span(notice, theme.dim),), width))
+            self._taken_any = True
+            self._version += 1
         while self._cursor < len(self.blocks):
             block = self.blocks[self._cursor]
             if isinstance(block, AssistantBlock):
@@ -657,6 +747,9 @@ class Transcript:
             self._cursor += 1
             self._cursor_lines = 0
             self._cursor_state = MarkdownState()
+        if (self._cursor, self._cursor_lines) != start:
+            self._version += 1
+        self._drop_past_cap()
         return taken
 
     def _take_assistant(self, block: AssistantBlock, width: int, theme: Theme) -> list[Line]:
@@ -687,30 +780,91 @@ class Transcript:
         self._cursor_lines = 0
         self._cursor_state = MarkdownState()
         self._taken_any = False
+        self._left_out = 0
+        self._version += 1
 
-    def live_lines(self, width: int, theme: Theme) -> list[Line]:
-        """Everything not yet taken, as it shows now: the streaming tail, live thinking, running tools."""
-        rows: list[Line] = []
-        seen = self._taken_any
-        for index in range(self._cursor, len(self.blocks)):
+    def retake_tail(self, width: int, theme: Theme, max_rows: int) -> None:
+        """`retake`, keeping to the session's last `max_rows` rows at `width`: a full redraw costs that, not the session.
+
+        The blocks are measured from the last finished one up, each with the
+        blank row above it, and the next take starts at the first block that
+        fits, so the cut always falls between blocks (a reply's markdown state
+        starts over there, as it does for every reply). The last finished
+        block is kept however tall it is, and the live block is never left
+        out: it is the live region's. When blocks are left out, the next take
+        opens with one row counting them, blocks `BLOCK_CAP` dropped included.
+        """
+        self.retake()
+        end = len(self.blocks) - (1 if self.blocks and not self.blocks[-1].done else 0)
+        cut, rows = end, 0
+        while cut > 0:
+            height = len(block_rows(self.blocks[cut - 1], width, theme)) + 1
+            if rows + height > max_rows and cut < end:
+                break
+            rows += height
+            cut -= 1
+        self._cursor = cut
+        self._left_out = cut + self.dropped
+        self._drop_past_cap()  # before the take, so the row names how many /history still holds
+
+    def live_lines(self, width: int, theme: Theme, max_rows: int | None = None) -> list[Line]:
+        """Everything not yet taken, as it shows now: the streaming tail, live thinking, running tools.
+
+        With `max_rows`, only the blocks that reach into the last `max_rows`
+        rows are rendered, and of live thinking text only its last rows: the
+        rows returned end exactly as the whole tail does, and may start below
+        its top. The answer is kept until the
+        transcript changes, so asking again with the same width, limit and
+        theme renders nothing.
+        """
+        key = (self._version, width, max_rows)
+        held = self._live_held
+        if held is None or held[0] != key or held[1] is not theme:
+            held = self._live_held = (key, theme, self._render_live(width, theme, max_rows))
+        return list(held[2])
+
+    def _render_live(self, width: int, theme: Theme, max_rows: int | None) -> list[Line]:
+        """`live_lines` rendered, from the last block up until `max_rows` rows are covered (all of them for None)."""
+        rendered: list[tuple[bool, list[Line]]] = []  # (opens a block, its rows), the last block first
+        count = 0
+        whole = True
+        for index in range(len(self.blocks) - 1, self._cursor - 1, -1):
+            if max_rows is not None and count >= max_rows:
+                whole = False  # the blocks above are above the rows asked for
+                break
             block = self.blocks[index]
             opens_block = True
             if index == self._cursor and isinstance(block, AssistantBlock):
                 rest = _display_lines(block.text)[self._cursor_lines :]
                 opens_block = self._cursor_lines == 0
-                rendered = render_lines(rest, self._cursor_state, _reply_width(width), theme)[0]
-                block_lines = _marked(rendered, opens_block, theme)
-            else:
-                block_lines = block_rows(block, width, theme, expanded=self.details_expanded and not block.done)
+                block_lines = _marked(render_lines(rest, self._cursor_state, _reply_width(width), theme)[0], opens_block, theme)
+            else:  # only the last block can be live thinking, the one kind the limit shortens, so it gets all of it
+                block_lines = block_rows(block, width, theme, self.details_expanded and not block.done, max_rows)
             if block_lines:
-                if opens_block and seen:
-                    rows.append(())
-                rows.extend(block_lines)
-                seen = True
+                rendered.append((opens_block, block_lines))
+                count += len(block_lines)
+        rows: list[Line] = []
+        seen = self._taken_any if whole else True  # a spacer above the first block shown is past the limit
+        for opens_block, block_lines in reversed(rendered):
+            if opens_block and seen:
+                rows.append(())
+            rows.extend(block_lines)
+            seen = True
         return rows
 
+    def dropped_rows(self, width: int, theme: Theme, dropped: int | None = None) -> list[Line]:
+        """/history's opening rows once `BLOCK_CAP` has dropped blocks (one counting them, then a blank one); else none.
+
+        `dropped` is the count to name, `self.dropped` when None: a pager
+        opened earlier names the count of the blocks it holds.
+        """
+        count = self.dropped if dropped is None else dropped
+        if not count:
+            return []
+        return [truncate_line((Span(DROPPED_NOTICE.format(earlier=_earlier(count)), theme.dim),), width), ()]
+
     def history_lines(self, width: int, theme: Theme, details: bool = True) -> list[Line]:
-        """The whole transcript at `width`; `details` adds full thinking text, tool result summaries, whole diffs."""
+        """Every block held at `width`; `details` adds full thinking text, tool result summaries, whole diffs."""
         rows: list[Line] = []
         for block in self.blocks:
             block_lines = block_rows(block, width, theme, expanded=details)

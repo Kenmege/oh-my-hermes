@@ -13,9 +13,11 @@ scenario's answer table in Hermes 6c61c3e27d's shapes.
 from __future__ import annotations
 
 import ast
+import base64
 from pathlib import Path
 import time
 import unittest
+from unittest.mock import patch
 
 from _tui_gateway_replay import Scenario, spans
 from _tui_lines import line_text
@@ -32,17 +34,17 @@ from test_tui_app import (
 from omh.tui import app as app_module
 from omh.tui import gateway_contract as contract
 from omh.tui import modes as modes_module
-from omh.tui.app import SLOT_ARM_SECONDS, App, queue_lines
+from omh.tui.app import ATTACH_LEFT_NOTICE, OSC52_COPY, SLOT_ARM_SECONDS, App, queue_lines
 from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, GatewayUnavailable, Response, ServerRequest
-from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder
+from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder, Paste
 from omh.tui.layout import slot_cap
 from omh.tui.modes import EFFORT_CYCLE
 from omh.tui.pager import Pager
 from omh.tui.session_picker import SessionPicker, SessionRow
 from omh.tui.slash import parse_slash, plan_invocation
 from omh.tui.theme import DEFAULT_THEME
-from omh.tui.transcript import NOTICE_ERROR, NOTICE_WARN, NoticeBlock, UserBlock
+from omh.tui.transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, NoticeBlock, UserBlock
 from omh.tui.width import line_width
 
 SID = "live-1"
@@ -65,6 +67,18 @@ class RecordingClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
         self.answers: list[tuple[str, dict]] = []
+        self.inbox: list[object] = []  # what the next `poll` hands the loop
+        self.forgotten: list[int] = []  # request ids the app stopped waiting for
+
+    def poll(self) -> list[object]:
+        items, self.inbox = self.inbox, []
+        return items
+
+    def wake_fd(self) -> None:
+        return None  # nothing to select on: a test drives the loop's reads itself
+
+    def wake(self) -> None:
+        pass  # no descriptor to make readable
 
     def request(self, method: str, params: dict) -> int:
         problem = contract.call_problem(method, params)
@@ -75,6 +89,9 @@ class RecordingClient:
 
     def respond(self, request_id: str, frame: dict) -> None:
         self.answers.append((request_id, frame))
+
+    def forget(self, request_id: int) -> None:
+        self.forgotten.append(request_id)
 
     def named(self, method: str) -> list[dict]:
         return [params for name, params in self.calls if name == method]
@@ -1039,6 +1056,269 @@ class LeavingTurnsYoloOffTests(unittest.TestCase):
         client.request = gone  # type: ignore[method-assign]
         app._shutdown()
         self.assertEqual(app.exit_code, 1)
+
+
+class LeftSessionStateTests(unittest.TestCase):
+    """What the session being left still has on its way, or kept, after `/new` or a switch."""
+
+    NEW = {"session_id": "live-2", "stored_session_id": "stored-2", "info": {"model": "m2", "cwd": "/p"}}
+    SHOT = {"attached": True, "path": "/h/images/shot.png", "name": "shot.png", "width": 4, "height": 3}
+
+    def left_with_call(self, start: object) -> tuple[App, RecordingClient, int]:
+        """`start(app)` sends a call in the first session; `/new` opens another before the call's answer."""
+        app, client = make_app()
+        start(app)
+        pending = len(client.calls)
+        app._new_session("")
+        answer(app, client, self.NEW)
+        self.assertEqual(app.sid, "live-2")
+        return app, client, pending
+
+    def test_a_new_session_after_a_resumed_launch_no_longer_says_resumed(self) -> None:
+        app, client = make_app()
+        app.stored_id = "stored-old"
+        app.banner_record = {"model": "m", "cwd": "~/p", "resumed": "stored-old"}
+        app._new_session("")
+        answer(app, client, self.NEW)
+        self.assertEqual(app.banner_record, {"model": "m2", "cwd": "/p", "resumed": ""})
+        app._redraw("")
+        self.assertEqual(app.banner_facts, {"model": "m2", "cwd": "/p", "resumed": ""})
+
+    def test_an_image_attached_in_the_session_left_is_no_chip_here_and_says_so(self) -> None:
+        for start, result in (
+            (lambda app: app._image("shot.png what is this?"), {**self.SHOT, "remainder": "what is this?"}),
+            (lambda app: app._paste(""), self.SHOT),
+            (lambda app: app._on_input(Paste("/h/shot.png")), {**self.SHOT, "matched": True, "is_image": True}),
+        ):
+            with self.subTest(result=result):
+                app, client, pending = self.left_with_call(start)
+                app._on_response(Response(pending, result, None))
+                self.assertEqual(app.attachments, [])
+                self.assertEqual(notices(app, NOTICE_WARN)[-1], ATTACH_LEFT_NOTICE.format(name="shot.png"))
+                # The question typed after the path is the person's own words: it comes back to the composer.
+                self.assertEqual(app.composer.text, result.get("remainder", ""))
+
+    def test_a_dropped_path_that_is_no_image_still_types_its_text_after_a_switch(self) -> None:
+        app, client, pending = self.left_with_call(lambda app: app._on_input(Paste("/h/notes.txt")))
+        app._on_response(Response(pending, {"matched": True, "is_image": False, "text": "[file: notes.txt]"}, None))
+        self.assertEqual((app.composer.text, app.attachments), ("[file: notes.txt]", []))
+
+    def test_in_the_same_session_the_image_is_a_chip_as_before(self) -> None:
+        app, client = make_app()
+        app._image("shot.png")
+        answer(app, client, self.SHOT)
+        self.assertEqual([item.name for item in app.attachments], ["shot.png"])
+        self.assertEqual(notices(app), [])
+
+
+class CopyTests(unittest.TestCase):
+    def test_a_reply_with_a_lone_surrogate_is_copied_as_the_screen_draws_it(self) -> None:
+        # JSON can carry an escaped lone surrogate; the terminal write draws it as "?", and so does the copy.
+        reply = "caf\udce9 au lait"
+        app, _client = make_app()
+        app.transcript.blocks.append(AssistantBlock(reply, done=True))
+        type_text(app, "/copy")
+        app._on_input(Key(ENTER))
+        frames = [text for text in app.terminal.writes if text.startswith("\x1b]52;")]  # type: ignore[attr-defined]
+        drawn = reply.encode("utf-8", "replace")  # what Terminal.write sends for the reply
+        self.assertEqual(drawn, b"caf? au lait")
+        self.assertEqual(frames, [OSC52_COPY.format(base64.b64encode(drawn).decode("ascii"))])
+        self.assertIsNone(app.exit_code)
+
+
+class LiveTailTickTests(unittest.TestCase):
+    def test_a_spinner_tick_with_nothing_new_renders_no_transcript_row_again(self) -> None:
+        now = [100.0]
+        app, _client = make_app(busy=True, clock=lambda: now[0])
+        app._on_event(Event("message.start", SID, {}))
+        app._on_event(Event("message.delta", SID, {"text": "a paragraph that is still streaming " * 12}))
+        first = drawn(app)
+        now[0] += 0.15  # the next spinner frame
+        fail = AssertionError("the live tail was rendered again")
+        with patch("omh.tui.transcript.render_lines", side_effect=fail), patch("omh.tui.transcript.block_rows", side_effect=fail):
+            ticked = drawn(app)
+        self.assertNotEqual(ticked, first)  # the spinner moved
+        self.assertEqual([row for row in ticked if "streaming" in row], [row for row in first if "streaming" in row])
+
+
+class StartupWaitsOnlyForTheSessionTests(unittest.TestCase):
+    """The first frame needs the session alone: the busy mode and the catalog are answered in the loop."""
+
+    def test_only_the_session_call_is_awaited(self) -> None:
+        class Blocking(RecordingClient):
+            def __init__(self) -> None:
+                super().__init__()
+                self.awaited: list[str] = []
+
+            def call(self, method: str, params: dict, timeout: float = 30.0) -> dict:
+                self.awaited.append(method)
+                return {"session_id": SID, "stored_session_id": "stored-1", "info": {"model": "m"}}
+
+        client = Blocking()
+        app = App(ScriptedTerminal(), client, {}, poller=FakePoller())  # type: ignore[arg-type]
+        app.startup()
+        self.assertEqual(client.awaited, ["session.create"])
+        self.assertEqual([method for method, _params in client.calls], ["config.get", "commands.catalog"])
+        self.assertEqual(app.busy_mode, "queue")  # Hermes' own default, until config.get answers
+        type_text(app, "/")
+        self.assertTrue(app._menu_rows())  # no catalog yet: the TUI's own commands still complete
+        app._on_response(Response(1, {"config": {"display": {"busy_input_mode": "interrupt"}}}, None))
+        self.assertEqual(app.busy_mode, "interrupt")
+
+
+class RedrawTailTests(unittest.TestCase):
+    def test_a_full_redraw_prints_only_the_last_rows_under_a_row_counting_the_rest(self) -> None:
+        app, _client = make_app(rows=24, cols=80)
+        for number in range(40):
+            app.transcript.add_notice(f"notice {number}")
+        drawn(app)
+        with patch("omh.tui.app.REDRAW_TAIL_ROWS", 10):
+            app._full_redraw()
+        drawn(app)
+        shown = "\n".join(app.terminal.screen.history())  # type: ignore[attr-defined]
+        self.assertIn("⋯ 35 earlier messages · /history shows all", shown)
+        self.assertNotIn("notice 34\n", shown)
+        self.assertIn("notice 39", shown)
+
+    def test_installation_names_the_tail_the_code_keeps(self) -> None:
+        from pathlib import Path
+
+        from omh.tui.app import REDRAW_TAIL_ROWS
+
+        prose = " ".join((Path(__file__).resolve().parents[1] / "docs/INSTALLATION.md").read_text(encoding="utf-8").split())
+        self.assertIn(f"prints the session's last {REDRAW_TAIL_ROWS:,} rows again", prose)
+
+    def test_installation_names_the_block_cap_the_code_keeps(self) -> None:
+        from pathlib import Path
+
+        from omh.tui.transcript import BLOCK_CAP
+
+        prose = " ".join((Path(__file__).resolve().parents[1] / "docs/INSTALLATION.md").read_text(encoding="utf-8").split())
+        self.assertIn(f"holds a session's last {BLOCK_CAP:,} messages", prose)
+
+    def test_history_opens_with_a_row_counting_the_messages_the_cap_dropped(self) -> None:
+        app, _client = make_app(rows=24, cols=80)
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(25):
+                app.transcript.add_notice(f"notice {number}")
+                drawn(app)  # printed, so the cap may drop it
+        app._history("")
+        shown = [line.rstrip() for line in drawn(app)]
+        self.assertEqual(shown[:3], ["⋯ 15 earlier messages no longer held", "", "· notice 15"])
+        self.assertEqual(shown[20:23], ["· notice 24", "", ""])  # the row, a blank, then the 10 notices held, spaced
+        self.assertIn("history · 1-10/10 messages", shown[-1])
+
+    def test_a_drop_while_history_is_open_leaves_its_count_as_it_opened(self) -> None:
+        app, _client = make_app(rows=24, cols=80)
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(25):
+                app.transcript.add_notice(f"notice {number}")
+                drawn(app)
+            app._history("")
+            for number in range(25, 30):  # five more printed under the pager: the cap drops five more
+                app.transcript.add_notice(f"notice {number}")
+                app.transcript.take_stable_lines(80, DEFAULT_THEME)
+            self.assertEqual(app.transcript.dropped, 20)
+            shown = [line.rstrip() for line in drawn(app)]
+        self.assertEqual(shown[:3], ["⋯ 15 earlier messages no longer held", "", "· notice 15"])
+
+    def test_history_renders_its_first_block_once_for_the_check_and_the_first_page(self) -> None:
+        app, _client = make_app(rows=24, cols=80)
+        for number in range(3):
+            app.transcript.add_notice(f"notice {number}")
+        first = app.transcript.blocks[0]
+        real = app_module.block_rows
+        rendered: list[object] = []
+
+        def counting(block: object, *args: object, **kwargs: object) -> list:
+            rendered.append(block)
+            return real(block, *args, **kwargs)
+
+        with patch("omh.tui.app.block_rows", counting):
+            app._history("")
+            drawn(app)
+        self.assertEqual(sum(block is first for block in rendered), 1)
+
+    def test_history_with_no_row_to_show_says_so_instead_of_opening(self) -> None:
+        app, _client = make_app(rows=24, cols=80)
+        app.transcript.blocks.append(AssistantBlock("\n", done=True))  # a reply that was only a line break
+        app._history("")
+        self.assertIsNone(app.pager)
+        self.assertEqual(app.transcript.blocks[-1].text, "Nothing in this session's transcript yet.")
+
+    def test_a_resumed_sessions_history_is_kept_to_the_tail_too(self) -> None:
+        app, _client = make_app(rows=24, cols=80)
+        messages = [{"role": "user", "text": f"question {number}"} for number in range(40)]
+        with patch("omh.tui.app.REDRAW_TAIL_ROWS", 6):
+            app._draw_history(messages)
+        taken = [line for line in app.transcript.take_stable_lines(80, DEFAULT_THEME) if line]
+        self.assertEqual(taken[0][0].text, "⋯ 37 earlier messages · /history shows all")
+        self.assertEqual([line[-1].text for line in taken[1:]], ["question 37", "question 38", "question 39"])
+
+
+class CallExpiryTests(unittest.TestCase):
+    """A call the gateway never answers is forgotten after a while, in the app and in the client, without running its handlers."""
+
+    def test_an_unanswered_call_is_forgotten_with_a_notice_and_a_late_answer_changes_nothing(self) -> None:
+        now = [100.0]
+        app, client = make_app(clock=lambda: now[0])
+        seen: list[object] = []
+        app._request("session.list", {"limit": 5}, seen.append, lambda error: seen.append(error) or True)
+        now[0] += app_module.CALL_ANSWER_SECONDS - 0.5
+        app._expire_calls()
+        self.assertEqual((len(app.pending), client.forgotten), (1, []))
+        now[0] += 0.5
+        app._expire_calls()
+        self.assertEqual((app.pending, client.forgotten), ({}, [1]))
+        self.assertEqual(notices(app, NOTICE_WARN), ["Hermes has not answered session.list in 120 s; the OMH TUI stopped waiting for it."])
+        answer(app, client, {"sessions": []})
+        self.assertEqual(seen, [])  # neither handler ran: no answer is not a refusal
+
+    def test_calls_nobody_waits_on_are_forgotten_without_a_word_a_tail_after_its_own_window(self) -> None:
+        now = [100.0]
+        app, client = make_app(clock=lambda: now[0])
+        app._request("complete.path", {"word": "./s", "session_id": SID}, lambda result: None, lambda error: True)
+        app._request("config.get", {"key": "full"}, lambda result: None, lambda error: True)
+        app._request("subagent.tail", {"session_id": SID, "subagent_id": "a1"}, lambda result: None)
+        now[0] += app_module.TAIL_ANSWER_SECONDS
+        app._expire_calls()
+        self.assertEqual(sorted(call.method for call in app.pending.values()), ["complete.path", "config.get"])
+        now[0] += app_module.CALL_ANSWER_SECONDS
+        app._expire_calls()
+        self.assertEqual((app.pending, sorted(client.forgotten)), ({}, [1, 2, 3]))
+        self.assertEqual(notices(app), [])
+
+    def test_the_loop_expires_calls_on_every_step(self) -> None:
+        now = [100.0]
+        app, client = make_app(clock=lambda: now[0])
+        app._request("session.list", {"limit": 5}, lambda result: None)
+        now[0] += app_module.CALL_ANSWER_SECONDS
+        app.terminal.deadline = time.monotonic() + 10.0  # type: ignore[attr-defined]  # an empty read, not an EOF
+        app._step()
+        self.assertEqual((app.pending, client.forgotten), ({}, [1]))
+
+
+class LazyHistoryTests(unittest.TestCase):
+    def test_history_renders_only_the_blocks_its_pages_reach_with_their_details(self) -> None:
+        from omh.tui import transcript as transcript_module
+
+        app, _client = make_app(rows=24, cols=80)
+        for number in range(500):
+            app.transcript.add_notice(f"notice {number}")
+        drawn(app)
+        rendered: list[object] = []
+
+        def counting(block: object, *args: object, **kwargs: object) -> object:
+            rendered.append(kwargs.get("expanded"))
+            return transcript_module.block_rows(block, *args, **kwargs)  # type: ignore[arg-type]
+
+        with patch("omh.tui.app.block_rows", side_effect=counting):
+            app._history("")
+            shown = [line.rstrip() for line in drawn(app)]
+        self.assertEqual(shown[0], "· notice 0")
+        self.assertIn("history · 1-12/500 messages", shown[-1])
+        self.assertLess(len(rendered), 30)  # the first page and the last, not 500 blocks
+        self.assertEqual(set(rendered), {True})  # thinking text, result summaries and whole diffs
 
 
 class ResumingTheLiveSessionTests(unittest.TestCase):

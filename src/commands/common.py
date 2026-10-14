@@ -8,15 +8,11 @@ from pathlib import Path
 
 from ..ingress import extract_message_text, extract_source_metadata
 from ..installer import OmhError
-from ..paths import resolve_paths
 from ..system.tracker_content import loads_tracker_event_json
 from ..routing.action_copy import next_action_label, next_action_label_with_id
 from ..setup_profiles import read_setup_profile
 from ..targets import TARGET_METADATA_KEYS
-
-
-def _paths(args: argparse.Namespace):
-    return resolve_paths(args.omh_home, args.hermes_home, scope=getattr(args, "scope", None))
+from .bare_launch import _paths as _paths  # one definition, shared with the bare launch
 
 
 def _command_hermes_session_id() -> str:
