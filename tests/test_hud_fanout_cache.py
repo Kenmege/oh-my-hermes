@@ -225,5 +225,73 @@ class ExecutorProgressLogReadTests(unittest.TestCase):
             self.assertTrue(all(item["latest_event"] for item in bindings))
 
 
+class HudScanTests(unittest.TestCase):
+    """A HUD read lists every run and binding file, but opens only what it can show or has not seen."""
+
+    def setUp(self) -> None:
+        runtime_reader._hud_binding_orders.clear()
+        self.addCleanup(runtime_reader._hud_binding_orders.clear)
+
+    def test_the_run_list_checks_only_the_newest_runs_it_shows(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            runs = home / "runtime" / "runs"
+            for index in range(50):
+                (runs / f"run-{index:03d}").mkdir(parents=True)
+                (runs / f"run-{index:03d}" / "run.json").write_text(json.dumps({"run_id": f"run-{index:03d}"}), encoding="utf-8")
+            (runs / "run-999").mkdir()  # the newest name, with no run.json: passed over
+            with patch.object(runtime_reader, "_contains_symlink", wraps=runtime_reader._contains_symlink) as checked:
+                status = runtime_reader._read_omh_hud_status(home, limit=5)
+            self.assertEqual([run["run_id"] for run in status["runs"]], [f"run-{index:03d}" for index in range(49, 44, -1)])
+            # The run list's own checks (the binding scan, and an open where no dir_fd exists, check theirs).
+            scanned = [
+                call.args[0] for call in checked.call_args_list
+                if call.args[0].name == "run.json" and call.kwargs.get("root") == runs
+            ]
+            self.assertEqual(len(scanned), 6)  # run-999 and the five shown, not all 51
+
+    def test_the_newest_children_are_the_ones_a_sort_of_every_child_keeps(self) -> None:
+        with TemporaryDirectory() as tmp:
+            runs = Path(tmp) / "runs"
+            for name in ("a", "a-b", "a.b", "a b", "b", "C", "b0"):
+                (runs / name).mkdir(parents=True)
+                (runs / name / "run.json").write_text("{}", encoding="utf-8")
+            for limit in range(1, 9):
+                with self.subTest(limit=limit):
+                    self.assertEqual(
+                        runtime_reader._newest_hud_child_files(runs, "run.json", limit=limit),
+                        sorted(runtime_reader._hud_child_files(runs, "run.json"), reverse=True)[:limit],
+                    )
+
+    def test_a_second_read_opens_only_binding_files_written_since_and_the_survivors(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+            now = datetime.now(timezone.utc)
+
+            def write(index: int, age: int) -> None:
+                stamp = (now - timedelta(seconds=age)).isoformat().replace("+00:00", "Z")
+                write_progress_binding(
+                    paths, build_progress_binding(target_type="run", target_id=f"run-{index}", executor_profile="codex", now=stamp)
+                )
+
+            for index in range(20):
+                write(index, age=10 + index)
+            runtime_dir = paths.omh_home.resolve() / "runtime"
+
+            def read() -> tuple[list[str], int]:
+                with patch.object(runtime_reader, "_read_hud_json", wraps=runtime_reader._read_hud_json) as reader:
+                    bindings = runtime_reader._progress_bindings(runtime_dir, limit=2, hud_safe=True)
+                opened = [call.args[0] for call in reader.call_args_list if call.args[0].name == "binding.json"]
+                return [item["binding"]["target_id"] for item in bindings], len(opened)
+
+            self.assertEqual(read(), (["run-0", "run-1"], 20))
+            self.assertEqual(read(), (["run-0", "run-1"], 2))  # only the two survivors, for their content
+            write(15, age=0)  # rewritten: now the newest
+            self.assertEqual(read(), (["run-15", "run-0"], 2))  # the rewritten file, then run-0
+            runtime_reader._hud_binding_orders.clear()
+            self.assertEqual(read(), (["run-15", "run-0"], 20))  # the same cut as a read that remembers nothing
+
+
 if __name__ == "__main__":
     unittest.main()
