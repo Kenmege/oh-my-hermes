@@ -726,6 +726,28 @@ def _omh_tui_blocker(paths) -> str:
     return omh_tui_blocker(sys.stdin, sys.stdout, os.environ, paths.hermes_home)
 
 
+def _tui_omh_home(args: argparse.Namespace, paths):
+    """The OMH home the OMH TUI is handed as `OMH_HOME`.
+
+    The one this `omh` resolved, except for `--profile <name>` without
+    `--omh-home`: then the store that profile's own
+    `plugins.entries.omh.settings.omh_home` names, when it names one. That
+    is the store `omh setup` saves the profile's theme in and the profile's
+    plugin binds, so the TUI opens with that profile's theme, and its HUD
+    and `/omh-model` read the same store. A profile that names none keeps
+    the resolved home, which is the store setup gave it.
+    """
+    from ..maintenance.hermes_resume import hermes_profile_home
+    from ..paths import configured_omh_home
+
+    profile = getattr(args, "tui_profile", None)
+    if not profile or paths.omh_home_named:
+        return paths.omh_home
+    profile_home = hermes_profile_home(paths.hermes_home, profile)
+    configured = configured_omh_home(profile_home) if profile_home is not None else None
+    return configured or paths.omh_home
+
+
 def _node_available(paths) -> bool:
     from ..tui.launch import node_available
 
@@ -754,7 +776,7 @@ def _run_terminal(hermes: str, args: argparse.Namespace, paths) -> int:
     if not blocker:
         with exit_on_signals(), fallback_sentinel() as sentinel:
             environment = omh_tui_environment(
-                os.environ, python=sys.executable, omh_home=paths.omh_home, fallback_sentinel=sentinel
+                os.environ, python=sys.executable, omh_home=_tui_omh_home(args, paths), fallback_sentinel=sentinel
             )
             child = subprocess.Popen([hermes, *_hermes_passthrough_argv(args, tui=True)], env=environment)
             returncode = int(child.wait())

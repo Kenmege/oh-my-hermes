@@ -511,6 +511,36 @@ class OmhTuiDoorTests(unittest.TestCase):
         self.assertEqual(environment["OMH_TUI_PYTHON"], sys.executable)
         self.assertEqual(Path(environment["OMH_HOME"]).name, "omh")
 
+    def test_a_profile_that_names_its_own_store_hands_the_tui_that_store(self) -> None:
+        # The theme, the HUD and `/omh-model` read OMH_HOME; for a split-store
+        # profile that has to be the store its config names, where setup
+        # saved its theme, not the primary's.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            split = root / "split-store"
+            (root / "profiles" / "split").mkdir(parents=True)
+            (root / "profiles" / "split" / "config.yaml").write_text(
+                f"plugins:\n  entries:\n    omh:\n      settings:\n        omh_home: {split.as_posix()}\n",
+                encoding="utf-8",
+            )
+            (root / "profiles" / "plain").mkdir(parents=True)
+            homes: dict[str, str] = {}
+            for name, argv in (
+                ("none", []),
+                ("split", ["-p", "split"]),
+                ("plain", ["-p", "plain"]),
+                ("named", ["--omh-home", str(root / "named"), "-p", "split"]),
+            ):
+                environments: list[dict[str, str] | None] = []
+                with launched(root, argv, omh_tui=True, environments=environments) as (_r, _o, _s):
+                    pass
+                homes[name] = environments[0]["OMH_HOME"]
+        self.assertEqual(Path(homes["split"]), split)
+        # A profile that names none keeps the store this `omh` resolved, and
+        # an explicit --omh-home still wins.
+        self.assertEqual(homes["plain"], homes["none"])
+        self.assertEqual(Path(homes["named"]), root / "named")
+
     def test_the_fallback_code_with_its_sentinel_reopens_hermes_own_terminal(self) -> None:
         from omh.tui.launch import FALLBACK_EXIT
 

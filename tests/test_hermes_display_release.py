@@ -591,6 +591,26 @@ class ProfileReleaseTests(unittest.TestCase):
             self.assertIn("saved OMH theme crimson for the OMH TUI", stdout)
             self.assertIn("kept the saved OMH theme crimson over amber, which display.skin named", stdout)
 
+    def test_a_profile_whose_env_names_its_store_gets_no_theme_in_the_primarys(self) -> None:
+        # OMH reads the names in a `.env`, never the values, so it cannot
+        # tell where this profile's theme belongs; the primary's store would
+        # be the wrong place, since the primary would then open with it.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = _Home(root)
+            bot = home.hermes_home / "profiles" / "bot"
+            bot.mkdir(parents=True)
+            (bot / ".env").write_text(f"OMH_HOME={(root / 'env-store').as_posix()}\n", encoding="utf-8")
+            home.legacy_install()
+            home.brand(bot / "config.yaml", skin="omh-amber")
+
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertIsNone(read_theme_choice(home.omh_home))
+            self.assertIn("did not save OMH theme amber: this home's .env names its OMH home", stdout)
+            self.assertNotIn("display", (bot / "config.yaml").read_text(encoding="utf-8"))
+
     @requires_symlinks
     def test_a_widget_it_must_refuse_to_remove_costs_no_profile_its_registration(self) -> None:
         # Removing the widget refuses a symlinked destination, as uninstall

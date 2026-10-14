@@ -519,6 +519,10 @@ fallback marker at the path `omh` named, which `omh` removes.
 
 The OMH TUI opens with the theme `omh theme use` saved under the OMH home
 (see [TUI Themes](#tui-themes)); `/theme <name>` switches the open session only.
+With `omh --profile <name>` and no `--omh-home`, the OMH home the TUI gets is
+the store that profile's config names in
+`plugins.entries.omh.settings.omh_home`, when it names one, so it opens with
+that profile's theme and its HUD and `/omh-model` read the profile's store.
 
 Bare `hermes` is stock Hermes. OMH writes none of its display keys and
 installs nothing into its terminal, so it opens whatever your Hermes config
@@ -1566,7 +1570,11 @@ uses:
 
 The theme for a bot profile whose `plugins.entries.omh.settings.omh_home`
 names its own store is saved there; one that names none shares the primary
-home's store. One store holds one theme, so the first home on the run that
+home's store. A profile that names its store only in its `.env` (`OMH_HOME`)
+gets none carried: OMH reads the names in a `.env`, never the values, so it
+cannot tell which store that is, and the output gives the
+`omh --omh-home <that home> theme use <name>` that saves it there. One
+store holds one theme, so the first home on the run that
 carries one keeps it (the primary goes first) and the output names any
 other home's skin it did not carry. When the theme cannot be saved (the
 store is not writable), that home's release waits: its display keys and

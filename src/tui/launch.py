@@ -96,7 +96,8 @@ def omh_tui_environment(
     """The environment `hermes --tui` runs with when it should start the OMH TUI.
 
     `OMH_HOME` carries the home this `omh` resolved (including `--omh-home` and
-    `--scope project`) across the three processes in between, which do not see
+    `--scope project`, and for `--profile <name>` the store that profile's
+    config names) across the three processes in between, which do not see
     `omh`'s own arguments.
     """
     env = dict(environ)
