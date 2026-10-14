@@ -4,6 +4,35 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The OMH TUI keeps the keys typed right after Esc, and stays fast in long
+  sessions.** Esc followed by a key within about 50 ms lost both keys (`Esc
+  /quit` reached Hermes as `quit`); a character sent in the same burst as an
+  Esc now types (tmux before 3.5 sends them that way), and Esc then a key in
+  separate reads acts as both. A bracketed paste whose end marker never comes
+  ends after 0.5 s of silence instead of swallowing every later key, Ctrl+C
+  included. `/new` no longer keeps a resumed session's banner for the next
+  redraw, and an image Hermes attached (`/image`, `/paste`, a drop) after you
+  left the session it was sent for is a notice instead of a chip in the new
+  one. A call the gateway leaves unanswered for 120 s (Hermes' own TUI's
+  limit) is dropped, with a notice for one a person waits on. A full redraw (a
+  resize, Ctrl+L, `/redraw`, a switch or a resume) prints the last 3,000 rows
+  under `⋯ N earlier messages · /history shows all`, and `/history` renders a
+  page at a time. The TUI holds a session's last 2,000 messages and the
+  composer its last 1,000 prompts, and an edit's diff is held in 42% less
+  memory. Measured against `origin/main` at 14cc8731a with the review lanes'
+  in-process harnesses (load average 10 to 30): at 1,000 turns a redraw took
+  14.8 s and 118 MB at its peak and now takes 0.27 s and 4.5 MB, and
+  `/history` opened in 5.7 s holding 65 MB and now in 6 ms; a key in a
+  500-turn session takes 0.19 ms (was 1.35), a key in a 2,000-line paste 13 ms
+  (169), Up there 0.35 ms (254), a spinner tick over a streaming
+  20,000-character paragraph 0.26 ms (40), and a tick with an agent's 400-row
+  log open 0.06 ms (95). The loop wakes for gateway events instead of reading
+  every 50 ms: event to frame 0.1 ms median (30), and an idle TUI wakes about
+  once a second (19). Bare `omh` reaches `hermes` in 46 ms (445) without
+  importing its command tree, and the first frame no longer waits for the
+  busy-mode read. A HUD read over 5,000 run directories checks only the runs
+  it shows and reopens only binding files that changed: 190 ms (708).
+
 - **Skill text decides which skills are OMH's by the installed label, and the
   spend, browser, schedule, and parallel-tool skills say what Hermes does.**
   `skill`, `rules-distill`, and `skill-health` no longer treat any `omh-*` or
