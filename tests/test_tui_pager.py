@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import random
 import unittest
+from collections import Counter
+from unittest.mock import patch
 
 from _vt_screen import VTScreen
 from omh.tui.keys import CHAR, Key
@@ -142,7 +144,58 @@ class HistoryPagerTests(unittest.TestCase):
             pager.frame(80, 24, THEME)
         self.assertEqual(pager.item, 1994)  # the last page's top: 23 rows end with block 1999's last
         self.assertLessEqual(len(pager._kept), HISTORY_BLOCKS_KEPT)
-        self.assertEqual(len(calls), 2000)  # each block rendered once on the way down
+        # Each block rendered once on the way down; the last page's six also once at the open, to bound the moves,
+        # and left to go from what was kept since no frame walks them again.
+        renders = Counter(index for index, _width in calls)
+        self.assertEqual(len(renders), 2000)
+        self.assertEqual(sorted(index for index, count in renders.items() if count > 1), list(range(1994, 2000)))
+
+    def test_a_frame_that_moves_nothing_does_not_walk_the_last_page_again(self) -> None:
+        pager = self.history(items_of([3] * 2000))
+        pager.frame(80, 24, THEME)  # the top page; the last page's top is found once, to bound the moves
+        walked: list[int] = []
+        real = pager._rendered
+
+        def recording(index: int, cols: int, theme: object) -> list[Line]:
+            walked.append(index)
+            return real(index, cols, theme)
+
+        pager._rendered = recording  # type: ignore[method-assign]
+        pager.invalidate()  # a frame drawn again (a gateway event dirtied the screen): nothing moved
+        pager.frame(80, 24, THEME)
+        self.assertTrue(walked)
+        self.assertEqual([index for index in walked if index >= 1990], [])
+        pager.handle_key(key("G"), 24)  # a jump still finds it, from what was kept
+        pager.frame(80, 24, THEME)
+        self.assertEqual(pager.item, 1994)
+
+    def test_a_new_size_finds_the_last_page_again(self) -> None:
+        def render(index: int, width: int, theme: object) -> list[Line]:
+            return rows(*(f"block {index} part {part}" for part in range(max(1, 120 // width))))  # wraps by width
+
+        def last_page_top(cols: int, height: int) -> tuple[int, int]:
+            fresh = HistoryPager("history", count=50, render=render)
+            fresh.handle_key(key("G"), height)
+            fresh.frame(cols, height, THEME)
+            return fresh.item, fresh.offset
+
+        pager = HistoryPager("history", count=50, render=render)
+        pager.handle_key(key("G"), 10)
+        tops = []
+        for cols, height in ((40, 10), (80, 10), (80, 20)):  # three rows a block, then one, then a taller screen
+            pager.frame(cols, height, THEME)
+            tops.append((pager.item, pager.offset))
+            self.assertEqual(tops[-1], last_page_top(cols, height))
+        self.assertEqual(len(set(tops)), 3)
+
+    def test_the_block_used_longest_ago_leaves_first(self) -> None:
+        calls: list[tuple[int, int]] = []
+        pager = self.history(items_of([1] * 10), calls)
+        with patch("omh.tui.pager.HISTORY_BLOCKS_KEPT", 4):
+            for index in (0, 1, 2, 3, 0, 4):  # block 0 used again before block 4 needs a place
+                pager._rendered(index, 80, THEME)
+            pager._rendered(0, 80, THEME)
+        self.assertEqual([index for index, _width in calls], [0, 1, 2, 3, 4])  # 0 was kept; 1 left for 4
 
     def test_a_new_width_renders_the_blocks_again_at_it(self) -> None:
         calls: list[tuple[int, int]] = []
