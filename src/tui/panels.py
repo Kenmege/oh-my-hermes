@@ -1059,12 +1059,16 @@ def panel_lines(
     now: float,
     *,
     received_at: float | None = None,
+    show_agents: bool = True,
 ) -> list[Line]:
     """The panel rows for one HUD payload: never more than `max_rows`, none wider than `width` cells.
 
     `now` is wall-clock seconds; it drives the spinner, the plan pulse and
     colour wave, and the age of a finished parallel shot. `received_at` (the
     snapshot's) lets a running agent's elapsed figure tick between polls.
+    Without `show_agents` the agents block (and its graph) is left out: the
+    app passes that while its own roster shows the agents, so they are drawn
+    once, from one source.
     """
     if max_rows <= 0 or width <= 0 or not isinstance(payload, Mapping):
         return []
@@ -1074,7 +1078,7 @@ def panel_lines(
         return []
     columns = max(20, width)
     plan = _plan_view(payload)
-    agents = _agents_view(payload)
+    agents = _agents_view(payload) if show_agents else None
     start, end = _initial_window(plan) if plan is not None and plan.status == "established" else (0, 0)
     layout = _Layout(
         plan_on=plan is not None,

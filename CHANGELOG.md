@@ -21,7 +21,11 @@ All notable changes will be documented here.
   composer, replaced by the next, withdrawn by key, or gone after their time,
   where they were dropped before; and a refused call reads as words (`/undo` on
   an empty session: `No user messages to undo.` instead of
-  `command.dispatch failed (4018): no user messages to undo`).
+  `command.dispatch failed (4018): no user messages to undo`). Agents show in
+  one place: the HUD panel's `[Agents]` block steps aside while the strip and
+  the list hold agents (the panel said "2 running" minutes after both had
+  finished), agents whose goals start alike are numbered on the strip, and the
+  status line says `idle · 2 agents running` while agents outlive the turn.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

@@ -337,3 +337,49 @@ class StripTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OneAgentSurfaceTests(unittest.TestCase):
+    """The roster (strip, list) is the one agent surface: the HUD's [Agents] block steps aside while it holds agents."""
+
+    def hud(self, app: App) -> None:
+        from test_tui_panels import agent_row, hud_payload, with_agents
+        from omh.tui.panels import HudSnapshot
+
+        payload = with_agents(hud_payload([{"text": "Ship it", "state": "active"}]), [agent_row(0), agent_row(1)])
+        app.hud = HudSnapshot(app.stored_id, payload, 0.0)
+
+    def slot(self, app: App) -> list[str]:
+        return [line_text(line) for line in app._slot_lines(80, 30)]
+
+    def test_the_agents_block_leaves_the_panel_while_the_roster_holds_agents_and_the_plan_stays(self) -> None:
+        app, _client = agent_app()
+        self.hud(app)
+        shown = self.slot(app)
+        self.assertFalse([row for row in shown if row.startswith("[Agents]")], shown)
+        self.assertTrue([row for row in shown if row.startswith("[Plan]")], shown)
+        app.roster.clear()
+        self.assertTrue([row for row in self.slot(app) if row.startswith("[Agents]")])
+
+    def test_agents_whose_names_match_are_numbered_on_the_strip(self) -> None:
+        app, _client = make_app(busy=True, clock=lambda: 0.0, cols=120)
+        goal = "Run exactly the command below and report"
+        agent_event(app, "start", FIRST, goal=goal)
+        agent_event(app, "start", SECOND, goal=goal)
+        agent_event(app, "start", "sa-2-other", goal="read the diff for risks")
+        line, hits = app._agent_strip(120)
+        text = line_text(line)
+        self.assertIn(f"{SPIN} 1·Run exactly the", text)
+        self.assertIn(f"{SPIN} 2·Run exactly the", text)
+        self.assertIn(f"{SPIN} read the diff", text)  # a name that is its own stays as it is
+        self.assertEqual(len(hits), 4)
+
+    def test_idle_with_agents_still_running_says_how_many_on_the_status_line(self) -> None:
+        app, _client = agent_app(busy=False)
+        self.assertEqual(app._state_text(), "idle · 2 agents running")
+        relay(app, FRAMES[11:12])  # the first agent's verdict
+        self.assertEqual(app._state_text(), "idle · 1 agent running")
+        relay(app, FRAMES)
+        self.assertEqual(app._state_text(), "idle")
+        busy, _client = agent_app(busy=True)
+        self.assertEqual(busy._state_text(), "running")

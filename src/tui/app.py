@@ -2552,15 +2552,22 @@ class App(ModesMixin, AgentViewMixin):
         payload = self.hud.payload if self.hud is not None else None
         if payload is None:
             return []
-        return panel_lines(payload, cols, cap, self.theme, self.wall_clock(), received_at=self.hud.received_at)
+        return panel_lines(
+            payload, cols, cap, self.theme, self.wall_clock(), received_at=self.hud.received_at,
+            show_agents=not self.roster.agents,  # the strip and the list show them while the roster holds any
+        )
 
     def _state_text(self) -> str:
+        """What the session is doing; idle with subagents still running says how many, since the turn is not all."""
         if self.slot is not None:
             state = STATE_WAITING
         elif self._busy():
             state = STATE_RUNNING
         else:
             state = STATE_IDLE
+            running = self.roster.running_count()
+            if running:
+                state += f" · {running} agent{'' if running == 1 else 's'} running"
         return f"{state} · queued {len(self.queued)}" if self.queued else state
 
     def _context_style(self) -> Style:

@@ -336,8 +336,12 @@ run and approval decision stays Hermes'; the screen is OMH's.
   under a command's echo, Hermes' own reason (`/undo` on an empty session:
   `No user messages to undo.`); otherwise what did not happen and why.
 - While a turn has delegated work, the mode row carries a strip of its
-  subagents, each named by the first words of its goal
-  (`● main  ⠹ find usages of  ○ read the diff  ↓`); Down on an empty composer
+  subagents, each named by the first words of its goal, numbered (`1·`, `2·`)
+  when two goals start alike
+  (`● main  ⠹ find usages of  ○ read the diff  ↓`), and the status line says
+  `idle · 2 agents running` while agents outlive the turn. The strip and the
+  list are the one place agents show while they hold any: the HUD panel's
+  `[Agents]` block steps aside for them and the plan keeps its rows. Down on an empty composer
   opens them as a list under the composer, which sits higher while the list is
   open and returns to its row when it closes. The list never pushes the screen
   up: it takes the blank rows above the composer first, then rows of what is

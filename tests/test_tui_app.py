@@ -203,7 +203,8 @@ class ScriptedTerminal:
         return "\n".join(self.screen.history())
 
     def idle(self) -> bool:
-        return self.status_row().rstrip().endswith("idle")
+        """The status line says idle, with or without subagents still running (`idle · 2 agents running`)."""
+        return re.search(r"idle( · \d+ agents? running)?$", self.status_row().rstrip()) is not None
 
     def shows(self, needle: str) -> Callable[[], bool]:
         return lambda: needle in "\n".join(self.screen.lines())

@@ -697,11 +697,11 @@ class StripTests(unittest.TestCase):
 
     def test_the_strip_collapses_the_moment_it_does_not_fit(self) -> None:
         roster = started("sa-a", "sa-b")
-        full = "● main  ⠋ find usages of  ⠋ find usages of  ↓"
-        self.assertEqual(line_width(roster.strip_line(200, THEME, 0)[0]), 45)
-        line, hits = roster.strip_line(45, THEME, 0)
+        full = "● main  ⠋ 1·find usages of  ⠋ 2·find usages of  ↓"  # one goal twice: numbered
+        self.assertEqual(line_width(roster.strip_line(200, THEME, 0)[0]), 49)
+        line, hits = roster.strip_line(49, THEME, 0)
         self.assertEqual((line_text(line), len(hits)), (full, 3))
-        line, hits = roster.strip_line(44, THEME, 0)
+        line, hits = roster.strip_line(48, THEME, 0)
         self.assertEqual((line_text(line), hits), ("● 2 agents ↓", ()))
         self.assertEqual(style_of(line, "●"), THEME.accent)
         self.assertEqual(style_of(line, "2 agents"), THEME.hint)
