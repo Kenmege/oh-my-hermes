@@ -734,6 +734,14 @@ class ProfileReleaseTests(unittest.TestCase):
             self.assertIn("this home is not registered, so its config is left as it is", stdout)
             self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
 
+            # Such a home never records the release, so only a manifest
+            # record proves a skin file OMH's there: a copy put back stays.
+            copied = home.hermes_home / "skins" / "omh-amber.yaml"
+            copied.write_bytes(skin_payload("omh-amber"))
+            for _ in range(2):
+                self.assertEqual(home.run("update")[0], 0)
+                self.assertTrue(copied.is_file())
+
     @requires_symlinks
     def test_a_widget_it_must_refuse_to_remove_costs_no_profile_its_registration(self) -> None:
         # Removing the widget refuses a symlinked destination, as uninstall

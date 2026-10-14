@@ -2143,8 +2143,12 @@ def _unregistered_display_release(paths: OmhPaths, args: argparse.Namespace) -> 
 
     Registering is what carries the config release, so a home that opted out
     keeps its config as it is. The files are OMH's own, though, and the
-    widget drew the OMH HUD inside Hermes' terminal; they go under the same
-    rules as on a registered home, so the skin the config still names stays.
+    widget drew the OMH HUD inside Hermes' terminal, so they go: the skin
+    the config still names stays, and a skin file is OMH's by its manifest
+    record only. Such a home never records the release, so the
+    shipped-bytes proof a registered home drops after its release would
+    otherwise apply on every update, and take a copy the person put back
+    each time.
     """
     return {
         "unregistered": True,
@@ -2152,7 +2156,7 @@ def _unregistered_display_release(paths: OmhPaths, args: argparse.Namespace) -> 
             paths,
             dry_run=bool(args.dry_run),
             config_text=read_config(paths.hermes_config_path),
-            released=_display_released(_managed_config_record(paths), paths),
+            released=True,
         ),
     }
 
