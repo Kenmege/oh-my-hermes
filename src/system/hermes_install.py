@@ -4,14 +4,19 @@ One seam, because two callers need the same fact and a second parser would
 drift from the first. ``maintenance.hermes_tui`` asks which Hermes a user's HUD
 would render in; ``workflows.plugin_hook_contract`` asks whether the pinned
 hook mapping was established for the Hermes a plugin is about to be enabled on.
+``maintenance.doctor`` asks which commit the checkout is at, to print next to
+the one the OMH TUI's gateway contract was declared against.
 
-What "bounded" means here, exactly: one path derived from a directory the
-caller named, opened only when it is a regular file under the size cap, decoded
-with replacement, and matched by one regex. Nothing is imported, no binary is
-executed, no subprocess is spawned and no socket is opened. That is what lets a
-caller point this at an installation it has not audited, and it is also the
-limit: a version string read off disk can be stale or edited, so it is evidence
-of what the installation declares, never of what a running host would report.
+What "bounded" means here, exactly: paths derived from a directory the caller
+named (the version module; the checkout's ``.git/HEAD``, the loose ref it
+names under ``refs/``, and ``packed-refs``), each opened only when it is a
+regular file under the size cap, decoded with replacement, and matched by one
+regex. Nothing is imported, no binary is executed (git included), no
+subprocess is spawned and no socket is opened. That is what lets a caller point
+this at an installation it has not audited, and it is also the limit: a
+version string or commit read off disk can be stale or edited, so it is
+evidence of what the installation declares, never of what a running host would
+report.
 """
 from __future__ import annotations
 
@@ -29,6 +34,8 @@ MAX_BOUNDED_READ_BYTES = 512_000
 VERSION_MODULE_RELATIVE = Path("hermes_cli") / "__init__.py"
 
 _VERSION_ASSIGNMENT = re.compile(r"__version__\s*=\s*[\"']([^\"']+)[\"']")
+_COMMIT = re.compile(r"[0-9a-f]{40}")
+_HEAD_REF = re.compile(r"ref: (refs/[A-Za-z0-9._/-]+)")
 
 
 def read_bounded_text(path: Path) -> str | None:
@@ -60,3 +67,30 @@ def installed_hermes_version(install_dir: Path) -> str:
         return ""
     match = _VERSION_ASSIGNMENT.search(text)
     return match.group(1) if match else ""
+
+
+def installed_hermes_commit(install_dir: Path) -> str:
+    """The commit the installation's git checkout is at, or "" when that cannot be read off disk.
+
+    A detached ``HEAD`` names it; a ``HEAD`` on a branch names a ref, read as
+    a loose file under ``.git/refs/`` or else as a ``packed-refs`` line.
+    Empty covers no ``.git`` directory (a ``.git`` file pointing elsewhere is
+    not followed), an unreadable or oversized file, a ref name with a ``..``
+    segment, and a ref found in neither place.
+    """
+    git_dir = install_dir / ".git"
+    head = (read_bounded_text(git_dir / "HEAD") or "").strip()
+    if _COMMIT.fullmatch(head):
+        return head
+    ref = _HEAD_REF.fullmatch(head)
+    if ref is None or ".." in ref.group(1).split("/"):
+        return ""
+    name = ref.group(1)
+    loose = (read_bounded_text(git_dir / name) or "").strip()
+    if _COMMIT.fullmatch(loose):
+        return loose
+    for line in (read_bounded_text(git_dir / "packed-refs") or "").splitlines():
+        commit, _, packed_name = line.partition(" ")
+        if packed_name == name and _COMMIT.fullmatch(commit):
+            return commit
+    return ""

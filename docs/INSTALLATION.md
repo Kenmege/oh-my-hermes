@@ -487,9 +487,13 @@ session. `omh` reopens Hermes' terminal only on the TUI's own request (exit
 75 together with a file `omh` named for that launch and removes afterwards),
 so a 75 Hermes returns for a reason of its own ends the launch like any other
 exit code. If the gateway stops accepting a method or a key mid-session, the
-TUI leaves with the command that reopens the same session in `hermes`; an
-event Hermes renames is not detected yet, and shows as a turn that never
-finishes. The gateway, and every tool it runs, inherits the environment `omh`
+TUI leaves with the command that reopens the same session in `hermes`. A
+turn that brings no event the TUI shows, only types it does not know (Hermes
+renamed its turn events), gets one notice pointing at `omh doctor`, which
+prints the installed Hermes commit next to the one the TUI was declared
+against; a single renamed event among known ones, such as `message.complete`
+alone, is not detected and shows as a turn that never finishes.
+The gateway, and every tool it runs, inherits the environment `omh`
 set for the frontend, `OMH_HOME` included, so `omh --omh-home <dir>` also picks
 the store the OMH plugin inside that gateway uses when the profile names none.
 The OMH TUI writes no prompt text,

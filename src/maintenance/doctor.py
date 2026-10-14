@@ -799,9 +799,13 @@ def _omh_tui_check(paths: OmhPaths) -> Check:
     the gateway entry). A miss is never an error, because bare `omh` falls back
     to Hermes' own terminal; ok stays True like the `hermes_tui_*` checks and
     the severity says whether the OMH TUI is reachable. Whether the gateway
-    still speaks the declared protocol is judged at launch, not here.
+    still speaks the declared protocol is judged at launch, not here; once a
+    Hermes install is found, every message names the commit its checkout is at
+    (read from its `.git`, "unknown" when it cannot be) next to the one the
+    gateway contract was declared against, and neither value moves the severity.
     """
-    from ..system.hermes_install import hermes_install_dir, read_bounded_text
+    from ..system.hermes_install import hermes_install_dir, installed_hermes_commit, read_bounded_text
+    from ..tui.gateway_contract import DECLARED_AGAINST_HERMES
     from ..tui.launch import FRONTEND_ENTRY, node_available
 
     fallback = "bare `omh` opens Hermes' own terminal until then"
@@ -821,22 +825,26 @@ def _omh_tui_check(paths: OmhPaths) -> Check:
             "omh_tui_support", True, f"Hermes install not found at {install_dir}; OMH TUI check skipped",
             observed=False,
         )
+    commit = installed_hermes_commit(install_dir)[:len(DECLARED_AGAINST_HERMES)] or "unknown"
+    versions = f" (Hermes commit {commit}; the OMH TUI was declared against {DECLARED_AGAINST_HERMES})"
     launcher = read_bounded_text(install_dir / "hermes_cli" / "main_tui_launch.py") or ""
     if "HERMES_TUI_DIR" not in launcher or not (install_dir / "tui_gateway" / "entry.py").is_file():
         return Check(
             "omh_tui_support", True,
-            "this Hermes has no HERMES_TUI_DIR launcher hook or no tui_gateway entry, which the OMH TUI needs",
+            "this Hermes has no HERMES_TUI_DIR launcher hook or no tui_gateway entry, which the OMH TUI needs"
+            + versions,
             severity="warning", next_action=f"update Hermes; {fallback}",
         )
     if not node_available(os.environ, paths.hermes_home):
         return Check(
             "omh_tui_support", True,
-            "no Node found for Hermes' launcher (HERMES_NODE, PATH, or Hermes' tools/node-*)",
+            "no Node found for Hermes' launcher (HERMES_NODE, PATH, or Hermes' tools/node-*)" + versions,
             severity="warning", next_action=f"install Node (Hermes' modern TUI needs it too); {fallback}",
         )
     return Check(
         "omh_tui_support", True,
-        "bare `omh` can open the OMH TUI: shim installed, Hermes launcher hook and gateway present, Node found",
+        "bare `omh` can open the OMH TUI: shim installed, Hermes launcher hook and gateway present, Node found"
+        + versions,
     )
 
 

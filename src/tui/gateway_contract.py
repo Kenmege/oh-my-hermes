@@ -9,10 +9,14 @@ rejection (4000) or an unknown method (-32601), which the client treats as
 "this Hermes no longer speaks what the TUI was built for". Inbound: the event
 names, fields and values the TUI keys on that the OMH TUI v2 batch added (the
 subagent events, `session.info`'s yolo and effort, `subagent.tail`'s result,
-`session.steer`'s status), read from here by the app and the roster. Nothing
-checks an inbound shape at runtime: an event type the TUI does not handle is
-ignored, and a renamed field reads as absent. The older transcript events and
-their fields are read where they are folded (`transcript`, `subagents`).
+`session.steer`'s status), read from here by the app and the roster, and every
+event type, split into the ones the TUI handles and the ones it reads nothing
+from. An event type the TUI does not handle is ignored; a submitted turn that
+brings no transcript, subagent or error event, and three of types neither set
+declares, gets one notice (`App._watch_turn`), and `omh doctor` prints the
+installed Hermes commit next to the one below. A renamed field still reads as
+absent. The older transcript events' fields are
+read where they are folded (`transcript`, `subagents`).
 
 Declared against Hermes 6c61c3e27d (2026-10-07).
 """
@@ -94,6 +98,30 @@ SUBAGENT_COMPLETE = "subagent.complete"
 SUBAGENT_EVENTS = (
     SUBAGENT_SPAWN_REQUESTED, SUBAGENT_START, SUBAGENT_PROGRESS, SUBAGENT_THINKING, SUBAGENT_TOOL, SUBAGENT_COMPLETE,
 )
+
+# The event types the TUI handles. `App._on_event` takes APP_EVENTS itself, `Transcript` folds TRANSCRIPT_EVENTS
+# and the roster SUBAGENT_EVENTS; `test_tui_gateway_contract` holds each of the three to these names.
+APP_EVENTS = ("request.cancel", "approval.cancelled", "session.info", "session.usage", "connection.request", "error")
+TRANSCRIPT_EVENTS = (
+    "message.start", "message.delta", "message.interim", "message.complete", "thinking.delta", "reasoning.delta",
+    "reasoning.available", "tool.generating", "tool.start", "tool.complete", "status.update",
+)
+HANDLED_EVENTS = frozenset((*APP_EVENTS, *TRANSCRIPT_EVENTS, *SUBAGENT_EVENTS))
+# The rest of the 77 event types Hermes 6c61c3e27d registers (`tui_gateway.contracts.registry.EVENTS`). The event
+# loop reads nothing from these; `gateway.ready` is read once, by the client at startup (`gateway.READY_EVENT`).
+UNREAD_EVENTS = frozenset({
+    "agent.terminal.output", "background.complete", "billing.step_up.verification", "bot_relay.outbox.pending",
+    "browser.controller.cancel", "browser.controller.command", "browser.progress", "btw.complete",
+    "connection.update", "cron.changed", "display.install.done", "display.install.log", "display.lease",
+    "display.status", "free_tier.challenge", "gateway.ready", "layout.apply", "message.reaction",
+    "moa.aggregating", "moa.phase", "moa.progress", "moa.reference", "notice", "notification.clear",
+    "notification.show", "pairing.changed", "pane.reveal", "pet.changed", "pet.generate.progress",
+    "pet.hatch.progress", "platforms.changed", "preview.close", "preview.open", "preview.restart.complete",
+    "preview.restart.progress", "projects.changed", "reaction", "review.summary", "session.control.update",
+    "session.reclaimed", "session.resume_progress", "session.title", "sessions.changed", "setup.ready",
+    "skin.changed", "terminal.close", "tip.show", "todo.updated", "tool.output_risk", "voice.interrupted",
+    "voice.partial", "voice.status", "voice.transcript", "wake.detected",
+})
 
 # `session.info` (and a create or resume answer's `info`), `contracts/common.py` `SessionLiveInfo`:
 # `yolo` (bool) is this session's approvals off, `reasoning_effort` (str, "" when unset) its effort.

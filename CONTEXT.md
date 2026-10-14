@@ -379,8 +379,11 @@ a client. The slice the TUI relies on (the methods it calls with the only
 keys it sends, how it answers each server-to-client request, and the subagent
 events and the `session.info`, `subagent.tail` and `session.steer` fields and
 values it keys on) is declared once in `src/tui/gateway_contract.py`, against
-a named Hermes commit; an event type it does not handle is ignored, never an
-error. The gateway rejects
+a named Hermes commit, with every event type split into handled and unread;
+an event type it does not handle is ignored, never an error, and a submitted
+turn that brings no event the TUI shows, only undeclared types, gets one
+notice pointing at `omh doctor`, which prints the installed Hermes commit next
+to the declared one. The gateway rejects
 unknown keys (code 4000) and unknown methods (-32601); the TUI reads either as
 drift, falls back at startup, and leaves mid-session with the command to
 reopen the session in `hermes`. This is a read and write coupling to

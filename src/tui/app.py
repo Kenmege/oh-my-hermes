@@ -330,6 +330,20 @@ CONNECTION_NOTICE = (
     "Hermes is waiting for an app connection, which only Hermes' Desktop app or `hermes --tui` can complete. "
     "Esc interrupts the turn."
 )
+# The events that show a submitted turn is one the TUI can follow: the first of them ends the drift watch
+# (`App._watch_turn`). `session.info` and `session.usage` are left out: Hermes sends `session.info` ahead of
+# every recorded turn, renamed turn events or not.
+TURN_PROGRESS_EVENTS = frozenset((*contract.TRANSCRIPT_EVENTS, *contract.SUBAGENT_EVENTS, "error"))
+# Events of types the gateway contract does not declare that a submitted turn may bring, before any of
+# TURN_PROGRESS_EVENTS, without a word; the next one shows UNKNOWN_EVENTS_NOTICE. Two, so one or two events of
+# a new type that Hermes sends ahead of the usual ones say nothing.
+UNKNOWN_EVENTS_BEFORE_NOTICE = 2
+UNKNOWN_EVENT_NAME_CHARS = 40
+UNKNOWN_EVENTS_NOTICE = (
+    "This turn has brought no event the OMH TUI shows, only types it does not know ({types}), so Hermes may have "
+    "changed its protocol; `omh doctor` shows the installed Hermes next to the one the TUI was built against. "
+    "Esc interrupts the turn."
+)
 YOLO_NOTE = (
     "Hermes commands go to Hermes as you type them, /yolo included: it turns off Hermes' approval prompts, "
     "so the OMH TUI then has none to show."
@@ -824,6 +838,10 @@ class App:
         self.sticky = ""
         self.flushed_since_prompt = 0  # rows printed above the region since the last prompt was sent
         self.turn_pending = False  # a prompt went out and its turn has not started (or ended) yet
+        # The undeclared event types the submitted turn has brought before any of TURN_PROGRESS_EVENTS; None
+        # before the first prompt, once the watch ends, and after the notice (`_watch_turn`).
+        self.turn_unknown: list[str] | None = None
+        self.turn_unknown_count = 0
         self.pending: dict[int, _Pending] = {}
         self.menu_index = 0
         self.pager: Pager | None = None
@@ -1157,6 +1175,7 @@ class App:
             return
         if not event.type.startswith(contract.GATEWAY_SCOPED_EVENT_PREFIX) and event.session_id != self.sid:
             return
+        self._watch_turn(event.type)
         if event.type == "session.info":
             self._on_session_info(payload)
         elif event.type == "session.usage":
@@ -1178,6 +1197,31 @@ class App:
             elif event.type == "message.complete":
                 self.turn_pending = False
                 self._drain_queue()
+
+    def _watch_turn(self, event_type: str) -> None:
+        """Say once when a submitted turn has brought no event it shows, only types the contract does not declare.
+
+        The first of TURN_PROGRESS_EVENTS ends the watch for the turn, and so
+        does a turn that is no longer pending (refused, or the session
+        changed); any other declared type, and a gateway-scoped one, neither
+        counts nor ends it. A turn whose events Hermes renamed would otherwise
+        only look like one that never finishes.
+        """
+        unknown = self.turn_unknown
+        if unknown is None or event_type.startswith(contract.GATEWAY_SCOPED_EVENT_PREFIX):
+            return
+        if event_type in TURN_PROGRESS_EVENTS or not self.turn_pending:
+            self.turn_unknown = None
+            return
+        if event_type in contract.HANDLED_EVENTS or event_type in contract.UNREAD_EVENTS:
+            return
+        if event_type not in unknown:
+            unknown.append(event_type)
+        self.turn_unknown_count += 1
+        if self.turn_unknown_count > UNKNOWN_EVENTS_BEFORE_NOTICE:
+            types = ", ".join(clean_text(name)[:UNKNOWN_EVENT_NAME_CHARS] for name in unknown)
+            self.transcript.add_notice(UNKNOWN_EVENTS_NOTICE.format(types=types), NOTICE_WARN)
+            self.turn_unknown = None
 
     def _on_error_event(self, message: str) -> None:
         """A bare `error` event; during a turn it ends that turn.
@@ -1567,6 +1611,7 @@ class App:
         self.flushed_since_prompt = 0
         self._clear_roster()  # the agents shown were the last turn's
         self.turn_pending = True
+        self.turn_unknown, self.turn_unknown_count = [], 0
         self.busy_since = self.clock()
         self.attachments.clear()  # the gateway sends its queued images with this turn
         params: dict[str, Any] = {"session_id": self.sid, "text": text}
