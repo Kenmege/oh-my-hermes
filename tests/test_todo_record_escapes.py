@@ -9,6 +9,7 @@ stripper; the parity case below holds the two to one grammar.
 
 from __future__ import annotations
 
+import inspect
 import json
 import random
 import tempfile
@@ -22,11 +23,13 @@ load_local_package()
 from omh.plugin_bundle.omh.runtime_reader import read_omh_hud  # noqa: E402
 from omh.plugin_bundle.omh.todo_store import (  # noqa: E402
     _CONTROL_CHARACTERS,
+    PLAN_STAGE_ACCEPTED,
     build_todo_record,
     strip_control_characters,
     validate_todo_items,
     write_todo,
 )
+from omh.plugin_bundle.omh.todo_templates import TODO_TEMPLATES  # noqa: E402
 from omh.tui.escapes import strip_escapes  # noqa: E402
 
 
@@ -50,15 +53,33 @@ class WholeSequenceTest(unittest.TestCase):
         self.assertEqual(_stored_text("\x9b31mred\x9b0m"), "red")
 
     def test_every_text_field_gets_the_same_treatment(self) -> None:
-        record = build_todo_record(
-            "\x1b[1mFoundation\x1b[0m",
-            [{"text": "x", "phase": "\x1b[2mphase\x1b[0m", "blocked_reason": "\x1b[33mwaiting\x1b[0m"}],
-            source="\x1b]0;title\x07cli",
+        # Every argument of `build_todo_record` but the item and drop lists is text, so a new one fails the
+        # first assertion until it is wrapped here too. `template` needs a record of its own: with a template
+        # and no items, the items come from the template.
+        wrapped = {
+            "title": ("Foundation", "\x1b[1mFoundation\x1b[0m"),
+            "source": ("cli", "\x1b]0;title\x07cli"),
+            "session_ref": ("20261014_114709_5eba2a", "\x1b[1m20261014_114709_5eba2a\x1b[0m"),
+            "deferred_reason": ("waiting on review", "\x1b[33mwaiting on review\x1b[0m"),
+            "plan_stage": (PLAN_STAGE_ACCEPTED, f"\x1b[2m{PLAN_STAGE_ACCEPTED}\x1b[0m"),
+        }
+        template = sorted(TODO_TEMPLATES)[0]
+        self.assertEqual(
+            set(inspect.signature(build_todo_record).parameters) - {"items", "dropped"}, {*wrapped, "template"}
         )
-        self.assertEqual(record["title"], "Foundation")
-        self.assertEqual(record["source"], "cli")
-        self.assertEqual(record["items"][0]["phase"], "phase")
-        self.assertEqual(record["items"][0]["blocked_reason"], "waiting")
+        # The item's own text fields are keys `validate_todo_items` reads; there is no list to derive them from.
+        item = {"text": "\x1b[31mx\x1b[0m", "phase": "\x1b[2mphase\x1b[0m", "blocked_reason": "\x1b[33mwaiting\x1b[0m"}
+        record = build_todo_record(
+            wrapped["title"][1], [item], **{name: raw for name, (_clean, raw) in wrapped.items() if name != "title"}
+        )
+        for name, (clean, _raw) in wrapped.items():
+            with self.subTest(field=name):
+                self.assertEqual(record[name], clean)
+        self.assertEqual(
+            {key: record["items"][0][key] for key in item}, {"text": "x", "phase": "phase", "blocked_reason": "waiting"}
+        )
+        templated = build_todo_record("t", [], source="cli", template=f"\x1b[1m{template}\x1b[0m")
+        self.assertEqual(templated["template"], template)
 
 
 class OrdinaryBracketsTest(unittest.TestCase):
