@@ -425,7 +425,8 @@ Esc closes it):
 | Ctrl+T | Steps the reasoning effort: low, medium, high, xhigh, max |
 | `@` | Starts a file or folder reference; Hermes offers matches above the composer |
 | `?` | On an empty composer, shows this list; `/keys` does too |
-| ↑ / ↓ | Move between the composer's rows, walk the input history at its first and last row, or move through an open completion menu |
+| ↑ / ↓ | Move between the composer's rows, walk the input history at its first and last row (earlier sessions' too, shared with `hermes --tui`), or move through an open completion menu |
+| Ctrl+R | Searches the input history; Ctrl+R again finds an older match, Enter puts it in the composer, Esc leaves the composer as it was |
 | ↑ | On an empty composer with prompts queued, takes them all back into the composer to edit |
 | ↓ | On an empty composer while the mode row shows subagents, opens the agent list under the composer |
 | ← / → | Move by a character; with Ctrl or Alt, by a word |

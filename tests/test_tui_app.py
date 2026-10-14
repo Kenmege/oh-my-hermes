@@ -279,6 +279,8 @@ class AppTestCase(unittest.TestCase):
             **replay_env(root),
             "HERMES_TUI_ACTIVE_SESSION_FILE": str(root / "active-session.json"),
             "HERMES_TUI_CWD": "/fixture/project",
+            # The input history file goes here, never into the person's own ~/.hermes.
+            "HERMES_HOME": str(root),
             "TERM": "xterm-256color",
             FALLBACK_SENTINEL_ENV: str(root / "fallback"),
             **(env or {}),

@@ -58,6 +58,7 @@ def observed(app: App, client: RecordingClient) -> tuple[object, ...]:
         app.transcript.details_expanded,
         app.exit_code,
         app.pager is not None,
+        app.search is not None,
         len(terminal.writes),
     )
 
@@ -82,7 +83,7 @@ class TableTests(unittest.TestCase):
 
     def test_the_ctrl_letters_named_are_the_ones_that_do_something(self) -> None:
         named = ctrl_letters_named()
-        self.assertEqual(named, set("acdejkltouvw"))
+        self.assertEqual(named, set("acdejklrtouvw"))
         for letter in string.ascii_lowercase:
             changed = False
             for draft in ("", "one two"):

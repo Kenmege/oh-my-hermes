@@ -27,7 +27,11 @@ All notable changes will be documented here.
   finished), agents whose goals start alike are numbered on the strip, and the
   status line says `idle · 2 agents running` while agents outlive the turn.
   Mouse reports are on only while the agent list is open, so during a turn the
-  wheel scrolls and a drag selects; the strip is reached with Down.
+  wheel scrolls and a drag selects; the strip is reached with Down. Up and the
+  new Ctrl+R search reach earlier sessions' prompts: the TUI reads Hermes' own
+  input history (`$HERMES_HOME/.hermes_history`, the file `hermes --tui`
+  keeps) and appends each line you send to it in that file's format, opened
+  append-only and without following a symlink, created mode 0600.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

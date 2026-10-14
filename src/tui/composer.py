@@ -35,10 +35,11 @@ inserts as is, newlines kept; Tab completes; Esc cancels and keeps the text;
 Ctrl+C clears the text and cancels, or reports an interrupt when there is no
 text; Ctrl+D exits on empty input and deletes forward otherwise.
 
-History lives in memory only, oldest first, at most `HISTORY_CAP` entries; a
-submit appends unless the text is blank or repeats the newest entry, or
+History is held oldest first, at most `HISTORY_CAP` entries; a submit
+appends unless the text is blank or repeats the newest entry, or
 `records_history` is off (the app turns it off while the composer answers a
-question Hermes asked). Masked input (secrets, sudo) draws one bullet per
+question Hermes asked). Each entry it records is handed to `on_record` too,
+which the app points at Hermes' history file (`history.py`). Masked input (secrets, sudo) draws one bullet per
 cluster, refuses newlines, never browses history, never enters it, and is
 shown as bullets by `repr` too.
 """
@@ -46,7 +47,7 @@ shown as bullets by `repr` too.
 from __future__ import annotations
 
 from bisect import bisect_right
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 import unicodedata
 
@@ -225,6 +226,7 @@ class Composer:
     history_index: int | None = None
     masked: bool = False
     records_history: bool = True
+    on_record: Callable[[str], None] | None = field(default=None, repr=False, compare=False)
     _draft: str = field(default="", init=False, repr=False, compare=False)
     _avail: int | None = field(default=None, init=False, repr=False, compare=False)
     _scroll: int = field(default=0, init=False, repr=False, compare=False)
@@ -372,11 +374,17 @@ class Composer:
         end = self.text.find(NEWLINE, self.caret)
         return len(self.text) if end < 0 else end
 
-    def _submit(self) -> ComposerAction:
-        text = self.text
+    def record(self, text: str) -> None:
+        """Keep `text` as the newest history entry, unless it is blank, repeats the newest, or nothing may be recorded."""
         if self.records_history and not self.masked and text.strip() and (not self.history or self.history[-1] != text):
             self.history.append(text)
             del self.history[:-HISTORY_CAP]
+            if self.on_record is not None:
+                self.on_record(text)
+
+    def _submit(self) -> ComposerAction:
+        text = self.text
+        self.record(text)
         self._clear()
         return ComposerAction(SUBMIT, text)
 

@@ -50,10 +50,12 @@ The input modes and the reasoning effort are `modes.ModesMixin`'s, and the
 subagent strip, list and log are `agent_view.AgentViewMixin`'s; each
 module's docstring holds their rules. `App` mixes both in.
 
-Prompt text, the transcript, attachments, secrets, server-request frames and
-the gateway's stderr stay in memory and on the person's own terminal; nothing
-here writes them anywhere. The files the TUI writes are metadata: that
-session file, what OMH's HUD reader (`panels.HudPoller`, its fan-out cache
+The transcript, attachments, secrets, server-request frames and the
+gateway's stderr stay in memory and on the person's own terminal; nothing
+here writes them anywhere. Prompt text goes to one file only: each line the
+person sends from the composer is appended to Hermes' own input history
+(`history.py`), never an answer to a question Hermes asked. The other files
+the TUI writes are metadata: that session file, what OMH's HUD reader (`panels.HudPoller`, its fan-out cache
 under `<omh_home>/runtime/`) and the model-chain picker (`/omh-model`'s saved
 chains) write under the OMH home, and an empty fallback marker at the path
 `omh` named, which `omh` removes. An attached image is a path the
@@ -102,6 +104,7 @@ from ..skin_pack import (
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
 from .frame import MODE_ACCEPT, MODE_PLAN, STATUS_SEPARATOR, build_frame, sticky_line
+from .history import SEARCH_ACCEPT, SEARCH_CANCEL, HistorySearch, append_entry, history_path, load_history
 from .gateway import (
     Event,
     GatewayCallError,
@@ -753,6 +756,12 @@ class App(ModesMixin, AgentViewMixin):
         self.pick_model_chains = pick_model_chains
         self.transcript = Transcript(clock)
         self.composer = Composer()
+        # Hermes' own input history: read once here, and every line the person sends appended (`history.py`).
+        self.history_file = history_path(environ)
+        if self.history_file is not None:
+            self.composer.history = load_history(self.history_file)
+            self.composer.on_record = self._remember
+        self.search: HistorySearch | None = None  # Ctrl+R's search, while it has the keys
         self.region = LiveRegion(terminal.write)
         self.decoder = KeyDecoder(clock)
         self.size = terminal.size()
@@ -1485,9 +1494,14 @@ class App(ModesMixin, AgentViewMixin):
         if self.slot is None and self.picker is not None:
             self._picker_key(event)
             return
+        if self.slot is None and self.search is not None:
+            self._search_key(event)
+            return
         if self.slot is None and self._agent_list_key(event):
             return
-        if self.slot is None and (self._mode_key(event) or self._effort_key(event) or self._guide_key(event)):
+        if self.slot is None and (
+            self._mode_key(event) or self._effort_key(event) or self._guide_key(event) or self._search_open_key(event)
+        ):
             return
         if self.slot is None and (self._attachment_input(event) or self._escape(event)):
             return
@@ -1500,6 +1514,29 @@ class App(ModesMixin, AgentViewMixin):
         if self.composer.text != before:
             self.menu_index = 0
         self._on_composer(action, event, steer=isinstance(event, Key) and event.name == ENTER and event.ctrl)
+
+    def _remember(self, text: str) -> None:
+        """A line the composer recorded goes to the end of Hermes' history file too (best effort)."""
+        if self.history_file is not None:
+            append_entry(self.history_file, text)
+
+    def _search_open_key(self, event: Key | Paste) -> bool:
+        """Ctrl+R opens the search over the composer's history in the slot."""
+        if not isinstance(event, Key) or event != Key(CHAR, "r", ctrl=True):
+            return False
+        self.search = HistorySearch(list(self.composer.history), self.composer.text)
+        return True
+
+    def _search_key(self, event: Key | Paste | Mouse) -> None:
+        """A key for the open search: Enter puts the match in the composer, Esc leaves it as it was."""
+        search = self.search
+        if search is None or isinstance(event, Mouse):
+            return
+        action = search.handle_key(event)
+        if action == SEARCH_ACCEPT:
+            self._set_composer(search.current() or search.original)
+        if action in (SEARCH_ACCEPT, SEARCH_CANCEL):
+            self.search = None
 
     def _slot_arming(self, event: Key | Paste) -> bool:
         """Whether `event` came too early to answer the open slot (`SLOT_ARM_SECONDS`).
@@ -1642,7 +1679,7 @@ class App(ModesMixin, AgentViewMixin):
 
     def _track_path_token(self) -> None:
         """Schedule `complete.path` for the `@` token at the caret once it holds still; drop the menu without one."""
-        open_composer = self.slot is None and self.picker is None
+        open_composer = self.slot is None and self.picker is None and self.search is None
         word = at_token(self.composer.text, self.composer.caret)[1] if open_composer else ""
         if word == self.path_word:
             return
@@ -2479,7 +2516,7 @@ class App(ModesMixin, AgentViewMixin):
                 theme=self.theme,
                 strip=strip,
             ),
-            placeholder=PLACEHOLDER if self.slot is None and self.picker is None else "",
+            placeholder=PLACEHOLDER if self.slot is None and self.picker is None and self.search is None else "",
             agent_list=agent_list if self.list_selected is not None else None,
         )
         self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad)
@@ -2536,6 +2573,8 @@ class App(ModesMixin, AgentViewMixin):
             return self.slot.lines(cols, self.theme, cap)
         if self.picker is not None:
             return self.picker.lines(cols, self.theme, cap, self.wall_clock())
+        if self.search is not None:
+            return self.search.lines(cols, self.theme, cap)
         # Nothing has the keys: the queued prompts take the slot's last rows, right above the composer's
         # top rule, Hermes' notification the row above them, and the menu or the panel gets the rows left. A
         # question or the picker hides them, since Up then does not edit the queue.
