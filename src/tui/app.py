@@ -952,6 +952,9 @@ class App(ModesMixin, AgentViewMixin):
         self.turn_output_base: int | None = None  # that counter as the running turn began
         self.session_title = ""  # Hermes' auto-title for the session (`session.title`)
         self.shown_title: str | None = None  # the terminal title last written
+        self.title_words = ""  # what that title was cut from: the same words need no new cut
+        # The status line last composed, with what it showed and the theme and HUD snapshot it was composed with.
+        self.status_held: tuple[tuple[object, ...], Theme, HudSnapshot | None, Line] | None = None
         self.title_pushed = False
         self.background_mode = BACKGROUND_AUTO
         self.dirty = True
@@ -1490,7 +1493,11 @@ class App(ModesMixin, AgentViewMixin):
     def _write_title(self) -> None:
         """The terminal title, `<session title> · <state>`, written only when it changed (the first one pushes the old)."""
         state = STATE_WAITING if self.slot is not None else STATE_RUNNING if self._busy() else STATE_IDLE
-        title = truncate_left(f"{self.session_title or TITLE_DEFAULT} · {state}", TITLE_CHARS)
+        words = f"{self.session_title or TITLE_DEFAULT} · {state}"
+        if words == self.title_words:
+            return  # every frame asks; most change nothing here
+        self.title_words = words
+        title = truncate_left(words, TITLE_CHARS)
         if title == self.shown_title:
             return
         self.shown_title = title
@@ -3115,6 +3122,17 @@ class App(ModesMixin, AgentViewMixin):
         return tuple((MODE_CHIPS[mode], replace(colour, bg=bar.bg, bold=True)) for mode, colour, on in shown if on)
 
     def _status_line(self, cols: int) -> Line:
+        """The status line, composed again only when something it shows changed (a spinner tick changes nothing)."""
+        shown = (cols, self.size[1], self.model, self.context, self.context_percent, self._state_text(),
+                 self.approvals_off, self.plan_mode)
+        held = self.status_held
+        if held is not None and held[0] == shown and held[1] is self.theme and held[2] is self.hud:
+            return held[3]
+        line = self._compose_status_line(cols)
+        self.status_held = (shown, self.theme, self.hud, line)
+        return line
+
+    def _compose_status_line(self, cols: int) -> Line:
         """OMH's segments, then model, context and state, on the status bar's background.
 
         The context turns warn from `CONTEXT_WARN_PERCENT` full and bad from

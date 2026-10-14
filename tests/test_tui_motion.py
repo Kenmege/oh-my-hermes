@@ -11,15 +11,17 @@ it, and the screen then repaints once a second while a turn runs.
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from _tui_lines import line_text
 from test_tui_modes import SID, make_app
 from test_tui_panels import hud_payload
 from omh.tui.app import REDUCED_TICK_SECONDS, SWEEP_CLUSTERS, TICK_SECONDS, App, reduced_motion, working_spans
 from omh.tui.gateway import Event
-from omh.tui.panels import SPINNER_FRAMES, HudSnapshot, panel_lines
+from omh.tui.panels import SPINNER_FRAMES, HudSnapshot, panel_lines, status_segments
 from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME as THEME
+from omh.tui.theme import theme_named
 from omh.tui.transcript import (
     PULSE_SECONDS,
     TOOL_DENIED,
@@ -34,6 +36,7 @@ from omh.tui.transcript import (
     Transcript,
     block_rows,
 )
+from omh.tui.width import truncate_left
 
 
 class Clock:
@@ -214,6 +217,44 @@ class ReducedMotionTests(unittest.TestCase):
             wall[0] = now
             seen.add(tuple(map(tuple, app._menu_or_panel_lines(80, 6))))
         self.assertEqual(len(seen), 1)  # the app tells the panel
+
+
+class SteadyRowsTests(unittest.TestCase):
+    """A tick that changes only the spinner leaves the status line and the title as they were, uncomputed."""
+
+    def test_the_status_line_is_composed_again_only_when_something_it_shows_changes(self) -> None:
+        clock = Clock()
+        app, _client = make_app(busy=True, clock=clock)
+        with mock.patch("omh.tui.app.status_segments", wraps=status_segments) as segments:
+            first = app._status_line(80)
+            clock.now += TICK_SECONDS
+            self.assertIs(app._status_line(80), first)
+            self.assertEqual(segments.call_count, 1)
+            for change in (
+                lambda: setattr(app, "model", "another/model"),
+                lambda: setattr(app, "turn_pending", False),  # running -> idle
+                lambda: app.queued.append(("next", "", "")),
+                lambda: setattr(app, "context_percent", 91.0),
+                lambda: setattr(app, "theme", theme_named("amber")),
+                lambda: setattr(app, "hud", HudSnapshot("s", hud_payload(), 0.0)),
+            ):
+                before = segments.call_count
+                change()
+                app._status_line(80)
+                self.assertEqual(segments.call_count, before + 1)
+            before = segments.call_count
+            app._status_line(60)  # another width
+            self.assertEqual(segments.call_count, before + 1)
+
+    def test_the_title_is_cut_only_when_its_words_change(self) -> None:
+        app, _client = make_app(busy=True)
+        with mock.patch("omh.tui.app.truncate_left", wraps=truncate_left) as cut:
+            app._write_title()
+            app._write_title()
+            self.assertEqual(cut.call_count, 1)
+            app.turn_pending = False
+            app._write_title()
+            self.assertEqual(cut.call_count, 2)
 
 
 class DocumentedMotionTests(unittest.TestCase):

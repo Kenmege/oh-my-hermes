@@ -99,6 +99,26 @@ class ClusterTests(unittest.TestCase):
         self.assertEqual(clusters("\ń"), ["\n", "́"])
 
 
+class KeptMeasureTests(unittest.TestCase):
+    """Short non-ASCII text is measured once and kept, since every frame measures the same rules and rows again."""
+
+    def test_a_kept_answer_is_handed_out_as_a_new_list_each_time(self) -> None:
+        rule = "─" * 40
+        first = clusters(rule)
+        first.append("changed")
+        self.assertEqual(clusters(rule), ["─"] * 40)
+        self.assertEqual(clusters(HANGUL_NFD), ["한", "글"])  # kept answers are still the NFC clusters
+
+    def test_long_text_is_measured_afresh_and_not_kept(self) -> None:
+        from omh.tui import width
+
+        long = "가" * (width._KEPT_TEXT_CHARS + 1)
+        held = width._kept_clusters.cache_info().currsize
+        self.assertEqual(len(clusters(long)), len(long))
+        self.assertEqual(width._kept_clusters.cache_info().currsize, held)
+        self.assertEqual(cell_width(long), 2 * len(long))
+
+
 class AsciiTests(unittest.TestCase):
     """ASCII text skips normalizing and segmenting; each of its 128 code points must still measure as before."""
 
