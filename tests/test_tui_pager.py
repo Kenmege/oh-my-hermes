@@ -94,7 +94,7 @@ class HistoryPagerTests(unittest.TestCase):
     def test_every_key_shows_the_page_a_pager_over_all_the_rows_shows(self) -> None:
         generator = random.Random(11)
         for trial in range(40):
-            items = items_of([generator.randrange(1, 7) for _ in range(generator.randrange(1, 30))])
+            items = items_of([generator.randrange(0, 7) for _ in range(generator.randrange(1, 30))])  # 0: a block with no rows
             lazy, eager = self.history(items), Pager("history", flattened(items))
             lazy_screen, eager_screen = VTScreen(8, 30), VTScreen(8, 30)
             lazy_screen.feed(lazy.frame(30, 8, THEME))
@@ -107,6 +107,15 @@ class HistoryPagerTests(unittest.TestCase):
                     screen.feed(pager.frame(30, 8, THEME))
                 with self.subTest(trial=trial, step=step, keys=chars):
                     self.assertEqual(lazy_screen.lines()[:-1], eager_screen.lines()[:-1])
+
+    def test_blocks_with_no_rows_get_no_blank_row_and_none_opens_the_history(self) -> None:
+        items = items_of([0, 0, 2, 0, 1])
+        lazy, eager = self.history(items), Pager("history", flattened(items))
+        lazy_screen, eager_screen = VTScreen(8, 30), VTScreen(8, 30)
+        lazy_screen.feed(lazy.frame(30, 8, THEME))
+        eager_screen.feed(eager.frame(30, 8, THEME))
+        self.assertEqual([row.rstrip() for row in lazy_screen.lines()[:4]], ["block 2 row 0", "block 2 row 1", "", "block 4 row 0"])
+        self.assertEqual(lazy_screen.lines()[:-1], eager_screen.lines()[:-1])
 
     def test_opening_and_jumping_to_either_end_render_only_the_blocks_those_pages_reach(self) -> None:
         calls: list[tuple[int, int]] = []

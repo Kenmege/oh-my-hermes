@@ -130,7 +130,7 @@ class HistoryPager(Pager):
     """`/history`: the transcript's blocks, each rendered only when a page reaches it.
 
     `render(index, width, theme)` gives block `index`'s rows; a blank row goes
-    above each block but the first, when the block has rows. The page's top
+    above each block that has rows but the first such block. The page's top
     is a block and a row inside it (`item`, `offset`), so opening, moving and
     jumping to either end render only the blocks the page and the last page
     reach, at the frame's width. A move asked for before the first frame is
@@ -148,6 +148,7 @@ class HistoryPager(Pager):
     _to_end: bool | None = field(default=None, init=False, repr=False, compare=False)
     _kept: dict[int, list[Line]] = field(default_factory=dict, init=False, repr=False, compare=False)
     _drawn: tuple[int, Theme] | None = field(default=None, init=False, repr=False, compare=False)
+    _first: int | None = field(default=None, init=False, repr=False, compare=False)
 
     def _scroll(self, step: int, rows: int) -> None:
         self._step += step
@@ -162,18 +163,28 @@ class HistoryPager(Pager):
             self._settle(self._drawn[0], self.body_rows(rows), self._drawn[1])
 
     def _rows(self, index: int, cols: int, theme: Theme) -> list[Line]:
-        """Block `index`'s rows at `cols`, the blank row above it included, rendered once while kept.
+        """Block `index`'s rows at `cols`, the blank row above it included."""
+        rows = self._rendered(index, cols, theme)
+        return [(), *rows] if rows and index > self._first_with_rows(cols, theme) else rows
 
-        The block used longest ago leaves first.
-        """
+    def _rendered(self, index: int, cols: int, theme: Theme) -> list[Line]:
+        """Block `index`'s rows at `cols`, rendered once while kept; the block used longest ago leaves first."""
         rows = self._kept.pop(index, None)
         if rows is None:
-            rendered = self.render(index, cols, theme)
-            rows = [(), *rendered] if index and rendered else rendered
+            rows = self.render(index, cols, theme)
             if len(self._kept) >= HISTORY_BLOCKS_KEPT:
                 del self._kept[next(iter(self._kept))]
         self._kept[index] = rows
         return rows
+
+    def _first_with_rows(self, cols: int, theme: Theme) -> int:
+        """The first block with any rows (`count` when none has any), found once per width and theme."""
+        if self._first is None:
+            index = 0
+            while index < self.count and not self._rendered(index, cols, theme):
+                index += 1
+            self._first = index
+        return self._first
 
     def _last_page_top(self, body: int, cols: int, theme: Theme) -> tuple[int, int]:
         """Where the page starts when its last row is the last block's last row (the top, for less than a page)."""
@@ -200,7 +211,7 @@ class HistoryPager(Pager):
 
     def _page(self, cols: int, rows: int, theme: Theme) -> tuple[list[Line], str]:
         if self._drawn is None or self._drawn[0] != cols or self._drawn[1] is not theme:
-            self._kept = {}
+            self._kept, self._first = {}, None
             self._drawn = (cols, theme)
         body = self.body_rows(rows)
         self._settle(cols, body, theme)
