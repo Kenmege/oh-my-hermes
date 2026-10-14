@@ -226,7 +226,6 @@ class UpdatePrintsRestartHintsTests(unittest.TestCase):
             # The existing restart line is kept beside the named hint.
             self.assertIn("Restart Hermes Desktop for bot chats to reload skills.", stdout)
             self.assertLess(stdout.index("Bot profiles:"), stdout.index("Hermes gateway for"))
-            self.assertLess(stdout.index("Hermes gateway for"), stdout.index("OMH TUI:"))
 
 
 if __name__ == "__main__":

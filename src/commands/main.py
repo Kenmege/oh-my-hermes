@@ -528,14 +528,9 @@ def _run_auto_update(args: argparse.Namespace, paths, result: dict[str, object])
     registration, `release_source_commit`) never ran. A real subprocess gives
     that re-entry its own correct `sys.argv`.
 
-    Deliberately `--no-interactive` without `--yes`: `--yes` presets the
-    branded-TUI identity choice (`commands/setup.py:_preset_tui_identity_choice`)
-    and would rewrite a user's own `display.interface`/skin choice on every
-    auto-update. `--no-interactive` alone leaves that choice unset --
-    `_update_should_interact()` still skips the prompt (this is a
-    non-interactive background launch), and `_apply_result()` then takes the
-    non-forcing `ensure_tui_interface`/`ensure_omh_skin` path instead of the
-    forcing `activate_*` one, so an existing explicit choice is preserved.
+    `--no-interactive` states what this launch is, a background run that
+    must never wait on a prompt. Update asks nothing today, so it changes
+    nothing; it stays so a prompt added later cannot block a launch.
 
     The attempt announces itself on stdout and says so again when it lands
     (`_auto_update_started_line`, `_auto_update_complete_line`), because the

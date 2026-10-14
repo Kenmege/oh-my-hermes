@@ -1,0 +1,389 @@
+"""Bare `hermes` is stock Hermes again: setup and update take back what earlier versions wrote.
+
+Every case runs the real CLI against throwaway homes. An install made before
+the display release is rebuilt by running today's setup and then rewriting
+the home the way the old version left it (`_legacy_display`): the branded
+display keys in the config, the write record naming them without the release
+marker, the status widget and every skin file with their manifests.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import shutil
+from tempfile import TemporaryDirectory
+import unittest
+
+from _cli_harness import run_cli
+from _legacy_display import brand_legacy_home
+from _platform_support import requires_posix_permissions, requires_symlinks
+from omh.install.config_reversal import MANAGED_CONFIG_WRITES_STATE_KEY
+from omh.skin_pack import SKIN_THEMES, read_theme_choice, theme_for_name, write_theme_choice
+
+
+class _Home:
+    """One primary Hermes home and its OMH store under a temp root."""
+
+    def __init__(self, root: Path) -> None:
+        self.omh_home = root / ".omh"
+        self.hermes_home = root / ".hermes"
+        self.hermes_home.mkdir(parents=True, exist_ok=True)
+        self.config = self.hermes_home / "config.yaml"
+        self.base = ["--omh-home", str(self.omh_home), "--hermes-home", str(self.hermes_home)]
+
+    @property
+    def state_path(self) -> Path:
+        return self.omh_home / "runtime" / "state.json"
+
+    def run(self, *argv: str, output_json: bool = True) -> tuple[int, str, str]:
+        return run_cli([*self.base, *argv], output_json=output_json)
+
+    def record(self, config: Path | None = None) -> dict[str, object]:
+        state = json.loads(self.state_path.read_text(encoding="utf-8"))
+        return state[MANAGED_CONFIG_WRITES_STATE_KEY][str((config or self.config).resolve())]
+
+    def brand(self, config: Path, skin: str = "omh") -> None:
+        brand_legacy_home(self.omh_home, config, skin)
+
+    def legacy_install(self, before: str = "version: 1\n", skin: str = "omh") -> None:
+        self.config.write_text(before, encoding="utf-8", newline="")
+        status, _stdout, stderr = self.run("setup", "--with-plugin")
+        assert status == 0, stderr
+        self.brand(self.config, skin)
+
+
+def _omh_skin_files(hermes_home: Path) -> list[str]:
+    skins = hermes_home / "skins"
+    return sorted(path.name for path in skins.glob("*.yaml")) if skins.is_dir() else []
+
+
+class FreshInstallTests(unittest.TestCase):
+    def test_setup_writes_no_display_key_and_installs_no_widget_or_skin(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+
+            status, stdout, stderr = home.run("setup", "--with-plugin", "--yes")
+
+            self.assertEqual(status, 0, stderr)
+            config_text = home.config.read_text(encoding="utf-8")
+            self.assertNotIn("display:", config_text)
+            self.assertIn("    - omh\n", config_text)
+            self.assertIn("  provider: omh\n", config_text)
+            self.assertFalse((home.hermes_home / "tui-widgets").exists())
+            self.assertFalse((home.hermes_home / "skins").exists())
+            self.assertIsNone(read_theme_choice(home.omh_home))
+            self.assertNotIn("tui_verdict", json.loads(stdout))
+
+    def test_no_omh_tui_is_still_accepted(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+
+            self.assertEqual(home.run("setup", "--no-omh-tui")[0], 0)
+            self.assertEqual(home.run("update", "--no-omh-tui", "--yes")[0], 0)
+
+            self.assertNotIn("display:", home.config.read_text(encoding="utf-8"))
+
+
+class UpdateReleaseTests(unittest.TestCase):
+    def test_update_returns_a_branded_install_to_stock_hermes(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install()
+            self.assertIn("  interface: tui\n", home.config.read_text(encoding="utf-8"))
+
+            status, _stdout, stderr = home.run("update")
+
+            self.assertEqual(status, 0, stderr)
+            config_text = home.config.read_text(encoding="utf-8")
+            self.assertNotIn("display", config_text)
+            # Only the screen goes: OMH's plugin, memory provider and skills stay.
+            self.assertIn("    - omh\n", config_text)
+            self.assertIn("  provider: omh\n", config_text)
+            self.assertFalse((home.hermes_home / "tui-widgets" / "omh-status.mjs").exists())
+            self.assertFalse((home.hermes_home / "tui-widgets" / ".omh-status.manifest.json").exists())
+            self.assertEqual(_omh_skin_files(home.hermes_home), [])
+            self.assertFalse((home.hermes_home / "skins" / ".omh-skin.manifest.json").exists())
+            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("sky"))
+            record = home.record()
+            self.assertEqual(record["restores"], {})
+            self.assertFalse({"display.interface", "display.skin", "display.sections"} & set(record["keys"]))  # type: ignore[arg-type]
+            self.assertIn("display_released_at", record)
+
+    def test_update_carries_a_chosen_theme_into_the_omh_store(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install(skin="omh-crimson")
+
+            self.assertEqual(home.run("update")[0], 0)
+
+            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("crimson"))
+            self.assertNotIn("skin:", home.config.read_text(encoding="utf-8"))
+            status, stdout, _stderr = home.run("theme", "status")
+            self.assertEqual(status, 0)
+            self.assertEqual(json.loads(stdout)["active_theme"], "crimson")
+
+    def test_a_theme_saved_after_the_old_install_wins_over_the_config_skin(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install(skin="omh-crimson")
+            mono = theme_for_name("mono")
+            assert mono is not None
+            write_theme_choice(home.omh_home, mono)
+
+            self.assertEqual(home.run("update")[0], 0)
+
+            self.assertEqual(read_theme_choice(home.omh_home), mono)
+
+    def test_update_puts_back_the_display_values_consent_replaced(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install(before="version: 1\ndisplay:\n  interface: cli\n  skin: ares\n")
+            self.assertIn("  skin: omh\n", home.config.read_text(encoding="utf-8"))
+
+            self.assertEqual(home.run("update")[0], 0)
+
+            config_text = home.config.read_text(encoding="utf-8")
+            self.assertIn("display:\n  interface: cli\n  skin: ares\n", config_text)
+            self.assertNotIn("collapsed", config_text)
+
+    def test_a_value_the_person_changed_after_omh_wrote_it_is_left_alone(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install()
+            home.config.write_text(
+                home.config.read_text(encoding="utf-8")
+                .replace("  interface: tui\n", "  interface: cli\n")
+                .replace("    tools: collapsed\n", "    tools: expanded\n"),
+                encoding="utf-8",
+                newline="",
+            )
+
+            self.assertEqual(home.run("update")[0], 0)
+
+            config_text = home.config.read_text(encoding="utf-8")
+            self.assertIn("  interface: cli\n", config_text)
+            self.assertIn("    tools: expanded\n", config_text)
+            self.assertNotIn("skin:", config_text)
+            self.assertNotIn("collapsed", config_text)
+
+    def test_an_install_from_before_the_record_loses_its_omh_skin_only(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install(skin="omh-mono")
+            state = json.loads(home.state_path.read_text(encoding="utf-8"))
+            del state[MANAGED_CONFIG_WRITES_STATE_KEY]
+            home.state_path.write_text(json.dumps(state), encoding="utf-8", newline="")
+
+            self.assertEqual(home.run("update")[0], 0)
+
+            config_text = home.config.read_text(encoding="utf-8")
+            self.assertNotIn("skin:", config_text)
+            # The record-less skin is OMH's by its name, and its theme is
+            # carried before the key goes.
+            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("mono"))
+            # `tui` and `collapsed` are values a person can hold; with no
+            # record nothing says OMH wrote them, so they stay.
+            self.assertIn("  interface: tui\n", config_text)
+            self.assertIn("    thinking: collapsed\n", config_text)
+
+    def test_a_persons_own_display_choices_survive_update(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.config.write_text(
+                "version: 1\ndisplay:\n  interface: cli\n  skin: ares\n", encoding="utf-8", newline=""
+            )
+            self.assertEqual(home.run("setup", "--with-plugin")[0], 0)
+            state = json.loads(home.state_path.read_text(encoding="utf-8"))
+            del state[MANAGED_CONFIG_WRITES_STATE_KEY]
+            home.state_path.write_text(json.dumps(state), encoding="utf-8", newline="")
+
+            self.assertEqual(home.run("update")[0], 0)
+
+            self.assertIn("display:\n  interface: cli\n  skin: ares\n", home.config.read_text(encoding="utf-8"))
+
+    def test_a_skin_file_the_person_edited_stays_and_is_named(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install()
+            edited = home.hermes_home / "skins" / "omh-amber.yaml"
+            edited.write_text(edited.read_text(encoding="utf-8") + "# mine\n", encoding="utf-8")
+
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(_omh_skin_files(home.hermes_home), ["omh-amber.yaml"])
+            self.assertIn(f"kept {edited.resolve()}", stdout)
+            self.assertIn("bare `hermes` opens stock Hermes", stdout)
+
+    def test_a_widget_of_the_persons_own_beside_ours_stays(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install()
+            personal = home.hermes_home / "tui-widgets" / "personal.mjs"
+            personal.write_text("export default function register() {}\n", encoding="utf-8")
+
+            self.assertEqual(home.run("update")[0], 0)
+
+            self.assertFalse((home.hermes_home / "tui-widgets" / "omh-status.mjs").exists())
+            self.assertEqual(personal.read_text(encoding="utf-8"), "export default function register() {}\n")
+
+    @requires_posix_permissions
+    def test_a_widget_that_cannot_be_unlinked_still_lets_the_record_land(self) -> None:
+        # The release has already rewritten the config when the files go, so
+        # a file that will not unlink is reported, not raised: raising there
+        # skipped the record write, and the next update read the released
+        # keys as never released.
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install()
+            widgets = home.hermes_home / "tui-widgets"
+            widgets.chmod(0o555)
+            try:
+                status, stdout, stderr = home.run("update", output_json=False)
+            finally:
+                widgets.chmod(0o755)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertIn("left the status widget in place:", stdout)
+            self.assertTrue((widgets / "omh-status.mjs").is_file())
+            self.assertIn("display_released_at", home.record())
+            self.assertNotIn("display", home.config.read_text(encoding="utf-8"))
+
+    def test_a_second_update_changes_nothing_and_keeps_a_skin_chosen_since(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install()
+            self.assertEqual(home.run("update")[0], 0)
+            # The person now picks an OMH palette for Hermes themselves.
+            chosen = home.config.read_text(encoding="utf-8") + "display:\n  skin: omh-crimson\n"
+            home.config.write_text(chosen, encoding="utf-8", newline="")
+
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(home.config.read_text(encoding="utf-8"), chosen)
+            self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
+            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("sky"))
+
+    def test_a_dry_run_writes_nothing(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install(skin="omh-amber")
+            config_before = home.config.read_text(encoding="utf-8")
+            state_before = home.state_path.read_text(encoding="utf-8")
+
+            status, _stdout, stderr = home.run("update", "--dry-run")
+
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(home.config.read_text(encoding="utf-8"), config_before)
+            self.assertEqual(home.state_path.read_text(encoding="utf-8"), state_before)
+            self.assertTrue((home.hermes_home / "tui-widgets" / "omh-status.mjs").exists())
+            self.assertEqual(len(_omh_skin_files(home.hermes_home)), len(SKIN_THEMES))
+            self.assertIsNone(read_theme_choice(home.omh_home))
+
+    def test_uninstall_after_the_migration_restores_the_config_before_setup(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            before = "version: 1\ndisplay:\n  interface: cli\n  compact: true\n"
+            home.legacy_install(before=before)
+            self.assertEqual(home.run("update")[0], 0)
+
+            status, stdout, stderr = home.run("uninstall")
+
+            self.assertEqual(status, 0, stderr)
+            self.assertEqual(home.config.read_text(encoding="utf-8"), before)
+            rows = {row["key"]: row["status"] for row in json.loads(stdout)["config_keys"]}
+            self.assertEqual(rows["display.skin"], "absent")
+            self.assertEqual(rows["display.interface"], "kept")
+
+    def test_setup_runs_the_same_release(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install(skin="omh-mono")
+
+            status, stdout, stderr = home.run("setup", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertNotIn("display", home.config.read_text(encoding="utf-8"))
+            self.assertEqual(_omh_skin_files(home.hermes_home), [])
+            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("mono"))
+            self.assertIn("saved OMH theme mono for the OMH TUI", stdout)
+
+
+class ProfileReleaseTests(unittest.TestCase):
+    def test_every_profile_is_released_and_its_theme_lands_in_its_own_store(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = _Home(root)
+            shared = home.hermes_home / "profiles" / "shared"
+            split = home.hermes_home / "profiles" / "split"
+            split_store = root / "split-store"
+            for profile in (shared, split):
+                profile.mkdir(parents=True)
+            # The split profile names its own store (#1679, #1680); the
+            # shared one names none and is given the primary's.
+            (split / "config.yaml").write_text(
+                f"plugins:\n  entries:\n    omh:\n      settings:\n        omh_home: {split_store.as_posix()}\n",
+                encoding="utf-8",
+                newline="",
+            )
+            home.legacy_install()
+            home.brand(shared / "config.yaml", skin="omh-amber")
+            home.brand(split / "config.yaml", skin="omh-crimson")
+
+            status, stdout, stderr = home.run("update")
+
+            self.assertEqual(status, 0, stderr)
+            for profile in (shared, split):
+                with self.subTest(profile=profile.name):
+                    self.assertNotIn("display", (profile / "config.yaml").read_text(encoding="utf-8"))
+                    self.assertFalse((profile / "tui-widgets" / "omh-status.mjs").exists())
+                    self.assertEqual(_omh_skin_files(profile), [])
+                    self.assertIn("display_released_at", home.record(profile / "config.yaml"))
+            # The primary's `omh` reached the shared store first; the
+            # profile's amber does not overwrite a saved choice.
+            self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("sky"))
+            self.assertEqual(read_theme_choice(split_store), theme_for_name("crimson"))
+
+    @requires_symlinks
+    def test_a_widget_it_must_refuse_to_remove_costs_no_profile_its_registration(self) -> None:
+        # Removing the widget refuses a symlinked destination, as uninstall
+        # does. The refusal is a line in the output: a bot that update
+        # bootstraps still gets its plugin, its skills and its memory
+        # provider, and its display keys still go.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = _Home(root)
+            profile = home.hermes_home / "profiles" / "bot"
+            profile.mkdir(parents=True)
+            home.legacy_install()
+            home.brand(profile / "config.yaml")
+            # A bot with no bundle and no registration is a new bot to the
+            # sync, so this run registers it from nothing.
+            shutil.rmtree(profile / "plugins" / "omh")
+            skills = (home.omh_home / "skills").resolve().as_posix()
+            config = profile / "config.yaml"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(f"    - {skills}\n", ""), encoding="utf-8", newline=""
+            )
+            self.assertNotIn(skills, config.read_text(encoding="utf-8"))
+            elsewhere = root / "elsewhere"
+            shutil.move(str(profile / "tui-widgets"), elsewhere)
+            (profile / "tui-widgets").symlink_to(elsewhere, target_is_directory=True)
+
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertIn("Bot profiles: bot (set up)", stdout)
+            self.assertIn("left the status widget in place: refusing symlinked widget path", stdout)
+            config_text = config.read_text(encoding="utf-8")
+            self.assertIn(skills, config_text)
+            self.assertIn("  provider: omh\n", config_text)
+            self.assertNotIn("display", config_text)
+            self.assertTrue((profile / "plugins" / "omh" / "plugin.yaml").is_file())
+            self.assertTrue((elsewhere / "omh-status.mjs").is_file())
+
+
+if __name__ == "__main__":
+    unittest.main()

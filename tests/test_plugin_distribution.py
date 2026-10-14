@@ -24,6 +24,7 @@ from _platform_support import requires_hermes_host, requires_posix, requires_sym
 
 load_local_package()
 
+from _legacy_display import brand_legacy_home, seed_legacy_skins, seed_legacy_widget
 from omh.commands import setup as _setup_module
 from omh.config_adapter import external_dirs
 from omh.paths import resolve_paths
@@ -2328,18 +2329,20 @@ class UpdateRefreshesTheBundleTests(unittest.TestCase):
     def test_update_bootstraps_a_bundle_setup_never_installed(self) -> None:
         # Update and setup converge on the same machine state (owner decision,
         # 2026-08-20): a machine that only ever ran `omh update` still gets the
-        # plugin bundle, the widget, the registration, and the seeded chain
-        # overrides — the full pair, not the half that is worse than neither.
+        # plugin bundle, the registration, and the seeded chain overrides —
+        # the full pair, not the half that is worse than neither. Neither
+        # installs anything into Hermes' terminal any more.
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             base = ["--omh-home", str(root / ".omh"), "--hermes-home", str(root / ".hermes")]
             status, _, stderr = run_cli(base + ["update"])
             self.assertEqual(status, 0, stderr)
             self.assertTrue((self._bundle_dir(root / ".hermes") / "memory_provider.py").is_file())
-            self.assertTrue((root / ".hermes" / "tui-widgets" / "omh-status.mjs").is_file())
+            self.assertFalse((root / ".hermes" / "tui-widgets").exists())
             self.assertTrue((root / ".omh" / "routing" / "model-chains.json").is_file())
             config_text = (root / ".hermes" / "config.yaml").read_text(encoding="utf-8")
             self.assertIn("provider: omh", config_text)
+            self.assertNotIn("display:", config_text)
 
     def test_a_dry_run_update_leaves_the_installed_bundle_alone(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -2805,15 +2808,10 @@ class HermesProfileSyncTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             profile = self._profile(root, "bluntcritic")
+            config = profile / "config.yaml"
+            config.write_text("display:\n  interface: cli\n  skin: default\n", encoding="utf-8")
             status, _, stderr = run_cli(self._base(root) + ["setup", "--json"], output_json=False)
             self.assertEqual(status, 0, stderr)
-            config = profile / "config.yaml"
-            config.write_text(
-                config.read_text(encoding="utf-8")
-                .replace("  interface: tui\n", "  interface: cli\n")
-                .replace("  skin: omh\n", "  skin: default\n"),
-                encoding="utf-8",
-            )
 
             status, _, stderr = run_cli(
                 self._base(root) + ["update", "--interactive"],
@@ -2851,22 +2849,24 @@ class HermesProfileSyncTests(unittest.TestCase):
         # a home registered before that move names the OMH home's own skills
         # directory. Both are OMH-owned, so a profile carrying the older of
         # the two is registered — reading it as the deliberate opt-out is
-        # what froze one real profile's plugin bundle and TUI widget at the
-        # generation they were installed at, update after update.
+        # what froze one real profile's plugin bundle at the generation it
+        # was installed at, update after update.
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             profile = self._profile(root, "politehelper")
             status, _, stderr = run_cli(self._base(root) + ["setup"])
             self.assertEqual(status, 0, stderr)
-            widget = profile / "tui-widgets" / "omh-status.mjs"
-            self.assertTrue(widget.is_file())
             # The profile stays registered at ~/.omh/skills while the
             # command install moves on to a generation pointer.
             self.assertIn(
                 (root / ".omh" / "skills").resolve().as_posix(),
                 (profile / "config.yaml").read_text(encoding="utf-8"),
             )
-            widget.unlink()
+            # What an install from before the display release left there:
+            # the per-profile pass is what takes it out.
+            brand_legacy_home(root / ".omh", profile / "config.yaml")
+            widget = profile / "tui-widgets" / "omh-status.mjs"
+            self.assertTrue(widget.is_file())
             generation = root / "generation" / "skills"
             generation.mkdir(parents=True)
 
@@ -2878,7 +2878,8 @@ class HermesProfileSyncTests(unittest.TestCase):
             self.assertEqual(status, 0, stderr)
             self.assertIn("Bot profiles: politehelper (refreshed)", stdout)
             # Refreshed means artifacts, not just a label.
-            self.assertTrue(widget.is_file())
+            self.assertFalse(widget.exists())
+            self.assertNotIn("display:", (profile / "config.yaml").read_text(encoding="utf-8"))
 
     def test_update_migrates_a_profile_off_the_pre_pointer_path(self) -> None:
         # Carrying a pre-pointer profile forward used to ADD the generation
@@ -3297,7 +3298,7 @@ class HermesProfileSyncTests(unittest.TestCase):
             self.assertFalse((profile / "plugins").exists())
             self.assertFalse((profile / "config.yaml").exists())
 
-    def test_update_prints_the_profiles_line_before_the_tui_verdict(self) -> None:
+    def test_update_prints_the_profiles_line_and_no_hermes_tui_verdict(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._profile(root, "politehelper")
@@ -3305,8 +3306,9 @@ class HermesProfileSyncTests(unittest.TestCase):
             status, stdout, stderr = run_cli(self._base(root) + ["update"], output_json=False)
             self.assertEqual(status, 0, stderr)
             self.assertIn("Bot profiles: politehelper (refreshed)", stdout)
-            # The TUI identity verdict keeps its final-output-line contract.
-            self.assertLess(stdout.index("Bot profiles:"), stdout.index("OMH TUI:"))
+            # The verdict judged whether bare `hermes` would show the OMH
+            # surface; it does not any more, so there is nothing to judge.
+            self.assertNotIn("OMH TUI:", stdout)
 
     def test_a_home_without_profiles_reports_no_profile_rows(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -3346,6 +3348,11 @@ class HermesProfileUninstallTests(unittest.TestCase):
             unrelated = polite / "tui-widgets" / "personal.mjs"
             status, _, stderr = run_cli(self._base(root) + ["setup", "--json"], output_json=False)
             self.assertEqual((status, stderr), (0, ""))
+            # What an install from before the display release left in each
+            # profile: uninstall still takes it out.
+            for profile in (polite, blunt):
+                seed_legacy_widget(profile)
+                seed_legacy_skins(profile)
             unrelated.write_text("personal\n", encoding="utf-8")
             status, stdout, stderr = run_cli(self._base(root) + ["uninstall", "--keep-command"])
             self.assertEqual((status, stderr), (0, ""))

@@ -13,6 +13,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from _cli_harness import run_cli
+from _legacy_display import brand_legacy_home, legacy_branded_display
 from omh.local_store import utc_now
 from _platform_support import requires_posix
 from omh.cli import OmhError, cmd_runtime_merge
@@ -1537,15 +1538,11 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertIn("OMH status helper:", stdout)
             self.assertIn("Restart or reload Hermes Agent", stdout)
             self.assertIn("If Hermes cannot see OMH yet", stdout)
-            # Setup's next steps recommend the per-category model chains, and
-            # the recommendation prints before the TUI verdict so the verdict
-            # keeps its final-output-line contract.
+            # Setup's next steps recommend the per-category model chains.
             self.assertIn("Recommended: tune the per-category model chains", stdout)
             self.assertIn("omh model-chains interview", stdout)
-            self.assertLess(
-                stdout.index("Recommended: tune the per-category model chains"),
-                stdout.index("OMH TUI:"),
-            )
+            # No verdict on whether bare `hermes` shows OMH: it does not.
+            self.assertNotIn("OMH TUI:", stdout)
             self.assertIn("For machine-readable output, rerun with `--json`.", stdout)
             self.assertNotIn("skills.external_dirs", stdout)
             self.assertNotIn("Plugin bridge", stdout)
@@ -2589,8 +2586,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertIn("omh setup --default-executor", stdout)
             config_text = (hermes_home / "config.yaml").read_text(encoding="utf-8")
             self.assertIn((omh_home / "skills").resolve().as_posix(), config_text)
-            self.assertIn("  interface: tui\n", config_text)
-            self.assertIn("  skin: omh\n", config_text)
+            self.assertNotIn("display:", config_text)
             profile = json.loads((omh_home / "setup-profile.json").read_text(encoding="utf-8"))
             self.assertEqual(profile["selected_categories"], ["safety-first"])
             self.assertEqual(profile["default_executor"], "choose")
@@ -2631,15 +2627,13 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertEqual(stderr, "")
             self.assertIn("OMH setup", stdout)
             self.assertIn("OMH setup complete.", stdout)
-            # Explicit --omh-home/--hermes-home skips the scope question. Two
-            # recommended choices remain: the yes/no that activates the shared
-            # branded TUI for bare `omh` and `hermes`, and the update-check
-            # mode, whose pre-selected answer is the shipped `off`. Star
-            # remains opt-in.
+            # Explicit --omh-home/--hermes-home skips the scope question. One
+            # recommended choice remains: the update-check mode, whose
+            # pre-selected answer is the shipped `off`. Nothing here asks a
+            # yes/no (no coding CLI is detected), and star remains opt-in.
             self.assertEqual(single_choice.call_count, 1)
             self.assertIn("update", single_choice.call_args.args[0].lower())
-            self.assertEqual(yes_no.call_count, 1)
-            self.assertTrue(yes_no.call_args.kwargs["default"])
+            yes_no.assert_not_called()
             star.assert_not_called()
             profile = json.loads((omh_home / "setup-profile.json").read_text(encoding="utf-8"))
             self.assertEqual(profile["selected_categories"], ["safety-first"])
@@ -2679,8 +2673,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertEqual(single_choice.call_count, 2)
             self.assertEqual([title for title in titles if "scope" in title.lower()], titles[:1])
             self.assertIn("update", titles[1].lower())
-            self.assertEqual(yes_no.call_count, 1)
-            self.assertTrue(yes_no.call_args.kwargs["default"])
+            yes_no.assert_not_called()
             star.assert_not_called()
 
     def test_setup_and_update_json_ignore_forced_interactive_mode(self) -> None:
@@ -2701,9 +2694,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
 
             config = hermes_home / "config.yaml"
             config.write_text(
-                config.read_text(encoding="utf-8")
-                .replace("  interface: tui\n", "  interface: cli\n")
-                .replace("  skin: omh\n", "  skin: default\n"),
+                config.read_text(encoding="utf-8") + "display:\n  interface: cli\n  skin: default\n",
                 encoding="utf-8",
             )
             with patch("omh.commands.setup._ask_yes_no") as yes_no:
@@ -2714,201 +2705,6 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertEqual(status, 0, stderr)
             self.assertEqual(json.loads(stdout)["operation"], "update")
             yes_no.assert_not_called()
-            config_text = config.read_text(encoding="utf-8")
-            self.assertIn("  interface: cli\n", config_text)
-            self.assertIn("  skin: default\n", config_text)
-
-    def test_update_interactive_offers_to_restore_the_branded_tui(self) -> None:
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            omh_home = root / ".omh"
-            hermes_home = root / ".hermes"
-            base = ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home)]
-            status, _, stderr = run_cli(base + ["setup", "--json"], output_json=False)
-            self.assertEqual(status, 0, stderr)
-            config = hermes_home / "config.yaml"
-            config.write_text(
-                config.read_text(encoding="utf-8")
-                .replace("  interface: tui\n", "  interface: cli\n")
-                .replace("  skin: omh\n", "  skin: default\n"),
-                encoding="utf-8",
-            )
-
-            with patch(
-                "omh.commands.setup._ask_yes_no",
-                return_value=True,
-            ) as yes_no:
-                status, _, stderr = run_cli(
-                    base + ["update", "--interactive"],
-                    output_json=False,
-                )
-
-            self.assertEqual(status, 0, stderr)
-            self.assertEqual(yes_no.call_count, 1)
-            self.assertTrue(yes_no.call_args.kwargs["default"])
-            config_text = config.read_text(encoding="utf-8")
-            self.assertIn("  interface: tui\n", config_text)
-            self.assertIn("  skin: omh\n", config_text)
-
-    def test_update_skips_prompt_when_branded_tui_is_already_active(self) -> None:
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            omh_home = root / ".omh"
-            hermes_home = root / ".hermes"
-            base = ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home)]
-            status, _, stderr = run_cli(base + ["setup", "--json"], output_json=False)
-            self.assertEqual(status, 0, stderr)
-
-            with patch("omh.commands.setup._ask_yes_no") as yes_no:
-                status, _, stderr = run_cli(
-                    base + ["update", "--interactive"],
-                    output_json=False,
-                )
-
-            self.assertEqual(status, 0, stderr)
-            yes_no.assert_not_called()
-            config_text = (hermes_home / "config.yaml").read_text(encoding="utf-8")
-            self.assertIn("  interface: tui\n", config_text)
-            self.assertIn("  skin: omh\n", config_text)
-
-    def test_update_skips_prompt_when_a_chosen_omh_theme_is_active(self) -> None:
-        # An operator on `omh theme use crimson` has the branded TUI on. The
-        # prompt used to compare against the default skin name alone, so it
-        # asked them to switch back and their yes would have erased the theme.
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            omh_home = root / ".omh"
-            hermes_home = root / ".hermes"
-            base = ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home)]
-            status, _, stderr = run_cli(base + ["setup", "--json"], output_json=False)
-            self.assertEqual(status, 0, stderr)
-            status, _, stderr = run_cli(base + ["theme", "use", "crimson", "--json"], output_json=False)
-            self.assertEqual(status, 0, stderr)
-
-            with patch("omh.commands.setup._ask_yes_no") as yes_no:
-                status, _, stderr = run_cli(base + ["update", "--interactive"], output_json=False)
-
-            self.assertEqual(status, 0, stderr)
-            yes_no.assert_not_called()
-            self.assertIn("  skin: omh-crimson\n", (hermes_home / "config.yaml").read_text(encoding="utf-8"))
-
-    def test_accepting_the_branded_tui_keeps_a_chosen_omh_theme(self) -> None:
-        # Same guarantee one branch over: the operator declined the modern TUI
-        # earlier but kept crimson. Saying yes now must set the interface and
-        # leave the palette they picked alone.
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            omh_home = root / ".omh"
-            hermes_home = root / ".hermes"
-            base = ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home)]
-            status, _, stderr = run_cli(base + ["setup", "--json"], output_json=False)
-            self.assertEqual(status, 0, stderr)
-            run_cli(base + ["theme", "use", "amber", "--json"], output_json=False)
-            config = hermes_home / "config.yaml"
-            config.write_text(
-                config.read_text(encoding="utf-8").replace("  interface: tui\n", "  interface: cli\n"),
-                encoding="utf-8",
-            )
-
-            with patch("omh.commands.setup._ask_yes_no", return_value=True) as yes_no:
-                status, _, stderr = run_cli(base + ["update", "--interactive"], output_json=False)
-
-            self.assertEqual(status, 0, stderr)
-            self.assertEqual(yes_no.call_count, 1)
-            config_text = config.read_text(encoding="utf-8")
-            self.assertIn("  interface: tui\n", config_text)
-            self.assertIn("  skin: omh-amber\n", config_text)
-
-    def test_update_skips_prompt_for_noncanonical_display_config(self) -> None:
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            omh_home = root / ".omh"
-            hermes_home = root / ".hermes"
-            base = ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home)]
-            status, _, stderr = run_cli(base + ["setup", "--json"], output_json=False)
-            self.assertEqual(status, 0, stderr)
-            config = hermes_home / "config.yaml"
-            config.write_text(
-                config.read_text(encoding="utf-8").replace("display:\n", '"display":\n'),
-                encoding="utf-8",
-            )
-            before = config.read_text(encoding="utf-8")
-
-            with patch("omh.commands.setup._ask_yes_no") as yes_no:
-                status, _, stderr = run_cli(
-                    base + ["update", "--interactive"],
-                    output_json=False,
-                )
-
-            self.assertEqual(status, 0, stderr)
-            yes_no.assert_not_called()
-            self.assertEqual(config.read_text(encoding="utf-8"), before)
-
-    def test_update_interactive_no_keeps_the_current_hermes_display(self) -> None:
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            omh_home = root / ".omh"
-            hermes_home = root / ".hermes"
-            base = ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home)]
-            status, _, stderr = run_cli(base + ["setup", "--json"], output_json=False)
-            self.assertEqual(status, 0, stderr)
-            config = hermes_home / "config.yaml"
-            config.write_text(
-                config.read_text(encoding="utf-8")
-                .replace("  interface: tui\n", "  interface: cli\n")
-                .replace("  skin: omh\n", "  skin: default\n"),
-                encoding="utf-8",
-            )
-
-            with patch(
-                "omh.commands.setup._ask_yes_no",
-                return_value=False,
-            ) as yes_no:
-                status, _, stderr = run_cli(
-                    base + ["update", "--interactive"],
-                    output_json=False,
-                )
-
-            self.assertEqual(status, 0, stderr)
-            self.assertEqual(yes_no.call_count, 1)
-            self.assertTrue(yes_no.call_args.kwargs["default"])
-            config_text = config.read_text(encoding="utf-8")
-            self.assertIn("  interface: cli\n", config_text)
-            self.assertIn("  skin: default\n", config_text)
-
-    def test_setup_interactive_no_keeps_the_current_hermes_display(self) -> None:
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            omh_home = root / ".omh"
-            hermes_home = root / ".hermes"
-            config = hermes_home / "config.yaml"
-            config.parent.mkdir(parents=True)
-            config.write_text(
-                "display:\n  interface: cli\n  skin: default\n",
-                encoding="utf-8",
-            )
-
-            with patch(
-                "omh.commands.setup._detect_external_cli_profiles",
-                return_value=_NO_EXTERNAL_CLI_DETECTED,
-            ), patch(
-                "omh.commands.setup._ask_yes_no",
-                return_value=False,
-            ) as yes_no:
-                status, _, stderr = run_cli(
-                    [
-                        "--omh-home",
-                        str(omh_home),
-                        "--hermes-home",
-                        str(hermes_home),
-                        "setup",
-                        "--interactive",
-                    ],
-                    output_json=False,
-                )
-
-            self.assertEqual(status, 0, stderr)
-            self.assertEqual(yes_no.call_count, 1)
             config_text = config.read_text(encoding="utf-8")
             self.assertIn("  interface: cli\n", config_text)
             self.assertIn("  skin: default\n", config_text)
@@ -2927,29 +2723,27 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                     "codex": {"binary_present": False, "login_marker": "absent"},
                 },
             ), patch(
-                # TUI identity yes, maestro delegation yes, category walk no —
-                # declining the interview keeps this test's surface to the
-                # seeding + pointers the name promises.
+                # Maestro delegation yes, category walk no — declining the
+                # interview keeps this test's surface to the seeding +
+                # pointers the name promises — Claude Code subscription no.
                 "omh.commands.setup._ask_yes_no",
-                # TUI yes, maestro yes, category walk no, Claude Code
-                # subscription no.
-                side_effect=[True, True, False, False],
+                side_effect=[True, False, False],
             ) as yes_no:
                 status, stdout, stderr = run_cli(base + ["setup", "--interactive"], output_json=False)
 
             self.assertEqual(status, 0, stderr)
-            # TUI identity choice, the maestro-delegation question, the
-            # category-maestro interview offer, then the Claude Code
-            # subscription question. The provider entitlements themselves are a
-            # ticked list, not a yes/no, so they no longer add a yes/no call;
-            # tests/test_provider_entitlements.py covers the list.
-            self.assertEqual(yes_no.call_count, 4)
+            # The maestro-delegation question, the category-maestro interview
+            # offer, then the Claude Code subscription question. The provider
+            # entitlements themselves are a ticked list, not a yes/no, so they
+            # no longer add a yes/no call; tests/test_provider_entitlements.py
+            # covers the list.
+            self.assertEqual(yes_no.call_count, 3)
+            first_prompt = yes_no.call_args_list[0].args[0]
+            self.assertIn("claude-code", first_prompt)
             second_prompt = yes_no.call_args_list[1].args[0]
-            self.assertIn("claude-code", second_prompt)
+            self.assertIn("category", second_prompt)
             third_prompt = yes_no.call_args_list[2].args[0]
-            self.assertIn("category", third_prompt)
-            fourth_prompt = yes_no.call_args_list[3].args[0]
-            self.assertIn("subscription", fourth_prompt)
+            self.assertIn("subscription", third_prompt)
             dispatch_models_path = omh_home / "routing" / "dispatch-models.json"
             self.assertTrue(dispatch_models_path.exists())
             seeded = json.loads(dispatch_models_path.read_text(encoding="utf-8"))
@@ -2972,16 +2766,16 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                     "codex": {"binary_present": True, "login_marker": "absent"},
                 },
             ), patch("omh.commands.setup._env_key_names", return_value=set()), patch(
-                "omh.commands.setup._ask_yes_no", side_effect=[True, False]
+                "omh.commands.setup._ask_yes_no", side_effect=[False]
             ) as yes_no:
                 status, stdout, stderr = run_cli(base + ["setup", "--interactive"], output_json=False)
 
             self.assertEqual(status, 0, stderr)
-            # TUI, then maestro delegation (no). The provider-entitlement
-            # question has nothing to ask here: a fresh config names no
-            # provider, no env key hints one, and Codex is not a Maestro-only
-            # subscription (Hermes' openai-codex provider spends it).
-            self.assertEqual(yes_no.call_count, 2)
+            # Maestro delegation (no). The provider-entitlement question has
+            # nothing to ask here: a fresh config names no provider, no env
+            # key hints one, and Codex is not a Maestro-only subscription
+            # (Hermes' openai-codex provider spends it).
+            self.assertEqual(yes_no.call_count, 1)
             self.assertFalse((omh_home / "routing" / "dispatch-models.json").exists())
             self.assertFalse((omh_home / "routing" / "providers.json").exists())
             self.assertNotIn("dispatch-models.json", stdout)
@@ -4144,10 +3938,6 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             ) as registration_refresh,
             patch.object(
                 setup_commands,
-                "_refresh_installed_tui_widget",
-            ) as widget_refresh,
-            patch.object(
-                setup_commands,
                 "_refresh_installed_menubar_app",
             ) as menubar_refresh,
         ):
@@ -4156,7 +3946,6 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
         self.assertEqual(status, 0)
         plugin_refresh.assert_not_called()
         registration_refresh.assert_not_called()
-        widget_refresh.assert_called_once_with(args)
         menubar_refresh.assert_called_once_with(args)
 
     def test_update_refreshes_an_existing_native_menubar_install(self) -> None:
@@ -12834,8 +12623,8 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             hermes_home.mkdir(parents=True, exist_ok=True)
             base = ["--omh-home", str(omh_home), "--hermes-home", str(hermes_home)]
             config_path = hermes_home / "config.yaml"
-            # A person's own config, including a display key setup migrates
-            # under consent and a compression block it repairs in place.
+            # A person's own config, including a display block setup leaves
+            # alone and a compression block it repairs in place.
             before = (
                 "version: 1\n"
                 "display:\n"
@@ -12854,7 +12643,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertEqual(run_cli(base + ["setup", "--with-plugin", "--yes"])[0], 0)
             after_setup = config_path.read_text(encoding="utf-8")
             self.assertIn("provider: omh", after_setup)
-            self.assertIn("interface: tui", after_setup)
+            self.assertIn("display:\n  interface: cli\n  compact: true\n", after_setup)
             self.assertIn("fallback_chain:", after_setup)
 
             status, stdout, stderr = run_cli(base + ["uninstall", "--dry-run"])
@@ -12866,9 +12655,6 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                 {row["key"] for row in preview["config_keys"] if row["status"] == "reversed"},
                 {
                     "auxiliary.compression.fallback_chain",
-                    "display.interface",
-                    "display.sections",
-                    "display.skin",
                     "memory.provider",
                     "plugins.enabled",
                     # Written because this store is not `~/.omh` (#1960).
@@ -12896,8 +12682,12 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             config_path.write_text(before, encoding="utf-8", newline="")
 
             self.assertEqual(run_cli(base + ["setup", "--with-plugin", "--yes"])[0], 0)
-            # Imitate an install that predates the write record: everything
+            # Imitate an install that predates the write record, made by a
+            # version that still wrote the branded display keys: everything
             # setup wrote is in the config, nothing says OMH wrote it.
+            config_path.write_text(
+                legacy_branded_display(config_path.read_text(encoding="utf-8")), encoding="utf-8", newline=""
+            )
             state_path = omh_home / "runtime" / "state.json"
             state = json.loads(state_path.read_text(encoding="utf-8"))
             self.assertIn("hermes_config_writes", state)
@@ -12968,7 +12758,6 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             remaining = config_path.read_text(encoding="utf-8")
             self.assertIn("  provider: omh", remaining)
             self.assertIn("    - omh", remaining)
-            self.assertIn("  skin: omh", remaining)
 
     def test_a_bot_profile_does_not_cost_the_primary_home_its_write_record(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -13000,7 +12789,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                 {row["key"] for row in payload["config_keys"] if row["status"] == "unrecorded"},
                 set(),
             )
-            self.assertNotIn("interface: tui", config_path.read_text(encoding="utf-8"))
+            self.assertNotIn("provider: omh", config_path.read_text(encoding="utf-8"))
 
     def test_uninstall_reverses_a_bot_profiles_config_the_way_it_does_the_primary(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -13015,7 +12804,7 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
                 config.write_text(before, encoding="utf-8", newline="")
 
             self.assertEqual(run_cli(base + ["setup", "--with-plugin", "--yes"])[0], 0)
-            # Setup writes the same seven keys to the profile home.
+            # Setup writes the same keys to the profile home.
             self.assertIn("provider: omh", (profile / "config.yaml").read_text(encoding="utf-8"))
 
             status, stdout, stderr = run_cli(base + ["uninstall"])
@@ -13030,9 +12819,6 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             self.assertEqual(
                 {entry["key"] for entry in row["config_keys"] if entry["status"] == "reversed"},
                 {
-                    "display.interface",
-                    "display.sections",
-                    "display.skin",
                     "memory.provider",
                     "plugins.enabled",
                     # `root/.omh` is not `~/.omh`, so the profile, naming no
@@ -13076,6 +12862,9 @@ Latest runtime run: 20260625T090917585910Z-loop-goal-loop-8b5bec.
             config = hermes_home / "config.yaml"
 
             self.assertEqual(run_cli(base + ["setup", "--with-plugin", "--yes"])[0], 0)
+            # An install the display release has not reached yet: the
+            # sections are OMH's on record, and the person changed one.
+            brand_legacy_home(omh_home, config)
             config.write_text(
                 config.read_text(encoding="utf-8").replace("    tools: collapsed", "    tools: expanded"),
                 encoding="utf-8",

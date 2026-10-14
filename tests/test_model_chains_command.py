@@ -237,18 +237,18 @@ class ModelChainsSetupWizardTests(unittest.TestCase):
                 ),
                 patch.object(setup_module, "_env_key_names", return_value=set()),
                 patch.object(setup_module, "_stdin_is_tty", return_value=True),
-                # TUI identity yes, then the chain-walk offer declined. The
-                # maestro and provider-entitlement questions have nothing to
-                # ask: no CLI is on PATH and a fresh config names no provider.
-                patch.object(setup_module, "_ask_yes_no", side_effect=[True, False]) as yes_no,
+                # The chain-walk offer, declined. The maestro and
+                # provider-entitlement questions have nothing to ask: no CLI
+                # is on PATH and a fresh config names no provider.
+                patch.object(setup_module, "_ask_yes_no", side_effect=[False]) as yes_no,
             ):
                 status, stdout, stderr = run_cli(
                     self._wizard_base(root) + ["setup", "--interactive"], output_json=False
                 )
 
             self.assertEqual((status, stderr), (0, ""), stdout)
-            self.assertEqual(yes_no.call_count, 2)
-            self.assertIn("chains", yes_no.call_args_list[1].args[0].lower())
+            self.assertEqual(yes_no.call_count, 1)
+            self.assertIn("chains", yes_no.call_args_list[0].args[0].lower())
             self.assertEqual(
                 json.loads(_chains_path(root).read_text(encoding="utf-8")),
                 _SEEDED_EMPTY_DOCUMENT,
@@ -267,7 +267,7 @@ class ModelChainsSetupWizardTests(unittest.TestCase):
                 ),
                 patch.object(setup_module, "_env_key_names", return_value=set()),
                 patch.object(setup_module, "_stdin_is_tty", return_value=True),
-                patch.object(setup_module, "_ask_yes_no", side_effect=[True, True]),
+                patch.object(setup_module, "_ask_yes_no", side_effect=[True]),
                 patch.object(
                     model_chains_module,
                     "model_chains_interview",
@@ -308,7 +308,7 @@ class ModelChainsSetupWizardTests(unittest.TestCase):
                 ),
                 patch.object(setup_module, "_env_key_names", return_value=set()),
                 patch.object(setup_module, "_stdin_is_tty", return_value=True),
-                patch.object(setup_module, "_ask_yes_no", side_effect=[True, True]),
+                patch.object(setup_module, "_ask_yes_no", side_effect=[True]),
                 patch.object(model_chains_module, "_stdin_is_tty", return_value=True),
                 patch("builtins.input", side_effect=lambda *_: next(responses)),
             ):
@@ -564,10 +564,10 @@ class ModelChainsSetupTerminalTests(unittest.TestCase):
     def test_declining_on_a_terminal_leaves_the_empty_seed(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            # TUI identity no, the chain offer declined, then Enter through
-            # the update-check question. Without that third answer the child
-            # blocks on a prompt the pty never closes and the run times out.
-            transcript = self._run_setup_under_pty(root, ["n", "n", ""])
+            # The chain offer declined, then Enter through the update-check
+            # question. Without that second answer the child blocks on a
+            # prompt the pty never closes and the run times out.
+            transcript = self._run_setup_under_pty(root, ["n", ""])
 
             self.assertIn("Walk the per-category model chains now (interview)?", transcript)
             # Default No: a bare Enter has to keep the shipped chains.
@@ -583,7 +583,7 @@ class ModelChainsSetupTerminalTests(unittest.TestCase):
         # so the answer has to outlive it. Option numbering follows the
         # interview's own rules: 1) keep, 2) Ultrafast when the chain has a
         # swappable member, last) custom entry.
-        answers = ["n", "y"]
+        answers = ["y"]
         for name, chain in HERMES_MIXTURE_CATEGORY_CHAINS.items():
             has_ultrafast = any(model in ("glm-5.2", "kimi-k3") for model, _ in chain)
             if name == "writing":
