@@ -45,6 +45,27 @@ All notable changes will be documented here.
   list, and Enter or a click opens one agent's read-only log, with mouse
   reports on only while an agent is there to click.
 
+- **In the OMH TUI, `/reload-skills` makes a newly installed skill runnable,
+  and a turn of unknown gateway events says so.** `/reload-skills` (or
+  `/reload_skills`) has Hermes re-scan its skills in the gateway itself, then
+  reads the command list again, so a skill installed after the TUI started
+  (`omh update`, `/skills install`) runs as `/<name>` without a restart. The
+  command list is read for each session the TUI opens, so a project's own
+  skills follow its workspace; its warning (skill discovery failed, or skills
+  that run only as `/skill <name>`) shows once; `/help` lists Hermes'
+  commands by category with a count of skill commands and is paged when long;
+  and completion also matches part of a name, so `/uml` finds
+  `/omh-codebase-uml`. A turn that brings no event the TUI shows, only types
+  it does not know, gets one notice pointing at `omh doctor`, whose OMH TUI
+  check now prints the installed Hermes commit next to the one the TUI was
+  declared against. `omh` opens Hermes' own terminal only on exit 75 together
+  with a file it named for that launch, so a 75 Hermes returns for a reason
+  of its own no longer opens a second terminal. The HUD's agent panel shows a
+  Hermes-native subagent whose session has ended as finished at once, where
+  it showed it running for up to 150 seconds. A plan item carrying an escape
+  sequence is stored without it, where the sequence's parameters (`[31m`)
+  used to stay behind as text.
+
 - **The OMH status widget and the Hermes Desktop pane keep ordinary
   punctuation and drop whole escape sequences.** Their character allowlists
   dropped apostrophes, commas, question marks and quotes, so a plan item
