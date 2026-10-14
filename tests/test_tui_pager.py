@@ -150,6 +150,13 @@ class HistoryPagerTests(unittest.TestCase):
         self.assertEqual(len(renders), 2000)
         self.assertEqual(sorted(index for index, count in renders.items() if count > 1), list(range(1994, 2000)))
 
+    def test_its_fields_hide_no_method_of_pager(self) -> None:
+        pager = self.history(items_of([3] * 50))
+        pager.frame(80, 24, THEME)
+        hidden = [name for name, value in vars(Pager).items() if callable(value) and not callable(getattr(pager, name))]
+        self.assertEqual(hidden, [])
+        Pager._scroll(pager, 1, 24)  # reached through the base class, as Pager's own methods reach it
+
     def test_a_frame_that_moves_nothing_does_not_walk_the_last_page_again(self) -> None:
         pager = self.history(items_of([3] * 2000))
         pager.frame(80, 24, THEME)  # the top page; the last page's top is found once, to bound the moves

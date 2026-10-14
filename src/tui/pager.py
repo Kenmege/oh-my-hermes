@@ -150,7 +150,7 @@ class HistoryPager(Pager):
     _drawn: tuple[int, Theme] | None = field(default=None, init=False, repr=False, compare=False)
     _first: int | None = field(default=None, init=False, repr=False, compare=False)
     # The last page's top, found for (body rows, count) at the width and theme drawn; every frame bounds by it.
-    _last_top: tuple[tuple[int, int], tuple[int, int]] | None = field(default=None, init=False, repr=False, compare=False)
+    _last_page: tuple[tuple[int, int], tuple[int, int]] | None = field(default=None, init=False, repr=False, compare=False)
 
     def _scroll(self, step: int, rows: int) -> None:
         self._step += step
@@ -195,14 +195,14 @@ class HistoryPager(Pager):
         drawn, so a frame that moves nothing walks no block for it.
         """
         key = (body, self.count)
-        if self._last_top is not None and self._last_top[0] == key:
-            return self._last_top[1]
+        if self._last_page is not None and self._last_page[0] == key:
+            return self._last_page[1]
         index, total = self.count, 0
         while index > 0 and total < body:
             index -= 1
             total += len(self._rows(index, cols, theme))
         top = index, max(total - body, 0)
-        self._last_top = (key, top)
+        self._last_page = (key, top)
         return top
 
     def _settle(self, cols: int, body: int, theme: Theme) -> None:
@@ -222,7 +222,7 @@ class HistoryPager(Pager):
 
     def _page(self, cols: int, rows: int, theme: Theme) -> tuple[list[Line], str]:
         if self._drawn is None or self._drawn[0] != cols or self._drawn[1] is not theme:
-            self._kept, self._first, self._last_top = {}, None, None
+            self._kept, self._first, self._last_page = {}, None, None
             self._drawn = (cols, theme)
         body = self.body_rows(rows)
         self._settle(cols, body, theme)
