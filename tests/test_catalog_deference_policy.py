@@ -342,24 +342,24 @@ KNOWN_INVERSIONS: dict[tuple[str, tuple[str, ...]], str] = {
 }
 
 
-# Recorded unreachable siblings, keyed (owner, sibling). `spend-gate` admits a
-# request only when a spend leads its clause (#2121), so an owner's statement
-# that hands a spend to it ("...; use `spend-gate`") never surfaces it, and
-# the owner then outranks it by default. The router is not bent to fit the
-# prose; each pair is recorded here with its reason, a recorded pair that
-# becomes reachable fails, and `EXPECTED_UNREACHABLE_COUNT` makes growing the
-# list a deliberate edit.
-KNOWN_UNREACHABLE: dict[tuple[str, str], str] = {
-    ("automation-blueprint", "spend-gate"): (
-        "A recurring job that would move money belongs to spend-gate, whose admission reads only a clause "
-        "that leads with a spend; the statement describes the job, so the router leaves spend-gate out."
-    ),
-    ("browser-operator", "spend-gate"): (
-        "A page step that moves money belongs to spend-gate, whose admission reads only a clause that leads "
-        "with a spend; the statement describes the page step, so the router leaves spend-gate out."
-    ),
+# Siblings that are unreachable by design, keyed (owner, sibling). This is not
+# routing debt: the router offers the sibling only to a shape of request that a
+# Do-Not-Use statement is not, so the statement cannot surface it, and the owner
+# then outranks it by default. Each pair carries its reason; a pair that becomes
+# reachable fails until its entry is deleted, the rule `docs navigation --check`
+# applies to a reachable page still marked exempt; and
+# `EXPECTED_DELIBERATELY_UNREACHABLE_COUNT` makes growing the list a deliberate
+# edit.
+_SPEND_GATE_BY_DESIGN = (
+    "by design (#2121): spend-gate is offered only to a request clause that leads with a spend and carries a "
+    "request marker; a Do-Not-Use line is not such a request, so it cannot surface spend-gate. A person's "
+    "marked request ('please pay ... with my card') reaches it."
+)
+DELIBERATELY_UNREACHABLE: dict[tuple[str, str], str] = {
+    ("automation-blueprint", "spend-gate"): _SPEND_GATE_BY_DESIGN,
+    ("browser-operator", "spend-gate"): _SPEND_GATE_BY_DESIGN,
 }
-EXPECTED_UNREACHABLE_COUNT = 2
+EXPECTED_DELIBERATELY_UNREACHABLE_COUNT = 2
 
 
 def _deference_cases() -> list[tuple[str, tuple[str, ...], str]]:
@@ -457,7 +457,8 @@ class CatalogDeferenceGraphTests(unittest.TestCase):
         a statement where NEITHER the owner nor its sibling appears scores as a
         tie and reports no inversion - compliance by absence. Routing neither
         party for a sentence describing a real request is arguably worse than an
-        inversion, so it is asserted here instead of being absorbed there.
+        inversion, so it is asserted here instead of being absorbed there. A pair
+        in `DELIBERATELY_UNREACHABLE` is exempt only while it stays unreachable.
         """
 
         unreachable = [
@@ -468,27 +469,30 @@ class CatalogDeferenceGraphTests(unittest.TestCase):
         ]
         found = {(owner, sibling) for owner, sibling, _ in unreachable}
         self.assertEqual(
-            sorted(set(KNOWN_UNREACHABLE) - found),
+            sorted(set(DELIBERATELY_UNREACHABLE) - found),
             [],
-            "a recorded unreachable sibling is reachable now; drop it from KNOWN_UNREACHABLE",
+            "a pair listed in DELIBERATELY_UNREACHABLE is reachable now, or no longer a deference pair; delete "
+            "its entry so the list keeps describing live behaviour",
         )
         self.assertEqual(
-            [(owner, sibling) for owner, sibling, _ in unreachable if (owner, sibling) not in KNOWN_UNREACHABLE],
+            [(owner, sibling) for owner, sibling, _ in unreachable if (owner, sibling) not in DELIBERATELY_UNREACHABLE],
             [],
             f"a skill hands a request to a sibling the router does not surface within the top "
             f"{FIELD_LIMIT}; the deference boundary is unreachable, not merely out-ranked",
         )
 
-    def test_every_recorded_unreachable_sibling_carries_a_rationale(self) -> None:
+    def test_every_deliberately_unreachable_pair_says_why(self) -> None:
         thin = sorted(
-            key for key, rationale in KNOWN_UNREACHABLE.items() if len(rationale.strip()) < MINIMUM_RATIONALE_LENGTH
+            key
+            for key, rationale in DELIBERATELY_UNREACHABLE.items()
+            if len(rationale.strip()) < MINIMUM_RATIONALE_LENGTH or not rationale.startswith("by design")
         )
-        self.assertEqual(thin, [], "a recorded unreachable sibling carries no real reason")
+        self.assertEqual(thin, [], "a deliberately unreachable pair must say why it is unreachable by design")
         self.assertEqual(
-            len(KNOWN_UNREACHABLE),
-            EXPECTED_UNREACHABLE_COUNT,
-            "the recorded-unreachable list changed size; growing it must be a deliberate edit to "
-            "EXPECTED_UNREACHABLE_COUNT",
+            len(DELIBERATELY_UNREACHABLE),
+            EXPECTED_DELIBERATELY_UNREACHABLE_COUNT,
+            "the deliberately-unreachable list changed size; growing it must be a deliberate edit to "
+            "EXPECTED_DELIBERATELY_UNREACHABLE_COUNT",
         )
 
     def test_every_recorded_inversion_carries_a_rationale(self) -> None:
@@ -511,8 +515,8 @@ class CatalogDeferenceGraphTests(unittest.TestCase):
     def test_no_skill_outranks_the_sibling_it_defers_to(self) -> None:
         inversions: dict[tuple[str, tuple[str, ...]], str] = {}
         for owner, siblings, statement in _deference_cases():
-            if all((owner, sibling) in KNOWN_UNREACHABLE for sibling in siblings):
-                # Unreachable, which the test above records; it outranks nothing it can see.
+            if all((owner, sibling) in DELIBERATELY_UNREACHABLE for sibling in siblings):
+                # Unreachable by design, which the reachability test holds; there is no rank to compare.
                 continue
             field = _routed_field(statement)
             # `min` is the lenient reading for the 12 statements naming more than
