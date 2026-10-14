@@ -2136,23 +2136,23 @@ class KeyTests(AppTestCase):
         app._on_path_items(app.path_seq, "@sr", items)
         self.assertEqual(app.path_items, [])
 
-    def test_ctrl_o_toggles_details(self) -> None:
-        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
-        terminal = run.terminal
-        client = self.make_client(run)(gateway_spawn(run.environ))
-        client.start(ready_timeout=10.0)
-        app = App(terminal, client, run.environ, poller=run.poller)
-        app.startup()
-        seen: list[bool] = []
-        terminal.script(
-            Step(b"\x0f", when=terminal.idle, label="idle"),
-            Step(b"\x0f", when=lambda: app.transcript.details_expanded and not seen.append(True), label="expanded"),
-            Step(b"\x04", when=lambda: not app.transcript.details_expanded, label="collapsed"),
+    def test_ctrl_o_opens_the_details_view_and_q_leaves_it(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers())
         )
-        with terminal:
-            run.code = app.run()
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "Reply with exactly the word: ok"),
+            Step(b"\x0f", when=lambda: "later." in terminal.history() and terminal.idle(), label="the reply"),
+            Step(b"q", when=lambda: terminal.screen.alternate, capture="details", label="the details view"),
+            Step(b"\x04", when=lambda: not terminal.screen.alternate and terminal.idle(), label="back"),
+        )
+        self.run_main(run)
         self.assert_clean_run(run)
-        self.assertEqual(seen, [True])
+        details = "\n".join(terminal.captures["details"])
+        self.assertIn("› Reply with exactly the word: ok", details)
+        self.assertIn("⏺ ok", details)
+        self.assertIn("history · ", details)
 
     def test_ctrl_l_redraws_the_session_from_memory(self) -> None:
         run = self.prepare(

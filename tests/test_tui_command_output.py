@@ -115,6 +115,33 @@ class CommandEchoTests(unittest.TestCase):
         self.assertFalse([entry for entry in app.transcript.blocks if isinstance(entry, (CommandBlock, NoticeBlock))])
 
 
+class DetailsViewTests(unittest.TestCase):
+    def test_ctrl_o_opens_the_whole_transcript_with_details_at_its_end(self) -> None:
+        from omh.tui.keys import CHAR
+        from omh.tui.pager import HistoryPager
+
+        app, client = make_app(rows=12, cols=80)
+        for number in range(30):
+            app.transcript.add_notice(f"notice {number}")
+        app._on_input(Key(CHAR, "o", ctrl=True))
+        self.assertIsInstance(app.pager, HistoryPager)
+        screen = drawn(app)
+        self.assertIn("· notice 29", screen)  # the last page, not the first
+        self.assertNotIn("· notice 0", screen)
+        self.assertEqual(client.calls, [])
+
+    def test_ctrl_o_leaves_an_open_question_on_screen(self) -> None:
+        from omh.tui.gateway import ServerRequest
+        from omh.tui.keys import CHAR
+
+        app, _client = make_app()
+        app.transcript.add_notice("something to show")  # so a view would have rows to open on
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+        app._on_input(Key(CHAR, "o", ctrl=True))
+        self.assertIsNone(app.pager)
+        self.assertIsNotNone(app.slot)
+
+
 class DocumentedOutputTests(unittest.TestCase):
     def test_installation_names_the_rows_the_code_shows(self) -> None:
         from pathlib import Path

@@ -182,6 +182,10 @@ class ToolRow:
     diff_root: str = ""  # the session's working directory, which the diff's file names are shown relative to
     # The parsed diff, kept while the row's group is live (it is drawn again on every change); None otherwise.
     held_lines: tuple[DiffLine, ...] | None = field(default=None, repr=False, compare=False)
+    # The first lines of what the tool printed (`TOOL_OUTPUT_KEEP` at most), and how many more it printed; for a
+    # failed tool, its error's first line.
+    output: tuple[str, ...] = ()
+    output_more: int = 0
 
     def diff_lines(self, hold: bool = False) -> tuple[DiffLine, ...]:
         """The diff colour-stripped and classified, its file names relative to `diff_root`.
@@ -334,6 +338,33 @@ def compact_count(value: float) -> str:
 
 def _earlier(count: int) -> str:
     return f"{count} earlier {'message' if count == 1 else 'messages'}"
+
+
+# Where a tool's printed text is in its result, in order; a failed tool's error first.
+_OUTPUT_KEYS = ("output", "stdout", "content", "text")
+_ERROR_KEYS = ("error", "stderr", "user_summary", "output")
+TOOL_OUTPUT_ROWS = 3  # shown under a tool row; the details view shows up to TOOL_OUTPUT_KEEP
+TOOL_OUTPUT_KEEP = 40
+
+
+def _tool_output(result: object, status: str) -> tuple[tuple[str, ...], int]:
+    """(first lines, how many more) of what a tool printed; a failed tool gives its error's first line only."""
+    if isinstance(result, str):
+        texts = [result]
+    elif isinstance(result, dict):
+        keys = _ERROR_KEYS if status == TOOL_ERROR else _OUTPUT_KEYS
+        texts = [as_text(result.get(key)) for key in keys]
+    else:
+        return (), 0
+    text = next((candidate for candidate in texts if candidate.strip()), "")
+    lines = [clean_text(line).rstrip() for line in text.split("\n")]
+    while lines and not lines[-1].strip():
+        lines.pop()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if status == TOOL_ERROR:
+        return tuple(lines[:1]), 0
+    return tuple(lines[:TOOL_OUTPUT_KEEP]), max(len(lines) - TOOL_OUTPUT_KEEP, 0)
 
 
 def _relative(root: str, path: str) -> str:
@@ -506,6 +537,21 @@ def _tool_row(tool: ToolRow, width: int, theme: Theme) -> Line:
     return truncate_line((*head, *args, *tail), width)
 
 
+def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> list[Line]:
+    """The tool's printed lines under its name, each cut to the width: three of them, or all kept with `expanded`."""
+    if not tool.output:
+        return []
+    shown = tool.output if expanded else tool.output[:TOOL_OUTPUT_ROWS]
+    hidden = len(tool.output) - len(shown) + tool.output_more
+    style = theme.error if tool.status == TOOL_ERROR else theme.muted
+    first: Line = (Span(TOOL_ROW_INDENT * 2), Span(TOOL_SUMMARY_MARK, theme.dim))
+    rest: Line = (Span(TOOL_ROW_INDENT * 2 + " " * len(TOOL_SUMMARY_MARK)),)
+    rows = [truncate_line((*(rest if index else first), Span(line, style)), width) for index, line in enumerate(shown)]
+    if hidden:
+        rows.append(truncate_line((*rest, Span(f"… +{hidden} line{'' if hidden == 1 else 's'}", theme.muted)), width))
+    return rows
+
+
 def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool) -> list[Line]:
     header = [Span(TOOL_GROUP_MARK, theme.tool), Span(f"Tool calls ({len(group.tools)})", theme.label)]
     if group.parallel > 1:
@@ -521,6 +567,8 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool) -> li
         lines = tool.diff_lines(hold=not group.done) if tool.inline_diff else ()
         if lines:
             rows.extend(diff_rows(lines, width, theme, full=expanded))
+        else:
+            rows.extend(_output_rows(tool, width, theme, expanded))
     return rows
 
 
@@ -827,6 +875,7 @@ class Transcript:
         row.status = tool_result_status(payload.get("result"))
         row.duration_s = _duration(payload, row, self._clock())
         row.summary = _result_summary(payload)
+        row.output, row.output_more = _tool_output(payload.get("result"), row.status)
         row.inline_diff, row.diff_root = as_text(payload.get("inline_diff")).encode("utf-8", "surrogatepass"), self.cwd
         row.held_lines = None
 

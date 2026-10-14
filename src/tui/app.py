@@ -121,6 +121,7 @@ from .keys import (
     BACKSPACE,
     CHAR,
     DOWN,
+    END,
     ENTER,
     ESCAPE,
     LEFT,
@@ -1672,11 +1673,15 @@ class App(ModesMixin, AgentViewMixin):
             self._accept_completion()
 
     def _display_key(self, event: Key | Paste) -> bool:
-        """Ctrl+O (details) and Ctrl+L (redraw) work whatever has the keys; True when it was one."""
+        """Ctrl+O (the details view) and Ctrl+L (redraw) work whatever has the keys; True when it was one.
+
+        Ctrl+O while Hermes asks something leaves the question on screen.
+        """
         if not isinstance(event, Key) or event.name != CHAR or not event.ctrl or event.alt:
             return False
         if event.char == "o":
-            self._details("")
+            if self.slot is None:
+                self._details_view()
         elif event.char == "l":
             self._redraw("")
         else:
@@ -2532,6 +2537,12 @@ class App(ModesMixin, AgentViewMixin):
             transcript.add_notice("Nothing in this session's transcript yet.")
             return
         self._show_pager(pager)
+
+    def _details_view(self) -> None:
+        """The whole transcript with every detail (thinking, tool output, whole diffs) in the pager, at its end."""
+        self._history("")
+        if isinstance(self.pager, HistoryPager):
+            self.pager.handle_key(Key(END), self.size[1])
 
     def _details(self, arg: str) -> None:
         # No notice: a new block would close the live one, the only block the toggle changes.

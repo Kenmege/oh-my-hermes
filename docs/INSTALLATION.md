@@ -406,6 +406,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   terminal's own notification: OSC 9 in iTerm2, WezTerm and Ghostty, OSC 777
   in foot and rxvt, the bell elsewhere (tmux among them, which flags the
   window); `OMH_TUI_BELL=0` keeps both quiet.
+- Each tool call's row shows the first three lines of what the tool printed
+  under its name (`⎿`) and counts the rest; a failed call (`✗`) shows its
+  error's first line in the error colour. Ctrl+O opens the whole transcript
+  with every detail (thinking, tool output, whole diffs) in the pager, at its
+  end.
 - While a turn runs, the working row reads
   `⠋ <what Hermes is doing> (12s · ↓1.2k tokens · esc to interrupt)`, the
   tokens being what the turn has written so far; each turn ends with a line
@@ -473,7 +478,7 @@ Esc closes it):
 | Esc | Closes the `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run); cancels a rewind you picked |
 | Esc Esc | With text, clears it and keeps it in this session's history; on an empty composer between turns, lists your prompts to rewind to (`/rewind` does too) |
 | Ctrl+V | Attaches the clipboard image |
-| Ctrl+O | Shows or hides thinking and tool detail |
+| Ctrl+O | Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end; q leaves it |
 | Ctrl+L | Redraws the screen |
 | Ctrl+C | Clears the composer, interrupts a running turn, or (twice when idle) exits |
 | Ctrl+D | On an empty composer, exits; with text, deletes the character ahead |

@@ -642,13 +642,17 @@ class ReasoningAndToolTests(LoopTestCase):
             [
                 "⏺ Tool calls (3)  parallel ×2",
                 "  ✓ read_file  src/a.py  0.5s",
+                "    ⎿ x",
                 "  ✗ search_files  needle  0.7s",
+                "    ⎿ rg failed",
                 "  ✗ terminal  pytest  2.0s",
+                "    ⎿ 1 failed",
             ],
         )
         self.assertEqual(self.taken[0][-1].style, THEME.accent)
         self.assertEqual(self.taken[1][1].style, THEME.ok)
-        self.assertEqual(self.taken[2][1].style, THEME.error)
+        self.assertEqual(self.taken[4][-1].style, THEME.error)  # a failure's first line
+        self.assertEqual(self.taken[3][1].style, THEME.error)  # the ✗ of search_files, under read_file's output
         self.step(ev("message.complete", text="Done.", status="complete"))
         self.assertIn("    ⎿ rg failed", self.history())
         self.assertIn("    ⎿ 1 failed", self.history())
@@ -727,7 +731,7 @@ class ReasoningAndToolTests(LoopTestCase):
         self.step(ev("message.complete", text="It is fine.", status="complete"))
         self.assertEqual(
             self.history(details=False),
-            ["⏺ Let me check the file.", "", "  ✓ read_file  a.py  0.1s", "", "⏺ It is fine."],
+            ["⏺ Let me check the file.", "", "  ✓ read_file  a.py  0.1s", "    ⎿ ok", "", "⏺ It is fine."],
         )
 
     def test_interim_text_that_never_streamed_becomes_its_own_block_once(self) -> None:
@@ -753,7 +757,9 @@ class TurnEndTests(LoopTestCase):
             )
         )
         flushed = self.step(ev("message.delta", text="\n\n1\n2\n"))
-        self.assertEqual(flushed, ["", "  ✓ terminal  seq 1 300  0.1s", "", "⏺ 1", "  2"])
+        self.assertEqual(
+            flushed, ["", "  ✓ terminal  seq 1 300  0.1s", "    ⎿ 1", "      2", "      3", "      … +3 lines", "", "⏺ 1", "  2"]
+        )
         flushed = self.step(ev("message.complete", text="1\n2", status="interrupted", partial=True))
         self.assertEqual(flushed, ["", "⚠ Interrupted."])
         self.assertEqual(self.taken[-1][0].style, THEME.warn)
@@ -965,7 +971,7 @@ class InlineDiffTests(LoopTestCase):
         self.assertEqual(lines_text(self.taken)[-1], "    … +8 lines (/history shows all)")
         self.assertEqual(self.live(), [])
 
-    def test_a_denied_or_failed_edit_without_a_diff_shows_nothing_extra(self) -> None:
+    def test_a_denied_edit_without_a_diff_shows_nothing_extra_and_a_failed_one_its_error(self) -> None:
         self.step(ev("message.start"))
         self.edit(None, {"approved": False, "user_consent": False}, tool_id="a")
         self.edit("", {"success": False, "error": "old_string not found in src/app.py"}, tool_id="b")
@@ -977,7 +983,9 @@ class InlineDiffTests(LoopTestCase):
                 "⏺ Tool calls (3)",
                 "  ⊘ patch  src/app.py  0.3s",
                 "  ✗ patch  src/app.py  0.3s",
+                "    ⎿ old_string not found in src/app.py",
                 "  ✗ patch  src/app.py  0.3s",
+                "    ⎿ no change",
             ],
         )
 
@@ -1062,3 +1070,42 @@ class CommandOutputTests(LoopTestCase):
         block = self.transcript.blocks[-1]
         self.assertIsInstance(block, CommandBlock)
         self.assertEqual((block.command, block.done), ("/model", True))
+
+
+class ToolOutputTests(LoopTestCase):
+    """Each tool row shows the first lines of what the tool printed; a failed one, its error's first line."""
+
+    def run_tool(self, result: object, name: str = "terminal", **payload: object) -> list[str]:
+        self.step(ev("message.start"))
+        self.step(ev("tool.start", tool_id="t1", name=name, context="seq 1 300"))
+        self.step(ev("tool.complete", tool_id="t1", name=name, result=result, duration_s=0.06, **payload))
+        return self.step(ev("message.complete", text="", status="complete"))
+
+    def test_the_first_three_lines_of_the_output_and_a_count_of_the_rest(self) -> None:
+        # Recorded from Hermes 6c61c3e27d (session fixture, the interrupted turn's `seq 1 300`).
+        flushed = self.run_tool({"output": "1\n2\n3\n4\n5\n[trimmed: 295 more lines]", "exit_code": 0, "error": None})
+        self.assertEqual(flushed[0].split("  ")[1], "✓ terminal")
+        self.assertEqual(flushed[1:], ["    ⎿ 1", "      2", "      3", "      … +3 lines"])  # under the tool's name
+        self.assertEqual(self.taken[-1][-1].style, THEME.muted)
+
+    def test_a_failed_tool_shows_its_errors_first_line_in_the_error_colour(self) -> None:
+        flushed = self.run_tool({"output": "", "exit_code": 2, "error": "ls: x.py: No such file or directory\nmore"})
+        self.assertIn("✗ terminal", flushed[0])
+        self.assertEqual(flushed[1:], ["    ⎿ ls: x.py: No such file or directory"])
+        self.assertEqual(self.taken[-1][-1].style, THEME.error)
+
+    def test_a_tool_that_printed_nothing_adds_no_row(self) -> None:
+        self.assertEqual(len(self.run_tool({"output": "", "exit_code": 0, "error": None})), 1)
+
+    def test_a_tool_whose_result_holds_no_text_adds_no_row(self) -> None:
+        self.assertEqual(len(self.run_tool({"responses": [{"status": "answered"}]}, name="clarify")), 1)
+
+    def test_an_edit_with_a_diff_shows_the_diff_and_no_output(self) -> None:
+        diff = "--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+b"
+        flushed = self.run_tool({"success": True, "output": "patched x.py"}, name="patch", inline_diff=diff)
+        self.assertNotIn("patched x.py", "\n".join(flushed))
+
+    def test_details_show_more_of_the_output(self) -> None:
+        self.run_tool({"output": "\n".join(f"row {number}" for number in range(10)), "exit_code": 0})
+        detailed = self.history(details=True)
+        self.assertIn("      row 9", detailed)

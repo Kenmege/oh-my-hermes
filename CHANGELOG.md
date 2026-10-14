@@ -44,7 +44,9 @@ All notable changes will be documented here.
   transcript. The working row counts the turn's tokens, each turn ends with
   `✻ 34s · 3 tools · ↓1.2k`, a turn of 10 s or more ends with the terminal's
   notification (OSC 9, OSC 777 or the bell; `OMH_TUI_BELL=0` silences it), and
-  the terminal title names the session and its state.
+  the terminal title names the session and its state. A tool row shows the
+  first three lines of what the tool printed (a failed one its error's first
+  line), and Ctrl+O opens the whole transcript with every detail.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:
