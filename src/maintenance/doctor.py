@@ -490,7 +490,6 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
     checks.append(_retired_skill_install_check(paths))
     checks.append(_flat_skill_layout_check(paths))
     checks.append(_plugin_ulw_lifecycle_check(paths))
-    checks.extend(_hermes_tui_checks(paths))
     checks.append(_omh_tui_check(paths))
     checks.append(_hermes_model_routing_check(paths))
     checks.append(_provider_entitlements_check(paths))
@@ -626,183 +625,19 @@ def _structural_search_check(*, which: Callable[[str], str | None] | None = None
     )
 
 
-def _hermes_tui_checks(paths: OmhPaths) -> list[Check]:
-    """Hermes-side TUI preflight findings.
-
-    The OMH HUD/todo surface renders only inside Hermes' modern TUI, and none
-    of the conditions for that are visible from OMH's own install state. An
-    old Hermes, a stripped widget SDK, an unset ``display.interface``, or a
-    stale embedded interpreter each degrade to a silent no-render — doctor
-    names the condition and the repair instead of leaving the user to diff
-    screenshots.
-    """
-    from .hermes_tui import hermes_tui_preflight
-
-    preflight = hermes_tui_preflight(paths)
-    install = preflight["install"]
-    if not install["found"]:
-        return [
-            Check(
-                "hermes_tui_support",
-                True,
-                f"Hermes install not found at {install['path']}; TUI checks skipped",
-                observed=False,
-            )
-        ]
-    # Every check keeps ok=True: the HUD is an optional surface, and the
-    # sibling degraded-optional checks (command_path, plugin_runtime_observed,
-    # memory_records) deliberately never flip the doctor exit code or the
-    # persisted last_doctor.ok over one. Degraded states carry
-    # severity="warning" plus a next action instead.
-    checks: list[Check] = []
-    loader = preflight["widget_loader"]
-    version = str(install.get("version") or "unknown")
-    checks.append(
-        Check(
-            "hermes_tui_support",
-            True,
-            (
-                f"Hermes {version} ships the TUI widget loader ({loader['marker']})"
-                if loader["present"]
-                else (
-                    f"no TUI widget loader found in Hermes {version} — an old Hermes predates the modern TUI; "
-                    "a changed Hermes layout can also hide it from this check"
-                )
-            ),
-            severity="ok" if loader["present"] else "warning",
-            next_action=(
-                ""
-                if loader["present"]
-                else "run `hermes update`; if `hermes --tui` already renders the HUD, report this check instead"
-            ),
-        )
-    )
-    sdk = preflight["sdk_surface"]
-    if sdk["checked"]:
-        if not sdk["parsed"]:
-            sdk_message = "Hermes widget SDK export changed shape; the OMH surface cannot be verified from here"
-            sdk_severity = "warning"
-            sdk_action = "if the HUD stops rendering, report the incompatibility"
-        elif sdk["missing"]:
-            sdk_message = (
-                f"Hermes widget SDK no longer exposes: {', '.join(sdk['missing'])} — the loader will skip the OMH widget"
-            )
-            sdk_severity = "warning"
-            sdk_action = "run `omh update` for a compatible widget, or report the incompatibility"
-        else:
-            sdk_message = "Hermes widget SDK exposes every API the OMH widget uses"
-            sdk_severity = "ok"
-            sdk_action = ""
-        checks.append(
-            Check(
-                "hermes_tui_sdk_surface",
-                True,
-                sdk_message,
-                severity=sdk_severity,
-                next_action=sdk_action,
-            )
-        )
-    # OMH defaults fresh installs to Hermes' modern TUI and may replace a
-    # canonical display choice after the operator accepts the setup/update
-    # prompt. A declined or noncanonical choice stays user-owned. Doctor names
-    # the shared behavior of the two launchers and the exact repair path.
-    interface = preflight["display_interface"]
-    hud_hint = (
-        "run `omh setup` or interactive `omh update` and accept the branded TUI; "
-        "`hermes --tui` opens it for one session without changing the setting"
-    )
-    if interface["explicit"] and interface["value"] not in ("", "tui"):
-        message = (
-            f"display.interface is {interface['value']!r} — bare `hermes` opens the classic REPL, "
-            "which loads no OMH HUD widget (bare `omh` opens the OMH TUI when it can run)"
-        )
-        interface_severity = "ok"
-        interface_action = hud_hint
-    elif interface["explicit"]:
-        message = (
-            "display.interface is 'tui' — bare `hermes` opens the modern TUI, where the OMH HUD widget renders "
-            "(bare `omh` opens the OMH TUI when it can run)"
-        )
-        interface_severity = "ok"
-        interface_action = ""
-    else:
-        message = (
-            "display.interface is unset, so bare `hermes` opens Hermes' default classic REPL, "
-            "which loads no OMH HUD widget (bare `omh` opens the OMH TUI when it can run)"
-        )
-        interface_severity = "ok"
-        interface_action = hud_hint
-    checks.append(
-        Check(
-            "hermes_tui_interface_default",
-            True,
-            message,
-            severity=interface_severity,
-            next_action=interface_action,
-        )
-    )
-    widget = preflight["widget"]
-    widget_degraded = not widget["installed"] or (bool(widget["interpreter"]) and not widget["interpreter_ok"])
-    if not widget["installed"]:
-        widget_message = "OMH status widget is not installed under tui-widgets/"
-    elif widget["interpreter"] and not widget["interpreter_ok"]:
-        widget_message = (
-            f"OMH status widget points at a missing Python interpreter ({widget['interpreter']})"
-        )
-    else:
-        widget_message = "OMH status widget installed and its embedded interpreter resolves"
-    checks.append(
-        Check(
-            "hermes_tui_widget_state",
-            True,
-            widget_message,
-            severity="warning" if widget_degraded else "ok",
-            next_action="run `omh setup` to (re)install the managed TUI widget" if widget_degraded else "",
-        )
-    )
-    if widget["installed"]:
-        # A widget from an older OMH loads and runs, so every check above
-        # stays green while the HUD renders yesterday's surface beside the
-        # prompt — the exact "it still looks like the old version" report this
-        # check exists to name. Current design: dense text in the host's
-        # status-line idiom, themed from the active skin; a bordered card
-        # marks the retired interim design.
-        skin = preflight["display_skin"]
-        checks.append(
-            Check(
-                "hermes_tui_widget_chrome",
-                True,
-                (
-                    f"OMH status widget renders the current text HUD themed from the active Hermes skin ({skin['value']})"
-                    if widget["themed_panel"]
-                    else (
-                        "installed OMH status widget predates the current text HUD; it renders an older "
-                        f"surface instead of the status-line-style HUD themed from the active skin ({skin['value']})"
-                    )
-                ),
-                severity="ok" if widget["themed_panel"] else "warning",
-                next_action=(
-                    ""
-                    if widget["themed_panel"]
-                    else "run `omh setup` to refresh the managed TUI widget"
-                ),
-            )
-        )
-    return checks
-
-
 def _omh_tui_check(paths: OmhPaths) -> Check:
     """Can bare `omh` open the OMH TUI here, or will it open Hermes' own terminal?
 
     Read-only and static: the shim OMH ships, Node for Hermes' launcher, and
     the two Hermes files the path relies on (`HERMES_TUI_DIR` in the launcher,
     the gateway entry). A miss is never an error, because bare `omh` falls back
-    to Hermes' own terminal; ok stays True like the `hermes_tui_*` checks and
-    the severity says whether the OMH TUI is reachable. Whether the gateway
-    still speaks the declared protocol is judged at launch, not here; once a
-    Hermes install is found, every message names the commit its checkout is at
-    (read from its `.git`, "unknown" when it cannot be) next to the one the
-    gateway contract was declared against, and neither value moves the severity.
+    to Hermes' own terminal; ok stays True, as for the other optional
+    surfaces, and the severity says whether the OMH TUI is reachable. Whether
+    the gateway still speaks the declared protocol is judged at launch, not
+    here; once a Hermes install is found, every message names the commit its
+    checkout is at (read from its `.git`, "unknown" when it cannot be) next to
+    the one the gateway contract was declared against, and neither value moves
+    the severity.
     """
     from ..system.hermes_install import hermes_install_dir, installed_hermes_commit, read_bounded_text
     from ..tui.gateway_contract import DECLARED_AGAINST_HERMES
@@ -857,9 +692,9 @@ def _hermes_model_routing_check(paths: OmhPaths) -> Check:
     so this is a Hermes user-config fault — doctor names the observed
     disagreement and leaves the repair to the user.
 
-    ok stays True like the sibling `hermes_tui_*` checks: an inconsistent
-    Hermes model config is not an OMH install failure and must not flip the
-    doctor exit code. `severity="warning"` plus a next action carries it.
+    ok stays True: an inconsistent Hermes model config is not an OMH install
+    failure and must not flip the doctor exit code. `severity="warning"`
+    plus a next action carries it.
     """
     from .hermes_model_routing import (
         hermes_model_routing_preflight,
