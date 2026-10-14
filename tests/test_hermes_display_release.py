@@ -114,6 +114,27 @@ class FreshInstallTests(unittest.TestCase):
             self.assertIn("display: {skin: mytheme}\n", home.config.read_text(encoding="utf-8"))
             self.assertIn("display_released_at", home.record())
 
+    @requires_symlinks
+    def test_a_dotfiles_symlinked_skins_and_widgets_directory_says_nothing(self) -> None:
+        # Refusing a symlinked directory that holds nothing of OMH's printed
+        # "left the skin files in place" under the stock-Hermes header.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            home = _Home(root)
+            home.config.write_text(BEFORE, encoding="utf-8", newline="")
+            for name, entry in (("skins", "ares.yaml"), ("tui-widgets", "personal.mjs")):
+                target = root / "dotfiles" / name
+                target.mkdir(parents=True)
+                (target / entry).write_text("mine\n", encoding="utf-8")
+                (home.hermes_home / name).symlink_to(target, target_is_directory=True)
+
+            for command in ("setup", "update"):
+                status, stdout, stderr = home.run(command, output_json=False)
+
+                self.assertEqual(status, 0, stderr)
+                self.assertNotIn("Hermes display", stdout)
+            self.assertEqual((root / "dotfiles" / "skins" / "ares.yaml").read_text(encoding="utf-8"), "mine\n")
+
     def test_setup_reports_config_changed_when_only_plugin_enablement_changes(self) -> None:
         with TemporaryDirectory() as tmp:
             home = _Home(Path(tmp))

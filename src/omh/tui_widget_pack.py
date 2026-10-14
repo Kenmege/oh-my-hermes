@@ -12,6 +12,7 @@ no widget source in the package.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 WIDGET_FILENAME = "omh-status.mjs"
@@ -56,6 +57,10 @@ def uninstall_tui_widget(hermes_home: Path, *, dry_run: bool = False) -> dict[st
     destination_dir = hermes_home / "tui-widgets"
     destination = destination_dir / WIDGET_FILENAME
     manifest = destination_dir / MANIFEST_FILENAME
+    if not os.path.lexists(destination) and not os.path.lexists(manifest):
+        # Nothing of OMH's, so nothing to refuse: a symlinked `tui-widgets/`
+        # holding only the person's widgets is theirs. Looked up by name only.
+        return {"status": "absent", "path": str(destination)}
     _reject_symlink_path(destination_dir)
     _reject_symlink_path(destination)
     _reject_symlink_path(manifest)

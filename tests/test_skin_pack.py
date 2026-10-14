@@ -363,6 +363,22 @@ class SkinRemovalTests(unittest.TestCase):
                 uninstall_skin(home)
             self.assertTrue((elsewhere / SKIN_FILENAME).is_file())
 
+    @requires_symlinks
+    def test_a_symlinked_skins_directory_with_nothing_of_omhs_is_absent_not_refused(self) -> None:
+        # A dotfiles-managed `skins/` holding only the person's skins: there
+        # is nothing to remove, so there is nothing to refuse either.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            elsewhere = root / "dotfiles" / "skins"
+            elsewhere.mkdir(parents=True)
+            (elsewhere / "ares.yaml").write_text("name: ares\n", encoding="utf-8")
+            home = root / "home"
+            home.mkdir()
+            (home / "skins").symlink_to(elsewhere, target_is_directory=True)
+
+            self.assertEqual(uninstall_skin(home)["status"], "absent")
+            self.assertEqual((elsewhere / "ares.yaml").read_text(encoding="utf-8"), "name: ares\n")
+
     def test_a_clean_home_is_absent(self) -> None:
         with TemporaryDirectory() as tmp:
             home = Path(tmp).resolve()

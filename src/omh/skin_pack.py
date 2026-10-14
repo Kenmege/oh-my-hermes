@@ -57,6 +57,8 @@ SKIN_THEMES: tuple[SkinTheme, ...] = (
     SkinTheme("mono", "omh-mono", "omh-mono.yaml", "Neutral grayscale with white accents."),
 )
 
+_SKIN_FILENAMES: tuple[str, ...] = tuple(theme.filename for theme in SKIN_THEMES)
+
 # `default` is not a theme, it is a way of saying "the shipped default"; both
 # aliases resolve to the same skin the fresh-config path writes.
 _THEME_ALIASES: dict[str, str] = {"default": "sky", "omh-sky": "sky"}
@@ -345,6 +347,23 @@ def uninstall_skin(
     """
     destination_dir = hermes_home / "skins"
     manifest = destination_dir / MANIFEST_FILENAME
+    if not any(os.path.lexists(destination_dir / name) for name in (MANIFEST_FILENAME, *_SKIN_FILENAMES)):
+        # Nothing under an OMH name, so nothing to remove and nothing to
+        # refuse: a `skins/` symlinked from a dotfiles repo is the person's.
+        # Looked up by name only; no entry is opened or followed.
+        return {
+            "status": "absent",
+            "path": str(destination_dir),
+            "skins": [
+                {
+                    "skin": theme.skin_name,
+                    "filename": theme.filename,
+                    "status": "absent",
+                    "path": str(destination_dir / theme.filename),
+                }
+                for theme in SKIN_THEMES
+            ],
+        }
     _reject_symlink_path(destination_dir)
     _reject_symlink_path(manifest)
     records = _read_manifest_records(manifest)

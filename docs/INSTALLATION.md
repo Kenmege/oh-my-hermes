@@ -1566,7 +1566,8 @@ uses:
 | Any other value in such a shape (no record names it, and it is not an OMH skin name) | `display: {skin: mytheme}` | kept |
 | A `display:` or `display.sections:` OMH created | emptied by the release | removed |
 | The status widget OMH installed | `omh-status.mjs` and its manifest | removed (a manifest left without its widget goes too) |
-| A widget the manifest cannot vouch for, or a symlinked `tui-widgets/` | — | kept, named once, in the output of the pass that records the release |
+| A widget the manifest cannot vouch for, or a symlinked `tui-widgets/` or `skins/` holding an OMH file | — | kept, named once, in the output of the pass that records the release |
+| A symlinked `tui-widgets/` or `skins/` with no file under an OMH name (a dotfiles directory) | — | untouched, nothing printed |
 | Skin files OMH installed (by manifest, or byte-identical to the shipped file) | `omh*.yaml` and the manifest | removed, except the one `display.skin` still names, or every one while `display.skin` is in a shape the editor refuses |
 | A skin file you edited | — | kept with its manifest record, named once, in the output of the pass that records the release |
 | Everything else OMH writes: skills, `plugins.enabled`, `memory.provider`, compression, `settings.omh_home` | — | untouched |
