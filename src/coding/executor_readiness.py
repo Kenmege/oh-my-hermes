@@ -527,6 +527,55 @@ def _resolved_command(profile: str) -> tuple[str, tuple[str, ...]] | None:
     return entry
 
 
+# Only the version token is kept from a version line, never the rest of what
+# the binary printed.
+_VERSION_TOKEN = re.compile(r"(?<![0-9A-Za-z.])v?([0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]{1,32})?)(?![0-9A-Za-z])")
+
+
+def version_probed_agent_clis() -> frozenset[str]:
+    """The agent CLIs this module already runs `--version` on, and no others.
+
+    The readiness table's commands plus every omo host `_resolved_command` can
+    pick. Another surface may reuse this probe for one of them; it may not
+    widen the set by asking.
+    """
+    from .fanout_dispatch import OMO_RUNTIME_HOST_CANDIDATES
+
+    return frozenset(command for command, _args in _COMMANDS.values()) | frozenset(OMO_RUNTIME_HOST_CANDIDATES)
+
+
+def agent_cli_version(command: str) -> tuple[str, str | None]:
+    """`(status, version)` from `<command> --version`; the token only, never the output.
+
+    Status is `observed`, `no_approved_probe` (a name outside
+    `version_probed_agent_clis()`; nothing runs), `executable_missing`,
+    `probe_failed` (spawn error, timeout, non-zero exit or no output), or
+    `output_unrecognized`. It runs the path `shutil.which` returned.
+    """
+    if command not in version_probed_agent_clis():
+        return "no_approved_probe", None
+    resolved = shutil.which(command)
+    if not resolved:
+        return "executable_missing", None
+    try:
+        completed = subprocess.run(
+            [resolved, "--version"],
+            text=True,
+            errors="replace",
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=_PROBE_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "probe_failed", None
+    lines = (completed.stdout or completed.stderr or "").strip().splitlines()
+    if completed.returncode != 0 or not lines:
+        return "probe_failed", None
+    match = _VERSION_TOKEN.search(lines[0])
+    return ("observed", match[1]) if match else ("output_unrecognized", None)
+
+
 def _run_probe(contract: dict[str, object]) -> dict[str, object]:
     result = dict(contract)
     probe = result.get("probe")

@@ -24,6 +24,22 @@ All notable changes will be documented here.
   pre-spend card, no longer opens the image-card skill, while an image card of
   "my card game stats" or "my card collection" still does.
 
+- **`omh quality-evidence agent-skills` reports Agent Skills host evidence
+  per host and scope.** For each of the six host adapters, in repo and user
+  scope, it records five stages (installed, discovered, nominated, loaded,
+  executed) and never infers one from another. `installed` is observed by
+  OMH: it reads the host's scan path under `--project-root` or `--user-home`
+  and compares every file with the `omh_host_adapter/v1` manifest, writing
+  nothing and starting no host. The later four stages stay `not_observed`
+  with each host's `probe_unsupported` reason, since no credential-free,
+  non-interactive listing command is known and OMH makes no model call. Each
+  `omh_agent_skills_discovery/v1` receipt binds the host version (from the
+  readiness module's approved `--version` probe, for the CLIs it already
+  runs), OS, scan path, the manifest's `source_digest`, and the pack
+  `catalog_revision`, and the parser rejects any malformed or contradictory
+  receipt. `--receipts` compares an earlier `--json` run with the current
+  pack and host versions. Built on the stage model, host descriptors and
+  fixture tests @blrain3 contributed in #2093.
 - **Bare `omh` opens the OMH TUI, OMH's own terminal over Hermes' gateway.**
   `omh` runs `hermes --tui` with OMH's frontend in place of Hermes' Ink app,
   so Hermes' launcher still resolves the profile, the resume target and

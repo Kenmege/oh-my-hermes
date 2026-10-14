@@ -381,6 +381,39 @@ def cmd_quality_evidence_cost_receipt(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_quality_evidence_agent_skills(args: argparse.Namespace) -> int:
+    """Print the Agent Skills host evidence matrix: five stages per host and scope.
+
+    OMH reads each host's scan path and compares it with the adapter manifest;
+    it starts no host and makes no model call, so only ``installed`` can be
+    observed. Exit 0 means the matrix was produced, not that any stage was
+    observed: read each row's ``evidence_class``. A receipts file that fails
+    validation is an error, never an empty matrix.
+    """
+    from ..quality.agent_skills_discovery import (
+        SCOPES,
+        build_agent_skills_evidence,
+        format_agent_skills_evidence,
+        load_evidence_receipts,
+    )
+
+    try:
+        stored = load_evidence_receipts(Path(args.receipts).expanduser()) if args.receipts else None
+        payload = build_agent_skills_evidence(
+            project_root=Path(args.project_root).expanduser().resolve(),
+            user_home=Path(args.user_home).expanduser().resolve() if args.user_home else Path.home().resolve(),
+            scopes=(args.scope,) if args.scope else SCOPES,
+            stored_receipts=stored,
+        )
+    except (OSError, ValueError) as exc:
+        raise OmhError(f"Agent Skills host evidence failed: {exc}") from exc
+    if _wants_json(args):
+        _print_json(payload)
+    else:
+        print(format_agent_skills_evidence(payload))
+    return 0
+
+
 def _reply_lint_input(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if args.hermes_session:
         paths = _paths(args)
@@ -659,6 +692,34 @@ def _add_quality_evidence_commands(sub: argparse._SubParsersAction[argparse.Argu
     receipt.add_argument("--session", required=True, help="Any Hermes session id of the conversation.")
     receipt.add_argument("--json", action="store_true", help="Print the machine-readable omh_cost_receipt/v1 payload.")
     receipt.set_defaults(func=cmd_quality_evidence_cost_receipt)
+
+    agent_skills = commands.add_parser(
+        "agent-skills",
+        help="Report Agent Skills host evidence per host and scope: installed, discovered, nominated, loaded, executed.",
+        description=(
+            "For every Agent Skills host adapter and scope, read the host's scan path (repo scope under "
+            "--project-root, user scope under --user-home) and compare its bytes with the omh_host_adapter/v1 "
+            "manifest. Nothing is written and no host is started; a host version comes only from the approved "
+            "`<cli> --version` readiness probe. Discovered, nominated, loaded and executed stay not_observed "
+            "with each host's probe_unsupported reason. Not execution, review, CI, or merge evidence."
+        ),
+    )
+    agent_skills.add_argument("--scope", choices=("repo", "user"), default=None, help="One scope only (default: both).")
+    agent_skills.add_argument(
+        "--project-root", default=".", help="Project directory whose repo-scope scan paths are read (default: current directory)."
+    )
+    agent_skills.add_argument(
+        "--user-home", default=None, help="Home directory whose user-scope scan paths are read (default: your home)."
+    )
+    agent_skills.add_argument(
+        "--receipts",
+        default=None,
+        help="Earlier `--json` output: report how its receipts compare with the current pack and host versions instead of reading scan paths.",
+    )
+    agent_skills.add_argument(
+        "--json", action="store_true", help="Print the machine-readable omh_agent_skills_evidence/v1 payload."
+    )
+    agent_skills.set_defaults(func=cmd_quality_evidence_agent_skills)
 
 
 def _add_json_input(parser: argparse.ArgumentParser, name: str, label: str) -> None:
