@@ -620,7 +620,7 @@ class ProfileReleaseTests(unittest.TestCase):
 
             self.assertEqual(status, 0, stderr)
             self.assertIsNone(read_theme_choice(home.omh_home))
-            self.assertIn("did not save OMH theme amber: this home's .env names its OMH home", stdout)
+            self.assertIn("did not save OMH theme amber: this profile names its OMH home where OMH cannot read it", stdout)
             self.assertNotIn("display", (bot / "config.yaml").read_text(encoding="utf-8"))
 
     def test_a_home_left_unregistered_keeps_its_config_and_loses_the_old_files(self) -> None:
@@ -690,6 +690,66 @@ class ProfileReleaseTests(unittest.TestCase):
             self.assertNotIn("display", config_text)
             self.assertTrue((profile / "plugins" / "omh" / "plugin.yaml").is_file())
             self.assertTrue((elsewhere / "omh-status.mjs").is_file())
+
+
+# Shapes Hermes' YAML loader reads and OMH's standalone setting scan refuses.
+UNREADABLE_SETTING_SHAPES = {
+    "flow": "plugins:\n  entries: {{omh: {{settings: {{omh_home: {store}}}}}}}\n",
+    "merge key": "plugins:\n  <<: *base\n",
+    "tab": "plugins:\n\tentries:\n",
+}
+
+
+class UnreadableProfileSettingTests(unittest.TestCase):
+    """A bot profile whose store setting OMH cannot read costs no command its run."""
+
+    def test_setup_and_update_register_the_profile(self) -> None:
+        # The setting reader raised out of the profile sync, which caught
+        # only plugin and OMH errors, so setup ended in a traceback.
+        for name, shape in UNREADABLE_SETTING_SHAPES.items():
+            with self.subTest(shape=name), TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                home = _Home(root)
+                bot = home.hermes_home / "profiles" / "bot"
+                bot.mkdir(parents=True)
+                home.config.write_text(BEFORE, encoding="utf-8", newline="")
+                (bot / "config.yaml").write_text(
+                    BEFORE + shape.format(store=(root / "bot-store").as_posix()), encoding="utf-8", newline=""
+                )
+
+                for command in ("setup", "update"):
+                    status, stdout, stderr = home.run(command, output_json=False)
+
+                    self.assertEqual((status, stderr), (0, ""), command)
+                    self.assertIn("Bot profiles: bot (", stdout)
+                    self.assertNotIn("bot (failed)", stdout)
+
+    def test_a_profile_rewritten_to_a_flow_setting_keeps_its_theme_out_of_the_primarys_store(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            home = _Home(root)
+            bot = home.hermes_home / "profiles" / "bot"
+            bot.mkdir(parents=True)
+            home.legacy_install()
+            home.brand(bot / "config.yaml", skin="omh-amber")
+            config = bot / "config.yaml"
+            store = plugin_omh_home_setting(config.read_text(encoding="utf-8"))
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    f"  entries:\n    omh:\n      settings:\n        omh_home: '{store}'\n",
+                    f"  entries: {{omh: {{settings: {{omh_home: '{store}'}}}}}}\n",
+                ),
+                encoding="utf-8",
+                newline="",
+            )
+            self.assertIn("entries: {omh:", config.read_text(encoding="utf-8"))
+
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual((status, stderr), (0, ""))
+            self.assertNotIn("display", config.read_text(encoding="utf-8"))
+            self.assertIsNone(read_theme_choice(home.omh_home))
+            self.assertIn("did not save OMH theme amber: this profile names its OMH home where OMH cannot read it", stdout)
 
 
 # The on-disk state the last release left, recorded from a real run of its own

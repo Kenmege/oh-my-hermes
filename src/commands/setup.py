@@ -561,18 +561,29 @@ def _profile_env_names_omh_home(profile_dir: Path) -> bool:
     return bool(env_key_names(profile_dir, allowed=("OMH_HOME",)))
 
 
-def _profile_theme_home(profile_paths: OmhPaths) -> Path | None:
-    """The store a bot profile's own `settings.omh_home` names (#1680), or None when it names none.
+def _profile_theme_home(profile_paths: OmhPaths, profile_dir: Path) -> Path | None:
+    """The store a bot profile's theme belongs in, or None when OMH cannot tell which store that is.
 
     `_profile_clone` names the primary's store for everything the sync
     installs, which is right for managed skills and wrong for a profile
     that chose a store of its own: `omh --hermes-home <profile> theme`
-    resolves that profile's setting, and so does the OMH TUI that
-    `omh --profile <name>` opens (`_tui_omh_home` in `commands/main.py`),
-    so its theme has to land there. One reader, `configured_omh_home`,
-    for both.
+    resolves that profile's `settings.omh_home` (#1680), and so does the
+    OMH TUI that `omh --profile <name>` opens (`_tui_omh_home` in
+    `commands/main.py`), so its theme has to land there. One reader,
+    `configured_omh_home`, for both. A profile that names no store shares
+    the primary's.
+
+    None when the profile chose a store OMH cannot read: a setting in a
+    shape the standalone scan refuses, or an `OMH_HOME` in its `.env`,
+    whose value OMH never reads. Saving into the primary's store then
+    would hand the primary that profile's theme.
     """
-    return configured_omh_home(profile_paths.hermes_home)
+    configured = configured_omh_home(profile_paths.hermes_home)
+    if configured is not None:
+        return configured
+    if config_names_key(read_config(profile_paths.hermes_config_path), PLUGIN_OMH_HOME_KEY):
+        return None
+    return None if _profile_env_names_omh_home(profile_dir) else profile_paths.omh_home
 
 
 def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
@@ -633,7 +644,7 @@ def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
             applied = _apply_result(
                 clone,
                 bind_omh_home=not _profile_env_names_omh_home(profile_dir),
-                theme_home=_profile_theme_home(profile_paths),
+                theme_home=_profile_theme_home(profile_paths, profile_dir),
             )
             entry["registration"] = applied["registration"]
             entry["retired_external_dirs"] = applied["retired_external_dirs"]
@@ -829,7 +840,8 @@ def _display_release_lines(label: str, release: object) -> list[str]:
         )
     elif theme.get("status") == "store_unknown":  # type: ignore[union-attr]
         details.append(
-            f"did not save OMH theme {theme.get('theme')}: this home's .env names its OMH home, which OMH does not read; "  # type: ignore[union-attr]
+            f"did not save OMH theme {theme.get('theme')}: this profile names its OMH home where OMH cannot read it "  # type: ignore[union-attr]
+            "(its .env, or a setting shape the reader refuses); "
             f"`omh --omh-home <that home> theme use {theme.get('theme')}` saves it there"  # type: ignore[union-attr]
         )
     elif theme.get("status") == "kept_saved":  # type: ignore[union-attr]
@@ -2155,8 +2167,12 @@ def _refused_display_files(files: dict[str, object]) -> list[dict[str, str]]:
     ]
 
 
+# `_apply_result`'s default theme store: the OMH home the command resolved.
+_RESOLVED_THEME_STORE = object()
+
+
 def _apply_result(
-    args: argparse.Namespace, *, bind_omh_home: bool = True, theme_home: Path | None = None
+    args: argparse.Namespace, *, bind_omh_home: bool = True, theme_home: Path | None | object = _RESOLVED_THEME_STORE
 ) -> dict[str, object]:
     """Write every managed key into this home's Hermes config, in one mutation.
 
@@ -2175,12 +2191,9 @@ def _apply_result(
     (`release_managed_display`), then removes the status widget and skin
     files OMH can prove it installed, so bare `hermes` opens stock Hermes.
     An OMH theme in `display.skin` is saved to the OMH store first, so the
-    OMH TUI keeps it: in `theme_home`, the store a bot profile's own setting
-    names, else in `paths.omh_home`. Not for a profile whose `.env` names
-    its store (`bind_omh_home` off) and whose config names none: OMH reads
-    the names in a `.env`, never the values, so it cannot tell which store
-    that is, and saving into the primary's would hand the primary that
-    profile's theme. The result says so (`store_unknown`).
+    OMH TUI keeps it: in `paths.omh_home`, or in the `theme_home` the
+    bot-profile sync names (`_profile_theme_home`). A `theme_home` of None
+    is a store OMH cannot tell, and no theme is saved (`store_unknown`).
     """
     paths = _paths(args)
     memory_mode = str(getattr(args, "memory_mode", "") or "") or "auto-safe"
@@ -2211,7 +2224,7 @@ def _apply_result(
     theme = _carry_theme_choice(
         paths,
         previous_writes,
-        theme_home=theme_home if theme_home is not None else paths.omh_home if bind_omh_home else None,
+        theme_home=paths.omh_home if theme_home is _RESOLVED_THEME_STORE else theme_home,  # type: ignore[arg-type]
         dry_run=bool(args.dry_run),
     )
     # The theme store could not take the theme `display.skin` names, so this

@@ -1572,10 +1572,11 @@ uses:
 
 The theme for a bot profile whose `plugins.entries.omh.settings.omh_home`
 names its own store is saved there; one that names none shares the primary
-home's store. A profile that names its store only in its `.env` (`OMH_HOME`)
-gets none carried: OMH reads the names in a `.env`, never the values, so it
-cannot tell which store that is, and the output gives the
-`omh --omh-home <that home> theme use <name>` that saves it there. One
+home's store. A profile that names its store only in its `.env` (`OMH_HOME`),
+or in a setting shape OMH's reader refuses (a flow `entries: {omh: ...}`, a
+`<<:` merge key, a tab), gets none carried: OMH reads the names in a `.env`,
+never the values, so it cannot tell which store that is, and the output
+gives the `omh --omh-home <that home> theme use <name>` that saves it there. One
 store holds one theme, so the first home on the run that
 carries one keeps it (the primary goes first) and the output names any
 other home's skin it did not carry. When the theme cannot be saved (the

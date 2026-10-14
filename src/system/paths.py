@@ -838,11 +838,14 @@ def configured_omh_home(hermes_home: Path) -> Path | None:
         text = (Path(hermes_home) / "config.yaml").read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
-    if not runtime_paths.omh_home_setting(text)[0]:
-        return None
     try:
+        if not runtime_paths.omh_home_setting(text)[0]:
+            return None
         return resolve_paths(None, hermes_home).omh_home
     except runtime_paths.RuntimeBindingError:
+        # The standalone scan refuses shapes Hermes' own YAML loader reads
+        # (a flow `entries: {omh: ...}`, a `<<:` merge key, a tab), so a
+        # setting the profile's plugin binds can still be unreadable here.
         return None
 
 

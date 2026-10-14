@@ -524,11 +524,19 @@ class OmhTuiDoorTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (root / "profiles" / "plain").mkdir(parents=True)
+            # Hermes loads this flow shape; OMH's setting scan refuses it,
+            # and the launch must not end in a traceback over that.
+            (root / "profiles" / "flow").mkdir(parents=True)
+            (root / "profiles" / "flow" / "config.yaml").write_text(
+                f"plugins:\n  entries: {{omh: {{settings: {{omh_home: {split.as_posix()}}}}}}}\n",
+                encoding="utf-8",
+            )
             homes: dict[str, str] = {}
             for name, argv in (
                 ("none", []),
                 ("split", ["-p", "split"]),
                 ("plain", ["-p", "plain"]),
+                ("flow", ["-p", "flow"]),
                 ("named", ["--omh-home", str(root / "named"), "-p", "split"]),
             ):
                 environments: list[dict[str, str] | None] = []
@@ -539,6 +547,7 @@ class OmhTuiDoorTests(unittest.TestCase):
         # A profile that names none keeps the store this `omh` resolved, and
         # an explicit --omh-home still wins.
         self.assertEqual(homes["plain"], homes["none"])
+        self.assertEqual(homes["flow"], homes["none"])
         self.assertEqual(Path(homes["named"]), root / "named")
 
     def test_the_fallback_code_with_its_sentinel_reopens_hermes_own_terminal(self) -> None:
