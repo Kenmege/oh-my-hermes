@@ -67,6 +67,7 @@ class RecordingClient:
         self.calls: list[tuple[str, dict]] = []
         self.answers: list[tuple[str, dict]] = []
         self.inbox: list[object] = []  # what the next `poll` hands the loop
+        self.forgotten: list[int] = []  # request ids the app stopped waiting for
 
     def poll(self) -> list[object]:
         items, self.inbox = self.inbox, []
@@ -84,6 +85,9 @@ class RecordingClient:
 
     def respond(self, request_id: str, frame: dict) -> None:
         self.answers.append((request_id, frame))
+
+    def forget(self, request_id: int) -> None:
+        self.forgotten.append(request_id)
 
     def named(self, method: str) -> list[dict]:
         return [params for name, params in self.calls if name == method]
@@ -1193,6 +1197,48 @@ class RedrawTailTests(unittest.TestCase):
         taken = [line for line in app.transcript.take_stable_lines(80, DEFAULT_THEME) if line]
         self.assertEqual(taken[0][0].text, "⋯ 37 earlier messages · /history shows all")
         self.assertEqual([line[-1].text for line in taken[1:]], ["question 37", "question 38", "question 39"])
+
+
+class CallExpiryTests(unittest.TestCase):
+    """A call the gateway never answers is forgotten after a while, in the app and in the client, without running its handlers."""
+
+    def test_an_unanswered_call_is_forgotten_with_a_notice_and_a_late_answer_changes_nothing(self) -> None:
+        now = [100.0]
+        app, client = make_app(clock=lambda: now[0])
+        seen: list[object] = []
+        app._request("session.list", {"limit": 5}, seen.append, lambda error: seen.append(error) or True)
+        now[0] += app_module.CALL_ANSWER_SECONDS - 0.5
+        app._expire_calls()
+        self.assertEqual((len(app.pending), client.forgotten), (1, []))
+        now[0] += 0.5
+        app._expire_calls()
+        self.assertEqual((app.pending, client.forgotten), ({}, [1]))
+        self.assertEqual(notices(app, NOTICE_WARN), ["Hermes has not answered session.list in 120 s; the OMH TUI stopped waiting for it."])
+        answer(app, client, {"sessions": []})
+        self.assertEqual(seen, [])  # neither handler ran: no answer is not a refusal
+
+    def test_calls_nobody_waits_on_are_forgotten_without_a_word_a_tail_after_its_own_window(self) -> None:
+        now = [100.0]
+        app, client = make_app(clock=lambda: now[0])
+        app._request("complete.path", {"word": "./s", "session_id": SID}, lambda result: None, lambda error: True)
+        app._request("config.get", {"key": "full"}, lambda result: None, lambda error: True)
+        app._request("subagent.tail", {"session_id": SID, "subagent_id": "a1"}, lambda result: None)
+        now[0] += app_module.TAIL_ANSWER_SECONDS
+        app._expire_calls()
+        self.assertEqual(sorted(call.method for call in app.pending.values()), ["complete.path", "config.get"])
+        now[0] += app_module.CALL_ANSWER_SECONDS
+        app._expire_calls()
+        self.assertEqual((app.pending, sorted(client.forgotten)), ({}, [1, 2, 3]))
+        self.assertEqual(notices(app), [])
+
+    def test_the_loop_expires_calls_on_every_step(self) -> None:
+        now = [100.0]
+        app, client = make_app(clock=lambda: now[0])
+        app._request("session.list", {"limit": 5}, lambda result: None)
+        now[0] += app_module.CALL_ANSWER_SECONDS
+        app.terminal.deadline = time.monotonic() + 10.0  # type: ignore[attr-defined]  # an empty read, not an EOF
+        app._step()
+        self.assertEqual((app.pending, client.forgotten), ({}, [1]))
 
 
 class LazyHistoryTests(unittest.TestCase):

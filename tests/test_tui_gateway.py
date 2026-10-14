@@ -8,6 +8,7 @@ from pathlib import Path
 import signal
 import time
 import unittest
+from unittest.mock import patch
 
 from _test_temp_root import make_test_tempdir
 from _tui_gateway_replay import EXIT, HANG, Scenario, load_fixture, materialize, replay_env, spans
@@ -295,6 +296,17 @@ class GatewayTurnTests(ReplayTestCase):
         self.assertIsInstance(answer, Response)
         self.assertEqual(answer.id, request_id)
         self.assertEqual(answer.result["sessions"][0]["id"], "20261013_115656_e709ea")
+
+
+class GatewayForgetTests(unittest.TestCase):
+    def test_an_answer_to_a_forgotten_request_is_dropped(self) -> None:
+        client = GatewayClient(gateway_spawn(LAUNCHER_ENV))
+        with patch.object(client, "_write"):  # nothing spawned: the request is only recorded as waited for
+            kept, forgotten = client.request("session.list", {}), client.request("session.list", {})
+        client.forget(forgotten)
+        client._deliver(Response(forgotten, {"sessions": []}, None))  # what the reader thread does with a line
+        client._deliver(Response(kept, {"sessions": []}, None))
+        self.assertEqual([item.id for item in client.poll()], [kept])  # type: ignore[union-attr]
 
 
 @unittest.skipIf(os.name == "nt", "select() waits on sockets only on Windows, and the TUI's loop is POSIX-only")

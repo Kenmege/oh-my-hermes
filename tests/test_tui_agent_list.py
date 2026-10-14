@@ -773,11 +773,13 @@ class TailPollTests(unittest.TestCase):
     def test_a_timed_out_call_is_forgotten_when_the_next_goes_out(self) -> None:
         app, client, now = self.open()
         app._ask_tail_when_due()
+        first = len(client.calls)
         now[0] += TAIL_ANSWER_SECONDS
         app._ask_tail_when_due()
         self.assertEqual(len(tails(client)), 2)
         waiting = [call for call in app.pending.values() if call.method == "subagent.tail"]
         self.assertEqual(len(waiting), 1)  # a gateway that never answers cannot grow `pending`
+        self.assertEqual(client.forgotten, [first])  # nor the client's own record of what it waits for
 
     def test_a_new_turn_drops_every_piece_of_tail_bookkeeping(self) -> None:
         app, client, now = self.open()
@@ -785,10 +787,12 @@ class TailPollTests(unittest.TestCase):
         answer(app, client, NO_TAIL)
         now[0] += TAIL_POLL_SECONDS
         app._ask_tail_when_due()  # a second call, still out
+        second = len(client.calls)
         self.assertTrue(app.tail_misses)
         app._submit_prompt("next task")
         self.assertEqual(app.tail_misses, {})
         self.assertEqual([call for call in app.pending.values() if call.method == "subagent.tail"], [])
+        self.assertEqual(client.forgotten, [second])
         self.assertEqual((app.tail_asked_at, app.tail_open), (None, False))
 
     def test_a_tail_in_between_starts_the_count_again_and_the_count_is_each_agents(self) -> None:

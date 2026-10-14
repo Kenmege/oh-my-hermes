@@ -251,9 +251,10 @@ class AgentViewMixin:
         self.tail_asked_at, self.tail_open = None, False
 
     def _forget_tail_calls(self) -> None:
-        """Drop the `subagent.tail` calls still waiting for an answer, so a gateway that never answers cannot grow `pending`."""
+        """Drop the `subagent.tail` calls still waiting for an answer, here and in the client, so neither grows."""
         for request_id in [rid for rid, call in self.pending.items() if call.method == "subagent.tail"]:
             del self.pending[request_id]
+            self.client.forget(request_id)
 
     def _on_tail(self, sid: str, subagent_id: str, result: Mapping[str, Any]) -> bool:
         """A `subagent.tail` answer: read only when Hermes has a tail, for an agent still running in this session.

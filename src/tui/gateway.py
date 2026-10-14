@@ -256,6 +256,11 @@ class GatewayClient:
         """Send a call without waiting; its `Response` arrives through `poll`."""
         return self._send_call(method, params, self._polled)
 
+    def forget(self, request_id: int) -> None:
+        """Stop waiting for a `request`'s answer: if it still comes, it is dropped like an answer to nothing asked."""
+        with self._inbox_ready:
+            self._polled.discard(request_id)
+
     def call(self, method: str, params: dict[str, Any], timeout: float = 30.0) -> dict[str, Any]:
         """Send a call and wait for its answer; every other inbound item stays queued for `poll`."""
         request_id = self._send_call(method, params, self._awaited)

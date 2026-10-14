@@ -121,7 +121,7 @@ from .keys import (
     Paste,
 )
 from .launch import request_fallback
-from .agent_view import AgentViewMixin
+from .agent_view import TAIL_ANSWER_SECONDS, AgentViewMixin
 from .layout import slot_cap, under_composer
 from .markdown import clean_text
 from .modes import NO_SESSION_NOTICE, ModesMixin, mode_row_line
@@ -236,6 +236,14 @@ STEER_LEFT_NOTICE = (
 # the answer, so the bound costs nothing on a fast link and covers a round trip of up to a second.
 EXIT_DRAIN_SECONDS = 1.0
 CURSOR_POSITION_REQUEST = f"{CSI}6n"
+# How long a call made from the loop is waited for: Hermes' own TUI gives every request 120 s
+# (`HERMES_TUI_RPC_TIMEOUT_MS`), and a `subagent.tail` is asked again after `TAIL_ANSWER_SECONDS` anyway. Past
+# it the call is forgotten (`App._expire_calls`) and an answer that still comes is dropped. Only the calls in
+# QUIET_EXPIRY_METHODS, which a person never waits on, are forgotten without a notice.
+CALL_ANSWER_SECONDS = 120.0
+CALL_ANSWER_SECONDS_BY_METHOD = {"subagent.tail": TAIL_ANSWER_SECONDS}
+QUIET_EXPIRY_METHODS = frozenset({"subagent.tail", "complete.path", "config.get"})
+CALL_EXPIRED_NOTICE = "Hermes has not answered {method} in {seconds:g} s; the OMH TUI stopped waiting for it."
 CURSOR_REPORT_START = b"\x1b["
 CURSOR_REPORT_FINAL = b"R"
 
@@ -326,6 +334,7 @@ class _Pending:
     method: str
     on_result: Callable[[dict[str, Any]], None]
     on_error: Callable[[dict[str, Any]], bool] | None = None
+    expires_at: float = math.inf  # on the app's clock: `_expire_calls` forgets the call then
 
 
 @dataclass(frozen=True)
@@ -937,6 +946,7 @@ class App(ModesMixin, AgentViewMixin):
         self._drain_gateway()
         if self.exit_code is not None:
             return
+        self._expire_calls()
         self._track_path_token()
         self._ask_path_completion_when_due()
         self._ask_tail_when_due()
@@ -1065,7 +1075,23 @@ class App(ModesMixin, AgentViewMixin):
         except GatewayUnavailable as error:
             self._lose_gateway(str(error))
             return
-        self.pending[request_id] = _Pending(method, on_result, on_error)
+        expires_at = self.clock() + CALL_ANSWER_SECONDS_BY_METHOD.get(method, CALL_ANSWER_SECONDS)
+        self.pending[request_id] = _Pending(method, on_result, on_error, expires_at)
+
+    def _expire_calls(self) -> None:
+        """Forget every call unanswered past its `expires_at`, here and in the client, saying so for most.
+
+        Neither of its handlers runs: an answer that never came is not a
+        refusal, and state that waits on one (a yolo call still unanswered)
+        stays as it was.
+        """
+        now = self.clock()
+        for request_id, call in [(rid, call) for rid, call in self.pending.items() if now >= call.expires_at]:
+            del self.pending[request_id]
+            self.client.forget(request_id)
+            if call.method not in QUIET_EXPIRY_METHODS:
+                seconds = CALL_ANSWER_SECONDS_BY_METHOD.get(call.method, CALL_ANSWER_SECONDS)
+                self.transcript.add_notice(CALL_EXPIRED_NOTICE.format(method=call.method, seconds=seconds), NOTICE_WARN)
 
     def _respond(self, answer: Answer) -> None:
         try:
