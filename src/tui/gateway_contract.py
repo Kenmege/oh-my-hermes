@@ -109,7 +109,10 @@ SUBAGENT_EVENTS = (
 
 # The event types the TUI handles. `App._on_event` takes APP_EVENTS itself, `Transcript` folds TRANSCRIPT_EVENTS
 # and the roster SUBAGENT_EVENTS; `test_tui_gateway_contract` holds each of the three to these names.
-APP_EVENTS = ("request.cancel", "approval.cancelled", "session.info", "session.usage", "connection.request", "error")
+APP_EVENTS = (
+    "request.cancel", "approval.cancelled", "session.info", "session.usage", "connection.request", "error",
+    "notification.show", "notification.clear",
+)
 TRANSCRIPT_EVENTS = (
     "message.start", "message.delta", "message.interim", "message.complete", "thinking.delta", "reasoning.delta",
     "reasoning.available", "tool.generating", "tool.start", "tool.complete", "status.update",
@@ -122,8 +125,8 @@ UNREAD_EVENTS = frozenset({
     "browser.controller.cancel", "browser.controller.command", "browser.progress", "btw.complete",
     "connection.update", "cron.changed", "display.install.done", "display.install.log", "display.lease",
     "display.status", "free_tier.challenge", "gateway.ready", "layout.apply", "message.reaction",
-    "moa.aggregating", "moa.phase", "moa.progress", "moa.reference", "notice", "notification.clear",
-    "notification.show", "pairing.changed", "pane.reveal", "pet.changed", "pet.generate.progress",
+    "moa.aggregating", "moa.phase", "moa.progress", "moa.reference", "notice",
+    "pairing.changed", "pane.reveal", "pet.changed", "pet.generate.progress",
     "pet.hatch.progress", "platforms.changed", "preview.close", "preview.open", "preview.restart.complete",
     "preview.restart.progress", "projects.changed", "reaction", "review.summary", "session.control.update",
     "session.reclaimed", "session.resume_progress", "session.title", "sessions.changed", "setup.ready",
@@ -135,6 +138,18 @@ UNREAD_EVENTS = frozenset({
 # `yolo` (bool) is this session's approvals off, `reasoning_effort` (str, "" when unset) its effort.
 SESSION_INFO_YOLO = "yolo"
 SESSION_INFO_REASONING_EFFORT = "reasoning_effort"
+
+# `notification.show` (`contracts/events.py` NotificationShowPayload, built by `agent_callbacks._agent_notice_update`
+# and the slow agent-build notice in `server._await_agent_ready`): `text` carries its own glyph, `level` is one of
+# NOTIFICATION_LEVELS, `kind` sticky, ttl or agent, `ttl_ms` is honoured for kind ttl, and a later show or a
+# `notification.clear` naming the same `key` replaces or withdraws it.
+NOTIFICATION_TEXT = "text"
+NOTIFICATION_LEVEL = "level"
+NOTIFICATION_KIND = "kind"
+NOTIFICATION_TTL_MS = "ttl_ms"
+NOTIFICATION_KEY = "key"
+NOTIFICATION_LEVELS = frozenset({"info", "warn", "error", "success"})
+NOTIFICATION_TTL_KIND = "ttl"
 
 # `subagent.tail`'s result (`contracts/profiles_vault_complete_foreign_subagents.py` `SubagentTailResult`):
 # `available` is false while the child has no live transcript; `text` is its last 16 KB, `truncated` says

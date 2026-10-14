@@ -392,9 +392,9 @@ extension of Hermes' TUI), a Hermes patch or fork, an execution surface
 Hermes' `tui_gateway` newline JSON-RPC over stdio, which the OMH TUI speaks as
 a client. The slice the TUI relies on (the methods it calls with the only
 keys it sends, how it answers each server-to-client request, and the subagent
-events and the `session.info`, `subagent.tail` and `session.steer` fields and
-values it keys on) is declared once in `src/tui/gateway_contract.py`, against
-a named Hermes commit, with every event type split into handled and unread;
+and notification events and the `session.info`, `subagent.tail` and
+`session.steer` fields and values it keys on) is declared once in
+`src/tui/gateway_contract.py`, against a named Hermes commit, with every event type split into handled and unread;
 an event type it does not handle is ignored, never an error, and a submitted
 turn that brings no event the TUI shows, only undeclared types, gets one
 notice pointing at `omh doctor`, which prints the installed Hermes commit next

@@ -76,6 +76,7 @@ import signal
 import sys
 import time
 from types import FrameType
+import unicodedata
 from typing import Any, Protocol, TextIO
 
 from ..plugin_bundle.omh.hud_text import elapsed_text
@@ -320,6 +321,18 @@ CATALOG_REFUSED_NOTICE = (
     "OMH TUI already knew; Hermes commands still run when typed."
 )
 GUIDE_KEY = "?"
+# A notification's glyph by level, unless its text opens with a glyph of its own (Hermes writes most of them so).
+NOTIFICATION_GLYPHS = {"info": "ℹ ", "warn": "⚠ ", "error": "✗ ", "success": "✓ "}
+# What a refused call outside a command failed to do, in the words a person reads; the method and the JSON-RPC
+# code stay out of the transcript. A refusal inside a command is Hermes' own words under the command's echo.
+CALL_FAILED_PHRASES = {
+    "prompt.submit": "take the prompt",
+    "session.interrupt": "interrupt the turn",
+    "image.detach": "remove the image",
+    "slash.exec": "run the command",
+    "command.dispatch": "run the command",
+    "session.list": "list the stored sessions",
+}
 
 
 class TerminalLike(Protocol):
@@ -354,6 +367,48 @@ class _Pending:
     on_error: Callable[[dict[str, Any]], bool] | None = None
     expires_at: float = math.inf  # on the app's clock: `_expire_calls` forgets the call then
     for_command: bool = False  # made while a command ran: the command's echo stays open until it is answered
+
+
+@dataclass(frozen=True)
+class Notification:
+    """One `notification.show` as the row above the composer shows it, until `expires_at` on the app's clock."""
+
+    text: str
+    level: str
+    key: str
+    expires_at: float = math.inf
+
+    def style(self, theme: Theme) -> Style:
+        return {"warn": theme.warn, "error": theme.error, "success": theme.ok}.get(self.level, theme.muted)
+
+    def line(self, width: int, theme: Theme) -> Line:
+        """The glyph (Hermes' own when the text opens with one) and the text, cut to `width`."""
+        first = self.text[:1]
+        own_glyph = bool(first) and not first.isalnum() and unicodedata.category(first)[0] in "SP"
+        glyph = "" if own_glyph else NOTIFICATION_GLYPHS.get(self.level, NOTIFICATION_GLYPHS["info"])
+        return truncate_line((Span(glyph + self.text, self.style(theme)),), width)
+
+
+def notification_from(payload: Mapping[str, Any], now: float) -> Notification | None:
+    """The row a `notification.show` payload shows; None without text. Only kind ttl expires, after `ttl_ms`."""
+    text = " ".join(clean_text(as_text(payload.get(contract.NOTIFICATION_TEXT))).split())
+    if not text:
+        return None
+    level = as_text(payload.get(contract.NOTIFICATION_LEVEL))
+    ttl = payload.get(contract.NOTIFICATION_TTL_MS)
+    expires_at = math.inf
+    if as_text(payload.get(contract.NOTIFICATION_KIND)) == contract.NOTIFICATION_TTL_KIND and isinstance(ttl, int) \
+            and not isinstance(ttl, bool) and ttl > 0:
+        expires_at = now + ttl / 1000
+    level = level if level in contract.NOTIFICATION_LEVELS else "info"
+    return Notification(text, level, as_text(payload.get(contract.NOTIFICATION_KEY)), expires_at)
+
+
+def plain_sentence(message: str) -> str:
+    """Hermes' message as a sentence: its first letter capitalised and a full stop when it ends without one."""
+    text = message.strip() or "refused"
+    text = text[:1].upper() + text[1:]
+    return text if text.endswith((".", "!", "?")) else f"{text}."
 
 
 @dataclass(frozen=True)
@@ -747,6 +802,7 @@ class App(ModesMixin, AgentViewMixin):
         self.pager: Pager | None = None
         self.resized_while_paging = False
         self.hud: HudSnapshot | None = None
+        self.notification: Notification | None = None  # Hermes' out-of-band notice, shown above the composer
         self.exit_armed_at: float | None = None
         self.exit_code: int | None = None
         self.farewell = ""
@@ -918,6 +974,7 @@ class App(ModesMixin, AgentViewMixin):
         # Plan is the TUI's flag and stays as it was.
         self.mode_request_open = False
         self.yolo_reported = None
+        self.notification = None  # Hermes' notices are the session's
         self.approvals_off = self.yolo_by_tui = self.hermes_approvals_said = False
         self.effort_asked = ""
         self.effort = ""
@@ -989,6 +1046,7 @@ class App(ModesMixin, AgentViewMixin):
         if self.exit_code is not None:
             return
         self._expire_calls()
+        self._expire_notification()
         self._track_path_token()
         self._ask_path_completion_when_due()
         self._ask_tail_when_due()
@@ -1033,7 +1091,15 @@ class App(ModesMixin, AgentViewMixin):
         tail = self._tail_due_at()
         if tail is not None:
             due.append(tail)
+        if self.notification is not None and self.notification.expires_at < math.inf:
+            due.append(self.notification.expires_at)
         return max(min(due) - now, 0.0)
+
+    def _expire_notification(self) -> None:
+        """Take a ttl notification off the screen once its time is up."""
+        if self.notification is not None and self.clock() >= self.notification.expires_at:
+            self.notification = None
+            self.dirty = True
 
     def _shutdown(self) -> None:
         """Hand the screen back to the shell, then stop the HUD poller and turn off yolo the TUI set.
@@ -1213,9 +1279,13 @@ class App(ModesMixin, AgentViewMixin):
             return
         if pending.on_error is not None and pending.on_error(error):
             return
-        self.transcript.add_notice(
-            f"{pending.method} failed ({error.get('code')}): {as_text(error.get('message'))}", NOTICE_ERROR
-        )
+        message = as_text(error.get("message")) or "refused"
+        if pending.for_command:
+            self.transcript.add_notice(plain_sentence(message), NOTICE_ERROR)  # under the command's echo
+            return
+        phrase = CALL_FAILED_PHRASES.get(pending.method, f"complete {pending.method}")
+        reason = message.strip().rstrip(".")
+        self.transcript.add_notice(f"Hermes did not {phrase}: {reason}.", NOTICE_ERROR)
 
     def _on_event(self, event: Event) -> None:
         payload = event.payload
@@ -1235,6 +1305,12 @@ class App(ModesMixin, AgentViewMixin):
             self._on_connection_request(payload)
         elif event.type == "error":
             self._on_error_event(as_text(payload.get("message")) or "The gateway reported an error.")
+        elif event.type == "notification.show":
+            self.notification = notification_from(payload, self.clock()) or self.notification
+        elif event.type == "notification.clear":
+            key = as_text(payload.get(contract.NOTIFICATION_KEY))
+            if self.notification is not None and key and self.notification.key == key:
+                self.notification = None  # a clear for another key, or a late one, leaves a newer notice
         elif event.type.startswith(contract.SUBAGENT_EVENT_PREFIX):
             self.roster.apply(event.type, payload, self.clock())  # folds what it knows; raises on nothing
             if isinstance(payload, Mapping):  # a new frame for an agent: its tail is asked for again
@@ -2461,10 +2537,11 @@ class App(ModesMixin, AgentViewMixin):
         if self.picker is not None:
             return self.picker.lines(cols, self.theme, cap, self.wall_clock())
         # Nothing has the keys: the queued prompts take the slot's last rows, right above the composer's
-        # top rule, and the menu or the panel gets the rows left. A question or the picker hides them,
-        # since Up then does not edit the queue.
+        # top rule, Hermes' notification the row above them, and the menu or the panel gets the rows left. A
+        # question or the picker hides them, since Up then does not edit the queue.
         queue = queue_lines([shown or text for text, shown, _typed in self.queued], cols, cap, self.theme)
-        return self._menu_or_panel_lines(cols, cap - len(queue)) + queue
+        notice = [self.notification.line(cols, self.theme)] if self.notification and cap > len(queue) else []
+        return self._menu_or_panel_lines(cols, cap - len(queue) - len(notice)) + notice + queue
 
     def _menu_or_panel_lines(self, cols: int, cap: int) -> list[Line]:
         if cap <= 0:

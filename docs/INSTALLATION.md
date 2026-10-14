@@ -328,6 +328,13 @@ run and approval decision stays Hermes'; the screen is OMH's.
   is not normal.
 - The composer does not move when the panel grows or shrinks; only its own
   lines move it, and the agent list for as long as it is open.
+- A notice Hermes sends outside the transcript (the agent still starting, a
+  credit warning, a provider that could not be reached) takes one row above
+  the queued prompts, in its level's colour with a glyph. The next one
+  replaces it, Hermes withdraws it, a timed one leaves when its time is up,
+  and switching sessions drops it. A call Hermes refuses is said in words:
+  under a command's echo, Hermes' own reason (`/undo` on an empty session:
+  `No user messages to undo.`); otherwise what did not happen and why.
 - While a turn has delegated work, the mode row carries a strip of its
   subagents, each named by the first words of its goal
   (`● main  ⠹ find usages of  ○ read the diff  ↓`); Down on an empty composer

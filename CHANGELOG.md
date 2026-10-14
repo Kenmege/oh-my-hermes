@@ -16,7 +16,12 @@ All notable changes will be documented here.
   prints stays in the transcript under it, a long output as its first 12 rows
   and a count of the rest for `/history`; nothing a command prints opens the
   pager any more, so typed-ahead keys are no longer swallowed and the output is
-  still in scrollback afterwards.
+  still in scrollback afterwards. Hermes' own notices (`notification.show`:
+  the agent still starting, credit warnings) show on one row above the
+  composer, replaced by the next, withdrawn by key, or gone after their time,
+  where they were dropped before; and a refused call reads as words (`/undo` on
+  an empty session: `No user messages to undo.` instead of
+  `command.dispatch failed (4018): no user messages to undo`).
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:
