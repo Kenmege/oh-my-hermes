@@ -767,15 +767,24 @@ def _memory_query_split(query: str) -> tuple[list[str], list[str]]:
     capitals or capitalized mid-sentence (`_kept_listed_words`), and every
     listed word is content when no content token longer than two Latin
     characters is left: "what is it?" is scored on "what" rather than as no
-    query, and "where do thanks go?" on "thanks" as well as "go".
+    query, and "where do thanks go?" on "thanks" as well as "go". Two things
+    come before that fallback. A two-letter word the raw query writes in
+    capitals (PR, CI, DB; not the interjections OK, HI, PS) is a name, by the
+    same case rule, so it counts as content left: "honestly what about CI" is
+    scored on CI. And the Korean suffix strip never causes the fallback: when
+    the stripped content collapses, the content without the strip is tried
+    first, so "pr 어떻게 해야돼" keeps 해야돼 as content, as it did before the
+    strip, instead of promoting 어떻게.
     """
     raw = str(query or "")
     if not raw.strip():
         return [], []
     every = _memory_token_list(raw)
-    content = _memory_token_list(raw, query=True, kept=_kept_listed_words(raw))
-    if all(len(token) <= 2 and token.isascii() for token in content):
-        content = every
+    kept = _kept_listed_words(raw)
+    content = _memory_token_list(raw, query=True, kept=kept)
+    if _no_content_left(content) and not set(content) & _written_acronyms(raw):
+        unstripped = _memory_token_list(raw, query=True, kept=kept, strip=False)
+        content = every if _no_content_left(unstripped) else unstripped
     return content, list((Counter(every) - Counter(content)).elements())
 
 def _memory_query_tokens(query: str) -> list[str]:
@@ -965,6 +974,9 @@ _QUERY_CHAT_FILLERS = frozenset(
         "remind", "reminder", "remember", "quick", "question", "questions", "anyone", "anybody",
         "someone", "somebody", "need", "needs", "tell", "know", "wondering", "wonder", "curious",
         "just", "again", "also", "ask", "okay", "sorry", "thank",
+        # Hedges and intensifiers a person opens or pads a question with.
+        "honestly", "literally", "basically", "actually", "kinda", "sorta", "really", "totally",
+        "anyway", "anyways",
     }
 )
 
@@ -983,6 +995,12 @@ _QUERY_FUNCTION_RUNS = frozenset(
         "해요", "했지", "했어", "했어요", "하지", "하나요", "합니까", "할까", "할까요", "되나요", "됐지",
         "있어", "있나요", "있지", "없어", "인가요", "이야", "이지", "일까", "알려줘", "알려줘요", "말해줘", "해줘",
         "어케", "어캐", "어떡해", "혹시",
+        # Discourse fillers and connectives (그냥, 근데, 일단, 아니, ...),
+        # intensifiers and hedges (진짜, 완전, 약간, 아마, ...), and
+        # demonstratives standing in for the topic (그거, 이게, ...).
+        "그냥", "근데", "그런데", "그래서", "일단", "아니", "뭔가",
+        "진짜", "정말", "완전", "너무", "약간", "솔직히", "아마",
+        "그거", "이거", "저거", "그게", "이게", "저게",
     }
 )
 
@@ -993,18 +1011,39 @@ _QUERY_FUNCTION_RUNS = frozenset(
 # 몇몇, 알려진), on the query side only.
 _QUERY_FUNCTION_RUN_PREFIXES = ("언제", "어떻게", "누가", "누구", "어디", "뭐", "무슨", "몇", "왜", "알려", "가르쳐")
 
+# Korean particles and the request and verb endings that glue to a noun
+# through 하다 / 되다 / 주다, stripped off the end of a query's Hangul run
+# (`_korean_query_stem`): 자동으로 is scored as 자동, 저장돼 as 저장. A run that
+# is one of them whole (해주세요, or 에서 after a Latin word as in "main에서")
+# leaves nothing. Longest first, so 으로 comes off before 로. A form that
+# repeated stripping already reaches is left out (해줘요 is 해줘 then 요).
+_QUERY_KOREAN_SUFFIXES = tuple(
+    sorted(
+        {
+            "은", "는", "이", "가", "을", "를", "에", "의", "도", "만", "로", "와", "과", "랑", "요", "좀",
+            "으로", "에서", "에게", "한테", "까지", "부터", "처럼", "보다", "이랑", "이나", "마다", "밖에",
+            "이면", "이라", "인데", "는데", "은데", "인지", "는지", "은지",
+            "해", "해줘", "해주세요", "주세요", "해봐", "해야", "하면", "해서", "하고", "했어", "했는데",
+            "하는데", "하자", "할래", "할게", "돼", "됐어", "됨",
+        },
+        key=lambda suffix: (-len(suffix), suffix),
+    )
+)
+
 # Japanese and Chinese interrogatives and request fillers, cut out of a
 # query's CJK run before it is split into bigrams, so no bigram crosses or
 # contains them: 怎么部署 keeps 部署 and loses 怎么 and 么部, and
 # どうすればいいですか leaves nothing. Longest first, so 为什么 is cut before
-# 什么 and 怎么弄 before 怎么.
+# 什么 and 怎么弄 before 怎么. The topic marker って and "how is it going"
+# (なってる) wrap a Japanese question the way "usually" (一般, 通常, 平时) and
+# "when" (什么时候, which would otherwise leave 时候 behind) wrap a Chinese one.
 _QUERY_FUNCTION_CJK = tuple(
     sorted(
         {
             "どうやって", "どう", "どの", "どれ", "どこ", "いつ", "誰", "何", "なぜ", "なに", "なん",
-            "すれば", "ですか", "いい", "教えて", "ください",
+            "すれば", "ですか", "いい", "教えて", "ください", "って", "なってる", "なっている", "なってます",
             "为什么", "怎么", "怎样", "什么", "哪里", "哪儿", "哪个", "谁", "多少", "几", "吗", "呢",
-            "请问", "一下", "怎么弄", "搞",
+            "请问", "一下", "怎么弄", "搞", "什么时候", "一般", "通常", "平时",
         },
         key=lambda word: (-len(word), word),
     )
@@ -1023,7 +1062,9 @@ _MEMORY_STEM_VOWELS = frozenset("aeiouy")
 # order; the number is the shortest stem the suffix may leave behind.
 _MEMORY_STEM_SUFFIXES = (("ment", 4), ("ing", 3), ("ion", 4), ("ed", 3), ("ly", 4))
 
-def _memory_token_list(value: str, *, query: bool = False, kept: frozenset[str] = frozenset()) -> list[str]:
+def _memory_token_list(
+    value: str, *, query: bool = False, kept: frozenset[str] = frozenset(), strip: bool = True
+) -> list[str]:
     """Index tokens for recall scoring, with repeats, covering ASCII and CJK text.
 
     ASCII words of three characters or more are indexed whole. Two-character
@@ -1051,6 +1092,8 @@ def _memory_token_list(value: str, *, query: bool = False, kept: frozenset[str] 
     With ``query=True`` the closed lists are left out: words in
     `_QUERY_DROPPED_WORDS` (unless in ``kept``), Korean runs in
     `_QUERY_FUNCTION_RUNS` or starting with `_QUERY_FUNCTION_RUN_PREFIXES`,
+    the `_QUERY_KOREAN_SUFFIXES` a Hangul run ends in (`_korean_query_stem`;
+    ``strip=False`` keeps the run whole, for `_memory_query_split`'s fallback),
     and `_QUERY_FUNCTION_CJK` cut out of a run before its bigrams are taken.
     Records are always tokenized in full.
     """
@@ -1070,13 +1113,64 @@ def _memory_token_list(value: str, *, query: bool = False, kept: frozenset[str] 
         if token not in _MEMORY_SHORT_STOPWORDS and not (query and token in _QUERY_DROPPED_WORDS and token not in kept)
     )
     for run in _MEMORY_CJK_RUN.findall(lowered):
-        if query and (run in _QUERY_FUNCTION_RUNS or run.startswith(_QUERY_FUNCTION_RUN_PREFIXES)):
+        if not query:
+            segments = [run]
+        elif _is_query_function_run(run):
             continue
-        for segment in _cut_cjk_function_words(run) if query else (run,):
+        elif not strip:
+            segments = [run] if all("\uac00" <= char <= "\ud7a3" for char in run) else _cut_cjk_function_words(run)
+        elif all("\uac00" <= char <= "\ud7a3" for char in run):
+            stem = _korean_query_stem(run)
+            segments = [stem] if stem else []
+        else:
+            segments = _cut_cjk_function_words(run)
+        for segment in segments:
             if len(segment) > 2:
                 tokens.append(segment)
             tokens.extend(segment[index : index + 2] for index in range(len(segment) - 1))
     return tokens
+
+
+def _is_query_function_run(run: str) -> bool:
+    """A Korean run the query drops whole: listed, or starting with a listed interrogative stem."""
+    return run in _QUERY_FUNCTION_RUNS or run.startswith(_QUERY_FUNCTION_RUN_PREFIXES)
+
+
+def _korean_query_stem(run: str) -> str:
+    """A query's Hangul run without the `_QUERY_KOREAN_SUFFIXES` it ends in.
+
+    The longest listed suffix comes off, again and again, while at least two
+    syllables stay: 자동으로 -> 자동, 확인해주세요 -> 확인, 메모리에서는 -> 메모리,
+    while 경로 and 평가 stay whole. The query then scores the stem -- whole
+    when longer than two syllables, and its bigrams -- and `_memory_query_split`
+    moves everything else the run indexes to the listed tier. The stem's
+    bigrams are a subset of the run's, so within the run the strip adds no
+    match: it only moves the suffix-bearing tokens (the inflected run, the
+    bigram that crosses into the suffix, the suffix's own bigrams) from
+    coverage to ordering, so "배포는 main 머지 후 자동으로 나간다" no longer
+    covers 으로 for "메모리 자동으로 저장돼?". The whole stem is the one token
+    that can be new, and only a record whose run is that bare stem holds it,
+    which already shares its bigrams: an inflected query scores as the bare
+    noun would. (A query left with no content falls back as
+    `_memory_query_split` says.)
+
+    The suffixes are spelled, not parsed, so a noun of three or more
+    syllables that ends in a listed syllable is cut too: 재시도 scores as 재시,
+    게이트웨이 as 게이트웨, 응답속도 as 응답속 -- each keeps its other bigrams
+    as content and loses its last bigram and its whole-run token to ordering.
+    A run that reduces to a stem which is itself a listed suffix leaves
+    nothing: 인지도 is 인지 + 도, the same shape as 해야돼 (해야 + 돼).
+
+    Empty when the run is wholly a listed suffix, or when what is left is one
+    or is a function run (진짜로 -> 진짜, which `_QUERY_FUNCTION_RUNS` lists).
+    """
+    stem = run
+    while stem not in _QUERY_KOREAN_SUFFIXES:
+        suffix = next((suffix for suffix in _QUERY_KOREAN_SUFFIXES if stem.endswith(suffix) and len(stem) - len(suffix) >= 2), "")
+        if not suffix:
+            break
+        stem = stem[: -len(suffix)]
+    return "" if stem in _QUERY_KOREAN_SUFFIXES or _is_query_function_run(stem) else stem
 
 
 def _cut_cjk_function_words(run: str) -> list[str]:
@@ -1115,6 +1209,21 @@ def _kept_listed_words(raw: str) -> frozenset[str]:
             if before and before[-1] not in _QUERY_SENTENCE_BREAKS:
                 kept.add(lowered)
     return frozenset(kept)
+
+def _no_content_left(content: list[str]) -> bool:
+    """No content token longer than two Latin characters: the fallback's trigger."""
+    return all(len(token) <= 2 and token.isascii() for token in content)
+
+# Two-letter all-caps words that are interjections, not names.
+_QUERY_CAPITAL_INTERJECTIONS = frozenset({"ok", "hi", "ps"})
+
+def _written_acronyms(raw: str) -> frozenset[str]:
+    """Two-letter words the raw query writes all in capitals, lowercased, minus interjections."""
+    return frozenset(
+        word.lower()
+        for word in _QUERY_RAW_WORD.findall(raw)
+        if len(word) == 2 and word.isupper() and word.lower() not in _QUERY_CAPITAL_INTERJECTIONS
+    )
 
 def _memory_tokens(value: str) -> set[str]:
     """The distinct, unstemmed tokens of `_memory_token_list`."""
@@ -1490,6 +1599,7 @@ __all__ = [
     "_QUERY_FUNCTION_RUN_PREFIXES",
     "_QUERY_FUNCTION_CJK",
     "_QUERY_FUNCTION_WORDS",
+    "_QUERY_KOREAN_SUFFIXES",
     "_SAFE_TAG",
     "_SOURCE_EVIDENCE_MAX_BYTES",
     "_TEMPORAL_QUERY_CUES",
@@ -1512,6 +1622,7 @@ __all__ = [
     "_memory_query_split",
     "_kept_listed_words",
     "_cut_cjk_function_words",
+    "_korean_query_stem",
     "_memory_token_list",
     "_memory_tokens",
     "_normalize_evaluator_timestamps",
