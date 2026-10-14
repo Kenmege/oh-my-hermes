@@ -256,7 +256,14 @@ class HudScanTests(unittest.TestCase):
             for name in ("a", "a-b", "a.b", "a b", "b", "C", "b0"):
                 (runs / name).mkdir(parents=True)
                 (runs / name / "run.json").write_text("{}", encoding="utf-8")
-            for limit in range(1, 9):
+            (runs / "z").mkdir()  # the newest name, over the size cap
+            (runs / "z" / "run.json").write_text(" " * (runtime_reader.MAX_HUD_METADATA_BYTES + 1), encoding="utf-8")
+            (runs / "y").mkdir()  # the next newest, its run.json a symlink
+            try:
+                (runs / "y" / "run.json").symlink_to(runs / "a" / "run.json")
+            except OSError:  # no symlink privilege (Windows): the size case still runs
+                pass
+            for limit in range(1, 11):
                 with self.subTest(limit=limit):
                     self.assertEqual(
                         runtime_reader._newest_hud_child_files(runs, "run.json", limit=limit),
@@ -291,6 +298,45 @@ class HudScanTests(unittest.TestCase):
             self.assertEqual(read(), (["run-15", "run-0"], 2))  # the rewritten file, then run-0
             runtime_reader._hud_binding_orders.clear()
             self.assertEqual(read(), (["run-15", "run-0"], 20))  # the same cut as a read that remembers nothing
+
+    def test_each_read_remembers_only_the_binding_files_it_saw(self) -> None:
+        with TemporaryDirectory() as tmp:
+            runtime_dir = self._bindings(Path(tmp), 3)
+            files = sorted(runtime_dir.rglob("binding.json"))
+            runtime_reader._progress_bindings(runtime_dir, limit=2, hud_safe=True)
+            self.assertEqual(sorted(runtime_reader._hud_binding_orders), files)
+            files[0].unlink()
+            runtime_reader._progress_bindings(runtime_dir, limit=2, hud_safe=True)
+            self.assertEqual(sorted(runtime_reader._hud_binding_orders), files[1:])
+
+    def test_a_survivor_whose_file_changed_after_its_stat_is_left_out(self) -> None:
+        with TemporaryDirectory() as tmp:
+            runtime_dir = self._bindings(Path(tmp), 3)
+            runtime_reader._progress_bindings(runtime_dir, limit=2, hud_safe=True)  # every order remembered
+            newest = next(
+                path for path in runtime_dir.rglob("binding.json")
+                if json.loads(path.read_text(encoding="utf-8"))["target_id"] == "run-0"
+            )
+            real = runtime_reader._read_hud_json
+
+            def rewritten_after_its_stat(path: Path, **kwargs: object) -> dict[str, object]:
+                return {} if path == newest else real(path, **kwargs)
+
+            with patch.object(runtime_reader, "_read_hud_json", side_effect=rewritten_after_its_stat):
+                bindings = runtime_reader._progress_bindings(runtime_dir, limit=2, hud_safe=True)
+            self.assertEqual([item["binding"]["target_id"] for item in bindings], ["run-1"])
+
+    @staticmethod
+    def _bindings(root: Path, count: int) -> Path:
+        """`count` run bindings, run-0 the newest; the runtime directory that holds them."""
+        paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+        now = datetime.now(timezone.utc)
+        for index in range(count):
+            stamp = (now - timedelta(seconds=10 + index)).isoformat().replace("+00:00", "Z")
+            write_progress_binding(
+                paths, build_progress_binding(target_type="run", target_id=f"run-{index}", executor_profile="codex", now=stamp)
+            )
+        return paths.omh_home.resolve() / "runtime"
 
 
 if __name__ == "__main__":
