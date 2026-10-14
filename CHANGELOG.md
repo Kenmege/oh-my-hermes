@@ -41,7 +41,10 @@ All notable changes will be documented here.
   exit code; it never reaches the model, and during a turn it waits in the
   queue. A paste of more than 3 lines or 800 characters is one atomic chip,
   `[Pasted text #1 +60 lines]`, sent whole and shown compact in the
-  transcript.
+  transcript. The working row counts the turn's tokens, each turn ends with
+  `✻ 34s · 3 tools · ↓1.2k`, a turn of 10 s or more ends with the terminal's
+  notification (OSC 9, OSC 777 or the bell; `OMH_TUI_BELL=0` silences it), and
+  the terminal title names the session and its state.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

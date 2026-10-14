@@ -1573,7 +1573,8 @@ class LocalCommandTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         reply = turn_rows("session", 44)["params"]["payload"]["text"].strip()
-        self.assertEqual(run.terminal.screen.osc, ["52;c;" + base64.b64encode(reply.encode("utf-8")).decode("ascii")])
+        copied = [body for body in run.terminal.screen.osc if body.startswith("52;")]  # the titles are OSC 2
+        self.assertEqual(copied, ["52;c;" + base64.b64encode(reply.encode("utf-8")).decode("ascii")])
         self.assertNotIn("52;c;", run.terminal.history())
 
     def test_logs_pages_the_gateway_stderr_and_q_leaves(self) -> None:

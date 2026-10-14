@@ -402,7 +402,17 @@ run and approval decision stays Hermes'; the screen is OMH's.
   Enter included, so typing that was meant for the composer cannot answer it.
   Approving a command permanently stays a choice for `hermes --tui`. The
   terminal bell rings once as an approval opens, so a terminal in the
-  background can flag it; `OMH_TUI_BELL=0` keeps it quiet.
+  background can flag it, and a turn that ran 10 s or more ends with the
+  terminal's own notification: OSC 9 in iTerm2, WezTerm and Ghostty, OSC 777
+  in foot and rxvt, the bell elsewhere (tmux among them, which flags the
+  window); `OMH_TUI_BELL=0` keeps both quiet.
+- While a turn runs, the working row reads
+  `⠋ <what Hermes is doing> (12s · ↓1.2k tokens · esc to interrupt)`, the
+  tokens being what the turn has written so far; each turn ends with a line
+  `✻ 34s · 3 tools · ↓1.2k`. The terminal's title names the session (Hermes
+  titles it after its first turn) and whether it is idle, running or waiting
+  on you; on exit the title you had comes back where the terminal keeps a
+  title stack.
 - Images: drag an image file onto the terminal, press Ctrl+V for an image on
   the clipboard, or type `/image <path>`. Each one shows as a chip on the row
   above the input (`📎 shot.png 1280×720`) and goes with the next message you

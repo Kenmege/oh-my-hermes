@@ -118,7 +118,7 @@ SUBAGENT_EVENTS = (
 # and the roster SUBAGENT_EVENTS; `test_tui_gateway_contract` holds each of the three to these names.
 APP_EVENTS = (
     "request.cancel", "approval.cancelled", "session.info", "session.usage", "connection.request", "error",
-    "notification.show", "notification.clear",
+    "notification.show", "notification.clear", "session.title",
 )
 TRANSCRIPT_EVENTS = (
     "message.start", "message.delta", "message.interim", "message.complete", "thinking.delta", "reasoning.delta",
@@ -136,7 +136,7 @@ UNREAD_EVENTS = frozenset({
     "pairing.changed", "pane.reveal", "pet.changed", "pet.generate.progress",
     "pet.hatch.progress", "platforms.changed", "preview.close", "preview.open", "preview.restart.complete",
     "preview.restart.progress", "projects.changed", "reaction", "review.summary", "session.control.update",
-    "session.reclaimed", "session.resume_progress", "session.title", "sessions.changed", "setup.ready",
+    "session.reclaimed", "session.resume_progress", "sessions.changed", "setup.ready",
     "skin.changed", "terminal.close", "tip.show", "todo.updated", "tool.output_risk", "voice.interrupted",
     "voice.partial", "voice.status", "voice.transcript", "wake.detected",
 })
@@ -157,6 +157,10 @@ NOTIFICATION_TTL_MS = "ttl_ms"
 NOTIFICATION_KEY = "key"
 NOTIFICATION_LEVELS = frozenset({"info", "warn", "error", "success"})
 NOTIFICATION_TTL_KIND = "ttl"
+
+# `session.title` (`contracts/events.py` SessionTitlePayload): auto-titling renamed the session; `title` is the new
+# name (the payload's `session_id` is the stored key, and the envelope's is the live session, as for every event).
+SESSION_TITLE = "title"
 
 # `subagent.tail`'s result (`contracts/profiles_vault_complete_foreign_subagents.py` `SubagentTailResult`):
 # `available` is false while the child has no live transcript; `text` is its last 16 KB, `truncated` says

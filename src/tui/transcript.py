@@ -63,6 +63,7 @@ from dataclasses import dataclass, field
 import time
 from typing import Any
 
+from ..plugin_bundle.omh.hud_text import elapsed_text
 from .diff_view import DIFF_FILE, FILE_ARROW, DiffLine, diff_rows, parse_inline_diff
 from .gateway import Event
 from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
@@ -147,6 +148,16 @@ class AssistantBlock:
 
 
 @dataclass
+class TurnSummaryBlock:
+    """The line that closes a turn: how long it took, its tool calls, and what it wrote (None when unknown)."""
+
+    seconds: float
+    tools: int
+    output_tokens: int | None = None
+    done: bool = True
+
+
+@dataclass
 class ThinkingBlock:
     text: str = ""
     done: bool = False
@@ -197,7 +208,7 @@ class ToolGroup:
     parallel: int = 1  # most tools running at the same moment
 
 
-Block = UserBlock | AssistantBlock | ThinkingBlock | ToolGroup | NoticeBlock | CommandBlock
+Block = UserBlock | AssistantBlock | ThinkingBlock | ToolGroup | NoticeBlock | CommandBlock | TurnSummaryBlock
 
 
 # ── payload reading ───────────────────────────────────────────────────────
@@ -313,6 +324,14 @@ def _duration(payload: dict[str, Any], row: ToolRow, now: float) -> float | None
     return None
 
 
+def compact_count(value: float) -> str:
+    """`950`, `1.2k`, `3M`: a count in at most four characters and a unit."""
+    for size, suffix in ((1_000_000, "M"), (1_000, "k")):
+        if value >= size:
+            return f"{value / size:.1f}".removesuffix(".0") + suffix
+    return str(int(value))
+
+
 def _earlier(count: int) -> str:
     return f"{count} earlier {'message' if count == 1 else 'messages'}"
 
@@ -381,6 +400,17 @@ def _notice_style(level: str, theme: Theme) -> tuple[str, Style]:
 def _notice_rows(block: NoticeBlock, width: int, theme: Theme) -> list[Line]:
     mark, style = _notice_style(block.level, theme)
     return _text_rows(block.text, style, (Span(mark, style),), (Span(" " * len(mark)),), width)
+
+
+TURN_DONE_MARK = "✻ "
+
+
+def _summary_rows(block: TurnSummaryBlock, width: int, theme: Theme) -> list[Line]:
+    """`✻ 34s · 3 tools · ↓1.2k`."""
+    facts = [elapsed_text(block.seconds), f"{block.tools} tool{'' if block.tools == 1 else 's'}"]
+    if block.output_tokens:
+        facts.append(f"↓{compact_count(block.output_tokens)}")
+    return [truncate_line((Span(TURN_DONE_MARK, theme.dim), Span(" · ".join(facts), theme.muted)), width)]
 
 
 _OUTPUT_GLYPHS = {NOTICE_WARN: "⚠ ", NOTICE_ERROR: "✗ "}
@@ -507,6 +537,8 @@ def block_rows(block: Block, width: int, theme: Theme, expanded: bool = False, m
         return _notice_rows(block, width, theme)
     if isinstance(block, CommandBlock):
         return _command_rows(block, width, theme, expanded)
+    if isinstance(block, TurnSummaryBlock):
+        return _summary_rows(block, width, theme)
     if isinstance(block, AssistantBlock):
         return _assistant_rows(block, width, theme)
     if isinstance(block, ThinkingBlock):
@@ -592,6 +624,11 @@ class Transcript:
             self._append(CommandBlock(command, [(text, level)], whole, done=True))
         else:
             self._append(NoticeBlock(text, level))
+
+    def add_turn_summary(self, seconds: float, output_tokens: int | None) -> None:
+        """Close the turn that just ended with its done line; its tool calls are counted from the turn's blocks."""
+        tools = sum(len(block.tools) for block in self.blocks[self._turn_start :] if isinstance(block, ToolGroup))
+        self._append(TurnSummaryBlock(max(seconds, 0.0), tools, output_tokens))
 
     def close_command(self) -> None:
         """The open command is over: its echo and output leave the live region at the next take."""

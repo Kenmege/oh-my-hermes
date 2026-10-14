@@ -163,9 +163,9 @@ from .slash import (
 )
 from .style import CSI, Line, Span, Style
 from .subagents import Hit, Roster
-from .terminal import Terminal, background_from_colorfgbg, terminal_supported
+from .terminal import Terminal, background_from_colorfgbg, terminal_name, terminal_supported
 from .theme import DEFAULT_THEME, LIGHT_STAND_IN, Theme, build_theme, is_light, theme_named
-from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, as_text, block_rows
+from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, as_text, block_rows, compact_count
 from .width import cell_width, line_width, truncate_left, truncate_line
 from ..version import __version__
 
@@ -286,6 +286,20 @@ CURSOR_REPORT_FINAL = b"R"
 BELL = "\a"
 BELL_ENV = "OMH_TUI_BELL"
 BELL_OFF = "0"
+# A turn that ran this long ends with the terminal's attention signal (`attention_sequence`).
+TURN_ALERT_SECONDS = 10.0
+TURN_ALERT_TEXT = "Hermes finished a turn ({elapsed})"
+# Terminals that show OSC 9 as a notification, and the TERM names whose form is OSC 777; elsewhere the bell.
+OSC9_TERMINALS = frozenset({"iTerm.app", "WezTerm", "ghostty"})
+OSC777_TERMS = ("foot", "rxvt")
+# The terminal title (OSC 2), pushed onto xterm's title stack before the first one and popped on the way out.
+TITLE_PUSH = f"{CSI}22;0t"
+TITLE_POP = f"{CSI}23;0t"
+# Every OSC string written here ends with ST, not BEL, so a BEL on the wire is only ever the bell itself.
+STRING_TERMINATOR = "\x1b\\"
+TITLE_SET = "\x1b]2;{}" + STRING_TERMINATOR
+TITLE_DEFAULT = "Hermes"
+TITLE_CHARS = 80
 
 EXIT_HINT = "Ctrl+C again to exit"
 INTERRUPT_HINT = "esc to interrupt"
@@ -432,6 +446,16 @@ def notification_from(payload: Mapping[str, Any], now: float) -> Notification | 
     return Notification(text, level, as_text(payload.get(contract.NOTIFICATION_KEY)), expires_at)
 
 
+def attention_sequence(environ: Mapping[str, str], message: str) -> str:
+    """What asks for the person's attention on this terminal: OSC 9, OSC 777, or the bell, by its name."""
+    text = clean_text(message)
+    if terminal_name(environ) in OSC9_TERMINALS:
+        return f"\x1b]9;{text}{STRING_TERMINATOR}"
+    if environ.get("TERM", "").startswith(OSC777_TERMS):
+        return f"\x1b]777;notify;OMH;{text}{STRING_TERMINATOR}"
+    return BELL
+
+
 def plain_sentence(message: str) -> str:
     """Hermes' message as a sentence: its first letter capitalised and a full stop when it ends without one."""
     text = message.strip() or "refused"
@@ -474,13 +498,6 @@ def busy_mode(config_result: Mapping[str, Any]) -> str:
     return value if value in BUSY_MODES else BUSY_QUEUE
 
 
-def _compact_count(value: float) -> str:
-    for size, suffix in ((1_000_000, "M"), (1_000, "k")):
-        if value >= size:
-            return f"{value / size:.1f}".removesuffix(".0") + suffix
-    return str(int(value))
-
-
 def context_text(usage: object) -> str:
     """`ctx 13.9k/1M 1%` from a `session.usage` / `session.info` usage block; "" when it has no context figures."""
     if not isinstance(usage, dict):
@@ -489,7 +506,7 @@ def context_text(usage: object) -> str:
     limit = usage.get("context_max")
     if not isinstance(used, int | float) or not isinstance(limit, int | float) or limit <= 0:
         return ""
-    text = f"ctx {_compact_count(used)}/{_compact_count(limit)}"
+    text = f"ctx {compact_count(used)}/{compact_count(limit)}"
     percent = usage.get("context_percent")
     if isinstance(percent, int | float) and not isinstance(percent, bool):
         text += f" {percent:.0f}%"
@@ -868,6 +885,11 @@ class App(ModesMixin, AgentViewMixin):
         self.wake: int | None = None  # the gateway client's wake descriptor, which `run` selects on with the input
         self.input_at = 0.0  # when input last arrived, on `clock`
         self.background: str | None = None  # the terminal's background as it reported it; None when it did not
+        self.usage_output: int | None = None  # the session's `output` counter, as the last usage block said
+        self.turn_output_base: int | None = None  # that counter as the running turn began
+        self.session_title = ""  # Hermes' auto-title for the session (`session.title`)
+        self.shown_title: str | None = None  # the terminal title last written
+        self.title_pushed = False
         self.background_mode = BACKGROUND_AUTO
         self.dirty = True
         self.last_render = -math.inf
@@ -1013,6 +1035,7 @@ class App(ModesMixin, AgentViewMixin):
         self.mode_request_open = False
         self.yolo_reported = None
         self.notification = None  # Hermes' notices are the session's
+        self.session_title = ""
         self.rewind = self.rewind_picker = None  # a rewind names a row of the session being left
         self.approvals_off = self.yolo_by_tui = self.hermes_approvals_said = False
         self.effort_asked = ""
@@ -1168,6 +1191,9 @@ class App(ModesMixin, AgentViewMixin):
                     self.region.flush_above(stable, cols)
             finally:
                 self.region.clear()
+            if self.title_pushed:
+                self.terminal.write(TITLE_POP)  # the title the shell had
+                self.title_pushed = False
             if reports_may_arrive:
                 self._discard_late_reports()
         except OSError as error:
@@ -1349,6 +1375,8 @@ class App(ModesMixin, AgentViewMixin):
             self._on_error_event(as_text(payload.get("message")) or "The gateway reported an error.")
         elif event.type == "notification.show":
             self.notification = notification_from(payload, self.clock()) or self.notification
+        elif event.type == "session.title":
+            self.session_title = " ".join(clean_text(as_text(payload.get(contract.SESSION_TITLE))).split())
         elif event.type == "notification.clear":
             key = as_text(payload.get(contract.NOTIFICATION_KEY))
             if self.notification is not None and key and self.notification.key == key:
@@ -1362,10 +1390,32 @@ class App(ModesMixin, AgentViewMixin):
             if event.type == "message.start":
                 if not self.turn_pending:  # a turn this TUI did not start (a resumed one, a server queue)
                     self.busy_since = self.clock()
+                    self.turn_output_base = self.usage_output
                 self.turn_pending = False
             elif event.type == "message.complete":
                 self.turn_pending = False
+                self._take_usage(payload.get("usage"))
+                seconds = self.clock() - self.busy_since
+                self.transcript.add_turn_summary(seconds, self._turn_tokens())
+                self._alert_turn_end(seconds)
                 self._drain_queue()
+
+    def _alert_turn_end(self, seconds: float) -> None:
+        """A turn of `TURN_ALERT_SECONDS` or more ends with the terminal's attention signal, unless OMH_TUI_BELL=0."""
+        if seconds < TURN_ALERT_SECONDS or self.environ.get(BELL_ENV) == BELL_OFF:
+            return
+        self.terminal.write(attention_sequence(self.environ, TURN_ALERT_TEXT.format(elapsed=elapsed_text(seconds))))
+
+    def _write_title(self) -> None:
+        """The terminal title, `<session title> · <state>`, written only when it changed (the first one pushes the old)."""
+        state = STATE_WAITING if self.slot is not None else STATE_RUNNING if self._busy() else STATE_IDLE
+        title = truncate_left(f"{self.session_title or TITLE_DEFAULT} · {state}", TITLE_CHARS)
+        if title == self.shown_title:
+            return
+        self.shown_title = title
+        push = "" if self.title_pushed else TITLE_PUSH
+        self.title_pushed = True
+        self.terminal.write(push + TITLE_SET.format(title))  # the session title was cleaned as it arrived
 
     def _watch_turn(self, event_type: str) -> None:
         """Say once when a submitted turn has brought no event it shows, only types the contract does not declare.
@@ -1428,9 +1478,19 @@ class App(ModesMixin, AgentViewMixin):
         self._adopt_stored(as_text(payload.get("stored_session_id")))
 
     def _take_usage(self, usage: object) -> None:
-        """A usage block with context figures replaces the shown ones; one without leaves them."""
+        """A usage block with context figures replaces the shown ones; one without leaves them. Its `output` counts tokens."""
         if context_text(usage):
             self.context, self.context_percent = context_text(usage), context_percent(usage)
+        output = usage.get("output") if isinstance(usage, dict) else None
+        if isinstance(output, int) and not isinstance(output, bool):
+            self.usage_output = output
+
+    def _turn_tokens(self) -> int | None:
+        """What the running (or just ended) turn has written, by the usage counter; None before it has written any."""
+        if self.usage_output is None or self.turn_output_base is None:
+            return None
+        written = self.usage_output - self.turn_output_base
+        return written if written > 0 else None
 
     def _on_withdrawn(self, payload: Mapping[str, Any]) -> None:
         ids = {as_text(payload.get("id"))} - {""}
@@ -1909,6 +1969,7 @@ class App(ModesMixin, AgentViewMixin):
         self.turn_pending = True
         self.turn_unknown, self.turn_unknown_count = [], 0
         self.busy_since = self.clock()
+        self.turn_output_base = self.usage_output
         self.attachments.clear()  # the gateway sends its queued images with this turn
         params: dict[str, Any] = {"session_id": self.sid, "text": text}
         if queued:
@@ -2691,6 +2752,7 @@ class App(ModesMixin, AgentViewMixin):
     def _render(self) -> None:
         cols, rows = self.size
         self._settle_list()
+        self._write_title()
         if self.pager is not None:
             self.clickable = {}
             self._set_mouse(False)
@@ -2806,7 +2868,9 @@ class App(ModesMixin, AgentViewMixin):
             now = self.clock()
             spinner = SPINNER_FRAMES[int(now / TICK_SECONDS) % len(SPINNER_FRAMES)]
             elapsed = elapsed_text(now - (self.busy_since or now))
-            row = f"{spinner} {text} ({elapsed} · {INTERRUPT_HINT})"
+            tokens = self._turn_tokens()
+            written = f" · ↓{compact_count(tokens)} tokens" if tokens else ""
+            row = f"{spinner} {text} ({elapsed}{written} · {INTERRUPT_HINT})"
             lines.append(truncate_line((Span(row, self.theme.muted),), cols))
         return lines
 
