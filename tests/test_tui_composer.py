@@ -115,11 +115,20 @@ class InsertTests(unittest.TestCase):
             composer.handle(key)
         self.assertEqual(composer.text, "/quit")
 
+    def test_reported_alt_b_and_f_move_by_a_word_as_the_legacy_bytes_do(self) -> None:
+        for data, arrow in ((b"\x1b[98;3u", LEFT), (b"\x1b[102;3u", RIGHT)):
+            with self.subTest(data=data):
+                composer, by_arrow = at("one two three", 5), at("one two three", 5)
+                by_arrow.handle(Key(arrow, alt=True))
+                (key,) = KeyDecoder().feed(data)
+                self.assertTrue(key.protocol)
+                composer.handle(key)
+                self.assertEqual((composer.text, composer.caret), ("one two three", by_arrow.caret))
+
     def test_reported_alt_chords_and_unbound_ctrl_keys_change_nothing(self) -> None:
         # A kitty or modifyOtherKeys report says Alt was held: no Esc can hide in it, so it types nothing.
         composer = at("abc", 1)
-        reported = [Key(CHAR, char, alt=True, protocol=True) for char in "xbf"]
-        for key in (*reported, ctrl("q"), Key(INSERT), Key(PAGE_UP), Key(UNKNOWN)):
+        for key in (Key(CHAR, "x", alt=True, protocol=True), ctrl("q"), Key(INSERT), Key(PAGE_UP), Key(UNKNOWN)):
             with self.subTest(key=key):
                 self.assertEqual(composer.handle(key), ComposerAction(NONE))
                 self.assertEqual((composer.text, composer.caret), ("abc", 1))
@@ -249,6 +258,19 @@ class DeleteTests(unittest.TestCase):
         self.assertEqual(composer.text, "say 안녕 ")
         press(composer, ctrl("w"), ctrl("w"))
         self.assertEqual((composer.text, composer.caret), ("", 0))
+
+    def test_alt_or_ctrl_backspace_deletes_the_word_before_the_caret_as_ctrl_w_does(self) -> None:
+        # Legacy Alt+Backspace (`ESC DEL`), and the kitty reports of Alt+Backspace and Ctrl+Backspace.
+        for data in (b"\x1b\x7f", b"\x1b[127;3u", b"\x1b[127;5u"):
+            with self.subTest(data=data):
+                composer = at("say 안녕 하세요  ", len("say 안녕 하세요  "))
+                for key in KeyDecoder().feed(data):
+                    composer.handle(key)
+                self.assertEqual((composer.text, composer.caret), ("say 안녕 ", len("say 안녕 ")))
+        composer = Composer()
+        composer.handle(Paste("\n".join(f"line {number}" for number in range(10))))
+        press(composer, Key(BACKSPACE, alt=True))
+        self.assertEqual((composer.text, composer.pastes), ("", {}))  # a chip goes whole
 
     def test_ctrl_u_and_ctrl_k_kill_to_the_line_edges(self) -> None:
         composer = at("one\ntwo three\nfour", len("one\ntwo "))

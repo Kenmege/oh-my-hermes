@@ -60,7 +60,9 @@ All notable changes will be documented here.
   whole plan, bare `/model` opens a picker of the models Hermes offers and
   switches this session to the one picked (it printed the current model
   before), and `/export` first says that Hermes exports a profile archive, not
-  the transcript.
+  the transcript. Alt+Backspace (and Ctrl+Backspace) deletes the word before
+  the caret, and Alt+B and Alt+F move by a word under the kitty keyboard
+  protocol too, where they did nothing.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

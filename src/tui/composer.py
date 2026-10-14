@@ -21,16 +21,17 @@ keep the caret row inside it.
 
 Keys: printable text inserts, with Alt too unless the chord came as a kitty or
 modifyOtherKeys report (the legacy bytes `ESC x` are also Esc then x arriving in
-one read, and the x is not lost with the Esc), except the legacy `ESC b` and
-`ESC f`, which move a word back and forward as readline's Alt+B and Alt+F do
-(Terminal.app sends Option+Left/Right that way); Enter submits, except right after a backslash,
-which it turns into a newline; Alt+Enter, Shift+Enter and Ctrl+J insert a
-newline (Ctrl+Enter is Enter here; the app decides what its submit means);
-Backspace/Delete remove one cluster; Left/Right move one cluster,
-with Ctrl or Alt one word; Up/Down move one visual row and browse history at
-the first and last row; Home/End and Ctrl+A/Ctrl+E go to the start/end of the
-logical line; Ctrl+U/Ctrl+K kill to the start/end of the line (at the edge,
-the newline itself); Ctrl+W deletes the word before the caret; a paste
+one read, and the x is not lost with the Esc), except Alt+B and Alt+F, legacy
+`ESC b` and `ESC f` or reported, which move a word back and forward as
+readline's do (Terminal.app sends Option+Left/Right that way); Enter submits,
+except right after a backslash, which it turns into a newline; Alt+Enter,
+Shift+Enter and Ctrl+J insert a newline (Ctrl+Enter is Enter here; the app
+decides what its submit means); Backspace/Delete remove one cluster;
+Left/Right move one cluster, with Ctrl or Alt one word; Up/Down move one
+visual row and browse history at the first and last row; Home/End and
+Ctrl+A/Ctrl+E go to the start/end of the logical line; Ctrl+U/Ctrl+K kill to
+the start/end of the line (at the edge, the newline itself); Ctrl+W,
+Alt+Backspace and Ctrl+Backspace delete the word before the caret; a paste
 inserts as is, newlines kept; Tab completes; Esc cancels and keeps the text;
 Ctrl+C clears the text and cancels, or reports an interrupt when there is no
 text; Ctrl+D exits on empty input and deletes forward otherwise.
@@ -109,8 +110,9 @@ class ComposerAction:
 
 NOTHING = ComposerAction(NONE)
 
-# Readline's Alt+B and Alt+F, and what stock macOS Terminal.app sends for Option+Left and Option+Right.
-LEGACY_ALT_WORD_MOVES = {"b": LEFT, "f": RIGHT}
+# Readline's Alt+B and Alt+F, legacy or reported; the legacy bytes are also what stock macOS Terminal.app sends for
+# Option+Left and Option+Right.
+ALT_WORD_MOVES = {"b": LEFT, "f": RIGHT}
 
 
 @dataclass(frozen=True)
@@ -383,8 +385,8 @@ class Composer:
         if event.name == CHAR:
             if event.ctrl:
                 return self._control(event.char)
-            if event.alt and not event.protocol and event.char in LEGACY_ALT_WORD_MOVES:
-                self._move_or_delete(Key(LEGACY_ALT_WORD_MOVES[event.char], alt=True))
+            if event.alt and event.char in ALT_WORD_MOVES:
+                self._move_or_delete(Key(ALT_WORD_MOVES[event.char], alt=True))
             elif not (event.alt and event.protocol):
                 self._insert(event.char)
             return NOTHING
@@ -402,7 +404,7 @@ class Composer:
         units, bounds, index = self._units()
         by_word = key.ctrl or key.alt
         if key.name == BACKSPACE and index > 0:
-            self._replace(bounds[index - 1], self.caret)
+            self._replace(bounds[_word_start(units, index) if by_word else index - 1], self.caret)
         elif key.name == DELETE and index < len(units):
             self._replace(self.caret, bounds[index + 1])
         elif key.name == LEFT:
