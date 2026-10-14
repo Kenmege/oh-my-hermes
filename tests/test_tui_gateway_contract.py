@@ -111,6 +111,10 @@ class ClientMethodTests(unittest.TestCase):
     def test_every_key_of_an_undeclared_method_is_undeclared(self) -> None:
         self.assertEqual(contract.undeclared_params("voice.toggle", {"on": True}), ["on"])
 
+    def test_only_the_catalog_and_the_skill_rescan_are_optional(self) -> None:
+        self.assertEqual(contract.OPTIONAL_METHODS, {"commands.catalog", "skills.reload"})
+        self.assertLessEqual(contract.OPTIONAL_METHODS, set(contract.CLIENT_METHODS))
+
     def test_drift_errors_are_param_rejection_and_unknown_method_only(self) -> None:
         self.assertTrue(contract.is_drift_error({"code": 4000, "message": "extra fields"}))
         self.assertTrue(contract.is_drift_error({"code": -32601, "message": "unknown method"}))

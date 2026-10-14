@@ -387,7 +387,9 @@ notice pointing at `omh doctor`, which prints the installed Hermes commit next
 to the declared one. The gateway rejects
 unknown keys (code 4000) and unknown methods (-32601); the TUI reads either as
 drift, falls back at startup, and leaves mid-session with the command to
-reopen the session in `hermes`. This is a read and write coupling to
+reopen the session in `hermes`, except on the two calls a session does
+without (reading the command list, the `/reload-skills` rescan), where it
+says so and the session goes on. This is a read and write coupling to
 a Hermes-private shape, the same class as the lease registry below, and
 testing OMH against a new Hermes release includes it; `requires_hermes` stays
 a floor for the plugin and is not raised for the TUI, whose compatibility is

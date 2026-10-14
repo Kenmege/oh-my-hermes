@@ -6,7 +6,8 @@ runtime. What this module declares instead is the subset the TUI uses.
 Outbound: the methods it calls and the keys it sends, and how it answers each
 server-to-client request. A drift in either surfaces at runtime as a param
 rejection (4000) or an unknown method (-32601), which the client treats as
-"this Hermes no longer speaks what the TUI was built for". Inbound: the event
+"this Hermes no longer speaks what the TUI was built for", except on the
+calls in OPTIONAL_METHODS, where it is a notice and the session goes on. Inbound: the event
 names, fields and values the TUI keys on that the OMH TUI v2 batch added (the
 subagent events, `session.info`'s yolo and effort, `subagent.tail`'s result,
 `session.steer`'s status), read from here by the app and the roster, and every
@@ -33,6 +34,10 @@ METHOD_NOT_FOUND = -32601  # also the client's own answer to a request it does n
 NOT_MINE = 4018  # `slash.exec` refusing a command that `command.dispatch` owns
 
 DRIFT_ERROR_CODES = frozenset({PARAM_REJECTED, METHOD_NOT_FOUND})
+# Calls a session does without: on these a drift error is a notice and the session goes on. On every other call
+# made during a session it ends the session (`App._on_response`). An older Hermes (0250c8bcae: SkillsReloadParams
+# takes no field) rejects `skills.reload {session_id}` with 4000, which must not cost the person their session.
+OPTIONAL_METHODS = frozenset({"commands.catalog", "skills.reload"})
 
 # Methods the TUI calls, with the only keys it ever sends. Sending a key outside
 # this map is a bug: a Hermes that does not know it rejects the whole call.

@@ -14,7 +14,8 @@ import unittest
 
 from _tui_lines import line_text
 from test_tui_modes import SID, RecordingClient, answer, make_app, notices, type_text
-from omh.tui.app import CATALOG_REFUSED_NOTICE, MENU_NAME_CELLS, App, _menu_lines
+from omh.tui import gateway_contract as contract
+from omh.tui.app import CATALOG_REFUSED_NOTICE, MENU_NAME_CELLS, RELOAD_REFUSED_NOTICE, App, _menu_lines
 from omh.tui.keys import ENTER, Key
 from omh.tui.theme import DEFAULT_THEME
 from omh.tui.transcript import NOTICE_WARN
@@ -61,6 +62,21 @@ class ReloadSkillsTests(unittest.TestCase):
         self.assertEqual(menu_names(app, "/spend"), ["/omh-spend-gate"])
         self.assertEqual(app.skill_count, 3)
 
+    def test_a_hermes_that_rejects_the_session_id_leaves_the_session_running_with_a_notice(self) -> None:
+        # Hermes 0250c8bcae's SkillsReloadParams takes no field, so it answers 4000; an unknown method is -32601.
+        for code in (contract.PARAM_REJECTED, contract.METHOD_NOT_FOUND):
+            with self.subTest(code=code):
+                app, client = catalog_app()
+                type_text(app, "/reload-skills")
+                app._on_input(Key(ENTER))
+                answer(app, client, error={"code": code, "message": "extra fields not permitted"})
+                self.assertIsNone(app.exit_code)
+                self.assertEqual(
+                    notices(app, NOTICE_WARN),
+                    [RELOAD_REFUSED_NOTICE.format(code=code, message="extra fields not permitted")],
+                )
+                self.assertEqual(client.calls, [("skills.reload", {"session_id": SID})])  # no catalog read after it
+
     def test_the_alias_runs_it_too_and_without_a_session_nothing_is_sent(self) -> None:
         app, client = catalog_app()
         type_text(app, "/reload_skills")
@@ -88,6 +104,25 @@ class CatalogAnswerTests(unittest.TestCase):
         answer(app, client, error={"code": 5020, "message": "catalog failed"})
         self.assertEqual(notices(app, NOTICE_WARN), [CATALOG_REFUSED_NOTICE.format(code=5020, message="catalog failed")])
         self.assertEqual(menu_names(app, "/uml"), ["/omh-codebase-uml"])
+
+    def test_a_drift_answer_is_a_notice_and_the_session_goes_on(self) -> None:
+        for code in (contract.PARAM_REJECTED, contract.METHOD_NOT_FOUND):
+            with self.subTest(code=code):
+                app, client = catalog_app()
+                app._refresh_catalog()
+                answer(app, client, error={"code": code, "message": "extra fields not permitted"})
+                self.assertIsNone(app.exit_code)
+                self.assertEqual(
+                    notices(app, NOTICE_WARN),
+                    [CATALOG_REFUSED_NOTICE.format(code=code, message="extra fields not permitted")],
+                )
+
+    def test_drift_on_a_call_the_session_needs_still_ends_it(self) -> None:
+        app, client = catalog_app()
+        type_text(app, "/xyz")
+        app._on_input(Key(ENTER))
+        answer(app, client, error={"code": contract.PARAM_REJECTED, "message": "extra fields not permitted"})
+        self.assertEqual(app.exit_code, 1)
 
     def test_an_answer_for_a_session_since_left_is_dropped(self) -> None:
         for frame in ({"result": RELOADED}, {"error": {"code": 5020, "message": "catalog failed"}}):

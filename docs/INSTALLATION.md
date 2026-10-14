@@ -495,7 +495,9 @@ session. `omh` reopens Hermes' terminal only on the TUI's own request (exit
 75 together with a file `omh` named for that launch and removes afterwards),
 so a 75 Hermes returns for a reason of its own ends the launch like any other
 exit code. If the gateway stops accepting a method or a key mid-session, the
-TUI leaves with the command that reopens the same session in `hermes`. A
+TUI leaves with the command that reopens the same session in `hermes`; on the
+two calls a session does without, reading the command list and the
+`/reload-skills` rescan, it says so instead and the session goes on. A
 turn that brings no event the TUI shows, only types it does not know (Hermes
 renamed its turn events), gets one notice pointing at `omh doctor`, which
 prints the installed Hermes commit next to the one the TUI was declared

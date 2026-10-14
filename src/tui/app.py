@@ -263,6 +263,10 @@ YOLO_NOTE = (
 # The keys themselves are `shortcuts.SHORTCUTS`, drawn by `?` and /keys; /help only points there.
 HELP_KEYS = "Keys: ? on an empty composer, or /keys, lists every key."
 SKILL_COMMANDS_NOTE = "{count} skill commands available: type / and part of a skill's name to find one."
+RELOAD_REFUSED_NOTICE = (
+    "Hermes did not rescan its skills ({code}: {message}); a skill installed since the OMH TUI started runs as "
+    "/<name> once it is restarted."
+)
 CATALOG_REFUSED_NOTICE = (
     "Hermes did not send its command list ({code}: {message}), so completion and /help show only what the "
     "OMH TUI already knew; Hermes commands still run when typed."
@@ -813,8 +817,9 @@ class App(ModesMixin, AgentViewMixin):
     def _refresh_catalog(self) -> None:
         """Ask for the command catalog of the live session; an answer for a session since left is dropped.
 
-        A refusal keeps the catalog the TUI has and says so: completion and
-        `/help` then list only what it already knew.
+        A refusal, drift included (`contract.OPTIONAL_METHODS`), keeps the
+        catalog the TUI has and says so: completion and `/help` then list
+        only what it already knew, and the session goes on.
         """
         sid = self.sid
         self._request(
@@ -1042,7 +1047,7 @@ class App(ModesMixin, AgentViewMixin):
             pending.on_result(response.result or {})
             return
         error = response.error
-        if contract.is_drift_error(error):
+        if contract.is_drift_error(error) and pending.method not in contract.OPTIONAL_METHODS:
             self._lose_gateway(
                 f"this Hermes refused {pending.method} ({error.get('code')}); "
                 "it no longer speaks the protocol the OMH TUI was built for"
@@ -1719,11 +1724,17 @@ class App(ModesMixin, AgentViewMixin):
         if not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
-        self._request("skills.reload", {"session_id": self.sid}, self._on_skills_reloaded)
+        self._request("skills.reload", {"session_id": self.sid}, self._on_skills_reloaded, self._on_reload_refused)
 
     def _on_skills_reloaded(self, result: dict[str, Any]) -> None:
         self._show_output("reload-skills", as_text(result.get("output")) or "Skills reloaded.")
         self._refresh_catalog()
+
+    def _on_reload_refused(self, error: dict[str, Any]) -> bool:
+        """A refused rescan, drift included (`contract.OPTIONAL_METHODS`): a notice, and the session goes on."""
+        message = as_text(error.get("message")) or "refused"
+        self.transcript.add_notice(RELOAD_REFUSED_NOTICE.format(code=error.get("code"), message=message), NOTICE_WARN)
+        return True
 
     def _guide_key(self, event: Key | Paste) -> bool:
         """`?` on an empty composer opens the key list; with anything typed it is a character."""
