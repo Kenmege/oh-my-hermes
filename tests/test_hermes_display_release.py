@@ -1205,7 +1205,8 @@ class UpgradeFromLastReleaseTests(unittest.TestCase):
 
             self.assertEqual(status, 0, stderr)
             self.assertEqual({rel: (root / rel).read_bytes() for rel in configs}, configs)
-            self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
+            # No display block at all, primary or profile, not only no stock-Hermes header.
+            self.assertNotIn("Hermes display", stdout)
 
     def test_uninstall_after_the_upgrade_neither_refuses_nor_needs_force(self) -> None:
         with TemporaryDirectory() as tmp:
