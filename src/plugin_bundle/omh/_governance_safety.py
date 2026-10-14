@@ -23,6 +23,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Iterator, Mapping
+from itertools import accumulate
 
 
 _BLOCKED_PATTERNS = (
@@ -288,6 +289,17 @@ _UPPER_SNAKE_IDENTIFIER_PATTERN = re.compile(r"[A-Z][A-Z0-9]{1,15}(?:_[A-Z][A-Z0
 _SEPARATOR_SPLIT_OPAQUE_PATTERN = re.compile(
     r"(?<![A-Za-z0-9])(?:[A-Za-z0-9]{4,20}[./\\ _-]){1,}[A-Za-z0-9]{4,20}(?![A-Za-z0-9])"
 )
+# Machine-generated names whose separators are not split points. A window
+# that overlaps one is not read as a split value; windows beside it still are.
+_GENERATED_NAME_PATTERNS = (
+    # An RFC 4122 UUID, which the opaque-token check already exempts whole.
+    _UUID_PATTERN,
+    # A Python `tempfile` default name: "tmp" plus eight characters, as a
+    # whole path segment or word.
+    re.compile(r"(?<![^\s/\\])tmp[a-z0-9_]{8}(?![^\s/\\])"),
+    # A Hermes session id: YYYYMMDD_HHMMSS_ plus six hex characters.
+    re.compile(r"\d{8}_\d{6}_[0-9a-f]{6}"),
+)
 _COMPACT_SPLIT_CREDENTIAL_PATTERN = re.compile(
     "(?:" + "|".join(
         (
@@ -395,6 +407,22 @@ def _looks_like_safe_path_segment(segment: str) -> bool:
     if " " in segment:
         words = segment.split()
         return bool(words) and all(_looks_like_safe_path_segment(word) for word in words)
+    # A leading run of "_" or "-" (`_temp`, `__pycache__`, an encoded
+    # `-Users-name-project` directory) carries nothing; the rest is judged
+    # by the same rules as a segment written without it. No part of the rest
+    # may carry an opaque character mix (upper and lower case with digits)
+    # either: a base64url secret split at "/" can
+    # leave a fragment that opens with "_" or "-" (`.../_Ij6Kl7Mn8Op9/...`),
+    # and "/_" is two separators, so the split-value check never joins it.
+    if segment.startswith(("_", "-")):
+        rest = segment.lstrip("_-")
+        return (
+            bool(rest)
+            and _looks_like_safe_path_segment(rest)
+            and not any(_has_opaque_character_mix(part) for part in re.split(r"[-_.]", rest))
+        )
+    if _UUID_PATTERN.fullmatch(segment):
+        return True
     stem, dot, suffix = segment.rpartition(".")
     if dot and suffix and re.fullmatch(r"[a-z0-9]{1,16}", suffix) and (
         _looks_like_path_identifier(stem)
@@ -436,7 +464,15 @@ def _looks_like_safe_windows_path(content: str) -> bool:
             bool(re.fullmatch(r"[A-Z][a-z]+\d*", segment))
             or not _has_opaque_character_mix(segment)
         )
-        and not _has_single_case_alphanumeric_opaque_mix(segment)
+        # Judged without a leading "_"/"-" run, which the safe-segment rule
+        # above drops from the segment and from each of its words: the mix
+        # check reads only all-alphanumeric values.
+        and not _has_single_case_alphanumeric_opaque_mix(segment.lstrip("_-"))
+        and not any(
+            _has_single_case_alphanumeric_opaque_mix(word.lstrip("_-"))
+            for word in segment.split()
+            if word.startswith(("_", "-"))
+        )
         and not _has_separator_split_opaque_value(segment)
         for segment in segments
     )
@@ -536,8 +572,28 @@ def _has_separator_split_blocked_credential(content: str) -> bool:
     return False
 
 
+def _generated_name_coverage(content: str) -> list[int] | None:
+    """Prefix counts of characters inside a generated name, or None when there is none.
+
+    ``coverage[end] - coverage[start]`` is how many characters of
+    ``content[start:end]`` lie inside one, so a window's overlap costs one
+    subtraction however many names the value holds.
+    """
+    inside = bytearray(len(content))
+    for pattern in _GENERATED_NAME_PATTERNS:
+        for found in pattern.finditer(content):
+            start, end = found.span()
+            if (start and content[start - 1].isalnum()) or (end < len(content) and content[end].isalnum()):
+                continue
+            inside[start:end] = b"\x01" * (end - start)
+    if not any(inside):
+        return None
+    return list(accumulate(inside, initial=0))
+
+
 def _has_separator_split_opaque_value(content: str) -> bool:
     """Catch one opaque value split into path or package fragments."""
+    generated = _generated_name_coverage(content)
     for match in _SEPARATOR_SPLIT_OPAQUE_PATTERN.finditer(content):
         matched = match.group(0)
         fragment_matches = list(re.finditer(r"[A-Za-z0-9]+", matched))
@@ -573,11 +629,17 @@ def _has_separator_split_opaque_value(content: str) -> bool:
                 )
                 if any(_looks_like_structured_identifier(fragment) for fragment in window) or semantic_snake_overlap:
                     continue
+                if generated and generated[match.start() + window_end] > generated[match.start() + window_start]:
+                    continue
                 mixed = _has_opaque_character_mix(combined)
                 uppercase_fragments = sum(any(char.isupper() for char in fragment) for fragment in window)
                 every_fragment_has_uppercase = uppercase_fragments == len(window)
+                # Digit/letter alternation is a split value's signal only when
+                # it spans fragments: one numbered segment among words (a
+                # `prefix-xxxxxxxx` temp directory) alternates on its own.
+                digit_fragments = sum(any(char.isdigit() for char in fragment) for fragment in window)
                 single_case_with_signal = _has_single_case_alphanumeric_opaque_mix(combined) and (
-                    any(char.isdigit() for char in combined) or combined.isupper()
+                    combined.isupper() or digit_fragments >= 2
                 )
                 lowercase_encoded_split = (
                     combined.islower()
