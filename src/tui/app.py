@@ -1049,7 +1049,8 @@ class App(ModesMixin, AgentViewMixin):
         are bytes the closing TUI has already read, and it acts on no input
         any more. A terminal that does not answer within the bound ends the
         drain there, as a read that waited out the time left does, and its
-        answer, if it comes later, reaches the shell as `ESC[<row>;<col>R`.
+        answer, if it comes later, reaches the shell as `ESC[<row>;<col>R`. A
+        read a resize signal ends early with nothing read does not end it.
         That takes a round trip over a second just after a click, on a link
         where the reports the drain exists for would reach the shell too: one
         late answer is the price of dropping every report ahead of it.
@@ -1063,7 +1064,7 @@ class App(ModesMixin, AgentViewMixin):
             except EOFError:
                 return  # the terminal hung up: nothing more is coming
             if not data:
-                return
+                continue  # waited out (the loop ends) or ended early by a resize signal (it reads on)
             seen = seen[-32:] + data  # the last read's tail too: an answer can be split across two reads
             if _holds_cursor_report(seen):
                 return
@@ -2127,7 +2128,10 @@ class App(ModesMixin, AgentViewMixin):
         """A picker's `read_key` over the TUI's terminal and key decoder; a hung-up terminal cancels.
 
         The decoder is told what the loop tells it, so a report sent before
-        the picker's off still types nothing and its ESC does not cancel.
+        the picker's off still types nothing and its ESC does not cancel. As
+        in the loop, an empty read settles held bytes only once input has been
+        quiet for `FLUSH_SILENCE_SECONDS`: a resize signal ends a read early
+        with nothing read, and must not turn an arrow's ESC into Esc.
         """
         pending: deque[Key | Paste | Mouse] = deque()
 
@@ -2138,8 +2142,9 @@ class App(ModesMixin, AgentViewMixin):
                 except EOFError:
                     return KEY_QUIT
                 if data:
+                    self.input_at = self.clock()
                     pending.extend(self.decoder.feed(data))
-                else:
+                elif self.clock() - self.input_at >= FLUSH_SILENCE_SECONDS:
                     pending.extend(self.decoder.flush(self.terminal.mouse_reporting, self.mouse_off_at))
             return picker_key(pending.popleft())
 
