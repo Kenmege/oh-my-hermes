@@ -272,11 +272,16 @@ class ShimTests(unittest.TestCase):
                 },
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             )
-            deadline = time.monotonic() + 20
-            while not started.exists() and time.monotonic() < deadline:
-                time.sleep(0.02)
-            shim.send_signal(signal.SIGTERM)
-            _out, err = shim.communicate(timeout=30)
+            try:
+                deadline = time.monotonic() + 20
+                while not started.exists() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                shim.send_signal(signal.SIGTERM)
+                _out, err = shim.communicate(timeout=30)
+            finally:
+                if shim.poll() is None:  # a failed assertion or a timeout above must not leave node running
+                    shim.kill()
+                    shim.communicate(timeout=10)
             self.assertFalse(sentinel.exists())
         self.assertEqual(shim.returncode, 0, err)
 
