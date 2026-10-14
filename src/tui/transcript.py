@@ -566,13 +566,21 @@ class Transcript:
         self._close_live()
         self.blocks.append(block)
         self._version += 1
-        # Past the cap, drop the oldest blocks already taken; one not taken yet stays until it is.
+        self._drop_past_cap()
+
+    def _drop_past_cap(self) -> None:
+        """Past `BLOCK_CAP`, drop the oldest blocks already taken (or left out); one not taken yet stays until it is.
+
+        Runs after an append, a take and a retake, so a resumed session's
+        history longer than the cap goes as soon as it is printed.
+        """
         drop = min(len(self.blocks) - BLOCK_CAP, self._cursor)
         if drop > 0:
             del self.blocks[:drop]
             self._cursor -= drop
             self._turn_start = max(self._turn_start - drop, 0)
             self.dropped += drop
+            self._version += 1
 
     def _tool_group(self) -> ToolGroup:
         group = self._live(ToolGroup)
@@ -741,6 +749,7 @@ class Transcript:
             self._cursor_state = MarkdownState()
         if (self._cursor, self._cursor_lines) != start:
             self._version += 1
+        self._drop_past_cap()
         return taken
 
     def _take_assistant(self, block: AssistantBlock, width: int, theme: Theme) -> list[Line]:
@@ -796,6 +805,7 @@ class Transcript:
             cut -= 1
         self._cursor = cut
         self._left_out = cut + self.dropped
+        self._drop_past_cap()  # before the take, so the row names how many /history still holds
 
     def live_lines(self, width: int, theme: Theme, max_rows: int | None = None) -> list[Line]:
         """Everything not yet taken, as it shows now: the streaming tail, live thinking, running tools.
@@ -842,11 +852,16 @@ class Transcript:
             seen = True
         return rows
 
-    def dropped_rows(self, width: int, theme: Theme) -> list[Line]:
-        """/history's opening rows once `BLOCK_CAP` has dropped blocks (one counting them, then a blank one); else none."""
-        if not self.dropped:
+    def dropped_rows(self, width: int, theme: Theme, dropped: int | None = None) -> list[Line]:
+        """/history's opening rows once `BLOCK_CAP` has dropped blocks (one counting them, then a blank one); else none.
+
+        `dropped` is the count to name, `self.dropped` when None: a pager
+        opened earlier names the count of the blocks it holds.
+        """
+        count = self.dropped if dropped is None else dropped
+        if not count:
             return []
-        return [truncate_line((Span(DROPPED_NOTICE.format(earlier=_earlier(self.dropped)), theme.dim),), width), ()]
+        return [truncate_line((Span(DROPPED_NOTICE.format(earlier=_earlier(count)), theme.dim),), width), ()]
 
     def history_lines(self, width: int, theme: Theme, details: bool = True) -> list[Line]:
         """Every block held at `width`; `details` adds full thinking text, tool result summaries, whole diffs."""

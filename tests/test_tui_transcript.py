@@ -282,6 +282,22 @@ class BlockCapTests(LoopTestCase):
         again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
         self.assertEqual(again, ["⋯ 23 earlier messages · /history shows the last 10", "", "· notice 23", "", "· notice 24"])
 
+    def test_blocks_past_the_cap_go_once_printed_without_waiting_for_a_new_block(self) -> None:
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(25):  # none printed yet, as a resumed session's history arrives
+                self.transcript.add_notice(f"notice {number}")
+            self.transcript.take_stable_lines(WIDTH, THEME)
+            self.assertEqual((len(self.transcript.blocks), self.transcript.dropped), (10, 15))
+
+    def test_a_redraw_of_blocks_past_the_cap_counts_them_and_holds_only_the_cap(self) -> None:
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(25):
+                self.transcript.add_notice(f"notice {number}")
+            self.transcript.retake_tail(WIDTH, THEME, max_rows=4)
+            again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
+        self.assertEqual(again, ["⋯ 23 earlier messages · /history shows the last 10", "", "· notice 23", "", "· notice 24"])
+        self.assertEqual(len(self.transcript.blocks), 10)
+
     def test_a_turns_answer_is_still_known_after_its_own_blocks_push_older_ones_out(self) -> None:
         with patch("omh.tui.transcript.BLOCK_CAP", 10):
             for number in range(8):
