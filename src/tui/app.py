@@ -12,13 +12,16 @@ hint for a session this TUI never opened). SIGTERM and SIGHUP leave through
 `SystemExit(128 + signum)`, so the terminal is restored and the gateway reaped
 as on any other exit.
 
-`App` is the loop. One thread owns the terminal and every model: it reads
-input with a short timeout, routes keys (the pager while it is open, then
+`App` is the loop. One thread owns the terminal and every model: it waits
+for input, a wake-up from the gateway client or a resize (`_read_timeout`
+says until when), routes keys (the pager while it is open, then
 Ctrl+O and Ctrl+L, an open prompt slot, the session picker, the agent list,
 the mode, effort and key-list keys, the attachment keys and Esc, the
 completion menu, the queue's Up, then the composer), takes everything the
 gateway sent since the last step, takes the newest HUD snapshot, and
-repaints when something changed or a spinner is due. Calls made from the
+repaints when something changed or a spinner is due. For `MIN_FRAME_SECONDS`
+after a frame it does not wait on the gateway, so a burst of events shares
+the next frame while a key still draws at once. Calls made from the
 loop go out with `GatewayClient.request` and their answers come back through
 `poll`, so a slow slash command never freezes the screen.
 
@@ -64,6 +67,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 import errno
 import json
+import math
 import os
 from pathlib import Path
 import signal
@@ -149,8 +153,17 @@ from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, a
 from .width import cell_width, line_width, truncate_left, truncate_line, wrap_line
 from ..version import __version__
 
+# While the key decoder holds bytes (a lone ESC, half a sequence, an open paste), the loop reads with this
+# timeout, and an empty read settles what is held only once input has been quiet for `FLUSH_SILENCE_SECONDS`:
+# a wake-up for the gateway right after an ESC must not decide it before the rest of its sequence arrives.
 READ_TIMEOUT_SECONDS = 0.05
+FLUSH_SILENCE_SECONDS = 0.04
 TICK_SECONDS = 0.1
+# Nothing due, nothing held: the loop still wakes this often, for the HUD poller's snapshots, which do not wake it.
+IDLE_READ_SECONDS = 1.0
+# For this long after a frame the loop does not wake for the gateway: what arrives meanwhile shares the next
+# frame. Input still wakes it at once.
+MIN_FRAME_SECONDS = 0.016
 # A window drag sends a burst of SIGWINCH; redraw once the size has held this long.
 RESIZE_SETTLE_SECONDS = 0.15
 EXIT_CONFIRM_SECONDS = 2.0
@@ -286,7 +299,7 @@ class TerminalLike(Protocol):
     def __exit__(self, *exc: object) -> Any: ...
     def size(self) -> tuple[int, int]: ...
     def resized(self) -> bool: ...
-    def read(self, timeout: float) -> bytes: ...
+    def read(self, timeout: float, wake: int | None = None) -> bytes: ...
     def write(self, text: str) -> None: ...
     def set_mouse(self, enabled: bool) -> None: ...
 
@@ -721,8 +734,10 @@ class App(ModesMixin, AgentViewMixin):
         # The cells a click opens, as last drawn: rows above the status line → the entries on that row.
         self.clickable: dict[int, tuple[Hit, ...]] = {}
         self.mouse_off_at: float | None = None  # when `_set_mouse` last turned reports off; None before that
+        self.wake: int | None = None  # the gateway client's wake descriptor, which `run` selects on with the input
+        self.input_at = 0.0  # when input last arrived, on `clock`
         self.dirty = True
-        self.last_render = 0.0
+        self.last_render = -math.inf
 
     # ── startup ──
 
@@ -879,7 +894,9 @@ class App(ModesMixin, AgentViewMixin):
         the caller's, after it has handed the terminal back.
         """
         self.poller.start()
+        self.wake = self.client.wake_fd()
         try:
+            self._render_when_due()  # the first frame does not wait for a first read
             while self.exit_code is None:
                 self._step()
         finally:
@@ -889,15 +906,23 @@ class App(ModesMixin, AgentViewMixin):
     def _step(self) -> None:
         if self.terminal.resized():
             self._on_resize()
+        timeout, pace = self._read_timeout(), self.last_render + MIN_FRAME_SECONDS - self.clock()
         try:
-            data = self.terminal.read(READ_TIMEOUT_SECONDS)
+            if pace > 0:  # a frame was just drawn: gateway news waits out the interval, input does not
+                data = self.terminal.read(min(timeout, pace))
+            else:
+                data = self.terminal.read(timeout, self.wake)
         except EOFError:
             self.exit_code = 0
             return
         if data:
+            self.input_at = self.clock()
             events = self.decoder.feed(data)
-        else:  # a report the terminal sent before an off may still be on its way: the decoder waits for it
+        elif self.clock() - self.input_at >= FLUSH_SILENCE_SECONDS:
+            # A report the terminal sent before an off may still be on its way: the decoder waits for it.
             events = self.decoder.flush(self.terminal.mouse_reporting, self.mouse_off_at)
+        else:
+            events = []
         for event in events:
             self.dirty = True
             self._on_input(event)
@@ -911,6 +936,30 @@ class App(ModesMixin, AgentViewMixin):
         self._ask_tail_when_due()
         self._take_hud()
         self._render_when_due()
+
+    def _read_timeout(self) -> float:
+        """How long the next read may wait: until the soonest thing the loop has to do without new input.
+
+        Input, a wake-up from the gateway client and a resize end the wait
+        sooner. Held key bytes, a spinner tick while a turn runs or the panel
+        is live, the settled resize, the debounced path completion and the
+        next agent tail call each set a deadline; without one it is
+        `IDLE_READ_SECONDS`.
+        """
+        now = self.clock()
+        due = [now + IDLE_READ_SECONDS]
+        if self.decoder.holding:
+            due.append(now + READ_TIMEOUT_SECONDS)
+        if self.redraw_at is not None:
+            due.append(self.redraw_at)
+        elif self._busy() or self._panel_live():
+            due.append(self.last_render + TICK_SECONDS)
+        if self.path_due is not None and self.sid:
+            due.append(self.path_due)
+        tail = self._tail_due_at()
+        if tail is not None:
+            due.append(tail)
+        return max(min(due) - now, 0.0)
 
     def _shutdown(self) -> None:
         """Hand the screen back to the shell, then stop the HUD poller and turn off yolo the TUI set.

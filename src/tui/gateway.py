@@ -9,7 +9,10 @@ import path, because another Python cannot load Hermes' compiled dependencies.
 inbound item; a second thread drains stderr into a bounded in-memory tail, since
 a full pipe would block the gateway mid-write. Inbound items wait in memory
 until `poll` takes them, except the answer to a blocking `call`, which goes
-straight to its caller. Nothing here writes a frame to disk or to a log.
+straight to its caller. `wake_fd` is a pipe that is readable while an item
+waits for `poll`, so the TUI's loop can select on it next to its input and
+sleep until either has something. Nothing here writes a frame to disk or to a
+log.
 """
 
 from __future__ import annotations
@@ -209,6 +212,7 @@ class GatewayClient:
         self._write_lock = threading.Lock()
         self._stderr_lock = threading.Lock()
         self._stderr: deque[str] = deque(maxlen=STDERR_TAIL_LINES)
+        self._wake: tuple[int, int] | None = None  # (read end, write end) once `wake_fd` was asked for
         self.capabilities: dict[str, Any] = {}
 
     def start(self, ready_timeout: float = 60.0) -> Event:
@@ -279,9 +283,26 @@ class GatewayClient:
             raise ValueError(f"a server-request answer carries exactly one of result or error, not {sorted(frame)}")
         self._write({"jsonrpc": "2.0", "id": request_id, **frame})
 
+    def wake_fd(self) -> int:
+        """A descriptor that is readable while an item waits for `poll`; `poll` empties it. POSIX only.
+
+        The pipe is made on the first call, and is readable at once if items
+        are already queued.
+        """
+        with self._inbox_ready:
+            if self._wake is None:
+                read_end, write_end = os.pipe()
+                os.set_blocking(read_end, False)
+                os.set_blocking(write_end, False)
+                self._wake = (read_end, write_end)
+                if self._inbox:
+                    self._signal_wake()
+            return self._wake[0]
+
     def poll(self, timeout: float = 0.0) -> list[Inbound]:
         """Every queued inbound item, waiting up to `timeout` for the first one."""
         deadline = self._clock() + timeout
+        self._drain_wake()  # first: an item queued after this wakes the next select, which costs one empty poll
         with self._inbox_ready:
             while not self._inbox:
                 remaining = deadline - self._clock()
@@ -322,6 +343,10 @@ class GatewayClient:
             thread.join(READER_JOIN_SECONDS)
             if not thread.is_alive():  # a pipe still held open (say, by a grandchild) is left to its thread
                 stream.close()
+        with self._inbox_ready:  # a reader still alive writes the wake pipe under this lock: none can after it
+            wake, self._wake = self._wake, None
+        for descriptor in wake or ():
+            os.close(descriptor)
         return code
 
     def _start_thread(self, name: str, target: Callable[[IO[bytes]], None], stream: IO[bytes]) -> None:
@@ -402,13 +427,34 @@ class GatewayClient:
                 elif item.id in self._polled:
                     self._polled.discard(item.id)
                     self._inbox.append(item)
+                    self._signal_wake()
                 else:
                     return  # an answer to nothing this client asked, or to a call that timed out
             else:
                 if isinstance(item, GatewayExited):
                     self._exited = True
                 self._inbox.append(item)
+                self._signal_wake()
             self._inbox_ready.notify_all()
+
+    def _signal_wake(self) -> None:
+        """Make the wake pipe readable; called with `_inbox_ready` held. A full pipe is readable already."""
+        if self._wake is not None:
+            try:
+                os.write(self._wake[1], b"\0")
+            except BlockingIOError:
+                pass
+
+    def _drain_wake(self) -> None:
+        with self._inbox_ready:
+            wake = self._wake
+            if wake is None:
+                return
+            try:
+                while os.read(wake[0], 4096):
+                    pass
+            except BlockingIOError:
+                pass
 
 
 def _is_ready(item: Inbound) -> bool:

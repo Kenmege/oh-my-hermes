@@ -560,6 +560,11 @@ class KeyDecoder:
         # send them, so Ctrl+Enter reaches the caller apart from Enter. Asking for them proves nothing.
         self.protocol_reported = False
 
+    @property
+    def holding(self) -> bool:
+        """Whether bytes wait to be decided (part of a key, an open paste, a settled report's rest): `flush` has work."""
+        return bool(self._pending) or self._paste is not None or bool(self._settled_start)
+
     def feed(self, data: bytes) -> list[Key | Paste | Mouse]:
         now = self._clock()
         if self._settled_start and now >= self._drop_until:

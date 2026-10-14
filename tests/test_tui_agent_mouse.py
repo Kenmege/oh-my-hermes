@@ -251,7 +251,7 @@ class MouseStateTests(unittest.TestCase):
         self.assertTrue(reporting(app))
         reads = [(0.0, b"\x1b"), *[(READ_TIMEOUT_SECONDS, b"")] * 3, (READ_TIMEOUT_SECONDS, b"[<0;5;5m"), (0.0, b"j")]
 
-        def read(timeout: float) -> bytes:
+        def read(timeout: float, wake: int | None = None) -> bytes:
             delay, data = reads.pop(0)
             now[0] += delay
             return data
@@ -319,7 +319,7 @@ class FailingShutdownTests(unittest.TestCase):
     def test_a_hang_up_with_reports_on_leaves_by_the_signal_not_a_traceback(self) -> None:
         app, client, terminal = self.leaving()
 
-        def hang_up(timeout: float) -> bytes:
+        def hang_up(timeout: float, wake: int | None = None) -> bytes:
             terminal.refusal = errno.EIO
             raise SystemExit(128 + 1)  # SIGHUP, as _exit_on_signal raises it
 
@@ -715,7 +715,7 @@ def step_through(app: App, now: list[float], reads: list[tuple[float, bytes]]) -
     """Run the loop one step per read: each read takes its time on the app's clock, then hands back its bytes."""
     queue = list(reads)
 
-    def read(timeout: float) -> bytes:
+    def read(timeout: float, wake: int | None = None) -> bytes:
         delay, data = queue.pop(0)
         now[0] += delay
         return data
@@ -972,7 +972,7 @@ class DrainTerminal(ScriptedTerminal):
         self.log.append(("write", text))
         super().write(text)
 
-    def read(self, timeout: float) -> bytes:
+    def read(self, timeout: float, wake: int | None = None) -> bytes:
         self.log.append(("read", timeout))
         item = self.incoming.pop(0) if self.incoming else self.endless
         if not isinstance(item, bytes):

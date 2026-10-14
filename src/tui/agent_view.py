@@ -200,6 +200,17 @@ class AgentViewMixin:
         if to_end or at_end:
             self.pager.top = len(self.pager.lines)  # past the end: the pager shows the last full page
 
+    def _tail_due_at(self) -> float | None:
+        """When `_ask_tail_when_due` may next send a call, on the app's clock; None while it sends none."""
+        agent = self.roster.agents.get(self.log_agent) if self.pager is not None else None
+        if agent is None or agent.status != RUNNING or not self.sid:
+            return None
+        if self.tail_misses.get(agent.subagent_id, 0) >= TAIL_MISSES_BEFORE_STOP:
+            return None
+        if self.tail_asked_at is None:
+            return self.clock()
+        return self.tail_asked_at + (TAIL_ANSWER_SECONDS if self.tail_open else TAIL_POLL_SECONDS)
+
     def _ask_tail_when_due(self) -> None:
         """`subagent.tail` for the agent whose log is open, while it runs: at most one call every `TAIL_POLL_SECONDS`.
 

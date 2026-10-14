@@ -166,7 +166,7 @@ class ScriptedTerminal:
         time.sleep(0.005)
         return b""
 
-    def read(self, timeout: float) -> bytes:
+    def read(self, timeout: float, wake: int | None = None) -> bytes:
         if self._quiet:
             self._quiet = False
             return self._wait("the silence after a step")
@@ -406,11 +406,11 @@ class SignalledTerminal(ScriptedTerminal):
         super().__init__()
         self.signum = signum
 
-    def read(self, timeout: float) -> bytes:
+    def read(self, timeout: float, wake: int | None = None) -> bytes:
         if self.signum and self.idle():
             signum, self.signum = self.signum, 0
             signal.raise_signal(signum)
-        return super().read(timeout)
+        return super().read(timeout, wake)
 
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")
@@ -1582,7 +1582,9 @@ class LocalCommandTests(AppTestCase):
         )
         terminal = run.terminal
         terminal.script(
-            self.submit(run, "/help"),
+            # The first frame comes before Hermes' catalog does: /help waits until the menu offers Hermes' /undo.
+            Step(b"/und", when=terminal.idle, label="idle"),
+            Step(b"\x15/help\r", when=terminal.shows("/undo"), label="Hermes' catalog in the menu"),
             Step(b"q", when=lambda: terminal.screen.alternate, capture="pager", label="the help pager"),
             Step(b"\x04", when=lambda: not terminal.screen.alternate and terminal.idle(), label="back"),
         )

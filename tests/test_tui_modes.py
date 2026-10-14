@@ -66,6 +66,14 @@ class RecordingClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
         self.answers: list[tuple[str, dict]] = []
+        self.inbox: list[object] = []  # what the next `poll` hands the loop
+
+    def poll(self) -> list[object]:
+        items, self.inbox = self.inbox, []
+        return items
+
+    def wake_fd(self) -> None:
+        return None  # nothing to select on: a test drives the loop's reads itself
 
     def request(self, method: str, params: dict) -> int:
         problem = contract.call_problem(method, params)
