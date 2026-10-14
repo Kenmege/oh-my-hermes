@@ -99,12 +99,38 @@ def _nfc(text: str) -> str:
     return unicodedata.normalize("NFC", text)
 
 
-def _boundaries(text: str) -> list[int]:
-    """Str index of every cluster boundary in NFC `text`, from 0 to len(text)."""
+@dataclass(frozen=True)
+class _Shape:
+    """One text value measured: its clusters, their boundaries, and what each draws as and how wide."""
+
+    text: str
+    masked: bool
+    units: list[str]
+    bounds: list[int]  # str index of every cluster boundary, from 0 to len(text)
+    shown: list[str]
+    widths: list[int | None]  # `None` for a newline
+
+
+def _shape(text: str, masked: bool) -> _Shape:
+    units = clusters(text)
     bounds = [0]
-    for cluster in clusters(text):
-        bounds.append(bounds[-1] + len(cluster))
-    return bounds
+    shown: list[str] = []
+    widths: list[int | None] = []
+    for unit in units:
+        bounds.append(bounds[-1] + len(unit))
+        if unit == NEWLINE:
+            shown.append("")
+            widths.append(None)
+        elif masked:
+            shown.append(MASK)
+            widths.append(1)
+        elif unit == TAB_CHAR:
+            shown.append(" " * TAB_CELLS)
+            widths.append(TAB_CELLS)
+        else:
+            shown.append(unit)
+            widths.append(cluster_width(unit))
+    return _Shape(text, masked, units, bounds, shown, widths)
 
 
 def _cluster_index(bounds: Sequence[int], caret: int) -> int:
@@ -194,6 +220,9 @@ class Composer:
     _draft: str = field(default="", init=False, repr=False, compare=False)
     _avail: int | None = field(default=None, init=False, repr=False, compare=False)
     _scroll: int = field(default=0, init=False, repr=False, compare=False)
+    # The text measured, and its rows at one width: a caret move or a redraw reuses them until the text changes.
+    _shaped: _Shape | None = field(default=None, init=False, repr=False, compare=False)
+    _laid: tuple[_Shape, int, list[_Row]] | None = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self._set(self.text, min(max(self.caret, 0), len(self.text)))
@@ -204,11 +233,26 @@ class Composer:
 
     # -- editing primitives ---------------------------------------------------
 
+    def _measured(self) -> _Shape:
+        """The text's `_Shape`, worked out again only when the text or the mask changed."""
+        shape = self._shaped
+        if shape is None or shape.masked != self.masked or shape.text != self.text:
+            shape = self._shaped = _shape(self.text, self.masked)
+        return shape
+
+    def _rows(self, avail: int) -> tuple[_Shape, list[_Row]]:
+        """The measured text and its visual rows at `avail` cells, laid out again only when either changed."""
+        shape = self._measured()
+        laid = self._laid
+        if laid is None or laid[0] is not shape or laid[1] != avail:
+            laid = self._laid = (shape, avail, _layout(shape.widths, avail))
+        return shape, laid[2]
+
     def _set(self, text: str, caret: int) -> None:
         """Store `text` as NFC with the caret moved to the matching cluster boundary."""
         full = _nfc(text)
-        bounds = _boundaries(full)
         self.text = full
+        bounds = self._measured().bounds
         self.caret = bounds[_cluster_index(bounds, min(len(_nfc(text[:caret])), len(full)))]
 
     def _replace(self, start: int, end: int, insert: str = "") -> None:
@@ -225,9 +269,8 @@ class Composer:
 
     def _units(self) -> tuple[list[str], list[int], int]:
         """Clusters, their boundaries, and the caret's cluster index."""
-        units = clusters(self.text)
-        bounds = _boundaries(self.text)
-        return units, bounds, _cluster_index(bounds, self.caret)
+        shape = self._measured()
+        return shape.units, shape.bounds, _cluster_index(shape.bounds, self.caret)
 
     def _load(self, text: str) -> None:
         self._set(text, len(text))
@@ -328,30 +371,13 @@ class Composer:
 
     # -- rows and history -----------------------------------------------------
 
-    def _cells(self) -> tuple[list[str], list[int | None]]:
-        """What each cluster draws as, and its width (`None` for a newline)."""
-        shown: list[str] = []
-        widths: list[int | None] = []
-        for unit in clusters(self.text):
-            if unit == NEWLINE:
-                shown.append("")
-                widths.append(None)
-            elif self.masked:
-                shown.append(MASK)
-                widths.append(1)
-            elif unit == TAB_CHAR:
-                shown.append(" " * TAB_CELLS)
-                widths.append(TAB_CELLS)
-            else:
-                shown.append(unit)
-                widths.append(cluster_width(unit))
-        return shown, widths
-
     def _vertical(self, step: int) -> None:
-        _, widths = self._cells()
-        unwrapped = sum(width or 0 for width in widths) + 1  # never rendered: logical lines only
-        rows = _layout(widths, self._avail if self._avail is not None else unwrapped)
-        bounds = _boundaries(self.text)
+        if self._avail is not None:
+            shape, rows = self._rows(self._avail)
+        else:  # never rendered: logical lines only
+            shape = self._measured()
+            shape, rows = self._rows(sum(width or 0 for width in shape.widths) + 1)
+        widths, bounds = shape.widths, shape.bounds
         row, col = _locate(rows, widths, _cluster_index(bounds, self.caret))
         target = row + step
         if 0 <= target < len(rows):
@@ -395,9 +421,9 @@ class Composer:
         prompt_cells = cell_width(prompt)
         avail = max(width - prompt_cells, 1)
         self._avail = avail
-        shown, widths = self._cells()
-        rows = _layout(widths, avail)
-        row, col = _locate(rows, widths, _cluster_index(_boundaries(self.text), self.caret))
+        shape, rows = self._rows(avail)
+        shown, widths = shape.shown, shape.widths
+        row, col = _locate(rows, widths, _cluster_index(shape.bounds, self.caret))
         visible = max(max_rows, 1)
         scroll = min(max(self._scroll, row - visible + 1), row)
         scroll = max(min(scroll, len(rows) - visible), 0)

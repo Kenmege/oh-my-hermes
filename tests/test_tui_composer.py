@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import unicodedata
 import unittest
+from unittest.mock import patch
 
 from _tui_lines import lines_text
 from omh.tui.composer import (
@@ -442,6 +443,31 @@ class MaskedTests(unittest.TestCase):
         press(composer, Key(ENTER, alt=True), ctrl("j"))
         composer.handle(Paste("b\nc\n"))
         self.assertEqual(composer.text, "abc")
+
+
+class MeasureOnceTests(unittest.TestCase):
+    """The text is split into clusters and measured once per value; moving the caret and redrawing reuse that."""
+
+    def test_moving_the_caret_and_redrawing_never_measure_the_text_again(self) -> None:
+        composer = Composer()
+        composer.handle(Paste(f"{HANGUL} line one\nline two runs longer than the width\nthree"))
+        composer.render(20, 5)
+        keys = (Key(LEFT), Key(UP), Key(RIGHT, ctrl=True), Key(DOWN), Key(HOME), Key(END), Key(UP), Key(UP))
+        with patch("omh.tui.composer.clusters", side_effect=AssertionError("the text was measured again")):
+            for key in keys:
+                composer.handle(key)
+                composer.render(20, 5)
+        # The walk ends on the second line's first row, 5 cells in, the start of `two` (counted by hand).
+        self.assertEqual(composer.caret, len(f"{HANGUL} line one\nline "))
+
+    def test_a_new_text_a_new_mask_or_a_new_width_is_laid_out_again(self) -> None:
+        composer = at("abcdef", 6)
+        self.assertEqual(lines_text(composer.render(20, 3)[0]), ["› abcdef"])
+        composer.masked = True
+        self.assertEqual(lines_text(composer.render(20, 3)[0]), ["› ••••••"])
+        typed(composer, "g")
+        self.assertEqual(lines_text(composer.render(20, 3)[0]), ["› •••••••"])
+        self.assertEqual(lines_text(composer.render(6, 3)[0]), ["› ••••", "  •••"])
 
 
 class RenderTests(unittest.TestCase):
