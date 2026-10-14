@@ -810,6 +810,35 @@ class ProfileReleaseTests(unittest.TestCase):
             self.assertIn("did not save OMH theme amber: this profile names its OMH home where OMH cannot read it", stdout)
             self.assertNotIn("display", (bot / "config.yaml").read_text(encoding="utf-8"))
 
+    def test_a_theme_with_no_store_to_go_to_is_said_once_on_the_recording_pass(self) -> None:
+        # While the profile's release stays refused, every update carries
+        # again and gets `store_unknown`; its line would repeat on each one.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = _Home(root)
+            bot = home.hermes_home / "profiles" / "bot"
+            bot.mkdir(parents=True)
+            (bot / ".env").write_text(f"OMH_HOME={(root / 'env-store').as_posix()}\n", encoding="utf-8")
+            home.legacy_install()
+            config = bot / "config.yaml"
+            home.brand(config, skin="omh-amber")
+            unshaped = config.read_text(encoding="utf-8")
+            config.write_text(unshaped + 'aliases:\n  "fast/model": glm-5.3\n', encoding="utf-8", newline="")
+
+            for _ in range(2):
+                status, stdout, stderr = home.run("update", output_json=False)
+
+                self.assertEqual(status, 0, stderr)
+                self.assertIn("could not release display.skin (", stdout)
+                self.assertNotIn("did not save OMH theme", stdout)
+
+            config.write_text(unshaped, encoding="utf-8", newline="")
+            status, stdout, stderr = home.run("update", output_json=False)
+
+            self.assertEqual(status, 0, stderr)
+            self.assertIn("did not save OMH theme amber: this profile names its OMH home where OMH cannot read it", stdout)
+            self.assertIsNone(read_theme_choice(home.omh_home))
+
     def test_an_env_store_named_after_setup_gets_no_theme_from_the_setting_this_pass_takes_back(self) -> None:
         # Setup gave the bot the primary's store; its `.env` names one of its
         # own afterwards. The theme was read from the setting the same pass
