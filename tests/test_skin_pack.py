@@ -38,7 +38,10 @@ from omh.skin_pack import (
     theme_for_name,
     theme_for_skin_name,
     theme_names,
+    read_theme_choice,
+    theme_store_path,
     uninstall_skin,
+    write_theme_choice,
 )
 
 _SKINS_DIR = Path(__file__).resolve().parents[1] / "src" / "omh" / "skins"
@@ -717,6 +720,46 @@ class SkinRepairTests(unittest.TestCase):
             with self.assertRaises(SkinInstallError):
                 repair_skins(home, adopt=frozenset({SKIN_FILENAME}))
             self.assertEqual(list(external.iterdir()), [])
+
+
+class ThemeStoreTests(unittest.TestCase):
+    """The OMH TUI theme choice, saved under the OMH home rather than in Hermes' config."""
+
+    def test_a_saved_theme_reads_back_from_the_omh_home(self) -> None:
+        with TemporaryDirectory() as tmp:
+            omh_home = Path(tmp) / ".omh"
+            crimson = theme_for_name("crimson")
+            assert crimson is not None
+
+            path = write_theme_choice(omh_home, crimson)
+
+            self.assertEqual(path, omh_home / "tui" / "theme.json")
+            self.assertEqual(theme_store_path(omh_home), path)
+            self.assertEqual(read_theme_choice(omh_home), crimson)
+            self.assertEqual(
+                json.loads(path.read_text(encoding="utf-8")),
+                {"schema_version": "omh_tui_theme/v1", "theme": "crimson"},
+            )
+
+    def test_nothing_saved_reads_as_no_choice(self) -> None:
+        with TemporaryDirectory() as tmp:
+            self.assertIsNone(read_theme_choice(Path(tmp) / ".omh"))
+
+    def test_a_file_this_module_did_not_write_reads_as_no_choice(self) -> None:
+        with TemporaryDirectory() as tmp:
+            omh_home = Path(tmp) / ".omh"
+            path = theme_store_path(omh_home)
+            path.parent.mkdir(parents=True)
+            for body in (
+                "not json",
+                json.dumps(["crimson"]),
+                json.dumps({"schema_version": "omh_tui_theme/v2", "theme": "crimson"}),
+                json.dumps({"schema_version": "omh_tui_theme/v1", "theme": "ares"}),
+                json.dumps({"schema_version": "omh_tui_theme/v1", "theme": 7}),
+            ):
+                with self.subTest(body=body):
+                    path.write_text(body, encoding="utf-8")
+                    self.assertIsNone(read_theme_choice(omh_home))
 
 
 class EnsureOmhSkinTests(unittest.TestCase):

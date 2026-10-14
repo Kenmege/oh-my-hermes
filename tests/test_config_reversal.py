@@ -31,11 +31,13 @@ from omh.config_adapter import (  # noqa: E402
 )
 from omh.config_adapter import read_config, write_config  # noqa: E402
 from omh.install.config_reversal import (  # noqa: E402
+    DISPLAY_KEYS,
     MANAGED_CONFIG_WRITES_SCHEMA,
     config_names_key,
     load_managed_config_writes,
     managed_config_reading,
     managed_config_writes,
+    release_managed_display,
     reverse_managed_config,
 )
 
@@ -599,6 +601,24 @@ class ReverseManagedConfigTests(unittest.TestCase):
         self.assertNotIn("skin: omh", change.text)
         self.assertNotIn("provider: omh", change.text)
 
+    def test_a_theme_chosen_after_the_record_was_taken_is_still_reversed(self) -> None:
+        """`omh theme use` rewrote `display.skin` without touching the record.
+
+        Mutation proof: without the by-construction rule on the recorded
+        branch, the recorded `omh` does not match `omh-amber` and uninstall
+        keeps a skin name whose file it is about to delete.
+        """
+        before = ""
+        after = _apply_setup_writes(before)
+        record = _record(before, after)
+        themed = after.replace("  skin: omh\n", "  skin: omh-amber\n")
+
+        change, rows = reverse_managed_config(themed, record, config_path=CONFIG_PATH)
+        by_key = {row.key: row for row in rows}
+
+        self.assertEqual(by_key["display.skin"].status, "reversed")
+        self.assertNotIn("skin:", change.text)
+
     def test_an_omh_theme_is_reversed_without_a_record_but_a_foreign_skin_is_not(self) -> None:
         for skin, status in (("omh-crimson", "reversed"), ("ares", "kept")):
             with self.subTest(skin=skin):
@@ -721,6 +741,174 @@ class ReverseManagedConfigTests(unittest.TestCase):
         self.assertEqual(reading["memory.provider"], "omh")
         self.assertEqual(reading["plugins.enabled"], ["omh"])
         self.assertEqual(reading["skills.external_dirs"], ["/tmp/omh/skills"])
+
+    def test_uninstall_after_the_release_leaves_a_skin_the_person_chose_since(self) -> None:
+        """Once released, an `omh*` skin is the person's, and uninstall says so."""
+        before = ""
+        after = _apply_setup_writes(before)
+        first = _record(before, after)
+        released = _released_record(after, first)
+        chosen = release_managed_display(after, first, config_path=CONFIG_PATH)[0].text
+        chosen = chosen + "display:\n  skin: omh-crimson\n"
+
+        change, rows = reverse_managed_config(chosen, _released_record(chosen, released), config_path=CONFIG_PATH)
+        by_key = {row.key: row for row in rows}
+
+        self.assertEqual(by_key["display.skin"].status, "kept")
+        self.assertIn("  skin: omh-crimson\n", change.text)
+        self.assertEqual(by_key["display.interface"].status, "absent")
+        self.assertEqual(by_key["memory.provider"].status, "reversed")
+
+
+def _released_record(text: str, stored: dict[str, object]) -> dict[str, object]:
+    """The map after one setup/update pass that ran the display release on `text`."""
+    released = release_managed_display(text, stored, config_path=CONFIG_PATH)[0].text
+    return managed_config_writes(
+        text,
+        released,
+        config_path=CONFIG_PATH,
+        previous=stored,
+        now="2026-10-14T00:00:00Z",
+        released=DISPLAY_KEYS,
+        display_released=True,
+    )
+
+
+class ReleaseManagedDisplayTests(unittest.TestCase):
+    """Setup and update take OMH's display keys back so bare `hermes` is stock Hermes."""
+
+    def _release(self, text: str, stored: object) -> tuple[str, dict[str, object]]:
+        change, rows = release_managed_display(text, stored, config_path=CONFIG_PATH)
+        return change.text, {row.key: row for row in rows}
+
+    def test_recorded_display_keys_go_and_the_bytes_before_setup_come_back(self) -> None:
+        before = "version: 1\n"
+        after = _apply_setup_writes(before)
+        record = _record(before, after)
+
+        released, by_key = self._release(after, record)
+
+        self.assertEqual({key for key, row in by_key.items() if row.status == "reversed"}, set(DISPLAY_KEYS))
+        self.assertNotIn("display:", released)
+        # Only the display half: OMH's plugin, memory provider and
+        # registration stay, which is what keeps OMH working inside Hermes.
+        self.assertIn("    - omh\n", released)
+        self.assertIn("  provider: omh\n", released)
+        self.assertIn("/tmp/omh/skills", released)
+
+    def test_a_value_consent_replaced_is_put_back(self) -> None:
+        before = "display:\n  interface: cli\n  skin: ares\n"
+        after = _apply_setup_writes(before)
+
+        released, by_key = self._release(after, _record(before, after))
+
+        self.assertIn("display:\n  interface: cli\n  skin: ares\n", released)
+        self.assertIn("restored display.skin to ares", by_key["display.skin"].detail)
+
+    def test_a_value_the_person_changed_after_omh_wrote_it_stays(self) -> None:
+        before = ""
+        after = _apply_setup_writes(before)
+        moved = (
+            after.replace("  interface: tui\n", "  interface: cli\n")
+            .replace("  skin: omh\n", "  skin: ares\n")
+            .replace("    tools: collapsed\n", "    tools: expanded\n")
+        )
+
+        released, by_key = self._release(moved, _record(before, after))
+
+        self.assertEqual(by_key["display.interface"].status, "kept")
+        self.assertEqual(by_key["display.skin"].status, "kept")
+        self.assertEqual(by_key["display.sections"].kept, "tools")
+        self.assertIn("  interface: cli\n", released)
+        self.assertIn("  skin: ares\n", released)
+        self.assertIn("    tools: expanded\n", released)
+        self.assertNotIn("collapsed", released)
+
+    def test_an_omh_skin_with_no_record_goes_and_the_persons_own_keys_stay(self) -> None:
+        text = "display:\n  interface: tui\n  skin: omh-crimson\n  compact: true\n"
+
+        released, by_key = self._release(text, {})
+
+        self.assertEqual(released, "display:\n  interface: tui\n  compact: true\n")
+        self.assertEqual(by_key["display.skin"].status, "reversed")
+        # `tui` is a value a person can choose; nothing says OMH wrote it.
+        self.assertEqual(by_key["display.interface"].status, "unrecorded")
+
+    def test_a_skin_omh_theme_use_wrote_over_the_recorded_one_goes(self) -> None:
+        before = ""
+        after = _apply_setup_writes(before)
+        themed = after.replace("  skin: omh\n", "  skin: omh-amber\n")
+
+        released, by_key = self._release(themed, _record(before, after))
+
+        self.assertEqual(by_key["display.skin"].status, "reversed")
+        self.assertNotIn("skin:", released)
+
+    def test_a_persons_own_display_choices_are_never_touched(self) -> None:
+        for text in (
+            "display:\n  skin: ares\n",
+            "display:\n  interface: cli\n",
+            "display:\n  skin: amber\n",
+            "display:\n  sections:\n    tools: collapsed\n",
+            "display: {skin: omh}\n",
+        ):
+            with self.subTest(text=text):
+                released, _by_key = self._release(text, {})
+                self.assertEqual(released, text)
+
+    def test_a_display_section_the_person_had_survives_a_recorded_release(self) -> None:
+        before = "version: 1\ndisplay:\n"
+        after = _apply_setup_writes(before)
+
+        released, _by_key = self._release(after, _record(before, after))
+
+        self.assertIn("version: 1\ndisplay:\n", released)
+        self.assertNotIn("  interface:", released)
+
+    def test_the_release_runs_once_per_config(self) -> None:
+        """Mutation proof: without the marker, update takes back a skin the person picked later."""
+        before = ""
+        after = _apply_setup_writes(before)
+        stored = _released_record(after, _record(before, after))
+        later = "display:\n  skin: omh-crimson\n"
+
+        released, by_key = self._release(later, stored)
+
+        self.assertEqual(released, later)
+        self.assertEqual(by_key, {})
+
+    def test_the_record_after_a_release_names_no_display_key_or_restore(self) -> None:
+        """Mutation proof: `released` must filter `restores` too.
+
+        Putting `ares` back reads, to the before/after comparison, like OMH
+        replacing its own `omh` with `ares`, so an unfiltered record would
+        keep `omh` as the value to restore and name `ares` as OMH's write.
+        """
+        before = "display:\n  interface: cli\n  skin: ares\n"
+        after = _apply_setup_writes(before)
+
+        entry = _entry(_released_record(after, _record(before, after)))
+
+        self.assertEqual(entry["restores"], {})
+        self.assertFalse(set(DISPLAY_KEYS) & set(entry["keys"]))  # type: ignore[arg-type]
+        self.assertEqual(entry["display_released_at"], "2026-10-14T00:00:00Z")
+        self.assertIn("memory.provider", entry["keys"])  # type: ignore[operator]
+
+    def test_the_record_keeps_the_first_release_time_and_drops_display_containers(self) -> None:
+        before = ""
+        after = _apply_setup_writes(before)
+        first = _record(before, after)
+        self.assertIn("display", _entry(first)["containers_created"])  # type: ignore[operator]
+        released = _released_record(after, first)
+
+        again = managed_config_writes(
+            after, after, config_path=CONFIG_PATH, previous=released, now="2026-12-01T00:00:00Z",
+            released=DISPLAY_KEYS, display_released=True,
+        )
+
+        self.assertEqual(_entry(again)["display_released_at"], "2026-10-14T00:00:00Z")
+        self.assertNotIn("display", _entry(again)["containers_created"])  # type: ignore[operator]
+        self.assertNotIn("display.sections", _entry(again)["containers_created"])  # type: ignore[operator]
 
 
 if __name__ == "__main__":

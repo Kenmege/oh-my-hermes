@@ -22,11 +22,14 @@ import os
 from pathlib import Path
 import secrets
 
+from .system.local_store import atomic_write_json
+
 SKIN_NAME = "omh"
 SKIN_FILENAME = "omh.yaml"
 MANIFEST_FILENAME = ".omh-skin.manifest.json"
 _MANIFEST_SCHEMA = "omh_skin_manifest/v2"
 _LEGACY_MANIFEST_SCHEMA = "omh_skin_manifest/v1"
+THEME_STORE_SCHEMA = "omh_tui_theme/v1"
 
 
 @dataclass(frozen=True)
@@ -105,6 +108,35 @@ def is_omh_skin_name(value: str) -> bool:
 def theme_names() -> tuple[str, ...]:
     """User-facing short names, for validation messages."""
     return tuple(theme.short_name for theme in SKIN_THEMES)
+
+
+def theme_store_path(omh_home: Path) -> Path:
+    """Where the OMH TUI theme choice lives: under the OMH home, never Hermes'."""
+    return Path(omh_home) / "tui" / "theme.json"
+
+
+def read_theme_choice(omh_home: Path) -> SkinTheme | None:
+    """The theme saved for this OMH home, or None when none is saved.
+
+    None for anything this module did not write as well (unreadable, another
+    schema, an unknown name), so a damaged file costs the person their saved
+    choice, never the TUI's start.
+    """
+    try:
+        record = json.loads(theme_store_path(omh_home).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(record, dict) or record.get("schema_version") != THEME_STORE_SCHEMA:
+        return None
+    name = record.get("theme")
+    return theme_for_name(name) if isinstance(name, str) else None
+
+
+def write_theme_choice(omh_home: Path, theme: SkinTheme) -> Path:
+    """Save the theme the OMH TUI opens with; the path it was written to."""
+    path = theme_store_path(omh_home)
+    atomic_write_json(path, {"schema_version": THEME_STORE_SCHEMA, "theme": theme.short_name})
+    return path
 
 
 def skin_payload(name: str = SKIN_NAME) -> bytes:
