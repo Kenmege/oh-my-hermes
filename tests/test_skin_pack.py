@@ -318,6 +318,22 @@ class SkinRemovalTests(unittest.TestCase):
                 {theme.filename: "removed" for theme in SKIN_THEMES if theme.filename != "omh-mono.yaml"},
             )
 
+    def test_manifest_only_leaves_our_bytes_without_a_record(self) -> None:
+        # After the display release, a copy of the shipped file is the
+        # person's; only a manifest record still proves a file OMH's.
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp).resolve()
+            skins = home / "skins"
+            skins.mkdir(parents=True)
+            (skins / SKIN_FILENAME).write_bytes(skin_payload())
+            self._stale_v1_record(skins)
+            entries = {entry["filename"]: entry["status"] for entry in uninstall_skin(home, manifest_only=True)["skins"]}
+            self.assertEqual(entries[SKIN_FILENAME], "kept_unmanaged")
+            self.assertTrue((skins / SKIN_FILENAME).is_file())
+            seed_legacy_skins(home)
+            entries = {entry["filename"]: entry["status"] for entry in uninstall_skin(home, manifest_only=True)["skins"]}
+            self.assertEqual(set(entries.values()), {"removed"})
+
     def test_the_skin_the_config_still_names_stays_with_its_record(self) -> None:
         # Removing it would leave Hermes naming a skin that is not there.
         with TemporaryDirectory() as tmp:

@@ -1572,6 +1572,9 @@ refused. That pass records `display_released_at` beside the write record in
 `$OMH_HOME/runtime/state.json`, and from then on no display value
 in that config is read as OMH's: a skin you pick for Hermes later, OMH
 palette or not, stays through every update, and uninstall leaves it too.
+So does a skin file you put back for it: after the release, setup and
+update count a skin file as OMH's only by the manifest record the release
+left, so a copy of a shipped file is yours.
 The pass that does something says so, per home:
 
 ```text

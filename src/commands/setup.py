@@ -2034,13 +2034,19 @@ def _selected_skins(config_text: str) -> tuple[str, ...]:
     return available_skins() if config_names_key(config_text, DISPLAY_SKIN_KEY) else ()
 
 
-def _remove_legacy_display_files(paths: OmhPaths, *, dry_run: bool, config_text: str) -> dict[str, object]:
+def _remove_legacy_display_files(
+    paths: OmhPaths, *, dry_run: bool, config_text: str, released: bool
+) -> dict[str, object]:
     """Remove the status widget and skin files earlier versions installed into this Hermes home.
 
     The manifest-checked uninstallers, so a file OMH cannot prove it wrote
     (a skin the person edited) stays and is reported `kept_unmanaged`, and
     the skin `config_text` still selects stays (`kept_selected`), since
-    removing it would leave Hermes naming a skin that is not there. A
+    removing it would leave Hermes naming a skin that is not there. Once
+    this config's release was recorded (`released`), a skin file is OMH's
+    by its manifest record only: that pass removed every file either proof
+    covered, so one with the shipped bytes that appears later is the
+    person's own copy. A
     symlinked destination is refused, as uninstall refuses it, and so is a
     file that cannot be unlinked. Either is reported rather than failing the
     setup or update the config release already carried, and rather than
@@ -2052,7 +2058,9 @@ def _remove_legacy_display_files(paths: OmhPaths, *, dry_run: bool, config_text:
     except (TuiWidgetInstallError, OSError) as exc:
         files["tui_widget"] = {"status": "refused", "reason": str(exc)}
     try:
-        files["skin"] = uninstall_skin(paths.hermes_home, dry_run=dry_run, keep=_selected_skins(config_text))
+        files["skin"] = uninstall_skin(
+            paths.hermes_home, dry_run=dry_run, keep=_selected_skins(config_text), manifest_only=released
+        )
     except (SkinInstallError, OSError) as exc:
         files["skin"] = {"status": "refused", "reason": str(exc)}
     return files
@@ -2106,6 +2114,9 @@ def _apply_result(
     # setting is OMH's, and the record this pass writes carries it forward.
     state_before, _state_error = read_state_result(paths)
     previous_writes = (state_before or {}).get(MANAGED_CONFIG_WRITES_STATE_KEY)
+    already_released = bool(
+        load_managed_config_writes(previous_writes, config_path=paths.hermes_config_path).get(DISPLAY_RELEASED_FIELD)
+    )
     theme = _carry_theme_choice(
         paths, previous_writes, theme_home=theme_home or paths.omh_home, dry_run=bool(args.dry_run)
     )
@@ -2208,7 +2219,10 @@ def _apply_result(
     # After the config, never before, and keeping the skin the config still
     # names: removing it would leave Hermes pointing at nothing.
     legacy_files = _remove_legacy_display_files(
-        paths, dry_run=bool(args.dry_run), config_text=plugin_omh_home.text
+        paths,
+        dry_run=bool(args.dry_run),
+        config_text=plugin_omh_home.text,
+        released=already_released,
     )
     if not args.dry_run:
         update_state(

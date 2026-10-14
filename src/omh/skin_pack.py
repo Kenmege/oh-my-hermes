@@ -9,8 +9,9 @@ Earlier versions also installed every theme file into ``$HERMES_HOME/skins/``
 and selected one through `display.skin`, so bare `hermes` wore it.
 `uninstall_skin` takes those files back: setup and update through the display
 release, uninstall on its own. It removes only a file OMH can prove it wrote,
-by manifest record or by matching the shipped bytes, and never the file
-`display.skin` still names; anything else is the person's and stays.
+by manifest record or, until that config's display release is recorded, by
+matching the shipped bytes, and never the file `display.skin` still names;
+anything else is the person's and stays.
 """
 
 from __future__ import annotations
@@ -280,7 +281,7 @@ def _manifest_document(records: dict[str, str]) -> bytes:
     ).encode()
 
 
-def _is_managed_file(destination: Path, records: dict[str, str], payload: bytes) -> bool:
+def _is_managed_file(destination: Path, records: dict[str, str], payload: bytes, *, manifest_only: bool) -> bool:
     """Does OMH own this file -- by manifest record, or by being our own content?
 
     Two proofs, either sufficient. The manifest record is the primary one. The
@@ -297,6 +298,13 @@ def _is_managed_file(destination: Path, records: dict[str, str], payload: bytes)
     since the package still ships the same bytes. A file that matches
     neither the record nor the template is genuinely user-edited and stays
     kept_unmanaged.
+
+    `manifest_only` drops the second proof, once the config's display
+    release is recorded. That pass removed every file either proof covered
+    and deleted the manifest it emptied, so a shipped-bytes file that
+    appears afterwards is one the person put there, typically to give
+    Hermes an OMH palette again, and the template match would take it on
+    every update.
     """
     try:
         digest = _sha256(destination.read_bytes())
@@ -304,7 +312,7 @@ def _is_managed_file(destination: Path, records: dict[str, str], payload: bytes)
         return False
     if records.get(destination.name) == digest:
         return True
-    return digest == _sha256(payload)
+    return not manifest_only and digest == _sha256(payload)
 
 
 _UNINSTALL_STATUS_ORDER = ("removed", "would_remove", "kept_unmanaged", "kept_selected", "absent")
@@ -322,12 +330,14 @@ def uninstall_skin(
     *,
     dry_run: bool = False,
     keep: Collection[str] = (),
+    manifest_only: bool = False,
 ) -> dict[str, object]:
     """Remove only the theme files OMH owns -- by record, or by being our bytes.
 
     The installer earlier versions ran adopted and refreshed a file on either
     proof, so either proof is what lets this take it away again; a machine
     with a stale manifest would otherwise keep orphaned skin files.
+    `manifest_only` limits it to the record (see `_is_managed_file`).
 
     `keep` names skins the Hermes config still selects. Their files stay
     (`kept_selected`) with their manifest records, whoever wrote them:
@@ -364,7 +374,7 @@ def uninstall_skin(
                 }
             )
             continue
-        if not _is_managed_file(destination, records, skin_payload(theme.skin_name)):
+        if not _is_managed_file(destination, records, skin_payload(theme.skin_name), manifest_only=manifest_only):
             entries.append(
                 {
                     "skin": theme.skin_name,

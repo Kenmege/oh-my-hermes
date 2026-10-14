@@ -339,6 +339,29 @@ class UpdateReleaseTests(unittest.TestCase):
             self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
             self.assertEqual(read_theme_choice(home.omh_home), theme_for_name("sky"))
 
+    def test_a_skin_file_copied_back_after_the_release_survives_later_updates(self) -> None:
+        # The release removed every OMH skin file and its manifest. A copy of
+        # the shipped bytes put back afterwards matches the template, which
+        # proved ownership before the release; after it, only a manifest
+        # record does, so the person's copy stays whether or not
+        # `display.skin` names it.
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install()
+            self.assertEqual(home.run("update")[0], 0)
+            self.assertEqual(_omh_skin_files(home.hermes_home), [])
+            for theme in ("omh-crimson", "omh-amber"):
+                (home.hermes_home / "skins" / f"{theme}.yaml").write_bytes(skin_payload(theme))
+            chosen = home.config.read_text(encoding="utf-8") + "display:\n  skin: omh-crimson\n"
+            home.config.write_text(chosen, encoding="utf-8", newline="")
+
+            for _ in range(2):
+                status, stdout, stderr = home.run("update", output_json=False)
+
+                self.assertEqual(status, 0, stderr)
+                self.assertEqual(_omh_skin_files(home.hermes_home), ["omh-amber.yaml", "omh-crimson.yaml"])
+                self.assertEqual(home.config.read_text(encoding="utf-8"), chosen)
+
     def test_a_dry_run_writes_nothing(self) -> None:
         with TemporaryDirectory() as tmp:
             home = _Home(Path(tmp))
