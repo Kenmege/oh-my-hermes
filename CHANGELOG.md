@@ -4,19 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
-- **Memory recall no longer lets a colloquial query's particles, endings and
-  fillers decide which record leads.** A Korean query run loses the particles
-  and request or verb endings it ends in while two syllables stay (자동으로 is
-  scored as 자동, 확인해주세요 as 확인, 경로 stays whole), and a run that is
-  one of them whole (해주세요, 에서 after a Latin word) adds nothing. Korean
-  discourse fillers, intensifiers and demonstratives (그냥, 진짜, 그거 ...),
-  English hedges (honestly, literally, kinda, really ...) and the Japanese and
-  Chinese wrappers って, なってる, 什么时候 and 一般 join the closed query-side
-  lists. All of them still order records of equal coverage; records are
-  tokenized in full. Measured against `origin/main` at 4d3c10141 with the
-  blind-round harness and its lead-record rule (distractor ids sort first, so
-  a tie goes against this change): round 4, 20 cases, 5 wins, 15 ties, 0
-  losses; its tie-flip twin 4 wins, 16 ties, 0 losses; round 3 and its twin
+- **Memory recall no longer lets a colloquial query's particles, endings,
+  fillers or long predicate runs decide which record leads.** A Korean query
+  run loses the particles and request or verb endings it ends in while two
+  syllables stay (자동으로 is scored as 자동, 확인해주세요 as 확인, 경로 stays
+  whole), and a run that is one of them whole (해주세요, 에서 after a Latin
+  word) adds nothing. Korean discourse fillers, intensifiers and
+  demonstratives (그냥, 진짜, 그거 ...), English hedges (honestly, literally,
+  kinda, really ...) and the Japanese and Chinese wrappers って, なってる,
+  什么时候 and 一般 join the closed query-side lists. All of them still order
+  records of equal coverage; records are tokenized in full. Coverage now
+  counts query words, not index terms: a Hangul run is one word, held in the
+  share of its bigrams a record has, so an everyday predicate run such as
+  넘어가게 adds no more than the topic noun 모델. Latin words count as they
+  did, except that an accented word and its folded twin are one word;
+  Japanese and Chinese bigrams each stay a word. The ranking block's
+  `coverage` is now in thousandths. Measured against `origin/main` at
+  4d3c10141 with the blind-round harness and its lead-record rule
+  (distractor ids sort first, so a tie goes against this change): round 5,
+  24 cases written blind and used for tuning once judged, 3 wins, 21 ties,
+  0 losses, the same on its tie-flip twin; round 4, 20 cases, 5 wins, 15
+  ties, 0 losses, its twin 4 wins, 16 ties, 0 losses; round 3 and its twin
   0 wins, 20 ties, 0 losses each; the 40-case pre-registered corpus served
   identical packs.
 

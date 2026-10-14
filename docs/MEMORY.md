@@ -1095,7 +1095,7 @@ more than half of `open_max_days`.
 ## Recall Ranking and Delivery Usage
 
 Recall packs order eligible records relevance-first: the relevance rank
-(query-term coverage, then term frequency and length) is the primary sort key, and deterministic
+(query-word coverage, then term frequency and length) is the primary sort key, and deterministic
 reciprocal rank fusion over
 relevance, recency (`approved_at`), and delivery usage orders records that
 share a relevance rank. A weaker keyword match can never
@@ -1110,10 +1110,40 @@ Relevance is computed against the eligible candidates of that one selection,
 so the average summary length comes from the store being recalled from and
 the same store and query always score the same. It has two keys:
 
-- Coverage comes first. It is twice the number of distinct content terms a
-  record matches in its summary or tags, plus one for each matched term that
-  is one of its tags (the old overlap scorer's shape, without the record
-  type). The ranking block reports `coverage`.
+- Coverage comes first. It counts the query's content words a record holds
+  in its summary or tags, 2000 each, plus 1000 for each word with a term
+  among its tags (the old overlap scorer's shape, without the record type),
+  as an integer in thousandths; the ranking block reports `coverage` in
+  those thousandths. A Latin word, or a two-letter one, is held whole or not
+  at all, its accent-folded twin included. A Hangul run, after the stripping
+  below, is one word, and a record holds the share of its bigrams it has,
+  rounded down to a thousandth. Japanese and Chinese put no space between
+  words, so a piece of their text is a phrase, and each of its bigrams is a
+  word of its own. Words that stem alike count once, and a run's whole token
+  only orders records.
+  - Counting words keeps a long predicate run from outweighing a topic noun.
+    Counted by index term, a Hangul run of n syllables was up to n terms, so
+    once the suffixes below were stripped, for "provider limit걸리면
+    fallback모델로 넘어가게 돼있지" a record sharing limit and 걸리면 and
+    another sharing 넘어가게 (four terms each) both outranked the topic record
+    sharing provider, fallback and 모델 (three terms, one of them a tag).
+    Per word, each run adds at most 2000, and an unspaced compound still
+    discriminates: holding three of 모델라우팅's four bigrams beats holding
+    one.
+  - The cost is the other side of the share. A compound a record holds in
+    part (two of 리뷰용모델체인's six bigrams) counts less than a short word
+    another record holds whole (맨앞), so Korean typed without spaces, which
+    joins several nouns into one word, loses weight per noun. Each word is
+    rounded down on its own, so two records whose exact shares add up equal
+    can land a thousandth apart.
+  - On every ASCII query of the recall corpus, coverage is the old term
+    count times 1000. The one Latin change is an accented word: it and its
+    folded twin were two terms, so a record writing the accent covered it
+    twice, and now they are one word.
+  - Japanese and Chinese stay per bigram because, as one word per piece, the
+    topic bigrams of an unspaced Chinese question (three of eleven) counted
+    less than one bigram of a short filler piece (one of three), a case the
+    term count served right.
 - Within one coverage, the score is BM25F (k1 1.2, b 0.75) without idf: how
   often the query's terms occur, saturating, in a summary normalized for
   length, with tag hits weighted up. Records whose words tie at one coverage
@@ -1195,6 +1225,15 @@ the same store and query always score the same. It has two keys:
     wrong: 피알 for PR is a transliteration no list covers, and a request
     verb (확인) is a word, so "확인좀 해주세요 PR" ties the PR record with a
     record about 확인 and the record id decides.
+  - On a fifth blind round (24 cases, used for tuning once judged), the
+    suffixes alone lost one case: "provider limit걸리면 fallback모델로
+    넘어가게 돼있지" lost the 모델로 tokens the topic record shared and fell
+    behind two predicate runs. Counting coverage by word, with the suffixes,
+    against the scorer before both: round 5 gained three cases and lost none,
+    as did its tie-flip twin; rounds 3 and 4, their twins and the
+    pre-registered corpus kept the verdicts and packs the suffixes alone gave.
+    Thirteen round-5 cases, the four negatives among them, are wrong under
+    both scorers.
 - There are three fields. A summary hit is the unit and a tag hit weighs 2;
   the weighted counts saturate together, so a word in both the summary and a
   tag outranks a tag-only hit, which outranks a summary-only hit. The record

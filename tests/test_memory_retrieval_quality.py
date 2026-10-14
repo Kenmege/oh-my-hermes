@@ -2,7 +2,7 @@
 
 Three changes are pinned here:
 
-- relevance is query-term coverage, then BM25F term frequency and length with
+- relevance is query-word coverage, then BM25F term frequency and length with
   no idf, over the eligible candidates (summary, tags, record type), with
   light English suffix stemming applied alike to the query and the records,
   CJK and accented text left as they were, and length counted in whole
@@ -65,12 +65,14 @@ from omh.plugin_bundle.omh.memory_recall_support import (
     _memory_index_terms,
     _memory_query_split,
     _memory_query_tokens,
+    _memory_query_words,
     _memory_relevance,
     _memory_relevance_scores,
     _memory_token_list,
     _memory_tokens,
     _stem_memory_token,
     _term_contributions,
+    _word_coverage,
     memory_summary_terms,
     newest_record,
     normalize_memory_subject,
@@ -117,7 +119,7 @@ class Bm25RelevanceTests(unittest.TestCase):
             _record("d", "zeta four"),
         ]
         relevance = _memory_relevance(records, "alpha zeta")
-        self.assertEqual(relevance.coverage, [2, 2, 2, 2])
+        self.assertEqual(relevance.coverage, [2000, 2000, 2000, 2000])
         self.assertEqual(len(set(relevance.scores)), 1, relevance.scores)
 
     def test_how_many_records_hold_a_term_never_moves_its_weight(self) -> None:
@@ -561,7 +563,7 @@ class QueryFunctionWordTests(unittest.TestCase):
             _record("links", "Quick links are pinned in the channel", tags=("docs",)),
         ]
         relevance = _memory_relevance(records, "is there a quick start?")
-        self.assertEqual(relevance.coverage, [2, 2, 0])
+        self.assertEqual(relevance.coverage, [2000, 2000, 0])
         self.assertGreater(relevance.scores[1], relevance.scores[0])
         self.assertEqual(relevance.scores[2], 0)
 
@@ -627,14 +629,15 @@ class ColloquialQueryTests(unittest.TestCase):
             _record("memory", "메모리 기록은 자동 승인되고 나중에 리뷰할 수 있다", tags=("memory",)),
             _record("deploy", "배포는 main 머지 후 자동으로 나간다", tags=("deploy",)),
         ]
-        # 자동으로 used to add 자동으로, 동으 and 으로, and the deploy record tied at 8.
-        self.assertEqual(_memory_relevance(records, "메모리 자동으로 저장돼?").coverage, [8, 2])
+        # 자동으로 used to add 자동으로, 동으 and 으로, and the deploy record tied
+        # the memory record; now it holds one of the query's two words, 자동.
+        self.assertEqual(_memory_relevance(records, "메모리 자동으로 저장돼?").coverage, [4000, 2000])
 
     def test_a_run_that_is_wholly_a_listed_ending_leaves_nothing(self) -> None:
         self.assertEqual(_korean_query_stem("해주세요"), "")
         self.assertEqual(_memory_query_tokens("확인좀 해주세요 PR"), ["pr", "확인"])
         records = [_record("bot", "해주세요 봇은 일정 알림을 보낸다", tags=("bot",)), _record("pr", "PR 리뷰는 코드오너 한 명 승인으로 머지한다")]
-        self.assertEqual(_memory_relevance(records, "확인좀 해주세요 PR").coverage, [0, 2])
+        self.assertEqual(_memory_relevance(records, "확인좀 해주세요 PR").coverage, [0, 2000])
 
     def test_two_syllables_always_stay(self) -> None:
         # 경로 and 평가 end in particle-like syllables and are nouns: the floor
@@ -662,8 +665,8 @@ class ColloquialQueryTests(unittest.TestCase):
         query = "진짜 그냥 해주세요"
         self.assertEqual(_memory_query_split(query), (_memory_token_list(query), []))
         records = [_record("bot", "해주세요 봇은 일정 알림을 보낸다"), _record("lunch", "점심은 12시")]
-        # 해주세요, 해주, 주세 and 세요 count again, as they did before any stripping.
-        self.assertEqual(_memory_relevance(records, query).coverage, [8, 0])
+        # 해주세요 counts again, as it did before any stripping, as one word.
+        self.assertEqual(_memory_relevance(records, query).coverage, [2000, 0])
 
     def test_records_keep_their_particles_and_endings(self) -> None:
         tokens = _memory_token_list("배포는 main 머지 후 자동으로 나간다")
@@ -731,14 +734,14 @@ class StemmedOnlyOverlapTests(unittest.TestCase):
 class CoverageGuardTests(unittest.TestCase):
     """One stray query word, however rare, never outranks a topic word with its tag."""
 
-    def test_coverage_counts_two_per_term_and_one_per_tag(self) -> None:
+    def test_coverage_counts_two_thousand_per_word_and_one_thousand_per_tag(self) -> None:
         records = [
             _record("both", "deploy from main", tags=("deploy", "main")),
             _record("summary", "deploy from main", tags=("ops",)),
             _record("one", "deploy nightly", tags=("ops",)),
             _record("none", "lunch at noon"),
         ]
-        self.assertEqual(_memory_relevance(records, "deploy main").coverage, [6, 4, 2, 0])
+        self.assertEqual(_memory_relevance(records, "deploy main").coverage, [6000, 4000, 2000, 0])
 
     def test_a_rare_unlisted_word_never_outranks_a_topic_match_at_scale(self) -> None:
         # Like a real store, the topic word is common: every 13th note (154) mentions a deploy.
@@ -759,7 +762,7 @@ class CoverageGuardTests(unittest.TestCase):
         _attach_recall_ranking(items, {}, now=FIXTURE_CLOCK, coverage={record["record_id"]: relevance.coverage[by_id[record["record_id"]]] for record in (stray, topic[0])})
         ranks = {item["record_id"]: item["ranking"]["relevance_rank"] for item in items}
         self.assertEqual((ranks["d0"], ranks["stray"]), (1, 2))
-        self.assertEqual(items[1]["ranking"]["coverage"], 3)
+        self.assertEqual(items[1]["ranking"]["coverage"], 3000)
 
     def test_the_selector_ranks_on_coverage_before_the_score(self) -> None:
         pack = _pack(
@@ -790,6 +793,117 @@ class CoverageGuardTests(unittest.TestCase):
         ranks = {item["record_id"]: item["ranking"]["relevance_rank"] for item in pack["included_records"]}
         self.assertEqual(set(ranks.values()), {1}, ranks)
         self.assertEqual(_ids(pack)[0], "mem_b_one")
+
+
+def _term_count_coverage(records: list[dict[str, object]], query: str) -> list[int]:
+    """Coverage as it was counted before words, in thousandths: 2000 per distinct matched term, 1000 per tag hit."""
+    terms = {_stem_memory_token(token) for token in _memory_query_split(query)[0]}
+    counted: list[int] = []
+    for record in records:
+        document = _record_relevance_fields(record)
+        matched = [term for term in terms if document["summary"][term] or document["tags"][term]]
+        counted.append(2000 * len(matched) + 1000 * sum(1 for term in matched if document["tags"][term]))
+    return counted
+
+
+class WordCoverageTests(unittest.TestCase):
+    """Coverage counts query words, not index terms; a Hangul run is one word held in share of its bigrams."""
+
+    def test_a_long_predicate_run_counts_as_one_word(self) -> None:
+        query = "fallback모델로 넘어가게 돼있지"
+        records = [
+            _record("topic", "다음 후보 모델로 넘긴다", tags=("fallback",)),
+            _record("predicates", "다크모드로 넘어가게 돼있지", tags=("frontend",)),
+            _record("part", "회의 시간 넘어가면 다음 안건으로 간다", tags=("meeting",)),
+        ]
+        # fallback as a tag (2000 + 1000) and 모델; two whole runs, 2000 each,
+        # not one per bigram; two of 넘어가게's three bigrams, rounded down.
+        self.assertEqual(_memory_relevance(records, query).coverage, [5000, 4000, 1333])
+        # Counted by term, the two runs were seven terms and buried the topic.
+        self.assertEqual(_term_count_coverage(records, query), [5000, 14000, 4000])
+        pack = _pack(
+            self,
+            _spec("mem_a_predicates", "다크모드로 넘어가게 돼있지", approved_at=_YOUNG, tags=("frontend",)),
+            _spec("mem_b_topic", "다음 후보 모델로 넘긴다", approved_at=_AGING, tags=("fallback",)),
+            query=query,
+        )
+        self.assertEqual(_ids(pack), ["mem_b_topic", "mem_a_predicates"])
+
+    def test_an_unspaced_compound_is_held_in_share_of_its_bigrams(self) -> None:
+        self.assertEqual(
+            _memory_query_words("모델라우팅"),
+            [(frozenset({"모델"}), frozenset({"델라"}), frozenset({"라우"}), frozenset({"우팅"}))],
+        )
+        records = [
+            _record("whole", "모델라우팅은 체인 순서를 따른다"),
+            _record("three", "라우팅 모델은 따로 정한다"),
+            _record("one", "모델 학습은 주말에 돈다"),
+            _record("none", "점심은 12시"),
+        ]
+        # 4, 3 and 1 of 모델, 델라, 라우, 우팅: a partial hold never reads as whole.
+        self.assertEqual(_memory_relevance(records, "모델라우팅").coverage, [2000, 1500, 500, 0])
+
+    def test_latin_coverage_is_the_term_count_it_was_except_an_accent_counts_once(self) -> None:
+        checked = 0
+        for case in RETRIEVAL_CASES:
+            query = str(case["query"])
+            if not query.isascii():
+                continue
+            records = [materialize_fixture_record(spec)[0] for spec in case["records"]]
+            with self.subTest(case=case["case_id"]):
+                self.assertEqual(_memory_relevance(records, query).coverage, _term_count_coverage(records, query))
+            checked += 1
+        self.assertGreater(checked, 40)
+        # Words that stem alike are one word, as they were one term.
+        repeated = [_record("deploy", "deploy from main"), _record("lunch", "lunch at noon")]
+        self.assertEqual(_memory_relevance(repeated, "deploy deployed deploying").coverage, [2000, 0])
+        self.assertEqual(_memory_relevance(repeated, "배포 배포는 deploy").coverage, [2000, 0])
+        # An accented word and its folded twin were two terms, so a record
+        # writing the accent covered it twice; they are one word now.
+        records = [_record("accent", "Le déploiement passe par main"), _record("folded", "deploiement nightly")]
+        self.assertEqual(_term_count_coverage(records, "déploiement"), [4000, 2000])
+        self.assertEqual(_memory_relevance(records, "déploiement").coverage, [2000, 2000])
+
+    def test_the_tag_bonus_is_one_per_word(self) -> None:
+        records = [
+            _record("tagged", "체인 순서를 따른다", tags=("모델라우팅", "deploy")),
+            _record("summary", "모델라우팅 deploy 문서"),
+            _record("one_bigram_tag", "체인 순서를 따른다", tags=("모델",)),
+        ]
+        # Every bigram of 모델라우팅 is a tag hit, and the word still adds one 1000.
+        self.assertEqual(_memory_relevance(records, "모델라우팅 deploy").coverage, [6000, 4000, 1500])
+
+    def test_coverage_is_an_integer_sum_that_ignores_word_order(self) -> None:
+        records = [
+            _record("a", "모델라우팅은 deploy 전에 넘어가 버린다", tags=("deploy",)),
+            _record("b", "라우팅 가게 보기 좋다", tags=("모델",)),
+        ]
+        query = "모델라우팅 넘어가게 deploy 돌려보기"
+        baseline = _memory_relevance(records, query).coverage
+        self.assertTrue(all(isinstance(value, int) for value in baseline))
+        self.assertEqual(_memory_relevance(records, "돌려보기 deploy 넘어가게 모델라우팅").coverage, baseline)
+        words = _memory_query_words(query)
+        for record, expected in zip(records, baseline):
+            document = _record_relevance_fields(record)
+            for seed in range(5):
+                rng = random.Random(seed)
+                permuted = [tuple(rng.sample(units, len(units))) for units in rng.sample(words, len(words))]
+                self.assertEqual(_word_coverage(document, permuted), expected)
+        # Each word is rounded down on its own: two of one word's three bigrams
+        # and one of each of two such words are equal shares a thousandth apart.
+        split = [_record("two_of_one", "넘어가 버렸다"), _record("one_of_each", "가게 보기 좋다")]
+        self.assertEqual(_memory_relevance(split, "넘어가게 돌려보기").coverage, [1333, 1332])
+
+    def test_japanese_and_chinese_bigrams_each_stay_a_word(self) -> None:
+        self.assertEqual(len(_memory_query_words("メモリの保存ってどうなってる")), 5)
+        self.assertTrue(all(len(units) == 1 for units in _memory_query_words("メモリの保存ってどうなってる")))
+        records = [
+            _record("topic", "版本号统一用脚本改，不要手动编辑"),
+            _record("filler", "麻烦的环境配置写成脚本"),
+        ]
+        # 版本, 本号, 要手 and 手动 against 麻烦. As one word, the clause's
+        # sixteen bigrams would hold the topic to 4/16 against the filler's 1/2.
+        self.assertEqual(_memory_relevance(records, "我们现在发版的时候还要手动改版本号吗 真麻烦").coverage, [8000, 2000])
 
 
 class RecordTypeFieldTests(unittest.TestCase):

@@ -51,7 +51,7 @@ _RECALL_RRF_K = 60
 
 _RECALL_RRF_WEIGHTS = {"relevance": 2.0, "recency": 1.0, "usage": 1.0}
 
-# Relevance within one query-term coverage: BM25F term-frequency saturation and
+# Relevance within one query-word coverage: BM25F term-frequency saturation and
 # length normalization (the Okapi defaults k1 and b) with no idf, over three
 # fields: the summary, the tags, and the record type. A summary hit is the unit.
 # A tag is a label the captor chose for the topic, so a tag hit weighs twice
@@ -66,6 +66,11 @@ _RECALL_BM25_TAG_WEIGHT = 2.0
 _RECALL_BM25_RECORD_TYPE_WEIGHT = 1.0
 
 _RECALL_SCORE_SCALE = 1000
+
+# Coverage (`_word_coverage`) is an integer in thousandths too: a word a record
+# holds whole adds 2000, a Hangul run it holds in part adds the share of its
+# bigrams held times 2000, rounded down, and a word with a tag hit adds 1000.
+_RECALL_COVERAGE_SCALE = 1000
 
 # A temporal query ranks relevance in this many bands below the best score
 # (see `_attach_recall_ranking`), so recency can order comparable matches.
@@ -773,10 +778,48 @@ def _memory_query_split(query: str) -> tuple[list[str], list[str]]:
     if not raw.strip():
         return [], []
     every = _memory_token_list(raw)
-    content = _memory_token_list(raw, query=True, kept=_kept_listed_words(raw))
-    if all(len(token) <= 2 and token.isascii() for token in content):
-        content = every
+    content = [token for group in _memory_query_content_groups(raw) for token in group]
     return content, list((Counter(every) - Counter(content)).elements())
+
+def _memory_query_content_groups(raw: str) -> list[tuple[str, ...]]:
+    """The content tokens of `_memory_query_split`, grouped by word (`_memory_token_groups`)."""
+    groups = _memory_token_groups(raw, query=True, kept=_kept_listed_words(raw))
+    if all(len(token) <= 2 and token.isascii() for group in groups for token in group):
+        return _memory_token_groups(raw)
+    return groups
+
+def _memory_query_words(query: str) -> list[tuple[frozenset[str], ...]]:
+    """The query's distinct content words, each as the units coverage counts.
+
+    A unit is a set of stemmed terms, any one of which holds it. A Latin or
+    two-character ASCII word is one unit (the word and its accent-folded
+    twin), so a record holds all of it or none. A Hangul run after stripping
+    is one word with one unit per distinct bigram: Korean puts a space
+    between words, so the run is a word, and a record holds the share of its
+    bigrams it has. Japanese and Chinese put no space between words, so a
+    piece left after cutting is a phrase, not a word: each of its distinct
+    bigrams is a word of its own, one unit, as every bigram counted before.
+    The whole-segment token is left out of every word -- a record holding it
+    holds all its bigrams too -- and stays a query term for ordering. Two
+    words with the same units are one word: "deploy deployed" is one.
+    """
+    raw = str(query or "")
+    if not raw.strip():
+        return []
+    words: dict[frozenset[frozenset[str]], tuple[frozenset[str], ...]] = {}
+    for group in _memory_query_content_groups(raw):
+        terms = [_stem_memory_token(token) for token in group]
+        if all("\uac00" <= char <= "\ud7a3" for char in group[0]):
+            units = tuple(dict.fromkeys(frozenset({term}) for term in terms if len(term) == 2))
+            words.setdefault(frozenset(units), units)
+        elif _MEMORY_CJK_RUN.fullmatch(group[0]):
+            for term in terms:
+                if len(term) == 2:
+                    words.setdefault(frozenset({frozenset({term})}), (frozenset({term}),))
+        else:
+            units = (frozenset(terms),)
+            words.setdefault(frozenset(units), units)
+    return list(words.values())
 
 def _memory_query_tokens(query: str) -> list[str]:
     """The content tokens of `_memory_query_split`."""
@@ -785,19 +828,38 @@ def _memory_query_tokens(query: str) -> list[str]:
 class MemoryRelevance(NamedTuple):
     """Per-record relevance of one selection, in record order.
 
-    ``coverage`` is the primary relevance key: twice the number of distinct
-    content terms a record matches in its summary or tags, plus one for each
-    of them that is one of its tags (the old overlap scorer's 10-per-term,
-    5-per-tag shape, without the record type). ``scores`` orders records only
-    within an equal coverage: term frequency and length normalization over
-    the content and listed terms, with no idf, in integer thousandths.
-    ``unstemmed`` says whether the record shares an unstemmed content token in
-    its summary or tags.
+    ``coverage`` is the primary relevance key, counted per query word
+    (`_word_coverage`), in integer thousandths: two for each content word a
+    record holds in its summary or tags -- the share of its bigrams, for a
+    Hangul run -- plus one for each word with a term among its tags (the old
+    overlap scorer's 10-per-word, 5-per-tag shape, without the record type).
+    ``scores`` orders records only within an equal coverage: term frequency
+    and length normalization over the content and listed terms, with no idf,
+    in integer thousandths. ``unstemmed`` says whether the record shares an
+    unstemmed content token in its summary or tags.
     """
 
     scores: list[int]
     unstemmed: list[bool]
     coverage: list[int]
+
+
+def _word_coverage(document: Mapping[str, Counter[str]], words: Iterable[tuple[frozenset[str], ...]]) -> int:
+    """One record's coverage of the query words (`_memory_query_words`), in integer thousandths.
+
+    A word adds `2 * _RECALL_COVERAGE_SCALE` times the share of its units
+    the record holds in its summary or tags, rounded down, plus
+    `_RECALL_COVERAGE_SCALE` when any of its terms is one of its tags. Each
+    word is rounded on its own and integers add exactly, so the total does
+    not depend on the order words arrive in; a test passes them permuted.
+    """
+    total = 0
+    for units in words:
+        held = sum(1 for unit in units if any(document["summary"][term] or document["tags"][term] for term in unit))
+        total += 2 * _RECALL_COVERAGE_SCALE * held // len(units)
+        if any(document["tags"][term] for unit in units for term in unit):
+            total += _RECALL_COVERAGE_SCALE
+    return total
 
 
 def _term_contributions(document: Mapping[str, Counter[str]], terms: Iterable[str], *, norm: float) -> list[int]:
@@ -823,14 +885,36 @@ def _term_contributions(document: Mapping[str, Counter[str]], terms: Iterable[st
 
 def _memory_relevance(records: list[dict[str, Any]], query: str) -> MemoryRelevance:
     """Relevance of each record to the query against this candidate set:
-    query-term coverage first, then term frequency and length.
+    query-word coverage first, then term frequency and length.
 
-    Coverage (`MemoryRelevance.coverage`) counts the distinct content terms a
-    record matches, twice, plus one per matched tag. The old score counted
-    every shared word alike, so a chat message sharing "the plan for" with an
-    offsite note outranked the one record about the backup it asked about;
-    the closed lists now drop those words from coverage, and the backup
-    record matches more of what is left.
+    Coverage (`MemoryRelevance.coverage`, `_word_coverage`) counts the query's
+    content words (`_memory_query_words`) a record holds, 2000 thousandths
+    each, plus 1000 for each word with a term among its tags. The old score
+    counted every shared word alike, so a chat message sharing "the plan for"
+    with an offsite note outranked the one record about the backup it asked
+    about; the closed lists now drop those words from coverage, and the
+    backup record matches more of what is left.
+
+    Coverage counts words, not index terms. A Hangul run of n syllables
+    indexes up to n terms (the run and its bigrams), so with terms counted
+    and the suffixes stripped (`_korean_query_stem`), for "provider
+    limit걸리면 fallback모델로 넘어가게 돼있지" a record sharing limit and 걸리면
+    and another sharing 넘어가게 (four terms each) both outranked the topic
+    record sharing provider, fallback and 모델 (three terms, one of them a
+    tag). Per word, a Hangul run adds at most 2000, times the share of its
+    bigrams a record holds, so a long run counts once and an unspaced
+    compound still discriminates: a record holding three of 모델라우팅's four
+    bigrams beats one holding one. The cost is the other side of that share:
+    an unspaced compound a record holds in part (two of 리뷰용모델체인's six
+    bigrams) counts less than a short word another record holds whole (맨앞).
+    Japanese and Chinese bigrams each stay a word, as before: a run there is
+    a phrase, and as one word the topic bigrams of an unspaced Chinese
+    question (three of eleven) counted less than one bigram of a short filler
+    piece (one of three). A Latin word counts as before, except that an
+    accented word and its folded twin are now one word, where they were two
+    terms. Each word's share is rounded down to a thousandth, so two records
+    whose exact shares add up equal can land a thousandth apart, and a share
+    under one in 2000 counts nothing.
 
     Within one coverage the score is BM25F without idf: how often the terms
     occur, saturating, in a summary normalized for length, with tag hits
@@ -882,6 +966,7 @@ def _memory_relevance(records: list[dict[str, Any]], query: str) -> MemoryReleva
     if not query_terms:
         return MemoryRelevance([1] * len(records), [True] * len(records), [0] * len(records))
     listed_terms = sorted({_stem_memory_token(token) for token in listed_tokens} - set(query_terms))
+    words = _memory_query_words(query)
     unstemmed_query = set(query_tokens)
     documents = [_record_relevance_fields(record) for record in records]
     count = len(documents)
@@ -896,7 +981,7 @@ def _memory_relevance(records: list[dict[str, Any]], query: str) -> MemoryReleva
             unstemmed.append(False)
             coverage.append(0)
             continue
-        coverage.append(2 * len(matched) + sum(1 for term in matched if document["tags"][term]))
+        coverage.append(_word_coverage(document, words))
         length = sum(document["summary"].values())
         multiple = max(1, (length * count) // total_length) if total_length else 1
         norm = 1 - _RECALL_BM25_B + _RECALL_BM25_B * multiple
@@ -1085,18 +1170,32 @@ def _memory_token_list(value: str, *, query: bool = False, kept: frozenset[str] 
     and `_QUERY_FUNCTION_CJK` cut out of a run before its bigrams are taken.
     Records are always tokenized in full.
     """
+    return [token for group in _memory_token_groups(value, query=query, kept=kept) for token in group]
+
+
+def _memory_token_groups(value: str, *, query: bool = False, kept: frozenset[str] = frozenset()) -> list[tuple[str, ...]]:
+    """The tokens of `_memory_token_list`, grouped by the word they came from, in the same order.
+
+    A Latin word is one group with its accent-folded twin, a two-character
+    ASCII word is one group, and a CJK segment -- a record's whole run, or
+    what a query's run keeps after stripping or cutting -- is one group: the
+    segment itself when longer than two characters, then its bigrams. A
+    one-character segment yields no token and no group. Query coverage reads
+    these groups (`_memory_query_words`).
+    """
     lowered = unicodedata.normalize("NFC", value).lower()
-    tokens: list[str] = []
+    groups: list[tuple[str, ...]] = []
     for word in _MEMORY_WORD_TOKEN.findall(lowered):
         if query and word in _QUERY_DROPPED_WORDS and word not in kept:
             continue
-        tokens.append(word)
+        group = [word]
         if not word.isascii():
             folded = "".join(char for char in unicodedata.normalize("NFKD", word) if not unicodedata.combining(char))
             if len(folded) >= 3:
-                tokens.append(folded)
-    tokens.extend(
-        token
+                group.append(folded)
+        groups.append(tuple(group))
+    groups.extend(
+        (token,)
         for token in _MEMORY_SHORT_ASCII_TOKEN.findall(lowered)
         if token not in _MEMORY_SHORT_STOPWORDS and not (query and token in _QUERY_DROPPED_WORDS and token not in kept)
     )
@@ -1110,10 +1209,11 @@ def _memory_token_list(value: str, *, query: bool = False, kept: frozenset[str] 
         else:
             segments = _cut_cjk_function_words(run)
         for segment in segments:
-            if len(segment) > 2:
-                tokens.append(segment)
-            tokens.extend(segment[index : index + 2] for index in range(len(segment) - 1))
-    return tokens
+            if len(segment) < 2:
+                continue
+            whole = (segment,) if len(segment) > 2 else ()
+            groups.append((*whole, *(segment[index : index + 2] for index in range(len(segment) - 1))))
+    return groups
 
 
 def _is_query_function_run(run: str) -> bool:
@@ -1555,6 +1655,7 @@ __all__ = [
     "_REVIEW_DEFAULT_DAYS",
     "_REVIEW_DUE_SOON_DAYS",
     "_RECALL_SCORE_SCALE",
+    "_RECALL_COVERAGE_SCALE",
     "_TEMPORAL_RELEVANCE_BANDS",
     "_QUERY_FUNCTION_RUNS",
     "_QUERY_CHAT_FILLERS",
@@ -1582,11 +1683,15 @@ __all__ = [
     "_memory_relevance_scores",
     "MemoryRelevance",
     "_term_contributions",
+    "_word_coverage",
     "_memory_query_split",
+    "_memory_query_content_groups",
+    "_memory_query_words",
     "_kept_listed_words",
     "_cut_cjk_function_words",
     "_korean_query_stem",
     "_memory_token_list",
+    "_memory_token_groups",
     "_memory_tokens",
     "_normalize_evaluator_timestamps",
     "_normalize_scope",
