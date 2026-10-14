@@ -320,7 +320,7 @@ class SharedValidatorTest(_TodoHomeTest):
         # a supplied one, and a guard carrying an escape must not miss.
         _ = self.write_plan([{"text": "land the fix", "state": "active"}])
 
-        _ = self.advance(item=1, item_text="land\x1b the fix", state="done")
+        _ = self.advance(item=1, item_text="land the\x1b[0m fix", state="done")
 
         self.assertEqual(self.stored()["items"][0]["state"], "done")
 

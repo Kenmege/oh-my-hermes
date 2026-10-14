@@ -44,7 +44,7 @@ class PhaseFieldStoreTest(unittest.TestCase):
         self.assertEqual(validated, [{"text": "task", "state": "pending"}])
 
     def test_a_phase_is_kept_control_stripped(self):
-        validated = validate_todo_items([{"text": "task", "phase": "Inter\x1bnal"}])
+        validated = validate_todo_items([{"text": "task", "phase": "Inter\x1b[0mnal"}])
         self.assertEqual(validated[0]["phase"], "Internal")
 
     def test_an_oversized_phase_is_refused(self):
@@ -71,7 +71,7 @@ class BlockedReasonFieldStoreTest(unittest.TestCase):
         self.assertEqual(validated, [{"text": "task", "state": "pending"}])
 
     def test_a_blocked_reason_is_kept_control_stripped(self):
-        validated = validate_todo_items([{"text": "task", "blocked_reason": "owner\x1b review"}])
+        validated = validate_todo_items([{"text": "task", "blocked_reason": "owner\x1b[1m review"}])
         self.assertEqual(validated[0]["blocked_reason"], "owner review")
 
     def test_an_oversized_blocked_reason_is_refused(self):
