@@ -22,6 +22,7 @@ from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.transcript import (
     AssistantBlock,
     ThinkingBlock,
+    ToolRow,
     Transcript,
     tool_result_status,
 )
@@ -264,14 +265,25 @@ class BlockCapTests(LoopTestCase):
         again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
         self.assertEqual(again, ["⋯ 23 earlier messages · /history shows the last 10", "", "· notice 23", "", "· notice 24"])
 
-    def test_an_edits_diff_is_kept_as_the_text_hermes_sent(self) -> None:
+    def test_an_edits_diff_is_kept_as_the_text_hermes_sent_encoded(self) -> None:
         self.transcript.cwd = "/repo"
         self.step(ev("message.start"))
         self.step(ev("tool.start", tool_id="e1", name="patch", context="/repo/src/app.py"))
         self.step(ev("tool.complete", tool_id="e1", name="patch", result={"success": True}, inline_diff=PATCH_INLINE_DIFF))
         (row,) = self.transcript.blocks[-1].tools
-        self.assertEqual(row.diff_text, PATCH_INLINE_DIFF)
+        self.assertEqual(row.inline_diff, PATCH_INLINE_DIFF.encode("utf-8"))
         self.assertFalse(hasattr(row, "diff"))
+
+    def test_an_edits_diff_is_held_in_less_memory_than_its_parsed_lines(self) -> None:
+        import sys
+
+        rows = "\n".join(f"\x1b[38;2;255;255;255;48;2;20;90;20m+    value_{n} = compute(row_{n})\x1b[0m" for n in range(200))
+        diff = f"  ┊ review diff\n\x1b[38;2;180;160;255ma/src/app.py → b/src/app.py\x1b[0m\n{rows}"
+        row = ToolRow(tool_id="e1", name="patch", inline_diff=diff.encode("utf-8"))
+        parsed = row.diff_lines()
+        held = sys.getsizeof(row.inline_diff)
+        self.assertLess(held, sys.getsizeof(diff))  # the str is widened to two bytes a character by `┊` and `→`
+        self.assertLess(held, sum(sys.getsizeof(line) + sys.getsizeof(line.text) for line in parsed))
 
 
 class ToolPathArgumentTests(LoopTestCase):
