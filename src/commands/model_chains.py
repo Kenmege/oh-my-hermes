@@ -66,9 +66,9 @@ from ..plugin_bundle.omh.model_chain_picker import (
     read_override_document,
 )
 from ..install.config_adapter import display_skin_selection, read_config
-from ..skin_pack import skin_colors, theme_for_skin_name
+from ..skin_pack import effective_theme, skin_colors
 from .common import _paths
-from .model_chain_picker import default_palette, pick_chains_interactively
+from .model_chain_picker import pick_chains_interactively
 
 # From `quickstart`, not `setup`, for the reason `theme` gives: importing the
 # parser module back here would close an import cycle.
@@ -412,10 +412,13 @@ def cmd_model_chains_set(args: argparse.Namespace) -> int:
 
 
 def _active_palette(paths) -> dict[str, str]:
-    """The active OMH skin's colours, so the picker matches the TUI; the
-    default skin when `display.skin` is unset or not an OMH theme."""
-    theme = theme_for_skin_name(display_skin_selection(read_config(paths.hermes_config_path)))
-    return skin_colors(theme.skin_name) if theme else default_palette()
+    """The colours of the theme the OMH TUI opens with, so the picker matches it.
+
+    `effective_theme`'s order: the theme saved under the OMH home, else an
+    OMH palette `display.skin` names, else the default.
+    """
+    theme, _source = effective_theme(paths.omh_home, display_skin_selection(read_config(paths.hermes_config_path)))
+    return skin_colors(theme.skin_name)
 
 
 def cmd_model_chains_pick(args: argparse.Namespace) -> int:

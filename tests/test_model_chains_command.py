@@ -621,5 +621,26 @@ class ChainTextParserTests(unittest.TestCase):
                     _parsechain_text(text)
 
 
+class PickerPaletteTests(unittest.TestCase):
+    """The picker paints with the theme the OMH TUI opens with."""
+
+    def test_the_saved_theme_wins_over_the_hermes_skin_and_the_default_is_the_floor(self) -> None:
+        from omh.commands.model_chains import _active_palette
+        from omh.paths import OmhPaths
+        from omh.skin_pack import skin_colors, theme_for_name, write_theme_choice
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".hermes").mkdir()
+            paths = OmhPaths(root / ".omh", root / ".hermes")
+            self.assertEqual(_active_palette(paths), skin_colors("omh"))
+            (root / ".hermes" / "config.yaml").write_text("display:\n  skin: omh-amber\n", encoding="utf-8")
+            self.assertEqual(_active_palette(paths), skin_colors("omh-amber"))
+            mono = theme_for_name("mono")
+            assert mono is not None
+            write_theme_choice(root / ".omh", mono)
+            self.assertEqual(_active_palette(paths), skin_colors("omh-mono"))
+
+
 if __name__ == "__main__":
     unittest.main()

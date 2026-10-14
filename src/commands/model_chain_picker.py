@@ -10,13 +10,13 @@ the file by construction.
 
 The chain rules — which aliases the ring holds, how an effort steps, how a
 save composes the document — live in the plugin bundle's
-`model_chain_picker` so the Modern-TUI widget walks the same rows; this
+`model_chain_picker` so `/omh-model` in the OMH TUI walks the same rows; this
 module only paints frames and reads keys. The same seams as the theme picker
 keep it testable without a terminal: `read_key`, `write` and the frame width
 arrive as arguments, and the raw-mode reader is shared with that picker.
 
-The frame is painted in the active OMH skin's palette so it reads as part of
-the same product as the TUI: the cursor row sits on the skin's selection
+The frame is painted in the OMH theme's palette so it reads as part of the
+same product as the OMH TUI: the cursor row sits on the skin's selection
 background with `◂ model ▸` and `− effort +` markers showing which keys act
 on which cell, effort bars are toned by rung, and a row's state is a glyph
 plus a word (`● edited`, `◆ override`, `· default`). NO_COLOR or a
