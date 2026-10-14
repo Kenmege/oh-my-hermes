@@ -16,6 +16,7 @@ from omh.tui.keys import (
     BUTTON_RIGHT,
     MOUSE_REPORT_SECONDS,
     NO_BUTTON,
+    PASTE_SETTLE_SECONDS,
     WHEEL_DOWN,
     WHEEL_LEFT,
     WHEEL_RIGHT,
@@ -206,11 +207,33 @@ class BracketedPasteTests(unittest.TestCase):
         events = decode_split_everywhere(self, data)
         self.assertEqual(events, [Paste("줄 하나\n줄 둘"), char("k")])
 
-    def test_flush_does_not_end_an_open_paste(self) -> None:
+    def test_a_flush_before_the_paste_has_been_silent_long_does_not_end_it(self) -> None:
         decoder = KeyDecoder()
         self.assertEqual(decoder.feed(b"\x1b[200~par"), [])
         self.assertEqual(decoder.flush(), [])
         self.assertEqual(decoder.feed(b"tial\x1b[201~"), [Paste("partial")])
+        paused = PausedInput(reporting=False)
+        paused.feed(b"\x1b[200~one ")
+        paused.pause(PASTE_SETTLE_SECONDS - READ_SECONDS)
+        paused.feed(b"two\x1b[201~")
+        self.assertEqual(paused.events, [Paste("one two")])
+
+    def test_a_paste_whose_end_marker_never_comes_settles_after_a_silence_and_keys_come_back(self) -> None:
+        paused = PausedInput(reporting=False)
+        paused.feed(b"\x1b[200~partial paste")
+        paused.pause(PASTE_SETTLE_SECONDS - READ_SECONDS)
+        self.assertEqual(paused.events, [])
+        paused.pause(READ_SECONDS)
+        self.assertEqual(paused.events, [Paste("partial paste")])
+        paused.feed(b"k\x03")  # a key, then Ctrl+C: neither is swallowed as paste text any more
+        self.assertEqual(paused.events[1:], [char("k"), char("c", ctrl=True)])
+
+    def test_an_open_paste_with_nothing_in_it_settles_as_nothing(self) -> None:
+        paused = PausedInput(reporting=False)
+        paused.feed(b"\x1b[200~")
+        paused.pause(PASTE_SETTLE_SECONDS + READ_SECONDS)
+        paused.feed(b"a")
+        self.assertEqual(paused.events, [char("a")])
 
     def test_an_empty_paste(self) -> None:
         self.assertEqual(decode(b"\x1b[200~\x1b[201~"), [Paste("")])

@@ -16,8 +16,10 @@ last went off). A lone ESC held from an earlier read also settles at the next
 read that cannot go on with a sequence (see `_continues_escape`), silence or
 not: it is Esc, and that read's bytes are keys of their own. So an Alt chord is
 an ESC and its key in one read; split across two reads it is Esc and the key,
-which is what Esc and then a key typed before the next silence send. A paste is
-not settled by `flush()`: it ends only at the terminal's paste-end marker.
+which is what Esc and then a key typed before the next silence send. A paste
+ends at the terminal's paste-end marker; one whose marker never comes ends at
+the first `flush()` after `PASTE_SETTLE_SECONDS` of silence, as what arrived
+so far, and the bytes after that are keys again.
 
 Nothing here raises on input. A sequence it does not know becomes
 `Key("unknown")` and decoding continues with the next byte.
@@ -101,6 +103,9 @@ BACKSPACE_BYTE = 0x08
 DELETE_BYTE = 0x7F
 PASTE_START_PARAMETER = "200"
 PASTE_END = b"\x1b[201~"
+# An open paste this long without a byte is over though its end marker never came, as Hermes' own TUI rules
+# (hermes-ink `App.tsx` PASTE_TIMEOUT); without it every later key, Ctrl+C included, would be paste text.
+PASTE_SETTLE_SECONDS = 0.5
 
 # A CSI longer than this without a final byte is garbage, not a slow key; the
 # bound keeps a hostile or broken stream from growing the held tail forever.
@@ -601,10 +606,13 @@ class KeyDecoder:
         `MOUSE_REPORT_SECONDS` and then is one unknown key; while a report may
         still arrive, `ESC` and `ESC[` wait for `REPORTING_ESCAPE_SECONDS` and
         then are Esc and one unknown key (a lone ESC's wait also ends at the
-        next read that does not go on with a sequence: see `feed`). Anything else
-        held settles now: a lone ESC becomes `Key("escape")`.
+        next read that does not go on with a sequence: see `feed`). An open
+        paste ends after `PASTE_SETTLE_SECONDS`, as what it holds. Anything
+        else held settles now: a lone ESC becomes `Key("escape")`.
         """
         now = self._clock()
+        if self._paste is not None:
+            return self._settle_paste() if now - self._fed_at >= PASTE_SETTLE_SECONDS else []
         if self._settled_start:
             if now < self._drop_until:
                 return []
@@ -619,6 +627,13 @@ class KeyDecoder:
                 return []
             return self._settle_start(held, Key(ESCAPE) if len(held) == 1 else Key(UNKNOWN), now)
         return self._drain(final=True, earlier=len(held))
+
+    def _settle_paste(self) -> list[Key | Paste | Mouse]:
+        """The open paste as it stands, its end marker given up on; nothing when it holds nothing."""
+        body = bytes(self._paste or b"") + bytes(self._pending)
+        self._paste = None
+        self._pending.clear()
+        return [Paste(_paste_text(body))] if body else []
 
     def _settle_start(self, held: bytes, key: Key, now: float) -> list[Key | Paste | Mouse]:
         """`key` for the start of a report held too long, and the window in which the rest of it is dropped."""
