@@ -8293,7 +8293,8 @@ _DEFINITIONS = [
             f"{native_tool_presence_clause('skill_manage', code=True)}; otherwise hand the person the exact change.",
             "Registry search, install, removal of a hub-installed skill, and per-platform hiding are the person's "
             "own `hermes skills search`, `install`, `uninstall`, and `config` in a terminal, with `/skills search` "
-            "and `/skills install` in a CLI or TUI session.",
+            "and `/skills install` in a CLI or TUI session; after an install, `/reload-skills` in a running session "
+            "makes the new skill available as `/<name>` without a restart.",
             "Never edit or delete an OMH-managed skill (an `omh-*` or `ulw-*` name) with `skill_manage`: OMH generates its "
             "body from its catalog, so the change does not carry into the next generation; put the lesson in a "
             "separately named skill instead.",
@@ -8532,7 +8533,9 @@ _DEFINITIONS = [
             "The board is labelled observed activity, not result, verification, review, CI, or merge evidence.",
             "On Hermes, `delegate_task` children and kanban workers of this conversation come from `omh_hud` (its "
             "`subagents` rows and `kanban` block, read from Hermes' own records) beside the OMH units, each labelled "
-            "by source; `/agents` is the person's own Hermes list of running agents and tasks.",
+            "by source; `/agents` is the person's own Hermes list of running agents and tasks in Hermes' own "
+            "terminal; the OMH TUI refuses `/agents`, and its agent list (Down on an empty composer while subagents "
+            "show) shows the subagents of the running turn.",
         ),
         recovery_notes=(
             "If no units are found, say so plainly rather than implying nothing ever ran.",
@@ -8764,7 +8767,7 @@ _DEFINITIONS = [
             "If a preferred Kimi, Claude, OpenAI, GLM, Grok, Gemini, or Qwen candidate is missing, preserve it as inactive and try the next confirmed-active compatible editorial candidate; do not substitute for an explicit unavailable choice.",
             "If no compatible model is confirmed active, record owner_default, finish applicable OMH setup without a model-config write, and name the relevant Hermes-native provider/auth or user-override next action.",
             "If the diagnosed Hermes config cannot be read, report the read failure and stop before proposing a diff; if the config digest changes or the user rejects the diff, do not apply it.",
-            "If an OAuth provider (OpenAI Codex/ChatGPT, Anthropic, Qwen OAuth) needs login or an account switch, know that the TUI `/model` picker only handles inline API-key entry and is a no-op for OAuth: guide the user to `/setup` inside the TUI (it suspends the TUI and runs the interactive wizard, including provider login) or to `hermes model` in another terminal (interactive provider selection with browser OAuth), then `/model --refresh` back in the TUI.",
+            "If an OAuth provider (OpenAI Codex/ChatGPT, Anthropic, Qwen OAuth) needs login or an account switch, guide the user to `hermes model` in another terminal (interactive provider selection with browser OAuth), which works whichever surface they chat in, then `/model --refresh` back in the session. In Hermes' own terminal (`hermes --tui`), `/setup` also runs the interactive wizard, including provider login, and the `/model` picker there handles only inline API-key entry, not OAuth; the OMH TUI refuses `/setup`, and its bare `/model` prints the current model as text.",
             "If a provider hit its quota or rate limit, guide Hermes pooled credentials instead of abandoning the provider: `hermes auth add` registers an additional account for the same provider, `hermes auth status` shows which credential is exhausted, and `hermes auth reset` clears recorded exhaustion after limits recover; delegation lanes can also route around the exhausted ecosystem via the category chains' cross-provider tails.",
         ),
         situations=(

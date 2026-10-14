@@ -27,6 +27,7 @@ from omh.tui.gateway import (
     attach_refused,
     gateway_spawn,
 )
+from omh.tui.launch import FALLBACK_SENTINEL_ENV
 
 LAUNCHER_ENV = {
     "HERMES_PYTHON": "/hermes/runtime/bin/python3",
@@ -90,9 +91,13 @@ class GatewaySpawnTests(unittest.TestCase):
             "HERMES_TUI_SIDECAR_URL": "ws://127.0.0.1:9/sidecar",
             "OMH_TUI_PYTHON": "/omh/venv/bin/python",
             "OMH_TUI_GATEWAY_PYTHONPATH": "/runtime/site-packages",
+            FALLBACK_SENTINEL_ENV: "/tmp/omh-tui-x/fallback",
         }
         child = gateway_spawn(env).env
-        for name in ("HERMES_TUI_GATEWAY_URL", "HERMES_TUI_SIDECAR_URL", "OMH_TUI_PYTHON", "OMH_TUI_GATEWAY_PYTHONPATH"):
+        for name in (
+            "HERMES_TUI_GATEWAY_URL", "HERMES_TUI_SIDECAR_URL", "OMH_TUI_PYTHON", "OMH_TUI_GATEWAY_PYTHONPATH",
+            FALLBACK_SENTINEL_ENV,
+        ):
             with self.subTest(name=name):
                 self.assertNotIn(name, child)
         for name in ("HERMES_HOME", "PATH", "OMH_HOME", "HERMES_PYTHON"):

@@ -6,9 +6,11 @@ own (it runs a full Hermes CLI per session), so the OMH TUI only has to own
 three kinds:
 
 - `local`: commands about this terminal (help, quit, history, theme, the OMH
-  model picker) and the ones whose screen is the TUI's own (attaching an
-  image, the session picker). The TUI handles them, calling the gateway
-  method underneath where there is one.
+  model picker), the ones whose screen is the TUI's own (attaching an image,
+  the session picker), and `/reload-skills`, which has to reach the gateway
+  itself: `slash.exec` runs commands in a separate per-session worker, so a
+  rescan there would leave the gateway's skill commands as they were. The TUI
+  handles them, calling the gateway method underneath where there is one.
 - `hermes`: commands whose surface is Ink-only (voice, the pet, the billing
   flows, overlays) or that would make the TUI persist raw prompts (`/save`,
   `/prompt`). The TUI names the Hermes door instead of half-supporting them.
@@ -64,6 +66,8 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("paste", LOCAL, "Attach the clipboard image to the next message (also Ctrl+V)"),
     SlashCommand("theme", LOCAL, "Switch the OMH colour theme"),
     SlashCommand("omh-model", LOCAL, "Pick OMH model chains"),
+    SlashCommand("reload-skills", LOCAL, "Re-scan Hermes' skills, so one installed since the start runs as /<name>",
+                 ("reload_skills",)),
     # Surfaces that only Hermes' own terminal has.
     SlashCommand("update", HERMES, "Update Hermes"),
     SlashCommand("voice", HERMES, "Voice mode"),
@@ -177,26 +181,26 @@ class Completion:
 
 
 def completions(prefix: str, catalog_pairs: Iterable[tuple[str, str]] = ()) -> list[Completion]:
-    """Commands starting with `prefix` (no slash): the TUI's own first, then the gateway catalog.
+    """Commands starting with `prefix` (no slash), then the ones that only contain it.
 
-    Catalog entries the TUI routes to Hermes or drops are left out, so the menu
-    only offers what will run here.
+    In each group the TUI's own come first, then the gateway catalog, so
+    `/uml` still finds `omh-codebase-uml` after every name that starts with
+    it. Catalog entries the TUI routes to Hermes or drops are left out, so the
+    menu only offers what will run here.
     """
-    local = [
-        Completion(command.name, command.summary)
-        for command in COMMANDS
-        if command.route == LOCAL and command.name.startswith(prefix)
-    ]
+    local = [Completion(command.name, command.summary) for command in COMMANDS if command.route == LOCAL]
     seen = {completion.name for completion in local}
     gateway: list[Completion] = []
     for raw_name, summary in catalog_pairs:
         name = raw_name.lstrip("/")
-        routed = _BY_NAME.get(name)
-        if name in seen or not name.startswith(prefix) or routed is not None:
+        if name in seen or name in _BY_NAME:
             continue
         seen.add(name)
         gateway.append(Completion(name, summary))
-    return local + gateway
+    offered = local + gateway
+    leading = [completion for completion in offered if completion.name.startswith(prefix)]
+    inner = [completion for completion in offered if prefix in completion.name and not completion.name.startswith(prefix)]
+    return leading + inner
 
 
 def catalog_pairs(catalog: Mapping[str, object]) -> list[tuple[str, str]]:
@@ -209,3 +213,32 @@ def catalog_pairs(catalog: Mapping[str, object]) -> list[tuple[str, str]]:
         for pair in pairs
         if isinstance(pair, (list, tuple)) and len(pair) == 2 and all(isinstance(part, str) for part in pair)
     ]
+
+
+def catalog_categories(catalog: Mapping[str, object]) -> list[tuple[str, list[str]]]:
+    """`(category, command names)` out of a `commands.catalog` result, for `/help`.
+
+    Hermes leaves skills out of its categories (`skill_count` counts them).
+    A command the TUI runs itself, routes to Hermes' terminal or drops is left
+    out as completion leaves it out, and a category left with none is dropped.
+    """
+    categories = catalog.get("categories")
+    rows: list[tuple[str, list[str]]] = []
+    for category in categories if isinstance(categories, list) else []:
+        name = category.get("name") if isinstance(category, dict) else None
+        if not isinstance(name, str):
+            continue
+        names = [
+            pair_name
+            for pair_name, _summary in catalog_pairs(category)
+            if pair_name.lstrip("/") not in _BY_NAME
+        ]
+        if names:
+            rows.append((name, names))
+    return rows
+
+
+def catalog_skill_count(catalog: Mapping[str, object]) -> int:
+    """How many skill commands a `commands.catalog` result says Hermes has; 0 when it does not say."""
+    count = catalog.get("skill_count")
+    return count if isinstance(count, int) and not isinstance(count, bool) and count > 0 else 0

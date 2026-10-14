@@ -6,13 +6,18 @@ runtime. What this module declares instead is the subset the TUI uses.
 Outbound: the methods it calls and the keys it sends, and how it answers each
 server-to-client request. A drift in either surfaces at runtime as a param
 rejection (4000) or an unknown method (-32601), which the client treats as
-"this Hermes no longer speaks what the TUI was built for". Inbound: the event
+"this Hermes no longer speaks what the TUI was built for", except on the
+calls in OPTIONAL_METHODS, where it is a notice and the session goes on. Inbound: the event
 names, fields and values the TUI keys on that the OMH TUI v2 batch added (the
 subagent events, `session.info`'s yolo and effort, `subagent.tail`'s result,
-`session.steer`'s status), read from here by the app and the roster. Nothing
-checks an inbound shape at runtime: an event type the TUI does not handle is
-ignored, and a renamed field reads as absent. The older transcript events and
-their fields are read where they are folded (`transcript`, `subagents`).
+`session.steer`'s status), read from here by the app and the roster, and every
+event type, split into the ones the TUI handles and the ones it reads nothing
+from. An event type the TUI does not handle is ignored; a submitted turn that
+brings no transcript, subagent or error event, and three of types neither set
+declares, gets one notice (`App._watch_turn`), and `omh doctor` prints the
+installed Hermes commit next to the one below. A renamed field still reads as
+absent. The older transcript events' fields are
+read where they are folded (`transcript`, `subagents`).
 
 Declared against Hermes 6c61c3e27d (2026-10-07).
 """
@@ -29,13 +34,19 @@ METHOD_NOT_FOUND = -32601  # also the client's own answer to a request it does n
 NOT_MINE = 4018  # `slash.exec` refusing a command that `command.dispatch` owns
 
 DRIFT_ERROR_CODES = frozenset({PARAM_REJECTED, METHOD_NOT_FOUND})
+# Calls a session does without: on these a drift error is a notice and the session goes on. On every other call
+# made during a session it ends the session (`App._on_response`). An older Hermes (0250c8bcae: SkillsReloadParams
+# takes no field) rejects `skills.reload {session_id}` with 4000, which must not cost the person their session.
+OPTIONAL_METHODS = frozenset({"commands.catalog", "skills.reload"})
 
 # Methods the TUI calls, with the only keys it ever sends. Sending a key outside
 # this map is a bug: a Hermes that does not know it rejects the whole call.
 CLIENT_METHODS: dict[str, frozenset[str]] = {
     "client.capabilities": frozenset({"server_requests"}),
     "config.get": frozenset({"key"}),
-    "commands.catalog": frozenset(),
+    # The session binds both to its profile and workspace, so project-local skills are listed and rescanned.
+    "commands.catalog": frozenset({"session_id"}),
+    "skills.reload": frozenset({"session_id"}),
     "complete.path": frozenset({"word", "session_id"}),
     "session.create": frozenset({"cols", "cwd"}),
     "session.resume": frozenset({"session_id", "cols"}),
@@ -94,6 +105,30 @@ SUBAGENT_COMPLETE = "subagent.complete"
 SUBAGENT_EVENTS = (
     SUBAGENT_SPAWN_REQUESTED, SUBAGENT_START, SUBAGENT_PROGRESS, SUBAGENT_THINKING, SUBAGENT_TOOL, SUBAGENT_COMPLETE,
 )
+
+# The event types the TUI handles. `App._on_event` takes APP_EVENTS itself, `Transcript` folds TRANSCRIPT_EVENTS
+# and the roster SUBAGENT_EVENTS; `test_tui_gateway_contract` holds each of the three to these names.
+APP_EVENTS = ("request.cancel", "approval.cancelled", "session.info", "session.usage", "connection.request", "error")
+TRANSCRIPT_EVENTS = (
+    "message.start", "message.delta", "message.interim", "message.complete", "thinking.delta", "reasoning.delta",
+    "reasoning.available", "tool.generating", "tool.start", "tool.complete", "status.update",
+)
+HANDLED_EVENTS = frozenset((*APP_EVENTS, *TRANSCRIPT_EVENTS, *SUBAGENT_EVENTS))
+# The rest of the 77 event types Hermes 6c61c3e27d registers (`tui_gateway.contracts.registry.EVENTS`). The event
+# loop reads nothing from these; `gateway.ready` is read once, by the client at startup (`gateway.READY_EVENT`).
+UNREAD_EVENTS = frozenset({
+    "agent.terminal.output", "background.complete", "billing.step_up.verification", "bot_relay.outbox.pending",
+    "browser.controller.cancel", "browser.controller.command", "browser.progress", "btw.complete",
+    "connection.update", "cron.changed", "display.install.done", "display.install.log", "display.lease",
+    "display.status", "free_tier.challenge", "gateway.ready", "layout.apply", "message.reaction",
+    "moa.aggregating", "moa.phase", "moa.progress", "moa.reference", "notice", "notification.clear",
+    "notification.show", "pairing.changed", "pane.reveal", "pet.changed", "pet.generate.progress",
+    "pet.hatch.progress", "platforms.changed", "preview.close", "preview.open", "preview.restart.complete",
+    "preview.restart.progress", "projects.changed", "reaction", "review.summary", "session.control.update",
+    "session.reclaimed", "session.resume_progress", "session.title", "sessions.changed", "setup.ready",
+    "skin.changed", "terminal.close", "tip.show", "todo.updated", "tool.output_risk", "voice.interrupted",
+    "voice.partial", "voice.status", "voice.transcript", "wake.detected",
+})
 
 # `session.info` (and a create or resume answer's `info`), `contracts/common.py` `SessionLiveInfo`:
 # `yolo` (bool) is this session's approvals off, `reasoning_effort` (str, "" when unset) its effort.

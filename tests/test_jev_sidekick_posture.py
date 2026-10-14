@@ -642,8 +642,8 @@ class PostureTests(unittest.TestCase):
             _checks, check = _doctor_check(paths)
 
             entry = posture["plugins"][0]
-            self.assertEqual(entry["name"], "jev[2K-evilplugin_jev_sidekick: ok")
-            self.assertEqual(entry["directory"], "jev[2K-evilplugin_jev_sidekick: ok")
+            self.assertEqual(entry["name"], "jev-evilplugin_jev_sidekick: ok")
+            self.assertEqual(entry["directory"], "jev-evilplugin_jev_sidekick: ok")
             for text in (json.dumps(posture), check.message, check.next_action):
                 self.assertNotIn("\x1b", text)
                 self.assertNotIn("\r", text)

@@ -31,11 +31,13 @@ from test_tui_app import (
 )
 from omh.tui import app as app_module
 from omh.tui import gateway_contract as contract
-from omh.tui.app import EFFORT_CYCLE, SLOT_ARM_SECONDS, App, queue_lines
+from omh.tui import modes as modes_module
+from omh.tui.app import SLOT_ARM_SECONDS, App, queue_lines
 from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, GatewayUnavailable, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder
 from omh.tui.layout import slot_cap
+from omh.tui.modes import EFFORT_CYCLE
 from omh.tui.pager import Pager
 from omh.tui.session_picker import SessionPicker, SessionRow
 from omh.tui.slash import parse_slash, plan_invocation
@@ -301,7 +303,10 @@ class SteerTests(unittest.TestCase):
                     else:
                         app._on_session_resumed("stored-2", {"session_id": "live-2", "stored_session_id": "stored-2"})
                     app._on_response(Response(steer, result, error))
-                    self.assertEqual([method for method, _params in client.calls[steer:]], ["session.close"])
+                    # The new session's catalog is asked for too; nothing goes to either session for the steer.
+                    self.assertEqual(
+                        [method for method, _params in client.calls[steer:]], ["session.close", "commands.catalog"]
+                    )
                     self.assertEqual(app.composer.text, "keep this")
                     self.assertFalse(app.queued)
                     self.assertIn(app_module.STEER_LEFT_NOTICE, notices(app, NOTICE_WARN))
@@ -513,7 +518,7 @@ class ModeCycleTests(unittest.TestCase):
         # Hermes 6c61c3e27d's sessionless branch sets HERMES_YOLO_MODE for the gateway process and answers
         # exactly what the session branch answers, so the answer check passes it; the guards are on the call.
         sessionless_answer = {"key": "yolo", "value": "1", "scope": "session"}
-        self.assertEqual(app_module.yolo_answer_problem(sessionless_answer, True), "")
+        self.assertEqual(modes_module.yolo_answer_problem(sessionless_answer, True), "")
         self.assertIn("session id", contract.call_problem("config.set", {"key": "yolo", "value": "on"}))
         app, client = make_app()
         app._on_input(SHIFT_TAB)
@@ -774,7 +779,7 @@ class HermesOwnApprovalsTests(unittest.TestCase):
             self.assertEqual(app.mode, expected)
         self.assertEqual(client.calls, [])
         (notice,) = notices(app)
-        self.assertEqual(notice, app_module.HERMES_APPROVALS_NOTICE)
+        self.assertEqual(notice, modes_module.HERMES_APPROVALS_NOTICE)
         type_text(app, "fix the flaky test")
         app._on_input(Key(ENTER))  # plan is on, so the prompt goes as /plan
         self.assertEqual(client.calls, [("slash.exec", {"command": "plan fix the flaky test", "session_id": SID})])
@@ -787,7 +792,7 @@ class HermesOwnApprovalsTests(unittest.TestCase):
         app._adopt_session({"session_id": "live-2", "info": {"yolo": True}})
         app._on_input(SHIFT_TAB)
         app._on_input(SHIFT_TAB)
-        self.assertEqual(notices(app), [app_module.HERMES_APPROVALS_NOTICE] * 2)
+        self.assertEqual(notices(app), [modes_module.HERMES_APPROVALS_NOTICE] * 2)
 
     def test_approvals_turned_back_on_and_off_again_without_the_tui_are_hermes_own(self) -> None:
         # The TUI's on, then a /yolo typed to Hermes turns approvals on, and another turns them off again.
@@ -849,7 +854,7 @@ class StaleSessionInfoTests(unittest.TestCase):
         return app, client, now
 
     def test_one_saying_on_within_two_seconds_waits_for_the_next_and_asks_nothing(self) -> None:
-        self.assertEqual(app_module.YOLO_SETTLE_SECONDS, 2.0)
+        self.assertEqual(modes_module.YOLO_SETTLE_SECONDS, 2.0)
         app, client, now = self.confirmed_on()
         now[0] += 1.9
         session_info(app, yolo=False)
@@ -961,7 +966,10 @@ class LeavingTurnsYoloOffTests(unittest.TestCase):
         app, client = in_accept()
         app._new_session("")
         answer(app, client, self.NEW)
-        self.assertEqual(client.calls[1:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+        self.assertEqual(
+            client.calls[1:],
+            [YOLO_OFF_CALL, ("session.close", {"session_id": SID}), ("commands.catalog", {"session_id": "live-2"})],
+        )
         self.answer_call(app, client, YOLO_OFF_CALL, result=YOLO_IS_OFF)
         self.assertEqual(notices(app, NOTICE_ERROR), [])
         self.assertEqual((app.sid, app.mode), ("live-2", MODE_NORMAL))
@@ -972,7 +980,7 @@ class LeavingTurnsYoloOffTests(unittest.TestCase):
                 app, client = in_accept()
                 app._switch_session("stored-2")
                 answer(app, client, {**self.NEW, "stored_session_id": "stored-2", "messages": []})
-                self.assertEqual(self.methods(client, 1), ["config.set", "session.close"])
+                self.assertEqual(self.methods(client, 1), ["config.set", "session.close", "commands.catalog"])
                 self.assertEqual(client.calls[1], YOLO_OFF_CALL)
                 self.answer_call(app, client, YOLO_OFF_CALL, **frame)
                 (notice,) = notices(app, NOTICE_ERROR)
@@ -1081,8 +1089,8 @@ class ResumingTheLiveSessionTests(unittest.TestCase):
     def test_a_real_switch_still_turns_off_declines_and_closes(self) -> None:
         app, client = in_accept()
         app._on_server_request(self.APPROVAL)
-        self.assertEqual(self.resume(app, client, "live-2"), ["config.set", "session.close"])
-        self.assertEqual(client.calls[-2:], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
+        self.assertEqual(self.resume(app, client, "live-2"), ["config.set", "session.close", "commands.catalog"])
+        self.assertEqual(client.calls[-3:-1], [YOLO_OFF_CALL, ("session.close", {"session_id": SID})])
         self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "deny"}})])
         self.assertEqual((app.sid, app.mode, app.slot), ("live-2", MODE_NORMAL, None))
         self.assertNotIn("Already in session stored-1.", notices(app))

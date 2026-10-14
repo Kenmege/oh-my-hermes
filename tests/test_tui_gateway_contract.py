@@ -111,6 +111,10 @@ class ClientMethodTests(unittest.TestCase):
     def test_every_key_of_an_undeclared_method_is_undeclared(self) -> None:
         self.assertEqual(contract.undeclared_params("voice.toggle", {"on": True}), ["on"])
 
+    def test_only_the_catalog_and_the_skill_rescan_are_optional(self) -> None:
+        self.assertEqual(contract.OPTIONAL_METHODS, {"commands.catalog", "skills.reload"})
+        self.assertLessEqual(contract.OPTIONAL_METHODS, set(contract.CLIENT_METHODS))
+
     def test_drift_errors_are_param_rejection_and_unknown_method_only(self) -> None:
         self.assertTrue(contract.is_drift_error({"code": 4000, "message": "extra fields"}))
         self.assertTrue(contract.is_drift_error({"code": -32601, "message": "unknown method"}))
@@ -182,6 +186,31 @@ class InboundTests(unittest.TestCase):
 
         self.assertEqual(set(Roster()._handlers), set(contract.SUBAGENT_EVENTS))
 
+    def test_the_transcript_folds_exactly_the_declared_transcript_events(self) -> None:
+        from omh.tui.transcript import Transcript
+
+        self.assertEqual(set(Transcript()._handlers), set(contract.TRANSCRIPT_EVENTS))
+
+    def test_the_app_takes_exactly_the_declared_app_events_and_hands_every_other_type_on(self) -> None:
+        from test_tui_modes import SID, make_app
+        from omh.tui.gateway import Event
+
+        for event_type in sorted(contract.HANDLED_EVENTS | contract.UNREAD_EVENTS | {"message.finished"}):
+            with self.subTest(event_type=event_type):
+                app, _client = make_app(busy=True)
+                folded: list[str] = []
+                app.transcript.apply = lambda event: folded.append(event.type)  # type: ignore[method-assign]
+                app.roster.apply = lambda kind, payload, now: folded.append(kind)  # type: ignore[method-assign]
+                app._on_event(Event(event_type, SID, {}))
+                self.assertEqual(folded == [], event_type in contract.APP_EVENTS)
+
+    def test_every_event_type_is_declared_once_and_every_recorded_one_is_declared(self) -> None:
+        # 77: `len(tui_gateway.contracts.registry.EVENTS)` in Hermes 6c61c3e27d.
+        self.assertEqual(contract.HANDLED_EVENTS & contract.UNREAD_EVENTS, frozenset())
+        self.assertEqual(len(contract.HANDLED_EVENTS | contract.UNREAD_EVENTS), 77)
+        recorded = {kind for name in ("session", "approval", "subagent_relay") for kind, _payload in recorded_events(name)}
+        self.assertLessEqual(recorded, contract.HANDLED_EVENTS | contract.UNREAD_EVENTS)
+
     def test_the_tui_reads_these_shapes_through_the_contract_only(self) -> None:
         fields = {
             contract.SESSION_INFO_YOLO, contract.SESSION_INFO_REASONING_EFFORT, contract.TAIL_AVAILABLE, contract.TAIL_TRUNCATED,
@@ -200,7 +229,8 @@ class InboundTests(unittest.TestCase):
                         compared = [part for part in (node.left, *node.comparators) if isinstance(part, ast.Constant)]
                         self.assertFalse({part.value for part in compared} & contract.STEER_STATUSES)
         (on_tail,) = [
-            node for node in ast.walk(tui_modules()["app.py"]) if isinstance(node, ast.FunctionDef) and node.name == "_on_tail"
+            node for node in ast.walk(tui_modules()["agent_view.py"])
+            if isinstance(node, ast.FunctionDef) and node.name == "_on_tail"
         ]
         literal_gets = [
             node.args[0].value
@@ -209,6 +239,104 @@ class InboundTests(unittest.TestCase):
             and node.args and isinstance(node.args[0], ast.Constant)
         ]
         self.assertEqual(literal_gets, [])  # `text` too: it is the tail's own field, read by its declared name
+
+
+def recorded_turns(name: str) -> list[list[tuple[str, dict]]]:
+    """The events of each submitted turn in a recorded session: those after one `prompt.submit` until the next."""
+    lines = (FIXTURES / f"{name}.jsonl").read_text(encoding="utf-8").splitlines()[1:]
+    turns: list[list[tuple[str, dict]]] = []
+    for row in map(json.loads, lines):
+        frame = row["frame"]
+        if row["dir"] == "out" and frame.get("method") == "prompt.submit":
+            turns.append([])
+        elif turns and row["dir"] == "in" and frame.get("method") == "event":
+            turns[-1].append((frame["params"]["type"], frame["params"].get("payload", {})))
+    return turns
+
+
+class TurnDriftNoticeTests(unittest.TestCase):
+    """A submitted turn that brings no event the TUI shows, only undeclared types, says so once."""
+
+    RENAMED = ["message.begin", "message.chunk", "message.chunk", "message.chunk", "message.end"]
+
+    def run_turn(self, events: list[tuple[str, dict]], app=None):
+        from test_tui_modes import SID, make_app
+        from omh.tui.gateway import Event
+
+        if app is None:
+            app, _client = make_app()
+        app._send_prompt("go")
+        for event_type, payload in events:
+            app._on_event(Event(event_type, SID, payload))
+        return app
+
+    def drift_notices(self, app) -> list[str]:
+        from test_tui_modes import notices
+        from omh.tui.transcript import NOTICE_WARN
+
+        return [text for text in notices(app, NOTICE_WARN) if "`omh doctor`" in text]
+
+    def test_no_recorded_turn_shows_it(self) -> None:
+        turns = [*recorded_turns("session"), *recorded_turns("approval"), recorded_events("subagent_relay")]
+        self.assertEqual(len(turns), 6)
+        for index, turn in enumerate(turns):
+            with self.subTest(turn=index):
+                self.assertTrue(turn)
+                self.assertEqual(self.drift_notices(self.run_turn(turn)), [])
+
+    def test_one_unknown_event_among_known_ones_says_nothing_wherever_it_comes(self) -> None:
+        turn = recorded_turns("session")[0]
+        for position in (0, 1, 2, len(turn)):
+            with self.subTest(position=position):
+                events = [*turn[:position], ("message.queued", {}), *turn[position:]]
+                self.assertEqual(self.drift_notices(self.run_turn(events)), [])
+
+    def test_declared_types_the_tui_does_not_show_never_count(self) -> None:
+        events = [("session.info", {}), ("session.title", {}), ("todo.updated", {}), ("notice", {})] * 3
+        self.assertEqual(self.drift_notices(self.run_turn(events)), [])
+
+    def test_a_turn_of_renamed_events_says_so_once_naming_them_even_after_session_info(self) -> None:
+        app = self.run_turn([("session.info", {}), ("session.title", {}), *[(name, {}) for name in self.RENAMED]])
+        (notice,) = self.drift_notices(app)
+        self.assertIn("(message.begin, message.chunk)", notice)
+        self.assertIn("Esc interrupts the turn", notice)
+
+    def test_types_already_named_say_nothing_on_a_later_turn_and_a_new_type_does(self) -> None:
+        # A Hermes that streams the same new type ahead of every turn names it once, not on every turn.
+        app = self.run_turn([(name, {}) for name in self.RENAMED])
+        app.turn_pending = False  # the person interrupted it; nothing Hermes sent ended it
+        self.run_turn([(name, {}) for name in self.RENAMED], app)
+        self.assertEqual(len(self.drift_notices(app)), 1)
+        app.turn_pending = False
+        self.run_turn([("message.begin", {}), ("message.chunk", {}), ("message.flush", {})], app)
+        (_first, second) = self.drift_notices(app)
+        self.assertIn("(message.begin, message.chunk, message.flush)", second)
+
+    def test_the_count_starts_again_with_each_turn(self) -> None:
+        app = self.run_turn([("message.begin", {}), ("message.begin", {})])
+        app.turn_pending = False
+        self.run_turn([("message.chunk", {}), ("message.chunk", {})], app)
+        self.assertEqual(self.drift_notices(app), [])
+
+    def test_a_session_change_ends_the_watch(self) -> None:
+        # The new session's turn is running, so only `_adopt_session` can end the old turn's watch.
+        app = self.run_turn([("message.begin", {}), ("message.chunk", {})])
+        app._adopt_session({"session_id": "live-2", "running": True, "info": {}})
+        from omh.tui.gateway import Event
+
+        app._on_event(Event("message.chunk", "live-2", {}))
+        self.assertEqual(self.drift_notices(app), [])
+
+    def test_a_refused_submit_ends_the_watch(self) -> None:
+        from test_tui_modes import SID, answer, make_app
+        from omh.tui.gateway import Event
+
+        app, client = make_app()
+        app._send_prompt("go")
+        answer(app, client, error={"code": 5009, "message": "session busy"})
+        for name in self.RENAMED:
+            app._on_event(Event(name, SID, {}))
+        self.assertEqual(self.drift_notices(app), [])
 
 
 if __name__ == "__main__":

@@ -13,10 +13,17 @@
 // the user's site-packages, where a `pip install --user` OMH lives. An OMH that
 // cannot import itself exits with FALLBACK_EXIT, so `omh` opens Hermes' own
 // terminal instead of showing a traceback.
+//
+// Exit 75 alone is not a fallback request, because Hermes exits 75 on paths of
+// its own: `omh` also needs the file it named in OMH_TUI_FALLBACK_SENTINEL to
+// exist. So every fallback exit here, the bootstrap's included, creates that
+// file first, as `omh.tui.launch.request_fallback` does for the TUI.
 const { spawn } = require('node:child_process')
+const fs = require('node:fs')
 const { constants } = require('node:os')
 
 const FALLBACK_EXIT = 75
+const FALLBACK_SENTINEL_ENV = 'OMH_TUI_FALLBACK_SENTINEL'
 
 const BOOTSTRAP = `
 import os, sys
@@ -24,14 +31,30 @@ try:
     from omh.tui.app import main
 except ImportError as error:
     sys.stderr.write(f"omh: the OMH TUI could not import itself: {error}\\n")
+    sentinel = os.environ.get("${FALLBACK_SENTINEL_ENV}", "")
+    if sentinel:
+        try:
+            os.close(os.open(sentinel, os.O_WRONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600))
+        except OSError:
+            pass
     sys.exit(${FALLBACK_EXIT})
 sys.exit(main(os.environ))
 `
 
+function requestFallback () {
+  const sentinel = process.env[FALLBACK_SENTINEL_ENV]
+  if (sentinel) {
+    try {
+      fs.closeSync(fs.openSync(sentinel, fs.constants.O_WRONLY | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW ?? 0), 0o600))
+    } catch {}
+  }
+  process.exit(FALLBACK_EXIT)
+}
+
 const python = process.env.OMH_TUI_PYTHON
 if (!python) {
   process.stderr.write('omh: OMH_TUI_PYTHON is not set; the OMH TUI is opened through `omh`.\n')
-  process.exit(FALLBACK_EXIT)
+  requestFallback()
 }
 
 const env = { ...process.env }
@@ -48,7 +71,12 @@ for (const signal of ['SIGTERM', 'SIGHUP']) {
   process.on(signal, () => child.kill(signal))
 }
 
-child.on('error', () => process.exit(FALLBACK_EXIT))
+// 'error' also fires when a kill fails after the child started; only a child
+// that never started asks for the fallback, or a live session's end would open
+// a second terminal.
+let started = false
+child.on('spawn', () => { started = true })
+child.on('error', () => { if (!started) requestFallback() })
 child.on('exit', (code, signal) => {
   if (code !== null) process.exit(code)
   process.exit(signal ? 128 + (constants.signals[signal] ?? 0) : 1)

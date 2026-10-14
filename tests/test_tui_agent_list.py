@@ -21,16 +21,14 @@ from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, Step, startup_answers
 from test_tui_modes import SID, RecordingClient, answer, composer_index, drawn, make_app, notices, queue, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND
 from omh.tui import gateway_contract as contract
-from omh.tui.app import (
+from omh.tui.agent_view import (
     AGENT_LIST_HINT,
     AGENT_LIST_ROWS,
-    SLOT_ARM_SECONDS,
     TAIL_ANSWER_SECONDS,
     TAIL_MISSES_BEFORE_STOP,
     TAIL_POLL_SECONDS,
-    VIEW_OPEN_NOTICE,
-    App,
 )
+from omh.tui.app import SLOT_ARM_SECONDS, VIEW_OPEN_NOTICE, App
 from omh.tui.frame import MODE_NORMAL
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, Paste

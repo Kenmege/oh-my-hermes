@@ -717,7 +717,12 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # 497611 -> 501668: one capability row for the new `spend-gate` skill, which
 # gates money the agent moves for the person on any rail; no other row moved.
 # Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 501668
+# 501668 -> 501786: `skill`'s quality-bar line on `/skills install` adds that
+# `/reload-skills` in a running session makes the new skill available as
+# `/<name>` without a restart (the OMH TUI now runs it in the gateway). The
+# `running-work-board` and `model-setup` edits of the same change sit outside
+# the rows and move nothing here. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 501786
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

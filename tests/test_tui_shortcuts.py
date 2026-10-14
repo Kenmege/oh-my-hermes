@@ -16,7 +16,7 @@ import unittest
 
 from _tui_lines import line_text
 from test_tui_app import FakePoller, ScriptedTerminal
-from test_tui_modes import RecordingClient, make_app, notices, type_text
+from test_tui_modes import RecordingClient, make_app, type_text
 from omh.tui.app import App
 from omh.tui.gateway import ServerRequest
 from omh.tui.keys import CHAR, ENTER, ESCAPE, LEFT, Key, Paste
@@ -198,7 +198,7 @@ class GuideKeyTests(unittest.TestCase):
         app, _client = make_app()
         type_text(app, "/help")
         app._on_input(Key(ENTER))
-        (text,) = notices(app)
+        text = self.paged(app)  # longer than half of the 24 rows, so it is paged
         self.assertIn("Keys: ? on an empty composer, or /keys, lists every key.", text)
         self.assertIn("/keys ", text)  # and the command is listed with the TUI's own
         self.assertNotIn("Ctrl+D", text)  # the key rows themselves are gone from /help

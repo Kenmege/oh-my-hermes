@@ -52,6 +52,7 @@ def _build_state_db(
     *,
     delegation_states: dict[str, str] | None = None,
     include_cost_provenance: bool = True,
+    include_end_columns: bool = False,
 ) -> None:
     connection = sqlite3.connect(home / "state.db")
     connection.executescript(
@@ -84,8 +85,13 @@ def _build_state_db(
     if not include_cost_provenance:
         connection.execute("ALTER TABLE session_model_usage DROP COLUMN cost_status")
         connection.execute("ALTER TABLE session_model_usage DROP COLUMN cost_source")
+    # Without them the table is a state.db from before Hermes stamped a
+    # session's end, which the reader must still read.
+    if include_end_columns:
+        connection.execute("ALTER TABLE sessions ADD COLUMN ended_at REAL")
+        connection.execute("ALTER TABLE sessions ADD COLUMN end_reason TEXT")
     connection.execute(
-        "INSERT INTO sessions VALUES (?, ?, ?, ?)",
+        "INSERT INTO sessions (id, model, model_config, started_at) VALUES (?, ?, ?, ?)",
         (PARENT_ID, "gpt-5.6-sol", "", NOW - 4000),
     )
     for child in children:
@@ -94,9 +100,14 @@ def _build_state_db(
             "reasoning_config": {"enabled": True, "effort": child.get("effort", "medium")},
         }
         connection.execute(
-            "INSERT INTO sessions VALUES (?, ?, ?, ?)",
+            "INSERT INTO sessions (id, model, model_config, started_at) VALUES (?, ?, ?, ?)",
             (child["id"], child["model"], json.dumps(config), child["started_at"]),
         )
+        if include_end_columns:
+            connection.execute(
+                "UPDATE sessions SET ended_at = ?, end_reason = ? WHERE id = ?",
+                (child.get("ended_at"), child.get("end_reason"), child["id"]),
+            )
         # The dispatch prompt lands as the child's first user row; a child
         # declaring none exercises the reader's empty-label degradation.
         for role, content in child.get("messages", []):
@@ -1583,6 +1594,98 @@ class HermesNativeSubagentReaderTest(unittest.TestCase):
         )
         self.assertEqual(expired["rows"], [])
         self.assertEqual(expired["status"], "idle")
+
+    def test_an_ended_child_reads_done_inside_the_recent_window_with_elapsed_to_its_end(self):
+        # The live row: started 1791946029.16, ended 1791946032.19 with
+        # `agent_close`, and drawn running in the HUD's agent panel for the
+        # next 150 s while the TUI's agent strip already showed it done.
+        for scope in (None, PARENT_ID):
+            with self.subTest(session_ref=scope):
+                _build_state_db(
+                    self.home,
+                    [
+                        {
+                            "id": "20260818_100100_ended1",
+                            "model": "gpt-5.6-sol",
+                            "started_at": NOW - 40,
+                            "ended_at": NOW - 37,
+                            "end_reason": "agent_close",
+                            "usage": {"first_seen": NOW - 39, "last_seen": NOW - 38, "output_tokens": 12},
+                        }
+                    ],
+                    include_end_columns=True,
+                )
+                payload = read_hermes_native_subagents(
+                    self.home, now=NOW, omh_home=self.home / ".omh", session_ref=scope
+                )
+                (self.home / "state.db").unlink()
+                (row,) = payload["rows"]
+                self.assertEqual(row["state"], "done")
+                self.assertEqual(row["elapsed_seconds"], 3.0)
+                self.assertEqual((payload["running"], payload["completed"]), (0, 1))
+
+    def test_an_ended_childs_elapsed_stops_at_its_end_when_its_log_moved_later(self):
+        _build_state_db(
+            self.home,
+            [
+                {
+                    "id": "20260818_100100_ended3",
+                    "model": "gpt-5.6-sol",
+                    "started_at": NOW - 40,
+                    "ended_at": NOW - 37,
+                    "end_reason": "agent_close",
+                    "usage": {"last_seen": NOW - 38, "output_tokens": 12},
+                }
+            ],
+            include_end_columns=True,
+        )
+        _write_manifest(self.home, "deleg_ended3", ["late log"], started=NOW - 41, log_mtime=NOW - 20)
+        (row,) = read_hermes_native_subagents(self.home, now=NOW, omh_home=self.home / ".omh")["rows"]
+        self.assertEqual(row["state"], "done")
+        self.assertEqual(row["elapsed_seconds"], 3.0)
+
+    def test_an_ended_child_without_model_usage_reads_failed(self):
+        _build_state_db(
+            self.home,
+            [
+                {
+                    "id": "20260818_100100_ended2",
+                    "model": "gpt-5.6-sol",
+                    "started_at": NOW - 40,
+                    "ended_at": NOW - 37,
+                    "end_reason": "agent_close",
+                }
+            ],
+            include_end_columns=True,
+        )
+        (row,) = read_hermes_native_subagents(
+            self.home, now=NOW, omh_home=self.home / ".omh", session_ref=PARENT_ID
+        )["rows"]
+        self.assertEqual(row["state"], "failed")
+        self.assertEqual(row["failure_hint"], "no model usage observed")
+
+    def test_an_unended_recent_child_still_reads_running(self):
+        for include_end_columns in (True, False):
+            with self.subTest(include_end_columns=include_end_columns):
+                _build_state_db(
+                    self.home,
+                    [
+                        {
+                            "id": "20260818_100100_open01",
+                            "model": "gpt-5.6-sol",
+                            "started_at": NOW - 40,
+                            "usage": {"last_seen": NOW - 5, "output_tokens": 12},
+                        }
+                    ],
+                    include_end_columns=include_end_columns,
+                )
+                payload = read_hermes_native_subagents(
+                    self.home, now=NOW, omh_home=self.home / ".omh", session_ref=PARENT_ID
+                )
+                (self.home / "state.db").unlink()
+                (row,) = payload["rows"]
+                self.assertEqual(row["state"], "running")
+                self.assertEqual(row["elapsed_seconds"], 40.0)
 
     def test_a_finished_row_is_byte_stable_across_polls(self):
         # The widget skips repaints when a snapshot serializes identically,

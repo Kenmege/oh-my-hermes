@@ -613,7 +613,7 @@ class AnswererLadderTests(unittest.TestCase):
         self.assertLess(len(blob), 2000)
         # The directory-name half, without the filesystem: the same bounding
         # the rung applies to a plugin directory name.
-        self.assertEqual(_bounded_items(["jev\x1b[31m-dir"]), ["jev[31m-dir"])
+        self.assertEqual(_bounded_items(["jev\x1b[31m-dir"]), ["jev-dir"])
 
     @unittest.skipIf(
         os.name == "nt",
@@ -635,7 +635,7 @@ class AnswererLadderTests(unittest.TestCase):
 
         blob = json.dumps(ladder[0], ensure_ascii=False)
         self.assertNotIn("\x1b", blob)
-        self.assertIn("jev[31m-dir", ladder[0]["plugins"])
+        self.assertIn("jev-dir", ladder[0]["plugins"])
 
     def test_a_name_that_is_only_control_characters_is_dropped_not_echoed_blank(self) -> None:
         with TemporaryDirectory() as tmp:

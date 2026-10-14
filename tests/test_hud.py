@@ -1610,15 +1610,15 @@ class TodoHudTests(unittest.TestCase):
             [{"text": "ok\x1b]0;hijack\x07 \r\n done", "state": "active"}],
             source="cli",
         )
-        self.assertEqual(record["title"], "A[2J[1;1Hpwned")
-        self.assertEqual(record["items"][0]["text"], "ok]0;hijack  done")
+        self.assertEqual(record["title"], "Apwned")
+        self.assertEqual(record["items"][0]["text"], "ok  done")
 
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._write_todo(
                 root / ".omh",
                 self._record(
-                    title="B\x1bad",
+                    title="B\x1b[1mad",
                     items=[{"text": "line\r\nsplit", "state": "active"}],
                 ),
             )
@@ -1919,7 +1919,7 @@ class TodoSessionScopeTests(_TodoSessionFixture, unittest.TestCase):
         )
 
         self.assertEqual(len(record["session_ref"]), MAX_TODO_SESSION_REF_CHARS)
-        self.assertTrue(record["session_ref"].startswith("s[2J9"))
+        self.assertTrue(record["session_ref"].startswith("s9"))
 
 
 class TodoSessionIsolationTests(_TodoSessionFixture, unittest.TestCase):

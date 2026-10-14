@@ -218,6 +218,20 @@ class TodoContendedError(TodoStoreError):
     """
 
 
+# Terminal escape sequences are removed whole before the control characters
+# below, so dropping an ESC does not leave its `[31m` behind as text for every
+# renderer. The grammar is `omh.tui.escapes.strip_escapes`', which this
+# directory cannot import (a test holds the two equal): a CSI, 7-bit or 8-bit,
+# with its parameters, intermediates and final byte; a control string (OSC,
+# DCS, SOS, PM, APC) up to BEL or ST, or to the end when unterminated; any
+# other ESC with its intermediates and final byte. A sequence cut off goes as
+# far as it got. Brackets without an introducer are text: `[31m` typed as
+# such, or left at rest by a write from before this, stays as it is.
+_ESCAPE_SEQUENCE = re.compile(
+    r"(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]?"
+    r"|(?:\x1b[\]PX^_]|[\x90\x98\x9d\x9e\x9f])(?:[^\x07\x1b\x9c]|\x1b(?!\\))*(?:\x07|\x1b\\|\x9c)?"
+    r"|\x1b(?:[ -/]*[0-~])?"
+)
 # C0/C1 control characters (ESC, BEL, CR, LF included) are stripped on write
 # and again on read so neither the artifact at rest nor the HUD projection can
 # carry terminal escapes or forge extra checklist lines.
@@ -225,7 +239,7 @@ _CONTROL_CHARACTERS = {code: None for code in (*range(0x00, 0x20), 0x7F, *range(
 
 
 def strip_control_characters(value: object) -> str:
-    return str(value or "").translate(_CONTROL_CHARACTERS).strip()
+    return _ESCAPE_SEQUENCE.sub("", str(value or "")).translate(_CONTROL_CHARACTERS).strip()
 
 
 def validate_todo_items(items: object) -> list[dict[str, Any]]:

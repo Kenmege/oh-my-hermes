@@ -5,7 +5,7 @@ terminal whose output lands in the VT screen model, a fake HUD poller, and the
 real `GatewayClient` talking to the replay gateway, which plays recorded Hermes
 6c61c3e27d frames and checks every frame the TUI sends against the recording.
 The TUI's startup differs from the recording client's (it asks `config.get`
-and `commands.catalog` before `session.create`), so those two are answered
+before `session.create` and `commands.catalog` after it), so those two are answered
 from the scenario's answer table: the catalog with its recorded answer, the
 config with an empty one.
 
@@ -61,7 +61,7 @@ from omh.tui.app import (
 )
 from omh.tui.gateway import GatewayClient, GatewayUnavailable, ServerRequest, gateway_spawn
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Mouse, Paste
-from omh.tui.launch import FALLBACK_EXIT
+from omh.tui.launch import FALLBACK_EXIT, FALLBACK_SENTINEL_ENV
 from omh.tui.prompts import open_request
 from omh.tui.theme import DEFAULT_THEME, theme_named
 from omh.tui.width import line_width
@@ -76,7 +76,8 @@ STATUS_MARK = "⚚ OMH"
 RULE_MARK = "────"
 # Between the composer and the status line on these 24-row terminals: the bottom rule and the mode row.
 UNDER_COMPOSER = 2
-STARTUP_METHODS = ["client.capabilities", "config.get", "commands.catalog", "session.create"]
+# The catalog is read after the session, naming it, so project-local skills are listed for its workspace.
+STARTUP_METHODS = ["client.capabilities", "config.get", "session.create", "commands.catalog"]
 NO_TERMIOS = terminal_module.termios is None
 TURN_CANCELLED = "Turn cancelled before the agent was ready"
 
@@ -246,6 +247,10 @@ class Run:
     def active_session_file(self) -> Path:
         return Path(self.environ["HERMES_TUI_ACTIVE_SESSION_FILE"])
 
+    @property
+    def fallback_sentinel(self) -> Path:
+        return Path(self.environ[FALLBACK_SENTINEL_ENV])
+
 
 class AppTestCase(unittest.TestCase):
     def prepare(self, scenario: Scenario, *, rows: int = 24, cols: int = 80, env: dict | None = None) -> Run:
@@ -256,6 +261,7 @@ class AppTestCase(unittest.TestCase):
             "HERMES_TUI_ACTIVE_SESSION_FILE": str(root / "active-session.json"),
             "HERMES_TUI_CWD": "/fixture/project",
             "TERM": "xterm-256color",
+            FALLBACK_SENTINEL_ENV: str(root / "fallback"),
             **(env or {}),
         }
         environ.pop("OMH_NO_TUI", None)
@@ -287,6 +293,12 @@ class AppTestCase(unittest.TestCase):
         self.assertEqual(run.code, code, run.stderr.getvalue())
         tails = [line for client in run.clients for line in client.stderr_tail()]
         self.assertFalse([line for line in tails if line.startswith("replay:")], tails)
+        self.assertFalse(run.fallback_sentinel.exists(), "a session that ran asked for the fallback")
+
+    def assert_fell_back(self, run: Run) -> None:
+        """Exit 75 and the sentinel `omh` named: without the file, `omh` passes the 75 on instead."""
+        self.assertEqual(run.code, FALLBACK_EXIT, run.stderr.getvalue())
+        self.assertTrue(run.fallback_sentinel.exists(), "exited 75 without creating the fallback sentinel")
 
     def submit(self, run: Run, text: str) -> Step:
         return Step(text.encode("utf-8") + b"\r", when=run.terminal.idle, label="the idle status line")
@@ -305,7 +317,7 @@ class StartupRefusalTests(AppTestCase):
             make_client=self.make_client(run),
             make_poller=lambda omh_home, hermes_home: run.poller,
         )
-        self.assertEqual(run.code, FALLBACK_EXIT)
+        self.assert_fell_back(run)
         self.assertIn("cannot run the OMH TUI", run.stderr.getvalue())
         self.assertEqual(run.clients, [])
         self.assertEqual(run.terminal.writes, [])
@@ -314,7 +326,7 @@ class StartupRefusalTests(AppTestCase):
         run = self.prepare(Scenario("session", spans("session", "startup")))
         del run.environ["HERMES_PYTHON"]
         self.run_main(run)
-        self.assertEqual(run.code, FALLBACK_EXIT)
+        self.assert_fell_back(run)
         self.assertIn("HERMES_PYTHON", run.stderr.getvalue())
         self.assertEqual(run.terminal.entered, 0)
 
@@ -325,6 +337,7 @@ class StartupRefusalTests(AppTestCase):
         )
         self.run_main(run)
         self.assertEqual(run.code, 1)
+        self.assertFalse(run.fallback_sentinel.exists())
         self.assertIn("hermes --tui --resume 20261013_000000_abc", run.stderr.getvalue())
         self.assertEqual(run.clients, [])
         self.assertEqual(run.terminal.entered, 0)
@@ -334,7 +347,7 @@ class StartupRefusalTests(AppTestCase):
         drift = recorded_answer("session", "drift_reply")
         run = self.prepare(Scenario("session", spans("session", "startup"), answers=(("config.get", drift),)))
         self.run_main(run)
-        self.assertEqual(run.code, FALLBACK_EXIT)
+        self.assert_fell_back(run)
         self.assertIn("-32601", run.stderr.getvalue())
         self.assertEqual(run.terminal.entered, 0)
         self.assertEqual(run.clients[0].close(grace=FAST_GRACE), 0)
@@ -345,7 +358,7 @@ class StartupRefusalTests(AppTestCase):
             Scenario("session", (), stderr=("\x1b[31mboom\x1b[0m: no provider\x1b]0;title\x07",), after=EXIT, exit_code=1)
         )
         self.run_main(run)
-        self.assertEqual(run.code, FALLBACK_EXIT)
+        self.assert_fell_back(run)
         printed = run.stderr.getvalue()
         self.assertIn("  boom: no provider\n", printed)
         self.assertNotIn("\x1b", printed)
@@ -1549,23 +1562,66 @@ class LocalCommandTests(AppTestCase):
         self.assertIn("Theme crimson applies to this session", history)
         self.assertIn("No theme named nope. Available: sky, amber, crimson, mono.", history)
 
-    def test_help_lists_local_commands_the_hermes_catalog_and_keys(self) -> None:
-        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), cols=200)
-        run.terminal.script(
+    def test_help_lists_local_commands_the_hermes_catalog_by_category_and_keys_in_the_pager(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), rows=40, cols=200
+        )
+        terminal = run.terminal
+        terminal.script(
             self.submit(run, "/help"),
-            Step(b"\x04", when=lambda: "Keys:" in run.terminal.history(), label="the help notice"),
+            Step(b"q", when=lambda: terminal.screen.alternate, capture="pager", label="the help pager"),
+            Step(b"\x04", when=lambda: not terminal.screen.alternate and terminal.idle(), label="back"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        history = run.terminal.history()
-        self.assertIn("/omh-model  Pick OMH model chains", history)
-        self.assertIn("Hermes commands (8): /new /clear /redraw /history /save /retry /prompt /undo", history)
+        pager = "\n".join(terminal.captures["pager"])
+        self.assertIn("/omh-model     Pick OMH model chains", pager)
+        self.assertIn("/reload-skills Re-scan Hermes' skills", pager)
+        # The recorded catalog's categories, without what the TUI runs itself, routes to Hermes' terminal or drops:
+        # Session (/new /clear /redraw), Exit (/quit) and TUI (/density /logs /mouse) are left with nothing.
+        self.assertIn("  Configuration: /export /import /config", pager)
+        self.assertIn("  Tools & Skills: /tools /toolsets /skills", pager)
+        self.assertNotIn("Session:", pager)
+        self.assertNotIn("skill commands available", pager)  # the recording lists none
         # The keys live in one table that ? and /keys draw; /help points there.
-        self.assertIn("Keys: ? on an empty composer, or /keys, lists every key.", history)
-        self.assertIn("/yolo included", history)
+        self.assertIn("Keys: ? on an empty composer, or /keys, lists every key.", pager)
+        self.assertIn("/yolo included", pager)
         # The banner no longer says it, so /help is where the way back to Hermes' own terminal stays.
-        self.assertIn("Bare `hermes` opens Hermes' own terminal.", history)
+        self.assertIn("Bare `hermes` opens Hermes' own terminal.", pager)
+        self.assertIn("/help: 26 lines, shown in the pager.", terminal.history())
         self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
+
+    def test_reload_skills_rescans_in_the_gateway_and_the_new_skill_completes(self) -> None:
+        # The second catalog is the recorded one with one skill more, in the shape Hermes 6c61c3e27d's
+        # `commands.catalog` gives a skill: a pair only, counted in `skill_count`, in no category.
+        recorded = recorded_answer("session", "commands_catalog")["result"]
+        reloaded = {**recorded, "pairs": [*recorded["pairs"], ["/omh-codebase-uml", "Draw UML from the code"]],
+                    "skills": {"/omh-codebase-uml": {"usage": 0, "origin": "local"}}, "skill_count": 1}
+        rescan = {"added": [{"name": "omh-codebase-uml"}], "removed": [], "unchanged": [], "total": 1, "commands": 1}
+        answers = (
+            *startup_answers(),
+            ("skills.reload", {"result": {"output": "Reloading skills...\nAdded skills:\n  - omh-codebase-uml\n"
+                                                    "1 skill(s) available", "result": rescan}}),
+            ("commands.catalog", {"result": reloaded}),
+        )
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "/reload-skills"),
+            Step(b"/uml", when=terminal.shows("1 skill(s) available"), label="the rescan's output"),
+            Step(b"\x7f\x7f\x7f\x7f", when=terminal.shows("/omh-codebase-uml"), capture="menu", label="the menu"),
+            Step(b"\x04", when=lambda: terminal.idle() and not terminal.shows("/omh-codebase-uml")(), label="cleared"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertTrue(any("Draw UML from the code" in line for line in terminal.captures["menu"]))
+        self.assertEqual(
+            [frame["method"] for frame in run.frames], [*STARTUP_METHODS, "skills.reload", "commands.catalog"]
+        )
+        self.assertEqual([frame["params"] for frame in run.calls("commands.catalog")], [{"session_id": LIVE_ID}] * 2)
+        (reload,) = run.calls("skills.reload")
+        self.assertEqual(reload["params"], {"session_id": LIVE_ID})
+        self.assertEqual(run.calls("slash.exec"), [])
 
     def test_queue_lists_what_waits_for_the_running_turn(self) -> None:
         run = self.prepare(

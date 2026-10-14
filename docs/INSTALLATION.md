@@ -473,27 +473,47 @@ Slash commands the OMH TUI runs itself: `/help`, `/keys`, `/quit`, `/new`,
 `/details` (show or hide thinking and tool detail on the live block),
 `/queue`, `/steer <text>`, `/effort <level>`, `/logs` (the gateway's recent
 stderr, kept in memory only), `/copy`, `/image`, `/paste` (the clipboard
-image), `/theme`, and `/omh-model`.
+image), `/theme`, `/omh-model`, and `/reload-skills` (Hermes re-scans its
+skills for this session and the TUI reads its command list again, so a skill
+installed since the start, by `omh update` or `/skills install`, runs as
+`/<name>` without a restart).
 Commands whose screen exists only in Hermes' own terminal (`/voice`, `/pet`,
 `/agents`, the billing flows, `/save`, `/prompt`, ...) say so and name
 `hermes --tui`. Everything else goes to Hermes as it would from Hermes'
-terminal.
+terminal, except that two commands whose screen there is an overlay answer
+here as text: bare `/skills` prints the help of Hermes' skills command instead
+of opening the skills hub, and bare `/model` prints the current model instead
+of opening the model picker. The command list is read again for each session
+the TUI opens, so a project's own skills are listed in its workspace, and
+completion also matches a part of a name: `/uml` finds `/omh-codebase-uml`.
 
 When the OMH TUI cannot start — Windows, a terminal without `termios` or with
 `TERM=dumb`, `OMH_NO_TUI=1`, no Node for Hermes' launcher, or a Hermes whose
 gateway no longer speaks what the TUI was built for — it says why and `omh`
 opens Hermes' own terminal instead, so you lose the OMH screen, never the
-session. If the gateway stops accepting a method or a key mid-session, the
-TUI leaves with the command that reopens the same session in `hermes`; an
-event Hermes renames is not detected yet, and shows as a turn that never
-finishes. The gateway, and every tool it runs, inherits the environment `omh`
+session. `omh` reopens Hermes' terminal only on the TUI's own request (exit
+75 together with a file `omh` named for that launch and removes afterwards),
+so a 75 Hermes returns for a reason of its own ends the launch like any other
+exit code. If the gateway stops accepting a method or a key mid-session, the
+TUI leaves with the command that reopens the same session in `hermes`; on the
+two calls a session does without, reading the command list and the
+`/reload-skills` rescan, it says so instead and the session goes on. A
+turn that brings no event the TUI shows, only types it does not know (Hermes
+renamed its turn events), gets one notice pointing at `omh doctor`, which
+prints the installed Hermes commit next to the one the TUI was declared
+against; a single renamed event among known ones, such as `message.complete`
+alone, is not detected, and neither is a renamed `message.*` family that
+arrives behind a known event such as `status.update`, `reasoning.available` or
+`tool.generating`; either shows as a turn that never finishes.
+The gateway, and every tool it runs, inherits the environment `omh`
 set for the frontend, `OMH_HOME` included, so `omh --omh-home <dir>` also picks
 the store the OMH plugin inside that gateway uses when the profile names none.
 The OMH TUI writes no prompt text,
 transcript, attachment, secret or Hermes question to disk. What it does write
 is metadata: the launcher's active-session file, which holds the session id,
-and what OMH's own HUD reader and model-chain picker write under the OMH home
-(the HUD's fan-out cache, and the chains `/omh-model` saves).
+what OMH's own HUD reader and model-chain picker write under the OMH home
+(the HUD's fan-out cache, and the chains `/omh-model` saves), and an empty
+fallback marker at the path `omh` named, which `omh` removes.
 
 Bare `hermes` is unchanged: it opens Hermes' own terminal, which still shows
 the OMH skin and status widget when the branded-TUI choice below is active.

@@ -358,15 +358,19 @@ the gateway's. Shift+Tab may turn on Hermes' per-session yolo, so Hermes stops
 asking for approvals in that one session (a `config.set` naming the session,
 never `approvals.mode`), and the TUI sends that session an explicit off before
 it leaves it. It writes no prompt text, transcript or server-request frame;
-its only writes are metadata (the launcher's active-session file, and what
-OMH's HUD reader and model-chain picker write under the OMH home). Finished
+its only writes are metadata (the launcher's active-session file, what OMH's
+HUD reader and model-chain picker write under the OMH home, and an empty
+fallback marker at the path `omh` named, which `omh` removes). Finished
 transcript lines go to the terminal's own scrollback; only a bottom region
 (the streaming tail, one slot for the plan and agents panels or a prompt
 Hermes asked, the composer, and the status line) repaints, and the composer's
 row does not move when the slot grows or shrinks. When it cannot start
 (unsupported terminal, Windows, no Node for the launcher, an OMH that cannot
-import itself, gateway unavailable, protocol drift at startup) it exits 75
-and `omh` opens Hermes' own terminal instead. Bare `hermes` is unaffected.
+import itself, gateway unavailable, protocol drift at startup) it creates the
+sentinel file `omh` named for that launch and exits 75, and `omh` opens
+Hermes' own terminal instead; a 75 without that file (Hermes exits 75 on
+paths of its own) ends the launch like any other code. Bare `hermes` is
+unaffected.
 _Avoid_: Modern TUI (Hermes' Ink app), OMH status widget (an extension of
 Hermes' TUI), a Hermes patch or fork, an execution surface
 
@@ -376,11 +380,16 @@ a client. The slice the TUI relies on (the methods it calls with the only
 keys it sends, how it answers each server-to-client request, and the subagent
 events and the `session.info`, `subagent.tail` and `session.steer` fields and
 values it keys on) is declared once in `src/tui/gateway_contract.py`, against
-a named Hermes commit; an event type it does not handle is ignored, never an
-error. The gateway rejects
+a named Hermes commit, with every event type split into handled and unread;
+an event type it does not handle is ignored, never an error, and a submitted
+turn that brings no event the TUI shows, only undeclared types, gets one
+notice pointing at `omh doctor`, which prints the installed Hermes commit next
+to the declared one. The gateway rejects
 unknown keys (code 4000) and unknown methods (-32601); the TUI reads either as
 drift, falls back at startup, and leaves mid-session with the command to
-reopen the session in `hermes`. This is a read and write coupling to
+reopen the session in `hermes`, except on the two calls a session does
+without (reading the command list, the `/reload-skills` rescan), where it
+says so and the session goes on. This is a read and write coupling to
 a Hermes-private shape, the same class as the lease registry below, and
 testing OMH against a new Hermes release includes it; `requires_hermes` stays
 a floor for the plugin and is not raised for the TUI, whose compatibility is
