@@ -168,7 +168,7 @@ class ReleaseSmokeTests(unittest.TestCase):
             "/tmp/omh update && /tmp/omh --version && /tmp/omh doctor",
         )
         self.assertIn("1.0.0", items["machine_sync_after_cut"]["evidence_required"])
-        self.assertIn("HUD footer", items["machine_sync_after_cut"]["evidence_required"])
+        self.assertIn("OMH TUI banner", items["machine_sync_after_cut"]["evidence_required"])
         self.assertIn("no installed machine changes", items["machine_sync_after_cut"]["proof_boundary"])
         self.assertIn("~/.hermes/plugins", items["machine_sync_after_cut"]["proof_boundary"])
         self.assertGreaterEqual(payload["required_item_count"], 18)

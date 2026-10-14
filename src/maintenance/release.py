@@ -280,7 +280,10 @@ SKILL_INDEX_LINE_CHAR_LIMIT = 100
 # paraphrased items. The sentence rides the schema the model reads when it
 # reaches for either list; the per-turn alternative would be paid on every
 # turn. Re-derived from the producer.
-PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
+# 64654 -> 64651: `omh_hud` names the OMH TUI, not Hermes', as the surface its
+# payload is for (-3): bare `hermes` no longer draws the HUD. Re-derived from
+# the producer.
+PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64651
 # PRE_LLM_CALL_CONTEXT_CHAR_LIMIT, PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT: moved with
 # their history to src/plugin_bundle/omh/turn_budget.py; imported at the top of this file.
 # 340000 -> 349637: three capability-skill sections were added by the domain
@@ -2574,15 +2577,15 @@ def release_readiness_checklist(
             False,
             True,
             (
-                f"The installed command reports {release_version}, doctor passes, and the Hermes TUI HUD footer shows "
-                f"v{release_version} after the terminal is restarted."
+                f"The installed command reports {release_version}, doctor passes, and the OMH TUI banner (bare `omh`) "
+                f"shows v{release_version} once it is reopened."
             ),
             (
                 "Tagging and publishing move the tag and the package registries only; no installed machine changes until it "
-                "updates itself. Every version an operator sees -- `omh --version`, the plugin manifest, and the TUI HUD "
-                "footer -- is the installed version, never the newest published tag. Never hand-copy files into "
-                "~/.hermes/plugins or ~/.hermes/tui-widgets to close the gap: that drifts from the install manifests and "
-                "makes the next update refuse."
+                "updates itself. Every version an operator sees -- `omh --version`, the plugin manifest, and the OMH TUI "
+                "banner -- is the installed version, never the newest published tag. Never hand-copy files into "
+                "~/.hermes/plugins to close the gap: that drifts from the install manifests and makes the next update "
+                "refuse."
             ),
         ),
     ]
