@@ -261,8 +261,8 @@ def write_override_document(omh_home: str | Path | None, document: Mapping[str, 
 
     The `omh model-chains` command keeps the repo-wide atomic writer; this is
     the bundle's own (the todo store's idiom: a fresh temporary beside the
-    target, then `os.replace`), because the widget reaches this module from
-    the installed plugin, where `omh.system` does not exist. Validated once
+    target, then `os.replace`), because a module in the plugin bundle may not
+    import `omh.system` (`tests/test_plugin_bundle_standalone.py`). Validated once
     more before the bytes land, so an invalid document is never written by
     either surface.
     """
@@ -302,12 +302,11 @@ def apply_picker_changes(
     *,
     hermes_home: str | Path | None = None,
 ) -> dict[str, Any]:
-    """The widget's save, as one call over stdin JSON.
+    """The save `/omh-model` in the OMH TUI makes, as one call.
 
     `raw_changes` is `{category: [{"model": ..., "reasoning_effort": ...}]}`
     for every edited row. A refusal comes back as `{"error": ...}` rather
-    than a traceback: the widget shows the sentence, and a shell reading the
-    script's stdout sees JSON either way.
+    than a traceback, and the TUI shows the sentence.
     """
     if not isinstance(raw_changes, Mapping):
         return {"error": "changes must be a JSON object keyed by category"}
