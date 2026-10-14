@@ -358,8 +358,9 @@ the gateway's. Shift+Tab may turn on Hermes' per-session yolo, so Hermes stops
 asking for approvals in that one session (a `config.set` naming the session,
 never `approvals.mode`), and the TUI sends that session an explicit off before
 it leaves it. It writes no prompt text, transcript or server-request frame;
-its only writes are metadata (the launcher's active-session file, and what
-OMH's HUD reader and model-chain picker write under the OMH home). Finished
+its only writes are metadata (the launcher's active-session file, what OMH's
+HUD reader and model-chain picker write under the OMH home, and an empty
+fallback marker at the path `omh` named, which `omh` removes). Finished
 transcript lines go to the terminal's own scrollback; only a bottom region
 (the streaming tail, one slot for the plan and agents panels or a prompt
 Hermes asked, the composer, and the status line) repaints, and the composer's

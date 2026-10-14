@@ -499,8 +499,9 @@ the store the OMH plugin inside that gateway uses when the profile names none.
 The OMH TUI writes no prompt text,
 transcript, attachment, secret or Hermes question to disk. What it does write
 is metadata: the launcher's active-session file, which holds the session id,
-and what OMH's own HUD reader and model-chain picker write under the OMH home
-(the HUD's fan-out cache, and the chains `/omh-model` saves).
+what OMH's own HUD reader and model-chain picker write under the OMH home
+(the HUD's fan-out cache, and the chains `/omh-model` saves), and an empty
+fallback marker at the path `omh` named, which `omh` removes.
 
 Bare `hermes` is unchanged: it opens Hermes' own terminal, which still shows
 the OMH skin and status widget when the branded-TUI choice below is active.
