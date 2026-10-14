@@ -16,7 +16,7 @@ What keeps it ONE plan is that there is still one store. `post_tool_call`
 hands every successful `todo_list` write to ``project_native_todo``, which
 writes the full list Hermes returned into the session's own record --
 ``$OMH_HOME/runtime/todos/<session key>.json``, the file `omh_todo` writes --
-with ``source: todo_list``. So the HUD, the TUI widget, the Desktop pane, the
+with ``source: todo_list``. So the HUD, the OMH TUI, the Desktop pane, the
 plan-stage gate, the stall finding and the continuation drive all read one
 record through `read_omh_todo` and need not know which tool wrote it. A
 deferred `todo_list` changes nothing here: Hermes peels the tool_search
@@ -84,9 +84,9 @@ a hook outliving ``plugins.hook_callback_timeout`` (30 s by default) and
 being abandoned; this projection's own lock wait is two seconds.
 
 Where the projected items are drawn is each surface's call, read off
-``source``: the modern TUI dock and the Desktop pane leave a todo_list-held
-plan's items to Hermes' own todo panel and show only what it cannot
-(`omh-status.mjs`, `desktop/plugin.js`).
+``source``: the Desktop pane leaves a todo_list-held plan's items to Hermes'
+own todo panel and shows only what it cannot (`desktop/plugin.js`); the OMH
+TUI's plan panel draws them whichever tool wrote them.
 
 This module imports nothing from ``omh`` (`tests/test_plugin_bundle_standalone.py`).
 """

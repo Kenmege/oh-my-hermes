@@ -29,8 +29,10 @@ _Avoid_: Hermes runtime (that names an OMH executor path), our agent
 
 **Hermes home**:
 `$HERMES_HOME`, default `~/.hermes` — Hermes Agent's own state root. OMH only
-adds managed, explicitly installed artifacts under it (`plugins/omh`,
-`tui-widgets/`, skill registration in `config.yaml`).
+adds managed, explicitly installed artifacts under it (`plugins/omh` and skill
+registration in `config.yaml`). Earlier versions also installed a status
+widget under `tui-widgets/` and skin files under `skins/`; setup and update
+remove the ones OMH can prove it wrote.
 _Avoid_: using it for OMH runtime state
 
 **OMH home**:
@@ -148,20 +150,21 @@ active to stale to expired; they never prove results.
 _Avoid_: process handle, job
 
 **Plan todo**:
-The declared checklist HUD surfaces render above the Hermes prompt input.
+The declared checklist the HUD surfaces render above the prompt input.
 Items are plan declarations; a done mark never upgrades into observed
 evidence. One record per declaring session: a plan stamped with `session_ref`
 lives at `$OMH_HOME/runtime/todos/<session key>.json` and renders only for
-the session that owns it — the TUI widget names its own session from the
-host's active-session file, the plugin tool and hooks from the session that
+the session that owns it — the OMH TUI names the session it shows, the
+Desktop pane its focused session, the plugin tool and hooks the session that
 invoked them — so a plan declared from Slack, Discord, or a second TUI is
 neither shown in nor overwritten by another session. An unstamped record
 (`omh runtime todo set` without `--session`) keeps the home-wide
 `$OMH_HOME/runtime/todo.json`, scoped by write time against the reading
 session's start; a reader with no live TUI row to date it against (a gateway
 session), or a host that cannot say which session is reading, keeps the
-age-only behavior. A widget reference that names no live TUI row is first
-offered to the host's active-session lease registry, which pairs a created
+age-only behavior. A TUI session reference (`tui_session_ref`, which the
+Desktop pane passes) that names no live TUI row is first offered to the
+host's active-session lease registry, which pairs a created
 session's transport id with its durable key; an unpaired reference stays its
 own identity and reads no other session's record.
 
@@ -178,7 +181,7 @@ alone sets item states (an `omh_todo` advance there keeps the state and the
 `source`), and a recorded reason is carried across later native writes by
 item text while the item stays where it was or is paused back to pending.
 Where it is absent, `omh_todo` is the only writer. Every
-reader — the HUD, the widget, the Desktop pane, the plan-stage gate, the
+reader — the HUD, the OMH TUI, the Desktop pane, the plan-stage gate, the
 stall finding and the continuation drive — reads the record through
 `read_omh_todo` and never asks which tool wrote it. A native write never
 replaces a plan only `omh_todo` can express: one awaiting acceptance or a
@@ -188,10 +191,10 @@ one, and a recorded `deferred_reason` only pauses it (the hold never reads
 it). Only a whole-list write re-declares a record's `source`: an `omh_todo`
 set, or a mirrored `todo_list` write (replacing the plan, or adopting an
 identical one). Where Hermes draws
-its own todo list — the modern TUI and Hermes Desktop — the OMH dock and pane
-leave a `todo_list`-held plan's items to it and show only what it cannot: a
-reason `omh_todo` recorded on an open item, the stall finding, and in the TUI
-dock the parallel-shot badge.
+its own todo list — Hermes Desktop — the OMH pane leaves a `todo_list`-held
+plan's items to it and shows only what it cannot: a reason `omh_todo`
+recorded on an open item and the stall finding. The OMH TUI's plan panel
+draws the items whichever tool holds them.
 
 One field on this record refuses work rather than describing it, which is why
 it is named here: a planning run stamps `plan_stage: awaiting_acceptance` when
@@ -330,17 +333,18 @@ _Avoid_: runtime state (the payload is a read-only projection of it)
 
 **Classic TUI**:
 Hermes Agent's Python prompt_toolkit terminal UI — what `hermes` runs when
-`display.interface` selects the classic REPL. It does not load user widget
-files; its extension point is wrapper-CLI method hooks.
-_Avoid_: treating it as the surface OMH widgets render in
+`display.interface` selects the classic REPL, which is the default bare
+`hermes` opens. It does not load user widget files; its extension point is
+wrapper-CLI method hooks.
+_Avoid_: treating it as an OMH surface
 
 **Modern TUI**:
 Hermes Agent's TypeScript terminal UI — what `hermes --tui` runs, and what
-bare `hermes` runs when `display.interface: tui` is set. Loads user widget
-apps from `$HERMES_HOME/tui-widgets/*.mjs`. The only Hermes surface that
-renders OMH's widgets. Its launcher runs `<HERMES_TUI_DIR>/dist/entry.js`
-instead of the Ink app when that variable is set, which is how the OMH TUI
-takes its place.
+bare `hermes` runs when the person sets `display.interface: tui` (OMH no
+longer sets it). Loads user widget apps from `$HERMES_HOME/tui-widgets/*.mjs`;
+OMH installs none. Its launcher runs `<HERMES_TUI_DIR>/dist/entry.js` instead
+of the Ink app when that variable is set, which is how the OMH TUI takes its
+place.
 _Avoid_: ui-tui (internal directory name), dashboard TUI, OMH TUI
 
 **OMH TUI**:
@@ -365,14 +369,21 @@ transcript lines go to the terminal's own scrollback; only a bottom region
 (the streaming tail, one slot for the plan and agents panels or a prompt
 Hermes asked, the composer, and the status line) repaints, and the composer's
 row does not move when the slot grows or shrinks. When it cannot start
-(unsupported terminal, Windows, no Node for the launcher, an OMH that cannot
-import itself, gateway unavailable, protocol drift at startup) it creates the
-sentinel file `omh` named for that launch and exits 75, and `omh` opens
-Hermes' own terminal instead; a 75 without that file (Hermes exits 75 on
-paths of its own) ends the launch like any other code. Bare `hermes` is
-unaffected.
-_Avoid_: Modern TUI (Hermes' Ink app), OMH status widget (an extension of
-Hermes' TUI), a Hermes patch or fork, an execution surface
+(an OMH that cannot import itself, gateway unavailable, protocol drift at
+startup) it creates the sentinel file `omh` named for that launch and exits
+75; that exit, and a blocker found before anything starts, has `omh` say why
+in one line on stderr and open Hermes' own TUI (`hermes --tui`, with none of
+the OMH TUI's environment) when the reason is the OMH TUI's own and Node is
+found, or plain `hermes` (`TERM=dumb`, `OMH_NO_TUI=1`, no Node), which follows
+`display.interface`. A 75 without that file (Hermes
+exits 75 on paths of its own) ends the launch like any other code. Bare
+`hermes` is stock Hermes: OMH writes none of its display keys and draws
+nothing in its terminal, while the OMH plugin (tools, hooks, memory, skills)
+stays loaded there. The theme it opens with is the one saved under the OMH
+home (`omh theme use`), else an OMH palette `display.skin` names, else sky
+(`skin_pack.effective_theme`); `/theme` changes the open session only.
+_Avoid_: Modern TUI (Hermes' Ink app), OMH status widget (the retired
+extension of Hermes' TUI), a Hermes patch or fork, an execution surface
 
 **Hermes gateway protocol**:
 Hermes' `tui_gateway` newline JSON-RPC over stdio, which the OMH TUI speaks as
@@ -397,23 +408,15 @@ judged at launch.
 _Avoid_: reading the generated OpenRPC file at runtime (Hermes' wheel does not
 ship it), a published API
 
-**Widget zone**:
-A named slot in the Modern TUI layout where an ambient widget app renders.
-`dock-top` sits above the prompt input (below the top status rule);
-`dock-bottom` sits below the prompt input (above the bottom status rule).
-_Avoid_: assuming dock-bottom means above the input
-
 **OMH status widget**:
-`omh-status.mjs`, the managed Modern-TUI widget file OMH installs into
-`$HERMES_HOME/tui-widgets/`. It registers two ambient apps that frame the
-composer like the classic REPL: a `dock-top` app renders the plan-todo
-checklist above the input — its `[Plan]` header carries the transient
-`parallel shot ×N` badge — closed by the frame rule above the composer,
-and a `dock-bottom` app opens with the frame rule
-below the input and renders the status HUD (header always visible when
-installed; activity rows only during live work).
-_Avoid_: statusline (that is a different, host-owned surface), HUD (the widget
-renders the HUD payload; it is not the payload)
+Retired. `omh-status.mjs`, the Modern-TUI widget file earlier versions
+installed into `$HERMES_HOME/tui-widgets/` so bare `hermes` drew the plan
+checklist and the status HUD, and registered `/omh-model` there. Setup and
+update remove it where its manifest proves OMH wrote it
+(`omh/tui_widget_pack.py`); the OMH TUI's panels draw that HUD, and its own
+`/omh-model` opens the picker.
+_Avoid_: describing it as installed, statusline (that is a different,
+host-owned surface)
 
 **Hermes Desktop**:
 Hermes Agent's Electron app (`hermes desktop`). It loads no `tui-widgets/`
@@ -431,9 +434,10 @@ the backend's `router` at `/api/plugins/omh/` while `omh` is in the host's
 agent rows with their route identity (`category:name(model:effort)`) and
 metrics, the fanout DAG while one is active -- plus a compact agent and plan
 count in the status bar, in the app's own visual language (theme tokens, the
-bundled panes' typography); the same HUD payload the status widget renders,
-with the same formatters, and the main session's model from the app's own
-state, which the payload carries only per subagent row. The route reads the
+bundled panes' typography); the same HUD payload the OMH TUI's panels draw,
+with formatters ported from the same retired widget, and the main session's
+model from the app's own state, which the payload carries only per subagent
+row. The route reads the
 launch profile's home: the `profile` query the app appends when it routes a
 non-primary profile through a shared backend is not honoured, as the host's
 own bundled plugin backends do not honour it (a local non-primary profile has
@@ -449,7 +453,7 @@ the bundle under `plugins/omh/` is what `omh update` refreshes), claiming the
 half is enabled (not observable from OMH), claiming the app's own copy step
 was observed (the pane and the status-bar item were observed from a
 hand-placed standalone copy in an isolated home; the copy step is read from
-the app's source), OMH status widget (that is the Modern-TUI surface)
+the app's source), OMH TUI (that is the terminal surface)
 
 ### Host surfaces OMH reads
 
@@ -482,8 +486,7 @@ chat surfaces. One entry per lease, carrying the durable session key as
 `session_id` and the gateway transport id as `metadata.live_session_id`,
 alongside `surface`. It is the only place the two names for one TUI session
 meet — the transport id appears in no `state.db` column — so it is how a
-widget reference taken from the per-TUI active-session file resolves to the
-session that owns a plan. Written by `_claim_active_session_slot`
+TUI session reference resolves to the session that owns a plan. Written by `_claim_active_session_slot`
 (`tui_gateway/session_lifecycle.py`) on a session's first real turn, not at
 creation, so a TUI nobody has prompted in is named by no entry.
 
@@ -550,8 +553,7 @@ is not id-shaped, reading an absent stamp as "belongs to no one" rather than
 **OMH install fault**:
 A managed artifact under a host root is missing, stale, or was never refreshed
 on this machine; the repo itself is fine. `omh doctor` proves it — it reports
-plugin, widget, and managed-skill state — and `omh setup` or `omh update`
-fixes it. Measure the domain before assuming one: this and the Hermes
+plugin and managed-skill state — and `omh setup` or `omh update` fixes it. Measure the domain before assuming one: this and the Hermes
 user-config fault are cheap reads and come first, an OMH product fault needs a
 clean-tree reproduction, and a Hermes-side fault comes last and only with both
 of its proofs in hand.
@@ -559,22 +561,21 @@ _Avoid_: opening a PR for it, reaching for `hermes update`
 
 **Hermes user-config fault**:
 A user-owned key is set inconsistently with what the reporter expects —
-`model.default`, `model.provider`, `model.base_url`, or a display choice the
-operator declined to migrate. Reading the key proves it. OMH normally reports
-the inconsistency and stops there. The narrow display exception is the branded
-TUI choice: fresh canonical configs default to `display.interface: tui` and
-`display.skin: omh`; interactive setup/update may replace canonical display
-values only after a default-Yes confirmation (or `--yes`), which also sets
-`display.sections` to collapsed (`thinking`, `tools`, `subagents`) — that key
-is consent-only and unset-only per section, never replacing a value the
-person set. No,
-`--no-omh-tui`, and every noncanonical YAML shape preserve the existing
-display choice byte-for-byte. JSON suppresses prompting but `--yes` remains
-explicit consent; without `--yes`, JSON preserves explicit canonical values.
-Dry-run may preview the accepted change but never persists it. Check this
-fault alongside the install fault, before reproducing anything.
-_Avoid_: rewriting a declined or noncanonical display choice, filing it as a
-product fault
+`model.default`, `model.provider`, `model.base_url`, or a display key. Reading
+the key proves it. OMH reports the inconsistency and stops there. Every
+display key (`display.interface`, `display.skin`, `display.sections`) is the
+person's: OMH writes none. Earlier versions wrote all three, so setup and
+update run a one-shot release per config (`release_managed_display`): a
+value OMH's record says it wrote and that still reads that way goes, or goes
+back to the value consent replaced; an `omh*` skin goes with or without a
+record, its theme saved under the OMH home first; a value the person changed
+since, an unrecorded `display.interface` or section, and every noncanonical
+YAML shape stay byte-for-byte. The record then carries
+`display_released_at`, and from that pass on no display value in that config
+is read as OMH's. Dry-run previews the release and never persists it. Check
+this fault alongside the install fault, before reproducing anything.
+_Avoid_: writing a display key, re-running the release on a config whose
+record says it ran, filing it as a product fault
 
 **OMH product fault**:
 The behaviour reproduces from a clean install and on the repo dev tree,
@@ -621,18 +622,12 @@ _Avoid_: a second comparer, a count or headroom formula restated in a test
 
 **Managed artifact**:
 A file OMH installs and refreshes under a host-owned root and may safely
-overwrite on setup/update — the plugin bundle, the widget file, the identity
-skin (`skins/omh.yaml`), managed skills, and the config keys OMH inserted.
-The branded-TUI consent is the narrow exception for existing canonical config:
-accepting the interactive default or passing `--yes` may set
-`display.interface: tui`, `display.skin: omh`, and a collapsed
-`display.sections` so bare `hermes` opens Hermes' Modern TUI wearing the OMH
-skin and status widget and a long run does not bury the conversation (bare
-`omh` opens the OMH TUI, and lands on that same Hermes terminal when the OMH
-TUI cannot start). Installs already carrying the first two
-are not prompted, and take the third through `--yes`. Declining,
-passing `--no-omh-tui`, or using a noncanonical YAML shape leaves the display
-configuration untouched. Everything else under a host root is user-owned and
-preserved.
+overwrite on setup/update — the plugin bundle, managed skills, and the config
+keys OMH inserted. The status widget and the skin files earlier versions
+installed are managed artifacts in one direction only: setup, update and
+uninstall remove them where a manifest (or, for a skin, the shipped bytes)
+proves OMH wrote them, and keep and name any the person edited. OMH writes no
+display key; `--no-omh-tui` is accepted and does nothing. Everything else
+under a host root is user-owned and preserved.
 _Avoid_: overwriting anything OMH did not write without explicit consent,
-rewriting a declined or noncanonical display choice
+writing a display key

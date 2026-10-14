@@ -1126,8 +1126,8 @@ def _hud_local_fanout_record(
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], str, str] | str | None:
     """The fanout record, shared across concurrent readers of one home (#2030).
 
-    Every TUI's status widget spawns its own reader every few seconds, and
-    this record does not depend on the reading session, so N TUIs used to
+    Every open OMH TUI and Desktop pane reads the HUD every few seconds, and
+    this record does not depend on the reading session, so N readers used to
     recompute the same scan N times. The first reader to miss computes it
     under the bundle's lock and stores it; the rest read that entry.
 
@@ -1601,11 +1601,11 @@ def _package_version(state: dict[str, Any], fallback: str) -> str:
     passes `omh.version.__version__`, the same string `omh --version`
     prints), and that wins: it is the version of the code producing the
     payload. The recorded `state.json` version is the fallback for the
-    reader the TUI widget spawns -- `tui_widgets/omh-status.mjs` runs
-    `python -I` with only `~/.hermes/plugins` on `sys.path`, so it imports
-    this module without being able to import `omh` at all, and the version
-    `omh install`/`omh update` recorded (`commands/setup.py`) is the only
-    installed version it can see. Both move when `omh update` runs. Reading
+    readers that load this module from the installed plugin bundle inside
+    Hermes' own interpreter -- the Desktop pane's route
+    (`dashboard/plugin_api.py`) and the plugin's tools -- which cannot import
+    `omh` at all, so the version `omh install`/`omh update` recorded
+    (`commands/setup.py`) is the only installed version they can see. Both move when `omh update` runs. Reading
     the record first made `omh hud` report a version older than `omh
     --version` after any upgrade that refreshed the package without
     rewriting the record.

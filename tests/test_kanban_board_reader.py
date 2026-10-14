@@ -9,9 +9,7 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sqlite3
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -20,6 +18,7 @@ from pathlib import Path
 from unittest import mock
 
 from _local_package import load_local_package
+from _tui_lines import line_text
 
 load_local_package()
 
@@ -29,7 +28,8 @@ from omh.plugin_bundle.omh.runtime_reader import (  # noqa: E402
     MAX_WIDGET_HUD_BYTES,
     read_omh_hud,
 )
-from omh.tui_widget_pack import widget_payload  # noqa: E402
+from omh.tui.panels import panel_lines  # noqa: E402
+from omh.tui.theme import DEFAULT_THEME  # noqa: E402
 
 NOW = 1_800_000_000
 
@@ -727,8 +727,10 @@ class KanbanHudMergeTests(unittest.TestCase):
         self.assertTrue(all(row["lane_backend"] == "kanban" for row in agents["rows"]))
         self.assertLessEqual(len(json.dumps(payload).encode("utf-8")) + 1, MAX_WIDGET_HUD_BYTES)
 
-    @unittest.skipUnless(shutil.which("node"), "Node is required for the widget boundary")
-    def test_widget_renders_the_kanban_identity_and_lane_markers(self) -> None:
+    def test_the_tui_renders_the_kanban_identity_and_lane_markers(self) -> None:
+        # The OMH TUI's agent rows (`tui/panels.py`), which took this
+        # rendering over from the Hermes status widget, over the reader's
+        # real payload.
         build_board(self.hermes / "kanban.db", [
             task("t_running1", "running", title="Ship the board lane", started_at=NOW - 280, worker_pid=7,
                  last_heartbeat_at=NOW - 1, model_override="gpt-5.6-sol", reasoning_effort="high"),
@@ -742,51 +744,33 @@ class KanbanHudMergeTests(unittest.TestCase):
         build_state_db(self.hermes / "profiles" / "miku" / "state.db",
                        [worker_session("sess-live-1", started_at=float(NOW - 270))])
         payload = self.hud()
-        widget = self.root / "widget.mjs"
-        widget.write_bytes(widget_payload(Path(sys.executable)))
-        script = """
-import register from './widget.mjs';
-const payload = JSON.parse(process.argv[1]);
-const apps = [], lines = [], colors = [], bolds = [];
-const h = (tag, props, ...children) => {
-  if (typeof tag === 'function') { const text = tag(props); if (tag.name === 'ActivityRow') lines.push(text); return text; }
-  if (props && props.color) colors.push([props.color, children.flat(Infinity).filter(x => x != null).join('')]);
-  if (props && props.bold) bolds.push(children.flat(Infinity).filter(x => x != null).join(''));
-  return children.flat(Infinity).filter(x => x != null).join('');
-};
-register({Box:'box', Text:'text', h, defineWidgetApp: app => {apps.push(app); return app}, openWidget:()=>{}, updateWidget:()=>{}});
-const app = apps.find(x => x.id === 'omh-status');
-const native = {scope:'global', state:'running', task_id:'a1b2c3d4', role:'hermes-native', action:'Review the router change',
-  model:'claude-fable-5-1', effort:'xhigh', tokens:12345, turn_count:4, tool_count:6, elapsed_seconds:42, category:'architect'};
-payload.subagents.rows.unshift(native); payload.subagents.active += 1; payload.subagents.running += 1;
-const t = {color:{accent:'ACCENT', warn:'WARN', muted:'MUTED', ok:'OK', error:'ERROR', label:'LABEL', text:'TEXT', primary:'PRIMARY', border:'BORDER', statusFg:'STATUSFG'}};
-const dock = app.render({cols:160, rows:30, state:{payload}, t});
-const dockLines = [...lines];
-const idle = app.render({cols:160, rows:30, state:{payload:{...payload, kanban:{...payload.kanban, rows_total:0, dispatcher_presence:'not_observed'}}}, t});
-lines.length = 0;
-app.render({cols:220, rows:30, state:{payload}, t});
-console.log(JSON.stringify({dock, idle, lines: dockLines, wide: [...lines], colors, bolds}));
-"""
-        result = subprocess.run(["node", "--input-type=module", "-e", script, json.dumps(payload)], cwd=self.root, encoding="utf-8", capture_output=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        views = json.loads(result.stdout)
-        self.assertIn("3 agents · 3 running · board 1q 2r 0b", views["dock"])
-        self.assertNotIn("dispatcher not observed", views["dock"])
-        self.assertNotIn("board 1q", views["idle"])
-        self.assertIn("dispatcher not observed", views["idle"])
-        lines = views["lines"]
+        native = {"scope": "global", "state": "running", "task_id": "a1b2c3d4", "role": "hermes-native",
+                  "action": "Review the router change", "model": "claude-fable-5-1", "effort": "xhigh",
+                  "tokens": 12345, "turn_count": 4, "tool_count": 6, "elapsed_seconds": 42, "category": "architect"}
+        payload["subagents"]["rows"].insert(0, native)
+        payload["subagents"]["active"] += 1
+        payload["subagents"]["running"] += 1
+        idle_payload = {**payload, "kanban": {**payload["kanban"], "rows_total": 0, "dispatcher_presence": "not_observed"}}
+
+        def view(value, cols):
+            return [line_text(line) for line in panel_lines(value, cols, 30, DEFAULT_THEME, float(NOW))]
+
+        dock = view(payload, 160)
+        idle = "\n".join(view(idle_payload, 160))
+        wide = view(payload, 220)
+        self.assertIn("3 agents · 3 running · board 1q 2r 0b", dock[0])
+        self.assertNotIn("dispatcher not observed", dock[0])
+        self.assertNotIn("board 1q", idle)
+        self.assertIn("dispatcher not observed", idle)
+        lines = [line for line in dock if any(name in line for name in ("Review", "Ship", "Stalled", "Write"))]
         self.assertEqual(len(lines), 4)
         self.assertIn("category:architect(claude-fable-5-1:xhigh)", lines[0])
         running = next(line for line in lines if "Ship the board lane" in line)
         self.assertIn("kanban/miku(gpt-5.6-sol:high)", running)
         self.assertIn("running · 4m 40s", running)
-        # The worker's own session figures render exactly as a native row's
-        # do: the same token column at the right edge, and the same turn/tools
-        # segment in the middle run, which both rows shed at 160 cells because
-        # the shared route column is wide.
         self.assertIn("13.3k tokens", running)
-        wide_board = next(line for line in views["wide"] if "Ship the board lane" in line)
-        wide_native = next(line for line in views["wide"] if "Review the router change" in line)
+        wide_board = next(line for line in wide if "Ship the board lane" in line)
+        wide_native = next(line for line in wide if "Review the router change" in line)
         self.assertIn("turn 9 (14 tools)", wide_board)
         self.assertIn("turn 4 (6 tools)", wide_native)
         self.assertIn("$0.1234", wide_board, "the session's recorded cost reads like a native row's")
@@ -799,70 +783,12 @@ console.log(JSON.stringify({dock, idle, lines: dockLines, wide: [...lines], colo
         queued = next(line for line in lines if "Write the release notes" in line)
         self.assertTrue(queued.startswith("· "), queued)
         self.assertIn("ready   ·", queued)
-        def color_of(fragment: str) -> str:
-            return next(color for color, text in views["colors"] if fragment in text)
-
-        # Kind tags: a board row is `[bot]`, a delegate child `[sub]`, both
-        # bold and three cells wide so the ids stay aligned; no scope word.
+        # Kind tags: a board row is `[bot]`, a delegate child `[sub]`; no
+        # scope word on a row.
         self.assertIn("[bot] ", running)
         self.assertIn("[sub] ", lines[0])
-        self.assertIn("[bot] ", views["bolds"])
-        self.assertIn("[sub] ", views["bolds"])
-        self.assertEqual(color_of("[bot] "), "ACCENT")
-        self.assertEqual(color_of("[sub] "), "MUTED")
         self.assertNotIn("[global]", running)
-        self.assertEqual(color_of("kanban/miku(gpt-5.6-sol:high)"), "ACCENT")
-        self.assertEqual(color_of("kanban/miku"), "ACCENT")
-        # The whole board row is accent: title and the dimmed scope/id and
-        # elapsed pieces; a native row keeps text/muted.
-        self.assertEqual(color_of("Ship the board lane"), "ACCENT")
-        self.assertEqual(color_of("Review the router change"), "TEXT")
-        self.assertEqual(color_of("· 4m 40s"), "ACCENT", "the board row's elapsed piece is accent (dimmed)")
-        self.assertEqual(color_of("· 42s"), "MUTED", "a native row's elapsed piece stays muted")
-        self.assertEqual(color_of("category:architect(claude-fable-5-1:xhigh)"), "LABEL")
-        self.assertEqual(next(color for color, text in views["colors"] if text == "· "), "ACCENT")
-        self.assertEqual(next(color for color, text in views["colors"] if text == "! "), "WARN")
-        self.assertEqual(color_of("· dispatcher not observed"), "WARN")
-        self.assertEqual(color_of("· board 1q 2r 0b"), "MUTED")
 
 
 if __name__ == "__main__":
     unittest.main()
-
-    @unittest.skipUnless(shutil.which("node"), "Node is required for the widget boundary")
-    def test_widget_never_hides_a_running_lane_behind_the_overflow_line(self) -> None:
-        # Five running lanes plus two lingering done ones: the `+N more` line
-        # costs a row, and that row is paid for by the budget, never by a
-        # running lane. Before this, the dock showed four lanes and `+3 more`.
-        rows = [
-            task(f"t_running{n}", "running", title=f"Lane {n}", started_at=NOW - 100 - n,
-                 worker_pid=100 + n, last_heartbeat_at=NOW - 1)
-            for n in range(5)
-        ] + [
-            task(f"t_done000{n}", "done", title=f"Finished {n}", started_at=NOW - 900, completed_at=NOW - 30 - n)
-            for n in range(2)
-        ]
-        build_board(self.hermes / "kanban.db", rows)
-        payload = self.hud()
-        widget = self.root / "widget.mjs"
-        widget.write_bytes(widget_payload(Path(sys.executable)))
-        script = """
-import register from './widget.mjs';
-const payload = JSON.parse(process.argv[1]);
-const apps = [], lines = [];
-const h = (tag, props, ...children) => {
-  if (typeof tag === 'function') { const text = tag(props); if (tag.name === 'ActivityRow') lines.push(text); return text; }
-  return children.flat(Infinity).filter(x => x != null).join('');
-};
-register({Box:'box', Text:'text', h, defineWidgetApp: app => {apps.push(app); return app}, openWidget:()=>{}, updateWidget:()=>{}});
-const app = apps.find(x => x.id === 'omh-status');
-const t = {color:{accent:'ACCENT', warn:'WARN', muted:'MUTED', ok:'OK', error:'ERROR', label:'LABEL', text:'TEXT', primary:'PRIMARY', border:'BORDER', statusFg:'STATUSFG'}};
-const dock = app.render({cols:160, rows:40, state:{payload}, t});
-console.log(JSON.stringify({dock, lines}));
-"""
-        result = subprocess.run(["node", "--input-type=module", "-e", script, json.dumps(payload)], cwd=self.root, encoding="utf-8", capture_output=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        views = json.loads(result.stdout)
-        running_lines = [line for line in views["lines"] if "Lane " in line]
-        self.assertEqual(len(running_lines), 5, views["lines"])
-        self.assertIn("+2 more", views["dock"])

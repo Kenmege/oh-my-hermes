@@ -34,8 +34,8 @@ process (a gateway serving several profiles, Desktop `serve`) refuses to load
 the plugin for every profile that names no store (#2037). A value already
 there is never replaced. A bot profile that already names a store, through
 this setting or through `OMH_HOME` in its own `.env`, keeps it untouched; a
-profile that names neither is given X too, because its managed skills,
-widget and skin come from X.
+profile that names neither is given X too, because its managed skills come
+from X.
 If a profile's `.env` names `OMH_HOME` after OMH gave it X, the setting would
 outrank that choice, so setup and update remove it while it still names the
 value OMH recorded writing, and say so per profile; a value OMH did not write,
@@ -68,7 +68,7 @@ The copied plugin and package use the same uncached root resolver, in this order
    values are refused before I/O. Use an absolute profile setting for bindings
    supplied only through an ad hoc in-memory secret mapping.
 4. For standalone/launch-owner operation -- the independent `omh` CLI and the
-   TUI widget's reader spawn, which load no Hermes module -- the same setting
+   OMH TUI's HUD reader, which load no Hermes module -- the same setting
    read from the Hermes home's own `config.yaml` by text scan (the user file;
    the managed overlay the native lane validates against is not reachable
    there), then the legacy `OMH_HOME`, then `~/.omh`. The scan follows the
@@ -82,9 +82,9 @@ The copied plugin and package use the same uncached root resolver, in this order
    `$HOME` -- this lane has no secret scope to verify a variable against, so
    it will not read one out of the process environment. Each refusal names
    `--omh-home` as the way to run the tool that reads the file. So
-   `omh model-chains --hermes-home ~/.hermes/profiles/<name>` and
-   `/omh-model` inside that profile's TUI read and write the store the
-   profile's own plugin dispatches from. The CLI has no Hermes dependency and
+   `omh model-chains --hermes-home ~/.hermes/profiles/<name>`, and
+   `/omh-model` in the OMH TUI `omh --hermes-home ~/.hermes/profiles/<name>`
+   opens, read and write the store the profile's own plugin dispatches from. The CLI has no Hermes dependency and
    retains its explicit `--omh-home`, `--hermes-home`, and `--scope project`
    behavior; an explicit `--omh-home` wins over the setting.
 
@@ -151,7 +151,8 @@ reinitialization with another Hermes home. Project recall uses the host's
 logical cwd rather than a multiplex launch repository; absent/deleted logical
 context selects no project. Evidence subprocesses receive only the existing
 minimal non-secret environment plus the resolved OMH/Hermes homes. A separately
-launched TUI widget must likewise receive its owning process's home pair;
+launched process such as the OMH TUI must likewise receive its owning process's
+home pair;
 Python context scopes do not cross process boundaries.
 
 Runtime homes are canonicalized (including symlinks) for store identity and
@@ -487,14 +488,17 @@ of opening the model picker. The command list is read again for each session
 the TUI opens, so a project's own skills are listed in its workspace, and
 completion also matches a part of a name: `/uml` finds `/omh-codebase-uml`.
 
-When the OMH TUI cannot start — Windows, a terminal without `termios` or with
-`TERM=dumb`, `OMH_NO_TUI=1`, no Node for Hermes' launcher, or a Hermes whose
-gateway no longer speaks what the TUI was built for — it says why and `omh`
-opens Hermes' own terminal instead, so you lose the OMH screen, never the
-session. `omh` reopens Hermes' terminal only on the TUI's own request (exit
-75 together with a file `omh` named for that launch and removes afterwards),
-so a 75 Hermes returns for a reason of its own ends the launch like any other
-exit code. If the gateway stops accepting a method or a key mid-session, the
+When the OMH TUI cannot start, `omh` says why in one line on stderr and opens
+Hermes instead, so you lose the OMH screen, never the session. For a reason
+that is the OMH TUI's own — Windows or another terminal without `termios`,
+its frontend missing, or a Hermes whose gateway no longer speaks what the TUI
+was built for — that is Hermes' own TUI (`hermes --tui`). With `TERM=dumb`,
+with `OMH_NO_TUI=1`, or with no Node for Hermes' launcher (Hermes' TUI needs
+it too), it is plain `hermes`, which opens what your `display.interface`
+chooses. `omh` reopens Hermes' terminal only
+on the TUI's own request (exit 75 together with a file `omh` named for that
+launch and removes afterwards), so a 75 Hermes returns for a reason of its
+own ends the launch like any other exit code. If the gateway stops accepting a method or a key mid-session, the
 TUI leaves with the command that reopens the same session in `hermes`; on the
 two calls a session does without, reading the command list and the
 `/reload-skills` rescan, it says so instead and the session goes on. A
@@ -515,8 +519,20 @@ what OMH's own HUD reader and model-chain picker write under the OMH home
 (the HUD's fan-out cache, and the chains `/omh-model` saves), and an empty
 fallback marker at the path `omh` named, which `omh` removes.
 
-Bare `hermes` is unchanged: it opens Hermes' own terminal, which still shows
-the OMH skin and status widget when the branded-TUI choice below is active.
+The OMH TUI opens with the theme `omh theme use` saved under the OMH home
+(see [TUI Themes](#tui-themes)); `/theme <name>` switches the open session only.
+With `omh --profile <name>` and no `--omh-home`, the OMH home the TUI gets is
+the store that profile's config names in
+`plugins.entries.omh.settings.omh_home`, when it names one, so it opens with
+that profile's theme and its HUD and `/omh-model` read the profile's store.
+
+Bare `hermes` is stock Hermes. OMH writes none of its display keys and
+installs nothing into its terminal, so it opens whatever your Hermes config
+chooses — the classic REPL unless you set `display.interface` — with no OMH
+skin and no HUD. The OMH plugin is still loaded there, so OMH's tools, hooks,
+memory and skills work in it; the HUD and `/omh-model` are the OMH TUI's.
+An install made before this is migrated by the next `omh setup` or
+`omh update`: see [Returning `hermes` to stock Hermes](#returning-hermes-to-stock-hermes).
 
 ### Keep every installed layer current
 
@@ -533,11 +549,10 @@ same flow through their isolated managed virtual environment. After the command
 package succeeds, the re-entered command refreshes managed skills, an already
 installed plugin bundle, and existing Hermes registration.
 
-On a machine that never completed `omh setup`, `omh update` bootstraps the
-full OMH TUI surface instead of skipping it: it installs the plugin bundle
-(which carries the Hermes Desktop half), registers and enables OMH in the
-Hermes config (activating the skin), installs the TUI widget, and seeds
-`~/.omh/routing/model-chains.json` — update and setup converge on the same
+On a machine that never completed `omh setup`, `omh update` bootstraps OMH
+instead of skipping it: it installs the plugin bundle (which carries the
+Hermes Desktop half), registers and enables OMH in the Hermes config, and
+seeds `~/.omh/routing/model-chains.json` — update and setup converge on the same
 machine state. One deliberate opt-out is honored: after
 `omh uninstall --registration-only` the plugin directory stays in place, so
 update never re-registers a machine whose owner removed the registration on
@@ -920,7 +935,7 @@ Chain customization is a config edit, not a source edit — bare
 one row per category, up/down to move, left/right to step the head model
 through the aliases chains name today, `-`/`+` to step its effort, `d` to
 restore the shipped default, Enter to save and `q` to leave the file alone;
-inside the Modern TUI, `/omh-model` opens the same picker as a modal over the
+inside the OMH TUI, `/omh-model` opens the same picker over the
 transcript (Hermes' own `/model` picks the session model and keeps its name;
 the two edit different things); `omh model-chains show` prints the current
 per-category state, `omh model-chains interview` walks every category with
@@ -1501,29 +1516,15 @@ OMH's setup footprint is intentionally bounded:
 - It enables the managed `omh` plugin and selects the OMH memory provider only
   when the corresponding provider slot is free. Existing foreign ownership is
   preserved.
-- It defaults `display.interface: tui` whenever the user has not chosen an
-  interface — on fresh configs and on existing configs alike, so upgraders
-  reach the installed HUD without knowing about `hermes --tui`.
-- Interactive `omh setup` and `omh update` offer a default-Yes branded-TUI
-  choice when the canonical config is not already
-  `display.interface: tui` plus `display.skin: omh`. Accepting it (or passing
-  `--yes`) sets those two and a collapsed `display.sections`, so bare `hermes`
-  opens Hermes' Modern TUI wearing the OMH skin and status widget and a long
-  run does not bury the conversation. (Bare `omh` opens the OMH TUI; it lands
-  on that same Hermes terminal only when the OMH TUI cannot start.) An already-active install does not ask, so an install
-  branded before `display.sections` joined the bundle keeps its current
-  sections until it runs with `--yes`. No or `--no-omh-tui` preserves the
-  current values. JSON suppresses
-  prompting; explicit canonical values remain unchanged unless `--yes`
-  supplies consent. Dry-run never persists a previewed change.
-  Noncanonical/quoted YAML shapes never prompt or change, even with `--yes`.
-  Uninstall does not remove an accepted display selection.
-- `display.sections` is narrower than the other two keys of that bundle. The
-  two scalars may be migrated off a stock value under consent; each section
-  key is unset-only, so an existing `display.sections.tools: expanded` is
-  preserved while `thinking` and `subagents` are still collapsed. `collapsed`
-  is not `hidden`: counts stay visible and a click expands. Nothing is written
-  without the confirmation or `--yes`.
+- It writes no display key and installs nothing into Hermes' terminal: bare
+  `hermes` is stock Hermes, and bare `omh` opens the OMH TUI. An install made
+  by an earlier version, which wrote `display.interface`, `display.skin` and
+  `display.sections` and installed a status widget and skin files, is migrated
+  once per config by the next `omh setup` or `omh update`, primary home and
+  every bot profile alike: see
+  [Returning `hermes` to stock Hermes](#returning-hermes-to-stock-hermes).
+  `--no-omh-tui` is accepted and does nothing; setup and update ask no
+  display question.
 - It adds `auxiliary.compression.fallback_chain` when the config pins
   compression to a single provider and already lists other fallback providers.
   Without a compression fallback, one unreachable endpoint leaves a session
@@ -1538,14 +1539,87 @@ OMH's setup footprint is intentionally bounded:
 
 The top-level `changed` value in `omh setup --json` is an aggregate: it is true
 when any managed setup field changes, including skill registration, compression
-fallbacks, plugin enablement, the fresh-config TUI default, or memory-provider
+fallbacks, plugin enablement, the display release, or memory-provider
 selection. Model-alias writes remain a separate preview-and-approval step.
+
+### Returning hermes to stock Hermes
+
+Earlier versions made bare `hermes` look like OMH: setup and update wrote
+`display.interface: tui`, an OMH skin in `display.skin` and collapsed
+`display.sections`, and installed the OMH status widget
+(`tui-widgets/omh-status.mjs`) and the four skin files (`skins/omh*.yaml`)
+into the Hermes home. The next `omh setup` or `omh update` takes that back,
+in the same config write that carries the registration forward, once per
+Hermes home (the primary and every bot profile), with the rules uninstall
+uses:
+
+| Case | Before | After |
+| --- | --- | --- |
+| A display key OMH's record says it wrote, unchanged since | `display.interface: tui`, `display.skin: omh`, `display.sections.*: collapsed` | removed |
+| A value consent replaced | you had `display.interface: cli`, OMH wrote `tui` | `cli` put back |
+| A recorded value you changed since | `display.interface: cli` after OMH wrote `tui`; `tools: expanded` | kept |
+| An OMH skin, with or without a record (`omh theme use` set one without one) | `display.skin: omh-crimson` | `crimson` saved to `<omh_home>/tui/theme.json` (unless a theme is already saved there, which the output then names), then the key removed |
+| The default skin, with or without a record | `display.skin: omh` | removed; no theme is saved: an empty store opens with the same sky, and a saved one would beat a theme a bot profile sharing the store picked |
+| A display key with no record (an install older than the record) | `display.interface: tui`, collapsed sections | kept: nothing says OMH wrote them |
+| Your own skin | `display.skin: ares` | kept |
+| A key OMH's record names, or a skin no record names with a value that reads as an OMH name (any of its values, when it is set twice), in a YAML shape the editor does not handle (a quoted key or an anchor anywhere in the file, a flow or duplicate `display`, a dotted key, a key set twice, a tag, a BOM, including one right before a first-line `display:`). A key OMH's record names that is set twice never reads as yours: the reader takes the first value, and Hermes may resolve another | `display.skin: !!str omh-crimson` with a record; `display.skin: omh-crimson` beside a quoted key; `skin: ares` then `skin: omh-crimson` | left as it is and named in the output; the release is not recorded, so the next setup or update tries again |
+| Any other value in such a shape: no record names it, and no value of it reads as an OMH skin name, including an OMH name the reader cannot see (a flow `display`, a tag or anchor on the value) | `display: {skin: mytheme}`; `display: {skin: omh-crimson}` with no record | kept, and the release is recorded; while the value cannot be read, no theme is carried and every OMH skin file stays, and the output does not say bare `hermes` opens stock Hermes |
+| A `display:` or `display.sections:` OMH created | emptied by the release | removed |
+| The status widget OMH installed | `omh-status.mjs` and its manifest | removed (a manifest left without its widget goes too) |
+| A widget the manifest cannot vouch for, or a symlinked `tui-widgets/` or `skins/` holding an OMH file | — | kept, named once, in the output of the pass that records the release |
+| A symlinked `tui-widgets/` or `skins/` with no file under an OMH name (a dotfiles directory) | — | untouched, nothing printed |
+| Skin files OMH installed (by manifest, or byte-identical to the shipped file) | `omh*.yaml` and the manifest | removed, except the one `display.skin` still names, or every one while that value cannot be read (a flow, duplicate or dotted `display`, a second `skin` in the block, a tag or anchor on the value); a quoted key, an anchor or a BOM elsewhere in the file does not stop the read |
+| A skin file you edited | — | kept with its manifest record, named once, in the output of the pass that records the release |
+| Everything else OMH writes: skills, `plugins.enabled`, `memory.provider`, compression, `settings.omh_home` | — | untouched |
+
+The theme for a bot profile whose `plugins.entries.omh.settings.omh_home`
+names its own store is saved there; one that names none shares the primary
+home's store. A profile that names its store only in its `.env` (`OMH_HOME`),
+or in a setting shape OMH's reader refuses (a flow `entries: {omh: ...}`, a
+`<<:` merge key, a tab), gets none carried. That includes a profile whose
+`.env` named a store after setup wrote the primary's into its setting: the
+same pass takes that setting back. OMH reads the names in a `.env`,
+never the values, so it cannot tell which store that is, and the output
+gives the `omh --omh-home <that home> theme use <name>` that saves it there. One
+store holds one theme, so the first home on the run that
+carries one keeps it (the primary goes first) and the output names any
+other home's skin it did not carry. When the theme cannot be saved (the
+store is not writable), that home's release waits: its display keys and
+files stay, the output says why, and the next setup or update tries again,
+while the rest of the pass, registration included, lands as usual.
+
+It happens once, on the first pass that leaves no key in a shape the editor
+refused. That pass records `display_released_at` beside the write record in
+`$OMH_HOME/runtime/state.json`, and from then on no display value
+in that config is read as OMH's: a skin you pick for Hermes later, OMH
+palette or not, stays through every update, and uninstall leaves it too.
+So does a skin file you put back for it: after the release, setup, update
+and uninstall count a skin file as OMH's only by the manifest record the
+release left, so a copy of a shipped file is yours.
+The pass that does something says so, per home:
+
+```text
+  Hermes display: bare `hermes` opens stock Hermes; bare `omh` opens the OMH TUI.
+    released display.interface, display.sections, display.skin
+    removed the OMH status widget, omh.yaml, omh-amber.yaml, omh-crimson.yaml, omh-mono.yaml
+    saved OMH theme crimson for the OMH TUI; `omh theme use <name>` changes it
+```
+
+While an OMH skin file stays because `display.skin` names it, or may name
+it, the first line says that instead of naming stock Hermes.
+`--dry-run` previews it and writes nothing. A home that is not registered
+(one `--skip-apply` left that way, or a home or bot profile that opted out
+with `omh uninstall --registration-only`) keeps its config as it is, since
+registering is what carries the release. `omh update` still removes the
+widget and the skin files its manifest records there, keeping the skin its
+config names, and so does `omh setup` for such a bot profile; for the
+primary home, `omh setup` registers it again and runs the release in the
+same write.
 
 ### TUI Themes
 
-OMH ships four palettes for the branded TUI. `omh setup` and `omh update`
-install all four into `$HERMES_HOME/skins/`, so switching is instant and
-offline — nothing is fetched when a theme is selected.
+OMH ships four palettes for the OMH TUI. They are part of the package, so
+switching is instant and offline, and nothing is installed into Hermes.
 
 | Theme | Skin name | Look |
 | --- | --- | --- |
@@ -1559,102 +1633,33 @@ omh theme                    # arrow-key picker with a live colour preview
 omh theme list               # plain listing, always (the scriptable surface)
 omh theme use crimson        # select one directly (also accepts omh-crimson)
 omh theme use crimson --dry-run
-omh theme status             # active skin, ownership, managed files on disk
-omh theme repair             # report unmanaged theme files; writes nothing
-omh theme repair sky         # adopt one back under OMH management
-omh theme repair --all --dry-run
+omh theme status             # the active theme, which source decided it, and where it is saved
 ```
 
 Bare `omh theme` opens a picker: up/down arrows (or `j`/`k`) move the cursor,
 each theme paints a sample of its own palette as you pass over it, Enter
-applies the highlighted theme, and `q`, Escape, or Ctrl-C cancels without
-writing anything. It needs a terminal on both ends — with `--json`, a pipe,
+saves the highlighted theme, and `q`, Escape, or Ctrl-C cancels without
+saving anything. It needs a terminal on both ends — with `--json`, a pipe,
 `TERM=dumb`, `OMH_NO_TUI=1`, or on Windows (no `termios`), bare `omh theme`
 prints the same plain listing `omh theme list` prints. `NO_COLOR` keeps the
 picker but drops every escape sequence, naming the hex values as text instead.
 
 Rules worth knowing:
 
-- **Selection is one config key.** `omh theme use` writes `display.skin` in the
-  Hermes config and nothing else. It never patches Hermes.
-- **A theme applies on the next Hermes start.** `omh` runs `hermes` as a child
-  process and Hermes reads its skin at startup, so a running session keeps the
-  look it opened with. Restart it.
-- **An explicit choice survives updates.** `omh theme use` is the consent, and
-  every later `omh setup` / `omh update` leaves the chosen theme alone — the
-  default is written only when `display.skin` is unset. A foreign skin (say
-  `ares`) is preserved the same way and reported as yours, not replaced.
-- **A hand-edited theme file is yours.** Each of the four skin YAMLs is tracked
-  in its own manifest record, so editing `omh-mono.yaml` keeps that file
-  untouched forever without stopping the other three from being refreshed.
-  `omh theme status` reports such a file as `unmanaged`.
-- **A stale manifest heals itself.** OMH owns a theme file when the manifest
-  record matches it *or* when its bytes are identical to the currently shipped
-  template. The second proof exists because a manifest can fall behind the file
-  it describes — an older update refreshed a skin without refreshing its
-  record — and record-only ownership would then read OMH's own file as
-  hand-edited and stop updating it forever. Adopting our own bytes cannot
-  destroy anything you wrote, because overwriting them is a no-op. A file
-  matching neither proof stays `unmanaged`.
-
-#### Why a theme file can be `unmanaged`
-
-`omh theme status` reports each theme file as `managed`, `unmanaged`, or
-`missing`. `unmanaged` means OMH cannot prove it wrote that file, so it will
-never overwrite it — and therefore never update it either. Two very different
-situations end up there:
-
-1. **You edited it, or wrote your own.** Working as designed. The file is
-   yours, it keeps winning over every future release, and nothing needs fixing.
-2. **It is OMH's file, stranded.** The manifest record went stale at some point
-   *and* the shipped template has since changed, so the file now matches
-   neither ownership proof. It is ours in origin but indistinguishable on disk
-   from case 1 — and it is frozen on an old palette forever, because no later
-   release can reach a file OMH will not touch.
-
-Nothing on disk separates those two cases, which is why OMH cannot fix case 2
-on its own. `omh theme repair` resolves it by asking you:
-
-```sh
-omh theme repair                  # report only; safe and idempotent, writes nothing
-omh theme repair sky              # adopt sky: overwrite it with the shipped file and record it
-omh theme repair --all            # adopt every unmanaged theme file
-omh theme repair sky --dry-run    # show exactly what adopting would do, without doing it
-omh theme repair --json           # machine-readable payload (omh_theme_repair/v1)
-```
-
-The bare form and `--dry-run` never write. Both print, per file, the
-before/after `sha256` and the palette tokens that would change, so you see what
-you are accepting before anything is destructive:
-
-```text
-OMH theme repair
-  Skins directory: /Users/you/.hermes/skins
-Theme files
-  sky      omh.yaml          - unmanaged; NOT adopted (name it, or pass --all, to accept)
-      sha256 e99be0e84830b659 -> 122577bf7c5080e3
-      ui_label: #7FDBFF -> #9FE8FF
-  amber    omh-amber.yaml    - managed; untouched
-  crimson  omh-crimson.yaml  - managed; untouched
-  mono     omh-mono.yaml     - managed; untouched
-Next
-  Nothing was written. Accept with `omh theme repair <name>` or `omh theme repair --all`.
-```
-
-Naming a theme (or passing `--all`) IS the consent — there is no hash that can
-give it, which is why the command asks for a name instead. Rules:
-
-- **Nothing repairs automatically.** `omh setup`, `omh update`, and
-  `omh theme use` never call the repair path. A skin you wrote is never
-  silently overwritten.
-- **Already-`managed` files are untouched** and reported as such, whether or
-  not you named them.
-- **A `missing` file is installed when named**, matching what `omh setup` and
-  `omh update` already do for a theme file that is not there.
-- **Repair is reversible the usual way.** A repaired file is a managed file, so
-  `omh uninstall --all` takes it away exactly like an installed one.
-- **After a repair, updates flow again.** The file is recorded in the manifest,
-  so the next release's template change lands on it normally.
+- **The choice lives under the OMH home.** `omh theme use` writes
+  `<omh_home>/tui/theme.json` and nothing else; it never touches Hermes'
+  config or the Hermes home. A bot profile whose
+  `plugins.entries.omh.settings.omh_home` names its own store keeps its own
+  theme there: `omh --hermes-home ~/.hermes/profiles/<name> theme use mono`.
+- **The OMH TUI reads it when it opens,** in this order: the saved theme;
+  else an OMH palette Hermes' `display.skin` names (an install the release
+  above has not reached yet, or a palette you picked for Hermes yourself);
+  else `sky`. `omh theme status` says which of the three decided, and the
+  `omh model-chains` picker paints with the same theme. `/theme <name>`
+  inside the OMH TUI switches the open session only; `omh theme use` keeps
+  it.
+- **Bare `hermes` keeps its own skin.** `display.skin` is yours; OMH reads it
+  only for the fallback above and never writes it.
 
 ## Bot Profiles
 
@@ -1667,8 +1672,9 @@ zero OMH skills while the default chat has the full set.
 `omh setup` and `omh update` sync every profile automatically:
 
 - an already-registered profile is refreshed to the running version — its
-  plugin bundle, TUI widget, and skin, under the same manifest-checked
-  refusals the primary home gets;
+  plugin bundle, under the same manifest-checked refusals the primary home
+  gets, and the same display release
+  ([Returning `hermes` to stock Hermes](#returning-hermes-to-stock-hermes));
 - a profile with no OMH bundle at all — including a bot created after
   install — gets the full bootstrap on the next `omh setup` or `omh update`;
 - a deliberately unregistered profile (see below) is left alone.
@@ -1714,9 +1720,13 @@ directory mtime, as safe to delete.
 `omh uninstall` is symmetric with the sync. A full uninstall (`omh uninstall`,
 `--all`, or `--purge`) clears every profile's registration, reverses the same
 `config.yaml` keys the primary home's reversal takes back, and removes its
-managed artifacts — the plugin bundle, the TUI widget, and the skin — through
-the same manifest checks the primary home gets: a profile directory OMH cannot
-prove it owns is kept and reported, never deleted blind. `--registration-only`
+managed artifacts — the plugin bundle, and any status widget or skin files an
+earlier version left — through the same manifest checks the primary home gets: a profile directory OMH cannot
+prove it owns is kept and reported, never deleted blind. The skin file
+`display.skin` still names stays, after the release only a manifest record
+proves a skin file OMH's (as on update), and a widget or skin directory OMH
+must refuse, such as a symlinked one, is kept and named rather than ending
+the uninstall. `--registration-only`
 removes every OMH-managed entry from each profile — the same directories the
 sync reads, so nothing is left behind for the next update to score as still
 registered — while keeping their plugin directories, which is exactly the
@@ -1747,14 +1757,17 @@ state.
 OMH workflows are skill triggers, not Hermes slash commands, so they do not
 appear in the `/` autocomplete — in any chat, bot or default. Invoke them as
 `$ulw …`, `$plan …`, `$research …` (or plain phrasings like `ulw work …`),
-and list what is installed with `/skills`. The one `/` entry OMH adds is
-`/omh-model`, the per-category model-chain picker the Modern-TUI widget
-registers as a modal app; it exists only in the Modern TUI, where the widget
-loads. In a bot's TUI it edits that bot's own store when the profile names one
-(`plugins.entries.omh.settings.omh_home`), the same file the bot's
-delegations read, and its footer names the file it is editing.
+and list what is installed with `/skills`. OMH adds no `/` entry to bare
+`hermes`. In the OMH TUI that bare `omh` opens, `/omh-model` is the
+per-category model-chain picker, the same one `omh model-chains` opens in
+any terminal; it edits the store the `omh` that opened it resolved, so
+`omh --hermes-home ~/.hermes/profiles/<name>` reaches that bot's own store
+when the profile names one (`plugins.entries.omh.settings.omh_home`), the
+same file the bot's delegations read, and it says which file it saved to.
+Earlier versions registered `/omh-model` in Hermes' Modern TUI through the
+status widget; it left bare `hermes` with the widget.
 
-![/omh-model in the Modern TUI: the same rows and keys as the CLI picker, over the transcript](../assets/omh-model-tui.png)
+![The /omh-model chain picker: the same rows and keys as the CLI picker, over the transcript](../assets/omh-model-tui.png)
 
 The curl installer intentionally stops before setup. It installs the isolated
 command package and `omh` executable only. `omh setup` is the explicit,
@@ -1856,8 +1869,8 @@ Hermes plugin bridge in addition to the skill pack:
 That installs `~/.hermes/plugins/omh` with deterministic workflow
 recommendation, metadata-only HUD/status/role support, and a bounded evidence
 probe.
-`omh hud` prints the same compact status line a Hermes TUI or plugin surface can
-render. It shows only operationally useful status: OMH version, plugin
+`omh hud` prints the same compact status line the OMH TUI or a plugin surface
+can render. It shows only operationally useful status: OMH version, plugin
 readiness, target topology, the coding-agent segment described below, and
 evidence state. Skill counts, setup inventory, token metadata, and deep
 diagnostics are left to `omh doctor`, `omh_status`, and machine-readable HUD
@@ -1865,10 +1878,10 @@ JSON.
 
 The HUD payload also carries a metadata-only plan todo list. When a todo is
 declared — by Hermes through the `omh_todo` plugin tool, or by an agent or
-operator through `omh runtime todo set` — the modern Hermes TUI
-(`hermes --tui`) renders it as a compact checklist above the prompt input,
-with the status and activity rows below the input. The classic Python TUI
-does not load TUI widget files, so this panel is a modern-TUI-only surface.
+operator through `omh runtime todo set` — the OMH TUI that bare `omh` opens
+renders it as a compact checklist above the composer, under the agent rows,
+and the Hermes Desktop pane draws the same payload. Bare `hermes` draws
+neither.
 `omh runtime todo show` prints the todo projection the HUD payload carries
 (`todo` plus `display.todo_lines`), and `omh runtime todo clear` removes it. Todo items are plan declarations, never execution, review, CI, or
 merge evidence; an all-done list collapses to a single header line and a list
@@ -1888,14 +1901,13 @@ alone sets item states. A planning checklist awaiting acceptance and a
 it goes stale; a native write replaces none of them, `omh_todo action=clear`
 is how a session leaves one for unrelated work (a recorded `deferred_reason`
 only pauses it), and the session's next turn is told once when a `todo_list`
-write was not mirrored and the plan is still held and not deferred. Hermes draws a `todo_list` itself in the modern TUI
-(under the latest message, then archived into the transcript) and in Hermes
-Desktop (the composer's status stack), so for a plan `todo_list` holds the
-OMH panel above the prompt and the Desktop pane do not repeat its items: they
-show a compact "in todo_list" plan summary only when OMH knows something
-Hermes does not show — an item waiting on a recorded reason, a checklist
-unchanged past the stall threshold, or, in the TUI panel, a parallel-shot
-badge — and otherwise nothing beyond the TUI's frame rule.
+write was not mirrored and the plan is still held and not deferred. Hermes
+Desktop draws a `todo_list` itself (the composer's status stack), so for a
+plan `todo_list` holds the Desktop pane does not repeat its items: it shows a
+compact "in todo_list" plan summary only when OMH knows something Hermes
+does not show — an item waiting on a recorded reason, or a checklist
+unchanged past the stall threshold. The OMH TUI's plan panel draws the items
+whichever tool holds them.
 
 A plan may be declared from a named phase template instead of from phases the
 model writes out itself. `omh_todo` with `action=set` and
@@ -1929,8 +1941,8 @@ plain `todo items are capped at 20`, as it always has.
 The panel belongs to the session that declared the plan. When Hermes
 declares a plan through `omh_todo`, the record is stored for that session
 (`$OMH_HOME/runtime/todos/<session key>.json`) and read back only for it: the
-modern TUI widget names its own session from the host's active-session file
-on every poll, and the plugin tools (`omh_todo`, `omh_hud`) and the pre-LLM
+OMH TUI names the session it shows on every poll, the Desktop pane its
+focused session, and the plugin tools (`omh_todo`, `omh_hud`) and the pre-LLM
 reminder name the session Hermes dispatched them for — never one named in
 tool arguments, so a model cannot address another session's record. A plan declared from a Slack or Discord gateway session,
 or from a second TUI open at the same time, is its own record, so it neither
@@ -1948,20 +1960,18 @@ stale. That fallback only applies where the host can answer it. With no
 it, or a reading session it does not list as a TUI (a gateway session has no
 row to date the record against), the projection keeps the age-only behavior
 above and shows the plan, since hiding a legitimately current checklist on
-missing evidence is the worse failure. The widget's identity likewise needs
-a host that sets `HERMES_TUI_ACTIVE_SESSION_FILE` for the TUI process; on a
-Hermes that does not, the widget carries no identity and the panel answers
-for the most recently active live TUI session, as it did before.
+missing evidence is the worse failure.
 
-The widget's own identity has one alias, which the reader resolves. After a
-resume or session switch the host's active-session file holds the durable
-session key; on a freshly created session it holds the gateway's transport
-id, which no record and no `state.db` row carries. The host's active-session
-lease registry (`$HERMES_HOME/runtime/active_sessions.json`) is where the two
-names for one session meet — it records both against one lease — so a widget
-reference that names no live TUI row is looked up there and read as the
-session it belongs to. Every TUI therefore renders the plan it declared and
-no other's, whether its session was created or resumed.
+A TUI session reference (`tui_session_ref`, which the Desktop pane passes
+for its focused session) has one alias, which the reader resolves: it can
+be the durable session key, or, for a freshly created session, the
+gateway's transport id, which no record and no `state.db` row carries. The
+host's active-session lease registry
+(`$HERMES_HOME/runtime/active_sessions.json`) is where the two names for one
+session meet — it records both against one lease — so a reference that
+names no live TUI row is looked up there and read as the session it belongs
+to. Each surface therefore renders the plan its session declared and no
+other's, whether that session was created or resumed.
 
 The host claims a session's lease on its first real turn rather than at
 creation, so a TUI nobody has prompted in is named by no entry — and it has
@@ -1988,13 +1998,13 @@ and totals, following only unambiguous compression continuations, never
 branches or delegated children. Missing, invalid or unmapped identities retain
 the previous global native fallback, including best-effort manifest context.
 The header line marks `[global]` whenever rows from outside this conversation
-are in the list, so the widget never attributes those totals to this chat.
+are in the list, so no surface attributes those totals to this chat.
 It is one marker for one fact, not a description of the list: an entirely
 unowned list and a mixed one both carry it. A session-only list carries no
 word at all, because each row already carries what runs it: `[sub]` for a
 delegate_task child, `[bot]` for a Kanban board worker. Mapped native rows omit
 unowned manifest/route labels. OMH executor, Maestro and DAG activity remains
-available in the widget, explicitly global. This changes display attribution
+on the panels, explicitly global. This changes display attribution
 only, not delegation or the todo policy above.
 
 #### Status model: no-run, prepared-handoff, observed-run
@@ -2032,12 +2042,12 @@ A quiet no-run line looks like
 `[omh] v1.0.6 | plugin:ready | target:single | coding-agent:not-selected`.
 
 That version is the **installed** version, never the newest published
-release: it is what `omh --version` prints, and for the TUI widget it is the
-version `omh install`/`omh update` recorded, because the widget runs the
-plugin-bundle reader without being able to import the `omh` package. A
-machine that has not run `omh update` since a release keeps showing the
-version it installed, and an already-open terminal keeps showing it until the
-TUI restarts. See [Release](RELEASE.md), "After the Cut".
+release: it is what `omh --version` prints, and for the readers inside
+Hermes' interpreter (the Desktop pane, the plugin's tools) it is the version
+`omh install`/`omh update` recorded, because they load the plugin-bundle
+reader without being able to import the `omh` package. A machine that has
+not run `omh update` since a release keeps showing the version it installed,
+and an already-open OMH TUI keeps showing it until it is reopened. See [Release](RELEASE.md), "After the Cut".
 
 The plugin also exposes `omh_context` for a compact OMH mental model plus
 generic-tool checkpoint, `omh_memory` for a metadata-only comparison of Hermes
@@ -2564,9 +2574,13 @@ understand internal config keys, topology names, MCP state, state-log entries,
 or plugin manifests. In a real terminal it first asks for setup language, then
 only asks for a simple coding-agent suggestion plus optional tool bridge
 settings when advanced setup is explicitly opened. The same command with `--json` should include install and apply
-steps, an `operator_summary` block, and a `hermes_native_setup/v1` block that
+steps, an `operator_summary` block, and a `hermes_native_setup/v2` block that
 names the equivalent Hermes skill install path, managed skill directory, and
-`skills.external_dirs` registration key.
+`skills.external_dirs` registration key. v2 marks the payload that no longer
+carries the branded-TUI fields v1 did (`tui_verdict`, `steps.tui_widget`,
+`steps.skin`, `steps.hermes_tui_preflight`, and `steps.apply.tui_interface`,
+`skin` and `display_sections`); `steps.apply.display_release` reports what
+the release took back.
 `hermes_native.observed` means the local bootstrap/apply step actually ran; it
 does not prove Hermes has reloaded or used the skill yet.
 `discovery_status: config_registered_reload_required` means restart or refresh
@@ -3395,8 +3409,8 @@ OMH Auto Update complete: omh 2.0.1 is installed.
 ```
 
 That completion version is read back from the record `omh update` just
-rewrote, which is the same record the Hermes TUI HUD footer renders, so the
-line names the version the terminal that opens next will show. A failure
+rewrote, and the OMH TUI the launch opens next imports the updated package,
+so the line names the version its banner will show. A failure
 still prints `omh: update-check auto-update failed` on stderr and nothing
 else changes. `off` and `notify` never print either line. A non-blocking lock
 keeps two simultaneous launches from auto-updating at once -- the launch that
@@ -3786,19 +3800,25 @@ that OMH cannot safely identify as install.sh-managed.
 
 ### What a full uninstall takes back out of `config.yaml`
 
-`omh setup` writes seven keys: `skills.external_dirs`,
-`auxiliary.compression.fallback_chain`, `plugins.enabled`, `display.interface`,
-`display.skin`, `display.sections` and `memory.provider`. A full uninstall
-reverses all seven, in the primary home and in every bot profile.
+`omh setup` writes `skills.external_dirs`,
+`auxiliary.compression.fallback_chain`, `plugins.enabled`, `memory.provider`
+and, for a store other than `~/.omh`, `plugins.entries.omh.settings.omh_home`.
+Earlier versions also wrote `display.interface`, `display.skin` and
+`display.sections`. A full uninstall reverses them, in the primary home and in
+every bot profile.
 
 It reverses a key only while the value there is still the one OMH wrote.
 Setup records that at write time, per config path, in
 `$OMH_HOME/runtime/state.json`. Change `memory.provider` to another product
 afterwards and uninstall keeps your value and names the key it left alone.
-A value that consent let OMH migrate you off — only `display.interface` and
-`display.skin` can be replaced at all — is put back rather than removed.
+A display value that consent let an earlier version migrate you off
+(`display.interface`, `display.skin`) is put back rather than removed. Once
+`omh setup` or `omh update` has released the display keys
+([Returning `hermes` to stock Hermes](#returning-hermes-to-stock-hermes)),
+uninstall reads every display value as yours and leaves it.
 
-An install made before OMH kept that record gets the honest subset.
+An install made before OMH kept that record, and not yet migrated, gets the
+honest subset.
 `display.skin: omh`, `plugins.enabled` containing `omh` and
 `memory.provider: omh` name OMH by construction and are reversed anyway.
 `display.interface: tui`, the `display.sections` children and the compression

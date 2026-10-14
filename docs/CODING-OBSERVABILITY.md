@@ -72,8 +72,8 @@ different readings with two different words. The dispatch word (`running`,
 `completed`, `failed`, …) stays on the row's `status`, and what the unit's own
 stdout showed goes in `unit_state` beside it — see the table below. Anything
 `unit_state` calls stuck replaces the dispatch word wherever a row is rendered:
-the status board, the plugin running-work block, and the DAG line in the TUI
-widget. A unit with no assessed snapshot carries no `unit_state` at all, which
+the status board, the plugin running-work block, and the DAG line on the OMH
+TUI's panels and the Desktop pane. A unit with no assessed snapshot carries no `unit_state` at all, which
 is not the same as "moving".
 
 A supervisor polls the same answer machine-readably with

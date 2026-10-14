@@ -39,17 +39,11 @@ from ..coding.model_discovery import discover_local_models
 from ..coding.model_recommendations import resolve_model_recommendation
 from ..config_adapter import (
     ConfigChange,
-    activate_display_sections,
-    activate_omh_skin,
-    activate_tui_interface,
     childless_containers,
-    display_interface_selection,
-    display_sections_selection,
+    display_read_refusal,
     display_skin_selection,
-    ensure_omh_skin,
     ensure_plugin_enabled,
     ensure_plugin_omh_home,
-    ensure_tui_interface,
     external_dir_registered,
     external_dirs,
     maybe_set_memory_provider,
@@ -61,12 +55,18 @@ from ..config_adapter import (
 )
 from ..install.compression_defaults import ensure_compression_defaults
 from ..install.config_reversal import (
+    DISPLAY_KEYS,
+    DISPLAY_RELEASED_FIELD,
+    DISPLAY_SKIN_KEY,
     MANAGED_CONFIG_WRITES_STATE_KEY,
+    _plain_scalar,
+    config_names_key,
     drop_emptied_containers,
     PLUGIN_OMH_HOME_KEY,
     load_managed_config_writes,
     managed_config_writes,
     reclaim_plugin_omh_home,
+    release_managed_display,
     reverse_managed_config,
 )
 from ..install.skill_registration import (
@@ -100,7 +100,13 @@ from .update_change_note import record_update_change_note, update_change_note_li
 from ..menubar_app import is_managed_menubar_install, setup_menubar_app, uninstall_menubar_app
 from ..mcp.host_config import install_mcp_host_config
 from ..mcp_bridge import MCP_HOST_CONFIG_RECIPE_HOSTS
-from ..paths import OmhPaths, managed_command_venv_dir, managed_current_workflow_pack_dir, managed_generation_for_executable
+from ..paths import (
+    OmhPaths,
+    managed_command_venv_dir,
+    managed_current_workflow_pack_dir,
+    managed_generation_for_executable,
+    configured_omh_home,
+)
 from ..plugin_bundle.omh.metadata import MEMORY_PROVIDER_NAME
 from ..plugin_bundle.omh.provider_detection import (
     LINKED_SOURCE_CONFIG,
@@ -118,8 +124,17 @@ from ..release import (
     package_url_for,
     release_artifact_note,
 )
-from ..skin_pack import SKIN_NAME, SkinInstallError, install_skin, is_omh_skin_name, uninstall_skin
-from ..tui_widget_pack import TuiWidgetInstallError, install_tui_widget, uninstall_tui_widget
+from ..skin_pack import (
+    SkinInstallError,
+    available_skins,
+    default_theme,
+    read_theme_choice,
+    theme_for_skin_name,
+    theme_store_path,
+    uninstall_skin,
+    write_theme_choice,
+)
+from ..tui_widget_pack import TuiWidgetInstallError, uninstall_tui_widget
 from ..routing.chat import recommend_route_summary
 from ..routing.recommend import recommend_skills
 from ..routing.route_plan import build_workflow_route_plan, compact_workflow_route_plan
@@ -437,9 +452,6 @@ def cmd_update(args: argparse.Namespace) -> int:
     self_update = _command_package_self_update_plan(args)
     if self_update.get("should_update"):
         return _run_command_package_self_update(args, self_update)
-    _preset_tui_identity_choice(args)
-    if _update_should_interact(args):
-        _ask_tui_identity_choice(args, _paths(args), _resolve_language(args))
     code = cmd_install(args)
     if code == 0:
         primary_registration: dict[str, object] | None = None
@@ -452,8 +464,7 @@ def cmd_update(args: argparse.Namespace) -> int:
                 # Seeding is create-only, so user edits are never touched.
                 _seed_model_chains_result(_paths(args), dry_run=bool(args.dry_run))
             else:
-                _bootstrap_tui_surface(args)
-        _refresh_installed_tui_widget(args)
+                primary_registration = _bootstrap_tui_surface(args)
         _refresh_installed_menubar_app(args)
         # Bot profiles are independent Hermes homes; update carries the same
         # managed registration into each so a bot chat sees the same skills
@@ -462,15 +473,14 @@ def cmd_update(args: argparse.Namespace) -> int:
         synced_profiles = not (args.from_skills_dir or args.source) and hasattr(args, "omh_home")
         if synced_profiles:
             profile_results = _sync_hermes_profiles(args)
-        # The verdict prints LAST on purpose: a success summary followed by a
-        # stock-Hermes terminal is what users kept reporting as a broken
-        # install. Human output only — the JSON payload was already emitted
-        # by cmd_install before the surface refreshes above ran.
+        # Human output only — the JSON payload was already emitted by
+        # cmd_install before the surface refreshes above ran.
         if (
             not _wants_json(args)
             and not bool(getattr(args, "dry_run", False))
             and hasattr(args, "omh_home")
         ):
+            _print_display_release_lines(primary_registration, profile_results)
             _print_registration_migrations(primary_registration, profile_results)
             _print_omh_home_reclaims(profile_results)
             _print_hermes_profiles_line(profile_results, language=_resolve_language(args))
@@ -483,50 +493,22 @@ def cmd_update(args: argparse.Namespace) -> int:
                     print(f"  warning: {line}")
                 for hint in gateway_restart_hints(_paths(args)):
                     print(f"  {hint}")
-            _print_tui_verdict_block(_tui_verdict_payload(args), language=_resolve_language(args))
     return code
 
 
-def _tui_verdict_payload(args: argparse.Namespace) -> dict[str, object]:
-    from ..maintenance.hermes_tui import tui_identity_verdict
-
-    return tui_identity_verdict(_paths(args))
-
-
-def _print_tui_verdict_block(verdict: dict[str, object], *, language: str) -> None:
-    use_color = _use_color()
-    status = str(verdict.get("status", ""))
-    if status == "ready":
-        print(_color(f"  {tr(language, 'tui_verdict_ready')}", "1;32", use_color))
-    elif status == "unknown":
-        print(f"  {tr(language, 'tui_verdict_unknown')}")
-    else:
-        print(_color(f"  {tr(language, 'tui_verdict_blocked')}", "1;33", use_color))
-        blockers = verdict.get("blockers", [])
-        if isinstance(blockers, list):
-            for blocker in blockers:
-                print(f"    - {blocker}")
-        next_commands = verdict.get("next_commands", [])
-        if isinstance(next_commands, list):
-            for command in next_commands:
-                print(_color(f"  {tr(language, 'tui_verdict_next', command=command)}", "1;33", use_color))
-    notes = verdict.get("notes", [])
-    if isinstance(notes, list):
-        for note in notes:
-            print(f"  {note}")
-
-
 def _bootstrap_tui_surface(args: argparse.Namespace) -> dict[str, object] | None:
-    """Give `omh update` on a never-set-up machine the full OMH TUI.
+    """Give `omh update` on a never-set-up machine the plugin and its registration.
 
     Update and setup must converge on the same machine state (owner decision,
     2026-08-20): a user who only ever runs `omh update` still ends with the
-    plugin bundle installed, OMH registered and enabled in the Hermes config
-    (which also activates the skin), and the chain-override document seeded —
-    instead of a plain Hermes that silently lacks the OMH identity. The
-    deliberate opt-out stays respected: `omh uninstall --registration-only`
-    keeps the plugin directory in place, so an unregistered-but-installed
-    machine never reaches this path and stays unregistered.
+    plugin bundle installed, OMH registered and enabled in the Hermes config,
+    and the chain-override document seeded. The deliberate opt-out stays
+    respected: `omh uninstall --registration-only` keeps the plugin
+    directory in place, so an unregistered-but-installed machine never
+    reaches this path and stays unregistered.
+
+    Returns the registration pass's result, or None when the bundle or the
+    config could not be written (each says why on stderr).
     """
     paths = _paths(args)
     try:
@@ -541,7 +523,7 @@ def _bootstrap_tui_surface(args: argparse.Namespace) -> dict[str, object] | None
         update_state(paths, {"last_plugin_distribution": result})
     _seed_model_chains_result(paths, dry_run=bool(args.dry_run))
     try:
-        _apply_result(args)
+        return _apply_result(args)
     except OmhError as exc:
         # The bundle landed; an unwritable config must not fail the update.
         # Say what is missing instead of leaving a half-silent install.
@@ -549,7 +531,7 @@ def _bootstrap_tui_surface(args: argparse.Namespace) -> dict[str, object] | None
             f"note: could not register OMH in the Hermes config: {exc}; run `omh setup`",
             file=sys.stderr,
         )
-    return result
+    return None
 
 
 def _hermes_profile_dirs(paths) -> list[tuple[str, "Path"]]:
@@ -563,9 +545,9 @@ def _profile_clone(args: argparse.Namespace, primary: OmhPaths, profile_dir: Pat
     The pair is named explicitly because the resolver now reads a profile's
     own `plugins.entries.omh.settings.omh_home` when nothing names a store
     (#1679), and that is the profile's dispatch store, not the one the
-    managed skills, widget and skin are installed from. Every profile shares
-    the primary's store for those, as `uninstall_profile_plugin` records, and
-    the registration candidates the sync scores are the primary's too.
+    managed skills are installed from. Every profile shares the primary's
+    store for those, as `uninstall_profile_plugin` records, and the
+    registration candidates the sync scores are the primary's too.
     """
     clone = argparse.Namespace(**vars(args))
     clone.hermes_home = str(profile_dir)
@@ -582,12 +564,47 @@ def _profile_env_names_omh_home(profile_dir: Path) -> bool:
     return bool(env_key_names(profile_dir, allowed=("OMH_HOME",)))
 
 
+def _profile_theme_home(profile_paths: OmhPaths, profile_dir: Path) -> Path | None:
+    """The store a bot profile's theme belongs in, or None when OMH cannot tell which store that is.
+
+    `_profile_clone` names the primary's store for everything the sync
+    installs, which is right for managed skills and wrong for a profile
+    that chose a store of its own: `omh --hermes-home <profile> theme`
+    resolves that profile's `settings.omh_home` (#1680), and so does the
+    OMH TUI that `omh --profile <name>` opens (`_tui_omh_home` in
+    `commands/main.py`), so its theme has to land there. One reader,
+    `configured_omh_home`, for both. A profile that names no store shares
+    the primary's.
+
+    None when the profile chose a store OMH cannot read: a setting in a
+    shape the standalone scan refuses, or an `OMH_HOME` in its `.env`,
+    whose value OMH never reads. Saving into the primary's store then
+    would hand the primary that profile's theme. That includes a setting
+    OMH wrote before the `.env` named a store: the same pass takes it back
+    (`reclaim_plugin_omh_home`, asked here with the record `_apply_result`
+    reads), so the store it names is no longer the profile's.
+    """
+    config_text = read_config(profile_paths.hermes_config_path)
+    env_names_store = _profile_env_names_omh_home(profile_dir)
+    if env_names_store:
+        state, _state_error = read_state_result(profile_paths)
+        record = (state or {}).get(MANAGED_CONFIG_WRITES_STATE_KEY)
+        if reclaim_plugin_omh_home(config_text, record, config_path=profile_paths.hermes_config_path).changed:
+            return None
+    configured = configured_omh_home(profile_paths.hermes_home)
+    if configured is not None:
+        return configured
+    if config_names_key(config_text, PLUGIN_OMH_HOME_KEY):
+        return None
+    return None if env_names_store else profile_paths.omh_home
+
+
 def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
     """Apply the managed OMH registration to every bot-profile home.
 
     Each profile is its own Hermes home, so each gets the same per-home pair
-    the primary gets: the plugin bundle plus config registration (with the
-    widget and skin artifacts the registration references). The primary
+    the primary gets: the plugin bundle plus config registration, with the
+    same display release and legacy widget/skin removal. The primary
     home's deliberate-unregistration rule carries over per profile: a
     profile whose plugin directory exists while its config does not list the
     skills directory chose to be unregistered, and neither setup nor update
@@ -610,7 +627,14 @@ def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
             for candidate in _managed_workflow_dir_candidates(profile_paths)
         )
         if profile_paths.hermes_plugin_dir.is_dir() and not registered:
-            results.append({"profile": name, "status": "unregistered_kept", "registration": "unchanged"})
+            results.append(
+                {
+                    "profile": name,
+                    "status": "unregistered_kept",
+                    "registration": "unchanged",
+                    "display_release": _unregistered_display_release(profile_paths, args),
+                }
+            )
             continue
         entry: dict[str, object] = {
             "profile": name,
@@ -630,20 +654,21 @@ def _sync_hermes_profiles(args: argparse.Namespace) -> list[dict[str, object]]:
                 # it, so "refreshed" would claim an update that did not happen.
                 entry["status"] = "host_managed"
                 entry["plugin_update_command"] = HERMES_PLUGIN_UPDATE_COMMAND
-            install_tui_widget(profile_paths.hermes_home, dry_run=bool(args.dry_run))
-            install_skin(profile_paths.hermes_home, dry_run=bool(args.dry_run))
-            applied = _apply_result(clone, bind_omh_home=not _profile_env_names_omh_home(profile_dir))
+            applied = _apply_result(
+                clone,
+                bind_omh_home=not _profile_env_names_omh_home(profile_dir),
+                theme_home=_profile_theme_home(profile_paths, profile_dir),
+            )
             entry["registration"] = applied["registration"]
             entry["retired_external_dirs"] = applied["retired_external_dirs"]
             entry["registered_dir"] = applied["registered_dir"]
+            entry["display_release"] = applied["display_release"]
             reclaimed = applied["plugin_omh_home"]["reclaimed"]  # type: ignore[index]
             if reclaimed:
                 entry["omh_home_reclaimed"] = reclaimed
-        # A profile's widget or skin the manifest cannot vouch for refuses,
-        # exactly as the primary home's does. That refusal is one profile's
-        # row, never the end of the update: the primary home and every other
-        # profile still get their refresh.
-        except (PluginPackError, OmhError, TuiWidgetInstallError, SkinInstallError) as exc:
+        # A refusal is one profile's row, never the end of the update: the
+        # primary home and every other profile still get their refresh.
+        except (PluginPackError, OmhError) as exc:
             entry["status"] = "failed"
             entry["error"] = str(exc)
         results.append(entry)
@@ -700,11 +725,16 @@ def _uninstall_hermes_profiles(
                     dry_run=bool(args.dry_run),
                     force=bool(args.force),
                 )
-                uninstall_tui_widget(profile_paths.hermes_home, dry_run=bool(args.dry_run))
-                uninstall_skin(profile_paths.hermes_home, dry_run=bool(args.dry_run))
+                files = _remove_legacy_display_files(
+                    profile_paths,
+                    dry_run=bool(args.dry_run),
+                    config_text=change.text,
+                    released=_display_released(record, profile_paths),
+                )
                 touched = touched or bool(plugin["removed_paths"]) or bool(plugin["would_remove"])
-                if plugin["kept_paths"]:
-                    entry["kept_paths"] = plugin["kept_paths"]
+                kept_paths = [*plugin["kept_paths"], *_refused_display_files(files)]
+                if kept_paths:
+                    entry["kept_paths"] = kept_paths
             kept_keys = _config_keys_kept(rows)
             if kept_keys:
                 entry["config_keys_kept"] = kept_keys
@@ -764,6 +794,101 @@ def _print_registration_migrations(
         retired = entry.get("retired_external_dirs")
         listed = ", ".join(str(item) for item in retired) if isinstance(retired, list) else ""
         print(f"  {label} migrated from {listed} to {entry.get('registered_dir')}.")
+
+
+def _display_release_lines(label: str, release: object) -> list[str]:
+    """What one home's display release did, or nothing when it did nothing.
+
+    A person who opens `hermes` after this update and finds stock Hermes
+    should already have read why, and where their OMH theme went. Keys taken
+    back, files removed and a theme saved are said on the pass that does
+    them, and so is a theme store that could not be written, which holds the
+    release; a key the editor refused is said on every pass that tries it.
+    A file left in place (`kept_unmanaged`, `refused`) and a theme not
+    carried (`kept_saved`, `store_unknown`) are said only on the pass that
+    records the release (`recorded`): a pass that does not record it runs
+    again on the next update and would repeat them each time.
+
+    The header says bare `hermes` opens stock Hermes only when no OMH skin
+    file stays for `display.skin` (`kept_selected`). One stays for a skin
+    the config names, or for every OMH skin while the value cannot be read,
+    such as a record-less `display: {skin: omh-crimson}`; Hermes may then
+    still open with an OMH skin.
+    """
+    if not isinstance(release, dict):
+        return []
+    details: list[str] = []
+    keys = release.get("keys")
+    rows = [row for row in keys if isinstance(row, dict)] if isinstance(keys, list) else []
+    released = [str(row.get("key")) for row in rows if row.get("status") == "reversed"]
+    if released:
+        details.append(f"released {', '.join(released)}")
+    refused = [row for row in rows if row.get("status") == "refused"]
+    for row in refused:
+        details.append(
+            f"could not release {row.get('key')} ({row.get('detail')}); the next `omh setup` or `omh update` tries again"
+        )
+    files = release.get("files") if isinstance(release.get("files"), dict) else {}
+    widget = files.get("tui_widget") if isinstance(files.get("tui_widget"), dict) else {}  # type: ignore[union-attr]
+    skin = files.get("skin") if isinstance(files.get("skin"), dict) else {}  # type: ignore[union-attr]
+    skins = [entry for entry in skin.get("skins", []) if isinstance(entry, dict)]  # type: ignore[union-attr]
+    removed = [str(entry.get("filename")) for entry in skins if entry.get("status") == "removed"]
+    if widget.get("status") == "removed":  # type: ignore[union-attr]
+        removed.insert(0, "the OMH status widget")
+    if removed:
+        details.append(f"removed {', '.join(removed)}")
+    if release.get("recorded"):
+        for entry in skins:
+            if entry.get("status") == "kept_unmanaged":
+                details.append(f"kept {entry.get('path')}: it differs from what OMH installed, so it is yours")
+        if widget.get("status") == "kept_unmanaged":  # type: ignore[union-attr]
+            details.append(f"kept {widget.get('path')}: OMH cannot prove it installed it")  # type: ignore[union-attr]
+        for name, outcome in (("status widget", widget), ("skin files", skin)):
+            if outcome.get("status") == "refused":  # type: ignore[union-attr]
+                details.append(f"left the {name} in place: {outcome.get('reason')}")  # type: ignore[union-attr]
+    theme = release.get("theme") if isinstance(release.get("theme"), dict) else {}
+    if theme.get("status") == "saved":  # type: ignore[union-attr]
+        details.append(
+            f"saved OMH theme {theme.get('theme')} for the OMH TUI; `omh theme use <name>` changes it"  # type: ignore[union-attr]
+        )
+    elif theme.get("status") == "failed":  # type: ignore[union-attr]
+        details.append(
+            f"could not save OMH theme {theme.get('theme')} to {theme.get('path')} ({theme.get('reason')}); "  # type: ignore[union-attr]
+            "the display keys and files stay until the next `omh setup` or `omh update` can save it"
+        )
+    elif theme.get("status") == "store_unknown" and release.get("recorded"):  # type: ignore[union-attr]
+        details.append(
+            f"did not save OMH theme {theme.get('theme')}: this profile names its OMH home where OMH cannot read it "  # type: ignore[union-attr]
+            "(its .env, or a setting shape the reader refuses); "
+            f"`omh --omh-home <that home> theme use {theme.get('theme')}` saves it there"  # type: ignore[union-attr]
+        )
+    elif theme.get("status") == "kept_saved" and release.get("recorded"):  # type: ignore[union-attr]
+        details.append(
+            f"kept the saved OMH theme {theme.get('saved')} over {theme.get('theme')}, which display.skin named"  # type: ignore[union-attr]
+        )
+    if not details:
+        return []
+    if release.get("unregistered"):
+        header = f"{label}: this home is not registered, so its config is left as it is; files OMH installed:"
+    elif refused or theme.get("status") == "failed":  # type: ignore[union-attr]
+        header = f"{label}: some display keys OMH wrote are still in Hermes' config; bare `omh` opens the OMH TUI."
+    elif any(entry.get("status") == "kept_selected" for entry in skins):
+        header = f"{label}: OMH skin files stay while `display.skin` may still name one; bare `omh` opens the OMH TUI."
+    else:
+        header = f"{label}: bare `hermes` opens stock Hermes; bare `omh` opens the OMH TUI."
+    return [header, *(f"  {line}" for line in details)]
+
+
+def _print_display_release_lines(
+    primary: dict[str, object] | None, profile_results: list[dict[str, object]]
+) -> None:
+    for label, entry in [("Hermes display", primary), *(
+        (f"Bot profile {row.get('profile')}: Hermes display", row) for row in profile_results
+    )]:
+        if not entry:
+            continue
+        for line in _display_release_lines(label, entry.get("display_release")):
+            print(f"  {line}")
 
 
 def _print_omh_home_reclaims(profile_results: list[dict[str, object]]) -> None:
@@ -987,7 +1112,8 @@ def _refresh_hermes_registration(args: argparse.Namespace) -> dict[str, object] 
     Only for an install that is already registered -- the skills directory is
     already in `skills.external_dirs`. Registering a fresh one stays setup's
     job, and someone who deliberately unregistered OMH must not have update
-    put it back.
+    put it back. Such a home still loses the widget and skin files an
+    earlier version left (`_unregistered_display_release`).
     """
     paths = _paths(args)
     config_text = read_config(paths.hermes_config_path)
@@ -998,7 +1124,7 @@ def _refresh_hermes_registration(args: argparse.Namespace) -> dict[str, object] 
         _external_dir_registered(config_text, candidate)
         for candidate in _managed_workflow_dir_candidates(paths)
     ):
-        return None
+        return {"display_release": _unregistered_display_release(paths, args)}
     try:
         return _apply_result(args)
     except OmhError:
@@ -1038,50 +1164,6 @@ def _refresh_installed_plugin_bundle(args: argparse.Namespace) -> dict[str, obje
         )
     if not args.dry_run:
         update_state(paths, {"last_plugin_distribution": result})
-    return result
-
-
-def _hermes_tui_preflight_step(
-    paths: OmhPaths, *, quiet: bool, dry_run: bool = False
-) -> dict[str, object]:
-    """Report whether the just-installed HUD can actually render, and why not.
-
-    Installing the widget while the Hermes side cannot load it (old Hermes,
-    stripped SDK, classic-REPL default, stale interpreter) is a success that
-    behaves like a failure: every check passes and the user still sees no
-    HUD. Setup and update therefore say so at install time instead of leaving
-    the diagnosis to a screenshot comparison. A dry run skips the inspection —
-    the state it would inspect is exactly the state the real run writes. In
-    JSON mode the note goes to stderr so machine output stays parseable while
-    a human watching the pipe still sees it. An absent Hermes install prints
-    nothing: PATH-installed Hermes layouts are real, and "cannot render" would
-    be a false claim there — doctor reports that state as unobserved instead.
-    """
-    from ..maintenance.hermes_tui import hermes_tui_preflight, widget_render_blockers
-
-    if dry_run:
-        return {"status": "skipped_dry_run"}
-    preflight = hermes_tui_preflight(paths)
-    blockers = widget_render_blockers(preflight)
-    install_found = bool(preflight.get("install", {}).get("found"))
-    if blockers and install_found:
-        stream = sys.stderr if quiet else sys.stdout
-        print("note: the OMH HUD may not render on this Hermes:", file=stream)
-        for blocker in blockers:
-            print(f"  - {blocker}", file=stream)
-    preflight["render_blockers"] = blockers
-    return preflight
-
-
-def _refresh_installed_tui_widget(args: argparse.Namespace) -> dict[str, object] | None:
-    paths = _paths(args)
-    if not paths.hermes_plugin_dir.is_dir():
-        return None
-    result = install_tui_widget(paths.hermes_home, dry_run=bool(args.dry_run))
-    install_skin(paths.hermes_home, dry_run=bool(args.dry_run))
-    # A refreshed widget that the Hermes side cannot load is a success that
-    # behaves like a failure; say so at update time (same note as setup).
-    _hermes_tui_preflight_step(paths, quiet=_wants_json(args), dry_run=bool(args.dry_run))
     return result
 
 
@@ -1970,7 +2052,169 @@ def cmd_apply(args: argparse.Namespace) -> int:
     return 0
 
 
-def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> dict[str, object]:
+def _carry_theme_choice(
+    paths: OmhPaths, previous_writes: object, *, theme_home: Path | None, dry_run: bool
+) -> dict[str, object]:
+    """Save an OMH theme `display.skin` names into the OMH store, before the release removes it.
+
+    On every pass until this config's release is recorded: after it, an
+    `omh*` skin in the config is the person's Hermes choice, not a theme OMH
+    set. That includes a pass whose release the editor refuses. Such a pass
+    leaves `display.skin` naming the same palette, which the OMH TUI
+    already opens with while the store holds none (`effective_theme`), so
+    saving it changes nothing that home's OMH TUI shows, and a store other
+    homes share keeps the theme of the home that goes first on the run,
+    whether or not that home's release was refused. Never the default
+    theme (`omh`, sky), with or without a record:
+    setup wrote it as a default nobody picked, an empty store already opens
+    with it, and saving it would make sky a choice that wins over a theme a
+    bot profile sharing this store did pick.
+
+    A theme already saved wins: `omh theme use` saved it, and that command
+    writes only the store, or another home sharing the store carried its
+    own earlier on this run, and one store holds one theme. When it differs
+    from this home's skin, the result names both (`kept_saved`) so the
+    output can say which one the OMH TUI opens with.
+
+    Runs before the config write. A store that cannot be written is
+    `failed`, never raised: the caller then holds the whole display release
+    for that pass, so `display.skin` does not go with its theme unsaved,
+    while the registration keys the same pass carries still land.
+    """
+    owned = load_managed_config_writes(previous_writes, config_path=paths.hermes_config_path)
+    theme = theme_for_skin_name(display_skin_selection(read_config(paths.hermes_config_path)))
+    result: dict[str, object] = {
+        "status": "none",
+        "theme": "",
+        "path": str(theme_store_path(theme_home)) if theme_home is not None else "",
+    }
+    if owned.get(DISPLAY_RELEASED_FIELD) or theme is None or theme == default_theme():
+        return result
+    result["theme"] = theme.short_name
+    if theme_home is None:
+        # A store OMH cannot tell: named in the profile's `.env`, or in a
+        # setting OMH cannot read or takes back on this pass (see
+        # `_profile_theme_home`).
+        result["status"] = "store_unknown"
+        return result
+    saved = read_theme_choice(theme_home)
+    if saved is not None:
+        result["status"] = "already_saved" if saved == theme else "kept_saved"
+        result["saved"] = saved.short_name
+    elif dry_run:
+        result["status"] = "would_save"
+    else:
+        try:
+            write_theme_choice(theme_home, theme)
+        except OSError as exc:
+            result["status"] = "failed"
+            result["reason"] = str(exc)
+            return result
+        result["status"] = "saved"
+    return result
+
+
+def _selected_skins(config_text: str) -> tuple[str, ...]:
+    """The skins a Hermes config still selects: the one `display.skin` names, or every OMH skin when it cannot be read.
+
+    Behind `display_read_refusal`, not the editor's wider guards: a quoted
+    key, an anchor or a BOM elsewhere in the file stops the editor but not
+    this read, which reads past a leading BOM as Hermes does, and keeping
+    every OMH skin file over one kept all four for good beside a skin of
+    the person's own. In a shape that does make the
+    read unreliable (a flow, duplicate or dotted `display`, a second `skin`
+    in the block, a tag or anchor on the value) the reader can return a
+    value that is not the one Hermes resolves, such as "!!str omh-crimson",
+    so every OMH skin file stays while `display.skin` is named at all.
+    """
+    if not config_names_key(config_text, DISPLAY_SKIN_KEY):
+        return ()
+    # Past a leading BOM, as Hermes' YAML loader reads the file.
+    readable = config_text.removeprefix("\ufeff")
+    named = _plain_scalar(display_skin_selection(readable))
+    if named and not display_read_refusal(readable, "skin"):
+        return (named,)
+    return available_skins()
+
+
+def _remove_legacy_display_files(
+    paths: OmhPaths, *, dry_run: bool, config_text: str, released: bool
+) -> dict[str, object]:
+    """Remove the status widget and skin files earlier versions installed into this Hermes home.
+
+    The manifest-checked uninstallers, so a file OMH cannot prove it wrote
+    (a skin the person edited) stays and is reported `kept_unmanaged`, and
+    the skin `config_text` still selects stays (`kept_selected`), since
+    removing it would leave Hermes naming a skin that is not there. With
+    `released`, a skin file is OMH's by its manifest record only, never by
+    its shipped bytes. A registered home passes it once its release was
+    recorded: that pass removed every file either proof covered, so one
+    with the shipped bytes that appears later is the person's own copy. An
+    unregistered home always passes it (`_unregistered_display_release`).
+    A symlinked destination is refused, and so is a file that cannot be
+    unlinked. Either is reported (`refused`) rather than raised: setup,
+    update and uninstall all call this after their config write has landed,
+    and raising here skipped what follows it, the write record on setup and
+    update, the bot-profile loop and the command package on uninstall.
+    """
+    files: dict[str, object] = {}
+    try:
+        files["tui_widget"] = uninstall_tui_widget(paths.hermes_home, dry_run=dry_run)
+    except (TuiWidgetInstallError, OSError) as exc:
+        files["tui_widget"] = {"status": "refused", "reason": str(exc), "path": str(paths.hermes_home / "tui-widgets")}
+    try:
+        files["skin"] = uninstall_skin(
+            paths.hermes_home, dry_run=dry_run, keep=_selected_skins(config_text), manifest_only=released
+        )
+    except (SkinInstallError, OSError) as exc:
+        files["skin"] = {"status": "refused", "reason": str(exc), "path": str(paths.hermes_home / "skins")}
+    return files
+
+
+def _unregistered_display_release(paths: OmhPaths, args: argparse.Namespace) -> dict[str, object]:
+    """The widget and skin files an earlier version left in a home that stays unregistered.
+
+    Registering is what carries the config release, so a home that opted out
+    keeps its config as it is. The files are OMH's own, though, and the
+    widget drew the OMH HUD inside Hermes' terminal, so they go: the skin
+    the config still names stays, and a skin file is OMH's by its manifest
+    record only. Such a home never records the release, so the
+    shipped-bytes proof a registered home drops after its release would
+    otherwise apply on every update, and take a copy the person put back
+    each time.
+    """
+    return {
+        "unregistered": True,
+        "files": _remove_legacy_display_files(
+            paths,
+            dry_run=bool(args.dry_run),
+            config_text=read_config(paths.hermes_config_path),
+            released=True,
+        ),
+    }
+
+
+def _display_released(record: object, paths: OmhPaths) -> bool:
+    """Whether this home's config record carries `display_released_at`."""
+    return bool(load_managed_config_writes(record, config_path=paths.hermes_config_path).get(DISPLAY_RELEASED_FIELD))
+
+
+def _refused_display_files(files: dict[str, object]) -> list[dict[str, str]]:
+    """The widget or skin removals `_remove_legacy_display_files` refused, as uninstall `kept_paths` rows."""
+    return [
+        {"path": str(outcome.get("path", "")), "reason": str(outcome.get("reason", ""))}
+        for outcome in files.values()
+        if isinstance(outcome, dict) and outcome.get("status") == "refused"
+    ]
+
+
+# `_apply_result`'s default theme store: the OMH home the command resolved.
+_RESOLVED_THEME_STORE = object()
+
+
+def _apply_result(
+    args: argparse.Namespace, *, bind_omh_home: bool = True, theme_home: Path | None | object = _RESOLVED_THEME_STORE
+) -> dict[str, object]:
     """Write every managed key into this home's Hermes config, in one mutation.
 
     `bind_omh_home` is off only for a bot-profile home whose `.env` names
@@ -1979,10 +2223,18 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
     `.env` named one is taken back, while it still says what the record
     says OMH wrote (#1973). A profile that chose through its own
     `settings.omh_home` is kept by the unset-only writer, and one that
-    chose neither is given the primary's store, which its managed skills,
-    widget and skin already come from (#1967). That holds for `~/.omh` too:
-    a single-profile process reaches it with nothing named, but a
+    chose neither is given the primary's store, which its managed skills
+    already come from (#1967). That holds for `~/.omh` too: a
+    single-profile process reaches it with nothing named, but a
     multiplexed one refuses every profile that names no store (#2037).
+
+    The same pass takes back the display keys earlier versions wrote
+    (`release_managed_display`), then removes the status widget and skin
+    files OMH can prove it installed, so bare `hermes` opens stock Hermes.
+    An OMH theme in `display.skin` is saved to the OMH store first, so the
+    OMH TUI keeps it: in `paths.omh_home`, or in the `theme_home` the
+    bot-profile sync names (`_profile_theme_home`). A `theme_home` of None
+    is a store OMH cannot tell, and no theme is saved (`store_unknown`).
     """
     paths = _paths(args)
     memory_mode = str(getattr(args, "memory_mode", "") or "") or "auto-safe"
@@ -1992,7 +2244,6 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
     # writing a stale whole-file copy over it (#1742).
     applied: dict[str, ConfigChange] = {}
     current = ""
-    display_sections_before: dict[str, str] = {}
     registered_dir = _registered_workflow_dir(paths)
     retired_external_dirs: list[str] = []
     # Register today's path and retire every other managed candidate in the
@@ -2010,9 +2261,20 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
     # setting is OMH's, and the record this pass writes carries it forward.
     state_before, _state_error = read_state_result(paths)
     previous_writes = (state_before or {}).get(MANAGED_CONFIG_WRITES_STATE_KEY)
+    already_released = _display_released(previous_writes, paths)
+    theme = _carry_theme_choice(
+        paths,
+        previous_writes,
+        theme_home=paths.omh_home if theme_home is _RESOLVED_THEME_STORE else theme_home,  # type: ignore[arg-type]
+        dry_run=bool(args.dry_run),
+    )
+    # The theme store could not take the theme `display.skin` names, so this
+    # pass leaves every display key and file where it is; the next one retries.
+    release_waits = theme["status"] == "failed"
+    display_rows: list[dict[str, str]] = []
 
     def _apply(config_text: str) -> ConfigChange:
-        nonlocal current, display_sections_before, retired_external_dirs
+        nonlocal current, display_rows, retired_external_dirs
         current = config_text
         # Re-derived on every pass of the mutation, so a retry reads the
         # other writer's file.
@@ -2024,72 +2286,24 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
         # Hermes. Doing only the first leaves an install that passes every
         # structural check while no OMH tool is reachable in chat.
         plugin_enable = ensure_plugin_enabled(compression.text, PLUGIN_NAME)
-        # Fresh installs default to the one branded surface the product
-        # promises: bare `omh` and bare `hermes` both enter Hermes' modern TUI,
-        # where the OMH HUD can render. Existing explicit choices are preserved
-        # unless the operator accepts the setup/update prompt; that consent
-        # allows stock `cli`/`default` values to be migrated too.
-        tui_choice = getattr(args, "_omh_tui_choice", None)
-        # Which section keys are OMH's to reverse is the difference between
-        # the reading before the bundle and the reading after, never the
-        # three it tried to write: a key the person already set is preserved
-        # and must stay theirs. The two display scalars below never touch
-        # this mapping, so reading it once here is the same reading.
-        display_sections_before = display_sections_selection(plugin_enable.text)
-        if tui_choice is False:
-            tui_interface = ConfigChange(
-                False,
-                "operator declined the OH-MY-HERMES modern TUI",
-                plugin_enable.text,
-            )
-            skin_active = ConfigChange(
-                False,
-                "operator declined the OH-MY-HERMES skin",
-                tui_interface.text,
-            )
-            display_sections = ConfigChange(
-                False,
-                "operator declined the OH-MY-HERMES transcript sections",
-                skin_active.text,
-            )
-        elif tui_choice is True:
-            tui_interface = activate_tui_interface(plugin_enable.text)
-            # Accepting the branded TUI must not undo a theme choice: an
-            # operator on `omh-crimson` who says yes to the modern TUI keeps
-            # crimson. Only a non-OMH or unset skin resolves to the default.
-            chosen_skin = display_skin_selection(tui_interface.text)
-            skin_active = activate_omh_skin(
-                tui_interface.text,
-                chosen_skin if is_omh_skin_name(chosen_skin) else SKIN_NAME,
-            )
-            # Third key of the same consented bundle. Hermes renders every
-            # tool call and every thinking block expanded by default, so on a
-            # long run the prompt scrolls out of sight and the transcript is
-            # a wall -- which is the thing that decides whether a person can
-            # see a run going wrong. Consent-only, and unset-only per key:
-            # unlike the two scalars above, an explicit `expanded` is never
-            # replaced, because there is no stock value here to migrate off.
-            display_sections = activate_display_sections(skin_active.text)
+        # OMH writes no display key any more: bare `omh` opens the OMH TUI,
+        # and bare `hermes` is Hermes' own terminal. This takes back the ones
+        # earlier versions wrote, once per config; everything else in this
+        # pass keeps OMH working inside Hermes.
+        if release_waits:
+            display_release, rows = ConfigChange(False, "the OMH theme could not be saved", plugin_enable.text), []
         else:
-            tui_interface = ensure_tui_interface(plugin_enable.text)
-            skin_active = ensure_omh_skin(tui_interface.text, SKIN_NAME)
-            # No `ensure_display_sections` twin on purpose. The two scalars
-            # above default without a prompt because a fresh install that
-            # lands in the classic REPL cannot show the HUD at all. Collapsing
-            # somebody's transcript is a change they should be told about, so
-            # it stays behind the confirmation rather than arriving silently.
-            display_sections = ConfigChange(
-                False,
-                "display.sections is set only under the branded-TUI confirmation or --yes",
-                skin_active.text,
+            display_release, rows = release_managed_display(
+                plugin_enable.text, previous_writes, config_path=paths.hermes_config_path
             )
+        display_rows = [row.as_dict() for row in rows]
         # Same reasoning one layer down. OMH's memory provider ships inside the
         # bundle, and a provider Hermes never selects is a provider that never
         # runs -- so requiring a control-plane command to switch it on meant the
         # people AGENTS.md says should only need setup/update/doctor would never
         # have it. Claims the slot only when it is free; `set_memory_provider`
         # refuses when another product holds it, because Hermes runs exactly one.
-        memory_provider = maybe_set_memory_provider(display_sections.text, MEMORY_PROVIDER_NAME, memory_mode)
+        memory_provider = maybe_set_memory_provider(display_release.text, MEMORY_PROVIDER_NAME, memory_mode)
         # Last, and unset-only. Without it the plugin in a home installed at
         # any store but `~/.omh` binds `~/.omh` unless Hermes is started
         # with `OMH_HOME` exported, and reads another install's manifest
@@ -2111,9 +2325,7 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
                 "external_dir": change,
                 "compression": compression,
                 "plugin_enable": plugin_enable,
-                "tui_interface": tui_interface,
-                "skin_active": skin_active,
-                "display_sections": display_sections,
+                "display_release": display_release,
                 "memory_provider": memory_provider,
                 "plugin_omh_home": plugin_omh_home,
             }
@@ -2134,9 +2346,7 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
     registration = "migrated" if retired_external_dirs else "added" if change.changed else "unchanged"
     compression = applied["compression"]
     plugin_enable = applied["plugin_enable"]
-    tui_interface = applied["tui_interface"]
-    skin_active = applied["skin_active"]
-    display_sections = applied["display_sections"]
+    display_release = applied["display_release"]
     memory_provider = applied["memory_provider"]
     plugin_omh_home = applied["plugin_omh_home"]
     # Only the profile branch removes this key, so a change there is a reclaim.
@@ -2146,12 +2356,28 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
     # leave every value the person has since changed; without it, three of
     # the seven keys are indistinguishable from a personal choice and have to
     # be left behind (#1725).
+    # A key the editor refused for its shape may still be OMH's, so it stays
+    # in the record and the release is not recorded: the next pass asks again.
+    # A release held for the theme store keeps every display key the same way.
+    held = set(DISPLAY_KEYS) if release_waits else {row["key"] for row in display_rows if row["status"] == "refused"}
     config_writes = managed_config_writes(
         current,
         plugin_omh_home.text,
         config_path=paths.hermes_config_path,
         previous=previous_writes,
-        released=(PLUGIN_OMH_HOME_KEY,) if reclaimed else (),
+        released=(
+            *(key for key in DISPLAY_KEYS if key not in held),
+            *((PLUGIN_OMH_HOME_KEY,) if reclaimed else ()),
+        ),
+        display_released=not held,
+    )
+    # After the config, never before, and keeping the skin the config still
+    # names: removing it would leave Hermes pointing at nothing.
+    legacy_files = {} if release_waits else _remove_legacy_display_files(
+        paths,
+        dry_run=bool(args.dry_run),
+        config_text=plugin_omh_home.text,
+        released=already_released,
     )
     if not args.dry_run:
         update_state(
@@ -2172,9 +2398,7 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
             or bool(retired_external_dirs)
             or compression.changed
             or plugin_enable.changed
-            or tui_interface.changed
-            or skin_active.changed
-            or display_sections.changed
+            or display_release.changed
             or memory_provider.changed
             or plugin_omh_home.changed
         ),
@@ -2189,28 +2413,16 @@ def _apply_result(args: argparse.Namespace, *, bind_omh_home: bool = True) -> di
         "dry_run": args.dry_run,
         "compression_defaults": {"changed": compression.changed, "message": compression.message},
         "plugin_enabled": {"changed": plugin_enable.changed, "message": plugin_enable.message},
-        "tui_interface": {
-            "changed": tui_interface.changed,
-            "message": tui_interface.message,
-            "selected": display_interface_selection(memory_provider.text),
-        },
-        "skin": {
-            "changed": skin_active.changed,
-            "message": skin_active.message,
-            "selected": display_skin_selection(memory_provider.text),
-        },
-        # Recorded the way the other two consented display keys are, so
-        # `omh uninstall` (#1725) can later reverse what setup wrote without
-        # having to guess which section values were the person's own.
-        "display_sections": {
-            "changed": display_sections.changed,
-            "message": display_sections.message,
-            "selected": display_sections_selection(memory_provider.text),
-            "written": sorted(
-                key
-                for key in display_sections_selection(memory_provider.text)
-                if key not in display_sections_before
-            ),
+        # What the display release took back, kept, and carried into the
+        # OMH theme store, plus the widget and skin files it removed.
+        "display_release": {
+            "changed": display_release.changed,
+            "message": display_release.message,
+            # True on the one pass that records `display_released_at`.
+            "recorded": not already_released and not held,
+            "keys": display_rows,
+            "theme": theme,
+            "files": legacy_files,
         },
         "memory_provider": {
             "changed": memory_provider.changed,
@@ -2286,16 +2498,18 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         force=bool(args.force),
         remove_command_package=bool(remove_all and not args.keep_command),
     )
-    tui_widget_result = (
-        uninstall_tui_widget(paths.hermes_home, dry_run=bool(args.dry_run))
+    legacy_files = (
+        _remove_legacy_display_files(
+            paths,
+            dry_run=bool(args.dry_run),
+            config_text=update.text,
+            released=_display_released(record, paths),
+        )
         if remove_all
-        else {"status": "not_requested"}
+        else {"tui_widget": {"status": "not_requested"}, "skin": {"status": "not_requested"}}
     )
-    skin_result = (
-        uninstall_skin(paths.hermes_home, dry_run=bool(args.dry_run))
-        if remove_all
-        else {"status": "not_requested"}
-    )
+    tui_widget_result = legacy_files["tui_widget"]
+    skin_result = legacy_files["skin"]
     profile_results = _uninstall_hermes_profiles(args, remove_all=remove_all, record=record)
     scope = (
         tr(language, "uninstall_scope_all")
@@ -2614,7 +2828,6 @@ def cmd_setup(args: argparse.Namespace) -> int:
     validate_model_setup_args(args)
     language = _setup_language(args)
     paths = _paths(args)
-    _preset_tui_identity_choice(args)
     if _setup_should_interact(args):
         if not _setup_paths_were_explicit(args) and not getattr(args, "scope", None):
             args.scope = _ask_setup_scope(use_color=_use_color(), language=language)
@@ -2653,20 +2866,12 @@ def cmd_setup(args: argparse.Namespace) -> int:
 
     progress.step(step_index, total_steps, tr(language, "step_plugin"), detail=str(paths.hermes_plugin_dir))
     steps["plugin"] = _plugin_setup_result(args, paths)
-    steps["tui_widget"] = install_tui_widget(paths.hermes_home, dry_run=bool(args.dry_run))
-    # The OMH identity skin ships next to the widget: same managed-artifact
-    # discipline, same refresh cadence. Activation happens in the config
-    # apply step (`ensure_omh_skin`), never here.
-    steps["skin"] = install_skin(paths.hermes_home, dry_run=bool(args.dry_run))
     # Every install gets the editable mixture-chain override document so
     # customizing routing is a config edit, not a source edit.
     steps["model_chains"] = _seed_model_chains_result(paths, dry_run=bool(args.dry_run))
     # Bot profiles are independent Hermes homes under <hermes_home>/profiles;
     # registering only the primary home is why bot chats saw zero OMH skills.
     steps["hermes_profiles"] = _sync_hermes_profiles(args) if not args.skip_apply else []
-    steps["hermes_tui_preflight"] = _hermes_tui_preflight_step(
-        paths, quiet=_wants_json(args), dry_run=bool(args.dry_run)
-    )
     plugin_status = steps["plugin"].get("status", "installed") if isinstance(steps["plugin"], dict) else "installed"
     progress.done(_plugin_status_label(language, str(plugin_status)))
     step_index += 1
@@ -2766,8 +2971,12 @@ def cmd_setup(args: argparse.Namespace) -> int:
         if args.skip_apply
         else "config_registered_reload_required"
     )
+    # v2: the setup payload no longer carries the branded-TUI fields v1 did
+    # (`tui_verdict`, `steps.tui_widget`, `steps.skin`,
+    # `steps.hermes_tui_preflight`, and `steps.apply.tui_interface`, `.skin`
+    # and `.display_sections`); `steps.apply.display_release` replaces them.
     hermes_native = {
-        "schema_version": "hermes_native_setup/v1",
+        "schema_version": "hermes_native_setup/v2",
         "mode": "omh_bootstrap",
         "dry_run": bool(args.dry_run),
         "observed": not args.dry_run and not args.skip_apply,
@@ -2826,8 +3035,6 @@ def cmd_setup(args: argparse.Namespace) -> int:
         payload["hermes_profiles"] = steps["hermes_profiles"]
     if args.profile_pack:
         payload["team_profiles"] = steps["team_profiles"]
-    if not args.dry_run:
-        payload["tui_verdict"] = _tui_verdict_payload(args)
     if _wants_json(args):
         _print_json(payload)
     else:
@@ -2856,73 +3063,6 @@ def _setup_should_interact(args: argparse.Namespace) -> bool:
     ):
         return False
     return sys.stdin.isatty() and sys.stdout.isatty()
-
-
-def _update_should_interact(args: argparse.Namespace) -> bool:
-    if not hasattr(args, "omh_home") or not hasattr(args, "hermes_home"):
-        return False
-    if getattr(args, "from_skills_dir", None) or getattr(args, "source", None):
-        return False
-    if _wants_json(args) or getattr(args, "dry_run", False):
-        return False
-    if getattr(args, "interactive", False):
-        return True
-    if (
-        getattr(args, "no_interactive", False)
-        or getattr(args, "yes", False)
-        or getattr(args, "no_omh_tui", False)
-    ):
-        return False
-    return sys.stdin.isatty() and sys.stdout.isatty()
-
-
-def _preset_tui_identity_choice(args: argparse.Namespace) -> None:
-    if getattr(args, "no_omh_tui", False):
-        args._omh_tui_choice = False
-    elif getattr(args, "yes", False):
-        args._omh_tui_choice = True
-
-
-def _will_ask_tui_identity(args: argparse.Namespace, paths: OmhPaths) -> bool:
-    """Whether `_ask_tui_identity_choice` puts a question on screen.
-
-    The group itself returns early on this predicate, so the step count the
-    wizard prints and the questions that appear are one condition read twice
-    rather than two conditions that can drift.
-    """
-    if hasattr(args, "_omh_tui_choice"):
-        return False
-    config_text = read_config(paths.hermes_config_path)
-    # Any shipped theme counts as identity-active: asking a crimson user to
-    # switch to the default skin is asking them to lose a choice they made.
-    selected_skin = display_skin_selection(config_text)
-    # Deliberately NOT widened to include `display.sections`, though that key
-    # joined the bundle this prompt consents to. A plain non-interactive `omh
-    # setup` writes `interface` and `skin` and never the sections, because
-    # collapsing somebody's transcript stays behind the confirmation. So an
-    # "is the bundle complete" test here would be satisfied by nothing OMH
-    # writes on its own, and every later interactive run would ask again about
-    # a state OMH itself created. The trigger stays the two keys it always
-    # was; `--yes` is how an already-branded install takes the third.
-    if display_interface_selection(config_text) == "tui" and is_omh_skin_name(selected_skin):
-        return False
-    target_skin = selected_skin if is_omh_skin_name(selected_skin) else SKIN_NAME
-    return bool(
-        activate_tui_interface(config_text).changed
-        or activate_omh_skin(config_text, target_skin).changed
-    )
-
-
-def _ask_tui_identity_choice(args: argparse.Namespace, paths: OmhPaths, language: str) -> None:
-    if not _will_ask_tui_identity(args, paths):
-        return
-    args._omh_tui_choice = _ask_yes_no(
-        tr(language, "tui_identity_prompt"),
-        default=True,
-        use_color=_use_color(),
-        note=tr(language, "tui_identity_note"),
-        language=language,
-    )
 
 
 # Binary name per external CLI profile, read-only PATH lookup only -- never
@@ -2961,8 +3101,8 @@ def _detected_external_cli_profiles() -> list[str]:
 def _will_ask_maestro_delegation(args: argparse.Namespace, paths: OmhPaths) -> bool:
     """Whether `_ask_maestro_delegation_choice` puts a question on screen.
 
-    Same shape as `_will_ask_tui_identity`: the group returns early on this,
-    so the wizard can count the question before the first prompt is printed.
+    The group returns early on this, so the wizard can count the question
+    before the first prompt is printed.
     """
     if hasattr(args, "_maestro_delegation_choice"):
         return False
@@ -3627,12 +3767,6 @@ def _wizard_question_groups() -> tuple[_WizardQuestion, ...]:
     functions defined further down this file.
     """
     return (
-        _WizardQuestion(
-            "tui_identity",
-            "wizard_step_tui_identity",
-            _will_ask_tui_identity,
-            _ask_tui_identity_choice,
-        ),
         _WizardQuestion(
             "maestro_delegation",
             "wizard_step_maestro_delegation",
@@ -4501,17 +4635,18 @@ def _print_setup_summary(payload: dict[str, object], *, language: str = "en") ->
         print(f"  {tr(language, 'setup_next_reload')}")
         print(f"  {tr(language, 'setup_next_prompt')}")
         print(f"  {tr(language, 'setup_next_verify')}")
-        # The chains recommendation belongs to setup's next steps, not the TUI
-        # verdict block below — the verdict stays the final output line.
         print(f"  {tr(language, 'setup_next_chains')}")
     print(f"  {tr(language, 'machine_readable')}")
     profiles = payload.get("hermes_profiles")
+    if not dry_run:
+        apply = steps.get("apply")
+        _print_display_release_lines(
+            apply if isinstance(apply, dict) else None,
+            [row for row in profiles if isinstance(row, dict)] if isinstance(profiles, list) else [],
+        )
     if isinstance(profiles, list):
         _print_hermes_profiles_line(profiles, language=language)
         _print_omh_home_reclaims([row for row in profiles if isinstance(row, dict)])
-    verdict = payload.get("tui_verdict")
-    if isinstance(verdict, dict):
-        _print_tui_verdict_block(verdict, language=language)
 
 
 def _provider_summary_line(providers: dict[str, object], *, language: str) -> str:
@@ -4757,6 +4892,10 @@ def _print_uninstall_summary(payload: dict[str, object], *, language: str = "en"
             if item.get("path", "") in command_kept_paths:
                 continue
             print(f"  {tr(language, 'kept')}: {item.get('path', '')} ({item.get('reason', '')})")
+    for key in ("tui_widget", "skin"):
+        outcome = payload.get(key)
+        if isinstance(outcome, dict) and outcome.get("status") == "refused":
+            print(f"  {tr(language, 'kept')}: {outcome.get('path', '')} ({outcome.get('reason', '')})")
 
     profiles = payload.get("hermes_profiles")
     if isinstance(profiles, list) and profiles:
@@ -5082,6 +5221,9 @@ def _print_apply_summary(payload: dict[str, object]) -> None:
     print(f"  Status: {status}")
     if message:
         print(f"  Detail: {message}")
+    if not dry_run:
+        for line in _display_release_lines("Hermes display", payload.get("display_release")):
+            print(f"  {line}")
     print(_color("Next", "1;32", use_color))
     print("  Restart or reload Hermes Agent before expecting chat to see new skills.")
     print(f"  {tr('en', 'machine_readable')}")
@@ -5923,7 +6065,10 @@ def _add_top_level_commands(sub) -> None:
     setup.add_argument(
         "--no-omh-tui",
         action="store_true",
-        help="Keep the current Hermes display interface and skin instead of activating the branded OMH TUI.",
+        help=(
+            "Accepted for compatibility and ignored: OMH writes no Hermes display key, "
+            "and this run still takes back any an earlier version wrote."
+        ),
     )
     setup.add_argument("--skip-apply", action="store_true", help="Install skills without registering them in Hermes config.")
     setup.add_argument(
@@ -6048,14 +6193,17 @@ def _add_top_level_commands(sub) -> None:
     update = sub.add_parser("update", help="Refresh OMH from a preview, stable, local, or explicit package source.")
     _add_common_install_options(update)
     update.add_argument("--json", action="store_true", help="Print the full machine-readable update payload.")
-    update.add_argument("--yes", action="store_true", help="Use the recommended branded TUI choice without prompting.")
-    update.add_argument("--interactive", action="store_true", help="Force the interactive update prompt.")
-    update.add_argument("--no-interactive", action="store_true", help="Disable the interactive update prompt.")
+    update.add_argument("--yes", action="store_true", help="Accepted for compatibility; update asks nothing.")
+    update.add_argument("--interactive", action="store_true", help="Accepted for compatibility; update asks nothing.")
+    update.add_argument("--no-interactive", action="store_true", help="Accepted for compatibility; update asks nothing.")
     update.add_argument("--recover-known-good", action="store_true", help="Atomically restore the retained known-good installer generation.")
     update.add_argument(
         "--no-omh-tui",
         action="store_true",
-        help="Keep the current Hermes display interface and skin instead of activating the branded OMH TUI.",
+        help=(
+            "Accepted for compatibility and ignored: OMH writes no Hermes display key, "
+            "and this run still takes back any an earlier version wrote."
+        ),
     )
     update.set_defaults(func=cmd_update)
 

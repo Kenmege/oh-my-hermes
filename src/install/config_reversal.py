@@ -29,6 +29,17 @@ construction and are reversible without a record. `display.interface: tui`,
 the `display.sections` children and the compression fallback chain are not
 distinguishable from a person's own choice, so they are kept and reported as
 unrecorded rather than guessed at.
+
+The three display keys stopped being OMH's to write when bare `hermes` went
+back to stock Hermes: bare `omh` opens the OMH TUI, and nothing OMH ships
+restyles Hermes' own terminal any more. `release_managed_display` is the
+migration. Setup and update run it with the same per-key rules uninstall
+uses, and once a pass leaves no key `refused` the record says so
+(`display_released_at`): from that point no display value in that config is
+OMH's, including an `omh*` skin name, which only the person can have chosen
+since. A key the editor would not touch for its YAML shape, and that the
+record or the OMH skin name says may be OMH's, is `refused` instead; it
+stays OMH's in the record, and the next pass tries again.
 """
 
 from __future__ import annotations
@@ -49,9 +60,12 @@ from .compression_defaults import (
 from .config_adapter import (
     ConfigChange,
     config_container_paths,
+    display_edit_refusal,
     display_interface_selection,
+    display_key_named_twice,
     display_sections_selection,
     display_skin_selection,
+    display_skin_selections,
     external_dirs,
     memory_provider_selection,
     plugin_enablement,
@@ -112,11 +126,20 @@ MANAGED_CONTAINERS: tuple[str, ...] = (
 
 _SECTION_VALUE = "collapsed"
 
-# The two keys consent lets OMH write OVER a value the person already had.
-# Everything else it writes is unset-only, so its inverse is a removal;
-# these two need the prior value put back or the person loses a choice they
-# made before they ever installed OMH.
+# The two keys consent let earlier versions write OVER a value the person
+# already had. Everything else OMH writes is unset-only, so its inverse is a
+# removal; these two need the prior value put back or the person loses a
+# choice they made before they ever installed OMH.
 RESTORABLE_KEYS: tuple[str, ...] = (DISPLAY_INTERFACE_KEY, DISPLAY_SKIN_KEY)
+
+# What `release_managed_display` takes back, and the containers it may drop
+# with them. Earlier versions wrote all three; this one writes none.
+DISPLAY_KEYS: tuple[str, ...] = (DISPLAY_INTERFACE_KEY, DISPLAY_SECTIONS_KEY, DISPLAY_SKIN_KEY)
+DISPLAY_CONTAINERS: tuple[str, ...] = ("display", "display.sections")
+
+# The per-config record field saying the release ran. Its presence, not its
+# value, is what every later reader checks.
+DISPLAY_RELEASED_FIELD = "display_released_at"
 
 
 @dataclass(frozen=True)
@@ -200,7 +223,7 @@ def _merged_keys(previous: dict[str, object], written: dict[str, object]) -> dic
     """Carry an earlier run's record forward; a later run only ever adds.
 
     `_apply_result` runs on every `omh setup` AND every `omh update`, and on
-    the second run the writers report "already tui" and change nothing. A
+    the second run the writers report "already enabled" and change nothing. A
     record that only ever held the latest run's writes would therefore erase
     itself on the first update, which is exactly the install that most needs
     it.
@@ -228,6 +251,7 @@ def managed_config_writes(
     previous: object = None,
     now: str | None = None,
     released: Iterable[str] = (),
+    display_released: bool = False,
 ) -> dict[str, object]:
     """Add this apply pass's record to the per-config map, keeping the others.
 
@@ -240,17 +264,28 @@ def managed_config_writes(
     no-record subset.
 
     `released` names keys this pass took back from the config, which leave
-    the record with them. The record only ever grows otherwise, so a key
-    removed without this would still read as OMH's, and a later pass would
-    take the same value back from the person who wrote it again (#1973).
+    the record with them, `restores` entry included. The record only ever
+    grows otherwise, so a key removed without this would still read as
+    OMH's, and a later pass would take the same value back from the person
+    who wrote it again (#1973). It has to cover `restores` as well as
+    `keys`: a release that puts a person's own value back reads, to the
+    before/after comparison below, like OMH writing that value over its own.
+
+    `display_released` says this pass ran `release_managed_display`. The
+    record keeps the first time it did, and stops naming the display
+    containers, which the release has already dropped where they were OMH's.
     """
     before = managed_config_reading(before_text)
     after = managed_config_reading(after_text)
     prior = load_managed_config_writes(previous, config_path=config_path)
     prior_keys = prior.get("keys") if isinstance(prior.get("keys"), dict) else {}
     prior_containers = prior.get("containers_created") if isinstance(prior.get("containers_created"), list) else []
+    released_at = str(prior.get(DISPLAY_RELEASED_FIELD) or "")
+    if display_released and not released_at:
+        released_at = now or utc_now()
     containers = sorted(
-        {
+        path
+        for path in {
             *(str(item) for item in prior_containers),
             *(
                 path
@@ -258,9 +293,11 @@ def managed_config_writes(
                 if path in MANAGED_CONTAINERS
             ),
         }
+        if not (released_at and path in DISPLAY_CONTAINERS)
     )
     prior_restores = prior.get("restores") if isinstance(prior.get("restores"), dict) else {}
     dropped = {str(key) for key in released}
+    restores = {**{str(k): str(v) for k, v in prior_restores.items()}, **_replaced_values(before, after)}  # type: ignore[union-attr]
     record = {
         "schema_version": MANAGED_CONFIG_WRITES_SCHEMA,
         "config_path": str(config_path),
@@ -271,15 +308,17 @@ def managed_config_writes(
             if key not in dropped
         },
         # The most recent replacement wins, and a pass that replaced nothing
-        # leaves the entry alone. Only an explicit re-consent replaces a
-        # value at all -- `ensure_tui_interface` refuses anything the person
-        # has set -- so a second entry means they chose something new and
-        # then let OMH migrate them off THAT. Putting back the value from
+        # leaves the entry alone. Only an explicit re-consent replaced a
+        # value at all -- the unset-only default writer earlier versions ran
+        # refused anything the person had set -- so a second entry means
+        # they chose something new and then let OMH migrate them off THAT. Putting back the value from
         # before the first install would hand them a choice they had already
         # abandoned.
-        "restores": {**{str(k): str(v) for k, v in prior_restores.items()}, **_replaced_values(before, after)},  # type: ignore[union-attr]
+        "restores": {key: value for key, value in restores.items() if key not in dropped},
         "containers_created": containers,
     }
+    if released_at:
+        record[DISPLAY_RELEASED_FIELD] = released_at
     return {**_config_map(previous), str(config_path): record}
 
 
@@ -412,6 +451,7 @@ def reverse_managed_config(
     keys = owned.get("keys") if isinstance(owned.get("keys"), dict) else {}
     restores = owned.get("restores") if isinstance(owned.get("restores"), dict) else {}
     containers = owned.get("containers_created") if isinstance(owned.get("containers_created"), list) else []
+    released = bool(owned.get(DISPLAY_RELEASED_FIELD))
     rows: list[ReversalRow] = []
     text = config_text
     changed = False
@@ -419,6 +459,9 @@ def reverse_managed_config(
     empty_before = childless_containers(baseline)
 
     for key in REVERSIBLE_KEYS:
+        if released and key in DISPLAY_KEYS:
+            rows.append(_released_row(text, key))
+            continue
         recorded = keys.get(key) if isinstance(keys, dict) else None  # type: ignore[union-attr]
         previous = str(restores.get(key) or "") if isinstance(restores, dict) else ""  # type: ignore[union-attr]
         change, row = _reverse_one(text, key, recorded, previous)
@@ -444,6 +487,139 @@ def reverse_managed_config(
     return ConfigChange(True, message, text), rows
 
 
+def _released_row(config_text: str, key: str) -> ReversalRow:
+    """A display key after `release_managed_display` ran: never OMH's again."""
+    if not config_names_key(config_text, key):
+        return ReversalRow(key, "absent", f"{key} is not set")
+    return ReversalRow(key, "kept", f"{key} is the person's own; OMH released its display keys")
+
+
+def release_managed_display(
+    config_text: str,
+    record: object,
+    *,
+    config_path: str | Path,
+) -> tuple[ConfigChange, list[ReversalRow]]:
+    """Take back the display keys OMH wrote, once per config, so bare `hermes` is stock Hermes.
+
+    The display half of `reverse_managed_config`, under the same per-key
+    rules, because it is the same question asked on setup and update instead
+    of on uninstall: a recorded value still on disk goes, or goes back to
+    the value consent replaced; a value the person changed since stays; an
+    `omh*` skin is OMH's with or without a record; an unrecorded
+    `display.interface` or section stays, because nothing says OMH wrote
+    it. A display container goes when OMH created it (or, with no record,
+    when this pass emptied it), exactly as uninstall decides.
+
+    Never `reverse_managed_config` itself: that reverses `plugins.enabled`
+    and `memory.provider` too, which on an update would switch OMH off.
+
+    Once only. The caller records `display_released_at` with the pass, and
+    from then on this changes nothing: OMH writes no display key any more,
+    so a `display.skin: omh-crimson` that appears later is one the person
+    chose, and taking it back on every update would undo that choice each
+    time (the #1973 shape).
+
+    Except when a row comes back `refused`: the editor would not touch that
+    key for its YAML shape, and the record or the OMH skin name says its
+    value may still be OMH's (`_refused_or_kept`). The caller must not
+    record the release on that pass, and must keep the key in the record so
+    the next pass asks again.
+    """
+    owned = load_managed_config_writes(record, config_path=config_path)
+    if owned.get(DISPLAY_RELEASED_FIELD):
+        return ConfigChange(False, "display keys were already released", config_text), []
+    keys = owned.get("keys") if isinstance(owned.get("keys"), dict) else {}
+    restores = owned.get("restores") if isinstance(owned.get("restores"), dict) else {}
+    containers = owned.get("containers_created") if isinstance(owned.get("containers_created"), list) else []
+    empty_before = childless_containers(config_text)
+    rows: list[ReversalRow] = []
+    text = config_text
+    for key in DISPLAY_KEYS:
+        recorded = keys.get(key) if isinstance(keys, dict) else None  # type: ignore[union-attr]
+        previous = str(restores.get(key) or "") if isinstance(restores, dict) else ""  # type: ignore[union-attr]
+        change, row = _reverse_one(text, key, recorded, previous)
+        text = change.text
+        rows.append(_refused_or_kept(text, row, recorded) if row.status == "kept" else row)
+    # Only the display containers are candidates: this pass removed nothing
+    # else, so no other container can have lost its last child here.
+    named = {str(item) for item in containers if str(item) in DISPLAY_CONTAINERS}  # type: ignore[union-attr]
+    guessed = set() if owned else set(DISPLAY_CONTAINERS) - empty_before
+    cleanup = remove_childless_containers(text, sorted(named | guessed))
+    text = cleanup.text
+    reversed_keys = [row.key for row in rows if row.status == "reversed"]
+    if text == config_text:
+        return ConfigChange(False, "no display key of OMH's to release", config_text), rows
+    message = f"released {', '.join(reversed_keys)}" if reversed_keys else cleanup.message
+    return ConfigChange(True, message, text), rows
+
+
+def _refused_or_kept(config_text: str, row: ReversalRow, recorded: object) -> ReversalRow:
+    """A `kept` display row, or `refused` when the shape stopped the edit and the value may still be OMH's.
+
+    `kept` from the removers covers two different outcomes: the value is no
+    longer the one OMH wrote, or the editor refused the YAML shape before
+    looking (a quoted key anywhere in the file, a dotted or duplicate
+    `display`, anchors, tags, a BOM). Only the first leaves nothing of OMH's
+    behind. The value is read here without the editor's guards.
+
+    With a record naming the key, a value that reads as the person's own
+    keeps the row `kept`; one that reads as OMH's, or cannot be read at
+    all, is `refused`. A key set in more than one place (a second `skin`
+    in the block, a second `display`, a dotted key beside the block) cannot
+    be read either: the reader returns the first value, and Hermes may
+    resolve another (`display_key_named_twice`), so the first reading as
+    the person's says nothing of the one Hermes uses. Without a record,
+    only an OMH skin name makes it `refused`, among any of the values when
+    the key is set more than once, since the one Hermes resolves may be an
+    OMH name behind a first one that is not. OMH's writers never wrote the
+    flow, dotted or duplicate shapes the editor refuses, so an unreadable
+    value nobody recorded, such as a fresh install's
+    `display: {skin: mytheme}`, is the person's.
+    """
+    leaf = row.key.rpartition(".")[2]
+    refusal = display_edit_refusal(config_text, leaf)
+    if not refusal:
+        return row
+    # The value is read past a leading BOM, as Hermes' YAML loader and
+    # `config_names_key` read it; the editor's refusal of the file stands.
+    readable = config_text.removeprefix("\ufeff")
+    if recorded:
+        may_be_omhs = display_key_named_twice(readable, leaf) or not _reads_as_persons(
+            readable, row.key, recorded
+        )
+    else:
+        may_be_omhs = row.key == DISPLAY_SKIN_KEY and any(
+            is_omh_skin_name(_plain_scalar(value)) for value in display_skin_selections(readable)
+        )
+    return ReversalRow(row.key, "refused", refusal) if may_be_omhs else row
+
+
+def _plain_scalar(value: str) -> str:
+    """`value`, or "" when it opens with a YAML node property or alias the readers return verbatim.
+
+    `skin: !!str omh-crimson` and `skin: &s omh-crimson` read as
+    "!!str omh-crimson" and "&s omh-crimson", which match no OMH skin name
+    while Hermes resolves the skin `omh-crimson`. Such a value cannot be
+    read here at all, so it never counts as the person's own.
+    """
+    return "" if value.startswith(("&", "!", "*")) else value
+
+
+def _reads_as_persons(config_text: str, key: str, recorded: object) -> bool:
+    if key == DISPLAY_INTERFACE_KEY:
+        current = _plain_scalar(display_interface_selection(config_text))
+        return bool(current) and current != recorded
+    if key == DISPLAY_SKIN_KEY:
+        current = _plain_scalar(display_skin_selection(config_text))
+        return bool(current) and not is_omh_skin_name(current)
+    # The sections reader returns nothing under the guards the editor
+    # applies, so a refused sections key never reads as anybody's.
+    current = display_sections_selection(config_text)
+    wanted = [str(name) for name in recorded] if isinstance(recorded, list) else []
+    return bool(current) and not any(current.get(name) == _SECTION_VALUE for name in wanted)
+
+
 def _reverse_one(
     config_text: str,
     key: str,
@@ -462,8 +638,14 @@ def _reverse_one(
 
     if key == DISPLAY_SKIN_KEY:
         expected = recorded if isinstance(recorded, str) and recorded else ""
+        current = display_skin_selection(config_text)
+        if expected and current != expected and is_omh_skin_name(current):
+            # `omh theme use` used to write `display.skin` without touching
+            # the record, so a recorded `omh` can be on disk as
+            # `omh-crimson`. The name is OMH's by construction, the same
+            # rule the record-less branch below applies.
+            expected = current
         if not expected:
-            current = display_skin_selection(config_text)
             if not current:
                 if config_names_key(config_text, DISPLAY_SKIN_KEY):
                     return ConfigChange(False, "", config_text), ReversalRow(
@@ -476,7 +658,10 @@ def _reverse_one(
                 )
             # An OMH skin name is OMH's by construction even with no record:
             # `omh` and the `omh-*` themes are this product's own names, and
-            # `omh theme use <name>` is the only thing that writes them.
+            # until the display release setup, update and `omh theme use`
+            # were the only things that wrote them. After it, nothing of
+            # OMH's does, which is why neither caller asks this question
+            # again once `display_released_at` is recorded.
             expected = current
         return _row_from(key, revert_display_scalar(config_text, "skin", expected, previous))
 
@@ -577,7 +762,13 @@ def config_names_key(config_text: str, key: str, *, name: str = "") -> bool:
     here" and the wrong one for "is anything left". A dotted
     `memory.provider: omh` that the guard refuses is present, and saying so
     is the whole point of the uninstall report.
+
+    A leading BOM is read through. Hermes' YAML loader skips it, so a key
+    on the line right after it is there. The editor refuses the whole file
+    for it, and the strict readers do not see past it, so the release reads
+    the value past it too (`_refused_or_kept`, setup's `_selected_skins`).
     """
+    config_text = config_text.removeprefix("\ufeff")
     if key == PLUGINS_ENABLED_KEY:
         if not plugin_enablement_is_readable(config_text):
             # The one answer this row must not give over a node OMH did not

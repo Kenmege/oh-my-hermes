@@ -316,10 +316,6 @@ class StartupCheckLaunchIntegrationTests(unittest.TestCase):
             self.assertEqual(spawned_argv[1:4], ["-P", "-m", "omh.cli"])
             self.assertIn("update", spawned_argv)
             self.assertIn("--no-interactive", spawned_argv)
-            # `--yes` would preset the branded-TUI identity choice
-            # (`commands/setup.py:_preset_tui_identity_choice`) and rewrite a
-            # user's own `display.interface`/skin choice on every auto-update.
-            self.assertNotIn("--yes", spawned_argv)
             # The synthesized argv (after the interpreter/module prefix) must
             # be a valid CLI invocation, not just plausible-looking strings.
             main_module.build_parser().parse_args(spawned_argv[4:])
@@ -334,8 +330,7 @@ class StartupCheckLaunchIntegrationTests(unittest.TestCase):
             # The launch is held for the whole update, so it says what it is
             # doing and what it landed on. The completion version is read
             # back from the record the update just rewrote -- this process is
-            # still running the pre-update package -- and that same record is
-            # what the TUI HUD footer renders.
+            # still running the pre-update package.
             output = buffer.getvalue()
             self.assertIn("OMH Auto Update: aaaaaaa -> bbbbbbb (preview channel)", output)
             self.assertIn("OMH Auto Update complete: omh 9.9.9 is installed.", output)

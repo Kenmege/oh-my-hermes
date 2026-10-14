@@ -117,22 +117,22 @@ class ReadmeHighlightsTests(unittest.TestCase):
         comments = {
             "README.md": (
                 "# Set the model per work category (arrow keys: category, ←→ head model, -/+ effort);\n"
-                "# the same picker opens inside the Hermes TUI as /omh-model:",
+                "# the same picker opens inside the OMH TUI (bare omh) as /omh-model:",
                 "# To onboard a new model family, use this skill in Hermes:",
             ),
             "README.ko.md": (
                 "# 작업 카테고리별 모델 설정 (화살표: 카테고리, ←→ head 모델, -/+ effort);\n"
-                "# Hermes TUI 안에서는 /omh-model이 같은 피커를 엽니다:",
+                "# OMH TUI(omh) 안에서는 /omh-model이 같은 피커를 엽니다:",
                 "# 새 모델 패밀리를 온보딩하려면 Hermes에서 이 스킬을 사용하세요:",
             ),
             "README.ja.md": (
                 "# 作業カテゴリごとのモデル設定（矢印キー: カテゴリ、←→ head モデル、-/+ effort）;\n"
-                "# Hermes TUI では /omh-model が同じピッカーを開きます:",
+                "# OMH TUI(omh)では /omh-model が同じピッカーを開きます:",
                 "# 新しいモデルファミリーをオンボーディングするには、Hermes でこのスキルを使ってください:",
             ),
             "README.zh.md": (
                 "# 按工作类别设置模型（方向键：类别，←→ head 模型，-/+ effort）；\n"
-                "# 在 Hermes TUI 中 /omh-model 打开同一个选择器：",
+                "# 在 OMH TUI（omh）中 /omh-model 打开同一个选择器：",
                 "# 如需接入新的模型家族，请在 Hermes 中使用此技能：",
             ),
         }

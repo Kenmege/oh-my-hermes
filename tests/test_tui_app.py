@@ -47,7 +47,7 @@ from _tui_gateway_replay import (
 from _tui_lines import line_text
 from _vt_screen import VTScreen
 from omh.tui import terminal as terminal_module
-from omh.skin_pack import hex_to_rgb
+from omh.skin_pack import hex_to_rgb, theme_for_name, write_theme_choice
 from omh.tui.app import (
     BANNER_HINT,
     EXIT_HINT,
@@ -1310,6 +1310,20 @@ class InitialThemeTests(unittest.TestCase):
             with self.subTest(skin=skin):
                 self.assertEqual(initial_theme({"skin": {"name": skin}}).name, theme)
         self.assertEqual(initial_theme({}).name, "sky")
+
+    def test_the_theme_saved_under_the_omh_home_wins_over_the_hermes_skin(self) -> None:
+        with make_test_tempdir("omh-tui-theme-") as tmp:
+            omh_home = Path(tmp) / ".omh"
+            # Nothing saved: the Hermes skin still decides, as before.
+            self.assertEqual(initial_theme({"skin": {"name": "omh-amber"}}, str(omh_home)).name, "amber")
+            mono = theme_for_name("mono")
+            assert mono is not None
+            write_theme_choice(omh_home, mono)
+
+            self.assertEqual(initial_theme({"skin": {"name": "omh-amber"}}, str(omh_home)).name, "mono")
+            self.assertEqual(initial_theme({}, str(omh_home)).name, "mono")
+            # No OMH home named (the TUI started some other way than bare `omh`).
+            self.assertEqual(initial_theme({"skin": {"name": "omh-amber"}}, None).name, "amber")
 
 
 @unittest.skipIf(NO_TERMIOS, "the OMH TUI needs termios")

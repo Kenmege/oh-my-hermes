@@ -1,11 +1,11 @@
 """Bounded, read-only inspection of a local Hermes installation.
 
-One seam, because two callers need the same fact and a second parser would
-drift from the first. ``maintenance.hermes_tui`` asks which Hermes a user's HUD
-would render in; ``workflows.plugin_hook_contract`` asks whether the pinned
-hook mapping was established for the Hermes a plugin is about to be enabled on.
-``maintenance.doctor`` asks which commit the checkout is at, to print next to
-the one the OMH TUI's gateway contract was declared against.
+One seam, because several callers need the same facts and a second parser
+would drift from the first. ``workflows.plugin_hook_contract`` asks whether the
+pinned hook mapping was established for the Hermes a plugin is about to be
+enabled on; doctor's OMH TUI check asks whether the launcher hook the OMH TUI
+needs is there, and which commit the checkout is at, to print next to the one
+the OMH TUI's gateway contract was declared against.
 
 What "bounded" means here, exactly: paths derived from a directory the caller
 named (the version module; the checkout's ``.git/HEAD``, the loose ref it
@@ -25,7 +25,7 @@ import re
 
 HERMES_INSTALL_DIRNAME = "hermes-agent"
 
-# Reading cap: userWidgets.ts is ~8KB and config.yaml tens of KB today.
+# Reading cap: `main_tui_launch.py`, the largest file read here, is ~23KB today.
 MAX_BOUNDED_READ_BYTES = 512_000
 
 # The module Hermes keeps `__version__` in, named in `HERMES_COMPAT_MATRIX`'s

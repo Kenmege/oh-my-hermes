@@ -8,9 +8,8 @@ questions this machine is about to ask, so every case here compares the printed
 headings against the prompts that actually appeared rather than against a
 constant written next to them.
 
-Several groups skip themselves -- a config that is already TUI plus an OMH
-skin, no external coding CLI on PATH, nothing to offer as a provider, no
-terminal, no `--with-mcp`. A total that counted those would be a lie on most
+Several groups skip themselves -- no external coding CLI on PATH, nothing to
+offer as a provider, no terminal, no `--with-mcp`. A total that counted those would be a lie on most
 machines.
 """
 
@@ -51,13 +50,9 @@ _NONE_DETECTED = {
     profile: {"binary_present": False, "login_marker": "absent"} for profile in EXTERNAL_CLI_PROFILES
 }
 
-# A config the TUI identity question has nothing left to ask about.
-_BRANDED_CONFIG = "display:\n  interface: tui\n  skin: omh\n"
-# A config that still uses the plain CLI interface, so the question is live.
-_PLAIN_CONFIG = "display:\n  interface: cli\n"
+_CONFIG = "version: 1\n"
 
 _STEP_LABEL_KEYS = (
-    "wizard_step_tui_identity",
     "wizard_step_maestro_delegation",
     "wizard_step_provider_entitlements",
     "wizard_step_model_chains",
@@ -143,16 +138,16 @@ class _WizardHarness:
 
 
 class WizardProgressTests(_WizardHarness, unittest.TestCase):
-    def test_every_group_running_numbers_one_through_six(self) -> None:
-        """All six groups ask, so the headings run `[1/6]` to `[6/6]`."""
+    def test_every_group_running_numbers_one_through_five(self) -> None:
+        """All five groups ask, so the headings run `[1/5]` to `[5/5]`."""
         with TemporaryDirectory() as tmp:
             paths = self._paths(Path(tmp))
-            self._config(paths, _PLAIN_CONFIG)
+            self._config(paths, _CONFIG)
             args, headings, prompts, _output = self._run_wizard(
                 paths, detected=_ALL_DETECTED, stdin_tty=True, with_mcp=True
             )
-            self.assertEqual([index for index, _total, _label in headings], [1, 2, 3, 4, 5, 6])
-            self.assertEqual({total for _index, total, _label in headings}, {6})
+            self.assertEqual([index for index, _total, _label in headings], [1, 2, 3, 4, 5])
+            self.assertEqual({total for _index, total, _label in headings}, {5})
             self.assertEqual(
                 [label for _index, _total, label in headings],
                 [tr("en", key) for key in _STEP_LABEL_KEYS],
@@ -163,7 +158,6 @@ class WizardProgressTests(_WizardHarness, unittest.TestCase):
             self.assertEqual(
                 prompts,
                 [
-                    tr("en", "tui_identity_prompt"),
                     tr("en", "maestro_delegation_prompt", clis=", ".join(EXTERNAL_CLI_PROFILES)),
                     tr("en", "provider_select_title"),
                     tr("en", "model_chains_interview_prompt"),
@@ -175,10 +169,10 @@ class WizardProgressTests(_WizardHarness, unittest.TestCase):
             self.assertEqual(args.mcp_host, "generic")
 
     def test_a_group_that_skips_itself_is_not_counted(self) -> None:
-        """A branded config and no `--with-mcp` leave four questions, numbered 1..4."""
+        """No `--with-mcp` leaves four questions, numbered 1..4."""
         with TemporaryDirectory() as tmp:
             paths = self._paths(Path(tmp))
-            self._config(paths, _BRANDED_CONFIG)
+            self._config(paths, _CONFIG)
             args, headings, prompts, output = self._run_wizard(
                 paths, detected=_ALL_DETECTED, stdin_tty=True, with_mcp=False
             )
@@ -194,17 +188,15 @@ class WizardProgressTests(_WizardHarness, unittest.TestCase):
                 ],
             )
             self.assertEqual(len(headings), len(prompts))
-            # The two skipped groups left neither a heading nor a question.
-            self.assertNotIn(tr("en", "wizard_step_tui_identity"), output)
+            # The skipped group left neither a heading nor a question.
             self.assertNotIn(tr("en", "wizard_step_mcp_host"), output)
-            self.assertNotIn(tr("en", "tui_identity_prompt"), prompts)
-            self.assertFalse(hasattr(args, "_omh_tui_choice"))
+            self.assertNotIn(tr("en", "mcp_host_title"), prompts)
 
     def test_nothing_to_ask_prints_no_headings(self) -> None:
         """Every group silent prints nothing, and each skip records what it always did."""
         with TemporaryDirectory() as tmp:
             paths = self._paths(Path(tmp))
-            self._config(paths, _BRANDED_CONFIG)
+            self._config(paths, _CONFIG)
             # The update-check question is settled by a recorded answer, not
             # by the machine: this home has one, so the group is silent.
             write_update_check_policy(paths, mode="off")
@@ -218,7 +210,6 @@ class WizardProgressTests(_WizardHarness, unittest.TestCase):
             self.assertEqual(headings, [])
             self.assertEqual(prompts, [])
             self.assertNotIn("[1/", output)
-            self.assertFalse(hasattr(args, "_omh_tui_choice"))
             self.assertIsNone(args._maestro_delegation_choice)
             self.assertIsNone(args._provider_entitlements)
             self.assertIsNone(args._model_chains_interview_choice)
@@ -231,7 +222,7 @@ class WizardProgressTests(_WizardHarness, unittest.TestCase):
         """The plan is the predicates; the predicates are what the groups return early on."""
         with TemporaryDirectory() as tmp:
             paths = self._paths(Path(tmp))
-            self._config(paths, _BRANDED_CONFIG)
+            self._config(paths, _CONFIG)
             args = argparse.Namespace(with_mcp=False, mcp_host="generic", profile=[], profile_pack=[], default_executor=None)
             with patch.object(setup_module, "_detect_external_cli_profiles", return_value=_ALL_DETECTED), patch.object(
                 setup_module, "_stdin_is_tty", return_value=True
@@ -254,12 +245,12 @@ class WizardProgressTests(_WizardHarness, unittest.TestCase):
         """
         with TemporaryDirectory() as tmp:
             paths = self._paths(Path(tmp))
-            self._config(paths, _PLAIN_CONFIG)
+            self._config(paths, _CONFIG)
             with patch.object(setup_module._HumanProgress, "_brief_tty_pause") as pause:
                 _args, headings, _prompts, _output = self._run_wizard(
                     paths, detected=_ALL_DETECTED, stdin_tty=True, with_mcp=True
                 )
-            self.assertEqual(len(headings), 6)
+            self.assertEqual(len(headings), 5)
             pause.assert_not_called()
 
         # Not vacuous: the same renderer still settles for an apply-phase step,
@@ -276,11 +267,11 @@ class WizardProgressTests(_WizardHarness, unittest.TestCase):
             stream = io.StringIO()
             with patch.object(setup_module._HumanProgress, "_brief_tty_pause"), redirect_stdout(stream):
                 setup_module._HumanProgress(enabled=True, use_color=False).step(
-                    2, 4, "Choosing how Hermes looks", pause=keep_pause
+                    2, 4, "Setting up coding delegation", pause=keep_pause
                 )
             rendered.append(stream.getvalue())
         self.assertEqual(rendered[0], rendered[1])
-        self.assertEqual(rendered[0], "[2/4] Choosing how Hermes looks...\n")
+        self.assertEqual(rendered[0], "[2/4] Setting up coding delegation...\n")
 
     def test_group_labels_exist_in_every_language(self) -> None:
         for key in _STEP_LABEL_KEYS:
@@ -311,7 +302,7 @@ class UpdateCheckQuestionTests(_WizardHarness, unittest.TestCase):
     """
 
     def _ask_once(self, paths, answer: str):
-        self._config(paths, _BRANDED_CONFIG)
+        self._config(paths, _CONFIG)
         return self._run_wizard(
             paths,
             detected=_NONE_DETECTED,

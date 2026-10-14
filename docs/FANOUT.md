@@ -338,7 +338,7 @@ Rules, all applied at freeze time:
   delegate_task rows, because a fanout unit IS the Maestro lane spawning an
   external CLI directly, and derives the row's `elapsed_seconds` from the
   binding's own opened timestamp against wall-clock now so a live row shows
-  real running time instead of the widget's snapshot-age fallback. Cost is
+  real running time instead of the renderers' snapshot-age fallback. Cost is
   NOT a live figure for this lane: the spawned CLI reports it only in its
   terminal result object, so `cost_usd` never has a value until the unit's
   binding closes on exit, and a closed binding drops out of the active-row

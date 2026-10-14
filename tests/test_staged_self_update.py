@@ -1423,7 +1423,9 @@ class ManagedWorkflowRegistrationTests(unittest.TestCase):
             applied: list[Namespace] = []
             captured_results: list[dict[str, object]] = []
 
-            def apply_result(profile_args: Namespace, *, bind_omh_home: bool = True) -> dict[str, object]:
+            def apply_result(
+                profile_args: Namespace, *, bind_omh_home: bool = True, theme_home: Path | None = None
+            ) -> dict[str, object]:
                 # This profile names no store, in its config or its `.env`,
                 # so the sync asks for the primary's to be written (#1967);
                 # the unset-only writer keeps a profile setting (#1679).
@@ -1435,6 +1437,7 @@ class ManagedWorkflowRegistrationTests(unittest.TestCase):
                     "registration": "unchanged",
                     "retired_external_dirs": [],
                     "registered_dir": current_skills.as_posix(),
+                    "display_release": {},
                     "plugin_omh_home": {"reclaimed": ""},
                 }
 
@@ -1446,19 +1449,13 @@ class ManagedWorkflowRegistrationTests(unittest.TestCase):
 
             with (
                 patch("omh.commands.setup._command_package_self_update_plan", return_value={"should_update": False}),
-                patch("omh.commands.setup._preset_tui_identity_choice"),
-                patch("omh.commands.setup._update_should_interact", return_value=False),
                 patch.object(setup_commands, "cmd_install", return_value=0),
                 patch("omh.commands.setup._bootstrap_tui_surface", return_value={}),
-                patch("omh.commands.setup._refresh_installed_tui_widget", return_value=None),
                 patch("omh.commands.setup._refresh_installed_menubar_app", return_value=None),
                 patch("omh.commands.setup._registered_workflow_dir", return_value=current_skills),
                 patch.object(setup_commands, "install_plugin_bundle"),
-                patch.object(setup_commands, "install_tui_widget"),
-                patch.object(setup_commands, "install_skin"),
                 patch("omh.commands.setup._apply_result", side_effect=apply_result),
                 patch("omh.commands.setup._print_hermes_profiles_line", side_effect=capture_results),
-                patch("omh.commands.setup._tui_verdict_payload", return_value={"status": "ready"}),
             ):
                 status = setup_commands.cmd_update(args)
 
@@ -1472,6 +1469,7 @@ class ManagedWorkflowRegistrationTests(unittest.TestCase):
                         "registration": "unchanged",
                         "retired_external_dirs": [],
                         "registered_dir": current_skills.as_posix(),
+                        "display_release": {},
                     }
                 ],
             )

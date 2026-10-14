@@ -1,11 +1,10 @@
-"""The managed OMH identity skins: install discipline and activation rules.
+"""The OMH themes: the shipped palettes, the saved choice, and removing old skin files.
 
-The skins are the owner-directed identity default — installing OMH opts into
-the OH-MY-HERMES look the way installing oh-my-zsh restyles the shell — so
-these tests pin the edges that keep that honest. Every shipped theme file is
-only ever overwritten when a manifest record proves OMH wrote THAT file, and
-`display.skin` is only ever defaulted in the unset case. An explicit user skin
-wins forever, in both places, and so does an explicitly chosen OMH theme.
+The palettes are what the OMH TUI paints with, so the registry and payload
+tests pin their shape. Earlier versions installed every theme file into the
+Hermes home; the removal tests pin that only a file OMH can prove it wrote
+goes, by manifest record (either schema) or by matching the shipped bytes,
+and that a file a person wrote stays, record and all.
 """
 
 from __future__ import annotations
@@ -16,11 +15,9 @@ from pathlib import Path
 import re
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import patch
 
+from _legacy_display import seed_legacy_skins
 from _platform_support import requires_symlinks
-
-from omh.install.config_adapter import display_skin_selection, ensure_omh_skin
 from omh.skin_pack import (
     MANIFEST_FILENAME,
     SKIN_FILENAME,
@@ -29,16 +26,16 @@ from omh.skin_pack import (
     SkinInstallError,
     available_skins,
     hex_to_rgb,
-    install_skin,
-    installed_skin_report,
     is_omh_skin_name,
-    repair_skins,
     skin_colors,
     skin_payload,
     theme_for_name,
     theme_for_skin_name,
     theme_names,
+    read_theme_choice,
+    theme_store_path,
     uninstall_skin,
+    write_theme_choice,
 )
 
 _SKINS_DIR = Path(__file__).resolve().parents[1] / "src" / "omh" / "skins"
@@ -210,63 +207,39 @@ class SkinPayloadTests(unittest.TestCase):
         self.assertEqual(len(widths), 1)
 
 
-class SkinInstallTests(unittest.TestCase):
-    def test_install_writes_every_theme_and_a_per_file_manifest(self) -> None:
+class SkinRemovalTests(unittest.TestCase):
+    """`uninstall_skin`, which setup, update and uninstall all use on the files earlier versions installed."""
+
+    def _stale_v1_record(self, skins: Path) -> None:
+        (skins / MANIFEST_FILENAME).write_text(
+            json.dumps(
+                {"schema_version": "omh_skin_manifest/v1", "filename": SKIN_FILENAME, "sha256": "1420e408" + "0" * 56}
+            ),
+            encoding="utf-8",
+        )
+
+    def test_every_file_an_earlier_install_wrote_goes_with_its_manifest(self) -> None:
         with TemporaryDirectory() as tmp:
             home = Path(tmp).resolve()
-            result = install_skin(home)
-            self.assertEqual(result["status"], "installed")
+            seed_legacy_skins(home)
+            self.assertEqual(uninstall_skin(home)["status"], "removed")
             for theme in SKIN_THEMES:
-                destination = home / "skins" / theme.filename
-                self.assertEqual(destination.read_bytes(), skin_payload(theme.skin_name))
-            manifest = json.loads((home / "skins" / MANIFEST_FILENAME).read_text(encoding="utf-8"))
-            self.assertEqual(manifest["schema_version"], "omh_skin_manifest/v2")
-            self.assertEqual(sorted(manifest["files"]), sorted(theme.filename for theme in SKIN_THEMES))
-            self.assertIn("sha256", manifest["files"][SKIN_FILENAME])
-
-    def test_reinstall_is_idempotent(self) -> None:
-        with TemporaryDirectory() as tmp:
-            home = Path(tmp).resolve()
-            install_skin(home)
-            self.assertEqual(install_skin(home)["status"], "unchanged")
-
-    def test_dry_run_writes_nothing(self) -> None:
-        with TemporaryDirectory() as tmp:
-            home = Path(tmp).resolve()
-            self.assertEqual(install_skin(home, dry_run=True)["status"], "would_install")
-            self.assertFalse((home / "skins" / SKIN_FILENAME).exists())
+                self.assertFalse((home / "skins" / theme.filename).exists())
             self.assertFalse((home / "skins" / MANIFEST_FILENAME).exists())
 
-    def test_a_user_authored_theme_file_is_never_replaced(self) -> None:
+    def test_a_dry_run_removes_nothing(self) -> None:
         with TemporaryDirectory() as tmp:
             home = Path(tmp).resolve()
-            destination = home / "skins" / SKIN_FILENAME
-            destination.parent.mkdir(parents=True)
-            destination.write_text("name: omh\n# mine\n", encoding="utf-8")
-            entries = {entry["filename"]: entry["status"] for entry in install_skin(home)["skins"]}
-            self.assertEqual(entries[SKIN_FILENAME], "kept_unmanaged")
-            self.assertEqual(destination.read_text(encoding="utf-8"), "name: omh\n# mine\n")
-
-    def test_one_user_authored_theme_does_not_block_the_others(self) -> None:
-        # Per-file isolation is the whole reason the manifest went per-file: a
-        # hand-edited omh-mono.yaml used to make the shared record mismatch, so
-        # `omh update` stopped refreshing the default skin too.
-        with TemporaryDirectory() as tmp:
-            home = Path(tmp).resolve()
-            mine = home / "skins" / "omh-mono.yaml"
-            mine.parent.mkdir(parents=True)
-            mine.write_text("name: omh-mono\n# mine\n", encoding="utf-8")
-            entries = {entry["filename"]: entry["status"] for entry in install_skin(home)["skins"]}
-            self.assertEqual(entries["omh-mono.yaml"], "kept_unmanaged")
-            self.assertEqual(entries[SKIN_FILENAME], "installed")
-            self.assertEqual(mine.read_text(encoding="utf-8"), "name: omh-mono\n# mine\n")
-            manifest = json.loads((home / "skins" / MANIFEST_FILENAME).read_text(encoding="utf-8"))
-            self.assertNotIn("omh-mono.yaml", manifest["files"])
+            seed_legacy_skins(home)
+            self.assertEqual(uninstall_skin(home, dry_run=True)["status"], "would_remove")
+            for theme in SKIN_THEMES:
+                self.assertTrue((home / "skins" / theme.filename).is_file())
+            self.assertTrue((home / "skins" / MANIFEST_FILENAME).is_file())
 
     def test_a_v1_manifest_still_proves_ownership_of_the_default_skin(self) -> None:
-        # Every machine installed before themes existed carries a v1 manifest.
-        # Failing to read it would classify OMH's own omh.yaml as user-authored
-        # and freeze it at the version it shipped with.
+        # Every machine installed before themes existed carries a v1 manifest,
+        # over bytes an older build shipped. Failing to read it would read
+        # OMH's own omh.yaml as the person's and leave it behind.
         with TemporaryDirectory() as tmp:
             home = Path(tmp).resolve()
             skins = home / "skins"
@@ -283,146 +256,42 @@ class SkinInstallTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            entries = {entry["filename"]: entry["status"] for entry in install_skin(home)["skins"]}
-            self.assertEqual(entries[SKIN_FILENAME], "installed")
-            self.assertEqual((skins / SKIN_FILENAME).read_bytes(), skin_payload())
-            manifest = json.loads((skins / MANIFEST_FILENAME).read_text(encoding="utf-8"))
-            self.assertEqual(manifest["schema_version"], "omh_skin_manifest/v2")
+            entries = {entry["filename"]: entry["status"] for entry in uninstall_skin(home)["skins"]}
+            self.assertEqual(entries[SKIN_FILENAME], "removed")
+            self.assertFalse((skins / SKIN_FILENAME).exists())
 
-    def test_a_stale_manifest_over_our_own_bytes_self_heals(self) -> None:
-        # Observed on the owner's machine while smoke-testing this branch: the
-        # installed omh.yaml was byte-identical to the shipped template, but
-        # the v1 manifest still recorded an older sha, because some past update
-        # refreshed the file without refreshing the record. Record-only
-        # ownership read that as user-authored, so the skin would have been
-        # kept_unmanaged forever and no future template change -- including the
-        # ui_label brightening in this very commit -- would ever have reached
-        # it. Matching the current template is the second ownership proof.
+    def test_our_own_bytes_go_even_under_a_stale_record(self) -> None:
+        # Observed on the owner's machine: omh.yaml byte-identical to the
+        # shipped template while the v1 manifest still recorded an older sha.
+        # Record-only ownership would leave an orphan behind.
         with TemporaryDirectory() as tmp:
             home = Path(tmp).resolve()
             skins = home / "skins"
             skins.mkdir(parents=True)
             (skins / SKIN_FILENAME).write_bytes(skin_payload())
-            (skins / MANIFEST_FILENAME).write_text(
-                json.dumps(
-                    {
-                        "schema_version": "omh_skin_manifest/v1",
-                        "filename": SKIN_FILENAME,
-                        "sha256": "1420e408" + "0" * 56,
-                    }
-                ),
-                encoding="utf-8",
-            )
-            # Reported as ours before anything is written, so `omh theme
-            # status` on such a machine stops saying `unmanaged`.
-            states = {entry["skin"]: entry["state"] for entry in installed_skin_report(home)}
-            self.assertEqual(states["omh"], "managed")
+            self._stale_v1_record(skins)
+            entries = {entry["filename"]: entry["status"] for entry in uninstall_skin(home)["skins"]}
+            self.assertEqual(entries[SKIN_FILENAME], "removed")
+            self.assertFalse((skins / SKIN_FILENAME).exists())
 
-            entries = {entry["filename"]: entry["status"] for entry in install_skin(home)["skins"]}
-            self.assertEqual(entries[SKIN_FILENAME], "unchanged")
-            manifest = json.loads((skins / MANIFEST_FILENAME).read_text(encoding="utf-8"))
-            self.assertEqual(manifest["schema_version"], "omh_skin_manifest/v2")
-            self.assertEqual(
-                manifest["files"][SKIN_FILENAME]["sha256"],
-                hashlib.sha256(skin_payload()).hexdigest(),
-            )
-
-    def test_a_healed_machine_receives_the_next_template_change(self) -> None:
-        # The point of healing the record is not the record, it is that the
-        # NEXT release reaches the machine. Ship a changed template and assert
-        # the file actually moves.
-        with TemporaryDirectory() as tmp:
-            home = Path(tmp).resolve()
-            skins = home / "skins"
-            skins.mkdir(parents=True)
-            (skins / SKIN_FILENAME).write_bytes(skin_payload())
-            (skins / MANIFEST_FILENAME).write_text(
-                json.dumps(
-                    {
-                        "schema_version": "omh_skin_manifest/v1",
-                        "filename": SKIN_FILENAME,
-                        "sha256": "1420e408" + "0" * 56,
-                    }
-                ),
-                encoding="utf-8",
-            )
-            install_skin(home)
-
-            shipped = skin_payload
-            next_release = skin_payload(SKIN_NAME) + b"# a later release\n"
-
-            def _next_template(name: str = SKIN_NAME) -> bytes:
-                return next_release if name == SKIN_NAME else shipped(name)
-
-            with patch("omh.skin_pack.skin_payload", _next_template):
-                entries = {entry["filename"]: entry["status"] for entry in install_skin(home)["skins"]}
-            self.assertEqual(entries[SKIN_FILENAME], "installed")
-            self.assertEqual((skins / SKIN_FILENAME).read_bytes(), next_release)
-
-    def test_a_genuinely_edited_file_is_still_never_adopted(self) -> None:
-        # The negative half of the self-heal: matching neither the manifest
-        # record nor the current template is what user-authored means, and that
-        # file keeps winning forever.
+    def test_a_genuinely_edited_file_stays(self) -> None:
+        # Matching neither the record nor the shipped bytes is what
+        # user-authored means.
         with TemporaryDirectory() as tmp:
             home = Path(tmp).resolve()
             skins = home / "skins"
             skins.mkdir(parents=True)
             mine = skin_payload().replace(b"name: omh\n", b"name: omh\n# my own tweak\n")
             (skins / SKIN_FILENAME).write_bytes(mine)
-            (skins / MANIFEST_FILENAME).write_text(
-                json.dumps(
-                    {
-                        "schema_version": "omh_skin_manifest/v1",
-                        "filename": SKIN_FILENAME,
-                        "sha256": "1420e408" + "0" * 56,
-                    }
-                ),
-                encoding="utf-8",
-            )
-            states = {entry["skin"]: entry["state"] for entry in installed_skin_report(home)}
-            self.assertEqual(states["omh"], "unmanaged")
-
-            entries = {entry["filename"]: entry["status"] for entry in install_skin(home)["skins"]}
+            self._stale_v1_record(skins)
+            entries = {entry["filename"]: entry["status"] for entry in uninstall_skin(home)["skins"]}
             self.assertEqual(entries[SKIN_FILENAME], "kept_unmanaged")
             self.assertEqual((skins / SKIN_FILENAME).read_bytes(), mine)
-            manifest = json.loads((skins / MANIFEST_FILENAME).read_text(encoding="utf-8"))
-            self.assertNotIn(SKIN_FILENAME, manifest["files"])
 
-    def test_uninstall_takes_back_a_file_it_would_have_adopted(self) -> None:
-        # Symmetry: if install adopts our own bytes despite a stale record,
-        # uninstall must remove them too, or removal leaves orphans behind.
+    def test_a_user_authored_file_stays_and_keeps_its_record(self) -> None:
         with TemporaryDirectory() as tmp:
             home = Path(tmp).resolve()
-            skins = home / "skins"
-            skins.mkdir(parents=True)
-            (skins / SKIN_FILENAME).write_bytes(skin_payload())
-            (skins / MANIFEST_FILENAME).write_text(
-                json.dumps(
-                    {
-                        "schema_version": "omh_skin_manifest/v1",
-                        "filename": SKIN_FILENAME,
-                        "sha256": "1420e408" + "0" * 56,
-                    }
-                ),
-                encoding="utf-8",
-            )
-            entries = {entry["filename"]: entry["status"] for entry in uninstall_skin(home)["skins"]}
-            self.assertEqual(entries[SKIN_FILENAME], "removed")
-            self.assertFalse((skins / SKIN_FILENAME).exists())
-
-    def test_uninstall_removes_only_the_managed_files(self) -> None:
-        with TemporaryDirectory() as tmp:
-            home = Path(tmp).resolve()
-            install_skin(home)
-            self.assertEqual(uninstall_skin(home)["status"], "removed")
-            for theme in SKIN_THEMES:
-                self.assertFalse((home / "skins" / theme.filename).exists())
-            self.assertFalse((home / "skins" / MANIFEST_FILENAME).exists())
-
-    def test_uninstall_keeps_a_user_authored_file_and_the_records_of_the_rest(self) -> None:
-        with TemporaryDirectory() as tmp:
-            home = Path(tmp).resolve()
-            install_skin(home)
+            seed_legacy_skins(home)
             mine = home / "skins" / "omh-amber.yaml"
             mine.write_text("name: omh-amber\n# mine\n", encoding="utf-8")
             entries = {entry["filename"]: entry["status"] for entry in uninstall_skin(home)["skins"]}
@@ -431,339 +300,129 @@ class SkinInstallTests(unittest.TestCase):
             self.assertTrue(mine.exists())
             manifest = json.loads((home / "skins" / MANIFEST_FILENAME).read_text(encoding="utf-8"))
             self.assertEqual(list(manifest["files"]), ["omh-amber.yaml"])
+            # A second pass, the next update, decides the same way.
+            entries = {entry["filename"]: entry["status"] for entry in uninstall_skin(home)["skins"]}
+            self.assertEqual(entries["omh-amber.yaml"], "kept_unmanaged")
+            self.assertEqual(entries[SKIN_FILENAME], "absent")
 
-    def test_uninstall_on_a_clean_home_is_absent(self) -> None:
+    def test_one_file_of_the_persons_does_not_keep_the_others(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp).resolve()
+            seed_legacy_skins(home)
+            mine = home / "skins" / "omh-mono.yaml"
+            mine.write_text("name: omh-mono\n# mine\n", encoding="utf-8")
+            entries = {entry["filename"]: entry["status"] for entry in uninstall_skin(home)["skins"]}
+            self.assertEqual(entries["omh-mono.yaml"], "kept_unmanaged")
+            self.assertEqual(
+                {name: status for name, status in entries.items() if name != "omh-mono.yaml"},
+                {theme.filename: "removed" for theme in SKIN_THEMES if theme.filename != "omh-mono.yaml"},
+            )
+
+    def test_manifest_only_leaves_our_bytes_without_a_record(self) -> None:
+        # After the display release, a copy of the shipped file is the
+        # person's; only a manifest record still proves a file OMH's.
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp).resolve()
+            skins = home / "skins"
+            skins.mkdir(parents=True)
+            (skins / SKIN_FILENAME).write_bytes(skin_payload())
+            self._stale_v1_record(skins)
+            entries = {entry["filename"]: entry["status"] for entry in uninstall_skin(home, manifest_only=True)["skins"]}
+            self.assertEqual(entries[SKIN_FILENAME], "kept_unmanaged")
+            self.assertTrue((skins / SKIN_FILENAME).is_file())
+            seed_legacy_skins(home)
+            entries = {entry["filename"]: entry["status"] for entry in uninstall_skin(home, manifest_only=True)["skins"]}
+            self.assertEqual(set(entries.values()), {"removed"})
+
+    def test_the_skin_the_config_still_names_stays_with_its_record(self) -> None:
+        # Removing it would leave Hermes naming a skin that is not there.
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp).resolve()
+            seed_legacy_skins(home)
+            entries = {
+                entry["filename"]: entry["status"] for entry in uninstall_skin(home, keep=("omh-crimson",))["skins"]
+            }
+            self.assertEqual(entries["omh-crimson.yaml"], "kept_selected")
+            self.assertTrue((home / "skins" / "omh-crimson.yaml").is_file())
+            self.assertEqual(entries[SKIN_FILENAME], "removed")
+            manifest = json.loads((home / "skins" / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+            self.assertEqual(list(manifest["files"]), ["omh-crimson.yaml"])
+            # Once nothing names it, the record still proves it OMH's.
+            entries = {entry["filename"]: entry["status"] for entry in uninstall_skin(home)["skins"]}
+            self.assertEqual(entries["omh-crimson.yaml"], "removed")
+
+    @requires_symlinks
+    def test_a_symlinked_skins_directory_is_refused_and_its_target_left_alone(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            elsewhere = seed_legacy_skins(root / "elsewhere")
+            home = root / "home"
+            home.mkdir()
+            (home / "skins").symlink_to(elsewhere, target_is_directory=True)
+            with self.assertRaises(SkinInstallError):
+                uninstall_skin(home)
+            self.assertTrue((elsewhere / SKIN_FILENAME).is_file())
+
+    @requires_symlinks
+    def test_a_symlinked_skins_directory_with_nothing_of_omhs_is_absent_not_refused(self) -> None:
+        # A dotfiles-managed `skins/` holding only the person's skins: there
+        # is nothing to remove, so there is nothing to refuse either.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            elsewhere = root / "dotfiles" / "skins"
+            elsewhere.mkdir(parents=True)
+            (elsewhere / "ares.yaml").write_text("name: ares\n", encoding="utf-8")
+            home = root / "home"
+            home.mkdir()
+            (home / "skins").symlink_to(elsewhere, target_is_directory=True)
+
+            self.assertEqual(uninstall_skin(home)["status"], "absent")
+            self.assertEqual((elsewhere / "ares.yaml").read_text(encoding="utf-8"), "name: ares\n")
+
+    def test_a_clean_home_is_absent(self) -> None:
         with TemporaryDirectory() as tmp:
             home = Path(tmp).resolve()
             self.assertEqual(uninstall_skin(home)["status"], "absent")
 
-    def test_installed_report_names_missing_managed_and_unmanaged_files(self) -> None:
+
+class ThemeStoreTests(unittest.TestCase):
+    """The OMH TUI theme choice, saved under the OMH home rather than in Hermes' config."""
+
+    def test_a_saved_theme_reads_back_from_the_omh_home(self) -> None:
         with TemporaryDirectory() as tmp:
-            home = Path(tmp).resolve()
-            self.assertEqual({entry["state"] for entry in installed_skin_report(home)}, {"missing"})
-            install_skin(home)
-            (home / "skins" / "omh-mono.yaml").write_text("name: omh-mono\n", encoding="utf-8")
-            states = {entry["skin"]: entry["state"] for entry in installed_skin_report(home)}
-            self.assertEqual(states["omh"], "managed")
-            self.assertEqual(states["omh-mono"], "unmanaged")
+            omh_home = Path(tmp) / ".omh"
+            crimson = theme_for_name("crimson")
+            assert crimson is not None
 
+            path = write_theme_choice(omh_home, crimson)
 
-class SkinRepairTests(unittest.TestCase):
-    """`repair_skins` -- the consent-based way out of a permanently frozen skin.
-
-    `_is_managed_file`'s self-heal covers a stale manifest over an UNCHANGED
-    template. The gap this closes is the one seen on the owner's machine after
-    that fix shipped: the manifest went stale at some earlier point AND the
-    template has since moved on, so the installed file matches neither proof.
-    It is ours in origin, indistinguishable from a hand-written one on disk,
-    and frozen forever. Consent is therefore the only sound gate, and the
-    command invocation is the consent -- which is exactly why the no-argument
-    form must never write.
-    """
-
-    def _older_template(self, skin_name: str = SKIN_NAME) -> bytes:
-        """A believable previous release of one theme: same document, older palette.
-
-        Shaped after the observed drift, where the installed `omh.yaml` still
-        carried the pre-brightening `#7FDBFF` `ui_label` while the shipped
-        template had moved on to `#9FE8FF`. Derived from the current template
-        rather than pinned to literal bytes so it keeps meaning "one release
-        behind" as the palette keeps evolving.
-        """
-        payload = skin_payload(skin_name).replace(skin_colors(skin_name)["ui_label"].encode(), b"#7FDBFF")
-        self.assertNotEqual(payload, skin_payload(skin_name))
-        return payload
-
-    def _stranded_home(self, tmp: str) -> tuple[Path, bytes]:
-        """The exact live shape: an older-template file, no record naming it.
-
-        A v2 manifest that records the three other themes and not `omh.yaml`,
-        which is what `omh theme status` was reporting as `sky omh.yaml -
-        unmanaged` on the machine that motivated this.
-        """
-        home = Path(tmp).resolve()
-        install_skin(home)
-        skins = home / "skins"
-        stale = self._older_template()
-        (skins / SKIN_FILENAME).write_bytes(stale)
-        manifest = skins / MANIFEST_FILENAME
-        record = json.loads(manifest.read_text(encoding="utf-8"))
-        record["files"].pop(SKIN_FILENAME)
-        manifest.write_text(json.dumps(record, sort_keys=True), encoding="utf-8")
-        states = {entry["skin"]: entry["state"] for entry in installed_skin_report(home)}
-        self.assertEqual(states[SKIN_NAME], "unmanaged")
-        return home, stale
-
-    def test_repair_adopts_a_file_stranded_by_a_stale_record_and_a_moved_template(self) -> None:
-        with TemporaryDirectory() as tmp:
-            home, stale = self._stranded_home(tmp)
-            result = repair_skins(home, adopt=frozenset({SKIN_FILENAME}))
-            entries = {entry["filename"]: entry for entry in result["skins"]}
-            self.assertEqual(result["status"], "repaired")
-            self.assertEqual(entries[SKIN_FILENAME]["state"], "unmanaged")
-            self.assertEqual(entries[SKIN_FILENAME]["status"], "repaired")
-            self.assertEqual(entries[SKIN_FILENAME]["before_sha256"], hashlib.sha256(stale).hexdigest())
+            self.assertEqual(path, omh_home / "tui" / "theme.json")
+            self.assertEqual(theme_store_path(omh_home), path)
+            self.assertEqual(read_theme_choice(omh_home), crimson)
             self.assertEqual(
-                entries[SKIN_FILENAME]["after_sha256"],
-                hashlib.sha256(skin_payload()).hexdigest(),
-            )
-            self.assertEqual((home / "skins" / SKIN_FILENAME).read_bytes(), skin_payload())
-
-            manifest = json.loads((home / "skins" / MANIFEST_FILENAME).read_text(encoding="utf-8"))
-            self.assertEqual(manifest["schema_version"], "omh_skin_manifest/v2")
-            self.assertEqual(
-                manifest["files"][SKIN_FILENAME]["sha256"],
-                hashlib.sha256(skin_payload()).hexdigest(),
-            )
-            # The whole point: the machine is back on the update path.
-            states = {entry["skin"]: entry["state"] for entry in installed_skin_report(home)}
-            self.assertEqual(states[SKIN_NAME], "managed")
-
-    def test_a_repaired_machine_receives_the_next_release(self) -> None:
-        # Recording the file is not the win; the win is that the NEXT template
-        # change actually lands on it. Ship one and watch the bytes move.
-        with TemporaryDirectory() as tmp:
-            home, _ = self._stranded_home(tmp)
-            repair_skins(home, adopt=frozenset({SKIN_FILENAME}))
-
-            shipped = skin_payload
-            next_release = skin_payload(SKIN_NAME) + b"# a later release\n"
-
-            def _next_template(name: str = SKIN_NAME) -> bytes:
-                return next_release if name == SKIN_NAME else shipped(name)
-
-            with patch("omh.skin_pack.skin_payload", _next_template):
-                entries = {entry["filename"]: entry["status"] for entry in install_skin(home)["skins"]}
-            self.assertEqual(entries[SKIN_FILENAME], "installed")
-            self.assertEqual((home / "skins" / SKIN_FILENAME).read_bytes(), next_release)
-
-    def test_repair_names_the_palette_tokens_that_would_change(self) -> None:
-        # A person accepting an overwrite of a file we cannot prove we wrote
-        # gets to see what they are trading away first.
-        with TemporaryDirectory() as tmp:
-            home, _ = self._stranded_home(tmp)
-            entries = {entry["filename"]: entry for entry in repair_skins(home)["skins"]}
-            self.assertEqual(
-                entries[SKIN_FILENAME]["palette_changes"],
-                [{"key": "ui_label", "before": "#7FDBFF", "after": skin_colors()["ui_label"]}],
+                json.loads(path.read_text(encoding="utf-8")),
+                {"schema_version": "omh_tui_theme/v1", "theme": "crimson"},
             )
 
-    def test_the_bare_repair_reports_and_never_writes(self) -> None:
-        # The safety contract: with nothing named there is no consent, so the
-        # reporting form must be safe and idempotent to run.
+    def test_nothing_saved_reads_as_no_choice(self) -> None:
         with TemporaryDirectory() as tmp:
-            home, stale = self._stranded_home(tmp)
-            manifest = home / "skins" / MANIFEST_FILENAME
-            before_manifest = manifest.read_bytes()
-            result = repair_skins(home)
-            entries = {entry["filename"]: entry["status"] for entry in result["skins"]}
-            self.assertEqual(result["status"], "unmanaged")
-            self.assertEqual(entries[SKIN_FILENAME], "unmanaged")
-            self.assertEqual((home / "skins" / SKIN_FILENAME).read_bytes(), stale)
-            self.assertEqual(manifest.read_bytes(), before_manifest)
-            self.assertEqual(repair_skins(home)["status"], "unmanaged")
-            self.assertEqual((home / "skins" / SKIN_FILENAME).read_bytes(), stale)
+            self.assertIsNone(read_theme_choice(Path(tmp) / ".omh"))
 
-    def test_a_dry_run_shows_the_repair_without_performing_it(self) -> None:
+    def test_a_file_this_module_did_not_write_reads_as_no_choice(self) -> None:
         with TemporaryDirectory() as tmp:
-            home, stale = self._stranded_home(tmp)
-            manifest = home / "skins" / MANIFEST_FILENAME
-            before_manifest = manifest.read_bytes()
-            result = repair_skins(home, adopt=frozenset({SKIN_FILENAME}), dry_run=True)
-            entries = {entry["filename"]: entry for entry in result["skins"]}
-            self.assertEqual(result["status"], "would_repair")
-            self.assertEqual(entries[SKIN_FILENAME]["status"], "would_repair")
-            self.assertEqual(
-                entries[SKIN_FILENAME]["after_sha256"],
-                hashlib.sha256(skin_payload()).hexdigest(),
-            )
-            self.assertEqual((home / "skins" / SKIN_FILENAME).read_bytes(), stale)
-            self.assertEqual(manifest.read_bytes(), before_manifest)
-
-    def test_a_genuinely_user_authored_file_is_overwritten_only_when_named(self) -> None:
-        # The negative case that defines the consent contract. Nothing on disk
-        # separates this file from a stranded one of ours, so repair CAN take
-        # it -- but only because a person typed its name. Bare repair and
-        # --dry-run must both leave it exactly as written.
-        with TemporaryDirectory() as tmp:
-            home = Path(tmp).resolve()
-            install_skin(home)
-            mine = skin_payload().replace(b"name: omh\n", b"name: omh\n# my own tweak\n")
-            destination = home / "skins" / SKIN_FILENAME
-            destination.write_bytes(mine)
-
-            self.assertEqual(
-                {entry["filename"]: entry["status"] for entry in repair_skins(home)["skins"]}[SKIN_FILENAME],
-                "unmanaged",
-            )
-            self.assertEqual(destination.read_bytes(), mine)
-
-            repair_skins(home, adopt=frozenset({SKIN_FILENAME}), dry_run=True)
-            self.assertEqual(destination.read_bytes(), mine)
-
-            adopted = repair_skins(home, adopt=frozenset({SKIN_FILENAME}))
-            entries = {entry["filename"]: entry["status"] for entry in adopted["skins"]}
-            self.assertEqual(entries[SKIN_FILENAME], "repaired")
-            self.assertEqual(destination.read_bytes(), skin_payload())
-
-    def test_repair_leaves_already_managed_files_untouched(self) -> None:
-        with TemporaryDirectory() as tmp:
-            home = Path(tmp).resolve()
-            install_skin(home)
-            manifest = home / "skins" / MANIFEST_FILENAME
-            before_manifest = manifest.read_bytes()
-            result = repair_skins(home, adopt=frozenset(theme.filename for theme in SKIN_THEMES))
-            self.assertEqual(result["status"], "managed")
-            self.assertEqual({entry["status"] for entry in result["skins"]}, {"managed"})
-            self.assertEqual(manifest.read_bytes(), before_manifest)
-
-    def test_repair_installs_a_missing_file_only_when_named(self) -> None:
-        # Consistent with `install_skin`, which installs a file that is not
-        # there; without a name it is reported and left alone.
-        with TemporaryDirectory() as tmp:
-            home = Path(tmp).resolve()
-            install_skin(home)
-            destination = home / "skins" / "omh-mono.yaml"
-            destination.unlink()
-
-            entries = {entry["filename"]: entry["status"] for entry in repair_skins(home)["skins"]}
-            self.assertEqual(entries["omh-mono.yaml"], "missing")
-            self.assertFalse(destination.exists())
-
-            entries = {
-                entry["filename"]: entry["status"]
-                for entry in repair_skins(home, adopt=frozenset({"omh-mono.yaml"}))["skins"]
-            }
-            self.assertEqual(entries["omh-mono.yaml"], "installed")
-            self.assertEqual(destination.read_bytes(), skin_payload("omh-mono"))
-
-    def test_repair_all_adopts_every_file_that_needs_it_in_one_pass(self) -> None:
-        with TemporaryDirectory() as tmp:
-            home, _ = self._stranded_home(tmp)
-            (home / "skins" / "omh-amber.yaml").write_text("name: omh-amber\n# mine\n", encoding="utf-8")
-            adopted = repair_skins(home, adopt=frozenset(theme.filename for theme in SKIN_THEMES))
-            entries = {entry["filename"]: entry["status"] for entry in adopted["skins"]}
-            self.assertEqual(entries[SKIN_FILENAME], "repaired")
-            self.assertEqual(entries["omh-amber.yaml"], "repaired")
-            self.assertEqual(entries["omh-mono.yaml"], "managed")
-            manifest = json.loads((home / "skins" / MANIFEST_FILENAME).read_text(encoding="utf-8"))
-            self.assertEqual(sorted(manifest["files"]), sorted(theme.filename for theme in SKIN_THEMES))
-
-    def test_repair_migrates_a_legacy_v1_manifest_forward(self) -> None:
-        # The v1 -> v2 migration is an invariant of every write path, not just
-        # `install_skin`: a machine old enough to be stranded is exactly the
-        # machine likeliest to still hold a v1 record.
-        with TemporaryDirectory() as tmp:
-            home = Path(tmp).resolve()
-            skins = home / "skins"
-            skins.mkdir(parents=True)
-            stale = self._older_template()
-            (skins / SKIN_FILENAME).write_bytes(stale)
-            (skins / MANIFEST_FILENAME).write_text(
-                json.dumps(
-                    {
-                        "schema_version": "omh_skin_manifest/v1",
-                        "filename": SKIN_FILENAME,
-                        "sha256": "1420e408" + "0" * 56,
-                    }
-                ),
-                encoding="utf-8",
-            )
-            adopted = repair_skins(home, adopt=frozenset({SKIN_FILENAME}))
-            entries = {entry["filename"]: entry["status"] for entry in adopted["skins"]}
-            self.assertEqual(entries[SKIN_FILENAME], "repaired")
-            manifest = json.loads((skins / MANIFEST_FILENAME).read_text(encoding="utf-8"))
-            self.assertEqual(manifest["schema_version"], "omh_skin_manifest/v2")
-            self.assertEqual(
-                manifest["files"][SKIN_FILENAME]["sha256"],
-                hashlib.sha256(skin_payload()).hexdigest(),
-            )
-
-    def test_uninstall_takes_back_a_repaired_file(self) -> None:
-        # Symmetry: a file repair adopted is a file uninstall must remove, or
-        # removal leaves an orphan behind on exactly the machines we just fixed.
-        with TemporaryDirectory() as tmp:
-            home, _ = self._stranded_home(tmp)
-            repair_skins(home, adopt=frozenset({SKIN_FILENAME}))
-            entries = {entry["filename"]: entry["status"] for entry in uninstall_skin(home)["skins"]}
-            self.assertEqual(entries[SKIN_FILENAME], "removed")
-            self.assertFalse((home / "skins" / SKIN_FILENAME).exists())
-
-    @requires_symlinks
-    def test_repair_refuses_a_symlinked_destination_and_parent(self) -> None:
-        # Repair is a write path, so it inherits the whole symlink invariant:
-        # naming a theme must never become a way to write through a link.
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp).resolve()
-            home = root / ".hermes"
-            skins = home / "skins"
-            skins.mkdir(parents=True)
-            victim = root / "victim.yaml"
-            victim_bytes = b"do not overwrite\n"
-            victim.write_bytes(victim_bytes)
-            (skins / SKIN_FILENAME).symlink_to(victim)
-
-            with self.assertRaises(SkinInstallError):
-                repair_skins(home, adopt=frozenset({SKIN_FILENAME}))
-            with self.assertRaises(SkinInstallError):
-                repair_skins(home)
-            self.assertEqual(victim.read_bytes(), victim_bytes)
-
-            (skins / SKIN_FILENAME).unlink()
-            skins.rmdir()
-            external = root / "external-skins"
-            external.mkdir()
-            skins.symlink_to(external, target_is_directory=True)
-            with self.assertRaises(SkinInstallError):
-                repair_skins(home, adopt=frozenset({SKIN_FILENAME}))
-            self.assertEqual(list(external.iterdir()), [])
-
-
-class EnsureOmhSkinTests(unittest.TestCase):
-    def test_unset_skin_defaults_to_omh(self) -> None:
-        change = ensure_omh_skin("display:\n  compact: true\n", SKIN_NAME)
-        self.assertTrue(change.changed)
-        self.assertEqual(display_skin_selection(change.text), SKIN_NAME)
-        self.assertIn("  compact: true", change.text)
-
-    def test_the_default_name_is_the_shipped_default_skin(self) -> None:
-        self.assertEqual(display_skin_selection(ensure_omh_skin("display:\n  compact: true\n").text), SKIN_NAME)
-
-    def test_missing_display_section_is_appended(self) -> None:
-        change = ensure_omh_skin("plugins:\n  enabled:\n    - omh\n", SKIN_NAME)
-        self.assertTrue(change.changed)
-        self.assertEqual(display_skin_selection(change.text), SKIN_NAME)
-
-    def test_an_explicit_skin_choice_is_never_rewritten(self) -> None:
-        # `hermes skin use ares` after setup must stick across every future
-        # update; rewriting it would repeat the display.interface mistake.
-        text = "display:\n  skin: ares\n"
-        change = ensure_omh_skin(text, SKIN_NAME)
-        self.assertFalse(change.changed)
-        self.assertEqual(change.text, text)
-        self.assertIn("user preference", change.message)
-
-    def test_a_chosen_omh_theme_survives_the_default_writer(self) -> None:
-        # The theme is an explicit choice too, so setup/update must leave it —
-        # and must say WHICH kind of choice it is, because "user preference"
-        # reads as a foreign skin in a support transcript.
-        text = "display:\n  skin: omh-amber\n"
-        change = ensure_omh_skin(text, SKIN_NAME)
-        self.assertFalse(change.changed)
-        self.assertEqual(change.text, text)
-        self.assertIn("OMH theme omh-amber", change.message)
-
-    def test_already_omh_is_unchanged(self) -> None:
-        change = ensure_omh_skin("display:\n  skin: omh\n", SKIN_NAME)
-        self.assertFalse(change.changed)
-
-    def test_dotted_key_is_user_owned(self) -> None:
-        change = ensure_omh_skin("display.skin: ares\n", SKIN_NAME)
-        self.assertFalse(change.changed)
-
-    def test_duplicate_display_sections_are_left_alone(self) -> None:
-        change = ensure_omh_skin("display:\n  compact: true\ndisplay:\n  streaming: true\n", SKIN_NAME)
-        self.assertFalse(change.changed)
+            omh_home = Path(tmp) / ".omh"
+            path = theme_store_path(omh_home)
+            path.parent.mkdir(parents=True)
+            for body in (
+                "not json",
+                json.dumps(["crimson"]),
+                json.dumps({"schema_version": "omh_tui_theme/v2", "theme": "crimson"}),
+                json.dumps({"schema_version": "omh_tui_theme/v1", "theme": "ares"}),
+                json.dumps({"schema_version": "omh_tui_theme/v1", "theme": 7}),
+            ):
+                with self.subTest(body=body):
+                    path.write_text(body, encoding="utf-8")
+                    self.assertIsNone(read_theme_choice(omh_home))
 
 
 if __name__ == "__main__":

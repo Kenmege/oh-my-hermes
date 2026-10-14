@@ -792,13 +792,11 @@ class HudPayloadTest(_NativeTodoHomeTest):
         _ = self.omh_todo({"action": "set", "items": [{"text": "land the fix", "state": "active"}]})
         self.assertEqual(self.stored()["source"], "omh_todo")
 
-    def test_the_renderers_key_on_the_projection_source(self):
-        for path in ("src/omh/tui_widgets/omh-status.mjs", "src/plugin_bundle/omh/desktop/plugin.js"):
-            with self.subTest(renderer=path):
-                self.assertIn(
-                    f"NATIVE_TODO_SOURCE = '{NATIVE_TODO_SOURCE}'",
-                    (REPO / path).read_text(encoding="utf-8"),
-                )
+    def test_the_desktop_pane_keys_on_the_projection_source(self):
+        self.assertIn(
+            f"NATIVE_TODO_SOURCE = '{NATIVE_TODO_SOURCE}'",
+            (REPO / "src/plugin_bundle/omh/desktop/plugin.js").read_text(encoding="utf-8"),
+        )
 
 
 class GuardsReadOneRecordTest(_NativeTodoHomeTest):

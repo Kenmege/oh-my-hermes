@@ -238,8 +238,9 @@ PROCESS_SPAWN_ALLOWLIST: dict[str, str] = {
     ),
     "src/commands/main.py": (
         "bare `omh` with a tty -- the operator's own launch of `hermes` (as `hermes --tui` "
-        "with the OMH frontend when it can run, then Hermes' own door on its fallback exit), "
-        "the same door as typing it themselves; never reached from any prepared-handoff path."
+        "with the OMH frontend when it can run, otherwise Hermes' own `hermes --tui`, or plain "
+        "`hermes` without Node), the same launch as typing it themselves; never reached from any "
+        "prepared-handoff path."
     ),
     "src/tui/gateway.py": (
         "the OMH TUI's single gateway child: Hermes' own `tui_gateway`, spawned with the interpreter "

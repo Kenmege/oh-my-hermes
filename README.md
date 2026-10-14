@@ -137,7 +137,7 @@ omh doctor
 
 ```sh
 # Set the model per work category (arrow keys: category, ←→ head model, -/+ effort);
-# the same picker opens inside the Hermes TUI as /omh-model:
+# the same picker opens inside the OMH TUI (bare omh) as /omh-model:
 omh model
 # To onboard a new model family, use this skill in Hermes:
 /omh-model-setup
@@ -263,8 +263,8 @@ environment all match.
 
 ### 05 · The Oh-My-Hermes interface, and Hermes Agent workflows
 
-The interface is the Hermes terminal with an OMH dock under the prompt and a
-phase todo above it; the workflows are the `ulw-*` engines and every `omh-*`
+The interface is the OMH TUI bare `omh` opens, with the agent rows and a
+phase todo above the prompt; the workflows are the `ulw-*` engines and every `omh-*`
 skill, routed from chat. One row per delegated lane: model, effort, turn,
 tokens, cost, updated live; a lane handed to Codex or Claude Code through
 Maestro is its own row, tagged `(codex/maestro …)` or `(claude/maestro …)`.
@@ -348,8 +348,10 @@ omh
   </tr>
 </table>
 
-Where the OMH TUI cannot start (Windows, a terminal without `termios`,
-`OMH_NO_TUI=1`, no Node), `omh` opens Hermes' own terminal instead; see
+Where the OMH TUI cannot start, `omh` says why in one line and opens Hermes'
+own TUI (`hermes --tui`) instead (Windows, a terminal without `termios`), or
+plain `hermes` under `TERM=dumb` or `OMH_NO_TUI=1` or without Node. Bare `hermes` is stock Hermes, with no OMH skin or HUD; OMH's tools,
+memory and skills are still there. See
 [The OMH TUI](docs/INSTALLATION.md#the-omh-tui).
 
 What the terminal shows while OMH workflows run:
@@ -360,8 +362,8 @@ What the terminal shows while OMH workflows run:
   carries its `category:name(model:effort)` so the routing is visible, and
   rejected routes fall back along the category chain.
 - **Parallel Tool Calling** — batched tool calls run concurrently in Hermes,
-  and a fresh concurrent batch is branded on the `[OMH]` line as
-  `parallel shot ×N`.
+  and a fresh concurrent batch is marked `parallel shot ×N` on the plan
+  header.
 - **Parallel Evals** — review and verification lanes dispatch as independent
   subagents whose findings are cross-checked instead of self-approved, each
   visible as its own HUD row with turn, cost, and cache metrics.
@@ -398,7 +400,7 @@ What the terminal shows while OMH workflows run:
 ## Recommended models
 
 <p align="center">
-  <img src="assets/omh-model-tui.png" alt="/omh-model in the Hermes Modern TUI: one row per category with its head model, effort bar and state; the cursor row shows the left/right and -/+ handles" width="820">
+  <img src="assets/omh-model-tui.png" alt="The /omh-model chain picker: one row per category with its head model, effort bar and state; the cursor row shows the left/right and -/+ handles" width="820">
 </p>
 
 OMH ships with these editable, ordered recommendation chains. Guided model
@@ -460,7 +462,7 @@ Check the chains currently in effect with `omh model-chains show`. If you
 would rather not edit the file by hand, bare `omh model-chains` (or
 `omh model`) opens an arrow-key picker — up/down picks a category, left/right
 steps its head model, `-`/`+` its effort — `/omh-model` opens the same picker
-inside the Modern TUI, and the scriptable form makes the same change from the
+inside the OMH TUI, and the scriptable form makes the same change from the
 command line:
 `omh model-chains set quick "kimi-k3-ultrafast:low, glm-5.3-ultrafast:low"`.
 When an alias uses a provider-specific wire ID, map it once in
@@ -636,7 +638,7 @@ live in [Workflow Reference](docs/WORKFLOWS.md).
 | 🧭 **Mixture-of-models routing** | Every delegated lane lands on a category (model + reasoning effort) at dispatch time. Chains fall through when a provider rejects a model, and a child that did no work shows `failed`, never a green row. |
 | 🎛️ **Per-family calibration** | Prompting is tuned per model family and generation — GPT-6 Astra, GPT-5.6, Claude 5.1, GLM 5.3, Kimi, Gemini, Qwen, DeepSeek and more — and each tune is kept only while the benchmark pair says it helps. |
 | 🗂️ **Categories you own** | Twelve shipped categories per executor, with `omh model-chains set` to reorder, an entitlement interview that reorders chains per machine, and a live view of what a request would route to before it runs. |
-| 🖥️ **Native TUI surface** | The OMH HUD (live rows with category, turns, cost, cache), the phase todo above the prompt, `parallel shot ×N`, full-row diff bands, and managed skins — installed beside Hermes, never patching it. |
+| 🖥️ **Native TUI surface** | The OMH HUD (live rows with category, turns, cost, cache), the phase todo above the prompt, `parallel shot ×N`, full-row diff bands, and a theme of your own — in the OMH TUI bare `omh` opens, never patching Hermes. |
 | ⚡ **Observed parallel work** | Independent work splits into fanout units with disjoint file ownership, admission control under provider pressure, typed result sidecars, and verification gates that read what came back. |
 | 🎼 **Maestro handoffs** | An explicit second lane for Codex, Claude Code, or another CLI: readiness probes, capability snapshots, owner-fit reports, and per-run model and effort — opt-in, and never the default path. |
 | 💸 **Priced cost telemetry** | Token counts and dollar figures on every HUD row and run summary, priced from a rate table that cites its source; an unpriceable run reads `unknown`, never `$0`. |

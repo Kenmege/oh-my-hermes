@@ -4893,7 +4893,7 @@ _ROUTE_HINT_RULES = (
         "workflow": "agent-ops-review",
         "lane": "automation_and_status",
         "next_action": "show_agent_ops_review",
-        "reason": "The user is asking to reopen or inspect the OMH HUD/menu bar/status surface.",
+        "reason": "The user is asking to reopen or inspect the OMH HUD/menu bar/status surface; the HUD draws in the OMH TUI that bare `omh` opens, not in bare `hermes`.",
         "fallback_action": "show_status_surface_or_next_repair_action",
         "phrases": (
             "start the omh menubar",

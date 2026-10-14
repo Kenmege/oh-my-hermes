@@ -65,6 +65,7 @@ from dataclasses import dataclass, replace
 import errno
 import json
 import os
+from pathlib import Path
 import signal
 import sys
 import time
@@ -82,7 +83,7 @@ from ..commands.theme_picker import (
     KEY_UP,
     plain_key,
 )
-from ..skin_pack import default_theme, skin_colors, theme_for_name, theme_for_skin_name, theme_names
+from ..skin_pack import default_theme, effective_theme, skin_colors, theme_for_name, theme_for_skin_name, theme_names
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
 from .frame import MODE_ACCEPT, MODE_PLAN, STATUS_SEPARATOR, build_frame, sticky_line
@@ -401,14 +402,11 @@ def queue_lines(prompts: Sequence[str], width: int, max_rows: int, theme: Theme)
     return [truncate_line(row, width) for row in rows]
 
 
-def initial_theme(ready_payload: Mapping[str, Any]) -> Theme:
-    """The theme for `gateway.ready`'s skin name (Hermes' `display.skin`); sky unless it names an OMH skin.
-
-    Skin names only: a foreign skin that happens to be called `amber` is not OMH's amber.
-    """
+def initial_theme(ready_payload: Mapping[str, Any], omh_home: str | None = None) -> Theme:
+    """The theme `effective_theme` picks: saved under `omh_home`, else `gateway.ready`'s skin name, else sky."""
     skin = ready_payload.get("skin")
     name = as_text(skin.get("name")) if isinstance(skin, dict) else ""
-    return build_theme(theme_for_skin_name(name) or default_theme())
+    return build_theme(effective_theme(Path(omh_home) if omh_home else None, name)[0])
 
 
 def short_path(path: str, home: str) -> str:
@@ -581,8 +579,8 @@ def run_model_chain_picker(
 ) -> str:
     """`omh model-chains`' picker, driven through the TUI's own terminal; returns a one-line result.
 
-    The same rows and the same validated save the Hermes widget used
-    (`plugin_bundle/omh/model_chain_picker.py`), painted by the CLI picker.
+    The rows and the validated save of `plugin_bundle/omh/model_chain_picker.py`,
+    the same ones `omh model-chains` uses, painted by the CLI picker.
     `read_key`, `write` and `width` are the picker's seams, so the terminal
     stays in the TUI's raw mode: no terminal setting changes, and Ctrl+C
     reaches the picker as a key that cancels instead of a signal.
@@ -2378,7 +2376,7 @@ def _run(
         client,
         environ,
         poller=make_poller(environ.get("OMH_HOME") or None, environ.get("HERMES_HOME") or None),
-        theme=initial_theme(ready.payload),
+        theme=initial_theme(ready.payload, environ.get("OMH_HOME") or None),
     )
     try:
         app.startup()

@@ -166,13 +166,13 @@ deliberately unregistered via
 `omh --hermes-home ~/.hermes/profiles/<name> uninstall --registration-only`
 is never re-registered.
 
-Setup and update end with an `OMH TUI:` verdict line. Act on it before
-reporting success: `ready` means the OMH look applies on the next Hermes
-start (restart any running session; the styled TUI opens with `omh` or
-`hermes --tui`). A blocked verdict lists each blocker with its fix — most
-commonly an old Hermes without the TUI widget loader, whose fix is running
-`hermes update` (Hermes' own updater; OMH never runs it for the user) and
-then restarting Hermes. Report the verdict and any fix you ran.
+Bare `hermes` is stock Hermes and bare `omh` opens the OMH TUI. `omh doctor`'s
+`omh_tui_support` row says whether the OMH TUI can open on this machine
+(it needs a POSIX terminal and Node); where it cannot, `omh` opens Hermes'
+own terminal and says why. On a machine an earlier OMH version styled,
+the first setup or update prints a `Hermes display:` block naming what it
+took back and where the OMH theme was saved; report that block, including
+any file it kept because the user edited it.
 
 Install success means a Hermes-usable skill path is configured and doctor has no
 blocking checks. It does not mean Hermes has already reloaded the skills,
@@ -336,7 +336,7 @@ in their native owner.
 
 The setup summary ends by recommending the per-category model chains. For an
 agent-driven install this recommendation is part of the protocol, not optional
-advice: once `omh setup` succeeds and the `OMH TUI:` verdict is handled, run
+advice: once `omh setup` succeeds and doctor has no blocking checks, run
 the chain interview with the user before reporting the install complete.
 
 `omh model-chains interview` is the human terminal path and refuses non-TTY

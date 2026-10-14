@@ -11,7 +11,7 @@ under a private package name, and everything it needs resolves through the
 bundle's own relative imports.
 
 ``GET /hud?session=<stored session id>`` answers with the ``omh_hud/v1``
-payload the modern-TUI widget renders, read for the gateway process's own
+payload the OMH TUI's panels draw, read for the gateway process's own
 Hermes home. The ``profile`` query Hermes Desktop appends when it routes a
 non-primary profile through a shared backend is not read: the route answers
 for the launch profile, as the host's own bundled plugin backends do. A reader
@@ -126,7 +126,8 @@ def hud_payload(
     ``omh_home`` is left to the reader, which resolves the store from the
     gateway's own Hermes home -- the same ``get_hermes_home()`` this route
     resolves, not the ``hermes_home`` handed in -- through that home's
-    ``plugins.entries.omh.settings.omh_home``, as it does for the TUI widget.
+    ``plugins.entries.omh.settings.omh_home``, as it does for every reader
+    that names no store.
     ``session`` is the focused stored session id the app names, and naming
     one is what makes the plan todo session-scoped rather than a
     most-recent-TUI guess.

@@ -89,8 +89,8 @@ def _epoch(value: object) -> float | None:
     return float(value)
 
 
-def hermes_state_db_path(hermes_home: str | Path, profile: str | None = None) -> Path | None:
-    """The state database for the default home, or for one named profile.
+def hermes_profile_home(hermes_home: str | Path, profile: str | None = None) -> Path | None:
+    """The Hermes home of the default profile, or of one named profile.
 
     Hermes' default profile lives at the home itself and every named one under
     ``<home>/profiles/<name>``. A name this cannot use as a directory
@@ -99,10 +99,16 @@ def hermes_state_db_path(hermes_home: str | Path, profile: str | None = None) ->
     """
     home = Path(hermes_home)
     if profile is None:
-        return home / "state.db"
+        return home
     if not _PROFILE_NAME_RE.fullmatch(profile):
         return None
-    return home / "profiles" / profile / "state.db"
+    return home / "profiles" / profile
+
+
+def hermes_state_db_path(hermes_home: str | Path, profile: str | None = None) -> Path | None:
+    """The state database for the default home, or for one named profile (`hermes_profile_home`)."""
+    home = hermes_profile_home(hermes_home, profile)
+    return None if home is None else home / "state.db"
 
 
 def _chosen_candidate(rows: list[tuple], child_ended_at: float) -> str | None:

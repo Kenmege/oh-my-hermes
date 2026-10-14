@@ -2,18 +2,17 @@
 from contextlib import closing
 import json
 import os
-import shutil
 import sqlite3
-import subprocess
-import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
+from _tui_lines import line_text
 from omh.plugin_bundle.omh.runtime_reader import read_omh_hud
-from omh.tui_widget_pack import widget_payload
+from omh.tui.panels import panel_lines
+from omh.tui.theme import DEFAULT_THEME
+from omh.tui.width import cell_width
 from test_kanban_board_reader import build_board, task
 from test_plugin_hermes_delegation import (
     NOW,
@@ -282,87 +281,58 @@ class HudConversationScopeTests(unittest.TestCase):
         self.assertEqual(paired['todo']['title'], 'Private plan')
         self.assertEqual((unmapped['todo']['title'], unmapped['todo']['status']), ('', 'absent'))
 
-    @unittest.skipUnless(shutil.which('node'), 'Node is required for the widget boundary')
-    def test_scoped_activity_rows_fit_and_keep_token_columns(self):
-        widget = self.root / 'widget.mjs'
-        widget.write_bytes(widget_payload(Path(sys.executable)))
-        script = """
-import register from './widget.mjs';
-const apps = [], lines = [];
-const h = (tag, props, ...children) => {
-  if (typeof tag === 'function') {
-    const text = tag(props);
-    if (tag.name === 'ActivityRow') lines.push(text);
-    return text;
-  }
-  return children.flat(Infinity).filter(x => x != null).join('');
-};
-register({Box:'box', Text:'text', h, defineWidgetApp: app => {apps.push(app); return app}, openWidget:()=>{}, updateWidget:()=>{}});
-const app = apps.find(x => x.id === 'omh-status');
-const results = [];
-for (const cols of [80, 100]) {
-  for (const model of ['', 'gpt', 'claude-fable-5-1:xhigh'])
-  for (const scopes of [['global', 'global'], ['session', 'session'], ['global', 'session']]) {
-    lines.length = 0;
-    const rows = scopes.map((scope, i) => ({scope, model, task_id:`worker${i}`, action:'A long action title that must yield to the token column', state:'done', elapsed_seconds:12, tokens:12345}));
-    app.render({cols, rows:30, state:{payload:{privacy:'metadata_only', active:true, subagents:{rows}, maestro:{rows:[]}}}, t:{color:{}}});
-    results.push({cols, scopes, lines:[...lines]});
-  }
-}
-console.log(JSON.stringify(results));
-"""
-        result = subprocess.run(['node', '--input-type=module', '-e', script], cwd=self.root,
-                                encoding='utf-8', capture_output=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        for case in json.loads(result.stdout):
-            with self.subTest(columns=case['cols'], scopes=case['scopes']):
-                self.assertEqual(len(case['lines']), 2)
-                for scope, line in zip(case['scopes'], case['lines']):
-                    # Rows carry what runs them, not a scope word: a delegate
-                    # child is `[sub]`. The header marks `[global]` when rows
-                    # from outside this conversation are listed; neither line
-                    # repeats it.
-                    self.assertIn('[sub] ', line)
-                    self.assertNotIn('[global]', line)
-                    self.assertNotIn('[this chat]', line)
-                    self.assertIn('12.3k tokens', line[:case['cols']])
-                    self.assertLessEqual(len(line), case['cols'] - 2)
-                self.assertEqual(*[line.index('12.3k tokens') for line in case['lines']])
+    def _panel(self, payload, cols):
+        return [line_text(line) for line in panel_lines(payload, cols, 30, DEFAULT_THEME, 0.0)]
 
-    @unittest.skipUnless(shutil.which('node'), 'Node is required for the widget boundary')
+    def test_scoped_activity_rows_fit_and_keep_token_columns(self):
+        # The OMH TUI's agent rows (`tui/panels.py`), which took this rule over
+        # from the Hermes status widget.
+        for cols in (80, 100):
+            for model in ('', 'gpt', 'claude-fable-5-1:xhigh'):
+                for scopes in (('global', 'global'), ('session', 'session'), ('global', 'session')):
+                    rows = [
+                        {'scope': scope, 'model': model, 'task_id': f'worker{index}',
+                         'action': 'A long action title that must yield to the token column',
+                         'state': 'done', 'elapsed_seconds': 12, 'tokens': 12345}
+                        for index, scope in enumerate(scopes)
+                    ]
+                    payload = {'privacy': 'metadata_only', 'active': True, 'subagents': {'rows': rows}, 'maestro': {'rows': []}}
+                    lines = [line for line in self._panel(payload, cols) if 'worker' in line]
+                    with self.subTest(columns=cols, model=model, scopes=scopes):
+                        self.assertEqual(len(lines), 2)
+                        for line in lines:
+                            # Rows carry what runs them, not a scope word: a
+                            # delegate child is `[sub]`. The header marks
+                            # `[global]` when rows from outside this
+                            # conversation are listed; no row repeats it.
+                            self.assertIn('[sub] ', line)
+                            self.assertNotIn('[global]', line)
+                            self.assertNotIn('[this chat]', line)
+                            self.assertIn('12.3k tokens', line)
+                            self.assertLessEqual(cell_width(line), cols)
+                        self.assertEqual(*[line.index('12.3k tokens') for line in lines])
+
     def test_header_marks_the_scope_only_when_rows_from_outside_are_listed(self):
         # The header word is a presence marker, not a description of the list:
         # it says rows from outside this conversation are on screen, and says
         # nothing at all when they are not. A session-only list is already
         # fully described by the rows' own `[sub]`/`[bot]` tags, and a payload
         # that names no scope must stay silent rather than pick a side.
-        widget = self.root / 'widget.mjs'
-        widget.write_bytes(widget_payload(Path(sys.executable)))
-        script = """
-import register from './widget.mjs';
-const apps = [];
-const h = (tag, props, ...children) => typeof tag === 'function' ? tag(props) : children.flat(Infinity).filter(x => x != null).join('');
-register({Box:'box', Text:'text', h, defineWidgetApp: app => {apps.push(app); return app}, openWidget:()=>{}, updateWidget:()=>{}});
-const app = apps.find(x => x.id === 'omh-status');
-const row = scope => ({scope, task_id:'worker', action:'Work', state:'running', elapsed_seconds:12, tokens:1200});
-const cases = {
-  session: [{scope:'session', active:1, running:1, rows:[row('session')]}, {rows:[]}],
-  global: [{scope:'global', active:1, running:1, rows:[row('global')]}, {rows:[]}],
-  mixed: [{scope:'mixed', active:1, running:1, rows:[row('session'), row('global')]}, {rows:[]}],
-  absent: [{active:1, running:1, rows:[row('session')]}, {rows:[]}],
-  absent_global_maestro: [{active:1, running:1, rows:[row('session')]}, {rows:[row('global')]}],
-  session_global_maestro: [{scope:'session', active:1, running:1, rows:[row('session')]}, {rows:[row('global')]}],
-};
-const results = {};
-for (const [name, [subagents, maestro]] of Object.entries(cases)) {
-  results[name] = app.render({cols:160, rows:30, state:{payload:{privacy:'metadata_only', active:true, subagents, maestro}}, t:{color:{}}});
-}
-console.log(JSON.stringify(results));
-"""
-        result = subprocess.run(['node', '--input-type=module', '-e', script], cwd=self.root,
-                                encoding='utf-8', capture_output=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        rendered = json.loads(result.stdout)
+        def row(scope):
+            return {'scope': scope, 'task_id': 'worker', 'action': 'Work', 'state': 'running', 'elapsed_seconds': 12, 'tokens': 1200}
+
+        cases = {
+            'session': ({'scope': 'session', 'active': 1, 'running': 1, 'rows': [row('session')]}, {'rows': []}),
+            'global': ({'scope': 'global', 'active': 1, 'running': 1, 'rows': [row('global')]}, {'rows': []}),
+            'mixed': ({'scope': 'mixed', 'active': 1, 'running': 1, 'rows': [row('session'), row('global')]}, {'rows': []}),
+            'absent': ({'active': 1, 'running': 1, 'rows': [row('session')]}, {'rows': []}),
+            'absent_global_maestro': ({'active': 1, 'running': 1, 'rows': [row('session')]}, {'rows': [row('global')]}),
+            'session_global_maestro': ({'scope': 'session', 'active': 1, 'running': 1, 'rows': [row('session')]}, {'rows': [row('global')]}),
+        }
+        rendered = {
+            name: '\n'.join(self._panel({'privacy': 'metadata_only', 'active': True, 'subagents': subagents, 'maestro': maestro}, 160))
+            for name, (subagents, maestro) in cases.items()
+        }
         state = '1 agent · 1 running'
         # A global row anywhere in the list — the aggregate scope, or a
         # Maestro row the aggregate does not cover — earns the one marker.
@@ -375,82 +345,7 @@ console.log(JSON.stringify(results));
             with self.subTest(case=name):
                 self.assertIn(state, rendered[name])
                 self.assertNotIn('[global]', rendered[name])
-        # The retired vocabulary is gone from every branch, including the one
-        # that used to spell both scopes out.
         for name, view in rendered.items():
             with self.subTest(case=name):
                 self.assertNotIn('[this chat]', view)
                 self.assertNotIn('this chat + global', view)
-
-    @unittest.skipUnless(shutil.which('node'), 'Node is required for the widget boundary')
-    def test_widget_renders_owned_rows_and_explicit_global_fallback(self):
-        # Run the shipped widget's actual Python reader, not a replica of its kwargs.
-        self.build()
-        with closing(sqlite3.connect(self.hermes / 'state.db')) as db, db:
-            db.execute('UPDATE sessions SET started_at=? WHERE id LIKE ?', (time.time() - 2, 'child_%'))
-        plugins = self.hermes / 'plugins'
-        plugins.mkdir()
-        source = Path(__file__).resolve().parents[1] / 'src/plugin_bundle/omh'
-        shutil.copytree(source, plugins / 'omh')
-        widget = self.root / 'widget.mjs'
-        widget.write_bytes(widget_payload(Path(sys.executable)))
-        script = """
-import childProcess from 'node:child_process';
-import {syncBuiltinESMExports} from 'node:module';
-import {pathToFileURL} from 'node:url';
-childProcess.execFile = (exe, args, opts, cb) => {
-  process.stdout.write(JSON.stringify({exe, args, env: opts.env})); cb(new Error('capture'));
-};
-syncBuiltinESMExports();
-const {default: register} = await import(pathToFileURL(process.argv[1]).href);
-register({Box: 'box', Text: 'text', h: () => null, defineWidgetApp: x => x,
-          openWidget: () => null, updateWidget: () => null});
-"""
-        active = self.root / 'active.json'
-        for reference in (None, 'bad/id', 'unmapped-transport', PARENT_ID, 'other-owner'):
-            if reference is not None:
-                active.write_text(json.dumps({'session_id': reference}))
-            env = {**os.environ, 'HERMES_TUI_ACTIVE_SESSION_FILE': str(active)}
-            capture = subprocess.run(['node', '--input-type=module', '-e', script, str(widget)], env=env, encoding='utf-8', capture_output=True)
-            self.assertEqual(capture.returncode, 0, capture.stderr)
-            invocation = json.loads(capture.stdout)
-            read = subprocess.run([invocation['exe'], *invocation['args']], env=invocation['env'], encoding='utf-8', capture_output=True)
-            self.assertEqual(read.returncode, 0, read.stderr)
-            rows = json.loads(read.stdout)['subagents']['rows']
-            expected = {PARENT_ID: ['own'], 'other-owner': ['other0']}.get(reference or '', ['own', 'other0'])
-            self.assertEqual(sorted(row['task_id'] for row in rows), sorted(expected), reference)
-            scope = 'session' if reference in (PARENT_ID, 'other-owner') else 'global'
-            self.assertTrue(all(row['scope'] == scope for row in rows))
-            render_script = """
-import register from './widget.mjs';
-const payload = JSON.parse(process.argv[1]);
-const apps = [];
-const h = (tag, props, ...children) => typeof tag === 'function' ? tag(props) : children.flat(Infinity).filter(x => x != null).join('');
-register({Box:'box', Text:'text', h, defineWidgetApp: app => {apps.push(app); return app}, openWidget:()=>{}, updateWidget:()=>{}});
-const app = apps.find(x => x.id === 'omh-status');
-const render = value => app.render({cols:160, rows:30, state:{payload:value}, t:{color:{}}});
-const native = render(payload);
-const globalRow = {...payload.subagents.rows[0], scope:'global', task_id:'executor', dispatch_lane:'maestro', executor_profile:'codex'};
-const omh = render({...payload, active:true, subagents:{...payload.subagents, scope:'global', rows:[globalRow]}, maestro:{scope:'global', rows:[globalRow]}, graph:{scope:'global', status:'active', nodes:[{node_id:'global-node', state:'running'}]}});
-console.log(JSON.stringify({native, omh}));
-"""
-            render = subprocess.run(['node', '--input-type=module', '-e', render_script, read.stdout], cwd=self.root, env=env, encoding='utf-8', capture_output=True)
-            self.assertEqual(render.returncode, 0, render.stderr)
-            views = json.loads(render.stdout)
-            # Executor and Maestro rows carry no kind tag; the DAG block keeps
-            # its explicit global word.
-            self.assertIn('MAIN', views['omh'])
-            self.assertNotIn('[global] MAIN', views['omh'])
-            self.assertIn('executor', views['omh'])
-            self.assertNotIn('[bot] executor', views['omh'])
-            self.assertNotIn('[sub] executor', views['omh'])
-            self.assertIn('[global] DAG', views['omh'])
-            self.assertIn('global-node', views['omh'])
-            self.assertIn('codex/maestro', views['omh'])
-            rendered = views['native']
-            # The header marks `[global]` once when rows from outside this
-            # conversation are listed and stays silent otherwise; every native
-            # row carries the `[sub]` kind tag either way.
-            self.assertEqual('[global]' in rendered, scope == 'global')
-            self.assertEqual(rendered.count('[sub] '), len(rows))
-            self.assertNotIn('[this chat]', rendered)

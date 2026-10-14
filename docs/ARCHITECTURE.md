@@ -208,7 +208,7 @@ OMH directly when Hermes taps are available.
 status-bar item and a structured `omh` pane (plan, agent routes and metrics,
 DAG), and `dashboard/plugin_api.py`, which the gateway
 mounts at `/api/plugins/omh/hud` while `omh` is registered in
-`plugins.enabled`, serving the HUD payload the TUI widget reads. The v1
+`plugins.enabled`, serving the HUD payload the Desktop pane reads. The v1
 plugin registers deterministic
 `omh_interact` chat/session interaction, `omh_recommend` route hints,
 metadata-only `omh_probe` capability status/roadmap, compact metadata-only

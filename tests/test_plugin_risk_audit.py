@@ -10,7 +10,7 @@ from _cli_harness import run_cli
 from omh.routing import recommend as recommend_module
 from omh.skill_pack import builtin_definitions, builtin_harnesses
 from omh.wrapper.contract import VISIBLE_ACTIONS, build_chat_interaction_payload
-from omh.system.hermes_install import VERSION_MODULE_RELATIVE, installed_hermes_version
+from omh.system.hermes_install import VERSION_MODULE_RELATIVE
 from omh.workflows.plugin_hook_contract import (
     MAX_HOST_VERSION_CHARS,
     PLUGIN_HOOK_CONTRACT_RANGE,
@@ -1134,22 +1134,6 @@ class InspectedHostVersionTests(unittest.TestCase):
             self.assertEqual(inspected["version"], "0.22.3")
             self.assertEqual(payload["declared_hooks"]["classification_status"], "unknown")
             self.assertIn("undetermined_hook_contract", payload["summary"]["risk_categories"])
-
-    @requires_secure_dir_io
-    def test_the_version_reader_is_the_seam_the_tui_preflight_already_uses(self) -> None:
-        # Reuse proved by behaviour rather than by an import assertion: the
-        # preflight and the audit read the same file the same way, so a change
-        # to one reader moves both.
-        from omh.maintenance.hermes_tui import hermes_tui_preflight
-        from omh.paths import OmhPaths
-
-        with tempfile.TemporaryDirectory() as host_directory:
-            home = Path(host_directory).resolve()
-            install = self._install(host_directory, f'__version__ = "{PLUGIN_HOOK_CONTRACT_VERSION}"\n')
-            preflight = hermes_tui_preflight(OmhPaths(home / ".omh", home))
-
-            self.assertEqual(preflight["install"]["version"], PLUGIN_HOOK_CONTRACT_VERSION)
-            self.assertEqual(installed_hermes_version(install), preflight["install"]["version"])
 
     def test_two_host_sources_are_refused_rather_than_ranked(self) -> None:
         with self.assertRaisesRegex(ValueError, "not both"):

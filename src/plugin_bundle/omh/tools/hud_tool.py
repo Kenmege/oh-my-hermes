@@ -16,7 +16,7 @@ from ..runtime_reader import read_omh_hud
 OMH_HUD_SCHEMA = {
     "name": "omh_hud",
     "description": (
-        "Read the compact OMH metadata-only HUD payload for Hermes TUI/status surfaces. "
+        "Read the compact OMH metadata-only HUD payload for OMH TUI/status surfaces. "
         "Token fields are shown only when supplied by the host metadata."
     ),
     "parameters": {

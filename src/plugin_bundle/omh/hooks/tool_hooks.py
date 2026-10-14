@@ -262,9 +262,9 @@ def pre_tool_call(**kwargs: object) -> dict[str, object] | None:
     #
     # Computed once and used twice: the gate decides this call with it, and
     # the ledger records it. `escalation_can_reach_a_person` reads two
-    # process-global maps, and the HUD reader is a DIFFERENT interpreter --
-    # the TUI widget spawns one every two seconds -- where both maps are
-    # empty and the predicate would answer "attended" for every session. So
+    # process-global maps, and the HUD reader runs in a DIFFERENT process --
+    # the OMH TUI polls it from its own every two seconds -- where both maps
+    # are empty and the predicate would answer "attended" for every session. So
     # the reader takes the recorded answer instead of asking again, and this
     # is the one place that answer is produced (#1687).
     escalation_allowed = escalation_can_reach_a_person(session_id)

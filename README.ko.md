@@ -134,7 +134,7 @@ omh doctor
 
 ```sh
 # 작업 카테고리별 모델 설정 (화살표: 카테고리, ←→ head 모델, -/+ effort);
-# Hermes TUI 안에서는 /omh-model이 같은 피커를 엽니다:
+# OMH TUI(omh) 안에서는 /omh-model이 같은 피커를 엽니다:
 omh model
 # 새 모델 패밀리를 온보딩하려면 Hermes에서 이 스킬을 사용하세요:
 /omh-model-setup
@@ -232,7 +232,7 @@ OMH의 코딩 쪽은 세 가지입니다. 모델별로 프롬프트를 튜닝하
 
 ### 05 · Oh-My-Hermes 인터페이스, 그리고 Hermes Agent 워크플로
 
-인터페이스는 Hermes 터미널입니다. 프롬프트 아래 OMH dock, 위에는 phase todo. 워크플로는 `ulw-*` 엔진과 모든 `omh-*` 스킬이며, 채팅에서 라우팅됩니다. 위임 레인마다 한 줄: 모델, effort, 턴, 토큰, 비용, 실시간. Maestro로 Codex나 Claude Code에 넘긴 레인은 `(codex/maestro …)`, `(claude/maestro …)` 태그가 붙은 자기 행으로 보입니다. 비용 0은 호스트가 확인했을 때만 표시되고, 가격을 모르는 호출은 `$0`이 아니라 `unknown`이라고 말합니다. 프로세스가 생기기 전에는 `Plan · not run`, 실행기가 끝났다고 하면 `Code · reported done`, 게이트를 통과해야 `Test · verified`입니다. 프롬프트 위의 phase todo는 나중에 쓴 요약이 아니라 그 런의 체크리스트입니다.
+인터페이스는 `omh`가 여는 OMH TUI입니다. 프롬프트 위에 에이전트 행과 phase todo. 워크플로는 `ulw-*` 엔진과 모든 `omh-*` 스킬이며, 채팅에서 라우팅됩니다. 위임 레인마다 한 줄: 모델, effort, 턴, 토큰, 비용, 실시간. Maestro로 Codex나 Claude Code에 넘긴 레인은 `(codex/maestro …)`, `(claude/maestro …)` 태그가 붙은 자기 행으로 보입니다. 비용 0은 호스트가 확인했을 때만 표시되고, 가격을 모르는 호출은 `$0`이 아니라 `unknown`이라고 말합니다. 프로세스가 생기기 전에는 `Plan · not run`, 실행기가 끝났다고 하면 `Code · reported done`, 게이트를 통과해야 `Test · verified`입니다. 프롬프트 위의 phase todo는 나중에 쓴 요약이 아니라 그 런의 체크리스트입니다.
 
 <p align="center">
   <img src="assets/showcase-05-hud.svg" alt="OMH HUD: 레인별 모델·effort·턴·토큰·비용 출처·증거 상태, 그리고 phase todo" width="1080">
@@ -288,8 +288,8 @@ omh
   </tr>
 </table>
 
-OMH TUI를 열 수 없는 환경(Windows, `termios`가 없는 터미널, `OMH_NO_TUI=1`, Node 없음)에서는
-`omh`가 Hermes 자체 터미널을 엽니다([The OMH TUI](docs/INSTALLATION.md#the-omh-tui)).
+OMH TUI를 열 수 없으면 `omh`가 이유를 한 줄로 알리고 Hermes 자체 TUI(`hermes --tui`)를 엽니다(Windows, `termios`가 없는 터미널).
+`TERM=dumb`, `OMH_NO_TUI=1`, Node가 없는 환경에서는 그냥 `hermes`를 엽니다. `hermes`는 OMH skin과 HUD가 없는 순정 Hermes로 열리고, OMH의 도구·메모리·스킬은 그대로 남아 있습니다([The OMH TUI](docs/INSTALLATION.md#the-omh-tui)).
 
 OMH 워크플로가 도는 동안 터미널이 보여주는 것:
 
@@ -298,7 +298,7 @@ OMH 워크플로가 도는 동안 터미널이 보여주는 것:
   단위로 적용되고, 각 활동 행에 `category:name(model:effort)`가 표시되어
   라우팅이 눈에 보입니다. 거부된 라우트는 카테고리 체인을 따라 fallback합니다.
 - **Parallel Tool Calling** — 배치된 툴 호출은 Hermes에서 동시 실행되며,
-  방금 발생한 동시 배치는 `[OMH]` 줄에 `parallel shot ×N`으로 표시됩니다.
+  방금 발생한 동시 배치는 계획 헤더에 `parallel shot ×N`으로 표시됩니다.
 - **Parallel Evals** — 리뷰·검증 lane은 독립 서브에이전트로 dispatch되어
   자기승인 없이 교차 검증되고, 각 lane이 turn·cost·cache 지표가 붙은 HUD
   행으로 보입니다.
@@ -334,7 +334,7 @@ OMH 워크플로가 도는 동안 터미널이 보여주는 것:
 ## 권장 모델
 
 <p align="center">
-  <img src="assets/omh-model-tui.png" alt="Hermes Modern TUI의 /omh-model: 카테고리마다 head 모델, effort 바, 상태를 한 행으로 보여주고, 커서 행에는 좌우와 -/+ 핸들이 표시됩니다" width="820">
+  <img src="assets/omh-model-tui.png" alt="/omh-model 체인 피커: 카테고리마다 head 모델, effort 바, 상태를 한 행으로 보여주고, 커서 행에는 좌우와 -/+ 핸들이 표시됩니다" width="820">
 </p>
 OMH에는 다음과 같이 편집 가능한 순서형 recommendation chain이 포함되어 있습니다. guided model setup은 사용자가 active라고 확인한 candidate만 기준으로 chain을 해석합니다. 그 결과는 준비된 routing config이며 provider availability, credential, dispatch, execution evidence가 아닙니다.
 
@@ -383,7 +383,7 @@ $ cat ~/.omh/routing/model-chains.json
 }
 ```
 
-현재 적용 중인 chain은 `omh model-chains show`로 확인할 수 있습니다. 파일을 직접 고치는 대신 바꾸고 싶다면 터미널에서 `omh model-chains`(또는 `omh model`)를 치면 화살표 피커가 열립니다 — 위아래로 카테고리, 좌우로 head 모델, `-`/`+`로 effort — 그리고 Modern TUI 안에서는 `/omh-model`이 같은 피커를 엽니다. 스크립트용 형태는 `omh model-chains set quick "kimi-k3-ultrafast:low, glm-5.3-ultrafast:low"`처럼 실행하면 이 파일이 그대로 수정됩니다.
+현재 적용 중인 chain은 `omh model-chains show`로 확인할 수 있습니다. 파일을 직접 고치는 대신 바꾸고 싶다면 터미널에서 `omh model-chains`(또는 `omh model`)를 치면 화살표 피커가 열립니다 — 위아래로 카테고리, 좌우로 head 모델, `-`/`+`로 effort — 그리고 OMH TUI 안에서는 `/omh-model`이 같은 피커를 엽니다. 스크립트용 형태는 `omh model-chains set quick "kimi-k3-ultrafast:low, glm-5.3-ultrafast:low"`처럼 실행하면 이 파일이 그대로 수정됩니다.
 alias에 provider 전용 wire ID가 필요하면 `model_provider_routes/v1` 형식의 `~/.omh/routing/model-providers.json`에 한 번 매핑하세요. 이후 `set`, `status`, fallback, HUD가 alias/provider/wire model 전체 route를 표시합니다. OMH는 provider ID만 저장하며 credential은 저장하지 않습니다.
 
 계정마다 상황이 다르므로 OMH는 Hermes가 이미 연결해 둔 provider를 스스로 읽습니다 — `hermes auth` 로그인, Hermes 설정의 `providers:` 항목이나 `model.provider`, `$HERMES_HOME/.env`의 API-key 변수 이름 — 그리고 스스로 셉니다. 각 체인은 연결된 provider가 다룰 수 있는 항목이 앞에 오도록 재정렬되고, 피커는 나머지를 표시만 하며, 아무것도 지우지 않고 확인을 위해 아무것도 호출하지 않습니다. 읽는 것은 id와 변수 이름뿐이며 키나 token은 읽지 않습니다. 대화형 `omh setup`은 계속 묻고, 연결된 행은 미리 체크되어 있어 종류를 고치거나, 실제로 쓸 수 없는 연결 provider의 체크를 해제하거나, OMH가 못 찾은 것을 추가하거나, Claude Code 구독 여부를 말할 수 있습니다. 그 답은 `~/.omh/routing/providers.json`(`provider_entitlements/v1`)에 들어가며 자동 탐지보다 우선합니다. Claude Code 구독은 Maestro 레인용 Claude Code `--model` 선호만 시드합니다. Hermes 자체는 그것을 소비할 수 없기 때문입니다.
@@ -523,7 +523,7 @@ Hermes Agent는 이미 루프를 돌립니다. OMH는 그 루프에 무엇을 �
 | 🧭 **Mixture-of-models 라우팅** | 위임되는 lane마다 dispatch 시점에 카테고리(모델 + 추론 강도)가 붙습니다. provider가 모델을 거부하면 chain을 따라 내려가고, 일을 하지 않은 자식은 초록 행이 아니라 `failed`로 표시됩니다. |
 | 🎛️ **모델 계열별 캘리브레이션** | GPT-6 Astra, GPT-5.6, Claude 5.1, GLM 5.3, Kimi, Gemini, Qwen, DeepSeek 등 계열과 세대별로 프롬프팅을 튜닝하고, 벤치마크 쌍이 효과를 보여줄 때만 유지합니다. |
 | 🗂️ **직접 소유하는 카테고리** | executor마다 열두 개의 기본 카테고리, `omh model-chains set`으로 순서 변경, 머신별로 chain을 재정렬하는 entitlement 인터뷰, 실행 전에 요청이 어디로 라우팅될지 보여주는 실시간 뷰를 제공합니다. |
-| 🖥️ **네이티브 TUI 표면** | OMH HUD(카테고리·턴·비용·캐시가 붙은 실시간 행), 프롬프트 위 phase todo, `parallel shot ×N`, full-row diff 밴드, 관리형 스킨을 Hermes 옆에 설치하며 Hermes를 패치하지 않습니다. |
+| 🖥️ **네이티브 TUI 표면** | OMH HUD(카테고리·턴·비용·캐시가 붙은 실시간 행), 프롬프트 위 phase todo, `parallel shot ×N`, full-row diff 밴드, 직접 고르는 테마를 `omh`가 여는 OMH TUI에서 보여주며 Hermes를 패치하지 않습니다. |
 | ⚡ **관측 가능한 병렬 작업** | 독립적인 작업을 파일 소유권이 겹치지 않는 fanout unit으로 나누고, provider 부하에 따른 admission control, 타입이 있는 결과 sidecar, 돌아온 결과를 읽는 verification gate를 붙입니다. |
 | 🎼 **Maestro handoff** | Codex, Claude Code 등 다른 CLI를 위한 명시적 두 번째 lane입니다. readiness probe, capability snapshot, owner-fit 리포트, 실행별 모델·강도 지정을 제공하며 opt-in이고 기본 경로가 아닙니다. |
 | 💸 **가격이 붙은 비용 텔레메트리** | 모든 HUD 행과 run summary에 토큰 수와 달러 금액을 표시합니다. 출처를 밝힌 요금표로 계산하고, 계산할 수 없는 run은 `$0`이 아니라 `unknown`으로 읽힙니다. |

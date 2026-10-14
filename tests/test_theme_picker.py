@@ -38,8 +38,7 @@ from omh.commands.theme_picker import (
     render_frame,
     run_picker,
 )
-from omh.install.config_adapter import display_skin_selection
-from omh.skin_pack import SKIN_THEMES, skin_colors
+from omh.skin_pack import SKIN_THEMES, read_theme_choice, skin_colors
 
 
 def _drive(keys: list[str], *, active_skin: str = "omh", use_color: bool = False):
@@ -248,9 +247,11 @@ class PickerCommandIntegrationTests(unittest.TestCase):
                 status, out, _ = run_cli([*self._homes(tmp), "theme"], output_json=False)
             self.assertEqual(status, 0)
             self.assertIn("OMH theme: crimson", out)
-            self.assertIn("Restart", out)
-            self.assertEqual(display_skin_selection(self._config_text(tmp)), "omh-crimson")
-            self.assertTrue((Path(tmp) / "hermes" / "skins" / "omh-crimson.yaml").is_file())
+            self.assertIn("the next time you run `omh`", out)
+            self.assertEqual(read_theme_choice(Path(tmp) / "omh"), SKIN_THEMES[2])
+            # The OMH TUI's theme, not Hermes': nothing lands in the Hermes home.
+            self.assertEqual(self._config_text(tmp), "")
+            self.assertFalse((Path(tmp) / "hermes" / "skins").exists())
 
     def test_cancelling_the_picker_writes_nothing(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -261,6 +262,7 @@ class PickerCommandIntegrationTests(unittest.TestCase):
                 status, out, _ = run_cli([*self._homes(tmp), "theme"], output_json=False)
             self.assertEqual(status, 0)
             self.assertIn("Cancelled", out)
+            self.assertIsNone(read_theme_choice(Path(tmp) / "omh"))
             self.assertEqual(self._config_text(tmp), "")
             self.assertFalse((Path(tmp) / "hermes" / "skins").exists())
 

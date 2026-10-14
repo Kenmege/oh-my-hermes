@@ -826,6 +826,29 @@ def project_identity(cwd: str | Path | None = None) -> str:
     return root.name if root is not None and root.name else "default"
 
 
+def configured_omh_home(hermes_home: Path) -> Path | None:
+    """The OMH home a Hermes home's own `plugins.entries.omh.settings.omh_home` names, or None.
+
+    The first source the standalone resolution (`resolve_paths(None,
+    hermes_home)`) takes, read on its own so a caller can tell "this home
+    names a store" from "nothing names one and the process default applies".
+    None as well for a config or setting that cannot be read or resolved.
+    """
+    try:
+        text = (Path(hermes_home) / "config.yaml").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    try:
+        if not runtime_paths.omh_home_setting(text)[0]:
+            return None
+        return resolve_paths(None, hermes_home).omh_home
+    except runtime_paths.RuntimeBindingError:
+        # The standalone scan refuses shapes Hermes' own YAML loader reads
+        # (a flow `entries: {omh: ...}`, a `<<:` merge key, a tab), so a
+        # setting the profile's plugin binds can still be unreadable here.
+        return None
+
+
 def resolve_paths(
     omh_home: str | Path | None = None,
     hermes_home: str | Path | None = None,

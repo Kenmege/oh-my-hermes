@@ -1,7 +1,7 @@
 """The editing model behind the chain picker, shared by its two surfaces.
 
-Bare `omh model-chains` on a terminal and the Modern-TUI `/omh-model` widget
-walk the same rows: one per shipped mixture category, each showing the chain
+Bare `omh model-chains` on a terminal and `/omh-model` in the OMH TUI walk
+the same rows: one per shipped mixture category, each showing the chain
 in effect, whether it is a shipped default or an override, and whether a
 provider this machine holds -- linked to Hermes, or recorded by `omh setup`
 -- serves its head. Left and right step the head
@@ -11,12 +11,12 @@ effort, and a save composes the override document exactly the way
 rules so neither surface carries chain logic of its own; it renders nothing
 and reads no keys.
 
-The widget imports this module from the installed plugin bundle, so it may
-depend only on siblings in this package. Display labels and purpose phrases
-live in the repo's catalog module, which the bundle cannot see; `picker_rows`
-takes them as optional mappings and falls back to the raw alias — the name
-routing actually uses — so a surface without the catalog still shows the
-truth, just less prettily.
+It lives in the plugin bundle, so it may depend only on siblings in this
+package (`tests/test_plugin_bundle_standalone.py`). Display labels and
+purpose phrases live in the repo's catalog module, which the bundle cannot
+see; `picker_rows` takes them as optional mappings and falls back to the raw
+alias — the name routing actually uses — so a surface without the catalog
+still shows the truth, just less prettily.
 """
 
 from __future__ import annotations
@@ -261,8 +261,8 @@ def write_override_document(omh_home: str | Path | None, document: Mapping[str, 
 
     The `omh model-chains` command keeps the repo-wide atomic writer; this is
     the bundle's own (the todo store's idiom: a fresh temporary beside the
-    target, then `os.replace`), because the widget reaches this module from
-    the installed plugin, where `omh.system` does not exist. Validated once
+    target, then `os.replace`), because a module in the plugin bundle may not
+    import `omh.system` (`tests/test_plugin_bundle_standalone.py`). Validated once
     more before the bytes land, so an invalid document is never written by
     either surface.
     """
@@ -302,12 +302,11 @@ def apply_picker_changes(
     *,
     hermes_home: str | Path | None = None,
 ) -> dict[str, Any]:
-    """The widget's save, as one call over stdin JSON.
+    """The save `/omh-model` in the OMH TUI makes, as one call.
 
     `raw_changes` is `{category: [{"model": ..., "reasoning_effort": ...}]}`
     for every edited row. A refusal comes back as `{"error": ...}` rather
-    than a traceback: the widget shows the sentence, and a shell reading the
-    script's stdout sees JSON either way.
+    than a traceback, and the TUI shows the sentence.
     """
     if not isinstance(raw_changes, Mapping):
         return {"error": "changes must be a JSON object keyed by category"}

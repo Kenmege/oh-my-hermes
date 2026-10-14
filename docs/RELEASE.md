@@ -652,7 +652,7 @@ published tag:
 | --- | --- |
 | `omh --version` | the `omh` package on PATH |
 | `~/.hermes/plugins/omh/plugin.yaml` | the plugin bundle the last install/update wrote |
-| The Hermes TUI HUD footer (` v2.0.1`) | the version recorded by the last install/update, read by the plugin-bundle reader the widget spawns |
+| The OMH TUI banner (`⚚ OH-MY-HERMES v2.0.1`) | the `omh` package the TUI runs, the one on PATH |
 
 The 2.0.1 cut is the worked example: the tag was pushed and npm `latest`
 moved, and the maintainer's own HUD kept showing `v2.0.0` for as long as the
@@ -666,12 +666,11 @@ omh --version          # must print the released version
 omh doctor
 ```
 
-Then restart the Hermes TUI and confirm the HUD footer shows the new version.
-The widget reads the installed plugin bundle, so a terminal that was already
-open keeps rendering the version it started with.
+Then reopen the OMH TUI (bare `omh`) and confirm its banner shows the new
+version. An OMH TUI that was already open keeps showing the version it
+started with.
 
-Never hand-copy files into `~/.hermes/plugins/` or `~/.hermes/tui-widgets/` to
-close that gap. Hand-copied artifacts drift from the install manifests and
+Never hand-copy files into `~/.hermes/plugins/` to close that gap. Hand-copied artifacts drift from the install manifests and
 make the next `omh update` refuse or demand `--force`.
 
 `omh release checklist` carries this as `machine_sync_after_cut`, a

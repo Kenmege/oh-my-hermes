@@ -12,8 +12,6 @@ import re
 import time
 from typing import Callable
 
-from omh.skin_pack import SKIN_NAME, is_omh_skin_name
-
 from ..core.errors import OmhError
 from ..plugin_bundle.omh import runtime_paths
 from ..plugin_bundle.omh.skill_ownership import yaml_null, yaml_scalar
@@ -954,11 +952,28 @@ def _non_null_scalar(value: str) -> str:
 def display_skin_selection(config_text: str) -> str:
     """The name in `display.skin`, or "" when Hermes resolves its built-in default.
 
-    The active skin is what colours the OMH widget's panel border, so doctor
-    names it when reporting the chrome. `ensure_omh_skin` is the one writer,
-    and only for the unset case.
+    Read only: OMH writes no display key. The display release reads it to
+    take back an OMH skin earlier versions set, and `omh theme` and the OMH
+    TUI read it as the fallback for an OMH palette it names.
     """
     return _section_scalar(config_text, "display", "skin")
+
+
+def display_skin_selections(config_text: str) -> list[str]:
+    """Every value `display.skin` is set to, in file order; `display_skin_selection` is the first."""
+    return _section_scalars(config_text, "display", "skin")
+
+
+def display_key_named_twice(config_text: str, key: str) -> bool:
+    """Whether `display.<key>` is set in more than one place, so the readers and Hermes can disagree on its value.
+
+    The readers return the first value they meet. Hermes' YAML loader keeps
+    the last of duplicate keys, keeps only the last of two `display`
+    sections, and reads a dotted `display.<key>` as a key of its own. Set
+    in one place, the value the readers return is the one Hermes resolves,
+    or one it passes over for its own default.
+    """
+    return len(_section_scalars(config_text, "display", key)) > 1
 
 
 def references_mapping_key(line: str, key: str) -> bool:
@@ -1095,78 +1110,12 @@ def _display_edit_guard(lines: list[str]) -> str:
     return section_edit_guard(lines, "display")
 
 
-def _canonical_display_entries(lines: list[str], key: str) -> list[tuple[int, str]]:
-    display_indices = [index for index, line in enumerate(lines) if line == "display:"]
-    if len(display_indices) != 1:
-        return []
-    entries: list[tuple[int, str]] = []
-    for index in range(display_indices[0] + 1, len(lines)):
-        line = lines[index]
-        if line.strip() and not line.startswith(" "):
-            break
-        if line.startswith("  ") and not line.startswith("    "):
-            candidate, separator, rest = line.strip().partition(":")
-            if separator and candidate == key:
-                entries.append((index, rest.strip()))
-    return entries
-
-
-def _activate_display_scalar(config_text: str, key: str, value: str) -> ConfigChange:
-    """Set one canonical ``display`` scalar after explicit operator consent."""
-    lines = config_text.splitlines()
-    guard = _display_edit_guard(lines)
-    if guard:
-        return ConfigChange(False, guard, config_text)
-    dotted = f"display.{key}"
-    if any(_references_mapping_key(line, dotted) for line in lines):
-        return ConfigChange(False, f"dotted display.{key} is user-owned; leaving it alone", config_text)
-
-    display_indices = [index for index, line in enumerate(lines) if line == "display:"]
-    if not display_indices:
-        text = (config_text.rstrip() + f"\n\ndisplay:\n  {key}: {value}\n").lstrip("\n")
-        return ConfigChange(True, f"appended display.{key}", text)
-
-    display_index = display_indices[0]
-    entries: list[tuple[int, str]] = []
-    key_like_lines = 0
-    for index in range(display_index + 1, len(lines)):
-        line = lines[index]
-        if line.strip() and not line.startswith(" "):
-            break
-        if _references_mapping_key(line, key):
-            key_like_lines += 1
-        if line.startswith("  ") and not line.startswith("    "):
-            candidate, separator, rest = line.strip().partition(":")
-            if separator and candidate == key:
-                entries.append((index, rest.strip()))
-    if key_like_lines != len(entries) or len(entries) > 1:
-        return ConfigChange(False, f"ambiguous display.{key} is user-owned; leaving it alone", config_text)
-    if entries:
-        index, raw = entries[0]
-        if not _scalar_value(raw) or raw.startswith(("{", "[", "|", ">")):
-            return ConfigChange(False, f"non-scalar display.{key} is user-owned; leaving it alone", config_text)
-        if _scalar_value(raw) == value:
-            return ConfigChange(False, f"display.{key} is already {value}", config_text)
-        lines[index] = f"  {key}: {value}"
-        return ConfigChange(True, f"set display.{key} to {value}", "\n".join(lines) + "\n")
-
-    lines.insert(display_index + 1, f"  {key}: {value}")
-    return ConfigChange(True, f"inserted display.{key}", "\n".join(lines) + "\n")
-
-
-COLLAPSED_DISPLAY_SECTIONS: tuple[tuple[str, str], ...] = (
-    ("thinking", "collapsed"),
-    ("tools", "collapsed"),
-    ("subagents", "collapsed"),
-)
-
-
 def display_sections_selection(config_text: str) -> dict[str, str]:
     """The canonical `display.sections` scalars, or {} for any other shape.
 
-    Read-only companion to the writer below, and the surface the apply result
-    reports so `omh uninstall` (#1725) can later tell what setup wrote from
-    what a person chose.
+    The reading the write record compares before and after an apply pass,
+    so `omh uninstall` (#1725) and the display release can tell the
+    sections earlier versions wrote from the ones a person chose.
     """
     lines = config_text.splitlines()
     if _display_edit_guard(lines):
@@ -1176,72 +1125,6 @@ def display_sections_selection(config_text: str) -> dict[str, str]:
         return {}
     _index, children = located
     return {key: _scalar_value(raw) for _child_index, key, raw in children if _scalar_value(raw)}
-
-
-def activate_display_sections(config_text: str) -> ConfigChange:
-    """Collapse the three transcript sections after the operator accepts the branded TUI.
-
-    Part of the same consented bundle as `display.interface` and
-    `display.skin`, and under the same rules: never on a noncanonical YAML
-    shape, never over a value the person set, and only from the default-Yes
-    confirmation or `--yes`.
-
-    Narrower than the two scalars in one way that matters. Consent lets those
-    two REPLACE a stock canonical value, because the whole point is migrating
-    somebody off `cli`. Here every key is unset-only, per key: an existing
-    `display.sections.tools: expanded` survives while `thinking` and
-    `subagents` are still added. Hermes' own defaults are `expanded`
-    (`SECTION_DEFAULTS` in `ui-tui/src/domain/details.ts`), so an explicit
-    `expanded` and the default look identical in behavior but not in
-    provenance -- one is a choice -- and only the absent key is OMH's to fill.
-
-    `collapsed` is not `hidden`: counts stay visible and a click expands.
-    """
-    lines = config_text.splitlines()
-    guard = _display_edit_guard(lines)
-    if guard:
-        return ConfigChange(False, guard, config_text)
-    if any(_references_mapping_key(line, "display.sections") for line in lines):
-        return ConfigChange(False, "dotted display.sections is user-owned; leaving it alone", config_text)
-
-    located = _canonical_display_sections(lines)
-    if isinstance(located, str):
-        return ConfigChange(False, located, config_text)
-
-    if located is None:
-        block = ["  sections:", *(f"    {key}: {value}" for key, value in COLLAPSED_DISPLAY_SECTIONS)]
-        display_index = next((index for index, line in enumerate(lines) if line == "display:"), None)
-        if display_index is None:
-            text = (config_text.rstrip() + "\n\ndisplay:\n" + "\n".join(block) + "\n").lstrip("\n")
-            return ConfigChange(True, "appended display.sections", text)
-        lines[display_index + 1 : display_index + 1] = block
-        return ConfigChange(True, "inserted display.sections", "\n".join(lines) + "\n")
-
-    sections_index, children = located
-    present = {key for _child_index, key, _raw in children}
-    missing = [(key, value) for key, value in COLLAPSED_DISPLAY_SECTIONS if key not in present]
-    if not missing:
-        # Not "already collapsed": every key being present says nothing about
-        # its value, and on a config where all three read `expanded` the old
-        # wording claimed the opposite of what is on disk.
-        return ConfigChange(
-            False,
-            "display.sections already sets "
-            + ", ".join(key for key, _value in COLLAPSED_DISPLAY_SECTIONS)
-            + "; leaving those values to the user",
-            config_text,
-        )
-    # After the `sections:` line, not after the last child: the children of a
-    # block mapping are unordered, and inserting at the head cannot land past
-    # a trailing comment that belongs to the key above it.
-    lines[sections_index + 1 : sections_index + 1] = [f"    {key}: {value}" for key, value in missing]
-    kept = sorted(present & {key for key, _value in COLLAPSED_DISPLAY_SECTIONS})
-    detail = f"; kept user value(s) for {', '.join(kept)}" if kept else ""
-    return ConfigChange(
-        True,
-        f"set display.sections.{', display.sections.'.join(key for key, _value in missing)}{detail}",
-        "\n".join(lines) + "\n",
-    )
 
 
 def _canonical_display_sections(
@@ -1311,65 +1194,6 @@ def _canonical_display_sections(
     return (sections_index, children)
 
 
-def activate_omh_skin(config_text: str, name: str = SKIN_NAME) -> ConfigChange:
-    """Select one managed OMH skin after the operator accepts it.
-
-    Forcing on purpose: this is the consent path. The setup/update prompt and
-    `omh theme use <name>` are both explicit choices, so they may replace an
-    existing canonical value; `ensure_omh_skin` is the narrow unset-only writer.
-    """
-    return _activate_display_scalar(config_text, "skin", name)
-
-
-def ensure_omh_skin(config_text: str, name: str = SKIN_NAME) -> ConfigChange:
-    """Default `display.skin` to the managed OMH skin when no skin is chosen.
-
-    This is the owner-directed identity default: installing OMH is opting into
-    the OH-MY-HERMES look, the way installing oh-my-zsh restyles the shell it
-    wraps. It is deliberately narrower than the retired `display.interface`
-    write that #986 removed — that write moved users off Hermes' default
-    terminal and cost them chrome; this one selects a palette on the terminal
-    they already use, only when `display.skin` is unset, and `hermes skin use
-    <anything>` immediately and permanently overrides it because an explicit
-    value is never rewritten.
-
-    An already-selected OMH theme (`omh theme use amber` and friends) is left
-    alone for the same reason a foreign skin is: it is an explicit choice. The
-    two cases differ only in the message, because "leaving user preference
-    unchanged" reads as a foreign skin and would hide a working OMH theme.
-    """
-    lines = config_text.splitlines()
-    guard = _display_edit_guard(lines)
-    if guard:
-        return ConfigChange(False, guard, config_text)
-    skin_entries = _canonical_display_entries(lines, "skin")
-    if len(skin_entries) > 1:
-        return ConfigChange(False, "duplicate display.skin keys are ambiguous; leaving them alone", config_text)
-    if skin_entries and (
-        not _scalar_value(skin_entries[0][1])
-        or skin_entries[0][1].startswith(("{", "[", "|", ">"))
-    ):
-        return ConfigChange(False, "non-scalar display.skin is user-owned; leaving it alone", config_text)
-    selected = display_skin_selection(config_text)
-    if selected == name:
-        return ConfigChange(False, f"display.skin is already {name}", config_text)
-    if selected and is_omh_skin_name(selected):
-        return ConfigChange(False, f"display.skin is the chosen OMH theme {selected}; leaving it unchanged", config_text)
-    if selected:
-        return ConfigChange(False, f"display.skin is {selected}; leaving user preference unchanged", config_text)
-
-    if any(line.startswith("display.skin:") for line in lines):
-        return ConfigChange(False, "dotted display.skin is user-owned; leaving it alone", config_text)
-    display_indices = [index for index, line in enumerate(lines) if line == "display:"]
-    if len(display_indices) > 1:
-        return ConfigChange(False, "duplicate display sections are ambiguous; leaving them alone", config_text)
-    if not display_indices:
-        text = (config_text.rstrip() + f"\n\ndisplay:\n  skin: {name}\n").lstrip("\n")
-        return ConfigChange(True, "appended display.skin", text)
-    lines.insert(display_indices[0] + 1, f"  skin: {name}")
-    return ConfigChange(True, f"set display.skin to {name}", "\n".join(lines) + "\n")
-
-
 def model_scalar_selection(config_text: str, key: str) -> str:
     """The scalar `model.<key>` (`default`, `provider`, `base_url`), or "".
 
@@ -1399,80 +1223,6 @@ def display_interface_selection(config_text: str) -> str:
     if len(entries) != 1 or not entries[0] or entries[0].startswith(("{", "[", "|", ">")):
         return ""
     return _scalar_value(entries[0])
-
-
-def activate_tui_interface(config_text: str) -> ConfigChange:
-    """Select Hermes' modern TUI after the operator accepts the prompt."""
-    return _activate_display_scalar(config_text, "interface", "tui")
-
-
-def ensure_tui_interface(config_text: str) -> ConfigChange:
-    """Default `display.interface` to tui whenever the user has not chosen one.
-
-    Existing installs matter as much as fresh ones: OMH's HUD widgets render
-    only in Hermes' official Ink TUI, so an upgrading user whose config predates
-    this key would otherwise keep landing in the classic REPL where the HUD
-    cannot exist. Every explicit or noncanonical display choice below stays
-    user-owned; only the genuinely unset case is defaulted.
-    """
-    lines = config_text.splitlines()
-    guard = _display_edit_guard(lines)
-    if guard:
-        return ConfigChange(False, guard, config_text)
-    display_lines = [
-        line
-        for line in lines
-        if re.match(r"^\s*display\s*:", line)
-    ]
-    if any(line.startswith("display.interface:") for line in lines):
-        return ConfigChange(False, "dotted display.interface is user-owned; leaving it alone", config_text)
-    if len(display_lines) > 1:
-        return ConfigChange(False, "duplicate display sections are ambiguous; leaving them alone", config_text)
-    if display_lines and display_lines[0] != "display:":
-        return ConfigChange(False, "inline display configuration is user-owned; leaving it alone", config_text)
-
-    display_index = next(
-        (index for index, line in enumerate(lines) if line.strip() == "display:" and not line.startswith(" ")),
-        None,
-    )
-    interface_entries: list[tuple[int, str]] = []
-    interface_like_lines = 0
-    if display_index is not None:
-        for index in range(display_index + 1, len(lines)):
-            line = lines[index]
-            if line.strip() and not line.startswith(" "):
-                break
-            if line.startswith("  ") and not line.startswith("    "):
-                key, separator, rest = line.strip().partition(":")
-                if separator and key.strip() == "interface":
-                    interface_entries.append((index, rest.strip()))
-            if re.match(r"^interface\s*:", line.lstrip()):
-                interface_like_lines += 1
-    if interface_like_lines != len(interface_entries):
-        return ConfigChange(False, "noncanonical display.interface is user-owned; leaving it alone", config_text)
-    if len(interface_entries) > 1:
-        return ConfigChange(False, "duplicate display.interface keys are ambiguous; leaving them alone", config_text)
-    if interface_entries and (
-        not _scalar_value(interface_entries[0][1])
-        or interface_entries[0][1].startswith(("{", "[", "|", ">"))
-    ):
-        return ConfigChange(False, "non-scalar display.interface is user-owned; leaving it alone", config_text)
-    selected = display_interface_selection(config_text)
-    if selected == "tui":
-        return ConfigChange(False, "display.interface is already tui", config_text)
-    if selected:
-        return ConfigChange(False, f"display.interface is {selected}; leaving user preference unchanged", config_text)
-
-    if display_index is None:
-        text = (config_text.rstrip() + "\n\ndisplay:\n  interface: tui\n").lstrip("\n")
-        return ConfigChange(True, "appended display.interface", text)
-
-    if interface_entries:
-        lines[interface_entries[0][0]] = "  interface: tui"
-        return ConfigChange(True, "set display.interface to tui", "\n".join(lines) + "\n")
-
-    lines.insert(display_index + 1, "  interface: tui")
-    return ConfigChange(True, "inserted display.interface", "\n".join(lines) + "\n")
 
 
 def maybe_set_memory_provider(config_text: str, name: str, mode: str) -> ConfigChange:
@@ -1664,6 +1414,11 @@ def _locate_display_scalar(lines: list[str], key: str) -> tuple[int, str] | str 
     guard = _display_edit_guard(lines)
     if guard:
         return guard
+    return _locate_display_block_scalar(lines, key)
+
+
+def _locate_display_block_scalar(lines: list[str], key: str) -> tuple[int, str] | str | None:
+    """`_locate_display_scalar` without the guards on the document and on the `display` section's own shape."""
     if any(_references_mapping_key(line, f"display.{key}") for line in lines):
         return f"dotted display.{key} is user-owned; leaving it alone"
     display_indices = [index for index, line in enumerate(lines) if line == "display:"]
@@ -1695,10 +1450,10 @@ def _locate_display_scalar(lines: list[str], key: str) -> tuple[int, str] | str 
 def revert_display_scalar(config_text: str, key: str, expected: str, previous: str = "") -> ConfigChange:
     """Put one canonical `display.<key>` back, but only while it reads `expected`.
 
-    The uninstall half of `_activate_display_scalar`, and under the same
-    guards: a shape that writer would have refused is a shape this one
-    refuses too, so the pair can never leave a config the editor no longer
-    understands.
+    The inverse of the consented writer earlier versions ran, under the same
+    guards (`_locate_display_scalar`): a shape that writer refused is a
+    shape this one refuses too, so the pair can never leave a config the
+    editor no longer understands.
 
     `previous` is the value the person had before consent let OMH migrate
     them off it. Removing the line in that case would be the wrong inverse:
@@ -1723,21 +1478,62 @@ def revert_display_scalar(config_text: str, key: str, expected: str, previous: s
     return ConfigChange(True, f"removed display.{key}", _joined(lines))
 
 
+def _locate_display_sections(lines: list[str]) -> tuple[int, list[tuple[int, str, str]]] | str | None:
+    """`_canonical_display_sections` behind the guards every display mutation shares."""
+    guard = _display_edit_guard(lines)
+    if guard:
+        return guard
+    if any(_references_mapping_key(line, "display.sections") for line in lines):
+        return "dotted display.sections is user-owned; leaving it alone"
+    return _canonical_display_sections(lines)
+
+
+def display_edit_refusal(config_text: str, key: str) -> str:
+    """Why the display removers will not edit `display.<key>` here, or "" when they would.
+
+    The same refusal `revert_display_scalar` and `remove_display_sections`
+    return, read without attempting the edit. A remover that changed
+    nothing says so in one message whether the shape stopped it or the
+    value was not the one it was asked to take back; the display release
+    has to tell those apart, because only the second leaves nothing of
+    OMH's behind.
+    """
+    lines = config_text.splitlines()
+    located = _locate_display_sections(lines) if key == "sections" else _locate_display_scalar(lines, key)
+    return located if isinstance(located, str) else ""
+
+
+def display_read_refusal(config_text: str, key: str) -> str:
+    """Why `display.<key>` as the readers return it may not be the value Hermes resolves, or "" when it is.
+
+    Narrower than `display_edit_refusal`. A quoted key, an anchor or a BOM
+    elsewhere in the file stops the editor, which could not keep that
+    syntax if it rewrote a line, but does not change what the reader
+    returns for `display.<key>`. What can change it is in `display`
+    itself: a flow, quoted or duplicate `display`, a dotted
+    `display.<key>`, a second `<key>` in the block (the reader takes the
+    first, Hermes' YAML loader the last), or an empty or non-scalar value.
+    A tag or anchor on the value is not checked here: the readers return
+    it verbatim, and the caller decides what that reads as.
+    """
+    lines = config_text.splitlines()
+    guard = _section_shape_guard(lines, "display")
+    if guard:
+        return guard
+    located = _locate_display_block_scalar(lines, key)
+    return located if isinstance(located, str) else ""
+
+
 def remove_display_sections(config_text: str, keys: list[str], expected: str) -> ConfigChange:
     """Drop the named `display.sections` children that still read `expected`.
 
-    Per key, like the writer: a child the person has since changed stays, and
-    the caller reports it by name. Deciding which keys to pass is the
-    caller's job -- `display_sections_selection` is the reading both sides
-    use -- so this only refuses shapes and removes lines.
+    Per key, like the writer earlier versions ran: a child the person has
+    since changed stays, and the caller reports it by name. Deciding which
+    keys to pass is the caller's job -- `display_sections_selection` is the
+    reading both sides use -- so this only refuses shapes and removes lines.
     """
     lines = config_text.splitlines()
-    guard = _display_edit_guard(lines)
-    if guard:
-        return ConfigChange(False, guard, config_text)
-    if any(_references_mapping_key(line, "display.sections") for line in lines):
-        return ConfigChange(False, "dotted display.sections is user-owned; leaving it alone", config_text)
-    located = _canonical_display_sections(lines)
+    located = _locate_display_sections(lines)
     if isinstance(located, str):
         return ConfigChange(False, located, config_text)
     if located is None:
@@ -1866,19 +1662,29 @@ def _joined(lines: list[str]) -> str:
 def _section_scalar(
     config_text: str, section: str, key: str, *, parse: Callable[[str], str] | None = None
 ) -> str:
+    values = _section_scalars(config_text, section, key, parse=parse)
+    return values[0] if values else ""
+
+
+def _section_scalars(
+    config_text: str, section: str, key: str, *, parse: Callable[[str], str] | None = None
+) -> list[str]:
+    """Every `section.key` value in file order, dotted or in a block; `_section_scalar` takes the first."""
     read = parse or _scalar_value
     dotted = f"{section}.{key}:"
-    for index, line in enumerate(config_text.splitlines()):
+    lines = config_text.splitlines()
+    values: list[str] = []
+    for index, line in enumerate(lines):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
         if stripped.startswith(dotted) and not line.startswith(" "):
-            return read(stripped[len(dotted) :])
-        if line.startswith("  ") and not line.startswith("    "):
+            values.append(read(stripped[len(dotted) :]))
+        elif line.startswith("  ") and not line.startswith("    "):
             candidate, separator, rest = stripped.partition(":")
-            if separator and candidate.strip() == key and _enclosing_section(config_text.splitlines(), index) == section:
-                return read(rest)
-    return ""
+            if separator and candidate.strip() == key and _enclosing_section(lines, index) == section:
+                values.append(read(rest))
+    return values
 
 
 def _enclosing_section(lines: list[str], index: int) -> str:
