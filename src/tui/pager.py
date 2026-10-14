@@ -136,7 +136,8 @@ class HistoryPager(Pager):
     reach, at the frame's width. A move asked for before the first frame is
     made at it; after that each move is made at once, as `Pager` makes it.
     The footer counts messages (blocks), not rows. At most
-    `HISTORY_BLOCKS_KEPT` blocks' rows are kept, for one width and theme.
+    `HISTORY_BLOCKS_KEPT` blocks' rows are kept, for one width and theme, the
+    last block's always once drawn.
     """
 
     lines: Sequence[Line] = ()
@@ -170,12 +171,17 @@ class HistoryPager(Pager):
         return [(), *rows] if rows and index > self._first_with_rows(cols, theme) else rows
 
     def _rendered(self, index: int, cols: int, theme: Theme) -> list[Line]:
-        """Block `index`'s rows at `cols`, rendered once while kept; the block used longest ago leaves first."""
+        """Block `index`'s rows at `cols`, rendered once while kept; the block used longest ago leaves first.
+
+        The last block never leaves: it is the one block that can still
+        change (a reply streaming while `/history` is open), and holding it
+        keeps the page, and the last page's top found from it, as first drawn.
+        """
         rows = self._kept.pop(index, None)
         if rows is None:
             rows = self.render(index, cols, theme)
             if len(self._kept) >= HISTORY_BLOCKS_KEPT:
-                del self._kept[next(iter(self._kept))]
+                del self._kept[next(kept for kept in self._kept if kept != self.count - 1)]
         self._kept[index] = rows
         return rows
 

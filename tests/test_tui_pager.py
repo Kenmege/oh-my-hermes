@@ -144,11 +144,11 @@ class HistoryPagerTests(unittest.TestCase):
             pager.frame(80, 24, THEME)
         self.assertEqual(pager.item, 1994)  # the last page's top: 23 rows end with block 1999's last
         self.assertLessEqual(len(pager._kept), HISTORY_BLOCKS_KEPT)
-        # Each block rendered once on the way down; the last page's six also once at the open, to bound the moves,
-        # and left to go from what was kept since no frame walks them again.
+        # Each block rendered once on the way down; the last page's first five also once at the open, to bound the
+        # moves, and left to go from what was kept since no frame walks them again. The last block stays kept.
         renders = Counter(index for index, _width in calls)
         self.assertEqual(len(renders), 2000)
-        self.assertEqual(sorted(index for index, count in renders.items() if count > 1), list(range(1994, 2000)))
+        self.assertEqual(sorted(index for index, count in renders.items() if count > 1), list(range(1994, 1999)))
 
     def test_its_fields_hide_no_method_of_pager(self) -> None:
         pager = self.history(items_of([3] * 50))
@@ -194,6 +194,22 @@ class HistoryPagerTests(unittest.TestCase):
             tops.append((pager.item, pager.offset))
             self.assertEqual(tops[-1], last_page_top(cols, height))
         self.assertEqual(len(set(tops)), 3)
+
+    def test_the_last_block_stays_as_first_drawn_so_the_last_page_holds(self) -> None:
+        # Only the last block can still change (a reply streaming while /history is open).
+        items = items_of([2] * 50)
+        pager = HistoryPager("history", count=50, render=lambda index, width, theme: items[index])
+        with patch("omh.tui.pager.HISTORY_BLOCKS_KEPT", 4):
+            pager.frame(80, 10, THEME)  # the top page; the last page's top is found from blocks 47 to 49
+            items[49] = rows(*(f"block 49 grown {part}" for part in range(5)))  # the live block grew meanwhile
+            for _ in range(5):  # paging on turns the kept rows over
+                pager.handle_key(key(" "), 10)
+                pager.frame(80, 10, THEME)
+            pager.handle_key(key("G"), 10)
+            pager.invalidate()  # paint every row of the next frame
+            screen = VTScreen(10, 80)
+            screen.feed(pager.frame(80, 10, THEME))
+        self.assertEqual(screen.lines()[-2].rstrip(), "block 49 row 1")  # its last row, as the pager first drew it
 
     def test_the_block_used_longest_ago_leaves_first(self) -> None:
         calls: list[tuple[int, int]] = []
