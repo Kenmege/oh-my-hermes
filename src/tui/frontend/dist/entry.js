@@ -71,7 +71,12 @@ for (const signal of ['SIGTERM', 'SIGHUP']) {
   process.on(signal, () => child.kill(signal))
 }
 
-child.on('error', requestFallback)
+// 'error' also fires when a kill fails after the child started; only a child
+// that never started asks for the fallback, or a live session's end would open
+// a second terminal.
+let started = false
+child.on('spawn', () => { started = true })
+child.on('error', () => { if (!started) requestFallback() })
 child.on('exit', (code, signal) => {
   if (code !== null) process.exit(code)
   process.exit(signal ? 128 + (constants.signals[signal] ?? 0) : 1)

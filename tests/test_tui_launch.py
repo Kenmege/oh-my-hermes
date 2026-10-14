@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -114,8 +115,6 @@ class FallbackSentinelTests(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "SIGHUP is POSIX-only, and the OMH TUI is never attempted on Windows")
     def test_exit_on_signals_turns_the_pair_into_system_exit_and_puts_the_handlers_back(self) -> None:
-        import signal
-
         before = {name: signal.getsignal(getattr(signal, name)) for name in launch.EXIT_SIGNALS}
         with launch.exit_on_signals():
             for name in launch.EXIT_SIGNALS:
@@ -246,6 +245,40 @@ class ShimTests(unittest.TestCase):
             )
             self.assertTrue(sentinel.is_file())
         self.assertEqual(result.returncode, launch.FALLBACK_EXIT)
+
+    def test_a_kill_that_fails_after_the_child_started_asks_for_no_fallback(self) -> None:
+        # Node emits 'error' for a failed kill too. The preload makes every kill fail that way; the SIGTERM sent to
+        # the shim alone then reaches only the failing kill, and the child goes on to exit 0 on its own.
+        with TemporaryDirectory() as tmp:
+            sentinel, started = Path(tmp) / "fallback", Path(tmp) / "started"
+            preload = Path(tmp) / "failing-kill.js"
+            preload.write_text(
+                "const cp = require('node:child_process')\n"
+                "const spawn = cp.spawn\n"
+                "cp.spawn = function (...args) {\n"
+                "  const child = spawn.apply(this, args)\n"
+                "  child.kill = () => { process.nextTick(() => child.emit('error', new Error('kill EPERM'))); return false }\n"
+                "  return child\n"
+                "}\n",
+                encoding="utf-8",
+            )
+            fake_python = _executable(Path(tmp) / "fake-python", f'#!/bin/sh\ntouch "{started}"\nsleep 1\nexit 0\n')
+            shim = subprocess.Popen(
+                ["node", "-r", str(preload), str(launch.FRONTEND_ENTRY)],
+                env={
+                    "PATH": os.environ.get("PATH", ""),
+                    "OMH_TUI_PYTHON": str(fake_python),
+                    launch.FALLBACK_SENTINEL_ENV: str(sentinel),
+                },
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            deadline = time.monotonic() + 20
+            while not started.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            shim.send_signal(signal.SIGTERM)
+            _out, err = shim.communicate(timeout=30)
+            self.assertFalse(sentinel.exists())
+        self.assertEqual(shim.returncode, 0, err)
 
     def test_a_fallback_without_a_sentinel_name_still_exits_75(self) -> None:
         # `python -m omh.tui` by hand, or a launcher that set no name: the code is the same, no file is made.
