@@ -1575,9 +1575,9 @@ refused. That pass records `display_released_at` beside the write record in
 `$OMH_HOME/runtime/state.json`, and from then on no display value
 in that config is read as OMH's: a skin you pick for Hermes later, OMH
 palette or not, stays through every update, and uninstall leaves it too.
-So does a skin file you put back for it: after the release, setup and
-update count a skin file as OMH's only by the manifest record the release
-left, so a copy of a shipped file is yours.
+So does a skin file you put back for it: after the release, setup, update
+and uninstall count a skin file as OMH's only by the manifest record the
+release left, so a copy of a shipped file is yours.
 The pass that does something says so, per home:
 
 ```text
@@ -1699,7 +1699,11 @@ directory mtime, as safe to delete.
 `config.yaml` keys the primary home's reversal takes back, and removes its
 managed artifacts — the plugin bundle, and any status widget or skin files an
 earlier version left — through the same manifest checks the primary home gets: a profile directory OMH cannot
-prove it owns is kept and reported, never deleted blind. `--registration-only`
+prove it owns is kept and reported, never deleted blind. The skin file
+`display.skin` still names stays, after the release only a manifest record
+proves a skin file OMH's (as on update), and a widget or skin directory OMH
+must refuse, such as a symlinked one, is kept and named rather than ending
+the uninstall. `--registration-only`
 removes every OMH-managed entry from each profile — the same directories the
 sync reads, so nothing is left behind for the next update to score as still
 registered — while keeping their plugin directories, which is exactly the

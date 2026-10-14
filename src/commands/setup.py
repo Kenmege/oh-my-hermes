@@ -697,11 +697,16 @@ def _uninstall_hermes_profiles(
                     dry_run=bool(args.dry_run),
                     force=bool(args.force),
                 )
-                uninstall_tui_widget(profile_paths.hermes_home, dry_run=bool(args.dry_run))
-                uninstall_skin(profile_paths.hermes_home, dry_run=bool(args.dry_run))
+                files = _remove_legacy_display_files(
+                    profile_paths,
+                    dry_run=bool(args.dry_run),
+                    config_text=change.text,
+                    released=_display_released(record, profile_paths),
+                )
                 touched = touched or bool(plugin["removed_paths"]) or bool(plugin["would_remove"])
-                if plugin["kept_paths"]:
-                    entry["kept_paths"] = plugin["kept_paths"]
+                kept_paths = [*plugin["kept_paths"], *_refused_display_files(files)]
+                if kept_paths:
+                    entry["kept_paths"] = kept_paths
             kept_keys = _config_keys_kept(rows)
             if kept_keys:
                 entry["config_keys_kept"] = kept_keys
@@ -2070,23 +2075,38 @@ def _remove_legacy_display_files(
     by its manifest record only: that pass removed every file either proof
     covered, so one with the shipped bytes that appears later is the
     person's own copy. A
-    symlinked destination is refused, as uninstall refuses it, and so is a
-    file that cannot be unlinked. Either is reported rather than failing the
-    setup or update the config release already carried, and rather than
-    skipping the record write that follows.
+    symlinked destination is refused, and so is a file that cannot be
+    unlinked. Either is reported (`refused`) rather than raised: setup,
+    update and uninstall all call this after their config write has landed,
+    and raising here skipped what follows it, the write record on setup and
+    update, the bot-profile loop and the command package on uninstall.
     """
     files: dict[str, object] = {}
     try:
         files["tui_widget"] = uninstall_tui_widget(paths.hermes_home, dry_run=dry_run)
     except (TuiWidgetInstallError, OSError) as exc:
-        files["tui_widget"] = {"status": "refused", "reason": str(exc)}
+        files["tui_widget"] = {"status": "refused", "reason": str(exc), "path": str(paths.hermes_home / "tui-widgets")}
     try:
         files["skin"] = uninstall_skin(
             paths.hermes_home, dry_run=dry_run, keep=_selected_skins(config_text), manifest_only=released
         )
     except (SkinInstallError, OSError) as exc:
-        files["skin"] = {"status": "refused", "reason": str(exc)}
+        files["skin"] = {"status": "refused", "reason": str(exc), "path": str(paths.hermes_home / "skins")}
     return files
+
+
+def _display_released(record: object, paths: OmhPaths) -> bool:
+    """Whether this home's config record carries `display_released_at`."""
+    return bool(load_managed_config_writes(record, config_path=paths.hermes_config_path).get(DISPLAY_RELEASED_FIELD))
+
+
+def _refused_display_files(files: dict[str, object]) -> list[dict[str, str]]:
+    """The widget or skin removals `_remove_legacy_display_files` refused, as uninstall `kept_paths` rows."""
+    return [
+        {"path": str(outcome.get("path", "")), "reason": str(outcome.get("reason", ""))}
+        for outcome in files.values()
+        if isinstance(outcome, dict) and outcome.get("status") == "refused"
+    ]
 
 
 def _apply_result(
@@ -2137,9 +2157,7 @@ def _apply_result(
     # setting is OMH's, and the record this pass writes carries it forward.
     state_before, _state_error = read_state_result(paths)
     previous_writes = (state_before or {}).get(MANAGED_CONFIG_WRITES_STATE_KEY)
-    already_released = bool(
-        load_managed_config_writes(previous_writes, config_path=paths.hermes_config_path).get(DISPLAY_RELEASED_FIELD)
-    )
+    already_released = _display_released(previous_writes, paths)
     theme = _carry_theme_choice(
         paths, previous_writes, theme_home=theme_home or paths.omh_home, dry_run=bool(args.dry_run)
     )
@@ -2366,16 +2384,18 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         force=bool(args.force),
         remove_command_package=bool(remove_all and not args.keep_command),
     )
-    tui_widget_result = (
-        uninstall_tui_widget(paths.hermes_home, dry_run=bool(args.dry_run))
+    legacy_files = (
+        _remove_legacy_display_files(
+            paths,
+            dry_run=bool(args.dry_run),
+            config_text=update.text,
+            released=_display_released(record, paths),
+        )
         if remove_all
-        else {"status": "not_requested"}
+        else {"tui_widget": {"status": "not_requested"}, "skin": {"status": "not_requested"}}
     )
-    skin_result = (
-        uninstall_skin(paths.hermes_home, dry_run=bool(args.dry_run))
-        if remove_all
-        else {"status": "not_requested"}
-    )
+    tui_widget_result = legacy_files["tui_widget"]
+    skin_result = legacy_files["skin"]
     profile_results = _uninstall_hermes_profiles(args, remove_all=remove_all, record=record)
     scope = (
         tr(language, "uninstall_scope_all")
@@ -4754,6 +4774,10 @@ def _print_uninstall_summary(payload: dict[str, object], *, language: str = "en"
             if item.get("path", "") in command_kept_paths:
                 continue
             print(f"  {tr(language, 'kept')}: {item.get('path', '')} ({item.get('reason', '')})")
+    for key in ("tui_widget", "skin"):
+        outcome = payload.get(key)
+        if isinstance(outcome, dict) and outcome.get("status") == "refused":
+            print(f"  {tr(language, 'kept')}: {outcome.get('path', '')} ({outcome.get('reason', '')})")
 
     profiles = payload.get("hermes_profiles")
     if isinstance(profiles, list) and profiles:

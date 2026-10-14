@@ -455,6 +455,55 @@ class UninstallTests(unittest.TestCase):
             self.assertEqual(unrelated.read_text(encoding="utf-8"), "personal\n")
             self.assertEqual(json.loads(stdout)["tui_widget"]["status"], "removed")
 
+    @requires_symlinks
+    def test_a_widget_it_must_refuse_to_remove_does_not_end_uninstall_halfway(self) -> None:
+        # The refusal used to escape as a traceback after the config was
+        # reversed and the plugin removed, skipping the profiles and the
+        # command package. It is a kept path now, primary and profile alike.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            home = _Home(root)
+            profile = home.hermes_home / "profiles" / "bot"
+            profile.mkdir(parents=True)
+            home.legacy_install()
+            home.brand(profile / "config.yaml")
+            self.assertEqual(home.run("update")[0], 0)
+            for name, hermes_home in (("primary", home.hermes_home), ("bot", profile)):
+                elsewhere = root / f"elsewhere-{name}"
+                seed_legacy_widget(elsewhere)
+                (hermes_home / "tui-widgets").rmdir()  # the update emptied it
+                (hermes_home / "tui-widgets").symlink_to(elsewhere / "tui-widgets", target_is_directory=True)
+
+            status, stdout, stderr = home.run("uninstall", "--keep-command")
+
+            self.assertEqual((status, stderr), (0, ""))
+            payload = json.loads(stdout)
+            self.assertEqual(payload["tui_widget"]["status"], "refused")
+            self.assertIn("refusing symlinked widget path", payload["tui_widget"]["reason"])
+            (bot,) = payload["hermes_profiles"]
+            self.assertIn(str(profile / "tui-widgets"), [row["path"] for row in bot["kept_paths"]])
+            self.assertEqual(home.config.read_text(encoding="utf-8"), BEFORE)
+            self.assertFalse((home.hermes_home / "plugins" / "omh").exists())
+            self.assertFalse((profile / "plugins" / "omh").exists())
+            self.assertTrue((root / "elsewhere-primary" / "tui-widgets" / "omh-status.mjs").is_file())
+
+    def test_uninstall_after_the_release_leaves_a_skin_file_the_person_put_back(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = _Home(Path(tmp))
+            home.legacy_install()
+            self.assertEqual(home.run("update")[0], 0)
+            for theme in ("omh-crimson", "omh-amber"):
+                (home.hermes_home / "skins" / f"{theme}.yaml").write_bytes(skin_payload(theme))
+            home.config.write_text(
+                home.config.read_text(encoding="utf-8") + "display:\n  skin: omh-crimson\n", encoding="utf-8", newline=""
+            )
+
+            status, _stdout, stderr = home.run("uninstall", "--keep-command")
+
+            self.assertEqual((status, stderr), (0, ""))
+            self.assertEqual(_omh_skin_files(home.hermes_home), ["omh-amber.yaml", "omh-crimson.yaml"])
+            self.assertIn("  skin: omh-crimson\n", home.config.read_text(encoding="utf-8"))
+
 
 class ProfileReleaseTests(unittest.TestCase):
     def test_every_profile_is_released_and_its_theme_lands_in_its_own_store(self) -> None:
