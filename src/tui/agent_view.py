@@ -1,0 +1,265 @@
+"""The OMH TUI's subagent views over `subagents.Roster`: the strip, the agent list, one agent's log, mixed into `App`.
+
+Subagents: every `subagent.*` event of the live session is folded into one
+`subagents.Roster`, which a new turn and a new session empty. While it holds
+an agent the mode row carries a strip of them, Down on an empty composer
+gives the keys to a list of them (the one thing that moves the composer: see
+`frame`), and Enter or a click opens one agent's log in the pager. The log is
+read-only: `subagent.tail` is asked for the open agent while it runs, at most
+every `TAIL_POLL_SECONDS`, and no more once `TAIL_MISSES_BEFORE_STOP` answers
+in a row had no tail, until that agent sends a frame; nothing is ever sent to
+a subagent. Mouse reports are on only while a click has an agent to land on
+and the row it would land on is certain: a turn running with agents named on
+the strip, or the list open. A plain left click on one of those cells opens
+that agent's log, or on the list's main row leaves the list; every other
+report does nothing. Reports the terminal sent before it acted on an off
+arrive after it, so `_set_mouse` notes when reporting went off and the
+decoder is told: a report that starts arriving while reporting is on, or
+within `keys.MOUSE_REPORT_SECONDS` after the off, types nothing if it
+arrives whole within 0.8 s of its first byte, split across reads or not.
+When the pause right after its first byte outlasts
+`keys.REPORTING_ESCAPE_SECONDS`, that ESC is Esc, and the rest is dropped
+only if it arrives within `keys.MOUSE_REPORT_SECONDS` after that. One that
+starts later and is split right after its `ESC` or `ESC[` is read as keys
+(`keys`).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+from . import gateway_contract as contract
+from .keys import BUTTON_LEFT, CHAR, DOWN, ENTER, ESCAPE, UNKNOWN, UP, Key, Mouse, Paste
+from .layout import Budget, under_composer
+from .modes import strip_column
+from .style import Line, Span
+from .subagents import MAIN_ID, RUNNING, Hit
+from .transcript import as_text
+from .width import truncate_line
+
+# The list Down opens, and one agent's log in the pager.
+AGENT_LIST_ROWS = 7  # main and six agents; a longer roster scrolls
+AGENT_LIST_HINT = "↑↓ select · ⏎ view log · esc back"
+AGENT_LOG_KEYS = "←/→ agents"
+TAIL_POLL_SECONDS = 2.0
+# Hermes answers `available: false` while an agent's log is not there yet, as it starts. Five answers in a row
+# like that (ten seconds at the pace above) stop the calls for that agent, so one whose `subagent.complete`
+# never comes is not asked forever; a new frame for it asks again.
+TAIL_MISSES_BEFORE_STOP = 5
+# A call with no answer this long no longer holds the next one back; its answer, if it still comes, is dropped.
+TAIL_ANSWER_SECONDS = 10.0
+
+
+class AgentViewMixin:
+    """`App`'s subagent strip, list and log.
+
+    The state it reads and writes is set in `App.__init__`, `mode` is
+    `ModesMixin`'s, and the methods it calls without defining them are `App`'s.
+    """
+
+    def _agent_strip(self, cols: int) -> tuple[Line, tuple[Hit, ...]]:
+        """The roster's strip for the mode row, and the cells each entry covers as 0-based screen columns."""
+        start = strip_column(self.mode, self.theme)
+        line, hits = self.roster.strip_line(cols - start, self.theme, self._spinner_frame())
+        return line, tuple(Hit(hit.start + start, hit.end + start, hit.subagent_id) for hit in hits)
+
+    def _agent_list(self, cols: int, room: int) -> tuple[list[Line], tuple[str, ...]]:
+        """The focused agent list for `room` rows, and the id of each agent row; nothing while it has no focus.
+
+        Its agent rows, scrolled to the highlight, then the hint row; where
+        `room` is a single row the frame keeps the first, the highlight's.
+        """
+        if self.list_selected is None:
+            return [], ()
+        shown = min(AGENT_LIST_ROWS, max(room - 1, 1))
+        lines, listed = self.roster.list_lines(
+            cols, self.theme, self.list_selected, self._spinner_frame(), shown, self.clock()
+        )
+        return [*lines, truncate_line((Span(AGENT_LIST_HINT, self.theme.hint),), cols)], listed
+
+    def _take_clickable(self, budget: Budget, hits: Sequence[Hit], listed: Sequence[str]) -> None:
+        """Note the cells of the frame just drawn that a click opens, and ask for mouse reports only while there are some.
+
+        A list row is clickable from edge to edge. The strip's agents are
+        clickable while a turn runs and no question is open; its `main` entry
+        opens nothing. Reports stay off while the region's place on the screen
+        is not certain, since no click could be read then.
+        """
+        cols, rows = self.size
+        under = budget.status + budget.mode - 1  # rows above the status line of the mode block's first row
+        self.clickable = {}
+        if listed:
+            self.clickable = {under - index: (Hit(0, cols, row_id),) for index, row_id in enumerate(listed[: budget.mode])}
+        elif budget.mode and self._busy() and self.slot is None:
+            agents = tuple(hit for hit in hits if hit.subagent_id != MAIN_ID)
+            self.clickable = {under: agents} if agents else {}
+        self._set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
+
+    def _list_available(self) -> bool:
+        """Whether the agent list can be shown: agents to list, the mode row it replaces, and nothing else holding the keys."""
+        cols, rows = self.size
+        return bool(self.roster.agents and under_composer(rows, cols)[1]) and self.slot is None and self.picker is None
+
+    def _settle_list(self) -> None:
+        """Take the keys back from a list that can no longer be shown; keep its highlight on a row it still has."""
+        if self.list_selected is None:
+            return
+        if not self._list_available():
+            self.list_selected = None
+        elif self.list_selected not in self.roster.agents:
+            self.list_selected = MAIN_ID
+
+    def _agent_list_key(self, event: Key | Paste) -> bool:
+        """The agent list's keys; True when the list took the key.
+
+        Down on an empty composer gives the list the keys, on the first
+        agent, while there is one to list and no completion menu is open.
+        Then Up and Down move, Enter opens the highlighted agent's log (on
+        main it only leaves) and Esc or Ctrl+C leaves. Anything else leaves
+        too and is then read as it would have been, so typing types. The
+        exception is a sequence the decoder has no name for, which does
+        nothing: with mouse reports on, a terminal that answers in the legacy
+        encoding sends one for every click.
+        """
+        self._settle_list()
+        name = event.name if isinstance(event, Key) else ""  # a paste is no key of the list's
+        if self.list_selected is None:
+            if name != DOWN or self.composer.text or self._menu_rows() or not self._list_available():
+                return False
+            self.list_selected = next(iter(self.roster.agents))
+            return True
+        if name in (UP, DOWN):
+            ids = self.roster.ids()
+            row = ids.index(self.list_selected) + (-1 if name == UP else 1)
+            self.list_selected = ids[min(max(row, 0), len(ids) - 1)]
+            return True
+        if name == ENTER and self.list_selected != MAIN_ID:
+            self._open_agent_log(self.list_selected)  # over the list: leaving the log comes back to it
+            return True
+        if name == UNKNOWN:
+            return True
+        self.list_selected = None
+        return name in (ENTER, ESCAPE) or event == Key(CHAR, "c", ctrl=True)
+
+    def _on_mouse(self, event: Mouse) -> None:
+        """A plain left press on an agent, on the strip or in the list, opens that agent's log; nothing else does anything.
+
+        The one other thing a click does is leave the list, from its main
+        row, which has no log. `clickable` holds the cells of the last frame
+        a click opens and is empty whenever the TUI has not asked for
+        reports, so a report another program left on opens nothing. The
+        report's row is read against the region's last row, and dropped while
+        that row is not certain, while a question Hermes asked has the keys,
+        or while the screen is being redrawn for a new size.
+        """
+        plain = event.button == BUTTON_LEFT and event.pressed and not (event.motion or event.shift or event.alt or event.ctrl)
+        last = self.region.last_row(self.size[1])
+        if not plain or last is None or self.pager is not None or self.slot is not None or self.redraw_at is not None:
+            return
+        above, column = last - (event.y - 1), event.x - 1  # a report counts rows and columns from 1
+        target = next((hit.subagent_id for hit in self.clickable.get(above, ()) if hit.start <= column < hit.end), None)
+        if target is None:
+            return
+        if self.list_selected is not None:
+            self.list_selected = target if target != MAIN_ID else None  # main has no log: the click leaves the list
+        if target != MAIN_ID:
+            self._open_agent_log(target)
+
+    def _open_agent_log(self, subagent_id: str) -> None:
+        """One agent's log on the alternate screen, opened at its newest rows; nothing for an agent no longer held."""
+        if subagent_id not in self.roster.agents:
+            return
+        self._open_pager("", [])
+        self.log_agent = subagent_id
+        self._refresh_agent_log(to_end=True)
+
+    def _step_agent_log(self, step: int) -> None:
+        """Left and Right in the log view: the agent before or after this one, stopping at either end."""
+        ids = tuple(self.roster.agents)
+        if self.log_agent not in ids:
+            return
+        self.log_agent = ids[min(max(ids.index(self.log_agent) + step, 0), len(ids) - 1)]
+        if self.list_selected is not None:
+            self.list_selected = self.log_agent  # leaving the log comes back to the row it shows
+        self._refresh_agent_log(to_end=True)
+
+    def _refresh_agent_log(self, to_end: bool = False) -> None:
+        """Rebuild the open log from the roster; a view on its last page stays on it as rows arrive.
+
+        An agent the roster no longer holds (a new turn began) keeps the rows
+        last drawn.
+        """
+        agent = self.roster.agents.get(self.log_agent)
+        if self.pager is None or agent is None:
+            return
+        cols, rows = self.size
+        at_end = self.pager.top >= len(self.pager.lines) - self.pager.body_rows(rows)
+        self.pager.title = f"{agent.name} · {AGENT_LOG_KEYS}"
+        self.pager.lines = self.roster.log_lines(agent.subagent_id, cols, self.theme, self.clock())
+        if to_end or at_end:
+            self.pager.top = len(self.pager.lines)  # past the end: the pager shows the last full page
+
+    def _ask_tail_when_due(self) -> None:
+        """`subagent.tail` for the agent whose log is open, while it runs: at most one call every `TAIL_POLL_SECONDS`.
+
+        The pace is the view's, not each agent's: the first call goes out as
+        a log opens unless one went out less than `TAIL_POLL_SECONDS` before,
+        and moving to another agent does not bring the next call forward.
+        None goes out while the last has had no answer for less than
+        `TAIL_ANSWER_SECONDS`, for an agent that is not running, for one whose
+        last `TAIL_MISSES_BEFORE_STOP` answers had no tail and that sent no
+        frame since, or without a session.
+        """
+        agent = self.roster.agents.get(self.log_agent) if self.pager is not None else None
+        if agent is None or agent.status != RUNNING or not self.sid:
+            return
+        if self.tail_misses.get(agent.subagent_id, 0) >= TAIL_MISSES_BEFORE_STOP:
+            return
+        now = self.clock()
+        if self.tail_asked_at is not None:
+            since = now - self.tail_asked_at
+            if since < TAIL_POLL_SECONDS or (self.tail_open and since < TAIL_ANSWER_SECONDS):
+                return
+        # A call still out timed out: forgetting it drops its answer (`_on_response` ignores an id not in `pending`).
+        self._forget_tail_calls()
+        self.tail_asked_at, self.tail_open = now, True
+        sid, subagent_id = self.sid, agent.subagent_id
+        self._request(
+            "subagent.tail",
+            {"session_id": sid, "subagent_id": subagent_id},
+            lambda result: self._on_tail(sid, subagent_id, result),
+            lambda error: self._on_tail(sid, subagent_id, {}),  # the log keeps what the events gave it
+        )
+
+    def _clear_roster(self) -> None:
+        """Drop the agents and every piece of tail bookkeeping that names them."""
+        self.roster.clear()
+        self.tail_misses.clear()
+        self._forget_tail_calls()  # an answer still on its way is for an agent no longer listed
+        self.tail_asked_at, self.tail_open = None, False
+
+    def _forget_tail_calls(self) -> None:
+        """Drop the `subagent.tail` calls still waiting for an answer, so a gateway that never answers cannot grow `pending`."""
+        for request_id in [rid for rid, call in self.pending.items() if call.method == "subagent.tail"]:
+            del self.pending[request_id]
+
+    def _on_tail(self, sid: str, subagent_id: str, result: Mapping[str, Any]) -> bool:
+        """A `subagent.tail` answer: read only when Hermes has a tail, for an agent still running in this session.
+
+        A tail that arrives after its agent finished would replace the reply
+        its `subagent.complete` put in the log, so it is dropped. An answer
+        without a tail (`available` anything but true, or an error) counts
+        towards `TAIL_MISSES_BEFORE_STOP`. An answer to a call that timed out
+        (`TAIL_ANSWER_SECONDS`) never reaches here: the call after it forgot it.
+        """
+        self.tail_open = False
+        if result.get(contract.TAIL_AVAILABLE) is not True:
+            self.tail_misses[subagent_id] = self.tail_misses.get(subagent_id, 0) + 1
+            return True
+        self.tail_misses.pop(subagent_id, None)
+        agent = self.roster.agents.get(subagent_id)
+        if sid == self.sid and agent is not None and agent.status == RUNNING:
+            text, truncated = as_text(result.get(contract.TAIL_TEXT)), result.get(contract.TAIL_TRUNCATED) is True
+            self.roster.ingest_tail(subagent_id, text, truncated)
+        return True

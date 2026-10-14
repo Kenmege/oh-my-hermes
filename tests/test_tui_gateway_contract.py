@@ -225,7 +225,8 @@ class InboundTests(unittest.TestCase):
                         compared = [part for part in (node.left, *node.comparators) if isinstance(part, ast.Constant)]
                         self.assertFalse({part.value for part in compared} & contract.STEER_STATUSES)
         (on_tail,) = [
-            node for node in ast.walk(tui_modules()["app.py"]) if isinstance(node, ast.FunctionDef) and node.name == "_on_tail"
+            node for node in ast.walk(tui_modules()["agent_view.py"])
+            if isinstance(node, ast.FunctionDef) and node.name == "_on_tail"
         ]
         literal_gets = [
             node.args[0].value

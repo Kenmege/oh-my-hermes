@@ -28,8 +28,8 @@ from test_tui_subagents import FIRST, FRAMES, SECOND
 from omh.commands.theme_picker import KEY_DOWN, KEY_NONE
 from omh.tui import keys as keys_module
 from omh.tui import terminal as terminal_module
+from omh.tui.agent_view import AGENT_LIST_HINT
 from omh.tui.app import (
-    AGENT_LIST_HINT,
     CURSOR_POSITION_REQUEST,
     EXIT_DRAIN_SECONDS,
     READ_TIMEOUT_SECONDS,
@@ -1151,7 +1151,7 @@ class DocumentedMouseTests(unittest.TestCase):
                       f"first byte. If {round(seconds * 1000)} ms pass after that byte without the next, the byte is read "
                       f"as Esc, and the rest is dropped only if it arrives within {grace:g} s after that.", agents)
         self.assertIn(f"types nothing if it arrives whole within {whole:g} s of its first byte",
-                      self.prose("src/tui/app.py"))
+                      self.prose("src/tui/agent_view.py"))
 
     def test_the_o_continuations_installation_names_are_every_ss3_final(self) -> None:
         named = {"F1 to F4": b"PQRS", "an arrow": b"ABCD", "Home": b"H", "End": b"F"}
@@ -1160,7 +1160,7 @@ class DocumentedMouseTests(unittest.TestCase):
                       self.prose("docs/INSTALLATION.md"))
 
     def test_no_doc_says_a_split_report_never_types_however_long_the_pause(self) -> None:
-        for name in ("src/tui/keys.py", "src/tui/app.py", "docs/INSTALLATION.md", "AGENTS.md"):
+        for name in ("src/tui/keys.py", "src/tui/app.py", "src/tui/agent_view.py", "docs/INSTALLATION.md", "AGENTS.md"):
             with self.subTest(name=name):
                 text = self.prose(name)
                 self.assertNotIn("however a pause splits it", text)
@@ -1169,7 +1169,7 @@ class DocumentedMouseTests(unittest.TestCase):
 
     def test_the_wait_is_not_credited_to_tmux_or_vim(self) -> None:
         # tmux's escape-time default is 500 ms (10 ms since 3.5) and Vim's ttimeoutlen 100: neither is 300.
-        for name in ("src/tui/keys.py", "src/tui/app.py", "docs/INSTALLATION.md", "AGENTS.md"):
+        for name in ("src/tui/keys.py", "src/tui/app.py", "src/tui/agent_view.py", "docs/INSTALLATION.md", "AGENTS.md"):
             with self.subTest(name=name):
                 text = self.prose(name)
                 self.assertNotIn("tmux and vim", text)

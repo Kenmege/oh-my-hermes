@@ -17,7 +17,8 @@ from _tui_lines import line_text
 from test_tui_app import status_index
 from test_tui_modes import SID, RecordingClient, answer, drawn, make_app, show_mode, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND, cells, payload
-from omh.tui.app import App, mode_label, mode_row_line, strip_column
+from omh.tui.app import App
+from omh.tui.modes import mode_label, mode_row_line, strip_column
 from omh.tui.frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, ServerRequest
 from omh.tui.keys import CHAR, ENTER, Key

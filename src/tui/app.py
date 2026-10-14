@@ -41,47 +41,9 @@ interrupt or redirect the turn it was meant to steer. A steer answered after
 its session was left goes back to the composer instead: the session now live
 never receives it.
 
-Input modes: Shift+Tab cycles normal, accept and plan. Accept is Hermes'
-per-session yolo, so entering and leaving it are `config.set` calls that
-always name this session and an explicit value and never a `scope`; the mode
-shown changes only once Hermes confirms it for this session, an answer that
-confirms anything else is treated as a failure and followed by an explicit
-off (accept is shown again if that off is not confirmed either: approvals
-may be off), and `session.info` corrects what is shown (one saying approvals
-are on within `YOLO_SETTLE_SECONDS` of a confirmed on waits for the next: it
-may be a snapshot Hermes took before the switch). With approvals off Hermes
-sends no approval request, so the TUI still answers none. Plan is the
-TUI's own flag, apart from what accept shows: a prompt typed while it is on
-goes as `/plan <text>`. When Hermes has approvals off on its own (an off it
-confirmed did not end them, or they were off without the TUI turning them
-on), accept stays shown and Shift+Tab turns only plan on and off, sending
-nothing.
-Ctrl+T and `/effort <level>` set the session's reasoning effort the same way
-(`config.set` with the session id); the level shown is the one Hermes
-confirmed or reports in `session.info`.
-
-Subagents: every `subagent.*` event of the live session is folded into one
-`subagents.Roster`, which a new turn and a new session empty. While it holds
-an agent the mode row carries a strip of them, Down on an empty composer
-gives the keys to a list of them (the one thing that moves the composer: see
-`frame`), and Enter or a click opens one agent's log in the pager. The log is
-read-only: `subagent.tail` is asked for the open agent while it runs, at most
-every `TAIL_POLL_SECONDS`, and no more once `TAIL_MISSES_BEFORE_STOP` answers
-in a row had no tail, until that agent sends a frame; nothing is ever sent to
-a subagent. Mouse reports are on only while a click has an agent to land on
-and the row it would land on is certain: a turn running with agents named on
-the strip, or the list open. A plain left click on one of those cells opens
-that agent's log, or on the list's main row leaves the list; every other
-report does nothing. Reports the terminal sent before it acted on an off
-arrive after it, so `_set_mouse` notes when reporting went off and the
-decoder is told: a report that starts arriving while reporting is on, or
-within `keys.MOUSE_REPORT_SECONDS` after the off, types nothing if it
-arrives whole within 0.8 s of its first byte, split across reads or not.
-When the pause right after its first byte outlasts
-`keys.REPORTING_ESCAPE_SECONDS`, that ESC is Esc, and the rest is dropped
-only if it arrives within `keys.MOUSE_REPORT_SECONDS` after that. One that
-starts later and is split right after its `ESC` or `ESC[` is read as keys
-(`keys`).
+The input modes and the reasoning effort are `modes.ModesMixin`'s, and the
+subagent strip, list and log are `agent_view.AgentViewMixin`'s; each
+module's docstring holds their rules. `App` mixes both in.
 
 Prompt text, the transcript, attachments, secrets, server-request frames and
 the gateway's stderr stay in memory and on the person's own terminal; nothing
@@ -123,7 +85,7 @@ from ..commands.theme_picker import (
 from ..skin_pack import default_theme, skin_colors, theme_for_name, theme_for_skin_name, theme_names
 from . import gateway_contract as contract
 from .composer import COMPLETE, EXIT, INTERRUPT, SUBMIT, Composer, ComposerAction
-from .frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN, STATUS_SEPARATOR, build_frame, sticky_line
+from .frame import MODE_ACCEPT, MODE_PLAN, STATUS_SEPARATOR, build_frame, sticky_line
 from .gateway import (
     Event,
     GatewayCallError,
@@ -138,7 +100,6 @@ from .gateway import (
 )
 from .keys import (
     BACKSPACE,
-    BUTTON_LEFT,
     CHAR,
     DOWN,
     ENTER,
@@ -146,8 +107,6 @@ from .keys import (
     LEFT,
     MOUSE_REPORT_SECONDS,
     RIGHT,
-    TAB,
-    UNKNOWN,
     UP,
     Key,
     KeyDecoder,
@@ -155,8 +114,10 @@ from .keys import (
     Paste,
 )
 from .launch import request_fallback
-from .layout import Budget, slot_cap, under_composer
+from .agent_view import AgentViewMixin
+from .layout import slot_cap, under_composer
 from .markdown import clean_text
+from .modes import NO_SESSION_NOTICE, ModesMixin, mode_row_line
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, Pager
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
 from .prompts import CHOICE_DIGITS, Answer, ImmediateAnswer, PromptSlot, open_request
@@ -180,7 +141,7 @@ from .slash import (
     plan_invocation,
 )
 from .style import CSI, Line, Span, Style
-from .subagents import MAIN_ID, RUNNING, Hit, Roster
+from .subagents import Hit, Roster
 from .terminal import Terminal, terminal_supported
 from .theme import DEFAULT_THEME, Theme, build_theme, theme_named
 from .transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, Transcript, as_text
@@ -218,19 +179,8 @@ BANNER_HINT = "/ commands · @ files · ? shortcuts · ⇧⇥ modes"
 PLACEHOLDER = "Ask Hermes anything"
 BARE_HERMES_NOTE = "Bare `hermes` opens Hermes' own terminal."
 
-# The mode row under the composer frame. In normal mode it carries the keys that matter now.
-IDLE_KEYS_HINT = "? shortcuts · ⇧⇥ mode · ctrl+t effort"
-INTERRUPT_KEY_HINT = "esc interrupt"
-STEER_KEY_HINT = "ctrl+enter steer"  # only once the terminal has sent a key in a CSI u or modifyOtherKeys report
-STEER_COMMAND_HINT = "/steer <text> steers"
-QUEUED_KEY_HINT = "↑ edit queued"
-ACCEPT_LABEL = "⏵⏵ accept all on"
-ACCEPT_HINT = " · approvals off for this session (⇧⇥ to cycle)"
-PLAN_LABEL = "⏸ plan mode on"
-PLAN_HINT = " (⇧⇥ to cycle)"
 # The mode on the status line, where the terminal is too short for the mode row.
 MODE_CHIPS = {MODE_ACCEPT: "⏵⏵ accept", MODE_PLAN: "⏸ plan"}
-MODE_ROW_GAP = 3
 # The context figure turns warn, then bad, on the status line.
 CONTEXT_WARN_PERCENT = 80
 CONTEXT_BAD_PERCENT = 95
@@ -241,38 +191,6 @@ BUSY_MODES = frozenset({"queue", "steer", "interrupt"})
 STATE_IDLE = "idle"
 STATE_RUNNING = "running"
 STATE_WAITING = "waiting on you"
-
-# Accept mode is Hermes' per-session yolo. The TUI sends these words; Hermes answers "1" or "0".
-YOLO_ON = "on"
-YOLO_OFF = "off"
-YOLO_ANSWERS = {True: "1", False: "0"}
-# Hermes builds `session.info` on other threads too, reading yolo before its slow probes, so one snapshot
-# taken before a confirmed on can arrive after it. For this long after a confirmed on, a `session.info`
-# saying approvals are on does not take accept off the composer by itself.
-YOLO_SETTLE_SECONDS = 2.0
-ACCEPT_REFUSED_NOTICE = (
-    "Hermes did not turn approvals off for this session alone ({}). "
-    "Accept all stays off, and the OMH TUI asked Hermes to switch it back off."
-)
-ACCEPT_STUCK_NOTICE = "Hermes did not confirm that this session asks for approvals again ({}). Accept all may still be on."
-# Said once per session, the first time Shift+Tab meets approvals Hermes turned off on its own.
-HERMES_APPROVALS_NOTICE = (
-    "Hermes itself has approvals off for this session: its approvals.mode is off, it was started with --yolo, "
-    "or /yolo turned them off. Accept all stays shown, and Shift+Tab now turns plan mode on and off "
-    "without changing Hermes' setting."
-)
-SWITCH_BACK_FAILED_NOTICE = (
-    "Hermes did not confirm the switch back either ({}), so approvals may be off: accept all is shown again, "
-    "and Shift+Tab asks Hermes to turn them back on."
-)
-LEFT_YOLO_NOTICE = (
-    "Hermes did not confirm that the session you left asks for approvals again ({}). "
-    "Its approvals may stay off while this Hermes gateway runs."
-)
-
-# Ctrl+T steps through these; `/effort` takes any level in `contract.REASONING_LEVELS`.
-EFFORT_CYCLE = ("low", "medium", "high", "xhigh", "max")
-EFFORT_REFUSED_NOTICE = "Hermes did not set the reasoning effort to {} ({}); it stays as shown."
 
 # The prompts waiting for the running turn, listed above the composer's top rule.
 QUEUE_GLYPH = "⧗ "
@@ -292,18 +210,6 @@ STEER_LEFT_NOTICE = (
     "Its text is back in the composer and was not sent to this one."
 )
 
-# Subagents: the strip on the mode row, the list Down opens, and one agent's log in the pager.
-STRIP_SEPARATOR = " · "
-AGENT_LIST_ROWS = 7  # main and six agents; a longer roster scrolls
-AGENT_LIST_HINT = "↑↓ select · ⏎ view log · esc back"
-AGENT_LOG_KEYS = "←/→ agents"
-TAIL_POLL_SECONDS = 2.0
-# Hermes answers `available: false` while an agent's log is not there yet, as it starts. Five answers in a row
-# like that (ten seconds at the pace above) stop the calls for that agent, so one whose `subagent.complete`
-# never comes is not asked forever; a new frame for it asks again.
-TAIL_MISSES_BEFORE_STOP = 5
-# A call with no answer this long no longer holds the next one back; its answer, if it still comes, is dropped.
-TAIL_ANSWER_SECONDS = 10.0
 # On the way out while mouse reports may still be on their way (reporting on, or off for less than
 # `keys.MOUSE_REPORT_SECONDS`): a cursor position request written after the off is answered after all of
 # them (a terminal handles what it is sent in order), so input is read and dropped up to that answer,
@@ -330,7 +236,6 @@ SESSION_LIST_LIMIT = 50
 PATH_COMPLETE_DEBOUNCE_SECONDS = 0.12
 ATTACH_ICON = "📎"
 ATTACH_HINT = "Backspace removes"
-NO_SESSION_NOTICE = "No session is open yet; try again in a moment."
 CONNECTION_NOTICE = (
     "Hermes is waiting for an app connection, which only Hermes' Desktop app or `hermes --tui` can complete. "
     "Esc interrupts the turn."
@@ -461,86 +366,6 @@ def context_percent(usage: object) -> float | None:
     if isinstance(percent, int | float) and not isinstance(percent, bool):
         return float(percent)
     return usage["context_used"] / usage["context_max"] * 100
-
-
-def mode_label(mode: str, theme: Theme) -> Line:
-    """The mode's own words on the mode row: accept and plan have them, both when both are on, normal has none."""
-    accept: Line = (Span(ACCEPT_LABEL, replace(theme.mode_accept, bold=True)),)
-    plan: Line = (Span(PLAN_LABEL, replace(theme.mode_plan, bold=True)),)
-    if mode == MODE_ACCEPT_PLAN:
-        return (*accept, Span(STRIP_SEPARATOR, theme.hint), *plan)
-    return {MODE_ACCEPT: accept, MODE_PLAN: plan}.get(mode, ())
-
-
-def strip_column(mode: str, theme: Theme) -> int:
-    """The mode row cell the agent strip starts on: after the mode's label and a separator, or the row's first."""
-    label = mode_label(mode, theme)
-    return line_width(label) + cell_width(STRIP_SEPARATOR) if label else 0
-
-
-def mode_row_line(
-    *,
-    mode: str,
-    busy: bool,
-    queued: int,
-    keyboard_protocol: bool,
-    effort: str,
-    width: int,
-    theme: Theme,
-    strip: Line = (),
-) -> Line:
-    """The row under the composer frame: the mode's label (accept, plan), the agent strip, the keys that matter now, the effort.
-
-    `strip` is the roster's strip while it holds an agent, drawn from cell
-    `strip_column(mode, theme)` on. The label always survives, and the strip
-    after it: the hint is cut from its end first, and the effort on the right
-    goes only when even the label and the strip beside it do not fit.
-    """
-    label = mode_label(mode, theme)
-    if mode == MODE_ACCEPT:
-        hint = ACCEPT_HINT
-    elif mode in (MODE_PLAN, MODE_ACCEPT_PLAN):
-        hint = PLAN_HINT
-    elif busy:
-        keys = [INTERRUPT_KEY_HINT, STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
-        hint = " · ".join(keys + ([QUEUED_KEY_HINT] if queued else []))
-    else:
-        hint = IDLE_KEYS_HINT
-    if strip:
-        label = (*label, Span(STRIP_SEPARATOR, theme.hint), *strip) if label else strip
-        hint = hint if hint.startswith(STRIP_SEPARATOR) else STRIP_SEPARATOR + hint.strip()
-    right: Line = (Span(f"effort {effort}", theme.muted),) if effort else ()
-    room = width - line_width(label) - (line_width(right) + MODE_ROW_GAP if right else 0)
-    if room < 0:
-        right, room = (), width - line_width(label)
-    left = truncate_line(label, width) + truncate_line((Span(hint, theme.hint),), max(room, 0))
-    if not right:
-        return left
-    return (*left, Span(" " * (width - line_width(left) - line_width(right))), *right)
-
-
-def yolo_answer_problem(result: Mapping[str, Any], on: bool) -> str:
-    """Why a `config.set yolo` answer does not confirm the switch that was asked for; "" when it does.
-
-    The answer must carry the value asked for ("1" on, "0" off) and
-    `scope: "session"`. Any other scope means Hermes wrote something wider
-    (`scope: "global"` is the permanent `approvals.mode`), so it is a failure.
-    The scope proves less than it reads, though: Hermes 6c61c3e27d answers
-    `scope: "session"` from its sessionless branch too, the one that sets
-    `HERMES_YOLO_MODE` for the whole gateway process (`_set_yolo` in
-    `tui_gateway/methods_config_set.py`), so the answer cannot say which
-    branch ran. What keeps the switch on one session is settled before the
-    answer: every yolo call names this session, `gateway_contract.call_problem`
-    refuses to send a `config.set` without a session id, and Hermes answers a
-    session id it does not hold with 4001 instead of falling back to the
-    process switch (`_SESSION_SCOPED_KEYS` in the same file).
-    """
-    scope, value = result.get("scope"), result.get("value")
-    if scope != contract.CONFIG_SET_SESSION_SCOPE:
-        return f"it answered scope {json.dumps(scope)}"
-    if value != YOLO_ANSWERS[on]:
-        return f"it answered value {json.dumps(value)}"
-    return ""
 
 
 def first_line(text: str) -> str:
@@ -796,7 +621,7 @@ def run_model_chain_picker(
 # ── the loop ──────────────────────────────────────────────────────────────
 
 
-class App:
+class App(ModesMixin, AgentViewMixin):
     """The OMH TUI after its gateway started: `startup()` opens the session, `run()` is the loop."""
 
     def __init__(
@@ -1311,38 +1136,6 @@ class App:
         # `message.complete`, by which time a queued prompt may already be pending.
         self._adopt_stored(as_text(payload.get("stored_session_id")))
 
-    def _take_session_state(self, info: Mapping[str, Any]) -> None:
-        """Hermes' own word on the session: its reasoning effort, and whether its approvals are off.
-
-        Approvals off means accept is shown, on means it is not; the plan
-        flag is the TUI's and stays as it is. Hermes reports yolo on for its
-        own reasons too (`approvals.mode` off, `--yolo`, a `/yolo` typed to
-        it), and then the composer says so as well.
-
-        One `session.info` saying approvals are on, within
-        `YOLO_SETTLE_SECONDS` of the TUI's confirmed on, is held instead: it
-        may be a snapshot Hermes took before the switch and wrote after its
-        answer. Hermes 6c61c3e27d has no per-session read to settle it with
-        (`config.get` reads `approvals.mode`, the global setting, and nothing
-        reads the session switch), so accept stays shown and the next
-        `session.info` decides. The other way round needs no hold: approvals
-        off is shown at once, since in doubt the composer shows accept.
-        """
-        effort = info.get(contract.SESSION_INFO_REASONING_EFFORT)
-        if isinstance(effort, str):
-            self.effort = effort
-        yolo = info.get(contract.SESSION_INFO_YOLO)
-        if not isinstance(yolo, bool):
-            return
-        confirmed_at = self.yolo_confirmed_at
-        settling = confirmed_at is not None and self.clock() - confirmed_at < YOLO_SETTLE_SECONDS
-        if not yolo and self.yolo_by_tui and settling:
-            self.yolo_confirmed_at = None  # held once: the next session.info decides
-            return
-        self.yolo_reported = self.approvals_off = yolo
-        if not yolo:
-            self.yolo_by_tui = False  # nothing has approvals off now, the TUI's own switch included
-
     def _take_usage(self, usage: object) -> None:
         """A usage block with context figures replaces the shown ones; one without leaves them."""
         if context_text(usage):
@@ -1775,170 +1568,6 @@ class App:
             self._set_composer("\n".join(part for part in (self.composer.text, text) if part))
         self.transcript.add_notice(STEER_LEFT_NOTICE, NOTICE_WARN)
 
-    # ── input modes ──
-
-    def _mode_key(self, event: Key | Paste) -> bool:
-        """Shift+Tab cycles the input mode; with a completion menu open it stays the no-op it was.
-
-        Shift+Tab alone: a key report that adds Ctrl or Alt to it is another
-        chord, and a chord that may turn approvals off is never a guess.
-        """
-        if event != Key(TAB, shift=True) or self._menu_rows():
-            return False
-        self._cycle_mode()
-        return True
-
-    def _cycle_mode(self) -> None:
-        """normal → accept → plan → normal. Entering and leaving accept wait for Hermes; plan is the TUI's own flag.
-
-        Approvals Hermes turned off on its own are not the TUI's to turn back
-        on: then accept stays shown and the key turns plan on and off, with
-        nothing sent.
-        """
-        if self.mode_request_open:
-            return  # one change at a time: the mode shown is the last one Hermes confirmed
-        if self.approvals_off and not self.yolo_by_tui:
-            self.plan_mode = not self.plan_mode
-            self._say_hermes_approvals()
-        elif self.approvals_off:
-            self._set_yolo(False)
-        elif self.plan_mode:
-            self.plan_mode = False
-        else:
-            self._set_yolo(True)
-
-    def _say_hermes_approvals(self) -> None:
-        if not self.hermes_approvals_said:
-            self.hermes_approvals_said = True
-            self.transcript.add_notice(HERMES_APPROVALS_NOTICE, NOTICE_WARN)
-
-    def _set_yolo(self, on: bool) -> None:
-        """Ask Hermes to turn this session's approvals off (`on`) or back on; accept, or plan, once it confirms.
-
-        The only caller is Shift+Tab. The call always names the session and
-        an explicit value: without a session Hermes would set the switch for
-        the whole gateway process, and a blank value toggles whatever it finds.
-        """
-        if not self.sid:
-            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
-            return
-        sid = self.sid
-        self.mode_request_open = True
-        self.yolo_reported = self.yolo_confirmed_at = None
-        self._request(
-            "config.set",
-            {"key": "yolo", "session_id": sid, "value": YOLO_ON if on else YOLO_OFF},
-            lambda result: self._on_yolo_answer(sid, on, yolo_answer_problem(result, on)),
-            lambda error: self._on_yolo_answer(
-                sid, on, f"{error.get('code')}: {as_text(error.get('message')) or 'refused'}"
-            ),
-        )
-
-    def _on_yolo_answer(self, sid: str, on: bool, problem: str) -> bool:
-        """Hermes answered a yolo call; `problem` says why the answer confirms nothing ("" when it does).
-
-        A confirmed off moves on to plan. When Hermes still reports approvals
-        off after it, they are Hermes' own: accept stays shown beside plan.
-        """
-        if sid != self.sid:
-            return True  # that session was left meanwhile, and its switch with it
-        self.mode_request_open = False
-        if problem and on:
-            # Whatever Hermes did, it was not "this session only": show accept off and ask for it explicitly.
-            self.approvals_off = False
-            self.mode_request_open = True  # the switch-back is a yolo call out too: possibly on until it is answered
-            self.transcript.add_notice(ACCEPT_REFUSED_NOTICE.format(problem), NOTICE_ERROR)
-            self._request(
-                "config.set",
-                {"key": "yolo", "session_id": sid, "value": YOLO_OFF},
-                lambda result: self._on_switched_back(sid, yolo_answer_problem(result, False)),
-                lambda error: self._on_switched_back(
-                    sid, f"{error.get('code')}: {as_text(error.get('message')) or 'refused'}"
-                ),
-            )
-        elif problem:
-            self.transcript.add_notice(ACCEPT_STUCK_NOTICE.format(problem), NOTICE_ERROR)  # accept stays shown
-        elif on:
-            self.approvals_off = self.yolo_by_tui = True
-            self.yolo_confirmed_at = self.clock()
-        else:
-            self.yolo_by_tui, self.plan_mode, self.approvals_off = False, True, bool(self.yolo_reported)
-            if self.approvals_off:
-                self._say_hermes_approvals()
-        return True
-
-    def _on_switched_back(self, sid: str, problem: str) -> bool:
-        """The explicit off after an on Hermes did not confirm; `problem` says why this answer confirms nothing either.
-
-        Unconfirmed, approvals may be off, so accept is shown again, as the
-        TUI's own: Shift+Tab then asks for the off once more, and leaving the
-        session sends one. Accept shown with approvals on costs nothing;
-        normal shown with them off would hide that Hermes asks nothing.
-        An answer for a session already left changes nothing and says
-        nothing: leaving it counted the switch-back as possibly on and sent
-        an off of its own, whose answer reports for it.
-        """
-        if sid != self.sid:
-            return True
-        self.mode_request_open = False
-        if problem:
-            self.transcript.add_notice(SWITCH_BACK_FAILED_NOTICE.format(problem), NOTICE_ERROR)
-            self.approvals_off = self.yolo_by_tui = True
-        return True
-
-    # ── reasoning effort ──
-
-    def _effort_key(self, event: Key | Paste) -> bool:
-        """Ctrl+T steps the reasoning effort through `EFFORT_CYCLE`, from low when it is at none of them."""
-        if not isinstance(event, Key) or event.name != CHAR or not event.ctrl or event.alt or event.char != "t":
-            return False
-        current = self.effort_asked or self.effort
-        step = EFFORT_CYCLE.index(current) + 1 if current in EFFORT_CYCLE else 0
-        self._set_effort(EFFORT_CYCLE[step % len(EFFORT_CYCLE)])
-        return True
-
-    def _effort_command(self, arg: str) -> None:
-        """`/effort <level>`: any level Hermes takes; alone, it names the level shown and the choices."""
-        level = arg.strip().lower()
-        levels = ", ".join(contract.REASONING_LEVELS)
-        if level in contract.REASONING_LEVELS:
-            self._set_effort(level)
-        elif level:
-            self.transcript.add_notice(f"No reasoning effort named {arg}. Levels: {levels}.", NOTICE_WARN)
-        else:
-            now = f"Reasoning effort {self.effort}." if self.effort else "Hermes reports no reasoning effort."
-            self.transcript.add_notice(f"{now} /effort <level> sets it for this session. Levels: {levels}.")
-
-    def _set_effort(self, level: str) -> None:
-        """Ask Hermes for `level` in this session; the mode row changes once Hermes confirms it."""
-        if not self.sid:
-            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
-            return
-        sid = self.sid
-        self.effort_asked = level
-        self._request(
-            "config.set",
-            {"key": "reasoning", "session_id": sid, "value": level},
-            lambda result: self._on_effort_answer(sid, level, result.get("value")),
-            lambda error: self._on_effort_answer(
-                sid, level, None, f"{error.get('code')}: {as_text(error.get('message')) or 'refused'}"
-            ),
-        )
-
-    def _on_effort_answer(self, sid: str, level: str, value: object, refusal: str = "") -> bool:
-        """Hermes answered an effort call: its `value` is the level it set, or `refusal` says why it set none."""
-        if sid != self.sid:
-            return True  # that session was left meanwhile
-        if self.effort_asked == level:
-            self.effort_asked = ""
-        if not refusal and value != level:
-            refusal = f"it answered {json.dumps(value)}"
-        if refusal:
-            self.transcript.add_notice(EFFORT_REFUSED_NOTICE.format(level, refusal), NOTICE_WARN)
-        else:
-            self.effort = level
-        return True
-
     # ── slash commands ──
 
     def _run_slash(self, invocation: SlashInvocation, depth: int = 0) -> None:
@@ -2104,34 +1733,6 @@ class App:
             self._turn_off_yolo_set_here(self.sid)
             self._request("session.close", {"session_id": self.sid}, lambda result: None, lambda error: True)
         self.exit_code = 0
-
-    def _turn_off_yolo_set_here(self, sid: str) -> None:
-        """Before leaving `sid`: an explicit yolo off for it, when the TUI turned yolo on there or a yolo call is out.
-
-        Hermes clears a session's yolo as it closes it only when it owns the
-        session's lifecycle, and never for a session a messaging gateway
-        started (`tui_gateway/session_lifecycle.py`), so the switch the TUI
-        set would outlive the TUI's attachment. Sent before `session.close`:
-        Hermes runs both inline, in the order they arrive, and answers the id
-        of a session it closed with 4001. An off for a call still out is
-        harmless and lands after it. A refused off is a notice in whatever
-        transcript is live when the answer comes; nothing waits for it, so a
-        switch or an exit is never held up.
-        """
-        if not (self.yolo_by_tui or self.mode_request_open):
-            return
-        self.yolo_by_tui = self.mode_request_open = False  # sent once; the session is being left
-        self._request(
-            "config.set",
-            {"key": "yolo", "session_id": sid, "value": YOLO_OFF},
-            lambda result: self._on_left_yolo_off(yolo_answer_problem(result, False)),
-            lambda error: self._on_left_yolo_off(f"{error.get('code')}: {as_text(error.get('message')) or 'refused'}"),
-        )
-
-    def _on_left_yolo_off(self, problem: str) -> bool:
-        if problem:
-            self.transcript.add_notice(LEFT_YOLO_NOTICE.format(problem), NOTICE_ERROR)
-        return True
 
     def _new_session(self, arg: str) -> None:
         """Create the new session first; the current one closes only once that worked."""
@@ -2558,223 +2159,10 @@ class App:
             self.region.flush_above(stable, cols)
         self._take_clickable(frame.budget, hits, listed)
 
-    @property
-    def mode(self) -> str:
-        """What the composer's rules and mode row show: accept while approvals are off, plan while its flag is on."""
-        if self.approvals_off:
-            return MODE_ACCEPT_PLAN if self.plan_mode else MODE_ACCEPT
-        return MODE_PLAN if self.plan_mode else MODE_NORMAL
-
     # ── subagents ──
 
     def _spinner_frame(self) -> int:
         return int(self.clock() / TICK_SECONDS)
-
-    def _agent_strip(self, cols: int) -> tuple[Line, tuple[Hit, ...]]:
-        """The roster's strip for the mode row, and the cells each entry covers as 0-based screen columns."""
-        start = strip_column(self.mode, self.theme)
-        line, hits = self.roster.strip_line(cols - start, self.theme, self._spinner_frame())
-        return line, tuple(Hit(hit.start + start, hit.end + start, hit.subagent_id) for hit in hits)
-
-    def _agent_list(self, cols: int, room: int) -> tuple[list[Line], tuple[str, ...]]:
-        """The focused agent list for `room` rows, and the id of each agent row; nothing while it has no focus.
-
-        Its agent rows, scrolled to the highlight, then the hint row; where
-        `room` is a single row the frame keeps the first, the highlight's.
-        """
-        if self.list_selected is None:
-            return [], ()
-        shown = min(AGENT_LIST_ROWS, max(room - 1, 1))
-        lines, listed = self.roster.list_lines(
-            cols, self.theme, self.list_selected, self._spinner_frame(), shown, self.clock()
-        )
-        return [*lines, truncate_line((Span(AGENT_LIST_HINT, self.theme.hint),), cols)], listed
-
-    def _take_clickable(self, budget: Budget, hits: Sequence[Hit], listed: Sequence[str]) -> None:
-        """Note the cells of the frame just drawn that a click opens, and ask for mouse reports only while there are some.
-
-        A list row is clickable from edge to edge. The strip's agents are
-        clickable while a turn runs and no question is open; its `main` entry
-        opens nothing. Reports stay off while the region's place on the screen
-        is not certain, since no click could be read then.
-        """
-        cols, rows = self.size
-        under = budget.status + budget.mode - 1  # rows above the status line of the mode block's first row
-        self.clickable = {}
-        if listed:
-            self.clickable = {under - index: (Hit(0, cols, row_id),) for index, row_id in enumerate(listed[: budget.mode])}
-        elif budget.mode and self._busy() and self.slot is None:
-            agents = tuple(hit for hit in hits if hit.subagent_id != MAIN_ID)
-            self.clickable = {under: agents} if agents else {}
-        self._set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
-
-    def _list_available(self) -> bool:
-        """Whether the agent list can be shown: agents to list, the mode row it replaces, and nothing else holding the keys."""
-        cols, rows = self.size
-        return bool(self.roster.agents and under_composer(rows, cols)[1]) and self.slot is None and self.picker is None
-
-    def _settle_list(self) -> None:
-        """Take the keys back from a list that can no longer be shown; keep its highlight on a row it still has."""
-        if self.list_selected is None:
-            return
-        if not self._list_available():
-            self.list_selected = None
-        elif self.list_selected not in self.roster.agents:
-            self.list_selected = MAIN_ID
-
-    def _agent_list_key(self, event: Key | Paste) -> bool:
-        """The agent list's keys; True when the list took the key.
-
-        Down on an empty composer gives the list the keys, on the first
-        agent, while there is one to list and no completion menu is open.
-        Then Up and Down move, Enter opens the highlighted agent's log (on
-        main it only leaves) and Esc or Ctrl+C leaves. Anything else leaves
-        too and is then read as it would have been, so typing types. The
-        exception is a sequence the decoder has no name for, which does
-        nothing: with mouse reports on, a terminal that answers in the legacy
-        encoding sends one for every click.
-        """
-        self._settle_list()
-        name = event.name if isinstance(event, Key) else ""  # a paste is no key of the list's
-        if self.list_selected is None:
-            if name != DOWN or self.composer.text or self._menu_rows() or not self._list_available():
-                return False
-            self.list_selected = next(iter(self.roster.agents))
-            return True
-        if name in (UP, DOWN):
-            ids = self.roster.ids()
-            row = ids.index(self.list_selected) + (-1 if name == UP else 1)
-            self.list_selected = ids[min(max(row, 0), len(ids) - 1)]
-            return True
-        if name == ENTER and self.list_selected != MAIN_ID:
-            self._open_agent_log(self.list_selected)  # over the list: leaving the log comes back to it
-            return True
-        if name == UNKNOWN:
-            return True
-        self.list_selected = None
-        return name in (ENTER, ESCAPE) or event == Key(CHAR, "c", ctrl=True)
-
-    def _on_mouse(self, event: Mouse) -> None:
-        """A plain left press on an agent, on the strip or in the list, opens that agent's log; nothing else does anything.
-
-        The one other thing a click does is leave the list, from its main
-        row, which has no log. `clickable` holds the cells of the last frame
-        a click opens and is empty whenever the TUI has not asked for
-        reports, so a report another program left on opens nothing. The
-        report's row is read against the region's last row, and dropped while
-        that row is not certain, while a question Hermes asked has the keys,
-        or while the screen is being redrawn for a new size.
-        """
-        plain = event.button == BUTTON_LEFT and event.pressed and not (event.motion or event.shift or event.alt or event.ctrl)
-        last = self.region.last_row(self.size[1])
-        if not plain or last is None or self.pager is not None or self.slot is not None or self.redraw_at is not None:
-            return
-        above, column = last - (event.y - 1), event.x - 1  # a report counts rows and columns from 1
-        target = next((hit.subagent_id for hit in self.clickable.get(above, ()) if hit.start <= column < hit.end), None)
-        if target is None:
-            return
-        if self.list_selected is not None:
-            self.list_selected = target if target != MAIN_ID else None  # main has no log: the click leaves the list
-        if target != MAIN_ID:
-            self._open_agent_log(target)
-
-    def _open_agent_log(self, subagent_id: str) -> None:
-        """One agent's log on the alternate screen, opened at its newest rows; nothing for an agent no longer held."""
-        if subagent_id not in self.roster.agents:
-            return
-        self._open_pager("", [])
-        self.log_agent = subagent_id
-        self._refresh_agent_log(to_end=True)
-
-    def _step_agent_log(self, step: int) -> None:
-        """Left and Right in the log view: the agent before or after this one, stopping at either end."""
-        ids = tuple(self.roster.agents)
-        if self.log_agent not in ids:
-            return
-        self.log_agent = ids[min(max(ids.index(self.log_agent) + step, 0), len(ids) - 1)]
-        if self.list_selected is not None:
-            self.list_selected = self.log_agent  # leaving the log comes back to the row it shows
-        self._refresh_agent_log(to_end=True)
-
-    def _refresh_agent_log(self, to_end: bool = False) -> None:
-        """Rebuild the open log from the roster; a view on its last page stays on it as rows arrive.
-
-        An agent the roster no longer holds (a new turn began) keeps the rows
-        last drawn.
-        """
-        agent = self.roster.agents.get(self.log_agent)
-        if self.pager is None or agent is None:
-            return
-        cols, rows = self.size
-        at_end = self.pager.top >= len(self.pager.lines) - self.pager.body_rows(rows)
-        self.pager.title = f"{agent.name} · {AGENT_LOG_KEYS}"
-        self.pager.lines = self.roster.log_lines(agent.subagent_id, cols, self.theme, self.clock())
-        if to_end or at_end:
-            self.pager.top = len(self.pager.lines)  # past the end: the pager shows the last full page
-
-    def _ask_tail_when_due(self) -> None:
-        """`subagent.tail` for the agent whose log is open, while it runs: at most one call every `TAIL_POLL_SECONDS`.
-
-        The pace is the view's, not each agent's: the first call goes out as
-        a log opens unless one went out less than `TAIL_POLL_SECONDS` before,
-        and moving to another agent does not bring the next call forward.
-        None goes out while the last has had no answer for less than
-        `TAIL_ANSWER_SECONDS`, for an agent that is not running, for one whose
-        last `TAIL_MISSES_BEFORE_STOP` answers had no tail and that sent no
-        frame since, or without a session.
-        """
-        agent = self.roster.agents.get(self.log_agent) if self.pager is not None else None
-        if agent is None or agent.status != RUNNING or not self.sid:
-            return
-        if self.tail_misses.get(agent.subagent_id, 0) >= TAIL_MISSES_BEFORE_STOP:
-            return
-        now = self.clock()
-        if self.tail_asked_at is not None:
-            since = now - self.tail_asked_at
-            if since < TAIL_POLL_SECONDS or (self.tail_open and since < TAIL_ANSWER_SECONDS):
-                return
-        # A call still out timed out: forgetting it drops its answer (`_on_response` ignores an id not in `pending`).
-        self._forget_tail_calls()
-        self.tail_asked_at, self.tail_open = now, True
-        sid, subagent_id = self.sid, agent.subagent_id
-        self._request(
-            "subagent.tail",
-            {"session_id": sid, "subagent_id": subagent_id},
-            lambda result: self._on_tail(sid, subagent_id, result),
-            lambda error: self._on_tail(sid, subagent_id, {}),  # the log keeps what the events gave it
-        )
-
-    def _clear_roster(self) -> None:
-        """Drop the agents and every piece of tail bookkeeping that names them."""
-        self.roster.clear()
-        self.tail_misses.clear()
-        self._forget_tail_calls()  # an answer still on its way is for an agent no longer listed
-        self.tail_asked_at, self.tail_open = None, False
-
-    def _forget_tail_calls(self) -> None:
-        """Drop the `subagent.tail` calls still waiting for an answer, so a gateway that never answers cannot grow `pending`."""
-        for request_id in [rid for rid, call in self.pending.items() if call.method == "subagent.tail"]:
-            del self.pending[request_id]
-
-    def _on_tail(self, sid: str, subagent_id: str, result: Mapping[str, Any]) -> bool:
-        """A `subagent.tail` answer: read only when Hermes has a tail, for an agent still running in this session.
-
-        A tail that arrives after its agent finished would replace the reply
-        its `subagent.complete` put in the log, so it is dropped. An answer
-        without a tail (`available` anything but true, or an error) counts
-        towards `TAIL_MISSES_BEFORE_STOP`. An answer to a call that timed out
-        (`TAIL_ANSWER_SECONDS`) never reaches here: the call after it forgot it.
-        """
-        self.tail_open = False
-        if result.get(contract.TAIL_AVAILABLE) is not True:
-            self.tail_misses[subagent_id] = self.tail_misses.get(subagent_id, 0) + 1
-            return True
-        self.tail_misses.pop(subagent_id, None)
-        agent = self.roster.agents.get(subagent_id)
-        if sid == self.sid and agent is not None and agent.status == RUNNING:
-            text, truncated = as_text(result.get(contract.TAIL_TEXT)), result.get(contract.TAIL_TRUNCATED) is True
-            self.roster.ingest_tail(subagent_id, text, truncated)
-        return True
 
     @property
     def keyboard_protocol(self) -> bool:
