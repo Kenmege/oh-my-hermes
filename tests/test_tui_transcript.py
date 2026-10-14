@@ -306,6 +306,25 @@ class BlockCapTests(LoopTestCase):
         self.assertEqual(row.inline_diff, PATCH_INLINE_DIFF.encode("utf-8"))
         self.assertFalse(hasattr(row, "diff"))
 
+    def test_a_live_groups_diff_is_parsed_once_and_let_go_when_the_group_is_done(self) -> None:
+        real = __import__("omh.tui.transcript", fromlist=["parse_inline_diff"]).parse_inline_diff
+        parsed: list[str] = []
+
+        def counting(text: str) -> object:
+            parsed.append(text)
+            return real(text)
+
+        self.transcript.cwd = "/repo"
+        self.step(ev("message.start"))
+        self.step(ev("tool.start", tool_id="e1", name="patch", context="/repo/src/app.py"))
+        with patch("omh.tui.transcript.parse_inline_diff", counting):
+            self.step(ev("tool.complete", tool_id="e1", name="patch", result={"success": True}, inline_diff=PATCH_INLINE_DIFF))
+            self.step(ev("tool.start", tool_id="t2", name="terminal", context="ls"))  # the live group changes twice
+            self.step(ev("tool.start", tool_id="t3", name="terminal", context="pwd"))
+        self.assertEqual(len(parsed), 1)
+        self.step(ev("message.complete", text="done"))
+        self.assertIsNone(self.transcript.blocks[-2].tools[0].held_lines)
+
     def test_an_edits_diff_with_a_lone_surrogate_is_kept_and_drawn(self) -> None:
         # JSON can carry an escaped lone surrogate ("\udce9", a byte surrogateescape left in a file's text).
         diff = PATCH_INLINE_DIFF + "\n\x1b[38;2;255;255;255;48;2;20;90;20m+name = 'caf\udce9'\x1b[0m"

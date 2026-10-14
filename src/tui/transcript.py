@@ -141,15 +141,25 @@ class ToolRow:
     # `surrogatepass` both ways: JSON can carry a lone surrogate, which plain UTF-8 refuses to encode.
     inline_diff: bytes = b""
     diff_root: str = ""  # the session's working directory, which the diff's file names are shown relative to
+    # The parsed diff, kept while the row's group is live (it is drawn again on every change); None otherwise.
+    held_lines: tuple[DiffLine, ...] | None = field(default=None, repr=False, compare=False)
 
-    def diff_lines(self) -> tuple[DiffLine, ...]:
-        """The diff colour-stripped and classified, its file names relative to `diff_root`."""
-        return tuple(
+    def diff_lines(self, hold: bool = False) -> tuple[DiffLine, ...]:
+        """The diff colour-stripped and classified, its file names relative to `diff_root`.
+
+        With `hold` the lines are kept for the next call that holds; without,
+        any kept lines are let go and the diff is parsed from its bytes.
+        """
+        if hold and self.held_lines is not None:
+            return self.held_lines
+        lines = tuple(
             DiffLine(line.kind, FILE_ARROW.join(_relative(self.diff_root, side) for side in line.text.split(FILE_ARROW)))
             if line.kind == DIFF_FILE
             else line
             for line in parse_inline_diff(self.inline_diff.decode("utf-8", "surrogatepass"))
         )
+        self.held_lines = lines if hold else None
+        return lines
 
 
 @dataclass
@@ -431,7 +441,7 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool) -> li
         rows.append(_tool_row(tool, width, theme))
         if expanded and tool.summary:
             rows.extend(wrap_prefixed((Span(tool.summary, theme.dim),), summary_first, summary_rest, width))
-        lines = tool.diff_lines() if tool.inline_diff else ()
+        lines = tool.diff_lines(hold=not group.done) if tool.inline_diff else ()
         if lines:
             rows.extend(diff_rows(lines, width, theme, full=expanded))
     return rows
@@ -692,6 +702,7 @@ class Transcript:
         row.duration_s = _duration(payload, row, self._clock())
         row.summary = _result_summary(payload)
         row.inline_diff, row.diff_root = as_text(payload.get("inline_diff")).encode("utf-8", "surrogatepass"), self.cwd
+        row.held_lines = None
 
     def _display_args(self, summary: str) -> str:
         return _relative(self.cwd, summary) if _is_path(summary) else summary
