@@ -507,6 +507,34 @@ class UpdateReleaseTests(unittest.TestCase):
                 self.assertNotIn("display_released_at", home.record())
                 self.assertEqual(len(_omh_skin_files(home.hermes_home)), len(SKIN_THEMES))
 
+    def test_an_omh_skin_the_reader_cannot_see_without_a_record_is_not_called_stock_hermes(self) -> None:
+        # No record names it and the reader cannot see the name, so the value
+        # is kept as the person's and the release is recorded; every skin file
+        # stays for it and no theme is carried. Hermes still resolves
+        # omh-crimson, so the header must not say bare `hermes` is stock.
+        for shape in ("display: {skin: omh-crimson}\n", "display:\n  skin: !!str omh-crimson\n"):
+            with self.subTest(shape=shape), TemporaryDirectory() as tmp:
+                home = _Home(Path(tmp))
+                home.legacy_install(skin="omh-crimson")
+                state = json.loads(home.state_path.read_text(encoding="utf-8"))
+                del state[MANAGED_CONFIG_WRITES_STATE_KEY]
+                home.state_path.write_text(json.dumps(state), encoding="utf-8", newline="")
+                text = home.config.read_text(encoding="utf-8")
+                start = text.index("display:")
+                end = text.index("  interface: tui\n") + len("  interface: tui\n")
+                home.config.write_text(text[:start] + shape + text[end:], encoding="utf-8", newline="")
+
+                status, stdout, stderr = home.run("update", output_json=False)
+
+                self.assertEqual(status, 0, stderr)
+                self.assertIn(shape, home.config.read_text(encoding="utf-8"))
+                self.assertIn("display_released_at", home.record())
+                self.assertEqual(len(_omh_skin_files(home.hermes_home)), len(SKIN_THEMES))
+                self.assertIsNone(read_theme_choice(home.omh_home))
+                self.assertIn("removed the OMH status widget", stdout)
+                self.assertNotIn("bare `hermes` opens stock Hermes", stdout)
+                self.assertIn("Hermes display: OMH skin files stay while `display.skin` may still name one", stdout)
+
     def test_a_skin_file_copied_back_after_the_release_survives_later_updates(self) -> None:
         # The release removed every OMH skin file and its manifest. A copy of
         # the shipped bytes put back afterwards matches the template, which

@@ -1562,8 +1562,8 @@ uses:
 | The default skin, with or without a record | `display.skin: omh` | removed; no theme is saved: an empty store opens with the same sky, and a saved one would beat a theme a bot profile sharing the store picked |
 | A display key with no record (an install older than the record) | `display.interface: tui`, collapsed sections | kept: nothing says OMH wrote them |
 | Your own skin | `display.skin: ares` | kept |
-| A key OMH's record names, or a skin with an OMH name, in a YAML shape the editor does not handle (a quoted key or an anchor anywhere in the file, a flow or duplicate `display`, a dotted key, a tag, a BOM) | `display.skin: !!str omh-crimson` | left as it is and named in the output; the release is not recorded, so the next setup or update tries again |
-| Any other value in such a shape (no record names it, and it is not an OMH skin name) | `display: {skin: mytheme}` | kept |
+| A key OMH's record names, or a skin no record names whose value still reads as an OMH name, in a YAML shape the editor does not handle (a quoted key or an anchor anywhere in the file, a flow or duplicate `display`, a dotted key, a tag, a BOM) | `display.skin: !!str omh-crimson` with a record; `display.skin: omh-crimson` beside a quoted key | left as it is and named in the output; the release is not recorded, so the next setup or update tries again |
+| Any other value in such a shape: no record names it, and it does not read as an OMH skin name, including an OMH name the reader cannot see (a flow `display`, a tag or anchor on the value) | `display: {skin: mytheme}`; `display: {skin: omh-crimson}` with no record | kept, and the release is recorded; while the value cannot be read, no theme is carried and every OMH skin file stays, and the output does not say bare `hermes` opens stock Hermes |
 | A `display:` or `display.sections:` OMH created | emptied by the release | removed |
 | The status widget OMH installed | `omh-status.mjs` and its manifest | removed (a manifest left without its widget goes too) |
 | A widget the manifest cannot vouch for, or a symlinked `tui-widgets/` or `skins/` holding an OMH file | — | kept, named once, in the output of the pass that records the release |
@@ -1605,6 +1605,8 @@ The pass that does something says so, per home:
     saved OMH theme crimson for the OMH TUI; `omh theme use <name>` changes it
 ```
 
+While an OMH skin file stays because `display.skin` names it, or may name
+it, the first line says that instead of naming stock Hermes.
 `--dry-run` previews it and writes nothing. A home that is not registered
 (one `--skip-apply` left that way, or a home or bot profile that opted out
 with `omh uninstall --registration-only`) keeps its config as it is, since

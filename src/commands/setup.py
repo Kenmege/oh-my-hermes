@@ -808,6 +808,12 @@ def _display_release_lines(label: str, release: object) -> list[str]:
     carried (`kept_saved`, `store_unknown`) are said only on the pass that
     records the release (`recorded`): a pass that does not record it runs
     again on the next update and would repeat them each time.
+
+    The header says bare `hermes` opens stock Hermes only when no OMH skin
+    file stays for `display.skin` (`kept_selected`). One stays for a skin
+    the config names, or for every OMH skin while the value cannot be read,
+    such as a record-less `display: {skin: omh-crimson}`; Hermes may then
+    still open with an OMH skin.
     """
     if not isinstance(release, dict):
         return []
@@ -866,6 +872,8 @@ def _display_release_lines(label: str, release: object) -> list[str]:
         header = f"{label}: this home is not registered, so its config is left as it is; files OMH installed:"
     elif refused or theme.get("status") == "failed":  # type: ignore[union-attr]
         header = f"{label}: some display keys OMH wrote are still in Hermes' config; bare `omh` opens the OMH TUI."
+    elif any(entry.get("status") == "kept_selected" for entry in skins):
+        header = f"{label}: OMH skin files stay while `display.skin` may still name one; bare `omh` opens the OMH TUI."
     else:
         header = f"{label}: bare `hermes` opens stock Hermes; bare `omh` opens the OMH TUI."
     return [header, *(f"  {line}" for line in details)]
