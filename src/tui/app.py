@@ -139,7 +139,9 @@ from .layout import slot_cap, under_composer
 from .markdown import clean_text
 from .modes import NO_SESSION_NOTICE, ModesMixin, mode_row_line
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
-from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, status_segments
+from .model_picker import PICK as MODEL_PICK
+from .model_picker import ModelPicker, model_rows
+from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, plan_text, status_segments
 from .prompts import CHOICE_DIGITS, Answer, ImmediateAnswer, PromptSlot, open_request
 from .screen import CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
 from .session_picker import PICK, SessionPicker, session_rows
@@ -151,6 +153,7 @@ from .slash import (
     DROPPED,
     HERMES,
     LOCAL,
+    RENAMED,
     Completion,
     SlashInvocation,
     catalog_categories,
@@ -210,6 +213,13 @@ SHELL_USAGE = "Usage: !<command> runs it in Hermes' shell (30 s at most); its ou
 SHELL_REFUSED = 4005  # Hermes' answer to a dangerous or hardline command
 REWIND_NONE_NOTICE = "No prompt to rewind to in this session yet."
 REWIND_REFUSED_NOTICE = "Hermes did not rewind: {reason}. The screen shows the session as Hermes still has it."
+MODEL_BUSY_NOTICE = "Hermes switches the model between turns: let this one end, or interrupt it with Esc."
+TODOS_NONE_NOTICE = "No plan in this session yet: Hermes' todo tool writes one."
+# Claude Code's /export saves the conversation; Hermes' writes a profile archive. Said once, then it runs.
+EXPORT_NOTE = (
+    "Hermes' /export writes a profile archive (config, skills, theme), not this transcript; /export again runs it. "
+    "/history pages the transcript and /copy copies the last reply."
+)
 # Every key a prompt slot takes, and the composer's Enter, is ignored when its
 # first byte arrived before the slot opened or less than this long after, so
 # Enter, Esc, an arrow or a digit typed for the composer as the request arrives
@@ -822,6 +832,8 @@ class App(ModesMixin, AgentViewMixin):
         self.rewind_picker: RewindPicker | None = None
         self.rewind_messages: list[dict[str, Any]] = []  # the history the picker was opened over
         self.rewind: Rewind | None = None  # a picked prompt waiting to be sent again
+        self.model_picker: ModelPicker | None = None  # bare /model's list of what Hermes offers
+        self.export_said = False  # EXPORT_NOTE has been said: the next /export runs
         self.interrupt_armed: str | None = None  # the agent a first `x` in the list asked about
         self.agent_steer: str | None = None  # the agent `s` picked: the next line sent is its steer
         self.region = LiveRegion(terminal.write)
@@ -1626,6 +1638,9 @@ class App(ModesMixin, AgentViewMixin):
         if self.slot is None and self.rewind_picker is not None:
             self._rewind_picker_key(event)
             return
+        if self.slot is None and self.model_picker is not None:
+            self._model_picker_key(event)
+            return
         if self.slot is None and self._agent_list_key(event):
             return
         if self.slot is None and (
@@ -1824,6 +1839,54 @@ class App(ModesMixin, AgentViewMixin):
             self.rewind = Rewind(row.row_id, row.ordinal, before)
             self._set_composer(row.text)
 
+    # ── Claude Code's commands: /todos, /model, /export ──
+
+    def _todos(self, arg: str) -> None:
+        """The whole plan the panel shows a window of, under the echo."""
+        text = plan_text(self.hud.payload if self.hud is not None else None)
+        if text:
+            self._show_output("/todos", text, whole=True)
+        else:
+            self.transcript.add_notice(TODOS_NONE_NOTICE)
+
+    def _model(self, arg: str) -> None:
+        """`/model <name> ...` is Hermes' as typed; bare, between turns, a picker of what Hermes offers this session."""
+        if arg:
+            self._route_slash(SlashInvocation("model", arg, None), 0)
+        elif self._busy():
+            self.transcript.add_notice(MODEL_BUSY_NOTICE, NOTICE_WARN)
+        elif not self.sid:
+            self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
+        else:
+            sid = self.sid
+            self._request("model.options", {"session_id": sid}, lambda result: self._open_model_picker(sid, result))
+
+    def _open_model_picker(self, sid: str, result: dict[str, Any]) -> None:
+        if sid != self.sid:
+            return
+        self.model_picker = ModelPicker(model_rows(result), current=as_text(result.get("model")) or self.model)
+        self._settle_list()
+
+    def _model_picker_key(self, event: Key | Paste | Mouse) -> None:
+        """A key for the open model picker: the model picked becomes this session's, through Hermes' own /model."""
+        picker = self.model_picker
+        if picker is None or isinstance(event, Mouse):
+            return
+        action = picker.handle_key(event)
+        if action is None:
+            return
+        self.model_picker = None
+        if action.kind == MODEL_PICK and action.row is not None:
+            self._run_slash(SlashInvocation("model", action.row.arg, None))  # Hermes' own command, echoed
+
+    def _export(self, arg: str) -> None:
+        """Hermes' /export, once the person has been told it is a profile archive and not the transcript."""
+        if not self.export_said:
+            self.export_said = True
+            self.transcript.add_notice(EXPORT_NOTE)
+            return
+        self._route_slash(SlashInvocation("export", arg, None), 0)
+
     def _send_rewind(self, text: str, shown: str = "") -> None:
         """Send `text` in place of the picked prompt: Hermes drops it and what came after, and the screen restarts there.
 
@@ -1931,8 +1994,7 @@ class App(ModesMixin, AgentViewMixin):
 
     def _track_path_token(self) -> None:
         """Schedule `complete.path` for the `@` token at the caret once it holds still; drop the menu without one."""
-        open_composer = self.slot is None and self.picker is None and self.search is None and self.rewind_picker is None
-        word = at_token(self.composer.text, self.composer.caret)[1] if open_composer else ""
+        word = at_token(self.composer.text, self.composer.caret)[1] if self._composer_open() else ""
         if word == self.path_word:
             return
         self.path_word = word
@@ -2211,6 +2273,8 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice(hermes_notice(command))
         elif command is not None and command.route == DROPPED:
             self.transcript.add_notice(dropped_notice(command))
+        elif command is not None and command.route == RENAMED:
+            self._route_slash(SlashInvocation(command.target, invocation.arg, None), depth)
         elif not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
         else:
@@ -2290,6 +2354,9 @@ class App(ModesMixin, AgentViewMixin):
             "redraw": self._redraw,
             "history": self._history,
             "rewind": self._rewind,
+            "todos": self._todos,
+            "model": self._model,
+            "export": self._export,
             "details": self._details,
             "queue": self._show_queue,
             "steer": self._steer_command,
@@ -2860,7 +2927,10 @@ class App(ModesMixin, AgentViewMixin):
 
     def _composer_open(self) -> bool:
         """Whether the composer takes the keys for a prompt: no question, picker or search has them."""
-        return self.slot is None and self.picker is None and self.search is None and self.rewind_picker is None
+        return (
+            self.slot is None and self.picker is None and self.search is None and self.rewind_picker is None
+            and self.model_picker is None
+        )
 
     def _mode_row_line(self, cols: int, strip: Line | None = None) -> Line:
         """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's second press)."""
@@ -2941,6 +3011,8 @@ class App(ModesMixin, AgentViewMixin):
             return self.search.lines(cols, self.theme, cap)
         if self.rewind_picker is not None:
             return self.rewind_picker.lines(cols, self.theme, cap, self.wall_clock())
+        if self.model_picker is not None:
+            return self.model_picker.lines(cols, self.theme, cap)
         # Nothing has the keys: the queued prompts take the slot's last rows, right above the composer's
         # top rule, Hermes' notification the row above them, and the menu or the panel gets the rows left. A
         # question or the picker hides them, since Up then does not edit the queue.

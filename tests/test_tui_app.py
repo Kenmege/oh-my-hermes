@@ -1696,8 +1696,9 @@ class LocalCommandTests(AppTestCase):
         self.assertIn("/omh-model     Pick OMH model chains", pager)
         self.assertIn("/reload-skills Re-scan Hermes' skills", pager)
         # The recorded catalog's categories, without what the TUI runs itself, routes to Hermes' terminal or drops:
-        # Session (/new /clear /redraw), Exit (/quit) and TUI (/density /logs /mouse) are left with nothing.
-        self.assertIn("  Configuration: /export /import /config", pager)
+        # Session (/new /clear /redraw), Exit (/quit) and TUI (/density /logs /mouse) are left with nothing, and
+        # /export is the TUI's (it says what Hermes exports before it runs).
+        self.assertIn("  Configuration: /import /config", pager)
         self.assertIn("  Tools & Skills: /tools /toolsets /skills", pager)
         self.assertNotIn("Session:", pager)
         self.assertNotIn("skill commands available", pager)  # the recording lists none

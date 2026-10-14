@@ -580,17 +580,23 @@ Slash commands the OMH TUI runs itself: `/help`, `/keys`, `/quit`, `/new`,
 `/details` (show or hide thinking and tool detail on the live block),
 `/queue`, `/steer <text>`, `/effort <level>`, `/logs` (the gateway's recent
 stderr, kept in memory only), `/copy`, `/image`, `/paste` (the clipboard
-image), `/theme`, `/omh-model`, and `/reload-skills` (Hermes re-scans its
+image), `/theme`, `/omh-model`, `/rewind`, `/todos` (the session's whole
+plan), `/model` (alone, a picker of the models Hermes offers this session,
+from Hermes' `model.options`; the one you pick is sent as Hermes' own
+`/model <name> --provider <slug> --session`, so it lasts for this session;
+`/model <name>` goes to Hermes as typed), `/export` (Hermes' export writes a
+profile archive, not the transcript, so the first `/export` says so and the
+next one runs it), and `/reload-skills` (Hermes re-scans its
 skills for this session and the TUI reads its command list again, so a skill
 installed since the start, by `omh update` or `/skills install`, runs as
-`/<name>` without a restart).
+`/<name>` without a restart). Claude Code's `/cost` and `/permissions` run
+Hermes' `/usage` and `/approvals`.
 Commands whose screen exists only in Hermes' own terminal (`/voice`, `/pet`,
 `/agents`, the billing flows, `/save`, `/prompt`, ...) say so and name
 `hermes --tui`. Everything else goes to Hermes as it would from Hermes'
-terminal, except that two commands whose screen there is an overlay answer
-here as text: bare `/skills` prints the help of Hermes' skills command instead
-of opening the skills hub, and bare `/model` prints the current model instead
-of opening the model picker. The command list is read again for each session
+terminal, except that bare `/skills`, whose screen there is an overlay,
+prints the help of Hermes' skills command here instead of opening the skills
+hub. The command list is read again for each session
 the TUI opens, so a project's own skills are listed in its workspace, and
 completion also matches a part of a name: `/uml` finds `/omh-codebase-uml`.
 

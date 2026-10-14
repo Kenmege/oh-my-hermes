@@ -38,8 +38,9 @@ DRIFT_ERROR_CODES = frozenset({PARAM_REJECTED, METHOD_NOT_FOUND})
 # made during a session it ends the session (`App._on_response`). An older Hermes (0250c8bcae: SkillsReloadParams
 # takes no field) rejects `skills.reload {session_id}` with 4000, which must not cost the person their session.
 # `config.get` is answered after the first frame and only sets the busy mode, which has a default (queue).
-# `session.list` is asked unprompted at the start of a fresh session, only to name the last one.
-OPTIONAL_METHODS = frozenset({"commands.catalog", "config.get", "session.list", "skills.reload"})
+# `session.list` is asked unprompted at the start of a fresh session, only to name the last one, and
+# `model.options` only fills `/model`'s picker, while `/model <name>` still switches.
+OPTIONAL_METHODS = frozenset({"commands.catalog", "config.get", "model.options", "session.list", "skills.reload"})
 
 # Methods the TUI calls, with the only keys it ever sends. Sending a key outside
 # this map is a bug: a Hermes that does not know it rejects the whole call.
@@ -60,6 +61,9 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     # See CONFIG_SET_VALUES: `scope` is deliberately not declared.
     "config.set": frozenset({"key", "value", "session_id"}),
     "session.list": frozenset({"limit"}),
+    # Bare `/model`: the providers and models Hermes offers this session, for the picker. The pick goes back as
+    # Hermes' own `/model <name> --provider <slug> --session` through `slash.exec`.
+    "model.options": frozenset({"session_id"}),
     # Read-only: the last 16 KB of one child's live transcript, for the agent log view. See `call_problem`.
     "subagent.tail": frozenset({"session_id", "subagent_id"}),
     # The two actions on one subagent, each on the person's keypress in the agent list (AGENTS.md): `x` once a

@@ -622,6 +622,26 @@ def _fold(count: int, side: str, theme: Theme) -> Line:
     return _line(Span(f"... ({count} {side} task{'' if count == 1 else 's'})", theme.muted))
 
 
+def plan_text(payload: Any) -> str:
+    """The whole plan as text, for `/todos`: its header, then every item under its phase; "" without a plan."""
+    plan = _plan_view(payload) if _valid(payload) else None
+    if plan is None:
+        return ""
+    counts = plan.counts
+    title = f" {plan.title}" if plan.title else ""
+    rows = [f"[Plan]{title} · {_count(counts.get('done'))}/{_count(counts.get('total'))}{_skipped_clause(counts)}"]
+    for phase, items in _groups(plan.items):
+        if phase:
+            rows.append(phase)
+        for item in items:
+            indent = "  " * (_depth(item) + (1 if phase else 0))
+            state = item.get("state")
+            reason = _safe_text(item.get("blocked_reason"))
+            waiting = f" ({'skipped' if state == 'done' else 'waiting'}: {reason})" if reason else ""
+            rows.append(f"{indent}{PLAN_MARKERS.get(str(state), '[ ]')} {_safe_text(item.get('text'))}{waiting}")
+    return "\n".join(rows)
+
+
 def _plan_lines(
     plan: _Plan, start: int, end: int, collapsed: bool, columns: int, now: float, theme: Theme
 ) -> list[Line]:

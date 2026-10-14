@@ -55,7 +55,12 @@ All notable changes will be documented here.
   interrupt; the strip ends with `↓ agents`; a narrow approval keeps a key hint
   and a wrapped command its indent; the banner is one row (the model is on the
   status line, the keys on the mode row) and a fresh session names the last one
-  with its `/resume` command.
+  with its `/resume` command. Claude Code's names work: `/cost` and
+  `/permissions` run Hermes' `/usage` and `/approvals`, `/todos` prints the
+  whole plan, bare `/model` opens a picker of the models Hermes offers and
+  switches this session to the one picked (it printed the current model
+  before), and `/export` first says that Hermes exports a profile archive, not
+  the transcript.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:
