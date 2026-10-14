@@ -28,7 +28,7 @@ This is a Hermes-native `automation-blueprint` workflow skill.
 - The user asks to review incident metrics once; use `omh-reliability-review`.
 - The user needs actual code changes; prepare a selected executor/runtime handoff after the blueprint or plan is accepted.
 - The person is inside Hermes' own /blueprint setup for one of its catalog automations; answer the questions that flow asks and let it create the job instead of preparing a second blueprint.
-- The recurring job would move money -- a purchase, a renewal, a top-up, or a transfer; use `omh-spend-gate`, because a scheduled run never spends and only prepares a card for the person's next turn.
+- The recurring job would move money -- a purchase, a renewal, a top-up, or a transfer; use `omh-spend-gate`, because an agent run on a schedule never spends, and a no-agent script that pays is a spend set up now: its card, typed yes, and cap come before the job exists.
 
 ## Examples
 

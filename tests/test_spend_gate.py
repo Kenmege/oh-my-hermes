@@ -308,7 +308,8 @@ class SpendGateSiblingTextTests(unittest.TestCase):
         lines = {
             "automation-blueprint": (
                 "The recurring job would move money -- a purchase, a renewal, a top-up, or a transfer; use "
-                "`spend-gate`, because a scheduled run never spends and only prepares a card for the person's next turn."
+                "`spend-gate`, because an agent run on a schedule never spends, and a no-agent script that pays is a "
+                "spend set up now: its card, typed yes, and cap come before the job exists."
             ),
             "browser-operator": (
                 "A page step that moves money -- a checkout, a payment, a booking deposit, a top-up; use `spend-gate`, "

@@ -325,7 +325,8 @@ class HeldCommandTests(unittest.TestCase):
             with self.subTest(skill=name):
                 self.assertEqual(hermes[name].count(f"will not run on its own ({HERMES_PENDING_APPROVAL_CLAUSE})"), 1)
 
-    def test_no_body_says_approve_runs_a_held_command(self) -> None:
+    def test_no_pending_approval_sentence_says_the_command_waits_for_a_reply(self) -> None:
+        """No sentence naming `pending_approval` says "waits for", as the old `/approve` claim did."""
         held = [
             (f"{projection}:{name}", sentence)
             for projection, name, content in _bodies()
@@ -345,16 +346,15 @@ class ParallelToolsSwitchTests(unittest.TestCase):
         definition = {d.name: d for d in builtin_definitions()}["parallel-tools"]
         self.assertEqual(
             definition.description,
-            "[omh] Parallel tool calls in doubt: read the installed version and each MCP server's "
-            "supports_parallel_tool_calls, then offer that per-server flag after diff approval; an update only on "
-            "request.",
+            "[omh] Parallel tool-call capability in doubt: report the version and whether MCP parallel tool calls are "
+            "enabled, then apply that as a diff only after approval; an update only on request.",
         )
         self.assertEqual(
             definition.use_when,
-            "Use when the user asks whether Hermes runs tools in parallel or whether its version is current: read the "
-            "installed version and each MCP server's `supports_parallel_tool_calls`, and offer that per-server flag as "
-            "the one change, following the shared prerequisite-check, diagnose, guide, diff-approved apply, and verify "
-            "contract; an update only on request.",
+            "Use when the user wants to check the parallel-tool capability status, whether Hermes tool calls run in "
+            "parallel, or whether the version is current for parallel tool calls: report the version and whether MCP "
+            "parallel tool calls are enabled, then apply that as a diff only after approval, following the shared "
+            "prerequisite-check, diagnose, guide, diff-approved apply, and verify contract; an update only on request.",
         )
         self.assertEqual(
             definition.good_example.why,

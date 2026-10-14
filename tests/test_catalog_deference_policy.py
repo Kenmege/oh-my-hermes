@@ -306,9 +306,12 @@ EXPECTED_DEFERRING_OWNERS = 112
 EXPECTED_INVERSION_COUNT = 4
 
 # How much of the ranked field an inversion is judged against. Wide enough that
-# a deferred-to sibling is never merely off the end - it holds in 128/128 cases
-# today, which `test_every_deferred_to_sibling_is_reachable` pins - and narrow
-# enough that "outranks" still means something among 103 routable skills.
+# a deferred-to sibling is never merely off the end: every pair surfaces within
+# it except those in `DELIBERATELY_UNREACHABLE`, whose sibling the router does
+# not return for that statement at all, so no wider field would reach it.
+# `test_every_deferred_to_sibling_is_reachable` holds both: the other pairs
+# inside this field, the listed ones outside it. Narrow enough that "outranks"
+# still means something among the routable skills.
 FIELD_LIMIT = 25
 
 # A rationale short enough to be a label rather than a verdict defeats the point
@@ -493,6 +496,21 @@ class CatalogDeferenceGraphTests(unittest.TestCase):
             EXPECTED_DELIBERATELY_UNREACHABLE_COUNT,
             "the deliberately-unreachable list changed size; growing it must be a deliberate edit to "
             "EXPECTED_DELIBERATELY_UNREACHABLE_COUNT",
+        )
+
+    def test_each_deliberately_unreachable_pair_comes_from_one_statement(self) -> None:
+        """The exemption is keyed by pair, so a second statement naming the same pair would inherit it unreviewed."""
+
+        statements: dict[tuple[str, str], list[str]] = {key: [] for key in DELIBERATELY_UNREACHABLE}
+        for owner, siblings, statement in _deference_cases():
+            for sibling in siblings:
+                if (owner, sibling) in statements:
+                    statements[(owner, sibling)].append(statement)
+        self.assertEqual(
+            {key: len(found) for key, found in statements.items() if len(found) != 1},
+            {},
+            "a DELIBERATELY_UNREACHABLE pair is named by other than exactly one statement; review the new statement "
+            "on its own instead of letting it share the exemption",
         )
 
     def test_every_recorded_inversion_carries_a_rationale(self) -> None:

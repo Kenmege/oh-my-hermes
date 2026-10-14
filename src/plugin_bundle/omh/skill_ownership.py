@@ -373,7 +373,10 @@ def managed_skill_edit_message(
     if action == "delete":
         consequence = "so deleting it here does not last: the next update renders it again or reports it missing"
     else:
-        consequence = f"so a {action} here would hold it back from later updates or be left behind in a retired install"
+        article = "an" if action.startswith(("a", "e", "i", "o", "u")) else "a"
+        consequence = (
+            f"so {article} {action} here would hold it back from later updates or be left behind in a retired install"
+        )
     return (
         f"Refused: '{label}' is an oh-my-hermes skill that OMH re-renders from its catalog on every update, "
         f"{consequence}. Keep any lesson in a skill OMH does not manage: skill_manage action=create with a "

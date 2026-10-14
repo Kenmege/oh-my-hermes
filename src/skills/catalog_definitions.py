@@ -6457,7 +6457,7 @@ _DEFINITIONS = [
             "The user asks to review incident metrics once; use `reliability-review`.",
             "The user needs actual code changes; prepare a selected executor/runtime handoff after the blueprint or plan is accepted.",
             "The person is inside Hermes' own /blueprint setup for one of its catalog automations; answer the questions that flow asks and let it create the job instead of preparing a second blueprint.",
-            "The recurring job would move money -- a purchase, a renewal, a top-up, or a transfer; use `spend-gate`, because a scheduled run never spends and only prepares a card for the person's next turn.",
+            "The recurring job would move money -- a purchase, a renewal, a top-up, or a transfer; use `spend-gate`, because an agent run on a schedule never spends, and a no-agent script that pays is a spend set up now: its card, typed yes, and cap come before the job exists.",
         ),
         good_example=SkillExample(
             prompt="automation-blueprint every weekday run an uptime check and send a Slack digest only if status changes.",
@@ -8784,7 +8784,7 @@ _DEFINITIONS = [
     ),
     SkillDefinition(
         "parallel-tools",
-        "Parallel tool calls in doubt: read the installed version and each MCP server's supports_parallel_tool_calls, then offer that per-server flag after diff approval; an update only on request.",
+        "Parallel tool-call capability in doubt: report the version and whether MCP parallel tool calls are enabled, then apply that as a diff only after approval; an update only on request.",
         (
             "parallel-tools",
             "parallel tools",
@@ -8796,10 +8796,10 @@ _DEFINITIONS = [
             "check hermes version for parallel tools",
         ),
         (
-            "Use when the user asks whether Hermes runs tools in parallel or whether its version is current: read the "
-            "installed version and each MCP server's `supports_parallel_tool_calls`, and offer that per-server flag as the "
-            "one change, following the shared prerequisite-check, diagnose, guide, diff-approved apply, and verify contract; "
-            "an update only on request."
+            "Use when the user wants to check the parallel-tool capability status, whether Hermes tool calls run in "
+            "parallel, or whether the version is current for parallel tool calls: report the version and whether MCP "
+            "parallel tool calls are enabled, then apply that as a diff only after approval, following the shared "
+            "prerequisite-check, diagnose, guide, diff-approved apply, and verify contract; an update only on request."
         ),
         category="hermes-setup",
         phase="setup",

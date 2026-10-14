@@ -731,7 +731,14 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64654
 # and offering that flag, with an update only when asked, instead of a
 # version-currency check. Every other edit sits past the rows' bounds.
 # Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 501991
+# 501991 -> 501984: `parallel-tools` (-7) after review. Its description and
+# use_when go back to the router words the row had before, plus `mcp` and
+# minus `currency`: words such as `installed`, `supports`, `server`, and
+# `runs` had moved ordinary version questions from a direct answer to a
+# clarify. The flag is applied as a diff only after approval, and the version
+# clause names parallel tool calls. `automation-blueprint`'s reworded spend
+# line sits past its row's bounds. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 501984
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

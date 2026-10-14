@@ -4253,7 +4253,7 @@ These surfaces are generated command references, not installed Hermes workflow s
   - The user asks to review incident metrics once; use `reliability-review`.
   - The user needs actual code changes; prepare a selected executor/runtime handoff after the blueprint or plan is accepted.
   - The person is inside Hermes' own /blueprint setup for one of its catalog automations; answer the questions that flow asks and let it create the job instead of preparing a second blueprint.
-  - The recurring job would move money -- a purchase, a renewal, a top-up, or a transfer; use `spend-gate`, because a scheduled run never spends and only prepares a card for the person's next turn.
+  - The recurring job would move money -- a purchase, a renewal, a top-up, or a transfer; use `spend-gate`, because an agent run on a schedule never spends, and a no-agent script that pays is a spend set up now: its card, typed yes, and cap come before the job exists.
 - Strong routing signals: `automation-blueprint`, `scheduled ops`, `scheduled operation`, `scheduled operations`, `automation blueprint`, `cron blueprint`, `cron-ready`, `recurring ops`, `recurring workflow`, `keep watching`, `keep monitoring`, `watch continuously`, `monitor continuously`, `every morning`, `every day`, `daily digest`, `weekly digest`, `automate this`, `automate workflow`, `send to slack`, `send to discord`, `post to telegram`, `only if changed`, `silent if nothing changed`, `schedule this`, `ずっと監視`, `監視し続け`, `継続的に監視`, `매일`, `매주`, `정기`, `예약`, `반복`, `자동화`, `자동화해줘`, `스케줄`, `슬랙`, `디스코드`, `텔레그램`, `보내`, `공유`, `변화 없으면`, `조용히`, `계속 감시`, `계속 모니터링`, `계속 지켜봐`, `持续监控`, `持續監控`, `一直监控`
 - Good example:
   - Prompt: automation-blueprint every weekday run an uptime check and send a Slack digest only if status changes.
@@ -6003,7 +6003,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 
 ### parallel-tools
 
-[omh] Parallel tool calls in doubt: read the installed version and each MCP server's supports_parallel_tool_calls, then offer that per-server flag after diff approval; an update only on request.
+[omh] Parallel tool-call capability in doubt: report the version and whether MCP parallel tool calls are enabled, then apply that as a diff only after approval; an update only on request.
 
 - Category: `hermes-setup`
 - Phase: `setup`
@@ -6018,7 +6018,7 @@ These surfaces are generated command references, not installed Hermes workflow s
 - Preferred usage: Use as an installed Hermes workflow skill when this explicit workflow is the clearest user-facing handle.
 - Handoff policy: Run diagnosis and reporting directly in Hermes for parallel-tool capability. Diagnosis reads non-secret metadata only; no writes. Show redacted placeholders in the config or `.env` diff; apply only after the user explicitly approves. Never ask the user to paste secrets into chat. Use Hermes-native secure entry or user-side OAuth/token setup; if unavailable, stop credential application and guide user-side setup. Use only a user-authorized credential store or local configuration; disclose destination and scope first. Keep secrets out of chat, previews, logs and evidence. Do not promise chat or platform non-retention. Delegate to a selected coding executor only if the user needs a change outside a local version/config check.
 - Why this exists: `parallel-tools` exists to give a read-first answer to whether tools run in parallel and to name the one setting a user controls: built-in read-only tools already run concurrently, and an MCP server's tools do only when its `supports_parallel_tool_calls` is true.
-- Use when: Use when the user asks whether Hermes runs tools in parallel or whether its version is current: read the installed version and each MCP server's `supports_parallel_tool_calls`, and offer that per-server flag as the one change, following the shared prerequisite-check, diagnose, guide, diff-approved apply, and verify contract; an update only on request.
+- Use when: Use when the user wants to check the parallel-tool capability status, whether Hermes tool calls run in parallel, or whether the version is current for parallel tool calls: report the version and whether MCP parallel tool calls are enabled, then apply that as a diff only after approval, following the shared prerequisite-check, diagnose, guide, diff-approved apply, and verify contract; an update only on request.
 - Do not use when:
   - The user wants a general Hermes update unrelated to parallel-tool capability.
   - No version or capability question has been asked yet.

@@ -1302,13 +1302,14 @@
 "hangul_anchors":"데이 도구 르메 메스 병렬 설정 업데 이트 인해 헤르 확인",
 "label":"omh-parallel-tools",
 "name":"parallel-tools",
-"situation":"Parallel tool calls in doubt",
+"situation":"Parallel tool-call capability in doubt",
 "terms":{
-"1":"after apply approv approval ask chang contract diagnos doubt follow guid prerequisit run shar user whether",
-"2":"capability diff enabl faster flag install mcp offer read request server setup status",
-"3":"current verify",
+"1":"approv contract diagnos doubt follow guid prerequisit run shar user want",
+"2":"after apply approval diff faster mcp report request setup whether",
+"3":"current status verify",
+"4":"capability enabl support",
 "5":"check herm",
-"6":"call support updat version",
+"6":"call updat version",
 "9":"parallel tool"
 }
 },

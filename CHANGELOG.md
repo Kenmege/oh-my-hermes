@@ -22,10 +22,11 @@ All notable changes will be documented here.
   `command-operator` and `spend-gate` say what Hermes does with a
   `pending_approval` command at v2026.9.7 and on upstream main: it is stored
   and never run, and `/approve` resumes only a run still waiting on an
-  approval. `spend-gate`'s portable body drops its Hermes- and OMH-only lines,
-  prose that named a sibling by its catalog name now writes the label
-  `skill_view` loads, and the spend and data-share references name only states
-  their skills keep.
+  approval. `spend-gate`'s portable body drops the `hermes chat -q`
+  parenthetical, the OMH browser adapter line, and the `pending_approval` rule,
+  which a host-neutral held-command rule replaces; prose that named a sibling
+  by its catalog name now writes the label `skill_view` loads, and the spend
+  and data-share references name only states their skills keep.
 
 - **A `/blueprint` seed is Hermes' turn, and a spend is spend-gate's wherever
   it is asked.** When `/blueprint` matches, Hermes rewrites the turn to a seed

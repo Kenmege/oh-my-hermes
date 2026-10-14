@@ -2275,6 +2275,20 @@ class CompanionNameTests(unittest.TestCase):
                 self.assertEqual(canonical_skill_for_label(companion), "")
 
 
+class RefusalArticleTests(unittest.TestCase):
+    def test_each_refused_action_takes_its_article(self) -> None:
+        expected = {
+            "edit": "so an edit here",
+            "patch": "so a patch here",
+            "write_file": "so a write_file here",
+            "remove_file": "so a remove_file here",
+        }
+        self.assertEqual(set(expected) | {"delete"}, set(skill_ownership.GUARDED_ACTIONS))
+        for action, phrase in expected.items():
+            with self.subTest(action=action):
+                self.assertIn(phrase, skill_ownership.managed_skill_edit_message("omh-plan", action))
+
+
 class OwnershipWordingTests(unittest.TestCase):
     """Skill text decides OMH ownership by the installed label, never by a name prefix."""
 
@@ -2303,7 +2317,8 @@ class OwnershipWordingTests(unittest.TestCase):
             ["rules-distill", "skill-health"],
         )
 
-    def test_no_body_decides_ownership_by_a_name_prefix(self) -> None:
+    def test_no_body_writes_an_omh_or_ulw_wildcard(self) -> None:
+        """No body, portable body, or reference writes `omh-*` or `ulw-*`, the old prefix rule's shape."""
         prefix_rule = re.compile(r"\b(?:omh|ulw)-\*")
         bodies = [
             *((f"hermes:{template.name}", template.content) for template in builtin_skill_templates()),
