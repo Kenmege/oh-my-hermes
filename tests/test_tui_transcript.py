@@ -282,6 +282,21 @@ class BlockCapTests(LoopTestCase):
         again = lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
         self.assertEqual(again, ["⋯ 23 earlier messages · /history shows the last 10", "", "· notice 23", "", "· notice 24"])
 
+    def test_a_turns_answer_is_still_known_after_its_own_blocks_push_older_ones_out(self) -> None:
+        with patch("omh.tui.transcript.BLOCK_CAP", 10):
+            for number in range(8):
+                self.transcript.add_notice(f"notice {number}")
+                self.transcript.take_stable_lines(WIDTH, THEME)
+            self.transcript.apply(ev("message.start"))
+            self.transcript.apply(ev("message.delta", text="the answer"))
+            for number in range(5):  # the turn's own blocks, each printed: four of the oldest go
+                self.transcript.add_notice(f"turn notice {number}")
+                self.transcript.take_stable_lines(WIDTH, THEME)
+            self.assertEqual(self.transcript.dropped, 4)
+            self.transcript.apply(ev("message.complete", text="the answer"))
+        answers = [block.text for block in self.transcript.blocks if isinstance(block, AssistantBlock)]
+        self.assertEqual(answers, ["the answer"])
+
     def test_an_edits_diff_is_kept_as_the_text_hermes_sent_encoded(self) -> None:
         self.transcript.cwd = "/repo"
         self.step(ev("message.start"))
