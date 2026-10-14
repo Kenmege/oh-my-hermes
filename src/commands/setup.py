@@ -2057,9 +2057,15 @@ def _carry_theme_choice(
 ) -> dict[str, object]:
     """Save an OMH theme `display.skin` names into the OMH store, before the release removes it.
 
-    Only on a pass that releases the display keys: after the release, an
+    On every pass until this config's release is recorded: after it, an
     `omh*` skin in the config is the person's Hermes choice, not a theme OMH
-    set. Never the default theme (`omh`, sky), with or without a record:
+    set. That includes a pass whose release the editor refuses. Such a pass
+    leaves `display.skin` naming the same palette, which the OMH TUI
+    already opens with while the store holds none (`effective_theme`), so
+    saving it changes nothing that home's OMH TUI shows, and a store other
+    homes share keeps the theme of the home that goes first on the run,
+    whether or not that home's release was refused. Never the default
+    theme (`omh`, sky), with or without a record:
     setup wrote it as a default nobody picked, an empty store already opens
     with it, and saving it would make sky a choice that wins over a theme a
     bot profile sharing this store did pick.
@@ -2086,7 +2092,9 @@ def _carry_theme_choice(
         return result
     result["theme"] = theme.short_name
     if theme_home is None:
-        # A store named only in the profile's `.env` (see `_apply_result`).
+        # A store OMH cannot tell: named in the profile's `.env`, or in a
+        # setting OMH cannot read or takes back on this pass (see
+        # `_profile_theme_home`).
         result["status"] = "store_unknown"
         return result
     saved = read_theme_choice(theme_home)
@@ -2134,12 +2142,13 @@ def _remove_legacy_display_files(
     The manifest-checked uninstallers, so a file OMH cannot prove it wrote
     (a skin the person edited) stays and is reported `kept_unmanaged`, and
     the skin `config_text` still selects stays (`kept_selected`), since
-    removing it would leave Hermes naming a skin that is not there. Once
-    this config's release was recorded (`released`), a skin file is OMH's
-    by its manifest record only: that pass removed every file either proof
-    covered, so one with the shipped bytes that appears later is the
-    person's own copy. A
-    symlinked destination is refused, and so is a file that cannot be
+    removing it would leave Hermes naming a skin that is not there. With
+    `released`, a skin file is OMH's by its manifest record only, never by
+    its shipped bytes. A registered home passes it once its release was
+    recorded: that pass removed every file either proof covered, so one
+    with the shipped bytes that appears later is the person's own copy. An
+    unregistered home always passes it (`_unregistered_display_release`).
+    A symlinked destination is refused, and so is a file that cannot be
     unlinked. Either is reported (`refused`) rather than raised: setup,
     update and uninstall all call this after their config write has landed,
     and raising here skipped what follows it, the write record on setup and
