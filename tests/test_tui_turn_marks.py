@@ -17,8 +17,9 @@ from _tui_lines import line_text, lines_text
 from test_tui_modes import CTRL_ENTER, SID, answer, drawn, make_app, type_text
 from test_tui_theme import DARK_BACKGROUNDS, LIGHT_BACKGROUNDS, contrast
 from omh.skin_pack import SKIN_THEMES, skin_colors
-from omh.tui.gateway import Event
-from omh.tui.keys import ENTER, Key
+from omh.tui.app import SLOT_ARM_SECONDS
+from omh.tui.gateway import Event, ServerRequest
+from omh.tui.keys import CHAR, ENTER, RIGHT, Key
 from omh.tui.screen import ERASE_TO_LINE_END, paint_line
 from omh.tui.style import SGR_RESET, Span, Style, fill
 from omh.tui.theme import DEFAULT_THEME as THEME
@@ -28,11 +29,14 @@ from omh.tui.transcript import (
     TOOL_OK,
     TOOL_RUNNING,
     AssistantBlock,
+    NoticeBlock,
     SteerBlock,
     ToolGroup,
+    TurnSummaryBlock,
     UserBlock,
     block_rows,
 )
+from omh.tui.width import line_width
 
 
 def ev(kind: str, **payload: object) -> Event:
@@ -144,6 +148,78 @@ class SteerPlacementTests(unittest.TestCase):
         self.assertEqual(line_text(row), "⧗ queued — Hermes refused the steer (4010: agent does not support steer) · keep this")
         self.assertEqual({span.style for span in row}, {THEME.warn})
         self.assertEqual([text for text, *_ in app.queued], ["keep this"])
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class TurnRuleTests(unittest.TestCase):
+    def test_a_turn_closes_with_its_facts_on_a_thin_rule_to_the_edge(self) -> None:
+        (row,) = block_rows(TurnSummaryBlock(34, 3, 1200), 50, THEME)
+        text = line_text(row)
+        self.assertTrue(text.startswith("✻ 34s · 3 tools · ↓1.2k  ─"), text)
+        self.assertEqual(line_width(row), 50)
+        self.assertEqual(set(text.split("  ", 1)[1]), {"─"})
+        self.assertEqual(row[-1].style, THEME.rule)
+
+    def test_a_narrow_terminal_keeps_the_facts_and_drops_the_rule(self) -> None:
+        (row,) = block_rows(TurnSummaryBlock(34, 3, 1200), 24, THEME)
+        self.assertEqual(line_text(row), "✻ 34s · 3 tools · ↓1.2k")
+
+
+class ApprovalOutcomeTests(unittest.TestCase):
+    COMMAND = "rm -rf ./build"
+
+    def asked(self) -> tuple[object, object, Clock]:
+        clock = Clock()
+        app, client = make_app(busy=True, clock=clock)
+        app._on_event(ev("message.start"))
+        app._on_event(ev("tool.start", tool_id="t1", name="terminal", context=self.COMMAND))
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": self.COMMAND, "description": "delete"}))
+        clock.now += SLOT_ARM_SECONDS + 0.1
+        return app, client, clock
+
+    def outcome(self, app: object) -> tuple[str, object]:
+        (block,) = [block for block in app.transcript.blocks if isinstance(block, NoticeBlock)]  # type: ignore[attr-defined]
+        (row,) = block_rows(block, 80, THEME)
+        return line_text(row), row[0].style
+
+    def test_a_denial_reads_in_red_ahead_of_the_call_and_leaves_it_running(self) -> None:
+        app, client, _clock = self.asked()
+        app._on_input(Key(CHAR, "d"))
+        self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "deny"}})])
+        self.assertEqual(self.outcome(app), (f"✗ denied · {self.COMMAND}", THEME.error))
+        notice, group = app.transcript.blocks
+        self.assertIsInstance(group, ToolGroup)
+        self.assertEqual(group.tools[0].status, TOOL_RUNNING)  # Hermes reports what the call did next
+
+    def test_allowing_reads_in_green(self) -> None:
+        for keys, words in (([Key(RIGHT)], "allowed once"), ([Key(RIGHT), Key(RIGHT)], "allowed for this session")):
+            with self.subTest(words=words):
+                app, _client, _clock = self.asked()
+                for key in (*keys, Key(ENTER)):
+                    app._on_input(key)
+                self.assertEqual(self.outcome(app), (f"✓ {words} · {self.COMMAND}", THEME.ok))
+
+    def test_over_a_streaming_reply_the_answer_waits_for_the_boundary(self) -> None:
+        clock = Clock()
+        app, _client = make_app(busy=True, clock=clock)
+        app._on_event(ev("message.start"))
+        app._on_event(ev("message.delta", text="Deleting it now"))
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": self.COMMAND}))
+        clock.now += SLOT_ARM_SECONDS + 0.1
+        app._on_input(Key(CHAR, "d"))
+        app._on_event(ev("message.delta", text=", or not: you said no."))
+        app._on_event(ev("message.complete", text="Deleting it now, or not: you said no.", status="complete"))
+        kinds = [type(block).__name__ for block in app.transcript.blocks]
+        self.assertEqual(kinds[:2], ["AssistantBlock", "NoticeBlock"])
+        self.assertEqual([block.text for block in app.transcript.blocks if isinstance(block, AssistantBlock)],
+                         ["Deleting it now, or not: you said no."])  # one reply, not split by the answer
 
 
 if __name__ == "__main__":

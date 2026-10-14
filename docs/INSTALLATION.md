@@ -439,7 +439,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - While a turn runs, the working row reads
   `⠋ <what Hermes is doing> (12s · ↓1.2k tokens · esc to interrupt)`, the
   tokens being what the turn has written so far; each turn ends with a line
-  `✻ 34s · 3 tools · ↓1.2k`. The terminal's title names the session (Hermes
+  `✻ 34s · 3 tools · ↓1.2k` on a thin rule. The terminal's title names the session (Hermes
   titles it after its first turn) and whether it is idle, running or waiting
   on you; on exit the title you had comes back where the terminal keeps a
   title stack.
@@ -461,6 +461,13 @@ run and approval decision stays Hermes'; the screen is OMH's.
   - A steer shows as `↪ steer · <text>` under what is running until Hermes
     answers, then becomes `↪ steer queued by Hermes · <text>`, or the amber
     refusal, at the next boundary in the transcript (see below).
+  - Each turn closes with its done line on a thin rule to the right edge
+    (`✻ 34s · 3 tools · ↓1.2k  ────`), so the start of the next one is easy
+    to find when you scroll back.
+  - Green and red mark outcomes, amber warnings: diff bands (light tints on
+    a light background), the answer you gave an approval, written above the
+    call it was about (`✓ allowed once · <command>` in green,
+    `✗ denied · <command>` in red), failed tool calls and error notices.
   - `OMH_TUI_REDUCED_MOTION=1`, or `NO_COLOR`, stops the motion: no pulse
     and no sweep, every spinner holds its first frame, and while a turn runs
     the screen repaints once a second for the elapsed time instead of ten

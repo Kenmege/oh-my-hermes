@@ -171,6 +171,7 @@ from .terminal import Terminal, background_from_colorfgbg, terminal_name, termin
 from .theme import DEFAULT_THEME, LIGHT_STAND_IN, Theme, build_theme, is_light, logo_lines, theme_named
 from .transcript import (
     NOTICE_ERROR,
+    NOTICE_OK,
     NOTICE_WARN,
     STEER_QUEUED,
     STEER_REFUSED,
@@ -291,6 +292,12 @@ STEER_REFUSED_OUTCOME = "{fallback} — Hermes refused the steer ({reason})"
 STEER_FALLBACK_QUEUED = "queued"  # a turn still runs: the text waits in the TUI's queue for it to end
 STEER_FALLBACK_SENT = "sent as a prompt"
 STEER_REJECTED_REASON = "its turn had ended"  # Hermes' `rejected`: the agent was idle
+# What an approval's answer reads as in the transcript, and its colour: allowed in green, denied in red.
+APPROVAL_OUTCOMES = {
+    "once": ("allowed once", NOTICE_OK),
+    "session": ("allowed for this session", NOTICE_OK),
+    "deny": ("denied", NOTICE_ERROR),
+}
 STEER_USAGE = "Usage: /steer <text to add to the running turn>"
 STEER_LEFT_NOTICE = (
     "Hermes answered a steer after you left its session. "
@@ -1625,7 +1632,18 @@ class App(ModesMixin, AgentViewMixin):
 
     def _answer(self, answer: Answer) -> None:
         self._respond(answer)
+        self._note_approval(answer)
         self._close_slot()
+
+    def _note_approval(self, answer: Answer) -> None:
+        """An approval's answer, in green or red, ahead of the tool call it was about: what the person decided."""
+        slot = self.slot
+        result = answer.frame.get("result")
+        choice = result.get("choice") if slot is not None and slot.method == "approval" and isinstance(result, dict) else None
+        if choice in APPROVAL_OUTCOMES:
+            command = first_line(as_text(slot.params.get("command"))) if slot is not None else ""
+            outcome, level = APPROVAL_OUTCOMES[choice]
+            self.transcript.add_answer(f"{outcome} · {command}" if command else outcome, level)
 
     def _close_slot(self) -> None:
         slot, self.slot = self.slot, None

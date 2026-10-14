@@ -79,6 +79,7 @@ TOOL_DENIED = "denied"
 TOOL_INTERRUPTED = "interrupted"  # still open when its group closed: it never reported a result
 
 NOTICE_INFO = "info"
+NOTICE_OK = "ok"  # something the person allowed went ahead
 NOTICE_WARN = "warn"
 NOTICE_ERROR = "error"
 
@@ -449,6 +450,10 @@ def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
     return [(*(Span(span.text, replace(span.style, bg=band.bg)) for span in row), fill(band)) for row in rows]
 
 
+def _awaits_answer(block: Block) -> bool:
+    return isinstance(block, SteerBlock) and block.state == STEER_SENT
+
+
 def _steer_rows(block: SteerBlock, width: int, theme: Theme) -> list[Line]:
     """`↪ steer · <text>` while it waits for Hermes, `↪ steer queued by Hermes · <text>` once taken, or the refusal."""
     text = _first_line(block.text)
@@ -459,6 +464,8 @@ def _steer_rows(block: SteerBlock, width: int, theme: Theme) -> list[Line]:
 
 
 def _notice_style(level: str, theme: Theme) -> tuple[str, Style]:
+    if level == NOTICE_OK:
+        return "✓ ", theme.ok
     if level == NOTICE_ERROR:
         return "✗ ", theme.error
     if level == NOTICE_WARN:
@@ -472,14 +479,17 @@ def _notice_rows(block: NoticeBlock, width: int, theme: Theme) -> list[Line]:
 
 
 TURN_DONE_MARK = "✻ "
+TURN_RULE = "─"
 
 
 def _summary_rows(block: TurnSummaryBlock, width: int, theme: Theme) -> list[Line]:
-    """`✻ 34s · 3 tools · ↓1.2k`."""
+    """`✻ 34s · 3 tools · ↓1.2k  ────`: the turn's facts on the thin rule that closes it."""
     facts = [elapsed_text(block.seconds), f"{block.tools} tool{'' if block.tools == 1 else 's'}"]
     if block.output_tokens:
         facts.append(f"↓{compact_count(block.output_tokens)}")
-    return [truncate_line((Span(TURN_DONE_MARK, theme.dim), Span(" · ".join(facts), theme.muted)), width)]
+    done: Line = (Span(TURN_DONE_MARK, theme.dim), Span(" · ".join(facts), theme.muted))
+    rule = width - line_width(done) - len(COLUMN_GAP)
+    return [truncate_line((*done, Span(COLUMN_GAP + TURN_RULE * rule, theme.rule)) if rule > 0 else done, width)]
 
 
 _OUTPUT_GLYPHS = {NOTICE_WARN: "⚠ ", NOTICE_ERROR: "✗ "}
@@ -666,7 +676,8 @@ class Transcript:
         self._taken_any = False  # whether any line has been taken (a spacer goes above the next block)
         self._left_out = 0  # blocks `retake_tail` left out: the next take opens with LEFT_OUT_NOTICE
         self.dropped = 0  # blocks BLOCK_CAP dropped from the front
-        self._held: list[SteerBlock] = []  # steers waiting for Hermes' answer or a block boundary (`add_steer`)
+        # Blocks about a live one (a steer, an answer to Hermes), waiting for a block boundary (`add_steer`).
+        self._held: list[Block] = []
         # Moves with every change to what `live_lines` draws; its last answer is kept with the version, width,
         # row limit and theme it was for, so a frame that changed nothing (a spinner tick) renders nothing.
         self._version = 0
@@ -712,6 +723,24 @@ class Transcript:
         self._write_held()
         self._version += 1
         return block
+
+    def add_answer(self, text: str, level: str) -> None:
+        """What the person answered Hermes (`✓ allowed once · <command>`), ahead of the tool call it was about.
+
+        A tool group still live has printed nothing yet, so the answer goes in
+        above it; above any other live block it waits for the next boundary,
+        as a steer does, rather than closing it.
+        """
+        block = NoticeBlock(text, level)
+        last = self.blocks[-1] if self.blocks else None
+        if isinstance(last, ToolGroup) and not last.done and len(self.blocks) - 1 >= self._cursor:
+            self.blocks.insert(len(self.blocks) - 1, block)
+        elif last is not None and not last.done:
+            self._held.append(block)
+        else:
+            self._append(block)
+            return
+        self._version += 1
 
     def steer_answered(self, block: SteerBlock, state: str, outcome: str = "") -> None:
         block.state, block.outcome = state, outcome
@@ -813,9 +842,9 @@ class Transcript:
         """The held steers Hermes has answered, into the transcript, when its last block is no longer live."""
         if self.blocks and not self.blocks[-1].done:
             return
-        answered = [block for block in self._held if block.state != STEER_SENT]
+        answered = [block for block in self._held if not _awaits_answer(block)]
         if answered:
-            self._held = [block for block in self._held if block.state == STEER_SENT]
+            self._held = [block for block in self._held if _awaits_answer(block)]
             self.blocks.extend(answered)
 
     def _drop_past_cap(self) -> None:
@@ -1094,7 +1123,7 @@ class Transcript:
     def _render_live(self, width: int, theme: Theme, max_rows: int | None, now: float | None = None) -> list[Line]:
         """`live_lines` rendered, from the last block up until `max_rows` rows are covered (all of them for None)."""
         rendered: list[tuple[bool, list[Line]]] = []  # (opens a block, its rows), the last block first
-        held = [(True, _steer_rows(block, width, theme)) for block in reversed(self._held)]  # under the live blocks
+        held = [(True, block_rows(block, width, theme)) for block in reversed(self._held)]  # under the live blocks
         rendered.extend(held)
         count = sum(len(rows) for _opens, rows in held)
         whole = True
