@@ -228,6 +228,7 @@ ROUTE_DECISION_KEYS = (
     "ambiguous",
     "fallback",
     "reason",
+    "reason_code",
 )
 CODING_DELEGATION_SCHEMA_VERSION = "coding_delegation/v1"
 CODING_DELEGATION_RECORD_TYPE = "coding_delegation"

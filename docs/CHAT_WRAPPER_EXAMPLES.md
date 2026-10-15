@@ -507,6 +507,39 @@ first.
 [ Open omh-image-cards ] [ Route for me ] [ Open omh ]
 ```
 
+The card's `kind` says which of three cards it is:
+
+- `workflow_route_hint`: the hint names a workflow. The actions open it, route
+  the message, or open the picker.
+- `no_route_hint`: nothing matched. The actions open the picker or ask Hermes
+  to clarify.
+- `direct_answer_route_hint`: the router answers the message in chat, so the
+  card says no OMH workflow is needed and offers no actions,
+  `messenger_rendering.primary_action` is `null`, and
+  `wrapper_contract.next_backend_commands` names no workflow. A thank-you, a
+  plain question, a turn Hermes wrote from one of its own session-command
+  templates, and a loop on a timer (Hermes' own `/loop`) all get it, even when
+  the hint named a workflow. The hint itself stays in `route_hint`.
+
+```text
+Hermes Agent  BOT
+[omh] no workflow needed.
+
+This message needs no OMH workflow; Hermes can answer it directly in chat.
+```
+
+The direct-answer card is chosen from `route_decision.reason_code`, a stable
+name for each of the router's answer-in-chat fallbacks. `direct_answer`,
+`host_command_turn`, `native_loop_cadence`, `typed_loop_goal`, and
+`loop_construct` give the direct-answer card; `file_lookup` keeps the no-hint
+card. The full route payload, `route` in both `omh chat route --json` and
+`omh chat interact --json`, carries the same `reason_code`. The key is
+additive: a route with none of these reasons has no `reason_code`, and
+`reason` stays prose for a reader. Branch on the code, never on `reason`, which
+the compact `route_decision` truncates. A wrapper that meets a `kind` it does
+not know should render the headline and body as a plain chat card, as the
+example shims and the native command renderer do.
+
 For missed OMH usage feedback, the wrapper does not need to teach the user a
 backend command first. Phrases such as "OMH 안 썼어", "missed route: Hermes
 skipped OMH", or "Hermes did not use OMH for my image request; record this as

@@ -76,6 +76,11 @@ def build_route_decision_contract(decision: dict[str, Any]) -> dict[str, Any]:
         contract["fallback"] = True
     if router_stage in {"guarded", "candidate_handoff", "fallback"} or action != "dispatch":
         contract["reason"] = reason
+    # `reason` above is truncated prose; the code is what a consumer reads to
+    # tell one fallback from another. Absent when the route carries none.
+    reason_code = str(decision.get("reason_code", ""))
+    if reason_code:
+        contract["reason_code"] = reason_code
     if margin is not None:
         contract["margin"] = margin
     threshold = str(decision.get("threshold", "high"))

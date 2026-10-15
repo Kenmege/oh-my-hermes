@@ -44,6 +44,7 @@ from ..plugin_bundle.omh.hermes_session_commands import (
     LOOP_TIMER_GOAL,
     LOOP_TIMER_NATIVE,
     LOOP_TIMERS_ANSWERED_DIRECTLY,
+    host_command_turn,
     loop_timer_verdict,
     person_request_text,
     typed_loop_sets_goal,
@@ -74,7 +75,6 @@ from .policy import (
     SKILL_SCOUT_CANDIDATE_INTENT_PHRASES,
     active_routing_guard_rules,
     explicit_skill_invocation as explicit_skill_name,
-    host_owned_command_turn,
     is_ambiguous_scores,
     meets_confidence_threshold,
     point_in_time_web_guard_applies,
@@ -127,10 +127,9 @@ DIRECT_ANSWER_REASON = (
     "Plain user question; answer directly in chat instead of opening an OMH workflow or picker."
 )
 # A turn Hermes owns, and a loop on a timer, answered in chat without a
-# workflow. Each reason keeps the direct-answer wording the wrapper reads
-# (`_is_direct_answer_fallback`). Which commands Hermes writes such turns for
-# is `HOST_COMMAND_TURN_FRAMES` (`hermes_session_commands`); the reason names
-# none of them, so a frame added there cannot leave it short.
+# workflow. Which commands Hermes writes such turns for is
+# `HOST_COMMAND_TURN_FRAMES` (`hermes_session_commands`); the reason names none
+# of them, so a frame added there cannot leave it short.
 HOST_COMMAND_TURN_REASON = (
     "Hermes wrote this turn from one of its own session-command templates, and its text is the host's "
     "instruction for the turn; answer directly by following it instead of opening an OMH workflow or picker."
@@ -158,6 +157,31 @@ SPENDING_LOOP_REASON = (
 LOOP_CONSTRUCT_REASON = (
     "A programming or media loop on a timer is a question about that loop, not a request to repeat a "
     "check; answer directly instead of opening an OMH workflow or goal loop."
+)
+# The stable name of each fallback above, carried as the decision's
+# `reason_code` beside its prose. A consumer branches on the code: the prose is
+# for a reader and may be reworded, and the compact `route_decision` contract
+# truncates it. Routes with no code here carry no `reason_code` at all.
+REASON_CODE_FILE_LOOKUP = "file_lookup"
+REASON_CODE_DIRECT_ANSWER = "direct_answer"
+REASON_CODE_HOST_COMMAND_TURN = "host_command_turn"
+REASON_CODE_NATIVE_LOOP_CADENCE = "native_loop_cadence"
+REASON_CODE_TYPED_LOOP_GOAL = "typed_loop_goal"
+REASON_CODE_LOOP_CONSTRUCT = "loop_construct"
+# The fallbacks answered directly in chat, without a workflow or picker, by
+# code, with the prose each one carries.
+_DIRECT_ANSWER_REASONS = {
+    REASON_CODE_DIRECT_ANSWER: DIRECT_ANSWER_REASON,
+    REASON_CODE_HOST_COMMAND_TURN: HOST_COMMAND_TURN_REASON,
+    REASON_CODE_NATIVE_LOOP_CADENCE: NATIVE_LOOP_CADENCE_REASON,
+    REASON_CODE_TYPED_LOOP_GOAL: TYPED_LOOP_GOAL_REASON,
+    REASON_CODE_LOOP_CONSTRUCT: LOOP_CONSTRUCT_REASON,
+}
+DIRECT_ANSWER_REASON_CODES = frozenset(_DIRECT_ANSWER_REASONS)
+# The direct answers to a loop on a timer: Hermes' own /loop, or a question
+# about a programming or media loop.
+LOOP_TIMER_ANSWER_REASON_CODES = frozenset(
+    {REASON_CODE_NATIVE_LOOP_CADENCE, REASON_CODE_TYPED_LOOP_GOAL, REASON_CODE_LOOP_CONSTRUCT}
 )
 WEAK_DISPATCH_EVIDENCE_REASON = (
     "The best match scored high on shared everyday words or a guard boost, not on its own trigger "
@@ -1540,6 +1564,9 @@ class ChatRouteDecision:
     # user's original invocation and the one-line capability reason the status
     # card shows.
     alias_resolution: dict[str, str] | None = None
+    # The stable code for `reason` (`REASON_CODE_*`), set only where a consumer
+    # branches on the kind of fallback; "" leaves the key out of the payload.
+    reason_code: str = ""
 
     def to_dict(self) -> dict[str, object]:
         payload = {
@@ -1573,6 +1600,8 @@ class ChatRouteDecision:
             payload["alias_resolution"] = dict(self.alias_resolution)
         if self.ambiguity_kind:
             payload["ambiguity_kind"] = self.ambiguity_kind
+        if self.reason_code:
+            payload["reason_code"] = self.reason_code
         return payload
 
 
@@ -2097,9 +2126,9 @@ def _route_chat_message_cached(
     limit: int,
     min_confidence: str,
 ) -> dict[str, object]:
-    if host_owned_command_turn(message):
+    if host_command_turn(message):
         return _direct_answer_decision(
-            message, source=source, min_confidence=min_confidence, reason=HOST_COMMAND_TURN_REASON
+            message, source=source, min_confidence=min_confidence, reason_code=REASON_CODE_HOST_COMMAND_TURN
         ).to_dict()
     executable_message = executable_routing_text(message)
     routing_message = _with_canonical_display_names(scrub_diagnostic_status_text(executable_message))
@@ -2117,13 +2146,13 @@ def _route_chat_message_cached(
         if spend_request_clause(executable_message, SPEND_GATE_PHRASES):
             return _spending_loop_decision(message, source=source, min_confidence=min_confidence).to_dict()
         if loop_timer != LOOP_TIMER_NATIVE:
-            reason = LOOP_CONSTRUCT_REASON
+            reason_code = REASON_CODE_LOOP_CONSTRUCT
         elif typed_loop_sets_goal(executable_message):
-            reason = TYPED_LOOP_GOAL_REASON
+            reason_code = REASON_CODE_TYPED_LOOP_GOAL
         else:
-            reason = NATIVE_LOOP_CADENCE_REASON
+            reason_code = REASON_CODE_NATIVE_LOOP_CADENCE
         return _direct_answer_decision(
-            message, source=source, min_confidence=min_confidence, reason=reason
+            message, source=source, min_confidence=min_confidence, reason_code=reason_code
         ).to_dict()
     # Built once: the fast paths and the scorer below read its stages instead
     # of each re-deriving the prep chain from `routing_message`.
@@ -2139,6 +2168,7 @@ def _route_chat_message_cached(
         decision["routing_prompt"] = _routing_prompt(
             trivial_decision.action, trivial_decision.selected_skill,
             trivial_decision.candidate_skill, trivial_decision.reason, message,
+            reason_code=trivial_decision.reason_code,
         )
         return decision
     fast_omh_help_decision = _omh_help_fast_path_decision(
@@ -2466,6 +2496,7 @@ def _route_chat_message_cached(
     ) or _is_narration_not_request(routing_message)
 
     ambiguity_kind = ""
+    reason_code = ""
     if explicit_skill and not task_card_overrides_explicit:
         selected_skill = explicit_skill
         action = "dispatch"
@@ -2506,6 +2537,7 @@ def _route_chat_message_cached(
         candidate_confidence = "low"
         action = "fallback"
         reason = FILE_LOOKUP_REASON
+        reason_code = REASON_CODE_FILE_LOOKUP
         ambiguous = False
     elif direct_answer:
         selected_skill = _ROUTER_SKILL
@@ -2515,6 +2547,7 @@ def _route_chat_message_cached(
         candidate_confidence = "low"
         action = "fallback"
         reason = DIRECT_ANSWER_REASON
+        reason_code = REASON_CODE_DIRECT_ANSWER
         ambiguous = False
     elif explicit_loop_signal and candidate_skill != "img-summary":
         selected_skill = "loop"
@@ -2642,6 +2675,7 @@ def _route_chat_message_cached(
         ambiguous = False
         ambiguity_kind = ""
         reason = "Explicit learning signal; prepare a reviewable learning candidate card without running Hermes /learn."
+        reason_code = ""
         learning_candidate_card = build_learning_candidate_card(
             message,
             source=source,
@@ -2654,7 +2688,9 @@ def _route_chat_message_cached(
         selected_skill=selected_skill,
         action=action,
     )
-    clarification = _clarification(action, candidate_skill, candidate_confidence, min_confidence, reason)
+    clarification = _clarification(
+        action, candidate_skill, candidate_confidence, min_confidence, reason, reason_code=reason_code
+    )
     route_next_action = _route_specific_next_action(
         routing_message,
         selected_skill=selected_skill,
@@ -2675,13 +2711,14 @@ def _route_chat_message_cached(
         ambiguous=ambiguous,
         reason=reason,
         clarification=clarification,
-        routing_prompt=_routing_prompt(action, selected_skill, candidate_skill, reason, message),
+        routing_prompt=_routing_prompt(action, selected_skill, candidate_skill, reason, message, reason_code=reason_code),
         task_card=task_card,
         workflow_route_plan=workflow_route_plan,
         learning_candidate_card=learning_candidate_card,
         recommendations=recommendations,
         route_next_action=route_next_action,
         ambiguity_kind=ambiguity_kind,
+        reason_code=reason_code,
     )
     return decision.to_dict()
 
@@ -3447,12 +3484,17 @@ def _file_lookup_fast_path_decision(
         explicit=False,
         ambiguous=False,
         reason=reason,
-        clarification=_clarification("fallback", _ROUTER_SKILL, "low", min_confidence, reason),
-        routing_prompt=_routing_prompt("fallback", _ROUTER_SKILL, _ROUTER_SKILL, reason, message),
+        clarification=_clarification(
+            "fallback", _ROUTER_SKILL, "low", min_confidence, reason, reason_code=REASON_CODE_FILE_LOOKUP
+        ),
+        routing_prompt=_routing_prompt(
+            "fallback", _ROUTER_SKILL, _ROUTER_SKILL, reason, message, reason_code=REASON_CODE_FILE_LOOKUP
+        ),
         task_card=None,
         workflow_route_plan=None,
         learning_candidate_card=None,
         recommendations=(_router_file_lookup_recommendation(message),),
+        reason_code=REASON_CODE_FILE_LOOKUP,
     )
 
 
@@ -6825,8 +6867,9 @@ def _direct_answer_decision(
     *,
     source: str,
     min_confidence: str,
-    reason: str = DIRECT_ANSWER_REASON,
+    reason_code: str = REASON_CODE_DIRECT_ANSWER,
 ) -> ChatRouteDecision:
+    reason = _DIRECT_ANSWER_REASONS[reason_code]
     selected_harness = primary_harness_for_skill(_ROUTER_SKILL)
     return ChatRouteDecision(
         schema_version=1,
@@ -6842,12 +6885,13 @@ def _direct_answer_decision(
         explicit=False,
         ambiguous=False,
         reason=reason,
-        clarification=_clarification("fallback", _ROUTER_SKILL, "low", min_confidence, reason),
-        routing_prompt=_routing_prompt("fallback", _ROUTER_SKILL, _ROUTER_SKILL, reason, message),
+        clarification=_clarification("fallback", _ROUTER_SKILL, "low", min_confidence, reason, reason_code=reason_code),
+        routing_prompt=_routing_prompt("fallback", _ROUTER_SKILL, _ROUTER_SKILL, reason, message, reason_code=reason_code),
         task_card=None,
         workflow_route_plan=None,
         learning_candidate_card=None,
         recommendations=(_router_direct_answer_recommendation(message),),
+        reason_code=reason_code,
     )
 
 
@@ -7038,13 +7082,14 @@ def public_route_payload(decision: dict[str, object], *, include_message: bool =
         str(route["action"]),
         str(route["selected_skill"]),
         str(route["candidate_skill"]),
-        str(route["reason"]),
+        str(route.get("reason_code", "")),
     )
     route["routing_prompt_template"] = _routing_prompt_template(
         str(route["action"]),
         str(route["selected_skill"]),
         str(route["candidate_skill"]),
         str(route["reason"]),
+        reason_code=str(route.get("reason_code", "")),
     )
     if not include_message:
         route.pop("routing_prompt", None)
@@ -7735,13 +7780,21 @@ def _heavy_lane_vagueness_reason(message: str, skill: str) -> str:
     return f"{_HEAVY_LANE_VAGUENESS_REASON_PREFIX} `{skill}`: no file/path, module, component, quoted identifier, or error text names it."
 
 
-def _clarification(action: str, candidate_skill: str, candidate_confidence: str, threshold: str, reason: str = "") -> str:
+def _clarification(
+    action: str,
+    candidate_skill: str,
+    candidate_confidence: str,
+    threshold: str,
+    reason: str = "",
+    *,
+    reason_code: str = "",
+) -> str:
     if action == "dispatch":
         return ""
     if action == "fallback":
-        if _is_file_lookup_reason(reason):
+        if reason_code == REASON_CODE_FILE_LOOKUP:
             return "Answer this as a file or text lookup, or ask for the target file/path if it is missing."
-        if _is_direct_answer_reason(reason):
+        if reason_code in DIRECT_ANSWER_REASON_CODES:
             return "Answer directly in the current chat; do not open an OMH workflow unless the user asks for one."
         return "Ask which workflow or outcome the user wants before choosing a specialist skill."
     if _is_heavy_lane_vagueness_reason(reason) and candidate_skill in _HEAVY_LANE_VAGUENESS_CLARIFICATION_TEMPLATES:
@@ -7758,38 +7811,31 @@ def _clarification(action: str, candidate_skill: str, candidate_confidence: str,
     return f"Ask whether to use `{candidate_skill}`; confidence was {candidate_confidence}, below threshold {threshold}."
 
 
-def _routing_prompt(action: str, selected_skill: str, candidate_skill: str, reason: str, message: str) -> str:
-    return _routing_prompt_template(action, selected_skill, candidate_skill, reason).replace("{message}", message)
+def _routing_prompt(
+    action: str, selected_skill: str, candidate_skill: str, reason: str, message: str, *, reason_code: str = ""
+) -> str:
+    return _routing_prompt_template(
+        action, selected_skill, candidate_skill, reason, reason_code=reason_code
+    ).replace("{message}", message)
 
 
-def _routing_prompt_template(action: str, selected_skill: str, candidate_skill: str, reason: str) -> str:
-    return f"{_routing_instruction(action, selected_skill, candidate_skill, reason)}\n\nRouting reason: {reason}\n\nUser message:\n{{message}}"
+def _routing_prompt_template(
+    action: str, selected_skill: str, candidate_skill: str, reason: str, *, reason_code: str = ""
+) -> str:
+    instruction = _routing_instruction(action, selected_skill, candidate_skill, reason_code)
+    return f"{instruction}\n\nRouting reason: {reason}\n\nUser message:\n{{message}}"
 
 
-def _routing_instruction(action: str, selected_skill: str, candidate_skill: str, reason: str = "") -> str:
+def _routing_instruction(action: str, selected_skill: str, candidate_skill: str, reason_code: str = "") -> str:
     if action == "dispatch":
         return f"Use the `{selected_skill}` workflow for this chat message."
     elif action == "clarify":
         return f"Use the `oh-my-hermes` router before dispatching to `{candidate_skill}`."
-    if _is_file_lookup_reason(reason):
+    if reason_code == REASON_CODE_FILE_LOOKUP:
         return "Answer this as a file or text lookup; do not dispatch to a workflow keyword unless the user explicitly asks."
-    if _is_direct_answer_reason(reason):
+    if reason_code in DIRECT_ANSWER_REASON_CODES:
         return "Answer directly in chat; do not open an OMH workflow, picker, or coding handoff."
     return "Use the `oh-my-hermes` router and ask one concise clarification question."
-
-
-def _is_file_lookup_reason(reason: str) -> bool:
-    return reason == FILE_LOOKUP_REASON
-
-
-def _is_direct_answer_reason(reason: str) -> bool:
-    return reason in (
-        DIRECT_ANSWER_REASON,
-        HOST_COMMAND_TURN_REASON,
-        NATIVE_LOOP_CADENCE_REASON,
-        TYPED_LOOP_GOAL_REASON,
-        LOOP_CONSTRUCT_REASON,
-    )
 
 
 def _is_heavy_lane_vagueness_reason(reason: str) -> bool:
@@ -8343,9 +8389,10 @@ def _route_next_action(route: dict[str, object], recommendation: dict[str, objec
         if str(route.get("selected_skill", "")) == "ultrawork" and _route_is_coding_status_request(route):
             return "show_coding_handoff_status"
         return str(recommendation.get("next_action") or "dispatch_to_workflow")
-    if action == "fallback" and _is_file_lookup_reason(str(route.get("reason", ""))):
+    reason_code = str(route.get("reason_code", ""))
+    if action == "fallback" and reason_code == REASON_CODE_FILE_LOOKUP:
         return "answer_file_lookup"
-    if action == "fallback" and _is_direct_answer_reason(str(route.get("reason", ""))):
+    if action == "fallback" and reason_code in DIRECT_ANSWER_REASON_CODES:
         return "answer_directly"
     if action == "clarify":
         return "answer_clarification"
@@ -8369,9 +8416,10 @@ def _route_is_coding_status_request(route: dict[str, object]) -> bool:
 
 
 def _route_claim_boundary(route: dict[str, object], recommendation: dict[str, object]) -> str:
-    if _is_file_lookup_reason(str(route.get("reason", ""))):
+    reason_code = str(route.get("reason_code", ""))
+    if reason_code == REASON_CODE_FILE_LOOKUP:
         return "No OMH workflow, execution, or file inspection has started."
-    if _is_direct_answer_reason(str(route.get("reason", ""))):
+    if reason_code in DIRECT_ANSWER_REASON_CODES:
         return "No OMH workflow, picker, handoff, execution, or file inspection has started."
     boundary = str(recommendation.get("evidence_boundary", "")).strip()
     if boundary:
