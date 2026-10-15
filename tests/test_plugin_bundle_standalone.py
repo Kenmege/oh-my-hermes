@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import importlib
 import importlib.util
 import json
@@ -29,6 +29,7 @@ import sys
 from tempfile import TemporaryDirectory
 from types import ModuleType
 import unittest
+from unittest.mock import patch
 
 from _local_package import load_local_package
 from _standalone_bundle import (
@@ -431,16 +432,48 @@ class HostLayoutRouterSeamTests(unittest.TestCase):
     def test_module_scope_seams_bind_the_router_in_the_host_layout(self) -> None:
         # Pairing is necessary, not sufficient: a pair in the wrong order lets the
         # standalone fallback in the relative import's except branch overwrite
-        # the router's binding.
+        # the router's binding. While the host layout loads, each router constant
+        # is swapped for an equal copy that is a different object, so `is` tells
+        # the router's binding from a fallback holding the same value.
         seams = [seam for seam in router_seams() if seam["scope"] == "<module>"]
-        with host_layout_bundle():
+        expected: dict[tuple[str, str], object] = {}
+        with ExitStack() as stack:
+            for seam in seams:
+                router_module = importlib.import_module(str(seam["target"]))
+                for name, _ in seam["names"]:
+                    if (str(seam["target"]), name) in expected:
+                        continue
+                    value = getattr(router_module, name)
+                    marked = value if callable(value) else _distinct_equal(value)
+                    self.assertTrue(
+                        callable(value) or marked is not value,
+                        f"{seam['target']}.{name}: no equal copy that is a different object",
+                    )
+                    stack.enter_context(patch.object(router_module, name, marked))
+                    expected[(str(seam["target"]), name)] = marked
+            stack.enter_context(host_layout_bundle())
             for seam in seams:
                 module = str(seam["module"])
                 host_module = importlib.import_module(f"{HOST_LAYOUT_PACKAGE}.{module}" if module else HOST_LAYOUT_PACKAGE)
-                router_module = importlib.import_module(str(seam["target"]))
                 for name, asname in seam["names"]:
                     with self.subTest(site=seam["site"], name=asname or name):
-                        self.assertIs(getattr(host_module, asname or name), getattr(router_module, name))
+                        self.assertIs(getattr(host_module, asname or name), expected[(str(seam["target"]), name)])
+
+
+def _distinct_equal(value: object) -> object:
+    """An equal value that is a different object, or `value` itself when none can be built.
+
+    The router's constant and the bundle's fallback literal can be one object:
+    CPython interns identifier-like string literals, so the fallback
+    `"prepare_one_cycle_delivery"` is the router's `CODING_ROUTE_LANE_NEXT_ACTION`.
+    A string joined at run time is not interned. Functions and classes pass
+    through, since a fallback defines its own.
+    """
+    if isinstance(value, str):
+        return "".join([value[:1], value[1:]])
+    if isinstance(value, (tuple, frozenset)):
+        return type(value)(list(value))
+    return value
 
 
 class UnavailableBoardDetailTests(unittest.TestCase):

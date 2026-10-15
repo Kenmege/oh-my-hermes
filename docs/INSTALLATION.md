@@ -830,7 +830,8 @@ the package rather than the bundle, so absence turns them off:
 
 The route hint itself still works without the package. It uses the bundle's own
 copies of the router's cue tables, guards and classifiers, so for some messages
-it hints a different workflow than `omh chat route-hint`, or none.
+it disagrees with `omh chat route-hint`: it hints a different workflow, hints
+none where `omh chat route-hint` hints one, or hints one where it hints none.
 
 To turn these on, install `oh-my-hermes` into the environment that runs
 Hermes as well, so `omh` is importable from both. Nothing else changes: the
