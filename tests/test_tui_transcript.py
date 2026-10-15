@@ -690,12 +690,14 @@ class ReasoningAndToolTests(LoopTestCase):
             )
         )
         flushed = self.step(ev("message.delta", text="\n\nIt was blocked — the command did not run."))
-        self.assertEqual(flushed, ["", "  ⊘ terminal  rm -rf ./omh-m0-probe-dir  0.1s"])
-        self.assertEqual(self.taken[-1][1].style, THEME.warn)
+        # One mark for a denial, the red cross (owner decision 6), and the person's words under it.
+        self.assertEqual(flushed, ["", "  ✗ terminal  rm -rf ./omh-m0-probe-dir  0.1s",
+                                   "    ⎿ You denied this command — it did not run."])
+        self.assertEqual(self.taken[-2][1].style, THEME.error)
         self.step(ev("message.complete", text="It was blocked — the command did not run.", status="complete"))
         history = self.history()
-        self.assertEqual(history[history.index("  ⊘ terminal  rm -rf ./omh-m0-probe-dir  0.1s") + 1],
-                         "    ⎿ You denied this command — it did not run.")
+        row = history.index("  ✗ terminal  rm -rf ./omh-m0-probe-dir  0.1s")
+        self.assertEqual(history[row + 1 : row + 3], ["    ⎿ You denied this command — it did not run.", ""])  # once
 
     def test_result_status_reads_the_result_shapes_hermes_sends(self) -> None:
         self.assertEqual(tool_result_status(DENIED_RESULT), "denied")
@@ -981,7 +983,8 @@ class InlineDiffTests(LoopTestCase):
             flushed,
             [
                 "⏺ Tool calls (3)",
-                "  ⊘ patch  src/app.py  0.3s",
+                "  ✗ patch  src/app.py  0.3s",
+                "    ⎿ denied",
                 "  ✗ patch  src/app.py  0.3s",
                 "    ⎿ old_string not found in src/app.py",
                 "  ✗ patch  src/app.py  0.3s",

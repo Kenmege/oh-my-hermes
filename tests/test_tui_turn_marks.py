@@ -23,15 +23,22 @@ from omh.tui.keys import CHAR, ENTER, RIGHT, Key
 from omh.tui.screen import ERASE_TO_LINE_END, paint_line
 from omh.tui.style import SGR_RESET, Span, Style, fill
 from omh.tui.theme import DEFAULT_THEME as THEME
-from omh.tui.theme import build_theme
+from omh.tui.theme import build_theme, is_light
 from omh.tui.transcript import (
+    NOTICE_ERROR,
+    NOTICE_OK,
+    NOTICE_WARN,
     STEER_QUEUED,
+    TOOL_DENIED,
+    TOOL_ERROR,
     TOOL_OK,
     TOOL_RUNNING,
     AssistantBlock,
+    CommandBlock,
     NoticeBlock,
     SteerBlock,
     ToolGroup,
+    ToolRow,
     TurnSummaryBlock,
     UserBlock,
     block_rows,
@@ -84,6 +91,82 @@ class BandTests(unittest.TestCase):
                     self.assertGreaterEqual(contrast(ink, theme.user_band.bg), 4.5)
 
 
+class OutcomeBandTests(unittest.TestCase):
+    """Owner decision 6: an outcome's whole row sits on a band, green for allowed, red for a denial or a failure.
+
+    Built like the prompt band: every span on the band's background and an
+    erase to the right edge, so a copy carries no trailing spaces. Words on a
+    band reach 4.5:1 against it and marks 3:1; with no background reported
+    there is no band. Warnings and running rows carry none.
+    """
+
+    DENIAL = "You denied this command — it did not run."
+
+    def outcomes(self, theme: object) -> list[tuple[str, list]]:
+        """(band role, rows) for every kind of row that carries a band."""
+        failed = ToolGroup([ToolRow("t1", "terminal", "pytest -q", TOOL_ERROR, duration_s=1.2, output=("1 failed",))], done=True)
+        denied = ToolGroup([ToolRow("t2", "terminal", "rm -rf ./build", TOOL_DENIED, duration_s=0.1, output=(self.DENIAL,))],
+                           done=True)
+        command = CommandBlock("!false", [("exit 1", NOTICE_ERROR)], done=True)
+        return [
+            ("ok_band", block_rows(NoticeBlock("allowed once · ls", NOTICE_OK), 60, theme)),  # type: ignore[arg-type]
+            ("error_band", block_rows(NoticeBlock("denied · rm -rf ./build", NOTICE_ERROR), 60, theme)),  # type: ignore[arg-type]
+            ("error_band", block_rows(NoticeBlock("The turn ended with an error.", NOTICE_ERROR), 60, theme)),  # type: ignore[arg-type]
+            ("error_band", block_rows(failed, 60, theme)),  # type: ignore[arg-type]
+            ("error_band", block_rows(denied, 60, theme)),  # type: ignore[arg-type]
+            ("error_band", block_rows(command, 60, theme)[1:]),  # type: ignore[arg-type]  # its output, not its echo
+        ]
+
+    def test_every_outcome_row_is_on_its_band_to_the_edge_and_every_word_reads_on_it(self) -> None:
+        for skin in SKIN_THEMES:
+            for background in (*LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
+                theme = build_theme(skin, background)
+                for role, rows in self.outcomes(theme):
+                    band = getattr(theme, role)
+                    for row in rows:
+                        with self.subTest(theme=skin.short_name, background=background, row=line_text(row)):
+                            self.assertEqual(row[-1], fill(band))  # an erase, not spaces
+                            self.assertEqual(line_text(row), line_text(row).rstrip())
+                            for span in row:
+                                self.assertEqual(span.style.bg, band.bg)
+                                if span.style.fg and span.text.strip():
+                                    minimum = 4.5 if any(char.isalnum() for char in span.text) else 3.0
+                                    self.assertGreaterEqual(contrast(span.style.fg, band.bg), minimum, span.text)
+
+    def test_bands_are_light_on_a_light_terminal_and_dark_on_a_dark_one(self) -> None:
+        for skin in SKIN_THEMES:
+            for background in (*LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
+                theme = build_theme(skin, background)
+                for role in ("ok_band", "error_band"):
+                    with self.subTest(theme=skin.short_name, background=background, role=role):
+                        band = getattr(theme, role).bg
+                        self.assertEqual(is_light(band), background in LIGHT_BACKGROUNDS)
+                        self.assertNotEqual(band, background)
+        light = build_theme(SKIN_THEMES[0], "#FFFFFF")
+        self.assertNotEqual(light.ok_band.bg, light.error_band.bg)  # green is not red
+
+    def test_with_no_background_reported_nothing_is_banded(self) -> None:
+        for skin in SKIN_THEMES:
+            theme = build_theme(skin, None)
+            for _role, rows in self.outcomes(theme):
+                with self.subTest(theme=skin.short_name):
+                    self.assertEqual({span.style.bg for row in rows for span in row}, {None})
+
+    def test_a_denial_shows_one_mark_the_red_cross(self) -> None:
+        theme = build_theme(SKIN_THEMES[0], "#FFFFFF")
+        rows = [line_text(row) for _role, rows in self.outcomes(theme) for row in rows]
+        self.assertFalse([row for row in rows if "⊘" in row], rows)
+        denied = [row for row in rows if "rm -rf ./build" in row and "terminal" in row]
+        self.assertEqual([row.split()[0] for row in denied], ["✗"])
+        self.assertIn("    ⎿ " + self.DENIAL, rows)  # told apart from a failure by its words, not only its colour
+
+    def test_warnings_and_running_rows_carry_no_band(self) -> None:
+        theme = build_theme(SKIN_THEMES[0], "#FFFFFF")
+        running = ToolGroup([ToolRow("t1", "terminal", "sleep 9", TOOL_RUNNING, started_at=0.0)])
+        for rows in (block_rows(NoticeBlock("careful", NOTICE_WARN), 60, theme), block_rows(running, 60, theme, now=0.7)):
+            self.assertEqual({span.style.bg for row in rows for span in row}, {None})
+
+
 class FromQueueTests(unittest.TestCase):
     def test_a_prompt_the_queue_sent_says_so_and_a_typed_one_does_not(self) -> None:
         app, client = make_app(busy=True)
@@ -99,6 +182,16 @@ class FromQueueTests(unittest.TestCase):
     def test_the_tag_waits_for_room(self) -> None:
         row = block_rows(UserBlock("a long prompt that fills the row", from_queue=True), 34, THEME)[0]
         self.assertEqual(line_text(row), "› a long prompt that fills the row")
+
+    def test_the_tag_reads_on_the_band_it_sits_on(self) -> None:
+        # Measured against the terminal's background, muted read 3.7 to 4.0:1 on the band.
+        for skin in SKIN_THEMES:
+            for background in (*LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
+                theme = build_theme(skin, background)
+                row = block_rows(UserBlock("next", from_queue=True), 80, theme)[0]
+                (tag,) = [span for span in row if "from queue" in span.text]
+                with self.subTest(theme=skin.short_name, background=background):
+                    self.assertGreaterEqual(contrast(tag.style.fg, theme.user_band.bg), 4.5)
 
 
 class SteerPlacementTests(unittest.TestCase):

@@ -65,13 +65,17 @@ class SaidAndDoneTests(unittest.TestCase):
         self.assertEqual((header[0].text, header[0].style), ("⏺ ", THEME.tool))
         self.assertNotEqual(THEME.text, THEME.tool)
 
-    def test_every_tool_state_has_its_own_glyph(self) -> None:
-        glyphs = {}
+    def test_every_tool_state_is_told_apart_without_colour(self) -> None:
+        glyphs, lines = {}, {}
         for status in (TOOL_RUNNING, TOOL_OK, TOOL_ERROR, TOOL_DENIED, TOOL_INTERRUPTED, TOOL_GENERATING):
-            row = block_rows(ToolGroup([ToolRow("a", "terminal", status=status)], done=True), 40, THEME)[0]
-            glyphs[status] = mark(row).text
+            rows = block_rows(ToolGroup([ToolRow("a", "terminal", status=status)], done=True), 40, THEME)
+            glyphs[status], lines[status] = mark(rows[0]).text, line_text(rows[-1])
         self.assertEqual(glyphs[TOOL_RUNNING], "⏺")
-        self.assertEqual(len(set(glyphs.values())), len(glyphs), glyphs)  # told apart without colour
+        # A denial shows one mark, the red cross of a failure (owner decision 6), and says so on its line.
+        self.assertEqual(glyphs[TOOL_DENIED], glyphs[TOOL_ERROR])
+        self.assertTrue(lines[TOOL_DENIED].endswith("⎿ denied"), lines[TOOL_DENIED])
+        del glyphs[TOOL_DENIED]
+        self.assertEqual(len(set(glyphs.values())), len(glyphs), glyphs)
 
 
 class PulseTests(unittest.TestCase):

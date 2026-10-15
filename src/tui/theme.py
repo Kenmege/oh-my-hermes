@@ -27,6 +27,13 @@ background reported there is no prompt band at all: its text is the
 terminal's own colour, which a guessed band can drown. `dim` is for
 decoration glyphs; words go on `muted` or `hint`.
 
+Outcomes sit on bands too (`ok_band` behind what the person allowed,
+`error_band` behind a denial or a failure): light tints of the palette's diff
+colours on a light background, its dark diff colours on a dark one, and
+none when no background was reported. What is drawn on a band takes
+`on_band(theme, band)`, the roles measured against that band, so its words
+reach 4.5:1 and its marks 3:1 on it.
+
 The status line keeps the palette's own status-bar background whatever the
 terminal's, so its words are measured against that bar instead: the
 `status*` roles here, and `on_status_bar(theme)` for the roles the status
@@ -112,6 +119,8 @@ class Theme:
     mode_accept: Style
     mode_plan: Style
     user_band: Style  # the background behind your prompt in the transcript
+    ok_band: Style  # behind what the person allowed (an approval)
+    error_band: Style  # behind a denial or a failure: a denied approval, a failed tool row and its lines, an error notice
 
 
 def _channel(value: int) -> float:
@@ -186,6 +195,13 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
     def on_bar(key: str, minimum: float = TEXT_CONTRAST) -> Style:
         return Style(fg=_lifted(c[key], status_ink, status_bg, minimum), bg=status_bg)
 
+    if not reported:
+        ok_band = error_band = Style()
+    elif light:
+        ok_band = Style(bg=_mix(c["diff_added_word"], surface, LIGHT_BAND_SHARE))
+        error_band = Style(bg=_mix(c["diff_removed_word"], surface, LIGHT_BAND_SHARE))
+    else:
+        ok_band, error_band = Style(bg=c["diff_added"]), Style(bg=c["diff_removed"])
     if light:
         diff_add = Style(bg=_mix(c["diff_added_word"], surface, LIGHT_BAND_SHARE))
         diff_add_word = Style(bg=_mix(c["diff_added_word"], surface, LIGHT_WORD_BAND_SHARE), bold=True)
@@ -234,6 +250,8 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         mode_accept=Style(fg=read("ui_warn")),
         mode_plan=Style(fg=read("ui_ok")),
         user_band=Style(bg=_mix(surface, ink, USER_BAND_SHARE)) if reported else Style(),
+        ok_band=ok_band,
+        error_band=error_band,
     )
 
 
@@ -255,6 +273,13 @@ def logo_lines(skin: SkinTheme, background: str | None = None) -> list[Line]:
         fg = _lifted(colour if hex_to_rgb(colour) else c["banner_title"], ink, surface, EDGE_CONTRAST)
         lines.append((Span(shown, Style(fg=fg, bold=bold)),))
     return lines
+
+
+@lru_cache(maxsize=32)
+def on_band(theme: Theme, band: Style) -> Theme:
+    """`theme`'s roles measured against `band`'s background, for the words and marks drawn on that band."""
+    skin = theme_for_name(theme.name) or default_theme()
+    return build_theme(skin, band.bg)
 
 
 @lru_cache(maxsize=16)

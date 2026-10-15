@@ -81,7 +81,10 @@ All notable changes will be documented here.
   once each print under their own echo. Each turn's
   done line sits on a thin rule to the edge, and the answer you gave an
   approval is written above the call it was about, `✓ allowed once ·
-  <command>` in green or `✗ denied · <command>` in red.
+  <command>` on a light green band or `✗ denied · <command>` on a light red
+  one; failed and denied tool rows with their lines and error notices sit on
+  the red band too, a denial shows the one red `✗` (no amber `⊘`), and with
+  no background reported nothing is banded.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

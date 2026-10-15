@@ -71,7 +71,7 @@ from .diff_view import DIFF_FILE, FILE_ARROW, DiffLine, diff_rows, parse_inline_
 from .gateway import Event
 from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
 from .style import Line, Span, Style, fill
-from .theme import Theme
+from .theme import Theme, on_band
 from .width import line_width, truncate, truncate_left, truncate_line
 
 TOOL_GENERATING = "generating"
@@ -373,16 +373,19 @@ def _earlier(count: int) -> str:
 # Where a tool's printed text is in its result, in order; a failed tool's error first.
 _OUTPUT_KEYS = ("output", "stdout", "content", "text")
 _ERROR_KEYS = ("error", "stderr", "user_summary", "output")
+# A denied call says so in the person's words first; `error` there is what Hermes told the model.
+_DENIED_KEYS = ("user_summary", "error", "output")
+DENIED_LINE = "denied"  # a denied call whose result says nothing more
 TOOL_OUTPUT_ROWS = 3  # shown under a tool row; the details view shows up to TOOL_OUTPUT_KEEP
 TOOL_OUTPUT_KEEP = 40
 
 
 def _tool_output(result: object, status: str) -> tuple[tuple[str, ...], int]:
-    """(first lines, how many more) of what a tool printed; a failed tool gives its error's first line only."""
+    """(first lines, how many more) of what a tool printed; a failed or denied tool gives one line, its reason's first."""
     if isinstance(result, str):
         texts = [result]
     elif isinstance(result, dict):
-        keys = _ERROR_KEYS if status == TOOL_ERROR else _OUTPUT_KEYS
+        keys = _ERROR_KEYS if status == TOOL_ERROR else _DENIED_KEYS if status == TOOL_DENIED else _OUTPUT_KEYS
         texts = [as_text(result.get(key)) for key in keys]
     else:
         return (), 0
@@ -392,7 +395,7 @@ def _tool_output(result: object, status: str) -> tuple[tuple[str, ...], int]:
         lines.pop()
     while lines and not lines[0].strip():
         lines.pop(0)
-    if status == TOOL_ERROR:
+    if status in (TOOL_ERROR, TOOL_DENIED):
         return tuple(lines[:1]), 0
     return tuple(lines[:TOOL_OUTPUT_KEEP]), max(len(lines) - TOOL_OUTPUT_KEEP, 0)
 
@@ -450,7 +453,8 @@ def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
     """Your prompt behind `›` on its band, which every row fills to the right edge; `⧗ from queue` when the queue sent it."""
     rows = _text_rows(block.text, theme.text, (Span(USER_MARK, theme.user),), (Span(" " * len(USER_MARK)),), width)
     if block.from_queue and rows:
-        tag: Line = (Span(COLUMN_GAP + FROM_QUEUE_TAG, theme.muted),)
+        roles = on_band(theme, theme.user_band) if theme.user_band.bg is not None else theme
+        tag: Line = (Span(COLUMN_GAP + FROM_QUEUE_TAG, roles.muted),)  # read against the band it sits on
         if line_width(rows[0]) + line_width(tag) <= width:
             rows[0] = (*rows[0], *tag)
     band = theme.user_band
@@ -488,9 +492,24 @@ def _notice_style(level: str, theme: Theme) -> tuple[str, Style]:
     return "· ", theme.muted
 
 
+def _banded(rows: list[Line], band: Style) -> list[Line]:
+    """`rows` on `band`: every span on its background and an erase to the right edge, so a copy has no trailing spaces."""
+    return [(*(Span(span.text, replace(span.style, bg=band.bg)) for span in row), fill(band)) for row in rows]
+
+
+def _outcome_band(level: str, theme: Theme) -> Style | None:
+    """The band behind a row of `level`: green for what the person allowed, red for an error; None for the rest,
+    or when the theme paints no band (no background was reported)."""
+    band = {NOTICE_OK: theme.ok_band, NOTICE_ERROR: theme.error_band}.get(level)
+    return band if band is not None and band.bg is not None else None
+
+
 def _notice_rows(block: NoticeBlock, width: int, theme: Theme) -> list[Line]:
-    mark, style = _notice_style(block.level, theme)
-    return _text_rows(block.text, style, (Span(mark, style),), (Span(" " * len(mark)),), width)
+    band = _outcome_band(block.level, theme)
+    roles = on_band(theme, band) if band is not None else theme
+    mark, style = _notice_style(block.level, roles)
+    rows = _text_rows(block.text, style, (Span(mark, style),), (Span(" " * len(mark)),), width)
+    return _banded(rows, band) if band is not None else rows
 
 
 TURN_DONE_MARK = "✻ "
@@ -513,12 +532,15 @@ _OUTPUT_GLYPHS = {NOTICE_WARN: "⚠ ", NOTICE_ERROR: "✗ "}
 def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool) -> list[Line]:
     """`› /name arg`, then each part of its output under `⎿` in its level's colour (and glyph), cut unless `expanded`."""
     rows = wrap_prefixed((Span(block.command, theme.hint),), (Span(COMMAND_MARK, theme.dim),), (Span("  "),), width)
-    first: Line = (Span(OUTPUT_INDENT), Span(OUTPUT_MARK, theme.dim))
     rest: Line = (Span(OUTPUT_INDENT + " " * len(OUTPUT_MARK)),)
     output: list[Line] = []
     for text, level in block.parts:
-        style = {NOTICE_WARN: theme.warn, NOTICE_ERROR: theme.error}.get(level, theme.text)
-        output.extend(_text_rows(_OUTPUT_GLYPHS.get(level, "") + text, style, rest if output else first, rest, width))
+        band = _outcome_band(level, theme)
+        roles = on_band(theme, band) if band is not None else theme
+        style = {NOTICE_WARN: roles.warn, NOTICE_ERROR: roles.error}.get(level, roles.text)
+        lead = rest if output else (Span(OUTPUT_INDENT), Span(OUTPUT_MARK, roles.dim))
+        part = _text_rows(_OUTPUT_GLYPHS.get(level, "") + text, style, lead, rest, width)
+        output.extend(_banded(part, band) if band is not None else part)
     if not expanded and not block.whole and len(output) > OUTPUT_PREVIEW_ROWS:
         hidden = len(output) - OUTPUT_PREVIEW_ROWS
         more = OUTPUT_MORE.format(count=hidden, noun="line" if hidden == 1 else "lines")
@@ -580,7 +602,7 @@ def _tool_mark(status: str, theme: Theme, dim: bool = False) -> Span:
     if status == TOOL_ERROR:
         return Span("✗", theme.error)
     if status == TOOL_DENIED:
-        return Span("⊘", theme.warn)
+        return Span("✗", theme.error)  # one mark for a denial, as its approval row has; its line says it was denied
     if status == TOOL_RUNNING:
         return Span("⏺", theme.dim if dim else theme.accent)
     if status == TOOL_INTERRUPTED:
@@ -609,12 +631,16 @@ def _tool_row(tool: ToolRow, width: int, theme: Theme, now: float | None = None)
 
 
 def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> list[Line]:
-    """The tool's printed lines under its name, each cut to the width: three of them, or all kept with `expanded`."""
-    if not tool.output:
+    """The tool's printed lines under its name, each cut to the width: three of them, or all kept with `expanded`.
+
+    A denied call whose result gave no reason says `denied`, so a denial reads apart from a failure without colour.
+    """
+    output = tool.output or ((DENIED_LINE,) if tool.status == TOOL_DENIED else ())
+    if not output:
         return []
-    shown = tool.output if expanded else tool.output[:TOOL_OUTPUT_ROWS]
-    hidden = len(tool.output) - len(shown) + tool.output_more
-    style = theme.error if tool.status == TOOL_ERROR else theme.muted
+    shown = output if expanded else output[:TOOL_OUTPUT_ROWS]
+    hidden = len(output) - len(shown) + tool.output_more
+    style = theme.error if tool.status in (TOOL_ERROR, TOOL_DENIED) else theme.muted
     first: Line = (Span(TOOL_ROW_INDENT * 2), Span(TOOL_SUMMARY_MARK, theme.dim))
     rest: Line = (Span(TOOL_ROW_INDENT * 2 + " " * len(TOOL_SUMMARY_MARK)),)
     rows = [truncate_line((*(rest if index else first), Span(line, style)), width) for index, line in enumerate(shown)]
@@ -631,15 +657,19 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: 
     rows = [truncate_line(tuple(header), width)] if len(group.tools) != 1 else []
     summary_first: Line = (Span(TOOL_ROW_INDENT * 2 + TOOL_SUMMARY_MARK, theme.dim),)
     summary_rest: Line = (Span(" " * (len(TOOL_ROW_INDENT) * 2 + len(TOOL_SUMMARY_MARK))),)
+    band = theme.error_band if theme.error_band.bg is not None else None
     for tool in group.tools:
-        rows.append(_tool_row(tool, width, theme, now))
-        if expanded and tool.summary:
-            rows.extend(wrap_prefixed((Span(tool.summary, theme.muted),), summary_first, summary_rest, width))
+        failed = band is not None and tool.status in (TOOL_ERROR, TOOL_DENIED)  # a settled mark: nothing pulses on a band
+        roles = on_band(theme, band) if failed else theme
+        own = [_tool_row(tool, width, roles, now)]
+        if expanded and tool.summary and tool.summary not in tool.output[:1]:  # a failure's line is said once
+            own.extend(wrap_prefixed((Span(tool.summary, roles.muted),), summary_first, summary_rest, width))
         lines = tool.diff_lines(hold=not group.done) if tool.inline_diff else ()
+        if not lines:
+            own.extend(_output_rows(tool, width, roles, expanded))
+        rows.extend(_banded(own, band) if failed and band is not None else own)
         if lines:
-            rows.extend(diff_rows(lines, width, theme, full=expanded))
-        else:
-            rows.extend(_output_rows(tool, width, theme, expanded))
+            rows.extend(diff_rows(lines, width, theme, full=expanded))  # a diff keeps its own bands
     return rows
 
 

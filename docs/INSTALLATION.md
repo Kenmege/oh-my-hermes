@@ -453,8 +453,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   - A tool call's mark says its state by glyph as well as colour: `⏺`
     running, pulsing between the accent and dim every 0.5 s from its own
     start (parallel calls pulse on their own), `✓` done in green, `✗` failed
-    in red with the error's first line under it in red, `⊘` denied in amber,
-    `▪` cut off, `◌` still being written. Only the live region at the bottom
+    or denied in red, with the error's first line, or the denial's words
+    (`denied` when the result gives none), under it in red, `▪` cut off,
+    `◌` still being written. Only the live region at the bottom
     moves; what reaches scrollback is the settled mark, never a frame of a
     pulse.
   - The working row's spinner turns and a highlight sweeps across what
@@ -469,10 +470,20 @@ run and approval decision stays Hermes'; the screen is OMH's.
   - Each turn closes with its done line on a thin rule to the right edge
     (`✻ 34s · 3 tools · ↓1.2k  ────`), so the start of the next one is easy
     to find when you scroll back.
-  - Green and red mark outcomes, amber warnings: diff bands (light tints on
-    a light background), the answer you gave an approval, written above the
-    call it was about (`✓ allowed once · <command>` in green,
-    `✗ denied · <command>` in red), failed tool calls and error notices.
+  - Green and red mark outcomes as full-row bands, built like your prompt's
+    (each row's background is erased to the right edge, so a copy carries
+    no trailing spaces). The answer you gave an approval is written above
+    the call it was about: allowed (`✓ allowed once · <command>`) on a light
+    green band, denied (`✗ denied · <command>`) on a light red one. A failed
+    or denied tool row with the lines under it, an error notice, and a
+    command's error line are on the light red band too. A denial shows one
+    mark, the red `✗`. Warnings stay amber, with no band. The bands follow
+    the theme and the background: light tints on a light terminal, dark
+    ones on a dark terminal, with words on them at 4.5:1 and marks at 3:1
+    against the band; with no background reported no band is painted. Only
+    settled rows carry bands, never one that moves, and every state still
+    reads apart without colour, by its glyph or its words. Diff lines keep
+    their own bands.
   - `OMH_TUI_REDUCED_MOTION=1`, or `NO_COLOR`, stops the motion: no pulse
     and no sweep, every spinner holds its first frame, and while a turn runs
     the screen repaints once a second for the elapsed time instead of ten
