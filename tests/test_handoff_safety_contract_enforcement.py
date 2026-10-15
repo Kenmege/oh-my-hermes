@@ -1114,16 +1114,23 @@ GIT_ARGV_ALLOWLIST: dict[tuple[str, tuple[str, ...]], str] = {
         "worktree's index. It stages no content, makes no commit, names no remote, and never runs "
         "against the operator's repository or a unit that succeeded"
     ),
+    ("src/coding/fanout_dispatch.py", ("symbolic-ref", "HEAD")): (
+        "`git symbolic-ref -q HEAD` in a unit's own worktree before the Hermes recovery lane commits "
+        "there, so a commit is made only while the unit's own `agent/<unit>` branch is checked out; "
+        "read-only local ref lookup, names no remote, writes nothing"
+    ),
     ("src/coding/fanout_dispatch.py", ("add",)): (
-        "`git add -A` inside a unit's own worktree after the operator-chosen Hermes recovery child "
-        "(`--on-failure=hermes`, file tools only) completed, staging what that child wrote so the "
-        "dispatcher can commit it on the unit branch. Not read-only: it writes that worktree's index, "
+        "`git add -A` inside a unit's own worktree in the operator-chosen Hermes recovery lane "
+        "(`--on-failure=hermes`, a file-tools-only child): once before the child starts, staging what "
+        "the failed attempt left, and once after it completes, staging what the child wrote, so the "
+        "dispatcher can commit each on the unit branch. Not read-only: it writes that worktree's index, "
         "runs inside the unit's write fence with the network denied, and names no remote"
     ),
     ("src/coding/fanout_dispatch.py", ("commit",)): (
-        "`git commit -q -m <message>` right after that `add`, recording the Hermes recovery child's "
-        "edits on the unit's own `agent/<unit>` branch, the commit a dispatched unit's executor makes "
-        "itself and a file-tools-only child cannot. Not read-only: it writes one local commit and "
+        "`git commit -q -m <message>` right after that `add`, recording the failed attempt's leftovers "
+        "or the Hermes recovery child's edits on the unit's own `agent/<unit>` branch -- the commit a "
+        "dispatched unit's executor makes itself and a file-tools-only child cannot -- and only after "
+        "`symbolic-ref` showed that branch checked out. Not read-only: it writes one local commit and "
         "moves that branch, inside the unit's write fence with the network denied; it never pushes, "
         "merges, or touches another branch or the operator's checkout"
     ),

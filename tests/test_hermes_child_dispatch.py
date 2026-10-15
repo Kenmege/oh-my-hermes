@@ -213,7 +213,11 @@ class HermesChildDispatchTests(unittest.TestCase):
         repo = self.root / 'repo'
         repo.mkdir()
         worktree = self.root / 'repo-fanout-a'
-        worktree.mkdir()
+        # A real unit worktree on its own branch: the lane commits there once the child is done.
+        for argv in (['init', '-q'], ['config', 'user.name', 't'], ['config', 'user.email', 't@t'],
+                     ['commit', '-q', '--allow-empty', '-m', 'base'],
+                     ['worktree', 'add', '-q', str(worktree), '-b', 'agent/a']):
+            subprocess.run(['git', *argv], cwd=repo, check=True, capture_output=True)
         run_ref = 'fanout-123456789abc-a'
         gate = OwnerLaunchGate()
         binding = AdmissionBinding('hermes', 'fanout-123456789abc', 'prior', run_ref, 1,

@@ -887,8 +887,9 @@ Rules, all applied at freeze time:
   prompt as named blocks for every path: live dispatch (a repair brief, a
   parent decision, or a retry's fresh sidecar path is an argument, never an
   edit of the text), Hermes recovery (no sidecar contract, and edit-only:
-  `EDIT_ONLY_OMITTED_BLOCKS` drops the verification pass and both commit
-  instructions, because that child has file tools and nothing else), and the
+  `EDIT_ONLY_OMITTED_BLOCKS` drops the verification pass, both commit
+  instructions, and the request for a `fanout_unit_result/v1` record, because
+  that child has file tools and nothing else), and the
   benchmark lanes. Prompts are subprocess argv, so the worst case is
   policy-gated in tests rather than trimmed at runtime:
   `UNIT_PROMPT_MAX_BYTES` for the dispatch prompt and
@@ -1064,10 +1065,11 @@ Rules, all applied at freeze time:
   decision itself still runs on the host, before any fence can exist; its
   `symbolic-ref` and `rev-parse` reads load no index and run no hook or
   filter, and `tests/test_fanout_host_git_outside_fence.py` pins that with
-  the same plant. The Hermes recovery dispatch's commit (`status`, `add -A`,
-  `commit`) and its checks run inside a fence prepared for the unit's
-  worktree and branch the same way, and the lane refuses before the child
-  starts when none can be proven. Every one of these fenced dispatcher git calls, and the
+  the same plant. The Hermes recovery dispatch's commits (`symbolic-ref`,
+  `status`, `add -A`, `commit`) and its checks run inside a fence prepared for
+  the unit's worktree and branch the same way, and the lane refuses before the
+  child starts when none can be proven; the Hermes child itself is not run
+  inside it. Every one of these fenced dispatcher git calls, and the
   dispatcher's own git inside the unit's fence, runs with the network denied
   (Seatbelt, or bwrap `--unshare-net`) and only `PATH`, `HOME`,
   `XDG_CONFIG_HOME`, the locale, the fence's own `TMPDIR` and git's
@@ -1272,13 +1274,21 @@ funnel into the same engine.
     boundary requires — equivalent to `--confirm-dispatch` — and it is recorded
     as such. The lane is offered only when `--hermes-model`,
     `--hermes-provider`, and `--hermes-reasoning` are supplied. The child has
-    file tools only, so it is told to edit and nothing else; when it
-    completes, the dispatcher commits what it wrote on the unit branch
-    (`recovery_commit`) and then, under `--run-verification`, runs the unit's
-    declared checks on that commit through the same verification a dispatched
-    unit gets, journaled on the recovery's own run (`<run-ref>-hermes-recovery`). The attempt's
-    `unit_state` is `verified` only when those checks ran and passed; otherwise
-    it is `failed` with `unit_state_reason` `process_not_completed`,
+    file tools only, so it is told to edit and nothing else. Before it starts,
+    whatever the failed attempt left in the worktree is committed on its own
+    (`pre_existing_commit`). When the child completes, the dispatcher commits
+    what it wrote (`recovery_commit`) and then, under `--run-verification`,
+    runs the unit's declared checks on that commit through the same
+    verification a dispatched unit gets, journaled on the recovery's own run
+    (`<run-ref>-hermes-recovery`). Both commits are made only while the unit's
+    own branch is checked out, and the lane refuses before the child starts
+    when the failed attempt left another branch checked out. They carry the
+    git identity the operator's configuration gives that worktree and no
+    `Signed-off-by`; a missing identity, a refusing hook, or commit signing
+    that cannot work inside the fence fails the commit as `commit_failed`. The
+    attempt's `unit_state` is `verified` only when the child changed something
+    and those checks ran on it and passed; otherwise it is `failed` with
+    `unit_state_reason` `process_not_completed`, `no_changes`,
     `commit_failed`, `verification_failed`, or `verification_not_observed`.
   - **Wait** marks the unit `awaiting_retry` in the run journal with its
     failure kind. The next `--resume-journal` run re-dispatches exactly those

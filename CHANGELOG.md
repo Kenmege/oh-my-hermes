@@ -14,14 +14,17 @@ All notable changes will be documented here.
   (`--on-failure=hermes`) sent its file-tools-only child a prompt asking it to
   run a verification pass and commit, which it cannot do, and nothing did
   either afterwards, so a `completed` recovery left edits unchecked and
-  uncommitted. The child now gets an edit-only prompt; when it completes, the
-  dispatcher commits its edits on the unit branch and, under
-  `--run-verification`, runs the unit's declared checks on that commit, both
-  inside the unit's write fence. The attempt's `unit_state` is `verified` only
-  when those checks ran and passed, and the lane refuses before the child
-  starts when no fence can be proven. `fanout status --wait`'s documented codes
-  and bounds, and the deadline `ulw-maestro` names, are now checked against the
-  command's constants.
+  uncommitted. The child now gets an edit-only prompt. What the failed attempt
+  left in the worktree is committed on its own before the child starts; when
+  the child completes, the dispatcher commits its edits on the unit branch and,
+  under `--run-verification`, runs the unit's declared checks on that commit.
+  The dispatcher's commits and checks run inside the unit's write fence (the
+  child does not), and the lane refuses before the child starts when no fence
+  can be proven or the unit's branch is not checked out. The attempt's
+  `unit_state` is `verified` only when the child changed something and those
+  checks ran on it and passed. `fanout status --wait`'s documented codes and
+  bounds, and the deadline `ulw-maestro` names, are now pinned by parity tests
+  against the command's constants.
 
 - **`omh chat route-hint` names no workflow on a turn Hermes wrote for its own
   session command.** On such a turn (a `/plan` frame, a `/loop` wakeup, a

@@ -827,6 +827,11 @@ def _editing_child(status: str = "completed", exit_code: int = 0):
     return child
 
 
+def _no_edit_child(**kwargs):
+    """A Hermes child stub that exits 0 having changed nothing, as a model that declined does."""
+    return {"status": "completed", "exit_code": 0, "run_id": kwargs["run_id"]}
+
+
 def _limit_then_real(argv, **kwargs):
     """Codex refuses on a usage limit; git and the declared checks really run."""
     if argv[0] == "git":
@@ -835,6 +840,22 @@ def _limit_then_real(argv, **kwargs):
         return subprocess.run(argv, cwd=kwargs.get("cwd"), env=kwargs.get("env"), text=True,
                               capture_output=True, timeout=kwargs.get("timeout"))
     return _FakeCompleted(1, _LIMIT_FAILURE_TEXT)
+
+
+def _limit_after(leftover):
+    """Codex does `leftover(worktree)` -- half its work, a branch switch -- then hits the limit."""
+    def runner(argv, **kwargs):
+        if argv[0] not in ("git", sys.executable):
+            leftover(Path(kwargs["cwd"]))
+        return _limit_then_real(argv, **kwargs)
+
+    return runner
+
+
+def _half_done(worktree: Path) -> None:
+    (worktree / "src" / "core").mkdir(parents=True, exist_ok=True)
+    (worktree / "src" / "core" / "partial_from_codex.txt").write_text("half\n", encoding="utf-8")
+    (worktree / "scratch-notes.md").write_text("codex scratch\n", encoding="utf-8")
 
 
 class HermesRecoverySettlementTests(unittest.TestCase):
@@ -853,9 +874,9 @@ class HermesRecoverySettlementTests(unittest.TestCase):
         contract = write_fanout_contract(paths, build_fanout_contract(_GOAL, units))
         return paths, repo, sha, contract
 
-    def _attempt(self, paths, repo, sha, contract, child, **kwargs):
+    def _attempt(self, paths, repo, sha, contract, child, *, runner=_limit_then_real, **kwargs):
         summary = dispatch_fanout(
-            paths, contract, goal_text=_GOAL, repo_root=repo, base_sha=sha, runner=_limit_then_real,
+            paths, contract, goal_text=_GOAL, repo_root=repo, base_sha=sha, runner=runner,
             readiness=_ready, on_failure="hermes", hermes_routing=_HERMES_ROUTING, hermes_child=child,
             **kwargs,
         )
@@ -866,10 +887,10 @@ class HermesRecoverySettlementTests(unittest.TestCase):
         self.assertEqual(_fanout_dispatch_exit_code(summary), 1)
         return decision["attempt"]
 
-    def _branch(self, repo: Path) -> tuple[str, list[str]]:
-        head = subprocess.run(["git", "rev-parse", "agent/core"], cwd=repo, capture_output=True,
+    def _branch(self, repo: Path, ref: str = "agent/core") -> tuple[str, list[str]]:
+        head = subprocess.run(["git", "rev-parse", ref], cwd=repo, capture_output=True,
                               text=True, check=True).stdout.strip()
-        changed = subprocess.run(["git", "show", "--name-only", "--format=", "agent/core"], cwd=repo,
+        changed = subprocess.run(["git", "show", "--name-only", "--format=", ref], cwd=repo,
                                  capture_output=True, text=True, check=True).stdout.split()
         return head, changed
 
@@ -882,11 +903,12 @@ class HermesRecoverySettlementTests(unittest.TestCase):
         self.assertIn("Work unit: Core work", prompt)
         self.assertIn("Done means, and only means:", prompt)
         for sentence in ("run one full verification pass", "Commit your work",
-                         "The work is committed on the unit branch"):
+                         "The work is committed on the unit branch", "fanout_unit_result/v1"):
             with self.subTest(sentence=sentence):
                 self.assertNotIn(sentence, prompt)
         blocks = attempt["unit_prompt"]["blocks"]
-        for name in ("head.verification_stop", "unit.commit_criterion", "tail.commit"):
+        for name in ("head.verification_stop", "unit.commit_criterion", "tail.commit",
+                     "head.unit_result_return", "head.parent_clarification"):
             with self.subTest(block=name):
                 self.assertNotIn(name, blocks)
 
@@ -916,6 +938,67 @@ class HermesRecoverySettlementTests(unittest.TestCase):
         self.assertNotIn("unit_verification_observed", unit_events)
         self.assertEqual([unit["unit_id"] for unit in roster["units"]], ["core"])
         self.assertIs(roster["all_units_terminal"], True)
+
+    def test_a_child_that_changed_nothing_is_not_verified_even_where_the_checks_pass(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [f"{_PY} -c 'import sys; sys.exit(0)'"])
+            attempt = self._attempt(paths, repo, sha, contract, _no_edit_child, run_verification=True)
+            head, _changed = self._branch(repo)
+
+        self.assertEqual(attempt["status"], "completed")
+        self.assertEqual(attempt["recovery_commit"], {"status": "nothing_to_commit", "head_sha": sha})
+        self.assertEqual(head, sha)
+        self.assertNotIn("verification_status", attempt)
+        self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "no_changes"))
+
+    def test_work_the_failed_attempt_left_is_committed_apart_from_the_recovery(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, _editing_child(),
+                                    runner=_limit_after(_half_done), run_verification=True)
+            recovery_head, recovery_changed = self._branch(repo)
+            left_head, left_changed = self._branch(repo, "agent/core^")
+            base, _ = self._branch(repo, "agent/core^^")
+
+        self.assertEqual(attempt["pre_existing_commit"], {"status": "committed", "head_sha": left_head})
+        self.assertEqual(sorted(left_changed), ["scratch-notes.md", "src/core/partial_from_codex.txt"])
+        self.assertEqual(base, sha)
+        # The recovery commit holds the child's edit and nothing the failed attempt wrote.
+        self.assertEqual(attempt["recovery_commit"], {"status": "committed", "head_sha": recovery_head})
+        self.assertEqual(recovery_changed, ["src/core/fix.txt"])
+        self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("verified", ""))
+
+    def test_leftovers_alone_never_make_a_child_that_changed_nothing_verified(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [f"{_PY} -c 'import sys; sys.exit(0)'"])
+            attempt = self._attempt(paths, repo, sha, contract, _no_edit_child,
+                                    runner=_limit_after(_half_done), run_verification=True)
+            head, _changed = self._branch(repo)
+
+        self.assertEqual(attempt["pre_existing_commit"], {"status": "committed", "head_sha": head})
+        self.assertEqual(attempt["recovery_commit"], {"status": "nothing_to_commit", "head_sha": head})
+        self.assertNotIn("verification_status", attempt)
+        self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "no_changes"))
+
+    def test_a_worktree_moved_off_its_branch_refuses_before_the_child(self) -> None:
+        def switch_branch(worktree: Path) -> None:
+            _git(worktree, "checkout", "-q", "-b", "elsewhere")
+            (worktree / "scratch-notes.md").write_text("codex scratch\n", encoding="utf-8")
+
+        child = _editing_child()
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, child,
+                                    runner=_limit_after(switch_branch), run_verification=True)
+            unit_branch, _ = self._branch(repo)
+            elsewhere, _ = self._branch(repo, "elsewhere")
+
+        self.assertEqual(child.calls, [])
+        self.assertEqual(attempt["status"], "hermes_child_refused")
+        self.assertEqual(attempt["reason_code"], "worktree_not_committable")
+        self.assertEqual(attempt["pre_existing_commit"]["status"], "failed")
+        self.assertEqual((unit_branch, elsewhere), (sha, sha))
+        self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "commit_failed"))
 
     def test_a_failing_check_leaves_the_recovery_failed_not_verified(self) -> None:
         with TemporaryDirectory() as tmp:

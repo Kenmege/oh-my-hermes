@@ -74,9 +74,13 @@ BLOCK_NAMES: Final[frozenset[str]] = frozenset({
 
 # The Hermes recovery child has file tools and nothing else, so it can neither
 # run a verification pass nor commit; the dispatcher does both once it returns.
-# These are the blocks that would ask the child to.
+# These are the blocks that would ask the child to, and the two that ask for a
+# `fanout_unit_result/v1` record naming a commit it cannot make, which that
+# lane does not collect anyway.
 EDIT_ONLY_OMITTED_BLOCKS: Final[frozenset[str]] = frozenset({
     "head.verification_stop",
+    "head.unit_result_return",
+    "head.parent_clarification",
     "unit.commit_criterion",
     "tail.commit",
 })

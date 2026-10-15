@@ -3144,8 +3144,11 @@ def _hermes_recovery_dispatch(
     completes the dispatcher commits what it wrote on the unit branch, then
     runs the unit's declared checks on that commit as it does for a dispatched
     unit under `--run-verification`, both inside the unit's write fence (or
-    unfenced only under `--allow-unconfined`). The attempt's `unit_state` is
-    `verified` only when those checks ran and passed.
+    unfenced only under `--allow-unconfined`). Whatever the failed attempt left
+    in the worktree is committed on its own before the child starts, so each
+    commit says where its changes came from. The attempt's `unit_state` is
+    `verified` only when the child changed something and those checks ran on
+    it and passed.
     """
     unit_id = str(unit.get("unit_id", ""))
     worktree = _worktree_path(repo_root, unit_id)
@@ -3231,6 +3234,30 @@ def _hermes_recovery_dispatch(
             "unit_state": UNIT_STATE_PERMISSION_BLOCKED,
             "unit_state_reason": "filesystem_confinement_unavailable",
         }
+    # Whatever the failed attempt left is committed on its own before the
+    # child starts. The recovery commit then holds the child's edits and
+    # nothing else, and a child that changed nothing is seen to have changed
+    # nothing rather than credited with the failed attempt's leftovers.
+    git_runner = _fenced_dispatcher_runner(runner, confinement, worktree)
+    branch = str(unit.get("branch_suggestion", f"agent/{unit_id}"))
+    pre_existing = _commit_recovery_edits(
+        git_runner, worktree, branch,
+        f"Work left in fanout unit {unit_id} by its failed {unit.get('owner', '')} attempt",
+    )
+    if pre_existing["status"] == "failed":
+        return {
+            "unit_id": unit_id,
+            "owner": "hermes",
+            "status": "hermes_child_refused",
+            "reason_code": "worktree_not_committable",
+            "reason": (
+                f"the work the failed attempt left could not be committed apart from the recovery "
+                f"({pre_existing['reason']}), so the Hermes child was not started"
+            ),
+            "pre_existing_commit": pre_existing,
+            "unit_state": UNIT_STATE_FAILED,
+            "unit_state_reason": "commit_failed",
+        }
     dispatcher = hermes_child if hermes_child is not None else dispatch_unit_via_hermes_child
     run_ref = str(unit.get("run_ref", unit_id))
     binding = AdmissionBinding('hermes', fanout_id, unit_id, run_ref, 1,
@@ -3259,21 +3286,29 @@ def _hermes_recovery_dispatch(
         "worktree_path": str(worktree),
         "consent": HERMES_LANE_CONSENT,
         "unit_prompt": _unit_prompt_record(assembled),
-        # Where the dispatcher's own commit and checks below run, not the child.
+        # Where the dispatcher's own commits and checks run, not the child.
         "filesystem_confinement": confinement_receipt(confinement, worktree),
+        "pre_existing_commit": pre_existing,
         **dict(attempt),
     }
     if record.get("status") != "completed":
         record.update(unit_state=UNIT_STATE_FAILED, unit_state_reason="process_not_completed")
         return record
-    # Commit first: the commit is then exactly what the child left, and the
-    # checks run on a clean, committed revision -- the order a dispatched
-    # unit's executor and dispatcher already keep. Checks run before the
-    # commit would have their own output swept into it.
-    commit = _commit_recovery_edits(_fenced_dispatcher_runner(runner, confinement, worktree), worktree, unit_id)
+    # Commit first: the worktree was clean when the child started, so the
+    # commit holds the child's edits, and the checks run on a clean, committed
+    # revision -- the order a dispatched unit's executor and dispatcher already
+    # keep. Checks run before the commit would have their own output swept
+    # into it.
+    commit = _commit_recovery_edits(git_runner, worktree, branch, f"Hermes recovery of fanout unit {unit_id}")
     record["recovery_commit"] = commit
     if commit["status"] == "failed":
         record.update(unit_state=UNIT_STATE_FAILED, unit_state_reason="commit_failed")
+        return record
+    if commit["status"] == "nothing_to_commit":
+        # The child exited 0 and changed nothing (a model that declined exits
+        # 0 too). The unit's checks would only re-check the work the failed
+        # attempt left, so they are not run and nothing is verified.
+        record.update(unit_state=UNIT_STATE_FAILED, unit_state_reason="no_changes")
         return record
     verification: dict[str, Any] = {}
     if run_verification:
@@ -3325,20 +3360,25 @@ def _hermes_recovery_dispatch(
     return record
 
 
-def _commit_recovery_edits(runner: Callable[..., Any], worktree: Path, unit_id: str) -> dict[str, Any]:
-    """Commit everything the recovery child left in the unit worktree; never raises.
+def _commit_recovery_edits(runner: Callable[..., Any], worktree: Path, branch: str, message: str) -> dict[str, Any]:
+    """Commit everything in the unit worktree on the unit's own branch; never raises.
 
     `status` is `committed`, `nothing_to_commit`, or `failed` with a reason.
     The first two carry `head_sha`, read only once the worktree is clean, so a
     commit that left files behind is a failure rather than a partial success.
+    A worktree whose HEAD is not the unit branch is refused before anything
+    is staged: a failed attempt that switched branches would otherwise have
+    the commit land on whatever branch it left checked out.
     """
+    head_ref = _git_text(runner, worktree, ["git", "symbolic-ref", "-q", "HEAD"])
+    if head_ref is None or head_ref.strip() != f"refs/heads/{branch}":
+        return {"status": "failed", "reason": f"the unit worktree does not have its branch {branch} checked out"}
     changes = _git_text(runner, worktree, ["git", "status", "--porcelain=v1", "--untracked-files=all"])
     if changes is None:
         return {"status": "failed", "reason": "git status could not read the unit worktree"}
     if changes.strip():
         if _git_text(runner, worktree, ["git", "add", "-A"]) is None:
-            return {"status": "failed", "reason": "git add could not stage the recovery edits"}
-        message = f"Hermes recovery of fanout unit {unit_id}"
+            return {"status": "failed", "reason": "git add could not stage the worktree's changes"}
         if _git_text(runner, worktree, ["git", "commit", "-q", "-m", message]) is None:
             return {"status": "failed", "reason": "git commit did not complete in the unit worktree"}
     head = _observed_clean_producer_head(runner, worktree)
