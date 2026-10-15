@@ -762,6 +762,15 @@ class AgentRowsDuringATurnTests(unittest.TestCase):
                 self.assertEqual(self.finish(app), [("delegate_task", TOOL_OK)])
                 self.assertEqual(notices(app)[0], said)
 
+    def test_x_on_an_agent_that_finished_while_the_call_runs_leaves_the_call_running(self) -> None:
+        app, client = self.delegating()
+        relay(app, [frame for frame in FRAMES if frame[0] == "subagent.complete" and frame[1]["subagent_id"] == FIRST])
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual(client.calls, [])
+        self.assert_running(app)
+        self.assertEqual(self.finish(app), [("delegate_task", TOOL_OK)])
+        self.assertIn("has finished", notices(app)[0])
+
     def test_a_refused_steer_leaves_the_delegate_call_running(self) -> None:
         app, client = self.delegating()
         app._on_input(Key(CHAR, "s"))
