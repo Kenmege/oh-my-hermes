@@ -193,16 +193,6 @@ _BLOCKED_PAGE_RECOVERY_PORTABLE = (
     "cached copy it returns as a dated historical capture, never as the live page."
 )
 
-# `loop`'s hand-off of a step that moves money, in spend-gate's own terms (the
-# line `automation-blueprint` writes for a recurring job). Host-neutral, so the
-# Hermes boundary and the portable override state the same sentence.
-_LOOP_SPEND_BOUNDARY = (
-    "A loop step would move money -- a purchase, a renewal, a top-up, or a transfer; use `spend-gate`, because a "
-    "cycle nobody can answer, such as a queued tick or a delegated subagent, never spends and only prepares the card "
-    "for the person's next interactive turn, and a no-agent script that pays is a spend set up now: its card, typed "
-    "yes, and cap come before the script exists."
-)
-
 
 _DEFINITIONS = [
     SkillDefinition(
@@ -479,6 +469,17 @@ _DEFINITIONS = [
             "Do not let unattended loop progress bypass verification; missing or failed verification returns to plan/research or waits for evidence.",
             "Do not let comprehension debt or cognitive surrender hide behind green-looking loop status.",
             "Do not claim a goal is complete because the upstream judge said done, the turn budget ran out, or a gate paused the loop.",
+            # The paying step is spend-gate's and the loop carries on around
+            # it, so this is a safety rule rather than a Do-Not-Use line, in
+            # spend-gate's own terms for a run nobody can answer. Written with
+            # the label `skill_view` loads, since this field is not rewritten.
+            (
+                "A loop step that would move money -- a purchase, a renewal, a top-up, or a transfer -- goes through "
+                "`omh-spend-gate` before it runs, and the loop carries on around it. An agent run on a schedule never "
+                "spends: a cycle nobody can answer, such as a queued tick or a delegated subagent, only prepares the "
+                "card for the person's next interactive turn. A no-agent script that pays is a spend set up now, so its "
+                "card, typed yes, and cap come before the script exists."
+            ),
         ),
         quality_tier="loop-gated",
         quality_bar=(
@@ -527,7 +528,6 @@ _DEFINITIONS = [
             "The permission profile does not allow repeated research, handoff, queue, or feedback cycles.",
             "The request is a check repeated on a timer inside this session, such as polling CI, a deploy, or a queue every few minutes until it changes; that is Hermes' native `/loop` (an interval plus `--until` or `--times`), which only the user can start, so name the command instead of opening a goal loop.",
             "The work must run unattended on a schedule that outlives this session, such as hourly or nightly; use `automation-blueprint`, which settles overlap, missed runs, retries, and failure pauses before a Hermes cron job is created.",
-            _LOOP_SPEND_BOUNDARY,
             "The request is one objective with a stated done condition that needs no interviewer, planner, researcher, or reviewer cycles; native `/goal` keeps the session on it (`/goal draft` writes its completion contract), and this skill keeps the long-horizon loop engineering.",
         ),
         good_example=SkillExample(
@@ -650,8 +650,7 @@ _DEFINITIONS = [
             ),
             # The Hermes section adds three lines naming Hermes' own `/loop`,
             # `automation-blueprint` for its cron, and `/goal`; another host has
-            # none of them under those names. The spend line is host-neutral
-            # and `spend-gate` ships to every host, so both sections carry it.
+            # none of them under those names.
             "do_not_use_when": (
                 "The user asks for one bounded delivery cycle; use `ultrawork`'s delivery-boundary capability instead.",
                 "Scope and milestones are already known and only durable checkpoint/resume tracking is needed; use `ultrawork`'s durable-checkpoint capability.",
@@ -659,11 +658,10 @@ _DEFINITIONS = [
                 "The goal is too vague to name an observable problem, next artifact, verification signal, or stop condition.",
                 "The goal depends mainly on external waiting, adoption, revenue, or community response without observable local next actions.",
                 "The permission profile does not allow repeated research, handoff, queue, or feedback cycles.",
-                _LOOP_SPEND_BOUNDARY,
             ),
         },
         portable_override_shadows={
-            "do_not_use_when": "30193c8f6ce9a3ceedc955722cb1432902f33e00080a72f8e86487dea0d3da51",
+            "do_not_use_when": "e62a657bc560a98ec06add69e143b2d65ce7a3c488d953d60cfacd1e1104645e",
             "quality_bar": "177832d2c680eaa5c2393fa0e9da9741c498409272a2643e5589387e36623041",
             "expected_outputs": "780eec788fe069700b05a39880a50a3813715f50fcd6401cb6fe486f1750616d",
             "artifact_expectations": "a0b60b9744a8ba2ea968e39cb84e90f2bc7125aaa4f40cee0996c658eeddc7ff",
@@ -2184,7 +2182,7 @@ _DEFINITIONS = [
             "Record each material claim as a compact evidence row: claim, source, source class (upstream official, practitioner heuristic, or unattributed), source date, confidence, and unresolved conflict.",
             "Keep claims that lack corroboration in an explicit unresolved list instead of asserting or silently dropping them.",
             "Separate observed sources, source quality, source diversity, inferred trends, and unresolved uncertainty.",
-            f"{_GROUNDED_CITATIONS_REGISTER_RULE}, and carry two more fields on every evidence row: the ledger id written as `[n]` - a bare number in a cell is not a citation to `verify`, so that row would go unchecked - and the verbatim quote attached with `sources.py quote <id> --text <quote> --from <page text file>`, which rejects wording that file does not contain. {_GROUNDED_CITATIONS_LEDGER_FILE_RULE} A row whose quote could not be attached says so, and a claim that rests on model knowledge is marked `[unverified]` and listed as unresolved, never entered as evidence. Run `sources.py verify <draft> --evidence`, since every evidence row carries its quote, and report the citation check from that run, or as `not_observed`: {_GROUNDED_CITATIONS_VERIFY_RULE}; it is a citation check, not fact verification. Without the skill, keep the source and its quoted wording in the row and report the citation check as `not_observed`.",
+            f"{_GROUNDED_CITATIONS_REGISTER_RULE}, and carry two more fields on every evidence row: the ledger id written as `[n]` - a bare number in a cell is not a citation to `verify`, so that row would go unchecked - and the verbatim quote attached with `sources.py quote <id> --text <quote> --from <page text file>`, which rejects wording that file does not contain. {_GROUNDED_CITATIONS_LEDGER_FILE_RULE} A row whose quote could not be attached says so, and a claim that rests on model knowledge is marked `[unverified]` and listed as unresolved, never entered as evidence. Run `sources.py verify <draft> --evidence`, since every evidence row is meant to carry its quote, and report the citation check from that run, or as `not_observed`: {_GROUNDED_CITATIONS_VERIFY_RULE}; it is a citation check, not fact verification. Without the skill, keep the source and its quoted wording in the row and report the citation check as `not_observed`.",
             "Use the brief to feed strategy or meeting work without calling it execution evidence.",
         ),
         do_not_use_when=(
@@ -3606,8 +3604,9 @@ _DEFINITIONS = [
             "Keep report packaging independent from reliability review unless explicitly requested.",
             "Export only Markdown/JSON outlines unless a separate presentation tool produces a binary deck.",
             "On Hermes, that tool can be the bundled `powerpoint` skill, and a deck it builds counts as generated from its read-back (`pptx_read.py --outline`).",
-            # The shared document rules, the `powerpoint` half only: a deck is
-            # this skill's one binary.
+            # The shared document QA rule, whose field list also names xlsx's
+            # `"recalculated": false`, and the `powerpoint` rungs alone, not
+            # the other producers': a deck is this skill's one binary.
             DOCUMENT_PRODUCER_QA_RULE,
             f"On Hermes, {DOCUMENT_PRODUCER_POWERPOINT_RUNGS}. {DOCUMENT_PRODUCER_IMAGES_INSPECTED}.",
         ),
@@ -8065,7 +8064,7 @@ _DEFINITIONS = [
         ),
         bad_example=SkillExample(
             prompt="$ultraperf make the recommender p95 under 200ms; baseline 340ms, benchmark is 'make bench'",
-            expected="Skip the discovery audit: record 340ms as the baseline and `make bench` as the evaluator command, then fix and re-measure against the 200ms target.",
+            expected="Skip the discovery audit: record 340ms as the baseline and `make bench` as the evaluator command, then hand the fix to the selected executor and re-measure against the 200ms target.",
             why="A single declared measurable goal does not need a discovery loop.",
         ),
         final_checklist=(

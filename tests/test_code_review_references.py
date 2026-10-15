@@ -316,6 +316,10 @@ class ReviewFindingsSchemaTests(unittest.TestCase):
             if template.relative_path == NATIVE_REVIEW_CONTRACT_REFERENCE_PATH
         )
         self.assertIn("Do not ask the same reviewer again", _flat(native))
+        # And both say what to do next in the same words.
+        remedy = "Re-dispatch with something changed, or write the findings yourself, and say which you did."
+        self.assertIn(remedy, content)
+        self.assertIn(remedy, _flat(native))
 
     def test_pasted_material_is_marked_as_review_material_not_as_steps(self) -> None:
         content = _flat(self._dispatch())

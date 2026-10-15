@@ -907,12 +907,15 @@ class PresenceRuleTest(unittest.TestCase):
         self.assertIn("omh_todo for a planning run, an accepted plan or a code-story template", hint)
         self.assertIn(native_tool_presence_clause(NATIVE_TODO_TOOL), hint)
 
-    def test_every_one_checklist_surface_names_the_same_held_plans(self):
+    def test_the_four_surfaces_that_list_omh_todos_plans_name_the_same_three(self):
         # The plans `_held_by_omh_todo` holds a native write for -- a plan
-        # stage or a template -- are the ones each surface sends to omh_todo.
-        # The route hint and the context tool hint once named only the first
-        # two, so a code-story run (`ultraqa`) was pointed at todo_list and its
-        # write was then held.
+        # stage or a template -- are the ones these four surfaces send to
+        # omh_todo. The route hint and the context tool hint once named only
+        # the first two, so a code-story run (`ultraqa`) was pointed at
+        # todo_list and its write was then held. Other one-checklist lines list
+        # no such plans: `ultrawork`'s opening step names only the accepted
+        # plan it executes, the plan nudge fires when no plan exists, and the
+        # board references only say which one tool holds the rows.
         from omh.plugin_bundle.omh.awareness import awareness_primer_payload
         from omh.skills.catalog import builtin_definitions
 

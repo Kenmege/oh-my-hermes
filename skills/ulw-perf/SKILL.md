@@ -38,7 +38,7 @@ Good example:
 Bad example:
 
 - Prompt: $ultraperf make the recommender p95 under 200ms; baseline 340ms, benchmark is 'make bench'
-- Expected behavior: Skip the discovery audit: record 340ms as the baseline and `make bench` as the evaluator command, then fix and re-measure against the 200ms target.
+- Expected behavior: Skip the discovery audit: record 340ms as the baseline and `make bench` as the evaluator command, then hand the fix to the selected executor and re-measure against the 200ms target.
 - Why: A single declared measurable goal does not need a discovery loop.
 
 ## Completion Checklist

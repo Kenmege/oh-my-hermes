@@ -5,10 +5,10 @@ All notable changes will be documented here.
 ## Unreleased
 
 - **Every skill says one thing about spends, retired siblings, review
-  retries and the one plan checklist.** `loop` hands a step that would move
-  money to `spend-gate`, in that skill's own terms: a cycle nobody can answer
-  never spends and only prepares the card, and a no-agent script that pays is
-  a spend set up now. `ultraperf` stops sending a declared metric, baseline
+  retries and the one plan checklist.** A `loop` step that would move money
+  goes through `spend-gate` first while the loop carries on, in that skill's
+  own terms: an agent run on a schedule never spends, and a no-agent script
+  that pays is a spend set up now. `ultraperf` stops sending a declared metric, baseline
   and benchmark to `performance-goal`, a skill #1691 folded into `ultraperf`
   itself; a declared goal starts from its baseline there, as its recovery note
   already said. `decision-prototype`'s compact body now carries the line that

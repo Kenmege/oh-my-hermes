@@ -28,7 +28,6 @@ This is an OMH `loop` workflow skill, projected for Agent Skills hosts (Claude C
 - The goal is too vague to name an observable problem, next artifact, verification signal, or stop condition.
 - The goal depends mainly on external waiting, adoption, revenue, or community response without observable local next actions.
 - The permission profile does not allow repeated research, handoff, queue, or feedback cycles.
-- A loop step would move money -- a purchase, a renewal, a top-up, or a transfer; use `omh-spend-gate`, because a cycle nobody can answer, such as a queued tick or a delegated subagent, never spends and only prepares the card for the person's next interactive turn, and a no-agent script that pays is a spend set up now: its card, typed yes, and cap come before the script exists.
 
 ## Examples
 
@@ -166,6 +165,7 @@ Safety rules:
 - Do not let unattended loop progress bypass verification; missing or failed verification returns to plan/research or waits for evidence.
 - Do not let comprehension debt or cognitive surrender hide behind green-looking loop status.
 - Do not claim a goal is complete because the upstream judge said done, the turn budget ran out, or a gate paused the loop.
+- A loop step that would move money -- a purchase, a renewal, a top-up, or a transfer -- goes through `omh-spend-gate` before it runs, and the loop carries on around it. An agent run on a schedule never spends: a cycle nobody can answer, such as a queued tick or a delegated subagent, only prepares the card for the person's next interactive turn. A no-agent script that pays is a spend set up now, so its card, typed yes, and cap come before the script exists.
 
 ## Runtime Evidence
 

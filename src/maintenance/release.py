@@ -749,7 +749,7 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64651
 # 502002 -> 501990: `ultraperf` (-12) drops its Do-Not-Use line handing a
 # declared metric to `performance-goal`, which #1691 retired into
 # `ultraperf` itself, so the one `do_not_use_when` entry its row carries is
-# now the `code-review` line. `loop`'s new spend-gate line, the shared
+# now the `code-review` line. `loop`'s new spend-gate safety rule, the shared
 # grounded-citations, curator-ledger, and document-producer rules, and the
 # presence clauses sit past the rows' bounds or render byte-identical and
 # move nothing here. Re-derived from the producer.

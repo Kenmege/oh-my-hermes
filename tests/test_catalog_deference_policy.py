@@ -298,13 +298,8 @@ NON_SKILL_BACKTICKS = frozenset(
 # `spend-gate`, and `loop`'s unattended-schedule statement points at
 # `automation-blueprint` instead of naming Hermes' cron tool. Three cases,
 # three pairs, no new owner.
-# `loop` gains a statement handing a loop step that would move money to
-# `spend-gate`, the same hand-off `automation-blueprint` makes for a recurring
-# job. `ultraperf`'s statement pointing at the retired `performance-goal`
-# (#1691) is gone, but it named no routable skill and was never a case. One
-# case, one pair, no new owner.
-EXPECTED_DEFERENCE_CASES = 385
-EXPECTED_DEFERENCE_PAIRS = 400
+EXPECTED_DEFERENCE_CASES = 384
+EXPECTED_DEFERENCE_PAIRS = 399
 EXPECTED_DEFERRING_OWNERS = 112
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
@@ -367,9 +362,8 @@ _SPEND_GATE_BY_DESIGN = (
 DELIBERATELY_UNREACHABLE: dict[tuple[str, str], str] = {
     ("automation-blueprint", "spend-gate"): _SPEND_GATE_BY_DESIGN,
     ("browser-operator", "spend-gate"): _SPEND_GATE_BY_DESIGN,
-    ("loop", "spend-gate"): _SPEND_GATE_BY_DESIGN,
 }
-EXPECTED_DELIBERATELY_UNREACHABLE_COUNT = 3
+EXPECTED_DELIBERATELY_UNREACHABLE_COUNT = 2
 
 
 def _deference_cases() -> list[tuple[str, tuple[str, ...], str]]:

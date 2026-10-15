@@ -176,7 +176,7 @@ verdicts are the ones `code-review` already names.
   yourself. If the return still does not match after that one ask, the review
   is `not_observed`: never a pass, and a verdict lifted out of the unmatched
   text is not a verdict. Re-dispatch with something changed, or write the
-  findings yourself.
+  findings yourself, and say which you did.
 - A return that matches has a checked shape. Its findings are still claims, read
   under the two rules below.
 

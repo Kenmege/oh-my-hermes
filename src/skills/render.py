@@ -8138,7 +8138,7 @@ verdicts are the ones `code-review` already names.
   yourself. If the return still does not match after that one ask, the review
   is `not_observed`: never a pass, and a verdict lifted out of the unmatched
   text is not a verdict. Re-dispatch with something changed, or write the
-  findings yourself.
+  findings yourself, and say which you did.
 - A return that matches has a checked shape. Its findings are still claims, read
   under the two rules below.
 
@@ -8257,8 +8257,8 @@ Hermes handles two parts of a review itself when its tools are present: it
 validates a delegated reviewer's return against a schema, and its review lane
 decides what happens to a kanban card. `code-review` states each rule once and
 reads the host's record rather than arguing the rule in prose. Presence is a
-fact about this session: a tool is present when {native_tool_presence_clause('it')}.
-Never infer it from a Hermes version.
+fact about this session: a tool is present when it is in your tool list or
+tool_search finds it. Never infer it from a Hermes version.
 
 ## 1. A reviewer dispatched with `delegate_task`
 

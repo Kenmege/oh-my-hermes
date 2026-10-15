@@ -10,7 +10,7 @@ metadata:
     phase: continuous-goal-loop
     role: planner
     quality_tier: loop-gated
-    related_skills: [ulw-work, omh-automation-blueprint, omh-spend-gate]
+    related_skills: [ulw-work, omh-automation-blueprint]
 ---
 
 # Loop
@@ -31,7 +31,6 @@ This is a Hermes-native `loop` workflow skill.
 - The permission profile does not allow repeated research, handoff, queue, or feedback cycles.
 - The request is a check repeated on a timer inside this session, such as polling CI, a deploy, or a queue every few minutes until it changes; that is Hermes' native `/loop` (an interval plus `--until` or `--times`), which only the user can start, so name the command instead of opening a goal loop.
 - The work must run unattended on a schedule that outlives this session, such as hourly or nightly; use `omh-automation-blueprint`, which settles overlap, missed runs, retries, and failure pauses before a Hermes cron job is created.
-- A loop step would move money -- a purchase, a renewal, a top-up, or a transfer; use `omh-spend-gate`, because a cycle nobody can answer, such as a queued tick or a delegated subagent, never spends and only prepares the card for the person's next interactive turn, and a no-agent script that pays is a spend set up now: its card, typed yes, and cap come before the script exists.
 - The request is one objective with a stated done condition that needs no interviewer, planner, researcher, or reviewer cycles; native `/goal` keeps the session on it (`/goal draft` writes its completion contract), and this skill keeps the long-horizon loop engineering.
 
 ## Examples
@@ -180,6 +179,7 @@ Safety rules:
 - Do not let unattended loop progress bypass verification; missing or failed verification returns to plan/research or waits for evidence.
 - Do not let comprehension debt or cognitive surrender hide behind green-looking loop status.
 - Do not claim a goal is complete because the upstream judge said done, the turn budget ran out, or a gate paused the loop.
+- A loop step that would move money -- a purchase, a renewal, a top-up, or a transfer -- goes through `omh-spend-gate` before it runs, and the loop carries on around it. An agent run on a schedule never spends: a cycle nobody can answer, such as a queued tick or a delegated subagent, only prepares the card for the person's next interactive turn. A no-agent script that pays is a spend set up now, so its card, typed yes, and cap come before the script exists.
 
 ## Goal Driver Ownership
 
