@@ -2033,14 +2033,20 @@ a brief written before it chose `off`. The pack carries none, and neither do
 the chat notice, `omh_memory`, or `omh doctor`. The counters keep counting, so
 switching back to `reminder` starts from what happened in the meantime. Written
 bare, `off` is a YAML false, and `hermes config set` stores it as `false`.
-`off`, `false` and `no` all mean `off`. Anything else, an unset key, or a
-config this reader cannot follow, keeps the default `reminder`, so memory keeps
-running with no step for a person to take.
-The setting is read from the profile's own file at every evaluation, so a
-change applies from the next turn without a restart. The same block-style scan
-the standalone lane uses for `omh_home` reads it, and the managed overlay is
-not consulted. `omh memory dream` reports the mode it read as `mode`. Profiles
-that share a store can choose differently, and no managed OMH file is edited.
+`off`, `false` and `no` all mean `off`. An unset key keeps the default
+`reminder`, so memory keeps running with no step for a person to take. Any
+other value (`disabled`, `0`, `on`, a typo), or a config this reader cannot
+follow, also keeps `reminder`, and says so: `omh memory dream` reports the mode
+in force as `mode` and how the setting read as `mode_setting`, which carries
+`issue: mode_setting_unrecognized` with the value as written (at most 64
+printable characters) and a `reason` of `unknown_value` or
+`config_unreadable`. `omh doctor` prints the same as a `mode_setting_unrecognized`
+advice line, which never changes the doctor status.
+The setting is read from the profile's own file once per evaluation and once
+per pack render, so a change applies from the next turn without a restart. The
+same block-style scan the standalone lane uses for `omh_home` reads it, and the
+managed overlay is not consulted. Profiles that share a store can choose
+differently, and no managed OMH file is edited.
 
 On the first attended session start after the upgrade from an earlier release,
 which kept one `memory/dreaming.json` and `memory/consolidation.json` for the
@@ -2050,11 +2056,15 @@ whole home:
   directory. Not routed means a process serving its launch profile alone. On a
   single-profile host the files are that profile's own, so a pending brief and
   its counters survive the upgrade. Where separate processes for different
-  profiles share one store, the first to start claims them. A file the profile
-  already has is never replaced.
+  profiles share one store, the first to start claims them, one at a time
+  under a single lock, so the two files never split between profiles. A file
+  the profile already has is never replaced, so if `omh memory dream
+  --evaluate` wrote the profile's own files before that first session start,
+  the old ones stay unread.
 - A routed profile leaves them where they are and never reads them. That is
-  every profile of a multiplexed process, or a profile other than the launch
-  one. Nothing records which profile raised them, so a stale shared brief stops
+  every profile of a multiplexed process, including a host that runs a single
+  profile with `gateway.multiplex_profiles: true`, or a profile other than the
+  launch one. Nothing records which profile raised them, so a stale shared brief stops
   reaching every profile instead of being handed to one at random. A standing
   condition such as low headroom is raised again from the profile's own state
   at its next evaluation.

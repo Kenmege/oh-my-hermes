@@ -24,6 +24,8 @@ import json
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -32,16 +34,19 @@ from _local_package import load_local_package
 
 load_local_package()
 from omh.paths import resolve_paths  # noqa: E402
-from omh.maintenance.doctor import _memory_consolidation_check  # noqa: E402
+from omh.maintenance.doctor import _memory_consolidation_check, run_doctor_advisories  # noqa: E402
 from omh.plugin_bundle.omh import runtime_paths  # noqa: E402
 from omh.plugin_bundle.omh.memory_blocks import approve_memory_block, build_memory_block, write_memory_block  # noqa: E402
 from omh.plugin_bundle.omh.memory_dreaming import (  # noqa: E402
     DEFAULT_TURN_INTERVAL,
     DREAMING_HANDOFF_SCHEMA_VERSION,
+    MODE_SETTING_UNRECOGNIZED,
+    adopt_legacy_dreaming_files,
     configured_dreaming_mode,
     consolidation_path,
     dreaming_state_path,
     empty_dreaming_state,
+    read_dreaming_mode_setting,
     read_dreaming_state,
     read_latest_consolidation,
     record_turn,
@@ -184,25 +189,43 @@ class ProfileIsolationTests(_SharedStore):
 
 class DreamingModeSettingTests(_SharedStore):
     def test_the_mode_is_read_from_the_profile_config(self) -> None:
+        unset = {"mode": "reminder", "raw": None, "recognized": True}
+        unreadable = {"mode": "reminder", "raw": None, "recognized": False, "issue": MODE_SETTING_UNRECOGNIZED, "reason": "config_unreadable"}
+
+        def unknown(raw: str) -> dict:
+            return {"mode": "reminder", "raw": raw, "recognized": False, "issue": MODE_SETTING_UNRECOGNIZED, "reason": "unknown_value"}
+
         cases = (
-            ("bare off, a YAML false", dreaming_mode_config("off"), "off"),
-            ("what hermes config set stores for off", dreaming_mode_config("false"), "off"),
-            ("quoted off", dreaming_mode_config('"off"'), "off"),
-            ("no", dreaming_mode_config("no"), "off"),
-            ("reminder", dreaming_mode_config("reminder"), "reminder"),
-            ("legacy config subtree", "plugins:\n  entries:\n    omh:\n      config:\n        dreaming_mode: off\n", "off"),
-            ("blank", dreaming_mode_config(""), "reminder"),
-            ("unknown word", dreaming_mode_config("sometimes"), "reminder"),
-            ("unset", "plugins:\n  entries:\n    omh:\n      settings:\n        omh_home: ~/.omh\n", "reminder"),
-            ("another plugin's setting", "plugins:\n  entries:\n    other:\n      settings:\n        dreaming_mode: off\n", "reminder"),
-            ("tab-indented, unreadable", "plugins:\n\tentries:\n\t\tomh:\n\t\t\tsettings:\n\t\t\t\tdreaming_mode: off\n", "reminder"),
+            ("bare off, a YAML false", dreaming_mode_config("off"), {"mode": "off", "raw": "off", "recognized": True}),
+            ("what hermes config set stores for off", dreaming_mode_config("false"), {"mode": "off", "raw": "false", "recognized": True}),
+            ("quoted off", dreaming_mode_config('"off"'), {"mode": "off", "raw": "off", "recognized": True}),
+            ("no", dreaming_mode_config("no"), {"mode": "off", "raw": "no", "recognized": True}),
+            ("reminder", dreaming_mode_config("reminder"), {"mode": "reminder", "raw": "reminder", "recognized": True}),
+            ("legacy config subtree", "plugins:\n  entries:\n    omh:\n      config:\n        dreaming_mode: off\n", {"mode": "off", "raw": "off", "recognized": True}),
+            ("blank", dreaming_mode_config(""), unset),
+            ("unset", "plugins:\n  entries:\n    omh:\n      settings:\n        omh_home: ~/.omh\n", unset),
+            ("another plugin's setting", "plugins:\n  entries:\n    other:\n      settings:\n        dreaming_mode: off\n", unset),
+            # Written, but not a mode: the default applies and says so.
+            ("disabled", dreaming_mode_config("disabled"), unknown("disabled")),
+            ("none, a string to a YAML loader", dreaming_mode_config("none"), unknown("none")),
+            ("zero", dreaming_mode_config("0"), unknown("0")),
+            ("a typo of off", dreaming_mode_config("offf"), unknown("offf")),
+            ("on", dreaming_mode_config("on"), unknown("on")),
+            ("only the value, bounded", dreaming_mode_config("x" * 200), unknown("x" * 64)),
+            ("tab-indented, unreadable", "plugins:\n\tentries:\n\t\tomh:\n\t\t\tsettings:\n\t\t\t\tdreaming_mode: off\n", unreadable),
+            ("not UTF-8, unreadable", b"plugins:\n  entries: \xff\n", unreadable),
         )
         for label, body, expected in cases:
             with self.subTest(case=label):
                 home = self.root / "modes" / label.replace(" ", "-").replace(",", "")
-                write_profile_config(home, body)
-                self.assertEqual(configured_dreaming_mode(home), expected)
-        self.assertEqual(configured_dreaming_mode(self.root / "no-config-here"), "reminder")
+                if isinstance(body, bytes):
+                    home.mkdir(parents=True)
+                    (home / "config.yaml").write_bytes(body)
+                else:
+                    write_profile_config(home, body)
+                self.assertEqual(read_dreaming_mode_setting(home), expected)
+                self.assertEqual(configured_dreaming_mode(home), expected["mode"])
+        self.assertEqual(read_dreaming_mode_setting(self.root / "no-config-here"), unset)
 
     def test_off_writes_and_serves_no_brief_for_that_profile_only(self) -> None:
         write_profile_config(self.profile_a, dreaming_mode_config("off"))
@@ -247,31 +270,78 @@ class DreamingModeSettingTests(_SharedStore):
 
     def test_omh_memory_dream_reports_the_profile_mode(self) -> None:
         write_profile_config(self.profile_a, dreaming_mode_config("off"))
-        for profile, expected in ((self.profile_a, "off"), (self.profile_b, "reminder")):
+        cases = (
+            (self.profile_a, "off", {"raw": "off", "recognized": True}),
+            (self.profile_b, "reminder", {"raw": None, "recognized": True}),
+        )
+        for profile, mode, setting in cases:
             with self.subTest(profile=profile.name):
                 status, stdout, stderr = run_cli(["--omh-home", str(self.store), "--hermes-home", str(profile), "memory", "dream"])
                 self.assertEqual(status, 0, stderr)
-                self.assertEqual(json.loads(stdout)["mode"], expected)
+                payload = json.loads(stdout)
+                self.assertEqual((payload["mode"], payload["mode_setting"]), (mode, setting))
+
+    def test_a_value_that_is_not_a_mode_is_reported_not_taken_as_a_choice(self) -> None:
+        write_profile_config(self.profile_a, dreaming_mode_config("disabled"))
+        write_hermes_memory(self.profile_a, "x" * 2100)
+        for evaluate in ([], ["--evaluate"]):
+            with self.subTest(evaluate=bool(evaluate)):
+                status, stdout, stderr = run_cli(
+                    ["--omh-home", str(self.store), "--hermes-home", str(self.profile_a), "memory", "dream", *evaluate]
+                )
+                self.assertEqual(status, 0, stderr)
+                payload = json.loads(stdout)
+                self.assertEqual(payload["mode"], "reminder")
+                self.assertEqual(
+                    payload["mode_setting"],
+                    {"raw": "disabled", "recognized": False, "issue": MODE_SETTING_UNRECOGNIZED, "reason": "unknown_value"},
+                )
+        # The default is what is in force, so the brief still fires.
+        self.assertTrue(read_latest_consolidation(self.store, self.profile_a)["due"])
+
+    def test_doctor_advises_on_a_setting_it_cannot_read_as_a_mode(self) -> None:
+        cases = (
+            ("disabled", dreaming_mode_config("disabled"), "advice", "'disabled', which is not off or reminder"),
+            ("tab-indented", "plugins:\n\tentries:\n\t\tomh:\n", "advice", "could not be read"),
+            ("off", dreaming_mode_config("off"), "ok", "dreaming_mode: off; off is in force"),
+            ("unset", "memory:\n  provider: omh\n", "ok", "unset; reminder is in force"),
+        )
+        for label, body, status, observed in cases:
+            with self.subTest(case=label):
+                home = self.root / "doctor" / label
+                write_profile_config(home, body)
+                entries = {entry.check_id: entry for entry in run_doctor_advisories(resolve_paths(self.store, home)).entries}
+                entry = entries[MODE_SETTING_UNRECOGNIZED]
+                self.assertEqual(entry.status, status)
+                self.assertIn(observed, entry.observed)
+        missing = run_doctor_advisories(resolve_paths(self.store, self.root / "doctor" / "no-config")).entries
+        self.assertEqual({entry.check_id: entry.status for entry in missing}[MODE_SETTING_UNRECOGNIZED], "unobserved")
 
 
 class LegacyStateUpgradeTests(_SharedStore):
     """What happens to the home-wide files an earlier release left in the store."""
 
-    def test_a_single_profile_host_keeps_its_pending_brief_and_counters(self) -> None:
+    def test_a_single_profile_host_is_served_its_pending_brief_after_the_upgrade(self) -> None:
+        # No pending turns, so nothing the session start raises replaces the
+        # adopted brief before the first turn serves it.
         legacy_brief = write_legacy(self.store, "consolidation.json", due_brief("context_compaction_observed", trigger="compaction"))
-        state = empty_dreaming_state()
-        for _ in range(3):
-            state = record_turn(state)
-        legacy_state = write_legacy(self.store, "dreaming.json", state)
+        legacy_state = write_legacy(self.store, "dreaming.json", empty_dreaming_state())
         write_hermes_memory(self.profile_a, "one short fact")
         live = self.start(self.profile_a, "session-a")
         self.assertFalse(legacy_brief.exists())
         self.assertFalse(legacy_state.exists())
         self.assertTrue(dreaming_state_path(self.store, self.profile_a).is_file())
-        # The pack `initialize` rendered carries the brief the profile had before the upgrade.
-        self.assertIn("<reason>context_compaction_observed</reason>", live._pack)
-        # The adopted counters were honoured: the session-start recovery saw
-        # three unconsolidated turns and raised its own brief over them.
+        # Served in Hermes' order: turn start, then prefetch.
+        self.assertIn("<reason>context_compaction_observed</reason>", self.turns(live, 1))
+
+    def test_a_single_profile_host_keeps_its_pending_counters(self) -> None:
+        state = empty_dreaming_state()
+        for _ in range(3):
+            state = record_turn(state)
+        write_legacy(self.store, "dreaming.json", state)
+        write_hermes_memory(self.profile_a, "one short fact")
+        self.start(self.profile_a, "session-a")
+        # The session-start recovery counted the three turns it adopted.
         self.assertIn("session_ending_with_unconsolidated_turns:3", read_latest_consolidation(self.store, self.profile_a)["reasons"])
 
     def test_adoption_never_replaces_the_profiles_own_state(self) -> None:
@@ -294,7 +364,6 @@ class LegacyStateUpgradeTests(_SharedStore):
             live = self.start(self.profile_b, "session-b")
         self.assertTrue(legacy_brief.exists())
         self.assertTrue(legacy_state.exists())
-        self.assertNotIn(BRIEF, live._pack)
         self.assertNotIn(BRIEF, self.turns(live, 1))
         self.assertIsNone(read_latest_consolidation(self.store, self.profile_b))
 
@@ -306,6 +375,46 @@ class LegacyStateUpgradeTests(_SharedStore):
         write_legacy(self.store, "consolidation.json", due_brief("turn_interval_reached:5/5"))
         inventory = build_memory_migration_inventory(resolve_paths(self.store, self.profile_a))
         self.assertEqual(inventory["counts"]["source_bucket"].get("provider_consolidation_journal"), 3)
+
+    def test_two_profiles_claiming_at_once_never_split_the_files_or_fail(self) -> None:
+        # The real move, slowed so both claimers are inside the claim together.
+        real_replace = os.replace
+
+        def slow_replace(source: object, target: object) -> None:
+            time.sleep(0.005)
+            real_replace(source, target)
+
+        for run in range(20):
+            store = self.root / f"race-{run}"
+            write_legacy(store, "dreaming.json", record_turn(empty_dreaming_state()))
+            write_legacy(store, "consolidation.json", due_brief("turn_interval_reached:5/5"))
+            barrier = threading.Barrier(2)
+            claimed: dict[str, list[str]] = {}
+            raised: list[str] = []
+
+            def claim(home: Path) -> None:
+                barrier.wait()
+                try:
+                    claimed[home.name] = adopt_legacy_dreaming_files(store, home)
+                except OSError as error:
+                    raised.append(type(error).__name__)
+
+            with patch.object(os, "replace", slow_replace):
+                threads = [threading.Thread(target=claim, args=(home,)) for home in (self.profile_a, self.profile_b)]
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join()
+            with self.subTest(run=run):
+                self.assertEqual(raised, [])
+                self.assertEqual(sorted(claimed.values()), [[], ["dreaming.json", "consolidation.json"]])
+                self.assertFalse((store / "memory" / "dreaming.json").exists())
+                self.assertFalse((store / "memory" / "consolidation.json").exists())
+
+    def test_a_file_gone_before_the_move_counts_as_already_claimed(self) -> None:
+        write_legacy(self.store, "consolidation.json", due_brief("turn_interval_reached:5/5"))
+        with patch.object(os, "replace", side_effect=FileNotFoundError("claimed elsewhere")):
+            self.assertEqual(adopt_legacy_dreaming_files(self.store, self.profile_a), [])
 
     def test_an_unattributable_scope_or_a_background_run_claims_nothing(self) -> None:
         legacy_brief = write_legacy(self.store, "consolidation.json", due_brief("turn_interval_reached:5/5"))

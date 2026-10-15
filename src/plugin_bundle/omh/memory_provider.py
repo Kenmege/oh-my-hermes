@@ -1149,7 +1149,11 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # The brief is a request, not a memory: it is served so the model can
         # consolidate in this turn, and it never moves the recall count. Only
         # this profile's brief, and none at all when its mode is `off`.
-        brief = read_latest_consolidation(self._omh_home, self._profile_home) if self._attended else None
+        brief = (
+            read_latest_consolidation(self._omh_home, self._profile_home, mode=configured_dreaming_mode(self._profile_home))
+            if self._attended
+            else None
+        )
         # A status, not a memory either: counts only, and never the recall count.
         # Withheld for a turn that is not the owner's DM: it stays pending,
         # never spent where it cannot be shown.
@@ -1370,7 +1374,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
             # (a record crossing from expiring into expired keeps N identical).
             # The persisted brief is refreshed in place: no new notification,
             # no suppression reset, no counter mutation.
-            self._refresh_brief_record_expiry(record_expiry)
+            self._refresh_brief_record_expiry(record_expiry, mode=mode)
         return handoff
 
     def _evaluation_inputs(
@@ -1419,9 +1423,9 @@ class OmhMemoryProvider(_MemoryProviderBase):
             readings,
         )
 
-    def _refresh_brief_record_expiry(self, record_expiry: dict[str, int]) -> None:
+    def _refresh_brief_record_expiry(self, record_expiry: dict[str, int], *, mode: str) -> None:
         """Keep the persisted due brief's expiry breakdown current, silently."""
-        brief = read_latest_consolidation(self._omh_home, self._profile_home)
+        brief = read_latest_consolidation(self._omh_home, self._profile_home, mode=mode)
         if not brief or not brief.get("due") or brief.get("record_expiry") == record_expiry:
             return
         updated = dict(brief)

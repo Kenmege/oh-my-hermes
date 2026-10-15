@@ -29,6 +29,7 @@ from ..coding.model_recommendations import (
 from ..config_adapter import external_dirs, read_config
 from ..paths import default_hermes_home, expand_path, find_project_root
 from ..plugin_bundle.omh import hermes_memory
+from ..plugin_bundle.omh.memory_dreaming import MODE_SETTING_UNRECOGNIZED, read_dreaming_mode_setting
 from ..routing.owner_preference import owner_preference_path, validate_owner_preference
 from ..surfaces.hermes_model_settings import HERMES_AUX_ALIASES
 from ..system.local_store import read_json_object_result
@@ -1218,6 +1219,50 @@ def check_loop_hard_stop_disabled(hermes_home: str | Path | None = None) -> Advi
         )
 
 
+def check_dreaming_mode_setting(hermes_home: str | Path | None = None) -> AdviceEntry:
+    """Is this profile's `dreaming_mode` setting one OMH reads as a mode?
+
+    `plugins.entries.omh.settings.dreaming_mode` chooses `off` or `reminder`
+    (#2087). A value that is neither, or a config.yaml OMH's block scan cannot
+    follow, leaves `reminder` in force while the person who wrote `disabled`
+    believes dreaming is off. A file the scan cannot follow is advice here,
+    not unobserved: the mode in force is not in doubt -- OMH applies the
+    default whenever it cannot read the setting -- and this line is where the
+    person learns that what they wrote is not read. Only a missing
+    config.yaml is unobserved, as for every other inspector here.
+
+    Report-only. OMH does not write this key.
+    """
+    home = _resolve_hermes_home(hermes_home)
+    config_path = home / "config.yaml"
+    evidence_boundary = (
+        "Local read of this profile's config.yaml `plugins.entries.omh.settings.dreaming_mode` "
+        "with the block-style scan the OMH memory provider reads it with. The managed config "
+        "overlay is not read."
+    )
+    remediation = (
+        "Set `plugins.entries.omh.settings.dreaming_mode` to `off` or `reminder`, written in "
+        "block style in this profile's config.yaml. Any other value, or a file OMH cannot read, "
+        "keeps `reminder`."
+    )
+    if not config_path.exists():
+        return AdviceEntry(MODE_SETTING_UNRECOGNIZED, "unobserved", remediation, evidence_boundary, f"{config_path} not found")
+    setting = read_dreaming_mode_setting(home)
+    if setting["recognized"]:
+        observed = (
+            f"dreaming_mode: {setting['raw']}; {setting['mode']} is in force"
+            if setting["raw"] is not None
+            else f"dreaming_mode is unset; {setting['mode']} is in force"
+        )
+        return AdviceEntry(MODE_SETTING_UNRECOGNIZED, "ok", remediation, evidence_boundary, observed)
+    observed = (
+        f"dreaming_mode is {setting['raw']!r}, which is not off or reminder; {setting['mode']} is in force"
+        if setting.get("reason") == "unknown_value"
+        else f"config.yaml could not be read by OMH's block-style scan; {setting['mode']} is in force"
+    )
+    return AdviceEntry(MODE_SETTING_UNRECOGNIZED, "advice", remediation, evidence_boundary, observed)
+
+
 # What a nested-scalar read can conclude. "absent" and "ambiguous" are
 # different answers and the two advisories say different things about them:
 # an absent key means the host default is in force and can be named, while a
@@ -1322,5 +1367,6 @@ def run_config_advisories(
             check_workflow_engine_reach(hermes_home, omh_home=omh_home),
             check_turn_budget_loop_exposure(hermes_home),
             check_loop_hard_stop_disabled(hermes_home),
+            check_dreaming_mode_setting(hermes_home),
         ],
     )

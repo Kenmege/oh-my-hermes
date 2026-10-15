@@ -25,12 +25,16 @@ All notable changes will be documented here.
   headroom-led brief is raised once. `dreaming_mode: off` in
   a profile's own `config.yaml` stops that profile's brief from being raised,
   served or reported, including one written before; bare `off` and `false`
-  both mean `off`. Unset or unreadable keeps `reminder`, the default.
-  `omh memory dream` reports the mode it read. On the first attended session
-  start after the upgrade, a single-profile host moves its old home-wide files
-  into its profile directory and keeps a pending brief. A routed profile, every
-  profile of a multiplexed process, leaves them unread. `omh memory retire
-  --apply` retires an expiring-only brief in every profile's directory. Thanks
+  both mean `off`. Unset keeps `reminder`, the default. Any other value, or a
+  config OMH cannot read, also keeps `reminder` but is reported as
+  `mode_setting_unrecognized`, in `omh memory dream`'s `mode_setting` and as
+  `omh doctor` advice. On the first attended session start after the upgrade, a
+  single-profile host moves its old home-wide files into its profile directory
+  and keeps a pending brief. Two cases leave them unread: the profile already
+  has its own files (`omh memory dream --evaluate` raised a brief first), or
+  the profile is routed, which every profile of a multiplexed process is, even
+  a single profile under `gateway.multiplex_profiles: true`. `omh memory
+  retire --apply` retires an expiring-only brief in every profile's directory. Thanks
   to @kanzaka110 for the report and @sanjkrsna for pointing at the
   per-profile key.
 

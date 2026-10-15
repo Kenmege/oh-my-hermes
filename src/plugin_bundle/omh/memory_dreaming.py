@@ -72,6 +72,13 @@ DREAMING_MODE_SETTING = "dreaming_mode"
 # `off` written bare is a YAML false, and `hermes config set ... off` stores
 # it as `false`; the false spellings all mean the profile chose `off`.
 _OFF_SETTING_SPELLINGS = frozenset({"off", "false", "no"})
+# A setting written but not read as a mode: a value outside the spellings
+# above and the modes, or a config.yaml the scan could not read. The default
+# applies either way; this names it so `omh memory dream` and the doctor
+# advisory can say so instead of reporting `reminder` as if it were chosen.
+MODE_SETTING_UNRECOGNIZED = "mode_setting_unrecognized"
+# Enough of an unrecognized value to recognize the typo, never more of the file.
+_RAW_SETTING_DISPLAY_CHARS = 64
 # Where an earlier release kept one set for the whole home, under `memory/`.
 LEGACY_STATE_FILENAMES = ("dreaming.json", "consolidation.json")
 
@@ -103,8 +110,8 @@ def dreaming_state_path(omh_home: str | Path, hermes_home: str | Path) -> Path:
     return profile_dreaming_dir(omh_home, hermes_home) / "dreaming.json"
 
 
-def configured_dreaming_mode(hermes_home: str | Path) -> str:
-    """The mode this profile chose, or the default when it chose none.
+def read_dreaming_mode_setting(hermes_home: str | Path) -> dict[str, object]:
+    """What this profile's `dreaming_mode` setting says, and the mode in force.
 
     Read from the profile's own ``config.yaml`` at
     ``plugins.entries.omh.settings.dreaming_mode``, the per-profile plugin
@@ -113,22 +120,56 @@ def configured_dreaming_mode(hermes_home: str | Path) -> str:
     differently, and nobody edits a managed file to choose. The text scan is
     the one the standalone lane reads ``omh_home`` with, keyed by the Hermes
     home the caller is bound to rather than whichever profile the process
-    has in scope; the managed overlay is not consulted. Read at every
-    evaluation and every brief read, so a change applies from the next turn.
+    has in scope; the managed overlay is not consulted.
 
-    Unset, unreadable, or a shape the scan cannot follow is the default: a
-    setting this reader cannot see must not turn dreaming off, and must not
-    raise into the turn that asked.
+    Returns ``{"mode", "raw", "recognized"}``. ``raw`` is the value as
+    written, bounded and printable only, or None when nothing was written or
+    the file could not be read. Anything not read as a mode falls back to the
+    default -- a setting this reader cannot see must not turn dreaming off,
+    and must not raise into the turn that asked -- but is not ``recognized``,
+    and carries ``issue`` (`MODE_SETTING_UNRECOGNIZED`) with ``reason``
+    ``unknown_value`` or ``config_unreadable``. No config.yaml at all is an
+    unset setting, which is recognized: the default is what nobody chose.
     """
     try:
         text = (Path(hermes_home).expanduser() / "config.yaml").read_text(encoding="utf-8")
-        value = runtime_paths.plugin_setting_text(text, DREAMING_MODE_SETTING)
+    except FileNotFoundError:
+        return {"mode": DEFAULT_DREAMING_MODE, "raw": None, "recognized": True}
     except (OSError, ValueError):
-        return DEFAULT_DREAMING_MODE
+        return _unrecognized_mode_setting(None, "config_unreadable")
+    try:
+        value = runtime_paths.plugin_setting_text(text, DREAMING_MODE_SETTING)
+    except runtime_paths.RuntimeBindingError:
+        return _unrecognized_mode_setting(None, "config_unreadable")
     if value is None:
-        return DEFAULT_DREAMING_MODE
+        return {"mode": DEFAULT_DREAMING_MODE, "raw": None, "recognized": True}
+    raw = "".join(character for character in value if character.isprintable())[:_RAW_SETTING_DISPLAY_CHARS]
     spelled = value.strip().lower()
-    return "off" if spelled in _OFF_SETTING_SPELLINGS else normalize_dreaming_mode(spelled)
+    if spelled in _OFF_SETTING_SPELLINGS:
+        return {"mode": "off", "raw": raw, "recognized": True}
+    if spelled in DREAMING_MODES:
+        return {"mode": spelled, "raw": raw, "recognized": True}
+    return _unrecognized_mode_setting(raw, "unknown_value")
+
+
+def _unrecognized_mode_setting(raw: str | None, reason: str) -> dict[str, object]:
+    return {
+        "mode": DEFAULT_DREAMING_MODE,
+        "raw": raw,
+        "recognized": False,
+        "issue": MODE_SETTING_UNRECOGNIZED,
+        "reason": reason,
+    }
+
+
+def configured_dreaming_mode(hermes_home: str | Path) -> str:
+    """The mode in force for this profile (`read_dreaming_mode_setting`).
+
+    Read fresh on each call, so a change applies from the next evaluation;
+    a caller that needs the mode twice in one render or evaluation reads it
+    once and passes it down.
+    """
+    return str(read_dreaming_mode_setting(hermes_home)["mode"])
 
 
 def adopt_legacy_dreaming_files(omh_home: str | Path, hermes_home: str | Path) -> list[str]:
@@ -144,21 +185,34 @@ def adopt_legacy_dreaming_files(omh_home: str | Path, hermes_home: str | Path) -
     and never reads them. A file the profile already has is never replaced,
     and the old file is moved, not copied, so it is claimed once. Returns the
     names moved. Raises ``OSError``.
+
+    One lock on the old location covers the whole claim. Locking each target
+    alone let two profiles claim at once: in 300 two-thread runs, 254 losers
+    raised ``FileNotFoundError`` on a file the winner had already moved, and
+    13 runs split the counters and the brief between the two profiles.
     """
     memory_dir = Path(omh_home).expanduser() / "memory"
+    legacy_files = [memory_dir / name for name in LEGACY_STATE_FILENAMES]
+    if not any(path.is_file() and not path.is_symlink() for path in legacy_files):
+        return []
     target_dir = profile_dreaming_dir(omh_home, hermes_home)
+    target_dir.mkdir(parents=True, exist_ok=True)
     moved: list[str] = []
-    for name in LEGACY_STATE_FILENAMES:
-        legacy = memory_dir / name
-        if legacy.is_symlink() or not legacy.is_file():
-            continue
-        target = target_dir / name
-        target_dir.mkdir(parents=True, exist_ok=True)
-        with state_file_lock(target):
-            if target.exists():
+    with state_file_lock(memory_dir / "consolidation.json"):
+        for legacy in legacy_files:
+            if legacy.is_symlink() or not legacy.is_file():
                 continue
-            os.replace(legacy, target)
-        moved.append(name)
+            target = target_dir / legacy.name
+            # The target's own lock as well: this profile's writers take only that one.
+            with state_file_lock(target):
+                if target.exists():
+                    continue
+                try:
+                    os.replace(legacy, target)
+                except FileNotFoundError:
+                    # Claimed by a writer outside this lock; nothing left to move.
+                    continue
+            moved.append(legacy.name)
     return moved
 
 
@@ -551,7 +605,12 @@ def consolidation_path(omh_home: str | Path, hermes_home: str | Path) -> Path:
     return profile_dreaming_dir(omh_home, hermes_home) / "consolidation.json"
 
 
-def read_latest_consolidation(omh_home: str | Path, hermes_home: str | Path) -> dict[str, Any] | None:
+def read_latest_consolidation(
+    omh_home: str | Path,
+    hermes_home: str | Path,
+    *,
+    mode: str | None = None,
+) -> dict[str, Any] | None:
     """This profile's newest brief on disk, or None when there is none to read.
 
     Never raises, and never returns fields a consumer has to type-check. The
@@ -564,9 +623,10 @@ def read_latest_consolidation(omh_home: str | Path, hermes_home: str | Path) -> 
 
     A profile whose mode is `off` has no brief to read, including one written
     before it chose `off`: the pack, the chat notice, the tool and doctor all
-    read through here, so none of them serves or reports it.
+    read through here, so none of them serves or reports it. ``mode`` is the
+    mode a caller already read in this render or evaluation; None reads it.
     """
-    if configured_dreaming_mode(hermes_home) == "off":
+    if (configured_dreaming_mode(hermes_home) if mode is None else mode) == "off":
         return None
     path = consolidation_path(omh_home, hermes_home)
     try:
