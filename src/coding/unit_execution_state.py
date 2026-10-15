@@ -65,7 +65,11 @@ UNIT_EXECUTION_STATE_CLAIM_BOUNDARY = (
     "States describe what OMH observed about the unit's work, not whether its "
     "process exists. `running` requires new evidence; a live process with no "
     "new evidence is `progress_stalled`. `verified` requires a validated "
-    "result record; an exit code alone never reaches it."
+    "result record; an exit code alone never reaches it. The one exception is "
+    "a Hermes recovery attempt, whose file-tools-only child returns no result "
+    "record: there `verified` means the child changed something, the "
+    "dispatcher committed all of it, and the unit's declared checks passed on "
+    "that commit."
 )
 
 

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import shlex
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest import mock
 
 from _local_package import load_local_package
 
@@ -47,14 +51,23 @@ from omh.coding.dispatch_failure_recovery import (  # noqa: E402
 )
 from omh.coding.fanout import build_fanout_contract  # noqa: E402
 from omh.coding.fanout_artifacts import write_fanout_contract  # noqa: E402
-from omh.coding.fanout_dispatch import dispatch_fanout  # noqa: E402
+from omh.coding.fanout_dispatch import (  # noqa: E402
+    _hermes_recovery_dispatch,
+    dispatch_fanout,
+    signal_safe_unit_runner,
+)
+from omh.coding.fanout_capacity import OwnerLaunchGate  # noqa: E402
 from omh.coding.fanout_journal import (  # noqa: E402
     RESUME_RERUN_AWAITING_RETRY,
     build_fanout_run_journal,
     plan_fanout_resume,
 )
 from omh.system.local_store import atomic_write_json, utc_now  # noqa: E402
+from omh.coding.fanout_status import project_fanout_status  # noqa: E402
+from omh.commands.coding import _fanout_dispatch_exit_code  # noqa: E402
 from omh.system.paths import OmhPaths  # noqa: E402
+from omh.workflows.observation_journal import read_observation_events  # noqa: E402
+from _fanout_host_fence import host_cannot_fence_fanout  # noqa: E402
 
 _GOAL = "split the sample feature across agents"
 _UNITS = [
@@ -789,6 +802,469 @@ class DispatchRecoveryChoiceTests(unittest.TestCase):
             summary = self._dispatch(paths, repo, sha, contract, dry_run=True)
             self.assertEqual(summary["units"][0]["status"], "dry_run_planned")
             self.assertNotIn("failure_recovery", summary)
+
+
+_PY = shlex.quote(sys.executable)
+_CHECK_FIX_COMMITTED = (
+    f"{_PY} -c 'import subprocess,sys; "
+    "sys.exit(subprocess.run([\"git\", \"cat-file\", \"-e\", \"HEAD:src/core/fix.txt\"]).returncode)'"
+)
+_FAILING_CHECK = f"{_PY} -c 'import sys; sys.exit(3)'"
+_HERMES_ROUTING = {"model": "m", "provider": "p", "reasoning": "high"}
+
+
+def _editing_child(status: str = "completed", exit_code: int = 0, *, also: tuple[str, ...] = ()):
+    """A Hermes child stub that edits the worktree it is given, as the file-tools child would.
+
+    It writes `src/core/fix.txt`, inside the fixture unit's `src/core/` scope,
+    and each path in `also`.
+    """
+    calls: list[dict] = []
+
+    def child(**kwargs):
+        calls.append(kwargs)
+        for name in ("src/core/fix.txt", *also):
+            target = Path(kwargs["cwd"]) / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("fixed\n", encoding="utf-8")
+        return {"status": status, "exit_code": exit_code, "run_id": kwargs["run_id"]}
+
+    child.calls = calls
+    return child
+
+
+def _no_edit_child(**kwargs):
+    """A Hermes child stub that exits 0 having changed nothing, as a model that declined does."""
+    return {"status": "completed", "exit_code": 0, "run_id": kwargs["run_id"]}
+
+
+def _limit_then_real(argv, **kwargs):
+    """Codex refuses on a usage limit; git and the declared checks really run."""
+    if argv[0] == "git":
+        return subprocess.run(argv, **kwargs)
+    if argv[0] == sys.executable:
+        return subprocess.run(argv, cwd=kwargs.get("cwd"), env=kwargs.get("env"), text=True,
+                              capture_output=True, timeout=kwargs.get("timeout"))
+    return _FakeCompleted(1, _LIMIT_FAILURE_TEXT)
+
+
+def _limit_after(leftover):
+    """Codex does `leftover(worktree)` -- half its work, a branch switch -- then hits the limit."""
+    def runner(argv, **kwargs):
+        if argv[0] not in ("git", sys.executable):
+            leftover(Path(kwargs["cwd"]))
+        return _limit_then_real(argv, **kwargs)
+
+    return runner
+
+
+def _half_done(worktree: Path) -> None:
+    """Half the work: a tracked file edited outside the scope, a new file inside it."""
+    (worktree / "seed.txt").write_text("seed, edited by codex\n", encoding="utf-8")
+    (worktree / "src" / "core").mkdir(parents=True, exist_ok=True)
+    (worktree / "src" / "core" / "partial_from_codex.txt").write_text("half\n", encoding="utf-8")
+
+
+def _secret_and_build_output(worktree: Path) -> None:
+    """New files outside the scope that `.gitignore` does not cover: a secret and a build artifact."""
+    (worktree / ".gitignore").write_text("build/\nnode_modules/\n", encoding="utf-8")
+    _git(worktree, "add", ".gitignore")
+    _git(worktree, "commit", "-q", "-m", "ignore build output")
+    (worktree / ".env").write_text("OPENAI_API_KEY=fixture-not-a-key\n", encoding="utf-8")
+    (worktree / "dist").mkdir()
+    (worktree / "dist" / "bundle.js").write_text("bundle\n", encoding="utf-8")
+    (worktree / "build").mkdir()
+    (worktree / "build" / "ignored.o").write_text("object\n", encoding="utf-8")
+
+
+class HermesRecoverySettlementTests(unittest.TestCase):
+    """The Hermes lane's child can only edit, so the dispatcher commits and then verifies (#2108)."""
+
+    def _setup(self, tmp: str, commands: list[str] | None = None):
+        root = Path(tmp)
+        paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")
+        repo, sha = _make_repo(root)
+        # The dispatcher commits as whoever the repository says, like an executor would.
+        _git(repo, "config", "user.name", "t")
+        _git(repo, "config", "user.email", "t@t")
+        units = [dict(unit) for unit in _UNITS]
+        if commands is not None:
+            units[0]["verification_commands"] = commands
+        contract = write_fanout_contract(paths, build_fanout_contract(_GOAL, units))
+        return paths, repo, sha, contract
+
+    def _attempt(self, paths, repo, sha, contract, child, *, runner=_limit_then_real, **kwargs):
+        summary = dispatch_fanout(
+            paths, contract, goal_text=_GOAL, repo_root=repo, base_sha=sha, runner=runner,
+            readiness=_ready, on_failure="hermes", hermes_routing=_HERMES_ROUTING, hermes_child=child,
+            **kwargs,
+        )
+        (decision,) = summary["failure_recovery"]["decisions"]
+        self.assertEqual(decision["choice"], CHOICE_HERMES)
+        # The unit's own row keeps the failure that sent it here, whatever the
+        # recovery reports, so the batch's exit code never reads it as success.
+        self.assertEqual(_fanout_dispatch_exit_code(summary), 1)
+        return decision["attempt"]
+
+    def _branch(self, repo: Path, ref: str = "agent/core") -> tuple[str, list[str]]:
+        head = subprocess.run(["git", "rev-parse", ref], cwd=repo, capture_output=True,
+                              text=True, check=True).stdout.strip()
+        changed = subprocess.run(["git", "show", "--name-only", "--format=", ref], cwd=repo,
+                                 capture_output=True, text=True, check=True).stdout.split()
+        return head, changed
+
+    def test_the_child_is_asked_to_edit_and_never_to_verify_or_commit(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp)
+            child = _editing_child()
+            attempt = self._attempt(paths, repo, sha, contract, child)
+        prompt = child.calls[0]["prompt"]
+        self.assertIn("Work unit: Core work", prompt)
+        self.assertIn("Done means, and only means:", prompt)
+        for sentence in ("run one full verification pass", "Commit your work",
+                         "The work is committed on the unit branch", "fanout_unit_result/v1"):
+            with self.subTest(sentence=sentence):
+                self.assertNotIn(sentence, prompt)
+        blocks = attempt["unit_prompt"]["blocks"]
+        for name in ("head.verification_stop", "unit.commit_criterion", "tail.commit",
+                     "head.unit_result_return", "head.parent_clarification"):
+            with self.subTest(block=name):
+                self.assertNotIn(name, blocks)
+
+    def test_a_completed_recovery_is_committed_then_verified(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, _editing_child(), run_verification=True)
+            head, changed = self._branch(repo)
+            parent = subprocess.run(["git", "rev-parse", "agent/core^"], cwd=repo, capture_output=True,
+                                    text=True, check=True).stdout.strip()
+            run_ref = f"{contract['fanout_id']}-core"
+            recovery_events = [str(event["event"]) for event in
+                               read_observation_events(paths, run_id=f"{run_ref}-hermes-recovery")]
+            unit_events = [str(event["event"]) for event in read_observation_events(paths, run_id=run_ref)]
+            roster = project_fanout_status(paths, str(contract["fanout_id"]))
+
+        self.assertEqual(attempt["status"], "completed")
+        self.assertEqual(attempt["recovery_commit"], {
+            "status": "committed", "head_sha": head, "paths": ["src/core/fix.txt"], "left_uncommitted": [],
+        })
+        self.assertEqual((parent, changed), (sha, ["src/core/fix.txt"]))
+        # The check reads the file from HEAD, so it passes only on the commit.
+        self.assertEqual(attempt["verification_status"], "passed")
+        self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("verified", ""))
+        # The checks are journaled on the recovery's own run, after the result
+        # the journal requires; the unit's own run gains no observed result, so
+        # a later dispatch does not skip the unit as already completed.
+        self.assertEqual(recovery_events[-1], "unit_verification_observed")
+        self.assertNotIn("unit_verification_observed", unit_events)
+        self.assertEqual([unit["unit_id"] for unit in roster["units"]], ["core"])
+        self.assertIs(roster["all_units_terminal"], True)
+
+    def test_a_child_that_changed_nothing_is_not_verified_even_where_the_checks_pass(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [f"{_PY} -c 'import sys; sys.exit(0)'"])
+            attempt = self._attempt(paths, repo, sha, contract, _no_edit_child, run_verification=True)
+            head, _changed = self._branch(repo)
+
+        self.assertEqual(attempt["status"], "completed")
+        self.assertEqual(attempt["recovery_commit"], {
+            "status": "nothing_to_commit", "head_sha": sha, "paths": [], "left_uncommitted": [],
+        })
+        self.assertEqual(head, sha)
+        self.assertNotIn("verification_status", attempt)
+        self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "no_changes"))
+
+    def test_work_the_failed_attempt_left_is_committed_apart_from_the_recovery(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, _editing_child(),
+                                    runner=_limit_after(_half_done), run_verification=True)
+            recovery_head, recovery_changed = self._branch(repo)
+            left_head, left_changed = self._branch(repo, "agent/core^")
+            base, _ = self._branch(repo, "agent/core^^")
+
+        # A tracked file's edit is committed wherever it is; a new file only inside the scope.
+        self.assertEqual(attempt["pre_existing_commit"], {
+            "status": "committed", "head_sha": left_head,
+            "paths": ["seed.txt", "src/core/partial_from_codex.txt"], "left_uncommitted": [],
+        })
+        self.assertEqual(sorted(left_changed), ["seed.txt", "src/core/partial_from_codex.txt"])
+        self.assertEqual(base, sha)
+        # The recovery commit holds the child's edit and nothing the failed attempt wrote.
+        self.assertEqual(attempt["recovery_commit"]["head_sha"], recovery_head)
+        self.assertEqual(attempt["recovery_commit"]["paths"], ["src/core/fix.txt"])
+        self.assertEqual(recovery_changed, ["src/core/fix.txt"])
+        self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("verified", ""))
+
+    def test_leftovers_alone_never_make_a_child_that_changed_nothing_verified(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [f"{_PY} -c 'import sys; sys.exit(0)'"])
+            attempt = self._attempt(paths, repo, sha, contract, _no_edit_child,
+                                    runner=_limit_after(_half_done), run_verification=True)
+            head, _changed = self._branch(repo)
+
+        self.assertEqual((attempt["pre_existing_commit"]["status"], attempt["pre_existing_commit"]["head_sha"]),
+                         ("committed", head))
+        self.assertEqual(attempt["recovery_commit"], {
+            "status": "nothing_to_commit", "head_sha": head, "paths": [], "left_uncommitted": [],
+        })
+        self.assertNotIn("verification_status", attempt)
+        self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "no_changes"))
+
+    def test_a_worktree_moved_off_its_branch_refuses_before_the_child(self) -> None:
+        def switch_branch(worktree: Path) -> None:
+            _git(worktree, "checkout", "-q", "-b", "elsewhere")
+            (worktree / "scratch-notes.md").write_text("codex scratch\n", encoding="utf-8")
+
+        child = _editing_child()
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, child,
+                                    runner=_limit_after(switch_branch), run_verification=True)
+            unit_branch, _ = self._branch(repo)
+            elsewhere, _ = self._branch(repo, "elsewhere")
+
+        self.assertEqual(child.calls, [])
+        self.assertEqual(attempt["status"], "hermes_child_refused")
+        self.assertEqual(attempt["reason_code"], "worktree_not_committable")
+        self.assertEqual(attempt["pre_existing_commit"]["status"], "failed")
+        self.assertEqual(attempt["pre_existing_commit"]["step"], "branch")
+        self.assertEqual((unit_branch, elsewhere), (sha, sha))
+        self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "commit_failed"))
+
+    def test_new_files_left_outside_the_scope_refuse_before_the_child_and_are_never_committed(self) -> None:
+        child = _editing_child()
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, child,
+                                    runner=_limit_after(_secret_and_build_output), run_verification=True)
+            tree = subprocess.run(["git", "ls-tree", "-r", "--name-only", "agent/core"], cwd=repo,
+                                  capture_output=True, text=True, check=True).stdout.split()
+            worktree = repo.parent / f"{repo.name}-fanout-core"
+            still_there = [name for name in (".env", "dist/bundle.js") if (worktree / name).exists()]
+
+        self.assertEqual(child.calls, [])
+        self.assertEqual(attempt["status"], "hermes_child_refused")
+        self.assertEqual(attempt["reason_code"], "untracked_leftovers")
+        # Named, never committed, never deleted, and the ignored build output is not listed.
+        self.assertEqual(attempt["pre_existing_commit"],
+                         {"status": "refused", "paths": [], "left_uncommitted": [".env", "dist/bundle.js"]})
+        self.assertEqual(sorted(tree), [".gitignore", "seed.txt"])
+        self.assertEqual(still_there, [".env", "dist/bundle.js"])
+        self.assertNotIn("fixture-not-a-key", json.dumps(attempt))
+        self.assertEqual(
+            (attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "untracked_leftovers")
+        )
+
+    def test_a_file_the_failed_attempt_staged_outside_the_scope_is_judged_like_a_new_one(self) -> None:
+        def staged_secret(worktree: Path) -> None:
+            (worktree / "secret.env").write_text("TOKEN=fixture\n", encoding="utf-8")
+            _git(worktree, "add", "secret.env")
+
+        child = _editing_child()
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, child,
+                                    runner=_limit_after(staged_secret), run_verification=True)
+            head, _ = self._branch(repo)
+
+        self.assertEqual(child.calls, [])
+        self.assertEqual(attempt["pre_existing_commit"]["left_uncommitted"], ["secret.env"])
+        self.assertEqual(head, sha)
+
+    def _refused_move(self, target: str) -> None:
+        def move_and_edit(worktree: Path) -> None:
+            (worktree / target).parent.mkdir(parents=True, exist_ok=True)
+            _git(worktree, "mv", "seed.txt", target)
+            (worktree / target).write_text("OPENAI_API_KEY=fixture-not-a-key\n", encoding="utf-8")
+
+        child = _editing_child()
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            # Copies too: config cannot turn rename detection back on.
+            _git(repo, "config", "diff.renames", "copies")
+            attempt = self._attempt(paths, repo, sha, contract, child,
+                                    runner=_limit_after(move_and_edit), run_verification=True)
+            head, _ = self._branch(repo)
+
+        self.assertEqual(child.calls, [])
+        self.assertEqual(attempt["reason_code"], "untracked_leftovers")
+        self.assertEqual(attempt["pre_existing_commit"]["left_uncommitted"], [target])
+        self.assertEqual(head, sha)
+
+    def test_a_tracked_file_moved_out_of_the_scope_is_judged_as_a_new_file(self) -> None:
+        self._refused_move(".env")
+
+    def test_a_tracked_file_moved_into_an_out_of_scope_directory_is_judged_as_a_new_file(self) -> None:
+        self._refused_move("conf/prod.env")
+
+    def test_a_move_into_the_scope_records_both_of_its_paths(self) -> None:
+        def move_in(worktree: Path) -> None:
+            (worktree / "src" / "core").mkdir(parents=True, exist_ok=True)
+            _git(worktree, "mv", "seed.txt", "src/core/seed.txt")
+
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            _git(repo, "config", "diff.renames", "copies")
+            attempt = self._attempt(paths, repo, sha, contract, _editing_child(),
+                                    runner=_limit_after(move_in), run_verification=True)
+
+        self.assertEqual(attempt["pre_existing_commit"]["paths"], ["seed.txt", "src/core/seed.txt"])
+        self.assertEqual(attempt["pre_existing_commit"]["left_uncommitted"], [])
+
+    def test_a_name_that_is_not_utf8_is_committed_or_named_never_dropped(self) -> None:
+        in_scope, out_of_scope = b"src/core/caf\xe9.txt", b"bad\xff.env"
+
+        def child(**kwargs):
+            root = os.fsencode(kwargs["cwd"])
+            for name in (b"src/core/fix.txt", in_scope, out_of_scope):
+                target = os.path.join(root, name)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, "wb") as stream:
+                    stream.write(b"fixed\n")
+            return {"status": "completed", "exit_code": 0, "run_id": kwargs["run_id"]}
+
+        with TemporaryDirectory() as tmp:
+            try:
+                with open(os.path.join(os.fsencode(tmp), b"probe\xff"), "wb"):
+                    pass
+            except (OSError, UnicodeError):
+                self.skipTest("this filesystem refuses file names that are not UTF-8 (APFS does)")
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, child, run_verification=True)
+            tree = subprocess.run(["git", "ls-tree", "-r", "-z", "--name-only", "agent/core"], cwd=repo,
+                                  capture_output=True, check=True).stdout.split(b"\0")
+
+        self.assertIn(in_scope, tree)
+        self.assertNotIn(out_of_scope, tree)
+        self.assertEqual(attempt["recovery_commit"]["paths"], ["src/core/caf\ufffd.txt", "src/core/fix.txt"])
+        self.assertEqual(attempt["recovery_commit"]["left_uncommitted"], ["bad\ufffd.env"])
+        self.assertEqual(
+            (attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "out_of_scope_files")
+        )
+
+    def test_a_child_that_writes_outside_the_scope_is_not_verified(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, _editing_child(also=(".env",)),
+                                    run_verification=True)
+            head, changed = self._branch(repo)
+
+        self.assertEqual(attempt["recovery_commit"]["status"], "committed")
+        self.assertEqual(attempt["recovery_commit"]["paths"], ["src/core/fix.txt"])
+        self.assertEqual(attempt["recovery_commit"]["left_uncommitted"], [".env"])
+        self.assertEqual(changed, ["src/core/fix.txt"])
+        self.assertNotIn("verification_status", attempt)
+        self.assertEqual(
+            (attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "out_of_scope_files")
+        )
+
+    def test_a_failing_check_leaves_the_recovery_failed_not_verified(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_FAILING_CHECK])
+            attempt = self._attempt(paths, repo, sha, contract, _editing_child(), run_verification=True)
+
+        self.assertEqual(attempt["recovery_commit"]["status"], "committed")
+        self.assertEqual(attempt["verification_status"], "failed")
+        self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "verification_failed"))
+
+    def test_without_run_verification_a_committed_recovery_is_still_not_verified(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, _editing_child())
+
+        self.assertEqual(attempt["recovery_commit"]["status"], "committed")
+        self.assertNotIn("verification_status", attempt)
+        self.assertEqual(
+            (attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "verification_not_observed")
+        )
+
+    def test_a_child_that_did_not_complete_is_neither_committed_nor_verified(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, _editing_child("timed_out", 124),
+                                    run_verification=True)
+            head, _changed = self._branch(repo)
+
+        self.assertNotIn("recovery_commit", attempt)
+        self.assertNotIn("verification_status", attempt)
+        self.assertEqual(head, sha)
+        self.assertEqual(
+            (attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "process_not_completed")
+        )
+
+    def test_a_failed_commit_is_reported_and_nothing_is_verified(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            # A pre-commit hook that refuses: the commit an executor would hit too.
+            hook = repo / ".git" / "hooks" / "pre-commit"
+            hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+            hook.chmod(0o755)
+            attempt = self._attempt(paths, repo, sha, contract, _editing_child(), run_verification=True)
+            head, _changed = self._branch(repo)
+
+        # The step and git's code say a hook refused, not an identity or a stage; no git output.
+        self.assertEqual(attempt["recovery_commit"], {
+            "status": "failed", "step": "commit", "exit_code": 1,
+            "reason": "git commit did not complete in the unit worktree", "left_uncommitted": [],
+        })
+        self.assertNotIn("verification_status", attempt)
+        self.assertEqual(head, sha)
+        self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "commit_failed"))
+
+
+class HermesRecoveryFenceTests(unittest.TestCase):
+    """The dispatcher's commit and checks run in the unit's fence, or the child is not started."""
+
+    def _worktree(self, root: Path) -> tuple[OmhPaths, Path, str]:
+        repo, sha = _make_repo(root)
+        _git(repo, "config", "user.name", "t")
+        _git(repo, "config", "user.email", "t@t")
+        _git(repo, "worktree", "add", "-q", str(repo.parent / f"{repo.name}-fanout-core"), "-b", "agent/core", sha)
+        return OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes"), repo, sha
+
+    def _recover(self, paths, repo, sha, child, *, allow_unconfined: bool):
+        unit = {**_UNITS[0], "run_ref": "fanout-0123456789ab-core", "branch_suggestion": "agent/core",
+                "boundary": {"file_scope": ["src/core/"]}}
+        return _hermes_recovery_dispatch(
+            paths, unit=unit, repo_root=repo, timeout=60, routing=_HERMES_ROUTING, hermes_child=child,
+            unit_dispatch_kwargs={
+                "fanout_id": "fanout-0123456789ab", "goal_text": _GOAL, "runner": signal_safe_unit_runner,
+                "run_verification": False, "environment_policy": None, "base_env": None,
+                "dispatch_depth": 0, "allow_unconfined": allow_unconfined, "base_sha": sha,
+                "invocation_id": "invocation", "launch_gate": OwnerLaunchGate(),
+                "verification_wave_width": 1, "verification_execution_gate": None,
+            },
+        )
+
+    def test_the_commit_runs_inside_the_units_fence_where_the_host_has_one(self) -> None:
+        unfenced_host = host_cannot_fence_fanout()
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha = self._worktree(Path(tmp).resolve())
+            attempt = self._recover(paths, repo, sha, _editing_child(), allow_unconfined=unfenced_host)
+            branch_head = subprocess.run(["git", "rev-parse", "agent/core"], cwd=repo, capture_output=True,
+                                         text=True, check=True).stdout.strip()
+
+        self.assertIs(attempt["filesystem_confinement"]["enforced"], not unfenced_host)
+        self.assertEqual(attempt["recovery_commit"], {
+            "status": "committed", "head_sha": branch_head, "paths": ["src/core/fix.txt"], "left_uncommitted": [],
+        })
+        self.assertNotEqual(branch_head, sha)
+
+    def test_no_provable_fence_refuses_before_the_child_starts(self) -> None:
+        child = _editing_child()
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha = self._worktree(Path(tmp).resolve())
+            with mock.patch("omh.coding.fanout_confinement.backend_available", return_value=False):
+                attempt = self._recover(paths, repo, sha, child, allow_unconfined=False)
+
+        self.assertEqual(child.calls, [])
+        self.assertEqual(attempt["status"], "hermes_child_refused")
+        self.assertEqual(attempt["reason_code"], "filesystem_confinement_unavailable")
+        self.assertEqual(
+            (attempt["unit_state"], attempt["unit_state_reason"]),
+            ("permission_blocked", "filesystem_confinement_unavailable"),
+        )
 
 
 class FailureRecoveryCliTests(unittest.TestCase):

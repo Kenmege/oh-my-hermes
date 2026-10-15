@@ -209,10 +209,15 @@ class HermesChildDispatchTests(unittest.TestCase):
     def test_capacity_recovery_path_reaches_the_same_actual_popen_gate(self) -> None:
         from omh.coding.fanout_capacity import AdmissionBinding, AdmissionSupport, AdmissionReceipt, OwnerLaunchGate
         from omh.coding.fanout_dispatch import _hermes_recovery_dispatch
+        from omh.system.paths import OmhPaths
         repo = self.root / 'repo'
         repo.mkdir()
         worktree = self.root / 'repo-fanout-a'
-        worktree.mkdir()
+        # A real unit worktree on its own branch: the lane commits there once the child is done.
+        for argv in (['init', '-q'], ['config', 'user.name', 't'], ['config', 'user.email', 't@t'],
+                     ['commit', '-q', '--allow-empty', '-m', 'base'],
+                     ['worktree', 'add', '-q', str(worktree), '-b', 'agent/a']):
+            subprocess.run(['git', *argv], cwd=repo, check=True, capture_output=True)
         run_ref = 'fanout-123456789abc-a'
         gate = OwnerLaunchGate()
         binding = AdmissionBinding('hermes', 'fanout-123456789abc', 'prior', run_ref, 1,
@@ -223,18 +228,25 @@ class HermesChildDispatchTests(unittest.TestCase):
             process_started=True, returncode=1, implementation_started=False))
         request = self.request(parent_run_id=run_ref, run_id=run_ref + '-hermes-recovery',
                                cwd=worktree, model='m', provider='p', reasoning='low')
+        paths = OmhPaths(omh_home=self.root / '.omh', hermes_home=self.root / '.hermes')
+
+        def recover(launch_gate: OwnerLaunchGate, invocation_id: str) -> dict[str, object]:
+            return _hermes_recovery_dispatch(paths, unit={'unit_id': 'a', 'run_ref': run_ref},
+                repo_root=repo, timeout=2, routing={'model': 'm', 'provider': 'p', 'reasoning': 'low'},
+                hermes_child=None, unit_dispatch_kwargs={
+                    'fanout_id': 'fanout-123456789abc', 'goal_text': 'fixture', 'runner': subprocess.run,
+                    'run_verification': False, 'environment_policy': None, 'base_env': None,
+                    'dispatch_depth': 0, 'allow_unconfined': False, 'base_sha': 'a' * 40,
+                    'invocation_id': invocation_id, 'launch_gate': launch_gate,
+                    'verification_wave_width': 1, 'verification_execution_gate': None,
+                })
+
         with patch('omh.coding.hermes_child_dispatch.HermesChildRequest', return_value=request):
-            attempt = _hermes_recovery_dispatch(unit={'unit_id': 'a', 'run_ref': run_ref},
-                goal_text='fixture', repo_root=repo, timeout=2,
-                routing={'model': 'm', 'provider': 'p', 'reasoning': 'low'}, hermes_child=None,
-                launch_gate=gate, fanout_id='fanout-123456789abc', invocation_id='invocation', base_sha='a' * 40)
+            attempt = recover(gate, 'invocation')
         self.assertEqual(attempt['status'], 'not_started_capacity_blocked')
         self.assertFalse((worktree / 'started').exists())
         with patch('omh.coding.hermes_child_dispatch.HermesChildRequest', return_value=request):
-            observed = _hermes_recovery_dispatch(unit={'unit_id': 'a', 'run_ref': run_ref},
-                goal_text='fixture', repo_root=repo, timeout=2,
-                routing={'model': 'm', 'provider': 'p', 'reasoning': 'low'}, hermes_child=None,
-                launch_gate=OwnerLaunchGate(), fanout_id='fanout-123456789abc', invocation_id='fresh', base_sha='a' * 40)
+            observed = recover(OwnerLaunchGate(), 'fresh')
         self.assertEqual((observed['status'], observed['exit_code']), ('completed', 0))
         self.assertTrue((worktree / 'started').exists())
 

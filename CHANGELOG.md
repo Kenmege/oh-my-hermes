@@ -4,6 +4,32 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A refused or Hermes-recovered fanout unit ends in a true state.** A unit
+  refused after a capacity-reuse reservation (no provable write fence, or the
+  reused worktree's preflight), or one whose dispatch raised before its spawn,
+  left its in-flight marker behind, so `fanout status` had to compare write
+  times to avoid reading it as in flight; every path out of a unit dispatch
+  that got its worktree now clears the marker, and a refusal for a worktree it
+  did not get still leaves another dispatch's marker alone. The opt-in Hermes recovery lane
+  (`--on-failure=hermes`) sent its file-tools-only child a prompt asking it to
+  run a verification pass and commit, which it cannot do, and nothing did
+  either afterwards, so a `completed` recovery left edits unchecked and
+  uncommitted. The child now gets an edit-only prompt. What the failed attempt
+  left in the worktree is committed on its own before the child starts; when
+  the child completes, the dispatcher commits its edits on the unit branch and,
+  under `--run-verification`, runs the unit's declared checks on that commit.
+  The dispatcher's commits and checks run inside the unit's write fence (the
+  child does not), and the lane refuses before the child starts when no fence
+  can be proven or the unit's branch is not checked out. A new file -- a
+  tracked file moved to a new path included -- is committed only inside the
+  unit's `file_scope`; one outside it (a `.env`, a build artifact) is never
+  committed and is named in the record, and the lane refuses before the child
+  when the failed attempt left one. The attempt's
+  `unit_state` is `verified` only when the child changed something, all of it
+  was committed, and those checks ran on it and passed. `fanout status
+  --wait`'s documented codes and bounds, and the deadline `ulw-maestro` names,
+  are now pinned by parity tests against the command's constants.
+
 - **A profile is served only its own consolidation brief, and
   `plugins.entries.omh.settings.dreaming_mode` turns the brief off for that
   profile (#2087).** Profiles that bind one OMH store, such as every profile of

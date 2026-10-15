@@ -72,6 +72,19 @@ BLOCK_NAMES: Final[frozenset[str]] = frozenset({
     "append.parent_decision",
 })
 
+# The Hermes recovery child has file tools and nothing else, so it can neither
+# run a verification pass nor commit; the dispatcher does both once it returns.
+# These are the blocks that would ask the child to, and the two that ask for a
+# `fanout_unit_result/v1` record naming a commit it cannot make, which that
+# lane does not collect anyway.
+EDIT_ONLY_OMITTED_BLOCKS: Final[frozenset[str]] = frozenset({
+    "head.verification_stop",
+    "head.unit_result_return",
+    "head.parent_clarification",
+    "unit.commit_criterion",
+    "tail.commit",
+})
+
 
 @dataclass(frozen=True)
 class PromptBlock:
@@ -123,7 +136,8 @@ def assemble_unit_prompt(
     prompt carries no sidecar contract, which is the Hermes recovery variant.
     `repair` is the `_dispatch_unit` repair mapping (`attempt`,
     `max_repair_attempts`, `failing_checks`). `omit` drops blocks by
-    vocabulary name and exists for benchmark lanes only; an unknown name
+    vocabulary name, for the benchmark lanes and for the Hermes recovery
+    variant (`EDIT_ONLY_OMITTED_BLOCKS`); an unknown name
     raises so a typo cannot silently send the full prompt, and so does
     omitting `head.failure_kind` from a prompt with a `binding`, because the
     sidecar contract leaves the `process_declined` definition to that block.

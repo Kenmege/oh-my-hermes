@@ -148,9 +148,11 @@ unit, the row reads `unknown` from `inflight_marker`, not terminal: the summary
 row is an earlier attempt's, and reading it would report a re-dispatched unit's
 old `account_limit` as the state of a process that has just started. When the
 marker is not later -- or either time cannot be read -- the summary row stands.
-A capacity-reuse reservation marker that an early return before the spawn
-never cleared is older than the summary row its own attempt wrote, and that row
-(a refusal that needs a person) must keep reading as stuck. A row's own
+Every way out of a unit dispatch clears its marker, a refusal right after a
+capacity-reuse reservation included. That clear is best-effort and never fails
+a dispatch, so a marker it could not remove is older than the summary row its
+own attempt wrote, and that row (a refusal that needs a person) must keep
+reading as stuck. A row's own
 `finished_at` is its record time; a row without one uses the summary file's
 modification time.
 

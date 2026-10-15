@@ -198,7 +198,13 @@ from .unit_progress import (
     empty_progress_evidence,
     stalled_for_seconds,
 )
-from .unit_prompt_assembly import AssembledPrompt, assemble_unit_prompt, recorded_model_route, unit_role as _unit_role
+from .unit_prompt_assembly import (
+    EDIT_ONLY_OMITTED_BLOCKS,
+    AssembledPrompt,
+    assemble_unit_prompt,
+    recorded_model_route,
+    unit_role as _unit_role,
+)
 from .workspace_preflight import (
     probe_workspace,
     workspace_preflight_reason,
@@ -2912,16 +2918,13 @@ def _run_failure_recovery(
             )
         elif decision["choice"] == CHOICE_HERMES:
             decision["attempt"] = _hermes_recovery_dispatch(
+                paths,
                 unit=units[unit_id],
-                goal_text=str(unit_dispatch_kwargs["goal_text"]),
                 repo_root=repo_root,
                 timeout=timeout,
                 routing=hermes_routing or {},
                 hermes_child=hermes_child,
-                launch_gate=unit_dispatch_kwargs['launch_gate'],
-                fanout_id=str(unit_dispatch_kwargs['fanout_id']),
-                invocation_id=str(unit_dispatch_kwargs['invocation_id']),
-                base_sha=str(unit_dispatch_kwargs['base_sha']),
+                unit_dispatch_kwargs=unit_dispatch_kwargs,
             )
         elif decision["choice"] == CHOICE_WAIT:
             # No re-dispatch: the mark on the unit is the whole action, and the
@@ -3121,21 +3124,32 @@ def _retarget_dispatch(
 
 
 def _hermes_recovery_dispatch(
+    paths: OmhPaths,
     *,
     unit: Mapping[str, Any],
-    goal_text: str,
     repo_root: Path,
     timeout: int,
     routing: Mapping[str, Any],
     hermes_child: Callable[..., Mapping[str, Any]] | None,
-    launch_gate: OwnerLaunchGate | None = None,
-    fanout_id: str = '', invocation_id: str = '', base_sha: str = '',
+    unit_dispatch_kwargs: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Re-run one failed unit through the Hermes subagent lane, in its worktree.
 
     The child runs in the unit's OWN worktree or not at all: pointing it at the
     dispatch repo root would let a recovery attempt edit the operator's main
     checkout, which no unit of a fanout is ever allowed to do.
+
+    The child has file tools and nothing else (`--toolsets file`), so it can
+    neither run a check nor commit. It gets the edit-only prompt, and when it
+    completes the dispatcher commits what it wrote on the unit branch, then
+    runs the unit's declared checks on that commit as it does for a dispatched
+    unit under `--run-verification`, both inside the unit's write fence (or
+    unfenced only under `--allow-unconfined`). Whatever the failed attempt left
+    in the worktree is committed on its own before the child starts, so each
+    commit says where its changes came from, and a new file outside the
+    unit's `file_scope` is never committed (`_commit_recovery_edits`). The
+    attempt's `unit_state` is `verified` only when the child changed
+    something, all of it was committed, and those checks ran on it and passed.
     """
     unit_id = str(unit.get("unit_id", ""))
     worktree = _worktree_path(repo_root, unit_id)
@@ -3148,17 +3162,135 @@ def _hermes_recovery_dispatch(
                 f"unit worktree {worktree} does not exist; the Hermes lane never runs against the "
                 "dispatch repo root"
             ),
+            "unit_state": UNIT_STATE_FAILED,
+            "unit_state_reason": "worktree_missing",
+        }
+    fanout_id = str(unit_dispatch_kwargs["fanout_id"])
+    goal_text = str(unit_dispatch_kwargs["goal_text"])
+    runner = unit_dispatch_kwargs["runner"]
+    run_verification = bool(unit_dispatch_kwargs["run_verification"])
+    environment_policy = unit_dispatch_kwargs["environment_policy"]
+    base_env = unit_dispatch_kwargs["base_env"]
+    verification_environment = fanout_child_environment(
+        os.environ if base_env is None else base_env,
+        depth=int(unit_dispatch_kwargs["dispatch_depth"]),
+        fanout_id=fanout_id,
+        unit_id=unit_id,
+        owner="hermes",
+        purpose="verification",
+        declaration=environment_policy,
+    )
+    # Both refusals below come before the child, as a dispatched unit's do
+    # before its spawn: the commit and checks that settle the attempt could
+    # not run afterwards, and edits nobody commits or checks are the state
+    # this lane exists to leave behind.
+    if run_verification and not verification_environment.ready:
+        return {
+            "unit_id": unit_id,
+            "owner": "hermes",
+            "status": "hermes_child_refused",
+            "reason_code": "environment_not_ready",
+            "reason": "required verification environment capabilities are missing or denied",
+            "verification_environment_policy": verification_environment.receipt,
+            "unit_state": UNIT_STATE_PERMISSION_BLOCKED,
+            "unit_state_reason": "environment_not_ready",
+        }
+    verification_argv: list[list[str]] = []
+    for command in declared_verification_commands(unit) if run_verification else ():
+        try:
+            _overrides, check_argv = verification_command_argv(command)
+        except FanoutContractError:
+            continue
+        verification_argv.append(check_argv)
+    # A program name for the fence to resolve, not an argv: the commit below
+    # spells its git subcommands as literals for the no-remote-mutation gate.
+    git_program = "git"
+    confinement = (
+        prepare_fanout_filesystem_confinement(
+            worktree, verification_environment.environment, ((git_program,), *verification_argv),
+            unit_branch=str(unit.get("branch_suggestion", f"agent/{unit_id}")),
+            repo_root=repo_root,
+            allow_unconfined=bool(unit_dispatch_kwargs["allow_unconfined"]),
+        )
+        if runner is signal_safe_unit_runner
+        else None
+    )
+    if (
+        confinement is not None
+        and confinement.receipt.get("enforced") is not True
+        and not confinement.unconfined_allowed
+    ):
+        reason_code = str(confinement.receipt.get("reason_code") or "sandbox_command_not_fenced")
+        return {
+            "unit_id": unit_id,
+            "owner": "hermes",
+            "status": "hermes_child_refused",
+            "reason_code": "filesystem_confinement_unavailable",
+            "reason": (
+                f"no filesystem write fence could be proven for this unit ({reason_code}), so the "
+                "dispatcher could not commit or check the recovery; pass --allow-unconfined to run it "
+                "with the operator's full write access"
+            ),
+            "filesystem_confinement": confinement.receipt,
+            "unit_state": UNIT_STATE_PERMISSION_BLOCKED,
+            "unit_state_reason": "filesystem_confinement_unavailable",
+        }
+    # Whatever the failed attempt left is committed on its own before the
+    # child starts. The recovery commit then holds the child's edits and
+    # nothing else, and a child that changed nothing is seen to have changed
+    # nothing rather than credited with the failed attempt's leftovers. A new
+    # file outside the unit's declared scope is never committed: the lane
+    # refuses before the child and names it, since it may be a secret or a
+    # build artifact the failed attempt wrote.
+    git_runner = _fenced_dispatcher_runner(runner, confinement, worktree)
+    branch = str(unit.get("branch_suggestion", f"agent/{unit_id}"))
+    boundary = unit.get("boundary") if isinstance(unit.get("boundary"), Mapping) else {}
+    file_scope = tuple(str(path) for path in boundary.get("file_scope", []) or [] if str(path).strip())
+    pre_existing = _commit_recovery_edits(
+        git_runner, worktree, branch,
+        f"Work left in fanout unit {unit_id} by its failed {unit.get('owner', '')} attempt",
+        file_scope, refuse_out_of_scope=True,
+    )
+    if pre_existing["status"] == "refused":
+        return {
+            "unit_id": unit_id,
+            "owner": "hermes",
+            "status": "hermes_child_refused",
+            "reason_code": "untracked_leftovers",
+            "reason": (
+                "the failed attempt left new files outside the unit's file scope; they were not committed "
+                "and the Hermes child was not started, so inspect the paths named in pre_existing_commit"
+            ),
+            "pre_existing_commit": pre_existing,
+            "unit_state": UNIT_STATE_FAILED,
+            "unit_state_reason": "untracked_leftovers",
+        }
+    if pre_existing["status"] == "failed":
+        return {
+            "unit_id": unit_id,
+            "owner": "hermes",
+            "status": "hermes_child_refused",
+            "reason_code": "worktree_not_committable",
+            "reason": (
+                f"the work the failed attempt left could not be committed apart from the recovery "
+                f"({pre_existing['reason']}), so the Hermes child was not started"
+            ),
+            "pre_existing_commit": pre_existing,
+            "unit_state": UNIT_STATE_FAILED,
+            "unit_state_reason": "commit_failed",
         }
     dispatcher = hermes_child if hermes_child is not None else dispatch_unit_via_hermes_child
     run_ref = str(unit.get("run_ref", unit_id))
-    binding = AdmissionBinding('hermes', fanout_id, unit_id, run_ref, 1, base_sha,
-                               str(worktree), invocation_id, str(uuid4()))
-    launch = (launch_gate or OwnerLaunchGate()).context(binding).launch
+    binding = AdmissionBinding('hermes', fanout_id, unit_id, run_ref, 1,
+                               str(unit_dispatch_kwargs['base_sha']), str(worktree),
+                               str(unit_dispatch_kwargs['invocation_id']), str(uuid4()))
+    launch = (unit_dispatch_kwargs['launch_gate'] or OwnerLaunchGate()).context(binding).launch
+    # The recovery variant: no sidecar contract and no discovery, because the
+    # Hermes child lane collects neither, and edit-only.
+    assembled = assemble_unit_prompt(unit, goal_text, route=recorded_model_route(unit), omit=EDIT_ONLY_OMITTED_BLOCKS)
     try:
         attempt = dispatcher(
-            # The recovery variant: no sidecar contract and no discovery,
-            # because the Hermes child lane collects neither.
-            prompt=build_unit_prompt(unit, goal_text),
+            prompt=assembled.text,
             routing=routing,
             parent_run_id=run_ref,
             run_id=f"{run_ref}-hermes-recovery",
@@ -3169,12 +3301,198 @@ def _hermes_recovery_dispatch(
     except CapacityBlocked as exc:
         attempt = {'status': 'not_started_capacity_blocked',
                    'capacity': capacity_fields(binding, exc.trip, status='not_started_capacity_blocked', process_started=False)}
-    return {
+    record = {
         "unit_id": unit_id,
         "owner": "hermes",
         "worktree_path": str(worktree),
         "consent": HERMES_LANE_CONSENT,
+        "unit_prompt": _unit_prompt_record(assembled),
+        # Where the dispatcher's own commits and checks run, not the child.
+        "filesystem_confinement": confinement_receipt(confinement, worktree),
+        "pre_existing_commit": pre_existing,
         **dict(attempt),
+    }
+    if record.get("status") != "completed":
+        record.update(unit_state=UNIT_STATE_FAILED, unit_state_reason="process_not_completed")
+        return record
+    # Commit first: nothing but ignored files was uncommitted when the child
+    # started, so the commit holds the child's edits, and the checks run on a
+    # committed revision -- the order a dispatched unit's executor and
+    # dispatcher already keep. Checks run before the commit would have their
+    # own output swept into it.
+    commit = _commit_recovery_edits(
+        git_runner, worktree, branch, f"Hermes recovery of fanout unit {unit_id}", file_scope,
+    )
+    record["recovery_commit"] = commit
+    if commit["status"] == "failed":
+        record.update(unit_state=UNIT_STATE_FAILED, unit_state_reason="commit_failed")
+        return record
+    if commit["left_uncommitted"]:
+        # The child wrote new files outside the unit's scope, and they stay
+        # out of the commit. The checks would run on a worktree that still
+        # holds them, so a pass could not speak for the commit: no checks,
+        # and the names are on the record for the operator.
+        record.update(unit_state=UNIT_STATE_FAILED, unit_state_reason="out_of_scope_files")
+        return record
+    if commit["status"] == "nothing_to_commit":
+        # The child exited 0 and changed nothing (a model that declined exits
+        # 0 too). The unit's checks would only re-check the work the failed
+        # attempt left, so they are not run and nothing is verified.
+        record.update(unit_state=UNIT_STATE_FAILED, unit_state_reason="no_changes")
+        return record
+    verification: dict[str, Any] = {}
+    if run_verification:
+        # The checks' journal events go under the recovery's own run, the
+        # child's `run_id`: the journal admits a verification only after an
+        # observed executor result on the same run, and an observed result on
+        # the unit's own run would make every later dispatch skip the unit as
+        # already completed. `worker_ref` stays the unit's, since the child
+        # worked in the unit's own worktree and branch.
+        recovery_run_ref = f"{run_ref}-hermes-recovery"
+        _ensure_unit_run(paths, {"unit_id": unit_id, "run_ref": recovery_run_ref}, "hermes")
+        for event, summary in (
+            ("worker_dispatch", f"Hermes recovery of unit {unit_id}, after its {unit.get('owner', '')} dispatch failed"),
+            ("worker_result", f"Hermes recovery child completed; dispatcher committed {commit['head_sha']}"),
+        ):
+            append_journal_observation(paths, {
+                "target_type": "run", "target_id": recovery_run_ref, "run_id": recovery_run_ref,
+                "event": event, "status": "observed", "summary": summary, "evidence_refs": [],
+                "worker_ref": unit_id, "worktree_ref": str(worktree), "runtime_profile": "hermes",
+            })
+        verification = _run_unit_verification(
+            paths,
+            unit,
+            run_ref=recovery_run_ref,
+            unit_id=unit_id,
+            worktree=worktree,
+            owner="hermes",
+            runner=runner,
+            child_env=verification_environment.environment,
+            fanout_id=fanout_id,
+            wave_width=int(unit_dispatch_kwargs["verification_wave_width"]),
+            execution_gate=unit_dispatch_kwargs["verification_execution_gate"],
+            confinement=confinement,
+            environment_policy=environment_policy,
+            known_secrets=(goal_text, assembled.text, *tuple(
+                value for key, value in verification_environment.environment.items()
+                if any(marker in key.upper() for marker in ('TOKEN', 'SECRET', 'PASSWORD', 'API_KEY'))
+            )[:126]),
+        )
+    record.update(verification)
+    outcome = verification.get("verification_status")
+    if outcome == "passed":
+        record.update(unit_state=UNIT_STATE_VERIFIED, unit_state_reason="")
+    else:
+        record.update(
+            unit_state=UNIT_STATE_FAILED,
+            unit_state_reason="verification_failed" if outcome == "failed" else "verification_not_observed",
+        )
+    return record
+
+
+def _commit_recovery_edits(
+    runner: Callable[..., Any],
+    worktree: Path,
+    branch: str,
+    message: str,
+    file_scope: Sequence[str],
+    *,
+    refuse_out_of_scope: bool = False,
+) -> dict[str, Any]:
+    """Commit the unit worktree's changes on the unit's own branch; never raises.
+
+    What is committed: every modification or deletion of a tracked file, and
+    each new file inside the unit's declared `file_scope`. A new file outside
+    it -- untracked and not ignored, or in the index but never committed,
+    intent-to-add included -- is named in `left_uncommitted`; with `refuse_out_of_scope` the call then changes
+    nothing and returns `status` `refused`. That mode is the checkpoint before
+    the child, the only point where the failed attempt's staged files can
+    exist, so a staged file is never committed past this rule. No scope means
+    no new file is committed.
+
+    `status` is `committed`, `nothing_to_commit`, `refused`, or `failed`.
+    `paths` names every committed path and `left_uncommitted` every new file
+    left out, by name only. A failure names its `step` (`branch`, `status`,
+    `add`, `commit`, or `head`) and git's `exit_code` (None when the command
+    could not run), never git's output: a hook's message can carry anything.
+    A worktree whose HEAD is not the unit branch fails at `branch` before
+    anything is staged, so the commit cannot land on another branch.
+    """
+    # Bytes in, decoded with `surrogateescape`: a file name that is not UTF-8
+    # then round-trips to the same bytes for `lexists` and `git add`, where
+    # `replace` would turn it into a name no file has.
+    def git(argv: list[str]) -> tuple[int | None, str]:
+        try:
+            completed = runner(argv, cwd=str(worktree), capture_output=True, timeout=60)
+            code = int(getattr(completed, "returncode", 1))
+            stdout = getattr(completed, "stdout", b"") or b""
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+            return None, ""
+        return code, stdout if isinstance(stdout, str) else stdout.decode("utf-8", "surrogateescape")
+
+    def failed(step: str, code: int | None, reason: str) -> dict[str, Any]:
+        return {"status": "failed", "step": step, "exit_code": code, "reason": reason}
+
+    def names(output: str) -> list[str]:
+        return sorted({name for name in output.split("\0") if name})
+
+    def shown(paths: Sequence[str]) -> list[str]:
+        # What a record carries: such a name's undecodable bytes read U+FFFD,
+        # so no record holds a lone surrogate.
+        return [path.encode("utf-8", "surrogateescape").decode("utf-8", "replace") for path in paths]
+
+    code, head_ref = git(["git", "symbolic-ref", "-q", "HEAD"])
+    if code != 0 or head_ref.strip() != f"refs/heads/{branch}":
+        return failed("branch", code, f"the unit worktree does not have its branch {branch} checked out")
+    code, untracked = git(["git", "ls-files", "--others", "--exclude-standard", "-z"])
+    if code != 0:
+        return failed("status", code, "git could not list the unit worktree's new files")
+    # New in the index but not in HEAD, intent-to-add entries included: the
+    # dispatcher's own probe of a failed unit marks every new file that way
+    # (`git add -N -- .`), which hides it from `--others` and would let
+    # `add -u` below stage it. `--no-renames`, which also turns off copy
+    # detection and outranks `diff.renames`: a `git mv seed.txt .env` would
+    # otherwise list as a rename, never as an addition, and `add -u` would
+    # stage the new path's content.
+    staged_code, staged_new = git(
+        ["git", "diff", "--cached", "--no-renames", "--ita-visible-in-index", "--name-only", "--diff-filter=A", "-z"]
+    )
+    if staged_code != 0:
+        return failed("status", staged_code, "git could not list the unit worktree's staged files")
+    scope = [entry.strip().rstrip("/") for entry in file_scope if entry.strip().rstrip("/")]
+    candidates = names(untracked) + names(staged_new)
+    inside = sorted({path for path in candidates if any(path == entry or path.startswith(entry + "/") for entry in scope)})
+    outside = sorted(set(candidates) - set(inside))
+    if refuse_out_of_scope and outside:
+        return {"status": "refused", "paths": [], "left_uncommitted": shown(outside)}
+    code, _ = git(["git", "add", "-u"])
+    if code != 0:
+        return failed("add", code, "git could not stage the unit worktree's tracked changes")
+    # A file staged and then deleted is no longer on disk; literal pathspecs,
+    # so a name holding `*` or `:(` stages that one file.
+    inside = [path for path in inside if os.path.lexists(worktree / path)]
+    if inside:
+        code, _ = git(["git", "--literal-pathspecs", "add", "--", *inside])
+        if code != 0:
+            return failed("add", code, "git could not stage the new files inside the unit's scope")
+    # Both sides of a move are named, the same way the addition was found.
+    code, staged = git(["git", "diff", "--cached", "--no-renames", "--name-only", "-z"])
+    if code != 0:
+        return failed("status", code, "git could not list what was staged")
+    committed = names(staged)
+    if committed:
+        code, _ = git(["git", "commit", "-q", "-m", message])
+        if code != 0:
+            return {**failed("commit", code, "git commit did not complete in the unit worktree"),
+                    "left_uncommitted": shown(outside)}
+    code, head = git(["git", "rev-parse", "HEAD"])
+    if code != 0 or not re.fullmatch(r"[0-9a-f]{40}", head.strip()):
+        return failed("head", code, "git could not read the unit branch's commit")
+    return {
+        "status": "committed" if committed else "nothing_to_commit",
+        "head_sha": head.strip(),
+        "paths": shown(committed),
+        "left_uncommitted": shown(outside),
     }
 
 
@@ -4485,213 +4803,220 @@ def _dispatch_unit(
             "failure_kind": FAILURE_KIND_WORKSPACE_BLOCKED,
             **_dispatch_status_ladder(),
         }
-    worktree = Path(str(worktree_record["worktree_path"]))
-    # The isolation now exists; whether the work can be DONE in it is a
-    # separate question, and the 2026-09-11 incident is what happens when only
-    # the first one is asked. A readiness probe says the executor binary runs.
-    # It cannot say that this worktree takes a file write, that its index can
-    # be written, that the commits the unit merges are present rather than
-    # promised by a partial clone, or that its tracked filenames survive a
-    # case-insensitive filesystem. Those four are observed HERE, in the path
-    # the unit was handed, before any process is spawned -- because none of
-    # them is cleared by running the unit and finding out.
-    #
-    # `target_ref` is deliberately None: the worktree was just created at
-    # `base_sha`, so the unit has no head of its own yet and HEAD is the only
-    # other commit there is to check. A REUSED worktree holds what an earlier
-    # attempt wrote, git config included, so its preflight waits for this
-    # attempt's fence below (#1999); a fresh one holds only the checkout.
-    reused_worktree = bool(worktree_record.get("reused"))
-    if not reused_worktree:
-        workspace_preflight = probe_workspace(
-            worktree, base_ref=base_sha or None, target_ref=None, runner=runner
-        )
-        if not workspace_preflight["ok"]:
-            return _workspace_preflight_refusal(unit_id, run_ref, owner, attempt_id, workspace_preflight)
-    session_capability = (negotiate_session_capability(owner, argv[0], env=child_env)
-                          if argv and getattr(runner, 'accepts_output_capture', False) else None)
-    if session_capability is not None:
-        worktree = worktree.resolve()
-    def session_argv(command: list[str]) -> list[str]:
-        if session_capability is None or session_capability.protocol is None:
-            return command
-        flags = ['--json'] if owner == 'codex' else ['--output-format', 'stream-json', '--verbose']
-        # Keep the Codex positional prompt last and all original model/permission options.
-        index = 2 if owner == 'codex' else 1
-        return [session_capability.binary_identity.resolved_path, *command[1:index], *flags, *command[index:]]
-    if argv is not None:
-        argv = session_argv(argv)
-    verification_argv: list[list[str]] = []
-    for command in declared_verification_commands(unit):
-        try:
-            _overrides, check_argv = verification_command_argv(command)
-        except FanoutContractError:
-            continue
-        verification_argv.append(check_argv)
-    confinement = (
-        prepare_fanout_filesystem_confinement(
-            worktree, child_env, (argv, *verification_argv), owner=owner,
-            intake_root=intake_root,
-            # Same expression ensure_fanout_unit_worktree used to create this unit's branch.
-            unit_branch=str(unit.get("branch_suggestion", f"agent/{unit_id}")),
-            repo_root=repo_root,
-            allow_unconfined=allow_unconfined,
-        )
-        if runner is signal_safe_unit_runner
-        else None
-    )
-    filesystem_confinement = confinement_receipt(confinement, worktree)
-    if confinement is not None and isinstance(filesystem_confinement, dict):
-        filesystem_confinement["git_roots_skip"] = git_roots_skip_reason(worktree.resolve())
-    if (
-        confinement is not None
-        and argv is not None
-        and confinement.command(argv) is None
-        and not confinement.unconfined_allowed
-    ):
-        # No proven fence, so the spawn below would run the owner CLI with the
-        # operator's full write access (#1982). The receipt alone said so, and
-        # nothing read it. Refused before anything runs in the worktree, the
-        # same setup-phase shape as a workspace preflight blocker: the next
-        # attempt on this host inherits the same missing fence, and only a
-        # host with a backend or the operator's `--allow-unconfined` clears it.
-        return _unfenced_unit_refusal(unit_id, run_ref, owner, attempt_id, worktree, filesystem_confinement)
-    if confinement is not None:
-        child_env = confinement.command_environment()
-    # From here on, git the dispatcher runs in this worktree runs inside the
-    # unit's own fence (#1990).
-    unit_git_runner = _fenced_dispatcher_runner(runner, confinement, worktree)
-    if reused_worktree:
-        workspace_preflight = probe_workspace(
-            worktree, base_ref=base_sha or None, target_ref=None, runner=unit_git_runner
-        )
-        if not workspace_preflight["ok"]:
-            return _workspace_preflight_refusal(unit_id, run_ref, owner, attempt_id, workspace_preflight)
-    # After the worktree exists and before anything else touches it: a linked
-    # artifact must be in place before the unit's process spawns to be worth
-    # anything, and re-checking from inside the worktree (see
-    # fanout_artifact_sharing) requires the worktree's own git metadata, which
-    # `git worktree add` has just finished writing.
-    shared_artifacts = plan_and_link_shared_artifacts(
-        repo_root=repo_root,
-        worktree_path=worktree,
-        runner=unit_git_runner,
-    )
-    if fanout_id:
-        # Before the spawn, like the in-flight marker below. A record from an
-        # earlier attempt describes a worktree that has just been rebuilt from
-        # base, so leaving it would advertise a stale digest and a recover_with
-        # pointing at work that no longer exists. If this run also fails, the
-        # probe writes a fresh one.
-        from .fanout_artifacts import clear_fanout_unit_recovery
-
-        clear_fanout_unit_recovery(paths, fanout_id, unit_id)
-    if sidecar_path is not None:
-        # A re-dispatch must never consume an earlier attempt's report. Create
-        # only the managed parent; the executor owns the sidecar write itself.
-        ensure_dir(sidecar_path.parent, private=True)
-        sidecar_path.unlink(missing_ok=True)
-    _ensure_unit_run(paths, unit, owner)
-    if repair is not None:
-        # Before the spawn, so an interrupted attempt is still counted and a
-        # later dispatch continues past it rather than re-spending it.
-        append_journal_observation(paths, {
-            "target_type": "run", "target_id": run_ref, "run_id": run_ref,
-            "event": REPAIR_ATTEMPT_STARTED_EVENT, "status": "observed",
-            "summary": f"dispatcher started repair attempt {repair['attempt']} for unit {unit_id}",
-            "worker_ref": unit_id, "worktree_ref": str(worktree), "runtime_profile": owner,
-            "attempt_id": attempt_id, "repair_attempt": int(repair["attempt"]),
-            "repair_checks": journal_repair_checks(repair["failing_checks"]),
-        })
-    dispatch_summary = f"local dispatch of unit {unit_id} to {owner}"
-    if shared_artifacts.get("linked"):
-        # Named in the journal, not just the eventual result dict, so a run
-        # stays explainable from the journal alone: the observation schema
-        # carries only fixed fields, so the note rides in free-text summary.
-        dispatch_summary = f"{dispatch_summary} (shared_artifacts: {', '.join(shared_artifacts['linked'])})"
-    dispatch_recorded: set[str] = set()
-
-    def dispatch_observed() -> None:
-        # Idempotent PER ATTEMPT: the pre-spawn recovery below must not
-        # double-record a dispatch the launch callback already observed, and a
-        # retry must still record its own, so the live view switches to the
-        # fresh attempt instead of holding the previous failure.
-        if attempt_id in dispatch_recorded:
-            return
-        dispatch_recorded.add(attempt_id)
-        # One decision claim can cover bounded process retries; each attempt
-        # still receives its own worker_dispatch observation below.
-        if clarification is not None and len(dispatch_recorded) == 1:
-            record_answer_redispatch(paths, clarification)
-        append_journal_observation(paths, {
-            'target_type': 'run', 'target_id': run_ref, 'run_id': run_ref,
-            'event': 'worker_dispatch', 'attempt_id': attempt_id, 'status': 'observed',
-            'summary': dispatch_summary, 'worker_ref': unit_id,
-            'worktree_ref': str(worktree), 'runtime_profile': owner})
-    if not getattr(runner, 'accepts_launch', False):
-        dispatch_observed()
-    started_at = utc_now()
-    started_clock = time.monotonic()
-    stderr_tail = ""
+    # From here to the end of the spawn, every path out -- a refusal or an
+    # exception -- passes the `finally` below, which clears this unit's
+    # in-flight marker. A capacity-reuse reservation has already written that
+    # marker inside `ensure_fanout_unit_worktree`, so a refusal before the
+    # spawn must clear it too. The refusal just above stays outside: a worktree
+    # this attempt did not get may be another dispatch's, marker and all. The
+    # `finally` reads the five names below, so they exist before it can run.
+    unit_title = str(unit.get("title") or unit.get("unit_id", unit_id))
+    progress_binding: dict[str, Any] | None = None
+    telemetry: dict[str, object] = {}
     stdout_text = ""
     exit_code = 1
-    owner_host = omo_runtime_host() or "" if owner == "omo-runtime" else ""
-    # Which account this owner's CLI is configured as, read once here from that
-    # CLI's own config file and redacted on the way out. Read at spawn rather
-    # than at failure time because the failure is what makes it interesting and
-    # by then the operator may already have switched: without the tag recorded
-    # beside the limit, "wait for the reset" is the only recovery omh can offer,
-    # including to the operator for whom that window no longer applies. No
-    # token or key is read, and an unreadable file is an empty tag.
-    account_tag = observed_account_tag(owner)
-    unit_title = str(unit.get("title") or unit.get("unit_id", unit_id))
-    # Written BEFORE the spawn and cleared in `finally`. This call blocks for
-    # the whole unit, so the dispatching process cannot report on itself; the
-    # marker is what lets ANOTHER session see that this unit is running and
-    # compute its elapsed time. Marker failures never block a dispatch.
-    # One dict for the unit's whole lifetime: the pid recorded after the spawn
-    # and the progress evidence written from each stdout snapshot both update
-    # it in place, so no later write erases what an earlier one recorded.
-    marker_fields: dict[str, str] = {
-        "owner": owner,
-        "owner_host": owner_host,
-        "model": routed_model,
-        "reasoning_effort": routed_effort,
-        "run_ref": run_ref,
-        "worktree": str(worktree),
-        "started_at": started_at,
-    }
-    _write_inflight(paths, fanout_id, unit_id, marker_fields)
-    # Holds the evidence across snapshots. Opened here rather than beside the
-    # on_output wiring below so the post-exit record has one to finalize even
-    # when the runner never accepted the snapshot hook at all.
-    progress_observer = _UnitProgressObserver(paths, fanout_id, unit_id, marker_fields)
-    # Best-effort HUD row for this unit: opened inside the same try whose
-    # finally below closes it, so the row can never outlive the process it
-    # describes -- opening it BEFORE the try left a window (a Ctrl-C during
-    # the stagger sleep just below, in particular) where the binding was on
-    # disk but the finally that closes it never ran, orphaning a live row for
-    # up to its freshness window. See _open_fanout_progress_binding.
-    progress_binding: dict[str, Any] | None = None
-    spawn_kwargs: dict[str, Any] = {}
-    # One entry per FAILED attempt, each carrying why it did or did not lead to
-    # another one. An empty list means the unit succeeded first try.
-    retry_decisions: list[dict[str, Any]] = []
-    attempt = 0
-    telemetry: dict[str, object] = {}
-    capture = FanoutOutput(known_secrets=known_secrets)
-    failure_diagnostic = None
-    session_fields: dict[str, object] = {}
-    capacity_trip: CapacityTrip | None = None
-
-    def diagnostic(phase: str, reason: str, code: int | None, source: str):
-        return build_failure_diagnostic(
-            fanout_id=fanout_id, unit_id=unit_id, run_ref=run_ref, owner=owner,
-            attempt_id=attempt_id, worktree_ref=str(worktree), base_sha=base_sha,
-            observed_revision=None, phase=phase, reason=reason, returncode=code,
-            exit_code_source=source, streams=capture.streams())
-
     try:
+        worktree = Path(str(worktree_record["worktree_path"]))
+        # The isolation now exists; whether the work can be DONE in it is a
+        # separate question, and the 2026-09-11 incident is what happens when only
+        # the first one is asked. A readiness probe says the executor binary runs.
+        # It cannot say that this worktree takes a file write, that its index can
+        # be written, that the commits the unit merges are present rather than
+        # promised by a partial clone, or that its tracked filenames survive a
+        # case-insensitive filesystem. Those four are observed HERE, in the path
+        # the unit was handed, before any process is spawned -- because none of
+        # them is cleared by running the unit and finding out.
+        #
+        # `target_ref` is deliberately None: the worktree was just created at
+        # `base_sha`, so the unit has no head of its own yet and HEAD is the only
+        # other commit there is to check. A REUSED worktree holds what an earlier
+        # attempt wrote, git config included, so its preflight waits for this
+        # attempt's fence below (#1999); a fresh one holds only the checkout.
+        reused_worktree = bool(worktree_record.get("reused"))
+        if not reused_worktree:
+            workspace_preflight = probe_workspace(
+                worktree, base_ref=base_sha or None, target_ref=None, runner=runner
+            )
+            if not workspace_preflight["ok"]:
+                return _workspace_preflight_refusal(unit_id, run_ref, owner, attempt_id, workspace_preflight)
+        session_capability = (negotiate_session_capability(owner, argv[0], env=child_env)
+                              if argv and getattr(runner, 'accepts_output_capture', False) else None)
+        if session_capability is not None:
+            worktree = worktree.resolve()
+        def session_argv(command: list[str]) -> list[str]:
+            if session_capability is None or session_capability.protocol is None:
+                return command
+            flags = ['--json'] if owner == 'codex' else ['--output-format', 'stream-json', '--verbose']
+            # Keep the Codex positional prompt last and all original model/permission options.
+            index = 2 if owner == 'codex' else 1
+            return [session_capability.binary_identity.resolved_path, *command[1:index], *flags, *command[index:]]
+        if argv is not None:
+            argv = session_argv(argv)
+        verification_argv: list[list[str]] = []
+        for command in declared_verification_commands(unit):
+            try:
+                _overrides, check_argv = verification_command_argv(command)
+            except FanoutContractError:
+                continue
+            verification_argv.append(check_argv)
+        confinement = (
+            prepare_fanout_filesystem_confinement(
+                worktree, child_env, (argv, *verification_argv), owner=owner,
+                intake_root=intake_root,
+                # Same expression ensure_fanout_unit_worktree used to create this unit's branch.
+                unit_branch=str(unit.get("branch_suggestion", f"agent/{unit_id}")),
+                repo_root=repo_root,
+                allow_unconfined=allow_unconfined,
+            )
+            if runner is signal_safe_unit_runner
+            else None
+        )
+        filesystem_confinement = confinement_receipt(confinement, worktree)
+        if confinement is not None and isinstance(filesystem_confinement, dict):
+            filesystem_confinement["git_roots_skip"] = git_roots_skip_reason(worktree.resolve())
+        if (
+            confinement is not None
+            and argv is not None
+            and confinement.command(argv) is None
+            and not confinement.unconfined_allowed
+        ):
+            # No proven fence, so the spawn below would run the owner CLI with the
+            # operator's full write access (#1982). The receipt alone said so, and
+            # nothing read it. Refused before anything runs in the worktree, the
+            # same setup-phase shape as a workspace preflight blocker: the next
+            # attempt on this host inherits the same missing fence, and only a
+            # host with a backend or the operator's `--allow-unconfined` clears it.
+            return _unfenced_unit_refusal(unit_id, run_ref, owner, attempt_id, worktree, filesystem_confinement)
+        if confinement is not None:
+            child_env = confinement.command_environment()
+        # From here on, git the dispatcher runs in this worktree runs inside the
+        # unit's own fence (#1990).
+        unit_git_runner = _fenced_dispatcher_runner(runner, confinement, worktree)
+        if reused_worktree:
+            workspace_preflight = probe_workspace(
+                worktree, base_ref=base_sha or None, target_ref=None, runner=unit_git_runner
+            )
+            if not workspace_preflight["ok"]:
+                return _workspace_preflight_refusal(unit_id, run_ref, owner, attempt_id, workspace_preflight)
+        # After the worktree exists and before anything else touches it: a linked
+        # artifact must be in place before the unit's process spawns to be worth
+        # anything, and re-checking from inside the worktree (see
+        # fanout_artifact_sharing) requires the worktree's own git metadata, which
+        # `git worktree add` has just finished writing.
+        shared_artifacts = plan_and_link_shared_artifacts(
+            repo_root=repo_root,
+            worktree_path=worktree,
+            runner=unit_git_runner,
+        )
+        if fanout_id:
+            # Before the spawn, like the in-flight marker below. A record from an
+            # earlier attempt describes a worktree that has just been rebuilt from
+            # base, so leaving it would advertise a stale digest and a recover_with
+            # pointing at work that no longer exists. If this run also fails, the
+            # probe writes a fresh one.
+            from .fanout_artifacts import clear_fanout_unit_recovery
+
+            clear_fanout_unit_recovery(paths, fanout_id, unit_id)
+        if sidecar_path is not None:
+            # A re-dispatch must never consume an earlier attempt's report. Create
+            # only the managed parent; the executor owns the sidecar write itself.
+            ensure_dir(sidecar_path.parent, private=True)
+            sidecar_path.unlink(missing_ok=True)
+        _ensure_unit_run(paths, unit, owner)
+        if repair is not None:
+            # Before the spawn, so an interrupted attempt is still counted and a
+            # later dispatch continues past it rather than re-spending it.
+            append_journal_observation(paths, {
+                "target_type": "run", "target_id": run_ref, "run_id": run_ref,
+                "event": REPAIR_ATTEMPT_STARTED_EVENT, "status": "observed",
+                "summary": f"dispatcher started repair attempt {repair['attempt']} for unit {unit_id}",
+                "worker_ref": unit_id, "worktree_ref": str(worktree), "runtime_profile": owner,
+                "attempt_id": attempt_id, "repair_attempt": int(repair["attempt"]),
+                "repair_checks": journal_repair_checks(repair["failing_checks"]),
+            })
+        dispatch_summary = f"local dispatch of unit {unit_id} to {owner}"
+        if shared_artifacts.get("linked"):
+            # Named in the journal, not just the eventual result dict, so a run
+            # stays explainable from the journal alone: the observation schema
+            # carries only fixed fields, so the note rides in free-text summary.
+            dispatch_summary = f"{dispatch_summary} (shared_artifacts: {', '.join(shared_artifacts['linked'])})"
+        dispatch_recorded: set[str] = set()
+
+        def dispatch_observed() -> None:
+            # Idempotent PER ATTEMPT: the pre-spawn recovery below must not
+            # double-record a dispatch the launch callback already observed, and a
+            # retry must still record its own, so the live view switches to the
+            # fresh attempt instead of holding the previous failure.
+            if attempt_id in dispatch_recorded:
+                return
+            dispatch_recorded.add(attempt_id)
+            # One decision claim can cover bounded process retries; each attempt
+            # still receives its own worker_dispatch observation below.
+            if clarification is not None and len(dispatch_recorded) == 1:
+                record_answer_redispatch(paths, clarification)
+            append_journal_observation(paths, {
+                'target_type': 'run', 'target_id': run_ref, 'run_id': run_ref,
+                'event': 'worker_dispatch', 'attempt_id': attempt_id, 'status': 'observed',
+                'summary': dispatch_summary, 'worker_ref': unit_id,
+                'worktree_ref': str(worktree), 'runtime_profile': owner})
+        if not getattr(runner, 'accepts_launch', False):
+            dispatch_observed()
+        started_at = utc_now()
+        started_clock = time.monotonic()
+        stderr_tail = ""
+        owner_host = omo_runtime_host() or "" if owner == "omo-runtime" else ""
+        # Which account this owner's CLI is configured as, read once here from that
+        # CLI's own config file and redacted on the way out. Read at spawn rather
+        # than at failure time because the failure is what makes it interesting and
+        # by then the operator may already have switched: without the tag recorded
+        # beside the limit, "wait for the reset" is the only recovery omh can offer,
+        # including to the operator for whom that window no longer applies. No
+        # token or key is read, and an unreadable file is an empty tag.
+        account_tag = observed_account_tag(owner)
+        # Written BEFORE the spawn and cleared in `finally`. This call blocks for
+        # the whole unit, so the dispatching process cannot report on itself; the
+        # marker is what lets ANOTHER session see that this unit is running and
+        # compute its elapsed time. Marker failures never block a dispatch.
+        # One dict for the unit's whole lifetime: the pid recorded after the spawn
+        # and the progress evidence written from each stdout snapshot both update
+        # it in place, so no later write erases what an earlier one recorded.
+        marker_fields: dict[str, str] = {
+            "owner": owner,
+            "owner_host": owner_host,
+            "model": routed_model,
+            "reasoning_effort": routed_effort,
+            "run_ref": run_ref,
+            "worktree": str(worktree),
+            "started_at": started_at,
+        }
+        _write_inflight(paths, fanout_id, unit_id, marker_fields)
+        # Holds the evidence across snapshots. Opened here rather than beside the
+        # on_output wiring below so the post-exit record has one to finalize even
+        # when the runner never accepted the snapshot hook at all.
+        progress_observer = _UnitProgressObserver(paths, fanout_id, unit_id, marker_fields)
+        spawn_kwargs: dict[str, Any] = {}
+        # One entry per FAILED attempt, each carrying why it did or did not lead to
+        # another one. An empty list means the unit succeeded first try.
+        retry_decisions: list[dict[str, Any]] = []
+        attempt = 0
+        capture = FanoutOutput(known_secrets=known_secrets)
+        failure_diagnostic = None
+        session_fields: dict[str, object] = {}
+        capacity_trip: CapacityTrip | None = None
+
+        def diagnostic(phase: str, reason: str, code: int | None, source: str):
+            return build_failure_diagnostic(
+                fanout_id=fanout_id, unit_id=unit_id, run_ref=run_ref, owner=owner,
+                attempt_id=attempt_id, worktree_ref=str(worktree), base_sha=base_sha,
+                observed_revision=None, phase=phase, reason=reason, returncode=code,
+                exit_code_source=source, streams=capture.streams())
+
+        # Best-effort HUD row for this unit: opened inside the same try whose
+        # finally below closes it, so the row can never outlive the process it
+        # describes -- opening it BEFORE the try left a window (a Ctrl-C during
+        # the stagger sleep just below, in particular) where the binding was on
+        # disk but the finally that closes it never ran, orphaning a live row for
+        # up to its freshness window. See _open_fanout_progress_binding.
         progress_binding = _open_fanout_progress_binding(
             paths,
             run_ref=run_ref,
