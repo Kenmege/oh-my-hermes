@@ -969,6 +969,8 @@ _GATEWAY_MOVED_REQUESTS = (
     "the anti-slop policy changes next week",
     "$loop every hour check CI",
     "thanks, got it",
+    # Planned: the plan builder decides its next action from what it is given.
+    "ulw something",
 )
 # A reply whose quoted text reads as a skill request and a catalog question,
 # and backfill that asks for the catalog before the person's message. Hermes
@@ -979,7 +981,7 @@ _CATALOG_BACKFILL = "[bob] which OMH workflows are available?\n\n[New message]\n
 _SURFACE_PREFIXES = {**GATEWAY_PREFIXES, "skill reply": _SKILL_REPLY, "catalog backfill": _CATALOG_BACKFILL}
 # Hermes' image description: the model's words, a `]`, then its closer-look note.
 _IMAGE_NOTE = (
-    "[The user sent an image~ Here's what I can see:\nA terminal showing `[x] done`\n\nand a red stack trace]\n"
+    "[The user sent an image~ Here's what I can see:\nA checklist with [x]\n\nand a red stack trace]\n"
     "[If you need a closer look, use vision_analyze with image_url: /cache/img.png ~]\n\n"
 )
 
@@ -1147,6 +1149,16 @@ class GatewayMaterialIsNotTheRequestTest(unittest.TestCase):
         self.assertEqual((generic["action"], generic["selected_skill"]), ("dispatch", "code-review"))
         self.assertNotEqual(build_chat_route_hint_payload(message, source="generic")["route_hint"], bare_hint)
         self.assertNotEqual(build_chat_interaction_payload(message, source="generic")["next_action"], "answer_directly")
+        # The wrapper's own reading too: a Korean name before an English
+        # question sets the card's language only where the person wrote it.
+        korean = "[\uae40\ucca0\uc218] what is a web crawler"
+
+        def hangul(source: str) -> bool:
+            headline = str(build_chat_interaction_payload(korean, source=source)["chat_response"]["headline"])
+            return any("\uac00" <= char <= "\ud7a3" for char in headline)
+
+        self.assertTrue(hangul("generic"))
+        self.assertFalse(hangul("discord"))
 
     def test_the_recommend_tool_ranks_the_bare_request(self):
         def ranked(message: str) -> tuple[object, object]:

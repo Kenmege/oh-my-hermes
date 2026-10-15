@@ -5518,9 +5518,10 @@ def _build_chat_interaction_payload_uncached(
     # quoted text is context, not the request. The turn's own text goes where
     # the turn is identified or handed on: the router (which decides on the
     # person's words itself and renders its routing prompt and question digest
-    # from the turn), the message hash, length and thread key, and the coding
-    # handoff and the plan. Those two carry the whole turn, as before, and the
-    # handoff's safety preflight judges exactly what it carries.
+    # from the turn), the message hash, length and thread key, the coding
+    # handoff, and the plan's statement. The handoff is built from the whole
+    # turn, as before, so its safety preflight judges exactly what it carries;
+    # the plan is decided on the words.
     message = person_request_text(turn_text, messaging=source in MESSAGING_CHAT_SOURCES)
     metadata = _source_metadata(event_or_message, source_metadata)
     # Files the platform attached to the message are declared media inputs
@@ -5752,12 +5753,17 @@ def _build_chat_interaction_payload_uncached(
         return _finish_interaction(base, target_notice)
 
     plan = build_hermes_plan_payload(
-        turn_text,
+        message,
         source=source,
         limit=limit,
         source_metadata=metadata,
         executor_target=resolved_executor_target,
     )
+    # Planned on the person's words; its statement is the whole turn, because
+    # the plan artifact is what a coding owner receives once it is accepted.
+    plan_statement = _nested(plan, "plan")
+    if plan_statement.get("task_statement"):
+        plan_statement["task_statement"] = turn_text
     if _plan_has_coding_delegate(plan):
         coding_delegate = _nested(_nested(plan, "wrapper_contract"), "coding_delegate")
         coding_delegate["executor_resolution"] = executor_resolution
