@@ -16,18 +16,29 @@ All notable changes will be documented here.
   on 159 and 404 of them: "please pay with my card for the summary report" went
   to `gateway-intent-card` instead of the pre-spend card, and "what is a web
   crawler" dispatched `web-research`. One helper, `person_request_text`, now
-  removes that material, and every hint and router surface reads through it. A
-  reply's quoted text is context, not the request. Measured over both corpora
-  behind eight gateway prefixes, both Hermes orders of the note and the reply
-  pointer included, nothing differs from the bare request on the hint, the
-  route or the wrapper's next action. Routed bare, no route moved. The hint
-  moved to none on the 8 Hermes host frames in the corpora: the context brief
-  and the plugin tools' standalone fallbacks now skip a host turn, as the hook
-  and the wrapper already did. Two loop requests behind a sender prefix now
-  start the cycle, as the same request without the prefix does. A reply
-  pointer now ends at the `"]` after its quote, so a quote that holds `]` and
-  a blank line no longer leaks its tail. A leading bracket the router reads as
-  the person's own (`[REPORT]`, `[ulw-loop]`, `[/plan]`) stays.
+  removes that material before any route is decided; a reply's quoted text is
+  context, not the request. What OMH hands on still carries the whole turn: the
+  routing prompt a bridge forwards to Hermes, the coding handoff and the plan
+  keep the quote, an attachment's path and the backfill. The sender prefix is
+  removed only on a turn from a messaging gateway (the platform in the hook,
+  the `discord`, `slack` or `telegram` source in the router and the wrapper),
+  since Hermes writes it nowhere else, and even there a bracket that names a
+  skill, `omh` or `ulw`, an invocation, a relay header, or a second bracket
+  stays: `[omh] status`, `[deep-interview] …` and `[ulw] fix the flaky tests`
+  route as before on every surface. A role marker is read from the person's own
+  text. A reply pointer ends at the `"]` after its quote and an image
+  description at the `~]` after its closer-look note, so a `]` and a blank line
+  inside either no longer cut them; QQ's `[Quoted message]:` block, which has
+  no close, leaves the turn whole. The context brief and the plugin tools'
+  standalone fallbacks now skip a turn Hermes wrote from a session-command
+  template, as the hook and the wrapper already did. Measured over both corpora:
+  behind a trigger note, a reply pointer in either Hermes order, or a reply
+  quoting a skill request, nothing differs from the bare request on the hint,
+  the route or the wrapper's next action; behind a sender prefix on a
+  messaging turn, only a request that itself opens with a bracket differs, and
+  it reads as it did before. Routed bare, no route moved; the hint moved to none on the 8 Hermes
+  host frames in the corpora, and two loop requests behind a sender prefix now
+  start the cycle, as the same request without the prefix does.
 
 - **`omh chat route-hint` names no workflow on a turn Hermes wrote for its own
   session command.** On such a turn (a `/plan` frame, a `/loop` wakeup, a
