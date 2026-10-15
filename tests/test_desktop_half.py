@@ -466,6 +466,20 @@ SCENARIOS = {
     "loading": {"gateway": "open", "stored": "20260924_101010_abc123", "data": None},
     "gateway_closed": {"gateway": "connecting", "stored": None, "data": None},
 }
+# The plugin's last tool burst (`tool_bursts._latest_shot_from_entries`) as (open now, peak open at once): calls run
+# one after another inside the grouping window, closed and with the last one still open; a real overlap, closed,
+# with one call left, and with three open.
+SHOTS = {"chain_closed": (0, 1), "chain_open": (1, 1), "overlap_closed": (0, 2), "overlap_last_open": (1, 2), "overlap_open": (3, 3)}
+for _name, (_open, _peak) in SHOTS.items():
+    SCENARIOS[f"shot_{_name}"] = {
+        **SCENARIOS["open_with_payload"],
+        "data": {
+            **ESTABLISHED_PAYLOAD,
+            "parallel_shot": {
+                "status": "observed", "open_count": _open, "peak_open_count": _peak, "observed_at": "2026-10-13T00:00:00Z",
+            },
+        },
+    }
 
 # The TUI examples from the widget's own grammar, one call each; the report
 # carries the answers in this order.
@@ -923,6 +937,19 @@ class DesktopPluginNodeTests(unittest.TestCase):
                 "c · blocked_by_dependency · blocked_by b",
             ],
         )
+
+    def test_the_parallel_shot_chip_shows_only_a_count_of_two_or_more(self) -> None:
+        # The TUI header's rule (`panels._shot_badge`): calls that never overlapped were no parallel shot.
+        def chips(scenario: str) -> list[str]:
+            return [text for text in self._pane(f"shot_{scenario}") if "parallel shot" in text]
+
+        self.assertEqual(chips("chain_closed"), [])
+        self.assertEqual(chips("chain_open"), [])
+        self.assertEqual(chips("overlap_open"), ["parallel shot ×3"])
+        for scenario in ("overlap_closed", "overlap_last_open"):
+            with self.subTest(scenario=scenario):
+                (chip,) = chips(scenario)
+                self.assertRegex(chip, r"^parallel shot ×2 \(.+ ago\)$")
 
     def test_a_skipped_note_under_a_finished_item_is_not_struck_through(self) -> None:
         render = self._drive()["renders"]["maestro_and_board"]

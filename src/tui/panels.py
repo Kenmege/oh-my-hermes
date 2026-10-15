@@ -537,15 +537,22 @@ def _shrink_window(plan: _Plan, start: int, end: int) -> tuple[int, int]:
 
 
 def _shot_badge(shot: Mapping[str, Any], now: float, theme: Theme) -> Span | None:
-    """`parallel shot ×N` while calls of the batch are open; the measured peak, dimmed with its age, after."""
+    """`parallel shot ×N` while N of the batch's calls are open; else the measured peak, dimmed with its age.
+
+    No badge shows a number below 2: a batch whose calls never overlapped (a peak of 1, calls run one after another
+    inside the plugin's grouping window) was no parallel shot. While one call of a real overlap is still open, the
+    badge is the peak's.
+    """
     if shot.get("status") != "observed":
         return None
     open_count = _count(shot.get("open_count"))
-    if open_count > 0:
+    if open_count > 1:
         return Span(f" · parallel shot ×{open_count}", theme.label)
+    peak = _count(shot.get("peak_open_count"))
+    if peak < 2:
+        return None
     observed = _epoch(shot.get("observed_at"))
     age = elapsed_text(max(0.0, now - observed)) if observed is not None and _finite(now) else ""
-    peak = _count(shot.get("peak_open_count"))
     return Span(f" · parallel shot ×{peak}{f' ({age} ago)' if age else ''}", theme.muted)
 
 

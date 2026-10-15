@@ -212,6 +212,30 @@ class PlanBlockTests(unittest.TestCase):
         badge = next(span for span in lines[0] if "parallel shot" in span.text)
         self.assertEqual(badge.style, THEME.muted)
 
+    def test_calls_that_never_overlapped_carry_no_parallel_shot_badge(self) -> None:
+        # The plugin groups calls started within 1.5 s and measures how many were open at once
+        # (`tool_bursts._latest_shot_from_entries`): a chain run one after another inside that window peaks at 1.
+        payload = hud_payload(phased_plan(3, phases=1, active=1))
+        now = datetime(2026, 10, 13, 0, 0, 3, tzinfo=timezone.utc).timestamp()
+
+        def header(open_count: int, peak_open_count: int) -> str:
+            shown = copy.deepcopy(payload)
+            shown["parallel_shot"] = {
+                "status": "observed",
+                "open_count": open_count,
+                "peak_open_count": peak_open_count,
+                "observed_at": "2026-10-13T00:00:00Z",
+            }
+            return lines_text(panel_lines(shown, 120, 10, THEME, now))[0]
+
+        for open_count, peak in ((0, 1), (1, 1), (0, 0), (1, 0)):
+            with self.subTest(open_count=open_count, peak_open_count=peak):
+                self.assertNotIn("parallel shot", header(open_count, peak))
+        self.assertIn(" · parallel shot ×2 (3s ago)", header(0, 2))
+        self.assertIn(" · parallel shot ×2 (3s ago)", header(1, 2))  # one call of a real overlap still running
+        self.assertIn(" · parallel shot ×2", header(2, 2))
+        self.assertNotIn("ago", header(2, 2))
+
     def test_an_active_item_moves_only_while_work_is_live(self) -> None:
         payload = hud_payload(phased_plan(3, phases=1, active=1))
         # This install never saw post_tool_call: liveness is unanswerable, so
