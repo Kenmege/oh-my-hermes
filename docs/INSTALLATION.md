@@ -461,7 +461,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
     Hermes is doing, beside the elapsed time and the tokens written.
   - Your prompt sits on a tinted band behind `›` that reaches the right edge
     (painted by the terminal's erase, so a copy picks up no trailing
-    spaces); a prompt the queue sent says `⧗ from queue`.
+    spaces), when the terminal reported its background; a prompt the queue
+    sent says `⧗ from queue`.
   - A steer shows as `↪ steer · <text>` under what is running until Hermes
     answers, then becomes `↪ steer queued by Hermes · <text>`, or the amber
     refusal, at the next boundary in the transcript (see below).
@@ -697,7 +698,9 @@ the replies are in the terminal's own text colour, every other colour a word is
 drawn in reaches 4.5:1 contrast on that background and every rule or mark 3:1
 (on the status line, which keeps the theme's own bar colour, against that bar),
 and on a light background the diff bands are light tints. With no answer the
-background is taken as dark. `/theme light` and `/theme dark` measure against a
+background is taken as dark, and nothing that would depend on knowing it is
+painted: your prompt gets no band, and a diff band names its own text colour
+rather than leave your terminal's on it. `/theme light` and `/theme dark` measure against a
 light or a dark background whatever the terminal said, `/theme auto` follows
 the terminal again, and each, like `/theme <name>`, redraws the screen in the
 new colours.

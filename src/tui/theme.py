@@ -21,8 +21,11 @@ colour and only moves toward the ink (the palette's `banner_text` on a dark
 background, black on a light one) as far as that takes, so a palette that
 already clears the background keeps its colour. On a light background the
 diff bands are tints of the palette's word colours over the background, so
-the default foreground stays readable on them. `dim` is for decoration
-glyphs; words go on `muted` or `hint`.
+the default foreground stays readable on them; a dark diff band names its own
+text colour (`banner_text`), since the dark it assumes may be a guess. With no
+background reported there is no prompt band at all: its text is the
+terminal's own colour, which a guessed band can drown. `dim` is for
+decoration glyphs; words go on `muted` or `hint`.
 
 The status line keeps the palette's own status-bar background whatever the
 terminal's, so its words are measured against that bar instead: the
@@ -168,6 +171,7 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
     c = _palette(skin)
     status_bg = c["status_bar_bg"]
     surface = surface_for(skin, background)
+    reported = surface == background  # the terminal said what its background is
     light = is_light(surface)
     ink = BLACK if light else c["banner_text"]
 
@@ -188,9 +192,9 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         diff_remove = Style(bg=_mix(c["diff_removed_word"], surface, LIGHT_BAND_SHARE))
         diff_remove_word = Style(bg=_mix(c["diff_removed_word"], surface, LIGHT_WORD_BAND_SHARE), bold=True)
     else:
-        diff_add = Style(bg=c["diff_added"])
+        diff_add = Style(fg=c["banner_text"], bg=c["diff_added"])
         diff_add_word = Style(fg=c["diff_added_word"], bg=c["diff_added"])
-        diff_remove = Style(bg=c["diff_removed"])
+        diff_remove = Style(fg=c["banner_text"], bg=c["diff_removed"])
         diff_remove_word = Style(fg=c["diff_removed_word"], bg=c["diff_removed"])
     return Theme(
         name=skin.short_name,
@@ -229,7 +233,7 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         muted=Style(fg=read("banner_dim")),
         mode_accept=Style(fg=read("ui_warn")),
         mode_plan=Style(fg=read("ui_ok")),
-        user_band=Style(bg=_mix(surface, ink, USER_BAND_SHARE)),
+        user_band=Style(bg=_mix(surface, ink, USER_BAND_SHARE)) if reported else Style(),
     )
 
 

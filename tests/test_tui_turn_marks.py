@@ -43,13 +43,26 @@ def ev(kind: str, **payload: object) -> Event:
     return Event(kind, SID, payload)
 
 
+# A theme measured against a background the terminal reported: only then is there a band to paint.
+REPORTED = build_theme(SKIN_THEMES[0], "#1E1E1E")
+
+
 class BandTests(unittest.TestCase):
     def test_every_row_of_a_prompt_is_on_the_band_and_ends_in_a_fill(self) -> None:
-        rows = block_rows(UserBlock("first line\nsecond line"), 40, THEME)
+        rows = block_rows(UserBlock("first line\nsecond line"), 40, REPORTED)
         self.assertEqual(lines_text(rows), ["› first line", "  second line"])  # no spaces to copy
         for row in rows:
-            self.assertEqual({span.style.bg for span in row}, {THEME.user_band.bg})
-            self.assertEqual(row[-1], fill(THEME.user_band))
+            self.assertEqual({span.style.bg for span in row}, {REPORTED.user_band.bg})
+            self.assertEqual(row[-1], fill(REPORTED.user_band))
+
+    def test_with_no_background_reported_the_prompt_has_no_band(self) -> None:
+        # The theme would only guess dark, and the person's own text colour on a guessed band read 1.4:1 on light.
+        for skin in SKIN_THEMES:
+            theme = build_theme(skin, None)
+            with self.subTest(theme=skin.short_name):
+                self.assertIsNone(theme.user_band.bg)
+                rows = block_rows(UserBlock("a prompt"), 40, theme)
+                self.assertEqual({span.style.bg for row in rows for span in row}, {None})
 
     def test_the_fill_erases_to_the_edge_in_its_background_and_a_full_row_erases_nothing(self) -> None:
         band = Style(bg="#102030")
@@ -61,9 +74,9 @@ class BandTests(unittest.TestCase):
 
     def test_the_band_is_a_tint_the_ink_still_reads_on_for_every_palette_and_background(self) -> None:
         for skin in SKIN_THEMES:
-            for background in (None, *LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
+            for background in (*LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
                 theme = build_theme(skin, background)
-                surface = background or skin_colors(skin.skin_name)["status_bar_bg"]
+                surface = background
                 ink = "#000000" if background in LIGHT_BACKGROUNDS else skin_colors(skin.skin_name)["banner_text"]
                 with self.subTest(theme=skin.short_name, background=background):
                     self.assertNotEqual(theme.user_band.bg, surface)

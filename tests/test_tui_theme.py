@@ -14,6 +14,7 @@ from omh.tui.theme import DEFAULT_THEME, GLYPH_ROLES, TEXT_ROLES, build_theme, i
 # for a dark terminal), pure white and black, and the near-white and near-black defaults common terminals ship.
 LIGHT_BACKGROUNDS = ("#FFFFFF", "#F6F8FA", "#FDF6E3")
 DARK_BACKGROUNDS = ("#000000", "#1E1E1E", "#002B36")
+BAND_ROLES = ("user_band",)
 
 
 def luminance(colour: str) -> float:
@@ -41,6 +42,8 @@ class ThemeTests(unittest.TestCase):
                 for field in fields(theme):
                     if field.name in ("name", "text", "user"):
                         continue
+                    if background is None and field.name in BAND_ROLES:
+                        continue  # no band is painted over a background nobody reported
                     with self.subTest(theme=skin.short_name, background=background, role=field.name):
                         style = getattr(theme, field.name)
                         self.assertTrue(style.fg or style.bg, "a role without any colour paints as plain text")
@@ -76,6 +79,18 @@ class ThemeTests(unittest.TestCase):
                         self.assertGreaterEqual(contrast(style.bg, "#000000"), 7.0)
         dark = build_theme(SKIN_THEMES[0], "#000000")
         self.assertEqual(dark.diff_add.bg, skin_colors(SKIN_THEMES[0].skin_name)["diff_added"])
+
+    def test_a_dark_diff_band_carries_its_own_text_colour(self) -> None:
+        # With no background reported the theme assumes dark; a light terminal's own dark text on the dark band
+        # read 1.5:1, so the band says what colour its text is, as it did before the light-terminal work.
+        for skin in SKIN_THEMES:
+            for background in (None, *DARK_BACKGROUNDS):
+                theme = build_theme(skin, background)
+                for role in ("diff_add", "diff_remove"):
+                    with self.subTest(theme=skin.short_name, background=background, role=role):
+                        style = getattr(theme, role)
+                        self.assertIsNotNone(style.fg)
+                        self.assertGreaterEqual(contrast(style.fg, style.bg), 7.0)
 
     def test_light_is_read_from_the_background_itself(self) -> None:
         self.assertTrue(all(is_light(colour) for colour in LIGHT_BACKGROUNDS))
