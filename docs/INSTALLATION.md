@@ -501,8 +501,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   that prompt and what followed (`prompt.submit` with
   `truncate_before_row_id` and `confirm_truncate`), and the screen is redrawn
   from the cut with your prompt under it; Esc instead cancels and empties the
-  composer. A rewind goes as a plain prompt, never through plan mode, and if
-  Hermes refuses it the screen is redrawn as Hermes still has the session.
+  composer. A rewind goes as a plain prompt, never through plan mode. If
+  Hermes refuses it, the screen goes back to how it was before you sent, and
+  is then redrawn from the history Hermes sends, as Hermes still has the
+  session; if Hermes does not send that history, a notice says so and the
+  screen stays as it was before you sent.
   Esc twice with text clears it, keeping it in this session's input history
   (not in Hermes' history file, since it was never sent).
 - `/sessions` (also `/resume`, `/switch`, `/session`) lists your stored

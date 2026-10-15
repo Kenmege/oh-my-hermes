@@ -184,6 +184,47 @@ class RewindTests(unittest.TestCase):
         self.assertEqual(users, [TODO_PROMPT, SECOND_PROMPT])
         self.assertFalse(app.turn_pending)
 
+    def sent_and_refused(self) -> tuple[App, object]:
+        """A rewind sent over a screen that shows the session, which Hermes refuses."""
+        app, client = self.picked()
+        for message in HISTORY["messages"]:  # what the screen showed before the rewind
+            if message.get("role") == "user":
+                app.transcript.add_user(message["text"])
+            elif message.get("role") == "assistant":
+                app.transcript.add_assistant(message.get("text") or "")
+        app._set_composer("an edited prompt")
+        app._on_input(Key(ENTER))
+        answer(app, client, error={"code": 4018, "message": "rewind target not found"})
+        return app, client
+
+    def users(self, app: App) -> list[str]:
+        return [block.text for block in app.transcript.blocks if isinstance(block, UserBlock)]
+
+    def test_a_refused_rewind_puts_the_screen_back_before_hermes_sends_its_history(self) -> None:
+        app, client = self.sent_and_refused()
+        self.assertEqual(client.calls[-1], ("session.history", {"session_id": SID}))
+        self.assertEqual(self.users(app), [TODO_PROMPT, SECOND_PROMPT])  # not the cut, not the prompt Hermes refused
+        self.assertIn("Hermes did not rewind: rewind target not found.", notices(app, NOTICE_WARN)[-1])
+        self.assertNotIn("as Hermes still has it", " ".join(notices(app)))  # nothing re-read yet
+
+    def test_a_refused_rewind_whose_history_read_fails_keeps_the_screen_from_before(self) -> None:
+        app, client = self.sent_and_refused()
+        answer(app, client, error={"code": 5000, "message": "state.db locked"})
+        self.assertEqual(self.users(app), [TODO_PROMPT, SECOND_PROMPT])
+        said = " ".join(notices(app))
+        self.assertIn("state.db locked", said)
+        self.assertNotIn("as Hermes still has it", said)
+
+    def test_a_rewind_sent_once_a_turn_started_gives_the_text_back_and_cuts_nothing(self) -> None:
+        app, client = self.picked()
+        app.turn_pending = True  # a turn started between the pick and the send
+        app._set_composer("an edited prompt")
+        app._on_input(Key(ENTER))
+        self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
+        self.assertEqual(app.composer.text, "an edited prompt")
+        self.assertIn("between turns", notices(app, NOTICE_WARN)[-1])
+        self.assertIsNone(app.rewind)
+
     def test_esc_cancels_a_rewind_and_empties_the_composer(self) -> None:
         app, client = self.picked()
         esc(app)

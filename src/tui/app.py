@@ -224,6 +224,9 @@ SHELL_USAGE = "Usage: !<command> runs it in Hermes' shell (30 s at most); its ou
 SHELL_REFUSED = 4005  # Hermes' answer to a dangerous or hardline command
 REWIND_NONE_NOTICE = "No prompt to rewind to in this session yet."
 REWIND_REFUSED_NOTICE = "Hermes did not rewind: {reason}. The screen shows the session as Hermes still has it."
+# Said as Hermes refuses, over the screen from before the send, until Hermes' history redraws it.
+REWIND_KEPT_NOTICE = "Hermes did not rewind: {reason}. The screen is back to how it was before you sent."
+REWIND_UNREAD_NOTICE = "Hermes did not send the session's history ({reason}), so the screen stays as it was before you sent."
 MODEL_BUSY_NOTICE = "Hermes switches the model between turns: let this one end, or interrupt it with Esc."
 TODOS_NONE_NOTICE = "No plan in this session yet: Hermes' todo tool writes one."
 # Claude Code's /export saves the conversation; Hermes' writes a profile archive. Said once, then it runs.
@@ -1993,8 +1996,9 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice(REWIND_BUSY_NOTICE, NOTICE_WARN)
             self._set_composer(text)
             return
+        kept = self.transcript  # the screen before the cut, put back if Hermes refuses it
         self._restart_transcript(list(rewind.before))
-        self._submit_prompt(text, shown, truncate=rewind.row_id)
+        self._submit_prompt(text, shown, truncate=rewind.row_id, before_cut=kept)
         self._full_redraw()
 
     def _restart_transcript(self, messages: list[dict[str, Any]]) -> None:
@@ -2004,27 +2008,42 @@ class App(ModesMixin, AgentViewMixin):
         self.transcript.cwd = cwd
         self._draw_history(messages)
 
-    def _on_rewind_refused(self, sid: str, error: dict[str, Any]) -> bool:
-        """Hermes kept its history: the turn never starts, and the screen is redrawn from what Hermes has."""
-        self._on_submit_error(error)
+    def _on_rewind_refused(self, sid: str, kept: Transcript, error: dict[str, Any]) -> bool:
+        """Hermes kept its history: the turn never starts, and the screen goes back to `kept`, as it was before the send.
+
+        Then it is redrawn from the history Hermes sends; if that read fails,
+        or until it is answered, the screen from before the send stays, and
+        the notices say which.
+        """
+        if sid != self.sid:
+            self._on_submit_error(error)
+            return True
         reason = (as_text(error.get("message")) or "refused").strip().rstrip(".")
-        notice = REWIND_REFUSED_NOTICE.format(reason=reason)
+        self.transcript = kept  # first: a prompt the queue sends next lands on this screen
+        self._full_redraw()
+        self.transcript.add_notice(REWIND_KEPT_NOTICE.format(reason=reason), NOTICE_WARN)
+        self._on_submit_error(error)
         self._request(
             "session.history",
             {"session_id": sid},
-            lambda result: self._redraw_from_history(sid, result, notice),
-            lambda history_error: self._redraw_from_history(sid, {}, notice),
+            lambda result: self._redraw_from_history(sid, result, REWIND_REFUSED_NOTICE.format(reason=reason)),
+            lambda history_error: self._history_unread(sid, history_error),
         )
         return True
 
-    def _redraw_from_history(self, sid: str, result: Mapping[str, Any], notice: str) -> bool:
-        if sid != self.sid:
-            return True
+    def _redraw_from_history(self, sid: str, result: Mapping[str, Any], notice: str) -> None:
+        """The screen redrawn from the history Hermes sent, under `notice`; one without messages changes nothing."""
         messages = result.get("messages")
-        if isinstance(messages, list):
-            self._restart_transcript([message for message in messages if isinstance(message, dict)])
-            self._full_redraw()
+        if sid != self.sid or not isinstance(messages, list):
+            return
+        self._restart_transcript([message for message in messages if isinstance(message, dict)])
+        self._full_redraw()
         self.transcript.add_notice(notice, NOTICE_WARN)
+
+    def _history_unread(self, sid: str, error: Mapping[str, Any]) -> bool:
+        if sid == self.sid:
+            reason = (as_text(error.get("message")) or "refused").strip().rstrip(".")
+            self.transcript.add_notice(REWIND_UNREAD_NOTICE.format(reason=reason), NOTICE_WARN)
         return True
 
     def _interrupt(self) -> None:
@@ -2167,8 +2186,15 @@ class App(ModesMixin, AgentViewMixin):
             return
         self._submit_prompt(text, shown)
 
-    def _submit_prompt(self, text: str, shown: str = "", queued: bool = False, truncate: int | None = None) -> None:
-        """Send one prompt; `truncate` names the row a rewind cuts the session before; `queued`, the queue sent it."""
+    def _submit_prompt(
+        self, text: str, shown: str = "", queued: bool = False, truncate: int | None = None,
+        before_cut: Transcript | None = None,
+    ) -> None:
+        """Send one prompt; `queued` says the queue sent it.
+
+        `truncate` names the row a rewind cuts the session before, and
+        `before_cut` the transcript from before that cut, which a refusal puts back.
+        """
         self.transcript.add_user(shown or text, from_queue=queued)
         self.sticky = shown or text
         self.flushed_since_prompt = 0
@@ -2183,8 +2209,8 @@ class App(ModesMixin, AgentViewMixin):
             params["queued"] = True  # the busy path holds a drained prompt; it never redirects or steers it
         if truncate is not None:
             params.update(truncate_before_row_id=truncate, confirm_truncate=True)  # the person picked this row
-            sid = self.sid
-            self._request("prompt.submit", params, lambda result: None, lambda error: self._on_rewind_refused(sid, error))
+            sid, kept = self.sid, before_cut or self.transcript
+            self._request("prompt.submit", params, lambda result: None, lambda error: self._on_rewind_refused(sid, kept, error))
             return
         self._request("prompt.submit", params, lambda result: None, self._on_submit_error)
 
