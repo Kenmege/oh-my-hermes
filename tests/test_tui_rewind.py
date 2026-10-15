@@ -17,7 +17,7 @@ from _tui_lines import line_text, lines_text
 from test_tui_gateway_contract import recorded_rows
 from test_tui_modes import SID, answer, make_app, notices, type_text
 from omh.tui.app import DOUBLE_ESCAPE_SECONDS, App
-from omh.tui.gateway import Response
+from omh.tui.gateway import Event, Response
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, Key
 from omh.tui.rewind_picker import CLOSE, PICK, RewindPicker, rewind_rows
 from omh.tui.theme import DEFAULT_THEME
@@ -264,6 +264,19 @@ class RewindTests(unittest.TestCase):
         answer(app, client, HISTORY)
         self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": "a queued prompt", "queued": True}))
         self.assertEqual(self.users(app), [TODO_PROMPT, SECOND_PROMPT, "a queued prompt"])  # its echo on the redrawn screen
+
+    def test_a_turn_started_before_the_history_answer_keeps_the_queued_prompt_for_its_end(self) -> None:
+        app, client = self.queued_behind_a_refused_rewind()
+        type_text(app, "sent right away")  # no turn runs after the refusal, so this one goes at once
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": "sent right away"}))
+        history = next(index for index, (method, _params) in enumerate(client.calls, start=1) if method == "session.history"
+                       and index > 1)
+        app._on_response(Response(history, HISTORY, None))
+        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": "sent right away"}))
+        self.assertEqual([line.text for line in app.queued], ["a queued prompt"])  # waits for that turn's end
+        app._on_event(Event("message.complete", SID, {"text": "done", "status": "complete"}))
+        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": "a queued prompt", "queued": True}))
 
     def test_a_prompt_queued_behind_a_refused_rewind_goes_once_the_history_read_fails_or_goes_unanswered(self) -> None:
         for outcome in ("refused", "unanswered"):
