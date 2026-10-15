@@ -1097,6 +1097,19 @@ class ToolOutputTests(LoopTestCase):
         self.assertEqual(flushed[1:], ["    ⎿ ls: x.py: No such file or directory"])
         self.assertEqual(self.taken[-1][-1].style, THEME.error)
 
+    def test_a_command_that_failed_by_its_exit_code_shows_the_end_of_what_it_printed(self) -> None:
+        # Hermes' terminal tool reports a non-zero exit as output plus exit_code with error None
+        # (tools/terminal_tool_result.py); pytest's summary is at the end, its banner at the start.
+        output = "\n".join(["==== test session starts ====", "collected 3 items", "", "test_x.py .F.", "",
+                             "FAILED test_x.py::test_b - assert 1 == 2", "==== 1 failed, 2 passed in 0.10s ===="])
+        flushed = self.run_tool({"output": output, "exit_code": 1, "error": None})
+        self.assertIn("✗ terminal", flushed[0])
+        self.assertEqual(flushed[1:], ["    ⎿ … +2 lines", "      test_x.py .F.",
+                                       "      FAILED test_x.py::test_b - assert 1 == 2",
+                                       "      ==== 1 failed, 2 passed in 0.10s ===="])
+        self.assertEqual(self.taken[-1][-1].style, THEME.error)
+        self.assertEqual(self.taken[-4][-1].style, THEME.muted)  # the count, above what it counts
+
     def test_a_tool_that_printed_nothing_adds_no_row(self) -> None:
         self.assertEqual(len(self.run_tool({"output": "", "exit_code": 0, "error": None})), 1)
 

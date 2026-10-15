@@ -381,20 +381,29 @@ TOOL_OUTPUT_KEEP = 40
 
 
 def _tool_output(result: object, status: str) -> tuple[tuple[str, ...], int]:
-    """(first lines, how many more) of what a tool printed; a failed or denied tool gives one line, its reason's first."""
+    """(lines, how many more) of what a tool printed: its first lines; for a failed or denied tool, one line, its
+    reason's first.
+
+    A failed tool whose result names no reason, only what it printed (Hermes' terminal tool reports a non-zero
+    exit that way: `output` and `exit_code`, `error` None), gives the end of that instead, blank lines left out:
+    a test run's summary is its last lines. `_output_rows` shows a failed tool's lines from their end.
+    """
     if isinstance(result, str):
-        texts = [result]
+        found = [("text", result)]
     elif isinstance(result, dict):
         keys = _ERROR_KEYS if status == TOOL_ERROR else _DENIED_KEYS if status == TOOL_DENIED else _OUTPUT_KEYS
-        texts = [as_text(result.get(key)) for key in keys]
+        found = [(key, as_text(result.get(key))) for key in keys]
     else:
         return (), 0
-    text = next((candidate for candidate in texts if candidate.strip()), "")
+    key, text = next(((key, candidate) for key, candidate in found if candidate.strip()), ("", ""))
     lines = [clean_text(line).rstrip() for line in text.split("\n")]
     while lines and not lines[-1].strip():
         lines.pop()
     while lines and not lines[0].strip():
         lines.pop(0)
+    if status == TOOL_ERROR and key == "output":
+        printed = [line for line in lines if line.strip()]
+        return tuple(printed[-TOOL_OUTPUT_KEEP:]), max(len(printed) - TOOL_OUTPUT_KEEP, 0)
     if status in (TOOL_ERROR, TOOL_DENIED):
         return tuple(lines[:1]), 0
     return tuple(lines[:TOOL_OUTPUT_KEEP]), max(len(lines) - TOOL_OUTPUT_KEEP, 0)
@@ -633,20 +642,23 @@ def _tool_row(tool: ToolRow, width: int, theme: Theme, now: float | None = None)
 def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> list[Line]:
     """The tool's printed lines under its name, each cut to the width: three of them, or all kept with `expanded`.
 
-    A denied call whose result gave no reason says `denied`, so a denial reads apart from a failure without colour.
+    A failed tool's are its last ones, with the count of the rest above them
+    (`_tool_output`). A denied call whose result gave no reason says
+    `denied`, so a denial reads apart from a failure without colour.
     """
     output = tool.output or ((DENIED_LINE,) if tool.status == TOOL_DENIED else ())
     if not output:
         return []
-    shown = output if expanded else output[:TOOL_OUTPUT_ROWS]
+    failed = tool.status in (TOOL_ERROR, TOOL_DENIED)
+    shown = output if expanded else output[-TOOL_OUTPUT_ROWS:] if failed else output[:TOOL_OUTPUT_ROWS]
     hidden = len(output) - len(shown) + tool.output_more
-    style = theme.error if tool.status in (TOOL_ERROR, TOOL_DENIED) else theme.muted
+    style = theme.error if failed else theme.muted
     first: Line = (Span(TOOL_ROW_INDENT * 2), Span(TOOL_SUMMARY_MARK, theme.dim))
     rest: Line = (Span(TOOL_ROW_INDENT * 2 + " " * len(TOOL_SUMMARY_MARK)),)
-    rows = [truncate_line((*(rest if index else first), Span(line, style)), width) for index, line in enumerate(shown)]
-    if hidden:
-        rows.append(truncate_line((*rest, Span(f"… +{hidden} line{'' if hidden == 1 else 's'}", theme.muted)), width))
-    return rows
+    texts = [Span(line, style) for line in shown]
+    more = [Span(f"… +{hidden} line{'' if hidden == 1 else 's'}", theme.muted)] if hidden else []
+    ordered = [*more, *texts] if failed else [*texts, *more]
+    return [truncate_line((*(rest if index else first), span), width) for index, span in enumerate(ordered)]
 
 
 def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: float | None = None) -> list[Line]:

@@ -437,7 +437,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   window); `OMH_TUI_BELL=0` keeps both quiet.
 - Each tool call's row shows the first three lines of what the tool printed
   under its name (`⎿`) and counts the rest; a failed call (`✗`) shows its
-  error's first line in the error colour. Ctrl+O opens the whole transcript
+  error's first line in the error colour, or, when it failed by its exit
+  code alone (a test run, say), the last three lines it printed, under the
+  count of the lines above them. Ctrl+O opens the whole transcript
   with every detail (thinking, tool output, whole diffs) in the pager, at its
   end.
 - While a turn runs, the working row reads
