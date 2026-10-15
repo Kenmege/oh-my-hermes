@@ -182,6 +182,14 @@ class HiddenCaretTests(unittest.TestCase):
         self.assertEqual(self.harness.screen.cursor, (9, 1))
         self.assertFalse(self.harness.region.caret_hidden)
 
+    def test_hiding_or_showing_the_caret_where_it_is_parked_is_still_written(self) -> None:
+        # A hidden caret parks at the start of the last row: from a caret already there, only its visibility changes.
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=(2, 0))
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=None)
+        self.assertFalse(self.harness.screen.cursor_visible)
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=(2, 0))
+        self.assertTrue(self.harness.screen.cursor_visible)
+
     def test_a_flush_keeps_the_caret_hidden_and_the_next_caret_shows_it(self) -> None:
         self.harness.render(plain("", "alpha", "beta"), cursor=None, pad=1)
         self.harness.flush(plain("done one", "done two"))
