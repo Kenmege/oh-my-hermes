@@ -2140,13 +2140,23 @@ def _query_state_db(state_db: Path, *, now: float, session_ref: str | None = Non
         "parent_models": {},
         "owners": frozenset(),
         "scope": "global",
+        # How the read went, so a caller that lists children can say a read
+        # failed instead of rendering it as no children: `absent` (no file),
+        # `unreadable` (the child query never answered), `partial` (children
+        # were read and a later query failed), else `read`.
+        "read_status": "read",
     }
+    if not state_db.is_file():
+        result["read_status"] = "absent"
+        return result
     try:
         connection = sqlite3.connect(
             f"file:{state_db}?mode=ro", uri=True, timeout=0.25
         )
     except sqlite3.Error:
+        result["read_status"] = "unreadable"
         return result
+    children_read = False
     try:
         owner_filter = ""
         parameters: list[Any] = [now - _SESSION_WINDOW_SECONDS]
@@ -2204,6 +2214,7 @@ def _query_state_db(state_db: Path, *, now: float, session_ref: str | None = Non
                 }
             )
         result["children"] = children
+        children_read = True
 
         for parent_id in parents_needed:
             cursor = connection.execute(
@@ -2286,7 +2297,7 @@ def _query_state_db(state_db: Path, *, now: float, session_ref: str | None = Non
     except sqlite3.Error:
         # A schema Hermes has since changed, a lock we lost the race for: the
         # partial result still distinguishes "observed nothing" from success.
-        pass
+        result["read_status"] = "partial" if children_read else "unreadable"
     finally:
         try:
             connection.close()
@@ -2329,6 +2340,7 @@ def read_hermes_native_subagents(
     }
     state = _query_state_db(home / "state.db", now=current, session_ref=session_ref)
     payload["scope"] = state["scope"]
+    payload["read_status"] = state["read_status"]
     children = state.get("children", [])
     if not children:
         return payload

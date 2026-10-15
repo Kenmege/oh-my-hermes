@@ -46,13 +46,16 @@ def _status_board_limit(args: argparse.Namespace) -> int:
 def add_coding_status_board_command(coding_sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     status_board = coding_sub.add_parser(
         "status-board",
-        help="Show every locally observed coding unit as one board (reporting-only, metadata-only).",
+        help=(
+            "Show every locally observed coding unit, plus Hermes delegate children and kanban workers "
+            "read from Hermes' state.db and kanban.db, as one board (read-only, reporting-only, metadata-only)."
+        ),
     )
     status_board.add_argument(
         "--limit",
         type=int,
         default=DEFAULT_LIMIT,
-        help=f"Maximum rows to display (default: {DEFAULT_LIMIT}).",
+        help=f"Maximum rows to display in each table, units and Hermes workers (default: {DEFAULT_LIMIT}).",
     )
     status_board.add_argument("--json", action="store_true", help="Emit the machine payload instead of plain text.")
     status_board.set_defaults(func=cmd_coding_status_board)

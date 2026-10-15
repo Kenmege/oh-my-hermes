@@ -4,6 +4,22 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh coding status-board` shows Hermes' delegate children and kanban
+  workers beside the fanout units.** The board listed only fanout units, so the
+  command could not show the work `omh_hud` already showed. It now reads the
+  same two readers the HUD uses (`hermes_delegation` over `state.db`,
+  `kanban_board_reader` over `kanban.db`), opening both read-only, and lists
+  each worker with its source and state in a second table under one headline.
+  The rows keep the board's running-first order, and a kanban lane whose
+  heartbeat stopped is counted with the stuck units. A Hermes database that is
+  missing, unreadable, refused or read only in part prints a line saying so
+  instead of an empty list. To tell those cases apart, both readers now report
+  a `read_status`, which the HUD payload does not carry. The fanout rows render
+  as before. The run-efficiency route reason now says the report reads the
+  supplied timings and context budget plus Hermes' recorded usage for a named
+  session, with provider, billing and cron not observed; it still described
+  the supplied-metadata report from before #2114.
+
 - **`omh chat route-hint` names no workflow on a turn Hermes wrote for its own
   session command.** On such a turn (a `/plan` frame, a `/loop` wakeup, a
   `/goal` continuation, a heartbeat, a goal-mode kanban nudge, a `/blueprint`
