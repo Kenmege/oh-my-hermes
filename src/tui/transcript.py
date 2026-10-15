@@ -677,7 +677,7 @@ def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> lis
 def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: float | None = None) -> list[Line]:
     if not group.tools:
         return []  # every row it had was a draft no call took (`_close_live`)
-    header =[Span(TOOL_GROUP_MARK, theme.tool), Span(f"Tool calls ({len(group.tools)})", theme.label)]
+    header = [Span(TOOL_GROUP_MARK, theme.tool), Span(f"Tool calls ({len(group.tools)})", theme.label)]
     if group.parallel > 1:
         header.append(Span(f"{COLUMN_GAP}parallel ×{group.parallel}", theme.accent))
     # One call needs no header: its own row already says what ran.
