@@ -748,6 +748,9 @@ class Transcript:
         self._taken_any = False  # whether any line has been taken (a spacer goes above the next block)
         self._left_out = 0  # blocks `retake_tail` left out: the next take opens with LEFT_OUT_NOTICE
         self.dropped = 0  # blocks BLOCK_CAP dropped from the front
+        # Where the last take's lines hold the first row of the newest prompt in them (not the blank row above it);
+        # None when that take held no prompt.
+        self.prompt_row: int | None = None
         # Blocks about a live one (a steer, an answer to Hermes, a command's echo), waiting for a block boundary
         # (`add_steer`, `add_command`).
         self._held: list[Block] = []
@@ -1121,9 +1124,13 @@ class Transcript:
     # ── output ──
 
     def take_stable_lines(self, width: int, theme: Theme) -> list[Line]:
-        """Lines that will never change, each returned once: print them above the live region."""
+        """Lines that will never change, each returned once: print them above the live region.
+
+        `prompt_row` says where among them the newest prompt's first row is.
+        """
         taken: list[Line] = []
         start = (self._cursor, self._cursor_lines)
+        self.prompt_row = None
         if self._left_out:
             earlier, self._left_out = _earlier(self._left_out), 0
             notice = (
@@ -1139,7 +1146,10 @@ class Transcript:
             if isinstance(block, AssistantBlock):
                 taken.extend(self._take_assistant(block, width, theme))
             elif block.done:
-                taken.extend(self._spaced(block_rows(block, width, theme), opens_block=True))
+                rows = block_rows(block, width, theme)
+                if isinstance(block, UserBlock) and rows:
+                    self.prompt_row = len(taken) + (1 if self._taken_any else 0)  # after the spacer `_spaced` adds
+                taken.extend(self._spaced(rows, opens_block=True))
             if not block.done:
                 break
             self._cursor += 1

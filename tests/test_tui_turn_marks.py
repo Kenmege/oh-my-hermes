@@ -628,6 +628,60 @@ class SettledTailTests(unittest.TestCase):
                     echoed += echo
                 self.assertGreater(echoed, 0, "the prompt never scrolled off")
 
+    def assert_prompt_xor_echo(self, app: object, where: str) -> bool:
+        """Exactly one of the prompt and its sticky echo is on screen; True when it is the echo."""
+        screen = app.terminal.screen.lines()  # type: ignore[attr-defined]
+        prompt = any(line.startswith("› run the tools") for line in screen)
+        echo = any(line.startswith("↳ you: run the tools") for line in screen)
+        self.assertFalse(prompt and echo, f"{where}: the prompt and its echo are both on screen\n" + "\n".join(screen))
+        self.assertTrue(prompt or echo, f"{where}: the prompt scrolled off and nothing echoes it")
+        return echo
+
+    def test_a_tall_tool_batch_never_shows_the_prompt_and_its_echo_together(self) -> None:
+        # The blank row above the prompt is not the prompt's: counted, the echo came one row early, over the prompt.
+        for rows, cols, earlier, tools in ((24, 80, 60, 8), (24, 80, 60, 14), (24, 80, 0, 14), (40, 100, 60, 14)):
+            with self.subTest(rows=rows, cols=cols, earlier=earlier, tools=tools):
+                app, now = self.app_with_plan(rows, cols, earlier)
+                app._submit_prompt("run the tools")
+                app._render()
+                app._on_event(ev("message.start"))
+                app._render()
+                for index in range(tools):
+                    now[0] += 0.1
+                    app._on_event(ev("tool.start", tool_id=f"t{index}", name="read_file", context=f"f{index}.py"))
+                    app._render()
+                    self.assert_prompt_xor_echo(app, f"tool {index} started")
+                for index in range(tools):
+                    app._on_event(ev("tool.complete", tool_id=f"t{index}", name="read_file", result={"content": "x"}))
+                    app._render()
+                    self.assert_prompt_xor_echo(app, f"tool {index} completed")
+
+    def test_a_resize_redraw_mid_turn_never_shows_the_prompt_and_its_echo_together(self) -> None:
+        # The redraw takes the session again from its top: only the rows from the prompt on are the prompt's.
+        for rows, cols, earlier in ((40, 100, 0), (40, 100, 60), (24, 80, 0), (24, 80, 60)):
+            with self.subTest(rows=rows, cols=cols, earlier=earlier):
+                app, now = self.app_with_plan(rows, cols, earlier)
+                app._submit_prompt("run the tools")
+                app._render()
+                app._on_event(ev("message.start"))
+                app._render()
+                for index in range(2):
+                    now[0] += 0.05
+                    app._on_event(ev("message.delta", text=f"line {index}\n"))
+                    app._render()
+                app.terminal.screen.resize(rows, cols - 10)  # type: ignore[attr-defined]
+                app._on_resize()
+                now[0] += 1.0
+                app._render_when_due()
+                self.assert_prompt_xor_echo(app, "after the resize redraw")
+                echoed = False
+                for index in range(2, rows * 2):
+                    now[0] += 0.05
+                    app._on_event(ev("message.delta", text=f"line {index}\n"))
+                    app._render()
+                    echoed = self.assert_prompt_xor_echo(app, f"line {index} after the redraw") or echoed
+                self.assertTrue(echoed, "the prompt never scrolled off after the redraw")
+
 
 class ApprovalOutcomeTests(unittest.TestCase):
     COMMAND = "rm -rf ./build"

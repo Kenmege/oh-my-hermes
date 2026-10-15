@@ -958,7 +958,7 @@ class App(ModesMixin, AgentViewMixin):
         self.waiting_requests: deque[ServerRequest] = deque()
         self.queued: deque[QueuedLine] = deque()
         self.sticky = ""
-        self.flushed_since_prompt = 0  # rows printed above the region since the last prompt was sent
+        self.flushed_since_prompt = 0  # rows printed above the region from the last prompt's first row on
         self.turn_pending = False  # a prompt went out and its turn has not started (or ended) yet
         # The undeclared event types the submitted turn has brought before any of TURN_PROGRESS_EVENTS; None
         # before the first prompt, once the watch ends, and after the notice (`_watch_turn`).
@@ -2721,7 +2721,7 @@ class App(ModesMixin, AgentViewMixin):
         self.transcript = Transcript(self.clock)
         self.queued.clear()
         self.sticky = ""
-        self.flushed_since_prompt = 0  # rows printed above the region since the last prompt was sent
+        self.flushed_since_prompt = 0  # rows printed above the region from the last prompt's first row on
         self.attachments.clear()  # the gateway queued them for the session being left
         self.hud = None
         self._clear_roster()
@@ -3137,12 +3137,20 @@ class App(ModesMixin, AgentViewMixin):
             self.terminal.write(self.pager.frame(cols, rows, self.theme))
             return
         stable = self.transcript.take_stable_lines(cols, self.theme)
+        prompt_row = self.transcript.prompt_row
         if self.banner_facts is not None:
-            logo = banner_logo(self._skin(), self._surface(), cols, rows) if self.logo_due else []
-            stable = logo + banner_lines(**self.banner_facts, theme=self.theme, width=cols) + stable
+            head = banner_logo(self._skin(), self._surface(), cols, rows) if self.logo_due else []
+            head += banner_lines(**self.banner_facts, theme=self.theme, width=cols)
+            stable = head + stable
+            prompt_row = None if prompt_row is None else prompt_row + len(head)
             self.banner_facts = None
         anchoring = self.anchor
-        self.flushed_since_prompt += len(stable)
+        # Counted from the prompt's own first row: not the blank row or the held rows above it, and after a full
+        # redraw only the rows retaken from the prompt on.
+        if prompt_row is not None:
+            self.flushed_since_prompt = len(stable) - prompt_row
+        else:
+            self.flushed_since_prompt += len(stable)
         previous = 0 if anchoring else self.region.height
         self.anchor = False
         strip, _hits = self._agent_strip(cols)
@@ -3279,9 +3287,9 @@ class App(ModesMixin, AgentViewMixin):
         """Whether the sent prompt needs echoing above the composer: only once it has scrolled off.
 
         `above` is how many screen rows lie above the live region. Everything
-        there is transcript, so while the rows printed since the prompt (the
-        prompt's own rows included) still fit there, the prompt itself is on
-        screen and an echo would only repeat it.
+        there is transcript, so while the rows printed from the prompt's first
+        row on still fit there, the prompt itself is on screen and an echo
+        would only repeat it.
         """
         if not (self._busy() and self.sticky.strip()):
             return False
