@@ -321,7 +321,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   menu), the prompts queued behind the running turn (`⧗`, up to three named
   and the rest counted), the composer framed by a rule above and below it, a
   mode row, and a status line with the model, context use (warn from 80 %
-  full, bad from 95 %) and what the session is doing. The banner above the
+  full, bad from 95 %) and what the session is doing. While you pick from a
+  list (a question answered by picking, or the `/sessions`, `/rewind` or bare
+  `/model` picker) the composer, its rules and its caret are not drawn and
+  the list stands in their place, right above the mode row. The banner above the
   session is one row: the brand, the version, the session it resumed and the
   working directory. A fresh session says under it where the last one is
   (`last session: <title> · /resume <id> reopens it`), unless you have
@@ -333,7 +336,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   redraw shows it again only on top of the whole session.
 - The mode row names the input mode, or the keys that matter right now, and
   the reasoning effort when Hermes reports one. While Hermes asks something
-  it names that question's keys (`←→ pick · enter confirms · d or esc
+  it names that question's keys (`↑↓ pick · enter confirms · d or esc
   denies`). The working row and the mode row offer Esc for an interrupt only
   while Esc would do that: not while a question, a picker, the history
   search, the agent list, a picked steer or rewind, the `@` menu or a draft in
@@ -347,7 +350,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   next poll two to eight seconds later), and a subtask keeps its place under
   its parent.
 - The composer does not move when the panel grows or shrinks; only its own
-  lines move it, and the agent list for as long as it is open.
+  lines move it, and the agent list for as long as it is open. Hidden while
+  you pick from a list, it comes back on the same row.
 - A notice Hermes sends outside the transcript (the agent still starting, a
   credit warning, a provider that could not be reached) takes one row above
   the queued prompts, in its level's colour with a glyph. The next one
@@ -431,12 +435,27 @@ run and approval decision stays Hermes'; the screen is OMH's.
   adds a line and the next one sends.
 - When Hermes asks something (an approval, a clarify question, a sudo
   password), the question takes the slot until you answer. Nothing is answered
-  for you: Esc or Ctrl+C declines. An approval offers deny, allow once and
-  allow this session, in that order, with deny selected; allowing takes the
-  Right arrow and then Enter (Left and Right stop at either end, Up and Down
-  do nothing), `d` or `n` denies, and Enter on an untouched approval denies.
-  A narrow terminal shortens the labels and keeps a key hint (`d denies`); a
-  long command wraps under its own indent.
+  for you: Esc or Ctrl+C declines. A question you answer by picking (an
+  approval, a clarify question with choices) hides the composer while it is
+  open, as Claude Code does: its choices stand one per row where the composer
+  was, the highlighted one marked `❯`. Nothing you type while it is open goes
+  into your draft, and the draft comes back as you left it (its text, caret
+  and paste chips) when the question closes, or when the last of several
+  questions Hermes asked one after another does. An approval offers deny,
+  allow once and allow this session, one per row in that order, with deny
+  highlighted; allowing takes the arrows (Down or Right) and then Enter. The
+  highlight stops at either end, so Up then Enter still denies, no number
+  picks a choice, `d` or `n` denies, and Enter on an untouched approval
+  denies. A clarify question numbers its choices: a digit, or Up and Down then
+  Enter, picks one. Its last row, `Other (type your answer)`, opens the
+  composer as the field for an answer of your own, and so does typing any
+  character that picks nothing, which becomes the answer's first character;
+  Up or Down goes back to the list and keeps what you typed, and Enter on an
+  empty field does too. A sudo password, a secret and a clarify question
+  without choices are typed into the composer. A long command wraps under its
+  own indent and shows its first lines; a terminal too short for every row
+  keeps the highlighted choice. Below 10 rows, where there is no mode row,
+  the question's keys take a row of its own when a row is left for them.
   Keys pressed in the first moment after any question appears are ignored,
   Enter included, so typing that was meant for the composer cannot answer it.
   Approving a command permanently stays a choice for `hermes --tui`. The
@@ -544,7 +563,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   (not in Hermes' history file, since it was never sent).
 - `/sessions` (also `/resume`, `/switch`, `/session`) lists your stored
   sessions in the slot, newest first, with the current one marked; type to
-  filter, Up/Down or PageUp/PageDown to move, Enter to switch, Esc to close.
+  filter (what you type shows on the list's last row, where the composer
+  was), Up/Down or PageUp/PageDown to move, Enter to switch, Esc to close.
   `/sessions <id or exact title>` switches directly. The screen is redrawn as
   the session you picked, with its earlier turns; the one you left closes only
   after the new one opened, so a session that cannot be opened (for example
@@ -580,9 +600,9 @@ Esc closes it):
 | Ctrl+L | Redraws the screen |
 | Ctrl+C | Clears the composer, interrupts a running turn, or (twice when idle) exits |
 | Ctrl+D | On an empty composer, exits; with text, deletes the character ahead |
-| ← / → then Enter | On an approval, picks allow once or allow this session; Enter alone denies |
+| ↑ / ↓ or ← / → then Enter | On an approval, highlight allow once or allow this session and allow it; Enter alone denies |
 | `d`, `n` | On an approval, deny |
-| 1 to 9 | On a clarify question with choices, pick one; ↑ / ↓ then Enter on an empty answer does too |
+| 1 to 9 | On a clarify question's list, pick that choice, or the last number opens the field for your own answer; ↑ / ↓ then Enter picks too, and any other character starts your own answer |
 | Esc, Ctrl+C | On a question Hermes asked, decline it (an approval is denied); Ctrl+C first clears an answer being typed |
 | ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions` or `/rewind` list, move, take the highlighted row (switch to that session, or put that prompt in the composer to send again), or close it; typing filters the list |
 | ↑ / ↓, Enter, Esc | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; other typing leaves it too |

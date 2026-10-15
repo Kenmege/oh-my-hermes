@@ -97,6 +97,21 @@ All notable changes will be documented here.
   more, so calls run one after another no longer read `parallel shot ×1`.
   The composer wraps between words, as the echo of the sent prompt does,
   instead of splitting a word at the edge.
+  While you pick from a list, the composer is hidden, as in Claude Code: an
+  approval, a clarify question with choices, and the `/sessions`, `/rewind`
+  and bare `/model` pickers stand where the composer was, with no rules and
+  no caret, and the draft comes back as you left it when the list closes (a
+  question waiting behind the first opens before the composer is drawn
+  again). An approval lists deny, allow once and allow this session one per
+  row, deny highlighted (`❯`); Up and Down move as Left and Right do, stop at
+  either end so Up then Enter still denies, and no number picks one. A
+  clarify question numbers its choices and ends with `Other (type your
+  answer)`, Hermes' wording; that row, or any character that picks nothing,
+  opens the composer as the answer field, and Up or Down goes back to the
+  list. A picker's filter is its last row. A clarify or sudo answer used to be
+  typed into the composer in place of the draft, which came back as plain
+  text with its caret at the end: a paste chip in it no longer expanded, so
+  sending it sent the chip's label instead of the pasted text.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:

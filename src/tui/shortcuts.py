@@ -52,9 +52,11 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Ctrl+L", "Redraws the screen"),
     ("Ctrl+C", "Clears the composer, interrupts a running turn, or (twice when idle) exits"),
     ("Ctrl+D", "On an empty composer, exits; with text, deletes the character ahead"),
-    ("← / → then Enter", "On an approval, picks allow once or allow this session; Enter alone denies"),
+    ("↑ / ↓ or ← / → then Enter", "On an approval, highlight allow once or allow this session and allow it; "
+                                  "Enter alone denies"),
     ("d, n", "On an approval, deny"),
-    ("1 to 9", "On a clarify question with choices, pick one; ↑ / ↓ then Enter on an empty answer does too"),
+    ("1 to 9", "On a clarify question's list, pick that choice, or the last number opens the field for your own "
+               "answer; ↑ / ↓ then Enter picks too, and any other character starts your own answer"),
     ("Esc, Ctrl+C", "On a question Hermes asked, decline it (an approval is denied); "
                     "Ctrl+C first clears an answer being typed"),
     ("↑ / ↓, PageUp / PageDown, Enter, Esc", "In the /sessions or /rewind list, move, take the highlighted row "
