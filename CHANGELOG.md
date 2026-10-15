@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh chat route-hint` names no workflow on a turn Hermes wrote for its own
+  session command.** On such a turn (a `/plan` frame, a `/loop` wakeup, a
+  `/goal` continuation, a heartbeat, a goal-mode kanban nudge, a `/blueprint`
+  seed) the route decision already said `fallback`, but the hint beside it was
+  read from the frame's text and named a workflow: the `/plan` frame came back
+  hinted `command-operator`, and each of the 16 seeds Hermes' own
+  `build_blueprint_seed` writes for its built-in blueprints `automation-blueprint`.
+  The hint now reads no request on such a turn, as the plugin's `pre_llm_call`
+  hook already did. Measured against `origin/main` at 03741a6a8 over both
+  routing corpora, every host frame behind each gateway prefix, and the
+  frames' bodies without them (1,678 messages): 101 hints moved to none, every one on a host turn, and no route
+  decision moved on either payload. The router's reason for these turns no
+  longer lists commands, so it cannot fall behind the frames OMH recognizes (it
+  had left out `/blueprint` and `/initiate-setup`). The `spend-rails.md`
+  reference both targets ship no longer names OMH's browser adapter, which
+  another host does not have; the Hermes body still does.
+
 - **The OMH TUI keeps the keys typed right after Esc, and stays fast in long
   sessions.** Esc followed by a key within about 50 ms lost both keys (Esc then
   `/quit` left `quit` in the composer, for Enter to send as a prompt); a
