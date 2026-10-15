@@ -7468,8 +7468,9 @@ _KOREAN_PREDICATE_TAILS = frozenset(
         "나왔어", "나왔어요", "나왔나", "나왔니", "나와", "나와요",
     )
 )
-# "해 줘" written as two words: 해 followed by one of these.
-_KOREAN_HAE = normalized_phrase("해")
+# The auxiliary 주다 written apart from its verb, the standard spelling ("보여
+# 주세요", "알려 줘", "확인해 주세요", "추적 해 줘"): the word before it is the
+# predicate, whatever it is, and the report check reads that word.
 _KOREAN_SPLIT_REQUEST_ENDINGS = frozenset(
     normalized_phrase(ending) for ending in ("줘", "줘요", "주세요", "줄래", "줄래요")
 )
@@ -7499,8 +7500,8 @@ def _korean_word_ends_at(normalized_query: str, end: int) -> bool:
 
 
 def _korean_final_predicate(words: list[str]) -> str:
-    if len(words) > 2 and words[-2] == _KOREAN_HAE and words[-1] in _KOREAN_SPLIT_REQUEST_ENDINGS:
-        return words[-3]
+    if len(words) > 1 and words[-1] in _KOREAN_SPLIT_REQUEST_ENDINGS:
+        words = words[:-1]
     if len(words) > 1 and words[-1] in _KOREAN_PREDICATE_TAILS:
         return words[-2]
     return words[-1] if words else ""

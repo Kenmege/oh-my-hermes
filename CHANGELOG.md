@@ -33,7 +33,8 @@ All notable changes will be documented here.
   predicate asks to see the usage -- show, tell, check, compare, monitor,
   track, how much, how is it, a report, or "is a lot" / "is fast" -- or the
   sentence ends on the phrase itself ("이번 주 토큰 사용량"). The final predicate
-  is the last word, or the word before it when the last word is a spaced
+  is the last word, or the word before it when the last word is the
+  auxiliary written apart ("보여 주세요", "알려 줘", "확인해 주세요") or a spaced
   ending matched whole ("모니터링 해줘", "추적 해 줘", "얼마 나왔어"), so 해제해줘
   and 하지마 are predicates of their own. Every other final predicate leaves
   the phrase uncounted: work (만들어줘, 추가해줘, 고쳐줘, 파싱해줘, 작성해줘, 짜줘,
@@ -48,9 +49,9 @@ All notable changes will be documented here.
   predicate is outside the report set no longer reach the card; this is a
   class, not a list. Measured examples that dispatched it on main and now
   ask: "토큰 사용량 어떻게 돼?", "토큰 사용량 얼마나 돼?", "토큰 사용량 궁금해", "토큰
-  사용량 확인 가능해?", "토큰 사용량 리포트 줘", "토큰 소모 심하네", "에이전트 비용
-  추적해줘", "오늘 LLM 비용 얼마 나왔어?", "이번 달 API 비용 얼마야", "이번 달 비용
-  얼마 나왔어" and "토큰 얼마나 썼어?"; "토큰 사용량 리포트 만들어줘" dispatches the
+  사용량 확인 가능해?", "토큰 소모 심하네", "에이전트 비용 추적해줘", "오늘 LLM 비용
+  얼마 나왔어?", "이번 달 API 비용 얼마야", "이번 달 비용 얼마 나왔어" and "토큰
+  얼마나 썼어?"; "토큰 사용량 리포트 만들어줘" dispatches the
   greenfield interview. English asks or answers directly on the same shapes
   ("how is my token usage?", "how much did the API cost this month"), and
   questions about what was spent belong to Hermes' /usage and /insights per
@@ -70,7 +71,7 @@ All notable changes will be documented here.
   48, written after the first fixes were chosen, moved the same way:
   codebase-uml dispatches 0 -> 4 of 8, wiki reaches 7 -> 0 of 7 LLM-wiki
   requests, and ops-observability-card dispatches 9 -> 0 of 10 negatives and
-  7 of 8 usage requests (8 before). Adds 21 negative controls and 26
+  7 of 8 usage requests (8 before). Adds 21 negative controls and 29
   interventions.
 
 - **The OMH TUI catches up with Claude Code and oh-my-pi.** It reads on a light

@@ -881,18 +881,19 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # beside "클라우드의", where a Korean code word keeps the diagram
             # beside a Korean cloud word (5). One reaches ops-observability-card,
             # which main sent to live-info-operator: a weekly token-usage report
-            # named as the last word (1). Twenty keep their base dispatch: a
-            # team wiki on wiki (1); token usage monitored, token consumption
+            # named as the last word (1). Twenty-three keep their base dispatch:
+            # a team wiki on wiki (1); token usage monitored, token consumption
             # asked about, token burn complained of, the token-usage trend
             # asked for, API cost monitored, token usage per feature and per
             # function, this week's token usage as a bare noun phrase, cost
             # monitoring with 해줘 said apart, and one sentence for each report
             # predicate (check, compare, track, how much, how is it, a polite
-            # show-me), a spaced ending before "!", and 해 줘 as two words, on
+            # show-me), a spaced ending before "!", 해 줘 as two words, and 보여
+            # 주세요, 알려 줘 and 확인해 주세요 with the auxiliary written apart, on
             # ops-observability-card, which the dropped bare 토큰 and 비용
-            # triggers carried before (17); and a token-usage API built and a
+            # triggers carried before (20); and a token-usage API built and a
             # token-usage bug fixed, which stay on ultrawork (2).
-            expected=823,
+            expected=826,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

@@ -8650,7 +8650,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     ),
     # One sentence per report predicate the token arm does not also read, so
     # each stem in `_KOREAN_USAGE_REPORT_PREDICATES` is pinned on its own, plus
-    # 해 줘 written as two words and trailing punctuation after a spaced ending.
+    # 해 줘 written as two words, trailing punctuation after a spaced ending, and
+    # the auxiliary 주다 written apart after any verb, the standard spelling.
     RoutingInterventionCase(
         "korean-token-usage-check",
         "Checking token usage, asked in Korean, opens ops observability",
@@ -8727,6 +8728,33 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "korean-token-usage-track-two-word-ending",
         "해 줘 written as two words still ends a Korean usage request",
         "토큰 사용량 추적 해 줘",
+        "dispatch",
+        "ops-observability-card",
+        "prepare_ops_observability_card",
+        "ops_observability",
+    ),
+    RoutingInterventionCase(
+        "korean-token-usage-show-auxiliary-apart",
+        "보여 주세요, with the auxiliary written apart, still ends a Korean usage request",
+        "토큰 사용량 보여 주세요",
+        "dispatch",
+        "ops-observability-card",
+        "prepare_ops_observability_card",
+        "ops_observability",
+    ),
+    RoutingInterventionCase(
+        "korean-token-usage-tell-auxiliary-apart",
+        "알려 줘, with the auxiliary written apart, still ends a Korean usage request",
+        "토큰 사용량 알려 줘",
+        "dispatch",
+        "ops-observability-card",
+        "prepare_ops_observability_card",
+        "ops_observability",
+    ),
+    RoutingInterventionCase(
+        "korean-token-usage-check-auxiliary-apart",
+        "확인해 주세요 reads its predicate from the verb before the auxiliary",
+        "토큰 소모량 확인해 주세요",
         "dispatch",
         "ops-observability-card",
         "prepare_ops_observability_card",
