@@ -12,7 +12,9 @@ import unittest
 
 # The distribution's own name, which is also the router's canonical name.
 _DISTRIBUTION_NAME = "oh-my-hermes"
-_REFERENCE_VERBS = r"(?:(?:route|routes|routed|routing|hand|hands|handed|send|sends|sent|go|goes)\b[^.;\n`]{0,60}?\bto|use|uses|load|loads)"
+# Read in any case, since a catalog bullet often opens with its verb ("Route
+# setup questions to doctor."); the skill names after it stay case-sensitive.
+_REFERENCE_VERBS = r"(?i:(?:route|routes|routed|routing|hand|hands|handed|send|sends|sent|go|goes)\b[^.;\n`]{0,60}?\bto|use|uses|load|loads)"
 
 
 def _unshipped_portable_skills() -> dict[str, str]:
@@ -39,8 +41,8 @@ def _skill_references(text: str, skills: dict[str, str]) -> list[tuple[int, str,
     always name the skill, and so does a bare hyphenated canonical name
     (`research-department`), which no sentence uses as an ordinary word. A
     one-word canonical name and the distribution name count only right after a
-    route, hand, send, use, or load verb, so "a doctor", "the always-loaded
-    skill body" and "pip install oh-my-hermes" never match.
+    route, hand, send, use, or load verb, read in any case, so "a doctor", "the
+    always-loaded skill body" and "pip install oh-my-hermes" never match.
     """
     def alternatives(names):
         return "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True)) or r"(?!)"
@@ -236,7 +238,15 @@ class AgentSkillsProjectionTests(unittest.TestCase):
         ]
         ordinary = [f"A {hyphenated.replace('-', ' ')} note is prose."]
         if words:
-            planted.append(f"If it is about setup, route to {words[0]}.")
+            # A catalog bullet often opens with its verb, so the verb is read
+            # in any case; the skill name is not.
+            planted += [
+                f"If it is about setup, route to {words[0]}.",
+                f"Route setup questions to {words[0]}.",
+                f"Use {words[0]} for install health.",
+                f"Hand it off to {words[0]}.",
+                f"Load {words[0]} to edit the catalog.",
+            ]
             ordinary += [f"A {words[0]} visit is no request.", f"The always-loaded {words[0]} body is prose."]
         if _DISTRIBUTION_NAME in unshipped:
             ordinary.append(f"Install with pip install {_DISTRIBUTION_NAME}.")
