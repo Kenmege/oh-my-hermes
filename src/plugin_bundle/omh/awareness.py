@@ -6030,9 +6030,12 @@ def awareness_route_hint(message: str, *, max_hints: int = 2) -> dict[str, objec
     """Return bounded message-specific workflow hints without exposing raw text.
 
     The hint reads the person's own words (`person_request_text`), never the
-    gateway material Hermes puts around them, and reads no request at all on
-    a turn Hermes wrote from a session-command template. Every caller gets
-    both, so none has to remember either.
+    host blocks or backfill a gateway puts around them, and reads no request
+    at all on a turn Hermes wrote from a session-command template. Every
+    caller gets both, so none has to remember either. A sender prefix is
+    removed only by a caller that knows the turn came through a messaging
+    gateway (the `pre_llm_call` hook, the router, the wrapper); here a
+    leading bracket stays the person's.
     """
     request = "" if host_command_turn(message) else person_request_text(message)
     return _copy_awareness_route_hint_payload(_awareness_route_hint_cached(request, max(max_hints, 0)))

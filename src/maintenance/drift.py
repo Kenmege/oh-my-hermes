@@ -837,8 +837,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # stays on img-summary: "with my card" before a noun pays nothing (1).
             # Reading only the person's words on a gateway turn adds a card
             # payment behind a Discord trigger note, which the note sent to
-            # gateway-intent-card instead of the pre-spend card (1).
-            expected=788,
+            # gateway-intent-card instead of the pre-spend card (1). Its review
+            # adds three whose leading bracket is the person's own -- OMH, a
+            # skill's name, and `ulw` -- each of which lost its route while
+            # every leading bracket was read as a sender prefix (3).
+            expected=791,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

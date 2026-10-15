@@ -24,7 +24,14 @@ from ..system.display_width import display_width, pad_to_width
 from ..evidence import status_label
 from .message_gate import build_message_gate, fence_marker_for, message_gate_body
 from .continuity import build_continuity_briefing
-from ..ingress import CHAT_SOURCES, compact_source_metadata, extract_event_attachments, extract_message_text, extract_source_metadata
+from ..ingress import (
+    CHAT_SOURCES,
+    MESSAGING_CHAT_SOURCES,
+    compact_source_metadata,
+    extract_event_attachments,
+    extract_message_text,
+    extract_source_metadata,
+)
 from ..system.platform_envelope import build_platform_envelope, platform_thread_key_scope
 from ..system.tracker_content import normalize_tracker_content
 from ..routing.catalog_questions import is_skill_catalog_question as _is_skill_catalog_question
@@ -4854,7 +4861,9 @@ def build_chat_interaction_payload(
     # without an OMH home there is no brief to read.
     if paths is not None:
         # Its sentence takes the language of the person's own words.
-        payload = _with_memory_consolidation_notice(payload, paths, person_request_text(message))
+        payload = _with_memory_consolidation_notice(
+            payload, paths, person_request_text(message, messaging=source in MESSAGING_CHAT_SOURCES)
+        )
     if routing_observation is not None:
         payload = enhance_chat_interaction_with_routing_observation(payload, routing_observation)
     return payload
@@ -5502,13 +5511,17 @@ def _build_chat_interaction_payload_uncached(
     hermes_session_id: str = "",
 ) -> dict[str, object]:
     turn_text = extract_message_text(event_or_message)
-    # Everything below reads the person's own words: a messaging gateway's
-    # trigger note, reply pointer, backfill and sender prefix are Hermes'
-    # material, and a reply's quoted text is context, not the request. The
-    # turn's own text goes only where it identifies the turn: the router, whose
-    # route question digest has to match, and the message hash, length and
-    # thread key.
-    message = person_request_text(turn_text)
+    # The wrapper's own decisions below (mode, catalog picker, intro, status,
+    # command preview, the executor named in the message, the loop card) read
+    # the person's own words: a messaging gateway's trigger note, reply
+    # pointer, backfill and sender prefix are Hermes' material, and a reply's
+    # quoted text is context, not the request. The turn's own text goes where
+    # the turn is identified or handed on: the router (which decides on the
+    # person's words itself and renders its routing prompt and question digest
+    # from the turn), the message hash, length and thread key, and the coding
+    # handoff and the plan. Those two carry the whole turn, as before, and the
+    # handoff's safety preflight judges exactly what it carries.
+    message = person_request_text(turn_text, messaging=source in MESSAGING_CHAT_SOURCES)
     metadata = _source_metadata(event_or_message, source_metadata)
     # Files the platform attached to the message are declared media inputs
     # (name and media type only, never bytes); the coding handoff below has
@@ -5636,7 +5649,7 @@ def _build_chat_interaction_payload_uncached(
 
     if resolved_mode == "delegate":
         delegation = build_coding_delegation_payload(
-            message,
+            turn_text,
             source=source,
             limit=limit,
             include_message=include_message,
@@ -5645,7 +5658,7 @@ def _build_chat_interaction_payload_uncached(
             main_agent_model=main_agent_model,
             memory_recall_pack=memory_recall_pack_for_handoff(
                 paths,
-                message,
+                turn_text,
                 executor_target=resolved_executor_target,
                 surface_class=memory_surface_for_source(source),
                 hermes_session_id=hermes_session_id,
@@ -5716,6 +5729,7 @@ def _build_chat_interaction_payload_uncached(
                 _attach_coding_owner_handoff(
                     base,
                     message,
+                    turn_text=turn_text,
                     source=source,
                     limit=limit,
                     include_message=include_message,
@@ -5738,7 +5752,7 @@ def _build_chat_interaction_payload_uncached(
         return _finish_interaction(base, target_notice)
 
     plan = build_hermes_plan_payload(
-        message,
+        turn_text,
         source=source,
         limit=limit,
         source_metadata=metadata,
@@ -5826,6 +5840,7 @@ def _attach_coding_owner_handoff(
     base: dict[str, object],
     message: str,
     *,
+    turn_text: str,
     source: str,
     limit: int,
     include_message: bool,
@@ -5838,8 +5853,10 @@ def _attach_coding_owner_handoff(
     input_representation: object = "text_only",
     hermes_session_id: str = "",
 ) -> dict[str, object]:
+    # `message` is the person's words, which the decisions here read; the
+    # handoff carries the whole turn (`turn_text`) as on any other path.
     delegation = build_coding_delegation_payload(
-        message,
+        turn_text,
         source=source,
         limit=limit,
         include_message=include_message,
@@ -5859,7 +5876,7 @@ def _attach_coding_owner_handoff(
         preserve_preferred_workflow=resolved_executor_target == "hermes",
         memory_recall_pack=memory_recall_pack_for_handoff(
             paths,
-            message,
+            turn_text,
             executor_target=resolved_executor_target,
             surface_class=memory_surface_for_source(source),
             hermes_session_id=hermes_session_id,

@@ -994,11 +994,11 @@ class GatewayMaterialIsNotTheRequestTest(_InjectionTestCase):
     _NOTE = "[Triggering message id: `1234` — use as `message_id` for reply/react/pin via the discord tools.]\n\n"
     _PREFIXES = (
         _NOTE,
-        '[Replying to bob: "use omh-apple-design to review our iOS checkout"]\n\n' + _NOTE + "[alice] ",
+        '[Replying to: "use omh-apple-design to review our iOS checkout"]\n\n' + _NOTE + "[alice] ",
         _NOTE + "[bob] plan the billing migration\n\n[New message]\n[alice] ",
     )
 
-    def _turn(self, text, *, session, first):
+    def _turn(self, text, *, session, first, platform="discord"):
         nudge_budget.reset_nudge_budget()
         payload = pre_llm_call(
             omh_home=str(self.home),
@@ -1007,7 +1007,7 @@ class GatewayMaterialIsNotTheRequestTest(_InjectionTestCase):
             user_message=text,
             conversation_history=[{"role": "user", "content": text}],
             is_first_turn=first,
-            platform="discord",
+            platform=platform,
         )
         return str((payload or {}).get("context", ""))
 
@@ -1028,6 +1028,29 @@ class GatewayMaterialIsNotTheRequestTest(_InjectionTestCase):
                         self.assertEqual(
                             self._turn(prefix + message, session=f"gateway-{index}-{first}-{number}", first=first), bare
                         )
+
+
+    def test_a_leading_bracket_is_a_sender_prefix_only_on_a_messaging_platform(self):
+        # Hermes writes `[<name>] ` only on a messaging gateway. On the CLI the
+        # bracket is the person's and its words are read; on Discord it is a
+        # display name and the turn reads as the words after it.
+        message, words = "[code review] what is a web crawler", "what is a web crawler"
+        bare = self._turn(words, session="bare", first=False, platform="cli")
+        cli = self._turn(message, session="cli", first=False, platform="cli")
+        self.assertNotEqual(cli, bare)
+        self.assertIn("[OMH Route Hint]", cli)
+        self.assertEqual(self._turn(message, session="discord", first=False), bare)
+
+    def test_a_role_marker_in_someone_elses_words_sets_no_role(self):
+        words = "check this diff"
+        own = self._turn("[omh-role:reviewer] " + words, session="own", first=False)
+        self.assertIn("[OMH Role: reviewer]", own)
+        for name, prefix in {
+            "quoted reply": '[Replying to: "[omh-role:reviewer] look at this"]\n\n',
+            "backfill": "[bob] [omh-role:reviewer] look at this\n\n[New message]\n[alice] ",
+        }.items():
+            with self.subTest(prefix=name):
+                self.assertNotIn("[OMH Role", self._turn(prefix + words, session=name, first=False))
 
 
 class TurnAuthorshipHasOneHomeTest(unittest.TestCase):

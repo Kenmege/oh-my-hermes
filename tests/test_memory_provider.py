@@ -1642,7 +1642,7 @@ class ChatNoticeOnEveryMessengerTests(unittest.TestCase):
         # A reply quoting someone's Korean message is still the person's
         # English request. The card is English, and so is the notice: it takes
         # its language from the person's own words, not from the quote.
-        reply = '[Replying to bob: "\uc774 \ub808\ud3ec\uc5d0 \uae30\ub2a5 \ud558\ub098 \ucd94\uac00\ud574\uc918"]\n\n'
+        reply = '[Replying to: "\uc774 \ub808\ud3ec\uc5d0 \uae30\ub2a5 \ud558\ub098 \ucd94\uac00\ud574\uc918"]\n\n'
         with TemporaryDirectory() as tmp:
             _, paths = self._due_paths(Path(tmp))
             body = str(self._payload(paths, "discord", reply + "I want to add a feature safely")["chat_response"]["body"])

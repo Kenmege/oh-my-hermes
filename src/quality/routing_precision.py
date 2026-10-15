@@ -4235,7 +4235,7 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase(
         "hermes-plan-turn-behind-a-reply-pointer-is-host-owned",
         "A /plan turn behind a reply pointer is not routed",
-        "[Replying to bob: \"can you plan it\"]\n\n[/plan \u2014 plan mode]\n\nFor this turn, you are in PLAN MODE "
+        "[Replying to: \"can you plan it\"]\n\n[/plan \u2014 plan mode]\n\nFor this turn, you are in PLAN MODE "
         "\u2014 planning only.\n\nTask to plan:\nadd a dark mode toggle\n",
         "answer_directly",
         "direct_answer",
@@ -4257,7 +4257,7 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase(
         "thanks-under-a-reply-quoting-a-skill-stays-direct",
         "A thank-you under a reply that quotes a skill request stays a direct answer",
-        "[Replying to bob: \"use omh-apple-design to review our iOS checkout\"]\n\nthanks, got it",
+        "[Replying to: \"use omh-apple-design to review our iOS checkout\"]\n\nthanks, got it",
         "answer_directly",
         "direct_answer",
     ),
@@ -13870,6 +13870,36 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     # The same spend behind a Discord trigger note: the router reads the
     # person's words, not the note, which used to send it to
     # gateway-intent-card.
+    # A leading bracket is a sender prefix only on a messaging gateway, and
+    # even there one that names a skill, `omh` or `ulw` is the person's own.
+    # Removed as a display name, each of these lost its route.
+    RoutingInterventionCase(
+        "omh-in-brackets-keeps-the-status-card",
+        "OMH named in brackets keeps the status card",
+        "[omh] what is the status",
+        "dispatch",
+        "oh-my-hermes",
+        "show_status",
+        "status",
+    ),
+    RoutingInterventionCase(
+        "skill-name-in-brackets-keeps-its-skill",
+        "A skill named in brackets keeps its skill",
+        "[deep-interview] I have a new product idea",
+        "dispatch",
+        "deep-interview",
+        "answer_clarification",
+        "clarification",
+    ),
+    RoutingInterventionCase(
+        "ulw-in-brackets-keeps-the-debugging-route",
+        "ulw in brackets keeps the debugging route",
+        "[ulw] fix the flaky tests",
+        "dispatch",
+        "app-debugging",
+        "prepare_root_cause_investigation",
+        "root_cause_investigation",
+    ),
     RoutingInterventionCase(
         "card-payment-behind-a-discord-note-reaches-spend-gate",
         "Paying with the person's card behind a Discord trigger note still reaches the pre-spend card",
