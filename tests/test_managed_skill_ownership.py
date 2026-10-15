@@ -59,10 +59,12 @@ from omh.hashutil import sha256_file
 from omh.install import installer
 from omh.install import manifest as manifest_module
 from omh.install.config_adapter import memory_provider_selection, skill_create_dir_selection
+from omh.install import curator_ledger as curator_ledger_module
 from omh.install.curator_ledger import CURATOR_LEDGER_RELATIVE_PATH, curator_ledger_paths, read_ledger_writes
 from omh.install.skill_registration import hermes_profile_dirs
 from omh.install.installer import (
     HERMES_EDIT_RECORD_KEY,
+    LEDGER_COPY_PARTIAL_KEY,
     PRUNE_SKIP_REASONS,
     RENDER_MARK_KEY,
     RENDER_MARKS_FLAG,
@@ -686,6 +688,57 @@ class InstallerKeepsHermesEditTests(_Home):
         self.assertEqual([item["disposition"] for item in result["hermes_edited_skills"]], ["replaced"])
         self.assertNotEqual(self.skill_file(second).read_bytes(), edited)
 
+    def test_force_finds_a_copy_recorded_under_an_earlier_generation(self) -> None:
+        # The row names generation 1, where Hermes made the edit; generation 2
+        # holds the kept copy, so the ledger is cut to generation 2 and the row
+        # sits outside that cut. What --force loses is judged by content
+        # against every row, so the copy is still found.
+        first = OmhPaths(omh_home=self.paths.omh_home, hermes_home=self.paths.hermes_home, managed_skills_dir=self.root / "gen-1" / "skills")
+        second = OmhPaths(omh_home=self.paths.omh_home, hermes_home=self.paths.hermes_home, managed_skills_dir=self.root / "gen-2" / "skills")
+        install_skill_pack(first, profile="core")
+        self.hermes_patch(self.skill_file(first))
+        self.store_blob(self.skill_file(first))
+        install_skill_pack(second, profile="core")
+        self.assertEqual(read_ledger_writes(self.paths.hermes_home, within=[second.skills_dir]), ([], []))
+
+        result = install_skill_pack(second, profile="core", force=True)
+
+        [item] = result["hermes_edited_skills"]
+        self.assertEqual((item["disposition"], item["ledger_copy"]), ("replaced", ["SKILL.md"]))
+
+    def test_a_replaced_edit_names_the_ledger_that_could_not_be_read(self) -> None:
+        # #2111 follow-up: the copies named for a replaced edit come from the
+        # ledgers that could be read. A bot's ledger that could not be may hold
+        # more, so the report names it beside the list, dry run or not.
+        install_skill_pack(self.paths, profile="core")
+        self.hermes_patch(self.skill_file())
+        self.store_blob(self.skill_file())
+        bot_ledger = self.paths.hermes_home / "profiles" / "bot" / CURATOR_LEDGER_RELATIVE_PATH
+        bot_ledger.parent.mkdir(parents=True)
+        bot_ledger.write_bytes(b"\xff\xfe not utf-8\n")
+
+        for dry_run in (True, False):
+            with self.subTest(dry_run=dry_run):
+                result = install_skill_pack(self.paths, profile="core", force=True, dry_run=dry_run)
+
+                [item] = result["hermes_edited_skills"]
+                self.assertEqual((item["disposition"], item["ledger_copy"]), ("replaced", ["SKILL.md"]))
+                self.assertIs(item[LEDGER_COPY_PARTIAL_KEY], True)
+                [unread] = result["unreadable_ledgers"]
+                self.assertTrue(unread.startswith(f"{bot_ledger}: "), unread)
+                [line] = [line.strip() for line in self._summary(result).splitlines() if "could not be read in full" in line]
+                self.assertEqual(
+                    line,
+                    f"Hermes' curator ledger could not be read in full ({unread}), so what OMH says above about "
+                    f"copies of {SKILL} counts only what it could read: a file it says has no copy may still have one there.",
+                )
+        # The marker is persisted with the entry; the error text is not.
+        [recorded] = read_manifest(self.paths.manifest_path)["hermes_edited_skills"]
+        self.assertIs(recorded[LEDGER_COPY_PARTIAL_KEY], True)
+        self.assertNotIn(unread.encode(), self.paths.manifest_path.read_bytes())
+        complete = {key: value for key, value in item.items() if key != LEDGER_COPY_PARTIAL_KEY}
+        self.assertNotIn("could not be read in full", self._summary({**result, "hermes_edited_skills": [complete]}))
+
     def test_force_clears_only_skills_this_install_renders_again(self) -> None:
         # Clearing is for a skill the render below writes back; a skill no
         # template renders is the pruner's to judge, never the force clear's.
@@ -695,8 +748,8 @@ class InstallerKeepsHermesEditTests(_Home):
         writes = read_ledger_writes(self.paths.hermes_home)[0]
         rendered = installer.rendered_skill_files()
 
-        _replaced, without = installer._force_replacements([item], self.paths, {"doctor"}, writes, rendered)
-        _replaced, with_skill = installer._force_replacements([item], self.paths, {"doctor", SKILL}, writes, rendered)
+        _replaced, without = installer._force_replacements([item], self.paths, {"doctor"}, writes, rendered, writes)
+        _replaced, with_skill = installer._force_replacements([item], self.paths, {"doctor", SKILL}, writes, rendered, writes)
 
         self.assertEqual(without, [])
         self.assertEqual(with_skill, [self.skill_file().parent])
@@ -1732,6 +1785,122 @@ class RetiredSkillEditTests(_Home):
         self.assertTrue(plain.startswith(f"Removed omh-old-skill/ ({self.NAME}), a skill the catalog"), lines)
         self.assertIn("OMH rendered it there, its SKILL.md is unchanged", plain)
 
+    def test_force_reads_the_ledger_once_for_every_loss_list(self) -> None:
+        # One read per install: --force used to read the whole ledger again
+        # for a replaced edit, again for a skill it clears, and again for every
+        # directory it removed.
+        directory, _lessons = self.retired_skill(kept=False)
+        self.hermes_patch(self.skill_file())
+        self.store_blob(self.skill_file())
+        doctor_dir = self.skill_file(name="doctor").parent
+        with (doctor_dir / "SKILL.md").open("a", encoding="utf-8") as handle:
+            handle.write("\nmy hand edit\n")
+        added = doctor_dir / "references" / "hermes-added.md"
+        added.parent.mkdir(exist_ok=True)
+        added.write_text("a file Hermes added\n", encoding="utf-8")
+        _append_ledger(self.paths.hermes_home, _ledger_row(added, action="write_file"))
+        self.store_blob(added)
+        ledger = self.paths.hermes_home / CURATOR_LEDGER_RELATIVE_PATH
+        rows = ledger.read_text(encoding="utf-8").splitlines()
+        reads: list[Path] = []
+        parsed: list[str] = []
+        read_bytes = Path.read_bytes
+        row_writes = curator_ledger_module._row_writes
+
+        def counting(path: Path) -> bytes:
+            if path.name == CURATOR_LEDGER_RELATIVE_PATH.name:
+                reads.append(path)
+            return read_bytes(path)
+
+        def counting_rows(line: str, source: str):
+            parsed.append(line)
+            return row_writes(line, source)
+
+        with (
+            mock.patch.object(Path, "read_bytes", counting),
+            mock.patch.object(curator_ledger_module, "_row_writes", side_effect=counting_rows),
+        ):
+            result = install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertEqual(reads, [ledger])
+        # Each row parsed once, though the loss lists need rows outside the packs too.
+        self.assertEqual(sorted(parsed), sorted(rows))
+        self.assertEqual(len(rows), 3)
+        self.assertFalse(directory.exists())
+        self.assertEqual(
+            sorted((item["name"], item["disposition"], tuple(item["ledger_copy"])) for item in result["hermes_edited_skills"]),
+            [("doctor", "replaced", ("references/hermes-added.md",)), (SKILL, "replaced", ("SKILL.md",))],
+        )
+        [forced] = result["force_pruned_skills"]
+        self.assertEqual((forced["name"], forced["ledger_copy"]), (self.NAME, ["references/lessons.md"]))
+        # Every ledger was read, so no loss list is marked or said to be partial.
+        self.assertNotIn("unreadable_ledgers", result)
+        self.assertFalse(any(LEDGER_COPY_PARTIAL_KEY in item for item in [*result["hermes_edited_skills"], forced]))
+        self.assertNotIn("could not be read in full", self.summary(result))
+
+    def test_a_force_loss_list_names_the_ledger_that_could_not_be_read(self) -> None:
+        # #2111 follow-up: a --force removal of a changed directory lists what
+        # the readable ledgers hold a copy of. A bot's ledger that could not be
+        # read may hold more, so the report names it beside the list.
+        directory, _lessons = self.retired_skill(kept=False)
+        bot_ledger = self.paths.hermes_home / "profiles" / "bot" / CURATOR_LEDGER_RELATIVE_PATH
+        bot_ledger.parent.mkdir(parents=True)
+        bot_ledger.write_bytes(b"\xff\xfe not utf-8\n")
+
+        forced = install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertFalse(directory.exists())
+        [item] = forced["force_pruned_skills"]
+        self.assertEqual(
+            (item["reason"], item["ledger_copy"], item["discarded"]),
+            ("changed_since_rendered", ["references/lessons.md"], ["SKILL.md"]),
+        )
+        self.assertIs(item[LEDGER_COPY_PARTIAL_KEY], True)
+        [unread] = forced["unreadable_ledgers"]
+        self.assertTrue(unread.startswith(f"{bot_ledger}: "), unread)
+        lines = [line.strip() for line in self.summary(forced).splitlines()]
+        discarded = lines.index(f"Removing {self.NAME} deleted files Hermes' curator ledger holds no copy of: SKILL.md.")
+        self.assertEqual(
+            lines[discarded + 1],
+            f"Hermes' curator ledger could not be read in full ({unread}), so what OMH says above about "
+            f"copies of {self.NAME} counts only what it could read: a file it says has no copy may still have one there.",
+        )
+        for language in ("ko", "ja", "zh"):
+            with self.subTest(language=language):
+                [line] = [line for line in self.summary(forced, language).splitlines() if unread in line]
+                self.assertIn(self.NAME, line)
+        # The error text stays in the result, like every other unread name.
+        self.assertNotIn(unread.encode(), self.paths.manifest_path.read_bytes())
+        complete = {key: value for key, value in item.items() if key != LEDGER_COPY_PARTIAL_KEY}
+        self.assertNotIn("could not be read in full", self.summary({**forced, "force_pruned_skills": [complete]}))
+
+    def test_many_torn_lines_name_their_ledger_once_after_every_loss_list(self) -> None:
+        # Fail-closed reads used to add one unread entry per torn line, and the
+        # summary printed the whole list beside every loss list: 40 torn lines
+        # made a line of over 9,000 characters, once per replaced or removed skill.
+        directory, _lessons = self.retired_skill(kept=False)
+        self.hermes_patch(self.skill_file())
+        self.store_blob(self.skill_file())
+        bot_ledger = self.paths.hermes_home / "profiles" / "bot" / CURATOR_LEDGER_RELATIVE_PATH
+        bot_ledger.parent.mkdir(parents=True)
+        # A row cut short after naming a file under the pack.
+        torn = json.dumps({"path": os.path.join(os.path.realpath(self.paths.skills_dir), "x", "SKILL.md")})[:-3]
+        bot_ledger.write_text("".join(f"{torn}\n" for _ in range(40)), encoding="utf-8")
+
+        forced = install_skill_pack(self.paths, profile="core", force=True)
+
+        self.assertFalse(directory.exists())
+        self.assertEqual(forced["unreadable_ledgers"], [f"{bot_ledger}: 40 lines are not ledger rows (the first is line 1)"])
+        summary = self.summary(forced)
+        [line] = [line.strip() for line in summary.splitlines() if "could not be read in full" in line]
+        self.assertEqual(
+            line,
+            f"Hermes' curator ledger could not be read in full ({forced['unreadable_ledgers'][0]}), so what OMH says "
+            f"above about copies of {SKILL}, {self.NAME} counts only what it could read: a file it says has no copy "
+            "may still have one there.",
+        )
+        self.assertEqual(summary.count(str(bot_ledger)), 1)
+
     def test_strict_security_keeps_a_retired_skill_with_a_hermes_edit_under_force(self) -> None:
         # OMH_SECURITY=strict takes away --force's override of a local
         # change; a retired skill holding a Hermes write is one.
@@ -1823,8 +1992,12 @@ class RetiredSkillEditTests(_Home):
         self.assertEqual(
             line,
             f"Removed omh-old-skill at {self.REL} because --force was given: Hermes' curator ledger could not be "
-            "read, so OMH could not tell whether Hermes wrote under it or whether the ledger holds a copy of it.",
+            f"read ({unread}), so OMH could not tell whether Hermes wrote under it or whether the ledger holds a copy of it.",
         )
+        for language in ("ko", "ja", "zh"):
+            with self.subTest(language=language):
+                [line] = self.removal_lines(forced, language, self.REL)
+                self.assertIn(unread, line)
 
     def test_a_ledger_line_under_the_pack_that_is_not_a_row_keeps_it_too(self) -> None:
         # A torn row that names a file in the directory may be the write that
@@ -2370,6 +2543,42 @@ class ConfigScalarTests(unittest.TestCase):
                 self.assertEqual(skill_create_dir_selection(text), "")
 
 
+class LedgerReaderTests(_Home):
+    """`read_ledger_writes` on its own: what it keeps, and what it names unread."""
+
+    def test_a_generator_of_directories_cuts_the_same_as_a_list(self) -> None:
+        # `within` was consumed twice, for the line cut and then the write
+        # filter, so a generator came back with no writes at all.
+        install_skill_pack(self.paths, profile="core")
+        self.hermes_patch(self.skill_file())
+        as_list = read_ledger_writes(self.paths.hermes_home, within=[self.paths.skills_dir])
+        self.assertEqual(len(as_list[0]), 1)
+
+        as_generator = read_ledger_writes(self.paths.hermes_home, within=(root for root in [self.paths.skills_dir]))
+
+        self.assertEqual(as_generator, as_list)
+
+    def test_torn_lines_name_their_ledger_once_with_a_count(self) -> None:
+        install_skill_pack(self.paths, profile="core")
+        self.hermes_patch(self.skill_file())
+        # A row cut short after naming a file under the pack.
+        torn = json.dumps({"path": os.path.join(os.path.realpath(self.paths.skills_dir), "x", "SKILL.md")})[:-3]
+        ledger = _append_ledger(self.paths.hermes_home, *([torn] * 40))
+        with ledger.open("a", encoding="utf-8") as handle:
+            handle.write(torn)
+
+        writes, unread = read_ledger_writes(self.paths.hermes_home, within=[self.paths.skills_dir], fail_closed=True)
+
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(
+            unread,
+            [
+                f"{ledger}: 40 lines are not ledger rows (the first is line 2), and line 42 is unterminated, "
+                "so an append may be in progress"
+            ],
+        )
+
+
 class DoctorLedgerTests(_Home):
     def _check(self, name: str):
         return next(check for check in run_doctor(self.paths) if check.name == name)
@@ -2530,6 +2739,24 @@ class DoctorLedgerTests(_Home):
         self.assertEqual(len(calls), 1)
         self.assertIsNotNone(calls[0])
         self.assertEqual(check.severity, "warning")
+
+    def test_doctor_judges_hermes_edits_once(self) -> None:
+        # Judging hashes every managed SKILL.md; two checks read the verdict.
+        install_skill_pack(self.paths, profile="core")
+        self.hermes_patch(self.skill_file())
+        calls: list[object] = []
+        real = doctor_module.hermes_edited_skills
+
+        def counting(*args, **kwargs):
+            calls.append(args)
+            return real(*args, **kwargs)
+
+        with mock.patch.object(doctor_module, "hermes_edited_skills", side_effect=counting):
+            checks = {check.name: check for check in run_doctor(self.paths)}
+
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(checks["local_modifications"].ok)
+        self.assertIn(f"{SKILL} at ", checks["hermes_skill_edits"].message)
 
     def test_an_unreadable_ledger_is_named_not_read_as_empty(self) -> None:
         install_skill_pack(self.paths, profile="core")

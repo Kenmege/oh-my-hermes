@@ -193,6 +193,8 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
     # Hermes' curator ledger, read once for every check below and cut to the
     # directories an OMH install may serve skills from.
     ledger_writes, ledger_unread = read_ledger_writes(paths.hermes_home, within=_managed_skill_roots(paths, manifest))
+    # Judged once: it hashes every managed SKILL.md, and two checks below read it.
+    hermes_edits = hermes_edited_skills(manifest, paths, writes=ledger_writes)
     state_error = read_state_error(paths)
     state = None if state_error else read_state(paths)
     checks.append(Check("manifest", manifest is not None, f"{paths.manifest_path}"))
@@ -210,7 +212,6 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
         # renders the second again (`missing_managed_skills`), so both are
         # left out of the blocking local-modification count, whose
         # refuse-until-`--force` advice is for a hand edit.
-        hermes_edits = hermes_edited_skills(manifest, paths, writes=ledger_writes)
         hermes_edited_paths = {str(item["path"]) for item in hermes_edits}
         missing = _missing_skills_on_next_install(paths, manifest)
         missing_paths = {str(item["path"]) for item in missing}
@@ -229,7 +230,7 @@ def run_doctor(paths: OmhPaths) -> list[Check]:
         checks.append(_skill_freshness_check(paths, manifest, exclude=hermes_edited_paths))
         if missing:
             checks.append(_missing_managed_skills_check(manifest, missing))
-    checks.append(_hermes_skill_edits_check(paths, manifest, ledger_writes, ledger_unread))
+    checks.append(_hermes_skill_edits_check(hermes_edits, ledger_writes, ledger_unread))
     checks.append(Check("skills_dir", paths.skills_dir.exists(), f"{paths.skills_dir}"))
     checks.append(_route_hint_skills_check(paths))
     runtime_writable = can_write_dir(paths.runtime_dir, probe_name=".doctor-write-test")
@@ -2117,9 +2118,7 @@ def _managed_skill_roots(paths: OmhPaths, manifest: dict | None) -> list[Path]:
     return roots
 
 
-def _hermes_skill_edits_check(
-    paths: OmhPaths, manifest: dict | None, writes: list[LedgerWrite], unread: list[str]
-) -> Check:
+def _hermes_skill_edits_check(edited: list[dict], writes: list[LedgerWrite], unread: list[str]) -> Check:
     """OMH-managed skills holding an edit Hermes made, read from Hermes' curator ledger.
 
     Hermes may edit a skill in `skills.external_dirs` in place, and its
@@ -2133,10 +2132,10 @@ def _hermes_skill_edits_check(
     from -- the managed pack, the pre-pointer copy, and every generation --
     because an edit left in a generation OMH has moved off is the one nobody
     sees otherwise. A warning, not a block: a kept edit is a working skill.
+    `edited` is `hermes_edited_skills` over the same writes.
     """
     # `writes` is already cut to the managed roots (`_managed_skill_roots`).
     under_managed = {(write.ledger, write.ts, write.path) for write in writes}
-    edited = hermes_edited_skills(manifest, paths, writes=writes)
     # Two different outcomes: a kept skill stays as it is on every install; an
     # edit in a directory this release does not render the skill into goes nowhere.
     kept = [item for item in edited if item["disposition"] != "left_behind"]

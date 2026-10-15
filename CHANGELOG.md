@@ -4,6 +4,33 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh install --force` reads Hermes' curator ledger once, and names the
+  ledger it could not read when it reports what a removal lost.** Under
+  `--force` the install read and parsed the whole ledger again for a replaced
+  Hermes edit, again for a skill it cleared, and again for every retired
+  directory it removed, beside a comment saying it read the ledger once. The
+  read it already made now also keeps every write the ledger records when a
+  local change may be overwritten, and each of those reports takes that list.
+  On a synthetic 190.8 MB ledger (16,000 rows in the shape Hermes wrote before
+  0.21.4, 20 files each, 30% of them under the OMH pack), a `--force` install
+  that replaced two skills and removed three retired directories went from 6
+  ledger reads in 8.1 s to 1 read in 2.9 s with the same result; a `--force`
+  with nothing to lose went from 2.9 s to 2.7 s, and a plain install from
+  2.3 s to 2.0 s. With no row under the pack, that `--force` with nothing to
+  lose is slower, 0.19 s to 0.54 s, because it now parses every row where it
+  used to skip them all, while the one that replaced and removed went from
+  5.4 s to 0.54 s. When a ledger could not be read, each replaced edit or
+  `--force` removal that lists what Hermes still holds a copy of carries
+  `ledger_copy_partial: true`, and one summary line after those lists names
+  what could not be read and says they count only what could be; a `--force`
+  removal OMH could not judge for that reason now names it too, and a
+  `--dry-run` result carries `unreadable_ledgers`. A ledger with more than one
+  torn line is named once, with a count, instead of once per line. The ledger
+  reader no longer drops every write when given a generator of directories,
+  resolves those directories once per read instead of once per write, and
+  builds a row's `after` list once instead of once per file the row listed
+  before; `omh doctor` judges Hermes edits once instead of twice.
+
 - **A checked team no longer checks a part while its helper's work sits
   unmerged in the worktree Hermes gave it, and the board fan-in asks Hermes
   only for transitions it lands.** With Hermes' `delegation.worktree_isolation`
