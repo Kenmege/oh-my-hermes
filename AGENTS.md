@@ -183,7 +183,8 @@ PR without the chat history.
   a terminal, preview or window read, a preview action, a tour, a display
   sudo install, a clarify with no question in it, or a method it does not
   know). It never
-  answers an approval, clarify, sudo, or secret request on its own: Esc or
+  answers an approval, clarify, sudo, or secret request on its own, apart
+  from declining at once a request it cannot show (listed above): Esc or
   Ctrl+C declines, an approval decline is an explicit deny, allowing a
   command takes the arrows and then Enter, and a request the gateway
   withdraws (its own timeout, an interrupt) closes without an answer.
