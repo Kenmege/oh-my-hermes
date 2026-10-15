@@ -1774,7 +1774,7 @@ class App(ModesMixin, AgentViewMixin):
                 if answer is not None:
                     self._answer(answer)
             elif steer:
-                self._steer_or_submit(action.text)
+                self._steer_or_submit(action.text, action.shown)
             else:
                 self._submit(action.text, action.shown)
         elif action.kind == INTERRUPT:
@@ -2091,15 +2091,26 @@ class App(ModesMixin, AgentViewMixin):
     # ── prompts ──
 
     def _submit(self, text: str, shown: str = "") -> None:
-        """Send what the composer submitted; `shown` is its compact form (paste chips), which the transcript shows."""
+        """Send what the composer submitted; `shown` is its compact form (paste chips), which the transcript shows.
+
+        Whether the line is a `!` shell line or a slash command is read from
+        what the composer showed, never from a chip's text: a paste that
+        starts with `!` or `/` is a prompt. Chips are expanded only in what is
+        sent: a shell line's command, a command's argument. A chip glued to
+        the command's name leaves the name as shown.
+        """
         if not text.strip():
             return
-        if text.startswith(SHELL_PREFIX):
-            self._shell_line(text)
+        seen = shown or text
+        if seen.startswith(SHELL_PREFIX):
+            self._shell_line(text, seen)  # a chip holds no `!` of its own, so the sent text starts with it too
             return
-        invocation = parse_slash(text)
+        invocation = parse_slash(seen)
         if invocation is not None:
-            self._run_slash(invocation)  # a picked rewind or agent stays picked under a command
+            sent = parse_slash(text)
+            if sent is None or sent.name != invocation.name:
+                sent = invocation
+            self._run_slash(sent, echo=f"/{invocation.text}")  # a picked rewind or agent stays picked under a command
         elif self.agent_steer is not None:
             self._steer_agent(text)
         elif self.rewind is not None:
@@ -2162,29 +2173,34 @@ class App(ModesMixin, AgentViewMixin):
         if self.queued and self.sid:
             text, shown, _typed = self.queued.popleft()
             if text.startswith(SHELL_PREFIX):
-                self._run_shell(text[len(SHELL_PREFIX) :].strip(), drain_after=True)
+                self._run_shell(text[len(SHELL_PREFIX) :].strip(), drain_after=True, echo=shown)
             else:
                 self._submit_prompt(text, shown, queued=True)
 
     # ── `!` shell lines ──
 
-    def _shell_line(self, text: str) -> None:
-        """A `!command` the person sent: run it now, or after the running turn, as a command waits in Claude Code."""
+    def _shell_line(self, text: str, shown: str = "") -> None:
+        """A `!command` the person sent: run it now, or after the running turn, as a command waits in Claude Code.
+
+        `shown` is the line as the composer showed it (paste chips), which the echo shows.
+        """
         command = text[len(SHELL_PREFIX) :].strip()
+        echo = SHELL_PREFIX + shown[len(SHELL_PREFIX) :].strip() if shown and shown != text else ""
         if not command:
             self.transcript.add_notice(SHELL_USAGE, NOTICE_WARN)
         elif self._busy():
-            self.queued.append((text, "", ""))
+            self.queued.append((text, echo, ""))
         else:
-            self._run_shell(command)
+            self._run_shell(command, echo=echo)
 
-    def _run_shell(self, command: str, drain_after: bool = False) -> None:
+    def _run_shell(self, command: str, drain_after: bool = False, echo: str = "") -> None:
         """`shell.exec` with the command the person typed, echoed as `› !command`; its output lands under the echo.
 
-        `drain_after` sends the next queued line once Hermes answered, so a
-        prompt queued behind it does not start a turn under its output.
+        `echo` is the line as the composer showed it, when paste chips made it
+        differ. `drain_after` sends the next queued line once Hermes answered,
+        so a prompt queued behind it does not start a turn under its output.
         """
-        echo = f"{SHELL_PREFIX}{command}"
+        echo = echo or f"{SHELL_PREFIX}{command}"
 
         def run() -> None:
             self._request(
@@ -2238,12 +2254,16 @@ class App(ModesMixin, AgentViewMixin):
 
     # ── steering ──
 
-    def _steer_or_submit(self, text: str) -> None:
-        """Ctrl+Enter: steer the running turn with the typed text. Idle, or on a slash command, it is Enter."""
-        if self._busy() and text.strip() and parse_slash(text) is None and not text.startswith(SHELL_PREFIX):
+    def _steer_or_submit(self, text: str, shown: str = "") -> None:
+        """Ctrl+Enter: steer the running turn with the typed text. Idle, or on a slash command or a `!` line, it is Enter.
+
+        As for Enter, what the line is comes from what the composer showed (`shown`, paste chips unexpanded).
+        """
+        seen = shown or text
+        if self._busy() and seen.strip() and parse_slash(seen) is None and not seen.startswith(SHELL_PREFIX):
             self._steer(text)
         else:
-            self._submit(text)
+            self._submit(text, shown)
 
     def _steer_command(self, arg: str) -> None:
         """`/steer <text>`: what Ctrl+Enter does, on any terminal. Idle, the text goes as a prompt."""
@@ -2309,17 +2329,18 @@ class App(ModesMixin, AgentViewMixin):
 
     # ── slash commands ──
 
-    def _run_slash(self, invocation: SlashInvocation, depth: int = 0) -> None:
+    def _run_slash(self, invocation: SlashInvocation, depth: int = 0, echo: str = "") -> None:
         """Run a slash command; one the person typed is echoed first, and stays open while its calls are out.
 
         Everything it says while open (a notice, its output) lands under the
-        echo. A command plan mode wrote around a prompt is no command the
-        person ran, and an alias's target runs under the alias's echo.
+        echo, which is `echo` when paste chips made the line shown differ. A
+        command plan mode wrote around a prompt is no command the person ran,
+        and an alias's target runs under the alias's echo.
         """
         if depth or invocation.for_plan_mode or (invocation.command is not None and not invocation.command.echo):
             self._route_slash(invocation, depth)
             return
-        self._as_command(f"/{invocation.text}", lambda: self._route_slash(invocation, depth))
+        self._as_command(echo or f"/{invocation.text}", lambda: self._route_slash(invocation, depth))
 
     def _as_command(self, echo: str, run: Callable[[], None]) -> None:
         """Echo `echo` and run `run` as that command: its calls keep the echo open until they are answered."""

@@ -20,7 +20,7 @@ from omh.tui import gateway_contract as contract
 from omh.tui.app import App
 from omh.tui.frame import MODE_SHELL, MODE_RULE_GLYPHS, rule_line
 from omh.tui.gateway import Event, Response
-from omh.tui.keys import ENTER, Key
+from omh.tui.keys import ENTER, Key, Paste
 from omh.tui.modes import SHELL_LABEL
 from omh.tui.theme import DEFAULT_THEME
 from omh.tui.transcript import NOTICE_ERROR, NOTICE_INFO, NOTICE_WARN, CommandBlock
@@ -117,6 +117,64 @@ class ShellDuringATurnTests(unittest.TestCase):
         app._on_input(Key(ENTER, ctrl=True))
         self.assertEqual(client.calls, [])
         self.assertEqual([text for text, _shown, _typed in app.queued], ["!ls"])
+
+
+class ShownLineDecidesTests(unittest.TestCase):
+    """What a line is (`!` shell, slash command, prompt) is read from what the composer showed, never a chip's text."""
+
+    BANG_PASTE = "!important: read the notes below\nmake clean\necho step2\necho step3\n"
+    QUIT_PASTE = "/quit is what the old docs said\nline 2\nline 3\nline 4\n"
+    SCRIPT = "echo one\necho two\necho three\necho four\n"
+    CHIP = "[Pasted text #1 +4 lines]"
+
+    def test_a_chip_whose_text_starts_with_a_bang_goes_to_the_model(self) -> None:
+        app, client = make_app()
+        app._on_input(Paste(self.BANG_PASTE))
+        self.assertEqual(app._display_mode(), "normal")  # what the person saw: a prompt
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": self.BANG_PASTE})])
+
+    def test_a_chip_whose_text_starts_with_quit_goes_to_the_model_and_the_session_stays(self) -> None:
+        app, client = make_app()
+        app._on_input(Paste(self.QUIT_PASTE))
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": self.QUIT_PASTE})])
+        self.assertIsNone(app.exit_code)
+
+    def test_a_slash_glued_to_a_chip_never_runs_the_chips_first_word(self) -> None:
+        app, client = make_app()
+        type_text(app, "/")
+        app._on_input(Paste("quit now\nline 2\nline 3\nline 4\n"))
+        app._on_input(Key(ENTER))
+        self.assertNotIn("session.close", [method for method, _params in client.calls])
+        self.assertIsNone(app.exit_code)
+
+    def test_ctrl_enter_steers_a_chip_whose_text_starts_with_a_bang(self) -> None:
+        app, client = make_app(busy=True)
+        app._on_input(Paste(self.BANG_PASTE))
+        app._on_input(Key(ENTER, ctrl=True))
+        self.assertEqual(client.calls, [("session.steer", {"session_id": SID, "text": self.BANG_PASTE})])
+        self.assertFalse(app.queued)
+
+    def test_a_typed_bang_runs_the_chip_after_it_and_the_echo_shows_the_chip(self) -> None:
+        # The `!` is the person's, on screen in the shell mode, so the paste after it is their command.
+        app, client = make_app()
+        type_text(app, "!")
+        app._on_input(Paste(self.SCRIPT))
+        self.assertEqual(app._display_mode(), MODE_SHELL)
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [("shell.exec", {"command": self.SCRIPT.strip()})])
+        (block,) = [block for block in app.transcript.blocks if isinstance(block, CommandBlock)]
+        self.assertEqual(block.command, "!" + self.CHIP)
+
+    def test_a_chip_in_a_commands_argument_is_sent_whole_and_echoed_as_the_chip(self) -> None:
+        app, client = make_app()
+        type_text(app, "/learn ")
+        app._on_input(Paste(self.SCRIPT))
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [("slash.exec", {"command": "learn " + self.SCRIPT.strip(), "session_id": SID})])
+        (block,) = [block for block in app.transcript.blocks if isinstance(block, CommandBlock)]
+        self.assertEqual(block.command, "/learn " + self.CHIP)
 
 
 class ContractTests(unittest.TestCase):
