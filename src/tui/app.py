@@ -139,7 +139,7 @@ from .launch import request_fallback
 from .agent_view import STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
 from .layout import slot_cap, under_composer
 from .markdown import clean_text
-from .modes import NO_SESSION_NOTICE, STRIP_SEPARATOR, ModesMixin, mode_row_line
+from .modes import MODE_ROW_GAP, NO_SESSION_NOTICE, STRIP_SEPARATOR, ModesMixin, mode_row_line
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows
@@ -3157,7 +3157,8 @@ class App(ModesMixin, AgentViewMixin):
         """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's second press).
 
         A picked steer or rewind keeps room for its last form but one, the shortest that still names what it
-        acts on: the strip collapses (`● 2 agents ↓`) before that would be cut.
+        acts on, beside the effort: the strip collapses (`● 2 agents ↓`) before that would be cut. The mode's
+        label keeps its room too (`_agent_strip` starts after it).
         """
         say: str | tuple[str, ...] = ""
         say_style = None
@@ -3172,7 +3173,8 @@ class App(ModesMixin, AgentViewMixin):
         elif armed is not None and self.clock() - armed[1] <= DOUBLE_ESCAPE_SECONDS:
             say = ESCAPE_AGAIN.format(armed[0])
         if isinstance(say, tuple):
-            strip = self._agent_strip(cols - cell_width(STRIP_SEPARATOR + say[max(len(say) - 2, 0)]))[0]
+            effort = cell_width(f"effort {self.effort}") + MODE_ROW_GAP if self.effort else 0
+            strip = self._agent_strip(cols - effort - cell_width(STRIP_SEPARATOR + say[max(len(say) - 2, 0)]))[0]
         return mode_row_line(
             mode=self._display_mode(),
             busy=self._busy(),

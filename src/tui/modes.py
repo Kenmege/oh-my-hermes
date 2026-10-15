@@ -128,7 +128,8 @@ def mode_row_line(
     will do (a rewind waiting to be sent, Esc's second press) and stands in
     for the hint, in `say_style`; given as forms, longest first, the first
     that fits whole is said, so a narrow row keeps the point rather than the
-    start of the long one. During a turn the hint offers Esc for the
+    start of the long one, and when none fits beside the effort the effort
+    goes before the last form is cut. During a turn the hint offers Esc for the
     interrupt only while `esc_interrupts` says Esc does that now. The label always survives, and the strip
     after it: the hint is cut from its end first, and the effort on the right
     goes only when even the label and the strip beside it do not fit.
@@ -142,7 +143,11 @@ def mode_row_line(
     forms = (say,) if isinstance(say, str) else say
     if any(forms):
         said = [form if not label else STRIP_SEPARATOR + form for form in forms]
-        hint = next((text for text in said if cell_width(text) <= room), said[-1])
+        fits = [text for text in said if cell_width(text) <= room]
+        if not fits and right:  # what the next key does outranks the effort
+            right, room = (), width - line_width(label)
+            fits = [text for text in said if cell_width(text) <= room]
+        hint = fits[0] if fits else said[-1]
     elif mode == MODE_SHELL:
         hint = SHELL_HINT
     elif mode == MODE_ACCEPT:

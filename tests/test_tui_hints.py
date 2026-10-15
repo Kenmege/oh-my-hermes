@@ -107,25 +107,51 @@ class EscMeaningTests(unittest.TestCase):
 class NarrowSayTests(unittest.TestCase):
     """What the next key does keeps its point on a narrow mode row: a shorter form, never a cut-off long one."""
 
-    def rewind_row(self, cols: int, agents: bool) -> str:
+    def rewind_row(self, cols: int, agents: bool, mode: str = "normal", effort: str = "") -> str:
         from test_tui_agent_strip import STARTS, relay
+        from test_tui_modes import show_mode
         from omh.tui.app import Rewind
 
         app, _client = agent_app(busy=False, frames=[], cols=cols)
         if agents:
             relay(app, STARTS)  # the strip from the turn before stays on the row
+        show_mode(app, mode)
+        app.effort = effort
         app.rewind = Rewind(row_id=7, ordinal=2, before=())
         return line_text(app._mode_row_line(cols))
 
-    def steer_row(self, cols: int) -> str:
+    def steer_row(self, cols: int, mode: str = "normal", effort: str = "") -> str:
         from test_tui_agent_strip import STARTS, relay
+        from test_tui_modes import show_mode
         from omh.tui.keys import CHAR, DOWN, Key
 
         app, _client = agent_app(busy=True, frames=[], cols=cols)
         relay(app, STARTS)
+        show_mode(app, mode)
+        app.effort = effort
         app._on_input(Key(DOWN))
         app._on_input(Key(CHAR, "s"))
         return line_text(app._mode_row_line(cols))
+
+    def test_a_mode_label_and_the_effort_give_way_before_the_rewind_or_steer_is_cut(self) -> None:
+        from omh.tui.frame import MODE_ACCEPT_PLAN, MODE_PLAN
+
+        for cols, mode, effort in ((40, MODE_PLAN, "high"), (60, MODE_ACCEPT_PLAN, "xhigh")):
+            with self.subTest(cols=cols, mode=mode, effort=effort):
+                rewind = self.rewind_row(cols, agents=False, mode=mode, effort=effort)
+                self.assertTrue(rewind.rstrip().endswith("⏪ replaces #2+ · esc"), rewind)
+                self.assertNotIn("effort", rewind)  # the effort went first
+                steer = self.steer_row(cols, mode=mode, effort=effort)
+                self.assertTrue(steer.rstrip().endswith("↪ steer · esc cancels"), steer)
+                self.assertIn("plan mode on", steer)  # the label always stays
+        # With room for both, the effort stays beside the short form.
+        self.assertTrue(self.rewind_row(60, agents=False, mode=MODE_PLAN, effort="high").rstrip().endswith("effort high"))
+
+    def test_with_the_effort_shown_the_strip_collapses_before_the_steered_agents_name_goes(self) -> None:
+        row = self.steer_row(100, effort="high")
+        self.assertIn("steering find usages of", row)
+        self.assertIn("2 agents", row)  # the strip, collapsed
+        self.assertTrue(row.rstrip().endswith("effort high"), row)
 
     def test_a_rewind_keeps_what_it_replaces_and_how_to_cancel_at_every_width(self) -> None:
         for cols in (100, 60, 40):
