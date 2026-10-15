@@ -240,7 +240,7 @@ def _has_table(connection: sqlite3.Connection, table: str) -> bool:
     return any(connection.execute(f'PRAGMA table_info("{table}")'))
 
 
-def _query_tasks(db: Path, *, now: float) -> list[dict[str, Any]]:
+def _query_tasks(db: Path, *, now: float) -> list[dict[str, Any]] | None:
     """One bounded SELECT over the open lanes plus the lingering finished ones.
 
     Each task's latest run rides along: its ``metadata`` is where the worker
@@ -248,14 +248,20 @@ def _query_tasks(db: Path, *, now: float) -> list[dict[str, Any]]:
     bounds the fallback match. A board whose schema has no ``task_runs`` (an
     older install, a foreign file) still projects its lanes -- the run columns
     simply read as absent, and every row is then unlinked.
+
+    ``None`` when the board could not be read at all (no connection, a
+    ``tasks`` table without the columns above, a failed query), so a caller
+    can tell that apart from a board with no lanes. The SELECT fetches one row
+    past ``_SELECT_LIMIT`` so the caller can tell a full selection from one the
+    bound cut; the caller drops that row.
     """
     try:
         connection = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=0.25)
     except sqlite3.Error:
-        return []
+        return None
     try:
         if not REQUIRED_COLUMNS <= _tasks_columns(connection):
-            return []
+            return None
         # The correlated subquery is bounded by the outer LIMIT and served by
         # Hermes' own ``idx_runs_task`` index on (task_id, started_at).
         has_runs = _has_table(connection, "task_runs")
@@ -280,13 +286,13 @@ def _query_tasks(db: Path, *, now: float) -> list[dict[str, Any]]:
             f"OR (t.status IN ({finished_marks}) AND t.completed_at >= ?) "
             "ORDER BY CASE WHEN t.status = 'running' THEN 0 ELSE 1 END, t.created_at ASC "
             "LIMIT ?",
-            (*OPEN_STATUSES, *FINISHED_STATUSES, now - COMPLETED_LINGER_SECONDS, _SELECT_LIMIT),
+            (*OPEN_STATUSES, *FINISHED_STATUSES, now - COMPLETED_LINGER_SECONDS, _SELECT_LIMIT + 1),
         )
         rows = cursor.fetchall()
     except sqlite3.Error:
         # A schema Hermes has since changed, a lock the dispatcher holds: the
         # board projects as empty for this poll rather than failing the HUD.
-        return []
+        return None
     finally:
         try:
             connection.close()
@@ -596,7 +602,9 @@ def _lane_row(
         frozen_at = heartbeat
     else:
         frozen_at = started
-    elapsed = max(0.0, frozen_at - started) if started is not None and frozen_at is not None else 0.0
+    # A lane that never started (Hermes creates tasks already `blocked`, and a
+    # `ready` one waits for a claim) has no elapsed time: None, never a zero.
+    elapsed = max(0.0, frozen_at - started) if started is not None and frozen_at is not None else None
     observed = max(value for value in (created, started, heartbeat, completed) if value is not None)
     model = _text(task["model_override"])
     row = {
@@ -679,6 +687,13 @@ def read_kanban_lanes(
     when identities were given and none match, the whole board projects as
     explicitly ``global`` -- the same fallback the native delegate reader makes
     for an unmapped conversation, never a borrowed session label.
+
+    ``read_status`` says how the board read went, so a caller that lists lanes
+    can say a read failed instead of rendering it as an empty board:
+    ``refused`` (``kanban_db_path`` would not name a path), ``absent`` (no
+    file), ``unreadable`` (``_query_tasks`` returned ``None``), else ``read``.
+    ``selection_capped`` is True when the board held more matching tasks than
+    ``_SELECT_LIMIT``: the counts and rows then cover the first ones only.
     """
     current = float(now) if now is not None else time.time()
     board_name = board.strip() or current_board(hermes_home)
@@ -693,11 +708,22 @@ def read_kanban_lanes(
         "scope": "none",
         "dispatcher_presence": "unknown",
         "board": board_name,
+        "read_status": "read",
+        "selection_capped": False,
     }
     db = kanban_db_path(hermes_home, board_name)
-    if db is None or not db.is_file():
+    if db is None:
+        payload["read_status"] = "refused"
+        return payload
+    if not db.is_file():
+        payload["read_status"] = "absent"
         return payload
     tasks = _query_tasks(db, now=current)
+    if tasks is None:
+        payload["read_status"] = "unreadable"
+        return payload
+    payload["selection_capped"] = len(tasks) > _SELECT_LIMIT
+    tasks = tasks[:_SELECT_LIMIT]
     if not tasks:
         return payload
     owners = set(session_ids or ())

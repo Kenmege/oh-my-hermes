@@ -36,9 +36,30 @@ All notable changes will be documented here.
   quoting a skill request, nothing differs from the bare request on the hint,
   the route or the wrapper's next action; behind a sender prefix on a
   messaging turn, only a request that itself opens with a bracket differs, and
-  it reads as it did before. Routed bare, no route moved; the hint moved to none on the 8 Hermes
-  host frames in the corpora, and two loop requests behind a sender prefix now
-  start the cycle, as the same request without the prefix does.
+  it reads as it did before. Routed bare, no route moved; the hint moved to
+  none on the 8 Hermes host frames in the corpora, and two loop requests behind
+  a sender prefix now start the cycle, as the same request without the prefix
+  does.
+
+- **`omh coding status-board` shows Hermes' delegate children and kanban
+  workers beside the fanout units.** The board listed only fanout units, so the
+  command could not show the work `omh_hud` already showed. It now reads the
+  same two readers the HUD uses (`hermes_delegation` over `state.db`,
+  `kanban_board_reader` over `kanban.db`), opening both read-only, and lists
+  each worker with its source and state in a second table under one headline.
+  The rows keep the board's running-first order, and a kanban lane whose
+  heartbeat stopped is counted with the stuck units. A Hermes database that is
+  missing, unreadable, refused or read only in part prints a line saying so
+  instead of an empty list. To tell those cases apart, both readers now report
+  a `read_status`, which the HUD payload does not carry. A reader that reaches
+  its selection bound now says so (`selection_capped`), and the board then
+  shows its counts as lower bounds ("at least 96 running") instead of as
+  totals. A kanban lane that never started reports no elapsed time instead
+  of 0; the HUD still draws it as before. The fanout rows render as before.
+  The run-efficiency route reason now says the report reads the supplied
+  timings and context budget plus Hermes' recorded usage for a named session,
+  with provider, billing and cron not observed; it still described the
+  supplied-metadata report from before #2114.
 
 - **`omh chat route-hint` names no workflow on a turn Hermes wrote for its own
   session command.** On such a turn (a `/plan` frame, a `/loop` wakeup, a

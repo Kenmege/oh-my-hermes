@@ -21,6 +21,54 @@ or run the command directly:
 omh coding status-board [--limit N] [--json]
 ```
 
+Below the units, the same board lists the work Hermes runs on its own: its
+`delegate_task` children and its kanban board's tasks, read through the same
+two readers the `omh_hud` tool uses (`hermes_delegation` over `state.db`,
+`kanban_board_reader` over `kanban.db`). Both open the databases read-only. A
+CLI board belongs to no conversation, so both answer in the global scope
+`omh_hud` uses for an unmapped session.
+
+```
+Coding status board (3 running, 1 stuck of 7 observed) — observed at 2026-08-03T12:00:00Z
+LABEL     RUNTIME  MODEL            STATUS          ELAPSED  TOKENS   TOOLS    SESSION
+research  claude   🟠 fable-5 high  Code · running  35m      unknown  unknown  unknown
+SOURCE           ID        MODEL                      STATE                   ELAPSED  TOKENS   TOOLS
+hermes-delegate  childrun  ⚪ gpt-5.6-sol high        running                 2m       1,200    unknown  Fix the parser
+hermes-kanban    aaaa0001  🟠 claude-sonnet-5 medium  running                 5m       3,400    7  Write the docs
+hermes-kanban    bbbb0002  ⬜ unknown                 stale                   34m      unknown  unknown  Task t_bbbb0002
+hermes-delegate  childend  ⚪ gpt-5.6-sol high        reported done           5m       1,200    unknown  Write the release note
+hermes-kanban    cccc0003  ⬜ unknown                 queued (retry pending)  unknown  unknown  unknown  Task t_cccc0003
+hermes-kanban    dddd0004  ⬜ unknown                 reported done           12m      unknown  unknown  Task t_dddd0004
+```
+
+- **SOURCE** says which reader the row came from; **ID** is Hermes' own (a
+  child session's tail, a board task id). **STATE** is the reader's verdict,
+  the same word the HUD shows, except that Hermes' `done` reads `reported done`:
+  Hermes reported it, and OMH checked nothing.
+- Rows run in the unit table's order: rows Hermes still calls running
+  (`running`, `stale`) first, then by source and id.
+- The headline counts units and Hermes workers together. A kanban lane whose
+  heartbeat stopped (`stale`) is counted with the stuck units, not as running.
+  In `--json`, `unit_count` / `running_count` / `stuck_count` stay the fanout
+  tally, and `hermes_workers` carries its own `worker_count`, `running_count`,
+  `stale_count`, `rows` and one `sources` record per reader.
+- A Hermes database the board could not read is never shown as an empty
+  source. Each `sources` record carries the reader's `read_status`, and
+  anything but `read` prints its own line: `state.db` or `kanban.db` does not
+  exist (`absent`), could not be read (`unreadable`), answered only some
+  queries (`partial`), or the board path was refused as a symbolic link or an
+  invalid board name and not opened (`refused`). The line names the file, never its local path.
+- `--limit` caps each table on its own and states what it left out.
+- Each reader selects a bounded number of rows (the newest delegate children,
+  and the board's open lanes, running first). A reader that reached its bound
+  sets `selection_capped`, and then every Hermes count on the board reads as a
+  lower bound (`at least 96 running of at least 96 observed`). A line also
+  names the source that was read only up to its limit.
+- A lane that never started (Hermes creates some tasks already `blocked`) has
+  no elapsed time: the reader reports `None` and the board prints `unknown`,
+  never `0s`. A queued lane's elapsed is `unknown` too, as the HUD leaves it
+  blank.
+
 Both renderers take a `locale`: `render_status_board_text(payload, locale=...)`
 for the aligned board and `status_board_messenger_body(payload, locale=...)`
 for a chat surface. The copy comes from `src/catalogs/briefing_vocabulary.py`
@@ -50,8 +98,10 @@ unit was mid-flight, which is exactly the multi-session case that matters.
 
 This is the part that makes "100% reliable" true rather than aspirational.
 
-**Runtime and model are always exact when present.** OMH itself chose them and
-put them on the command line, so there is nothing to infer.
+**A unit's runtime and model are always exact when present.** OMH itself chose
+them and put them on the command line, so there is nothing to infer. A Hermes
+worker's model is the one Hermes recorded for it, which is a different claim:
+OMH did not choose it.
 
 **Tokens, session refs, and elapsed-for-unfinished-units are observed or
 explicitly unknown.** They are never estimated, and never derived from the
@@ -181,6 +231,8 @@ normalizes both vocabularies onto one set of keys.
 | `~/.omh/coding/fanout/<id>/inflight/<unit>.json` | start time, and the last assessed `unit_state` with its reason, stall age, repeat count, and phase markers |
 | `dispatch_summary.json` | owner, model, effort, status, duration, tokens, session |
 | executor progress bindings | live cross-unit state and latest observed event |
+| Hermes `state.db` (read-only) | `delegate_task` children: model, effort, state, elapsed, tokens, goal text |
+| Hermes `kanban.db` (read-only) | board tasks: state, native status, title; a linked worker session's model, tokens and tool calls |
 
 Tokens and session ids are parsed from the spawned CLI's own structured output
 by `parse_unit_telemetry`, which is pure: no file I/O, no clock, no network.
