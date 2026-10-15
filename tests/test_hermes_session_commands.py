@@ -969,15 +969,18 @@ _GATEWAY_MOVED_REQUESTS = (
     "$loop every hour check CI",
     "thanks, got it",
 )
-# A reply whose quoted text reads as a skill request and a catalog question.
+# A reply whose quoted text reads as a skill request and a catalog question,
+# and backfill that asks for the catalog before the person's message.
 _SKILL_REPLY = '[Replying to bob: "use omh-apple-design to review our iOS checkout; which OMH workflows are there?"]\n\n'
+_CATALOG_BACKFILL = "[bob] which OMH workflows are available?\n\n[New message]\n" + _SENDER
+_SURFACE_PREFIXES = {**GATEWAY_PREFIXES, "skill reply": _SKILL_REPLY, "catalog backfill": _CATALOG_BACKFILL}
 
 
 class PersonRequestTextTest(unittest.TestCase):
     """What the person wrote, with the gateway's material around it removed."""
 
     def test_the_gateway_material_goes_in_either_host_order(self):
-        for prefix_name, prefix in {**GATEWAY_PREFIXES, "skill reply": _SKILL_REPLY}.items():
+        for prefix_name, prefix in _SURFACE_PREFIXES.items():
             with self.subTest(prefix=prefix_name):
                 self.assertEqual(person_request_text(prefix + "fix the login bug"), "fix the login bug")
 
@@ -1026,7 +1029,7 @@ class GatewayMaterialIsNotTheRequestTest(unittest.TestCase):
         for message in _GATEWAY_MOVED_REQUESTS:
             hint = awareness_route_hint(message)
             route = route_chat_message(message, source="discord")
-            for prefix_name, prefix in {**GATEWAY_PREFIXES, "skill reply": _SKILL_REPLY}.items():
+            for prefix_name, prefix in _SURFACE_PREFIXES.items():
                 with self.subTest(message=message, prefix=prefix_name):
                     self.assertEqual(awareness_route_hint(prefix + message), hint)
                     prefixed = route_chat_message(prefix + message, source="discord")
@@ -1041,18 +1044,19 @@ class GatewayMaterialIsNotTheRequestTest(unittest.TestCase):
         for message in _GATEWAY_MOVED_REQUESTS:
             interaction = build_chat_interaction_payload(message, source="discord")
             hint_payload = build_chat_route_hint_payload(message, source="discord")
-            for prefix_name in ("note", "note+reply+sender", "reply+note+sender", "note+backfill+sender"):
-                prefix = GATEWAY_PREFIXES[prefix_name]
-                for name, text in ((prefix_name, prefix + message), ("skill reply", _SKILL_REPLY + message)):
-                    with self.subTest(message=message, prefix=name):
-                        prefixed = build_chat_interaction_payload(text, source="discord")
-                        self.assertEqual(
-                            (prefixed["route"]["action"], prefixed["route"]["selected_skill"], prefixed["next_action"]),
-                            (interaction["route"]["action"], interaction["route"]["selected_skill"], interaction["next_action"]),
-                        )
-                        prefixed_hint = build_chat_route_hint_payload(text, source="discord")
-                        self.assertEqual(prefixed_hint["route_hint"], hint_payload["route_hint"])
-                        self.assertEqual(prefixed_hint["route_decision"], hint_payload["route_decision"])
+            for prefix_name in (
+                "note", "note+reply+sender", "reply+note+sender", "note+backfill+sender", "skill reply", "catalog backfill"
+            ):
+                text = _SURFACE_PREFIXES[prefix_name] + message
+                with self.subTest(message=message, prefix=prefix_name):
+                    prefixed = build_chat_interaction_payload(text, source="discord")
+                    self.assertEqual(
+                        (prefixed["route"]["action"], prefixed["route"]["selected_skill"], prefixed["next_action"]),
+                        (interaction["route"]["action"], interaction["route"]["selected_skill"], interaction["next_action"]),
+                    )
+                    prefixed_hint = build_chat_route_hint_payload(text, source="discord")
+                    self.assertEqual(prefixed_hint["route_hint"], hint_payload["route_hint"])
+                    self.assertEqual(prefixed_hint["route_decision"], hint_payload["route_decision"])
 
     def test_the_recommend_tool_ranks_the_bare_request(self):
         def ranked(message: str) -> tuple[object, object]:
