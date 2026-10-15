@@ -590,6 +590,37 @@ class ClarifyBatchTests(unittest.TestCase):
         press(app, Key(ENTER))
         self.assertEqual(answered(client, "srq-11"), [{"result": {"answers": {"a": "first", "b": "second"}}}])
 
+    def test_in_the_first_moment_a_text_question_takes_no_key_at_all(self) -> None:
+        # Nothing typed, nothing cleared, nothing sent: the keys are ignored, as on an approval.
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        app._on_server_request(SUDO)
+        type_text(app, "pw")
+        press(app, Paste("pasted"))
+        self.assertEqual(app.composer.text, "")  # nothing typed
+        press(app, Key(ENTER))
+        self.assertEqual((app.composer.text, client.answers), ("", []))  # nothing sent
+        now[0] += 10.0
+        type_text(app, "hunter2")
+        press(app, Key(ENTER))
+        self.assertEqual(answered(client, "srq-3"), [{"result": {"value": "hunter2"}}])
+
+    def test_in_the_first_moment_after_a_pick_the_next_text_question_takes_no_key(self) -> None:
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        app._on_server_request(ServerRequest("srq-12", "clarify", {"questions": [
+            {"qid": "a", "question": "A?", "choices": ["x", "y"]}, {"qid": "b", "question": "B?"}]}))
+        now[0] += 10.0
+        press(app, Key(CHAR, "1"))  # Q1 = x; Q2's field opens
+        type_text(app, "hi")
+        self.assertEqual(app.composer.text, "")  # nothing typed
+        press(app, Key(ENTER))
+        self.assertEqual((app.composer.text, client.answers), ("", []))  # nothing sent
+        now[0] += 10.0
+        type_text(app, "hi")
+        press(app, Key(ENTER))
+        self.assertEqual(answered(client, "srq-12"), [{"result": {"answers": {"a": "x", "b": "hi"}}}])
+
     def test_keys_in_the_first_moment_after_the_next_question_appears_answer_nothing(self) -> None:
         # A double-tapped Enter: the first picks for Q1, the second must not answer Q2 unseen.
         for second in (Key(ENTER), Key(CHAR, "1"), Key(ESCAPE)):

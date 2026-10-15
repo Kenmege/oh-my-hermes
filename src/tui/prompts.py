@@ -9,8 +9,8 @@ or withdrawn by the gateway. Three rules shape this module:
   decline frame (an explicit deny for approvals). Allowing a command takes
   the arrows and then Enter: deny is the first row and selected, the
   narrowest allow sits under it, the selection does not wrap, no digit picks
-  a choice, and a letter can only deny. The app ignores every key, and the
-  composer's Enter, for a moment after any slot opens. A request the gateway
+  a choice, and a letter can only deny. The app ignores every key for a
+  moment after any slot opens, or its next question appears. A request the gateway
   withdraws itself (its own timeout, an interrupt) arrives as
   `request.cancel`, and the app closes the slot without answering.
 - Nothing is left unanswered. A request the TUI cannot show is answered at

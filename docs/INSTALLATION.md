@@ -464,9 +464,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   keeps the highlighted choice. Below 10 rows, where there is no mode row,
   the question's keys take a row of its own when a row is left for them.
   Keys pressed in the first moment after any question appears are ignored,
-  Enter included, and so are those right after each next question of a
-  batch, so typing that was meant for the composer, or for the question
-  before, cannot answer it.
+  Enter included (nothing is typed into an answer, cleared or sent), and so
+  are those right after each next question of a batch, so typing that was
+  meant for the composer, or for the question before, cannot answer it.
   Approving a command permanently stays a choice for `hermes --tui`. The
   terminal bell rings once as an approval opens, so a terminal in the
   background can flag it, and a turn that ran 10 s or more ends with the

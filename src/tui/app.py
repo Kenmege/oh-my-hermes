@@ -257,11 +257,11 @@ EXPORT_NOTE = (
     "Hermes' /export writes a profile archive (config, skills, theme), not this transcript; /export again runs it. "
     "/history pages the transcript and /copy copies the last reply."
 )
-# Every key a prompt slot takes, and the composer's Enter, is ignored when its
-# first byte arrived before the slot opened or less than this long after, so
-# Enter, Esc, an arrow or a digit typed for the composer as the request arrives
-# cannot answer it (an approval, a clarify, a value prompt), however late the
-# decoder decides the key.
+# While a prompt slot is open, every key is ignored when its first byte arrived
+# before the slot opened (or its current question appeared) or less than this
+# long after, so Enter, Esc, an arrow, a digit or text typed for the composer as
+# the request arrives cannot answer it (an approval, a clarify, a value prompt)
+# or go into its answer field, however late the decoder decides the key.
 SLOT_ARM_SECONDS = 0.4
 # The delay instead, counted from the slot's opening, when reports were on as it
 # opened or went off less than `keys.MOUSE_REPORT_SECONDS` before: a report sent
@@ -1769,9 +1769,9 @@ class App(ModesMixin, AgentViewMixin):
             return
         if self._display_key(event):
             return
+        if self.slot is not None and self._slot_arming(event):
+            return  # in the first moment of a question every key is ignored: nothing typed, cleared or sent
         if self.slot is not None and _slot_owns(self.slot, event, self.composer.text):
-            if self._slot_arming(event):
-                return
             question = self.slot.question_index
             answer = self.slot.handle_key(event)
             if isinstance(answer, TypeIt):
@@ -1847,7 +1847,7 @@ class App(ModesMixin, AgentViewMixin):
             self.slot_opened_at = self.clock()
 
     def _slot_arming(self, event: Key | Paste) -> bool:
-        """Whether `event` came too early to answer the open slot (`SLOT_ARM_SECONDS`).
+        """Whether `event` came too early for the open slot (`SLOT_ARM_SECONDS`): it is then ignored, whatever it is.
 
         Timed from when the key's first byte arrived, not from when it was
         decided: an Esc waits up to `keys.REPORTING_ESCAPE_SECONDS` for a
@@ -1868,8 +1868,6 @@ class App(ModesMixin, AgentViewMixin):
         """Act on what the composer made of `event`; `steer` says the key was Ctrl+Enter."""
         if action.kind == SUBMIT:
             if self.slot is not None:
-                if self._slot_arming(event):
-                    return  # an Enter meant for something else answers nothing, not the highlighted choice
                 question = self.slot.question_index
                 answer = self.slot.submit_text(action.text)
                 if answer is not None:

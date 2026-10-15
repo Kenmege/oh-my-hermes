@@ -391,6 +391,7 @@ class UnansweredSteerTests(unittest.TestCase):
         clock = Clock()
         app, client, _steer = self.agent_steered(clock)
         app._on_server_request(ServerRequest("srq-1", "sudo", {"prompt": "[sudo] password"}))
+        clock.now += SLOT_ARM_SECONDS  # keys in the first moment are ignored
         type_text(app, "hunter")  # the answer, masked
         clock.now += 3600
         app._expire_calls()
