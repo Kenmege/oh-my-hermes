@@ -536,19 +536,25 @@ DOCUMENT_PRODUCER_QA_RULE = (
 )
 # `pptx_render.py` lists every image already in its output directory, and
 # `xlsx_recalc.py` overwrites its input unless `--out` is given; both shape
-# how the rung is read.
+# how the rung is read. The `powerpoint` rungs and the inspection rule are
+# their own strings because `report-package`, whose one binary is a deck,
+# states them without the other producers'.
+DOCUMENT_PRODUCER_POWERPOINT_RUNGS = (
+    "`powerpoint` gives `slide_count` (`pptx_read.py --outline`) and `render_screenshot` (`pptx_render.py` into a "
+    "fresh directory, its image count matching `slide_count`, since it lists every image already in that directory)"
+)
+DOCUMENT_PRODUCER_IMAGES_INSPECTED = "Images that exist are not a render pass until each one has been inspected"
 DOCUMENT_PRODUCER_RUNGS_RULE = (
-    "On Hermes, the bundled skills give these rungs when available: `powerpoint` gives `slide_count` "
-    "(`pptx_read.py --outline`) and `render_screenshot` (`pptx_render.py` into a fresh directory, its image count "
-    "matching `slide_count`, since it lists every image already in that directory); `pdf` gives `page_count` "
-    "(`pdf_read.py --meta`) and `render_preview` (`pdf_page_image.py`); `xlsx` gives `sheet_schema` (`xlsx_read.py "
-    "--sheets`) and `formula_recalculation` (`xlsx_recalc.py --out <copy>`, since without `--out` it replaces the "
-    "input and rungs or approvals already recorded were for other bytes, then the cached results read back with "
-    "`xlsx_read.py --formulas`, where an error value or a formula with no cached value is a finding); `docx` gives "
-    "`section_structure` and `required_clause_check` (`docx_read.py --structure` and `--text`) but no "
-    "`page_count` or appearance until a converted PDF is rendered, and `docx_validate.py` checks package health, "
-    "never rendering. Images that exist are not a render pass until each one has been inspected, and a "
-    "producer's `\"ok\": true` is never the QA verdict."
+    "On Hermes, the bundled skills give these rungs when available: "
+    f"{DOCUMENT_PRODUCER_POWERPOINT_RUNGS}; "
+    "`pdf` gives `page_count` (`pdf_read.py --meta`) and `render_preview` (`pdf_page_image.py`); `xlsx` gives "
+    "`sheet_schema` (`xlsx_read.py --sheets`) and `formula_recalculation` (`xlsx_recalc.py --out <copy>`, since "
+    "without `--out` it replaces the input and rungs or approvals already recorded were for other bytes, then the "
+    "cached results read back with `xlsx_read.py --formulas`, where an error value or a formula with no cached value "
+    "is a finding); `docx` gives `section_structure` and `required_clause_check` (`docx_read.py --structure` and "
+    "`--text`) but no `page_count` or appearance until a converted PDF is rendered, and `docx_validate.py` checks "
+    f"package health, never rendering. {DOCUMENT_PRODUCER_IMAGES_INSPECTED}, and a producer's `\"ok\": true` is "
+    "never the QA verdict."
 )
 
 # Shared five-step contract for the Hermes setup-guide skills (model-setup,

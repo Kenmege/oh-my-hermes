@@ -44,6 +44,12 @@ TOOL_SEARCH_TOOL = "tool_search"
 # record shows rather than why it happened. Here, beside the tool's name, so
 # the projection and the `omh_todo` tool read one string.
 NATIVE_CANCELLED_REASON = "cancelled in todo_list"
+# The plans only `omh_todo` can hold, because `plan_stage` and the template
+# exist only there: the plans `native_todo._held_by_omh_todo` keeps from a
+# native write. One string, so every surface that says which ONE tool holds
+# the steps names the same three: the `omh_todo` tool, `todo-checklist`, the
+# route hint's `plan_todo` line, and the awareness primer.
+OMH_TODO_HELD_PLANS = "a planning run, an accepted plan or a code-story template"
 
 
 def native_tool_presence_clause(name: str, *, code: bool = False) -> str:

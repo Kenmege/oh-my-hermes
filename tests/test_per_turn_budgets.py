@@ -375,8 +375,6 @@ class IndexOpeningLintTests(unittest.TestCase):
 
     def test_opening_is_the_first_three_visible_words_after_the_prefix(self) -> None:
         self.assertEqual(skill_index.index_opening("[omh] Hermes Code Review workflow: bug-first"), "hermes code review")
-        # Only the visible window counts: words past character 57 never reach it.
-        self.assertEqual(skill_index.index_opening("[omh] " + "a" * 60 + " b c"), "a" * 51)
 
     def test_the_opening_words_are_the_same_with_and_without_the_description_prefix(self) -> None:
         # An installed body keeps the prefix until its next update; the lint

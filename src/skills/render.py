@@ -1808,7 +1808,7 @@ could actually pick, drawn from the request, repo evidence, or the tradeoff the 
 really about, never filler to reach a count, and never a candidate whose text is itself a bare
 number (a reply by number would collide with it, in the list below and in a messaging picker).
 
-- **With Hermes' `clarify` tool** (in your tool list or tool search): keep the header in your
+- **With Hermes' `clarify` tool**, when {native_tool_presence_clause('clarify', code=True)}: keep the header in your
   message and ask through `clarify` — one `questions` entry, the sentence as `question`, the
   candidates as `choices`. Add no free-input row of your own and keep the candidates out of the
   question sentence: the picker marks the recommendation and adds its own typed-answer row.
@@ -2823,11 +2823,20 @@ def _progressive_workflow_body(definition: SkillDefinition, name: str) -> str:
         "sales-pipeline-review": "Required: supplied snapshot and as-of time, definitions, prior outcomes, and owner. Output: scope, health, forecast, supported annexes, and follow-up handoff.",
     }
     verb = "builds" if operation == "build" else "prepares"
+    # Hermes loads this body beside the bundled skill it shares a job with and
+    # the full contract only on demand, so a line saying which request is the
+    # bundled skill's (`HermesSkillLine`) is read here or not at all. The lines
+    # naming catalog siblings stay in the full contract.
+    bundled_boundary = "".join(
+        f"**Do Not Use When:** {loadable_skill_mentions(line)}\n\n"
+        for line in definition.do_not_use_when
+        if isinstance(line, HermesSkillLine)
+    )
     return f"""# {title}
 
 {compact_contracts[name]}
 
-**HOLD:** Missing inputs or failed contract gates. Prepared OMH routing is not execution or approval. **Completion:** Follow the full-contract checklist.
+{bundled_boundary}**HOLD:** Missing inputs or failed contract gates. Prepared OMH routing is not execution or approval. **Completion:** Follow the full-contract checklist.
 
 Shared product, routing, compatibility, and evidence rules: `{SHARED_RAIL_SKILL_VIEW}`.
 
@@ -7076,7 +7085,7 @@ def context_skill() -> SkillTemplate:
 1. Classify the turn as a safe lookup, reviewed capture, terminology correction, unresolved decision frontier, or confirmed planning/handoff transition.
 2. For lookup, inspect the optional source and active reviewed profile on demand, answer directly, and name source/freshness status. File presence, profile match, or nomination is not proof that a model used the content.
 3. Before capture, show the exact machine-only projection and ask for confirmation. Staging creates pending candidates only; review and approval remain separate.
-4. Before interviewing, confirm frontier entry. Then present every currently dependency-ready decision in one numbered batch per round, using stable `{decision_id_prefix}1`, `{decision_id_prefix}2`, ... identifiers. When Hermes' `clarify` tool is present (in your tool list or tool search), the round header and each decision's evidence and tradeoff stay in your message and the batch goes through `clarify`: one `questions` entry per decision whose question text opens with its identifier, at most four `choices` with the recommendation first beside the real alternatives, no free-input row of your own, and no options in the question text. Decisions in one frontier have no prerequisite between them, so they share the call, and a batch past the tool's per-call limit continues in a second call in the same round; a dependent never joins its prerequisite, and an unanswered entry leaves its decision open. Without `clarify`, the numbered batch in your message is the fallback.
+4. Before interviewing, confirm frontier entry. Then present every currently dependency-ready decision in one numbered batch per round, using stable `{decision_id_prefix}1`, `{decision_id_prefix}2`, ... identifiers. When {native_tool_presence_clause('clarify', code=True)}, the round header and each decision's evidence and tradeoff stay in your message and the batch goes through `clarify`: one `questions` entry per decision whose question text opens with its identifier, at most four `choices` with the recommendation first beside the real alternatives, no free-input row of your own, and no options in the question text. Decisions in one frontier have no prerequisite between them, so they share the call, and a batch past the tool's per-call limit continues in a second call in the same round; a dependent never joins its prerequisite, and an unanswered entry leaves its decision open. Without `clarify`, the numbered batch in your message is the fallback.
 5. The frontier is bounded at {max_rounds} rounds. Run a non-round consent check before Round {soft_round}. Lookup, research, entry consent, summary confirmation, and next-path consent do not consume rounds.
 6. Stop on the first matching condition: every reachable decision is resolved, deferred, or blocked; the user asks to stop or proceed; or the answer to Round {max_rounds} is recorded. Never emit Round {max_rounds + 1}.
 7. Omitted decisions stay open and recommendations require explicit acceptance. If round or decision identity cannot be recovered, close with a named recovery blocker instead of restarting.
@@ -7187,7 +7196,7 @@ The dependency tree, frontier rounds, recommendation pattern, fact/decision spli
 def docs_skill() -> SkillTemplate:
     """Render the OMH self-documentation skill with compact workflow rails."""
     definition = _definitions_by_name()["product-docs"]
-    body = """# OMH Docs
+    body = f"""# OMH Docs
 
 Use this skill to answer questions about OMH itself from current sources. It
 defaults to passive inspection; it is not a generic documentation writer,
@@ -7272,7 +7281,7 @@ before mutation unless that separate action is authorized.
 - Current lane: **Research and company ops**. Stay read-only and return to the
   router when the request belongs to another workflow.
 - Shared product, routing, compatibility, and evidence rules:
-  `skill_view(name='omh-routing', file_path='references/skill-common-rail.md')`.
+  `{SHARED_RAIL_SKILL_VIEW}`.
 
 ## Completion Checklist
 
@@ -8121,11 +8130,15 @@ verdicts are the ones `code-review` already names.
   The skill leaves those values open; the schema is where they are fixed.
 - A `ship` names what it checked. `checked_clean` is required and non-empty on a
   `ship`, so a verdict with no finding and nothing checked does not validate.
-- A return that does not match the schema is not a review. Ask once for a
-  corrected return, naming what failed, unless the host already made that ask
-  (a retry count on the result says so). If the corrected return still does not
-  match, the review is `not_observed`: never a pass, and a verdict lifted out of
-  the unmatched text is not a verdict.
+- A return that does not match the schema is not a review. The contract allows
+  one corrected ask, naming what failed. When the host checked the return
+  against this schema, it may already have made that ask without the result
+  saying so, so do not ask the same reviewer again, whether or not the result
+  shows a retry count. When nothing checked it before you, make the ask
+  yourself. If the return still does not match after that one ask, the review
+  is `not_observed`: never a pass, and a verdict lifted out of the unmatched
+  text is not a verdict. Re-dispatch with something changed, or write the
+  findings yourself, and say which you did.
 - A return that matches has a checked shape. Its findings are still claims, read
   under the two rules below.
 
@@ -8249,7 +8262,7 @@ tool_search finds it. Never infer it from a Hermes version.
 
 ## 1. A reviewer dispatched with `delegate_task`
 
-When `delegate_task` is in your tool list or tool_search finds it, give the
+When {native_tool_presence_clause('delegate_task', code=True)}, give the
 reviewer task the findings schema from `review-dispatch.md` as its
 `output_schema`, exactly as that file prints it.
 
@@ -8325,7 +8338,7 @@ decides nothing about the card.
 | `ship` | Nothing yet: it is one input to an approval `sdlc-review` decides against what the card asked for | `kanban_complete`, when that approval is reached |
 | `not_observed` | Nothing: the review is not done. Finish it, or escalate only when what is missing is a person's decision or an outside prerequisite | `kanban_block`, for the escalation only |
 
-- Call a transition only when it is in your tool list or tool_search finds it.
+- Call a transition only when {native_tool_presence_clause('it')}.
   Outside a kanban review worker `code-review` never moves a card.
 - Request changes only for what the implementer can correct. A blocker that
   turns on a decision only a person can make is an escalation, `kanban_block`
