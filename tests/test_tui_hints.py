@@ -147,6 +147,39 @@ class NarrowSayTests(unittest.TestCase):
         # With room for both, the effort stays beside the short form.
         self.assertTrue(self.rewind_row(60, agents=False, mode=MODE_PLAN, effort="high").rstrip().endswith("effort high"))
 
+    def test_at_forty_columns_with_accept_and_plan_the_labels_shorten_before_the_say_form_is_cut(self) -> None:
+        from omh.tui.frame import MODE_ACCEPT_PLAN
+
+        for effort in ("", "xhigh"):
+            with self.subTest(effort=effort):
+                rewind = self.rewind_row(40, agents=False, mode=MODE_ACCEPT_PLAN, effort=effort)
+                steer = self.steer_row(40, mode=MODE_ACCEPT_PLAN, effort=effort)
+                self.assertTrue(rewind.rstrip().endswith("⏪ replaces #2+ · esc"), rewind)
+                self.assertTrue(steer.rstrip().endswith("↪ steer · esc cancels"), steer)
+                for row in (rewind, steer):
+                    self.assertTrue(row.startswith("⏵⏵") and "⏸" in row, row)  # both modes are still named
+                    self.assertFalse(row.rstrip().endswith("…"), row)
+                    self.assertLessEqual(len(row), 40)
+
+    def test_the_labels_keep_their_words_where_the_say_form_fits_beside_them(self) -> None:
+        from omh.tui.frame import MODE_ACCEPT_PLAN
+
+        for cols in (60, 100):
+            with self.subTest(cols=cols):
+                row = self.rewind_row(cols, agents=False, mode=MODE_ACCEPT_PLAN)
+                self.assertTrue(row.startswith("⏵⏵ accept all on · ⏸ plan mode on · ⏪"), row)
+
+    def test_a_question_keeps_its_way_out_at_forty_columns_with_accept_and_plan(self) -> None:
+        from test_tui_modes import show_mode
+        from omh.tui.frame import MODE_ACCEPT_PLAN
+
+        app, _client = make_app(busy=True, cols=40)
+        show_mode(app, MODE_ACCEPT_PLAN)
+        app._on_server_request(CLARIFY)
+        row = line_text(app._mode_row_line(40))
+        self.assertTrue(row.rstrip().endswith("esc cancels"), row)
+        self.assertTrue(row.startswith("⏵⏵") and "⏸" in row, row)
+
     def test_with_the_effort_shown_the_strip_collapses_before_the_steered_agents_name_goes(self) -> None:
         row = self.steer_row(100, effort="high")
         self.assertIn("steering find usages of", row)
