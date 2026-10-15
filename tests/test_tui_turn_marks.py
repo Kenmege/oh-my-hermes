@@ -6,7 +6,8 @@ the turn before it ended says `⧗ from queue`. A steer shows as
 `↪ steer · <text>` under what is running until Hermes answers, and is
 written into the transcript at the next block boundary after that, so it
 never closes a running tool group (whose calls would read as cut off) or
-splits a streaming reply.
+splits a streaming reply. A turn's done line sits right above the panel
+however tall its last tool group was.
 """
 
 from __future__ import annotations
@@ -15,11 +16,13 @@ import unittest
 
 from _tui_lines import line_text, lines_text
 from test_tui_modes import CTRL_ENTER, SID, answer, drawn, make_app, type_text
+from test_tui_panels import hud_payload, phased_plan
 from test_tui_theme import DARK_BACKGROUNDS, LIGHT_BACKGROUNDS, contrast
 from omh.skin_pack import SKIN_THEMES, skin_colors
 from omh.tui.app import SLOT_ARM_SECONDS
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, ENTER, RIGHT, Key
+from omh.tui.panels import HudSnapshot
 from omh.tui.screen import ERASE_TO_LINE_END, paint_line
 from omh.tui.style import SGR_RESET, Span, Style, fill
 from omh.tui.theme import DEFAULT_THEME as THEME
@@ -565,6 +568,65 @@ class TurnRuleTests(unittest.TestCase):
     def test_a_narrow_terminal_keeps_the_facts_and_drops_the_rule(self) -> None:
         (row,) = block_rows(TurnSummaryBlock(34, 3, 1200), 24, THEME)
         self.assertEqual(line_text(row), "✻ 34s · 3 tools · ↓1.2k")
+
+
+class SettledTailTests(unittest.TestCase):
+    """The rows a settled tool group gives back are filled by its own lines, never left blank under the done line."""
+
+    def app_with_plan(self, rows: int, cols: int, earlier: int) -> tuple[object, list[float]]:
+        now = [100.0]
+        app, _client = make_app(rows=rows, cols=cols, clock=lambda: now[0])
+        app.stored_id = "stored"
+        app.hud = HudSnapshot("stored", hud_payload(phased_plan(4, phases=1, active=1)), now[0])
+        for index in range(earlier):  # transcript rows above the region before the turn
+            app.transcript.add_notice(f"earlier line {index}")
+        app._render()
+        return app, now
+
+    def test_the_done_line_sits_right_above_the_panel_however_tall_the_last_group_was(self) -> None:
+        for tools in (1, 4, 12):
+            with self.subTest(tools=tools):
+                app, now = self.app_with_plan(40, 100, earlier=60)  # a screen already full of transcript
+                app._submit_prompt("run the tools")
+                app._render()
+                app._on_event(ev("message.start"))
+                for index in range(tools):
+                    now[0] += 0.1
+                    app._on_event(ev("tool.start", tool_id=f"t{index}", name="read_file", context=f"f{index}.py"))
+                    app._render()
+                for index in range(tools):
+                    app._on_event(ev("tool.complete", tool_id=f"t{index}", name="read_file", result={"content": "x"}))
+                    app._render()
+                app._on_event(ev("message.delta", text="All read."))
+                app._render()
+                app._on_event(ev("message.complete", text="All read.", status="complete"))
+                app._render()
+                self.assertEqual(app.region.pad, 0, "a frame whose flush scrolled the screen left pad rows")
+                screen = app.terminal.screen.lines()
+                plan = next(index for index, line in enumerate(screen) if "[Plan]" in line)
+                self.assertTrue(screen[plan - 1].startswith("✻ "), "\n".join(screen[plan - 4 : plan + 1]))
+
+    def test_the_prompt_and_its_sticky_echo_are_never_on_screen_together(self) -> None:
+        # A reply streams line by line under the prompt: the prompt shows until it scrolls off, the echo after.
+        for rows, cols, earlier in ((24, 80, 0), (24, 80, 60), (40, 100, 0), (40, 100, 60)):
+            with self.subTest(rows=rows, cols=cols, earlier=earlier):
+                app, now = self.app_with_plan(rows, cols, earlier)
+                app._submit_prompt("run the tools")
+                app._render()
+                app._on_event(ev("message.start"))
+                app._render()
+                echoed = 0
+                for index in range(rows * 2):
+                    now[0] += 0.05
+                    app._on_event(ev("message.delta", text=f"line {index}\n"))
+                    app._render()
+                    screen = app.terminal.screen.lines()
+                    prompt = any(line.startswith("› run the tools") for line in screen)
+                    echo = any(line.startswith("↳ you: run the tools") for line in screen)
+                    self.assertFalse(prompt and echo, f"line {index}: the prompt and its echo are both on screen")
+                    self.assertTrue(prompt or echo, f"line {index}: the prompt scrolled off and nothing echoes it")
+                    echoed += echo
+                self.assertGreater(echoed, 0, "the prompt never scrolled off")
 
 
 class ApprovalOutcomeTests(unittest.TestCase):

@@ -3,16 +3,17 @@
 The owner's top complaint about the Hermes-hosted TUI is that the prompt
 "goes too far up": rows added around the input push the composer upward.
 This file is the regression proof that the OMH TUI's composer does not move.
-It runs the frame helper and the live region the way the app loop will (flush
-stable lines with `flush_above`, then build a frame from the region's current
-height and render it) through event sequences: a streaming tail that grows
-past the screen, stable lines flushed with and without pad rows, a panel slot
-that grows and shrinks, a server-request prompt slot, a completion menu, a
-composer that grows to its maximum and back, a multi-line paste, the end of a
-turn, the input mode switching between normal, accept and plan (each
-redraws both composer rules and the mode row), and the agent list taking the
-keys, growing past its cap and giving them back. After every step, and after
-every flush before the next frame, it reads the VT screen back and asserts:
+It runs the frame helper and the live region the way the app loop does
+(`App._render`: build a frame from the region's current height and render it,
+then flush the stable lines with `flush_above` into its pad rows) through
+event sequences: a streaming tail that grows past the screen, stable lines
+flushed with and without pad rows, a panel slot that grows and shrinks, a
+server-request prompt slot, a completion menu, a composer that grows to its
+maximum and back, a multi-line paste, the end of a turn, the input mode
+switching between normal, accept and plan (each redraws both composer rules
+and the mode row), and the agent list taking the keys, growing past its cap
+and giving them back. After every frame, and again after its flush, it reads
+the VT screen back and asserts:
 
 (a) the composer's first screen row changes only when the composer's own row
     count changes, and then by exactly that count, because the region's
@@ -35,7 +36,10 @@ every flush before the next frame, it reads the VT screen back and asserts:
     composer and the cap, and only where the mode row would be;
 (f) whenever the live region says which screen row it ends on
     (`LiveRegion.last_row`), that is the row the status line is on, and by
-    the end of every scenario it does say.
+    the end of every scenario it does say;
+(g) a flush of more lines than the frame has pad rows (one that scrolls the
+    screen) leaves the region with no pad rows, so no blank row stays between
+    the lines just printed and the region.
 
 Sampling: heights 6, 7, 9, 10, 11, 12, 13, 16, 20, 24, 31, 40, 57, 80 (the
 heights where the mode row and the bottom rule drop out, the small heights
@@ -138,15 +142,6 @@ class Session:
 
     def paint(self, label: str, flush: Sequence[str] = ()) -> None:
         self.label = label
-        if flush:
-            pad = self.region.pad
-            consumed = min(len(flush), pad)
-            self.flush_pads.append((pad, len(flush)))
-            self.region.flush_above([plain(text) for text in flush], self.cols)
-            self.flushed.extend(flush)
-            self.label = f"{label} (after flush, before the frame)"
-            self.check(self.lines[consumed:], self.view, self.drawn_list)
-            self.label = label
         self.modes_seen.add(self.mode)
         mode_row = mode_row_line(
             mode=self.mode,
@@ -179,6 +174,18 @@ class Session:
         text = self.composer.text
         if text and "\n" not in text and self.composer.caret == len(text) and cell_width(PROMPT + text) < self.cols:
             self.case.assertEqual(self.screen.cursor[1], cell_width(PROMPT + text), f"{label}: cursor column")
+        if flush:
+            pad = self.region.pad
+            consumed = min(len(flush), pad)
+            self.flush_pads.append((pad, len(flush)))
+            self.region.flush_above([plain(line) for line in flush], self.cols)
+            self.flushed.extend(flush)
+            self.lines = frame.lines[consumed:]
+            self.label = f"{label} (after its flush)"
+            self.check(self.lines, self.view, self.drawn_list)
+            if len(flush) > pad:  # (g) the flush scrolled the screen: no pad row is left under its lines
+                self.case.assertEqual(self.region.pad, 0, f"{self.rows}x{self.cols} after {self.label!r}: pad rows")
+            self.label = label
 
     def list_rows(self, composer_rows: int) -> int:
         """The spec, written out: the rows of the list a region this tall shows under its composer.

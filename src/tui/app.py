@@ -72,6 +72,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 import errno
+from functools import partial
 import json
 import math
 import os
@@ -3134,8 +3135,6 @@ class App(ModesMixin, AgentViewMixin):
             stable = logo + banner_lines(**self.banner_facts, theme=self.theme, width=cols) + stable
             self.banner_facts = None
         anchoring = self.anchor
-        if stable and not anchoring:
-            self.region.flush_above(stable, cols)
         self.flushed_since_prompt += len(stable)
         previous = 0 if anchoring else self.region.height
         self.anchor = False
@@ -3147,13 +3146,13 @@ class App(ModesMixin, AgentViewMixin):
             lines, listed = self._agent_list(cols, room)
             return lines
 
-        frame = build_frame(
+        build = partial(
+            build_frame,
             cols=cols,
             rows=rows,
             composer=self.composer,
             status=self._status_line(cols),
             previous_height=previous,
-            sticky=sticky_line(self.sticky, cols, self.theme) if self._sticky_needed(rows) else None,
             tail=self._tail(cols),
             slot=self._slot_lines(cols, rows),
             theme=self.theme,
@@ -3165,11 +3164,16 @@ class App(ModesMixin, AgentViewMixin):
             placeholder=PLACEHOLDER if self._composer_open() else "",
             agent_list=agent_list if self.list_selected is not None else None,
         )
+        frame = build()
+        # The flush below fills this frame's pad rows first, so they are transcript rows by the time it shows.
+        if self._sticky_needed(rows - frame.height + min(len(stable), frame.pad)):
+            frame = build(sticky=sticky_line(self.sticky, cols, self.theme))
         self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad)
-        if stable and anchoring:
-            # An anchoring frame fills the screen with pad rows. Lines flushed before it
-            # (the banner, a resumed history) would be pushed off the top before anyone
-            # saw them; flushed after it, they land in those pad rows instead.
+        if stable:
+            # Flushed after the frame, the lines land in its pad rows: the rows a shrinking tail gave
+            # back (a settled tool group is those same rows, moved above the region), or the screen of
+            # pad rows an anchoring frame fills. Flushed before it, they would push the region down by
+            # their whole count, and the rows the tail gave back would stay as blank pad under them.
             self.region.flush_above(stable, cols)
         self._take_clickable(frame.budget, listed)
 
@@ -3253,16 +3257,17 @@ class App(ModesMixin, AgentViewMixin):
         """
         return self.decoder.protocol_reported
 
-    def _sticky_needed(self, rows: int) -> bool:
+    def _sticky_needed(self, above: int) -> bool:
         """Whether the sent prompt needs echoing above the composer: only once it has scrolled off.
 
-        Everything above the live region is transcript, so while the rows printed
-        since the prompt (the prompt's own rows included) still fit there, the
-        prompt itself is on screen and an echo would only repeat it.
+        `above` is how many screen rows lie above the live region. Everything
+        there is transcript, so while the rows printed since the prompt (the
+        prompt's own rows included) still fit there, the prompt itself is on
+        screen and an echo would only repeat it.
         """
         if not (self._busy() and self.sticky.strip()):
             return False
-        return self.flushed_since_prompt > rows - self.region.height
+        return self.flushed_since_prompt > above
 
     def _tail(self, cols: int) -> list[Line]:
         now = self.clock()
