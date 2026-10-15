@@ -4,6 +4,29 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The plugin's route hint reaches the router in Hermes chat, so your own
+  trigger packs hint there too.** Hermes imports the plugin bundle as
+  `hermes_plugins.omh`, one package deep, and there the bundle's
+  `from ...routing` imports climb past the top-level package and raise
+  ImportError even when Hermes can import `omh`. Four of them had no absolute
+  fallback, so in every Hermes chat the bridge to the router for user trigger
+  packs (#1539) returned nothing: a phrase from
+  `<omh-home>/routing/trigger-packs/` got `no_hint` from the plugin while
+  `omh chat route-hint` hinted it. Coding-delivery hints also asked the user to
+  choose the executor instead of carrying the router's owner decision, and the
+  visual-QA and office-material cue tables were the bundle's copies. Each import
+  now falls back to its absolute `omh.` form, and the bridge still resolves on
+  each call. Over both routing corpora (1,535 messages, measured against
+  42ad99ec7), the plugin's hint with `omh` importable differed from the package
+  layout's on 118 messages before, each in the coding-owner decision, and on
+  none after. Where Hermes cannot import `omh`, the usual install, nothing
+  changes; `docs/INSTALLATION.md` now lists the trigger-pack hint and the coding
+  owner among what that turns off. A test loads the bundle under Hermes' own
+  package name, and a gate requires every bundle import that climbs above the
+  bundle root to be paired with its absolute form and, at module scope, to bind
+  the router's object there. Reported with a reproduction by @fauzibrevy-hub
+  (#2129).
+
 - **`omh coding status-board` shows Hermes' delegate children and kanban
   workers beside the fanout units.** The board listed only fanout units, so the
   command could not show the work `omh_hud` already showed. It now reads the

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import importlib
 import importlib.util
 import json
@@ -29,6 +29,7 @@ import sys
 from tempfile import TemporaryDirectory
 from types import ModuleType
 import unittest
+from unittest.mock import patch
 
 from _local_package import load_local_package
 from _standalone_bundle import (
@@ -314,6 +315,165 @@ class CallTimeBundleImportGateTests(unittest.TestCase):
         source = "def handler():\n    from ..runtime_reader import read_omh_todo\n"
         nodes = [n for n in ast.walk(ast.parse(source)) if isinstance(n, ast.ImportFrom)]
         self.assertEqual([n.level for n in nodes], [2])
+
+
+# Hermes' directory loader imports the bundle as `hermes_plugins.<slug>` and its
+# memory-provider lane as `_hermes_user_memory.<name>__source_<digest>`: one
+# package deep either way. A foreign parent of the same depth keeps this off
+# the namespace a real host owns.
+HOST_LAYOUT_PACKAGE = "hermes_plugins_test2129.omh"
+
+
+@contextmanager
+def host_layout_bundle() -> Iterator[ModuleType]:
+    """The bundle as Hermes' directory loader imports it, with `omh` importable."""
+    parent_name = HOST_LAYOUT_PACKAGE.split(".")[0]
+
+    def forget() -> None:
+        for name in list(sys.modules):
+            if name == parent_name or name.startswith(f"{parent_name}."):
+                sys.modules.pop(name, None)
+
+    forget()
+    parent = ModuleType(parent_name)
+    parent.__path__ = []
+    sys.modules[parent_name] = parent
+    directory = bundle_dir()
+    spec = importlib.util.spec_from_file_location(
+        HOST_LAYOUT_PACKAGE, directory / "__init__.py", submodule_search_locations=[str(directory)]
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("failed to load the plugin bundle under a host name")
+    package = importlib.util.module_from_spec(spec)
+    sys.modules[HOST_LAYOUT_PACKAGE] = package
+    try:
+        spec.loader.exec_module(package)
+        yield package
+    finally:
+        forget()
+
+
+def _imports_by_scope(tree: ast.Module) -> dict[ast.AST, list[ast.ImportFrom]]:
+    """`from` imports grouped by the function, or the module, whose names they bind."""
+    scopes: dict[ast.AST, list[ast.ImportFrom]] = {}
+
+    def visit(node: ast.AST, scope: ast.AST) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.ImportFrom):
+                scopes.setdefault(scope, []).append(child)
+            visit(child, child if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) else scope)
+
+    visit(tree, tree)
+    return scopes
+
+
+def router_seams() -> list[dict[str, object]]:
+    """Every relative import that climbs above the bundle root, read off the directory.
+
+    In the package layout such an import reaches the `omh` package. Under the
+    one-deep name a plugin host gives the bundle it climbs past the top-level
+    package and raises ImportError whether or not `omh` is installed, so only
+    an absolute `omh.` import in the same scope can reach the router there
+    (#2129). Each seam records the module it reaches and whether that pairing
+    is present.
+    """
+    bundle = bundle_dir()
+    seams: list[dict[str, object]] = []
+    for path in sorted(bundle.rglob("*.py")):
+        rel = path.relative_to(bundle)
+        package = ".".join(("omh", "plugin_bundle", "omh", *rel.parts[:-1]))
+        depth = len(rel.parts) - 1  # package depth below the bundle root
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for scope, imports in _imports_by_scope(tree).items():
+            absolute = {
+                (node.module, alias.name, alias.asname)
+                for node in imports
+                if node.level == 0
+                for alias in node.names
+            }
+            for node in imports:
+                if node.level - 1 <= depth:
+                    continue
+                target = importlib.util.resolve_name("." * node.level + (node.module or ""), package)
+                names = tuple((alias.name, alias.asname) for alias in node.names)
+                module_parts = rel.with_suffix("").parts
+                seams.append(
+                    {
+                        "site": f"{rel.as_posix()}:{node.lineno}",
+                        "module": ".".join(module_parts[:-1] if module_parts[-1] == "__init__" else module_parts),
+                        "scope": getattr(scope, "name", "<module>"),
+                        "target": target,
+                        "names": names,
+                        "paired": all((target, name, asname) in absolute for name, asname in names),
+                    }
+                )
+    return seams
+
+
+class HostLayoutRouterSeamTests(unittest.TestCase):
+    """A router seam that resolves only in the package layout is inert in Hermes."""
+
+    def test_every_climbing_import_is_paired_with_its_absolute_form(self) -> None:
+        unpaired = [seam["site"] for seam in router_seams() if not seam["paired"]]
+        self.assertEqual(
+            unpaired,
+            [],
+            "Hermes imports the bundle as `hermes_plugins.omh`, where `from ...` climbs "
+            "past the top-level package and raises ImportError even with `omh` installed, "
+            "so the guarded fallback runs in every Hermes chat (#2129). Follow the relative "
+            "import with `from omh.<same module> import <same names>` in the same scope.",
+        )
+
+    def test_the_gate_sees_module_and_call_time_seams(self) -> None:
+        seams = {(seam["scope"], seam["target"]) for seam in router_seams()}
+        self.assertIn(("<module>", "omh.routing.visual_qa_cues"), seams)
+        self.assertIn(("_user_trigger_pack_route_decision", "omh.routing.chat"), seams)
+
+    def test_module_scope_seams_bind_the_router_in_the_host_layout(self) -> None:
+        # Pairing is necessary, not sufficient: a pair in the wrong order lets the
+        # standalone fallback in the relative import's except branch overwrite
+        # the router's binding. While the host layout loads, each router constant
+        # is swapped for an equal copy that is a different object, so `is` tells
+        # the router's binding from a fallback holding the same value.
+        seams = [seam for seam in router_seams() if seam["scope"] == "<module>"]
+        expected: dict[tuple[str, str], object] = {}
+        with ExitStack() as stack:
+            for seam in seams:
+                router_module = importlib.import_module(str(seam["target"]))
+                for name, _ in seam["names"]:
+                    if (str(seam["target"]), name) in expected:
+                        continue
+                    value = getattr(router_module, name)
+                    marked = value if callable(value) else _distinct_equal(value)
+                    self.assertTrue(
+                        callable(value) or marked is not value,
+                        f"{seam['target']}.{name}: no equal copy that is a different object",
+                    )
+                    stack.enter_context(patch.object(router_module, name, marked))
+                    expected[(str(seam["target"]), name)] = marked
+            stack.enter_context(host_layout_bundle())
+            for seam in seams:
+                module = str(seam["module"])
+                host_module = importlib.import_module(f"{HOST_LAYOUT_PACKAGE}.{module}" if module else HOST_LAYOUT_PACKAGE)
+                for name, asname in seam["names"]:
+                    with self.subTest(site=seam["site"], name=asname or name):
+                        self.assertIs(getattr(host_module, asname or name), expected[(str(seam["target"]), name)])
+
+
+def _distinct_equal(value: object) -> object:
+    """An equal value that is a different object, or `value` itself when none can be built.
+
+    The router's constant and the bundle's fallback literal can be one object:
+    CPython interns identifier-like string literals, so the fallback
+    `"prepare_one_cycle_delivery"` is the router's `CODING_ROUTE_LANE_NEXT_ACTION`.
+    A string joined at run time is not interned. Functions and classes pass
+    through, since a fallback defines its own.
+    """
+    if isinstance(value, str):
+        return "".join([value[:1], value[1:]])
+    if isinstance(value, (tuple, frozenset)):
+        return type(value)(list(value))
+    return value
 
 
 class UnavailableBoardDetailTests(unittest.TestCase):
