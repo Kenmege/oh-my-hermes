@@ -818,15 +818,21 @@ the Hermes interpreter therefore cannot import `omh` at all.
 
 That is a supported state, not a broken one. Every module of the bundle imports
 without the package: the imports that need it are guarded, and the features it
-carries report their own absence instead of failing. Two features live in the
-package rather than the bundle, so they are the ones that absence turns off:
+carries report their own absence instead of failing. These features live in
+the package rather than the bundle, so absence turns them off:
 
 | Feature | Behavior when Hermes cannot import `omh` |
 | --- | --- |
 | Agent board (`omh_agent_board`) | Answers `unavailable` with reason `omh_agent_board_core_unavailable`, and leaves native `kanban_*` calls alone. See [Agent board and native Kanban coordination](AGENT-BOARD.md). |
 | Local activity observer engine | `register` reports `observer_setup_failed`; the rest of the plugin still loads. See [Session activity receipts](SESSION-ACTIVITY-RECEIPTS.md). |
+| Route hint for your own trigger packs | A phrase that only a pack under `<omh-home>/routing/trigger-packs/` recognises gets no route hint in chat; `omh chat route-hint` still hints it. |
+| Coding owner on coding-delivery route hints | The hint asks the user to choose the executor instead of carrying the router's coding-owner decision. |
 
-To turn those two on, install `oh-my-hermes` into the environment that runs
+The route hint itself still works without the package. It uses the bundle's own
+copies of the router's cue tables, guards and classifiers, so for some messages
+it hints a different workflow than `omh chat route-hint`, or none.
+
+To turn these on, install `oh-my-hermes` into the environment that runs
 Hermes as well, so `omh` is importable from both. Nothing else changes: the
 bundle, the configuration, and every doctor check stay the same.
 

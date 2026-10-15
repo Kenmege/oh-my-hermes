@@ -62,7 +62,9 @@ There are two places a pack can live, and the difference matters:
   `routing/model-chains.json`. These merge at the scoring layer only, so your
   local phrases change what your router recognises and never rewrite the
   repo's generated artifacts. `omh doctor` lists both, and names any pack it
-  refused.
+  refused. The route hint the Hermes plugin shows in chat uses them only
+  where Hermes' interpreter can import `omh`; see
+  [What the Hermes interpreter must be able to import](INSTALLATION.md#what-the-hermes-interpreter-must-be-able-to-import).
 
 Rules the validator enforces, and why:
 
