@@ -5,12 +5,12 @@ from .. import runtime_paths
 from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePath
 import re
 import shlex
 import subprocess
 import tempfile
-from typing import Any
+from typing import Any, NamedTuple
 
 from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, observe_plugin_tool_call
 
@@ -66,8 +66,65 @@ _UNITTEST_FLAGS = frozenset({
 })
 _UNITTEST_VALUE_FLAGS = frozenset({"-k"})
 # `git diff` options that write a file, run a configured external program, or
-# read paths outside the repository.
+# read paths outside the repository. Every other argument that is not an option
+# must name a path inside workdir: with two paths and one of them outside the
+# repository, git switches to `--no-index` on its own and prints both files.
 _GIT_DIFF_REFUSED = ("--output", "--ext-diff", "--textconv", "--no-index")
+
+
+class _OptionGrammar(NamedTuple):
+    """The argparse options that may follow a prefix whose program opens paths.
+
+    Anything not listed is refused, argparse abbreviations included. The value
+    of a `paths` option names a path the program opens, and so does every
+    positional argument when `operands` is set (at least one is then
+    required); each must stay inside workdir. `refused` only adds the reason.
+    """
+
+    flags: frozenset[str] = frozenset()
+    values: frozenset[str] = frozenset()
+    paths: frozenset[str] = frozenset()
+    refused: tuple[tuple[str, str], ...] = ()
+    operands: bool = False
+
+
+# The same options on Python 3.11 through 3.14. With no path compileall
+# compiles every directory on sys.path, so a path is required.
+_COMPILEALL_GRAMMAR = _OptionGrammar(
+    flags=frozenset({"-l", "-f", "-q", "--hardlink-dupes"}),
+    values=frozenset({"-r", "-x", "-o", "-j", "--workers", "--invalidation-mode"}),
+    paths=frozenset({"-e"}),
+    refused=(
+        ("-i", "reads more paths from a file or stdin"),
+        ("-b", "writes .pyc beside the sources, outside the private pycache"),
+        ("-d", "rewrites the source path recorded in the bytecode"),
+        ("-s", "rewrites the source path recorded in the bytecode"),
+        ("-p", "rewrites the source path recorded in the bytecode"),
+    ),
+    operands=True,
+)
+# The omh prefixes with an option that opens a path or writes a file. The
+# other shipped omh prefixes have no such option, and argparse refuses one they
+# do not define.
+_OMH_GRAMMARS = (
+    (("omh", "doctor"), _OptionGrammar(
+        flags=frozenset({"--json"}),
+        values=frozenset({"--language"}),
+        refused=(("--profile-isolation", "reads two profile homes named by the caller"),),
+    )),
+    (("omh", "docs", "workflows"), _OptionGrammar(
+        flags=frozenset({"--check"}),
+        paths=frozenset({"--output"}),
+    )),
+    (("omh", "release", "evidence-bundle"), _OptionGrammar(
+        # A bare `--verify` reads the canonical bundle; a PATH after it is a
+        # positional here, so it is refused.
+        flags=frozenset({"--json", "--verify"}),
+        values=frozenset({"--version", "--omh-command", "--archive-digest", "--artifact-digest"}),
+        paths=frozenset({"--repo-root", "--artifact", "--notes-file"}),
+        refused=(("--write", "writes the bundle into the OMH home"),),
+    )),
+)
 _DEFAULT_ALLOWLIST = (
     "omh --help",
     "omh doctor",
@@ -137,11 +194,11 @@ def omh_evidence_handler(args: dict, **kwargs) -> str:
         except ValueError as exc:
             rejected.append({"command": command_text, "reason": f"parse failed: {exc}"})
             continue
-        reason = _allowlist_rejection(tokens, allowlist)
+        reason = _allowlist_rejection(tokens, allowlist, workdir)
         if reason is not None:
             rejected.append({"command": command_text, "reason": reason})
             continue
-        parsed.append((command_text, tokens))
+        parsed.append((command_text, _limit_compileall_symlinks(tokens)))
 
     results = [_rejected_result(item["command"], item["reason"]) for item in rejected]
     try:
@@ -249,22 +306,23 @@ def _unquote(value: str) -> str:
     return value
 
 
-def _allowlist_rejection(tokens: list[str], allowlist: tuple[str, ...]) -> str | None:
+def _allowlist_rejection(tokens: list[str], allowlist: tuple[str, ...], workdir: Path) -> str | None:
     """None when some allowlist entry admits `tokens`, else the reason to refuse."""
     reason = "command not in allowlist"
     for prefix in allowlist:
         prefix_tokens = prefix.split()
         if not prefix_tokens or tokens[: len(prefix_tokens)] != prefix_tokens:
             continue
-        refused = _suffix_rejection(prefix_tokens, tokens[len(prefix_tokens):])
+        refused = _suffix_rejection(prefix_tokens, tokens[len(prefix_tokens):], workdir)
         if refused is None:
             return None
         reason = refused
     return reason
 
 
-def _suffix_rejection(prefix_tokens: list[str], suffix: list[str]) -> str | None:
-    """Bound the free suffix after a prefix whose program would run it as code."""
+def _suffix_rejection(prefix_tokens: list[str], suffix: list[str], workdir: Path) -> str | None:
+    """Bound the free suffix after a prefix whose program would run it as code
+    or open a path it names outside workdir."""
     if _has_pair(prefix_tokens, "-m", "unittest"):
         index = 0
         while index < len(suffix):
@@ -275,11 +333,125 @@ def _suffix_rejection(prefix_tokens: list[str], suffix: list[str]) -> str | None
             if token not in _UNITTEST_FLAGS:
                 return f"unittest argument not allowed: {token[:80]}"
             index += 1
+    if _has_pair(prefix_tokens, "-m", "compileall"):
+        return _grammar_rejection("compileall", _COMPILEALL_GRAMMAR, suffix, workdir)
+    for command, grammar in _OMH_GRAMMARS:
+        if tuple(prefix_tokens[: len(command)]) == command:
+            return _grammar_rejection(" ".join(command), grammar, suffix, workdir)
     if " ".join(prefix_tokens[:2]) == "git diff":
+        options_end = False
         for token in suffix:
-            if token.split("=", 1)[0] in _GIT_DIFF_REFUSED:
-                return f"git diff option not allowed: {token[:80]}"
+            if not options_end and token.startswith("-") and token != "-":
+                if token == "--":
+                    options_end = True
+                elif token.split("=", 1)[0] in _GIT_DIFF_REFUSED:
+                    return f"git diff option not allowed: {token[:80]}"
+                elif not token.startswith("--") and "O" in token:
+                    # `-O<file>` reads an order file, also inside a cluster such as `-pO<file>`.
+                    return "git diff option not allowed: -O (reads an order file)"
+                continue
+            refused = _path_rejection("git diff", token, workdir)
+            if refused is not None:
+                return refused
     return None
+
+
+def _grammar_rejection(program: str, grammar: _OptionGrammar, suffix: list[str], workdir: Path) -> str | None:
+    """None when every token of `suffix` fits `grammar`, read the way argparse reads it."""
+    refused = dict(grammar.refused)
+    operand_count = 0
+    options_end = False
+    index = 0
+    while index < len(suffix):
+        token = suffix[index]
+        index += 1
+        if options_end or token == "-" or not token.startswith("-"):
+            if not grammar.operands:
+                return f"{program} argument not allowed"
+            reason = _path_rejection(program, token, workdir)
+            if reason is not None:
+                return reason
+            operand_count += 1
+            continue
+        if token == "--":
+            options_end = True
+            continue
+        if token.startswith("--"):
+            option, equals, inline = token.partition("=")
+            pieces = [(option, inline if equals else None)]
+        elif "=" in token:
+            # argparse drops the `=` from `-e=DIR` and `-fe=DIR` alike; the
+            # token is refused rather than mirrored.
+            return f"{program} option not allowed: {token[:2]} with '='"
+        else:
+            pieces = _short_option_cluster(token, grammar.flags)
+        for option, inline in pieces:
+            if option in refused:
+                return f"{program} option not allowed: {option} ({refused[option]})"
+            if option in grammar.flags and inline is None:
+                continue
+            if option not in grammar.values and option not in grammar.paths:
+                return f"{program} option not allowed: {option[:80]}"
+            value = inline
+            if value is None:
+                if index == len(suffix):
+                    return f"{program} option needs a value: {option}"
+                value = suffix[index]
+                index += 1
+            if option in grammar.paths:
+                reason = _path_rejection(program, value, workdir)
+                if reason is not None:
+                    return reason
+    if grammar.operands and not operand_count:
+        return f"{program} needs a path inside workdir"
+    return None
+
+
+def _short_option_cluster(token: str, flags: frozenset[str]) -> list[tuple[str, str | None]]:
+    """Split `-fqr5` as argparse does: flags chain, the next option takes the rest as its value."""
+    pieces: list[tuple[str, str | None]] = []
+    rest = token[1:]
+    while rest:
+        option, rest = "-" + rest[0], rest[1:]
+        if option in flags:
+            pieces.append((option, None))
+            continue
+        pieces.append((option, rest or None))
+        break
+    return pieces
+
+
+def _path_rejection(program: str, value: str, workdir: Path) -> str | None:
+    """Why `value`, read relative to workdir, could name a path outside it.
+
+    The reason never repeats the value or what it resolves to, so a symlink
+    that leads out of workdir does not tell the caller where it leads.
+    """
+    path = PurePath(value)
+    if not value:
+        return f"{program} path not allowed: empty"
+    if path.anchor or value.startswith("~"):
+        return f"{program} path not allowed: absolute or home-relative"
+    if ".." in path.parts:
+        return f"{program} path not allowed: '..' component"
+    try:
+        resolved = Path(os.path.realpath(workdir / path))
+    except (OSError, ValueError):
+        return f"{program} path not allowed: cannot be resolved"
+    if not resolved.is_relative_to(workdir):
+        return f"{program} path not allowed: resolves outside workdir"
+    return None
+
+
+def _limit_compileall_symlinks(tokens: list[str]) -> list[str]:
+    """Add `-e .` after `-m compileall`, so a symlink found below a path
+    argument that leads out of workdir is skipped instead of compiled. A
+    caller's own `-e DIR` comes later on the command line and wins; it is
+    bounded to workdir like every path."""
+    for index in range(len(tokens) - 1):
+        if tokens[index : index + 2] == ["-m", "compileall"]:
+            return [*tokens[: index + 2], "-e", ".", *tokens[index + 2 :]]
+    return tokens
 
 
 def _has_pair(tokens: list[str], first: str, second: str) -> bool:

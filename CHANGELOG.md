@@ -4,6 +4,23 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh_gather_evidence` keeps the paths a probe names inside its working
+  directory.** The allowlist matched a command prefix and left the rest free,
+  so `python3 -m compileall /any/path` compiled files anywhere and printed
+  their paths and the source line of any syntax error (#2137, reported by
+  @simongonzalezdc). A path given to compileall or `git diff`, or to an omh
+  option that opens one, must now be relative, free of `..`, and resolve
+  inside `workdir` after symlinks; the refusal names the rule, never where a
+  symlink leads. compileall also needs at least one such path, because with
+  none it compiles every directory on `sys.path`; it refuses `-i` (paths read
+  from a file or stdin), `-b` (bytecode written beside the sources, past the
+  private pycache) and `-d`/`-s`/`-p`; and it runs with `-e .`, so a symlink
+  below a compiled directory that leads out is skipped. `git diff` refuses
+  `-O` (an order file read from anywhere) and any path outside `workdir`: two
+  paths with one outside the repository made git switch to `--no-index` and
+  print both files. `omh doctor` refuses `--profile-isolation`, and
+  `omh release evidence-bundle` refuses `--write` and a `--verify` PATH.
+
 - **The plugin's route hint reaches the router in Hermes chat, so your own
   trigger packs hint there too.** Hermes imports the plugin bundle as
   `hermes_plugins.omh`, one package deep, and there the bundle's
