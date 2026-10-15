@@ -3120,8 +3120,8 @@ class App(ModesMixin, AgentViewMixin):
     def _mode_row_line(self, cols: int, strip: Line | None = None) -> Line:
         """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's second press).
 
-        A picked steer or rewind keeps room for its shortest form: the strip collapses (`● 2 agents ↓`) before
-        what sending does and how to cancel it would be cut.
+        A picked steer or rewind keeps room for its last form but one, the shortest that still names what it
+        acts on: the strip collapses (`● 2 agents ↓`) before that would be cut.
         """
         say: str | tuple[str, ...] = ""
         say_style = None
@@ -3136,7 +3136,7 @@ class App(ModesMixin, AgentViewMixin):
         elif armed is not None and self.clock() - armed[1] <= DOUBLE_ESCAPE_SECONDS:
             say = ESCAPE_AGAIN.format(armed[0])
         if isinstance(say, tuple):
-            strip = self._agent_strip(cols - cell_width(STRIP_SEPARATOR + say[-1]))[0]
+            strip = self._agent_strip(cols - cell_width(STRIP_SEPARATOR + say[max(len(say) - 2, 0)]))[0]
         return mode_row_line(
             mode=self._display_mode(),
             busy=self._busy(),

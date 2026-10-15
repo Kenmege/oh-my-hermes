@@ -139,12 +139,14 @@ class NarrowSayTests(unittest.TestCase):
         self.assertIn("replaces prompt #2 and everything after it · esc cancels", self.rewind_row(100, False))
 
     def test_an_agent_steer_keeps_esc_cancels_at_every_width_with_the_strip_shown(self) -> None:
-        for cols in (100, 60, 40):
+        for cols in (100, 80, 60, 40):
             with self.subTest(cols=cols):
                 row = self.steer_row(cols)
                 self.assertIn("esc cancels", row)
                 self.assertIn("steer", row)
                 self.assertFalse(row.rstrip().endswith("…"), row)
+                if cols >= 60:  # the strip gives way before the agent's name does
+                    self.assertIn("steering find usages of", row)
 
 
 class StripMarkTests(unittest.TestCase):
