@@ -670,7 +670,6 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: 
         header.append(Span(f"{COLUMN_GAP}parallel ×{group.parallel}", theme.accent))
     # One call needs no header: its own row already says what ran.
     rows = [truncate_line(tuple(header), width)] if len(group.tools) != 1 else []
-    summary_first: Line = (Span(TOOL_ROW_INDENT * 2 + TOOL_SUMMARY_MARK, theme.dim),)
     summary_rest: Line = (Span(" " * (len(TOOL_ROW_INDENT) * 2 + len(TOOL_SUMMARY_MARK))),)
     band = theme.error_band if theme.error_band.bg is not None else None
     for tool in group.tools:
@@ -678,6 +677,7 @@ def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: 
         roles = on_band(theme, band) if failed else theme
         own = [_tool_row(tool, width, roles, now)]
         if expanded and tool.summary and tool.summary not in tool.output[:1]:  # a failure's line is said once
+            summary_first: Line = (Span(TOOL_ROW_INDENT * 2 + TOOL_SUMMARY_MARK, roles.dim),)  # read against its band
             own.extend(wrap_prefixed((Span(tool.summary, roles.muted),), summary_first, summary_rest, width))
         lines = tool.diff_lines(hold=not group.done) if tool.inline_diff else ()
         if not lines:

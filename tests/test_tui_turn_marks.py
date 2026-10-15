@@ -108,12 +108,15 @@ class OutcomeBandTests(unittest.TestCase):
         denied = ToolGroup([ToolRow("t2", "terminal", "rm -rf ./build", TOOL_DENIED, duration_s=0.1, output=(self.DENIAL,))],
                            done=True)
         command = CommandBlock("!false", [("exit 1", NOTICE_ERROR)], done=True)
+        summarized = ToolGroup([ToolRow("t3", "read_file", "/nope.txt", TOOL_ERROR, duration_s=0.1,
+                                        summary="read_file could not open the path", output=("File not found",))], done=True)
         return [
             ("ok_band", block_rows(NoticeBlock("allowed once · ls", NOTICE_OK), 60, theme)),  # type: ignore[arg-type]
             ("error_band", block_rows(NoticeBlock("denied · rm -rf ./build", NOTICE_ERROR), 60, theme)),  # type: ignore[arg-type]
             ("error_band", block_rows(NoticeBlock("The turn ended with an error.", NOTICE_ERROR), 60, theme)),  # type: ignore[arg-type]
             ("error_band", block_rows(failed, 60, theme)),  # type: ignore[arg-type]
             ("error_band", block_rows(denied, 60, theme)),  # type: ignore[arg-type]
+            ("error_band", block_rows(summarized, 60, theme, expanded=True)),  # type: ignore[arg-type]  # Ctrl+O's summary row
             ("error_band", block_rows(command, 60, theme)[1:]),  # type: ignore[arg-type]  # its output, not its echo
         ]
 
