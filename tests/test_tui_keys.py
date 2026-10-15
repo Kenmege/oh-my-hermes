@@ -159,10 +159,25 @@ class EscapeSequenceTests(unittest.TestCase):
             with self.subTest(reply=reply):
                 self.assertEqual(decode(reply + b"ab"), [Key("unknown"), char("a"), char("b")])
                 whole = decode(reply)
-                for cut in range(2, len(reply)):  # split after its ESC it is Esc and keys (`EscapeWaitTests`)
+                # Split after its ESC it is Esc and keys (`EscapeWaitTests`); split after `ESC ]` it is Alt+] and
+                # keys, since only a digit after the `]` in what has arrived opens an OSC string.
+                for cut in range(3, len(reply)):
                     decoder = KeyDecoder()
                     events = decoder.feed(reply[:cut]) + decoder.feed(reply[cut:]) + decoder.flush()
                     self.assertEqual(events, whole, f"split at byte {cut}")
+
+    def test_alt_bracket_in_the_legacy_encoding_types_a_bracket_and_never_swallows_the_next_keys(self) -> None:
+        # Alt+] with metaSendsEscape is `ESC ]`; no digit follows it, so it is no OSC string.
+        now = [0.0]
+        decoder = KeyDecoder(lambda: now[0])
+        events = decoder.feed(b"\x1b]")
+        now[0] += 0.02  # the next keys before the loop's silence flush
+        events += decoder.feed(b"h")
+        now[0] += 0.02
+        events += decoder.feed(b"i") + decoder.flush()
+        self.assertEqual(events, [char("]", alt=True), char("h"), char("i")])
+        self.assertEqual(decode(b"\x1b]h"), [char("]", alt=True), char("h")])
+        self.assertEqual(decode(b"\x1b]"), [char("]", alt=True)])
 
     def test_an_osc_string_that_never_ends_is_dropped_whole(self) -> None:
         self.assertEqual(decode(b"\x1b]11;rgb:ff"), [Key("unknown")])

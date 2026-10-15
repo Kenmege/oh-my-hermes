@@ -26,11 +26,12 @@ key.
 
 Nothing here raises on input. A sequence it does not know becomes
 `Key("unknown")` and decoding continues with the next byte. So does an OSC
-string (`ESC ]` up to BEL or ST) arriving in one read with its `ESC`: no key
-sends one, a terminal answering a query does (the startup background query's
+string (`ESC ]` up to BEL or ST) whose `ESC ]` arrives with a digit after it:
+a terminal answering a query sends one (the startup background query's
 answer, when it comes after the TUI stopped waiting for it), and it types
 nothing. One that never ends is dropped whole at the next silence, or at
-`_MAX_OSC_LENGTH` bytes.
+`_MAX_OSC_LENGTH` bytes. `ESC ]` with no digit after it in what has arrived
+is Alt+], as the legacy encoding sends it, and the keys after it are keys.
 
 Terminals that `Terminal` asks for richer key reports send some keys as kitty
 CSI u (`ESC[99;5u`) or xterm modifyOtherKeys (`ESC[27;5;99~`). A key xterm's
@@ -531,7 +532,7 @@ def _decode_escape(data: bytes, start: int, final: bool) -> tuple[Key | Mouse | 
     second = data[start + 1]
     if second == CSI_BYTE:
         return _decode_csi(data, start, final)
-    if second == OSC_BYTE:
+    if second == OSC_BYTE and data[start + 2 : start + 3].isdigit():  # an answer's OSC number, not Alt+]
         return _decode_osc(data, start, final)
     if second == SS3_BYTE:
         return _decode_ss3(data, start, final)
