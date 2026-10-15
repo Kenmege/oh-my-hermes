@@ -491,7 +491,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
     mark, the red `✗`. Warnings stay amber, with no band. The bands follow
     the theme and the background: light tints on a light terminal, dark
     ones on a dark terminal, with words on them at 4.5:1 and marks at 3:1
-    against the band; with no background reported no band is painted. Only
+    against the band; with no background reported (and none named with
+    `/theme light` or `/theme dark`) no band is painted. Only
     settled rows carry bands, never one that moves, and every state still
     reads apart without colour, by its glyph or its words. Diff lines keep
     their own bands.

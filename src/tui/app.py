@@ -170,7 +170,17 @@ from .slash import (
 from .style import CSI, Line, Span, Style
 from .subagents import Hit, Roster
 from .terminal import Terminal, background_from_colorfgbg, terminal_name, terminal_supported
-from .theme import DEFAULT_THEME, LIGHT_STAND_IN, Theme, build_theme, is_light, logo_lines, on_status_bar, theme_named
+from .theme import (
+    DEFAULT_THEME,
+    LIGHT_STAND_IN,
+    Theme,
+    build_theme,
+    is_light,
+    logo_lines,
+    on_status_bar,
+    surface_for,
+    theme_named,
+)
 from .transcript import (
     NOTICE_ERROR,
     NOTICE_OK,
@@ -1186,7 +1196,9 @@ class App(ModesMixin, AgentViewMixin):
         if self.background_mode == BACKGROUND_LIGHT:
             return reported if reported and is_light(reported) else LIGHT_STAND_IN
         if self.background_mode == BACKGROUND_DARK:
-            return reported if reported and not is_light(reported) else None  # None: the palette's dark stand-in
+            # The palette's status-bar background stands in for a dark one the person named: named, it is no guess,
+            # so the bands that need a known background are painted (None would read as nothing reported).
+            return reported if reported and not is_light(reported) else surface_for(self._skin(), None)
         return reported
 
     def run(self, typed: bytes = b"") -> int:

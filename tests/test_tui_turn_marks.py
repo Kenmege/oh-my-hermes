@@ -145,6 +145,22 @@ class OutcomeBandTests(unittest.TestCase):
         light = build_theme(SKIN_THEMES[0], "#FFFFFF")
         self.assertNotEqual(light.ok_band.bg, light.error_band.bg)  # green is not red
 
+    def test_a_background_the_person_names_with_theme_light_or_dark_is_banded(self) -> None:
+        # No guess there: the person said which background it is, though the terminal did not.
+        for word, light in (("light", True), ("dark", False)):
+            with self.subTest(theme=word):
+                app, _client = make_app()
+                app.adopt_background(None)
+                type_text(app, f"/theme {word}")
+                app._on_input(Key(ENTER))
+                for role in ("user_band", "ok_band", "error_band"):
+                    band = getattr(app.theme, role).bg
+                    self.assertIsNotNone(band, role)
+                    self.assertEqual(is_light(band), light, role)
+                type_text(app, "/theme auto")
+                app._on_input(Key(ENTER))
+                self.assertIsNone(app.theme.error_band.bg)  # back to following a terminal that reports nothing
+
     def test_with_no_background_reported_nothing_is_banded(self) -> None:
         for skin in SKIN_THEMES:
             theme = build_theme(skin, None)
