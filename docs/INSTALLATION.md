@@ -375,7 +375,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   (`x again interrupts <agent> · any other key cancels`) and a second `x`
   interrupts it (`subagent.interrupt`); `s` makes the next line you send that
   agent's steer (`subagent.steer`), which Hermes hands it at its next tool
-  call, with the mode row saying so until you send it or press Esc. A steer
+  call, with the mode row saying so until you send it or press Esc (which
+  keeps what you typed, as an ordinary draft). A steer
   Hermes does not take comes back to the composer, and so does one Hermes
   has not answered in 120 s, which is never sent again; its row says which,
   with Hermes' reason when it gave one. Its row reads as the main
@@ -568,7 +569,7 @@ Esc closes it):
 | Backspace / Delete | Delete a character, or a paste chip whole; Backspace on an empty composer removes the last attached image |
 | Ctrl+W, Alt+Backspace, Ctrl+Backspace | Deletes the word before the caret (Ctrl+Backspace where the terminal reports it apart from Backspace) |
 | Ctrl+U / Ctrl+K | Delete to the start or the end of the line |
-| Esc | Closes the `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run); cancels a rewind you picked |
+| Esc | Closes the `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run); cancels a rewind you picked; cancels an agent steer you picked and keeps what you typed |
 | Esc Esc | With text, clears it and keeps it in this session's history; on an empty composer between turns, lists your prompts to rewind to (`/rewind` does too) |
 | Ctrl+V | Attaches the clipboard image |
 | Ctrl+O | Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end; q leaves it |

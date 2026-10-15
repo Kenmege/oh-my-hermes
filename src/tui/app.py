@@ -1900,7 +1900,8 @@ class App(ModesMixin, AgentViewMixin):
         return False
 
     def _escape(self, event: Key | Paste) -> bool:
-        """Esc: closes the `@` path menu, cancels a rewind, interrupts a running turn on an empty composer.
+        """Esc: closes the `@` path menu, cancels a picked agent steer (what was typed stays, a draft like any other),
+        cancels a rewind, interrupts a running turn on an empty composer.
 
         Otherwise it arms a second press within `DOUBLE_ESCAPE_SECONDS`: with
         text, the second clears it into this session's history (a draft is no
@@ -1914,7 +1915,6 @@ class App(ModesMixin, AgentViewMixin):
             return True
         if self.agent_steer is not None:
             self.agent_steer = None
-            self._set_composer("")
             return True
         if self.rewind is not None:
             self.rewind = None

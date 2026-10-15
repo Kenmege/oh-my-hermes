@@ -196,6 +196,15 @@ class SearchTests(unittest.TestCase):
         self.typed(empty, "nothing like it")
         self.assertEqual(lines_text(empty.lines(80, DEFAULT_THEME, 4))[1], "  no earlier prompt holds it")
 
+    def test_a_narrow_slot_keeps_the_way_out(self) -> None:
+        search = self.search()
+        self.typed(search, "git")
+        for width, keys in ((80, "ctrl+r older · enter takes it · esc cancels"), (60, "ctrl+r older · esc cancels"),
+                            (40, "esc cancels")):
+            with self.subTest(width=width):
+                self.assertEqual(lines_text(search.lines(width, DEFAULT_THEME, 4))[0].rstrip(),
+                                 f"⌕ search history: git  {keys}")
+
 
 class AppHistoryTests(unittest.TestCase):
     """The composer's history in the app: Hermes' file read at start, each line the person sends appended."""

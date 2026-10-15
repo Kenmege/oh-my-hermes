@@ -41,7 +41,7 @@ from .composer import HISTORY_CAP
 from .keys import BACKSPACE, CHAR, ENTER, ESCAPE, Key, Paste
 from .style import Line, Span
 from .theme import Theme
-from .width import truncate_line
+from .width import cell_width, truncate_line
 
 HISTORY_FILE = ".hermes_history"
 # The most of the file read at start: about ten thousand typical prompts, far past the entries kept.
@@ -53,6 +53,8 @@ SEARCH_ACCEPT = "accept"
 SEARCH_CANCEL = "cancel"
 SEARCH_LABEL = "⌕ search history: "
 SEARCH_HINT = "ctrl+r older · enter takes it · esc cancels"
+# Shorter forms for a narrow row, longest first: the last keeps only the way out.
+SEARCH_HINTS = (SEARCH_HINT, "ctrl+r older · esc cancels", "esc cancels")
 SEARCH_NONE = "no earlier prompt holds it"
 _CANCEL_CHARS = frozenset("cg")  # with Ctrl
 
@@ -183,7 +185,9 @@ class HistorySearch:
         """The query and the keys, then the match's first line and where it is among the matches."""
         if max_rows <= 0:
             return []
-        head = truncate_line((Span(SEARCH_LABEL, theme.accent), Span(self.query), Span(f"  {SEARCH_HINT}", theme.hint)), width)
+        room = width - cell_width(SEARCH_LABEL + self.query + "  ")
+        keys = next((form for form in SEARCH_HINTS if cell_width(form) <= room), SEARCH_HINTS[-1])
+        head = truncate_line((Span(SEARCH_LABEL, theme.accent), Span(self.query), Span(f"  {keys}", theme.hint)), width)
         if max_rows == 1:
             return [head]
         found = self.matches()

@@ -705,14 +705,26 @@ class AgentActionTests(unittest.TestCase):
         self.assertIsNone(app.list_selected)
         self.assertEqual(client.calls, [])
 
-    def test_esc_cancels_the_steer_and_nothing_is_sent(self) -> None:
+    def test_esc_cancels_the_steer_keeps_the_text_as_a_draft_and_nothing_is_sent(self) -> None:
         app, client = focused()
         app._on_input(Key(CHAR, "s"))
         type_text(app, "never mind")
         app._on_input(Key(ESCAPE))
         self.assertIsNone(app.agent_steer)
+        self.assertEqual(app.composer.text, "never mind")  # an ordinary draft now
+        self.assertEqual(client.calls, [])
+        app._on_input(Key(ESCAPE))  # as for any draft: the first Esc arms the clear
+        self.assertEqual((app.composer.text, app.escape_armed[0]), ("never mind", "clear"))  # type: ignore[index]
+        app._on_input(Key(ESCAPE))
         self.assertEqual(app.composer.text, "")
         self.assertEqual(client.calls, [])
+
+    def test_a_narrow_list_keeps_its_keys_and_the_way_back(self) -> None:
+        for cols, said in ((100, AGENT_LIST_HINT), (40, "⏎ log · x interrupt · s steer · esc back"),
+                           (34, "x interrupt · s steer · esc back")):
+            with self.subTest(cols=cols):
+                app, _client = focused(cols=cols)
+                self.assertEqual(under_the_frame(app)[-1].rstrip(), said)
 
     def test_the_hint_names_both_keys(self) -> None:
         app, _client = focused()

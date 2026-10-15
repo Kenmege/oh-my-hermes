@@ -36,11 +36,13 @@ from .modes import strip_column
 from .style import Line, Span
 from .subagents import FINISHED_STATUSES, MAIN_ID, RUNNING, Hit
 from .transcript import NOTICE_WARN, STEER_QUEUED, STEER_REFUSED, NoticeBlock, SteerBlock, as_text
-from .width import truncate_line
+from .width import cell_width, truncate_line
 
 # The list Down opens, and one agent's log in the pager.
 AGENT_LIST_ROWS = 7  # main and six agents; a longer roster scrolls
 AGENT_LIST_HINT = "↑↓ select · ⏎ log · x interrupt · s steer · esc back"
+# Shorter forms for a narrow row, longest first: each keeps the two action keys and the way back.
+AGENT_LIST_HINTS = (AGENT_LIST_HINT, "⏎ log · x interrupt · s steer · esc back", "x interrupt · s steer · esc back")
 INTERRUPT_CONFIRM = "x again interrupts {name} · any other key cancels"
 # What the mode row says while `s` has picked an agent, longest first: a narrow row takes the first that fits.
 STEER_SAY = (
@@ -93,10 +95,11 @@ class AgentViewMixin:
             cols, self.theme, self.list_selected, self._spinner_frame(), shown, self.clock()
         )
         armed = self.roster.agents.get(self.interrupt_armed or "") if self.interrupt_armed == self.list_selected else None
+        keys = next((form for form in AGENT_LIST_HINTS if cell_width(form) <= cols), AGENT_LIST_HINTS[-1])
         hint = (
             Span(INTERRUPT_CONFIRM.format(name=armed.name), self.theme.warn)
             if armed is not None
-            else Span(AGENT_LIST_HINT, self.theme.hint)
+            else Span(keys, self.theme.hint)
         )
         return [*lines, truncate_line((hint,), cols)], listed
 
