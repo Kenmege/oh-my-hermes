@@ -12,6 +12,7 @@ from ..plugin_bundle.omh.route_question_mode import ROUTE_QUESTION_MODE_OFF, rea
 from ..routing.catalog_questions import is_skill_catalog_question
 from ..routing.action_copy import next_action_label
 from ..routing.chat import route_chat_message
+from ..routing.policy import host_owned_command_turn
 from ..routing.reference_regions import executable_routing_text
 
 # `contract` never imports this module, so the edge is one-way and cycle-free.
@@ -57,8 +58,13 @@ def build_chat_route_hint_payload(
     if source not in CHAT_SOURCES:
         raise ValueError(f"unsupported chat route hint source: {source}")
     metadata = dict(source_metadata or {})
-    route_hint = awareness_route_hint(message, max_hints=max_hints)
-    route_hint = _route_hint_with_catalog_picker(route_hint, message)
+    # A turn Hermes wrote from one of its session-command templates holds the
+    # host's instruction for itself, and the router answers it directly; a
+    # hint read from its text would name a workflow beside that fallback. The
+    # hint reads no request on such a turn, as the `pre_llm_call` hook's does.
+    hint_message = "" if host_owned_command_turn(message) else message
+    route_hint = awareness_route_hint(hint_message, max_hints=max_hints)
+    route_hint = _route_hint_with_catalog_picker(route_hint, hint_message)
     route = route_chat_message(message, source=source, limit=max_hints)
     route_decision = route["route_decision"]
     route_question = route.get("route_question")

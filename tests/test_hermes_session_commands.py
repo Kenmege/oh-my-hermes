@@ -47,6 +47,7 @@ from omh.routing.policy import LOOP_GOAL_GUARD, active_routing_guard_rules
 from omh.routing.query import RoutingQuery
 from omh.routing.reference_regions import executable_routing_text
 from omh.wrapper.contract import build_chat_interaction_payload
+from omh.wrapper.route_hints import build_chat_route_hint_payload
 
 PROBE_SENTENCES = Path(__file__).resolve().parent / "fixtures" / "loop_timer_probe_sentences.json"
 
@@ -888,6 +889,36 @@ class HostTurnRouterTest(unittest.TestCase):
         for name in ("plan", "goal continuation", "goal gate failed", "kanban continuation", "heartbeat", "initiate setup"):
             with self.subTest(turn=name):
                 self.assertEqual(self._route(HOST_TURNS[name][1])["action"], "dispatch")
+
+    def test_the_wrapper_route_hint_names_no_workflow_on_a_host_turn(self):
+        # `omh chat route-hint` once hinted from the frame's text while its
+        # route decision said fallback: the `/plan` frame came back hinted
+        # `command-operator`, the `/blueprint` seed `automation-blueprint`.
+        for name, (opening, body) in HOST_TURNS.items():
+            for prefix_name, prefix in GATEWAY_PREFIXES.items():
+                with self.subTest(turn=name, prefix=prefix_name):
+                    payload = build_chat_route_hint_payload(prefix + opening + body, source="discord")
+                    response = payload["chat_response"]
+                    self.assertEqual(payload["route_decision"]["action"], "fallback")
+                    self.assertEqual(payload["route_hint"]["hints"], [])
+                    self.assertEqual(payload["route_hint"]["selected_workflow"], "")
+                    self.assertEqual(response["kind"], "no_route_hint")
+                    self.assertEqual(response["state"]["selected_workflow"], "")
+
+    def test_the_same_bodies_without_their_frame_keep_their_wrapper_hint(self):
+        # Measured on the bodies above: without the frame each of these is
+        # hinted a workflow, so the frame is what withholds the hint.
+        for name in (
+            "plan", "blueprint", "goal continuation", "goal gate failed", "heartbeat", "kanban finalize", "loop wakeup"
+        ):
+            body = HOST_TURNS[name][1]
+            with self.subTest(turn=name):
+                payload = build_chat_route_hint_payload(body, source="discord")
+                self.assertEqual(payload["chat_response"]["kind"], "workflow_route_hint")
+                self.assertNotEqual(payload["route_hint"]["selected_workflow"], "")
+                self.assertEqual(
+                    payload["route_hint"]["selected_workflow"], awareness_route_hint(body)["selected_workflow"]
+                )
 
 
 if __name__ == "__main__":  # pragma: no cover - module entry point
