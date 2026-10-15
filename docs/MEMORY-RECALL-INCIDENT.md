@@ -38,7 +38,7 @@ The incident names the last claim it could prove in `last_proven_stage`
 | `invalid_or_superseded` | `superseded`, `payload_digest_mismatch`, `invalid_record`, `review_required_legacy`, `review_not_found`, `review_identity_mismatch` | `omh_control_plane` | `review_correction` |
 | `scope_or_perspective_mismatch` | `scope_mismatch`, `perspective_mismatch` | `omh_control_plane` | `review_scope_lens` |
 | `stale_expired_or_archived` | `review_due`, `stale_review_required`, `expired_standard`, `expired_volatile`, `expired_durable`, `archived_tier`, `retired`, `source_changed`, `source_unverifiable` | `omh_control_plane` | `review_freshness` |
-| `relevance_attention_or_budget_exclusion` | `no_query_overlap`, `attention_cut`, `over_budget` | `omh_control_plane` | `review_recall_selection` |
+| `relevance_attention_or_budget_exclusion` | `no_query_overlap`, `common_terms_only`, `attention_cut`, `over_budget` | `omh_control_plane` | `review_recall_selection` |
 | `selected_not_rendered` | `selected_not_rendered` | `provider` | `inspect_provider_rendering` |
 | `rendered_delivery_not_observed` | `rendered_delivery_not_observed` | `unresolved` | `inspect_host_delivery` |
 | `delivered_model_use_unknown` | `delivered_model_use_unknown` | `unresolved` | `leave_model_use_unresolved` |

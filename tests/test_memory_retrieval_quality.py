@@ -20,6 +20,11 @@ non-retired record, hints filtered through the session lens with a computed
 recall status, and a `correct` that only supersedes into a record that can
 stand in. Each has a test below that a mutation of it fails.
 
+The store-common floor came after: a query term more than half of five or
+more servable, distinct candidates hold never makes a record match alone,
+unless the record carries it as a tag, and a query whose every term is common
+keeps them.
+
 The recall suite (`tests/test_memory_retrieval_suite.py`) runs the corpus cases
 these changes were measured on; this file pins the parts underneath them.
 """
@@ -826,6 +831,237 @@ class CoverageGuardTests(unittest.TestCase):
         ranks = {item["record_id"]: item["ranking"]["relevance_rank"] for item in pack["included_records"]}
         self.assertEqual(set(ranks.values()), {1}, ranks)
         self.assertEqual(_ids(pack)[0], "mem_b_one")
+
+
+# "tally" is in four of these six records: a project store, where the
+# project's name is in most records and says nothing about the topic.
+_TALLY_IMPORT = _record("t", "Tally import needs a dry run first")
+_TALLY_LIST = _record("a", "Tally list view pages by fifty")
+_TALLY_SQLITE = _record("b", "Tally keeps its data in sqlite")
+_TALLY_FRIDAYS = _record("c", "Tally ships on fridays")
+_STANDUPS = _record("s", "Standups start at nine thirty")
+_LUNCH = _record("l", "Lunch is at noon")
+_COFFEE = _record("k", "The coffee machine is on floor two")
+
+
+class StoreCommonTermTests(unittest.TestCase):
+    """A query term most candidates hold never makes a record match on its own."""
+
+    def test_a_term_most_candidates_hold_never_matches_alone(self) -> None:
+        records = [_TALLY_IMPORT, _TALLY_LIST, _TALLY_SQLITE, _TALLY_FRIDAYS, _STANDUPS, _LUNCH]
+        relevance = _memory_relevance(records, "tally import")
+        self.assertEqual(relevance.coverage, [2, 0, 0, 0, 0, 0])
+        self.assertEqual(relevance.scores[1:], [0, 0, 0, 0, 0])
+        self.assertEqual(relevance.common_only, [False, True, True, True, False, False])
+        # Scored like a listed word: it still orders the record it appears in.
+        self.assertGreater(relevance.scores[0], _memory_relevance(records, "import").scores[0])
+
+    def test_a_query_whose_every_term_is_common_keeps_them(self) -> None:
+        records = [_TALLY_IMPORT, _TALLY_LIST, _TALLY_SQLITE, _TALLY_FRIDAYS, _STANDUPS, _LUNCH]
+        relevance = _memory_relevance(records, "tally")
+        self.assertEqual(relevance.coverage, [2, 2, 2, 2, 0, 0])
+        self.assertEqual(relevance.common_only, [False] * 6)
+
+    def test_below_five_candidates_the_rule_is_off(self) -> None:
+        # Three of four hold "tally", yet four candidates are too few to say.
+        four = [_TALLY_IMPORT, _TALLY_LIST, _TALLY_SQLITE, _STANDUPS]
+        self.assertEqual(_memory_relevance(four, "tally import").coverage, [4, 2, 2, 0])
+        self.assertEqual(_memory_relevance(four, "tally import").common_only, [False] * 4)
+        five = [*four, _LUNCH]
+        self.assertEqual(_memory_relevance(five, "tally import").coverage, [2, 0, 0, 0, 0])
+
+    def test_a_term_exactly_half_the_candidates_hold_is_not_common(self) -> None:
+        six = [_TALLY_IMPORT, _TALLY_LIST, _TALLY_SQLITE, _STANDUPS, _LUNCH, _COFFEE]
+        self.assertEqual(_memory_relevance(six, "tally import").coverage, [4, 2, 2, 0, 0, 0])
+        seven = [*six, _TALLY_FRIDAYS]
+        self.assertEqual(_memory_relevance(seven, "tally import").coverage, [2, 0, 0, 0, 0, 0, 0])
+
+    def test_a_tag_hit_on_a_common_term_still_matches(self) -> None:
+        tagged = _record("a", "Tally list view pages by fifty", tags=("tally",))
+        records = [_TALLY_IMPORT, tagged, _TALLY_SQLITE, _TALLY_FRIDAYS, _STANDUPS, _LUNCH]
+        relevance = _memory_relevance(records, "tally import")
+        self.assertEqual(relevance.coverage, [2, 3, 0, 0, 0, 0])
+        self.assertEqual(relevance.common_only, [False, False, True, True, False, False])
+
+    def test_the_selector_names_a_record_that_met_the_query_only_on_a_common_term(self) -> None:
+        pack = _pack(
+            self,
+            _spec("mem_t_import", "Tally import needs a dry run first", approved_at=_AGING, tags=("import",)),
+            _spec("mem_t_list", "Tally list view pages by fifty", approved_at=_YOUNG, tags=("ui",)),
+            _spec("mem_t_sqlite", "Tally keeps its data in sqlite", approved_at=_YOUNG, tags=("storage",)),
+            _spec("mem_t_fridays", "Tally ships on fridays", approved_at=_YOUNG, tags=("release",)),
+            _spec("mem_standups", "Standups start at nine thirty", approved_at=_YOUNG, tags=("meeting",)),
+            query="tally import",
+        )
+        self.assertEqual(_ids(pack), ["mem_t_import"])
+        self.assertEqual(
+            _reasons(pack),
+            {
+                "mem_t_list": "common_terms_only",
+                "mem_t_sqlite": "common_terms_only",
+                "mem_t_fridays": "common_terms_only",
+                "mem_standups": "no_query_overlap",
+            },
+        )
+        self.assertNotIn("query_fallback", pack)
+        self.assertEqual(validate_project_memory_recall_pack(pack), [])
+
+    def test_a_record_held_back_on_a_common_word_still_anchors_a_stemmed_match(self) -> None:
+        # "backup" meets "Backups" only through stemming, and "team" is the
+        # query's one unstemmed hit. The team records cannot match on it, but
+        # they still share it, so the stemmed match counts and leads alone.
+        team = [
+            _spec("mem_team1", "The team meets on mondays", approved_at=_YOUNG),
+            _spec("mem_team2", "The team uses squash merges", approved_at=_YOUNG),
+            _spec("mem_team3", "Team lunch is on fridays", approved_at=_YOUNG),
+            _spec("mem_team4", "The team owns the billing service", approved_at=_YOUNG),
+        ]
+        backup = _spec("mem_backup", "Backups rotate weekly", approved_at=_AGING)
+        records = [_record(str(spec["record_id"]), str(spec["summary"])) for spec in (*team, backup)]
+        relevance = _memory_relevance(records, "team backup")
+        self.assertEqual(relevance.common_only, [True, True, True, True, False])
+        self.assertEqual(relevance.unstemmed, [True, True, True, True, False])
+        self.assertEqual(relevance.scores[:4], [0, 0, 0, 0])
+        pack = _pack(self, *team, backup, query="team backup")
+        self.assertEqual(_ids(pack), ["mem_backup"])
+        self.assertNotIn("query_fallback", pack)
+        self.assertEqual(set(_reasons(pack).values()), {"common_terms_only"})
+
+    def test_with_no_unstemmed_holder_a_common_word_does_not_block_the_fallback(self) -> None:
+        # "teams" meets "team" only through stemming, so no record shares an
+        # unstemmed query word: the stemmed-only rule makes this a query that
+        # matched nothing, and it falls back with the team records still out.
+        team = [
+            _spec("mem_team1", "The team meets on mondays", approved_at=_YOUNG),
+            _spec("mem_team2", "The team uses squash merges", approved_at=_YOUNG),
+            _spec("mem_team3", "Team lunch is on fridays", approved_at=_YOUNG),
+            _spec("mem_team4", "The team owns the billing service", approved_at=_YOUNG),
+        ]
+        pack = _pack(self, *team, _spec("mem_backup", "Backups rotate weekly", approved_at=_AGING), query="teams backup")
+        self.assertEqual(_ids(pack), ["mem_backup"])
+        self.assertEqual(pack["query_fallback"]["readmitted_count"], 1)
+        self.assertEqual(set(_reasons(pack).values()), {"common_terms_only"})
+
+    def test_a_holder_with_the_term_only_as_a_tag_counts_toward_common(self) -> None:
+        # Three summaries and one tag hold "tally": four of six, a majority.
+        tag_only = _record("g", "Release notes go out on fridays", tags=("tally",))
+        records = [_TALLY_IMPORT, _TALLY_LIST, _TALLY_SQLITE, tag_only, _STANDUPS, _LUNCH]
+        relevance = _memory_relevance(records, "tally import")
+        self.assertEqual(relevance.coverage, [2, 0, 0, 3, 0, 0])
+        self.assertEqual(relevance.common_only, [False, True, True, False, False, False])
+
+    def test_copies_of_one_record_count_once(self) -> None:
+        # Four copies of one summary are one pack slot, so "backup" is held by
+        # two of five distinct records, not five of eight.
+        copies = [_record(f"x{index}", "Backup questions go to the external portal", tags=("backup",)) for index in range(4)]
+        rotate = _record("v", "Rotate the backup encryption key monthly")
+        records = [rotate, _STANDUPS, _LUNCH, _COFFEE, *copies]
+        relevance = _memory_relevance(records, "backup restore steps")
+        self.assertEqual(relevance.common_only, [False] * 8)
+        self.assertEqual(relevance.coverage[0], 2)
+
+    def test_only_records_marked_live_count_toward_common(self) -> None:
+        records = [_TALLY_IMPORT, _TALLY_LIST, _TALLY_SQLITE, _TALLY_FRIDAYS, _STANDUPS, _LUNCH]
+        self.assertEqual(_memory_relevance(records, "tally import").common_only, [False, True, True, True, False, False])
+        # Two of the tally records are not servable (a replaced subject value,
+        # an inspection-only stale record): two of four live is not a majority
+        # and four live records are too few anyway, so every holder matches.
+        live = [True, True, False, False, True, True]
+        relevance = _memory_relevance(records, "tally import", live)
+        self.assertEqual(relevance.common_only, [False] * 6)
+        self.assertEqual(relevance.coverage, [4, 2, 2, 2, 0, 0])
+
+    def test_an_inspection_only_stale_record_never_makes_a_word_common(self) -> None:
+        stale = [
+            _spec(f"mem_stale{index}", f"Tally release {index} notes are archived", approved_at=_AGING, review_due_at=_PAST)
+            for index in range(4)
+        ]
+        live = [
+            _spec("mem_t_import", "Tally import needs a dry run first", approved_at=_YOUNG),
+            _spec("mem_t_list", "Tally list view pages by fifty", approved_at=_YOUNG),
+            _spec("mem_standups", "Standups start at nine thirty", approved_at=_YOUNG),
+            _spec("mem_lunch", "Lunch is at noon", approved_at=_YOUNG),
+            _spec("mem_coffee", "The coffee machine is on floor two", approved_at=_YOUNG),
+        ]
+        # Two of the five servable records hold "tally"; the four stale ones
+        # --include-stale shows would make it six of nine.
+        pack = _pack(self, *live, *stale, query="tally import", include_stale=True)
+        self.assertIn("mem_t_list", _ids(pack))
+        self.assertNotIn("common_terms_only", set(_reasons(pack).values()))
+
+    def test_a_current_value_that_met_the_query_on_a_common_word_takes_the_older_match(self) -> None:
+        # "Tally" is in four of the five servable records. The current storage
+        # record meets "tally sqlite locking error" only on it; the value it
+        # replaced said "sqlite", so the current one takes that match.
+        pack = _pack(
+            self,
+            _spec("mem_t_list", "Tally list view pages by fifty", approved_at=_YOUNG),
+            _spec("mem_t_fridays", "Tally ships on fridays", approved_at=_YOUNG),
+            _spec("mem_t_import", "Tally import needs a dry run", approved_at=_YOUNG),
+            _spec("mem_old", "Tally keeps its data in sqlite", approved_at=_AGING, subject="storage-backend"),
+            _spec("mem_new", "Tally moved storage to postgres", approved_at=_YOUNG, subject="storage-backend"),
+            _spec("mem_standups", "Standups start at nine thirty", approved_at=_YOUNG),
+            query="tally sqlite locking error",
+        )
+        self.assertEqual(_ids(pack), ["mem_new"])
+        reasons = _reasons(pack)
+        self.assertEqual(reasons["mem_old"], "superseded_by_subject")
+        self.assertEqual({reasons[record_id] for record_id in ("mem_t_list", "mem_t_fridays", "mem_t_import")}, {"common_terms_only"})
+
+    def test_a_current_value_whose_group_met_the_query_only_on_common_words_stays_held_back(self) -> None:
+        # "Tally" is in four of the five servable records, and neither value of
+        # the host subject says "quantum": the group has no match to give, so
+        # the current value stays `common_terms_only`.
+        pack = _pack(
+            self,
+            _spec("mem_t_list", "Tally list view pages by fifty", approved_at=_YOUNG),
+            _spec("mem_t_fridays", "Tally ships on fridays", approved_at=_YOUNG),
+            _spec("mem_t_import", "Tally import needs a dry run", approved_at=_YOUNG),
+            _spec("mem_old", "Tally ran on a laptop", approved_at=_AGING, subject="tally-host"),
+            _spec("mem_new", "Tally runs on a server now", approved_at=_YOUNG, subject="tally-host"),
+            _spec("mem_standups", "Standups start at nine thirty", approved_at=_YOUNG),
+            query="tally quantum",
+        )
+        self.assertEqual(_ids(pack), [])
+        self.assertEqual(_reasons(pack)["mem_new"], "common_terms_only")
+
+    def test_the_all_common_guard_reads_the_closed_lists(self) -> None:
+        # 탈리 is in four of the six records. 알려줘 is a listed request word, so
+        # in "탈리 알려줘" every content term is common and the guard keeps them;
+        # 대해 is not listed, so in "탈리에 대해" 탈리 is common beside it.
+        records = [
+            _record("k1", "탈리 목록은 50개씩 페이지를 나눈다"),
+            _record("k2", "탈리는 금요일마다 배포한다"),
+            _record("k3", "탈리 가져오기는 dry run이 먼저 필요하다"),
+            _record("k4", "탈리 데이터는 sqlite에 저장된다"),
+            _record("k5", "스탠드업은 9시 30분에 시작한다"),
+            _record("k6", "점심은 정오에 먹는다"),
+        ]
+        kept = _memory_relevance(records, "탈리 알려줘")
+        self.assertEqual(kept.coverage, [2, 2, 2, 2, 0, 0])
+        self.assertEqual(kept.common_only, [False] * 6)
+        held = _memory_relevance(records, "탈리에 대해")
+        self.assertEqual(held.coverage, [0] * 6)
+        self.assertEqual(held.common_only, [True, True, True, True, False, False])
+
+    def test_a_current_value_that_took_an_older_match_is_readmitted_by_the_fallback(self) -> None:
+        # "teams" meets "team" only through stemming and the replaced value
+        # does not count, so nothing servable overlaps and the query falls
+        # back. The current value took the replaced value's "databases" match,
+        # so it is no longer common-only: it is readmitted and leads.
+        pack = _pack(
+            self,
+            _spec("mem_team1", "The team meets on mondays", approved_at=_YOUNG),
+            _spec("mem_team2", "The team uses squash merges", approved_at=_YOUNG),
+            _spec("mem_team3", "Team lunch is on fridays", approved_at=_YOUNG),
+            _spec("mem_old", "Data lived in sqlite databases", approved_at=_AGING, subject="storage-backend"),
+            _spec("mem_new", "The team moved storage to postgres", approved_at=_YOUNG, subject="storage-backend"),
+            _spec("mem_coffee", "The coffee machine is on floor two", approved_at=_YOUNG),
+            query="teams databases",
+        )
+        self.assertEqual(_ids(pack), ["mem_new", "mem_coffee"])
+        self.assertEqual(pack["query_fallback"]["readmitted_count"], 2)
+        self.assertEqual({_reasons(pack)[f"mem_team{index}"] for index in (1, 2, 3)}, {"common_terms_only"})
 
 
 class RecordTypeFieldTests(unittest.TestCase):

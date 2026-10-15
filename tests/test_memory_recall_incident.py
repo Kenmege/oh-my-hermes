@@ -116,6 +116,7 @@ class MemoryRecallIncidentTests(unittest.TestCase):
             'expired_standard': ('stale_expired_or_archived', 'review_freshness'),
             'archived_tier': ('stale_expired_or_archived', 'review_freshness'),
             'no_query_overlap': ('relevance_attention_or_budget_exclusion', 'review_recall_selection'),
+            'common_terms_only': ('relevance_attention_or_budget_exclusion', 'review_recall_selection'),
             'attention_cut': ('relevance_attention_or_budget_exclusion', 'review_recall_selection'),
             'over_budget': ('relevance_attention_or_budget_exclusion', 'review_recall_selection'),
             'selected_not_rendered': ('selected_not_rendered', 'inspect_provider_rendering'),

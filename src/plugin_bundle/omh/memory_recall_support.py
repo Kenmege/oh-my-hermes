@@ -67,6 +67,15 @@ _RECALL_BM25_RECORD_TYPE_WEIGHT = 1.0
 
 _RECALL_SCORE_SCALE = 1000
 
+# A query term that more than half of the records a selection could serve
+# hold (its live, distinct candidates) is store-common (`_store_common_terms`):
+# it never makes a record match on its own. The rule needs at least this many
+# of them; with fewer, a majority is three records or fewer. The share is a
+# strict majority: a term held by exactly half is not common.
+_RECALL_COMMON_TERM_MIN_CANDIDATES = 5
+
+_RECALL_COMMON_TERM_SHARE_PCT = 50
+
 # A temporal query ranks relevance in this many bands below the best score
 # (see `_attach_recall_ranking`), so recency can order comparable matches.
 _TEMPORAL_RELEVANCE_BANDS = 4
@@ -801,12 +810,16 @@ class MemoryRelevance(NamedTuple):
     within an equal coverage: term frequency and length normalization over
     the content and listed terms, with no idf, in integer thousandths.
     ``unstemmed`` says whether the record shares an unstemmed content token in
-    its summary or tags.
+    its summary or tags, store-common ones included. ``common_only`` marks a
+    record whose only matches are store-common terms (`_store_common_terms`):
+    it scores 0 at coverage 0 like a record that matched nothing, and the
+    selector names it apart.
     """
 
     scores: list[int]
     unstemmed: list[bool]
     coverage: list[int]
+    common_only: list[bool]
 
 
 def _term_contributions(document: Mapping[str, Counter[str]], terms: Iterable[str], *, norm: float) -> list[int]:
@@ -830,7 +843,56 @@ def _term_contributions(document: Mapping[str, Counter[str]], terms: Iterable[st
     return contributions
 
 
-def _memory_relevance(records: list[dict[str, Any]], query: str) -> MemoryRelevance:
+def _store_common_terms(
+    records: list[dict[str, Any]],
+    documents: list[dict[str, Counter[str]]],
+    query_terms: list[str],
+    live: list[bool] | None,
+) -> frozenset[str]:
+    """The query terms most of the servable candidates hold; none when the rule is off.
+
+    The count runs over the live, distinct candidates. `live` marks the
+    records the pack could serve -- the selector leaves out subject-superseded
+    and inspection-only candidates; None counts every record -- and records
+    whose summaries are equal after normalization (`normalized_summary_key`)
+    count once, since the pack keeps one of them. Otherwise a subject's old
+    values, or copies of one record, would make their own words common and
+    hold back the one record that can be served.
+
+    A term is store-common when more than `_RECALL_COMMON_TERM_SHARE_PCT`
+    percent of those records hold it in their summary or tags, counted in the
+    index terms the ranker matches on (stemmed words and CJK bigrams alike),
+    and only when there are at least `_RECALL_COMMON_TERM_MIN_CANDIDATES` of
+    them. In a store about one project its name is in most records, and a
+    query that named the project matched every one of them on that word
+    alone, so the tie-breaks decided which of them filled the pack.
+
+    This is not idf. Nothing is weighted by rarity: a rare term counts exactly
+    as before, and a common term keeps its term-frequency score
+    (`_memory_relevance` scores it like a listed word). The one change is that
+    a majority term no longer makes a record match on its own. When every
+    content term of the query is common, none is returned and the query is
+    scored as before: a store whose records all say "release" still answers
+    "release" with them.
+    """
+    held_by_record: dict[str | int, set[str]] = {}
+    for index, (record, document) in enumerate(zip(records, documents)):
+        if live is not None and not live[index]:
+            continue
+        held = held_by_record.setdefault(normalized_summary_key(str(record.get("summary", ""))) or index, set())
+        held.update(term for term in query_terms if document["summary"][term] or document["tags"][term])
+    count = len(held_by_record)
+    if count < _RECALL_COMMON_TERM_MIN_CANDIDATES:
+        return frozenset()
+    common = frozenset(
+        term
+        for term in query_terms
+        if 100 * sum(1 for held in held_by_record.values() if term in held) > _RECALL_COMMON_TERM_SHARE_PCT * count
+    )
+    return frozenset() if len(common) == len(query_terms) else common
+
+
+def _memory_relevance(records: list[dict[str, Any]], query: str, live: list[bool] | None = None) -> MemoryRelevance:
     """Relevance of each record to the query against this candidate set:
     query-term coverage first, then term frequency and length.
 
@@ -859,6 +921,18 @@ def _memory_relevance(records: list[dict[str, Any]], query: str) -> MemoryReleva
     two records that match the same content words, the one that also says
     "quick" is the quick start guide.
 
+    A store-common query term (`_store_common_terms`) is scored like a listed
+    word too: it never makes a record match and never adds coverage, except
+    in a record that carries it as a tag, since a tag is the captor's label
+    for the topic. A record whose only matches are common terms scores 0 at
+    coverage 0 and is marked `common_only`. It keeps its `unstemmed` flag, so
+    when its common word is the query's only unstemmed hit, a stemmed match
+    in another record still counts: in a store where most records name the
+    team, "team backup" still reaches "Backups rotate weekly". Which terms are
+    common is counted over the records `live` marks (all of them when it is
+    None); every record is still scored, and length is still normalized over
+    all of them.
+
     Fields: summary hits are length-normalized, a tag hit weighs
     `_RECALL_BM25_TAG_WEIGHT`, and the weighted counts saturate together
     (BM25F). The record type weighs `_RECALL_BM25_RECORD_TYPE_WEIGHT`, but only
@@ -882,27 +956,39 @@ def _memory_relevance(records: list[dict[str, Any]], query: str) -> MemoryReleva
     other evidence ties. Integer arithmetic decides the multiple.
 
     Each term's contribution is rounded to integer millionths before it is
-    added (`_term_contributions`). A score of 0 means no content term matched;
-    any match scores at least 1. No query, or one with no terms at all, scores every
-    record 1 at coverage 0 and counts as matched.
+    added (`_term_contributions`). A score of 0 means no content term matched,
+    or only store-common ones did; any other match scores at least 1. No
+    query, or one with no terms at all, scores every record 1 at coverage 0
+    and counts as matched.
     """
     query_tokens, listed_tokens = _memory_query_split(query)
     query_terms = sorted({_stem_memory_token(token) for token in query_tokens})
     if not query_terms:
-        return MemoryRelevance([1] * len(records), [True] * len(records), [0] * len(records))
+        return MemoryRelevance([1] * len(records), [True] * len(records), [0] * len(records), [False] * len(records))
     listed_terms = sorted({_stem_memory_token(token) for token in listed_tokens} - set(query_terms))
     unstemmed_query = set(query_tokens)
     documents = [_record_relevance_fields(record) for record in records]
+    common = _store_common_terms(records, documents, query_terms, live)
     count = len(documents)
     total_length = sum(sum(document["summary"].values()) for document in documents)
     scores: list[int] = []
     unstemmed: list[bool] = []
     coverage: list[int] = []
+    common_only: list[bool] = []
     for record, document in zip(records, documents):
-        matched = [term for term in query_terms if document["summary"][term] or document["tags"][term]]
-        if not matched:
+        held = [term for term in query_terms if document["summary"][term] or document["tags"][term]]
+        if not held:
             scores.append(0)
             unstemmed.append(False)
+            coverage.append(0)
+            common_only.append(False)
+            continue
+        content = _memory_tokens(str(record.get("summary", ""))) | _memory_tokens(" ".join(_normalize_tags(record.get("tags", []))))
+        unstemmed.append(bool(unstemmed_query & content))
+        matched = [term for term in held if term not in common or document["tags"][term]]
+        common_only.append(not matched)
+        if not matched:
+            scores.append(0)
             coverage.append(0)
             continue
         coverage.append(2 * len(matched) + sum(1 for term in matched if document["tags"][term]))
@@ -911,9 +997,7 @@ def _memory_relevance(records: list[dict[str, Any]], query: str) -> MemoryReleva
         norm = 1 - _RECALL_BM25_B + _RECALL_BM25_B * multiple
         contributions = _term_contributions(document, [*query_terms, *listed_terms], norm=norm)
         scores.append(max(1, (sum(contributions) + 500) // (1_000_000 // _RECALL_SCORE_SCALE)))
-        content = _memory_tokens(str(record.get("summary", ""))) | _memory_tokens(" ".join(_normalize_tags(record.get("tags", []))))
-        unstemmed.append(bool(unstemmed_query & content))
-    return MemoryRelevance(scores, unstemmed, coverage)
+    return MemoryRelevance(scores, unstemmed, coverage, common_only)
 
 def _memory_relevance_scores(records: list[dict[str, Any]], query: str) -> list[int]:
     """The scores of `_memory_relevance`."""
@@ -1587,6 +1671,8 @@ __all__ = [
     "_RECALL_BM25_K1",
     "_RECALL_BM25_RECORD_TYPE_WEIGHT",
     "_RECALL_BM25_TAG_WEIGHT",
+    "_RECALL_COMMON_TERM_MIN_CANDIDATES",
+    "_RECALL_COMMON_TERM_SHARE_PCT",
     "_RECALL_RRF_K",
     "_RECALL_RRF_WEIGHTS",
     "_REVIEW_DEFAULT_DAYS",
@@ -1619,6 +1705,7 @@ __all__ = [
     "_memory_relevance_scores",
     "MemoryRelevance",
     "_term_contributions",
+    "_store_common_terms",
     "_memory_query_split",
     "_kept_listed_words",
     "_cut_cjk_function_words",

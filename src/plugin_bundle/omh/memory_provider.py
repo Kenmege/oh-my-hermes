@@ -1740,9 +1740,10 @@ def _askable_record_ids(pack: dict[str, Any]) -> set[str]:
     principal-denied, out of lens. Asking about such a record is a question
     with no working answer, and it would still mark the ledger. So the ask
     set is what the selector delivered, plus records it held back only for
-    reasons that are not about eligibility: no query overlap and the budget
-    cut. The reminder is not query-bound -- an open question is open whether
-    or not this turn's message mentions it -- but it is eligibility-bound.
+    reasons that are not about eligibility: no query overlap, overlap only on
+    store-common words, and the budget cut. The reminder is not query-bound --
+    an open question is open whether or not this turn's message mentions it --
+    but it is eligibility-bound.
     Hidden exclusions (scope, perspective, principal) never appear in the
     pack at all, so they never appear here.
     """
@@ -1755,7 +1756,7 @@ def _askable_record_ids(pack: dict[str, Any]) -> set[str]:
         str(item.get("record_id", ""))
         for item in pack.get("excluded_records", [])
         if isinstance(item, dict)
-        and str(item.get("reason", "")) in {"no_query_overlap", "over_budget"}
+        and str(item.get("reason", "")) in {"no_query_overlap", "common_terms_only", "over_budget"}
         and str(item.get("eligibility_reason", "")) == "eligible"
     )
     askable.discard("")

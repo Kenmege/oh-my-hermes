@@ -852,6 +852,23 @@ class ProviderReminderTests(unittest.TestCase):
             self.assertIn(f"({unrelated['record_id']})", pack)
             self.assertEqual(set(read_open_reminders(root / ".omh")), {unrelated["record_id"]})
 
+    def test_an_open_record_held_back_on_a_store_common_word_is_still_asked_about(self) -> None:
+        # `common_terms_only` is a relevance cut like `no_query_overlap`, not an
+        # eligibility one, so the open question it held back keeps its reminder.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = resolve_paths(root / ".omh", root / ".hermes")
+            question = _open_record(paths, "tally storage: sqlite or postgres", days_open=34)
+            for summary in ("tally list view pages by fifty", "tally ships on fridays", "tally import needs a dry run", "standups start at nine thirty"):
+                _approved(paths, summary)
+            provider = _provider(root)
+            pack = provider.prefetch("tally import")
+            counts = provider.latest_prefetch_receipt()["selection"]["exclusion_reason_counts"]
+            self.assertEqual(counts, {"common_terms_only": 3, "no_query_overlap": 1})
+            self.assertNotIn('<record id="%s"' % question["record_id"], pack)
+            self.assertIn(f"({question['record_id']}) has been unresolved for 34 days", pack)
+            self.assertEqual(set(read_open_reminders(root / ".omh")), {question["record_id"]})
+
     def test_a_queued_rerender_that_is_never_served_does_not_ask(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

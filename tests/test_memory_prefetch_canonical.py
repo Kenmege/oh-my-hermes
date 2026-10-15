@@ -188,10 +188,17 @@ class CanonicalPrefetchTests(unittest.TestCase):
             self.assertEqual(rendered_ids(pack), included_ids(expected))
             self.assertEqual(receipt["configuration_id"], expected.configuration_id)
             self.assertEqual(receipt["selection"]["exclusion_reason_counts"], expected.exclusion_reason_counts)
-            self.assertEqual(receipt["selection"]["exclusion_reason_counts"], {"no_query_overlap": 1})
+            # "release" is in 5 of the 7 candidates, so it is store-common and
+            # matches only where it is a tag: the untagged rollback record met
+            # "release tests" on that word alone and is named apart.
+            self.assertEqual(receipt["selection"]["exclusion_reason_counts"], {"common_terms_only": 1, "no_query_overlap": 1})
             self.assertEqual(receipt["selection"]["truncated"], expected.pack["truncated"])
             self.assertIn(unused["record_id"], included_ids(expected))
-            self.assertIn(old["record_id"], included_ids(expected))
+            self.assertNotIn(old["record_id"], included_ids(expected))
+            self.assertIn(
+                {"record_id": old["record_id"], "reason": "common_terms_only"},
+                [{"record_id": row["record_id"], "reason": row["reason"]} for row in expected.pack["excluded_records"]],
+            )
 
             # Budget parity: record and character limits are the selector's cut.
             prepared = memory_records.prepare_prefetch_records(

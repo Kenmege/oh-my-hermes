@@ -172,6 +172,11 @@ class RetrievalCorpusCoverageTests(unittest.TestCase):
             "character_budget_truncation_is_reported_separately",
             "accent_folded_query_matches_an_accented_record",
             "accented_word_is_not_split_into_fragments",
+            "store_common_term_never_matches_alone",
+            "project_name_alone_never_fills_the_pack",
+            "store_common_term_stemmed_only_query_falls_back",
+            "subject_history_never_makes_its_own_word_common",
+            "duplicate_copies_count_once_toward_a_common_word",
         }
 
         self.assertEqual(required - {case["case_id"] for case in RETRIEVAL_CASES}, set())

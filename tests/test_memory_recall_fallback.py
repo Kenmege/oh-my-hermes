@@ -3,8 +3,9 @@
 Recall is lexical, so a chat message sharing no token with any record used to
 produce an empty pack every such turn while approved active memories sat in
 the store. These cases pin when the active-tier fallback fires and, as
-importantly, every way it must not; and that two records with one normalized
-summary never both occupy the pack.
+importantly, every way it must not -- including a query that met the store
+only on words most records hold (`common_terms_only`); and that two records
+with one normalized summary never both occupy the pack.
 """
 from __future__ import annotations
 
@@ -92,6 +93,48 @@ class ActiveTierFallbackTests(unittest.TestCase):
         result = selection([reviewed("mem-a", summary="Deploys wait for nightly")], "")
         self.assertEqual(included_ids(result), ["mem-a"])
         self.assertNotIn("query_fallback", payload(result))
+
+    def test_overlap_only_on_store_common_words_does_not_fall_back(self) -> None:
+        # "tally" is in four of six records, so it never matches alone; the
+        # query met the store on it and nothing else, and that is not "matched
+        # nothing": the pack stays empty and says why for each record.
+        pairs = [
+            reviewed("mem-t1", summary="Tally list view pages by fifty"),
+            reviewed("mem-t2", summary="Tally keeps its data in sqlite"),
+            reviewed("mem-t3", summary="Tally ships on fridays"),
+            reviewed("mem-t4", summary="Tally exports go to the finance bucket"),
+            reviewed("mem-o1", summary="Standups start at nine thirty"),
+            reviewed("mem-o2", summary="Lunch is at noon"),
+        ]
+        result = selection(pairs, "tally quantum")
+        self.assertEqual(included_ids(result), [])
+        self.assertNotIn("query_fallback", payload(result))
+        self.assertEqual(result.exclusion_reason_counts, {"common_terms_only": 4, "no_query_overlap": 2})
+        self.assertEqual(_excluded(result)["mem-t1"]["reason"], "common_terms_only")
+        self.assertEqual(memory.validate_project_memory_recall_pack(payload(result)), [])
+        # The same store still falls back for a query that overlaps nothing.
+        unmatched = selection(pairs, _NO_MATCH)
+        self.assertEqual(len(included_ids(unmatched)), 6)
+        self.assertEqual(payload(unmatched)["query_fallback"], {**_FALLBACK, "readmitted_count": 6})
+
+    def test_a_replaced_subject_value_on_a_common_word_never_blocks_the_fallback(self) -> None:
+        # The live records hold "team" only through a "teams" tag: they match
+        # on it, but only by stemming, so nothing servable overlaps and the
+        # query falls back. The one record that met the query on the common
+        # word alone is a replaced subject value, and that never counts.
+        pairs = [
+            reviewed("mem-l1", summary="Squash merges for every pull request", tags=["teams"]),
+            reviewed("mem-l2", summary="Lunch is on fridays", tags=["teams"]),
+            reviewed("mem-l3", summary="Docs live in the wiki", tags=["teams"]),
+            reviewed("mem-l4", summary="Billing service owners rotate", tags=["teams"]),
+            reviewed("mem-old", summary="The team rotates on-call weekly", subject="on-call", approved_at="2026-08-01T00:00:00Z"),
+            reviewed("mem-new", summary="On-call moved to pagerduty", subject="on-call", approved_at="2026-09-01T00:00:00Z"),
+            reviewed("mem-o1", summary="Standups start at nine thirty"),
+        ]
+        result = selection(pairs, "team quantum")
+        self.assertEqual(sorted(included_ids(result)), ["mem-l1", "mem-l2", "mem-l3", "mem-l4", "mem-new", "mem-o1"])
+        self.assertEqual(payload(result)["query_fallback"], {**_FALLBACK, "readmitted_count": 6})
+        self.assertEqual(_excluded(result)["mem-old"]["reason"], "superseded_by_subject")
 
     def test_the_fallback_still_honours_the_budget(self) -> None:
         pairs = [reviewed(f"mem-{index}", summary=f"Distinct fact number {index}") for index in range(3)]
