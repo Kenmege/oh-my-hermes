@@ -4982,6 +4982,11 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
     state_key = str(payload.get("runtime_state_key", "")).strip()
     if state_path and state_key:
         print(f"  {tr(language, 'state_log', path=state_path, entry=state_key)}")
+    unreadable = payload.get("unreadable_ledgers")
+    # A loss list is built from the ledgers that could be read. When one could
+    # not be, it is named beside the list, which is otherwise read as complete.
+    loss_list_partial = isinstance(unreadable, list) and bool(unreadable)
+    ledger = "; ".join(map(str, unreadable)) if loss_list_partial else "-"
     hermes_edited = payload.get("hermes_edited_skills")
     for item in hermes_edited if isinstance(hermes_edited, list) else []:
         if not isinstance(item, dict):
@@ -5006,14 +5011,15 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
         if discarded:
             line = tr(language, "hermes_edit_discarded_line", name=item.get("name", ""), files=", ".join(map(str, discarded)))
             print(_color(f"  {line}", "1;33", use_color))
+        if disposition == "replaced" and loss_list_partial:
+            line = tr(language, "loss_list_ledger_unread_line", name=item.get("name", ""), ledger=ledger)
+            print(_color(f"  {line}", "1;33", use_color))
     restored = payload.get("restored_skills")
     for item in restored if isinstance(restored, list) else []:
         if isinstance(item, dict):
             key = "managed_skill_restored_line" if item.get("disposition") == "restored" else "managed_skill_not_restored_line"
             print(_color(f"  {tr(language, key, name=item.get('name', ''), path=item.get('path', ''))}", "1;33", use_color))
     prune_skipped = payload.get("prune_skipped_skills")
-    unreadable = payload.get("unreadable_ledgers")
-    ledger = "; ".join(map(str, unreadable)) if isinstance(unreadable, list) and unreadable else "-"
     for item in prune_skipped if isinstance(prune_skipped, list) else []:
         if isinstance(item, dict):
             # One line per reason: a directory left because it is not OMH's and
@@ -5068,6 +5074,9 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
         discarded = item.get("discarded") if isinstance(item.get("discarded"), list) else []
         if discarded:
             line = tr(language, "retired_skill_discarded_line", name=item.get("name", ""), files=", ".join(map(str, discarded)))
+            print(_color(f"  {line}", "1;33", use_color))
+        if item.get("reason") != "ledger_unreadable" and loss_list_partial:
+            line = tr(language, "loss_list_ledger_unread_line", name=item.get("name", ""), ledger=ledger)
             print(_color(f"  {line}", "1;33", use_color))
     profile_state = payload.get("skill_profile_state")
     if isinstance(profile_state, dict) and profile_state.get("retained_exception"):

@@ -195,8 +195,6 @@ def _seed_held_native_write(omh_home: Path) -> None:
     the one a held write leaves for the next turn, beside the plan line the
     open plan carries.
     """
-    import json as _json
-
     from ..plugin_bundle.omh.native_todo import project_native_todo
     from ..plugin_bundle.omh.todo_store import PLAN_STAGE_ACCEPTED, build_todo_record, write_todo
 
@@ -214,7 +212,7 @@ def _seed_held_native_write(omh_home: Path) -> None:
     project_native_todo(
         tool_name="todo_list",
         args={"todos": todos},
-        result=_json.dumps({"todos": todos}),
+        result=json.dumps({"todos": todos}),
         status="ok",
         session_ref=_SCENARIO_SESSION,
         omh_home=str(omh_home),

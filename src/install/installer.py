@@ -185,6 +185,7 @@ def hermes_edited_skills(
     *,
     overwritten: bool = False,
     writes: list[LedgerWrite] | None = None,
+    stored_writes: list[LedgerWrite] | None = None,
     reference_templates: list[SkillReferenceTemplate] | None = None,
     catalog_names: set[str] | None = None,
 ) -> list[dict]:
@@ -234,6 +235,8 @@ def hermes_edited_skills(
     When `overwritten`, each entry also names, in `ledger_copy`, the files of
     the skill whose current content Hermes' ledger still holds a copy of, so
     the report can say whether the replaced edit is recoverable from there.
+    That is judged against `stored_writes`, every write the ledgers record
+    (`read_ledger_writes` `every_write`), read here when not given.
 
     A Hermes edit under the skill's own label in a directory this release
     does not render it into -- an earlier release's directory after a move,
@@ -249,7 +252,6 @@ def hermes_edited_skills(
     pack_writes = writes_under(writes, pack)
     rendered = rendered_skill_files(reference_templates)
     catalog = {template.name for template in builtin_skill_templates()} if catalog_names is None else catalog_names
-    stored_writes: list[LedgerWrite] | None = None
     found: list[dict] = []
     for record in manifest.get("skills", []):
         if not isinstance(record, dict):
@@ -415,6 +417,7 @@ def _force_replacements(
     install_names: set[str],
     writes: list[LedgerWrite],
     rendered: dict[str, frozenset[str]],
+    stored_writes: list[LedgerWrite],
 ) -> tuple[list[dict], list[Path]]:
     """What `--force` replaces in the pack being written, and the skill directories it clears first.
 
@@ -426,12 +429,12 @@ def _force_replacements(
     a path a manifest record names, and never one reached through a category
     directory that is a link out of the pack. Each entry names, in
     `discarded`, the files the clear removes that OMH does not render and
-    Hermes' ledger holds no copy of: those are gone for good.
+    Hermes' ledger holds no copy of: those are gone for good. `stored_writes`
+    is every write the ledgers record, for what a copy is held of.
     """
     by_name = {str(item["name"]): item for item in hermes_edited if item["disposition"] == "replaced"}
     pack_writes = writes_under(writes, paths.skills_dir)
     real_pack = os.path.realpath(paths.skills_dir)
-    stored_writes: list[LedgerWrite] | None = None
     replaced = list(hermes_edited)
     targets: list[Path] = []
     for name in sorted(install_names):
@@ -444,8 +447,6 @@ def _force_replacements(
             write = hermes_edit_still_on_disk(target, pack_writes, rendered.get(name, _SKILL_FILE_ONLY))
             if write is None:
                 continue
-            if stored_writes is None:
-                stored_writes = read_ledger_writes(paths.hermes_home)[0]
             item = _hermes_edit_item(
                 name, f"{relative.as_posix()}/SKILL.md", target, _write_evidence(write), True, stored_writes
             )
@@ -622,11 +623,21 @@ def install_skill_pack(
     install_names = {template.name for template in templates}
     pack = manifest_pack(manifest, paths) if manifest else paths.skills_dir
     # One ledger read per install, cut to the two packs it can concern. Only
-    # the pruners read the unread list: a removal is final, so whatever may
+    # the pruners act on the unread list: a removal is final, so whatever may
     # record a write and could not be read (a ledger, a line, the profile
-    # list) keeps what they would otherwise remove.
+    # list) keeps what they would otherwise remove. The result names it too,
+    # and the summary names it beside any loss list. When a local change may be
+    # overwritten, the same read also keeps every write, wherever it sits:
+    # what a replaced or removed skill loses is judged by content against all
+    # of them, since a row may name a generation the files were copied from.
+    stored_writes: list[LedgerWrite] = []
     ledger_writes, unreadable_ledgers = (
-        read_ledger_writes(paths.hermes_home, within=[pack, paths.skills_dir], fail_closed=True)
+        read_ledger_writes(
+            paths.hermes_home,
+            within=[pack, paths.skills_dir],
+            fail_closed=True,
+            every_write=stored_writes if overwrite_allowed else None,
+        )
         if manifest
         else ([], [])
     )
@@ -635,6 +646,7 @@ def install_skill_pack(
         paths,
         overwritten=overwrite_allowed,
         writes=ledger_writes,
+        stored_writes=stored_writes,
         reference_templates=all_reference_templates,
         catalog_names={template.name for template in all_templates},
     )
@@ -673,7 +685,7 @@ def install_skill_pack(
     force_targets: list[Path] = []
     if overwrite_allowed and same_pack:
         hermes_edited, force_targets = _force_replacements(
-            hermes_edited, paths, install_names, ledger_writes, rendered
+            hermes_edited, paths, install_names, ledger_writes, rendered, stored_writes
         )
     kept_names = {str(item["name"]) for item in kept.values()}
     templates = [template for template in templates if template.name not in kept_names]
@@ -697,6 +709,9 @@ def install_skill_pack(
             result["hermes_edited_skills"] = hermes_edited
         if missing:
             result["restored_skills"] = missing
+        if unreadable_ledgers:
+            # A replaced edit's loss list counts only the ledgers that could be read.
+            result["unreadable_ledgers"] = unreadable_ledgers
         return result
     paths.skills_dir.mkdir(parents=True, exist_ok=True)
     # `--force` replaces the whole skill, not just the files OMH renders: a
@@ -736,7 +751,7 @@ def install_skill_pack(
         prune_manifest,
         catalog_names,
         force=overwrite_allowed,
-        hermes_home=paths.hermes_home,
+        stored_writes=stored_writes,
         writes=ledger_writes,
         ledger_unreadable=bool(unreadable_ledgers),
     )
@@ -745,7 +760,7 @@ def install_skill_pack(
         prune_manifest,
         catalog_names,
         force=overwrite_allowed,
-        hermes_home=paths.hermes_home,
+        stored_writes=stored_writes,
         writes=ledger_writes,
         ledger_unreadable=bool(unreadable_ledgers),
     )
@@ -965,22 +980,24 @@ def _render_mark_refusal(record: dict, skill_file: Path, writes: list[LedgerWrit
 _FORCE_REMOVES = frozenset({"changed_since_rendered", "ledger_unreadable"})
 
 
-def _skip_item(record: dict, name: object, rel: object, reason: str) -> dict:
+def _skip_item(name: object, rel: object, reason: str) -> dict:
     return {"name": str(name), "path": str(rel), "reason": reason}
 
 
-def _force_pruned_item(name: object, rel: object, directory: Path, hermes_home: Path | None, reason: str) -> dict:
+def _force_pruned_item(
+    name: object, rel: object, directory: Path, stored_writes: list[LedgerWrite], reason: str
+) -> dict:
     """What `--force` loses by removing a marked directory a plain install leaves, and why it was left.
 
     Built before the directory goes: the files Hermes' ledger still holds a
-    copy of, and the rest, which are gone for good. When the ledger could not
-    be read, neither is knowable, so neither is claimed.
+    copy of (`stored_writes`, every write the ledgers record), and the rest,
+    which are gone for good. When the ledger could not be read, neither is
+    knowable, so neither is claimed.
     """
     item = {"name": str(name), "path": str(rel), "reason": reason}
     if reason == "ledger_unreadable":
         return item
-    writes = read_ledger_writes(hermes_home)[0] if hermes_home is not None else []
-    ledger_copy = _ledger_copies(directory, writes)
+    ledger_copy = _ledger_copies(directory, stored_writes)
     return {**item, "ledger_copy": ledger_copy, "discarded": _discarded_for_good(directory, frozenset(), ledger_copy)}
 
 
@@ -1045,7 +1062,7 @@ def _prune_flat_layout_skill_directories(
     catalog_names: set[str],
     *,
     force: bool,
-    hermes_home: Path | None = None,
+    stored_writes: list[LedgerWrite] | None = None,
     writes: list[LedgerWrite] | None = None,
     ledger_unreadable: bool = False,
     remove: bool = True,
@@ -1126,10 +1143,10 @@ def _prune_flat_layout_skill_directories(
         if marked:
             reason = _render_mark_refusal(record, entry / "SKILL.md", pack_writes, ledger_unreadable)
             if reason and not (force and reason in _FORCE_REMOVES):
-                skipped.append(_skip_item(record, canonical, rel, reason))
+                skipped.append(_skip_item(canonical, rel, reason))
                 continue
             if reason and remove:
-                forced.append(_force_pruned_item(canonical, rel, entry, hermes_home, reason))
+                forced.append(_force_pruned_item(canonical, rel, entry, stored_writes or [], reason))
         elif rel in modified and not force:
             retained.append(canonical)
             continue
@@ -1242,7 +1259,7 @@ def _prune_orphaned_skills(
     catalog_names: set[str],
     *,
     force: bool,
-    hermes_home: Path | None = None,
+    stored_writes: list[LedgerWrite] | None = None,
     writes: list[LedgerWrite] | None = None,
     ledger_unreadable: bool = False,
     remove: bool = True,
@@ -1256,6 +1273,7 @@ def _prune_orphaned_skills(
     marks) and `kind` always `retired_skill`; every candidate left in place is returned
     second with the reason; third, what ``force`` lost for each changed directory it removed.
     ``writes`` are Hermes' ledger writes, for what "changed" means (`_render_mark_refusal`),
+    ``stored_writes`` every write the ledgers record, for what a ``force`` removal loses,
     and ``ledger_unreadable`` says a ledger exists that could not be read, which leaves a
     marked directory with nothing else against it in place (`ledger_unreadable`) until
     ``force``; with ``remove`` false nothing is deleted and only the verdicts are returned.
@@ -1305,7 +1323,7 @@ def _prune_orphaned_skills(
         if not name or not rel or name in catalog_names:
             continue
         if marked and not isinstance(record.get(RENDER_MARK_KEY), str):
-            skipped.append(_skip_item(record, name, rel, "not_rendered_by_omh"))
+            skipped.append(_skip_item(name, rel, "not_rendered_by_omh"))
             continue
         if not marked and str(rel) in modified and not force:
             continue
@@ -1314,27 +1332,27 @@ def _prune_orphaned_skills(
         # path names the directory that actually exists.
         relative = omh_layout_dir(str(rel), categories)
         if relative is None:
-            skipped.append(_skip_item(record, name, rel, "not_an_omh_layout"))
+            skipped.append(_skip_item(name, rel, "not_an_omh_layout"))
             continue
         target_dir = skills_dir / relative
         if not target_dir.is_dir() or target_dir.is_symlink() or same_directory(target_dir, skills_dir):
             continue
         if not _strictly_inside(os.path.realpath(target_dir), real_skills_dir):
-            skipped.append(_skip_item(record, name, rel, "outside_the_skills_directory"))
+            skipped.append(_skip_item(name, rel, "outside_the_skills_directory"))
             continue
         if _holds_other_skills(target_dir, category_dirs):
-            skipped.append(_skip_item(record, name, rel, "category_directory"))
+            skipped.append(_skip_item(name, rel, "category_directory"))
             continue
         if any(same_directory(target_dir, render_dir) for render_dir in render_dirs):
-            skipped.append(_skip_item(record, name, rel, "same_directory_as_a_rendered_skill"))
+            skipped.append(_skip_item(name, rel, "same_directory_as_a_rendered_skill"))
             continue
         if marked:
             reason = _render_mark_refusal(record, target_dir / "SKILL.md", pack_writes, ledger_unreadable)
             if reason and not (force and reason in _FORCE_REMOVES):
-                skipped.append(_skip_item(record, name, rel, reason))
+                skipped.append(_skip_item(name, rel, reason))
                 continue
             if reason and remove:
-                forced.append(_force_pruned_item(name, rel, target_dir, hermes_home, reason))
+                forced.append(_force_pruned_item(name, rel, target_dir, stored_writes or [], reason))
         if not remove:
             continue
         shutil.rmtree(target_dir)

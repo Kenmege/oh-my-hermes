@@ -597,7 +597,9 @@ is carried into the new install (when the install's skill profile includes
 it) and named in the summary, and it receives no OMH update until a run with
 `--force` clears that directory and renders it again; the summary then says
 whether Hermes' ledger still holds a copy of the replaced files, and names any
-file it removed that OMH does not render and the ledger holds no copy of. A
+file it removed that OMH does not render and the ledger holds no copy of.
+When a ledger could not be read, the summary names it beside those lines,
+which then count only the ledgers that could be read. A
 change the ledger does not account for, including a hand edit to `SKILL.md`
 beside a ledgered change to another file, still stops the update until you
 resolve it or pass `--force`. A managed skill whose `SKILL.md` is gone is
@@ -636,7 +638,8 @@ change that is not a kept Hermes edit, and the directory stays in the previous
 generation. `--force` removes it, except under `OMH_SECURITY=strict`, where
 `--force` overrides no local change, and lists it under `force_pruned_skills`,
 with the files Hermes' ledger still holds a copy of and the files that are
-gone for good. A Hermes curator ledger that exists but cannot be read (for
+gone for good; when a ledger could not be read, the summary names it beside
+that list, which then counts only the ledgers that could be read. A Hermes curator ledger that exists but cannot be read (for
 example a permission error, or bytes that are not UTF-8), that holds a line
 naming a path in the skills directory that is not a ledger row, or whose last
 line has no line end (an append may be in progress), may record such a write,

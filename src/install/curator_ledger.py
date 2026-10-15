@@ -98,7 +98,11 @@ def _curator_ledger_paths_reporting(hermes_home: Path, unread: list[str]) -> lis
 
 
 def read_ledger_writes(
-    hermes_home: Path, within: Iterable[Path] | None = None, *, fail_closed: bool = False
+    hermes_home: Path,
+    within: Iterable[Path] | None = None,
+    *,
+    fail_closed: bool = False,
+    every_write: list[LedgerWrite] | None = None,
 ) -> tuple[list[LedgerWrite], list[str]]:
     """Every file write the home's ledgers record, oldest first, and the ledgers that could not be read.
 
@@ -113,9 +117,26 @@ def read_ledger_writes(
     under `within` that is not a row, a last line with no line end (an append
     may be in progress, so it is named whatever it says), and a profile
     directory, or entry in it, that could not be read.
+
+    With `every_write`, the same read also extends that list with every write
+    any row records, wherever it sits, oldest first: a line outside `within`
+    is then parsed too, for that list only, and one that is not a row is
+    skipped, not named unread. It is for a caller that needs both answers, so
+    the ledger is read once.
     """
-    needles = _path_needles(within) if within is not None else None
+    # Each root as given and resolved (Hermes records an external skills
+    # directory by its resolved path), taken once: both the line cut and the
+    # write filter below use them, and `within` may be a generator, which a
+    # second pass would find empty.
+    bases = (
+        {spelling for root in within for spelling in (os.path.normpath(str(root)), os.path.realpath(str(root)))}
+        if within is not None
+        else None
+    )
+    # Each base as it appears inside a JSON string.
+    needles = {json.dumps(base, ensure_ascii=False)[1:-1] for base in bases} if bases is not None else None
     writes: list[LedgerWrite] = []
+    stored: list[LedgerWrite] = []
     unread: list[str] = []
     ledgers = _curator_ledger_paths_reporting(hermes_home, unread) if fail_closed else curator_ledger_paths(hermes_home)
     for ledger in ledgers:
@@ -139,6 +160,8 @@ def read_ledger_writes(
             if number == open_line and line.strip():
                 unread.append(f"{ledger}: line {number} is unterminated, so an append may be in progress")
             if needles is not None and not any(needle in line for needle in needles):
+                if every_write is not None:
+                    stored.extend(_row_writes(line, str(ledger)) or [])
                 continue
             row_writes = _row_writes(line, str(ledger))
             if row_writes is None:
@@ -146,22 +169,17 @@ def read_ledger_writes(
                     unread.append(f"{ledger}: line {number} is not a ledger row")
                 continue
             writes.extend(row_writes)
-    if within is not None:
-        roots = list(within)
-        writes = [write for write in writes if any(writes_under([write], root) for root in roots)]
+            if every_write is not None:
+                stored.extend(row_writes)
+    if bases is not None:
+        writes = [write for write in writes if any(_within(os.path.normpath(write.path), base) for base in bases)]
     # ISO-8601 UTC stamps from one writer sort as text. Stable, so rows of one
     # ledger that share a stamp keep the order they were appended in.
     writes.sort(key=lambda write: write.ts)
+    if every_write is not None:
+        stored.sort(key=lambda write: write.ts)
+        every_write.extend(stored)
     return writes, unread
-
-
-def _path_needles(roots: Iterable[Path]) -> set[str]:
-    """Each root as it appears inside a JSON string, both as given and resolved."""
-    needles: set[str] = set()
-    for root in roots:
-        for spelling in {os.path.normpath(str(root)), os.path.realpath(str(root))}:
-            needles.add(json.dumps(spelling, ensure_ascii=False)[1:-1])
-    return needles
 
 
 def _row_writes(line: str, ledger: str) -> list[LedgerWrite] | None:
@@ -177,10 +195,11 @@ def _row_writes(line: str, ledger: str) -> list[LedgerWrite] | None:
     if str(row.get("action", "")) in _NOT_AN_EDIT:
         return []
     before = _file_states(row.get("before"))
+    listed_after = _file_states(row.get("after"))
     # Upstream `_delta`, for rows written before Hermes applied it: a file with
     # the same hash on both sides was listed, not changed.
-    after = {path: sha for path, sha in _file_states(row.get("after")).items() if before.get(path) != sha}
-    removed = [path for path in before if path not in _file_states(row.get("after"))]
+    after = {path: sha for path, sha in listed_after.items() if before.get(path) != sha}
+    removed = [path for path in before if path not in listed_after]
     fields = {
         "ts": str(row.get("ts", "") or ""),
         "actor": str(row.get("actor", "") or ""),
