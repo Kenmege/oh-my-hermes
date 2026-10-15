@@ -111,6 +111,17 @@ class ShellDuringATurnTests(unittest.TestCase):
         app._on_response(Response(1, {"stdout": "a.py\n", "stderr": "", "code": 0}, None))
         self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": "next prompt", "queued": True}))
 
+    def test_a_queued_bang_line_with_a_chip_echoes_the_chip_when_it_runs(self) -> None:
+        script = "echo one\necho two\necho three\necho four\n"
+        app, client = make_app(busy=True)
+        type_text(app, "!")
+        app._on_input(Paste(script))
+        app._on_input(Key(ENTER))
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertEqual(client.calls, [("shell.exec", {"command": script.strip()})])
+        (block,) = [block for block in app.transcript.blocks if isinstance(block, CommandBlock)]
+        self.assertEqual(block.command, "![Pasted text #1 +4 lines]")  # as the composer showed it, not the whole paste
+
     def test_ctrl_enter_never_steers_a_shell_line(self) -> None:
         app, client = make_app(busy=True)
         type_text(app, "!ls")
