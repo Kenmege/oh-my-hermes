@@ -16,12 +16,14 @@ from omh.plugin_bundle.omh.native_tools import native_tool_presence_clause
 from omh.plugin_bundle.omh.spend_signals import (
     SPEND_EVERYDAY_SENSE_ANCHORS,
     SPEND_EVERYDAY_SENSE_PHRASES,
+    SPEND_GATE_KOREAN_PHRASES,
     SPEND_GATE_NAME_LEADS,
     SPEND_GATE_PHRASES,
     SPEND_LEADS,
     SPEND_MONEY_CUED_LEADS,
     SPEND_RECONCILE_LEADS,
     spend_gate_named_as_command,
+    spend_request_phrases,
 )
 from omh.quality.routing_precision import ROUTING_PRECISION_CASES
 from omh.routing.chat import HOST_COMMAND_TURN_REASON, NATIVE_LOOP_CADENCE_REASON, SPENDING_LOOP_REASON
@@ -31,6 +33,7 @@ from omh.routing.recommend import (
     _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS,
     _prepare_definition,
     _spend_gate_clause,
+    _tokens,
     recommend_skills,
 )
 from omh.skills.catalog import builtin_definitions, omh_skill_display_name
@@ -1101,6 +1104,129 @@ NOT_SPENDING = (
     "Book the flight with my card for me never shows up on android",
     "Pay the invoice with my card for me is broken in safari",
 )
+class SpendGateKoreanTests(unittest.TestCase):
+    """A Korean spend request reaches the gate on both surfaces (KO-1); the same words' everyday sense does not."""
+
+    def _named(self, message: str) -> set[str]:
+        route = _route(message)
+        handoff = route.get("candidate_handoff") or {}
+        return {
+            str(route.get("selected_skill") or ""),
+            str(route.get("candidate_skill") or ""),
+            *(str(item.get("skill")) for item in route.get("recommendations", [])),
+            *(str(item.get("skill")) for item in handoff.get("candidates", [])),
+        }
+
+    def test_a_korean_spend_request_reaches_the_gate(self) -> None:
+        # Ordinary scoring: one of the gate's phrases asks with the gate
+        # leading, as "please send money" does in English; a phrase and the
+        # person's card or wallet dispatch it.
+        for message, action in (
+            ("내 카드로 결제해줘", "dispatch"),
+            ("카드로 호텔 예약해 주세요", "dispatch"),
+            ("내 지갑에서 이더 0.1개 보내 줘", "dispatch"),
+            ("이거 결제해줘", "clarify"),
+            ("송금해줘", "clarify"),
+            ("집주인한테 50만원 송금해 줄 수 있어?", "clarify"),
+            ("교통카드 2만원 충전해줘", "clarify"),
+            ("이 책 사 주세요", "clarify"),
+            ("결제 부탁드립니다", "clarify"),
+            # A compound that ends in a spend verb is that verb ("선결제",
+            # prepay), and the booking beside it is the gate's phrase too.
+            ("렌터카 예약하고 선결제까지 해줘", "dispatch"),
+        ):
+            with self.subTest(message=message):
+                route = _route(message)
+                leading = route["selected_skill"] if action == "dispatch" else route["candidate_skill"]
+                self.assertEqual((route["action"], leading), (action, SKILL))
+                self.assertIn(SKILL, _hinted_workflows(message))
+                self.assertTrue(_spend_awareness_marked(message))
+
+    def test_the_everyday_sense_of_the_same_words_names_no_gate(self) -> None:
+        for message in (
+            # A payment system designed, a payment bug fixed, a card game
+            # built, a cost report written: the request ends on another verb.
+            "결제 시스템 설계해줘",
+            "결제 버그 고쳐줘",
+            "카드 게임 만들어줘",
+            "비용 보고서 만들어줘",
+            "결제 모듈 리팩터링해줘",
+            "송금 기능 구현해줘",
+            "결제 테스트 해줘",
+            "결제 내역 정리해줘",
+            "결제 취소해줘",
+            # No request: a statement, a prohibition, a question, a button.
+            "결제했어",
+            "결제하지 마",
+            "결제 안 해줘도 돼",
+            "결제해줘?",
+            "결제가 왜 실패했어?",
+            "결제해줘 버튼이 안 눌려",
+            "결제 페이지가 깨졌어. 내 카드로 결제해줘",
+            # Document approval (결재) is not payment (결제).
+            "이 문서 결재해줘",
+            # A booking, a charge, a subscription, a renewal or a send with no
+            # money in it.
+            "식당 예약해줘",
+            "폰 충전해줘",
+            "유튜브 채널 구독해줘",
+            "토큰 갱신해줘",
+            "파일 보내줘",
+        ):
+            with self.subTest(message=message):
+                self.assertNotIn(SKILL, self._named(message))
+                self.assertNotIn(SKILL, _hinted_workflows(message))
+                self.assertFalse(_spend_awareness_marked(message))
+
+    def test_an_admitted_korean_request_always_says_a_scored_phrase(self) -> None:
+        # Parity by construction: the rule admits a Korean request only when
+        # it says one of the gate's Korean phrases, which the router scores
+        # whole, so the router never admits one at score 0 while the hint
+        # names the gate.
+        for message in (
+            "내 카드로 결제해줘",
+            "송금해줘",
+            "이 책 사 주세요",
+            "카드로 호텔 예약해 주세요",
+            "도메인 1년 갱신해줘 카드로 결제는 말고",
+        ):
+            with self.subTest(message=message):
+                said = spend_request_phrases(message, SPEND_GATE_PHRASES)
+                if said:
+                    self.assertTrue(set(said) & set(SPEND_GATE_KOREAN_PHRASES))
+                    score = next(item["score"] for item in recommend_skills(message, limit=50) if item["skill"] == SKILL)
+                    self.assertGreaterEqual(score, 6)
+        # A send needs money beside it; buying asked as "사줄래?" says none of
+        # the gate's four forms of 사, so it is not admitted.
+        self.assertEqual(spend_request_phrases("엄마한테 10만원 보내줘", SPEND_GATE_PHRASES), ["보내"])
+        self.assertEqual(spend_request_phrases("엄마한테 사진 보내줘", SPEND_GATE_PHRASES), [])
+        self.assertEqual(spend_request_phrases("이 책 사줄래?", SPEND_GATE_PHRASES), [])
+
+    def test_the_router_fold_admits_what_the_hint_admits(self) -> None:
+        # The router reads Hangul folded into jamo (NFKD), the hint composed.
+        for message in ("내 카드로 결제해줘", "결제 좀 해줘", "결제 시스템 설계해줘", "식당 예약해줘", "이 책 사 주세요"):
+            with self.subTest(message=message):
+                self.assertEqual(
+                    bool(_spend_gate_clause(normalized_phrase(message))),
+                    bool(spend_request_phrases(message, SPEND_GATE_PHRASES)),
+                )
+
+    def test_a_korean_loop_that_pays_reaches_the_gate(self) -> None:
+        for message in ("/loop 1h 가격 떨어지면 내 카드로 결제해줘", "/loop 30m 재고 생기면 결제"):
+            with self.subTest(message=message):
+                route = _route(message)
+                self.assertEqual(
+                    (route["action"], route["selected_skill"], route["reason"]), ("dispatch", SKILL, SPENDING_LOOP_REASON)
+                )
+
+    def test_the_korean_phrases_score_only_whole(self) -> None:
+        prepared = _prepare_definition(_definition(SKILL))
+        self.assertEqual(set(prepared.trigger_tokens) & _tokens(" ".join(SPEND_GATE_KOREAN_PHRASES)), set())
+        for phrase in SPEND_GATE_KOREAN_PHRASES:
+            with self.subTest(phrase=phrase):
+                self.assertIn(normalized_phrase(phrase), prepared.plain_trigger_phrases)
+
+
 OWNERS = (
     ("open the staging checkout url, click login and fill the form", "browser-operator"),
     ("triage the payment failure reports from support this week", "feedback-triage"),

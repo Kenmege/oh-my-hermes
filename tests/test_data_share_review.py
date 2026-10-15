@@ -8,10 +8,16 @@ load_local_package()
 
 from omh.plugin_bundle.omh.awareness import (
     _ROUTE_HINT_RULES,
+    _data_share_awareness_marked,
     awareness_context_matches_message,
     awareness_route_hint,
 )
-from omh.plugin_bundle.omh.data_share_cues import DATA_SHARE_REVIEW_PHRASES
+from omh.plugin_bundle.omh.data_share_cues import (
+    DATA_SHARE_REVIEW_KOREAN_PHRASES,
+    DATA_SHARE_REVIEW_PHRASES,
+    data_share_phrases_said,
+    data_share_request_admitted,
+)
 from omh.routing.localization import normalized_phrase, routing_tokens
 from omh.routing.recommend import _SKILL_OFFERS_ITSELF, recommend_skills
 from omh.skills.catalog import builtin_definitions
@@ -398,6 +404,109 @@ NEGATIVES = (
     "de-identify means what exactly, before we send the file to the researcher?",
     "de-identify is the term we use in the guide; write a page on how we send files to vendors",
 )
+class DataShareReviewKoreanTests(unittest.TestCase):
+    """A Korean request to protect data leaving the team reaches the review (KO-2); the same words elsewhere do not."""
+
+    def _hinted(self, message: str) -> bool:
+        return any(hint.get("workflow") == SKILL for hint in awareness_route_hint(message).get("hints", []))
+
+    def _named(self, message: str) -> set[str]:
+        route = _route(message)
+        handoff = route.get("candidate_handoff") or {}
+        return {
+            str(route.get("selected_skill") or ""),
+            str(route.get("candidate_skill") or ""),
+            *(str(item.get("skill")) for item in route.get("recommendations", [])),
+            *(str(item.get("skill")) for item in handoff.get("candidates", [])),
+        }
+
+    def test_a_korean_data_share_request_reaches_the_review(self) -> None:
+        # The first dispatched gateway-intent-card on its "보내줘" and the
+        # second asked about automation-blueprint: the review now scores its
+        # personal-data phrase and its recipient, in either order of the two
+        # clauses.
+        for message in (
+            "고객 정보 마스킹해서 벤더한테 보내줘",
+            "개인정보 지우고 외부에 공유해줘",
+            "벤더한테 보내기 전에 개인정보 마스킹해줘",
+            "고객 데이터 익명화해서 연구자한테 보내줘",
+            "개인정보 제거한 다음에 외부에 올려줘",
+            "외부에 공유하기 전에 고객 정보 가려줘",
+        ):
+            with self.subTest(message=message):
+                route = _route(message)
+                self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", SKILL))
+                self.assertTrue(self._hinted(message))
+                self.assertTrue(_data_share_awareness_marked(message))
+
+    def test_the_same_words_elsewhere_name_no_review(self) -> None:
+        for message in (
+            # Shared, summarized, sent: nothing protected.
+            "화면 공유해줘",
+            "이 문서 요약해서 공유해줘",
+            "회의록 팀에 공유해줘",
+            "파일 보내줘",
+            # A background masked, not personal data, even for a vendor.
+            "사진 배경 마스킹해서 보내줘",
+            "사진 배경 마스킹해서 벤더한테 보내줘",
+            # Code, a feature, a policy, a setting: another job.
+            "개인정보 마스킹하는 코드 짜줘",
+            "개인정보 마스킹 기능 구현해줘",
+            "개인정보 처리방침 검토해서 법무팀에 보내줘",
+            "개인정보 마스킹 설정 켜줘",
+            "개인정보 마스킹해서 법무팀에 보내줘",
+            "개인정보 마스킹해서 PR 올려줘",
+            # The request ends on another job.
+            "개인정보 지우고 벤더 목록 정리해줘",
+            # Protected, but leaving for nowhere.
+            "고객 개인정보 지워줘",
+            "개인정보 마스킹해줘",
+            # A field name alone is no phrase of the skill.
+            "이름 지우고 공유해줘",
+            # Already anonymized, or a question.
+            "익명화된 데이터 벤더한테 보내줘",
+            "개인정보 지우고 외부에 공유해도 돼?",
+        ):
+            with self.subTest(message=message):
+                self.assertNotIn(SKILL, self._named(message))
+                self.assertFalse(self._hinted(message))
+                # Folded as `awareness_context_matches_message` folds it.
+                self.assertFalse(_data_share_awareness_marked(message.casefold()))
+
+    def test_a_korean_phrase_inside_a_compound_is_read(self) -> None:
+        # The router reads a Korean trigger by containment. Korean writes
+        # compounds without a space, and the hint's whole-word reader found
+        # neither phrase here, so the hint named nothing while the router
+        # dispatched the review.
+        message = "고객개인정보 지우고 협력업체에 공유해줘"
+        self.assertEqual(data_share_phrases_said(message), ["개인정보", "업체"])
+        self.assertEqual(data_share_phrases_said("pseudonymized export"), [])
+        self.assertEqual((_route(message)["action"], _route(message)["selected_skill"]), ("dispatch", SKILL))
+        self.assertTrue(self._hinted(message))
+
+    def test_the_router_fold_admits_what_the_hint_admits(self) -> None:
+        for message in (
+            "고객 정보 마스킹해서 벤더한테 보내줘",
+            "벤더한테 보내기 전에 개인정보 마스킹해줘",
+            "사진 배경 마스킹해서 보내줘",
+            "이름 지우고 공유해줘",
+        ):
+            with self.subTest(message=message):
+                self.assertEqual(_offered(message), data_share_request_admitted(message))
+        # A field name admits a request only beside one of the review's
+        # phrases; alone, the rule itself refuses it.
+        self.assertFalse(data_share_request_admitted("이름 지우고 공유해줘"))
+        self.assertTrue(data_share_request_admitted("이름 지우고 외부에 공유해줘"))
+
+    def test_an_admitted_korean_request_always_says_a_scored_phrase(self) -> None:
+        for message in ("고객 정보 마스킹해서 벤더한테 보내줘", "데이터셋 가명 처리해서 업로드해줘"):
+            with self.subTest(message=message):
+                self.assertTrue(data_share_request_admitted(message))
+                self.assertTrue(set(data_share_phrases_said(message)) & set(DATA_SHARE_REVIEW_KOREAN_PHRASES))
+                score = next(item["score"] for item in recommend_skills(message, limit=50) if item["skill"] == SKILL)
+                self.assertGreaterEqual(score, 6)
+
+
 OWNERS = (
     ("attach the crash log to the github issue", "github-event-ops"),
     ("summarize this customer support transcript", "media-input-operator"),

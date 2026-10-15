@@ -616,7 +616,16 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # adds three that dispatched the gate while "gate" anchored a cap
             # or wallet phrase anywhere in the message: an airport gate, a red
             # CI gate and a gate number (3).
-            expected=756,
+            # Admitting Korean spend and data-share requests to their gates
+            # adds twelve whose Korean words keep their everyday sense: a
+            # payment system designed, a payment flow tested, a payment made,
+            # no need to pay, a document approved (결재), a restaurant booked
+            # and a phone charged, with nothing of money beside them (7); and
+            # a screen shared, code written to mask personal data, a customer's
+            # personal data deleted, personal data masked for no recipient, and
+            # a name removed before sharing, which says none of the review's
+            # phrases (5).
+            expected=768,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -858,7 +867,16 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # gate run by name on the person's spending limit, which the cap's
             # everyday sense withdrew before the named gate was exempted from
             # it (1).
-            expected=797,
+            # Admitting Korean spend and data-share requests to their gates
+            # adds nine: a card payment and a spending loop that reach the
+            # pre-spend card (2); a payment and a remittance asked with only
+            # the verb, which ask with the card leading (2); customer
+            # information masked for a vendor, personal data removed before an
+            # external share, and personal data masked before it goes to a
+            # vendor, which reach the data share review (3); and a payment bug
+            # fix and a shared summary, which stay on ultrawork and
+            # long-document-reading (2).
+            expected=806,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

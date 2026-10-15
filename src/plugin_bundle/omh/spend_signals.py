@@ -54,6 +54,19 @@ and the like -- only when all of this holds, and "" otherwise:
   loop's prompt and naming the gate as a command are exempt, as they are
   from the marker (`spend_gate_named_as_command`, which the router reads too).
 
+A Korean request puts its verb last, so its half of the rule
+(`_korean_admitted`) reads the first sentence from its end
+(`korean_request`): it is admitted when a request ending ("-해줘", "-해
+주세요", "-해줄래?", "부탁해") closes a last predicate that spends --
+"결제" (pay), "송금" (remit), "주문" (order), "사줘" (buy it for me) and the
+rest of `KOREAN_SPEND_NOUNS`, or a booking, a top-up, a subscription, a
+renewal, a donation or a send beside the person's card, wallet, account,
+money or an amount -- and the sentence says one of
+`SPEND_GATE_KOREAN_PHRASES`. "결제 시스템 설계해줘" (design a payment system)
+and "결제 버그 고쳐줘" (fix a payment bug) end on design and fix, "결제했어"
+(I paid) and "결제하지 마" (do not pay) end on no request, and "식당
+예약해줘" (book a restaurant) books with no money in it.
+
 Everything else returns to the router's base behaviour: the router withdraws
 the skill (so no phrase or word of it counts) and the route hint and the
 awareness markers stay silent. Nothing here lets the gate take a request
@@ -62,10 +75,11 @@ phrases score as usual -- except an admitted loop prompt, for which the chat
 router dispatches the gate before any scoring (`SPENDING_LOOP_REASON` in
 `omh.routing.chat`): a loop that would spend is never answered with `/loop`.
 
-One phrase table, `SPEND_GATE_PHRASES`, is the skill's trigger list: the
-router (`omh.routing.recommend`) passes it to `spend_request_clause`, and the
-awareness route hint and its markers (`awareness.py`) pass it to
-`spend_request_phrases`, so a request one of them admits the others admit too.
+One phrase table, `SPEND_GATE_PHRASES`, its Korean phrases included, is the
+skill's trigger list: the router (`omh.routing.recommend`) passes it to
+`spend_request_clause`, and the awareness route hint and its markers
+(`awareness.py`) pass it to `spend_request_phrases`, so a request one of them
+admits the others admit too.
 The bundle may not import `omh.routing`, so the everyday-sense pair lives here
 and the router imports it. Stdlib only.
 """
@@ -77,7 +91,73 @@ from collections.abc import Iterable
 
 from .boundary_phrase import contains_boundary_phrase
 from .hermes_session_commands import native_loop_prompt
+from .korean_request import composed, korean_request
 from .request_lead import courtesy_opener_length
+
+# The Korean half of the clause rule (`_korean_admitted`). A Korean request
+# ends on its verb, so it is read from the end (`korean_request`): the first
+# sentence's last predicate, closed by a request ending ("-해줘", "-해 주세요",
+# "-해줄래?", "부탁해"), which marks it as a request the way "please" does in
+# English. "결제 시스템 설계해줘" and "결제 버그 고쳐줘" end on design and fix;
+# "내 카드로 결제해줘" ends on pay.
+#
+# 하다 verbs that move the person's money whatever their object: pay, remit,
+# transfer, deposit, pay out, pay a bill, purchase (twice), order, book a
+# ticket. A compound that ends in one is the same verb: "선결제" (prepay),
+# "재주문" (reorder), "해외송금" (remit abroad).
+KOREAN_SPEND_NOUNS = ("결제", "송금", "이체", "입금", "지불", "납부", "구매", "구입", "주문", "예매")
+# 하다 verbs whose object is often not money -- a phone is charged, a
+# restaurant booked, a channel subscribed to, a token renewed -- which count
+# only with money in the sentence (`_KOREAN_MONEY`): top up, book, subscribe,
+# renew, sponsor, donate.
+KOREAN_MONEY_CUED_NOUNS = ("충전", "예약", "구독", "갱신", "후원", "기부")
+# Other verbs, as the word before the request ending: buy ("사줘"); and send,
+# plain or honorific ("보내줘", "보내드려 줘"), which counts only beside money.
+KOREAN_SPEND_FORMS = frozenset({"사"})
+KOREAN_MONEY_CUED_FORMS = frozenset({"보내", "보내드려"})
+# The person's card, wallet or account, money itself, or an amount.
+_KOREAN_MONEY = re.compile(
+    r"카드로|카드에서|지갑에서|계좌에서|계좌로"
+    r"|(?:^|\s)돈(?:을|도|만|좀)?(?=\s|$)"
+    r"|\d[\d,.]*\s?(?:원|만\s?원|천\s?원|억|달러|불|엔|유로|위안|usd|krw)"
+    r"|[$€£¥₩]\s?\d"
+)
+# The gate's Korean phrases: each verb above, 사 as said with its request
+# ending (one syllable is no phrase), and the Korean "with my card", "from my
+# wallet" and "from my account". Book (예약) and send (보내) are
+# automation-blueprint's phrases too, a sharing declared in
+# `omh.skills.trigger_collisions`: here they score only in a request admitted
+# with money beside them. An admitted Korean request always says one of these
+# phrases (`_korean_admitted`), so the router scores every request this rule
+# admits. They live here, beside the English table, and not in
+# `routing/trigger_packs/ko.json`, for the reason the English table does: the
+# rule reads them, and the bundle cannot read a pack.
+SPEND_GATE_KOREAN_PHRASES = (
+    "결제",
+    "송금",
+    "이체",
+    "입금",
+    "지불",
+    "납부",
+    "구매",
+    "구입",
+    "주문",
+    "예매",
+    "사줘",
+    "사 줘",
+    "사주세요",
+    "사 주세요",
+    "충전",
+    "예약",
+    "구독",
+    "갱신",
+    "후원",
+    "기부",
+    "보내",
+    "카드로",
+    "지갑에서",
+    "계좌에서",
+)
 
 # `spend-gate`'s trigger list, word for word (the catalog reads it from here).
 SPEND_GATE_PHRASES = (
@@ -129,6 +209,7 @@ SPEND_GATE_PHRASES = (
     "did the payment go through",
     "did the charge go through",
     "pay for the booking",
+    *SPEND_GATE_KOREAN_PHRASES,
 )
 
 _CURRENCY_SYMBOLS = "$€£¥₩"
@@ -417,8 +498,40 @@ def _request(text: str, phrases: Iterable[str]) -> tuple[str, list[str]]:
     # check out from my wallet when the price drops" may be a purchase. So is
     # it for the gate named as a command, which asks for the gate whatever
     # cap it names ("run spend gate on my spending limit").
+    korean = _korean_admitted(text, phrases, by_loop=False)
+    if korean[0]:
+        return korean
     prompt = native_loop_prompt(text)
-    return _admitted(prompt, phrases, by_loop=True) if prompt else ("", [])
+    if not prompt:
+        return "", []
+    admitted = _admitted(prompt, phrases, by_loop=True)
+    return admitted if admitted[0] else _korean_admitted(prompt, phrases, by_loop=True)
+
+
+def _korean_admitted(text: str, phrases: tuple[str, ...], *, by_loop: bool) -> tuple[str, list[str]]:
+    """The English rule's Korean mirror: the first sentence when its last predicate is a spend.
+
+    The request ending is the marker (a loop's prompt is marked by the loop,
+    as in English); the predicate is a spend verb, or a money-cued one beside
+    money; and one of `phrases` is said in the sentence -- always so for an
+    admitted request when `phrases` holds `SPEND_GATE_KOREAN_PHRASES`. The
+    sentence is returned as the caller passed it, so the caller's phrases
+    match it in the caller's own fold.
+    """
+    request = korean_request(text, require_ending=not by_loop)
+    if request is None:
+        return "", []
+    said = " ".join(request.words)
+    predicate = request.predicate
+    if predicate in KOREAN_MONEY_CUED_FORMS or predicate.endswith(KOREAN_MONEY_CUED_NOUNS):
+        if not _KOREAN_MONEY.search(said):
+            return "", []
+    elif not (predicate in KOREAN_SPEND_FORMS or predicate.endswith(KOREAN_SPEND_NOUNS)):
+        return "", []
+    found = [phrase for phrase in phrases if composed(phrase) in said]
+    if not found:
+        return "", []
+    return request.sentence, list(dict.fromkeys(found))
 
 
 def _admitted(text: str, phrases: Iterable[str], *, by_loop: bool) -> tuple[str, list[str]]:
@@ -474,5 +587,9 @@ def spend_request_clause(text: str, phrases: Iterable[str]) -> str:
 
 
 def spend_request_phrases(text: str, phrases: Iterable[str]) -> list[str]:
-    """Which of `phrases` the admitted request clause says, as whole words; [] when it is not admitted."""
+    """Which of `phrases` the admitted request says; [] when it is not admitted.
+
+    An English clause says a phrase as whole words, an admitted Korean
+    sentence anywhere in it (its particles and endings attach to the word).
+    """
     return _request(text, phrases)[1]

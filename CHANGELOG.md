@@ -4,6 +4,34 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Korean spend and data-share requests reach their gates.** "내 카드로
+  결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보
+  마스킹해서 벤더한테 보내줘" dispatched gateway-intent-card, and "개인정보 지우고
+  외부에 공유해줘" asked about automation-blueprint: both gates' admission rules
+  read only an English lead. A Korean request puts its verb last, so a new
+  bundle reader (`korean_request`) reads the first sentence's last predicate,
+  and only when a request ending closes it ("-해줘", "-해 주세요", "-해줄래?",
+  "부탁해"), the way "please" marks an English one. spend-gate admits it when
+  that predicate spends (결제, 송금, 이체, 구매, 주문, 예매, "사줘", ...), or books,
+  tops up, subscribes, renews, donates or sends beside the person's card,
+  wallet, account, money or an amount; data-share-review when it protects
+  personal data (익명화, 가명 처리, 비식별화, or masking, deleting or covering
+  personal data) and the data leaves (a recipient outside the team, or a verb
+  that sends it), in either order of the two clauses. Each gate scores only its
+  own phrases, which an admitted request always says, with no boost: one phrase
+  scores below the dispatch line, so the router asks, as it does for "please
+  send money", and a second one (the person's card, a recipient) dispatches
+  the gate unless another skill outscores it.
+  The everyday sense of the same words ends on another verb or on no request
+  and reaches neither gate on either surface: "결제 시스템 설계해줘", "결제 버그
+  고쳐줘", "카드 게임 만들어줘", "화면 공유해줘", "이 문서 요약해서 공유해줘",
+  "식당 예약해줘", "이 문서 결재해줘" (approval, not payment). The Korean phrases
+  live in the bundle beside the English ones, since the rules read them, and
+  "예약" and "보내" are declared as shared with automation-blueprint. On two
+  held-out Korean sets written blind by a separate author (85 spend, 85
+  data-share, 170 everyday-sense), no everyday-sense sentence named a gate on
+  either surface; recall is partial and is reported in the PR.
+
 - **A host turn or a thank-you gets a direct-answer card.** `omh chat
   route-hint` and the example shims showed the generic no-hint card, with "Open
   omh" and "Clarify" buttons, beside a route decision that said to answer
