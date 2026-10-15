@@ -19,7 +19,9 @@ Stripping an opener admits nothing by itself: each reader still requires its
 own lead, and spend-gate its own request marker. An opener counts only as
 whole words at the start, followed by the end of the text, a space, or
 punctuation that ends a word (`,.!;:?`), so "hermes's config", "so-called"
-and "ok/loop" keep their first word. Stdlib only.
+and "ok/loop" keep their first word. A "." right before a "/" is not taken
+with the opener: it starts a path or OMH's `./loop`, so "ok ./loop" and
+"ok./loop" both keep the sigil. Stdlib only.
 """
 
 from __future__ import annotations
@@ -68,7 +70,7 @@ COURTESY_OPENERS: tuple[tuple[str, ...], ...] = tuple(
 _OPENERS_AT_START = re.compile(
     r"\s*(?:(?:"
     + "|".join(r"\s+".join(re.escape(word) for word in opener) for opener in COURTESY_OPENERS)
-    + r")(?=[\s,.!;:?]|$)[,.!;:?]*\s*)+"
+    + r")(?=[\s,.!;:?]|$)(?:[,!;:?]|\.(?!/))*\s*)+"
 )
 
 

@@ -4357,11 +4357,13 @@ def _score_definition(
     ):
         self_name = ""
 
-    # `spend-gate`'s trigger phrases and trigger tokens count only on the
-    # request clause it admitted (its `_SKILL_OFFERS_ITSELF` row): "check out
-    # this thread about agents that buy it for me automatically" says one of
-    # them as a topic, and words after the clause are not the request either.
-    # Its name, description, use-when, category and phase still read the whole
+    # `spend-gate`'s trigger phrases count only on the request clause it
+    # admitted (its `_SKILL_OFFERS_ITSELF` row), and so do its trigger and
+    # metadata tokens: `query_tokens` is the clause's from here on, for every
+    # later read in this function. "check out this thread about agents that
+    # buy it for me automatically" says one of its phrases as a topic, and
+    # words after the clause are not the request either. Its name,
+    # description, use-when, category and phase phrases still read the whole
     # message, as every skill's do. The clause is tokenized the way every
     # other skill's message is (`_tokens`).
     trigger_text = normalized_query

@@ -35,6 +35,7 @@ from ..plugin_bundle.omh.request_lead import after_courtesy
 from ..plugin_bundle.omh.spend_signals import (
     SPEND_EVERYDAY_SENSE_ANCHORS,
     SPEND_EVERYDAY_SENSE_PHRASES,
+    spend_gate_named_as_command,
     spend_phrase_continues_a_request,
 )
 from .missed_route import has_normalized_missed_omh_workflow_context
@@ -2197,7 +2198,8 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
     # `spend_signals`, whose request clause applies it too, so the route hint
     # withdraws the gate from the same messages the router does ("can you check
     # out the spending cap for the city council budget"); its comment says
-    # which words anchor and why.
+    # which words anchor and why. The gate named as a command is exempt
+    # (`everyday_sense_phrase_unanchored`).
     "spend-gate": (SPEND_EVERYDAY_SENSE_PHRASES, SPEND_EVERYDAY_SENSE_ANCHORS),
     # "the play store on my phone will not open", "my google play gift card did
     # not work" and "the app store keeps asking for my password" are a phone's
@@ -2366,6 +2368,10 @@ def everyday_sense_phrase_unanchored(skill: str, normalized_query: str) -> bool:
     """
     entry = EVERYDAY_SENSE_PHRASES.get(skill)
     if entry is None:
+        return False
+    # "run spend gate on my spending limit" asks for the gate whatever cap it
+    # names; `spend_signals`' clause rule skips the check for it too.
+    if skill == "spend-gate" and spend_gate_named_as_command(normalized_query):
         return False
     phrases, anchors = entry
     spoken = tuple(phrase for phrase in phrases if phrase_is_spoken(normalized_query, phrase))

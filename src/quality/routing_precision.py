@@ -6215,6 +6215,32 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "spend-gate",
     ),
+    # "gate" said anywhere but in the gate's own name is no word of paying:
+    # while it anchored a cap or wallet phrase, each of these dispatched the gate.
+    RoutingPrecisionCase(
+        "airport-gate-spending-limit-look-is-not-a-spend",
+        "An airport gate beside a spending limit is no word of paying",
+        "could you check out the spending limit at the airport gate",
+        "answer_clarification",
+        "",
+        "spend-gate",
+    ),
+    RoutingPrecisionCase(
+        "red-ci-gate-beside-a-budget-cap-is-not-a-spend",
+        "A red CI gate beside a city budget's spending cap is no word of paying",
+        "can you check out the spending cap for the city council budget, the ci gate is red",
+        "answer_clarification",
+        "",
+        "spend-gate",
+    ),
+    RoutingPrecisionCase(
+        "wallet-receipt-at-a-gate-number-is-not-a-spend",
+        "A gate number beside a receipt from the person's wallet is no word of paying",
+        "please check out the receipt from my wallet at gate 12",
+        "answer_clarification",
+        "",
+        "spend-gate",
+    ),
 )
 
 
@@ -14019,7 +14045,7 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     ),
     RoutingInterventionCase(
         "spend-gate-run-on-a-spending-limit-reaches-spend-gate",
-        "Running the gate by name on the person's spending limit reaches the pre-spend card; the gate's name anchors the cap",
+        "Running the gate by name on the person's spending limit reaches the pre-spend card; the named gate skips the cap's everyday sense",
         "run spend gate on my spending limit",
         "dispatch",
         "spend-gate",

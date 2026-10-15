@@ -21,6 +21,7 @@ from omh.plugin_bundle.omh.spend_signals import (
     SPEND_LEADS,
     SPEND_MONEY_CUED_LEADS,
     SPEND_RECONCILE_LEADS,
+    spend_gate_named_as_command,
 )
 from omh.quality.routing_precision import ROUTING_PRECISION_CASES
 from omh.routing.chat import HOST_COMMAND_TURN_REASON, NATIVE_LOOP_CADENCE_REASON, SPENDING_LOOP_REASON
@@ -664,8 +665,16 @@ class SpendGateRoutingTests(unittest.TestCase):
             ("please subscribe to the pro plan from my wallet", False),
             ("could you top up my account from my wallet", False),
             ("please donate $20 to the food bank from my wallet", False),
-            # The gate's own name anchors the cap: the person asks for the gate.
+            # Naming the gate as a command asks for the gate whatever cap it
+            # names: the check is skipped for it, on both surfaces.
             ("run spend gate on my spending limit", False),
+            ("use spend gate for my spending cap", False),
+            # "gate" anywhere else is no word of paying: an airport gate, a CI
+            # gate and a gate number leave the cap or wallet in its everyday
+            # sense.
+            ("could you check out the spending limit at the airport gate", True),
+            ("can you check out the spending cap for the city council budget, the ci gate is red", True),
+            ("please check out the receipt from my wallet at gate 12", True),
             # Only those six verbs: "check out" also asks to look at a thing,
             # and the clause rule admits each of these.
             ("can you check out the spending cap for the city council budget", True),
@@ -682,13 +691,20 @@ class SpendGateRoutingTests(unittest.TestCase):
         self.assertIs(phrases, SPEND_EVERYDAY_SENSE_PHRASES)
         self.assertIs(anchors, SPEND_EVERYDAY_SENSE_ANCHORS)
 
-    def test_every_lead_but_check_out_holds_an_anchor(self) -> None:
+    def test_every_lead_the_check_reads_but_check_out_holds_an_anchor(self) -> None:
         # Why the clause rule can skip the router's other condition (a word of
         # the message's own beside the phrase): with no anchor in the message
-        # the lead is "check out", and "check" is such a word.
-        leads = (*SPEND_LEADS, *SPEND_MONEY_CUED_LEADS, *SPEND_RECONCILE_LEADS, *SPEND_GATE_NAME_LEADS)
+        # the lead is "check out", and "check" is such a word. The gate named
+        # as a command is not read by the check at all.
+        leads = (*SPEND_LEADS, *SPEND_MONEY_CUED_LEADS, *SPEND_RECONCILE_LEADS)
         unanchored = [lead for lead in leads if not set(lead) & SPEND_EVERYDAY_SENSE_ANCHORS]
         self.assertEqual(unanchored, [("check", "out")])
+        for lead in SPEND_GATE_NAME_LEADS:
+            with self.subTest(lead=lead):
+                message = " ".join(lead) + " on my spending limit"
+                self.assertTrue(spend_gate_named_as_command(message))
+                self.assertTrue(_spend_gate_clause(normalized_phrase(message)))
+                self.assertFalse(everyday_sense_phrase_unanchored(SKILL, normalized_phrase(message)))
 
     def test_a_loop_keeps_a_cap_or_wallet_phrase_without_a_word_of_paying(self) -> None:
         # The everyday-sense check is waived for a loop's prompt, as the
@@ -860,12 +876,19 @@ class SpendGateRouteHintTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertFalse(_spend_awareness_marked(message))
 
-    def test_the_hint_withdraws_the_gate_where_the_router_does(self) -> None:
-        # The router offers the gate when its clause rule admits the request
-        # and the cap or wallet phrase is not in its everyday sense; the hint
-        # names it on exactly those. Before, the hint had no everyday-sense
-        # check and named the gate for every look-at request below.
+    def test_cap_wallet_name_and_opener_sentences_get_the_hint_where_the_router_offers_the_gate(self) -> None:
+        # These sentences only: the router offers the gate when its clause rule
+        # admits the request and the cap or wallet phrase is not in its
+        # everyday sense, and the hint names it on exactly those. Before, the
+        # hint had no everyday-sense check and named the gate for every
+        # look-at request below. Every corpus sentence is held to the same
+        # agreement by the routing-precision cases and the hint test over the
+        # negative controls; this pins the sentences the change is about.
         for message in (
+            "could you check out the spending limit at the airport gate",
+            "can you check out the spending cap for the city council budget, the ci gate is red",
+            "please check out the receipt from my wallet at gate 12",
+            "use spend gate for my spending cap",
             "can you check out the spending cap for the city council budget",
             "could you check out the spending limit in this city",
             "please check out the receipt from my wallet",

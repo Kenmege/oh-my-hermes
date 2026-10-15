@@ -7,7 +7,7 @@ from _local_package import load_local_package
 load_local_package()
 
 from omh.plugin_bundle.omh.data_share_cues import data_share_request_admitted
-from omh.plugin_bundle.omh.hermes_session_commands import LOOP_TIMER_NATIVE, loop_timer_verdict
+from omh.plugin_bundle.omh.hermes_session_commands import LOOP_TIMER_GOAL, LOOP_TIMER_NATIVE, loop_timer_verdict
 from omh.plugin_bundle.omh.request_lead import COURTESY_OPENERS, after_courtesy, courtesy_opener_length
 from omh.plugin_bundle.omh.spend_signals import SPEND_GATE_PHRASES, SPEND_REQUEST_MARKERS, spend_request_clause
 from omh.routing.localization import normalized_phrase
@@ -56,9 +56,14 @@ class CourtesyOpenerTests(unittest.TestCase):
         ):
             with self.subTest(text=text):
                 self.assertEqual(after_courtesy(text), text)
-        # Only the punctuation that ends a word goes with the opener: OMH's
-        # `./loop` keeps its sigil.
-        self.assertEqual(after_courtesy("ok ./loop every 5m check ci"), "./loop every 5m check ci")
+        # Only the punctuation that ends a word goes with the opener, and a "."
+        # right before a "/" does not: OMH's `./loop` keeps its sigil, spaced
+        # or not, and stays OMH's loop.
+        for text in ("ok ./loop every 5m check ci", "ok./loop every 5m check ci"):
+            with self.subTest(text=text):
+                self.assertEqual(after_courtesy(text), "./loop every 5m check ci")
+                self.assertEqual(loop_timer_verdict(text), LOOP_TIMER_GOAL)
+        self.assertEqual(after_courtesy("ok. please buy it"), "buy it")
 
     def test_every_spend_request_marker_is_an_opener(self) -> None:
         # A marker is read only among the openers stripped before the lead, so

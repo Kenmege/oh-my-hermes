@@ -51,7 +51,8 @@ and the like -- only when all of this holds, and "" otherwise:
   spending cap for the city council budget" asks to look at a budget):
   `SPEND_EVERYDAY_SENSE_PHRASES` and `SPEND_EVERYDAY_SENSE_ANCHORS`, the same
   pair the router's `EVERYDAY_SENSE_PHRASES` entry for the gate reads. A
-  loop's prompt is exempt, as it is from the marker.
+  loop's prompt and naming the gate as a command are exempt, as they are
+  from the marker (`spend_gate_named_as_command`, which the router reads too).
 
 Everything else returns to the router's base behaviour: the router withdraws
 the skill (so no phrase or word of it counts) and the route hint and the
@@ -245,17 +246,20 @@ _OWN_MONEY_AFTER_WITH = (
 # for the person; each phrase keeps the gate only beside a word of paying or
 # buying. Six verbs that open a spend the clause rule admits are anchors too:
 # "book", "donate", "renew", "subscribe", "tip" and "top" (up), so "please
-# renew the domain from my wallet" keeps its route; and so is the gate's own
-# name, "gate": "run spend gate on my spending limit" asks for the gate. The
-# other leads' verbs are not: "can you check out the spending cap for the
-# city council budget" asks to look at a budget. "agent" and "hermes" are not
-# anchors: the router's tokenizer drops both. The router reads this pair as
-# the gate's `EVERYDAY_SENSE_PHRASES` entry (`omh.routing.policy`).
+# renew the domain from my wallet" keeps its route. The other leads' verbs
+# are not: "can you check out the spending cap for the city council budget"
+# asks to look at a budget. Nor is the gate's own word "gate", which counted
+# anywhere in the message: "could you check out the spending limit at the
+# airport gate" dispatched the gate. Naming the gate as a command ("run spend
+# gate on my spending limit") is exempt from the check instead
+# (`spend_gate_named_as_command`). "agent" and "hermes" are not anchors: the
+# router's tokenizer drops both. The router reads this pair as the gate's
+# `EVERYDAY_SENSE_PHRASES` entry (`omh.routing.policy`).
 SPEND_EVERYDAY_SENSE_PHRASES = ("spend cap", "spending cap", "spend limit", "spending limit", "from my wallet")
 SPEND_EVERYDAY_SENSE_ANCHORS = frozenset(
     {
         "402", "api", "approve", "book", "bot", "buy", "buying", "buys", "card", "charge", "charged",
-        "checkout", "credits", "dollars", "donate", "endpoint", "euros", "funds", "gate", "money", "order",
+        "checkout", "credits", "dollars", "donate", "endpoint", "euros", "funds", "money", "order",
         "orders", "pay", "paying", "payment", "payments", "purchase", "purchases", "renew", "send",
         "subscribe", "subscription", "tip", "top", "transfer", "usd",
     }
@@ -335,10 +339,11 @@ def _everyday_sense(folded: str) -> bool:
     word even when its last runs on ("spending capacity"), and this reads it
     only where it ends a word too (`contains_boundary_phrase`), so it can find
     a phrase the router finds and never one the router does not: where the
-    two differ, this one admits. The router's
-    other condition, a word of the message's own beside the phrase, always
-    holds by the time this is asked: every lead but "check out" holds an
-    anchor, and "check" is such a word.
+    two differ, this one admits. The router's other condition, a word of the
+    message's own beside the phrase, always holds by the time this is asked:
+    every lead it is asked about but "check out" holds an anchor, and "check"
+    is such a word. (A loop's prompt and the gate named as a command are not
+    asked about.)
     """
     if not contains_boundary_phrase(folded, SPEND_EVERYDAY_SENSE_PHRASES):
         return False
@@ -409,7 +414,9 @@ def _request(text: str, phrases: Iterable[str]) -> tuple[str, list[str]]:
     # loop that spends skip the gate, while this one moves no money. No list
     # of status words is kept against it; earlier rounds rejected that. The
     # everyday-sense check is waived on the same terms: "loop every hour and
-    # check out from my wallet when the price drops" may be a purchase.
+    # check out from my wallet when the price drops" may be a purchase. So is
+    # it for the gate named as a command, which asks for the gate whatever
+    # cap it names ("run spend gate on my spending limit").
     prompt = native_loop_prompt(text)
     return _admitted(prompt, phrases, by_loop=True) if prompt else ("", [])
 
@@ -435,9 +442,20 @@ def _admitted(text: str, phrases: Iterable[str], *, by_loop: bool) -> tuple[str,
         return "", []
     if not marked and not _has_request_marker(prefix, clause, [(start, end) for _phrase, start, end in found]):
         return "", []
-    if not by_loop and _everyday_sense(folded):
+    if not marked and _everyday_sense(folded):
         return "", []
     return " ".join(clause), list(dict.fromkeys(phrase for phrase, _start, _end in found))
+
+
+def spend_gate_named_as_command(text: str) -> bool:
+    """Whether the sentence, after its courtesy openers, opens by naming the gate as a command.
+
+    "run spend gate on my spending limit" asks for the gate whatever cap it
+    names, so the router's everyday-sense check for the gate skips it, as the
+    clause rule here does.
+    """
+    tokens = _without_filler(_tokens(text.casefold().strip()))
+    return any(_starts_with(tokens, lead) for lead in SPEND_GATE_NAME_LEADS)
 
 
 def spend_phrase_continues_a_request(text: str, phrase: str) -> bool:

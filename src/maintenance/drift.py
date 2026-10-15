@@ -612,8 +612,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # router and the route hint adds three, each of which got the
             # spend-gate hint while the router left the gate out: a city
             # budget's spending cap looked at (1), the gate's spaced name alone
-            # (1), and the gate's name as a greyed-out label (1).
-            expected=753,
+            # (1), and the gate's name as a greyed-out label (1). Its review
+            # adds three that dispatched the gate while "gate" anchored a cap
+            # or wallet phrase anywhere in the message: an airport gate, a red
+            # CI gate and a gate number (3).
+            expected=756,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -853,7 +856,8 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # export de-identified for a researcher opened with "hi," and with
             # "hermes," (2); a spending loop opened with "let's" (1); and the
             # gate run by name on the person's spending limit, which the cap's
-            # everyday sense withdrew before "gate" anchored it (1).
+            # everyday sense withdrew before the named gate was exempted from
+            # it (1).
             expected=797,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
