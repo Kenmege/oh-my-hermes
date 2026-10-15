@@ -171,7 +171,10 @@ PR without the chat history.
   directory and session ownership, then starts OMH's frontend in place of its
   own. That frontend spawns exactly one child, Hermes' `tui_gateway`, with the
   interpreter and import path the launcher handed it, and speaks the
-  gateway's stdio JSON-RPC. It relays only what the person types. It never
+  gateway's stdio JSON-RPC. It relays only what the person types; on its
+  own it only reads, Hermes' settings and command catalog as a session
+  opens and, at a fresh start, `session.list` to name the last session
+  under the banner. It never
   answers an approval, clarify, sudo, or secret request on its own: Esc or
   Ctrl+C declines, an approval decline is an explicit deny, allowing a
   command takes the arrows and then Enter, and a request the gateway
@@ -197,7 +200,12 @@ PR without the chat history.
   too, except that one saying approvals are on within 2 seconds of a
   confirmed on is held until the next, keeping accept shown. Ctrl+T and
   `/effort` set that session's reasoning effort through the same
-  session-scoped call. Plan mode is the frontend's own flag, also
+  session-scoped call. A pick in the `/model` picker (bare `/model`, listed
+  from `model.options`) is sent as Hermes' own `/model <name> --provider
+  <slug> --session` through `slash.exec`, so it switches that session only,
+  and a name or slug that could read as a flag is left out of the list.
+  `/cost` and `/permissions` run Hermes' `/usage` and `/approvals`; the
+  latter shows or sets Hermes' persistent approval mode, as typed. Plan mode is the frontend's own flag, also
   turned on with Shift+Tab: while it is on, a prompt the person types goes to
   Hermes as `/plan <text>`. While Hermes has approvals off on its own (an off
   it confirmed did not end them, or they were off without the TUI turning
@@ -216,7 +224,11 @@ PR without the chat history.
   person sends that starts with `!` is their own shell command: the TUI
   sends it with `shell.exec`, which Hermes runs outside the model's context
   under its own 30 s limit and dangerous-command refusals, shows what it
-  printed and its exit code, and sends nothing else that way. A rewind (Esc
+  printed and its exit code when that is not 0 or nothing was printed, and
+  sends nothing else that way: only a line whose leading `!` the composer
+  showed (a collapsed paste whose text starts with `!` goes to the model),
+  never a refused steer or a queued prompt that happens to start with `!`.
+  A rewind (Esc
   Esc on an empty composer, `/rewind`) cuts the session's history before
   the prompt the person picked, and only when they send the prompt that
   replaces it (`prompt.submit` with `truncate_before_row_id` and
@@ -237,7 +249,8 @@ PR without the chat history.
   history, `$HERMES_HOME/.hermes_history`, the file `hermes --tui` reads and
   writes, in its format (`+`-prefixed lines under a `#` timestamp line). It
   only appends there (opened `O_APPEND` and `O_NOFOLLOW`, created mode
-  0600), reads at most the file's last 1 MiB, and never writes an answer to
+  0600), reads at most the file's last 1 MiB and only when it is a regular
+  file (no symlink or FIFO), and never writes an answer to
   a question Hermes asked or masked input there. The other files it writes
   are metadata: the launcher's active-session file (the session id), and
   what OMH's own HUD reader and model-chain picker already write under the
