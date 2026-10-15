@@ -743,11 +743,11 @@ class HelperPromptIsTrueUnderEitherSetting(TeamHarness):
             with self.subTest(goal=entry["goal"][:30]):
                 for claim in ("shared workspace", "same workspace"):
                     self.assertNotIn(claim, entry["context"])
-                self.assertIn(f"When you stop, OMH runs this command in this session's workspace and the part "
-                              f"counts as done only if it exits 0 there: {CHECK_A}", entry["context"])
+                self.assertIn(f"When you stop, OMH runs this command in the parent session's workspace and the "
+                              f"part counts as done only if it exits 0 there: {CHECK_A}", entry["context"])
                 self.assertIn("If Hermes gave you a git worktree of your own, your edits reach that workspace only "
-                              "when the session merges your branch, so commit them on your branch before you stop.",
-                              entry["context"])
+                              "when the parent session merges your branch, so commit them on your branch before "
+                              "you stop.", entry["context"])
 
 
 class UnmergedHelperWorkIsNeverChecked(TeamHarness):
@@ -769,6 +769,7 @@ class UnmergedHelperWorkIsNeverChecked(TeamHarness):
         self.assertEqual(refusal.reason, "helper_branch_unmerged")
         self.assertEqual(refusal.unmerged, ({"unit_id": "a", "branch": BRANCH_A, "state": "commits_not_merged"},))
         self.assertIn(BRANCH_A, refusal.say)
+        self.assertIn("If one cannot be merged, report that part as blocked and stop.", refusal.say)
         self.assertEqual(self.runner.calls, [])
         status = team.team_status(self.ctx, team_id="t1")
         self.assertEqual((self.states(status), status["units"][0]["attempts_used"]), ({"a": "awaiting_check"}, 1))
@@ -782,7 +783,8 @@ class UnmergedHelperWorkIsNeverChecked(TeamHarness):
         self.helper_states[BRANCH_A] = "uncommitted_changes"
         refusal = self.refused()
         self.assertEqual(refusal.unmerged, ({"unit_id": "a", "branch": BRANCH_A, "state": "uncommitted_changes"},))
-        self.assertIn("commit them on that branch first", refusal.say)
+        self.assertIn("commit what belongs to the part on that branch, and remove what does not, or the whole "
+                      "worktree once its work is merged", refusal.say)
         self.assertEqual(self.runner.calls, [])
 
     def test_one_unmerged_branch_holds_every_check(self) -> None:
@@ -946,6 +948,46 @@ class HelperWorkReadsRealWorktrees(TeamHarness):
         _git(self.workdir, "checkout", "-q", BRANCH_A)
         (self.workdir / "app.txt").write_text("session edit\n", encoding="utf-8")
         self.assertEqual(self.probe(self.workdir, BRANCH_A), "merged")
+
+    def leave_branch_and_commit(self, *move: str) -> Path:
+        worktree = self.isolate(SUBAGENT_A)
+        _git(worktree, *move)
+        self.commit_in(worktree, "v2\n")
+        return worktree
+
+    def test_a_helper_that_committed_on_a_detached_head_is_unmerged(self) -> None:
+        """P1: Hermes' branch still sits at the base commit; the work is on the worktree's HEAD."""
+        self.leave_branch_and_commit("checkout", "-q", "--detach")
+        self.assertEqual(self.probe(self.workdir, BRANCH_A), "commits_not_merged")
+
+    def test_a_helper_that_committed_on_a_branch_of_its_own_is_unmerged_until_that_is_merged(self) -> None:
+        """P2, then its positive control: merging the helper's own branch is what clears it."""
+        self.leave_branch_and_commit("checkout", "-q", "-b", "mine")
+        self.assertEqual(self.probe(self.workdir, BRANCH_A), "commits_not_merged")
+        _git(self.workdir, "merge", "-q", "--no-ff", "-m", "merge helper", "mine")
+        self.assertEqual(self.probe(self.workdir, BRANCH_A), "merged")
+
+    def test_an_untracked_file_in_a_merged_helpers_worktree_refuses_until_removed(self) -> None:
+        worktree = self.isolate(SUBAGENT_A)
+        self.commit_in(worktree, "v2\n")
+        _git(self.workdir, "merge", "-q", "--no-ff", "-m", "merge helper", BRANCH_A)
+        (worktree / "build.log").write_text("noise\n", encoding="utf-8")
+        self.assertEqual(self.probe(self.workdir, BRANCH_A), "uncommitted_changes")
+        (worktree / "build.log").unlink()
+        self.assertEqual(self.probe(self.workdir, BRANCH_A), "merged")
+
+    def test_a_worktree_moved_away_from_hermes_path_is_found_by_its_branch(self) -> None:
+        moved = self.workdir.parent / "moved-helper"
+        _git(self.workdir, "worktree", "move", str(self.isolate(SUBAGENT_A)), str(moved))
+        (moved / "app.txt").write_text("v2\n", encoding="utf-8")
+        self.assertEqual(self.probe(self.workdir, BRANCH_A), "uncommitted_changes")
+
+    def test_output_that_will_not_decode_is_unreadable_not_a_store_failure(self) -> None:
+        from omh.plugin_bundle.omh.tools import team_tool
+
+        undecodable = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        with mock.patch.object(team_tool._evidence_tool, "run_verification_command", side_effect=undecodable):
+            self.assertEqual(self.probe(self.workdir, BRANCH_A), "unreadable")
 
     def test_outside_git_is_unreadable(self) -> None:
         plain = self.workdir.parent / "plain"

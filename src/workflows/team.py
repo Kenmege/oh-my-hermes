@@ -59,10 +59,12 @@ session merges that branch. OMH never merges. A check run before
 the merge tests a tree without the helper's work, so `team_reconcile` checks
 nothing while a returned helper's branch has commits this workspace's HEAD
 does not contain, or its worktree has uncommitted changes: it refuses with
-``helper_branch_unmerged`` and names each such branch. Merged means the
-branch's last commit is in HEAD's history; a branch that no longer exists
-(Hermes deletes one whose helper changed nothing, and the session deletes one
-it has merged) is not looked for.
+``helper_branch_unmerged`` and names each such branch. The worktree is found
+by the path Hermes gave it as well as by the branch, so a helper that left the
+branch (a detached HEAD, a branch of its own) is still read. Merged means the
+branch's last commit and the worktree's HEAD are both in HEAD's history; work
+held by neither (Hermes prunes a worktree whose helper changed nothing, and
+the session removes one it has merged) is not looked for.
 
 What this does not see
 ----------------------
@@ -75,9 +77,10 @@ user with the real HOME. Both are stated in `team_status` and in the approval
 prompt.
 The unmerged-branch guard keeps an honest session from checking too early; it
 is not a trust boundary. The subagent id it reads is in the record, so a record
-edited to drop it skips the guard, and the branch name is Hermes' naming: a
-host that names helper branches differently leaves the guard finding nothing,
-and checks run as they did before it.
+edited to drop it skips the guard, and the branch and worktree names are
+Hermes' naming: a host that names them differently leaves the guard finding
+nothing, and checks run as they did before it. Work a helper moved out of both
+(a branch renamed or deleted after its worktree was removed) is not looked for.
 The approval is the host's: under ``--yolo``, ``approvals.mode: off`` or a
 cron ``approve`` mode Hermes answers it without asking anyone. The command
 policy and Hermes' own floor still apply there, and `team_start` refuses in a
@@ -603,14 +606,14 @@ def _delegate_entry(team_id: str, unit: Mapping[str, Any], attempt: Mapping[str,
     key = attempt_key(team_id, str(unit["unit_id"]), int(attempt["n"]))
     command = str(unit["verification_command"])
     # True whether or not Hermes isolates helpers: the check always runs in the
-    # session's workspace, and a helper in a worktree of its own learns that
+    # parent session's workspace, and a helper in a worktree of its own learns that
     # from the note Hermes appends to its goal, not from this text.
     lines = [
         f"Part of a checked team: {unit['plan_item']}",
-        f"When you stop, OMH runs this command in this session's workspace and the part counts as done "
-        f"only if it exits 0 there: {command}",
+        f"When you stop, OMH runs this command in the parent session's workspace and the part counts as "
+        f"done only if it exits 0 there: {command}",
         "If Hermes gave you a git worktree of your own, your edits reach that workspace only when the "
-        "session merges your branch, so commit them on your branch before you stop.",
+        "parent session merges your branch, so commit them on your branch before you stop.",
         "Stay inside this part; other parts are being worked on at the same time.",
     ]
     failing = attempt.get("repairs_check")
@@ -1102,17 +1105,19 @@ def _require_helper_work_merged(
         lines = [_UNMERGED_SAY[item["state"]].format(title=item["title"], branch=item["branch"]) for item in unmerged]
         raise TeamRefusal(
             "helper_branch_unmerged",
-            " ".join(lines) + " Nothing was checked: merge each branch into this workspace, then call "
-            "team_reconcile again.",
+            " ".join(lines) + " Nothing was checked: merge each into this workspace, then call team_reconcile "
+            "again. If one cannot be merged, report that part as blocked and stop.",
             unmerged=tuple({key: item[key] for key in ("unit_id", "branch", "state")} for item in unmerged),
         )
     return frozenset(unreadable)
 
 
 _UNMERGED_SAY: Final[dict[str, str]] = {
-    "commits_not_merged": "'{title}' left commits on branch {branch} that this workspace does not have yet.",
-    "uncommitted_changes": "'{title}' left uncommitted changes in the worktree of branch {branch}; commit them on "
-                           "that branch first.",
+    "commits_not_merged": "'{title}' left commits on branch {branch}, or in its worktree, that this workspace "
+                          "does not have yet.",
+    "uncommitted_changes": "'{title}' left uncommitted changes or untracked files in the worktree of branch "
+                           "{branch}: commit what belongs to the part on that branch, and remove what does not, "
+                           "or the whole worktree once its work is merged.",
 }
 
 

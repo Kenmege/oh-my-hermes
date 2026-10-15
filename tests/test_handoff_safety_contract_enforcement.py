@@ -1253,14 +1253,15 @@ GIT_ARGV_ALLOWLIST: dict[tuple[str, tuple[str, ...]], str] = {
         "Read-only local ref lookup, names no remote, writes nothing"
     ),
     ("src/plugin_bundle/omh/tools/team_tool.py", ("core.fsmonitor=false", "worktree", "list")): (
-        "`git -c core.fsmonitor=false --no-optional-locks worktree list --porcelain`, run only when that helper "
-        "branch exists, to find the worktree it is checked out in so its uncommitted changes can be read; "
-        "read-only listing, names no remote, writes nothing"
+        "`git -c core.fsmonitor=false --no-optional-locks worktree list --porcelain` beside the read above, to "
+        "find the helper's worktree by the path Hermes gave it (`.worktrees/subagent-<id>`) or by that branch, "
+        "and the commit its HEAD is on, so a helper that left the branch and its uncommitted changes are still "
+        "read; read-only listing, names no remote, writes nothing"
     ),
     ("src/plugin_bundle/omh/tools/team_tool.py", ("core.fsmonitor=false", "merge-base")): (
-        "`git -c core.fsmonitor=false --no-optional-locks merge-base --is-ancestor <helper-branch-commit> HEAD` "
-        "right after the read above, in the same workspace: whether that helper's last commit is already in "
-        "the history of the HEAD a team check would run on. A read-only local ancestry query, not the forbidden "
+        "`git -c core.fsmonitor=false --no-optional-locks merge-base --is-ancestor <commit> HEAD` right after "
+        "the reads above, in the same workspace, once for the helper branch's last commit and once for its "
+        "worktree's HEAD: whether that commit is already in the history of the HEAD a team check would run on. A read-only local ancestry query, not the forbidden "
         "`merge` verb; names no remote, writes nothing, and OMH never merges the branch itself"
     ),
     ("src/coding/fanout_artifact_sharing.py", ("check-ignore",)): (

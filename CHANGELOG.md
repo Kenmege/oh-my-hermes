@@ -4,27 +4,33 @@ All notable changes will be documented here.
 
 ## Unreleased
 
-- **A checked team never counts a helper's unmerged work as checked, and the
-  board fan-in asks Hermes only for transitions it lands.** With Hermes'
-  `delegation.worktree_isolation` on, an `omh_team` helper edits a worktree of
-  its own, and its work reaches the session's workspace only when the session
-  merges its branch. `team_reconcile` still ran each part's check in that
-  workspace, so a check could pass on a tree without the part's work and accept
-  it. It now reads each returned helper's branch (`hermes-subagent/subagent-<id>`,
-  from the subagent id Hermes' `subagent_start` carries) with read-only git, and
-  while one holds commits the workspace's HEAD lacks, or its worktree holds
-  uncommitted changes, it checks nothing and is refused as
-  `helper_branch_unmerged`, naming each branch in `unmerged`. OMH never merges.
-  A branch git cannot read makes that part's check inconclusive, so the team
-  still reaches a stop. The helper's own instructions no longer say the
-  workspace is shared: they say the check runs in the session's workspace, and
-  that a helper in a worktree of its own commits on its branch. In `ultraqa`'s
-  board fan-in reference the main session no longer prepares `request_review`
-  on a `done` fixer row or `request_changes` on a row no review run holds, both
-  of which Hermes refuses: the fixer's own run ends with
-  `kanban_request_review`, and a failed re-check this session ran is a
-  `comment` on the row, with sending it back left to the operator's
-  `hermes kanban reopen-review`.
+- **A checked team no longer checks a part while its helper's work sits
+  unmerged in the worktree Hermes gave it, and the board fan-in asks Hermes
+  only for transitions it lands.** With Hermes' `delegation.worktree_isolation`
+  on, an `omh_team` helper edits a worktree of its own, and its work reaches
+  the session's workspace only when the session merges it. `team_reconcile`
+  still ran each part's check in that workspace, so a check could pass on a
+  tree without the part's work and accept it. It now reads each returned
+  helper's branch (`hermes-subagent/subagent-<id>`, from the subagent id
+  Hermes' `subagent_start` carries) and its worktree (`.worktrees/subagent-<id>`,
+  found by path even when the helper left the branch for a detached HEAD or a
+  branch of its own) with read-only git. While the branch's last commit or the
+  worktree's HEAD is missing from the workspace's history, or the worktree
+  holds uncommitted changes or untracked files, it checks nothing and is
+  refused as `helper_branch_unmerged`, naming each branch in `unmerged`. OMH
+  never merges. A branch git cannot read makes that part's check
+  inconclusive, so the team still reaches a stop. Work held by neither the
+  branch nor the worktree (a branch renamed or deleted after its worktree was
+  removed) is not looked for, and a host that names them differently leaves
+  the guard off.
+  The helper's own instructions no longer say the workspace is shared: they
+  say the check runs in the parent session's workspace, and that a helper in a
+  worktree of its own commits on its branch. In `ultraqa`'s board fan-in
+  reference the main session no longer prepares `request_review` on a `done`
+  fixer row or `request_changes` on a row no review run holds, both of which
+  Hermes refuses: the fixer's own run ends with `kanban_request_review`, and a
+  failed re-check this session ran is a `comment` on the row, with sending it
+  back left to the operator's `hermes kanban reopen-review`.
 
 - **`omh_gather_evidence` bounds the paths a probe's arguments name.** The
   allowlist matched a command prefix and left the rest free, so

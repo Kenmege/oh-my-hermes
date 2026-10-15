@@ -246,8 +246,12 @@ class BoardFields(unittest.TestCase):
         )
 
 
-class BoardFanInAsksOnlyForTransitionsHermesAccepts(unittest.TestCase):
-    """`ultraqa`'s board fan-in: the review step uses only transitions the host lands.
+class BoardFanInReviewStep(unittest.TestCase):
+    """`ultraqa`'s board fan-in review step: the fixer's run requests review, the main session does not.
+
+    This pins the replacement sentences and the absence of the two retired
+    main-session transitions; it does not parse every transition the reference
+    could name.
 
     Hermes moves a row to `review` only from `running` or `ready`
     (`hermes_cli/kanban_db.py` `request_review`, v2026.9.7 and later), and
@@ -271,7 +275,7 @@ class BoardFanInAsksOnlyForTransitionsHermesAccepts(unittest.TestCase):
             with self.subTest(clause=clause[:60]):
                 self.assertIn(clause, self.text)
 
-    def test_the_main_session_asks_for_no_transition_hermes_refuses(self) -> None:
+    def test_the_two_retired_main_session_transitions_are_gone(self) -> None:
         for refused in (
             "When the fixer row is `done`, the main session prepares `request_review`",
             "`request_review` on the fixer is prepared only after its row reads back `done`",

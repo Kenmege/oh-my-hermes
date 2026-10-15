@@ -207,61 +207,75 @@ def _fingerprint(workdir: Path) -> tuple[str, str | None]:
 
 
 def _helper_work(workdir: Path, branch: str) -> str:
-    """Where a helper's branch stands against this workspace: one of `team.HELPER_WORK_STATES`.
+    """Where a helper's work stands against this workspace: one of `team.HELPER_WORK_STATES`.
 
-    Read-only git, through the same minimal-environment runner as the checks:
-    the branch's last commit and the worktree it is checked out in, whether
-    that worktree holds uncommitted changes (the checks' own fingerprint), and
-    whether that commit is in the history of this workspace's HEAD.
+    Hermes makes the helper's worktree at ``<repo>/.worktrees/<name>`` on branch
+    ``hermes-subagent/<name>`` (`tools/subagent_worktree.py`). A helper can leave
+    that branch inside its worktree (a detached HEAD, a branch of its own), so
+    the worktree is found by its path as well as by the branch, and both the
+    branch's last commit and the commit the worktree's HEAD is on must be in the
+    history of this workspace's HEAD. Read-only git, through the same
+    minimal-environment runner as the checks; uncommitted changes in the
+    worktree are read with the checks' own fingerprint.
     """
     ref = "refs/heads/" + branch
-    # Without isolation this first read is the only one, and it finds nothing.
     code, listed = _git(workdir, ["git", "-c", "core.fsmonitor=false", "--no-optional-locks", "for-each-ref",
                                   "--format=%(refname)%00%(objectname)", ref])
     if code != 0:
         return "unreadable"
     row = next((fields for fields in (line.split("\0") for line in listed.splitlines()) if fields[0] == ref), None)
-    if row is None:
-        return "absent"
-    if len(row) != 2:
+    if row is not None and len(row) != 2:
         return "unreadable"
-    tip = row[1]
     code, worktrees = _git(workdir, ["git", "-c", "core.fsmonitor=false", "--no-optional-locks", "worktree", "list",
                                      "--porcelain"])
     if code != 0:
         return "unreadable"
-    worktree = _checked_out_at(worktrees, ref)
-    # The branch checked out in this workspace itself is this workspace's own
-    # state, which the check sees as it is.
-    if worktree and Path(worktree).is_dir() and not workdir.resolve().is_relative_to(Path(worktree).resolve()):
-        state, _ = _fingerprint(Path(worktree))
-        if state == "dirty":
-            return "uncommitted_changes"
-        if state != "clean":
+    found = _helper_worktree(worktrees, ref, branch.rpartition("/")[2])
+    if row is None and found is None:
+        return "absent"
+    commits = [row[1]] if row is not None else []
+    if found is not None:
+        path, head = found
+        # The branch checked out in this workspace itself is this workspace's
+        # own state, which the check sees as it is.
+        if Path(path).is_dir() and not workdir.resolve().is_relative_to(Path(path).resolve()):
+            state, _ = _fingerprint(Path(path))
+            if state == "dirty":
+                return "uncommitted_changes"
+            if state != "clean":
+                return "unreadable"
+        if head:
+            commits.append(head)
+    for commit in commits:
+        code, _ = _git(workdir, ["git", "-c", "core.fsmonitor=false", "--no-optional-locks", "merge-base",
+                                 "--is-ancestor", commit, "HEAD"])
+        if code == 1:
+            return "commits_not_merged"
+        if code != 0:
             return "unreadable"
-    code, _ = _git(workdir, ["git", "-c", "core.fsmonitor=false", "--no-optional-locks", "merge-base",
-                             "--is-ancestor", tip, "HEAD"])
-    if code == 0:
-        return "merged"
-    return "commits_not_merged" if code == 1 else "unreadable"
+    return "merged"
 
 
-def _checked_out_at(porcelain: str, ref: str) -> str:
-    """The path of the worktree `git worktree list --porcelain` shows with ``ref`` checked out, or ""."""
-    path = ""
-    for line in porcelain.splitlines():
-        if line.startswith("worktree "):
-            path = line[len("worktree "):]
-        elif line == "branch " + ref:
-            return path
-    return ""
+def _helper_worktree(porcelain: str, ref: str, name: str) -> tuple[str, str] | None:
+    """``(path, head)`` of the helper's worktree in `git worktree list --porcelain`, or None.
+
+    Matched by the path Hermes gave it (``.worktrees/<name>``) or by its branch
+    still checked out somewhere, so a helper that left the branch is still found.
+    """
+    for block in porcelain.split("\n\n"):
+        fields = dict(line.split(" ", 1) for line in block.splitlines() if " " in line)
+        path = fields.get("worktree", "")
+        named = Path(path).name == name and Path(path).parent.name == ".worktrees"
+        if path and (named or fields.get("branch") == ref):
+            return path, fields.get("HEAD", "")
+    return None
 
 
 def _git(workdir: Path, argv: list[str]) -> tuple[int | None, str]:
-    """One bounded git read: its exit code (None when it never exited) and its output."""
+    """One bounded git read: its exit code (None when it never exited or its output would not decode)."""
     try:
         observed = _evidence_tool.run_verification_command(argv, workdir=workdir, timeout=_GIT_READ_TIMEOUT_SECONDS)
-    except OSError:
+    except (OSError, UnicodeError):
         return None, ""
     code = observed.get("exit_code")
     return (code if observed.get("outcome") == "exited" and isinstance(code, int) else None), str(observed.get("output", ""))
