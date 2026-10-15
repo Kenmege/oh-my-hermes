@@ -4,6 +4,67 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **spend-gate and data-share-review admit the same requests on the router
+  and the in-session hint, whatever courtesy opener is used.** Four readers
+  of a request's opening -- spend-gate's clause rule, data-share-review's
+  lead, the loop-on-a-timer verdict and the router's command word -- each
+  kept their own list of openers, and the lists had drifted: "hey, redact pii
+  in the export before we send it to the vendor" reached data-share-review
+  and the same sentence opened with "hi,", "pls" or "would you" did not. One
+  bundle list, `request_lead.COURTESY_OPENERS`, now serves all four; a "."
+  right before a "/" stays with what follows, so `ok./loop` keeps OMH's
+  sigil. "pls", "plz" and "kindly" mark a spend as "please" does, and so
+  carry its known residual: "pls pay with my card in safari is broken"
+  reaches the gate as "please pay with my card in safari is broken" already
+  did. "hermes," before a data-share request is the address it is for
+  spend-gate; Hermes named after it still withdraws the review ("before
+  hermes uploads it"), a trailing ", hermes" included, and the docstring now
+  says so instead of claiming only a Hermes setting does. The hint also
+  stops naming spend-gate where the router withdraws it: the everyday-sense
+  pair for its cap and wallet phrases moved from the router into
+  `spend_signals`, whose clause rule applies it, so "can you check out the
+  spending cap for the city council budget" gets no gate on either surface.
+  A loop's prompt and the gate named as a command are exempt on both
+  surfaces, as they are from the request marker, so "run spend gate on my
+  spending limit" dispatches the gate instead of a clarify without it. The
+  gates' spaced names ("spend gate", "data share review") are no longer
+  direct invocations for the hint, which follows the router's verbs ("use
+  spend gate") and the hyphenated names. data-share-review's hint reads the
+  router's own trigger table as whole words, so "anonymize the dataset
+  before we upload it to the provider", which the router dispatches, gets
+  its hint and arms awareness on a later turn. Measured with
+  `build_chat_interaction_payload(source="discord")` and
+  `awareness_route_hint` at `dc6933c3a` (identical on every row to the
+  branch's first base, `cd8a879db`) and at this head over both corpora, the
+  follow-up probe sets, every string in the two skills' test files and a
+  matrix of 33 openers over 17 requests (2,632 sentences): neither corpus
+  moved on the router or the hint; router/hint agreement on whether the gate
+  is offered went from 260/281 to 297/297 for spend-gate and from 61/78 to
+  152/154 for data-share-review (the two left are one transcript-excerpt
+  sentence, in two of the sets, that the router dispatches to its owner,
+  media-input-operator). Outside the two gates, an opener new to a reader
+  now reads as the bare request does, or as the request after "please" for
+  an opener that marks one. Behind 11 openers over every corpus case that
+  opens with a Latin word (12,740 routes), 166 routes outside the gates
+  moved and 161 now match that reference: 76 requests that open on a fix,
+  build or change verb, behind "hey,", "hi,", "so", "just", "let's" or "i
+  need you to", dispatch (46) or ask (30) with ultrawork leading, where they
+  went to feedback-triage (30, among them three negative controls such as
+  "fix the broken wheel on my shopping cart") or a clarify led by another
+  skill; 12 cadence reports behind four openers each
+  (48) clarify instead of dispatching automation-blueprint; loops on a timer
+  get Hermes' `/loop` (20) or, after a cadence naming ulw-loop, OMH's loop
+  (8); and two pay-on-my-behalf feature requests after "pls" and "kindly"
+  clarify as after "please" (2). The other 5 are "configure web search"
+  after "hey,", "hi,", "so", "just" or "let's", which now asks with
+  websearch-setup leading, as "please configure web search" does, where the
+  bare request dispatches websearch-setup (before: dispatched web-research).
+  The money cues of a send or transfer are read as words, so "please
+  transfer the balance with my card-on-file" stays admitted. Internal: one
+  offers-itself table row per gate, spend-gate's clause tokenized like every
+  other skill's message, and the misleading `_WHOLE_WORD_ROUTE_HINT_RULES`
+  replaced by the hint's phrase readers.
+
 - **Every skill says one thing about spends, retired siblings, review
   retries and the one plan checklist.** A `loop` step that would move money
   goes through `spend-gate` first while the loop carries on, in that skill's

@@ -7,7 +7,7 @@ import re
 import unicodedata
 
 from .boundary_phrase import contains_boundary_phrase as _contains_boundary_phrase
-from .data_share_cues import data_share_request_admitted
+from .data_share_cues import DATA_SHARE_REVIEW_PHRASES, data_share_request_admitted
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES as _CODING_DELIVERY_REQUEST_PHRASES,
     CODING_DELIVERY_REQUEST_TOKENS as _CODING_DELIVERY_REQUEST_TOKENS,
@@ -2021,27 +2021,18 @@ _ROUTE_HINT_RULES = (
             "residual scan run",
             "file shared",
         ),
-        # Only the phrases that name taking personal data out of a file. A bare
-        # "pii", "redact", "mask" or "share" is absent: an acronym question, a
-        # censored film, a photo mask, and a shared doc all say them. The
-        # phrases also name code, settings, legal questions and issue triage,
-        # so the hint stands only for the request `data_share_cues` admits.
-        "phrases": (
-            "data-share-review",
-            "data share review",
-            "pii redaction",
-            "redact pii",
-            "redact the pii",
-            "redact personal data",
-            "strip the pii",
-            "remove the pii",
-            "residual pii",
-            "de-identify",
-            "quasi-identifier",
-        ),
-        # Whole tokens, so "the pseudonymized dataset" is not a cue. Every cue
-        # also needs an admitted request (`_rule_suppressed_by_context`).
-        "tokens": ("pseudonymize", "pseudonymise", "pseudonymization", "pseudonymisation", "deidentify"),
+        # The skill's own trigger table, the one the router scores, read as
+        # whole words (`_ROUTE_HINT_PHRASE_READERS`), so "the pseudonymized
+        # dataset" is not a cue. A smaller table here gave "anonymize the
+        # dataset before we upload it to the provider" another skill's hint
+        # while the router dispatched it here. None of the phrases is a bare
+        # "pii", "redact", "mask" or "share": an acronym question, a censored
+        # film, a photo mask, and a shared doc all say them. The phrases also
+        # name code, settings, legal questions and issue triage, so the hint
+        # stands only for the request `data_share_cues` admits
+        # (`_rule_suppressed_by_context`).
+        "phrases": DATA_SHARE_REVIEW_PHRASES,
+        "tokens": (),
         "adjacent_workflows": (
             "legal-compliance-review",
             "security-safety-review",
@@ -4165,13 +4156,11 @@ _ROUTE_HINT_RULES = (
         # table here hinted another skill for "go ahead and pay the 402
         # challenge for the dataset", which the router dispatches to the gate.
         # A checkout screen, a developer's own paywall or a government budget
-        # said as a topic opens no admitted clause. One gap is known: the
-        # router also withdraws the gate from a cap or wallet phrase with no
-        # word of paying beside it (`EVERYDAY_SENSE_PHRASES` in
-        # `omh.routing.policy`, which the bundle cannot import), and this rule
-        # has no such check, so "can you check out the spending cap for the
-        # city council budget" is admitted and gets this hint while the router
-        # asks about another skill.
+        # said as a topic opens no admitted clause, and neither does a cap or
+        # wallet phrase with no word of paying in the message ("can you check
+        # out the spending cap for the city council budget"): the clause rule
+        # reads the router's everyday-sense pair, which lives in
+        # `spend_signals` because the bundle cannot import `omh.routing`.
         "phrases": SPEND_GATE_PHRASES,
         "tokens": (),
         "adjacent_workflows": ("browser-operator", "connector-operator", "feedback-triage", "finance-analysis"),
@@ -6034,6 +6023,7 @@ def _awareness_context_matches_message_cached(message: str) -> tuple[bool, str]:
         bool(tokens & _AWARENESS_TOKEN_MARKERS)
         or any(marker in text for marker in _AWARENESS_MESSAGE_MARKERS)
         or _spend_awareness_marked(raw_text)
+        or _data_share_awareness_marked(raw_text)
     )
     # `degraded[0][1]` is lossless here because the `_localized_routing_text`
     # call above is the sole guarded call in this function body, so the
@@ -6050,6 +6040,15 @@ def _awareness_context_matches_message_cached(message: str) -> tuple[bool, str]:
 # spends.
 def _spend_awareness_marked(text: str) -> bool:
     return bool(spend_request_phrases(text, SPEND_GATE_PHRASES))
+
+
+# A file leaving the team arms awareness the same way: a request
+# `data_share_cues` admits that says one of the router's own phrases as whole
+# words. The phrase markers above hold only a few of them, so "anonymize the
+# dataset before we upload it to the provider", which the router dispatches,
+# armed nothing on a later turn.
+def _data_share_awareness_marked(text: str) -> bool:
+    return bool(_whole_word_phrases(text, list(DATA_SHARE_REVIEW_PHRASES))) and data_share_request_admitted(text)
 
 
 def awareness_route_hint(message: str, *, max_hints: int = 2) -> dict[str, object]:
@@ -6478,9 +6477,25 @@ def _rule_suppressed_by_named_coding_agent_delivery(
     return named_coding_agent_delivery and rule.get("id") == "customer_signal"
 
 
-# Rules whose phrases count only as whole words. A substring match is how
-# "spending cap" fired inside "consumer spending capacity is falling".
-_WHOLE_WORD_ROUTE_HINT_RULES = frozenset({"spend_gate"})
+def _whole_word_phrases(routing_normalized: str, phrases: list[str]) -> list[str]:
+    return [phrase for phrase in phrases if _contains_boundary_phrase(routing_normalized, (phrase,))]
+
+
+# Rules whose phrases are read the way the router reads the skill's triggers,
+# so the hint names the skill where the router scores it. Every other rule
+# matches its phrases as substrings.
+# - `spend_gate`: whole words inside the request clause the router admits,
+#   each followed only by what may follow a request (`spend_request_phrases`).
+#   A substring match is how "spending cap" fired inside "consumer spending
+#   capacity is falling".
+# - `data_share_review`: whole words. Its table holds single words that a
+#   longer word contains ("pseudonymize" in "pseudonymized", a finished
+#   state); the request the router admits is checked apart, by
+#   `_rule_suppressed_by_context`.
+_ROUTE_HINT_PHRASE_READERS: dict[str, Callable[[str, list[str]], list[str]]] = {
+    "spend_gate": spend_request_phrases,
+    "data_share_review": _whole_word_phrases,
+}
 
 
 def _route_hint_rule_matches(
@@ -6503,12 +6518,10 @@ def _route_hint_rule_matches(
 
 def _route_hint_phrase_matches(rule: dict[str, object], routing_normalized: str) -> list[str]:
     phrases = [str(phrase) for phrase in rule["phrases"]]
-    if rule["id"] not in _WHOLE_WORD_ROUTE_HINT_RULES:
+    reader = _ROUTE_HINT_PHRASE_READERS.get(str(rule["id"]))
+    if reader is None:
         return [phrase for phrase in phrases if phrase in routing_normalized]
-    # `spend_gate`: whole words inside the request clause the router admits
-    # too, each followed only by what may follow a request
-    # (`spend_request_phrases`).
-    return spend_request_phrases(routing_normalized, phrases)
+    return reader(routing_normalized, phrases)
 
 
 def _route_hint_rule_by_id(rule_id: str) -> dict[str, object] | None:
@@ -7956,10 +7969,20 @@ _WORKFLOW_INVOCATION_ALIASES = {
 }
 
 
+# Workflows the router offers only for a request their own rule admits
+# (`spend_signals`, `data_share_cues`). The router reads only the hyphenated
+# name as an invocation; the spaced name is a trigger phrase it scores inside
+# an admitted request, so "use spend gate" dispatches and "spend gate" alone,
+# "use spend gate is greyed out" and "data share review" do not. Here, too,
+# only the hyphenated name is a direct invocation; the spaced name is left to
+# the workflow's own rule, which reads the same admission.
+_ADMISSION_HELD_WORKFLOWS = frozenset({"spend-gate", "data-share-review"})
+
+
 def _direct_workflow_prefix(routing_normalized: str) -> str:
     normalized = routing_normalized.strip()
     for workflow in sorted(_DIRECT_WORKFLOW_NEXT_ACTIONS, key=len, reverse=True):
-        aliases = (workflow, workflow.replace("-", " "))
+        aliases = (workflow,) if workflow in _ADMISSION_HELD_WORKFLOWS else (workflow, workflow.replace("-", " "))
         if any(_starts_with_direct_workflow_alias(normalized, alias) for alias in aliases):
             return workflow
     for alias in sorted(_WORKFLOW_INVOCATION_ALIASES, key=len, reverse=True):

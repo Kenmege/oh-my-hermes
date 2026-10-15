@@ -13,12 +13,26 @@ from omh.plugin_bundle.omh.awareness import (
     awareness_route_hint,
 )
 from omh.plugin_bundle.omh.native_tools import native_tool_presence_clause
-from omh.plugin_bundle.omh.spend_signals import SPEND_GATE_PHRASES
+from omh.plugin_bundle.omh.spend_signals import (
+    SPEND_EVERYDAY_SENSE_ANCHORS,
+    SPEND_EVERYDAY_SENSE_PHRASES,
+    SPEND_GATE_NAME_LEADS,
+    SPEND_GATE_PHRASES,
+    SPEND_LEADS,
+    SPEND_MONEY_CUED_LEADS,
+    SPEND_RECONCILE_LEADS,
+    spend_gate_named_as_command,
+)
 from omh.quality.routing_precision import ROUTING_PRECISION_CASES
 from omh.routing.chat import HOST_COMMAND_TURN_REASON, NATIVE_LOOP_CADENCE_REASON, SPENDING_LOOP_REASON
 from omh.routing.localization import normalized_phrase
-from omh.routing.policy import everyday_sense_phrase_unanchored
-from omh.routing.recommend import _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS, _prepare_definition, _spend_gate_clause
+from omh.routing.policy import EVERYDAY_SENSE_PHRASES, everyday_sense_phrase_unanchored
+from omh.routing.recommend import (
+    _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS,
+    _prepare_definition,
+    _spend_gate_clause,
+    recommend_skills,
+)
 from omh.skills.catalog import builtin_definitions, omh_skill_display_name
 from omh.skills.packaging import builtin_skill_reference_templates, builtin_skill_templates
 from omh.skills.render import agent_skill_reference_templates, agent_skill_templates
@@ -445,6 +459,15 @@ class SpendGateRoutingTests(unittest.TestCase):
             ("i need you to pay with my card for the hotel", True),
             ("i want you to pay with my card for the hotel", True),
             ("hermes, pay with my card for the hotel", True),
+            # "pls", "plz" and "kindly" are stripped before the lead as
+            # "please" is, and mark the request as it does. An opener that
+            # asks nothing of the agent is stripped and marks nothing.
+            ("pls pay with my card for the hotel", True),
+            ("plz pay with my card for the hotel", True),
+            ("kindly pay with my card for the hotel", True),
+            ("so pay with my card for the hotel", False),
+            ("hey, pay with my card for the hotel", False),
+            ("let's pay with my card for the hotel", False),
             ("pay with my card $40 for the refill", True),
             ("pay with my card 40 dollars for the refill", True),
             ("transfer 40 dollars from my wallet to my landlord", True),
@@ -597,6 +620,8 @@ class SpendGateRoutingTests(unittest.TestCase):
             "please send the deposit to the landlord with my card",
             "please send the deposit to the landlord with my credit card",
             "please transfer the deposit from my wallet to the landlord",
+            # The money cue is read as words: a hyphen after it ends no cue.
+            "please transfer the balance with my card-on-file",
             "hermes, did the payment go through after you paid the invoice?",
             "hermes, did the payment go through after you bought the tickets?",
             "hermes, did the payment go through after you ordered the pizza?",
@@ -654,6 +679,16 @@ class SpendGateRoutingTests(unittest.TestCase):
             ("please subscribe to the pro plan from my wallet", False),
             ("could you top up my account from my wallet", False),
             ("please donate $20 to the food bank from my wallet", False),
+            # Naming the gate as a command asks for the gate whatever cap it
+            # names: the check is skipped for it, on both surfaces.
+            ("run spend gate on my spending limit", False),
+            ("use spend gate for my spending cap", False),
+            # "gate" anywhere else is no word of paying: an airport gate, a CI
+            # gate and a gate number leave the cap or wallet in its everyday
+            # sense.
+            ("could you check out the spending limit at the airport gate", True),
+            ("can you check out the spending cap for the city council budget, the ci gate is red", True),
+            ("please check out the receipt from my wallet at gate 12", True),
             # Only those six verbs: "check out" also asks to look at a thing,
             # and the clause rule admits each of these.
             ("can you check out the spending cap for the city council budget", True),
@@ -662,6 +697,48 @@ class SpendGateRoutingTests(unittest.TestCase):
         ):
             with self.subTest(message=message):
                 self.assertIs(everyday_sense_phrase_unanchored(SKILL, normalized_phrase(message)), withdrawn)
+
+    def test_the_router_and_the_clause_rule_read_one_everyday_sense_pair(self) -> None:
+        # The pair lives in the bundle, which may not import the router; the
+        # router's table holds the same objects, so the two cannot drift.
+        phrases, anchors = EVERYDAY_SENSE_PHRASES[SKILL]
+        self.assertIs(phrases, SPEND_EVERYDAY_SENSE_PHRASES)
+        self.assertIs(anchors, SPEND_EVERYDAY_SENSE_ANCHORS)
+
+    def test_every_lead_the_check_reads_but_check_out_holds_an_anchor(self) -> None:
+        # Why the clause rule can skip the router's other condition (a word of
+        # the message's own beside the phrase): with no anchor in the message
+        # the lead is "check out", and "check" is such a word. The gate named
+        # as a command is not read by the check at all.
+        leads = (*SPEND_LEADS, *SPEND_MONEY_CUED_LEADS, *SPEND_RECONCILE_LEADS)
+        unanchored = [lead for lead in leads if not set(lead) & SPEND_EVERYDAY_SENSE_ANCHORS]
+        self.assertEqual(unanchored, [("check", "out")])
+        for lead in SPEND_GATE_NAME_LEADS:
+            with self.subTest(lead=lead):
+                message = " ".join(lead) + " on my spending limit"
+                self.assertTrue(spend_gate_named_as_command(message))
+                self.assertTrue(_spend_gate_clause(normalized_phrase(message)))
+                self.assertFalse(everyday_sense_phrase_unanchored(SKILL, normalized_phrase(message)))
+
+    def test_a_loop_keeps_a_cap_or_wallet_phrase_without_a_word_of_paying(self) -> None:
+        # The everyday-sense check is waived for a loop's prompt, as the
+        # marker is: a loop that may check out from the person's wallet
+        # reaches the gate. Outside a loop the same words do not.
+        message = "loop every hour and check out from my wallet when the price drops"
+        route = _route(message)
+        self.assertEqual((route["action"], route["selected_skill"], route["reason"]), ("dispatch", SKILL, SPENDING_LOOP_REASON))
+        self.assertIn(SKILL, _hinted_workflows(message))
+        message = "please check out from my wallet when the price drops"
+        self.assertEqual(_spend_gate_clause(normalized_phrase(message)), "")
+        self.assertNotIn(SKILL, _hinted_workflows(message))
+
+    def test_the_clause_is_tokenized_like_every_other_skills_message(self) -> None:
+        # `_tokens`, not `routing_tokens`: the two differ on "user", one of the
+        # gate's metadata words, which every other skill is credited for.
+        recommendation = next(
+            item for item in recommend_skills("please pay with my card for the user", limit=50) if item["skill"] == SKILL
+        )
+        self.assertIn("metadata:user", recommendation["matched"])
 
     def test_a_city_budget_cap_is_not_the_persons_spend(self) -> None:
         # The clause rule admits it ("can you" and the lead "check out"); the
@@ -720,6 +797,18 @@ class SpendGateRoutingTests(unittest.TestCase):
                 self.assertEqual(awareness_route_hint(message)["selected_workflow"], SKILL)
         # What follows the name is still read: a verb after it makes it a label.
         self.assertEqual(_spend_gate_clause(normalized_phrase("use spend gate is greyed out in settings")), "")
+        # The hint takes the same verbs: the spaced name alone, or as a label,
+        # is no invocation on either surface. The hyphenated name is one on
+        # both.
+        for message in ("spend gate", "use spend gate is greyed out in settings", "spend gate for the hotel booking"):
+            with self.subTest(message=message):
+                route = _route(message)
+                self.assertNotEqual(route.get("selected_skill"), SKILL)
+                self.assertNotEqual(route.get("candidate_skill"), SKILL)
+                self.assertNotIn(SKILL, _hinted_workflows(message))
+        route = _route("spend-gate")
+        self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", SKILL))
+        self.assertEqual(awareness_route_hint("spend-gate")["selected_workflow"], SKILL)
 
     def test_the_router_the_hint_and_the_markers_read_one_phrase_table(self) -> None:
         self.assertEqual(_definition(SKILL).triggers, SPEND_GATE_PHRASES)
@@ -800,6 +889,38 @@ class SpendGateRouteHintTests(unittest.TestCase):
         ):
             with self.subTest(message=message):
                 self.assertFalse(_spend_awareness_marked(message))
+
+    def test_cap_wallet_name_and_opener_sentences_get_the_hint_where_the_router_offers_the_gate(self) -> None:
+        # These sentences only: the router offers the gate when its clause rule
+        # admits the request and the cap or wallet phrase is not in its
+        # everyday sense, and the hint names it on exactly those. Before, the
+        # hint had no everyday-sense check and named the gate for every
+        # look-at request below. Every corpus sentence is held to the same
+        # agreement by the routing-precision cases and the hint test over the
+        # negative controls; this pins the sentences the change is about.
+        for message in (
+            "could you check out the spending limit at the airport gate",
+            "can you check out the spending cap for the city council budget, the ci gate is red",
+            "please check out the receipt from my wallet at gate 12",
+            "use spend gate for my spending cap",
+            "can you check out the spending cap for the city council budget",
+            "could you check out the spending limit in this city",
+            "please check out the receipt from my wallet",
+            "can you check out the spend cap",
+            "please renew the domain from my wallet",
+            "please tip the driver from my wallet",
+            "could you top up my account from my wallet",
+            "please check out with my card",
+            "run spend gate on my spending limit",
+            "transfer 40 dollars from my wallet to the vendor",
+            "kindly pay with my card for the hotel",
+            "pls buy it for me",
+        ):
+            with self.subTest(message=message):
+                query = normalized_phrase(message)
+                router_offers = bool(_spend_gate_clause(query)) and not everyday_sense_phrase_unanchored(SKILL, query)
+                self.assertIs(SKILL in _hinted_workflows(message), router_offers)
+                self.assertIs(_spend_awareness_marked(message), router_offers)
 
     def test_a_spend_of_the_persons_own_money_gets_the_hint(self) -> None:
         for message in (

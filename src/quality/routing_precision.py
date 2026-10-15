@@ -6188,6 +6188,59 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "direct_answer",
         "spend-gate",
     ),
+    # The router and the in-session hint admit the same requests: each of
+    # these got spend-gate's route hint while the router left the gate out. `tests/test_spend_gate.py` checks every
+    # negative control's hint, so these pin the hint as well as the route.
+    RoutingPrecisionCase(
+        "city-budget-spending-cap-look-is-not-a-spend",
+        "Looking at a city budget's spending cap has no word of paying, so neither the router nor the hint offers the gate",
+        "can you check out the spending cap for the city council budget",
+        "answer_clarification",
+        "",
+        "spend-gate",
+    ),
+    RoutingPrecisionCase(
+        "spend-gate-spaced-name-alone-is-not-an-invocation",
+        "The gate's spaced name alone is no invocation; the router and the hint both wait for 'use' or 'run' or the hyphenated name",
+        "spend gate",
+        "answer_clarification",
+        "",
+        "spend-gate",
+    ),
+    RoutingPrecisionCase(
+        "spend-gate-name-as-a-greyed-out-label-is-not-a-request",
+        "Naming the gate as a label that is greyed out asks for no spend",
+        "use spend gate is greyed out in settings",
+        "answer_clarification",
+        "",
+        "spend-gate",
+    ),
+    # "gate" said anywhere but in the gate's own name is no word of paying:
+    # while it anchored a cap or wallet phrase, each of these dispatched the gate.
+    RoutingPrecisionCase(
+        "airport-gate-spending-limit-look-is-not-a-spend",
+        "An airport gate beside a spending limit is no word of paying",
+        "could you check out the spending limit at the airport gate",
+        "answer_clarification",
+        "",
+        "spend-gate",
+    ),
+    RoutingPrecisionCase(
+        "red-ci-gate-beside-a-budget-cap-is-not-a-spend",
+        "A red CI gate beside a city budget's spending cap is no word of paying",
+        "can you check out the spending cap for the city council budget, the ci gate is red",
+        "answer_clarification",
+        "",
+        "spend-gate",
+    ),
+    RoutingPrecisionCase(
+        "wallet-receipt-at-a-gate-number-is-not-a-spend",
+        "A gate number beside a receipt from the person's wallet is no word of paying",
+        "please check out the receipt from my wallet at gate 12",
+        "answer_clarification",
+        "",
+        "spend-gate",
+    ),
 )
 
 
@@ -13474,7 +13527,8 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "run_hermes_research",
         "web_research",
     ),
-    # Review round two: the crash log stays with the guard that holds the issue.
+    # Review round three: the crash log stays with the guard that holds the
+    # issue (round two pinned it to dispatch data-share-review).
     RoutingInterventionCase(
         "crash-log-for-a-public-github-issue-stays-on-github-event-ops",
         "Redacting a crash log before a public GitHub issue stays with GitHub event ops, which holds the issue",
@@ -13937,6 +13991,66 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "img-summary",
         "prepare_visual_prompt_card",
         "img_summary",
+    ),
+    # Every courtesy opener reads the same way on the router and the hint
+    # (`request_lead.COURTESY_OPENERS`): "pls" and "kindly" mark a spend as
+    # "please" does, and "hi," and "hermes," open a data-share request as
+    # "hey," does.
+    RoutingInterventionCase(
+        "kindly-card-payment-reaches-spend-gate",
+        "A card payment asked for with 'kindly' reaches the pre-spend card, as with 'please'",
+        "kindly pay with my card for the hotel",
+        "dispatch",
+        "spend-gate",
+        "prepare_pre_spend_card",
+        "pre_spend_card",
+        "spend-gate",
+    ),
+    RoutingInterventionCase(
+        "pls-buy-it-for-me-leads-with-spend-gate",
+        "A purchase asked for with 'pls' asks with the pre-spend card leading, as with 'please'",
+        "pls buy it for me",
+        "clarify",
+        "oh-my-hermes",
+        "answer_clarification",
+        "clarification",
+        "spend-gate",
+    ),
+    RoutingInterventionCase(
+        "hi-opened-export-for-a-researcher-reaches-data-share-review",
+        "De-identifying an export for a researcher after 'hi,' reaches the data share review, as after 'hey,'",
+        "hi, de-identify this export for the researcher",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "hermes-addressed-export-for-a-researcher-reaches-data-share-review",
+        "De-identifying an export for a researcher, addressed to Hermes, reaches the data share review",
+        "hermes, de-identify this export for the researcher",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "lets-opened-loop-that-buys-with-my-card-reaches-spend-gate",
+        "A loop on a timer that buys with the person's card, opened with 'let's', reaches the pre-spend card",
+        "let's loop every hour and buy the concert tickets for me with my card if they drop under $50",
+        "dispatch",
+        "spend-gate",
+        "prepare_pre_spend_card",
+        "pre_spend_card",
+    ),
+    RoutingInterventionCase(
+        "spend-gate-run-on-a-spending-limit-reaches-spend-gate",
+        "Running the gate by name on the person's spending limit reaches the pre-spend card; the named gate skips the cap's everyday sense",
+        "run spend gate on my spending limit",
+        "dispatch",
+        "spend-gate",
+        "prepare_pre_spend_card",
+        "pre_spend_card",
     ),
     # A person typing a blueprint seed's first line, without the fixed line
     # Hermes writes after it, still routes to the blueprint skill.

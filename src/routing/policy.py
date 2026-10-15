@@ -31,8 +31,13 @@ from .reference_regions import executable_routing_text
 from .jev_addressing import jev_addressed_skill
 from .localization import normalized_phrase, phrase_is_spoken, routing_terms, routing_tokens
 from .materials_cues import OFFICE_FILE_MATERIAL_PHRASES
-from ..plugin_bundle.omh.data_share_cues import data_share_request_admitted
-from ..plugin_bundle.omh.spend_signals import spend_phrase_continues_a_request
+from ..plugin_bundle.omh.request_lead import after_courtesy
+from ..plugin_bundle.omh.spend_signals import (
+    SPEND_EVERYDAY_SENSE_ANCHORS,
+    SPEND_EVERYDAY_SENSE_PHRASES,
+    spend_gate_named_as_command,
+    spend_phrase_continues_a_request,
+)
 from .missed_route import has_normalized_missed_omh_workflow_context
 from .omh_help import is_omh_docs_question
 from .visual_qa_cues import BROWSER_VISUAL_QA_PHRASES, CUSTOMER_SYMPTOM_REPORT_PHRASES
@@ -2188,26 +2193,14 @@ EVERYDAY_SENSE_PHRASES: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
             }
         ),
     ),
-    # "congress raised the spending cap again", "the speed and spending limit
-    # rules in this city" and "the photo fell out from my wallet" move no money
-    # for the person; each phrase keeps this route only beside a word of paying
-    # or buying. "agent" and "hermes" are not anchors: the tokenizer drops both.
-    # Six verbs that open a spend the clause rule admits are anchors too:
-    # "book", "donate", "renew", "subscribe", "tip" and "top" (up), so "please
-    # renew the domain from my wallet" keeps its route. The other leads' verbs
-    # are not: "can you check out the spending cap for the city council
-    # budget" asks to look at a budget.
-    "spend-gate": (
-        ("spend cap", "spending cap", "spend limit", "spending limit", "from my wallet"),
-        frozenset(
-            {
-                "402", "api", "approve", "book", "bot", "buy", "buying", "buys", "card", "charge", "charged",
-                "checkout", "credits", "dollars", "donate", "endpoint", "euros", "funds", "money", "order",
-                "orders", "pay", "paying", "payment", "payments", "purchase", "purchases", "renew", "send",
-                "subscribe", "subscription", "tip", "top", "transfer", "usd",
-            }
-        ),
-    ),
+    # "congress raised the spending cap again" and "the photo fell out from my
+    # wallet" move no money for the person. The pair lives in the bundle's
+    # `spend_signals`, whose request clause applies it too, so the route hint
+    # withdraws the gate from the same messages the router does ("can you check
+    # out the spending cap for the city council budget"); its comment says
+    # which words anchor and why. The gate named as a command is exempt
+    # (`everyday_sense_phrase_unanchored`).
+    "spend-gate": (SPEND_EVERYDAY_SENSE_PHRASES, SPEND_EVERYDAY_SENSE_ANCHORS),
     # "the play store on my phone will not open", "my google play gift card did
     # not work" and "the app store keeps asking for my password" are a phone's
     # store app, not a release; each phrase keeps this route only beside a word
@@ -2375,6 +2368,10 @@ def everyday_sense_phrase_unanchored(skill: str, normalized_query: str) -> bool:
     """
     entry = EVERYDAY_SENSE_PHRASES.get(skill)
     if entry is None:
+        return False
+    # "run spend gate on my spending limit" asks for the gate whatever cap it
+    # names; `spend_signals`' clause rule skips the check for it too.
+    if skill == "spend-gate" and spend_gate_named_as_command(normalized_query):
         return False
     phrases, anchors = entry
     spoken = tuple(phrase for phrase in phrases if phrase_is_spoken(normalized_query, phrase))
@@ -3000,18 +2997,6 @@ _SECURITY_EVENT_OVER_GITHUB_EVENT_PHRASES = (
     "leaked credential",
     "committed a secret",
 )
-# `data-share-review` is scored only for a sentence that leads with redact,
-# pseudonymize, anonymize or de-identify on a file leaving the team
-# (`data_share_cues`, which the awareness route hint reads too). It has no
-# boost and no guard stands down for it: a request another skill holds stays
-# with that skill.
-
-
-def data_share_review_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
-    """A sentence that leads with a protective verb on a file leaving the team."""
-    return data_share_request_admitted(normalized_query)
-
-
 # A build waiting in TestFlight or a store's review is a store release owned by
 # `mobile-release` (#1568), not a CI build or a pull-request review: the store,
 # not GitHub, decides what happens next.
@@ -6790,26 +6775,13 @@ def _deep_interview_guard_applies(normalized_query: str, query_tokens: set[str])
     return (interview or clarify) and before_plan
 
 
-# The words of a message from its command verb on, after an optional courtesy
-# opener ("please", "can you") or an address to the assistant ("omh").
+# The words of a message from its command verb on, after the courtesy openers
+# and the address to the assistant ("please", "can you", "omh", "hermes,") that
+# every reader of a request's opening strips (`request_lead.COURTESY_OPENERS`).
 # Used only to NARROW guards: an edit verb that is not the command verb does
 # not make a request an edit.
-_COURTESY_OPENERS = (
-    "please ", "pls ", "can you ", "could you ", "would you ", "will you ", "can we ", "could we ",
-    "kindly ", "hey ", "ok ", "okay ", "now ", "omh ", "hermes ", "hermes, ",
-)
-
-
 def _command_words(normalized_query: str) -> list[str]:
-    text = normalized_query.strip()
-    changed = True
-    while changed:
-        changed = False
-        for opener in _COURTESY_OPENERS:
-            if text.startswith(opener):
-                text = text[len(opener) :].lstrip(" ,")
-                changed = True
-    return re.findall(r"[a-z0-9#][a-z0-9#+.-]*", text)
+    return re.findall(r"[a-z0-9#][a-z0-9#+.-]*", after_courtesy(normalized_query.strip()))
 
 
 # Code-shaped objects: the nouns a code edit acts on. The direct code-edit
@@ -8367,8 +8339,8 @@ _HERMES_SETUP_GUIDE_PHRASES = (
 # Said alone, these name Hermes' own setting; with an object ("configure web
 # search for the store's product catalog", "... in our nextjs app") they name
 # the user's app, where the setup guide dispatched. They count only as the
-# whole request, after a courtesy opener (`_COURTESY_OPENERS`) and before a
-# closing "please" or "thanks".
+# whole request, after the courtesy openers (`request_lead.COURTESY_OPENERS`)
+# and before a closing "please" or "thanks".
 _HERMES_SETUP_GUIDE_WHOLE_REQUESTS = ("configure web search",)
 _COURTESY_CLOSERS = frozenset({"please", "pls", "thanks", "thx", "thank", "you"})
 
