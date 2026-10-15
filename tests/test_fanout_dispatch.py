@@ -21,6 +21,7 @@ from _local_package import load_local_package
 load_local_package()
 
 from _cli_harness import run_cli  # noqa: E402
+from _fanout_interrupt_flag import InterruptFlagIsolatedTestCase  # noqa: E402
 
 from omh.coding.executor_readiness import (  # noqa: E402
     live_readiness_binding,
@@ -264,17 +265,7 @@ def _writing_runner(
     return runner
 
 
-class FanoutUnitResultIntakeTests(unittest.TestCase):
-    def setUp(self) -> None:
-        # The dispatch under test sets the process-global interrupt flag and
-        # leaves it for the next dispatch entry; a sibling spawning through
-        # signal_safe_unit_runner directly would be SIGTERMed on
-        # register-then-check (#1482).
-        from omh.coding.fanout_dispatch import _INTERRUPT_FLAG
-
-        _INTERRUPT_FLAG.clear()
-        self.addCleanup(_INTERRUPT_FLAG.clear)
-
+class FanoutUnitResultIntakeTests(InterruptFlagIsolatedTestCase):
     def _setup(self, tmp: str):
         root = Path(tmp)
         paths = OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes")

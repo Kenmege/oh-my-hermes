@@ -10,6 +10,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
+from _fanout_interrupt_flag import InterruptFlagIsolatedTestCase
 from omh.coding.fanout import build_fanout_contract
 from omh.coding.fanout_artifacts import write_fanout_contract
 from omh.coding.fanout_dispatch import dispatch_fanout
@@ -451,17 +452,7 @@ class FanoutRecoveredPressureIntegrationTests(unittest.TestCase):
         self.assertEqual(runner.attempts["b-pressure"], 2)
 
 
-class FanoutInterruptedAdmissionTests(unittest.TestCase):
-    def setUp(self) -> None:
-        # The dispatch under test sets the process-global interrupt flag and
-        # leaves it for the next dispatch entry; a sibling spawning through
-        # signal_safe_unit_runner directly would be SIGTERMed on
-        # register-then-check (#1482).
-        from omh.coding.fanout_dispatch import _INTERRUPT_FLAG
-
-        _INTERRUPT_FLAG.clear()
-        self.addCleanup(_INTERRUPT_FLAG.clear)
-
+class FanoutInterruptedAdmissionTests(InterruptFlagIsolatedTestCase):
     def test_interrupt_cleanup_observes_a_collected_clean_completion_once(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
