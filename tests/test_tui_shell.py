@@ -172,6 +172,36 @@ class QueuedKindTests(unittest.TestCase):
         self.assertEqual([(entry.text, entry.shell) for entry in app.queued], [("!ls", True)])
 
 
+class RecalledPromptTests(unittest.TestCase):
+    """Up takes a queued prompt back; the composer then shows what it shows for that text, as for anything typed."""
+
+    BANG_PASTE = "!important: read the notes below\nmake clean\necho step2\necho step3\n"
+
+    def test_a_queued_chip_whose_text_starts_with_a_bang_comes_back_as_a_chip_and_goes_to_the_model(self) -> None:
+        app, client = make_app(busy=True)
+        app._on_input(Paste(self.BANG_PASTE))
+        app._on_input(Key(ENTER))  # queued as a prompt: the composer showed a chip
+        send(app, "and this")
+        app._on_input(Key(UP))
+        self.assertTrue(app.composer.text.startswith("[Pasted text #"), app.composer.text)
+        self.assertTrue(app.composer.text.endswith("\nand this"), app.composer.text)
+        self.assertEqual(app._display_mode(), "normal")  # no `!` line on the composer
+        app._on_input(Key(ENTER))
+        self.assertEqual([(entry.text, entry.shell) for entry in app.queued], [(self.BANG_PASTE + "\nand this", False)])
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": self.BANG_PASTE + "\nand this",
+                                                           "queued": True})])
+
+    def test_a_refused_steer_whose_text_starts_with_a_bang_comes_back_as_its_text(self) -> None:
+        # Documented in `_recall_queue`: the composer decides again, so this text shows as a `!` line.
+        app, client = make_app(busy=True)
+        send(app, "/steer !echo pwned")
+        answer(app, client, None, {"code": 4009, "message": "agent not ready"})
+        app._on_input(Key(UP))
+        self.assertEqual(app.composer.text, "!echo pwned")
+        self.assertEqual(app._display_mode(), MODE_SHELL)
+
+
 class ShownLineDecidesTests(unittest.TestCase):
     """What a line is (`!` shell, slash command, prompt) is read from what the composer showed, never a chip's text."""
 

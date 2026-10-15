@@ -2350,6 +2350,12 @@ class App(ModesMixin, AgentViewMixin):
         back alone, and otherwise the prompts before it come back and it stays
         queued, with everything after it. A line sent again while the turn
         still runs joins the queue at its end.
+        The composer decides again what the text it gets back shows, as for
+        anything typed. So a prompt that comes back first and was a paste chip
+        whose text starts with `!` comes back as one chip holding that text,
+        and the composer shows a prompt, as it did when it was sent; any other
+        prompt whose text starts with `!` (a refused steer's) shows as a `!`
+        line, and Enter then runs it as one.
         With nothing queued Up is the composer's: it walks the input history.
         """
         if not isinstance(event, Key) or event.name != UP or self.composer.text or not self.queued:
@@ -2357,7 +2363,13 @@ class App(ModesMixin, AgentViewMixin):
         taken = [self.queued.popleft()]
         while self.queued and not taken[0].shell and not self.queued[0].shell:
             taken.append(self.queued.popleft())
-        self._set_composer("\n".join(line.typed or line.text for line in taken))
+        first = taken[0]
+        if not first.shell and not first.typed and first.shown and first.text.startswith(SHELL_PREFIX):
+            self.composer.handle(Paste(first.text))  # a chip again, never a `!` line the composer would run
+            for line in taken[1:]:
+                self.composer.replace(self.composer.caret, self.composer.caret, "\n" + (line.typed or line.text))
+        else:
+            self._set_composer("\n".join(line.typed or line.text for line in taken))
         return True
 
     # ── steering ──
