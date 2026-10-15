@@ -4299,9 +4299,10 @@ _WORKFLOW_OPERATIONS_CHAT_CARDS.update(
             "kind": "running_work_board",
             "headline": "I can show what coding work is running right now.",
             "body": (
-                "I will show one row per unit: which runtime, which model, status, elapsed time, and tokens. "
-                "Runtime and model are exact because omh chose them; anything nobody observed prints as the "
-                "literal unknown rather than an estimate."
+                "I will show one row per unit: which runtime, which model, status, elapsed time, and tokens, "
+                "and one per Hermes delegate child or kanban worker with its source and state. A unit's runtime "
+                "and model are exact because omh chose them; a Hermes worker's model is the one Hermes recorded; "
+                "anything nobody observed prints as the literal unknown rather than an estimate."
             ),
             "phase": "running_work_board_prepared",
             "next_action": "show_running_work_board",

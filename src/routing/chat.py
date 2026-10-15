@@ -4150,7 +4150,7 @@ _OPERATOR_SURFACE_FAST_PATH_RULES: tuple[tuple[str, tuple[str, ...], str, str], 
             "로컬 실행 효율",
         ),
         "operator_surface_fast_path:run_efficiency",
-        "Clear local run-efficiency request; prepare a supplied-metadata report with provider and host gaps explicit.",
+        "Clear local run-efficiency request; prepare a report from the supplied timings and context budget plus Hermes' recorded usage for a named session, with provider, billing, and cron not observed.",
     ),
     (
         "external-connector-readiness",

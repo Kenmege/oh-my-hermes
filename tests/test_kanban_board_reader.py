@@ -272,7 +272,9 @@ class KanbanLaneTests(unittest.TestCase):
         self.assertFalse(by_id["block001"]["retry_pending"])
         self.assertEqual(by_id["ready001"]["role"], "worker")
         self.assertEqual(by_id["ready001"]["parent_count"], 2)
-        self.assertEqual(by_id["ready001"]["elapsed_seconds"], 0.0)
+        # Never started: no elapsed time at all, not an observed zero. The HUD
+        # renders a queued lane's elapsed cell blank either way.
+        self.assertIsNone(by_id["ready001"]["elapsed_seconds"])
         # Finished rows freeze at completion; a settled one at its heartbeat.
         self.assertEqual(by_id["done0001"]["elapsed_seconds"], 500.0)
         self.assertTrue(by_id["done0001"]["completed"])

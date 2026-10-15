@@ -11,8 +11,9 @@ the same on-disk markers directly with `json.load` and narrow excepts, the
 same standalone-file pattern `tools/capability_tool.py` already uses for the
 capability-family sidecar.
 
-Sources, in merge precedence order (matches
-`omh.coding.status_board.SOURCE_ORDER`):
+Sources, in merge precedence order (the first two entries of
+`omh.coding.status_board.SOURCE_ORDER`; this hook-side reader does not read
+executor progress or Hermes' own delegate children and kanban workers):
 
 - `<omh_home>/coding/fanout/<fanout_id>/inflight/<unit_id>.json` -- one marker
   per unit currently dispatched, written before the blocking spawn and removed
