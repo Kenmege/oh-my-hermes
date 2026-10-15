@@ -25,6 +25,7 @@ from _local_package import load_local_package
 
 load_local_package()
 from omh.plugin_bundle.omh.native_tools import native_tool_presence_clause
+from omh.routing.chat import route_chat_message
 from omh.skills.catalog import builtin_definitions, omh_skill_display_name
 from omh.skills.catalog_types import OMH_MANAGED_SKILL_CLAUSE
 from omh.skills.packaging import builtin_skill_templates
@@ -205,6 +206,20 @@ class HermesUsageSurfaceTests(unittest.TestCase):
                 for clause in clauses:
                     with self.subTest(skill=name, projection=projection, clause=clause[:80]):
                         self.assertNotIn("cost", clause.lower())
+
+
+class RunEfficiencyRouteReasonTests(unittest.TestCase):
+    def test_the_route_reason_names_hermes_recorded_usage(self) -> None:
+        # The report reads Hermes' recorded usage for a session named with
+        # `--hermes-session`; the router's reason said a "supplied-metadata
+        # report" with host gaps, which stopped being what it reads.
+        decision = route_chat_message("show the local run efficiency report", source="discord")
+        self.assertEqual((decision["action"], decision["selected_skill"]), ("dispatch", "run-efficiency"))
+        reason = decision["reason"]
+        self.assertIn("Hermes' recorded usage for a named session", reason)
+        # The three domains the report marks not_observed whatever it read.
+        self.assertIn("provider, billing, and cron not observed", reason)
+        self.assertNotIn("supplied-metadata", reason)
 
 
 class PortableScopeTests(unittest.TestCase):

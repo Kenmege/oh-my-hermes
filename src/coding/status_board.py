@@ -4,12 +4,16 @@ Answers one question — "what coding work is running right now?" — by merging
 three local observation sources into one row per unit and rendering them as an
 aligned, dialect-neutral board. Every row carries a label, the runtime that
 owns it, the model that runtime was told to use, a status, an elapsed time, and
-a token total.
+a token total. Below the units, the same board lists the work Hermes runs on
+its own -- `delegate_task` children and kanban board tasks -- through the two
+readers `omh_hud` uses, each row with its source and state, and says when
+either Hermes database could not be read.
 
 Boundaries, in order of importance:
 
-- Honesty over completeness. Runtime and model are always exact when present
-  because omh itself selected them and put them on the command line. Tokens,
+- Honesty over completeness. A unit's runtime and model are always exact when
+  present because omh itself selected them and put them on the command line; a
+  Hermes worker's model is the one Hermes recorded. Tokens,
   session refs, and the elapsed time of an unfinished unit are observed or the
   literal `unknown` — never estimated, never derived from a conversation token
   budget (that budget belongs to a different actor and using it here would be a
@@ -33,12 +37,22 @@ dispatch summary, so this module never re-parses executor output.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Final, Mapping
 
 from ..system.local_store import read_json_object_result, utc_now
 from ..evidence import PHASE_CODE, status_label
+from ..evidence.labels import (
+    CONFIDENCE_BLOCKED,
+    CONFIDENCE_FAILED,
+    CONFIDENCE_NOT_RUN,
+    CONFIDENCE_REPORTED_DONE,
+    CONFIDENCE_RUNNING,
+)
+from ..plugin_bundle.omh.hermes_delegation import read_hermes_native_subagents
+from ..plugin_bundle.omh.kanban_board_reader import read_kanban_lanes
 from ..plugin_bundle.omh.run_records import DISPATCH_STATUS_VOCABULARY, DISPATCH_SUMMARY_FILE, FANOUT_CONTRACT_FILE
 from ..system.paths import OmhPaths
 from ..workflows.observation_journal import (
@@ -62,14 +76,14 @@ from ..catalogs.model_vendor_glyphs import vendor_glyph
 CODING_STATUS_BOARD_SCHEMA_VERSION: Final[str] = "omh_coding_status_board/v1"
 
 CODING_STATUS_BOARD_CLAIM_BOUNDARY: Final[str] = (
-    "Status board rows are metadata-only observed activity. Runtime and model are exact because "
-    "omh selected them; tokens, session refs, and the elapsed time of an unfinished unit are "
-    "observed or the literal unknown, never estimated. It is not result, verification, review, "
-    "CI, merge-readiness, or merge evidence."
+    "Status board rows are metadata-only observed activity. A unit's runtime and model are exact "
+    "because omh selected them; a Hermes worker's model is the one Hermes recorded. Tokens, session "
+    "refs, and the elapsed time of an unfinished unit are observed or the literal unknown, never "
+    "estimated. It is not result, verification, review, CI, merge-readiness, or merge evidence."
 )
 
-# The messenger line. The full boundary above is 308 characters against a
-# two-row board of roughly 275 -- 53% of what a person sees on a phone would be
+# The messenger line. The full boundary above is longer than a two-row board of
+# roughly 275 characters -- over half of what a person sees on a phone would be
 # boilerplate they scroll past to reach two lines of data, which is exactly the
 # saturation a chat surface has to avoid. The full text stays in the payload and
 # in `--json`, where an auditor reads it; the short form carries the two claims
@@ -88,13 +102,64 @@ DEFAULT_LIMIT: Final[int] = 20
 SOURCE_INFLIGHT: Final[str] = "inflight_markers"
 SOURCE_DISPATCH_SUMMARY: Final[str] = "dispatch_summary"
 SOURCE_EXECUTOR_PROGRESS: Final[str] = "executor_progress"
+SOURCE_HERMES_DELEGATES: Final[str] = "hermes_delegate_children"
+SOURCE_HERMES_KANBAN: Final[str] = "hermes_kanban_board"
 # Merge order is also precedence order: an in-flight marker wins over a
 # dispatch-summary row for the same unit, and both win over a progress binding.
+# The two Hermes sources come last and never merge into a unit: their rows are
+# Hermes' own delegate children and board tasks, keyed by Hermes' ids, and the
+# board lists them apart under `hermes_workers`.
 SOURCE_ORDER: Final[tuple[str, ...]] = (
     SOURCE_INFLIGHT,
     SOURCE_DISPATCH_SUMMARY,
     SOURCE_EXECUTOR_PROGRESS,
+    SOURCE_HERMES_DELEGATES,
+    SOURCE_HERMES_KANBAN,
 )
+
+# The row cap both Hermes readers are called with. It is at or above each
+# reader's own selection bound, so the board counts every row a reader selected
+# and applies its own `limit` afterwards; rows a reader still reports as hidden
+# are added to `worker_count` rather than dropped. The selection itself is
+# bounded: a reader that reached its bound says so (`selection_capped`), and
+# the board then renders its counts as lower bounds rather than as totals.
+_HERMES_READ_LIMIT: Final[int] = 64
+# The SOURCE cell, and the Hermes file each reader opens (named in the "not
+# available" line by file name only, never by its local path).
+_HERMES_SOURCE_LABELS: Final[Mapping[str, str]] = {
+    SOURCE_HERMES_DELEGATES: "hermes-delegate",
+    SOURCE_HERMES_KANBAN: "hermes-kanban",
+}
+_HERMES_SOURCE_FILES: Final[Mapping[str, str]] = {
+    SOURCE_HERMES_DELEGATES: "state.db",
+    SOURCE_HERMES_KANBAN: "kanban.db",
+}
+# A reader's `read_status` -> the line that says the read failed. `read` has no
+# line; any other value, including one this map does not know, gets one, so a
+# failed read is never shown as an empty source.
+_HERMES_READ_COPY: Final[Mapping[str, str]] = {
+    "absent": "hermes_absent",
+    "unreadable": "hermes_unreadable",
+    "partial": "hermes_partial",
+    "refused": "hermes_refused",
+}
+_HERMES_READ_OK: Final[str] = "read"
+# What a person reads for each state the two Hermes readers produce. `done` is
+# Hermes' report about its own worker, so it reads `reported done`, the label a
+# unit's `completed` gets; a state outside both readers' vocabularies fails
+# closed to `not run`, the way `normalize_status` does. `stale` is a kanban
+# lane Hermes still calls running whose heartbeat stopped.
+_HERMES_STATE_TEXT: Final[Mapping[str, str]] = {
+    "running": CONFIDENCE_RUNNING,
+    "stale": "stale",
+    "queued": "queued",
+    "blocked": CONFIDENCE_BLOCKED,
+    "failed": CONFIDENCE_FAILED,
+    "done": CONFIDENCE_REPORTED_DONE,
+}
+# States that still hold a worker slot as far as Hermes knows; they sort first,
+# as a unit with `status: running` does whether or not it is stuck.
+_HERMES_LIVE_STATES: Final[frozenset[str]] = frozenset({"running", "stale"})
 
 _SUMMARY_LIMIT: Final[int] = 120
 # Bound for a status word the closed vocabulary refused. It is a word, not a
@@ -122,6 +187,18 @@ _COLUMNS: Final[tuple[tuple[str, str], ...]] = (
     ("TOOLS", "tool_count_text"),
     ("SESSION", "session_ref"),
 )
+# The Hermes table keeps the unit table's column order with SOURCE in front.
+# Its ID is Hermes' own (a child session's tail, a board task id), and it has
+# no SESSION column because the delegate reader carries only that tail.
+_HERMES_COLUMNS: Final[tuple[tuple[str, str], ...]] = (
+    ("SOURCE", "source"),
+    ("ID", "worker_id"),
+    ("MODEL", "model_label"),
+    ("STATE", "state"),
+    ("ELAPSED", "elapsed_text"),
+    ("TOKENS", "tokens_text"),
+    ("TOOLS", "tool_count_text"),
+)
 
 _RICH_MARKDOWN: Final[str] = "rich_markdown"
 _LIMITED_MARKDOWN: Final[str] = "limited_markdown"
@@ -141,6 +218,10 @@ def build_status_board(paths: OmhPaths, *, limit: int = DEFAULT_LIMIT, now: str 
         _merge_unit(merged, unit, source=SOURCE_DISPATCH_SUMMARY, sources_used=sources_used)
     for unit in _progress_units(paths, observed_at):
         _merge_unit(merged, unit, source=SOURCE_EXECUTOR_PROGRESS, sources_used=sources_used)
+    hermes = _hermes_workers(paths, observed_at, limit=effective_limit)
+    sources_used.extend(
+        str(record["source"]) for record in hermes["sources"] if int(record["worker_count"]) > 0
+    )
 
     units = sorted(merged.values(), key=_board_sort_key)
     running_count = sum(1 for unit in units if unit["status"] == "running")
@@ -158,6 +239,10 @@ def build_status_board(paths: OmhPaths, *, limit: int = DEFAULT_LIMIT, now: str 
         "running_count": running_count,
         "stuck_count": stuck_count,
         "units": units[:effective_limit],
+        # `unit_count`, `running_count` and `stuck_count` above stay the fanout
+        # tally; Hermes workers carry their own counts here, and the rendered
+        # headline adds the two.
+        "hermes_workers": hermes,
         "sources_used": [source for source in SOURCE_ORDER if source in sources_used],
         "claim_boundary": CODING_STATUS_BOARD_CLAIM_BOUNDARY,
     }
@@ -173,23 +258,33 @@ def render_status_board_text(payload: dict[str, Any], *, locale: str = "") -> st
     a boolean.
     """
     units = _payload_units(payload)
+    workers = _payload_hermes_rows(payload)
     lines = [_header_line(payload, locale=locale)]
-    if not units:
+    if not units and not workers:
         lines.append(_empty_line(locale=locale))
-        lines.append(str(payload.get("claim_boundary", "")))
-        return "\n".join(line for line in lines if line)
-
-    widths = _column_widths(units)
-    lines.append(_table_row([header for header, _ in _COLUMNS], widths, summary=""))
-    for unit in units:
-        cells = [_cell(unit, field) for _, field in _COLUMNS]
-        lines.append(_table_row(cells, widths, summary=str(unit.get("summary", "") or "")))
-        observation = unit.get("routing_observation")
-        if isinstance(observation, Mapping):
-            lines.extend(render_routing_status_rows(observation))
-    truncation = _truncation_line(payload, locale=locale)
-    if truncation:
-        lines.append(truncation)
+    if units:
+        widths = _column_widths(units)
+        lines.append(_table_row([header for header, _ in _COLUMNS], widths, summary=""))
+        for unit in units:
+            cells = [_cell(unit, field) for _, field in _COLUMNS]
+            lines.append(_table_row(cells, widths, summary=str(unit.get("summary", "") or "")))
+            observation = unit.get("routing_observation")
+            if isinstance(observation, Mapping):
+                lines.extend(render_routing_status_rows(observation))
+        truncation = _truncation_line(payload, locale=locale)
+        if truncation:
+            lines.append(truncation)
+    if workers:
+        widths = [
+            max([display_width(header)] + [display_width(_hermes_cell(worker, field)) for worker in workers])
+            for header, field in _HERMES_COLUMNS
+        ]
+        lines.append(_table_row([header for header, _ in _HERMES_COLUMNS], widths, summary=""))
+        for worker in workers:
+            cells = [_hermes_cell(worker, field) for _, field in _HERMES_COLUMNS]
+            lines.append(_table_row(cells, widths, summary=str(worker.get("summary", "") or "")))
+        lines.append(_hermes_truncation_line(payload, locale=locale))
+    lines.extend(_hermes_read_lines(payload, locale=locale))
     lines.append(str(payload.get("claim_boundary", "")))
     return "\n".join(line for line in lines if line)
 
@@ -218,14 +313,20 @@ def status_board_messenger_body(
             + CODING_STATUS_BOARD_SHORT_BOUNDARY
         )
     units = _payload_units(payload)
+    workers = _payload_hermes_rows(payload)
     lines = [_header_line(payload, locale=locale)]
-    if not units:
+    if not units and not workers:
         lines.append(_empty_line(locale=locale))
     for unit in units:
         lines.append(_bullet_line(unit))
     truncation = _truncation_line(payload, locale=locale)
     if truncation:
         lines.append(truncation)
+    for worker in workers:
+        lines.append(_hermes_bullet_line(worker))
+    if workers:
+        lines.append(_hermes_truncation_line(payload, locale=locale))
+    lines.extend(_hermes_read_lines(payload, locale=locale))
     lines.append(CODING_STATUS_BOARD_SHORT_BOUNDARY)
     return "\n".join(line for line in lines if line)
 
@@ -541,6 +642,113 @@ def _progress_units(paths: OmhPaths, observed_at: str) -> list[dict[str, Any]]:
     return units
 
 
+def _hermes_workers(paths: OmhPaths, observed_at: str, *, limit: int) -> dict[str, Any]:
+    """Hermes' own delegate children and kanban lanes, read by the readers `omh_hud` uses.
+
+    The board belongs to no conversation, so both readers answer in their
+    explicit global scope, as `omh_hud` does for an unmapped session. Both
+    open Hermes' databases read-only. Each source keeps the reader's
+    `read_status`, so a database that is missing or would not answer renders as
+    "not available" rather than as a source with nothing running.
+    """
+    start = _parse_timestamp(observed_at)
+    now = start.timestamp() if start is not None else None
+    native = read_hermes_native_subagents(
+        paths.hermes_home, now=now, limit=_HERMES_READ_LIMIT, omh_home=paths.omh_home
+    )
+    kanban = read_kanban_lanes(paths.hermes_home, now=now, limit=_HERMES_READ_LIMIT)
+    rows: list[dict[str, Any]] = []
+    sources: list[dict[str, Any]] = []
+    for source, read in ((SOURCE_HERMES_DELEGATES, native), (SOURCE_HERMES_KANBAN, kanban)):
+        read_rows = [row for row in read.get("rows", []) if isinstance(row, Mapping)]
+        rows.extend(_hermes_worker_row(row, source=source) for row in read_rows)
+        hidden = int(read.get("hidden", 0) or 0)
+        capped = read.get("selection_capped") is True
+        record: dict[str, Any] = {
+            "source": source,
+            "read_status": str(read.get("read_status", "") or ""),
+            "scope": str(read.get("scope", "") or ""),
+            "worker_count": len(read_rows) + hidden,
+            "selection_capped": capped,
+            # A capped selection may have left workers unread, and hidden rows
+            # are counted without their states: either way the counts below
+            # are floors, not totals.
+            "counts_are_lower_bounds": capped or hidden > 0,
+        }
+        if source == SOURCE_HERMES_KANBAN:
+            record["board"] = str(read.get("board", "") or "")
+            record["dispatcher_presence"] = str(read.get("dispatcher_presence", "") or "")
+        sources.append(record)
+    rows.sort(key=_hermes_sort_key)
+    return {
+        "worker_count": sum(int(record["worker_count"]) for record in sources),
+        "running_count": sum(1 for row in rows if row["state"] == "running"),
+        # A lane Hermes still calls running after its heartbeat stopped. The
+        # headline names it beside the stuck units instead of as running.
+        "stale_count": sum(1 for row in rows if row["state"] == "stale"),
+        "counts_are_lower_bounds": any(record["counts_are_lower_bounds"] for record in sources),
+        "rows": rows[:limit],
+        "sources": sources,
+    }
+
+
+def _hermes_worker_row(row: Mapping[str, Any], *, source: str) -> dict[str, Any]:
+    """One reader row in the board's own field names, observed or `unknown`."""
+    model = str(row.get("model", "") or "")
+    effort = str(row.get("effort", "") or "")
+    state = str(row.get("state", "") or "")
+    elapsed = row.get("elapsed_seconds")
+    # A lane that never started arrives as None and renders `unknown`. A queued
+    # lane is `unknown` even when it ran before: no worker is running, the
+    # figure would be an earlier run's, and the HUD leaves that cell blank.
+    elapsed_seconds = (
+        int(elapsed)
+        if state != "queued" and isinstance(elapsed, (int, float)) and not isinstance(elapsed, bool)
+        and math.isfinite(elapsed) and elapsed >= 0
+        else UNKNOWN
+    )
+    tool_count = _observed_tokens(row.get("tool_count"))
+    worker: dict[str, Any] = {
+        "source": source,
+        "worker_id": str(row.get("task_id", "") or "") or UNKNOWN,
+        "state": state or UNKNOWN,
+        "model": model or UNKNOWN,
+        "reasoning_effort": effort or UNKNOWN,
+        "model_label": " ".join(part for part in (model, effort) if part) or UNKNOWN,
+        "elapsed_seconds": elapsed_seconds,
+        "elapsed_text": elapsed_text_for(elapsed_seconds),
+        # The delegate reader sends None for a running child that has not
+        # reported yet, the kanban reader until a worker session is linked:
+        # both are `unknown`, never a zero.
+        "tokens_total": _observed_tokens(row.get("tokens")),
+        "tokens_text": tokens_text_for(row.get("tokens")),
+        "tool_count": tool_count,
+        "tool_count_text": tool_count_text_for(tool_count),
+        "summary": sanitize_user_facing_progress_text(str(row.get("action", "") or ""), max_chars=_SUMMARY_LIMIT),
+        "scope": str(row.get("scope", "") or ""),
+    }
+    # Why the state reads as it does, when the reader said: a delegate child
+    # with no recorded model usage is failed, and a queued lane the dispatcher
+    # requeued after a failed run is waiting for a retry, not idle.
+    detail = str(row.get("failure_hint", "") or "")
+    if not detail and row.get("retry_pending") is True:
+        detail = "retry pending"
+    if detail:
+        worker["state_detail"] = detail
+    if source == SOURCE_HERMES_KANBAN:
+        worker["native_status"] = str(row.get("native_status", "") or "")
+        worker["assignee"] = str(row.get("assignee", "") or "")
+    return worker
+
+
+def _hermes_sort_key(worker: Mapping[str, Any]) -> tuple[int, int, str]:
+    """The unit table's order: live rows first, then by source and id."""
+    live_first = 0 if worker.get("state") in _HERMES_LIVE_STATES else 1
+    source = str(worker.get("source", ""))
+    rank = SOURCE_ORDER.index(source) if source in SOURCE_ORDER else len(SOURCE_ORDER)
+    return (live_first, rank, str(worker.get("worker_id", "")))
+
+
 def _unit_row(
     *,
     fanout_id: str,
@@ -726,12 +934,6 @@ def _table_row(cells: list[str], widths: list[int], *, summary: str) -> str:
 
 
 def _bullet_line(unit: dict[str, Any]) -> str:
-    elapsed_text = str(unit.get("elapsed_text", UNKNOWN) or UNKNOWN)
-    elapsed_phrase = "elapsed unknown" if elapsed_text == UNKNOWN else elapsed_text
-    tokens_text = str(unit.get("tokens_text", UNKNOWN) or UNKNOWN)
-    tokens_phrase = "tokens unknown" if tokens_text == UNKNOWN else f"{tokens_text} tokens"
-    tools_text = str(unit.get("tool_count_text", UNKNOWN) or UNKNOWN)
-    tools_phrase = "tools unknown" if tools_text == UNKNOWN else f"{tools_text} tool calls"
     parts = [
         str(unit.get("label", "")),
         # Runtime and model are ONE field visually: "codex (gpt-5.6-sol xhigh)".
@@ -742,14 +944,118 @@ def _bullet_line(unit: dict[str, Any]) -> str:
         f"{vendor_glyph(str(unit.get('model_label', '') or ''))} "
         f"{unit.get('runtime', UNKNOWN)} ({unit.get('model_label', _MODEL_DEFAULT_LABEL)})",
         status_text_for(unit),
-        elapsed_phrase,
-        tools_phrase,
-        tokens_phrase,
+        *_figure_phrases(unit),
         f"session {unit.get('session_ref', UNKNOWN)}",
     ]
     line = "- " + " — ".join(parts)
     summary = str(unit.get("summary", "") or "")
     return f"{line} — {summary}" if summary else line
+
+
+def _figure_phrases(row: Mapping[str, Any]) -> list[str]:
+    """Elapsed, tool calls and tokens as a bullet says them, `unknown` spelled out."""
+    elapsed_text = str(row.get("elapsed_text", UNKNOWN) or UNKNOWN)
+    tokens_text = str(row.get("tokens_text", UNKNOWN) or UNKNOWN)
+    tools_text = str(row.get("tool_count_text", UNKNOWN) or UNKNOWN)
+    return [
+        "elapsed unknown" if elapsed_text == UNKNOWN else elapsed_text,
+        "tools unknown" if tools_text == UNKNOWN else f"{tools_text} tool calls",
+        "tokens unknown" if tokens_text == UNKNOWN else f"{tokens_text} tokens",
+    ]
+
+
+def _payload_hermes(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    block = payload.get("hermes_workers")
+    return block if isinstance(block, Mapping) else {}
+
+
+def _payload_hermes_rows(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
+    rows = _payload_hermes(payload).get("rows", [])
+    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
+def _hermes_state_text(worker: Mapping[str, Any]) -> str:
+    text = _HERMES_STATE_TEXT.get(str(worker.get("state", "") or ""), CONFIDENCE_NOT_RUN)
+    detail = str(worker.get("state_detail", "") or "")
+    return f"{text} ({detail})" if detail else text
+
+
+def _hermes_cell(worker: Mapping[str, Any], field: str) -> str:
+    if field == "source":
+        return _HERMES_SOURCE_LABELS.get(str(worker.get("source", "") or ""), UNKNOWN)
+    if field == "state":
+        return _hermes_state_text(worker)
+    if field == "model_label":
+        label = str(worker.get(field, "") or UNKNOWN)
+        return f"{vendor_glyph(label)} {label}"
+    return str(worker.get(field, "") or UNKNOWN)
+
+
+def _hermes_bullet_line(worker: Mapping[str, Any]) -> str:
+    """A unit bullet's shape, with the source where a unit names its runtime."""
+    label = str(worker.get("model_label", "") or UNKNOWN)
+    parts = [
+        str(worker.get("worker_id", "") or UNKNOWN),
+        f"{vendor_glyph(label)} {_hermes_cell(worker, 'source')} ({label})",
+        _hermes_state_text(worker),
+        *_figure_phrases(worker),
+    ]
+    line = "- " + " — ".join(parts)
+    summary = str(worker.get("summary", "") or "")
+    return f"{line} — {summary}" if summary else line
+
+
+def _hermes_lower_bound(payload: Mapping[str, Any]) -> bool:
+    return _payload_hermes(payload).get("counts_are_lower_bounds") is True
+
+
+def _count_text(count: int, *, lower_bound: bool, locale: str) -> str:
+    """`96`, or `at least 96` when a reader limit may have left workers uncounted."""
+    return status_board_copy("at_least", locale=locale).format(count=count) if lower_bound else str(count)
+
+
+def _hermes_truncation_line(payload: Mapping[str, Any], *, locale: str) -> str:
+    total = int(_payload_hermes(payload).get("worker_count", 0) or 0)
+    shown = len(_payload_hermes_rows(payload))
+    dropped = total - shown
+    if dropped <= 0:
+        return ""
+    floor = _hermes_lower_bound(payload)
+    return status_board_copy("hermes_truncation", locale=locale).format(
+        shown=shown,
+        total=_count_text(total, lower_bound=floor, locale=locale),
+        dropped=_count_text(dropped, lower_bound=floor, locale=locale),
+    )
+
+
+def _hermes_source_name(record: Mapping[str, Any], *, locale: str) -> str:
+    if str(record.get("source", "") or "") == SOURCE_HERMES_KANBAN:
+        return status_board_copy("hermes_kanban_source", locale=locale).format(
+            board=str(record.get("board", "") or UNKNOWN)
+        )
+    return status_board_copy("hermes_delegate_source", locale=locale)
+
+
+def _hermes_read_lines(payload: Mapping[str, Any], *, locale: str) -> list[str]:
+    """One line per Hermes source the board could not read in full or counted only in part."""
+    sources = _payload_hermes(payload).get("sources", [])
+    lines: list[str] = []
+    for record in sources if isinstance(sources, list) else []:
+        if not isinstance(record, Mapping):
+            continue
+        name = _hermes_source_name(record, locale=locale)
+        status = str(record.get("read_status", "") or "")
+        if status != _HERMES_READ_OK:
+            key = _HERMES_READ_COPY.get(status, "hermes_unreadable")
+            source = str(record.get("source", "") or "")
+            lines.append(
+                status_board_copy(key, locale=locale).format(
+                    source=name, file=_HERMES_SOURCE_FILES.get(source, UNKNOWN)
+                )
+            )
+        if record.get("counts_are_lower_bounds") is True:
+            lines.append(status_board_copy("hermes_lower_bound", locale=locale).format(source=name))
+    return lines
 
 
 def _header_line(payload: dict[str, Any], *, locale: str) -> str:
@@ -761,10 +1067,28 @@ def _header_line(payload: dict[str, Any], *, locale: str) -> str:
     # at a glance, and it must not say work is moving when it is not.
     stuck = min(int(payload.get("stuck_count", 0) or 0), running)
     moving = running - stuck
+    # One board, one headline: Hermes workers count beside the units, and a
+    # lane whose heartbeat stopped is named with the stuck units, not as running.
+    hermes = _payload_hermes(payload)
+    moving += int(hermes.get("running_count", 0) or 0)
+    stuck += int(hermes.get("stale_count", 0) or 0)
+    total += int(hermes.get("worker_count", 0) or 0)
+    # A Hermes reader that hit a limit leaves every Hermes-derived count a
+    # floor; the headline says so instead of presenting a partial count as all.
+    floor = _hermes_lower_bound(payload)
     observed_at = str(payload.get("observed_at", "") or UNKNOWN)
-    stuck_text = status_board_copy("header_stuck_suffix", locale=locale).format(stuck=stuck) if stuck else ""
+    stuck_text = (
+        status_board_copy("header_stuck_suffix", locale=locale).format(
+            stuck=_count_text(stuck, lower_bound=floor, locale=locale)
+        )
+        if stuck
+        else ""
+    )
     return status_board_copy("header", locale=locale).format(
-        moving=moving, stuck=stuck_text, total=total, observed_at=observed_at
+        moving=_count_text(moving, lower_bound=floor, locale=locale),
+        stuck=stuck_text,
+        total=_count_text(total, lower_bound=floor, locale=locale),
+        observed_at=observed_at,
     )
 
 
