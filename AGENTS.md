@@ -172,9 +172,9 @@ PR without the chat history.
   own. That frontend spawns exactly one child, Hermes' `tui_gateway`, with the
   interpreter and import path the launcher handed it, and speaks the
   gateway's stdio JSON-RPC. It relays only what the person types; on its
-  own it only reads, Hermes' settings and command catalog as a session
-  opens and, at a fresh start, `session.list` to name the last session
-  under the banner. It never
+  own it reads Hermes' settings and command catalog as a session opens
+  and, at a fresh start, `session.list` to name the last session under
+  the banner, and sends only what this bullet names below. It never
   answers an approval, clarify, sudo, or secret request on its own: Esc or
   Ctrl+C declines, an approval decline is an explicit deny, allowing a
   command takes the arrows and then Enter, and a request the gateway
@@ -200,21 +200,24 @@ PR without the chat history.
   too, except that one saying approvals are on within 2 seconds of a
   confirmed on is held until the next, keeping accept shown. Ctrl+T and
   `/effort` set that session's reasoning effort through the same
-  session-scoped call. A pick in the `/model` picker (bare `/model`, listed
-  from `model.options`) is sent as Hermes' own `/model <name> --provider
-  <slug> --session` through `slash.exec`, so it switches that session only,
-  and a name or slug that could read as a flag is left out of the list.
-  `/cost` and `/permissions` run Hermes' `/usage` and `/approvals`; the
-  latter shows or sets Hermes' persistent approval mode, as typed. Plan mode is the frontend's own flag, also
+  session-scoped call. A pick in the `/model` picker (bare `/model`,
+  listed from `model.options`) is sent as Hermes' own `/model <name>
+  --provider <slug> --session` through `slash.exec`, so it switches
+  that session only, and a name or slug that could read as a flag is
+  left out of the list. `/cost` and `/permissions` run Hermes' `/usage`
+  and `/approvals`; the latter shows or sets Hermes' persistent
+  approval mode, as typed. Plan mode is the frontend's own flag, also
   turned on with Shift+Tab: while it is on, a prompt the person types goes to
   Hermes as `/plan <text>`. While Hermes has approvals off on its own (an off
   it confirmed did not end them, or they were off without the TUI turning
   them on), Shift+Tab sends nothing and turns only plan mode on and off. A
   steer (Ctrl+Enter, `/steer`) sends into the running turn only text the
   person typed and sent that way; the TUI never steers on its own, and a
-  queued prompt is never turned into a steer. A steer Hermes does not take
-  waits in the TUI's own queue for the running turn to end, whatever the busy
-  mode, so it never interrupts that turn. The subagent views (the strip, the
+  queued prompt is never turned into a steer. A steer Hermes does
+  not take waits in the TUI's own queue for the running turn to
+  end, whatever the busy mode, so it never interrupts that turn.
+  A steer Hermes does not answer within 120 s goes back to the
+  composer and is never re-sent. The subagent views (the strip, the
   list, one agent's log) read with `subagent.tail` only, the tail of the log
   the person opened. Two keys in the agent list act on the highlighted
   agent, and only on the person's keypress: `x` interrupts it
@@ -224,11 +227,11 @@ PR without the chat history.
   person sends that starts with `!` is their own shell command: the TUI
   sends it with `shell.exec`, which Hermes runs outside the model's context
   under its own 30 s limit and dangerous-command refusals, shows what it
-  printed and its exit code when that is not 0 or nothing was printed, and
-  sends nothing else that way: only a line whose leading `!` the composer
-  showed (a collapsed paste whose text starts with `!` goes to the model),
-  never a refused steer or a queued prompt that happens to start with `!`.
-  A rewind (Esc
+  printed and its exit code when that is not 0 or nothing was
+  printed, and sends nothing else that way: only a line whose
+  leading `!` the composer showed (a collapsed paste whose text
+  starts with `!` goes to the model), never a refused steer or
+  a queued prompt that happens to start with `!`. A rewind (Esc
   Esc on an empty composer, `/rewind`) cuts the session's history before
   the prompt the person picked, and only when they send the prompt that
   replaces it (`prompt.submit` with `truncate_before_row_id` and

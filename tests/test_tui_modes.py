@@ -454,6 +454,9 @@ class DocumentedSteerTests(unittest.TestCase):
         self.assertIn(f"`⧗ {unanswered} · <text>`", installation)  # given back, never sent again
         self.assertIn("A steer Hermes does not take waits in the TUI's own queue for the running turn to end, whatever "
                       "the busy mode, so it never interrupts that turn.", self.prose("AGENTS.md"))
+        seconds = f"{app_module.CALL_ANSWER_SECONDS:g}"
+        self.assertIn(f"A steer Hermes does not answer within {seconds} s goes back to the composer and is never re-sent.",
+                      self.prose("AGENTS.md"))
 
 
 class DocumentedApprovalsToggleTests(unittest.TestCase):
