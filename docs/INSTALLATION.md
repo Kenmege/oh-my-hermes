@@ -469,7 +469,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
     start (parallel calls pulse on their own), `✓` done in green, `✗` failed
     or denied in red, with the error's first line, or the denial's words
     (`denied` when the result gives none), under it in red, `▪` cut off,
-    `◌` still being written. Only the live region at the bottom
+    `◌` still being written (a call Hermes never starts, such as a streamed
+    attempt it discards and retries, leaves no row and is not counted in the
+    turn's done line). Only the live region at the bottom
     moves; what reaches scrollback is the settled mark, never a frame of a
     pulse.
   - The working row's spinner turns and a highlight sweeps across what

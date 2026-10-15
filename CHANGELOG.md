@@ -85,7 +85,18 @@ All notable changes will be documented here.
   <command>` on a light green band or `✗ denied · <command>` on a light red
   one; failed and denied tool rows with their lines and error notices sit on
   the red band too, a denial shows the one red `✗` (no amber `⊘`), and with
-  no background reported nothing is banded.
+  no background reported nothing is banded. A turn's last lines and its done
+  line sit right above the panel on a full screen, where blank rows used to
+  stay under them, more the taller the last tool group was (23 for 12 calls
+  at 40x100; origin/main had the same gap).
+  A call Hermes only drafted (`tool.generating`) and never started, such as a
+  streamed attempt it discards and retries, leaves no row and is not counted
+  in the done line, where it settled as `▪ tool_call`; a deferred tool's
+  `tool_call` draft becomes the call it reached. The plan header's `parallel
+  shot ×N` badge, and the desktop pane's chip, show only a count of 2 or
+  more, so calls run one after another no longer read `parallel shot ×1`.
+  The composer wraps between words, as the echo of the sent prompt does,
+  instead of splitting a word at the edge.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:
