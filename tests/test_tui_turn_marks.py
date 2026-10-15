@@ -639,7 +639,9 @@ class SettledTailTests(unittest.TestCase):
 
     def test_a_tall_tool_batch_never_shows_the_prompt_and_its_echo_together(self) -> None:
         # The blank row above the prompt is not the prompt's: counted, the echo came one row early, over the prompt.
-        for rows, cols, earlier, tools in ((24, 80, 60, 8), (24, 80, 60, 14), (24, 80, 0, 14), (40, 100, 60, 14)):
+        shapes = ((24, 80, 60, 8), (24, 80, 60, 14), (24, 80, 0, 14), (40, 100, 60, 14), (24, 80, 0, 2), (40, 100, 0, 2),
+                  (40, 100, 0, 8))
+        for rows, cols, earlier, tools in shapes:
             with self.subTest(rows=rows, cols=cols, earlier=earlier, tools=tools):
                 app, now = self.app_with_plan(rows, cols, earlier)
                 app._submit_prompt("run the tools")

@@ -220,6 +220,39 @@ class HiddenComposerTests(unittest.TestCase):
         self.assertFalse(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
         self.assertIn("▌ ❯ deny", screen)
 
+    def test_two_text_questions_back_to_back_give_the_draft_back_unmasked(self) -> None:
+        # The draft is back before the waiting question opens, so the second one sets the draft aside, not the first's field.
+        second = (ServerRequest("srq-8", "sudo", {"command": "make install"}),
+                  ServerRequest("srq-9", "clarify", {"questions": [{"qid": "q", "question": "Why?"}]}),
+                  ServerRequest("srq-10", "secret", {"env_var": "TOKEN"}))
+        for waiting in second:
+            with self.subTest(method=waiting.method):
+                app, client = make_app(busy=True)
+                draft = a_draft(app)
+                app._on_server_request(SUDO)
+                app._on_server_request(waiting)
+                armed(app)
+                type_text(app, "hunter2")
+                press(app, Key(ENTER))
+                self.assertIs(app.slot.request_id, waiting.id)  # type: ignore[union-attr]
+                self.assertEqual(app.composer.text, "")
+                armed(app)
+                press(app, Key(ESCAPE))
+                self.assertIsNone(app.slot)
+                self.assertEqual(held(app), draft)
+                self.assertFalse(app.composer.masked)
+
+    def test_leaving_a_view_opened_over_the_composer_shows_the_caret_again_at_once(self) -> None:
+        app, _client = make_app()
+        app.transcript.add_notice("something to view")
+        type_text(app, "a draft")
+        drawn(app)
+        press(app, Key(CHAR, "o", ctrl=True))
+        self.assertIsNotNone(app.pager)
+        press(app, Key(CHAR, "q"))
+        self.assertIsNone(app.pager)
+        self.assertTrue(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]  # before any repaint
+
     def test_a_text_only_question_keeps_the_composer_as_its_answer_field(self) -> None:
         for request in (SUDO, ServerRequest("srq-4", "clarify", {"questions": [{"qid": "q", "question": "Why?"}]})):
             with self.subTest(method=request.method):
