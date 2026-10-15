@@ -393,7 +393,8 @@ class MalformedPayloadTests(unittest.TestCase):
                 self.assertEqual(roster.agents, {})
 
     def test_a_frame_without_a_usable_id_changes_nothing(self) -> None:
-        for bad in (None, "", 7, ["sa-1"], {"id": "sa-1"}, True, "x" * 129):
+        # Blank after strip too: the gateway contract refuses such an id in a call (`call_problem`).
+        for bad in (None, "", " ", "\t\n", 7, ["sa-1"], {"id": "sa-1"}, True, "x" * 129):
             with self.subTest(bad=bad):
                 roster = Roster()
                 roster.apply("subagent.start", payload(bad), 1.0)  # type: ignore[arg-type]
@@ -401,6 +402,11 @@ class MalformedPayloadTests(unittest.TestCase):
         roster = Roster()
         roster.apply("subagent.start", {key: value for key, value in IDENTITY.items() if key != "subagent_id"}, 1.0)
         self.assertEqual(roster.agents, {})
+
+    def test_an_id_with_spaces_around_its_text_is_kept_as_it_came(self) -> None:
+        roster = Roster()
+        roster.apply("subagent.start", payload(" sa-1 "), 1.0)
+        self.assertEqual(list(roster.agents), [" sa-1 "])
 
     def test_the_longest_id_accepted_is_128_characters(self) -> None:
         roster = Roster()

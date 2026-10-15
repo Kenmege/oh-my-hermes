@@ -697,6 +697,14 @@ class AgentActionTests(unittest.TestCase):
         self.assertEqual(app.composer.text, "use it")
         self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
 
+    def test_an_agent_whose_id_is_blank_is_not_listed_so_no_steer_row_can_be_left_held(self) -> None:
+        app, client = make_app(busy=True, clock=lambda: 0.0)
+        app._on_event(Event("subagent.start", SID, {"subagent_id": " ", "goal": "read the diff", "depth": 1}))
+        self.assertEqual(app.roster.agents, {})
+        app._on_input(Key(DOWN))  # no list to open
+        self.assertIsNone(app.list_selected)
+        self.assertEqual(client.calls, [])
+
     def test_esc_cancels_the_steer_and_nothing_is_sent(self) -> None:
         app, client = focused()
         app._on_input(Key(CHAR, "s"))

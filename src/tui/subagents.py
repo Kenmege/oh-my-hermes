@@ -295,14 +295,15 @@ class Roster:
         """Fold one gateway event; `now` is the app's clock.
 
         An event type that is not one of the six above, a payload that is not
-        an object, and a `subagent_id` that is missing, empty, over-long or
-        not a string each change nothing. Nothing raises.
+        an object, and a `subagent_id` that is missing, blank (the gateway
+        contract refuses a call naming it), over-long or not a string each
+        change nothing. Nothing raises.
         """
         handler = self._handlers.get(event_type) if isinstance(event_type, str) else None
         if handler is None or not isinstance(payload, dict):
             return
         subagent_id = payload.get("subagent_id")
-        if not isinstance(subagent_id, str) or not 0 < len(subagent_id) <= ID_CHARS:
+        if not isinstance(subagent_id, str) or not subagent_id.strip() or len(subagent_id) > ID_CHARS:
             return
         handler(subagent_id, payload, now)
         agent = self.agents.get(subagent_id)
