@@ -95,8 +95,11 @@ All notable changes will be documented here.
   `tool_call` draft becomes the call it reached. The plan header's `parallel
   shot ×N` badge, and the desktop pane's chip, show only a count of 2 or
   more, so calls run one after another no longer read `parallel shot ×1`.
-  The composer wraps between words, as the echo of the sent prompt does,
-  instead of splitting a word at the edge.
+  The composer wraps between words instead of splitting a word at the edge,
+  as the echo of the sent prompt does, with one difference: a space stays on
+  the row it ends, so a word with no room left for the space typed after it
+  moves to the next row (the echo keeps the word there and drops the space),
+  and a tab with no room takes a row of its own.
   While you pick from a list, the composer is hidden, as in Claude Code: an
   approval, a clarify question with choices, and the `/sessions`, `/rewind`
   and bare `/model` pickers stand where the composer was, with no rules and
