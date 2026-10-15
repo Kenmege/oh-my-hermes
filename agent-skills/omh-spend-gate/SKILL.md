@@ -17,7 +17,7 @@ This is an OMH `spend-gate` workflow skill, projected for Agent Skills hosts (Cl
 
 ## Why This Exists
 
-`spend-gate` exists because money movement had at most one native guard, on one rail: where Hermes' saved-card fill is present it asks before filling a card and refuses when nobody can confirm, while an HTTP 402 call, a wallet transfer, a booking, or a paid data endpoint had no pre-spend check, no receipt rule, and no cap. `omh-browser` gates payment only inside a page, and `omh-provider-profile-posture` claims no payment at all.
+`spend-gate` exists because money movement had at most one native guard, on one rail: where Hermes' saved-card fill is present it asks before filling a card and refuses when nobody can confirm, while an HTTP 402 call, a wallet transfer, a booking, or a paid data endpoint had no pre-spend check, no receipt rule, and no cap. `omh-provider-profile-posture` claims no payment at all.
 
 ## First Steps
 
@@ -26,7 +26,7 @@ This is an OMH `spend-gate` workflow skill, projected for Agent Skills hosts (Cl
 
 ## Do Not Use When
 
-- The page task moves no money -- open a URL, log in, fill a form, capture blockers; use `omh-browser`.
+- The page task moves no money -- open a URL, log in, fill a form, capture blockers.
 - Users report a payment failure in the product and the ask is to sort those reports; use `omh-feedback-triage`.
 - The ask is budget vs actual, a budget variance, or the month-end close; use `omh-finance-analysis`.
 - The ask is a provider profile's posture or whether its secrets are present, with nothing bought; use `omh-provider-profile-posture`.

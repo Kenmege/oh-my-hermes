@@ -37,6 +37,25 @@ All notable changes will be documented here.
   data-share requests (the hint 24 and 22). Every set has since been read
   while the rule was revised, so none is held out for this version.
 
+- **A portable host is no longer told to load a skill only Hermes ships.** On
+  main the Agent Skills bodies and references named 17 such skills 63 times:
+  by label (`omh-research-department`), by backticked or hyphenated canonical
+  name, or by a one-word name right after "route to" or "routed to". None of
+  these remain. A Do Not Use When line that hands its request only to such
+  skills now keeps the request and loses the pointer, so the skill still says
+  what it is not for. The rule reads the shipping set, so the pointer comes
+  back once one of its siblings ships portably. Every other sentence is
+  rewritten for that projection only: a list line through the new
+  `PortableLine`, which keeps its portable wording beside the Hermes text; a
+  description or other single-text field through `portable_overrides` (the
+  portable frontmatter now reads a description override); and the wiki
+  blueprint reference through `PORTABLE_REFERENCE_REWRITES`. A gate reads
+  which skills each projection ships and fails, by path and line, when a
+  portable body or reference names one the portable projection does not ship.
+  A second test fails when a skill that a rewrite leaves out starts shipping
+  portably, so the rewrite is re-read. Hermes bodies, references and their
+  digests do not change.
+
 - **A host turn or a thank-you gets a direct-answer card.** `omh chat
   route-hint` and the example shims showed the generic no-hint card, with "Open
   omh" and "Clarify" buttons, beside a route decision that said to answer
