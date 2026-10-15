@@ -39,7 +39,9 @@ Synchronized output: every frame that paints rows is one synchronized
 update (DECSET 2026, `SYNC_BEGIN` ... `SYNC_END`), so a terminal that
 supports it shows the frame whole instead of row by row, and a blinking or
 animated row never flickers; a terminal that does not ignores the mode. A
-frame that only parks the cursor is not wrapped.
+frame that only parks the cursor is not wrapped. `render(..., flush=lines)`
+writes a frame and the lines flushed after it as one write and one update,
+so no screen between the two shows.
 
 Precondition: the region is never taller than the terminal. Cursor-up stops
 at the top of the screen, so a taller region would lose its relative
@@ -186,8 +188,8 @@ class LiveRegion:
         ops.append(CARRIAGE_RETURN)
         self._row = row
 
-    def _compose(self, lines: Sequence[Line], cursor: tuple[int, int] | None, width: int, ops: list[str]) -> str:
-        """The frame's bytes, appended to `ops` already queued; "" when nothing changed.
+    def _compose(self, lines: Sequence[Line], cursor: tuple[int, int] | None, width: int, ops: list[str]) -> tuple[str, bool]:
+        """The frame's bytes, after `ops` already queued ("" when nothing changed), and whether they paint rows.
 
         A row whose line and width are the ones the last frame painted keeps
         that frame's bytes instead of being painted again. `cursor` None hides
@@ -228,25 +230,35 @@ class LiveRegion:
         self._cursor = cursor
         self._hidden = hidden
         if not painted and target == self._parked and not toggled:
-            return ""
+            return "", False
         park: list[str] = []
         self._move_to(target[0], park)
         park.append(cursor_forward(target[1]))
         self._parked = target
         if not painted:
-            return "".join(park) + ((HIDE_CURSOR if hidden else SHOW_CURSOR) if toggled else "")
+            return "".join(park) + ((HIDE_CURSOR if hidden else SHOW_CURSOR) if toggled else ""), False
         shown = [] if hidden else [SHOW_CURSOR]
-        return "".join([SYNC_BEGIN, HIDE_CURSOR, AUTOWRAP_OFF, *ops, AUTOWRAP_ON, *park, *shown, SYNC_END])
+        return "".join([HIDE_CURSOR, AUTOWRAP_OFF, *ops, AUTOWRAP_ON, *park, *shown]), True
 
-    def render(self, lines: Sequence[Line], cursor: tuple[int, int] | None, width: int, pad: int = 0) -> None:
+    def _send(self, written: str, painted: bool) -> None:
+        """Write `written`, as one synchronized update when it paints rows."""
+        if written:
+            self._write(f"{SYNC_BEGIN}{written}{SYNC_END}" if painted else written)
+
+    def render(
+        self, lines: Sequence[Line], cursor: tuple[int, int] | None, width: int, pad: int = 0, flush: Sequence[Line] = ()
+    ) -> None:
         """Show `lines` as the region and park the cursor at `cursor` = (row, col) within it; None hides it.
 
-        The first `pad` lines are padding (blank rows) that `flush_above` may write into.
+        The first `pad` lines are padding (blank rows) that `flush_above` may write into. `flush` is flushed
+        above the region right after, in the same write.
         """
-        frame = self._compose(lines, cursor, width, [])
+        written, painted = self._compose(lines, cursor, width, [])
         self._pad = min(max(pad, 0), len(self._rows))
-        if frame:
-            self._write(frame)
+        if flush:
+            more, also = self._flush(flush, width)
+            written, painted = written + more, painted or also
+        self._send(written, painted)
 
     def flush_above(self, lines: Sequence[Line], width: int) -> None:
         """Print `lines` permanently above the region, then repaint the region beneath them.
@@ -256,6 +268,10 @@ class LiveRegion:
         pad are written over the region's top rows and push it down; once they
         scroll off the screen they are ordinary scrollback.
         """
+        self._send(*self._flush(lines, width))
+
+    def _flush(self, lines: Sequence[Line], width: int) -> tuple[str, bool]:
+        """`flush_above`'s bytes and whether they paint rows, unwritten."""
         width = max(width, 1)
         consumed = min(len(lines), self._pad)
         ops: list[str] = []
@@ -281,7 +297,7 @@ class LiveRegion:
         self._lines = self._lines[consumed:]
         if self._cursor is not None:
             self._cursor = (self._cursor[0] - consumed, self._cursor[1])
-        self._write(self._compose(self._lines, self._cursor, width, ops))
+        return self._compose(self._lines, self._cursor, width, ops)
 
     def clear(self) -> None:
         """Erase the region and leave the cursor at column 0 of its top row (resize, exit)."""

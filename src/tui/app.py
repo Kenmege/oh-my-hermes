@@ -3183,13 +3183,12 @@ class App(ModesMixin, AgentViewMixin):
         # The flush below fills this frame's pad rows first, so they are transcript rows by the time it shows.
         if self._sticky_needed(rows - frame.height + min(len(stable), frame.pad)):
             frame = build(sticky=sticky_line(self.sticky, cols, self.theme))
-        self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad)
-        if stable:
-            # Flushed after the frame, the lines land in its pad rows: the rows a shrinking tail gave
-            # back (a settled tool group is those same rows, moved above the region), or the screen of
-            # pad rows an anchoring frame fills. Flushed before it, they would push the region down by
-            # their whole count, and the rows the tail gave back would stay as blank pad under them.
-            self.region.flush_above(stable, cols)
+        # Flushed after the frame, the lines land in its pad rows: the rows a shrinking tail gave
+        # back (a settled tool group is those same rows, moved above the region), or the screen of
+        # pad rows an anchoring frame fills. Flushed before it, they would push the region down by
+        # their whole count, and the rows the tail gave back would stay as blank pad under them.
+        # Frame and flush are one write, so no screen between them shows.
+        self.region.render(frame.lines, frame.cursor, cols, pad=frame.pad, flush=stable)
         self._take_clickable(frame.budget, listed)
 
     def _display_mode(self) -> str:

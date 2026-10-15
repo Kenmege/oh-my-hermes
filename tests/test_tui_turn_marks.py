@@ -656,6 +656,37 @@ class SettledTailTests(unittest.TestCase):
                     app._render()
                     self.assert_prompt_xor_echo(app, f"tool {index} completed")
 
+    def test_the_frame_and_its_flush_are_one_write_so_no_state_between_them_shows(self) -> None:
+        # Written apart, the frame (echo drawn) showed for a moment over the prompt the flush had not yet moved.
+        from omh.tui.screen import SYNC_BEGIN
+
+        for rows, cols, earlier, tools in ((24, 80, 0, 14), (24, 80, 60, 8), (40, 100, 0, 14)):
+            with self.subTest(rows=rows, cols=cols, earlier=earlier, tools=tools):
+                app, now = self.app_with_plan(rows, cols, earlier)
+                app._submit_prompt("run the tools")
+                app._render()
+                screen = app.terminal.screen
+                feed = screen.feed
+                synced: list[int] = []
+
+                def checked(text: str) -> None:  # every write reaches the screen as one feed
+                    feed(text)
+                    synced[-1] += text.count(SYNC_BEGIN)
+                    self.assert_prompt_xor_echo(app, "after one write")
+
+                screen.feed = checked  # type: ignore[method-assign]
+                events = [ev("message.start")]
+                events += [ev("tool.start", tool_id=f"t{n}", name="read_file", context=f"f{n}.py") for n in range(tools)]
+                events += [ev("tool.complete", tool_id=f"t{n}", name="read_file", result={"content": "x"}) for n in range(tools)]
+                events += [ev("message.delta", text=f"reply {n}\n") for n in range(rows)]  # the group settles at once
+                for event in events:
+                    now[0] += 0.1
+                    app._on_event(event)
+                    synced.append(0)
+                    app._render()
+                self.assertLessEqual(max(synced), 1, "a render wrote more than one synchronized update")
+                self.assertIn(1, synced)
+
     def test_a_resize_redraw_mid_turn_never_shows_the_prompt_and_its_echo_together(self) -> None:
         # The redraw takes the session again from its top: only the rows from the prompt on are the prompt's.
         for rows, cols, earlier in ((40, 100, 0), (40, 100, 60), (24, 80, 0), (24, 80, 60)):

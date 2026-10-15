@@ -77,6 +77,23 @@ class SynchronizedOutputTests(unittest.TestCase):
         self.assertEqual(SYNC_BEGIN, "\x1b[?2026h")
         self.assertEqual(SYNC_END, "\x1b[?2026l")
 
+    def test_a_frame_and_its_flush_are_one_write_with_the_screen_of_the_two_writes(self) -> None:
+        from omh.tui.screen import SYNC_BEGIN, SYNC_END
+
+        apart, together = Harness(history=9), Harness(history=9)
+        for harness in (apart, together):
+            harness.render(plain("", "", "one", "two"), cursor=(3, 0), pad=2)
+        apart.render(plain("", "", "one", "TWO"), cursor=(3, 0), pad=2)
+        apart.flush(plain("f1", "f2", "f3"))
+        written = len(together.writes)
+        together.region.render(plain("", "", "one", "TWO"), (3, 0), together.cols, pad=2, flush=plain("f1", "f2", "f3"))
+        (frame,) = together.writes[written:]
+        self.assertTrue(frame.startswith(SYNC_BEGIN) and frame.endswith(SYNC_END), repr(frame))
+        self.assertEqual((frame.count(SYNC_BEGIN), frame.count(SYNC_END)), (1, 1))
+        self.assertEqual(together.screen.history(), apart.screen.history())
+        self.assertEqual(together.screen.cursor, apart.screen.cursor)
+        self.assertEqual((together.region.height, together.region.pad), (apart.region.height, apart.region.pad))
+
     def test_a_pager_frame_is_wrapped_too(self) -> None:
         from omh.tui.pager import Pager
         from omh.tui.screen import SYNC_BEGIN, SYNC_END
