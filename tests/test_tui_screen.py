@@ -49,12 +49,60 @@ class Harness:
         self.screen.feed(text)
 
     def render(
-        self, lines: list[Line], cursor: tuple[int, int] = (0, 0), width: int | None = None, pad: int = 0
+        self, lines: list[Line], cursor: tuple[int, int] | None = (0, 0), width: int | None = None, pad: int = 0
     ) -> None:
         self.region.render(lines, cursor, self.cols if width is None else width, pad=pad)
 
     def flush(self, lines: list[Line], width: int | None = None) -> None:
         self.region.flush_above(lines, self.cols if width is None else width)
+
+
+class SynchronizedOutputTests(unittest.TestCase):
+    """Every frame that paints rows is one synchronized update (DECSET 2026), so a terminal shows it whole."""
+
+    def test_every_painting_frame_is_wrapped_and_a_cursor_only_move_is_not(self) -> None:
+        from omh.tui.screen import SYNC_BEGIN, SYNC_END
+
+        harness = Harness(history=3)
+        harness.render(plain("one", "two"), cursor=(1, 0))
+        harness.render(plain("one", "TWO"), cursor=(1, 0))
+        harness.flush(plain("flushed"))
+        harness.render(plain("one", "TWO"), cursor=(0, 2))  # nothing changed but the caret
+        painting, parking = harness.writes[:3], harness.writes[3]
+        for frame in painting:
+            with self.subTest(frame=frame):
+                self.assertTrue(frame.startswith(SYNC_BEGIN) and frame.endswith(SYNC_END), repr(frame))
+                self.assertEqual((frame.count(SYNC_BEGIN), frame.count(SYNC_END)), (1, 1))
+        self.assertNotIn(SYNC_BEGIN, parking)
+        self.assertEqual(SYNC_BEGIN, "\x1b[?2026h")
+        self.assertEqual(SYNC_END, "\x1b[?2026l")
+
+    def test_a_frame_and_its_flush_are_one_write_with_the_screen_of_the_two_writes(self) -> None:
+        from omh.tui.screen import SYNC_BEGIN, SYNC_END
+
+        apart, together = Harness(history=9), Harness(history=9)
+        for harness in (apart, together):
+            harness.render(plain("", "", "one", "two"), cursor=(3, 0), pad=2)
+        apart.render(plain("", "", "one", "TWO"), cursor=(3, 0), pad=2)
+        apart.flush(plain("f1", "f2", "f3"))
+        written = len(together.writes)
+        together.region.render(plain("", "", "one", "TWO"), (3, 0), together.cols, pad=2, flush=plain("f1", "f2", "f3"))
+        (frame,) = together.writes[written:]
+        self.assertTrue(frame.startswith(SYNC_BEGIN) and frame.endswith(SYNC_END), repr(frame))
+        self.assertEqual((frame.count(SYNC_BEGIN), frame.count(SYNC_END)), (1, 1))
+        self.assertEqual(together.screen.history(), apart.screen.history())
+        self.assertEqual(together.screen.cursor, apart.screen.cursor)
+        self.assertEqual((together.region.height, together.region.pad), (apart.region.height, apart.region.pad))
+
+    def test_a_pager_frame_is_wrapped_too(self) -> None:
+        from omh.tui.pager import Pager
+        from omh.tui.screen import SYNC_BEGIN, SYNC_END
+        from omh.tui.theme import DEFAULT_THEME
+
+        pager = Pager("t", plain("a", "b"))
+        frame = pager.frame(20, 5, DEFAULT_THEME)
+        self.assertTrue(frame.startswith(SYNC_BEGIN) and frame.endswith(SYNC_END))
+        self.assertEqual(pager.frame(20, 5, DEFAULT_THEME), "")  # nothing changed: nothing written
 
 
 class FirstFrameTests(unittest.TestCase):
@@ -122,6 +170,51 @@ class RepaintTests(unittest.TestCase):
         self.harness.region.clear()
         finals = {final for text in self.harness.writes for _, final in _CSI.findall(text)}
         self.assertLessEqual(finals, {"A", "B", "C", "K", "J", "m", "h", "l"})
+
+
+class HiddenCaretTests(unittest.TestCase):
+    """A frame with no caret (`cursor=None`: the composer is hidden) leaves the hardware cursor hidden."""
+
+    def setUp(self) -> None:
+        self.harness = Harness(rows=10, history=9)
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=(2, 1))
+
+    def test_a_frame_with_no_caret_leaves_the_cursor_hidden(self) -> None:
+        from omh.tui.screen import SHOW_CURSOR
+
+        self.harness.render(plain("alpha", "BETA", "gamma"), cursor=None)
+        self.assertFalse(self.harness.screen.cursor_visible)
+        self.assertNotIn(SHOW_CURSOR, self.harness.writes[-1])
+        self.assertTrue(self.harness.region.caret_hidden)
+        self.assertEqual(self.harness.screen.lines()[-3:], ["alpha", "BETA", "gamma"])
+
+    def test_hiding_or_showing_the_caret_alone_is_written_and_an_unchanged_frame_is_not(self) -> None:
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=None)  # only the caret changed
+        self.assertFalse(self.harness.screen.cursor_visible)
+        before = len(self.harness.writes)
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=None)
+        self.assertEqual(len(self.harness.writes), before)
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=(2, 1))
+        self.assertTrue(self.harness.screen.cursor_visible)
+        self.assertEqual(self.harness.screen.cursor, (9, 1))
+        self.assertFalse(self.harness.region.caret_hidden)
+
+    def test_hiding_or_showing_the_caret_where_it_is_parked_is_still_written(self) -> None:
+        # A hidden caret parks at the start of the last row: from a caret already there, only its visibility changes.
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=(2, 0))
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=None)
+        self.assertFalse(self.harness.screen.cursor_visible)
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=(2, 0))
+        self.assertTrue(self.harness.screen.cursor_visible)
+
+    def test_a_flush_keeps_the_caret_hidden_and_the_next_caret_shows_it(self) -> None:
+        self.harness.render(plain("", "alpha", "beta"), cursor=None, pad=1)
+        self.harness.flush(plain("done one", "done two"))
+        self.assertFalse(self.harness.screen.cursor_visible)
+        self.assertEqual(self.harness.screen.lines()[-3:], ["done two", "alpha", "beta"])
+        self.harness.render(plain("alpha", "beta"), cursor=(1, 2))
+        self.assertTrue(self.harness.screen.cursor_visible)
+        self.assertEqual(self.harness.screen.cursor, (9, 2))
 
 
 class PaintReuseTests(unittest.TestCase):

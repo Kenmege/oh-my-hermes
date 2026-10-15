@@ -100,7 +100,9 @@ DONE_MARK = "○"
 FAILED_MARK = "✗"
 QUEUED_MARK = "◌"
 INTERRUPTED_MARK = "▪"
-OPEN_MARK = "↓"
+OPEN_MARK = "↓ agents"  # what Down opens, at the end of the strip
+COLLAPSED_OPEN_MARK = "↓"  # after `2 agents`, which already says it
+NUMBER_MARK = "·"  # between the number and the name of agents whose names match on the strip
 SELECTED_MARK = "▸ "
 UNSELECTED_MARK = "  "
 STRIP_GAP = "  "
@@ -293,14 +295,15 @@ class Roster:
         """Fold one gateway event; `now` is the app's clock.
 
         An event type that is not one of the six above, a payload that is not
-        an object, and a `subagent_id` that is missing, empty, over-long or
-        not a string each change nothing. Nothing raises.
+        an object, and a `subagent_id` that is missing, blank (the gateway
+        contract refuses a call naming it), over-long or not a string each
+        change nothing. Nothing raises.
         """
         handler = self._handlers.get(event_type) if isinstance(event_type, str) else None
         if handler is None or not isinstance(payload, dict):
             return
         subagent_id = payload.get("subagent_id")
-        if not isinstance(subagent_id, str) or not 0 < len(subagent_id) <= ID_CHARS:
+        if not isinstance(subagent_id, str) or not subagent_id.strip() or len(subagent_id) > ID_CHARS:
             return
         handler(subagent_id, payload, now)
         agent = self.agents.get(subagent_id)
@@ -401,11 +404,25 @@ class Roster:
         """`MAIN_ID`, then every agent in roster order: the rows of the list, top to bottom."""
         return (MAIN_ID, *self.agents)
 
+    def running_count(self) -> int:
+        """How many agents are still running."""
+        return sum(1 for agent in self.agents.values() if agent.status == RUNNING)
+
+    def strip_names(self) -> dict[str, str]:
+        """Each agent's name on the strip: its own, or, where two or more share it, `n·` and the name (n from 1, roster order)."""
+        names = {subagent_id: agent.name for subagent_id, agent in self.agents.items()}
+        shared = {name for name in names.values() if list(names.values()).count(name) > 1}
+        return {
+            subagent_id: f"{number}{NUMBER_MARK}{name}" if name in shared else name
+            for number, (subagent_id, name) in enumerate(names.items(), start=1)
+        }
+
     def strip_line(self, width: int, theme: Theme, spinner_frame: int) -> tuple[Line, tuple[Hit, ...]]:
-        """`● main  ⠹ explore  ○ review  ↓`, and the cells each entry covers on it.
+        """`● main  ⠹ explore  ○ review  ↓ agents`, and the cells each entry covers on it.
 
         A running agent shows frame `spinner_frame` of the spinner, a finished
-        one `○`, a failed one `✗`. When that row is wider than `width` it
+        one `○`, a failed one `✗`. Agents whose names match are numbered
+        (`strip_names`), so no two entries read the same. When that row is wider than `width` it
         becomes `● 2 agents ↓` (cut to `width`), which names no agent and so
         has no hits; `64+ agents` when the cap pushed some out. With no agent
         there is no strip.
@@ -416,9 +433,10 @@ class Roster:
         column = cell_width(f"{MAIN_MARK} {MAIN_NAME}")
         hits = [Hit(0, column, MAIN_ID)]
         tail = f"{STRIP_GAP}{OPEN_MARK}"
+        names = self.strip_names()
         for agent in self.agents.values():
             mark = _mark(agent, theme, spinner_frame)
-            name = agent.name
+            name = names[agent.subagent_id]
             start = column + cell_width(STRIP_GAP)
             column = start + cell_width(f"{mark.text} {name}")
             if column + cell_width(tail) > width:
@@ -432,7 +450,7 @@ class Roster:
     def _collapsed_strip(self, width: int, theme: Theme) -> Line:
         count = len(self.agents)
         more = "+" if self.evicted else ""
-        label = f"{count}{more} agent{'' if count == 1 else 's'} {OPEN_MARK}"
+        label = f"{count}{more} agent{'' if count == 1 else 's'} {COLLAPSED_OPEN_MARK}"
         return truncate_line((Span(f"{MAIN_MARK} ", theme.accent), Span(label, theme.hint)), width)
 
     def list_lines(

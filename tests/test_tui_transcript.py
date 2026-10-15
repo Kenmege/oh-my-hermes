@@ -20,10 +20,13 @@ from omh.tui.gateway import Event
 from omh.tui.style import Line, Span
 from omh.tui.theme import DEFAULT_THEME as THEME
 from omh.tui.transcript import (
+    OUTPUT_PREVIEW_ROWS,
     AssistantBlock,
+    CommandBlock,
     ThinkingBlock,
     ToolRow,
     Transcript,
+    block_rows,
     tool_result_status,
 )
 from omh.tui.width import is_control, line_width
@@ -120,7 +123,7 @@ class LiveTailMemoTests(LoopTestCase):
             return real(block, *args, **kwargs)
 
         with patch("omh.tui.transcript.block_rows", counting):
-            self.assertEqual(lines_text(self.transcript.live_lines(WIDTH, THEME, max_rows=1))[-1:], ["  ◔ terminal  ls"])
+            self.assertEqual(lines_text(self.transcript.live_lines(WIDTH, THEME, max_rows=1))[-1:], ["  ⏺ terminal  ls"])
         self.assertEqual(rendered, [self.transcript.blocks[-1]])
 
     def test_only_the_last_block_is_ever_live(self) -> None:
@@ -191,6 +194,30 @@ class SpacingTests(LoopTestCase):
         self.transcript.add_assistant("   ")
         self.assertEqual(self.step(), ["", "⏺ hello there", "", "  sh", "  ls"])
         self.assertEqual(len(self.transcript.blocks), 2)
+
+
+class PromptRowTests(LoopTestCase):
+    """`prompt_row`: where the last take's lines hold the newest prompt's first row; None when they hold no prompt."""
+
+    def take(self) -> list[str]:
+        return lines_text(self.transcript.take_stable_lines(WIDTH, THEME))
+
+    def test_only_a_prompt_sets_it_after_the_blank_row_above_it(self) -> None:
+        self.transcript.add_notice("a notice")
+        self.assertTrue(self.take())
+        self.assertIsNone(self.transcript.prompt_row)
+        self.transcript.add_user("first")
+        taken = self.take()
+        self.assertEqual(self.transcript.prompt_row, 1)  # the blank row above the prompt is not the prompt's
+        self.assertEqual(taken[1], "› first")
+        for event in (ev("message.start"), ev("tool.start", tool_id="t1", name="terminal", context="ls"),
+                      ev("tool.complete", tool_id="t1", name="terminal", result={"exit_code": 0}, duration_s=0.5)):
+            self.transcript.apply(event)
+        self.transcript.apply(ev("message.delta", text="done\n"))  # the tool group settles: a take with no prompt
+        self.assertTrue(self.take())
+        self.assertIsNone(self.transcript.prompt_row)
+        self.assertEqual(self.take(), [])
+        self.assertIsNone(self.transcript.prompt_row)  # an empty take holds no prompt either
 
 
 class RetakeTests(LoopTestCase):
@@ -443,7 +470,7 @@ class PlainTurnTests(LoopTestCase):
         self.assertEqual(self.live(), ["⏺ line one", "  line two", "  partial"])
         self.assertEqual(self.step(), ["⏺ line one", "  line two"])
         self.assertEqual(self.live(), ["  partial"])
-        self.assertEqual(self.taken[0][0], Span("⏺ ", THEME.accent))
+        self.assertEqual(self.taken[0][0], Span("⏺ ", THEME.text))  # what it said, apart from the tool colour
 
     def test_a_trailing_blank_line_waits_for_the_text_after_it(self) -> None:
         self.step(ev("message.start"))
@@ -571,7 +598,7 @@ class ReasoningAndToolTests(LoopTestCase):
             ),
             at=114.3,
         )
-        self.assertEqual(self.live(), ["", "  ◔ terminal  rm -rf ./omh-m0-probe-dir"])
+        self.assertEqual(self.live(), ["", "  ⏺ terminal  rm -rf ./omh-m0-probe-dir"])
         self.step(ev("session.usage", usage={"total": 27946}))
         self.step(
             ev(
@@ -628,7 +655,7 @@ class ReasoningAndToolTests(LoopTestCase):
         self.step(ev("tool.generating", name="read_file"))
         self.step(ev("tool.generating", name="search_files"))
         self.step(ev("tool.start", tool_id="a", name="read_file", context="src/a.py"), at=1.0)
-        self.assertEqual(self.live(), ["⏺ Tool calls (2)", "  ◔ read_file  src/a.py", "  ◌ search_files"])
+        self.assertEqual(self.live(), ["⏺ Tool calls (2)", "  ⏺ read_file  src/a.py", "  ◌ search_files"])
         self.step(ev("tool.start", tool_id="b", name="search_files", args={"pattern": "needle"}), at=1.1)
         self.step(ev("tool.complete", tool_id="a", name="read_file", duration_s=0.5, result={"content": "x"}))
         self.step(ev("tool.complete", tool_id="b", name="search_files", duration_s=0.7, result={"error": "rg failed"}))
@@ -640,13 +667,17 @@ class ReasoningAndToolTests(LoopTestCase):
             [
                 "⏺ Tool calls (3)  parallel ×2",
                 "  ✓ read_file  src/a.py  0.5s",
+                "    ⎿ x",
                 "  ✗ search_files  needle  0.7s",
+                "    ⎿ rg failed",
                 "  ✗ terminal  pytest  2.0s",
+                "    ⎿ 1 failed",
             ],
         )
         self.assertEqual(self.taken[0][-1].style, THEME.accent)
         self.assertEqual(self.taken[1][1].style, THEME.ok)
-        self.assertEqual(self.taken[2][1].style, THEME.error)
+        self.assertEqual(self.taken[4][-1].style, THEME.error)  # a failure's first line
+        self.assertEqual(self.taken[3][1].style, THEME.error)  # the ✗ of search_files, under read_file's output
         self.step(ev("message.complete", text="Done.", status="complete"))
         self.assertIn("    ⎿ rg failed", self.history())
         self.assertIn("    ⎿ 1 failed", self.history())
@@ -684,12 +715,14 @@ class ReasoningAndToolTests(LoopTestCase):
             )
         )
         flushed = self.step(ev("message.delta", text="\n\nIt was blocked — the command did not run."))
-        self.assertEqual(flushed, ["", "  ⊘ terminal  rm -rf ./omh-m0-probe-dir  0.1s"])
-        self.assertEqual(self.taken[-1][1].style, THEME.warn)
+        # One mark for a denial, the red cross (owner decision 6), and the person's words under it.
+        self.assertEqual(flushed, ["", "  ✗ terminal  rm -rf ./omh-m0-probe-dir  0.1s",
+                                   "    ⎿ You denied this command — it did not run."])
+        self.assertEqual(self.taken[-2][1].style, THEME.error)
         self.step(ev("message.complete", text="It was blocked — the command did not run.", status="complete"))
         history = self.history()
-        self.assertEqual(history[history.index("  ⊘ terminal  rm -rf ./omh-m0-probe-dir  0.1s") + 1],
-                         "    ⎿ You denied this command — it did not run.")
+        row = history.index("  ✗ terminal  rm -rf ./omh-m0-probe-dir  0.1s")
+        self.assertEqual(history[row + 1 : row + 3], ["    ⎿ You denied this command — it did not run.", ""])  # once
 
     def test_result_status_reads_the_result_shapes_hermes_sends(self) -> None:
         self.assertEqual(tool_result_status(DENIED_RESULT), "denied")
@@ -725,7 +758,7 @@ class ReasoningAndToolTests(LoopTestCase):
         self.step(ev("message.complete", text="It is fine.", status="complete"))
         self.assertEqual(
             self.history(details=False),
-            ["⏺ Let me check the file.", "", "  ✓ read_file  a.py  0.1s", "", "⏺ It is fine."],
+            ["⏺ Let me check the file.", "", "  ✓ read_file  a.py  0.1s", "    ⎿ ok", "", "⏺ It is fine."],
         )
 
     def test_interim_text_that_never_streamed_becomes_its_own_block_once(self) -> None:
@@ -733,6 +766,108 @@ class ReasoningAndToolTests(LoopTestCase):
         self.assertEqual(self.step(ev("message.interim", text="Checking.", already_streamed=False)), ["⏺ Checking."])
         self.step(ev("message.complete", text="Checking.", status="complete"))
         self.assertEqual(sum(isinstance(block, AssistantBlock) for block in self.transcript.blocks), 1)
+
+
+class ToolDraftTests(LoopTestCase):
+    """`tool.generating` (a name, no id) drafts a placeholder row; only `tool.start` and `tool.complete` make calls.
+
+    Measured against Hermes 6c61c3e27d: a streamed attempt Hermes discards
+    (`turn_truncation._retry_truncated_tool_call`, arguments it cannot repair)
+    has sent its `tool.generating` and nothing after it, and a deferred tool
+    reached through the `tool_call` bridge drafts as `tool_call` and starts
+    under the name of the tool it reached (`tool_executor._unwrap_tool_search_call`).
+    """
+
+    def end_turn(self, seconds: float, status: str = "complete") -> list[str]:
+        self.step(ev("message.complete", text="", status=status))
+        self.transcript.add_turn_summary(seconds, None)
+        self.step()
+        return lines_text(self.taken)
+
+    def test_a_bridge_draft_becomes_the_call_it_reached_in_its_place(self) -> None:
+        self.step(ev("message.start"))
+        self.step(ev("tool.generating", name="tool_call"))
+        self.assertEqual(self.live(), ["  ◌ tool_call"])
+        self.step(ev("tool.start", tool_id="call_1", name="todo_list", context="planning 3 task(s)"))
+        self.assertEqual(self.live(), ["  ⏺ todo_list  planning 3 task(s)"])
+        self.step(ev("tool.complete", tool_id="call_1", name="todo_list", result={"todos": []}, duration_s=0.0))
+        taken = self.end_turn(2.0)
+        self.assertEqual(taken[0], "  ✓ todo_list  planning 3 task(s)  0.0s")
+        self.assertNotIn("tool_call", "\n".join(taken))
+        self.assertTrue(taken[-1].startswith("✻ 2s · 1 tool "), taken[-1])
+
+    def test_a_draft_of_the_same_name_is_claimed_before_a_bridge_draft(self) -> None:
+        self.step(ev("message.start"))
+        self.step(ev("tool.generating", name="tool_call"))
+        self.step(ev("tool.generating", name="read_file"))
+        self.step(ev("tool.start", tool_id="a", name="read_file", context="a.py"))
+        self.assertEqual(self.live(), ["⏺ Tool calls (2)", "  ◌ tool_call", "  ⏺ read_file  a.py"])
+        self.step(ev("tool.start", tool_id="b", name="todo_list", context="planning 1 task(s)"))
+        self.assertEqual(
+            self.live(), ["⏺ Tool calls (2)  parallel ×2", "  ⏺ todo_list  planning 1 task(s)", "  ⏺ read_file  a.py"]
+        )
+
+    def test_two_bridge_drafts_become_their_calls_in_the_order_they_started(self) -> None:
+        # Each start claims the first unclaimed bridge draft, so the rows keep the order the calls began in.
+        self.step(ev("message.start"))
+        self.step(ev("tool.generating", name="tool_call"))
+        self.step(ev("tool.generating", name="tool_call"))
+        self.step(ev("tool.start", tool_id="a", name="todo_list", context="planning 1 task(s)"))
+        self.assertEqual(self.live(), ["⏺ Tool calls (2)", "  ⏺ todo_list  planning 1 task(s)", "  ◌ tool_call"])
+        self.step(ev("tool.start", tool_id="b", name="web_search", context="hermes agent"))
+        self.assertEqual(
+            self.live(),
+            ["⏺ Tool calls (2)  parallel ×2", "  ⏺ todo_list  planning 1 task(s)", "  ⏺ web_search  hermes agent"],
+        )
+
+    def test_a_streamed_attempt_hermes_discards_leaves_no_row_and_no_count(self) -> None:
+        self.step(ev("message.start"))
+        self.step(ev("tool.generating", name="write_file"))  # the attempt Hermes discards
+        self.step(ev("tool.generating", name="write_file"))  # the attempt it keeps
+        self.step(ev("tool.start", tool_id="w1", name="write_file", context="notes.md"))
+        self.step(ev("tool.complete", tool_id="w1", name="write_file", result={"bytes_written": 3}, duration_s=0.1))
+        taken = self.end_turn(4.0)
+        self.assertEqual(taken[0], "  ✓ write_file  notes.md  0.1s")
+        self.assertNotIn("◌", "\n".join(taken))
+        self.assertNotIn("▪", "\n".join(taken))
+        self.assertTrue(taken[-1].startswith("✻ 4s · 1 tool "), taken[-1])
+
+    def test_discarded_attempts_under_their_own_reasoning_leave_no_group_behind(self) -> None:
+        # The shape of the capture: each attempt sent its reasoning, then drafted the bridge and write_file.
+        self.step(ev("message.start"))
+        for attempt in range(4):
+            self.step(ev("reasoning.delta", text=f"plan it {attempt}"))
+            self.step(ev("tool.generating", name="tool_call"))
+            self.step(ev("tool.generating", name="write_file"))
+        self.step(ev("reasoning.delta", text="plan it"))
+        self.step(ev("tool.generating", name="tool_call"))
+        self.step(ev("tool.start", tool_id="call_9", name="todo_list", context="planning 3 task(s)"))
+        self.step(ev("tool.complete", tool_id="call_9", name="todo_list", result={"todos": []}, duration_s=0.0))
+        taken = self.end_turn(12.0)
+        text = "\n".join(taken)
+        for absent in ("▪", "◌", "write_file", "tool_call", "Tool calls"):
+            self.assertNotIn(absent, text)
+        self.assertEqual(text.count("  ✓ todo_list  planning 3 task(s)  0.0s"), 1)
+        self.assertTrue(taken[-1].startswith("✻ 12s · 1 tool "), taken[-1])
+
+    def test_a_draft_that_never_starts_leaves_no_row(self) -> None:
+        for status in ("complete", "interrupted"):
+            with self.subTest(status=status):
+                self.setUp()
+                self.step(ev("message.start"))
+                self.step(ev("tool.generating", name="terminal"))
+                self.assertEqual(self.live(), ["  ◌ terminal"])
+                taken = self.end_turn(1.0, status)
+                self.assertNotIn("terminal", "\n".join(taken))
+                self.assertEqual(taken[-1].split("  ")[0], "✻ 1s")  # no tools to count
+
+    def test_a_call_the_turn_cut_off_while_it_ran_still_reads_as_interrupted_and_counts(self) -> None:
+        self.step(ev("message.start"))
+        self.step(ev("tool.generating", name="terminal"))
+        self.step(ev("tool.start", tool_id="t1", name="terminal", context="sleep 60"))
+        taken = self.end_turn(3.0, "interrupted")
+        self.assertEqual(taken[0], "  ▪ terminal  sleep 60")
+        self.assertTrue(taken[-1].startswith("✻ 3s · 1 tool "), taken[-1])
 
 
 class TurnEndTests(LoopTestCase):
@@ -751,7 +886,9 @@ class TurnEndTests(LoopTestCase):
             )
         )
         flushed = self.step(ev("message.delta", text="\n\n1\n2\n"))
-        self.assertEqual(flushed, ["", "  ✓ terminal  seq 1 300  0.1s", "", "⏺ 1", "  2"])
+        self.assertEqual(
+            flushed, ["", "  ✓ terminal  seq 1 300  0.1s", "    ⎿ 1", "      2", "      3", "      … +3 lines", "", "⏺ 1", "  2"]
+        )
         flushed = self.step(ev("message.complete", text="1\n2", status="interrupted", partial=True))
         self.assertEqual(flushed, ["", "⚠ Interrupted."])
         self.assertEqual(self.taken[-1][0].style, THEME.warn)
@@ -798,7 +935,7 @@ class TurnEndTests(LoopTestCase):
         self.transcript.add_notice("approval declined", "warn")
         self.transcript.add_notice("gateway exited", "error")
         self.assertEqual(self.step(), ["· Ctrl+C again to exit", "", "⚠ approval declined", "", "✗ gateway exited"])
-        self.assertEqual([row[0].style for row in self.taken if row], [THEME.dim, THEME.warn, THEME.error])
+        self.assertEqual([row[0].style for row in self.taken if row], [THEME.muted, THEME.warn, THEME.error])
 
     def test_unknown_events_and_bad_payloads_change_nothing(self) -> None:
         self.step(ev("session.info", running=True))
@@ -945,7 +1082,7 @@ class InlineDiffTests(LoopTestCase):
         self.assertEqual(len(flushed), 1 + 23 + 1)
         self.assertEqual(flushed[-2].rstrip(), " 22 +row 22")
         self.assertEqual(flushed[-1], "    … +18 lines (/history shows all)")
-        self.assertEqual(self.taken[-1][-1].style, THEME.dim)
+        self.assertEqual(self.taken[-1][-1].style, THEME.muted)
         full = self.history(details=True)
         self.assertEqual(len(full), 1 + 41)
         self.assertEqual(full[-1].rstrip(), " 40 +row 40")
@@ -963,7 +1100,7 @@ class InlineDiffTests(LoopTestCase):
         self.assertEqual(lines_text(self.taken)[-1], "    … +8 lines (/history shows all)")
         self.assertEqual(self.live(), [])
 
-    def test_a_denied_or_failed_edit_without_a_diff_shows_nothing_extra(self) -> None:
+    def test_a_denied_edit_without_a_diff_shows_nothing_extra_and_a_failed_one_its_error(self) -> None:
         self.step(ev("message.start"))
         self.edit(None, {"approved": False, "user_consent": False}, tool_id="a")
         self.edit("", {"success": False, "error": "old_string not found in src/app.py"}, tool_id="b")
@@ -973,9 +1110,12 @@ class InlineDiffTests(LoopTestCase):
             flushed,
             [
                 "⏺ Tool calls (3)",
-                "  ⊘ patch  src/app.py  0.3s",
                 "  ✗ patch  src/app.py  0.3s",
+                "    ⎿ denied",
                 "  ✗ patch  src/app.py  0.3s",
+                "    ⎿ old_string not found in src/app.py",
+                "  ✗ patch  src/app.py  0.3s",
+                "    ⎿ no change",
             ],
         )
 
@@ -994,3 +1134,131 @@ class InlineDiffTests(LoopTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CommandOutputTests(LoopTestCase):
+    """A command the person runs is echoed, and what it prints stays under the echo in the transcript."""
+
+    def test_the_echo_waits_live_and_its_output_lands_under_it(self) -> None:
+        self.transcript.add_command("/model")
+        self.assertEqual(self.step(), [])  # still waiting for the command's output
+        self.assertEqual(self.live(), ["› /model"])
+        self.transcript.add_output("Current model: deepseek/deepseek-v4.1-flash-ultrafast")
+        self.assertEqual(self.step(), [])  # more may come until the command is over
+        self.transcript.close_command()
+        self.assertEqual(self.step(), ["› /model", "  ⎿ Current model: deepseek/deepseek-v4.1-flash-ultrafast"])
+
+    def test_a_notice_while_the_echo_is_open_is_the_commands_output_in_its_level(self) -> None:
+        self.transcript.add_command("/theme nope")
+        self.transcript.add_notice("No theme named nope.", "warn")
+        self.transcript.close_command()
+        self.assertEqual(self.step(), ["› /theme nope", "  ⎿ ⚠ No theme named nope."])  # a glyph, not only a hue
+        self.assertEqual(self.taken[-1][-1].style, THEME.warn)
+
+    def test_several_outputs_stack_under_one_echo_until_it_closes(self) -> None:
+        self.transcript.add_command("/reload-skills")
+        self.transcript.add_output("Skills reloaded.")
+        self.transcript.add_notice("Hermes' command catalog: two skills share a name", "warn")
+        self.transcript.close_command()
+        self.assertEqual(
+            self.step(), ["› /reload-skills", "  ⎿ Skills reloaded.", "    ⚠ Hermes' command catalog: two skills share a name"]
+        )
+
+    def test_an_echo_closed_without_output_flushes_alone_and_the_next_block_follows(self) -> None:
+        self.transcript.add_command("/details")
+        self.transcript.add_user("go on")
+        self.assertEqual(self.step(), ["› /details", "", "› go on"])
+
+    def test_output_that_comes_after_the_echo_closed_repeats_it(self) -> None:
+        self.transcript.add_command("/usage")
+        self.transcript.add_user("next prompt")
+        self.step()
+        self.transcript.add_output("Session cost: $0.01", command="/usage")
+        self.assertEqual(self.step(), ["", "› /usage", "  ⎿ Session cost: $0.01"])
+
+    def test_long_output_shows_its_first_rows_and_counts_the_rest_for_history(self) -> None:
+        self.transcript.add_command("/context")
+        self.transcript.add_output("\n".join(f"row {number}" for number in range(30)))
+        self.transcript.close_command()
+        flushed = self.step()
+        self.assertEqual(len(flushed), 1 + OUTPUT_PREVIEW_ROWS + 1)
+        self.assertEqual(flushed[1], "  ⎿ row 0")
+        self.assertEqual(flushed[OUTPUT_PREVIEW_ROWS], f"    row {OUTPUT_PREVIEW_ROWS - 1}")
+        self.assertEqual(flushed[-1], f"    … +{30 - OUTPUT_PREVIEW_ROWS} rows · /history shows all")
+        self.assertEqual(self.history()[-1], "    row 29")
+
+    def test_the_count_names_rows_since_it_counts_them_at_this_width(self) -> None:
+        # The same output wraps to more rows on a narrower terminal; the word says what is counted.
+        self.transcript.add_command("/context")
+        self.transcript.add_output("\n".join(f"row {number} " + "x" * 30 for number in range(20)))
+        self.transcript.close_command()
+        (block,) = self.transcript.blocks
+        for width in (100, 40):
+            rows = lines_text(block_rows(block, width, THEME))
+            self.assertRegex(rows[-1], r"… \+\d+ rows · /history shows all")
+
+    def test_whole_output_is_never_cut(self) -> None:
+        self.transcript.add_command("/help")
+        self.transcript.add_output("\n".join(f"row {number}" for number in range(30)), whole=True)
+        self.transcript.close_command()
+        self.assertEqual(len(self.step()), 1 + 30)
+
+    def test_the_block_is_one_command_and_its_output(self) -> None:
+        self.transcript.add_command("/model")
+        self.transcript.add_output("x")
+        self.transcript.close_command()
+        block = self.transcript.blocks[-1]
+        self.assertIsInstance(block, CommandBlock)
+        self.assertEqual((block.command, block.done), ("/model", True))
+
+
+class ToolOutputTests(LoopTestCase):
+    """Each tool row shows the first lines of what the tool printed; a failed one, its error's first line."""
+
+    def run_tool(self, result: object, name: str = "terminal", **payload: object) -> list[str]:
+        self.step(ev("message.start"))
+        self.step(ev("tool.start", tool_id="t1", name=name, context="seq 1 300"))
+        self.step(ev("tool.complete", tool_id="t1", name=name, result=result, duration_s=0.06, **payload))
+        return self.step(ev("message.complete", text="", status="complete"))
+
+    def test_the_first_three_lines_of_the_output_and_a_count_of_the_rest(self) -> None:
+        # Recorded from Hermes 6c61c3e27d (session fixture, the interrupted turn's `seq 1 300`).
+        flushed = self.run_tool({"output": "1\n2\n3\n4\n5\n[trimmed: 295 more lines]", "exit_code": 0, "error": None})
+        self.assertEqual(flushed[0].split("  ")[1], "✓ terminal")
+        self.assertEqual(flushed[1:], ["    ⎿ 1", "      2", "      3", "      … +3 lines"])  # under the tool's name
+        self.assertEqual(self.taken[-1][-1].style, THEME.muted)
+
+    def test_a_failed_tool_shows_its_errors_first_line_in_the_error_colour(self) -> None:
+        flushed = self.run_tool({"output": "", "exit_code": 2, "error": "ls: x.py: No such file or directory\nmore"})
+        self.assertIn("✗ terminal", flushed[0])
+        self.assertEqual(flushed[1:], ["    ⎿ ls: x.py: No such file or directory"])
+        self.assertEqual(self.taken[-1][-1].style, THEME.error)
+
+    def test_a_command_that_failed_by_its_exit_code_shows_the_end_of_what_it_printed(self) -> None:
+        # Hermes' terminal tool reports a non-zero exit as output plus exit_code with error None
+        # (tools/terminal_tool_result.py); pytest's summary is at the end, its banner at the start.
+        output = "\n".join(["==== test session starts ====", "collected 3 items", "", "test_x.py .F.", "",
+                             "FAILED test_x.py::test_b - assert 1 == 2", "==== 1 failed, 2 passed in 0.10s ===="])
+        flushed = self.run_tool({"output": output, "exit_code": 1, "error": None})
+        self.assertIn("✗ terminal", flushed[0])
+        self.assertEqual(flushed[1:], ["    ⎿ … +2 lines", "      test_x.py .F.",
+                                       "      FAILED test_x.py::test_b - assert 1 == 2",
+                                       "      ==== 1 failed, 2 passed in 0.10s ===="])
+        self.assertEqual(self.taken[-1][-1].style, THEME.error)
+        self.assertEqual(self.taken[-4][-1].style, THEME.muted)  # the count, above what it counts
+
+    def test_a_tool_that_printed_nothing_adds_no_row(self) -> None:
+        self.assertEqual(len(self.run_tool({"output": "", "exit_code": 0, "error": None})), 1)
+
+    def test_a_tool_whose_result_holds_no_text_adds_no_row(self) -> None:
+        self.assertEqual(len(self.run_tool({"responses": [{"status": "answered"}]}, name="clarify")), 1)
+
+    def test_an_edit_with_a_diff_shows_the_diff_and_no_output(self) -> None:
+        diff = "--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+b"
+        flushed = self.run_tool({"success": True, "output": "patched x.py"}, name="patch", inline_diff=diff)
+        self.assertNotIn("patched x.py", "\n".join(flushed))
+
+    def test_details_show_more_of_the_output(self) -> None:
+        self.run_tool({"output": "\n".join(f"row {number}" for number in range(10)), "exit_code": 0})
+        detailed = self.history(details=True)
+        self.assertIn("      row 9", detailed)

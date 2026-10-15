@@ -243,13 +243,15 @@ export function chipList(payload) {
   const metrics = sessionMetrics(payload)
   if (metrics.tokens) chips.push({ key: 'tokens', text: metrics.tokens, variant: 'muted' })
   const shot = payload.parallel_shot || {}
+  // No chip shows a number below 2: calls that never overlapped were no parallel shot (the TUI's `_shot_badge`).
   if (shot.status === 'observed') {
     const open = Number(shot.open_count) || 0
-    if (open > 0) chips.push({ key: 'shot', text: `parallel shot ×${open}`, variant: 'default' })
-    else {
+    const peak = Number(shot.peak_open_count) || 0
+    if (open > 1) chips.push({ key: 'shot', text: `parallel shot ×${open}`, variant: 'default' })
+    else if (peak > 1) {
       const observedAt = shot.observed_at ? Date.parse(shot.observed_at) : NaN
       const age = Number.isFinite(observedAt) ? elapsedText(Math.max(0, (Date.now() - observedAt) / 1000)) : ''
-      chips.push({ key: 'shot', text: `parallel shot ×${Number(shot.peak_open_count) || 0}${age ? ` (${age} ago)` : ''}`, variant: 'muted' })
+      chips.push({ key: 'shot', text: `parallel shot ×${peak}${age ? ` (${age} ago)` : ''}`, variant: 'muted' })
     }
   }
   return chips

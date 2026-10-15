@@ -6,7 +6,7 @@ a footer, and switches back when the person leaves, which restores the main
 screen (live region included) exactly as it was. Nothing it shows is written
 anywhere else. After its first frame a pager paints only the rows that changed
 since its last one, until the size changes or `invalidate` says something else
-cleared the screen.
+cleared the screen, each frame one synchronized update as the live region's.
 
 `Pager` shows lines rendered beforehand. `HistoryPager` (`/history`) renders
 the transcript's blocks only as a page reaches them, so a long session opens
@@ -23,7 +23,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from .keys import CHAR, DOWN, END, ESCAPE, HOME, PAGE_DOWN, PAGE_UP, UP, Key, Paste
-from .screen import HIDE_CURSOR, paint_line
+from .screen import HIDE_CURSOR, SYNC_BEGIN, SYNC_END, paint_line
 from .style import CSI, Line, Span
 from .theme import Theme
 
@@ -109,7 +109,7 @@ class Pager:
             self._paint(row, shown[row] if row < len(shown) else (), cols, parts)
         footer: Line = (Span(f" {self.title} · {position} · {FOOTER_KEYS} ", theme.status),)
         self._paint(rows - 1, footer, cols, parts)
-        return HIDE_CURSOR + "".join(parts) if parts else ""
+        return SYNC_BEGIN + HIDE_CURSOR + "".join(parts) + SYNC_END if parts else ""
 
     def _paint(self, row: int, line: Line, cols: int, parts: list[str]) -> None:
         """Add screen row `row`'s bytes to `parts`, unless the last frame left this very line there."""

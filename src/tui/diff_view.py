@@ -124,7 +124,7 @@ def _style(kind: str, theme: Theme) -> Style:
         return theme.label
     if kind == DIFF_CONTEXT:
         return theme.code
-    return theme.dim
+    return theme.muted
 
 
 def _indent(width: int) -> Line:
@@ -172,7 +172,7 @@ def _gutter_cells(numbers: Sequence[int | None], width: int) -> int:
 
 def _gutter(label: str, gutter: int, theme: Theme) -> Line:
     """`label` right-aligned in the gutter, one space before the text; nothing when there is no gutter."""
-    return (Span(label.rjust(gutter - 1) + " ", theme.dim),) if gutter else ()
+    return (Span(label.rjust(gutter - 1) + " ", theme.muted),) if gutter else ()
 
 
 def _code_rows(text: str, style: Style, width: int, band: bool, number: int | None, gutter: int, theme: Theme) -> list[Line]:
@@ -225,5 +225,5 @@ def diff_rows(lines: Sequence[DiffLine], width: int, theme: Theme, full: bool = 
         rows.extend(_line_rows(line, number, width, gutter, theme))
     hidden = sum(1 for line, _number in numbered[len(shown) :] if line.kind != DIFF_HUNK)
     if hidden:
-        rows.extend(_note_rows(_hidden_note(hidden), theme.dim, width))
+        rows.extend(_note_rows(_hidden_note(hidden), theme.muted, width))
     return rows

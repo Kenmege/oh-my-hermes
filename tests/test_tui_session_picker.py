@@ -7,6 +7,7 @@ import unittest
 from _tui_lines import line_text
 from omh.tui.keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
 from omh.tui.session_picker import CLOSE, PICK, PickerAction, SessionPicker, age_text, session_rows
+from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME
 from omh.tui.width import line_width
 
@@ -80,8 +81,9 @@ class LinesTests(unittest.TestCase):
     def test_a_header_then_one_row_per_session_with_the_current_one_marked(self) -> None:
         lines = picker().lines(60, DEFAULT_THEME, 8, NOW)
         self.assertTrue(line_text(lines[0]).startswith(" Sessions (3)"))
-        self.assertEqual(len(lines), 4)
-        current, other, old = (line_text(line) for line in lines[1:])
+        self.assertEqual(len(lines), 5)
+        self.assertEqual(line_text(lines[-1]), " › type to filter")  # the filter, where the composer was
+        current, other, old = (line_text(line) for line in lines[1:4])
         self.assertTrue(current.startswith(" ● Reply with ok"))
         self.assertTrue(current.rstrip().endswith("just now · 14 messages"))
         self.assertTrue(other.startswith("   Refactor the router"))
@@ -93,15 +95,63 @@ class LinesTests(unittest.TestCase):
 
     def test_rows_scroll_to_keep_the_highlighted_one_and_the_page_follows_the_room(self) -> None:
         chooser = picker(index=2)
-        lines = chooser.lines(60, DEFAULT_THEME, 3, NOW)
-        self.assertEqual(len(lines), 3)
-        self.assertIn("Release notes", line_text(lines[-1]))
+        lines = chooser.lines(60, DEFAULT_THEME, 4, NOW)
+        self.assertEqual(len(lines), 4)
+        self.assertIn("Release notes", line_text(lines[-2]))
         self.assertEqual(chooser.page, 2)
 
     def test_a_filter_that_matches_nothing_says_so(self) -> None:
         lines = picker(query="zzz").lines(60, DEFAULT_THEME, 5, NOW)
         self.assertIn("Sessions (0/3)", line_text(lines[0]))
         self.assertIn("no session matches", line_text(lines[1]))
+        self.assertEqual(line_text(lines[-1]), " › zzz")
+
+    def test_the_filter_row_is_last_at_every_budget_and_says_what_typing_filters_by(self) -> None:
+        chooser = picker(query="re")
+        for max_rows in range(2, 9):
+            with self.subTest(max_rows=max_rows):
+                lines = chooser.lines(60, DEFAULT_THEME, max_rows, NOW)
+                self.assertLessEqual(len(lines), max_rows)
+                self.assertEqual(line_text(lines[-1]), " › re")
+                self.assertNotIn("filter", line_text(lines[0]))
+        self.assertEqual(len(chooser.lines(60, DEFAULT_THEME, 1, NOW)), 1)
+        filtered = picker()
+        filtered.handle_key(Key(CHAR, "R"))
+        self.assertEqual(line_text(filtered.lines(60, DEFAULT_THEME, 6, NOW)[-1]), " › R")
+
+
+class FrameTests(unittest.TestCase):
+    """The keys ladder in the header, the highlighted row on a tiny budget, and the caret at the end of the filter."""
+
+    def test_the_headers_keys_take_the_longest_form_that_fits(self) -> None:
+        for width, said in ((100, "↑↓ move · enter switches · esc closes"), (48, "↑↓ enter switches · esc closes"),
+                            (40, "esc closes")):
+            with self.subTest(width=width):
+                header = line_text(picker().lines(width, DEFAULT_THEME, 6, NOW)[0])
+                self.assertTrue(header.rstrip().endswith(said), header)
+                self.assertLessEqual(line_width(picker().lines(width, DEFAULT_THEME, 6, NOW)[0]), width)
+        self.assertEqual(line_text(picker().lines(100, DEFAULT_THEME, 6, NOW, keys=False)[0]).rstrip(), " Sessions (3)")
+
+    def test_two_rows_or_fewer_keep_the_highlighted_row_and_drop_the_header(self) -> None:
+        chooser = picker(index=1)
+        one = chooser.lines(60, DEFAULT_THEME, 1, NOW)
+        self.assertEqual(len(one), 1)
+        self.assertTrue(line_text(one[0]).startswith("   Refactor the router"), one)
+        self.assertEqual(one[0][0].style, DEFAULT_THEME.menu_current)
+        two = [line_text(line) for line in chooser.lines(60, DEFAULT_THEME, 2, NOW)]
+        self.assertTrue(two[0].startswith("   Refactor the router"), two)
+        self.assertEqual(two[1], " › type to filter")
+        self.assertIn("no session matches", line_text(picker(query="zzz").lines(60, DEFAULT_THEME, 1, NOW)[0]))
+
+    def test_the_caret_sits_at_the_end_of_the_filter_row(self) -> None:
+        for query, budget in (("", 6), ("re", 6), ("re", 2), ("한글", 6)):
+            with self.subTest(query=query, budget=budget):
+                chooser = picker(query=query)
+                lines = chooser.lines(60, DEFAULT_THEME, budget, NOW)
+                self.assertEqual(chooser.caret, (len(lines) - 1, line_width((Span(" › " + query),))))
+        chooser = picker()
+        chooser.lines(60, DEFAULT_THEME, 1, NOW)
+        self.assertIsNone(chooser.caret)  # no filter row drawn, no caret
 
 
 if __name__ == "__main__":

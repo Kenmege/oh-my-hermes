@@ -32,9 +32,15 @@ from omh.tui.terminal import (
     MODIFY_OTHER_KEYS_ON,
     MOUSE_REPORTING_OFF,
     MOUSE_REPORTING_ON,
+    BACKGROUND_QUERY,
+    BACKGROUND_QUERY_SECONDS,
+    DEVICE_ATTRIBUTES_QUERY,
     RESTORE_SEQUENCE,
     Terminal,
+    background_from_colorfgbg,
+    colorfgbg_names_dark,
     keyboard_protocol_request,
+    split_background_replies,
     terminal_blocker,
     terminal_supported,
 )
@@ -180,6 +186,48 @@ class KeyboardProtocolRequestTests(unittest.TestCase):
         self.assertEqual(KITTY_KEYBOARD_POP, "\x1b[<u")
         self.assertEqual(MODIFY_OTHER_KEYS_OFF, "\x1b[>4m")
         self.assertEqual(BOTH_REPORTS, "\x1b[>1u\x1b[>4;2m")
+
+
+class BackgroundReplyTests(unittest.TestCase):
+    """The answers to the startup background query, read out of whatever else the input held."""
+
+    def test_the_background_answer_is_read_in_every_digit_count_and_either_terminator(self) -> None:
+        da1 = b"\x1b[?62;22c"
+        cases = {
+            b"\x1b]11;rgb:ffff/ffff/ffff\x07": "#FFFFFF",
+            b"\x1b]11;rgb:1e1e/1e1e/1e1e\x1b\\": "#1E1E1E",
+            b"\x1b]11;rgb:fd/f6/e3\x07": "#FDF6E3",
+            b"\x1b]11;rgb:f/0/8\x07": "#FF0088",
+            b"\x1b]11;rgb:800/800/800\x07": "#808080",
+        }
+        for reply, colour in cases.items():
+            with self.subTest(reply=reply):
+                self.assertEqual(split_background_replies(reply + da1), (colour, b"", True))
+
+    def test_keys_typed_around_the_answers_are_kept_in_order(self) -> None:
+        data = b"ab\x1b]11;rgb:0000/0000/0000\x07c\x1b[?1;2cd"
+        self.assertEqual(split_background_replies(data), ("#000000", b"abcd", True))
+
+    def test_a_terminal_that_answers_only_the_attributes_request_reports_no_background(self) -> None:
+        self.assertEqual(split_background_replies(b"\x1b[?64;1;2c"), (None, b"", True))
+        self.assertEqual(split_background_replies(b"x"), (None, b"x", False))
+
+    def test_colorfgbg_names_a_light_background_only_for_its_light_colours(self) -> None:
+        self.assertEqual(background_from_colorfgbg({"COLORFGBG": "0;15"}), "#FFFFFF")
+        self.assertEqual(background_from_colorfgbg({"COLORFGBG": "0;default;7"}), "#E5E5E5")
+        for value in ("15;0", "7;8", "15;default", "", "garbage", "0;99"):
+            with self.subTest(value=value):
+                self.assertIsNone(background_from_colorfgbg({"COLORFGBG": value}))
+        self.assertIsNone(background_from_colorfgbg({}))
+
+    def test_colorfgbg_names_a_dark_background_for_its_dark_colours(self) -> None:
+        for value in ("15;0", "7;0", "15;default;0", "7;8", "0;4"):
+            with self.subTest(value=value):
+                self.assertTrue(colorfgbg_names_dark({"COLORFGBG": value}))
+        for value in ("0;15", "0;default;7", "15;default", "15", "", "garbage", "0;99", "15;9"):
+            with self.subTest(value=value):
+                self.assertFalse(colorfgbg_names_dark({"COLORFGBG": value}))
+        self.assertFalse(colorfgbg_names_dark({}))
 
 
 class MouseReportingSequenceTests(unittest.TestCase):
@@ -370,6 +418,29 @@ class TerminalPtyTests(unittest.TestCase):
             os.write(self.master, b"\x03\r\n")
             # ISIG off: no SIGINT, the byte is input. ICRNL off: CR stays CR.
             self.assertEqual(self.read_exactly(term, 3), b"\x03\r\n")
+
+    def test_the_background_query_reads_the_answer_and_hands_keys_typed_meanwhile_back(self) -> None:
+        with Terminal(self.slave, self.slave) as term:
+            self.master_output()
+            os.write(self.master, b"ab\x1b]11;rgb:ffff/ffff/ffff\x07\x1b[?62;22cz")
+            colour, typed = term.query_background()
+            self.assertEqual((colour, typed), ("#FFFFFF", b"abz"))
+            self.assertEqual(self.master_output(), (BACKGROUND_QUERY + DEVICE_ATTRIBUTES_QUERY).encode())
+
+    def test_the_attributes_answer_ends_the_wait_without_a_background(self) -> None:
+        with Terminal(self.slave, self.slave) as term:
+            os.write(self.master, b"\x1b[?62;22c")
+            started = time.monotonic()
+            self.assertEqual(term.query_background(timeout=5.0), (None, b""))
+            self.assertLess(time.monotonic() - started, 1.0)
+
+    def test_a_terminal_that_answers_nothing_costs_the_timeout_and_no_more(self) -> None:
+        with Terminal(self.slave, self.slave) as term:
+            started = time.monotonic()
+            self.assertEqual(term.query_background(), (None, b""))
+            elapsed = time.monotonic() - started
+        self.assertGreaterEqual(elapsed, BACKGROUND_QUERY_SECONDS * 0.9)
+        self.assertLess(elapsed, BACKGROUND_QUERY_SECONDS + 0.5)
 
     def test_read_returns_nothing_when_nothing_arrives(self) -> None:
         with Terminal(self.slave, self.slave) as term:

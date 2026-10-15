@@ -3,8 +3,10 @@
 `session.list` answers with the person's stored sessions, most recent first.
 The picker shows each as one row (its title, or the first prompt when it has
 no title, its age and its message count), marks the session this TUI is in,
-and returns the id the person picked. It holds no IO: the app sends the list
-call, feeds keys in, and runs the switch with the id it gets back.
+and returns the id the person picked. Its last row is the filter
+(`filter_line`), drawn where the composer is, which the app hides while a
+picker is open. It holds no IO: the app sends the list call, feeds keys in,
+and runs the switch with the id it gets back.
 
 Keys: Up/Down move one row, PageUp/PageDown one page; printable text filters
 (by title, first prompt or id, ignoring case) and Backspace takes a filter
@@ -13,18 +15,21 @@ character back; Enter picks the highlighted row; Esc or Ctrl+C closes.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
 from .style import Line, Span
 from .theme import Theme
-from .width import cell_width, truncate, truncate_line
+from .width import cell_width, line_width, truncate, truncate_line
 
 PICK = "pick"
 CLOSE = "close"
 CURRENT_MARK = "●"
-HINT = "↑↓ move · type to filter · Enter switches · Esc closes"
+# Its keys, longest first: on the mode row while it is open, in its header where there is no mode row.
+KEYS = ("↑↓ move · enter switches · esc closes", "↑↓ enter switches · esc closes", "esc closes")
+FILTER_PROMPT = " › "
+FILTER_PLACEHOLDER = "type to filter"
 
 
 @dataclass(frozen=True)
@@ -85,6 +90,57 @@ def age_text(started_at: float, now: float) -> str:
     return "just now"
 
 
+def filter_line(query: str, width: int, theme: Theme) -> Line:
+    """A picker's last row: what typing filters it by, or how to start, after the composer's prompt glyph."""
+    typed = Span(query, theme.text) if query else Span(FILTER_PLACEHOLDER, theme.hint)
+    return truncate_line((Span(FILTER_PROMPT, theme.prompt), typed), width)
+
+
+@dataclass(frozen=True)
+class PickerFrame:
+    lines: list[Line]
+    caret: tuple[int, int] | None  # (row, col) at the end of the filter row's text; None with no filter row drawn
+    page: int  # list rows shown: what PageUp and PageDown move by
+
+
+def picker_frame(
+    head: Line,
+    keys: tuple[str, ...],
+    count: int,
+    index: int,
+    row: Callable[[int], Line],
+    empty: str,
+    query: str,
+    width: int,
+    theme: Theme,
+    max_rows: int,
+) -> PickerFrame:
+    """A picker's rows within `max_rows`, the same for every picker.
+
+    A header (`head`, then the longest form of `keys` that fits beside it;
+    `keys` empty says none), the `count` list rows `row` draws scrolled so
+    the highlighted `index` shows (`empty` when there are none), then the
+    filter row, its caret at the end of what was typed so an IME pre-edit
+    shows there. With two rows or fewer the header goes first, so the
+    highlighted row stays.
+    """
+    if max_rows <= 0:
+        return PickerFrame([], None, 1)
+    current = (lambda number: truncate_line(row(number), width)) if count else (lambda number: (Span(empty, theme.muted),))
+    caret = min(cell_width(FILTER_PROMPT) + cell_width(query), max(width - 1, 0))
+    if max_rows <= 2:
+        lines = [current(index), filter_line(query, width, theme)][:max_rows]
+        return PickerFrame(lines, (1, caret) if max_rows == 2 else None, 1)
+    room = width - line_width(head) - 2
+    said = next((form for form in keys if cell_width(form) <= room), keys[-1]) if keys else ""
+    header = truncate_line((*head, Span(f"  {said}" if said else "", theme.hint)), width)
+    body = max_rows - 2
+    start = min(max(index - body + 1, 0), max(count - body, 0))
+    rows = [current(number) for number in range(start, min(start + body, count))] if count else [current(0)]
+    lines = [header, *rows, filter_line(query, width, theme)]
+    return PickerFrame(lines, (len(lines) - 1, caret), body)
+
+
 def _messages(count: int) -> str:
     return f"{count} message{'' if count == 1 else 's'}"
 
@@ -96,6 +152,7 @@ class SessionPicker:
     query: str = ""
     index: int = 0
     page: int = 1  # rows the last render showed; PageUp/PageDown move by this many
+    caret: tuple[int, int] | None = None  # the last render's caret, at the end of its filter row
 
     def visible(self) -> list[SessionRow]:
         """The rows the filter keeps, in list order."""
@@ -127,26 +184,19 @@ class SessionPicker:
         self.query = query
         self.index = 0
 
-    def lines(self, width: int, theme: Theme, max_rows: int, now: float) -> list[Line]:
-        """A header row, then the filtered rows scrolled so the highlighted one shows."""
-        if max_rows <= 0:
-            return []
+    def lines(self, width: int, theme: Theme, max_rows: int, now: float, keys: bool = True) -> list[Line]:
+        """A header row (its keys after the title when `keys`), the filtered rows scrolled so the highlighted one
+        shows, then the filter row (`picker_frame`)."""
         shown = self.visible()
+        self.index = min(self.index, max(len(shown) - 1, 0))
         title = f" Sessions ({len(shown)}/{len(self.rows)})" if self.query else f" Sessions ({len(self.rows)})"
-        header = (Span(title, theme.heading), Span(f"  filter: {self.query}" if self.query else "", theme.text),
-                  Span(f"  {HINT}", theme.dim))
-        lines: list[Line] = [truncate_line(header, width)]
-        body = max_rows - 1
-        self.page = max(body, 1)
-        if body <= 0:
-            return lines
-        if not shown:
-            return [*lines, (Span(" no session matches the filter", theme.dim),)]
-        self.index = min(self.index, len(shown) - 1)
-        start = min(max(self.index - body + 1, 0), max(len(shown) - body, 0))
-        for number in range(start, min(start + body, len(shown))):
-            lines.append(self._row(shown[number], number == self.index, width, theme, now))
-        return lines
+        frame = picker_frame(
+            (Span(title, theme.heading),), KEYS if keys else (), len(shown), self.index,
+            lambda number: self._row(shown[number], number == self.index, width, theme, now),
+            " no session matches the filter", self.query, width, theme, max_rows,
+        )
+        self.page, self.caret = frame.page, frame.caret
+        return frame.lines
 
     def _row(self, row: SessionRow, highlighted: bool, width: int, theme: Theme, now: float) -> Line:
         style = theme.menu_current if highlighted else theme.menu
