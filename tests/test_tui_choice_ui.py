@@ -463,6 +463,45 @@ class PickerTests(unittest.TestCase):
                 screen = drawn(app)
                 self.assertEqual(app.terminal.screen.cursor[0], next(i for i, line in enumerate(screen) if line.startswith("› a draft")))  # type: ignore[attr-defined]
 
+    def test_the_caret_stays_on_the_filter_row_with_the_echo_and_the_working_row_above(self) -> None:
+        # The slot's top is below the sticky echo and the working row: the caret counts them.
+        app, _client = make_app(busy=True)
+        app.sticky, app.flushed_since_prompt = "run the tools", 999  # the prompt has scrolled off: its echo shows
+        app._open_session_picker(SESSIONS)
+        type_text(app, "re")
+        screen = drawn(app)
+        self.assertTrue(any(line.startswith("↳ you: run the tools") for line in screen), screen)
+        self.assertTrue(any("working" in line for line in screen), screen)
+        row = status_row(screen) - 2
+        self.assertEqual(screen[row], " › re")
+        self.assertEqual(app.terminal.screen.cursor, (row, 5))  # type: ignore[attr-defined]
+
+    def test_an_approval_over_a_picker_shows_no_caret_and_the_pickers_comes_back_after(self) -> None:
+        app, client = make_app(busy=True)
+        app._open_session_picker(SESSIONS)
+        filter_row = status_row(drawn(app)) - 2
+        app._on_server_request(APPROVAL)
+        screen = drawn(app)
+        self.assertFalse(app.terminal.screen.cursor_visible, screen)  # type: ignore[attr-defined]
+        armed(app)
+        press(app, Key(ESCAPE))
+        self.assertEqual(answered(client, "srq-1"), [{"result": {"choice": "deny"}}])
+        drawn(app)
+        self.assertEqual(app.terminal.screen.cursor, (filter_row, 3))  # type: ignore[attr-defined]
+
+    def test_a_view_left_over_a_picker_without_a_filter_row_keeps_the_caret_hidden(self) -> None:
+        # Five rows give a picker one row, its highlighted one, so no filter row and no caret.
+        app, _client = make_app(rows=5, cols=40)
+        app.transcript.add_notice("something to view")
+        app._open_session_picker(SESSIONS)
+        drawn(app)
+        self.assertFalse(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
+        press(app, Key(CHAR, "o", ctrl=True))
+        self.assertIsNotNone(app.pager)
+        press(app, Key(CHAR, "q"))
+        self.assertIsNone(app.pager)
+        self.assertFalse(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]  # before any repaint
+
     def test_a_tiny_terminal_still_shows_the_pickers_highlighted_row(self) -> None:
         for rows in (5, 4, 3):
             with self.subTest(rows=rows):
@@ -535,6 +574,21 @@ class ClarifyBatchTests(unittest.TestCase):
         self.assertEqual(app.composer.text, "z")
         press(app, Key(ENTER))
         self.assertEqual(answered(client, "srq-6"), [{"result": {"answers": {"a": "x", "b": "z"}}}])
+
+    def test_an_enter_right_after_a_typed_answer_does_not_answer_the_next_question(self) -> None:
+        # The advance came from a submit, not a key: the next question arms all the same.
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        app._on_server_request(ServerRequest("srq-11", "clarify", {"questions": [
+            {"qid": "a", "question": "A?"}, {"qid": "b", "question": "B?"}]}))
+        now[0] += 10.0
+        type_text(app, "first")
+        press(app, Key(ENTER), Key(ENTER))  # a double-tapped Enter
+        self.assertEqual((app.slot.question_index, client.answers), (1, []))  # type: ignore[union-attr]
+        now[0] += 10.0
+        type_text(app, "second")
+        press(app, Key(ENTER))
+        self.assertEqual(answered(client, "srq-11"), [{"result": {"answers": {"a": "first", "b": "second"}}}])
 
     def test_keys_in_the_first_moment_after_the_next_question_appears_answer_nothing(self) -> None:
         # A double-tapped Enter: the first picks for Q1, the second must not answer Q2 unseen.
