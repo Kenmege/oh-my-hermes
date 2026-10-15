@@ -1433,8 +1433,12 @@ class App(ModesMixin, AgentViewMixin):
                 call.on_expiry()
             elif call.method not in QUIET_EXPIRY_METHODS:
                 seconds = CALL_ANSWER_SECONDS_BY_METHOD.get(call.method, CALL_ANSWER_SECONDS)
-                with self._for_command(call.command):  # under the echo of the command it was made for
-                    self.transcript.add_notice(CALL_EXPIRED_NOTICE.format(method=call.method, seconds=seconds), NOTICE_WARN)
+                notice = CALL_EXPIRED_NOTICE.format(method=call.method, seconds=seconds)
+                if call.command is None:
+                    self.transcript.add_aside(NoticeBlock(notice, NOTICE_WARN))  # never closes what runs
+                else:
+                    with self._for_command(call.command):  # under the echo of the command it was made for
+                        self.transcript.add_notice(notice, NOTICE_WARN)
             self._command_call_done(call)
 
     @contextmanager

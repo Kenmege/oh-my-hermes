@@ -475,6 +475,21 @@ class CommandPlacementTests(unittest.TestCase):
         echoes = [block for block in app.transcript.blocks if type(block).__name__ == "CommandBlock"]
         self.assertEqual([(block.command, block.parts) for block in echoes], [("/usage", [("Session cost: $0.01", "info")])])
 
+    def test_a_commands_call_that_expires_mid_tool_says_so_under_its_echo_and_the_call_runs_on(self) -> None:
+        clock = Clock()
+        app, _client = make_app(busy=True, clock=clock)
+        app._on_event(ev("message.start"))
+        app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="pytest -q"))
+        type_text(app, "/usage")
+        app._on_input(Key(ENTER))
+        clock.now += 3600
+        app._expire_calls()
+        group = app.transcript.blocks[-1]
+        self.assertIsInstance(group, ToolGroup)
+        self.assertEqual(group.tools[0].status, TOOL_RUNNING)
+        self.assertEqual(lines_text(app.transcript.live_lines(140, THEME))[-2:],
+                         ["› /usage", "  ⎿ ⚠ Hermes has not answered slash.exec in 120 s; the OMH TUI stopped waiting for it."])
+
     def test_output_for_an_echo_already_closed_waits_under_a_running_call(self) -> None:
         app, client = make_app()
         type_text(app, "/usage")

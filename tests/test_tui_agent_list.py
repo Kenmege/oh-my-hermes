@@ -728,8 +728,8 @@ class AgentRowsDuringATurnTests(unittest.TestCase):
     (`▪`, cut off) or split a streaming reply.
     """
 
-    def delegating(self) -> tuple[App, RecordingClient]:
-        app, client = agent_app(busy=True, frames=[])
+    def delegating(self, **options: object) -> tuple[App, RecordingClient]:
+        app, client = agent_app(busy=True, frames=[], **options)
         app._on_event(Event("message.start", SID, {}))
         app._on_event(Event("tool.start", SID, {"tool_id": "t1", "name": "delegate_task", "context": "two subagents"}))
         relay(app, STARTS)
@@ -774,6 +774,18 @@ class AgentRowsDuringATurnTests(unittest.TestCase):
                 self.assert_running(app)
                 self.assertEqual(self.finish(app), [("delegate_task", TOOL_OK)])
                 self.assertEqual(notices(app)[0], said)
+
+    def test_an_interrupt_hermes_never_answers_says_so_and_leaves_the_delegate_call_running(self) -> None:
+        now = [0.0]
+        app, client = self.delegating(clock=lambda: now[0])
+        app._on_input(Key(CHAR, "x"))
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual(client.calls[-1][0], "subagent.interrupt")
+        now[0] += 3600  # far past any call's answer time
+        app._expire_calls()
+        self.assert_running(app)  # the notice waits under the call instead of cutting it off
+        self.assertEqual(self.finish(app), [("delegate_task", TOOL_OK)])
+        self.assertEqual(notices(app)[0], "Hermes has not answered subagent.interrupt in 120 s; the OMH TUI stopped waiting for it.")
 
     def test_x_on_an_agent_that_finished_while_the_call_runs_leaves_the_call_running(self) -> None:
         app, client = self.delegating()
