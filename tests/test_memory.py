@@ -19,6 +19,7 @@ load_local_package()
 from omh.coding_delegation import build_coding_delegation_payload
 from omh.coding_lifecycle import start_codex_delegation_lifecycle
 from omh.plugin_bundle.omh import memory_governance
+from omh.plugin_bundle.omh.memory_dreaming import consolidation_path
 from omh.plugin_bundle.omh.memory_session_lens import SURFACE_OPERATOR_CONSOLE
 from omh.workflows import memory as memory_workflow
 from omh.memory import (
@@ -2136,16 +2137,27 @@ class RetirementApplyTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             paths, record, expires = self._seed(tmp)
             probe_now = expires + timedelta(days=1)
-            brief_path = paths.omh_home / "memory" / "consolidation.json"
-            brief_path.parent.mkdir(parents=True, exist_ok=True)
-            brief_path.write_text(
-                json.dumps({"schema_version": "omh_memory_consolidation_handoff/v1", "due": True, "reasons": ["expiring_records:1"]}),
-                encoding="utf-8",
-            )
+            # The records are the home's, so the retirement answers the ask in
+            # every brief kept there: this profile's, another profile's on the
+            # same store, and a home-wide one an earlier release left unclaimed.
+            briefs = [
+                consolidation_path(paths.omh_home, paths.hermes_home),
+                consolidation_path(paths.omh_home, Path(tmp) / "other-profile"),
+                paths.memory_dir / "consolidation.json",
+            ]
+            for brief_path in briefs:
+                brief_path.parent.mkdir(parents=True, exist_ok=True)
+                brief_path.write_text(
+                    json.dumps({"schema_version": "omh_memory_consolidation_handoff/v1", "due": True, "reasons": ["expiring_records:1"]}),
+                    encoding="utf-8",
+                )
             apply_memory_retirement(paths, now=probe_now)
-            cleared = json.loads(brief_path.read_text(encoding="utf-8"))
-            self.assertFalse(cleared["due"])
-            self.assertTrue(cleared.get("superseded_at"))
+            for brief_path in briefs:
+                cleared = json.loads(brief_path.read_text(encoding="utf-8"))
+                self.assertFalse(cleared["due"], brief_path)
+                self.assertTrue(cleared.get("superseded_at"), brief_path)
+
+            brief_path = briefs[0]
 
             brief_path.write_text(
                 json.dumps(

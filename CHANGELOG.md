@@ -4,6 +4,40 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A profile is served only its own consolidation brief, and
+  `plugins.entries.omh.settings.dreaming_mode` turns the brief off for that
+  profile (#2087).** Profiles that bind one OMH store, such as every profile of
+  a gateway running `gateway.multiplex_profiles: true` against `~/.omh`, shared
+  one `memory/dreaming.json` and one `memory/consolidation.json`. A nearly full
+  `MEMORY.md` in one profile raised a brief that every other profile was then
+  served on every turn, and all profiles' turns moved one interval counter. The
+  counters and the brief now live under
+  `memory/profiles/<sha256 of the Hermes home>/` (the slot the group-activity
+  status already keys by). The pack, the chat notice, `omh_memory`, `omh memory
+  dream` and `omh doctor` read the brief of the Hermes home they are bound to.
+  Measured with two profiles on one store, profile A over its headroom floor,
+  20 interleaved turns each. Before, B's pack carried a brief on 20 of 20
+  turns, 14 of them with A's `headroom_below_floor` reason. The shared interval
+  fired 6 times for B and once for A, and A raised a brief led by its headroom
+  reason 6 times, because each brief B raised replaced the `last_reasons` that
+  suppression compares against. After, B's pack carries A's reason on 0 turns,
+  each profile's interval fires 4 times in its own 20 turns, and A's
+  headroom-led brief is raised once. `dreaming_mode: off` in
+  a profile's own `config.yaml` stops that profile's brief from being raised,
+  served or reported, including one written before; bare `off` and `false`
+  both mean `off`. Unset keeps `reminder`, the default. Any other value, or a
+  config OMH cannot read, also keeps `reminder` but is reported as
+  `mode_setting_unrecognized`, in `omh memory dream`'s `mode_setting` and as
+  `omh doctor` advice. On the first attended session start after the upgrade, a
+  single-profile host moves its old home-wide files into its profile directory
+  and keeps a pending brief. Two cases leave them unread: the profile already
+  has its own files (`omh memory dream --evaluate` raised a brief first), or
+  the profile is routed, which every profile of a multiplexed process is, even
+  a single profile under `gateway.multiplex_profiles: true`. `omh memory
+  retire --apply` retires an expiring-only brief in every profile's directory. Thanks
+  to @kanzaka110 for the report and @sanjkrsna for pointing at the
+  per-profile key.
+
 - **`omh install --force` reads Hermes' curator ledger once, and names the
   ledger it could not read when it reports what a removal lost.** Under
   `--force` the install read and parsed the whole ledger again for a replaced

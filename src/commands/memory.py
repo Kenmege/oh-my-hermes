@@ -25,7 +25,7 @@ from ..plugin_bundle.omh.memory_blocks import (
     read_memory_blocks,
     write_memory_block,
 )
-from ..plugin_bundle.omh.memory_dreaming import read_dreaming_state
+from ..plugin_bundle.omh.memory_dreaming import read_dreaming_mode_setting, read_dreaming_state
 from ..plugin_bundle.omh.memory_principals import parse_principal_context
 from ..plugin_bundle.omh.memory_provider import OmhMemoryProvider
 from ..plugin_bundle.omh.project_identity import mint_explicit_project_identity, project_identity_root, require_project_identity, resolve_project_identity
@@ -817,13 +817,22 @@ def cmd_memory_dream(args: argparse.Namespace) -> int:
     `--evaluate` no longer initializes either. The evaluation it reports is now
     its own first one, under the `manual` trigger it actually is, rather than
     the second reading of a `session_start_recovery` that never happened.
+
+    The counters and the mode are the Hermes home's own: each profile keeps its
+    dreaming state apart, and `mode` is the mode in force. `mode_setting`
+    says how it was read; a value that is not a mode, or a config.yaml that
+    could not be read, carries `issue: mode_setting_unrecognized` there, so a
+    typo that left the default in force is not reported as a choice.
     """
     paths = _paths(args)
     payload: dict[str, object] = {}
     if args.evaluate:
         provider = OmhMemoryProvider(paths.omh_home, hermes_home=paths.hermes_home)
         payload = dict(provider.consolidation_due())
-    payload["state"] = read_dreaming_state(paths.omh_home)
+    setting = read_dreaming_mode_setting(paths.hermes_home)
+    payload["mode"] = setting["mode"]
+    payload["mode_setting"] = {key: value for key, value in setting.items() if key != "mode"}
+    payload["state"] = read_dreaming_state(paths.omh_home, paths.hermes_home)
     payload["evaluated"] = bool(args.evaluate)
     _print_json(payload)
     return 0

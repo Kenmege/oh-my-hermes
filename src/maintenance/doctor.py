@@ -1851,13 +1851,13 @@ def _memory_consolidation_check(paths: OmhPaths) -> Check:
     state is reported as the fact it is, at `severity="ok"`, naming the move
     that does exist: shorten or remove an entry in Hermes memory.
     """
-    brief = read_latest_consolidation(paths.omh_home)
+    brief = read_latest_consolidation(paths.omh_home, paths.hermes_home)
     if not brief:
         return Check("memory_consolidation", True, "No memory consolidation is pending", observed=True)
     reasons = [str(reason) for reason in brief.get("reasons", []) if isinstance(reason, str)]
     if not brief.get("due") or not reasons:
         return Check("memory_consolidation", True, "No memory consolidation is pending", observed=True)
-    at = str(brief.get("raised_at", "") or read_dreaming_state(paths.omh_home).get("last_consolidated_at", "") or "unknown time")
+    at = str(brief.get("raised_at", "") or read_dreaming_state(paths.omh_home, paths.hermes_home).get("last_consolidated_at", "") or "unknown time")
     record_expiry = brief.get("record_expiry", {}) if isinstance(brief.get("record_expiry"), dict) else {}
     expired = int(record_expiry.get("expired", 0) or 0)
     full_pack = _unreclaimable_full_pack_message(reasons, brief)

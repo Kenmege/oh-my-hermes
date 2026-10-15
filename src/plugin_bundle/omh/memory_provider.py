@@ -82,8 +82,11 @@ from .memory_blocks import (
     select_memory_blocks,
 )
 from .memory_dreaming import (
+    adopt_legacy_dreaming_files,
     build_consolidation_handoff,
     clear_after_consolidation,
+    configured_dreaming_mode,
+    consolidation_path,
     consolidation_reasons,
     headroom_floor_for_cap,
     HEADROOM_USER_GUARD_INSTRUCTION,
@@ -234,6 +237,11 @@ class OmhMemoryProvider(_MemoryProviderBase):
         # start: it renders the pack and settles the previous session's
         # unconsolidated turns. A question is not a session start.
         self._omh_home, self._hermes_home = runtime_paths.resolve_homes(omh_home, hermes_home)
+        # The profile whose dreaming counters, brief and mode this provider
+        # keeps (`memory_dreaming.profile_dreaming_dir`): the Hermes home
+        # `resolve_homes` chose, kept even where that store is not yet bound
+        # for reading below, and rebound by `initialize` to the home it is given.
+        self._profile_home: Path = self._hermes_home
         if hermes_home is None and runtime_paths._host() is None:
             # Standalone callers may supply the native comparison root at first
             # initialize; no Hermes store is read before that explicit binding.
@@ -365,6 +373,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
             if self._hermes_home is not None and supplied_home != self._hermes_home:
                 raise runtime_paths.RuntimeBindingError("OMH provider cannot be initialized for another profile")
             self._hermes_home = supplied_home
+            self._profile_home = supplied_home
         self._query = ""
         self._pack, self._pack_count, self._pack_has_memory = "", 0, False
         self._served_pack, self._served_count, self._served_has_memory = "", 0, False
@@ -427,6 +436,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
         self._status_callback = callback if callable(callback) else None
         self._guest = False
         self._publish_lens(reset=True, initializing=True)
+        self._claim_legacy_dreaming_state()
         self._start_session_digest(initializing=True)
         self._pack = self.render_pack()
         # A session that died rather than ended -- a killed process, a closed
@@ -1137,8 +1147,13 @@ class OmhMemoryProvider(_MemoryProviderBase):
             else None
         )
         # The brief is a request, not a memory: it is served so the model can
-        # consolidate in this turn, and it never moves the recall count.
-        brief = read_latest_consolidation(self._omh_home) if self._attended else None
+        # consolidate in this turn, and it never moves the recall count. Only
+        # this profile's brief, and none at all when its mode is `off`.
+        brief = (
+            read_latest_consolidation(self._omh_home, self._profile_home, mode=configured_dreaming_mode(self._profile_home))
+            if self._attended
+            else None
+        )
         # A status, not a memory either: counts only, and never the recall count.
         # Withheld for a turn that is not the owner's DM: it stays pending,
         # never spent where it cannot be shown.
@@ -1311,19 +1326,22 @@ class OmhMemoryProvider(_MemoryProviderBase):
         """Decide whether dreaming is due; write the brief when it is.
 
         Returns the handoff either way so a caller can see the reasons that were
-        weighed, not only the ones that fired.
+        weighed, not only the ones that fired. The counters weighed and the
+        brief written are this profile's; under its `off` mode nothing is due.
         """
-        state = read_dreaming_state(self._omh_home)
+        state = read_dreaming_state(self._omh_home, self._profile_home)
+        mode = configured_dreaming_mode(self._profile_home)
         moment = now or datetime.now(timezone.utc)
         plan, reason_kwargs, record_expiry, readings = self._evaluation_inputs(trigger, now=moment)
         blocks = () if self._shared_surface else read_memory_blocks(self._omh_home)
         selection = self._block_selection(blocks=blocks, now=moment)
-        reasons = self._with_replay_reminders(consolidation_reasons(state, **reason_kwargs), selection)
+        reasons = self._with_replay_reminders(consolidation_reasons(state, mode=mode, **reason_kwargs), selection, mode=mode)
         handoff = build_consolidation_handoff(
             reasons,
             block_summaries=[self._block_summary(block, selection.evaluations[block.block_id]) for block in blocks],
             eviction_plan=plan,
             record_expiry=record_expiry,
+            mode=mode,
             trigger=trigger,
             messages_at_risk=messages_at_risk,
             session_id=self._session_id,
@@ -1356,7 +1374,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
             # (a record crossing from expiring into expired keeps N identical).
             # The persisted brief is refreshed in place: no new notification,
             # no suppression reset, no counter mutation.
-            self._refresh_brief_record_expiry(record_expiry)
+            self._refresh_brief_record_expiry(record_expiry, mode=mode)
         return handoff
 
     def _evaluation_inputs(
@@ -1405,15 +1423,15 @@ class OmhMemoryProvider(_MemoryProviderBase):
             readings,
         )
 
-    def _refresh_brief_record_expiry(self, record_expiry: dict[str, int]) -> None:
+    def _refresh_brief_record_expiry(self, record_expiry: dict[str, int], *, mode: str) -> None:
         """Keep the persisted due brief's expiry breakdown current, silently."""
-        brief = read_latest_consolidation(self._omh_home)
+        brief = read_latest_consolidation(self._omh_home, self._profile_home, mode=mode)
         if not brief or not brief.get("due") or brief.get("record_expiry") == record_expiry:
             return
         updated = dict(brief)
         updated["record_expiry"] = dict(record_expiry)
         payload = json.dumps(updated, ensure_ascii=False, sort_keys=True)
-        path = self._omh_home / "memory" / "consolidation.json"
+        path = consolidation_path(self._omh_home, self._profile_home)
         self._safely("consolidation_brief", path, lambda: _write_text(path, payload))
 
     def _standing_reasons(self) -> list[str]:
@@ -1423,10 +1441,12 @@ class OmhMemoryProvider(_MemoryProviderBase):
         while remaining true; retirement must see through that, or it would
         clear a notice whose fact had not cleared.
         """
-        state = read_dreaming_state(self._omh_home)
+        state = read_dreaming_state(self._omh_home, self._profile_home)
         _, reason_kwargs, _record_expiry, _readings = self._evaluation_inputs("memory_write", count_expiry=False)
         blocks = () if self._shared_surface else read_memory_blocks(self._omh_home)
         selection = self._block_selection(blocks=blocks)
+        # The mode is not asked here: whether a condition still holds is a fact
+        # about the profile, and under `off` there is no brief to retire.
         return [
             *consolidation_reasons(state, suppress=False, **reason_kwargs),
             *self._replay_reminder_reasons(selection),
@@ -1447,7 +1467,7 @@ class OmhMemoryProvider(_MemoryProviderBase):
         never retire -- event reasons clear their own counters by firing, so
         anything looser erases a brief before anyone could act on it.
         """
-        brief = read_latest_consolidation(self._omh_home)
+        brief = read_latest_consolidation(self._omh_home, self._profile_home)
         if not brief or not brief.get("due"):
             return
         retired = dict(brief)
@@ -1501,13 +1521,18 @@ class OmhMemoryProvider(_MemoryProviderBase):
         self,
         reasons: list[str],
         selection: MemoryBlockSelection,
+        *,
+        mode: str,
     ) -> list[str]:
         # Replay exclusions are standing reminder evidence, not another
         # consolidation trigger subject to the normal last-reasons suppression.
         # A manual inspection must still report them when no ordinary trigger
         # fired; the selection is read-only and evaluated at the same instant
-        # as the rest of this consolidation decision.
-        return [*reasons, *self._replay_reminder_reasons(selection)]
+        # as the rest of this consolidation decision. Under `off` none are
+        # added: `consolidation_reasons` returned nothing for that mode, and a
+        # replay reminder would still raise a brief the profile turned off.
+        replay = self._replay_reminder_reasons(selection) if mode != "off" else []
+        return [*reasons, *replay]
 
     def _demotion_rows(self, snapshot: tuple[HermesMemoryFile, ...]) -> list[dict[str, object]]:
         """The Hermes entries a nearly-full brief asks the model to demote, metadata only.
@@ -1566,15 +1591,42 @@ class OmhMemoryProvider(_MemoryProviderBase):
         """Read-modify-write the counters under the state lock; a failure is counted."""
         self._safely(
             "dreaming_state",
-            dreaming_state_path(self._omh_home),
-            lambda: update_dreaming_state(self._omh_home, mutate),
+            dreaming_state_path(self._omh_home, self._profile_home),
+            lambda: update_dreaming_state(self._omh_home, self._profile_home, mutate),
+        )
+
+    def _claim_legacy_dreaming_state(self) -> None:
+        """At a session start, claim the home-wide counters and brief an earlier release left.
+
+        Only an attended console of a profile that is not routed claims them
+        (`memory_dreaming.adopt_legacy_dreaming_files`): a single-profile host
+        keeps a pending brief and its counters across the upgrade. A routed
+        profile -- every profile of a multiplexed process, or one other than
+        the launch profile -- cannot tell whose they were, so it leaves them
+        unread rather than serve another profile's brief (#2087).
+        """
+        if not self._attended:
+            return
+        try:
+            routed = runtime_paths.profile_is_routed()
+        except runtime_paths.RuntimeBindingError:
+            return
+        if routed:
+            return
+        self._safely(
+            "dreaming_state",
+            dreaming_state_path(self._omh_home, self._profile_home),
+            lambda: adopt_legacy_dreaming_files(self._omh_home, self._profile_home),
         )
 
     def _write_handoff(self, handoff: dict[str, object]) -> None:
-        """Write the latest handoff and retain a bounded metadata-only journal."""
-        directory = self._omh_home / "memory"
+        """Write this profile's latest handoff and retain the home's bounded metadata-only journal.
+
+        The journal stays home-wide: it is a history read by evidence reports,
+        never served, and each line carries the session that raised it.
+        """
         payload = json.dumps(handoff, ensure_ascii=False, sort_keys=True)
-        brief, journal = directory / "consolidation.json", directory / "consolidation.jsonl"
+        brief, journal = consolidation_path(self._omh_home, self._profile_home), self._omh_home / "memory" / "consolidation.jsonl"
         self._safely("consolidation_brief", brief, lambda: _write_text(brief, payload))
         entry = _consolidation_journal_entry(handoff)
         self._safely("consolidation_journal", journal, lambda: _append_bounded_json_line(journal, entry))

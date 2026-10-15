@@ -21,7 +21,7 @@ from ..local_store import (
 from ..plugin_bundle.omh.hermes_memory import build_hermes_memory_bridge as _bundle_memory_bridge
 from ..plugin_bundle.omh.hermes_memory import build_memory_demotion_plan as _bundle_demotion_plan
 from ..plugin_bundle.omh.hermes_memory import classify_record_expiry as _classify_record_expiry
-from ..plugin_bundle.omh.memory_dreaming import consolidation_path as _consolidation_path
+from ..plugin_bundle.omh.memory_dreaming import profile_states_dir as _profile_states_dir
 from ..plugin_bundle.omh.memory_prefetch_receipt import prefetch_receipt_path as _prefetch_receipt_path
 from ..plugin_bundle.omh.memory_prefetch_receipt import read_prefetch_receipt as _read_prefetch_receipt
 from ..plugin_bundle.omh.memory_open_reminders import (
@@ -2572,20 +2572,27 @@ def _reconcile_retirement_archive(paths: OmhPaths) -> list[dict[str, object]]:
 
 
 def _clear_expiring_only_brief(paths: OmhPaths) -> bool:
-    """Retire a brief whose only ask was the retirement that just ran."""
-    brief_path = _consolidation_path(paths.omh_home)
-    brief, _error = read_json_object_result(brief_path)
-    if not isinstance(brief, dict) or brief.get("schema_version") != "omh_memory_consolidation_handoff/v1":
-        return False
-    reasons = [str(reason) for reason in brief.get("reasons", []) if isinstance(reason, str)]
-    if not brief.get("due") or not reasons or not all(reason.startswith("expiring_records:") for reason in reasons):
-        return False
-    retired = dict(brief)
-    retired["due"] = False
-    retired["superseded_at"] = utc_now()
-    retired["superseded_by"] = "omh memory retire --apply"
-    atomic_write_json(brief_path, retired, private=True)
-    return True
+    """Retire every brief in this home whose only ask was the retirement that just ran.
+
+    Each profile keeps its own brief, but the records are the home's: one
+    retirement answers that ask for every profile on the store, and for a
+    home-wide brief an earlier release left unclaimed.
+    """
+    cleared = False
+    for brief_path in (*sorted(_profile_states_dir(paths.omh_home).glob("*/consolidation.json")), paths.memory_dir / "consolidation.json"):
+        brief, _error = read_json_object_result(brief_path)
+        if not isinstance(brief, dict) or brief.get("schema_version") != "omh_memory_consolidation_handoff/v1":
+            continue
+        reasons = [str(reason) for reason in brief.get("reasons", []) if isinstance(reason, str)]
+        if not brief.get("due") or not reasons or not all(reason.startswith("expiring_records:") for reason in reasons):
+            continue
+        retired = dict(brief)
+        retired["due"] = False
+        retired["superseded_at"] = utc_now()
+        retired["superseded_by"] = "omh memory retire --apply"
+        atomic_write_json(brief_path, retired, private=True)
+        cleared = True
+    return cleared
 
 
 def apply_memory_retirement(

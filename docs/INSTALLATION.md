@@ -54,7 +54,10 @@ from the old store first.
 Two trusted profiles may explicitly name the same directory. That shares OMH
 records and home-wide ledgers; it does not make them separate stores. Existing
 memory principal/admission checks still apply within shared stores. Different
-directories are not an OS sandbox.
+directories are not an OS sandbox. The dreaming counters and the consolidation
+brief stay per profile even in a shared store, and each profile can turn its
+brief off with `plugins.entries.omh.settings.dreaming_mode`
+([Per-profile dreaming state](MEMORY.md#per-profile-dreaming-state-and-the-mode-setting)).
 
 The copied plugin and package use the same uncached root resolver, in this order:
 
