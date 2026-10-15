@@ -574,9 +574,10 @@ class SubmittedChipsTests(unittest.TestCase):
         action = self.submitted()
         composer = Composer()
         composer.restore(action.shown, action.chips)
-        composer.handle(Paste("a\nb\nc\nd\ne\n"))
+        composer.handle(Paste("a\nb\nc\nd\n"))  # four lines, as the restored chip: the same label but for its number
+        self.assertEqual(composer.text, action.shown + "[Pasted text #2 +4 lines]")
         self.assertEqual(len(composer.pastes), 2)
-        self.assertEqual(composer.expanded(), action.text + "a\nb\nc\nd\ne\n")
+        self.assertEqual(composer.expanded(), action.text + "a\nb\nc\nd\n")
 
 
 class PasteChipAppTests(unittest.TestCase):
