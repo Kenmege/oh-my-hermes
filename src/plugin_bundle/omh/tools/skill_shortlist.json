@@ -2190,8 +2190,8 @@
 },
 {
 "anchors":"board card dashboard grafana health history latency metric mode monitor number observability ops overview prometheus rate slo spend telemetry token uptim",
-"hangul":"관측 그라 라파 로메 메테 메트 비스 비용 서비 시간 연시 우스 운영 지연 지휘 측성 테우 토큰 트릭 파나 품질 프로 휘판",
-"hangul_anchors":"관측 그라 라파 로메 메테 메트 비스 비용 서비 시간 연시 우스 운영 지연 지휘 측성 테우 토큰 트릭 파나 품질 휘판",
+"hangul":"관측 그라 라파 로메 메테 메트 비스 서비 시간 연시 우스 운영 지연 지휘 측성 테우 트릭 파나 품질 프로 휘판",
+"hangul_anchors":"관측 그라 라파 로메 메테 메트 비스 서비 시간 연시 우스 운영 지연 지휘 측성 테우 트릭 파나 품질 휘판",
 "label":"omh-ops-observability-card",
 "name":"ops-observability-card",
 "situation":"Tracking cost, tokens, latency, or service health",

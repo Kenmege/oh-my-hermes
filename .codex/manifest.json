@@ -131,7 +131,7 @@
     "omh-native-debugging/SKILL.md": "8aa8443cfa2275f96a90ac31bf4a9e97a886e786a9c21917fc87dd37cc584163",
     "omh-native-debugging/references/native-debug-loop.md": "3ce0f29395b8a1c71074ce2808d6d2497bef1ccbecbba179b74950055435430d",
     "omh-operating-rhythm/SKILL.md": "f98677092982a72b2c761af253e97374e8aedb10e19ecea7f14c59f8a6936638",
-    "omh-ops-observability-card/SKILL.md": "6e9643ffc8242fa18120b9d1b6967fd65f267279bd22db9b54eeefaceaa71eca",
+    "omh-ops-observability-card/SKILL.md": "50ec8a3feed2b3230cf1faa2adbad5d95d7a54e524c5a9c46d9eb8e221950675",
     "omh-ops-review/SKILL.md": "70d2a2a4788404709745edb1dab7808a017e2e67d2c315c4489d468ae1dc00b5",
     "omh-paper-learning/SKILL.md": "0cc3e266894616b04b523016c63cc7f3bab65d76da4bdf8411b2cf99fbecd283",
     "omh-people-ops/SKILL.md": "8abe6c890fe7ec9b73639d1a7ea79a867cd2a1bf07ce1756e20cc168f60c77ac",
@@ -324,7 +324,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "e12552145e0b32a2c089b23128f90fb621ce8798bf84341e61766df6681b8b47",
+  "source_digest": "cf5d907c35c7ba68f54b342d2370081a9081ed7946bf62712155f88fcc1e2a57",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

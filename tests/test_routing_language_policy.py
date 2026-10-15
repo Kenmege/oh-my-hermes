@@ -173,7 +173,10 @@ FROZEN_HANGUL_TRIGGERS_BY_SKILL: dict[str, int] = {
     "morning-brief": 4,
     "oh-my-hermes": 2,
     "operating-rhythm": 7,
-    "ops-observability-card": 9,
+    # 9 -> 7 (2026-10-15): bare "비용" and "토큰" removed. Each dispatched the
+    # card on its own -- an auth token's storage, the cost of a function call --
+    # and the usage reading moved to whole phrases in the card's guard.
+    "ops-observability-card": 7,
     "ops-review": 7,
     "paper-learning": 10,
     "parallel-tools": 4,
