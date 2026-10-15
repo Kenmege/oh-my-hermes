@@ -29,30 +29,39 @@ All notable changes will be documented here.
   but no longer reads "알려줘" as a status request, a word its English list
   never had. Korean token and cost usage is read from "토큰 사용량", "토큰 사용
   추이", "토큰 소모(량)", "토큰 소비(량)" and "비용 모니터링", each as a whole word
-  ("토큰 소비" is not "토큰 소비자") and standing down on a request for code or
-  for less usage ("토큰 사용량 제한 기능 구현해줘", "토큰 소모 줄이는 프롬프트로
-  바꿔줘"). Five usage requests that dispatched the card now ask: "에이전트 비용
-  추적해줘", "오늘 LLM 비용 얼마 나왔어?", "이번 달 API 비용 얼마야", "이번 달 비용
-  얼마 나왔어" and "토큰 얼마나 썼어?". The last four ask what was spent, which
-  the card's Do-Not-Use sends to Hermes' /usage and /insights, and English
-  "how much did the API cost this month" asks too. Measured with
+  ("토큰 소비" is not "토큰 소비자"), and only when the sentence's final
+  predicate asks to see the usage -- show, tell, check, compare, monitor,
+  track, summarize, how much, how is it, a report, or "is a lot" / "is fast"
+  -- or the sentence ends on the phrase itself ("이번 주 토큰 사용량"). Any other
+  final predicate (만들어줘, 추가해줘, 고쳐줘, 파싱해줘, 작성해줘, 짜줘, 줄여줘)
+  leaves the phrase uncounted, so "토큰 사용량 API 만들어줘" and "토큰 사용량 버그
+  고쳐줘" stay on ultrawork, and a modifier earlier in the sentence ("기능별
+  토큰 사용량 알려줘") does not stop a usage question. The guard's English-shaped
+  token arm is unchanged: 토큰 or 비용 beside 보여줘, 상태 or 요약 still opens the
+  card, as on main ("토큰 사용량 제한 로직 보여줘"). Six usage requests that
+  dispatched the card now do not: "에이전트 비용 추적해줘", "오늘 LLM 비용 얼마
+  나왔어?", "이번 달 API 비용 얼마야", "이번 달 비용 얼마 나왔어" and "토큰 얼마나
+  썼어?" ask, and "토큰 사용량 리포트 만들어줘" dispatches the greenfield
+  interview. Four of the first five ask what was spent, which the card's
+  Do-Not-Use sends to Hermes' /usage and /insights, and English "how much
+  did the API cost this month" asks too. Measured with
   `build_chat_interaction_payload` (`source="discord"`), `awareness_route_hint`
   and the skill candidate line at main and at this head, over both corpora
   (unchanged except three English llm-wiki clarifies whose leading candidate
   moved), the triage probes, 134 Korean probes of our own and the review's
-  examples: Korean diagram requests that dispatch codebase-uml go from 1 to 5 of
-  25, plus 4 that now ask with it leading, and no Korean diagram negative
-  moves toward it; of 21 LLM-wiki requests, which went to wiki (18) or
-  dispatched the interview (3), 20 now ask and one dispatches
-  materials-package on "PDF"; ops-observability-card dispatches none of 24
-  everyday-sense negatives (20 before), none of the five code requests the
-  review found, a token consumer group or a consumer price (all seven
-  dispatched it before), and 22 of 24 usage requests (24 before). A
-  held-out set of 48, written after the first fixes were chosen, moved the
-  same way: codebase-uml dispatches 0 -> 4 of 8, wiki reaches 7 -> 0 of 7
-  LLM-wiki requests, and ops-observability-card dispatches 9 -> 0 of 10
-  negatives and keeps 8 of 8 usage requests. Adds 15 negative controls and
-  11 interventions.
+  probe sets: Korean diagram requests that dispatch codebase-uml go from 1
+  to 5 of 25, plus 4 that now ask with it leading, and no Korean diagram
+  negative moves toward it; of 21 LLM-wiki requests, which went to wiki (18)
+  or dispatched the interview (3), 20 now ask and one dispatches
+  materials-package on "PDF"; ops-observability-card dispatches none of our
+  24 everyday-sense negatives (20 before), 4 of the review's 52 code and
+  everyday requests (44 before; the 4 dispatched it on main too), 22 of our
+  24 usage requests and 31 of the review's 36 (all before). A held-out set of
+  48, written after the first fixes were chosen, moved the same way:
+  codebase-uml dispatches 0 -> 4 of 8, wiki reaches 7 -> 0 of 7 LLM-wiki
+  requests, and ops-observability-card dispatches 9 -> 0 of 10 negatives and
+  7 of 8 usage requests (8 before). Adds 19 negative controls and 17
+  interventions.
 
 - **A host turn or a thank-you gets a direct-answer card.** `omh chat
   route-hint` and the example shims showed the generic no-hint card, with "Open

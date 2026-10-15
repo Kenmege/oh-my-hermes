@@ -7430,21 +7430,35 @@ def _adversarial_qa_guard_applies(normalized_query: str, query_tokens: set[str])
 # Token and cost usage said in Korean. `ko.json` gives this card no bare 토큰 or
 # 비용 trigger -- they dispatched it for an auth token's storage and for the cost
 # of a function call -- so these phrases carry the usage reading. Unlike the
-# phrases above, each is read as a whole word ("토큰 소비" is not "토큰 소비자")
-# and stands down when the message asks for code or for less usage rather than
-# a look at it ("토큰 사용량 제한 기능 구현해줘", "토큰 소모 줄이는 프롬프트로
-# 바꿔줘"). English asks on those: its guard needs a status or runtime word they
-# do not carry.
+# phrases above, each is read as a whole word ("토큰 소비" is not "토큰 소비자"),
+# and only in a sentence shaped like a look at the usage
+# (`_KOREAN_USAGE_REPORT_PREDICATES`), as the English token arm needs a status
+# or runtime word.
 _OPS_OBSERVABILITY_KOREAN_USAGE_PHRASES = tuple(
     normalized_phrase(phrase)
     for phrase in ("토큰 사용량", "토큰 사용 추이", "토큰 소모", "토큰 소모량", "토큰 소비", "토큰 소비량", "비용 모니터링")
 )
-# Read as the start of a token, so the particle or ending may follow
-# ("구현해줘", "코드를", "줄이는", "줄여줘").
-_OPS_OBSERVABILITY_KOREAN_STAND_DOWN_PREFIXES = tuple(
-    normalized_phrase(word)
-    for word in ("구현", "코드", "로직", "미들웨어", "함수", "기능", "짜줘", "줄이", "줄여", "절감", "최적화")
+# The final predicates a usage phrase counts under, each read as the start of
+# the sentence's last word ("보여줘", "보여주세요"):
+#   보여, 알려 -- show me, tell me: ask for the figures;
+#   확인, 비교, 모니터링, 추적, 요약 -- check, compare, monitor, track,
+#     summarize: ask to look at them;
+#   얼마, 어때 -- how much, how is it: ask about the amount;
+#   리포트 -- the report itself, said as the last word;
+#   많, 빨라 -- is a lot, is fast: say how large the usage is, the Korean shape
+#     of "too many tokens".
+# Every other last word asks for work -- 만들어줘, 추가해줘, 고쳐줘, 파싱해줘,
+# 구현해줘, 짜줘, 줄여줘, 정리해줘 (which also means "clean up") -- and the phrase
+# does not count. Only the last word is read: "기능별" and "함수별" earlier in
+# the sentence modify the usage being asked about.
+_KOREAN_USAGE_REPORT_PREDICATES = tuple(
+    normalized_phrase(stem)
+    for stem in ("보여", "알려", "확인", "비교", "모니터링", "추적", "요약", "얼마", "어때", "리포트", "많", "빨라")
 )
+# A last word that only finishes the one before it: 해/하 said apart from its
+# noun ("모니터링 해줘") or 나왔/나와 after the amount ("얼마 나왔어", "많이 나와").
+_KOREAN_PREDICATE_TAILS = tuple(normalized_phrase(tail) for tail in ("해", "하", "나왔", "나와"))
+_KOREAN_SENTENCE_END_PUNCTUATION = " ?!.~…"
 # What may follow a Korean word without making it a longer one: a noun
 # particle that ends there ("소비가", not "소비가격"), or 하/해 making it a verb
 # ("모니터링해줘", "소비하는").
@@ -7469,14 +7483,30 @@ def _korean_word_ends_at(normalized_query: str, end: int) -> bool:
     return False
 
 
-def _korean_usage_request(normalized_query: str, query_tokens: set[str]) -> bool:
-    said = False
+def _korean_final_predicate(words: list[str]) -> str:
+    if len(words) > 1 and words[-1].startswith(_KOREAN_PREDICATE_TAILS):
+        return words[-2]
+    return words[-1] if words else ""
+
+
+def _korean_usage_request(normalized_query: str) -> bool:
+    """A Korean usage phrase in a sentence that asks to see the usage.
+
+    The phrase counts when the sentence's final predicate is a report form
+    (`_KOREAN_USAGE_REPORT_PREDICATES`), or when the sentence ends on the
+    phrase itself ("이번 주 토큰 사용량", "토큰 사용량은?"), a noun-phrase question.
+    """
+    text = normalized_query.rstrip(_KOREAN_SENTENCE_END_PUNCTUATION)
+    last_word_start = text.rfind(" ") + 1
+    asks_to_see = _korean_final_predicate(text.split()).startswith(_KOREAN_USAGE_REPORT_PREDICATES)
     for phrase in _OPS_OBSERVABILITY_KOREAN_USAGE_PHRASES:
-        start = normalized_query.find(phrase)
-        while start != -1 and not said:
-            said = _korean_word_ends_at(normalized_query, start + len(phrase))
-            start = normalized_query.find(phrase, start + 1)
-    return said and not any(token.startswith(_OPS_OBSERVABILITY_KOREAN_STAND_DOWN_PREFIXES) for token in query_tokens)
+        start = text.find(phrase)
+        while start != -1:
+            end = start + len(phrase)
+            if _korean_word_ends_at(text, end) and (asks_to_see or end > last_word_start):
+                return True
+            start = text.find(phrase, start + 1)
+    return False
 
 
 def _ops_observability_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
@@ -7490,7 +7520,7 @@ def _ops_observability_guard_applies(normalized_query: str, query_tokens: set[st
         return False
     if _contains_phrase(normalized_query, _OPS_OBSERVABILITY_PHRASES):
         return True
-    if _korean_usage_request(normalized_query, query_tokens):
+    if _korean_usage_request(normalized_query):
         return True
     telemetry = bool(_OPS_OBSERVABILITY_TOKENS & query_tokens)
     runtime_context = operator_context

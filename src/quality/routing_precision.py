@@ -4410,9 +4410,10 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     # main every ops case dispatched the card: a bare 토큰 or 비용 trigger, or
     # the guard reading 알려줘 as a status request, took an auth token, the
     # cost of a call, or code that touches token usage for a usage report. The
-    # Korean usage phrases that replace the triggers read whole words and stand
-    # down on a request for code or for less usage. "LLM 위키", spaced or not,
-    # dispatched the wiki blueprint or asked with it leading, and where the
+    # Korean usage phrases that replace the triggers read whole words and count
+    # only under a final predicate that asks to see the usage, so a request
+    # for code or for less usage does not reach the card. "LLM 위키", spaced or
+    # not, dispatched the wiki blueprint or asked with it leading, and where the
     # blueprint did not claim it the greenfield interview dispatched on
     # "만들어줘" ("이 문서들 LLM 위키로 만들어줘"); both now stand down on an LLM
     # wiki. The diagram cases hold the Korean diagram fix to the
@@ -4486,6 +4487,40 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "korean-kafka-token-consumer-group-is-not-ops-observability",
         "A token consumer group is not token consumption: 소비자 is a longer word than 소비",
         "카프카 토큰 소비자 그룹 늘려줘",
+        "answer_clarification",
+        "",
+        "ops-observability-card",
+    ),
+    RoutingPrecisionCase(
+        "korean-kafka-token-consumer-count-is-not-ops-observability",
+        "Asking for the token-consumer count is not token consumption, even under a report predicate",
+        "카프카 토큰 소비자 수 알려줘",
+        "answer_clarification",
+        "",
+        "ops-observability-card",
+    ),
+    # A usage phrase counts only under a final predicate that asks to see the
+    # usage; these end in work on code, whatever comes earlier ("보여주는").
+    RoutingPrecisionCase(
+        "korean-token-usage-parsing-is-not-ops-observability",
+        "Parsing token usage is code, not a usage report",
+        "토큰 사용량 파싱해줘",
+        "answer_clarification",
+        "",
+        "ops-observability-card",
+    ),
+    RoutingPrecisionCase(
+        "korean-token-usage-test-is-not-ops-observability",
+        "Writing a token-usage test is code, not a usage report",
+        "토큰 사용량 테스트 작성해줘",
+        "answer_clarification",
+        "",
+        "ops-observability-card",
+    ),
+    RoutingPrecisionCase(
+        "korean-token-usage-field-is-not-ops-observability",
+        "A report word before the final predicate does not make adding a field a usage report",
+        "토큰 사용량 보여주는 필드 추가해줘",
         "answer_clarification",
         "",
         "ops-observability-card",
@@ -8558,6 +8593,64 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "ops-observability-card",
         "prepare_ops_observability_card",
         "ops_observability",
+    ),
+    RoutingInterventionCase(
+        "korean-token-usage-per-feature",
+        "A modifier before the usage phrase does not stop a Korean usage question",
+        "기능별 토큰 사용량 알려줘",
+        "dispatch",
+        "ops-observability-card",
+        "prepare_ops_observability_card",
+        "ops_observability",
+    ),
+    RoutingInterventionCase(
+        "korean-token-usage-per-function",
+        "Token usage per function, asked in Korean, opens ops observability",
+        "함수별 토큰 사용량 알려줘",
+        "dispatch",
+        "ops-observability-card",
+        "prepare_ops_observability_card",
+        "ops_observability",
+    ),
+    RoutingInterventionCase(
+        "korean-token-usage-noun-phrase-question",
+        "A Korean sentence that ends on the usage phrase asks for it",
+        "이번 주 토큰 사용량",
+        "dispatch",
+        "ops-observability-card",
+        "prepare_ops_observability_card",
+        "ops_observability",
+    ),
+    RoutingInterventionCase(
+        "korean-cost-monitoring-with-spaced-verb",
+        "해줘 said apart from its noun still ends a Korean monitoring request",
+        "비용 모니터링 해줘",
+        "dispatch",
+        "ops-observability-card",
+        "prepare_ops_observability_card",
+        "ops_observability",
+    ),
+    # Building or fixing something that touches token usage stays a coding
+    # request: the usage phrase does not count under a work predicate.
+    RoutingInterventionCase(
+        "korean-token-usage-api-build-stays-with-handoff",
+        "Building a token-usage API stays a coding handoff",
+        "토큰 사용량 API 만들어줘",
+        "dispatch",
+        "ultrawork",
+        "choose_executor",
+        "handoff",
+        "ultrawork",
+    ),
+    RoutingInterventionCase(
+        "korean-token-usage-bug-fix-stays-with-handoff",
+        "Fixing a token-usage bug stays a coding handoff",
+        "토큰 사용량 버그 고쳐줘",
+        "dispatch",
+        "ultrawork",
+        "choose_executor",
+        "handoff",
+        "ultrawork",
     ),
     RoutingInterventionCase(
         "korean-update-version-unchanged",
