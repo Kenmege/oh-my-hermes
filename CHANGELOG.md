@@ -18,14 +18,26 @@ All notable changes will be documented here.
   on the route and on `route_decision`. The key is additive and absent on every
   other route, and `reason` keeps its prose. A direct-answer code gives a new
   `direct_answer_route_hint` card with no actions and no tool checkpoint, which
-  says no OMH workflow is needed. The router's next action, claim boundary and
-  routing instruction, and the wrapper's file-lookup and direct-answer cards and
-  its loop-timer check, read the code instead of matching the reason's wording.
-  Measured over both corpora on Discord, plus 18 messages on four sources, at
-  `origin/main` cd8a879db and at the head: no route, interaction card or next
-  action moved. The route-hint card moved on exactly the 271 direct-answer
-  routes and nowhere else; the 211 corpus rows among them are all negative
-  controls, 165 from the no-hint card and 46 from a workflow card.
+  says no OMH workflow is needed; its `next_backend_commands` no longer lead
+  with a hinted workflow, and the human `omh chat route-hint` summary reads the
+  card instead of the hint beside it. The router's next action, claim boundary,
+  clarification and routing instruction, and the wrapper's file-lookup and
+  direct-answer cards and its loop-timer check, read the code instead of
+  matching the reason's wording. A turn Hermes wrote around an OMH status,
+  quickstart or intro question ("omh status" under a `/plan` or heartbeat frame)
+  became that OMH card in `omh chat interact`, beside the router's decision to
+  answer it directly; it now gets the direct-answer card the router decided, as
+  it already did for a catalog question. Where the wrapper does turn a route
+  into an OMH card, it drops the replaced reason's code from the route and from
+  `route_decision`. Measured over both corpora on Discord, plus 18 messages on
+  four sources, at `origin/main` dc6933c3a and at the head: no route,
+  interaction card or next action moved. The route-hint card moved on exactly
+  the 271 direct-answer routes and nowhere else, and its backend commands on the
+  58 of them where the hint had named a workflow. Of the 271, the 211 corpus
+  rows are all negative controls, 165 from the no-hint card and 46 from a
+  workflow card. Over four Hermes frames around six OMH questions on four
+  sources, the interaction card moved on the 72 host turns that had become OMH
+  cards, and on none of the same questions typed by a person.
   `host_owned_command_turn`, a pass-through over the bundle's
   `host_command_turn`, is gone; the router and both wrapper payloads call the
   bundle's predicate.

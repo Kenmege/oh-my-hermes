@@ -10,10 +10,12 @@ showed both the generic "Open omh" / "Clarify" card.
 
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
 
+from _cli_harness import run_cli
 from _local_package import load_local_package
 
 load_local_package()
@@ -50,6 +52,12 @@ _PROSE_BY_CODE = {
 _CODE_BY_PROSE = {prose: code for code, prose in _PROSE_BY_CODE.items()}
 
 _PLAN_TURN = "[/plan — plan mode]\nFor this turn, you are in PLAN MODE. Plan the database migration."
+_PLAN_FRAME = "[/plan — plan mode]\nFor this turn, you are in PLAN MODE\n\n"
+_HEARTBEAT_FRAME = "[Heartbeat — recurring instruction, fires every 5m]\n"
+_LEARN_FRAME = (
+    "[/learn] The user wants you to learn a reusable skill from the request below, and save it.\nTHE REQUEST:\n"
+)
+_DIRECT_ANSWER_BOUNDARY = "No OMH workflow, picker, handoff, execution, or file inspection has started."
 _REWORDED = "Reworded for a reader; nothing here is a phrase any predicate knows."
 
 
@@ -120,6 +128,7 @@ class PredicatesReadTheCodeTest(unittest.TestCase):
         }
         if reason_code:
             route["reason_code"] = reason_code
+            route["route_decision"] = {"schema_version": "route_decision/v1", "reason_code": reason_code}
         return route
 
     def test_the_router_explanation_reads_the_code(self) -> None:
@@ -127,9 +136,33 @@ class PredicatesReadTheCodeTest(unittest.TestCase):
         prose_only = route_explanation_payload(self._route(reason=HOST_COMMAND_TURN_REASON))
         self.assertEqual(coded["next_action"], "answer_directly")
         self.assertNotEqual(prose_only["next_action"], "answer_directly")
+        self.assertEqual(coded["claim_boundary"], _DIRECT_ANSWER_BOUNDARY)
+        self.assertNotEqual(prose_only["claim_boundary"], _DIRECT_ANSWER_BOUNDARY)
         lookup = route_explanation_payload(self._route(reason=_REWORDED, reason_code="file_lookup"))
+        lookup_prose_only = route_explanation_payload(self._route(reason=FILE_LOOKUP_REASON))
         self.assertEqual(lookup["next_action"], "answer_file_lookup")
-        self.assertNotEqual(route_explanation_payload(self._route(reason=FILE_LOOKUP_REASON))["next_action"], "answer_file_lookup")
+        self.assertNotEqual(lookup_prose_only["next_action"], "answer_file_lookup")
+        lookup_boundary = "No OMH workflow, execution, or file inspection has started."
+        self.assertEqual(lookup["claim_boundary"], lookup_boundary)
+        self.assertNotEqual(lookup_prose_only["claim_boundary"], lookup_boundary)
+
+    def test_the_clarification_reads_the_code(self) -> None:
+        # The router writes `clarification` while it builds the decision, so
+        # the pair is the builder's own call with and without the code.
+        direct = "Answer directly in the current chat; do not open an OMH workflow unless the user asks for one."
+        lookup = "Answer this as a file or text lookup, or ask for the target file/path if it is missing."
+        for code, prose, expected in (
+            ("direct_answer", DIRECT_ANSWER_REASON, direct),
+            ("host_command_turn", HOST_COMMAND_TURN_REASON, direct),
+            ("file_lookup", FILE_LOOKUP_REASON, lookup),
+        ):
+            with self.subTest(code=code):
+                coded = chat._clarification("fallback", "oh-my-hermes", "low", "high", _REWORDED, reason_code=code)
+                prose_only = chat._clarification("fallback", "oh-my-hermes", "low", "high", prose)
+                self.assertEqual(coded, expected)
+                self.assertNotEqual(prose_only, expected)
+        # The routed decision carries the coded sentence.
+        self.assertEqual(route_chat_message("thanks!", source="discord")["clarification"], direct)
 
     def test_the_routing_instruction_reads_the_code(self) -> None:
         coded = chat.public_route_payload(self._route(reason=_REWORDED, reason_code="direct_answer"))
@@ -161,13 +194,38 @@ class PredicatesReadTheCodeTest(unittest.TestCase):
             contract._omh_intro_route_payload,
         ):
             with self.subTest(build=build.__name__):
-                updated = build(self._route(reason=DIRECT_ANSWER_REASON, reason_code="direct_answer"))
+                route = self._route(reason=DIRECT_ANSWER_REASON, reason_code="direct_answer")
+                updated = build(route)
                 self.assertEqual(updated["action"], "dispatch")
                 self.assertNotIn("reason_code", updated)
-                self.assertNotEqual(
-                    updated["route_explanation"]["claim_boundary"],
-                    "No OMH workflow, picker, handoff, execution, or file inspection has started.",
-                )
+                self.assertNotIn("reason_code", updated["route_decision"])
+                self.assertNotEqual(updated["route_explanation"]["claim_boundary"], _DIRECT_ANSWER_BOUNDARY)
+                # A copy: the route it was built from keeps its code.
+                self.assertEqual(route["route_decision"]["reason_code"], "direct_answer")
+
+    def test_a_host_turn_never_becomes_an_omh_intro_quickstart_or_status_card(self) -> None:
+        # A session-command turn whose body asks about OMH is still Hermes'
+        # instruction for itself: the interaction answers it directly, and the
+        # route and its compact contract name the same code.
+        for frame in (_PLAN_FRAME, _HEARTBEAT_FRAME, _LEARN_FRAME):
+            for body, typed_kind in (
+                ("omh status", "status"),
+                ("omh quickstart", "quickstart"),
+                ("how do I use omh?", "context_brief"),
+            ):
+                with self.subTest(frame=frame.split("]")[0], body=body):
+                    payload = contract.build_chat_interaction_payload(frame + body, source="discord")
+                    route = payload["route"]
+                    self.assertEqual(payload["chat_response"]["kind"], "clarification")
+                    self.assertEqual(payload["chat_response"]["state"]["lookup_kind"], "direct_answer")
+                    self.assertEqual(route["action"], "fallback")
+                    self.assertEqual(route["reason_code"], "host_command_turn")
+                    self.assertEqual(route["route_decision"]["reason_code"], "host_command_turn")
+                    # The same body typed by a person still gets its OMH card.
+                    typed = contract.build_chat_interaction_payload(body, source="discord")
+                    self.assertEqual(typed["chat_response"]["kind"], typed_kind)
+                    self.assertNotIn("reason_code", typed["route"])
+                    self.assertNotIn("reason_code", typed["route"]["route_decision"])
 
 
 class DirectAnswerRouteHintCardTest(unittest.TestCase):
@@ -205,6 +263,28 @@ class DirectAnswerRouteHintCardTest(unittest.TestCase):
         payload = build_chat_route_hint_payload(_precision_message("become-a-doctor-is-not-doctor"), source="discord")
         self._assert_direct_answer_card(payload, "direct_answer")
         self.assertEqual(payload["route_hint"]["primary_workflow"], "doctor")
+
+    def test_the_backend_commands_offer_no_hinted_workflow_on_a_direct_answer(self) -> None:
+        payload = build_chat_route_hint_payload(_precision_message("become-a-doctor-is-not-doctor"), source="discord")
+        commands = payload["wrapper_contract"]["next_backend_commands"]
+        self.assertEqual([command["id"] for command in commands], ["route_for_me", "open_picker"])
+        self.assertNotIn("./doctor", " ".join(command["command"] for command in commands))
+        # A routed request still leads with its workflow.
+        routed = build_chat_route_hint_payload("make an image explaining the cron feature", source="discord")
+        self.assertEqual(routed["wrapper_contract"]["next_backend_commands"][0]["id"], "open_workflow")
+
+    def test_the_human_summary_reads_the_card(self) -> None:
+        message = _precision_message("become-a-doctor-is-not-doctor")
+        status, stdout, stderr = run_cli(["chat", "route-hint", "--source", "discord", message], output_json=False)
+        self.assertEqual((status, stderr), (0, ""))
+        self.assertIn("Status: direct_answer\nWorkflow: none\nNext action: answering directly in chat\nHints: 0", stdout)
+        self.assertIn("[omh] no workflow needed.", stdout)
+        for absent in ("doctor", "Checkpoint:", "Hint details:", "Matched cues:"):
+            self.assertNotIn(absent, stdout)
+        # The JSON still carries the hint the card set aside.
+        status, stdout, _ = run_cli(["chat", "route-hint", "--source", "discord", "--json", message], output_json=False)
+        self.assertEqual(status, 0)
+        self.assertEqual(json.loads(stdout)["route_hint"]["primary_workflow"], "doctor")
 
     def test_other_fallbacks_and_routed_requests_keep_their_cards(self) -> None:
         unmatched = build_chat_route_hint_payload("zzzzzz", source="slack")

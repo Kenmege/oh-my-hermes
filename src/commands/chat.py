@@ -636,13 +636,17 @@ def _print_chat_route_summary(payload: dict[str, object]) -> None:
 
 def _print_chat_route_hint_summary(payload: dict[str, object]) -> None:
     response = _as_mapping(payload.get("chat_response"))
-    route_hint = _as_mapping(payload.get("route_hint"))
+    # A direct-answer card offers no workflow, so the summary reads the card
+    # rather than the hint rail beside it: no hinted workflow, cues, or tool
+    # checkpoint. `--json` still carries the hint.
+    answers_directly = response.get("kind") == "direct_answer_route_hint"
+    route_hint = {} if answers_directly else _as_mapping(payload.get("route_hint"))
     state = _as_mapping(response.get("state"))
     state_route_hint = _as_mapping(state.get("route_hint"))
     hints = [item for item in _as_list(route_hint.get("hints")) if isinstance(item, dict)]
     primary_hint = hints[0] if hints else {}
-    status = _text(route_hint.get("status") or ("hinted" if hints else "no_hint"), "unknown")
-    fallback_workflow = "none" if status == "no_hint" else "unknown"
+    status = "direct_answer" if answers_directly else _text(route_hint.get("status") or ("hinted" if hints else "no_hint"), "unknown")
+    fallback_workflow = "none" if status in {"no_hint", "direct_answer"} else "unknown"
     selected_workflow = _text(
         route_hint.get("primary_workflow")
         or route_hint.get("selected_workflow")
@@ -720,7 +724,7 @@ def _print_chat_route_hint_summary(payload: dict[str, object]) -> None:
             if len(printed_rows) >= 6:
                 break
 
-    checkpoint = _as_mapping(payload.get("generic_tool_checkpoint"))
+    checkpoint = {} if answers_directly else _as_mapping(payload.get("generic_tool_checkpoint"))
     checkpoint_body = _summary_text(checkpoint.get("body"))
     if checkpoint_body:
         print()

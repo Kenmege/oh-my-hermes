@@ -514,11 +514,12 @@ The card's `kind` says which of three cards it is:
 - `no_route_hint`: nothing matched. The actions open the picker or ask Hermes
   to clarify.
 - `direct_answer_route_hint`: the router answers the message in chat, so the
-  card says no OMH workflow is needed and offers no actions, and
-  `messenger_rendering.primary_action` is `null`. A thank-you, a plain
-  question, a turn Hermes wrote from one of its own session-command templates,
-  and a loop on a timer (Hermes' own `/loop`) all get it, even when the hint
-  named a workflow. The hint itself stays in `route_hint`.
+  card says no OMH workflow is needed and offers no actions,
+  `messenger_rendering.primary_action` is `null`, and
+  `wrapper_contract.next_backend_commands` names no workflow. A thank-you, a
+  plain question, a turn Hermes wrote from one of its own session-command
+  templates, and a loop on a timer (Hermes' own `/loop`) all get it, even when
+  the hint named a workflow. The hint itself stays in `route_hint`.
 
 ```text
 Hermes Agent  BOT

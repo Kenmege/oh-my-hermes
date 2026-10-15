@@ -111,7 +111,8 @@ def build_chat_route_hint_payload(
             "generic_tool_checkpoint_path": "generic_tool_checkpoint",
             "safe_to_render_without_shell_approval": True,
             "does_not_require_plugin_load": True,
-            "next_backend_commands": _next_backend_commands(primary_hint),
+            # A direct answer offers no hinted workflow here either.
+            "next_backend_commands": _next_backend_commands({} if _answers_directly(route_decision) else primary_hint),
         },
         "privacy": {
             "mode": "metadata_only",
@@ -192,6 +193,11 @@ def _route_hint_with_catalog_picker(route_hint: dict[str, object], message: str)
     return updated
 
 
+def _answers_directly(route_decision: dict[str, object]) -> bool:
+    """The router answers this turn in chat, read from its reason code."""
+    return route_decision.get("action") == "fallback" and route_decision.get("reason_code") in DIRECT_ANSWER_REASON_CODES
+
+
 def _checkpoint_body_text(generic_tool_checkpoint: dict[str, object]) -> str:
     body = str(generic_tool_checkpoint.get("body") or "").strip()
     if not body:
@@ -220,7 +226,7 @@ def _response_for_hint(
     route_decision: dict[str, object],
 ) -> dict[str, object]:
     checkpoint_body = _checkpoint_body_text(generic_tool_checkpoint)
-    if route_decision.get("action") == "fallback" and route_decision.get("reason_code") in DIRECT_ANSWER_REASON_CODES:
+    if _answers_directly(route_decision):
         # The router answers this turn in chat: a host turn, a thank-you, a
         # plain question, or a loop on a timer. The card says so whatever the
         # hint rail named, and offers nothing to open or clarify; the hint

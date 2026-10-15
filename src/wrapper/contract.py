@@ -5599,8 +5599,11 @@ def _build_chat_interaction_payload_uncached(
     if goal_quality_coaching_card:
         base["goal_quality_coaching_card"] = goal_quality_coaching_card
 
-    loop_timer_answer = _is_loop_timer_answer(route_payload)
-    if _is_omh_intro_question(message) and not loop_timer_answer and resolved_mode in {"route", "plan", "clarify"}:
+    # A loop on a timer and a turn Hermes wrote for its own session command
+    # are answered as the route says; their text is never a question about
+    # OMH's intro, quickstart, or status, as it is never a catalog question.
+    answered_as_routed = _is_loop_timer_answer(route_payload) or host_command_turn(message)
+    if _is_omh_intro_question(message) and not answered_as_routed and resolved_mode in {"route", "plan", "clarify"}:
         base["mode"] = "route"
         base["route"] = _omh_intro_route_payload(route_payload)
         base["chat_response"] = build_chat_response_from_omh_context_brief(
@@ -5611,7 +5614,7 @@ def _build_chat_interaction_payload_uncached(
         base["next_action"] = str(_nested(base["chat_response"], "state").get("next_action", "show_context_brief"))
         return _finish_interaction(base, target_notice)
 
-    if _is_omh_quickstart_question(message) and not loop_timer_answer and resolved_mode in {"route", "plan", "clarify"}:
+    if _is_omh_quickstart_question(message) and not answered_as_routed and resolved_mode in {"route", "plan", "clarify"}:
         base["mode"] = "status"
         base["route"] = _omh_quickstart_route_payload(route_payload)
         base["chat_response"] = build_chat_response_from_omh_quickstart(
@@ -5625,7 +5628,7 @@ def _build_chat_interaction_payload_uncached(
     if (
         _is_omh_status_question(message)
         and str(route_payload.get("selected_skill", "")) == _ROUTER_SKILL
-        and not loop_timer_answer
+        and not answered_as_routed
         and resolved_mode in {"route", "plan", "clarify"}
     ):
         base["mode"] = "status"
@@ -9629,10 +9632,22 @@ def _route_recommendation_next_action(decision: dict[str, object]) -> str:
     return str(first.get("next_action", ""))
 
 
-def _catalog_question_route_payload(route_payload: dict[str, object]) -> dict[str, object]:
+def _route_without_reason_code(route_payload: dict[str, object]) -> dict[str, object]:
+    """A copy of the route for a builder that replaces its reason with its own.
+
+    The code named the reason being replaced, so it goes from the route and
+    from the compact `route_decision` beside it; a wrapper may read either.
+    """
     updated = dict(route_payload)
-    # The reason is replaced below, so the code that named the old one goes.
     updated.pop("reason_code", None)
+    route_decision = updated.get("route_decision")
+    if isinstance(route_decision, dict) and "reason_code" in route_decision:
+        updated["route_decision"] = {key: value for key, value in route_decision.items() if key != "reason_code"}
+    return updated
+
+
+def _catalog_question_route_payload(route_payload: dict[str, object]) -> dict[str, object]:
+    updated = _route_without_reason_code(route_payload)
     harness = primary_harness_for_skill(_ROUTER_SKILL)
     updated.update(
         {
@@ -9667,9 +9682,7 @@ def _catalog_question_route_payload(route_payload: dict[str, object]) -> dict[st
 
 
 def _omh_status_route_payload(route_payload: dict[str, object]) -> dict[str, object]:
-    updated = dict(route_payload)
-    # The reason is replaced below, so the code that named the old one goes.
-    updated.pop("reason_code", None)
+    updated = _route_without_reason_code(route_payload)
     harness = primary_harness_for_skill(_ROUTER_SKILL)
     updated.update(
         {
@@ -9704,9 +9717,7 @@ def _omh_status_route_payload(route_payload: dict[str, object]) -> dict[str, obj
 
 
 def _omh_quickstart_route_payload(route_payload: dict[str, object]) -> dict[str, object]:
-    updated = dict(route_payload)
-    # The reason is replaced below, so the code that named the old one goes.
-    updated.pop("reason_code", None)
+    updated = _route_without_reason_code(route_payload)
     harness = primary_harness_for_skill(_ROUTER_SKILL)
     updated.update(
         {
@@ -9741,9 +9752,7 @@ def _omh_quickstart_route_payload(route_payload: dict[str, object]) -> dict[str,
 
 
 def _omh_intro_route_payload(route_payload: dict[str, object]) -> dict[str, object]:
-    updated = dict(route_payload)
-    # The reason is replaced below, so the code that named the old one goes.
-    updated.pop("reason_code", None)
+    updated = _route_without_reason_code(route_payload)
     harness = primary_harness_for_skill(_ROUTER_SKILL)
     updated.update(
         {
