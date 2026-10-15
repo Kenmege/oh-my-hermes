@@ -196,7 +196,8 @@ PR without the chat history.
   sends that session an explicit off, since Hermes keeps yolo through
   `session.close` for a session a messaging gateway started. The mode is
   shown on the composer (both rules and the mode row, or the status line on
-  a short terminal) only once Hermes confirms it
+  a short terminal; the mode row, or that status line, alone while a list
+  the person picks from hides the composer) only once Hermes confirms it
   for that session; when turning it on, an answer that confirms anything else
   is a failure, followed by an explicit off, and accept is shown again if
   Hermes does not confirm that off either; and `session.info` corrects

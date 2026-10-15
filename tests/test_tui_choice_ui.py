@@ -236,6 +236,29 @@ class HiddenComposerTests(unittest.TestCase):
                 self.assertEqual(held(app), draft)
 
 
+class ModeShownTests(unittest.TestCase):
+    """While a list hides the composer and its rules, the mode row (or, below 10 rows, the status line) shows the mode."""
+
+    def test_the_mode_row_or_the_status_line_names_the_mode_while_a_list_hides_the_composer(self) -> None:
+        from test_tui_modes import show_mode
+        from omh.tui.frame import MODE_ACCEPT, MODE_PLAN
+
+        for mode, label, chip in ((MODE_ACCEPT, "⏵⏵ accept all on", "⏵⏵ accept"), (MODE_PLAN, "⏸ plan mode on", "⏸ plan")):
+            for opener in (lambda app: app._on_server_request(CLARIFY), lambda app: app._open_session_picker(SESSIONS)):
+                with self.subTest(mode=mode):
+                    app, _client = make_app(busy=True)
+                    show_mode(app, mode)
+                    opener(app)
+                    screen = drawn(app)
+                    self.assertEqual(rule_rows(screen), [])  # no rule carries the mode now
+                    self.assertTrue(screen[status_row(screen) - 1].startswith(label), screen)
+                    short, _client = make_app(busy=True, rows=9)
+                    show_mode(short, mode)
+                    opener(short)
+                    screen = drawn(short)
+                    self.assertIn(chip, screen[status_row(screen)])
+
+
 class ClarifyFieldTests(unittest.TestCase):
     def open(self) -> tuple[App, RecordingClient, tuple[str, int, dict[str, str]]]:
         app, client = make_app(busy=True)
