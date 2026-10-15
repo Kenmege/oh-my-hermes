@@ -112,7 +112,7 @@ def render_line(source: str, state: MarkdownState, width: int, theme: Theme) -> 
         fence, lang = opened
         indent = _leading_spaces(text)
         list_indent = state.list_indent if indent else 0
-        label = _verbatim_rows(" " * indent + lang, width, theme.dim) if lang else []
+        label = _verbatim_rows(" " * indent + lang, width, theme.muted) if lang else []
         return label, MarkdownState(fence, lang, indent, list_indent)
     if not text.strip():
         return [()], state
@@ -402,7 +402,7 @@ def _inline_spans(text: str, style: Style, theme: Theme) -> list[Span]:
                 label, url, index = link
                 spans.append(Span(label, theme.link))
                 if url != label:
-                    spans.append(Span(f" ({url})", theme.dim))
+                    spans.append(Span(f" ({url})", theme.muted))
                 continue
         if ch in "*_":
             emphasis = _emphasis(text, index)

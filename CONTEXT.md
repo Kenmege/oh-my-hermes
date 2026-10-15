@@ -266,8 +266,8 @@ OMH's one sanctioned execution surface — the explicit, operator-invoked
 `omh coding fanout dispatch` (multi-unit) or its `omh coding run` single-run
 entry (one unit, same engine, one call) that spawns local agent CLIs as
 subprocesses. Nothing else in OMH executes work: the OMH TUI below starts
-Hermes' own gateway for a terminal the person opened, and every model call and
-tool run there is Hermes'.
+Hermes' own gateway for a terminal the person opened, and every model call,
+tool run and `!` shell command the person types there is Hermes' to run.
 _Avoid_: implicit execution, background dispatch, counting the OMH TUI as an
 execution surface
 
@@ -361,10 +361,13 @@ the OMH panels are OMH's; every model call, tool run and approval decision is
 the gateway's. Shift+Tab may turn on Hermes' per-session yolo, so Hermes stops
 asking for approvals in that one session (a `config.set` naming the session,
 never `approvals.mode`), and the TUI sends that session an explicit off before
-it leaves it. It writes no prompt text, transcript or server-request frame;
-its only writes are metadata (the launcher's active-session file, what OMH's
-HUD reader and model-chain picker write under the OMH home, and an empty
-fallback marker at the path `omh` named, which `omh` removes). Finished
+it leaves it. It writes no transcript or server-request frame, and prompt
+text only to Hermes' own input history (`$HERMES_HOME/.hermes_history`, which
+`hermes --tui` shares: each line the person sends is appended in its format,
+never an answer to a question Hermes asked); its other writes are metadata
+(the launcher's active-session file, what OMH's HUD reader and model-chain
+picker write under the OMH home, and an empty fallback marker at the path
+`omh` named, which `omh` removes). Finished
 transcript lines go to the terminal's own scrollback; only a bottom region
 (the streaming tail, one slot for the plan and agents panels or a prompt
 Hermes asked, the composer, and the status line) repaints, and the composer's
@@ -389,9 +392,9 @@ extension of Hermes' TUI), a Hermes patch or fork, an execution surface
 Hermes' `tui_gateway` newline JSON-RPC over stdio, which the OMH TUI speaks as
 a client. The slice the TUI relies on (the methods it calls with the only
 keys it sends, how it answers each server-to-client request, and the subagent
-events and the `session.info`, `subagent.tail` and `session.steer` fields and
-values it keys on) is declared once in `src/tui/gateway_contract.py`, against
-a named Hermes commit, with every event type split into handled and unread;
+and notification events and the `session.info`, `subagent.tail` and
+`session.steer` fields and values it keys on) is declared once in
+`src/tui/gateway_contract.py`, against a named Hermes commit, with every event type split into handled and unread;
 an event type it does not handle is ignored, never an error, and a submitted
 turn that brings no event the TUI shows, only undeclared types, gets one
 notice pointing at `omh doctor`, which prints the installed Hermes commit next

@@ -30,8 +30,8 @@ from omh.tui.width import line_width
 
 STARTS = FRAMES[:2]  # both recorded agents started, neither finished
 SPIN = SPINNER_FRAMES[0]  # a clock at 0 draws the spinner's first frame
-STRIP = f"● main  {SPIN} find usages of  {SPIN} read the diff  ↓"
-DONE_STRIP = "● main  ○ find usages of  ✗ read the diff  ↓"
+STRIP = f"● main  {SPIN} find usages of  {SPIN} read the diff  ↓ agents"
+DONE_STRIP = "● main  ○ find usages of  ✗ read the diff  ↓ agents"
 BUSY_HINT = "esc interrupt · /steer <text> steers"
 IDLE_HINT = "? shortcuts · ⇧⇥ mode · ctrl+t effort"
 
@@ -198,7 +198,7 @@ class StripTests(unittest.TestCase):
         app, _client = make_app(busy=True, cols=120, clock=lambda: 0.0)
         self.assertEqual(mode_row(app), BUSY_HINT)
         relay(app, STARTS[:1])
-        self.assertEqual(mode_row(app), f"● main  {SPIN} find usages of  ↓ · {BUSY_HINT}")
+        self.assertEqual(mode_row(app), f"● main  {SPIN} find usages of  ↓ agents · {BUSY_HINT}")
         relay(app, STARTS[1:])
         self.assertEqual(mode_row(app), f"{STRIP} · {BUSY_HINT}")
         app.turn_pending = False
@@ -212,7 +212,7 @@ class StripTests(unittest.TestCase):
 
     def test_at_eighty_columns_two_agents_leave_the_hint_cut_and_the_strip_whole(self) -> None:
         app, _client = agent_app()
-        self.assertEqual(mode_row(app), f"{STRIP} · esc interrupt · /steer <text> st…")
+        self.assertEqual(mode_row(app), f"{STRIP} · esc interrupt · /steer <t…")
 
     def test_the_spinner_turns_with_the_clock(self) -> None:
         now = [0.0]
@@ -233,12 +233,12 @@ class StripTests(unittest.TestCase):
                 self.assertEqual(mode_row(app), row)
 
     def test_the_effort_stays_on_the_right_while_the_strip_leaves_it_room(self) -> None:
-        app, _client = agent_app(cols=100)
+        app, _client = agent_app(cols=110)
         app.effort = "high"
         row = mode_row(app)
         self.assertTrue(row.startswith(f"{STRIP} · {BUSY_HINT}"), row)
         self.assertTrue(row.endswith("effort high"), row)
-        self.assertEqual(len(row), 100)
+        self.assertEqual(len(row), 110)
 
     def test_cut_short_the_hint_goes_first_then_the_effort_then_the_strip_and_never_the_label(self) -> None:
         roster = Roster()
@@ -270,17 +270,17 @@ class StripTests(unittest.TestCase):
                 if "2 agents ↓" in row:
                     seen.add("collapsed")
         self.assertEqual(seen, {"strip", "effort", "hint", "collapsed"})
-        # Two widths where the rules show. At 68 the strip is whole, the hint is cut to a letter and the
-        # effort has no room; five cells narrower the strip no longer fits, counts its agents, and the
-        # room that frees goes to the effort and what is left of the hint.
+        # Two widths where the rules show. At 75 the strip is whole, the hint is cut to a letter and the
+        # effort has no room; at 62 the strip no longer fits, counts its agents, and the room that frees
+        # goes to the effort and what is left of the hint.
         rows = {}
-        for width in (68, 62):
+        for width in (75, 62):
             strip = roster.strip_line(width - strip_column(MODE_ACCEPT, DEFAULT_THEME), DEFAULT_THEME, 0)[0]
             rows[width] = line_text(
                 mode_row_line(mode=MODE_ACCEPT, busy=True, queued=0, keyboard_protocol=False, effort="xhigh",
                               width=width, theme=DEFAULT_THEME, strip=strip)
             )
-        self.assertEqual(rows[68], f"{label} · {STRIP} · a…")
+        self.assertEqual(rows[75], f"{label} · {STRIP} · a…")
         self.assertEqual(rows[62], f"{label} · ● 2 agents ↓ · approvals of…   effort xhigh")
 
     def test_the_strip_starts_right_after_the_label_and_at_the_edge_without_one(self) -> None:
@@ -328,12 +328,60 @@ class StripTests(unittest.TestCase):
         self.assertTrue(mode_row(app).startswith(STRIP), mode_row(app))
 
     def test_typing_never_changes_the_strip(self) -> None:
+        # The hint after it may change (a draft takes Esc from the interrupt); the strip does not.
         app, _client = agent_app()
-        before = mode_row(app)
+        strip = mode_row(app).partition(" · ")[0]
+        self.assertTrue(strip.endswith("↓ agents"), strip)
         for char in "what are they doing":
             app._on_input(Key(CHAR, char))
-        self.assertEqual(mode_row(app), before)
+        self.assertEqual(mode_row(app).partition(" · ")[0], strip)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OneAgentSurfaceTests(unittest.TestCase):
+    """The roster (strip, list) is the one agent surface: the HUD's [Agents] block steps aside while it holds agents."""
+
+    def hud(self, app: App) -> None:
+        from test_tui_panels import agent_row, hud_payload, with_agents
+        from omh.tui.panels import HudSnapshot
+
+        payload = with_agents(hud_payload([{"text": "Ship it", "state": "active"}]), [agent_row(0), agent_row(1)])
+        app.hud = HudSnapshot(app.stored_id, payload, 0.0)
+
+    def slot(self, app: App) -> list[str]:
+        return [line_text(line) for line in app._slot_lines(80, 30)]
+
+    def test_the_agents_block_leaves_the_panel_while_the_roster_holds_agents_and_the_plan_stays(self) -> None:
+        app, _client = agent_app()
+        self.hud(app)
+        shown = self.slot(app)
+        self.assertFalse([row for row in shown if row.startswith("[Agents]")], shown)
+        self.assertTrue([row for row in shown if row.startswith("[Plan]")], shown)
+        app.roster.clear()
+        self.assertTrue([row for row in self.slot(app) if row.startswith("[Agents]")])
+
+    def test_agents_whose_names_match_are_numbered_on_the_strip(self) -> None:
+        app, _client = make_app(busy=True, clock=lambda: 0.0, cols=120)
+        goal = "Run exactly the command below and report"
+        agent_event(app, "start", FIRST, goal=goal)
+        agent_event(app, "start", SECOND, goal=goal)
+        agent_event(app, "start", "sa-2-other", goal="read the diff for risks")
+        line, hits = app._agent_strip(120)
+        text = line_text(line)
+        self.assertIn(f"{SPIN} 1·Run exactly the", text)
+        self.assertIn(f"{SPIN} 2·Run exactly the", text)
+        self.assertIn(f"{SPIN} read the diff", text)  # a name that is its own stays as it is
+        self.assertEqual(len(hits), 4)
+
+    def test_idle_with_agents_still_running_says_how_many_on_the_status_line(self) -> None:
+        app, _client = agent_app(busy=False)
+        self.assertEqual(app._state_text(), "idle · 2 agents running")
+        relay(app, FRAMES[11:12])  # the first agent's verdict
+        self.assertEqual(app._state_text(), "idle · 1 agent running")
+        relay(app, FRAMES)
+        self.assertEqual(app._state_text(), "idle")
+        busy, _client = agent_app(busy=True)
+        self.assertEqual(busy._state_text(), "running")

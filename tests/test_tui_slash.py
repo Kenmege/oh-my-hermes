@@ -13,9 +13,9 @@ class ParseSlashTests(unittest.TestCase):
         self.assertEqual((invocation.command.name, invocation.command.route), ("quit", slash.LOCAL))
 
     def test_an_unknown_command_passes_through_with_its_argument(self) -> None:
-        invocation = slash.parse_slash("/model  gpt-x --global ")
+        invocation = slash.parse_slash("/reasoning  high --global ")
         self.assertIsNone(invocation.command)
-        self.assertEqual(invocation.text, "model gpt-x --global")
+        self.assertEqual(invocation.text, "reasoning high --global")
 
     def test_text_that_only_looks_like_a_command_is_not_one(self) -> None:
         for text in ("hello /new", "/", "//comment", "/usr/bin/env python", "  "):
@@ -31,10 +31,14 @@ class RouteTableTests(unittest.TestCase):
         names = [name for command in slash.COMMANDS for name in (command.name, *command.aliases)]
         self.assertEqual(len(names), len(set(names)))
 
-    def test_every_route_is_one_of_the_three_owned_kinds(self) -> None:
+    def test_every_route_is_one_of_the_four_owned_kinds(self) -> None:
         for command in slash.COMMANDS:
             with self.subTest(command=command.name):
-                self.assertIn(command.route, (slash.LOCAL, slash.HERMES, slash.DROPPED))
+                self.assertIn(command.route, (slash.LOCAL, slash.HERMES, slash.DROPPED, slash.RENAMED))
+                # A renamed command names the Hermes command it runs, which goes to Hermes as typed.
+                self.assertEqual(bool(command.target), command.route == slash.RENAMED)
+                if command.target:
+                    self.assertIsNone(slash.parse_slash(f"/{command.target}").command)
 
     def test_commands_that_would_persist_raw_prompts_go_to_hermes(self) -> None:
         for name in ("save", "prompt", "compose"):

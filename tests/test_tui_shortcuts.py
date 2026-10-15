@@ -58,6 +58,7 @@ def observed(app: App, client: RecordingClient) -> tuple[object, ...]:
         app.transcript.details_expanded,
         app.exit_code,
         app.pager is not None,
+        app.search is not None,
         len(terminal.writes),
     )
 
@@ -82,7 +83,7 @@ class TableTests(unittest.TestCase):
 
     def test_the_ctrl_letters_named_are_the_ones_that_do_something(self) -> None:
         named = ctrl_letters_named()
-        self.assertEqual(named, set("acdejkltouvw"))
+        self.assertEqual(named, set("acdejklrtouvw"))
         for letter in string.ascii_lowercase:
             changed = False
             for draft in ("", "one two"):
@@ -198,7 +199,8 @@ class GuideKeyTests(unittest.TestCase):
         app, _client = make_app()
         type_text(app, "/help")
         app._on_input(Key(ENTER))
-        text = self.paged(app)  # longer than half of the 24 rows, so it is paged
+        self.assertFalse(self.open(app))  # its output is the transcript's, however long
+        text = app.transcript.blocks[-1].parts[0][0]
         self.assertIn("Keys: ? on an empty composer, or /keys, lists every key.", text)
         self.assertIn("/keys ", text)  # and the command is listed with the TUI's own
         self.assertNotIn("Ctrl+D", text)  # the key rows themselves are gone from /help

@@ -10,7 +10,10 @@ the tail keeping its last rows, and the exact row count. The focused agent
 list is the one content size that changes the rows under the composer; it is
 checked over the same sizes for the bounds that matter: the region is exactly
 as tall as it would be without the list, and nothing above the composer is
-lost that the list did not need.
+lost that the list did not need. A hidden composer (a question answered by
+picking) is checked over the same grid: no rules or input rows, the mode row
+and the status line exactly where the composer leaves them, and the slot given
+its `choice_cap`, at least one row wherever the composer had one.
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ from omh.tui.layout import (
     agent_list_room,
     allocate,
     caret_row,
+    choice_cap,
     compose,
     composer_cap,
     slot_cap,
@@ -203,6 +207,66 @@ class AllocateExampleTests(unittest.TestCase):
         self.assertEqual([composer_cap(rows) for rows in (1, 2, 3, 7, 8, 24, 80)], [0, 1, 1, 1, 2, 6, 20])
         self.assertEqual([slot_cap(rows, 80) for rows in (5, 6, 24, 80)], [0, 2, 8, 26])
         self.assertEqual(slot_cap(24, MIN_COLS - 1), 0)
+
+
+class HiddenComposerBudgetTests(unittest.TestCase):
+    """While the person picks from a list the composer frame is not drawn and the slot takes its rows."""
+
+    def test_the_slot_takes_the_composer_frames_rows_and_the_rows_under_it_stay(self) -> None:
+        checked = 0
+        for rows, cols, tail_rows, slot_rows, composer_rows, sticky in itertools.product(
+            ROWS, COLS, TAIL_ROWS, SLOT_ROWS, COMPOSER_ROWS, (False, True)
+        ):
+            for min_height in (0, rows // 2, rows - 1, rows + 3):
+                parts = dict(sticky=sticky, tail_rows=tail_rows, slot_rows=slot_rows, min_height=min_height)
+                shown = allocate(rows, cols, composer_rows=composer_rows, **parts)  # type: ignore[arg-type]
+                got = allocate(rows, cols, composer_rows=composer_rows, composer_hidden=True, **parts)  # type: ignore[arg-type]
+                where = (rows, cols, tail_rows, slot_rows, composer_rows, sticky, min_height, got)
+                self.assertEqual((got.rule, got.composer, got.bottom_rule), (0, 0, 0), where)
+                self.assertEqual((got.mode, got.status), (shown.mode, shown.status), where)
+                self.assertLessEqual(got.total, max(rows - 1, 0), where)
+                self.assertTrue(all(part >= 0 for part in (got.pad, got.sticky, got.tail, got.slot)), where)
+                self.assertEqual(got.slot, min(slot_rows, choice_cap(rows, cols)), where)
+                if slot_rows and shown.composer:
+                    self.assertGreaterEqual(got.slot, 1, where)  # the highlighted row, at least
+                if rows < MIN_ROWS or cols < MIN_COLS:
+                    self.assertEqual((got.sticky, got.tail), (0, 0), where)
+                content = got.total - got.pad
+                self.assertEqual(got.total, max(content, min(min_height, max(rows - 1, 0))), where)
+                checked += 1
+        self.assertGreater(checked, 100_000)
+
+    def test_the_cap_is_the_slots_and_a_one_row_composer_frames(self) -> None:
+        sizes = (1, 2, 5, 6, 7, 9, 10, 24, 80)
+        self.assertEqual([choice_cap(rows, 80) for rows in sizes], [0, 1, 1, 4, 5, 6, 6, 11, 29])
+        self.assertEqual(choice_cap(24, MIN_COLS - 1), 1)  # too narrow for a slot: the composer's own row
+        for rows in sizes:
+            with self.subTest(rows=rows):
+                frame = allocate(rows, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1, min_height=0)
+                self.assertEqual(choice_cap(rows, 80), slot_cap(rows, 80) + frame.rule + frame.composer + frame.bottom_rule)
+
+    def test_an_everyday_terminal(self) -> None:
+        got = allocate(24, 80, sticky=True, tail_rows=3, slot_rows=5, composer_rows=2, min_height=0, composer_hidden=True)
+        self.assertEqual(got, budget(sticky=1, tail=3, slot=5, mode=1, status=1))
+        got = allocate(24, 80, sticky=True, tail_rows=100, slot_rows=100, composer_rows=1, min_height=23, composer_hidden=True)
+        self.assertEqual(got, budget(sticky=1, tail=9, slot=11, mode=1, status=1))
+
+
+class SlotCaretTests(unittest.TestCase):
+    """With no composer, `slot_caret` (a row and a column within the slot) is the frame's caret: a picker's filter."""
+
+    def test_the_caret_lands_on_its_slot_row_and_none_when_that_row_is_cut(self) -> None:
+        slot = plain("header", "row 1", "row 2", " › re")
+        frame = build_frame(cols=80, rows=24, composer=None, status=plain("status")[0], previous_height=0, slot=slot,
+                            slot_caret=(3, 5))
+        row, col = frame.cursor  # type: ignore[misc]
+        self.assertEqual(lines_text([frame.lines[row]]), [" › re"])
+        self.assertEqual(col, 5)
+        cut = build_frame(cols=80, rows=24, composer=None, status=plain("status")[0], previous_height=0,
+                          slot=slot + plain(*[f"more {n}" for n in range(20)]), slot_caret=(23, 5))
+        self.assertIsNone(cut.cursor)  # its row is past the slot's cap
+        self.assertIsNone(build_frame(cols=80, rows=24, composer=None, status=plain("status")[0], previous_height=0,
+                                      slot=slot).cursor)
 
 
 class AgentListBudgetTests(unittest.TestCase):

@@ -20,7 +20,7 @@ import unittest
 from unittest.mock import patch
 
 from _tui_gateway_replay import Scenario, spans
-from _tui_lines import line_text
+from _tui_lines import line_text, lines_text
 from test_tui_app import (
     LIVE_ID,
     NO_TERMIOS,
@@ -34,7 +34,7 @@ from test_tui_app import (
 from omh.tui import app as app_module
 from omh.tui import gateway_contract as contract
 from omh.tui import modes as modes_module
-from omh.tui.app import ATTACH_LEFT_NOTICE, OSC52_COPY, SLOT_ARM_SECONDS, App, queue_lines
+from omh.tui.app import ATTACH_LEFT_NOTICE, OSC52_COPY, SLOT_ARM_SECONDS, App, QueuedLine, queue_lines
 from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, GatewayUnavailable, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder, Paste
@@ -44,7 +44,17 @@ from omh.tui.pager import Pager
 from omh.tui.session_picker import SessionPicker, SessionRow
 from omh.tui.slash import parse_slash, plan_invocation
 from omh.tui.theme import DEFAULT_THEME
-from omh.tui.transcript import NOTICE_ERROR, NOTICE_WARN, AssistantBlock, NoticeBlock, UserBlock
+from omh.tui.transcript import (
+    NOTICE_ERROR,
+    NOTICE_WARN,
+    STEER_QUEUED,
+    AssistantBlock,
+    CommandBlock,
+    NoticeBlock,
+    SteerBlock,
+    UserBlock,
+    block_rows,
+)
 from omh.tui.width import line_width
 
 SID = "live-1"
@@ -122,11 +132,26 @@ def show_mode(app: App, mode: str) -> None:
 
 
 def notices(app: App, level: str | None = None) -> list[str]:
-    return [
-        block.text
-        for block in app.transcript.blocks
-        if isinstance(block, NoticeBlock) and (level is None or block.level == level)
-    ]
+    """What the transcript said, in order: each notice, and each part of a command's output under its echo."""
+    said: list[str] = []
+    for block in app.transcript.blocks:
+        if isinstance(block, NoticeBlock):
+            parts = [(block.text, block.level)]
+        elif isinstance(block, CommandBlock):
+            parts = block.parts
+        else:
+            continue
+        said += [text for text, kind in parts if level is None or kind == level]
+    return said
+
+
+def steers_of(blocks: list) -> list[str]:
+    return [line_text(row) for block in blocks if isinstance(block, SteerBlock) for row in block_rows(block, 100, DEFAULT_THEME)]
+
+
+def steers(app: App) -> list[str]:
+    """The steer rows the transcript has written (one Hermes has not answered yet is still held under the tail)."""
+    return steers_of(app.transcript.blocks)
 
 
 class SteerTests(unittest.TestCase):
@@ -136,9 +161,10 @@ class SteerTests(unittest.TestCase):
         app._on_input(CTRL_ENTER)
         self.assertEqual(client.calls, [("session.steer", {"session_id": SID, "text": "use the other file"})])
         self.assertEqual(app.composer.text, "")
-        self.assertEqual(notices(app), [])  # nothing is claimed before Hermes answers
+        self.assertEqual(steers(app), [])  # nothing is claimed before Hermes answers
+        self.assertIn("↪ steer · use the other file", lines_text(app.transcript.live_lines(80, DEFAULT_THEME)))
         answer(app, client, {"status": "queued", "text": "use the other file"})
-        self.assertEqual(notices(app), ["↪ steer queued by Hermes: use the other file"])
+        self.assertEqual(steers(app), ["↪ steer queued by Hermes · use the other file"])
         self.assertEqual(client.named("prompt.submit"), [])
         self.assertFalse(app.queued)
 
@@ -150,7 +176,7 @@ class SteerTests(unittest.TestCase):
         app._on_input(CTRL_ENTER)
         self.assertEqual(client.named("session.steer"), [{"session_id": SID, "text": "first line\nsecond line"}])
         answer(app, client, {"status": "queued", "text": "first line\nsecond line"})
-        self.assertEqual(notices(app), ["↪ steer queued by Hermes: first line"])
+        self.assertEqual(steers(app), ["↪ steer queued by Hermes · first line"])
 
     def test_ctrl_enter_while_idle_is_enter(self) -> None:
         sent = []
@@ -187,9 +213,8 @@ class SteerTests(unittest.TestCase):
         app._on_input(CTRL_ENTER)
         answer(app, client, error={"code": 4010, "message": "agent does not support steer"})
         self.assertEqual([text for text, *_ in app.queued], ["keep this"])
-        (warning,) = notices(app, NOTICE_WARN)
-        self.assertIn("4010", warning)
-        self.assertIn("It waits in the queue and goes when the turn ends", warning)
+        (warning,) = steers(app)
+        self.assertEqual(warning, "⧗ queued — Hermes refused the steer (agent does not support steer) · keep this")
 
     def test_a_steer_hermes_does_not_take_never_interrupts_the_turn_whatever_the_busy_mode(self) -> None:
         # Under `interrupt` (Hermes' default) or `steer`, a prompt.submit mid-turn redirects the turn.
@@ -220,7 +245,7 @@ class SteerTests(unittest.TestCase):
                 app.turn_pending = False
                 answer(app, client, error={"code": 4010, "message": "agent does not support steer"})
                 self.assertEqual(client.named("prompt.submit"), [{"session_id": SID, "text": "too late"}])
-                self.assertIn("Sent as a prompt instead", notices(app, NOTICE_WARN)[0])
+                self.assertIn("sent as a prompt — Hermes refused the steer (agent", steers(app)[0])
 
     def test_in_plan_mode_the_refused_steer_waits_as_the_plan_prompt(self) -> None:
         app, client = make_app(busy=True)
@@ -241,9 +266,9 @@ class SteerTests(unittest.TestCase):
         type_text(app, "check the tests too")
         app._on_input(CTRL_ENTER)
         answer(app, client, {"status": "queued", "text": "check the tests too"})
-        (notice,) = notices(app)
-        self.assertEqual(notice, "↪ steer queued by Hermes: check the tests too")
-        self.assertNotIn("steered", notice)
+        (row,) = steers(app)
+        self.assertEqual(row, "↪ steer queued by Hermes · check the tests too")
+        self.assertNotIn("applied", row)
 
     def test_ctrl_enter_with_nothing_typed_sends_nothing(self) -> None:
         app, client = make_app(busy=True)
@@ -275,7 +300,7 @@ class SteerTests(unittest.TestCase):
         app._on_input(Key(ENTER))
         self.assertEqual(client.calls, [("session.steer", {"session_id": SID, "text": "check the tests too"})])
         answer(app, client, {"status": "queued", "text": "check the tests too"})
-        self.assertEqual(notices(app), ["↪ steer queued by Hermes: check the tests too"])
+        self.assertEqual(steers(app), ["↪ steer queued by Hermes · check the tests too"])
 
         app, client = make_app()
         type_text(app, "/steer check the tests too")
@@ -328,6 +353,28 @@ class SteerTests(unittest.TestCase):
                     self.assertFalse(app.queued)
                     self.assertIn(app_module.STEER_LEFT_NOTICE, notices(app, NOTICE_WARN))
                     self.assertFalse(any("queued by Hermes" in text for text in notices(app)))
+
+    def test_a_steer_unanswered_after_its_session_was_left_comes_back_and_nothing_is_sent(self) -> None:
+        for leave in ("new", "switch"):
+            with self.subTest(leave=leave):
+                now = [100.0]
+                app, client = make_app(busy=True, clock=lambda: now[0])
+                type_text(app, "keep this")
+                app._on_input(CTRL_ENTER)
+                steer = len(client.calls)
+                if leave == "new":
+                    app._on_new_session({"session_id": "live-2", "stored_session_id": "stored-2"})
+                else:
+                    app._on_session_resumed("stored-2", {"session_id": "live-2", "stored_session_id": "stored-2"})
+                now[0] += 3600
+                app._expire_calls()
+                self.assertEqual(
+                    [method for method, _params in client.calls[steer:]], ["session.close", "commands.catalog"]
+                )
+                self.assertEqual(app.composer.text, "keep this")
+                self.assertFalse(app.queued)
+                said = app_module.STEER_LEFT_UNANSWERED_NOTICE.format(seconds=app_module.CALL_ANSWER_SECONDS)
+                self.assertIn(said, notices(app, NOTICE_WARN))  # said in the session now live
 
     def test_a_steer_that_comes_back_never_lands_in_an_answer_or_over_a_draft(self) -> None:
         now = [100.0]
@@ -398,12 +445,18 @@ class DocumentedSteerTests(unittest.TestCase):
 
     def test_the_label_and_the_fallback_are_the_ones_the_code_uses(self) -> None:
         installation = self.prose("docs/INSTALLATION.md")
-        self.assertIn(f"`{app_module.STEERED_NOTICE.format('').rstrip()}`", installation)
+        label = steers_of([SteerBlock("x", STEER_QUEUED)])[0].removesuffix(" · x")
+        self.assertIn(f"`{label}`", installation)
         self.assertIn("joins the OMH TUI's own queue (`⧗`) and goes when the turn ends, whatever "
                       "`display.busy_input_mode` says, so it never interrupts the turn", installation)
         self.assertNotIn("`↪ steered:`", installation)
+        unanswered = app_module.STEER_UNANSWERED_OUTCOME.format(seconds=app_module.CALL_ANSWER_SECONDS)
+        self.assertIn(f"`⧗ {unanswered} · <text>`", installation)  # given back, never sent again
         self.assertIn("A steer Hermes does not take waits in the TUI's own queue for the running turn to end, whatever "
                       "the busy mode, so it never interrupts that turn.", self.prose("AGENTS.md"))
+        seconds = f"{app_module.CALL_ANSWER_SECONDS:g}"
+        self.assertIn(f"A steer Hermes does not answer within {seconds} s goes back to the composer and is never re-sent.",
+                      self.prose("AGENTS.md"))
 
 
 class DocumentedApprovalsToggleTests(unittest.TestCase):
@@ -445,7 +498,7 @@ class SteerReplayTests(AppTestCase):
         terminal.script(
             # One read: Ctrl+Enter lands while the first prompt's turn is pending.
             Step(b"first prompt\rsecond prompt" + CTRL_ENTER_BYTES, when=terminal.idle, label="idle"),
-            Step(b"\x04", when=lambda: "↪ steer queued by Hermes: second prompt" in terminal.history() and terminal.idle(), label="steered"),
+            Step(b"\x04", when=lambda: "↪ steer queued by Hermes · second prompt" in terminal.history() and terminal.idle(), label="steered"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
@@ -1077,12 +1130,12 @@ class LeftSessionStateTests(unittest.TestCase):
     def test_a_new_session_after_a_resumed_launch_no_longer_says_resumed(self) -> None:
         app, client = make_app()
         app.stored_id = "stored-old"
-        app.banner_record = {"model": "m", "cwd": "~/p", "resumed": "stored-old"}
+        app.banner_record = {"cwd": "~/p", "resumed": "stored-old"}
         app._new_session("")
         answer(app, client, self.NEW)
-        self.assertEqual(app.banner_record, {"model": "m2", "cwd": "/p", "resumed": ""})
+        self.assertEqual(app.banner_record, {"cwd": "/p", "resumed": ""})
         app._redraw("")
-        self.assertEqual(app.banner_facts, {"model": "m2", "cwd": "/p", "resumed": ""})
+        self.assertEqual(app.banner_facts, {"cwd": "/p", "resumed": ""})
 
     def test_an_image_attached_in_the_session_left_is_no_chip_here_and_says_so(self) -> None:
         for start, result in (
@@ -1158,7 +1211,7 @@ class StartupWaitsOnlyForTheSessionTests(unittest.TestCase):
         app = App(ScriptedTerminal(), client, {}, poller=FakePoller())  # type: ignore[arg-type]
         app.startup()
         self.assertEqual(client.awaited, ["session.create"])
-        self.assertEqual([method for method, _params in client.calls], ["config.get", "commands.catalog"])
+        self.assertEqual([method for method, _params in client.calls], ["config.get", "commands.catalog", "session.list"])
         self.assertEqual(app.busy_mode, "queue")  # Hermes' own default, until config.get answers
         type_text(app, "/")
         self.assertTrue(app._menu_rows())  # no catalog yet: the TUI's own commands still complete
@@ -1253,7 +1306,7 @@ class RedrawTailTests(unittest.TestCase):
             app._draw_history(messages)
         taken = [line for line in app.transcript.take_stable_lines(80, DEFAULT_THEME) if line]
         self.assertEqual(taken[0][0].text, "⋯ 37 earlier messages · /history shows all")
-        self.assertEqual([line[-1].text for line in taken[1:]], ["question 37", "question 38", "question 39"])
+        self.assertEqual([line_text(line) for line in taken[1:]], ["› question 37", "› question 38", "› question 39"])
 
 
 class CallExpiryTests(unittest.TestCase):
@@ -1608,7 +1661,7 @@ def composer_index(screen: list[str]) -> int:
 
 def queue(app: App, *prompts: str) -> None:
     for prompt in prompts:
-        app.queued.append((prompt, "", ""))
+        app.queued.append(QueuedLine(prompt))
 
 
 class QueueLinesTests(unittest.TestCase):
@@ -1789,14 +1842,14 @@ class QueueTests(unittest.TestCase):
     def test_recalled_prompts_go_as_one_text_and_only_a_first_line_command_runs(self) -> None:
         # What the recall docstring says Enter does with them: one submission, as for anything typed.
         app, client = make_app(busy=True)
-        app.queued.extend([("plain prompt", "", ""), ("a long skill prompt", "learn: the build", "/learn the build")])
+        app.queued.extend([QueuedLine("plain prompt"), QueuedLine("a long skill prompt", "learn: the build", "/learn the build")])
         app._on_input(Key(UP))
         app.turn_pending = False
         app._on_input(Key(ENTER))
         self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": "plain prompt\n/learn the build"})])
 
         app, client = make_app(busy=True)
-        app.queued.extend([("a long skill prompt", "learn: the build", "/learn the build"), ("plain prompt", "", "")])
+        app.queued.extend([QueuedLine("a long skill prompt", "learn: the build", "/learn the build"), QueuedLine("plain prompt")])
         app._on_input(Key(UP))
         app.turn_pending = False
         app._on_input(Key(ENTER))
@@ -1818,8 +1871,8 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(
             list(app.queued),
             [
-                (PLAN_PROMPT, "/plan fix the flaky test", "fix the flaky test"),
-                ("a long skill prompt", "learn: the build", "/learn the build"),
+                QueuedLine(PLAN_PROMPT, "/plan fix the flaky test", "fix the flaky test"),
+                QueuedLine("a long skill prompt", "learn: the build", "/learn the build"),
             ],
         )
         rows = [line_text(line) for line in app._slot_lines(80, 24)]
