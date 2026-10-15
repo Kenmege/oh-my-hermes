@@ -28,6 +28,8 @@ _LEAKERS = (
     ".test_interrupt_cleanup_observes_a_collected_clean_completion_once",
     "test_fanout_cancellation_states.InterruptedRunningUnitTests"
     ".test_a_signal_killed_unit_records_cancelled_rather_than_a_model_failure",
+    "test_fanout_capacity_reservation.ReservationMarkerTests"
+    ".test_an_exception_after_the_reservation_clears_the_marker_and_still_raises",
     "test_fanout_dispatch.FanoutUnitResultIntakeTests"
     ".test_d5_dispatcher_exception_preserves_summary_and_reraises",
     "test_fanout_dispatch.FanoutUnitResultIntakeTests"

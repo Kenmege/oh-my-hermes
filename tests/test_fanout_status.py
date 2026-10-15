@@ -514,10 +514,11 @@ def _leaked_reservation(paths: OmhPaths) -> None:
     """A capacity-reuse reservation marker this attempt never cleared, then its own summary.
 
     The worktree reuse writes a marker with owner, run ref and worktree
-    only; an early return before the spawn (here the unfenced refusal,
-    which records `permission_blocked`) skips the `finally` that clears
-    it, and the dispatch then writes its summary. So the marker is OLDER
-    than the summary row it would otherwise hide.
+    only. Every return clears it, but the clear is best-effort: one that
+    failed after a refusal (here the unfenced refusal, which records
+    `permission_blocked`) leaves the marker, and the dispatch then writes
+    its summary. So the marker is OLDER than the summary row it would
+    otherwise hide.
     """
     _seed_journal(paths, _roster_fixture())
     write_inflight_marker(paths, _FANOUT_ID, "core", {
