@@ -298,6 +298,7 @@ STEER_REFUSED_OUTCOME = "{fallback} — Hermes refused the steer ({reason})"
 STEER_FALLBACK_QUEUED = "queued"  # a turn still runs: the text waits in the TUI's queue for it to end
 STEER_FALLBACK_SENT = "sent as a prompt"
 STEER_REJECTED_REASON = "its turn had ended"  # Hermes' `rejected`: the agent was idle
+STEER_UNANSWERED_OUTCOME = "{fallback} — Hermes did not answer the steer in {seconds:g} s"
 # What an approval's answer reads as in the transcript, and its colour: allowed in green, denied in red.
 APPROVAL_OUTCOMES = {
     "once": ("allowed once", NOTICE_OK),
@@ -449,6 +450,7 @@ class _Pending:
     # The command it was made for (its handler, or the answer to one of its calls, was running): what its answer
     # says lands under that command's echo, which stays open until every call made for it is answered.
     command: CommandBlock | None = None
+    on_expiry: Callable[[], None] | None = None  # what an answer that never came settles; None: a notice says so
 
 
 class QueuedLine(NamedTuple):
@@ -1373,6 +1375,7 @@ class App(ModesMixin, AgentViewMixin):
         params: dict[str, Any],
         on_result: Callable[[dict[str, Any]], None],
         on_error: Callable[[dict[str, Any]], bool] | None = None,
+        on_expiry: Callable[[], None] | None = None,
     ) -> None:
         try:
             request_id = self.client.request(method, params)
@@ -1383,20 +1386,23 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice(f"The OMH TUI did not send {method}: {error}.", NOTICE_ERROR)
             return
         expires_at = self.clock() + CALL_ANSWER_SECONDS_BY_METHOD.get(method, CALL_ANSWER_SECONDS)
-        self.pending[request_id] = _Pending(method, on_result, on_error, expires_at, self.transcript.command)
+        self.pending[request_id] = _Pending(method, on_result, on_error, expires_at, self.transcript.command, on_expiry)
 
     def _expire_calls(self) -> None:
         """Forget every call unanswered past its `expires_at`, here and in the client, saying so for most.
 
         Neither of its handlers runs: an answer that never came is not a
         refusal, and state that waits on one (a yolo call still unanswered)
-        stays as it was.
+        stays as it was. A call with an `on_expiry` (a steer, whose row and
+        text wait on the answer) is settled by it instead, and says so itself.
         """
         now = self.clock()
         for request_id, call in [(rid, call) for rid, call in self.pending.items() if now >= call.expires_at]:
             del self.pending[request_id]
             self.client.forget(request_id)
-            if call.method not in QUIET_EXPIRY_METHODS:
+            if call.on_expiry is not None:
+                call.on_expiry()
+            elif call.method not in QUIET_EXPIRY_METHODS:
                 seconds = CALL_ANSWER_SECONDS_BY_METHOD.get(call.method, CALL_ANSWER_SECONDS)
                 with self._for_command(call.command):  # under the echo of the command it was made for
                     self.transcript.add_notice(CALL_EXPIRED_NOTICE.format(method=call.method, seconds=seconds), NOTICE_WARN)
@@ -2356,6 +2362,7 @@ class App(ModesMixin, AgentViewMixin):
             {"session_id": sid, "text": text},
             lambda result: self._on_steered(sid, block, result),
             lambda error: self._on_steer_refused(sid, block, error),
+            lambda: self._on_steer_unanswered(sid, block),
         )
 
     def _on_steered(self, sid: str, block: SteerBlock, result: dict[str, Any]) -> None:
@@ -2374,14 +2381,22 @@ class App(ModesMixin, AgentViewMixin):
         self._steer_refused(block, f"{error.get('code')}: {as_text(error.get('message')) or 'refused'}")
         return True
 
-    def _steer_refused(self, block: SteerBlock, reason: str) -> None:
-        """The steer says what became of its text, which goes as the next prompt.
+    def _on_steer_unanswered(self, sid: str, block: SteerBlock) -> None:
+        """No answer within `CALL_ANSWER_SECONDS`: settled as a refusal, so the text is not lost and the row leaves."""
+        if sid != self.sid:
+            self._steer_back(block.text)
+        else:
+            self._steer_refused(block, "", STEER_UNANSWERED_OUTCOME)
+
+    def _steer_refused(self, block: SteerBlock, reason: str, outcome: str = STEER_REFUSED_OUTCOME) -> None:
+        """The steer says what became of its text (`outcome`, with `reason`), which goes as the next prompt.
 
         While a turn runs it waits in the TUI's queue, whatever the busy mode;
         only an idle session gets it as a prompt at once.
         """
         fallback = STEER_FALLBACK_QUEUED if self._busy() else STEER_FALLBACK_SENT
-        self.transcript.steer_answered(block, STEER_REFUSED, STEER_REFUSED_OUTCOME.format(fallback=fallback, reason=reason))
+        said = outcome.format(fallback=fallback, reason=reason, seconds=CALL_ANSWER_SECONDS)
+        self.transcript.steer_answered(block, STEER_REFUSED, said)
         self._send_typed(block.text, hold=True)
 
     def _steer_back(self, text: str) -> None:

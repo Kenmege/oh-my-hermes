@@ -623,7 +623,9 @@ steer), the text joins the OMH TUI's own queue (`⧗`) and goes when the turn
 ends, whatever `display.busy_input_mode` says, so it never interrupts the
 turn; if the turn had already ended, it goes as an ordinary prompt. Either
 way the steer's row says so in amber (`⧗ queued — Hermes refused the steer
-(<why>) · <text>`). If you
+(<why>) · <text>`). A steer Hermes has not answered in 120 s is settled the
+same way (`⧗ queued — Hermes did not answer the steer in 120 s · <text>`),
+and an agent's steer comes back to the composer. If you
 left the session (`/new`, a switch) before Hermes answered, the text comes
 back to the composer and is not sent to the session you are in. The OMH TUI
 steers only with text you typed and sent this way: a queued prompt is never

@@ -205,6 +205,7 @@ class AgentViewMixin:
             {"session_id": self.sid, "subagent_id": agent.subagent_id, "text": text},
             lambda result: self._on_agent_steered(block, result),
             lambda error: self._on_agent_steered(block, {}),
+            lambda: self._on_agent_steered(block, {}),  # no answer: its text comes back, as for a refusal
         )
 
     def _on_agent_steered(self, block: SteerBlock, result: Mapping[str, Any]) -> bool:

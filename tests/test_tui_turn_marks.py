@@ -269,6 +269,47 @@ class SteerPlacementTests(unittest.TestCase):
         self.assertEqual([text for text, *_ in app.queued], ["keep this"])
 
 
+class UnansweredSteerTests(unittest.TestCase):
+    """A steer Hermes never answers is settled when its call expires: as a refusal, so its text is not lost."""
+
+    def test_an_unanswered_steer_is_queued_and_its_row_leaves_the_live_region(self) -> None:
+        clock = Clock()
+        app, client = make_app(busy=True, clock=clock)
+        app._on_event(ev("message.start"))
+        type_text(app, "use the other file")
+        app._on_input(CTRL_ENTER)
+        clock.now += 3600  # far past any call's answer time
+        app._expire_calls()
+        self.assertEqual([line.text for line in app.queued], ["use the other file"])  # waits for the turn, as refused
+        app._on_event(ev("message.complete", text="done", status="complete"))
+        taken = lines_text(app.transcript.take_stable_lines(100, THEME))  # what reaches scrollback
+        self.assertNotIn("steer", " ".join(lines_text(app.transcript.live_lines(100, THEME))))  # nothing held back
+        self.assertIn("⧗ queued — Hermes did not answer the steer in 120 s · use the other file", taken)
+        rows = [line_text(row) for block in app.transcript.blocks if isinstance(block, SteerBlock)
+                for row in block_rows(block, 100, THEME)]
+        self.assertEqual(rows, ["⧗ queued — Hermes did not answer the steer in 120 s · use the other file"])
+        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": "use the other file", "queued": True}))
+
+    def test_an_unanswered_agent_steer_gives_its_text_back(self) -> None:
+        from test_tui_agent_strip import STARTS, agent_app, relay
+        from omh.tui.keys import DOWN
+
+        clock = Clock()
+        app, _client = agent_app(busy=True, frames=[], clock=clock)
+        app._on_event(ev("message.start"))
+        relay(app, STARTS)
+        app._on_input(Key(DOWN))
+        app._on_input(Key(CHAR, "s"))
+        type_text(app, "skip the tests folder")
+        app._on_input(Key(ENTER))
+        clock.now += 3600
+        app._expire_calls()
+        self.assertEqual(app.composer.text, "skip the tests folder")
+        app._on_event(ev("message.complete", text="done", status="complete"))
+        app.transcript.take_stable_lines(100, THEME)
+        self.assertNotIn("steer", " ".join(lines_text(app.transcript.live_lines(100, THEME))))
+
+
 class CommandPlacementTests(unittest.TestCase):
     """A command typed while a tool runs is held under it, as a steer is, and never cuts the running call off."""
 
