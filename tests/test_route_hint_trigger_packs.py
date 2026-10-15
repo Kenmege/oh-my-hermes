@@ -28,6 +28,7 @@ from omh.routing import chat as routing_chat
 from omh.routing import recommend as routing_recommend
 from omh.wrapper.route_hints import build_chat_route_hint_payload
 from _module_patch import patch_modules
+from _standalone_bundle import bundle_dir
 
 
 # One phrase, in a language with no shipped pack, so nothing in the catalog or
@@ -263,6 +264,123 @@ class RouteHintTriggerPackTests(TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.strip(), "hinted dispatch")
+
+
+# The reproduction in #2129 (reported by @fauzibrevy-hub): an Indonesian pack,
+# a language OMH ships no pack for.
+HOST_PACK_PHRASE = "riset kompetitor"
+_HOST_PACK_DOCUMENT = {
+    "schema_version": "trigger_language_pack/v1",
+    "language": "id",
+    "skills": {"research": [HOST_PACK_PHRASE]},
+}
+
+# `_load_directory_module` in Hermes' hermes_cli/plugins_loader.py, the same at
+# the v2026.9.7 floor tag and on main at 6c61c3e27: a bare `hermes_plugins`
+# parent, then the plugin directory as `hermes_plugins.<slug>`. With `block`,
+# every absolute `omh` import raises, as on a host with no `omh` package.
+_HERMES_DIRECTORY_PLUGIN_PROBE = """
+import builtins, importlib, importlib.util, json, sys, types
+from pathlib import Path
+
+plugin_dir, message, block = Path(sys.argv[1]), sys.argv[2], sys.argv[3] == "block"
+if block:
+    real_import = builtins.__import__
+
+    def blocked(name, globals=None, locals=None, fromlist=(), level=0):
+        if level == 0 and (name == "omh" or name.startswith("omh.")):
+            raise ImportError(f"no omh package in this host (blocked {name!r})", name=name)
+        return real_import(name, globals, locals, fromlist, level)
+
+    builtins.__import__ = blocked
+parent = types.ModuleType("hermes_plugins")
+parent.__path__ = []
+parent.__package__ = "hermes_plugins"
+sys.modules["hermes_plugins"] = parent
+spec = importlib.util.spec_from_file_location(
+    "hermes_plugins.omh", plugin_dir / "__init__.py", submodule_search_locations=[str(plugin_dir)]
+)
+package = importlib.util.module_from_spec(spec)
+package.__package__ = "hermes_plugins.omh"
+package.__path__ = [str(plugin_dir)]
+sys.modules["hermes_plugins.omh"] = package
+spec.loader.exec_module(package)
+awareness = importlib.import_module("hermes_plugins.omh.awareness")
+hint = awareness.awareness_route_hint(message)
+print(json.dumps({
+    "package": awareness.__package__,
+    "decision": awareness._user_trigger_pack_route_decision(message),
+    "status": hint["status"],
+    "selected_workflow": hint.get("selected_workflow", ""),
+    "hints": [[row["id"], row["matched_cues"]] for row in hint["hints"]],
+}))
+"""
+
+
+class HermesDirectoryPluginLayoutTests(TestCase):
+    """The bridge as Hermes loads the bundle, not as this repo imports it (#2129).
+
+    Every other case here imports `omh.plugin_bundle.omh.awareness`, where the
+    bridge's relative import reaches the router. Hermes names the bundle
+    `hermes_plugins.omh`, one package deep, so that import climbs past the
+    top-level package; until #2129 the bridge was empty in every Hermes chat
+    while `omh chat route-hint` hinted the same message. A fresh interpreter,
+    because the loader's `hermes_plugins` parent is process state.
+    """
+
+    def _probe(self, root: Path, *, block_omh: bool) -> dict[str, object]:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-P",
+                "-c",
+                _HERMES_DIRECTORY_PLUGIN_PROBE,
+                str(bundle_dir()),
+                HOST_PACK_PHRASE,
+                "block" if block_omh else "allow",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, "OMH_HOME": str(root)},
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        return json.loads(completed.stdout)
+
+    def test_user_pack_phrase_hints_the_routers_workflow_in_hermes_layout(self) -> None:
+        with _omh_home(_HOST_PACK_DOCUMENT) as root:
+            observed = self._probe(root, block_omh=False)
+            route = routing_chat.route_chat_message(HOST_PACK_PHRASE, limit=1)["route_decision"]
+
+        self.assertEqual(observed["package"], "hermes_plugins.omh")
+        self.assertEqual(route["action"], "dispatch")
+        self.assertEqual(
+            observed["decision"],
+            {"workflow": route["selected_skill"], "matched_phrase": HOST_PACK_PHRASE},
+        )
+        self.assertEqual(observed["status"], "hinted")
+        self.assertEqual(
+            observed["selected_workflow"],
+            awareness._public_workflow_name(str(route["selected_skill"])),
+        )
+        self.assertEqual(observed["hints"], [["user_trigger_pack", [HOST_PACK_PHRASE]]])
+
+    def test_the_phrase_is_silent_without_the_pack(self) -> None:
+        # The control: the hint above can only have come from the pack.
+        with _omh_home(None):
+            payload = build_chat_route_hint_payload(HOST_PACK_PHRASE)
+
+        self.assertEqual(payload["route_hint"]["status"], "no_hint")
+        self.assertNotEqual(payload["route_decision"]["action"], "dispatch")
+
+    def test_hermes_layout_without_omh_degrades_to_no_hint(self) -> None:
+        with _omh_home(_HOST_PACK_DOCUMENT) as root:
+            observed = self._probe(root, block_omh=True)
+
+        self.assertEqual(observed["package"], "hermes_plugins.omh")
+        self.assertEqual(observed["decision"], {})
+        self.assertEqual(observed["status"], "no_hint")
+        self.assertEqual(observed["hints"], [])
 
 
 class UserTriggerPackRouteDecisionTests(TestCase):

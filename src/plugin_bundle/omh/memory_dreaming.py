@@ -18,6 +18,13 @@ explicit that the technique pays off in proportion to how predictable the next
 query is, so a scheduler that fires on a fixed interval should not be sold as
 one that fires when consolidation would help most.
 
+The counters and the brief belong to one Hermes profile, not to the OMH home.
+Several profiles may name one home -- a multiplexed gateway's profiles can all
+bind ``~/.omh`` -- and a brief raised by one profile's turns and its own
+MEMORY.md is not another profile's to serve. So both files live under
+``memory/profiles/<slot>/``, the slot being `profile_slot` of the profile's
+Hermes home, the key the group-activity status already uses (#2087).
+
 Stdlib only; vendored in the bundle because it is imported inside the Hermes
 process, where the ``omh`` package does not exist.
 """
@@ -25,9 +32,12 @@ process, where the ``omh`` package does not exist.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Callable
 
+from . import runtime_paths
+from .group_activity_status import profile_slot
 from .memory_state_files import state_file_lock, write_text_atomic, write_text_locked
 
 DREAMING_STATE_SCHEMA_VERSION = "omh_memory_dreaming_state/v1"
@@ -57,6 +67,20 @@ def headroom_floor_for_cap(cap: int) -> int:
 # offering the word would claim a capability the wrapper does not have.
 DREAMING_MODES = ("off", "reminder")
 DEFAULT_DREAMING_MODE = "reminder"
+# The profile setting that chooses one: `plugins.entries.omh.settings.dreaming_mode`.
+DREAMING_MODE_SETTING = "dreaming_mode"
+# `off` written bare is a YAML false, and `hermes config set ... off` stores
+# it as `false`; the false spellings all mean the profile chose `off`.
+_OFF_SETTING_SPELLINGS = frozenset({"off", "false", "no"})
+# A setting written but not read as a mode: a value outside the spellings
+# above and the modes, or a config.yaml the scan could not read. The default
+# applies either way; this names it so `omh memory dream` and the doctor
+# advisory can say so instead of reporting `reminder` as if it were chosen.
+MODE_SETTING_UNRECOGNIZED = "mode_setting_unrecognized"
+# Enough of an unrecognized value to recognize the typo, never more of the file.
+_RAW_SETTING_DISPLAY_CHARS = 64
+# Where an earlier release kept one set for the whole home, under `memory/`.
+LEGACY_STATE_FILENAMES = ("dreaming.json", "consolidation.json")
 
 # Reasons that describe a moment rather than a state. These clear themselves by
 # firing -- the turn counter resets, the compaction flag is lowered -- so they
@@ -72,8 +96,124 @@ _EVENT_REASONS = frozenset(
 )
 
 
-def dreaming_state_path(omh_home: str | Path) -> Path:
-    return Path(omh_home).expanduser() / "memory" / "dreaming.json"
+def profile_states_dir(omh_home: str | Path) -> Path:
+    """The directory every profile's counters and brief sit under in one OMH home."""
+    return Path(omh_home).expanduser() / "memory" / "profiles"
+
+
+def profile_dreaming_dir(omh_home: str | Path, hermes_home: str | Path) -> Path:
+    """One profile's directory: ``<omh_home>/memory/profiles/<profile_slot(hermes_home)>``."""
+    return profile_states_dir(omh_home) / profile_slot(Path(hermes_home))
+
+
+def dreaming_state_path(omh_home: str | Path, hermes_home: str | Path) -> Path:
+    return profile_dreaming_dir(omh_home, hermes_home) / "dreaming.json"
+
+
+def read_dreaming_mode_setting(hermes_home: str | Path) -> dict[str, object]:
+    """What this profile's `dreaming_mode` setting says, and the mode in force.
+
+    Read from the profile's own ``config.yaml`` at
+    ``plugins.entries.omh.settings.dreaming_mode``, the per-profile plugin
+    setting Hermes keeps beside ``omh_home``: each profile of a multiplexed
+    host has its own file, so profiles sharing one store can choose
+    differently, and nobody edits a managed file to choose. The text scan is
+    the one the standalone lane reads ``omh_home`` with, keyed by the Hermes
+    home the caller is bound to rather than whichever profile the process
+    has in scope; the managed overlay is not consulted.
+
+    Returns ``{"mode", "raw", "recognized"}``. ``raw`` is the value as
+    written, bounded and printable only, or None when nothing was written or
+    the file could not be read. Anything not read as a mode falls back to the
+    default -- a setting this reader cannot see must not turn dreaming off,
+    and must not raise into the turn that asked -- but is not ``recognized``,
+    and carries ``issue`` (`MODE_SETTING_UNRECOGNIZED`) with ``reason``
+    ``unknown_value`` or ``config_unreadable``. No config.yaml at all is an
+    unset setting, which is recognized: the default is what nobody chose.
+    """
+    try:
+        text = (Path(hermes_home).expanduser() / "config.yaml").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {"mode": DEFAULT_DREAMING_MODE, "raw": None, "recognized": True}
+    except (OSError, ValueError):
+        return _unrecognized_mode_setting(None, "config_unreadable")
+    try:
+        value = runtime_paths.plugin_setting_text(text, DREAMING_MODE_SETTING)
+    except runtime_paths.RuntimeBindingError:
+        return _unrecognized_mode_setting(None, "config_unreadable")
+    if value is None:
+        return {"mode": DEFAULT_DREAMING_MODE, "raw": None, "recognized": True}
+    raw = "".join(character for character in value if character.isprintable())[:_RAW_SETTING_DISPLAY_CHARS]
+    spelled = value.strip().lower()
+    if spelled in _OFF_SETTING_SPELLINGS:
+        return {"mode": "off", "raw": raw, "recognized": True}
+    if spelled in DREAMING_MODES:
+        return {"mode": spelled, "raw": raw, "recognized": True}
+    return _unrecognized_mode_setting(raw, "unknown_value")
+
+
+def _unrecognized_mode_setting(raw: str | None, reason: str) -> dict[str, object]:
+    return {
+        "mode": DEFAULT_DREAMING_MODE,
+        "raw": raw,
+        "recognized": False,
+        "issue": MODE_SETTING_UNRECOGNIZED,
+        "reason": reason,
+    }
+
+
+def configured_dreaming_mode(hermes_home: str | Path) -> str:
+    """The mode in force for this profile (`read_dreaming_mode_setting`).
+
+    Read fresh on each call, so a change applies from the next evaluation;
+    a caller that needs the mode twice in one render or evaluation reads it
+    once and passes it down.
+    """
+    return str(read_dreaming_mode_setting(hermes_home)["mode"])
+
+
+def adopt_legacy_dreaming_files(omh_home: str | Path, hermes_home: str | Path) -> list[str]:
+    """Move the home-wide counters and brief an earlier release wrote into this profile's directory.
+
+    Before #2087 every profile on a home read and wrote ``memory/dreaming.json``
+    and ``memory/consolidation.json``, and neither records which profile
+    raised it. The provider claims them only for a profile that is not
+    routed (`runtime_paths.profile_is_routed`): a process serving its launch
+    profile alone. On a single-profile host they are that profile's own;
+    where separate processes for different profiles share one store, the
+    first to start claims them. A routed profile leaves them where they are
+    and never reads them. A file the profile already has is never replaced,
+    and the old file is moved, not copied, so it is claimed once. Returns the
+    names moved. Raises ``OSError``.
+
+    One lock on the old location covers the whole claim. Locking each target
+    alone let two profiles claim at once: in a two-thread probe most losers
+    raised ``FileNotFoundError`` on a file the winner had already moved, and
+    some runs split the counters and the brief between the two profiles.
+    """
+    memory_dir = Path(omh_home).expanduser() / "memory"
+    legacy_files = [memory_dir / name for name in LEGACY_STATE_FILENAMES]
+    if not any(path.is_file() and not path.is_symlink() for path in legacy_files):
+        return []
+    target_dir = profile_dreaming_dir(omh_home, hermes_home)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    moved: list[str] = []
+    with state_file_lock(memory_dir / "consolidation.json"):
+        for legacy in legacy_files:
+            if legacy.is_symlink() or not legacy.is_file():
+                continue
+            target = target_dir / legacy.name
+            # The target's own lock as well: this profile's writers take only that one.
+            with state_file_lock(target):
+                if target.exists():
+                    continue
+                try:
+                    os.replace(legacy, target)
+                except FileNotFoundError:
+                    # Claimed by a writer outside this lock; nothing left to move.
+                    continue
+            moved.append(legacy.name)
+    return moved
 
 
 def empty_dreaming_state() -> dict[str, object]:
@@ -87,13 +227,13 @@ def empty_dreaming_state() -> dict[str, object]:
     }
 
 
-def read_dreaming_state(omh_home: str | Path) -> dict[str, object]:
-    """Persisted counters, or a fresh state when absent or unusable.
+def read_dreaming_state(omh_home: str | Path, hermes_home: str | Path) -> dict[str, object]:
+    """This profile's persisted counters, or a fresh state when absent or unusable.
 
     Never raises. A corrupt counter file must cost at most one missed
     consolidation, not the turn that read it.
     """
-    path = dreaming_state_path(omh_home)
+    path = dreaming_state_path(omh_home, hermes_home)
     try:
         if path.is_symlink() or not path.is_file():
             return empty_dreaming_state()
@@ -111,15 +251,16 @@ def read_dreaming_state(omh_home: str | Path) -> dict[str, object]:
     return state
 
 
-def write_dreaming_state(omh_home: str | Path, state: dict[str, Any]) -> Path:
-    """Replace the counters whole, under the state lock. Raises ``OSError``."""
-    path = dreaming_state_path(omh_home)
+def write_dreaming_state(omh_home: str | Path, hermes_home: str | Path, state: dict[str, Any]) -> Path:
+    """Replace this profile's counters whole, under the state lock. Raises ``OSError``."""
+    path = dreaming_state_path(omh_home, hermes_home)
     write_text_locked(path, json.dumps(state, ensure_ascii=False, sort_keys=True))
     return path
 
 
 def update_dreaming_state(
     omh_home: str | Path,
+    hermes_home: str | Path,
     mutate: Callable[[dict[str, Any]], dict[str, Any]],
 ) -> dict[str, Any]:
     """Read, mutate and replace the counters as one step; returns what was written.
@@ -130,10 +271,10 @@ def update_dreaming_state(
     write. A ``mutate`` that raises leaves the previous file untouched.
     Raises ``OSError`` (a lock timeout is one).
     """
-    path = dreaming_state_path(omh_home)
+    path = dreaming_state_path(omh_home, hermes_home)
     path.parent.mkdir(parents=True, exist_ok=True)
     with state_file_lock(path):
-        updated = mutate(read_dreaming_state(omh_home))
+        updated = mutate(read_dreaming_state(omh_home, hermes_home))
         write_text_atomic(path, json.dumps(updated, ensure_ascii=False, sort_keys=True))
     return updated
 
@@ -460,12 +601,17 @@ def build_consolidation_handoff(
     }
 
 
-def consolidation_path(omh_home: str | Path) -> Path:
-    return Path(omh_home).expanduser() / "memory" / "consolidation.json"
+def consolidation_path(omh_home: str | Path, hermes_home: str | Path) -> Path:
+    return profile_dreaming_dir(omh_home, hermes_home) / "consolidation.json"
 
 
-def read_latest_consolidation(omh_home: str | Path) -> dict[str, Any] | None:
-    """The newest brief on disk, or None when there is none to read.
+def read_latest_consolidation(
+    omh_home: str | Path,
+    hermes_home: str | Path,
+    *,
+    mode: str | None = None,
+) -> dict[str, Any] | None:
+    """This profile's newest brief on disk, or None when there is none to read.
 
     Never raises, and never returns fields a consumer has to type-check. The
     first version validated only that the file was a dict with the right
@@ -474,8 +620,15 @@ def read_latest_consolidation(omh_home: str | Path) -> dict[str, Any] | None:
     consumer, which for the chat notice meant one malformed local file took
     down every reply on every messenger. Fields are normalized here, once,
     for every consumer.
+
+    A profile whose mode is `off` has no brief to read, including one written
+    before it chose `off`: the pack, the chat notice, the tool and doctor all
+    read through here, so none of them serves or reports it. ``mode`` is the
+    mode a caller already read in this render or evaluation; None reads it.
     """
-    path = consolidation_path(omh_home)
+    if (configured_dreaming_mode(hermes_home) if mode is None else mode) == "off":
+        return None
+    path = consolidation_path(omh_home, hermes_home)
     try:
         if path.is_symlink() or not path.is_file():
             return None

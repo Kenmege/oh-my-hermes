@@ -41,6 +41,141 @@ All notable changes will be documented here.
   a sender prefix now start the cycle, as the same request without the prefix
   does.
 
+- **A profile is served only its own consolidation brief, and
+  `plugins.entries.omh.settings.dreaming_mode` turns the brief off for that
+  profile (#2087).** Profiles that bind one OMH store, such as every profile of
+  a gateway running `gateway.multiplex_profiles: true` against `~/.omh`, shared
+  one `memory/dreaming.json` and one `memory/consolidation.json`. A nearly full
+  `MEMORY.md` in one profile raised a brief that every other profile was then
+  served on every turn, and all profiles' turns moved one interval counter. The
+  counters and the brief now live under
+  `memory/profiles/<sha256 of the Hermes home>/` (the slot the group-activity
+  status already keys by). The pack, the chat notice, `omh_memory`, `omh memory
+  dream` and `omh doctor` read the brief of the Hermes home they are bound to.
+  Measured with two profiles on one store, profile A over its headroom floor,
+  20 interleaved turns each. Before, B's pack carried a brief on 20 of 20
+  turns, 14 of them with A's `headroom_below_floor` reason. The shared interval
+  fired 6 times for B and once for A, and A raised a brief led by its headroom
+  reason 6 times, because each brief B raised replaced the `last_reasons` that
+  suppression compares against. After, B's pack carries A's reason on 0 turns,
+  each profile's interval fires 4 times in its own 20 turns, and A's
+  headroom-led brief is raised once. `dreaming_mode: off` in
+  a profile's own `config.yaml` stops that profile's brief from being raised,
+  served or reported, including one written before; bare `off` and `false`
+  both mean `off`. Unset keeps `reminder`, the default. Any other value, or a
+  config OMH cannot read, also keeps `reminder` but is reported as
+  `mode_setting_unrecognized`, in `omh memory dream`'s `mode_setting` and as
+  `omh doctor` advice. On the first attended session start after the upgrade, a
+  single-profile host moves its old home-wide files into its profile directory
+  and keeps a pending brief. Two cases leave them unread: the profile already
+  has its own files (`omh memory dream --evaluate` raised a brief first), or
+  the profile is routed, which every profile of a multiplexed process is, even
+  a single profile under `gateway.multiplex_profiles: true`. `omh memory
+  retire --apply` retires an expiring-only brief in every profile's directory. Thanks
+  to @kanzaka110 for the report and @sanjkrsna for pointing at the
+  per-profile key.
+
+- **`omh install --force` reads Hermes' curator ledger once, and names the
+  ledger it could not read when it reports what a removal lost.** Under
+  `--force` the install read and parsed the whole ledger again for a replaced
+  Hermes edit, again for a skill it cleared, and again for every retired
+  directory it removed, beside a comment saying it read the ledger once. The
+  read it already made now also keeps every write the ledger records when a
+  local change may be overwritten, and each of those reports takes that list.
+  On a synthetic 190.8 MB ledger (16,000 rows in the shape Hermes wrote before
+  0.21.4, 20 files each, 30% of them under the OMH pack), a `--force` install
+  that replaced two skills and removed three retired directories went from 6
+  ledger reads in 8.1 s to 1 read in 2.9 s with the same result; a `--force`
+  with nothing to lose went from 2.9 s to 2.7 s, and a plain install from
+  2.3 s to 2.0 s. With no row under the pack, that `--force` with nothing to
+  lose is slower, 0.19 s to 0.54 s, because it now parses every row where it
+  used to skip them all, while the one that replaced and removed went from
+  5.4 s to 0.54 s. When a ledger could not be read, each replaced edit or
+  `--force` removal that lists what Hermes still holds a copy of carries
+  `ledger_copy_partial: true`, and one summary line after those lists names
+  what could not be read and says they count only what could be; a `--force`
+  removal OMH could not judge for that reason now names it too, and a
+  `--dry-run` result carries `unreadable_ledgers`. A ledger with more than one
+  torn line is named once, with a count, instead of once per line. The ledger
+  reader no longer drops every write when given a generator of directories,
+  resolves those directories once per read instead of once per write, and
+  builds a row's `after` list once instead of once per file the row listed
+  before; `omh doctor` judges Hermes edits once instead of twice.
+
+- **A checked team no longer checks a part while its helper's work sits
+  unmerged in the worktree Hermes gave it, and the board fan-in asks Hermes
+  only for transitions it lands.** With Hermes' `delegation.worktree_isolation`
+  on, an `omh_team` helper edits a worktree of its own, and its work reaches
+  the session's workspace only when the session merges it. `team_reconcile`
+  still ran each part's check in that workspace, so a check could pass on a
+  tree without the part's work and accept it. It now reads each returned
+  helper's branch (`hermes-subagent/subagent-<id>`, from the subagent id
+  Hermes' `subagent_start` carries) and its worktree (`.worktrees/subagent-<id>`,
+  found by path even when the helper left the branch for a detached HEAD or a
+  branch of its own) with read-only git. While the branch's last commit or the
+  worktree's HEAD is missing from the workspace's history, or the worktree
+  holds uncommitted changes or untracked files, it checks nothing and is
+  refused as `helper_branch_unmerged`, naming each branch in `unmerged`. OMH
+  never merges. A branch git cannot read makes that part's check
+  inconclusive, so the team still reaches a stop. Work held by neither the
+  branch nor the worktree (a branch renamed or deleted after its worktree was
+  removed) is not looked for, and a host that names them differently leaves
+  the guard off.
+  The helper's own instructions no longer say the workspace is shared: they
+  say the check runs in the parent session's workspace, and that a helper in a
+  worktree of its own commits on its branch. In `ultraqa`'s board fan-in
+  reference the main session no longer prepares `request_review` on a `done`
+  fixer row or `request_changes` on a row no review run holds, both of which
+  Hermes refuses: the fixer's own run ends with `kanban_request_review`, and a
+  failed re-check this session ran is a `comment` on the row, with sending it
+  back left to the operator's `hermes kanban reopen-review`.
+
+- **`omh_gather_evidence` bounds the paths a probe's arguments name.** The
+  allowlist matched a command prefix and left the rest free, so
+  `python3 -m compileall /any/path` compiled files anywhere and printed their
+  paths and the source line of any syntax error (#2137, reported by
+  @simongonzalezdc). A compileall argument, the value of an omh option that
+  opens a path, and a `git diff` path argument must now be relative, free of
+  `..`, and resolve inside `workdir` after symlinks; a path refusal names the
+  rule, never the path or where a symlink leads. compileall also needs at
+  least one such path, because with none it compiles every directory on
+  `sys.path`; it refuses `-i` (paths read from a file or stdin), `-b`
+  (bytecode written beside the sources, past the private pycache) and
+  `-d`/`-s`/`-p`; and it runs with `-e .`, so a symlink below a compiled
+  directory that leads out is skipped, and with `PYTHONSAFEPATH`, so a
+  `compileall.py` in `workdir` no longer runs in place of the stdlib module
+  (Python 3.11 and later; an older `python3` ignores it).
+  `git diff` refuses `-O` (an order file read from anywhere), and its path
+  bound stops the switch to `--no-index` that two paths with one outside the
+  repository caused, which printed both files; a `:/` pathspec or
+  `<rev>:<path>` still reaches the whole repository, as a bare `git diff`
+  already does. `omh doctor` refuses `--profile-isolation`, and
+  `omh release evidence-bundle` refuses `--write` and a `--verify` PATH.
+  Evidence probes and `omh_team` checks now run with no stdin.
+
+- **The plugin's route hint reaches the router in Hermes chat, so your own
+  trigger packs hint there too.** Hermes imports the plugin bundle as
+  `hermes_plugins.omh`, one package deep, and there the bundle's
+  `from ...routing` imports climb past the top-level package and raise
+  ImportError even when Hermes can import `omh`. Four of them had no absolute
+  fallback, so in every Hermes chat the bridge to the router for user trigger
+  packs (#1539) returned nothing: a phrase from
+  `<omh-home>/routing/trigger-packs/` got `no_hint` from the plugin while
+  `omh chat route-hint` hinted it. Coding-delivery hints also asked the user to
+  choose the executor instead of carrying the router's owner decision, and the
+  visual-QA and office-material cue tables were the bundle's copies. Each import
+  now falls back to its absolute `omh.` form, and the bridge still resolves on
+  each call. Over both routing corpora (1,535 messages, measured against
+  42ad99ec7), the plugin's hint with `omh` importable differed from the package
+  layout's on 118 messages before, each in the coding-owner decision, and on
+  none after. Where Hermes cannot import `omh`, the usual install, nothing
+  changes; `docs/INSTALLATION.md` now lists the trigger-pack hint and the coding
+  owner among what that turns off. A test loads the bundle under Hermes' own
+  package name, and a gate requires every bundle import that climbs above the
+  bundle root to be paired with its absolute form and, at module scope, to bind
+  the router's object there. Reported with a reproduction by @fauzibrevy-hub
+  (#2129).
+
 - **`omh coding status-board` shows Hermes' delegate children and kanban
   workers beside the fanout units.** The board listed only fanout units, so the
   command could not show the work `omh_hud` already showed. It now reads the

@@ -144,12 +144,25 @@ except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
             for phrase in phrases
         )
 
+# Hermes imports the bundle one package deep (`hermes_plugins.omh`), where every
+# `from ...` in this file climbs past the top-level package and raises
+# ImportError even with `omh` installed. So each one is paired with the absolute
+# `omh.` import in the same scope (#2129). `test_plugin_bundle_standalone` gates
+# the pairing and, at module scope, that the absolute form wins in that layout.
+try:  # File-loaded plugin bundles should still use the router's cue tables when OMH is installed.
+    from omh.routing.visual_qa_cues import (
+        BROWSER_VISUAL_QA_PHRASES as _BROWSER_VISUAL_QA_HINT_PHRASES,
+        CUSTOMER_SYMPTOM_REPORT_PHRASES as _CUSTOMER_SYMPTOM_REPORT_HINT_PHRASES,
+        contains_cue_phrase as _contains_route_cue_phrase,
+    )
+except ImportError:  # pragma: no cover - standalone plugin hosts keep the fallback above.
+    pass
+
 try:
     from ...routing.coding_route_actions import (
         CODING_ROUTE_LANE_NEXT_ACTION as _CODING_ROUTE_LANE_NEXT_ACTION,
         coding_route_decision_payload as _coding_route_decision_payload,
         resolve_coding_route_decision as _resolve_coding_route_decision,
-        user_choice_coding_route_decision as _user_choice_coding_route_decision,
     )
 except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
     # Standalone hosts keep the lane action but degrade to the retained user-choice
@@ -157,7 +170,15 @@ except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
     _CODING_ROUTE_LANE_NEXT_ACTION = "prepare_one_cycle_delivery"
     _coding_route_decision_payload = None
     _resolve_coding_route_decision = None
-    _user_choice_coding_route_decision = None
+
+try:  # File-loaded plugin bundles should still resolve the coding owner when OMH is installed.
+    from omh.routing.coding_route_actions import (
+        CODING_ROUTE_LANE_NEXT_ACTION as _CODING_ROUTE_LANE_NEXT_ACTION,
+        coding_route_decision_payload as _coding_route_decision_payload,
+        resolve_coding_route_decision as _resolve_coding_route_decision,
+    )
+except ImportError:  # pragma: no cover - standalone plugin hosts keep the fallback above.
+    pass
 
 try:
     from ...routing.materials_cues import OFFICE_FILE_MATERIAL_PHRASES as _OFFICE_FILE_MATERIAL_PHRASES
@@ -194,6 +215,11 @@ except ImportError:
         "pdf 표를 csv",
         "pdf 표 추출",
     )
+
+try:  # File-loaded plugin bundles should still use the router's material cues when OMH is installed.
+    from omh.routing.materials_cues import OFFICE_FILE_MATERIAL_PHRASES as _OFFICE_FILE_MATERIAL_PHRASES
+except ImportError:  # pragma: no cover - standalone plugin hosts keep the fallback above.
+    pass
 
 try:  # Keep installed plugin bundles usable even when the full package is absent.
     from ...routing.intent import META_OR_FEEDBACK_INTENTS
@@ -8214,11 +8240,21 @@ def _user_trigger_pack_route_decision(message: str) -> dict[str, str]:
     of it binds `None` in any process that imports the CLI first -- an
     import-order bug that fails silently, because the fallback for a standalone
     host and the fallback for a half-built module look identical from here.
+
+    The relative form reaches the router only in the package layout
+    (`omh.plugin_bundle.omh`). Hermes imports the bundle as `hermes_plugins.omh`,
+    one package deep, where `from ...` climbs past the top-level package and
+    raises ImportError with `omh` installed or not; the absolute form is the
+    one that reaches the router there. With only the relative form, the bridge
+    was empty in every Hermes chat (#2129).
     """
     try:
         from ...routing.chat import user_trigger_pack_route_hint
-    except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
-        return {}
+    except ImportError:
+        try:
+            from omh.routing.chat import user_trigger_pack_route_hint
+        except ImportError:  # pragma: no cover - exercised by standalone plugin hosts.
+            return {}
     return user_trigger_pack_route_hint(message)
 
 

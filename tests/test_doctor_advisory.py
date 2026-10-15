@@ -52,6 +52,7 @@ ADVISORY_CHECK_IDS = {
     "workflow_engine_reach",
     "turn_budget_loop_exposure",
     "loop_hard_stop_disabled",
+    "mode_setting_unrecognized",
 }
 
 ALL_AUTO_AUXILIARY = """version: 1
@@ -448,6 +449,9 @@ class MembershipGuardrailTests(unittest.TestCase):
                 # detector that only warns.
                 "turn_budget_loop_exposure": "advice",
                 "loop_hard_stop_disabled": "advice",
+                # The fixture config sets no `dreaming_mode`: unset reads as
+                # the default, which nobody needs telling about.
+                "mode_setting_unrecognized": "ok",
             },
         )
 

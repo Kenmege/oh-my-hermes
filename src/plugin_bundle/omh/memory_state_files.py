@@ -1,8 +1,9 @@
 """Locked, atomic writes for the memory provider's own state files.
 
-The provider keeps counters (``dreaming.json``), the latest brief
-(``consolidation.json``), the served receipt and two bounded journals under
-``<omh_home>/memory``. A CLI session and a gateway session can run against the
+The provider keeps counters (``dreaming.json``) and the latest brief
+(``consolidation.json``) per Hermes profile under
+``<omh_home>/memory/profiles/<slot>``, and the served receipt and two bounded
+journals under ``<omh_home>/memory``. A CLI session and a gateway session can run against the
 same home at once, so a read-modify-write that is not serialized loses the
 other writer's update, and a plain ``write_text`` that dies half-way leaves a
 file no reader accepts. This module is the open-reminders ledger's pattern

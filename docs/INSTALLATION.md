@@ -54,7 +54,10 @@ from the old store first.
 Two trusted profiles may explicitly name the same directory. That shares OMH
 records and home-wide ledgers; it does not make them separate stores. Existing
 memory principal/admission checks still apply within shared stores. Different
-directories are not an OS sandbox.
+directories are not an OS sandbox. The dreaming counters and the consolidation
+brief stay per profile even in a shared store, and each profile can turn its
+brief off with `plugins.entries.omh.settings.dreaming_mode`
+([Per-profile dreaming state](MEMORY.md#per-profile-dreaming-state-and-the-mode-setting)).
 
 The copied plugin and package use the same uncached root resolver, in this order:
 
@@ -597,7 +600,10 @@ is carried into the new install (when the install's skill profile includes
 it) and named in the summary, and it receives no OMH update until a run with
 `--force` clears that directory and renders it again; the summary then says
 whether Hermes' ledger still holds a copy of the replaced files, and names any
-file it removed that OMH does not render and the ledger holds no copy of. A
+file it removed that OMH does not render and the ledger holds no copy of.
+When a ledger could not be read, those lists count only the ledgers that
+could be read: the entry carries `ledger_copy_partial: true`, and one line
+after the summary's loss lists names what could not be read. A
 change the ledger does not account for, including a hand edit to `SKILL.md`
 beside a ledgered change to another file, still stops the update until you
 resolve it or pass `--force`. A managed skill whose `SKILL.md` is gone is
@@ -636,17 +642,21 @@ change that is not a kept Hermes edit, and the directory stays in the previous
 generation. `--force` removes it, except under `OMH_SECURITY=strict`, where
 `--force` overrides no local change, and lists it under `force_pruned_skills`,
 with the files Hermes' ledger still holds a copy of and the files that are
-gone for good. A Hermes curator ledger that exists but cannot be read (for
-example a permission error, or bytes that are not UTF-8), that holds a line
-naming a path in the skills directory that is not a ledger row, or whose last
-line has no line end (an append may be in progress), may record such a write,
-and so may a bot profile's ledger when `<hermes_home>/profiles` cannot be
-listed or an entry in it cannot be read. So a marked directory with nothing
-else against it is listed as `ledger_unreadable` and left in place, with
-what could not be read and its error named in the summary (and under
-`unreadable_ledgers` in the `--json` result); a ledger that does not exist records nothing. `--force`
-removes it on the same terms, and says the ledger could not be read instead of
-what it holds. A manifest
+gone for good; when a ledger could not be read, that entry carries
+`ledger_copy_partial: true` and the summary says the lists count only what
+could be read, naming what could not. A Hermes curator ledger that exists but
+cannot be read (for example a permission error, or bytes that are not UTF-8),
+that holds a line naming a path in the skills directory that is not a ledger
+row, or whose last line has no line end (an append may be in progress), may
+record such a write, and so may a bot profile's ledger when
+`<hermes_home>/profiles` cannot be listed or an entry in it cannot be read. So
+a marked directory with nothing else against it is listed as
+`ledger_unreadable` and left in place, with what could not be read and its
+error named in the summary (and under `unreadable_ledgers` in the `--json`
+result, each ledger once: more than one torn line is named by a count and the
+first line number, a single one by its line number); a ledger that does not
+exist records nothing. `--force` removes it on the same terms, and names what
+could not be read instead of what the ledger holds. A manifest
 written before marks existed is handled once more by the earlier rule, which
 does not know what OMH rendered or look for Hermes writes: an unchanged record
 at the top level or in a category directory, inside the skills directory, is
@@ -818,15 +828,22 @@ the Hermes interpreter therefore cannot import `omh` at all.
 
 That is a supported state, not a broken one. Every module of the bundle imports
 without the package: the imports that need it are guarded, and the features it
-carries report their own absence instead of failing. Two features live in the
-package rather than the bundle, so they are the ones that absence turns off:
+carries report their own absence instead of failing. These features live in
+the package rather than the bundle, so absence turns them off:
 
 | Feature | Behavior when Hermes cannot import `omh` |
 | --- | --- |
 | Agent board (`omh_agent_board`) | Answers `unavailable` with reason `omh_agent_board_core_unavailable`, and leaves native `kanban_*` calls alone. See [Agent board and native Kanban coordination](AGENT-BOARD.md). |
 | Local activity observer engine | `register` reports `observer_setup_failed`; the rest of the plugin still loads. See [Session activity receipts](SESSION-ACTIVITY-RECEIPTS.md). |
+| Route hint for your own trigger packs | A phrase that only a pack under `<omh-home>/routing/trigger-packs/` recognises gets no route hint in chat; `omh chat route-hint` still hints it. |
+| Coding owner on coding-delivery route hints | The hint asks the user to choose the executor instead of carrying the router's coding-owner decision. |
 
-To turn those two on, install `oh-my-hermes` into the environment that runs
+The route hint itself still works without the package. It uses the bundle's own
+copies of the router's cue tables, guards and classifiers, so for some messages
+it disagrees with `omh chat route-hint`: it hints a different workflow, hints
+none where `omh chat route-hint` hints one, or hints one where it hints none.
+
+To turn these on, install `oh-my-hermes` into the environment that runs
 Hermes as well, so `omh` is importable from both. Nothing else changes: the
 bundle, the configuration, and every doctor check stay the same.
 
