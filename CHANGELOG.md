@@ -30,6 +30,80 @@ All notable changes will be documented here.
   --wait`'s documented codes and bounds, and the deadline `ulw-maestro` names,
   are now pinned by parity tests against the command's constants.
 
+- **A checked team no longer checks a part while its helper's work sits
+  unmerged in the worktree Hermes gave it, and the board fan-in asks Hermes
+  only for transitions it lands.** With Hermes' `delegation.worktree_isolation`
+  on, an `omh_team` helper edits a worktree of its own, and its work reaches
+  the session's workspace only when the session merges it. `team_reconcile`
+  still ran each part's check in that workspace, so a check could pass on a
+  tree without the part's work and accept it. It now reads each returned
+  helper's branch (`hermes-subagent/subagent-<id>`, from the subagent id
+  Hermes' `subagent_start` carries) and its worktree (`.worktrees/subagent-<id>`,
+  found by path even when the helper left the branch for a detached HEAD or a
+  branch of its own) with read-only git. While the branch's last commit or the
+  worktree's HEAD is missing from the workspace's history, or the worktree
+  holds uncommitted changes or untracked files, it checks nothing and is
+  refused as `helper_branch_unmerged`, naming each branch in `unmerged`. OMH
+  never merges. A branch git cannot read makes that part's check
+  inconclusive, so the team still reaches a stop. Work held by neither the
+  branch nor the worktree (a branch renamed or deleted after its worktree was
+  removed) is not looked for, and a host that names them differently leaves
+  the guard off.
+  The helper's own instructions no longer say the workspace is shared: they
+  say the check runs in the parent session's workspace, and that a helper in a
+  worktree of its own commits on its branch. In `ultraqa`'s board fan-in
+  reference the main session no longer prepares `request_review` on a `done`
+  fixer row or `request_changes` on a row no review run holds, both of which
+  Hermes refuses: the fixer's own run ends with `kanban_request_review`, and a
+  failed re-check this session ran is a `comment` on the row, with sending it
+  back left to the operator's `hermes kanban reopen-review`.
+
+- **`omh_gather_evidence` bounds the paths a probe's arguments name.** The
+  allowlist matched a command prefix and left the rest free, so
+  `python3 -m compileall /any/path` compiled files anywhere and printed their
+  paths and the source line of any syntax error (#2137, reported by
+  @simongonzalezdc). A compileall argument, the value of an omh option that
+  opens a path, and a `git diff` path argument must now be relative, free of
+  `..`, and resolve inside `workdir` after symlinks; a path refusal names the
+  rule, never the path or where a symlink leads. compileall also needs at
+  least one such path, because with none it compiles every directory on
+  `sys.path`; it refuses `-i` (paths read from a file or stdin), `-b`
+  (bytecode written beside the sources, past the private pycache) and
+  `-d`/`-s`/`-p`; and it runs with `-e .`, so a symlink below a compiled
+  directory that leads out is skipped, and with `PYTHONSAFEPATH`, so a
+  `compileall.py` in `workdir` no longer runs in place of the stdlib module
+  (Python 3.11 and later; an older `python3` ignores it).
+  `git diff` refuses `-O` (an order file read from anywhere), and its path
+  bound stops the switch to `--no-index` that two paths with one outside the
+  repository caused, which printed both files; a `:/` pathspec or
+  `<rev>:<path>` still reaches the whole repository, as a bare `git diff`
+  already does. `omh doctor` refuses `--profile-isolation`, and
+  `omh release evidence-bundle` refuses `--write` and a `--verify` PATH.
+  Evidence probes and `omh_team` checks now run with no stdin.
+
+- **The plugin's route hint reaches the router in Hermes chat, so your own
+  trigger packs hint there too.** Hermes imports the plugin bundle as
+  `hermes_plugins.omh`, one package deep, and there the bundle's
+  `from ...routing` imports climb past the top-level package and raise
+  ImportError even when Hermes can import `omh`. Four of them had no absolute
+  fallback, so in every Hermes chat the bridge to the router for user trigger
+  packs (#1539) returned nothing: a phrase from
+  `<omh-home>/routing/trigger-packs/` got `no_hint` from the plugin while
+  `omh chat route-hint` hinted it. Coding-delivery hints also asked the user to
+  choose the executor instead of carrying the router's owner decision, and the
+  visual-QA and office-material cue tables were the bundle's copies. Each import
+  now falls back to its absolute `omh.` form, and the bridge still resolves on
+  each call. Over both routing corpora (1,535 messages, measured against
+  42ad99ec7), the plugin's hint with `omh` importable differed from the package
+  layout's on 118 messages before, each in the coding-owner decision, and on
+  none after. Where Hermes cannot import `omh`, the usual install, nothing
+  changes; `docs/INSTALLATION.md` now lists the trigger-pack hint and the coding
+  owner among what that turns off. A test loads the bundle under Hermes' own
+  package name, and a gate requires every bundle import that climbs above the
+  bundle root to be paired with its absolute form and, at module scope, to bind
+  the router's object there. Reported with a reproduction by @fauzibrevy-hub
+  (#2129).
+
 - **`omh coding status-board` shows Hermes' delegate children and kanban
   workers beside the fanout units.** The board listed only fanout units, so the
   command could not show the work `omh_hud` already showed. It now reads the

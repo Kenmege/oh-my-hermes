@@ -5416,15 +5416,17 @@ Exactly one fixer row, prepared after every probe receipt is observed:
 | `skills` | `["ulw-work"]` |
 | `parents` | every probe row's observed task id |
 | `workspace_kind` | `worktree` |
-| `body` | the findings to fix, each quoted from the probe `result` it came from |
+| `body` | the findings to fix, each quoted from the probe `result` it came from; its `STOP WHEN` ends the run with `kanban_request_review` |
 
 Because `parents` lists every probe, the host promotes the fixer only after every probe is `done` or `archived`. A probe whose run reads back `timed_out` is neither: the budget ended the worker, not the row, so that probe is completed with a blocker summary or archived before the fixer can promote. One fixer, not one per probe: findings from separate probes often share a cause, and N fixers would race in N worktrees over the same files. The fixer's `body` is written from read-back probe results, so it cannot be prepared before the last probe reports.
 
 ## Re-Verification Through the Review Lane
 
-When the fixer row is `done`, the main session prepares `request_review` on it with a `summary` naming the probes the fix claims to address. Re-verification is the probes run again against the fixer's worktree: by a review-claimed run on the host's own review dispatcher where one exists, or by this session where the worktree is reachable. On a failed re-check the main session prepares `request_changes` on the fixer row with the failing probe's evidence as `reason`; the row returns to the fixer and the cycle repeats.
+The fixer asks for its own review: its run ends with `kanban_request_review` instead of `kanban_complete`, with a `summary` naming the probes the fix claims to address. Hermes moves a row to `review` only from `running` or `ready`, so the request has to come from the fixer's own run while its row is `running`. The main session never prepares `request_review` on a fixer row: once the row reads back `done`, Hermes refuses the move. A fixer that completed instead skipped the review lane; re-verify it in this session where its worktree is reachable, or report it as not re-verified.
 
-A row in `review` is a request (the observed fact is `review_requested`), and a review claim is not merge evidence. A headless host with review dispatch disabled cannot land a positive `request_changes`; the host denies the native call, the denial is recorded as a native boundary, and the re-check is done in this session or reported as not done.
+Re-verification is the probes run again against the fixer's worktree. Unless the operator set `kanban.review_dispatch` off, the host's dispatcher claims the `review` row for a review run, and that run either requests changes, which returns the row to the fixer and repeats the cycle, or completes it. Hermes takes `request_changes` only from inside that review run, so the main session never prepares it. Where no review run claims the row, this session runs the probes again where the worktree is reachable. A failed re-check is then a prepared `comment` on the fixer row carrying the failing probe's evidence, and the closing brief reports the fix as failing its re-check; sending the row back to the fixer is the operator's `hermes kanban reopen-review`, not a step of the QA pass.
+
+A row in `review` is a request (the observed fact is `review_requested`), and a review claim is not merge evidence.
 
 ## Findings Come Back Through Readback Only
 
@@ -5454,10 +5456,10 @@ prepare  coordination=durable operation=create
 prepare  coordination=durable operation=create
   title="Fixer: installer upgrade path"          assignee=<profile> skills=["ulw-work"]
   parents=[<probe 1 id>, <probe 2 id>, <probe 3 id>] workspace_kind=worktree
-  body=<findings quoted from the three probe results>
+  body=<findings quoted from the three probe results; STOP WHEN ends with kanban_request_review>
 ```
 
-The fixer's `parents` are the observed task ids from the three probe receipts, so the probes are prepared, invoked, and read back before the fixer is prepared. Four `omh_todo` items exist after the fourth receipt, one per row. `request_review` on the fixer is prepared only after its row reads back `done`.
+The fixer's `parents` are the observed task ids from the three probe receipts, so the probes are prepared, invoked, and read back before the fixer is prepared. Four `omh_todo` items exist after the fourth receipt, one per row. The fixer's own run requests the review, so once the fix is in its row reads back `review`, not `done`; the main session prepares no transition on it.
 """
 
 
@@ -5603,16 +5605,16 @@ Load this reference when an accepted `ultrawork` plan splits into in-session `de
 
 1. `team_start` with `team_id`, `plan_ref`, and one unit per lane (`unit_id`, `title`, `depends_on`, `verification_command`). `max_repair_attempts` defaults to 2 and is capped at 3.
 2. Dispatch the returned `delegate_task` entries unchanged in one call. Each `goal` starts with the attempt key OMH reserved; you may add to `context`, never edit `goal`.
-3. When the helpers return, call `team_reconcile`. While any team helper is still out it checks nothing and says so (`delegations_in_flight`). It runs at most two checks per call; `checks_pending` means call it again.
+3. When the helpers return, call `team_reconcile`. While any team helper is still out it checks nothing and says so (`delegations_in_flight`). While a returned helper's work is on a branch this workspace has not merged, it is refused as `helper_branch_unmerged`, checks nothing, and names each such branch in `unmerged`. It runs at most two checks per call; `checks_pending` means call it again.
 4. Relay the result's `say` line. Dispatch any new entries it returns: fix-ups for lanes whose check failed, and lanes whose parents have all passed.
-5. Repeat from 3 until `team_state` is `done` or `blocked`. Those are the only two stops.
+5. Repeat from 3 until `team_state` is `done` or `blocked`. The one other stop is a `helper_branch_unmerged` you cannot clear, because a branch does not merge or its work must not land: report that part as blocked with its branch named, and stop.
 
 `team_status` reports each lane's state, tries used against the maximum, its last check (`command`, `exit_code`, `observed_at`), and this conversation's cost including helpers.
 
 ## What Counts
 
 - A lane is accepted only on an exit code OMH observed. An accepted lane carries `evidence: {kind: team_check, ref: <team_id>/<unit_id>/attempt-<n>/check}`; cite that when closing the matching `omh_todo` item.
-- A check that could not run cleanly (timeout, command not found, killed by a signal, workspace missing or not a git checkout, files changed while it ran) spends no try; three in a row block the lane.
+- A check that could not run cleanly (timeout, command not found, killed by a signal, workspace missing or not a git checkout, files changed while it ran, git could not read the helper's branch) spends no try; three in a row block the lane.
 - After Hermes restarts, `team_reconcile` is refused until `team_start` is called again with the same parts and the person approves again; every earlier pass is then checked once more.
 - A failing check with tries left returns a fix-up entry carrying only `{command, exit_code}`; the helper reruns the command itself to see the output.
 - Out of tries, the lane is `blocked` with `repair_budget_exhausted` and its last check. Report that lane and stop; do not start a new team to route around it.
@@ -5620,7 +5622,7 @@ Load this reference when an accepted `ultrawork` plan splits into in-session `de
 ## Limits to State
 
 - Helpers share one workspace by default. A check is attributed to its lane, but another lane's edits are in the same tree; checks wait until every team helper is back to narrow this, not remove it.
-- With Hermes' `delegation.worktree_isolation` on, a helper works in a git worktree of its own and its edits land on its own branch, not in this workspace. A check run here then tests a tree without that lane's work, and a pass would accept a lane nobody checked. Once every helper is back, commit what each left uncommitted in its worktree, then merge each returned helper's branch into this workspace before `team_reconcile`; `references/native-delegation.md` says how to find the branches.
+- With Hermes' `delegation.worktree_isolation` on, a helper works in a git worktree of its own and its edits land on its own branch, not in this workspace. A check run here then tests a tree without that lane's work, and a pass would accept a lane nobody checked. Once every helper is back, commit what each left uncommitted in its worktree, then merge each returned helper's branch into this workspace before `team_reconcile`; `references/native-delegation.md` says how to find the branches. OMH never merges: until then `team_reconcile` is refused as `helper_branch_unmerged` with the branch named, `state: commits_not_merged` or `state: uncommitted_changes`. The helper's worktree (`.worktrees/subagent-<id>`) is found by its path even when the helper left its branch, and a helper counts as merged once the branch's last commit and the worktree's HEAD are both in this workspace's history, so after a squash or rebase merge remove the worktree and delete the branch; once both are gone nothing is looked for. Untracked files left in a merged helper's worktree also refuse: remove them, or the worktree.
 - A check runs code the helpers wrote, as the person's own user account with the real home folder.
 - Parallel helpers in one call share one model route; a lane that needs a different model is dispatched in its own call after `omh_delegate_route`.
 - Board lanes (`references/kanban-lane.md`) are not checked by `omh_team` yet; they still follow the prepare and readback recipe there.

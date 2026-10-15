@@ -1564,6 +1564,7 @@ print(json.dumps(observed, ensure_ascii=False))
                     "PATH",
                     "PYTHONNOUSERSITE",
                     "PYTHONPYCACHEPREFIX",
+                    "PYTHONSAFEPATH",
                     "TMPDIR",
                 },
             )

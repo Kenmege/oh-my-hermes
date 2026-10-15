@@ -246,6 +246,54 @@ class BoardFields(unittest.TestCase):
         )
 
 
+class BoardFanInReviewStep(unittest.TestCase):
+    """`ultraqa`'s board fan-in review step: the fixer's run requests review, the main session does not.
+
+    This pins the replacement sentences and the absence of the two retired
+    main-session transitions; it does not parse every transition the reference
+    could name.
+
+    Hermes moves a row to `review` only from `running` or `ready`
+    (`hermes_cli/kanban_db.py` `request_review`, v2026.9.7 and later), and
+    takes `request_changes` only inside a review run claimed from `review`. The
+    recipe used to have the main session prepare `request_review` on a `done`
+    fixer row, and `request_changes` on a row no review run held: both refused.
+    """
+
+    def setUp(self) -> None:
+        self.text = _reference("ultraqa", "references/board-fanin.md")
+
+    def test_the_fixer_requests_its_own_review_from_its_running_row(self) -> None:
+        for clause in (
+            "its `STOP WHEN` ends the run with `kanban_request_review`",
+            "The fixer asks for its own review: its run ends with `kanban_request_review` instead of "
+            "`kanban_complete`, with a `summary` naming the probes the fix claims to address.",
+            "Hermes moves a row to `review` only from `running` or `ready`, so the request has to come from the "
+            "fixer's own run while its row is `running`.",
+            "STOP WHEN ends with kanban_request_review",
+        ):
+            with self.subTest(clause=clause[:60]):
+                self.assertIn(clause, self.text)
+
+    def test_the_two_retired_main_session_transitions_are_gone(self) -> None:
+        for refused in (
+            "When the fixer row is `done`, the main session prepares `request_review`",
+            "`request_review` on the fixer is prepared only after its row reads back `done`",
+            "the main session prepares `request_changes`",
+        ):
+            with self.subTest(refused=refused[:60]):
+                self.assertNotIn(refused, self.text)
+        self.assertIn("The main session never prepares `request_review` on a fixer row", self.text)
+        self.assertIn("Hermes takes `request_changes` only from inside that review run, so the main session never "
+                      "prepares it.", self.text)
+
+    def test_a_failed_session_recheck_is_a_comment_and_the_operator_reopens(self) -> None:
+        self.assertIn("A failed re-check is then a prepared `comment` on the fixer row carrying the failing probe's "
+                      "evidence", self.text)
+        self.assertIn("sending the row back to the fixer is the operator's `hermes kanban reopen-review`, not a step "
+                      "of the QA pass.", self.text)
+
+
 class ContextFileLoading(unittest.TestCase):
     """Portable: a fact about how one more reader loads the file, not a Hermes-only tool."""
 
