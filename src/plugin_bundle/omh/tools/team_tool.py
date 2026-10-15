@@ -25,6 +25,8 @@ KANBAN_TASK_ENV = "HERMES_KANBAN_TASK"
 # Hermes marks a cron run with this; its approval can be an automatic `approve`.
 CRON_SESSION_ENV = "HERMES_CRON_SESSION"
 _OUTPUT_TAIL_CHARS = 4000
+# Each read-only git call `_helper_work` makes, the same bound as the working-tree fingerprint's.
+_GIT_READ_TIMEOUT_SECONDS = 15
 
 # Process memory, never disk (`omh.workflows.team.TeamContext`): the exact
 # command lists a person approved through the host gate since this Hermes
@@ -112,7 +114,7 @@ def omh_team_handler(args: Mapping[str, object], **kwargs: object) -> str:
             return _refused(action, "session_required", "A team needs a named chat session.")
         ctx = team.TeamContext(
             omh_home=omh_home, session_ref=durable, runner=_runner(team),
-            fingerprint=_fingerprint, now=_now, host_guard=_host_floor,
+            fingerprint=_fingerprint, now=_now, host_guard=_host_floor, helper_work=_helper_work,
             approved=_APPROVED_TEAMS, observed_checks=_OBSERVED_CHECKS,
         )
         if action == "team_start" and _cron_session():
@@ -202,6 +204,67 @@ def _fingerprint(workdir: Path) -> tuple[str, str | None]:
 
     observed = working_tree_content_fingerprint(workdir)
     return (str(observed.state.value), observed.fingerprint)
+
+
+def _helper_work(workdir: Path, branch: str) -> str:
+    """Where a helper's branch stands against this workspace: one of `team.HELPER_WORK_STATES`.
+
+    Read-only git, through the same minimal-environment runner as the checks:
+    the branch's last commit and the worktree it is checked out in, whether
+    that worktree holds uncommitted changes (the checks' own fingerprint), and
+    whether that commit is in the history of this workspace's HEAD.
+    """
+    ref = "refs/heads/" + branch
+    # Without isolation this first read is the only one, and it finds nothing.
+    code, listed = _git(workdir, ["git", "-c", "core.fsmonitor=false", "--no-optional-locks", "for-each-ref",
+                                  "--format=%(refname)%00%(objectname)", ref])
+    if code != 0:
+        return "unreadable"
+    row = next((fields for fields in (line.split("\0") for line in listed.splitlines()) if fields[0] == ref), None)
+    if row is None:
+        return "absent"
+    if len(row) != 2:
+        return "unreadable"
+    tip = row[1]
+    code, worktrees = _git(workdir, ["git", "-c", "core.fsmonitor=false", "--no-optional-locks", "worktree", "list",
+                                     "--porcelain"])
+    if code != 0:
+        return "unreadable"
+    worktree = _checked_out_at(worktrees, ref)
+    # The branch checked out in this workspace itself is this workspace's own
+    # state, which the check sees as it is.
+    if worktree and Path(worktree).is_dir() and not workdir.resolve().is_relative_to(Path(worktree).resolve()):
+        state, _ = _fingerprint(Path(worktree))
+        if state == "dirty":
+            return "uncommitted_changes"
+        if state != "clean":
+            return "unreadable"
+    code, _ = _git(workdir, ["git", "-c", "core.fsmonitor=false", "--no-optional-locks", "merge-base",
+                             "--is-ancestor", tip, "HEAD"])
+    if code == 0:
+        return "merged"
+    return "commits_not_merged" if code == 1 else "unreadable"
+
+
+def _checked_out_at(porcelain: str, ref: str) -> str:
+    """The path of the worktree `git worktree list --porcelain` shows with ``ref`` checked out, or ""."""
+    path = ""
+    for line in porcelain.splitlines():
+        if line.startswith("worktree "):
+            path = line[len("worktree "):]
+        elif line == "branch " + ref:
+            return path
+    return ""
+
+
+def _git(workdir: Path, argv: list[str]) -> tuple[int | None, str]:
+    """One bounded git read: its exit code (None when it never exited) and its output."""
+    try:
+        observed = _evidence_tool.run_verification_command(argv, workdir=workdir, timeout=_GIT_READ_TIMEOUT_SECONDS)
+    except OSError:
+        return None, ""
+    code = observed.get("exit_code")
+    return (code if observed.get("outcome") == "exited" and isinstance(code, int) else None), str(observed.get("output", ""))
 
 
 def _now() -> float:

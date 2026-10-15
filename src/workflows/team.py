@@ -42,20 +42,42 @@ Check outcomes
 --------------
 ``passed`` accepts the unit. ``failed`` (the command ran and exited non-zero)
 spends an attempt. ``inconclusive`` (timeout, command not found, killed by a
-signal, missing workspace, a workspace outside git, or the working tree
-changed while the check ran) spends nothing, and three of them on one attempt
-block the unit with that reason so the team still reaches a stop. ``refused``
-(the command policy or Hermes' own floor refuses it at run time) runs nothing
-and blocks the unit. One `team_reconcile` runs at most
-MAX_CHECKS_PER_RECONCILE checks, each leased just before it runs.
+signal, missing workspace, a workspace outside git, the working tree changed
+while the check ran, or a helper branch git could not read) spends nothing,
+and three of them on one attempt block the unit with that reason so the team
+still reaches a stop. ``refused`` (the command policy or Hermes' own floor
+refuses it at run time) runs nothing and blocks the unit. One `team_reconcile`
+runs at most MAX_CHECKS_PER_RECONCILE checks, each leased just before it runs.
+
+Helpers in worktrees of their own
+---------------------------------
+With Hermes' ``delegation.worktree_isolation`` on, in a git workspace with
+Hermes' terminal running locally, a helper edits a git worktree of its own, on
+branch ``hermes-subagent/subagent-<id>`` named after the subagent id
+`subagent_start` carries, and its work reaches this workspace only when the
+session merges that branch. OMH never merges. A check run before
+the merge tests a tree without the helper's work, so `team_reconcile` checks
+nothing while a returned helper's branch has commits this workspace's HEAD
+does not contain, or its worktree has uncommitted changes: it refuses with
+``helper_branch_unmerged`` and names each such branch. Merged means the
+branch's last commit is in HEAD's history; a branch that no longer exists
+(Hermes deletes one whose helper changed nothing, and the session deletes one
+it has merged) is not looked for.
 
 What this does not see
 ----------------------
-Helpers share one checkout. A check is attributed to the unit whose command it
-is, but a different unit's edits are in the same tree; the barrier (no check
-while any team delegation is in flight) narrows that, it does not remove it.
-A check executes code the helpers wrote, as the operator's OS user with the
-real HOME. Both are stated in `team_status` and in the approval prompt.
+Without worktree isolation, helpers share one checkout. A check is attributed
+to the unit whose command it is, but a different unit's edits are in the same
+tree; the barrier (no check while any team delegation is in flight) narrows
+that, it does not remove it. With isolation the merged branches put the same
+mix in the tree. A check executes code the helpers wrote, as the operator's OS
+user with the real HOME. Both are stated in `team_status` and in the approval
+prompt.
+The unmerged-branch guard keeps an honest session from checking too early; it
+is not a trust boundary. The subagent id it reads is in the record, so a record
+edited to drop it skips the guard, and the branch name is Hermes' naming: a
+host that names helper branches differently leaves the guard finding nothing,
+and checks run as they did before it.
 The approval is the host's: under ``--yolo``, ``approvals.mode: off`` or a
 cron ``approve`` mode Hermes answers it without asking anyone. The command
 policy and Hermes' own floor still apply there, and `team_start` refuses in a
@@ -127,8 +149,8 @@ TEAM_EVENTS: Final = ("started", "finished", "check_passed", "check_failed", "re
 MAX_TEAM_EVENTS: Final = 64
 TEAM_CAVEAT: Final = (
     "Helpers run under this same Hermes profile, and each check runs the code they wrote as your own "
-    "user account with your real home folder. Helpers share this one workspace, so a check can see "
-    "another part's edits."
+    "user account with your real home folder. Every check runs in this one workspace, which also holds "
+    "the other parts' edits, so a check can see another part's work."
 )
 # INVARIANT 3 (`tests/test_handoff_safety_contract_enforcement.py`) applied to
 # the one command-execution surface that does NOT go through the evidence
@@ -203,6 +225,15 @@ _MARKER: Final = re.compile(
     r"\A\[omh-team:([a-z0-9][a-z0-9-]{0,47})/([a-z0-9][a-z0-9_-]{0,47})/attempt-([1-9][0-9]?)\]"
 )
 _CONTROL: Final = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+# The subagent id Hermes hands `subagent_start` (`sa-<index>-<hex>` at v2026.9.7)
+# and the branch it names a helper's worktree after
+# (`tools/subagent_worktree.py:create_subagent_worktree`).
+_SUBAGENT_ID: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+HELPER_BRANCH_PREFIX: Final = "hermes-subagent/subagent-"
+# What `TeamContext.helper_work` reports for one helper branch, seen from this
+# workspace. Any other answer is read as `unreadable`.
+HELPER_WORK_STATES: Final = ("absent", "merged", "commits_not_merged", "uncommitted_changes", "unreadable")
+_HELPER_WORK_UNMERGED: Final = frozenset({"commits_not_merged", "uncommitted_changes"})
 _FINGERPRINT_UNAVAILABLE: Final = frozenset({"timed_out", "unavailable"})
 # Outside a git checkout the fingerprint cannot see a change, so a check there
 # is never conclusive: the team is for git workspaces.
@@ -210,12 +241,17 @@ _FINGERPRINT_UNTRACKED: Final = frozenset({"not_a_repository", "unsupported"})
 
 
 class TeamRefusal(ValueError):
-    """A closed refusal. ``reason`` is a code; ``say`` is one plain sentence."""
+    """A closed refusal. ``reason`` is a code; ``say`` is one plain sentence.
 
-    def __init__(self, reason: str, say: str) -> None:
+    ``unmerged`` names, for ``helper_branch_unmerged`` only, each helper branch
+    whose work is not in this workspace yet: ``unit_id``, ``branch``, ``state``.
+    """
+
+    def __init__(self, reason: str, say: str, *, unmerged: tuple[dict[str, str], ...] = ()) -> None:
         super().__init__(reason)
         self.reason = reason
         self.say = say
+        self.unmerged = unmerged
 
 
 @dataclass(frozen=True)
@@ -231,6 +267,8 @@ Runner = Callable[[list[str], Path, int], CheckRun]
 Fingerprint = Callable[[Path], tuple[str, str | None]]
 # The host's own command floor: None to allow, else a refusal reason code.
 HostGuard = Callable[[str], str | None]
+# Where one helper branch stands against this workspace: one of HELPER_WORK_STATES.
+HelperWork = Callable[[Path, str], str]
 
 
 @dataclass(frozen=True)
@@ -242,6 +280,8 @@ class TeamContext:
     the handler adds to it and nothing else does. ``observed_checks`` holds the
     nonce of every check this process ran. Neither is ever read from disk, so a
     record written by anyone else can neither run a command nor carry a pass.
+    ``helper_work`` reads, through git, whether a helper's branch is merged
+    into the workspace (`HELPER_WORK_STATES`).
     """
 
     omh_home: Path
@@ -250,6 +290,7 @@ class TeamContext:
     fingerprint: Fingerprint
     now: Callable[[], float]
     host_guard: HostGuard
+    helper_work: HelperWork
     approved: set[tuple[str, str, str]]
     observed_checks: set[str]
 
@@ -437,7 +478,8 @@ def _unit_shape_ok(unit: object, ids: list[object]) -> bool:
         if not isinstance(attempt, dict) or attempt.get("n") != number or not isinstance(attempt.get("inconclusive"), list):
             return False
         dispatch = attempt.get("dispatch")
-        if dispatch is not None and not (isinstance(dispatch, dict) and isinstance(dispatch.get("child_session_id"), str)):
+        if dispatch is not None and not (isinstance(dispatch, dict) and isinstance(dispatch.get("child_session_id"), str)
+                                         and isinstance(dispatch.get("subagent_id", ""), str)):
             return False
         check = attempt.get("check")
         if check is not None and not (isinstance(check, dict) and check.get("outcome") in ("passed", "failed")
@@ -560,11 +602,16 @@ def evidence_ref(team_id: str, unit_id: str, n: int) -> dict[str, str]:
 def _delegate_entry(team_id: str, unit: Mapping[str, Any], attempt: Mapping[str, Any]) -> dict[str, str]:
     key = attempt_key(team_id, str(unit["unit_id"]), int(attempt["n"]))
     command = str(unit["verification_command"])
+    # True whether or not Hermes isolates helpers: the check always runs in the
+    # session's workspace, and a helper in a worktree of its own learns that
+    # from the note Hermes appends to its goal, not from this text.
     lines = [
         f"Part of a checked team: {unit['plan_item']}",
-        f"When you stop, OMH runs this command in the shared workspace and the part counts as done "
-        f"only if it exits 0: {command}",
-        "Stay inside this part; other parts are being worked on in the same workspace.",
+        f"When you stop, OMH runs this command in this session's workspace and the part counts as done "
+        f"only if it exits 0 there: {command}",
+        "If Hermes gave you a git worktree of your own, your edits reach that workspace only when the "
+        "session merges your branch, so commit them on your branch before you stop.",
+        "Stay inside this part; other parts are being worked on at the same time.",
     ]
     failing = attempt.get("repairs_check")
     if isinstance(failing, Mapping):
@@ -953,7 +1000,11 @@ def team_reconcile(ctx: TeamContext, *, team_id: object, since_seq: object = 0) 
                            since_seq=since_seq)
         waiting = [str(unit["unit_id"]) for unit in record["units"] if unit_state(unit) == "awaiting_check"]
         before = {str(unit["unit_id"]): len(unit.get("attempts") or []) for unit in record["units"]}
+        helpers = _helper_branches(record, waiting)
         write_team(path, record)
+    # Phase A2, outside the lock (git may be slow): nothing is checked while a
+    # returned helper's work sits on a branch this workspace has not merged.
+    unreadable = _require_helper_work_merged(ctx, Path(str(record["workdir"])), helpers)
     # Phase B, one unit at a time: lease it just before its own check, run the
     # check outside the lock, apply the result only while the lease is ours.
     entries: list[dict[str, str]] = []
@@ -970,7 +1021,7 @@ def team_reconcile(ctx: TeamContext, *, team_id: object, since_seq: object = 0) 
             busy.append(unit_id)
             continue
         nonce, command, workdir = leased
-        result = _run_check(ctx, command, workdir)
+        result = _run_check(ctx, command, workdir, helper_unreadable=unit_id in unreadable)
         checked += 1
         with locked_team(ctx.omh_home, ctx.session_ref, tid):
             path, record = _load(ctx, tid)
@@ -1009,6 +1060,62 @@ def team_reconcile(ctx: TeamContext, *, team_id: object, since_seq: object = 0) 
                    since_seq=since_seq)
 
 
+def helper_branch(subagent_id: str) -> str:
+    """The branch Hermes' worktree isolation gives the helper with this subagent id."""
+    return HELPER_BRANCH_PREFIX + subagent_id
+
+
+def _helper_branches(record: Mapping[str, Any], unit_ids: list[str]) -> list[tuple[str, str, str]]:
+    """``(unit_id, title, branch)`` for each listed unit whose latest helper reported a subagent id."""
+    found = []
+    for unit_id in unit_ids:
+        unit = _unit(record, unit_id)
+        attempt = _latest(unit)
+        dispatch = attempt.get("dispatch") if attempt else None
+        subagent_id = dispatch.get("subagent_id") if isinstance(dispatch, Mapping) else None
+        if isinstance(subagent_id, str) and _SUBAGENT_ID.fullmatch(subagent_id):
+            found.append((unit_id, str(unit["title"]), helper_branch(subagent_id)))
+    return found
+
+
+def _require_helper_work_merged(
+    ctx: TeamContext, workdir: Path, helpers: list[tuple[str, str, str]],
+) -> frozenset[str]:
+    """Refuse while a helper's branch holds work this workspace lacks; return the unreadable ones.
+
+    A branch git could not read is not refused here: its unit's check becomes
+    inconclusive instead, so three such reads still end the unit as blocked
+    rather than refusing every call forever.
+    """
+    if not helpers or not workdir.is_dir():
+        # A missing workspace is the check's own `workspace_missing`.
+        return frozenset()
+    unmerged: list[dict[str, str]] = []
+    unreadable: set[str] = set()
+    for unit_id, title, branch in helpers:
+        state = ctx.helper_work(workdir, branch)
+        if state in _HELPER_WORK_UNMERGED:
+            unmerged.append({"unit_id": unit_id, "title": title, "branch": branch, "state": state})
+        elif state not in ("absent", "merged"):
+            unreadable.add(unit_id)
+    if unmerged:
+        lines = [_UNMERGED_SAY[item["state"]].format(title=item["title"], branch=item["branch"]) for item in unmerged]
+        raise TeamRefusal(
+            "helper_branch_unmerged",
+            " ".join(lines) + " Nothing was checked: merge each branch into this workspace, then call "
+            "team_reconcile again.",
+            unmerged=tuple({key: item[key] for key in ("unit_id", "branch", "state")} for item in unmerged),
+        )
+    return frozenset(unreadable)
+
+
+_UNMERGED_SAY: Final[dict[str, str]] = {
+    "commits_not_merged": "'{title}' left commits on branch {branch} that this workspace does not have yet.",
+    "uncommitted_changes": "'{title}' left uncommitted changes in the worktree of branch {branch}; commit them on "
+                           "that branch first.",
+}
+
+
 def _take_lease(ctx: TeamContext, team_id: str, unit_id: str) -> tuple[str, str, Path] | None:
     """Stamp one unit's lease just before its check; None when it no longer needs one."""
     with locked_team(ctx.omh_home, ctx.session_ref, team_id):
@@ -1027,7 +1134,7 @@ def _take_lease(ctx: TeamContext, team_id: str, unit_id: str) -> tuple[str, str,
         return nonce, str(unit["verification_command"]), Path(str(record["workdir"]))
 
 
-def _run_check(ctx: TeamContext, command: str, workdir: Path) -> dict[str, Any]:
+def _run_check(ctx: TeamContext, command: str, workdir: Path, *, helper_unreadable: bool = False) -> dict[str, Any]:
     started = ctx.now()
     try:
         tokens = validate_team_command(command)
@@ -1041,6 +1148,8 @@ def _run_check(ctx: TeamContext, command: str, workdir: Path) -> dict[str, Any]:
         return {"outcome": "inconclusive", "reason": "workspace_not_tracked", "observed_at": _iso(started)}
     if before[0] in _FINGERPRINT_UNAVAILABLE:
         return {"outcome": "inconclusive", "reason": "workspace_fingerprint_unavailable", "observed_at": _iso(started)}
+    if helper_unreadable:
+        return {"outcome": "inconclusive", "reason": "helper_branch_unreadable", "observed_at": _iso(started)}
     run = ctx.runner(tokens, workdir, TEAM_CHECK_TIMEOUT_SECONDS)
     after = ctx.fingerprint(workdir)
     observed_at = _iso(ctx.now())
@@ -1121,6 +1230,7 @@ _REASON_SAY: Final[dict[str, str]] = {
     "check_timeout": f"it ran past {TEAM_CHECK_TIMEOUT_SECONDS // 60} minutes",
     "check_killed": "it was stopped by a signal before it finished",
     "command_not_found": "the command was not found",
+    "helper_branch_unreadable": "git could not say whether its helper's branch is merged into this workspace",
 }
 
 _BLOCKED_SAY: Final[dict[str, str]] = {
@@ -1138,8 +1248,15 @@ _BLOCKED_SAY: Final[dict[str, str]] = {
 # --------------------------------------------------------------------------
 
 
-def observe_dispatch(omh_home: Path, session_ref: str, *, child_session_id: object, goal: object, now: float) -> bool:
-    """`subagent_start` saw a goal carrying a team marker: bind that attempt to the child."""
+def observe_dispatch(
+    omh_home: Path, session_ref: str, *, child_session_id: object, goal: object, now: float,
+    subagent_id: object = None,
+) -> bool:
+    """`subagent_start` saw a goal carrying a team marker: bind that attempt to the child.
+
+    ``subagent_id`` is the host's id for the child, kept so `team_reconcile`
+    can find the branch a worktree-isolated helper left its work on.
+    """
     match = _MARKER.match(goal) if isinstance(goal, str) else None
     if match is None or not isinstance(child_session_id, str) or not child_session_id.strip():
         return False
@@ -1153,6 +1270,8 @@ def observe_dispatch(omh_home: Path, session_ref: str, *, child_session_id: obje
         if attempt is None or attempt["n"] != n or attempt.get("dispatch") or attempt.get("returned_at"):
             return False
         attempt["dispatch"] = {"child_session_id": child_session_id.strip()[:160], "dispatched_at": _iso(now)}
+        if isinstance(subagent_id, str) and _SUBAGENT_ID.fullmatch(subagent_id):
+            attempt["dispatch"]["subagent_id"] = subagent_id
         _emit(record, now, unit=unit, event="started",
               summary="Started a fix for this part." if n > 1 else "Started working on this part.",
               detail_ref=attempt_key(team_id, unit_id, n))
@@ -1286,7 +1405,7 @@ def _say(record: Mapping[str, Any], *, events: list[str] | None = None, resumed:
 
 
 def refusal_result(action: str, refusal: TeamRefusal) -> dict[str, Any]:
-    return {
+    result: dict[str, Any] = {
         "schema_version": TEAM_RESULT_SCHEMA_VERSION,
         "action": action,
         "status": "refused",
@@ -1294,3 +1413,6 @@ def refusal_result(action: str, refusal: TeamRefusal) -> dict[str, Any]:
         "say": refusal.say,
         "delegate_task": None,
     }
+    if refusal.unmerged:
+        result["unmerged"] = [dict(item) for item in refusal.unmerged]
+    return result

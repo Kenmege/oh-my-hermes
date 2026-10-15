@@ -1245,6 +1245,24 @@ GIT_ARGV_ALLOWLIST: dict[tuple[str, tuple[str, ...]], str] = {
         "read-only local object lookup, writes no index, names no remote, and cannot invoke a "
         "configured fsmonitor hook."
     ),
+    ("src/plugin_bundle/omh/tools/team_tool.py", ("core.fsmonitor=false", "for-each-ref")): (
+        "`git -c core.fsmonitor=false --no-optional-locks for-each-ref --format=... refs/heads/<branch>` in "
+        "`omh_team`'s `team_reconcile`, run in the session's own workspace through the minimal-environment "
+        "`run_verification_command` runner: reads the last commit of one helper branch Hermes' worktree "
+        "isolation names (`hermes-subagent/subagent-<id>`), so a check never runs before that work is merged. "
+        "Read-only local ref lookup, names no remote, writes nothing"
+    ),
+    ("src/plugin_bundle/omh/tools/team_tool.py", ("core.fsmonitor=false", "worktree", "list")): (
+        "`git -c core.fsmonitor=false --no-optional-locks worktree list --porcelain`, run only when that helper "
+        "branch exists, to find the worktree it is checked out in so its uncommitted changes can be read; "
+        "read-only listing, names no remote, writes nothing"
+    ),
+    ("src/plugin_bundle/omh/tools/team_tool.py", ("core.fsmonitor=false", "merge-base")): (
+        "`git -c core.fsmonitor=false --no-optional-locks merge-base --is-ancestor <helper-branch-commit> HEAD` "
+        "right after the read above, in the same workspace: whether that helper's last commit is already in "
+        "the history of the HEAD a team check would run on. A read-only local ancestry query, not the forbidden "
+        "`merge` verb; names no remote, writes nothing, and OMH never merges the branch itself"
+    ),
     ("src/coding/fanout_artifact_sharing.py", ("check-ignore",)): (
         "`git check-ignore -q --` against the parent checkout, then again inside the fresh unit "
         "worktree after a symlink is created, to decide whether an allowlisted artifact directory "
