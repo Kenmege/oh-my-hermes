@@ -6,11 +6,14 @@ from _local_package import load_local_package
 
 load_local_package()
 
-from omh.plugin_bundle.omh.awareness import awareness_route_hint
+from omh.plugin_bundle.omh.awareness import (
+    _ROUTE_HINT_RULES,
+    awareness_context_matches_message,
+    awareness_route_hint,
+)
 from omh.plugin_bundle.omh.data_share_cues import DATA_SHARE_REVIEW_PHRASES
 from omh.routing.localization import normalized_phrase, routing_tokens
-from omh.routing.policy import data_share_review_offers_itself
-from omh.routing.recommend import recommend_skills
+from omh.routing.recommend import _SKILL_OFFERS_ITSELF, recommend_skills
 from omh.skills.catalog import builtin_definitions
 from omh.skills.packaging import builtin_skill_reference_templates, builtin_skill_templates
 from omh.wrapper.contract import build_chat_interaction_payload
@@ -41,7 +44,7 @@ def _reference() -> str:
 
 def _offered(message: str) -> bool:
     query = normalized_phrase(message)
-    return data_share_review_offers_itself(query, routing_tokens(query))
+    return _SKILL_OFFERS_ITSELF[SKILL](query, routing_tokens(query))
 
 
 class DataShareReviewCatalogTests(unittest.TestCase):
@@ -218,6 +221,14 @@ class DataShareReviewRoutingTests(unittest.TestCase):
             ("anonymize the dataset before we upload it to the provider", True),
             ("hey, redact personal data from the spreadsheet before it goes to the contractor", True),
             ("can you de-identify this export for the researcher", True),
+            # Every courtesy opener the other readers strip is stripped here
+            # too (`request_lead`); before, only "hey," of these was.
+            ("hi, redact pii from this csv before sending to the vendor", True),
+            ("pls redact pii from this csv before sending to the vendor", True),
+            ("kindly redact pii from this csv before sending to the vendor", True),
+            ("would you redact pii from this csv before sending to the vendor", True),
+            ("hermes, redact pii from this csv before sending to the vendor", True),
+            ("hey hermes, de-identify this export for the researcher", True),
             # An everyday verb, a later clause, or another job leads.
             ("strip the pii from this dataset before we send it to an external contractor", False),
             ("take the customer names out of the export before sending it to the vendor", False),
@@ -272,6 +283,9 @@ class DataShareReviewRoutingTests(unittest.TestCase):
         for message in (
             "pseudonymize this export for the vendor as gdpr requires",
             "redact pii in the export before hermes uploads it to the vendor",
+            # Hermes named after the opener withdraws it whatever the opener.
+            "hi, redact pii in the export before hermes uploads it to the vendor",
+            "hermes, redact pii in the export before hermes uploads it to the vendor",
             "redact the pii in the files we share with vendors on s3",
             "redact pii across our shared files before the vendor audit",
             "redact pii in the export before sending it to the vendor, then turn on the gateway hashing",
@@ -311,6 +325,21 @@ class DataShareReviewRoutingTests(unittest.TestCase):
 
         self.assertTrue(hinted("redact pii from this csv before sending to the vendor"))
         self.assertTrue(hinted("pseudonymize the emails in customers.csv before I share it with the agency"))
+        # The hint reads the router's own trigger table. Before, a smaller one
+        # gave this sentence source-finder's hint while the router dispatched
+        # it here; and nothing armed awareness for it on a later turn.
+        message = "anonymize the dataset before we upload it to the provider"
+        self.assertEqual((_route(message)["action"], _route(message)["selected_skill"]), ("dispatch", SKILL))
+        self.assertTrue(hinted(message))
+        self.assertTrue(awareness_context_matches_message(message))
+        rule = next(rule for rule in _ROUTE_HINT_RULES if rule["id"] == "data_share_review")
+        self.assertIs(rule["phrases"], DATA_SHARE_REVIEW_PHRASES)
+        # The spaced name is no invocation on either surface; the hyphenated
+        # name is one on both.
+        self.assertFalse(hinted("data share review"))
+        self.assertNotIn(SKILL, (_route("data share review").get("selected_skill"), _route("data share review").get("candidate_skill")))
+        self.assertTrue(hinted("data-share-review"))
+        self.assertEqual(_route("data-share-review")["selected_skill"], SKILL)
         for message in (
             # Admitted, but "pseudonymized" is a finished state, not the token cue.
             "redact the names in the pseudonymized export before sending it to the vendor",

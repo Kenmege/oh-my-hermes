@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 import re
 
+from ..plugin_bundle.omh.data_share_cues import data_share_request_admitted
 from ..plugin_bundle.omh.spend_signals import spend_request_clause
 from ..skills.catalog import SkillDefinition, builtin_definitions, routable_definitions
 from .domain_signals import (
@@ -36,7 +37,6 @@ from .query import RoutingQuery
 from ..plugin_bundle.omh.hermes_session_commands import LOOP_TIMER_NONE
 from .policy import (
     appearance_edit_request,
-    data_share_review_offers_itself,
     everyday_sense_phrase_unanchored,
     KOREAN_NOUN_PARTICLES,
     PUBLIC_PLUGIN_CONNECTOR_ALIAS_PHRASES,
@@ -4357,15 +4357,17 @@ def _score_definition(
     ):
         self_name = ""
 
-    # `spend-gate` scores only on the request clause it admitted
-    # (`_spend_gate_offers_itself`) -- its phrases and its words alike:
-    # "check out this thread about agents that buy it for me automatically"
-    # says one of them as a topic, and words after the clause are not the
-    # request either.
+    # `spend-gate`'s trigger phrases and trigger tokens count only on the
+    # request clause it admitted (its `_SKILL_OFFERS_ITSELF` row): "check out
+    # this thread about agents that buy it for me automatically" says one of
+    # them as a topic, and words after the clause are not the request either.
+    # Its name, description, use-when, category and phase still read the whole
+    # message, as every skill's do. The clause is tokenized the way every
+    # other skill's message is (`_tokens`).
     trigger_text = normalized_query
     if definition.name == "spend-gate":
         trigger_text = _spend_gate_clause(normalized_query)
-        query_tokens = routing_tokens(trigger_text)
+        query_tokens = _tokens(trigger_text)
     for trigger_phrase in prepared.plain_trigger_phrases:
         if trigger_phrase == self_name:
             continue
@@ -5775,29 +5777,6 @@ def _spend_gate_clause(normalized_query: str) -> str:
     return spend_request_clause(normalized_query, _spend_gate_trigger_phrases())
 
 
-def _spend_gate_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
-    """Offer the gate only when its request clause asks the agent to spend through one of its phrases.
-
-    Routing is deliberately conservative. Here the gate competes only in
-    ordinary scoring, through phrases held to whole-phrase matches, on the
-    request clause `spend_request_clause` returns (the bundle's
-    `spend_signals`, which the awareness route hint and markers read too): a
-    message marked as a request outside the gate's own phrase ("please", "can
-    you", an address to Hermes, an amount, naming the gate as a command, ...),
-    whose clause opens with a spend addressed to the agent, where every one of
-    the gate's phrases is followed only by what may follow a request. Every
-    other sentence -- an unmarked imperative, a phrase used as a topic, a
-    subject, a label, a later clause -- routes as before this skill existed,
-    and nothing here stands down another skill's guard. One path skips
-    scoring: a loop on a timer whose prompt the clause rule admits, which
-    counts as marked by the loop, is dispatched to the gate by the chat router
-    before scoring (`SPENDING_LOOP_REASON` in `chat.py`), unmarked imperative
-    or not.
-    """
-    del query_tokens
-    return bool(_spend_gate_clause(normalized_query))
-
-
 # Skills that withdraw from the shortlist unless their own precondition holds,
 # checked in `_score_definition`. An explicit invocation always overrides this:
 # naming a skill outright is the user overruling its self-assessment.
@@ -5828,6 +5807,28 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     "sales-pipeline-review": _sales_pipeline_review_offers_itself,
     # An LLM wiki is the pattern Hermes' bundled `llm-wiki` skill builds.
     "wiki": lambda normalized_query, query_tokens: not llm_wiki_request(normalized_query),
-    "data-share-review": data_share_review_offers_itself,
-    "spend-gate": _spend_gate_offers_itself,
+    # The two safety gates read one admission rule each from the plugin
+    # bundle, which the awareness route hint and its markers read too, so the
+    # router and the hint admit the same requests. Neither has a boost, and
+    # nothing here stands down another skill's guard: a request another skill
+    # holds stays with that skill.
+    #
+    # `data-share-review`: a sentence that leads with redact, pseudonymize,
+    # anonymize or de-identify on a file leaving the team (`data_share_cues`).
+    "data-share-review": lambda normalized_query, query_tokens: data_share_request_admitted(normalized_query),
+    # `spend-gate`: deliberately conservative. The gate competes only in
+    # ordinary scoring, through phrases held to whole-phrase matches, on the
+    # request clause `spend_request_clause` returns (`spend_signals`): a
+    # message marked as a request outside the gate's own phrase ("please",
+    # "can you", an address to Hermes, an amount, naming the gate as a
+    # command, ...), whose clause opens with a spend addressed to the agent,
+    # where every one of the gate's phrases is followed only by what may
+    # follow a request, and where a cap or wallet phrase has a word of paying
+    # beside it. Every other sentence -- an unmarked imperative, a phrase used
+    # as a topic, a subject, a label, a later clause -- routes as before this
+    # skill existed. One path skips scoring: a loop on a timer whose prompt
+    # the clause rule admits, which counts as marked by the loop, is
+    # dispatched to the gate by the chat router before scoring
+    # (`SPENDING_LOOP_REASON` in `chat.py`), unmarked imperative or not.
+    "spend-gate": lambda normalized_query, query_tokens: bool(_spend_gate_clause(normalized_query)),
 }

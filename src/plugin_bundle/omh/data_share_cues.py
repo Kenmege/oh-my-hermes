@@ -8,10 +8,12 @@ legal questions, issue triage, messages, posts and videos, and an everyday
 verb ("remove", "strip", "take ... out") as often removes something that is
 not personal data at all, so all of these must hold:
 
-- the sentence itself (no later clause) begins, after filler such as "hey" or
-  "can you", with an inherently protective verb: redact, pseudonymize,
-  anonymize, or de-identify. Words are read Unicode-aware, so a sentence that
-  opens in Hangul or another script has no Latin lead;
+- the sentence itself (no later clause) begins, after the courtesy openers
+  every reader of a request's opening strips ("hey", "hi,", "pls", "would
+  you", "hermes,", ...: `request_lead.COURTESY_OPENERS`), with an inherently
+  protective verb: redact, pseudonymize, anonymize, or de-identify. Words are
+  read Unicode-aware, so a sentence that opens in Hangul or another script
+  has no Latin lead;
 - the verb is a command: it is not defined ("de-identify means ...",
   "de-identify is the term ...") and the sentence is not a question;
 - that verb's object does not end in a word for something other than data (a
@@ -20,7 +22,11 @@ not personal data at all, so all of these must hold:
   records, extract, transcript excerpt, corpus, dump or spreadsheet, beside an
   outbound cue (a vendor, contractor, agency, researcher, the public, a
   provider, a training set, or a verb that sends it);
-- no word names a legal question, a Hermes setting, or a storage-wide scan.
+- no word after the openers names a legal question, Hermes (a setting of it,
+  or Hermes doing the job: "before hermes uploads it to the vendor"), or a
+  storage-wide scan. "hermes," as the address before the request is an
+  opener, not a mention: "hermes, redact pii in the export before we send
+  it to the vendor" is admitted like "hey, ...".
 
 Two readers hold this one function: the router (`omh.routing.policy`) and the
 awareness route hint here in the plugin bundle. Stdlib only: this ships in the
@@ -32,6 +38,7 @@ from __future__ import annotations
 import re
 
 from .boundary_phrase import contains_boundary_phrase
+from .request_lead import after_courtesy
 
 # Each phrase names taking personal data out of something. They are also the
 # skill's trigger list, word for word (`tests/test_data_share_review.py`).
@@ -72,21 +79,6 @@ DATA_SHARE_REVIEW_PHRASES = (
     "redact these logs",
 )
 
-# Filler a request may open with before its verb.
-DATA_SHARE_FILLER_OPENERS = (
-    "hey",
-    "ok",
-    "okay",
-    "so",
-    "please",
-    "i need you to",
-    "go ahead and",
-    "can you",
-    "could you",
-    "let's",
-    "lets",
-    "we need to",
-)
 # Verbs that protect data whatever their object.
 DATA_SHARE_LEAD_VERBS = frozenset(
     {"anonymise", "anonymize", "de-identify", "deidentify", "pseudonymise", "pseudonymize", "redact"}
@@ -136,14 +128,14 @@ DATA_SHARE_OUTBOUND_PHRASES = (
     "handing them",
     "handing over",
 )
-# Words that name another job: a legal question (`legal-compliance-review`), a
-# Hermes setting, or a scan across storage.
+# Words that name another job: a legal question (`legal-compliance-review`),
+# Hermes (a setting of it, or Hermes doing the job), or a scan across storage.
 DATA_SHARE_WITHDRAWAL_TOKENS = frozenset(
     {
         # legal
         "ccpa", "compliance", "compliant", "contract", "contracts", "dpa", "gdpr", "hipaa", "lawful", "legal",
         "legally", "regulation", "regulations", "regulatory",
-        # Hermes settings
+        # Hermes
         "config", "configure", "enable", "gateway", "hermes", "setting", "settings",
         # storage-wide scans
         "bucket", "buckets", "drive", "s3",
@@ -159,20 +151,7 @@ def _words(text: str) -> list[str]:
     return [word.split("'")[0] for word in _WORD.findall(text)]
 
 
-def _without_filler(text: str) -> str:
-    text = text.strip()
-    changed = True
-    while changed:
-        changed = False
-        for opener in DATA_SHARE_FILLER_OPENERS:
-            if text == opener or text.startswith(opener + " ") or text.startswith(opener + ","):
-                text = text[len(opener) :].lstrip(" ,")
-                changed = True
-    return text
-
-
-def _protective_lead(text: str) -> bool:
-    words = _words(_without_filler(text))
+def _protective_lead(words: list[str]) -> bool:
     if not words or words[0] not in DATA_SHARE_LEAD_VERBS:
         return False
     if words[1:2] and words[1] in DATA_SHARE_DEFINITION_WORDS:
@@ -213,8 +192,9 @@ def data_share_request_admitted(text: str) -> bool:
     # A question is not a request to clean a file.
     if text.rstrip().endswith("?"):
         return False
-    words = _words(text)
+    request = after_courtesy(text.strip())
+    words = _words(request)
     tokens = set(words) | {part for word in words for part in word.split("-") if part}
-    if tokens & DATA_SHARE_WITHDRAWAL_TOKENS or contains_boundary_phrase(text, DATA_SHARE_WITHDRAWAL_PHRASES):
+    if tokens & DATA_SHARE_WITHDRAWAL_TOKENS or contains_boundary_phrase(request, DATA_SHARE_WITHDRAWAL_PHRASES):
         return False
-    return _protective_lead(text) and _leaving(text, tokens, words)
+    return _protective_lead(words) and _leaving(request, tokens, words)

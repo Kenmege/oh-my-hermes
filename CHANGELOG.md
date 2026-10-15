@@ -4,6 +4,50 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **spend-gate and data-share-review admit the same requests on the router
+  and the in-session hint, whatever courtesy opener is used.** Four readers
+  of a request's opening -- spend-gate's clause rule, data-share-review's
+  lead, the loop-on-a-timer verdict and the router's command word -- each
+  kept their own list of openers, and the lists had drifted: "hey, redact pii
+  in the export before we send it to the vendor" reached data-share-review
+  and the same sentence opened with "hi,", "pls" or "would you" did not. One
+  bundle list, `request_lead.COURTESY_OPENERS`, now serves all four. "pls",
+  "plz" and "kindly" mark a spend as "please" does. "hermes," before a
+  data-share request is the address it is for spend-gate; Hermes named after
+  it still withdraws the review ("before hermes uploads it"), and the
+  docstring now says so instead of claiming only a Hermes setting does. The
+  hint also stops naming spend-gate where the router withdraws it: the
+  everyday-sense pair for its cap and wallet phrases moved from the router
+  into `spend_signals`, whose clause rule applies it, so "can you check out
+  the spending cap for the city council budget" gets no gate on either
+  surface; a loop's prompt is exempt, as it is from the request marker, and
+  "gate" is now an anchor, so "run spend gate on my spending limit"
+  dispatches the gate instead of a clarify without it. The gates' spaced
+  names ("spend gate", "data share review") are no longer direct invocations
+  for the hint, which follows the router's verbs ("use spend gate") and the
+  hyphenated names. data-share-review's hint reads the router's own trigger
+  table as whole words, so "anonymize the dataset before we upload it to the
+  provider", which the router dispatches, gets its hint and arms awareness on
+  a later turn. Measured with `build_chat_interaction_payload(source="discord")`
+  and `awareness_route_hint` at `cd8a879db` and at this head over both
+  corpora, the follow-up probe sets, every string in the two skills' test
+  files and a matrix of 33 openers over 17 requests (2,632 sentences):
+  neither corpus moved on the router or the hint; router/hint agreement on
+  whether the gate is offered went from 260/281 to 297/297 for spend-gate and
+  from 61/78 to 152/154 for data-share-review (the two left are one
+  transcript-excerpt sentence, in two of the sets, that the router dispatches
+  to its owner, media-input-operator). Outside the two gates, an opener new to
+  a reader now reads as the others did there: a loop on a timer after "just",
+  "let's", "omh," or "i need you to" is answered with Hermes' `/loop`, as after
+  "please" (13 openers), and "hi, configure web search" asks between
+  websearch-setup and web-research, as "please configure web search" does
+  (19 openers). The money cues of a send or
+  transfer are read as words, so "please transfer the balance with my
+  card-on-file" stays admitted. Internal: one offers-itself table row per
+  gate, spend-gate's clause tokenized like every other skill's message, and
+  the misleading `_WHOLE_WORD_ROUTE_HINT_RULES` replaced by the hint's phrase
+  readers.
+
 - **Memory recall no longer fills a pack with records that share only the
   project's name.** A query term that more than half of the records the pack
   could serve hold, when there are at least five of them, never makes a record
