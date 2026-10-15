@@ -28,6 +28,7 @@ from _local_package import load_local_package
 
 load_local_package()
 
+from _fanout_interrupt_flag import InterruptFlagIsolatedTestCase  # noqa: E402
 from omh.commands.coding import (  # noqa: E402
     FANOUT_DISPATCH_BUSY_EXIT_CODE,
     _brief_repair,
@@ -388,10 +389,7 @@ class RepairStopsBlockedTests(unittest.TestCase):
         self.assertEqual(_fanout_dispatch_exit_code(summary), 1)
 
 
-class RepairResumeTests(unittest.TestCase):
-    def tearDown(self) -> None:
-        fanout_dispatch._INTERRUPT_FLAG.clear()
-
+class RepairResumeTests(InterruptFlagIsolatedTestCase):
     def test_a_later_dispatch_continues_the_count_and_never_resets_it(self) -> None:
         def interrupt_during_first_repair(spawn: int) -> None:
             if spawn == 2:
@@ -487,10 +485,7 @@ class RepairResumeTests(unittest.TestCase):
         self.assertEqual(projection["attempts"][0]["check"], {"command": "c", "exit_code": 1, "observed_at": "t0"})
 
 
-class RepairConcurrencyTests(unittest.TestCase):
-    def tearDown(self) -> None:
-        fanout_dispatch._INTERRUPT_FLAG.clear()
-
+class RepairConcurrencyTests(InterruptFlagIsolatedTestCase):
     def test_a_second_dispatch_skips_a_unit_whose_repair_is_in_flight(self) -> None:
         # A budget of 2, so the in-flight attempt leaves the loop pending to a
         # second reader and only the lock stands between it and a second spawn.
@@ -543,10 +538,7 @@ class RepairConcurrencyTests(unittest.TestCase):
         self.assertEqual(len(harness.prompts), 2)
 
 
-class RepairWorktreeMissingTests(unittest.TestCase):
-    def tearDown(self) -> None:
-        fanout_dispatch._INTERRUPT_FLAG.clear()
-
+class RepairWorktreeMissingTests(InterruptFlagIsolatedTestCase):
     def test_a_vanished_worktree_blocks_the_loop_and_exits_nonzero_without_spawning(self) -> None:
         harness = _Harness(self, plan=["broken"], max_repair_attempts=2)
         harness.left_pending(self)

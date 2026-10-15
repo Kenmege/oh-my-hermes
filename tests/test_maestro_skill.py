@@ -19,6 +19,7 @@ from _local_package import load_local_package
 load_local_package()
 
 from omh.coding.orchestration_vocabulary import HERMES_HARNESS_DEFAULT_WORDING
+from omh.commands.coding import FANOUT_STATUS_WAIT_DEFAULT_TIMEOUT_SECONDS
 from omh.routing.executor_cues import NAMED_CODING_AGENT_PHRASES
 from omh.routing.ulw_alias import CODEX_OWNER_CHOICE_CUES
 from omh.skills.catalog import (
@@ -239,7 +240,13 @@ class MaestroObserveToTerminalStateTests(unittest.TestCase):
     command they name parses.
     """
 
-    _WATCHER = "omh coding fanout status --fanout-id <fanout-id> --wait --timeout 600"
+    # The deadline the skill names is the command's own default, so moving the
+    # default moves this string and fails the quality-bar pin below until the
+    # skill says the same.
+    _WATCHER = (
+        "omh coding fanout status --fanout-id <fanout-id> --wait "
+        f"--timeout {FANOUT_STATUS_WAIT_DEFAULT_TIMEOUT_SECONDS}"
+    )
 
     def test_the_quality_bar_names_one_background_watcher_not_a_poll_interval(self) -> None:
         combined = " ".join(_maestro_definition().quality_bar)
@@ -267,12 +274,12 @@ class MaestroObserveToTerminalStateTests(unittest.TestCase):
         self.assertEqual(read.fanout_id, "fanout-0123456789ab")
         self.assertTrue(read.json)
         self.assertTrue(watch.wait)
-        self.assertEqual(watch.timeout, 600)
+        self.assertEqual(watch.timeout, FANOUT_STATUS_WAIT_DEFAULT_TIMEOUT_SECONDS)
 
     def test_the_watcher_timeout_the_skill_names_is_inside_the_commands_bounds(self) -> None:
         from omh.commands.coding import FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS
 
-        self.assertLessEqual(600, FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS)
+        self.assertLessEqual(FANOUT_STATUS_WAIT_DEFAULT_TIMEOUT_SECONDS, FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS)
 
     def test_the_exit_codes_the_skill_names_are_the_ones_the_watcher_returns(self) -> None:
         # Each sentence is graded by the command's own mapper, so a code moved

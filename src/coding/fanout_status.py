@@ -267,7 +267,6 @@ def render_fanout_status_text(roster: Mapping[str, Any]) -> str:
 WAIT_OUTCOME_STUCK_UNITS = "stuck_units"
 WAIT_OUTCOME_ALL_UNITS_TERMINAL = "all_units_terminal"
 WAIT_OUTCOME_TIMED_OUT = "timed_out"
-WAIT_OUTCOMES = (WAIT_OUTCOME_STUCK_UNITS, WAIT_OUTCOME_ALL_UNITS_TERMINAL, WAIT_OUTCOME_TIMED_OUT)
 
 
 def wait_for_fanout_status(
@@ -371,9 +370,9 @@ def _apply_unit_progress(paths: OmhPaths, fanout_id: str, units: list[dict[str, 
     means this unit is in flight NOW, and a summary row from an earlier
     dispatch of the same id must not report over it. A marker with no reading
     yet wins only when it was written after that row (`_written_after`): a
-    capacity-reuse reservation marker that an early return before the spawn
-    never cleared is OLDER than the summary row its own attempt wrote, and
-    hiding that row would turn a refused unit into one "in flight" forever.
+    capacity-reuse reservation marker whose best-effort clear failed is OLDER
+    than the summary row its own attempt wrote, and hiding that row would turn
+    a refused unit into one "in flight" forever.
 
     Best-effort: an unreadable marker directory or summary leaves every row at
     `unknown`, which is honest and keeps a poll loop waiting rather than

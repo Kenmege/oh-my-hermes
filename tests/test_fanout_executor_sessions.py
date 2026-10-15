@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 from _local_package import load_local_package
 
 load_local_package()
+from _fanout_interrupt_flag import InterruptFlagIsolatedTestCase
 from five_issue_cases import JsonValue, sessions as producer
 from five_issue_process_fixture import process_fixture
 from omh.coding.codex_progress import build_codex_session_observation
@@ -411,17 +412,7 @@ class SessionsFoundation(unittest.TestCase):
                 self.assertEqual(paths.runtime_journal_events_path.read_text(), original)
 
 
-class SessionsIntegration(unittest.TestCase):
-    def setUp(self) -> None:
-        # The dispatch under test sets the process-global interrupt flag and
-        # leaves it for the next dispatch entry; a sibling spawning through
-        # signal_safe_unit_runner directly would be SIGTERMed on
-        # register-then-check (#1482).
-        from omh.coding.fanout_dispatch import _INTERRUPT_FLAG
-
-        _INTERRUPT_FLAG.clear()
-        self.addCleanup(_INTERRUPT_FLAG.clear)
-
+class SessionsIntegration(InterruptFlagIsolatedTestCase):
     def check_case(self, case: str) -> None:
         result = producer.run_case(case)
         self.assertTrue(result['pass'], result['blocked_reason'])

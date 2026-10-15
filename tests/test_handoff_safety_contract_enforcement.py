@@ -1114,11 +1114,40 @@ GIT_ARGV_ALLOWLIST: dict[tuple[str, tuple[str, ...]], str] = {
         "worktree's index. It stages no content, makes no commit, names no remote, and never runs "
         "against the operator's repository or a unit that succeeded"
     ),
+    ("src/coding/fanout_dispatch.py", ("symbolic-ref", "HEAD")): (
+        "`git symbolic-ref -q HEAD` in a unit's own worktree before the Hermes recovery lane commits "
+        "there, so a commit is made only while the unit's own `agent/<unit>` branch is checked out; "
+        "read-only local ref lookup, names no remote, writes nothing"
+    ),
+    ("src/coding/fanout_dispatch.py", ("ls-files",)): (
+        "`git ls-files --others --exclude-standard -z` in a unit's own worktree, listing the new, "
+        "unignored files the Hermes recovery lane must judge against the unit's file scope before it "
+        "commits anything; read-only, names no remote, writes nothing"
+    ),
+    ("src/coding/fanout_dispatch.py", ("add",)): (
+        "`git add -u`, then `git --literal-pathspecs add -- <paths>` for new files inside the unit's "
+        "declared file scope, in a unit's own worktree in the operator-chosen Hermes recovery lane "
+        "(`--on-failure=hermes`, a file-tools-only child): before the child starts for what the failed "
+        "attempt left, after it completes for what it wrote. A new file outside the scope is never "
+        "added. Not read-only: it writes that worktree's index, runs inside the unit's write fence with "
+        "the network denied, and names no remote"
+    ),
+    ("src/coding/fanout_dispatch.py", ("commit",)): (
+        "`git commit -q -m <message>` right after that `add`, recording the failed attempt's leftovers "
+        "or the Hermes recovery child's edits on the unit's own `agent/<unit>` branch -- the commit a "
+        "dispatched unit's executor makes itself and a file-tools-only child cannot -- and only after "
+        "`symbolic-ref` showed that branch checked out. The repository's hooks run. Not read-only: it "
+        "writes one local commit and moves that branch, inside the unit's write fence with the network "
+        "denied; it never pushes, merges, or touches another branch or the operator's checkout"
+    ),
     ("src/coding/fanout_dispatch.py", ("diff",)): (
         "measures what a failed unit left in its own worktree -- `--numstat -z` for paths, then the "
         "patch that is hashed for size/sha256 and dropped; and `--name-only --no-renames -z <base> <head>` "
         "between the base and the producer HEAD the dispatcher already observed clean, the changed paths a "
-        "task-linked postcondition selects its tests from; read-only, local-only, names no remote"
+        "task-linked postcondition selects its tests from; and in the Hermes recovery lane, `--cached "
+        "--name-only` for what is staged (with `--ita-visible-in-index --diff-filter=A`, the files new to the "
+        "index, intent-to-add included, that it judges against the unit's scope) so the commit record names "
+        "every path; read-only, local-only, names no remote"
     ),
     ("src/coding/fanout_confinement.py", ("symbolic-ref", "HEAD")): (
         "`symbolic-ref -q HEAD` in `_git_write_roots` reads which branch the unit's linked worktree has "
@@ -1158,7 +1187,7 @@ GIT_ARGV_ALLOWLIST: dict[tuple[str, tuple[str, ...]], str] = {
         "after executor exit. The dispatcher compares it exactly to the sidecar report before "
         "allowing integration fan-in, so executor text cannot substitute a stale base SHA. "
         "Read-only local object lookup, names no remote, writes nothing, and resolves no "
-        "caller-supplied ref"
+        "caller-supplied ref. The Hermes recovery lane reads it the same way after each of its commits"
     ),
     ("src/coding/fanout_dispatch.py", ("merge-base",)): (
         "`merge-base --is-ancestor <producer-head> HEAD` proves each sidecar-observed producer commit "
