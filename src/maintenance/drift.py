@@ -624,8 +624,15 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # a screen shared, code written to mask personal data, a customer's
             # personal data deleted, personal data masked for no recipient, and
             # a name removed before sharing, which says none of the review's
-            # phrases (5).
-            expected=768,
+            # phrases (5). Its review adds eight that named a gate while a
+            # recipient counted by containment, a negated clause or a document
+            # sent beside an amount was read as the request, or a processed
+            # order as a payment: personal data masked in external logs and
+            # deleted from an overseas department's list, masking instead of
+            # sending, and cleaned test data uploaded to staging (4); a payment
+            # and an order processed (2); and two loops that send a price alert
+            # and a rules document (2).
+            expected=776,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -875,8 +882,12 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # external share, and personal data masked before it goes to a
             # vendor, which reach the data share review (3); and a payment bug
             # fix and a shared summary, which stay on ultrawork and
-            # long-document-reading (2).
-            expected=806,
+            # long-document-reading (2). Its review adds four: a card payment
+            # after a greeting sentence and masked customer information for a
+            # vendor addressed to Hermes, which reach their gates (2); and a
+            # receipt that states an amount and a quote sent instead of paying,
+            # which stay on gateway-intent-card (2).
+            expected=810,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

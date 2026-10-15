@@ -432,12 +432,47 @@ class DataShareReviewKoreanTests(unittest.TestCase):
             "고객 데이터 익명화해서 연구자한테 보내줘",
             "개인정보 제거한 다음에 외부에 올려줘",
             "외부에 공유하기 전에 고객 정보 가려줘",
+            # An address to Hermes before the request is its address, not a
+            # Hermes setting.
+            "헤르메스, 고객 정보 마스킹해서 벤더한테 보내줘",
+            "헤르메스야 개인정보 지우고 외부에 공유해줘",
+            # Asked as a question that is itself a request.
+            "개인정보 마스킹해서 벤더한테 보내줄래?",
+            "계약서에서 개인정보 지우고 거래처에 보내줘",
         ):
             with self.subTest(message=message):
                 route = _route(message)
                 self.assertEqual((route["action"], route["selected_skill"]), ("dispatch", SKILL))
                 self.assertTrue(self._hinted(message))
                 self.assertTrue(_data_share_awareness_marked(message))
+
+    def test_a_recipient_is_where_the_data_goes_only_as_a_destination(self) -> None:
+        # The recipient alone carries the data out here: no verb sends it.
+        for message in ("벤더한테 줄 파일에서 개인정보 지워줘", "외부 공유용으로 개인정보 지워줘"):
+            with self.subTest(message=message):
+                self.assertTrue(data_share_request_admitted(message))
+                self.assertIn(SKILL, self._named(message))
+                self.assertTrue(self._hinted(message))
+        # A source, a kind, or a word inside another is not a destination.
+        for message in (
+            "업체 목록에서 전화번호 삭제해줘",
+            "거래처 주소록에서 퇴사자 연락처 삭제해줘",
+            "외부 로그에서 개인정보 마스킹해줘",
+            "해외부서 명단에서 개인정보 삭제해줘",
+            "연구자 명단에서 전화번호 지워줘",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(data_share_request_admitted(message))
+                self.assertNotIn(SKILL, self._named(message))
+                self.assertFalse(self._hinted(message))
+
+    def test_a_later_send_and_a_finished_removal_count(self) -> None:
+        # Only a future send carries the data out ("올릴"); only "지운 다음에"
+        # protects it.
+        for message in ("캐글에 올릴 데이터에서 개인정보 지워줘", "개인정보 지운 다음에 외부에 공유해줘"):
+            with self.subTest(message=message):
+                self.assertTrue(data_share_request_admitted(message))
+                self.assertTrue(self._hinted(message))
 
     def test_the_same_words_elsewhere_name_no_review(self) -> None:
         for message in (
@@ -446,9 +481,11 @@ class DataShareReviewKoreanTests(unittest.TestCase):
             "이 문서 요약해서 공유해줘",
             "회의록 팀에 공유해줘",
             "파일 보내줘",
-            # A background masked, not personal data, even for a vendor.
+            # A background masked, not personal data, even for a vendor; and
+            # personal data said, but not as what is removed.
             "사진 배경 마스킹해서 보내줘",
             "사진 배경 마스킹해서 벤더한테 보내줘",
+            "개인정보 들어간 사진에서 배경 지우고 벤더한테 보내줘",
             # Code, a feature, a policy, a setting: another job.
             "개인정보 마스킹하는 코드 짜줘",
             "개인정보 마스킹 기능 구현해줘",
@@ -458,14 +495,22 @@ class DataShareReviewKoreanTests(unittest.TestCase):
             "개인정보 마스킹해서 PR 올려줘",
             # The request ends on another job.
             "개인정보 지우고 벤더 목록 정리해줘",
-            # Protected, but leaving for nowhere.
+            "개인정보 지우고 외부에 공유하는 방법 알려줘",
+            # Protected, but leaving for nowhere, or staying inside the team.
             "고객 개인정보 지워줘",
             "개인정보 마스킹해줘",
+            "테스트 데이터에서 고객 정보 지우고 스테이징에 올려줘",
+            "개인정보 지우고 팀원들한테 공유해줘",
             # A field name alone is no phrase of the skill.
             "이름 지우고 공유해줘",
             # Already anonymized, or a question.
             "익명화된 데이터 벤더한테 보내줘",
             "개인정보 지우고 외부에 공유해도 돼?",
+            # A negated clause is not the request.
+            "벤더한테 보내지 말고 개인정보만 마스킹해줘",
+            "개인정보 마스킹하지 말고 벤더한테 보내줘",
+            # Labelled text is not the request.
+            "사용자 발화 예시: 고객 정보 마스킹해서 벤더한테 보내줘",
         ):
             with self.subTest(message=message):
                 self.assertNotIn(SKILL, self._named(message))
@@ -484,19 +529,21 @@ class DataShareReviewKoreanTests(unittest.TestCase):
         self.assertEqual((_route(message)["action"], _route(message)["selected_skill"]), ("dispatch", SKILL))
         self.assertTrue(self._hinted(message))
 
-    def test_the_router_fold_admits_what_the_hint_admits(self) -> None:
+    def test_the_router_and_the_hint_admit_alike(self) -> None:
         for message in (
             "고객 정보 마스킹해서 벤더한테 보내줘",
             "벤더한테 보내기 전에 개인정보 마스킹해줘",
             "사진 배경 마스킹해서 보내줘",
             "이름 지우고 공유해줘",
+            "업체 목록에서 전화번호 삭제해줘",
         ):
             with self.subTest(message=message):
-                self.assertEqual(_offered(message), data_share_request_admitted(message))
+                self.assertEqual(_offered(message), self._hinted(message))
         # A field name admits a request only beside one of the review's
         # phrases; alone, the rule itself refuses it.
         self.assertFalse(data_share_request_admitted("이름 지우고 공유해줘"))
         self.assertTrue(data_share_request_admitted("이름 지우고 외부에 공유해줘"))
+        self.assertTrue(data_share_request_admitted("pii 마스킹해서 벤더한테 보내줘"))
 
     def test_an_admitted_korean_request_always_says_a_scored_phrase(self) -> None:
         for message in ("고객 정보 마스킹해서 벤더한테 보내줘", "데이터셋 가명 처리해서 업로드해줘"):

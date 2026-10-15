@@ -41,11 +41,14 @@ A Korean request puts its verb last, so its half of the rule
   블러, 지우-, 가리-, 빼-) with personal data among the three words before
   it ("개인정보 지우고", "고객 정보 마스킹해서"), as the last predicate or in a
   clause joined to it; "사진 배경 마스킹해서 보내줘" removes a background;
-- it leaves: an outbound verb in a predicate or a "-기 전에" clause ("보내기
-  전에"), or a recipient outside the team (벤더, 외부, 협력사, 제3자, ...);
-- no word names a legal question, Hermes or its settings, a storage-wide
-  scan, or something other than data (코드, 함수, 기능, 버그, ...): "개인정보
-  마스킹 기능 만들어서 벤더한테 보내줘" ships a feature.
+- it leaves: a recipient outside the team named as where it goes ("벤더한테",
+  "외부에", "협력업체에"; not "업체 목록에서" or "외부 로그"), or a verb that
+  sends it (a predicate, a "-기 전에" clause, "보낼 파일") with no destination
+  inside the team ("스테이징에", "팀원들한테");
+- no word names a legal question, a Hermes setting, a storage-wide scan, or
+  something other than data (코드, 함수, 기능, 버그, ...): "개인정보 마스킹
+  기능 만들어서 벤더한테 보내줘" ships a feature;
+- one of the skill's Korean phrases is said.
 
 Two readers hold this one function: the router (`omh.routing.policy`) and the
 awareness route hint here in the plugin bundle. Stdlib only: this ships in the
@@ -88,9 +91,10 @@ DATA_SHARE_KOREAN_PERSONAL_DATA = (
 # Field names that are personal data only in this frame -- removed, and the
 # data then leaving -- and everyday words elsewhere: a name, an email, an
 # address, a birth date, a user id, a nickname, an employee or student
-# number, an IP. They admit a request but are no phrase of the skill, so one
-# of its phrases must still be said (`_korean_admitted`).
-DATA_SHARE_KOREAN_FIELD_NAMES = ("이름", "이메일", "주소", "생년월일", "아이디", "닉네임", "사번", "학번", "ip")
+# number, an IP, "PII" said in English. They admit a request but are no
+# phrase of the skill, so one of its phrases must still be said
+# (`_korean_admitted`).
+DATA_SHARE_KOREAN_FIELD_NAMES = ("이름", "이메일", "주소", "생년월일", "아이디", "닉네임", "사번", "학번", "ip", "pii")
 # Verbs that protect data whatever their object: anonymize, pseudonymize,
 # de-identify, also as "<noun> 처리" ("익명 처리", "가명 처리", "비식별 처리").
 DATA_SHARE_KOREAN_PROTECTIVE_VERBS = frozenset(
@@ -113,7 +117,10 @@ DATA_SHARE_KOREAN_OUTBOUND_JOINED = frozenset({"보내고", "보내서", "넘기
 DATA_SHARE_KOREAN_OUTBOUND_FUTURE = frozenset({"보낼", "넘길", "올릴", "내보낼"})
 # Who receives it outside the team: a vendor, the outside, a company, a
 # partner, a client firm, a third party, an outsourcer, an agency, a
-# researcher.
+# researcher. One counts as where the data goes only with a particle that
+# names a destination ("벤더한테", "외부로", "협력업체에"), or right before a
+# verb that sends ("외부 공유용으로"): "업체 목록에서 전화번호 삭제해줘" deletes
+# from a list, and "외부 로그" is a kind of log (`_korean_recipient`).
 DATA_SHARE_KOREAN_RECIPIENTS = (
     "벤더",
     "외부",
@@ -128,13 +135,20 @@ DATA_SHARE_KOREAN_RECIPIENTS = (
     "연구자",
     "연구기관",
 )
-# Words that name another job, as a word's start: a legal question, Hermes
-# or its settings, a storage-wide scan, or something other than data.
+_DESTINATION_PARTICLES = ("에게", "한테", "께", "쪽에", "측에", "쪽으로", "으로", "에", "로")
+# Destinations inside the team. A verb that sends counts as the data leaving
+# unless one of these is where it goes and no outside recipient is named:
+# "테스트 데이터에서 고객 정보 지우고 스테이징에 올려줘" moves it to staging.
+DATA_SHARE_KOREAN_INTERNAL_DESTINATIONS = ("팀", "사내", "내부", "스테이징", "staging", "개발서버", "로컬")
+# Words that name another job, as a word's start: a legal question, a Hermes
+# setting, a storage-wide scan, or something other than data. Hermes named
+# alone is no withdrawal: "헤르메스," before a request is its address
+# (`korean_request.OPENERS`), as "hermes," is in English.
 DATA_SHARE_KOREAN_WITHDRAWAL_STEMS = (
     # legal
-    "법률", "법적", "법무", "보호법", "개인정보보호법", "처리방침", "규정", "규제", "컴플라이언스", "계약",
-    # Hermes
-    "설정", "헤르메스", "게이트웨이",
+    "법률", "법적", "법무", "보호법", "개인정보보호법", "처리방침", "규정", "규제", "컴플라이언스",
+    # a Hermes setting
+    "설정", "게이트웨이",
     # storage-wide scans
     "버킷",
     # not data
@@ -146,15 +160,10 @@ _AFTER_WORDS = frozenset({"다음", "다음에", "뒤", "뒤에", "후", "후에
 # router scores every request this rule admits. They live here, beside the
 # English phrases and not in `routing/trigger_packs/ko.json`, for the reason
 # the English ones do: the rule reads them, and the bundle cannot read a pack.
+_KOREAN_PROTECTIVE_PHRASES = ("익명화", "익명 처리", "익명처리", "가명화", "가명 처리", "가명처리", "비식별")
 DATA_SHARE_REVIEW_KOREAN_PHRASES = (
     *DATA_SHARE_KOREAN_PERSONAL_DATA,
-    "익명화",
-    "익명 처리",
-    "익명처리",
-    "가명화",
-    "가명 처리",
-    "가명처리",
-    "비식별",
+    *_KOREAN_PROTECTIVE_PHRASES,
     *DATA_SHARE_KOREAN_RECIPIENTS,
 )
 
@@ -359,12 +368,46 @@ def _korean_sends(word: str) -> bool:
     return word in DATA_SHARE_KOREAN_OUTBOUND_FUTURE or (word.endswith("할") and word[:-1] in DATA_SHARE_KOREAN_OUTBOUND_VERBS)
 
 
+def _korean_recipient(words: tuple[str, ...]) -> bool:
+    """Whether a recipient outside the team is said as where the data goes.
+
+    With a destination particle, the recipient starting or ending the word
+    ("벤더한테", "외부로", "협력업체에", "외부감사인에게"), or bare right before
+    a word that sends ("외부 공유해줘", "외부 공유용으로"). Not as a source
+    ("업체 목록에서"), a kind ("외부 로그"), or inside another word
+    ("해외부서").
+    """
+    for index, word in enumerate(words):
+        particle = next((particle for particle in _DESTINATION_PARTICLES if word.endswith(particle)), "")
+        stem = word[: -len(particle)] if particle else word
+        names_one = stem.startswith(DATA_SHARE_KOREAN_RECIPIENTS) or stem.endswith(DATA_SHARE_KOREAN_RECIPIENTS)
+        if names_one and particle:
+            return True
+        following = words[index + 1] if index + 1 < len(words) else ""
+        if word in DATA_SHARE_KOREAN_RECIPIENTS and following.startswith(tuple(DATA_SHARE_KOREAN_OUTBOUND_VERBS)):
+            return True
+    return False
+
+
+def _korean_internal_destination(words: tuple[str, ...]) -> bool:
+    """Whether a destination inside the team is named ("팀에", "팀원들한테", "스테이징에", "사내 위키에")."""
+    for index, word in enumerate(words):
+        particle = next((particle for particle in _DESTINATION_PARTICLES if word.endswith(particle)), "")
+        if word.startswith(DATA_SHARE_KOREAN_INTERNAL_DESTINATIONS) and (
+            particle or (index + 1 < len(words) and words[index + 1].endswith(_DESTINATION_PARTICLES))
+        ):
+            return True
+    return False
+
+
 def _korean_admitted(text: str, latin_tokens: set[str]) -> bool:
     """The Korean half: a request ending on protecting the data or sending it, with both said.
 
     One of the skill's Korean phrases must be said too, so the router scores
-    every request this admits; a field name alone ("이름 지우고 공유해줘")
-    admits nothing.
+    every request this admits: personal data or a protective verb anywhere
+    (Korean writes them into compounds, "고객개인정보"), or a recipient as
+    where the data goes. A field name alone ("이름 지우고 공유해줘") admits
+    nothing.
     """
     request = korean_request(text)
     if request is None:
@@ -383,11 +426,13 @@ def _korean_admitted(text: str, latin_tokens: set[str]) -> bool:
         elif word in DATA_SHARE_KOREAN_REMOVAL_BEFORE_AFTER and following in _AFTER_WORDS:
             clauses.append((word, index))
     protective = any(_korean_protective(form, index, words) for form, index in clauses)
-    outbound = (
+    recipient = _korean_recipient(words)
+    sends = (
         any(form in DATA_SHARE_KOREAN_OUTBOUND_VERBS or form in DATA_SHARE_KOREAN_OUTBOUND_JOINED for form, _ in clauses)
         or any(verb in DATA_SHARE_KOREAN_OUTBOUND_VERBS for verb in request.before)
         or any(_korean_sends(word) for word in words)
-        or _korean_says(words, DATA_SHARE_KOREAN_RECIPIENTS)
     )
+    outbound = recipient or (sends and not _korean_internal_destination(words))
+    said = recipient or _korean_says(words, DATA_SHARE_KOREAN_PERSONAL_DATA + _KOREAN_PROTECTIVE_PHRASES)
     asks_for_it = final in DATA_SHARE_KOREAN_OUTBOUND_VERBS or _korean_protective(final, request.predicate_index, words)
-    return asks_for_it and protective and outbound and _korean_says(words, DATA_SHARE_REVIEW_KOREAN_PHRASES)
+    return asks_for_it and protective and outbound and said

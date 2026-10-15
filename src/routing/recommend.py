@@ -5782,7 +5782,10 @@ def _spend_gate_trigger_phrases() -> tuple[str, ...]:
 
 
 def _spend_gate_clause(normalized_query: str) -> str:
-    return spend_request_clause(normalized_query, _spend_gate_trigger_phrases())
+    # A Korean clause comes back composed (`korean_request`); folding it again
+    # puts it in the fold the trigger phrases are matched in, and leaves an
+    # English clause, already folded, as it was.
+    return normalized_phrase(spend_request_clause(normalized_query, _spend_gate_trigger_phrases()))
 
 
 # Skills that withdraw from the shortlist unless their own precondition holds,

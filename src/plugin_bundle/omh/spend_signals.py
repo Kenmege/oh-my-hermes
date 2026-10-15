@@ -55,17 +55,19 @@ and the like -- only when all of this holds, and "" otherwise:
   from the marker (`spend_gate_named_as_command`, which the router reads too).
 
 A Korean request puts its verb last, so its half of the rule
-(`_korean_admitted`) reads the first sentence from its end
-(`korean_request`): it is admitted when a request ending ("-해줘", "-해
-주세요", "-해줄래?", "부탁해") closes a last predicate that spends --
-"결제" (pay), "송금" (remit), "주문" (order), "사줘" (buy it for me) and the
-rest of `KOREAN_SPEND_NOUNS`, or a booking, a top-up, a subscription, a
-renewal, a donation or a send beside the person's card, wallet, account,
-money or an amount -- and the sentence says one of
-`SPEND_GATE_KOREAN_PHRASES`. "결제 시스템 설계해줘" (design a payment system)
-and "결제 버그 고쳐줘" (fix a payment bug) end on design and fix, "결제했어"
-(I paid) and "결제하지 마" (do not pay) end on no request, and "식당
-예약해줘" (book a restaurant) books with no money in it.
+(`_korean_admitted`) reads the request clause from its end
+(`korean_request`, which also skips greetings, labels, quotes and a negated
+clause): it is admitted when a request ending ("-해줘", "-해 주세요",
+"-해줄래?", "부탁해") closes a last predicate that spends -- "결제" (pay),
+"송금" (remit), "주문" (order), "사줘" (buy it for me) and the rest of
+`KOREAN_SPEND_NOUNS`, but not processing one ("결제 처리해줘") -- or a
+booking, a top-up, a subscription, a renewal or a donation with the
+person's money in its own clause, or a send whose object is money -- and
+the clause says one of `SPEND_GATE_KOREAN_PHRASES`. "결제 시스템 설계해줘"
+(design a payment system) and "결제 버그 고쳐줘" (fix a payment bug) end on
+design and fix, "결제했어" (I paid) and "결제하지 마" (do not pay) end on no
+request, "식당 예약해줘" (book a restaurant) books with no money in it, and
+"결제 금액 10,000원 영수증 이메일로 보내줘" sends a receipt.
 
 Everything else returns to the router's base behaviour: the router withdraws
 the skill (so no phrase or word of it counts) and the route hint and the
@@ -91,12 +93,12 @@ from collections.abc import Iterable
 
 from .boundary_phrase import contains_boundary_phrase
 from .hermes_session_commands import native_loop_prompt
-from .korean_request import composed, korean_request
+from .korean_request import SOFTENERS, KoreanRequest, composed, korean_request
 from .request_lead import courtesy_opener_length
 
 # The Korean half of the clause rule (`_korean_admitted`). A Korean request
-# ends on its verb, so it is read from the end (`korean_request`): the first
-# sentence's last predicate, closed by a request ending ("-해줘", "-해 주세요",
+# ends on its verb, so it is read from the end (`korean_request`): the request
+# clause's last predicate, closed by a request ending ("-해줘", "-해 주세요",
 # "-해줄래?", "부탁해"), which marks it as a request the way "please" does in
 # English. "결제 시스템 설계해줘" and "결제 버그 고쳐줘" end on design and fix;
 # "내 카드로 결제해줘" ends on pay.
@@ -104,34 +106,58 @@ from .request_lead import courtesy_opener_length
 # 하다 verbs that move the person's money whatever their object: pay, remit,
 # transfer, deposit, pay out, pay a bill, purchase (twice), order, book a
 # ticket. A compound that ends in one is the same verb: "선결제" (prepay),
-# "재주문" (reorder), "해외송금" (remit abroad).
+# "재주문" (reorder), "해외송금" (remit abroad). Processing one ("결제
+# 처리해줘", "주문 처리해줘") is not paying, as "process the order" is no spend
+# in English.
 KOREAN_SPEND_NOUNS = ("결제", "송금", "이체", "입금", "지불", "납부", "구매", "구입", "주문", "예매")
+KOREAN_SPEND_NON_LIGHT_VERBS = frozenset({"처리"})
 # 하다 verbs whose object is often not money -- a phone is charged, a
 # restaurant booked, a channel subscribed to, a token renewed -- which count
-# only with money in the sentence (`_KOREAN_MONEY`): top up, book, subscribe,
-# renew, sponsor, donate.
+# only with money in their own clause (`_korean_money_in_clause`): top up,
+# book, subscribe, renew, sponsor, donate.
 KOREAN_MONEY_CUED_NOUNS = ("충전", "예약", "구독", "갱신", "후원", "기부")
 # Other verbs, as the word before the request ending: buy ("사줘"); and send,
-# plain or honorific ("보내줘", "보내드려 줘"), which counts only beside money.
+# plain or honorific ("보내줘", "보내드려 줘"), which counts only when what it
+# sends is money (`_korean_sends_money`).
 KOREAN_SPEND_FORMS = frozenset({"사"})
 KOREAN_MONEY_CUED_FORMS = frozenset({"보내", "보내드려"})
-# The person's card, wallet or account, money itself, or an amount.
-_KOREAN_MONEY = re.compile(
-    r"카드로|카드에서|지갑에서|계좌에서|계좌로"
-    r"|(?:^|\s)돈(?:을|도|만|좀)?(?=\s|$)"
-    r"|\d[\d,.]*\s?(?:원|만\s?원|천\s?원|억|달러|불|엔|유로|위안|usd|krw)"
-    r"|[$€£¥₩]\s?\d"
+# An amount: digits with a currency, as a whole word or with what may follow
+# an amount ("3만원짜리", "5만원어치", "50만원을", "1000원 이하"). "3원칙" is a
+# rule, and "1억 건" a count.
+_KOREAN_AMOUNT = re.compile(
+    r"(?:[$€£¥₩]\s?\d[\d,.]*|\d[\d,.]*\s?(?:만|천|백|억)?\s?(?:원|달러|불|엔|유로|위안|파운드|usd|krw|eur|jpy))"
+    r"(?:짜리|어치|씩|을|를|이|가|은|는|도|만|으로|로|에|까지|정도|쯤|이하|이상|가량)?"
 )
+_KOREAN_MONEY_WORDS = frozenset({"돈", "돈을", "돈도", "돈만", "돈좀"})
+# The person's own money as a source: "내 지갑에서", "내 계좌에서".
+_KOREAN_MONEY_SOURCES = ("지갑에서", "계좌에서")
+# A card is the person's money when said as theirs ("내 카드로", "제
+# 법인카드로"), or in the clause of the verb it pays with ("카드로 호텔
+# 예약해줘"); "결제 내역 카드로 정리해서 보내줘" puts the card on organizing.
+_KOREAN_POSSESSIVES = frozenset({"내", "제", "우리"})
+_KOREAN_CARD_MEANS = ("카드로", "카드에서", "카드로만")
+# What a send's object is when it is not money, inside any word ("거래내역"):
+# "영수증 이메일로 보내줘", "3만원짜리 주문 목록 보내줘", "내 계좌에서 거래내역
+# 보내줘".
+_KOREAN_SENT_DOCUMENTS = (
+    "견적", "영수증", "보고서", "리포트", "알림", "내역", "목록", "문서", "메일", "이메일", "파일", "자료",
+    "링크", "사진", "메시지", "문자", "공지", "초안", "데이터", "명세서", "청구서", "계약서", "주문서",
+)
+# What stands between a send and its object without being the object: whom
+# it goes to and how ("엄마한테", "계좌로", "카카오페이로"), a determiner, and
+# the softeners.
+_KOREAN_SEND_PASSING = ("한테", "에게", "께", "에", "으로", "로", "까지")
+_KOREAN_DETERMINERS = frozenset({"이", "그", "저", "다", "전부", "모두"})
 # The gate's Korean phrases: each verb above, 사 as said with its request
 # ending (one syllable is no phrase), and the Korean "with my card", "from my
 # wallet" and "from my account". Book (예약) and send (보내) are
 # automation-blueprint's phrases too, a sharing declared in
-# `omh.skills.trigger_collisions`: here they score only in a request admitted
-# with money beside them. An admitted Korean request always says one of these
-# phrases (`_korean_admitted`), so the router scores every request this rule
-# admits. They live here, beside the English table, and not in
-# `routing/trigger_packs/ko.json`, for the reason the English table does: the
-# rule reads them, and the bundle cannot read a pack.
+# `omh.skills.trigger_collisions`: here, like every phrase of the gate, they
+# score only inside a request this rule admitted. An admitted Korean request
+# always says one of these phrases (`_korean_admitted`), so the router scores
+# every request this rule admits. They live here, beside the English table,
+# and not in `routing/trigger_packs/ko.json`, for the reason the English
+# table does: the rule reads them, and the bundle cannot read a pack.
 SPEND_GATE_KOREAN_PHRASES = (
     "결제",
     "송금",
@@ -509,29 +535,86 @@ def _request(text: str, phrases: Iterable[str]) -> tuple[str, list[str]]:
 
 
 def _korean_admitted(text: str, phrases: tuple[str, ...], *, by_loop: bool) -> tuple[str, list[str]]:
-    """The English rule's Korean mirror: the first sentence when its last predicate is a spend.
+    """The English rule's Korean mirror: the request clause when its last predicate is a spend.
 
     The request ending is the marker (a loop's prompt is marked by the loop,
     as in English); the predicate is a spend verb, or a money-cued one beside
-    money; and one of `phrases` is said in the sentence -- always so for an
-    admitted request when `phrases` holds `SPEND_GATE_KOREAN_PHRASES`. The
-    sentence is returned as the caller passed it, so the caller's phrases
-    match it in the caller's own fold.
+    the person's money; and one of `phrases` is said in the clause -- always
+    so for an admitted request when `phrases` holds
+    `SPEND_GATE_KOREAN_PHRASES`. The clause is returned composed (NFC); a
+    caller that matches another fold folds it.
     """
     request = korean_request(text, require_ending=not by_loop)
     if request is None:
         return "", []
-    said = " ".join(request.words)
     predicate = request.predicate
-    if predicate in KOREAN_MONEY_CUED_FORMS or predicate.endswith(KOREAN_MONEY_CUED_NOUNS):
-        if not _KOREAN_MONEY.search(said):
+    if predicate in KOREAN_MONEY_CUED_FORMS:
+        if not _korean_sends_money(request.words, request.predicate_index):
+            return "", []
+    elif predicate.endswith(KOREAN_MONEY_CUED_NOUNS):
+        if not _korean_money_in_clause(request):
             return "", []
     elif not (predicate in KOREAN_SPEND_FORMS or predicate.endswith(KOREAN_SPEND_NOUNS)):
         return "", []
-    found = [phrase for phrase in phrases if composed(phrase) in said]
+    if KOREAN_SPEND_NON_LIGHT_VERBS & set(request.light_verbs):
+        return "", []
+    found = [phrase for phrase in phrases if composed(phrase) in request.clause]
     if not found:
         return "", []
-    return request.sentence, list(dict.fromkeys(found))
+    return request.clause, list(dict.fromkeys(found))
+
+
+def _korean_amount(words: tuple[str, ...], index: int) -> bool:
+    """Whether the word at `index`, or it and the next ("5만 원"), is an amount."""
+    pair = "".join(words[index : index + 2])
+    return bool(_KOREAN_AMOUNT.fullmatch(words[index]) or (index + 1 < len(words) and _KOREAN_AMOUNT.fullmatch(pair)))
+
+
+def _korean_money_word(words: tuple[str, ...], index: int) -> bool:
+    return (
+        _korean_amount(words, index)
+        or words[index] in _KOREAN_MONEY_WORDS
+        or words[index].endswith(_KOREAN_MONEY_SOURCES)
+    )
+
+
+def _korean_owned_card(words: tuple[str, ...]) -> bool:
+    return any(
+        "카드" in word and (word.startswith(("내", "제")) or (index > 0 and words[index - 1] in _KOREAN_POSSESSIVES))
+        for index, word in enumerate(words)
+    )
+
+
+def _korean_money_in_clause(request: KoreanRequest) -> bool:
+    """Money in the predicate's own clause, or the person's card said as theirs anywhere."""
+    words = request.words
+    start = max((index + 1 for _noun, index in request.joined if index < request.predicate_index), default=0)
+    in_clause = range(start, request.predicate_index + 1)
+    return _korean_owned_card(words) or any(
+        _korean_money_word(words, index) or words[index].endswith(_KOREAN_CARD_MEANS) for index in in_clause
+    )
+
+
+def _korean_sends_money(words: tuple[str, ...], predicate_index: int) -> bool:
+    """Whether a send's object is money: an amount or "돈", or anything from the person's wallet or account.
+
+    The object is the first word before the verb that is not whom it goes to,
+    how, a determiner or a softener. "엄마한테 10만원 보내줘" and "축의금 10만원
+    카카오페이로 보내줘" send money; "결제 금액 10,000원 영수증 이메일로
+    보내줘" sends a receipt and "매일 아침 리포트 보내줘" a report.
+    """
+    index = predicate_index - 1
+    while index >= 0 and (
+        words[index] in SOFTENERS
+        or words[index] in _KOREAN_DETERMINERS
+        or (words[index].endswith(_KOREAN_SEND_PASSING) and not words[index].endswith(_KOREAN_MONEY_SOURCES))
+    ):
+        index -= 1
+    if index < 0 or any(document in words[index] for document in _KOREAN_SENT_DOCUMENTS):
+        return False
+    if _korean_amount(words, index) or words[index] in _KOREAN_MONEY_WORDS:
+        return True
+    return any(word.endswith(_KOREAN_MONEY_SOURCES) for word in words[:predicate_index])
 
 
 def _admitted(text: str, phrases: Iterable[str], *, by_loop: bool) -> tuple[str, list[str]]:

@@ -89,10 +89,10 @@ COLLISION_RATIONALES: dict[str, str] = {
         "Chat gateway platform names belong to both automation blueprints and gateway intent cards."
     ),
     "R-SPEND-BESIDE-MONEY": (
-        "Booking and sending are automation-blueprint's scheduling words and, beside the person's money, a spend. "
-        "spend-gate scores its phrase only inside a request its own admission rule admitted: a Korean request ending on the "
-        "verb with the person's card, wallet, account, money or an amount in the sentence. So the two meet only where money "
-        "moves, and there the gate's money phrase is what decides between them."
+        "Booking and sending are automation-blueprint's scheduling words and, said of the person's money, a spend. "
+        "spend-gate scores them only inside a Korean request its own admission rule admitted (a spend, or a booking or a send "
+        "of the person's money), so a booking or a send without the person's money never reaches the gate through them. "
+        "Inside an admitted request they add to the gate's score like its other phrases, and either skill may still win."
     ),
     "R-SUBAGENT-VIEW": (
         "Subagent state is shown by the agent board and assessed by executor runtime readiness."

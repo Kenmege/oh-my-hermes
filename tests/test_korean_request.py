@@ -26,6 +26,7 @@ class KoreanRequestTests(unittest.TestCase):
             ("이 책 사 주세요", "사"),
             ("엄마한테 돈 보내줘", "보내"),
             ("결제해줘~ ㅎㅎ", "결제"),
+            ("내 카드로 결제해 줘라", "결제"),
             # The everyday sense of a spend word ends on another verb.
             ("결제 시스템 설계해줘", "설계"),
             ("결제 버그 고쳐줘", "고쳐"),
@@ -57,15 +58,61 @@ class KoreanRequestTests(unittest.TestCase):
                 assert request is not None
                 self.assertEqual(request.predicate, "결제")
 
-    def test_only_the_first_sentence_is_read(self) -> None:
+    def test_only_the_first_sentence_past_the_openers_is_read(self) -> None:
         self.assertIsNone(korean_request("결제 페이지가 깨졌어. 내 카드로 결제해줘"))
         request = korean_request("내 카드로 결제해줘. 영수증은 메일로")
         assert request is not None
-        self.assertEqual((request.predicate, request.sentence), ("결제", "내 카드로 결제해줘"))
+        self.assertEqual((request.predicate, request.clause), ("결제", "내 카드로 결제해줘"))
         # A decimal point ends no sentence.
         request = korean_request("이더 0.1개 송금해줘")
         assert request is not None
         self.assertEqual(request.predicate, "송금")
+        # A greeting sentence, or an address, before the request is skipped.
+        for message, clause in (
+            ("안녕하세요. 제 카드로 결제해 주세요.", "제 카드로 결제해 주세요"),
+            ("헤르메스, 내 카드로 결제해줘", "내 카드로 결제해줘"),
+            ("헤르메스. 내 카드로 결제해줘", "내 카드로 결제해줘"),
+            ("헤르메스야 개인정보 지우고 외부에 공유해줘", "개인정보 지우고 외부에 공유해줘"),
+        ):
+            with self.subTest(message=message):
+                request = korean_request(message)
+                assert request is not None
+                self.assertEqual(request.clause, clause)
+
+    def test_labelled_and_quoted_text_is_not_the_request(self) -> None:
+        for message in (
+            "버튼 라벨: 내 카드로 결제해줘",
+            "사용자 발화 예시: 고객 정보 마스킹해서 벤더한테 보내줘",
+            '테스트 케이스 이름 "카드로 결제해줘"',
+        ):
+            with self.subTest(message=message):
+                self.assertIsNone(korean_request(message))
+        request = korean_request('이 문장 영어로 번역해줘 "내 카드로 결제해줘"')
+        assert request is not None
+        self.assertEqual(request.predicate, "번역")
+        # A clock time is not a label.
+        request = korean_request("10:30에 결제해줘")
+        assert request is not None
+        self.assertEqual(request.predicate, "결제")
+
+    def test_a_negated_clause_is_dropped(self) -> None:
+        for message, clause, predicate in (
+            ("카드로 결제하지 말고 견적만 보내줘", "견적만 보내줘", "보내"),
+            ("결제 말고 100만원 견적만 보내줘", "100만원 견적만 보내줘", "보내"),
+            ("벤더한테 보내지 말고 개인정보만 마스킹해줘", "개인정보만 마스킹해줘", "마스킹"),
+            ("결제하지 않고 장바구니에 담아줘", "장바구니에 담아줘", "담아"),
+        ):
+            with self.subTest(message=message):
+                request = korean_request(message)
+                assert request is not None
+                self.assertEqual((request.clause, request.predicate), (clause, predicate))
+
+    def test_the_light_verbs_passed_are_kept(self) -> None:
+        for message, light_verbs in (("결제 처리해줘", ("처리",)), ("결제 진행해줘", ("진행",)), ("결제해줘", ())):
+            with self.subTest(message=message):
+                request = korean_request(message)
+                assert request is not None
+                self.assertEqual((request.predicate, request.light_verbs), ("결제", light_verbs))
 
     def test_joined_clauses_and_before_clauses(self) -> None:
         request = korean_request("고객 정보 마스킹해서 벤더한테 보내줘")
@@ -91,12 +138,7 @@ class KoreanRequestTests(unittest.TestCase):
                     self.assertIsNone(folded)
                     continue
                 assert folded is not None
-                self.assertEqual(
-                    (folded.words, folded.predicate, folded.joined, folded.before),
-                    (composed.words, composed.predicate, composed.joined, composed.before),
-                )
-                # The sentence stays in the caller's own fold.
-                self.assertEqual(folded.sentence, unicodedata.normalize("NFKD", composed.sentence))
+                self.assertEqual(folded, composed)
 
     def test_a_loop_prompt_needs_no_request_ending(self) -> None:
         self.assertIsNone(korean_request("재고 생기면 결제"))
