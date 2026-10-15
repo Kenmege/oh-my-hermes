@@ -19,7 +19,7 @@ from omh.routing.chat import HOST_COMMAND_TURN_REASON, NATIVE_LOOP_CADENCE_REASO
 from omh.routing.localization import normalized_phrase
 from omh.routing.policy import everyday_sense_phrase_unanchored
 from omh.routing.recommend import _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS, _prepare_definition, _spend_gate_clause
-from omh.skills.catalog import builtin_definitions
+from omh.skills.catalog import builtin_definitions, omh_skill_display_name
 from omh.skills.packaging import builtin_skill_reference_templates, builtin_skill_templates
 from omh.skills.render import agent_skill_reference_templates, agent_skill_templates
 from omh.wrapper.contract import build_chat_interaction_payload
@@ -144,13 +144,20 @@ class SpendGateContractTests(unittest.TestCase):
             "the saved-card fill included, so that fill is absent there too.",
             bodies["hermes"],
         )
-        # Another host has no OMH browser adapter to name.
+        # Another host has no OMH browser adapter to name. The portable body
+        # leaves it out, and the reference both targets ship names no adapter:
+        # on Hermes the body's line above is what says the adapter makes the
+        # fill absent.
         self.assertNotIn("omh_browser", bodies["portable"])
+        references = _references()
         self.assertInBoth(
-            "When it is absent, or OMH's browser adapter blocks the native `browser_*` tools, stop at the payment "
-            "step: the person enters the card, and never type a card the person gives you into the page.",
-            _references(),
+            "When it is absent or blocked, stop at the payment step: the person enters the card, and never type a "
+            "card the person gives you into the page.",
+            references,
         )
+        for projection, reference in references.items():
+            with self.subTest(projection=projection):
+                self.assertNotIn("browser adapter", reference)
 
     def test_a_run_nobody_can_answer_never_spends(self) -> None:
         bodies = _bodies()
@@ -333,14 +340,29 @@ class SpendGateSiblingTextTests(unittest.TestCase):
         self.assertIn(line.replace("`automation-blueprint`", "`omh-automation-blueprint`"), self._hermes()["loop"])
 
     def test_prose_names_siblings_by_the_label_skill_view_loads(self) -> None:
-        self.assertInBoth(
+        loadable = {
+            "hermes": {omh_skill_display_name(template.name) for template in builtin_skill_templates()},
+            "portable": {template.name for template in agent_skill_templates()},
+        }
+        bodies = _bodies()
+        self.assertIn(
             "`omh-browser` gates payment only inside a page, and `omh-provider-profile-posture` claims no payment at all.",
-            _bodies(),
+            bodies["hermes"],
         )
+        self.assertIn("omh-browser", loadable["hermes"])
+        # `omh-browser` is Hermes-only, so nothing loads it on the portable
+        # projection and only the Hermes body is held to naming it. The
+        # portable body still names it: how portable prose names a Hermes-only
+        # sibling is not settled here.
+        self.assertNotIn("omh-browser", loadable["portable"])
+        self.assertIn("`omh-provider-profile-posture` claims no payment at all.", bodies["portable"])
         self.assertInBoth(
             "It is the rule `omh-llm-app-dev` applies to an ambiguous public post: reconcile before any retry.",
             _references(),
         )
+        for projection, labels in loadable.items():
+            with self.subTest(projection=projection):
+                self.assertLessEqual({"omh-provider-profile-posture", "omh-llm-app-dev"}, labels)
 
     def test_the_reference_names_a_state_the_skill_keeps(self) -> None:
         self.assertInBoth(

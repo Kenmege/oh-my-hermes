@@ -2290,7 +2290,13 @@ class RefusalArticleTests(unittest.TestCase):
 
 
 class OwnershipWordingTests(unittest.TestCase):
-    """Skill text decides OMH ownership by the installed label, never by a name prefix."""
+    """The skills that set OMH's own skills apart tell them by the installed label.
+
+    Held two ways: each of those skills states the label clause once, and no
+    body or reference, Hermes or portable, writes the `omh-*` or `ulw-*`
+    wildcard the old prefix rule used. A prefix rule worded any other way is
+    not caught here.
+    """
 
     OWNERS = ("skill", "rules-distill", "skill-health")
 
