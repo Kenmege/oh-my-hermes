@@ -137,7 +137,7 @@ from .keys import (
     Paste,
 )
 from .launch import request_fallback
-from .agent_view import STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
+from .agent_view import AGENT_STEER_LEFT_UNANSWERED_NOTICE, STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
 from .layout import choice_cap, slot_cap, under_composer
 from .markdown import clean_text
 from .modes import MODE_ROW_GAP, NO_SESSION_NOTICE, STRIP_SEPARATOR, ModesMixin, mode_row_line
@@ -2455,6 +2455,15 @@ class App(ModesMixin, AgentViewMixin):
         """
         if sid != self.sid:
             self._steer_back(block.text, STEER_LEFT_UNANSWERED_NOTICE.format(seconds=CALL_ANSWER_SECONDS))
+        else:
+            self._steer_unanswered(block)
+
+    def _on_agent_steer_unanswered(self, sid: str, session: str, block: SteerBlock) -> None:
+        """An agent steer with no answer within `CALL_ANSWER_SECONDS`: as the main steer's, and if `sid`, the session
+        it went to, was left, a notice names the agent and `session`."""
+        if sid != self.sid:
+            said = AGENT_STEER_LEFT_UNANSWERED_NOTICE.format(name=block.agent, seconds=CALL_ANSWER_SECONDS, session=session)
+            self._steer_back(block.text, said)
         else:
             self._steer_unanswered(block)
 

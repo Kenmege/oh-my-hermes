@@ -37,7 +37,7 @@ from omh.tui.session_picker import SessionPicker, SessionRow
 from omh.tui.style import Span
 from omh.tui.subagents import MAIN_ID
 from omh.tui.theme import DEFAULT_THEME
-from omh.tui.transcript import TOOL_OK, TOOL_RUNNING, AssistantBlock, ToolGroup
+from omh.tui.transcript import NOTICE_WARN, TOOL_OK, TOOL_RUNNING, AssistantBlock, ToolGroup
 
 CTRL_C = Key(CHAR, "c", ctrl=True)
 TAIL_CALL = ("subagent.tail", {"session_id": SID, "subagent_id": FIRST})
@@ -700,6 +700,42 @@ class AgentActionTests(unittest.TestCase):
         )
         self.assertEqual(app.composer.text, "use it")
         self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
+
+    def test_a_steer_settled_after_its_session_was_left_comes_back_with_a_notice_naming_that_session(self) -> None:
+        # As the main steer's: the text comes back, never to the session now open, and a notice says whose it was.
+        answers = {
+            "taken": ({"status": "queued", "subagent_id": FIRST, "text": "use it"}, None),
+            "rejected": (recorded_parity("subagent_steer")[1], None),
+            "refused": (None, {"code": 4009, "message": "agent busy."}),
+            "unanswered": None,
+        }
+        for name, answered in answers.items():
+            for leave in ("new", "switch"):
+                with self.subTest(answer=name, leave=leave):
+                    now = [0.0]
+                    app, client = focused(clock=lambda: now[0])
+                    app.stored_id = "stored-1"
+                    app._on_input(Key(CHAR, "s"))
+                    type_text(app, "use it")
+                    app._on_input(Key(ENTER))
+                    steer = len(client.calls)
+                    if leave == "new":
+                        app._on_new_session({"session_id": "live-2", "stored_session_id": "stored-2"})
+                    else:
+                        app._on_session_resumed("stored-2", {"session_id": "live-2", "stored_session_id": "stored-2"})
+                    if answered is None:
+                        now[0] += 3600
+                        app._expire_calls()
+                    else:
+                        app._on_response(Response(steer, *answered))
+                    self.assertEqual(app.composer.text, "use it")
+                    self.assertEqual(
+                        [method for method, _params in client.calls[steer:]], ["session.close", "commands.catalog"]
+                    )
+                    said = [text for text in notices(app, NOTICE_WARN) if "stored-1" in text]
+                    self.assertEqual(len(said), 1, notices(app))
+                    self.assertIn("find usages of", said[0])
+                    self.assertIn("not sent to this one", said[0])
 
     def test_an_agent_whose_id_is_blank_is_not_listed_so_no_steer_row_can_be_left_held(self) -> None:
         app, client = make_app(busy=True, clock=lambda: 0.0)

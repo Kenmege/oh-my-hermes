@@ -674,7 +674,8 @@ and its row says so (`⧗ back in the composer — Hermes did not answer the
 steer in 120 s · <text>`). An agent's steer comes back to the composer the
 same way. If you
 left the session (`/new`, a switch) before Hermes answered, the text comes
-back to the composer and is not sent to the session you are in. The OMH TUI
+back to the composer and is not sent to the session you are in, and a notice
+says so; for an agent's steer it names the agent and the session you left. The OMH TUI
 steers only with text you typed and sent this way: a queued prompt is never
 turned into a steer.
 

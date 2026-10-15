@@ -52,6 +52,16 @@ STEER_SAY = (
     "↪ steer · esc cancels",
 )
 AGENT_FINISHED_NOTICE = "{name} has finished; there is nothing to {action}."
+# An agent steer that settled after its session was left, as the main steer's notices say it, naming the agent and
+# the session it was for.
+AGENT_STEER_LEFT_NOTICE = (
+    "Hermes answered the steer for {name} after you left session {session}. "
+    "Its text is back in the composer and was not sent to this one."
+)
+AGENT_STEER_LEFT_UNANSWERED_NOTICE = (
+    "Hermes did not answer the steer for {name} in {seconds:g} s, and you had left session {session}. "
+    "Its text is back in the composer and was not sent to this one."
+)
 AGENT_INTERRUPTED_NOTICE = "Interrupted {name}."
 AGENT_ALREADY_DONE_NOTICE = "{name} had already finished."
 AGENT_INTERRUPT_REFUSED_NOTICE = "Hermes did not interrupt {name}: {reason}."
@@ -212,16 +222,26 @@ class AgentViewMixin:
             self._set_composer(text)
             return
         block = self.transcript.add_steer(text, agent=agent.name)  # held under what runs, as the main steer is
+        sid, session = self.sid, self.stored_id or self.sid
         self._request(
             "subagent.steer",
-            {"session_id": self.sid, "subagent_id": agent.subagent_id, "text": text},
-            lambda result: self._on_agent_steered(block, result),
-            lambda error: self._on_agent_steered(block, {}, as_text(error.get("message")).strip().rstrip(".")),
-            lambda: self._steer_unanswered(block),  # its text comes back, and is never sent again
+            {"session_id": sid, "subagent_id": agent.subagent_id, "text": text},
+            lambda result: self._on_agent_steered(sid, session, block, result),
+            lambda error: self._on_agent_steered(sid, session, block, {}, as_text(error.get("message")).strip().rstrip(".")),
+            lambda: self._on_agent_steer_unanswered(sid, session, block),  # its text comes back, never sent again
         )
 
-    def _on_agent_steered(self, block: SteerBlock, result: Mapping[str, Any], reason: str = "") -> bool:
-        """Hermes' answer to an agent steer: taken, or refused (with `reason` when Hermes gave one) and given back."""
+    def _on_agent_steered(
+        self, sid: str, session: str, block: SteerBlock, result: Mapping[str, Any], reason: str = ""
+    ) -> bool:
+        """Hermes' answer to an agent steer: taken, or refused (with `reason` when Hermes gave one) and given back.
+
+        Settled after `sid`, the session it went to, was left (named `session`), whatever the answer, its text
+        comes back with a notice saying so, as the main steer's does.
+        """
+        if sid != self.sid:
+            self._steer_back(block.text, AGENT_STEER_LEFT_NOTICE.format(name=block.agent, session=session))
+            return True
         if as_text(result.get("status")) == contract.STEER_QUEUED:
             self.transcript.steer_answered(block, STEER_QUEUED)
         else:
