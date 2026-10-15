@@ -378,11 +378,16 @@ class SpendGateSiblingTextTests(unittest.TestCase):
             bodies["hermes"],
         )
         self.assertIn("omh-browser", loadable["hermes"])
-        # `omh-browser` is Hermes-only, so nothing loads it on the portable
-        # projection and only the Hermes body is held to naming it. The
-        # portable body still names it: how portable prose names a Hermes-only
-        # sibling is not settled here.
-        self.assertNotIn("omh-browser", loadable["portable"])
+        # A body names `omh-browser` only where its projection ships it, so
+        # this holds whichever projections `catalog_portable.py` ships it in;
+        # the portable label gate in `test_agent_skills_projection.py` holds
+        # the same for every sibling.
+        for projection, labels in loadable.items():
+            with self.subTest(projection=projection, sibling="omh-browser"):
+                if "omh-browser" in labels:
+                    self.assertIn("`omh-browser`", bodies[projection])
+                else:
+                    self.assertNotIn("omh-browser", bodies[projection])
         self.assertIn("`omh-provider-profile-posture` claims no payment at all.", bodies["portable"])
         self.assertInBoth(
             "It is the rule `omh-llm-app-dev` applies to an ambiguous public post: reconcile before any retry.",

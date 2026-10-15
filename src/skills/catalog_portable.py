@@ -424,3 +424,18 @@ PORTABLE_REFERENCE_PATHS = frozenset({
     'ai-slop-cleaner/references/prose-lexicon.md',
     'plan/references/project-constitution.md',
 })
+
+
+# Reviewed portable wording for a shipped reference that names a skill only
+# the Hermes projection ships: path -> (Hermes text, portable text) pairs.
+# `portable_reference_templates` swaps each Hermes text, which must occur in
+# the reference exactly once, so an edit that moves it fails the render
+# instead of shipping the old pointer.
+PORTABLE_REFERENCE_REWRITES: dict[str, tuple[tuple[str, str], ...]] = {
+    'wiki/references/wiki-blueprint.md': (
+        (
+            "Route existing `USER.md`/`MEMORY.md` cleanup to `memory-sync`, new durable project facts to `memory-new`,",
+            "Keep existing `USER.md`/`MEMORY.md` cleanup out of the wiki; route new durable project facts to `memory-new`,",
+        ),
+    ),
+}
