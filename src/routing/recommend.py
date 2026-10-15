@@ -5,8 +5,8 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 import re
 
-from ..plugin_bundle.omh.data_share_cues import data_share_request_admitted
-from ..plugin_bundle.omh.spend_signals import spend_request_clause
+from ..plugin_bundle.omh.data_share_cues import DATA_SHARE_REVIEW_KOREAN_PHRASES, data_share_request_admitted
+from ..plugin_bundle.omh.spend_signals import SPEND_GATE_KOREAN_PHRASES, spend_request_clause
 from ..skills.catalog import SkillDefinition, builtin_definitions, routable_definitions
 from .domain_signals import (
     DomainOperatorOverride,
@@ -3135,9 +3135,12 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # and "my personal data was in a breach" all scored it as bare tokens.
     # Only the complete phrases score. Tokens that mean nothing else stay
     # creditable: `pseudonymize` and its spellings and -ing form, `deidentify`,
-    # `de-identify`, `de-identifying`, `quasi-identifier(s)`.
+    # `de-identify`, `de-identifying`, `quasi-identifier(s)`. Every word of its
+    # Korean phrases is held back too: "고객" (customer), "정보" (information)
+    # and "외부" (outside) say nothing alone, and the phrases score whole.
     "data-share-review": frozenset(
         {
+            *DATA_SHARE_REVIEW_KOREAN_PHRASES,
             "anonymize",
             "data",
             "data-share",
@@ -3171,9 +3174,12 @@ _WHOLE_PHRASE_ONLY_TRIGGER_TOKENS = {
     # order, a wallet is lost and a repo is transferred, and none of those
     # moves money. Only the complete phrases
     # score. The two hyphenated names stay creditable: `spend-gate` and
-    # `pre-spend` mean nothing else.
+    # `pre-spend` mean nothing else. Every word of its Korean phrases is held
+    # back too, so a Korean request scores its phrases whole, as an English
+    # one does.
     "spend-gate": frozenset(
         {
+            *SPEND_GATE_KOREAN_PHRASES,
             "402",
             "approval",
             "again",
@@ -5798,7 +5804,10 @@ def _spend_gate_trigger_phrases() -> tuple[str, ...]:
 
 
 def _spend_gate_clause(normalized_query: str) -> str:
-    return spend_request_clause(normalized_query, _spend_gate_trigger_phrases())
+    # A Korean clause comes back composed (`korean_request`); folding it again
+    # puts it in the fold the trigger phrases are matched in, and leaves an
+    # English clause, already folded, as it was.
+    return normalized_phrase(spend_request_clause(normalized_query, _spend_gate_trigger_phrases()))
 
 
 # Skills that withdraw from the shortlist unless their own precondition holds,

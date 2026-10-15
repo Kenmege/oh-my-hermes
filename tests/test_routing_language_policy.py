@@ -108,6 +108,15 @@ FROZEN_HANGUL_TRIGGERS_BY_SKILL: dict[str, int] = {
     "context-budget-review": 4,
     "cto-loop": 6,
     "data-analysis": 13,
+    # 0 -> 36 (2026-10-15, owner decision D.4 of the upstream-audit follow-up
+    # triage, KO-2): Korean admission for the two safety gates. A Korean
+    # request to protect personal data leaving the team reached no gate
+    # ("고객 정보 마스킹해서 벤더한테 보내줘" dispatched gateway-intent-card).
+    # Its phrases live in `data_share_cues`, read by its Korean admission
+    # rule, so they score only in a request that rule admits. A new
+    # capability for a skill that had no Korean, frozen at what it carries so
+    # a later miss is not papered over by padding it.
+    "data-share-review": 36,
     "deep-interview": 5,
     # 2026-07-27: bare "자료" removed - a generic research-shaded noun that stole
     # reference/data-finding prompts from the research lane via substring phrase
@@ -185,6 +194,11 @@ FROZEN_HANGUL_TRIGGERS_BY_SKILL: dict[str, int] = {
     "skill-health": 6,
     "skill-scout": 13,
     "source-finder": 8,
+    # 0 -> 24 (2026-10-15, owner decision D.4, KO-1): the other safety gate,
+    # on the same terms. "내 카드로 결제해줘" fell back with score 0. Its
+    # phrases live in `spend_signals` and score only in a request its Korean
+    # admission rule admits.
+    "spend-gate": 24,
     "strategy-brief": 6,
     "toolbelt-readiness": 5,
     "ultragoal": 4,

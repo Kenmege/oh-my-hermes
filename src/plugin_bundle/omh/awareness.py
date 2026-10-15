@@ -7,7 +7,7 @@ import re
 import unicodedata
 
 from .boundary_phrase import contains_boundary_phrase as _contains_boundary_phrase
-from .data_share_cues import DATA_SHARE_REVIEW_PHRASES, data_share_request_admitted
+from .data_share_cues import DATA_SHARE_REVIEW_PHRASES, data_share_phrases_said, data_share_request_admitted
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES as _CODING_DELIVERY_REQUEST_PHRASES,
     CODING_DELIVERY_REQUEST_TOKENS as _CODING_DELIVERY_REQUEST_TOKENS,
@@ -6035,20 +6035,20 @@ def _awareness_context_matches_message_cached(message: str) -> tuple[bool, str]:
 
 # Spending the person's money arms awareness only through the request clause
 # the router admits, on the router's own phrase table (`spend_request_phrases`,
-# `SPEND_GATE_PHRASES`), as whole words: "consumer spending capacity is
-# falling" and "check out this thread about agents that buy it for me" are not
-# spends.
+# `SPEND_GATE_PHRASES`), as whole words, or for a Korean request inside the
+# sentence the router admits: "consumer spending capacity is falling" and
+# "check out this thread about agents that buy it for me" are not spends.
 def _spend_awareness_marked(text: str) -> bool:
     return bool(spend_request_phrases(text, SPEND_GATE_PHRASES))
 
 
 # A file leaving the team arms awareness the same way: a request
-# `data_share_cues` admits that says one of the router's own phrases as whole
-# words. The phrase markers above hold only a few of them, so "anonymize the
+# `data_share_cues` admits that says one of the router's own phrases, read as
+# the router reads them (`data_share_phrases_said`). The phrase markers above hold only a few of them, so "anonymize the
 # dataset before we upload it to the provider", which the router dispatches,
 # armed nothing on a later turn.
 def _data_share_awareness_marked(text: str) -> bool:
-    return bool(_whole_word_phrases(text, list(DATA_SHARE_REVIEW_PHRASES))) and data_share_request_admitted(text)
+    return bool(data_share_phrases_said(text)) and data_share_request_admitted(text)
 
 
 def awareness_route_hint(message: str, *, max_hints: int = 2) -> dict[str, object]:
@@ -6477,10 +6477,6 @@ def _rule_suppressed_by_named_coding_agent_delivery(
     return named_coding_agent_delivery and rule.get("id") == "customer_signal"
 
 
-def _whole_word_phrases(routing_normalized: str, phrases: list[str]) -> list[str]:
-    return [phrase for phrase in phrases if _contains_boundary_phrase(routing_normalized, (phrase,))]
-
-
 # Rules whose phrases are read the way the router reads the skill's triggers,
 # so the hint names the skill where the router scores it. Every other rule
 # matches its phrases as substrings.
@@ -6488,13 +6484,16 @@ def _whole_word_phrases(routing_normalized: str, phrases: list[str]) -> list[str
 #   each followed only by what may follow a request (`spend_request_phrases`).
 #   A substring match is how "spending cap" fired inside "consumer spending
 #   capacity is falling".
-# - `data_share_review`: whole words. Its table holds single words that a
-#   longer word contains ("pseudonymize" in "pseudonymized", a finished
-#   state); the request the router admits is checked apart, by
+# - `data_share_review`: an English phrase as whole words, a Korean one
+#   anywhere, as the router reads them (`data_share_phrases_said`). Its table
+#   holds single words that a longer word contains ("pseudonymize" in
+#   "pseudonymized", a finished state), while Korean writes compounds
+#   without a space ("협력업체", "고객개인정보"), so a Korean phrase often
+#   starts mid-word; the request the router admits is checked apart, by
 #   `_rule_suppressed_by_context`.
 _ROUTE_HINT_PHRASE_READERS: dict[str, Callable[[str, list[str]], list[str]]] = {
     "spend_gate": spend_request_phrases,
-    "data_share_review": _whole_word_phrases,
+    "data_share_review": data_share_phrases_said,
 }
 
 

@@ -631,7 +631,30 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # Three hold the Korean diagram fix to the English boundary: sales
             # data visualized, and a cloud architecture diagram bare and with a
             # particle, none of which names codebase-uml (3).
-            expected=777,
+            # Admitting Korean spend and data-share requests to their gates
+            # adds twelve whose Korean words keep their everyday sense: a
+            # payment system designed, a payment flow tested, a payment made,
+            # no need to pay, a document approved (결재), a restaurant booked
+            # and a phone charged, with nothing of money beside them (7); and
+            # a screen shared, code written to mask personal data, a customer's
+            # personal data deleted, personal data masked for no recipient, and
+            # a name removed before sharing, which says none of the review's
+            # phrases (5). Its review adds eight that named a gate while a
+            # recipient counted by containment, a negated clause or a document
+            # sent beside an amount was read as the request, or a processed
+            # order as a payment: personal data masked in external logs and
+            # deleted from an overseas department's list, masking instead of
+            # sending, and cleaned test data uploaded to staging (4); a payment
+            # and an order processed (2); and two loops that send a price alert
+            # and a rules document (2). Its second review adds sixteen: an
+            # amount or a card that pays for nothing -- a sponsor list, a
+            # price, card details, a card report, a card-game tournament, and
+            # two loops that subscribe to an alert and reprice a price list
+            # (7); an honorific and a "없이" negation (2); 로 on a word that
+            # starts with a recipient -- per vendor, per client, a foreign key,
+            # a vendor-name sort (4); and exports to a spreadsheet, a CSV and a
+            # backup folder (3).
+            expected=813,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -893,7 +916,20 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # ops-observability-card, which the dropped bare 토큰 and 비용
             # triggers carried before (20); and a token-usage API built and a
             # token-usage bug fixed, which stay on ultrawork (2).
-            expected=826,
+            # Admitting Korean spend and data-share requests to their gates
+            # adds nine: a card payment and a spending loop that reach the
+            # pre-spend card (2); a payment and a remittance asked with only
+            # the verb, which ask with the card leading (2); customer
+            # information masked for a vendor, personal data removed before an
+            # external share, and personal data masked before it goes to a
+            # vendor, which reach the data share review (3); and a payment bug
+            # fix and a shared summary, which stay on ultrawork and
+            # long-document-reading (2). Its review adds four: a card payment
+            # after a greeting sentence and masked customer information for a
+            # vendor addressed to Hermes, which reach their gates (2); and a
+            # receipt that states an amount and a quote sent instead of paying,
+            # which stay on gateway-intent-card (2).
+            expected=839,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

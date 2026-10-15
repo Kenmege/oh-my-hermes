@@ -1616,8 +1616,8 @@
 },
 {
 "anchors":"asked attach bug chat contractor copy customer de deidentify email export number phon pseudonymis pseudonymisation pseudonymiz pseudonymization researcher server spreadsheet still train usag vendor",
-"hangul":"",
-"hangul_anchors":"",
+"hangul":"가명 감정 개인 객정 거래 계좌 고객 구기 구자 기관 너사 대행 드번 등록 락처 래처 력사 록번 메일 명처 명화 민감 민등 민번 번호 벤더 별자 별정 비식 식별 실명 업체 에이 연구 연락 외부 외주 이메 이전 익명 인정 전시 전화 정보 좌번 주민 주소 처리 카드 트너 파트 행사 협력 화번",
+"hangul_anchors":"가명 감정 개인 객정 거래 계좌 고객 구기 구자 기관 너사 대행 드번 등록 락처 래처 력사 록번 메일 명처 명화 민감 민등 민번 번호 벤더 별자 별정 비식 식별 실명 업체 에이 연구 연락 외부 외주 이메 이전 익명 인정 전시 전화 정보 좌번 주민 주소 처리 카드 트너 파트 행사 협력 화번",
 "label":"omh-data-share-review",
 "name":"data-share-review",
 "situation":"Before data leaves the team -- a dataset, log, ticket export or transcript excerpt bound for a vendor, a public issue, a model provider or a training corpus",
@@ -1650,8 +1650,8 @@
 },
 {
 "anchors":"fee month really renew sign sure went",
-"hangul":"",
-"hangul_anchors":"",
+"hangul":"갑에 갱신 결제 계좌 구독 구매 구입 기부 납부 드로 보내 사주 송금 에서 예매 예약 이체 입금 좌에 주문 지갑 지불 충전 카드 후원",
+"hangul_anchors":"갑에 갱신 결제 계좌 구독 구매 구입 기부 납부 드로 보내 사주 송금 에서 예매 예약 이체 입금 좌에 주문 지갑 지불 충전 카드 후원",
 "label":"omh-spend-gate",
 "name":"spend-gate",
 "situation":"Spending money on the user's behalf -- a card checkout, an HTTP 402 or pay-per-request call, a wallet transfer, a booking, a paid data endpoint",

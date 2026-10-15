@@ -55,7 +55,7 @@
     "omh-data-analysis/SKILL.md": "475091c685020d44ee0ae4d3bbc1df694e00a9c94a79f6fcf2c6f5f8de71265e",
     "omh-data-pipelines/SKILL.md": "cf425772f6adb8c9aff00504a2a6257db1c7467d40ebbb107ef06a4c4feb72e1",
     "omh-data-pipelines/references/pipeline-method.md": "9f2dea6059c664a0c1ab4d989545825d3ecc567d22816af00975e79670ef36f0",
-    "omh-data-share-review/SKILL.md": "a49ec2a3bf83ad399e14ae3dda59a3ee23ccfbecbdefa911491d9a04f1c7fe03",
+    "omh-data-share-review/SKILL.md": "3a0ee571ce42fa799003dd12ad93bfb6d6436be881c7da95375a2ea86722d624",
     "omh-data-share-review/references/data-share-method.md": "bf7840d9464b63ea72f0c6e4efeafb56007c4ee2a4df33f2974608661e226709",
     "omh-decide/SKILL.md": "98056de24d057f62d043d91c3d058b86a6fd856a5cce761fc2724f7480f3de62",
     "omh-decide/references/capacity-planning.md": "5f017b357b0bfb37279918098b9992c3c793ac8ad4056969bf3e2c0e6d5bb9ae",
@@ -170,7 +170,7 @@
     "omh-skill-health/SKILL.md": "371280735d0de2381430e2bf43fcf17133130e05c3da7c8b0e1789898347014f",
     "omh-skill-scout/SKILL.md": "f5a05efd980f9da34f41e128c59000fc0a82f0d763b84048c153094d3d4a479c",
     "omh-source-finder/SKILL.md": "3554b96f773583c9ea78add745996d8f54eab7a157528e2ef53b961d760cef91",
-    "omh-spend-gate/SKILL.md": "8609a6dbb03ef5f190db7981b3410fd316108f432e27b6da27ee7747807ddbbe",
+    "omh-spend-gate/SKILL.md": "c6a03240933e7a6e18803f5bef4c13c8f27ec5d3ee0fa8157e28f47ad9f0439c",
     "omh-spend-gate/references/spend-rails.md": "c542dd6e71697631bb0ed1c647b8ab9748e62e3fcbf355c20eff1c75b3207488",
     "omh-support-operations/SKILL.md": "8f1cbbc2c3647debc830558621ad73eef4d3dad6960cc92573c8720169d8c323",
     "omh-tech-debt-audit/SKILL.md": "b428ffad47c4b2789adc99f08293a543b44bd0d43add239a27ac0d29e5d7b78c",
@@ -324,7 +324,7 @@
     "ulw-work"
   ],
   "source": "agent-skills",
-  "source_digest": "e18b26a87b413efba311667f31a67124e7e246164bd8174cfd5933f69a1c5d30",
+  "source_digest": "cf5d907c35c7ba68f54b342d2370081a9081ed7946bf62712155f88fcc1e2a57",
   "targets": {
     "repo": ".agents/skills",
     "user": ".agents/skills"

@@ -88,6 +88,12 @@ COLLISION_RATIONALES: dict[str, str] = {
     "R-CHAT-GATEWAY": (
         "Chat gateway platform names belong to both automation blueprints and gateway intent cards."
     ),
+    "R-SPEND-BESIDE-MONEY": (
+        "Booking and sending are automation-blueprint's scheduling words and, said of the person's money, a spend. "
+        "spend-gate scores them only inside a Korean request its own admission rule admitted (a spend, or a booking or a send "
+        "of the person's money), so a booking or a send without the person's money never reaches the gate through them. "
+        "Inside an admitted request they add to the gate's score like its other phrases, and either skill may still win."
+    ),
     "R-SUBAGENT-VIEW": (
         "Subagent state is shown by the agent board and assessed by executor runtime readiness."
     ),
@@ -147,8 +153,10 @@ INTENTIONAL_COLLISIONS: tuple[CollisionDeclaration, ...] = (
     CollisionDeclaration(identity="고객 피드백", owners=("feedback-triage", "research",), rationale_id="R-FEEDBACK-SIGNAL"),
     CollisionDeclaration(identity="디스코드", owners=("automation-blueprint", "gateway-intent-card",), rationale_id="R-CHAT-GATEWAY"),
     CollisionDeclaration(identity="레이아웃 깨짐", owners=("frontend", "visual-qa",), rationale_id="R-LAYOUT-DEFECT-INTAKE"),
+    CollisionDeclaration(identity="보내", owners=("automation-blueprint", "spend-gate",), rationale_id="R-SPEND-BESIDE-MONEY"),
     CollisionDeclaration(identity="서브에이전트", owners=("agent-board", "executor-runtime-readiness",), rationale_id="R-SUBAGENT-VIEW"),
     CollisionDeclaration(identity="슬랙", owners=("automation-blueprint", "gateway-intent-card",), rationale_id="R-CHAT-GATEWAY"),
+    CollisionDeclaration(identity="예약", owners=("automation-blueprint", "spend-gate",), rationale_id="R-SPEND-BESIDE-MONEY"),
     CollisionDeclaration(identity="장기 목표", owners=("loop", "ultragoal",), rationale_id="R-LONG-HORIZON-GOAL"),
     CollisionDeclaration(identity="접근성", owners=("frontend", "voice-operator",), rationale_id="R-ACCESSIBILITY-SURFACE"),
     CollisionDeclaration(identity="조용히", owners=("automation-blueprint", "gateway-intent-card",), rationale_id="R-CHAT-GATEWAY"),
