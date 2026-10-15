@@ -556,6 +556,7 @@ class WrapperGoldenExampleTests(unittest.TestCase):
 
                 self.assertEqual(response["schema_version"], expected["schema_version"])
                 self.assertEqual(response["kind"], expected["kind"])
+                self.assertEqual(live["route_decision"].get("reason_code", ""), expected["reason_code"])
                 self.assertEqual(live["route_hint"]["primary_workflow"], expected["primary_workflow"])
                 self.assertEqual(response["state"]["next_action"], expected["next_action"])
                 self.assertEqual(
@@ -630,6 +631,40 @@ class WrapperGoldenExampleTests(unittest.TestCase):
                 self.assertIn("workflow_execution", payload["not_evidence_until_observed"])
                 self.assertEqual(action_ids, {"open_workflow", "route_for_me", "open_picker"})
                 self.assertIn(f"Open {omh_skill_display_name(workflow)}", {action["label"] for action in payload["actions"]})
+                self.assertNotIn(raw_message, result.stdout)
+
+    def test_route_hint_shims_render_direct_answer_cards(self) -> None:
+        cases = (
+            ("examples/telegram-adapter-shim.py", "examples/wrapper-events/telegram-route-hint-thanks.json", "telegram", "thanks!"),
+            (
+                "examples/discord-adapter-shim.py",
+                "examples/wrapper-events/discord-route-hint-blueprint-seed.json",
+                "discord",
+                "Morning briefing",
+            ),
+        )
+
+        for script, fixture, source, raw_message in cases:
+            with self.subTest(source=source):
+                result = subprocess.run(
+                    [sys.executable, script, "--route-hint", fixture],
+                    cwd=Path.cwd(),
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+
+                self.assertEqual(result.stderr, "")
+                self.assertEqual(result.returncode, 0)
+                payload = json.loads(result.stdout)
+
+                self.assertEqual(payload["mode"], "route_hint")
+                self.assertEqual(payload["response"]["kind"], "direct_answer_route_hint")
+                self.assertEqual(payload["response"]["headline"], "[omh] no workflow needed.")
+                self.assertEqual(payload["next_action"], "answer_directly")
+                self.assertEqual(payload["actions"], [])
+                self.assertIsNone(payload["messenger_rendering"]["primary_action"])
+                self.assertEqual(payload["usage_trace"]["visible_prefix"], "[omh] route_hint")
                 self.assertNotIn(raw_message, result.stdout)
 
     def test_plugin_interact_golden_examples_render_plugin_tool_sessions(self) -> None:

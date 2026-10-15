@@ -17,7 +17,6 @@ from ..plugin_bundle.omh.hermes_session_commands import (
     LOOP_REPEATED_IMPROVEMENT_TOKENS,
     LOOP_TIMER_NONE,
     LOOP_TIMERS_ANSWERED_DIRECTLY,
-    host_command_turn,
 )
 from .executor_cues import (
     CODING_DELIVERY_REQUEST_PHRASES,
@@ -7524,15 +7523,6 @@ def _durable_research_goal_guard_applies(normalized_query: str, query_tokens: se
     research = bool({"research", "researching", "evidence", "gaps", "sources"} & query_tokens)
     stop_condition = _contains_phrase(normalized_query, ("until", "closed or logged", "checkpoint", "stop condition"))
     return durable and research and stop_condition
-
-
-def host_owned_command_turn(message: str) -> bool:
-    """A turn Hermes wrote from its own session-command template; OMH routes nothing on it.
-
-    The predicate lives in the plugin bundle (`hermes_session_commands`) so the
-    per-turn hook, which may not import `omh`, and this router read one copy.
-    """
-    return host_command_turn(message)
 
 
 def _loop_goal_guard_applies(

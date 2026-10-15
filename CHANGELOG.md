@@ -4,6 +4,32 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A host turn or a thank-you gets a direct-answer card.** `omh chat
+  route-hint` and the example shims showed the generic no-hint card, with "Open
+  omh" and "Clarify" buttons, beside a route decision that said to answer
+  directly: on a turn Hermes wrote from one of its session-command templates, on
+  "thanks!", and on every other route the router answers in chat. Where the hint
+  rail had named a workflow beside such a decision, the card offered to open it
+  ("how long does it take to become a doctor" offered `omh-doctor`). The card
+  could not tell these routes apart: the compact `route_decision` it reads cuts
+  the reason to thirteen characters. The router now names each answer-in-chat
+  fallback with a stable `reason_code` (`direct_answer`, `host_command_turn`,
+  `native_loop_cadence`, `typed_loop_goal`, `loop_construct`, and `file_lookup`)
+  on the route and on `route_decision`. The key is additive and absent on every
+  other route, and `reason` keeps its prose. A direct-answer code gives a new
+  `direct_answer_route_hint` card with no actions and no tool checkpoint, which
+  says no OMH workflow is needed. The router's next action, claim boundary and
+  routing instruction, and the wrapper's file-lookup and direct-answer cards and
+  its loop-timer check, read the code instead of matching the reason's wording.
+  Measured over both corpora on Discord, plus 18 messages on four sources, at
+  `origin/main` cd8a879db and at the head: no route, interaction card or next
+  action moved. The route-hint card moved on exactly the 271 direct-answer
+  routes and nowhere else; the 211 corpus rows among them are all negative
+  controls, 165 from the no-hint card and 46 from a workflow card.
+  `host_owned_command_turn`, a pass-through over the bundle's
+  `host_command_turn`, is gone; the router and both wrapper payloads call the
+  bundle's predicate.
+
 - **Memory recall no longer fills a pack with records that share only the
   project's name.** A query term that more than half of the records the pack
   could serve hold, when there are at least five of them, never makes a record

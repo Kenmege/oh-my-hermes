@@ -7,13 +7,12 @@ from ..plugin_bundle.omh.awareness import (
     awareness_route_hint_context_from_payload,
 )
 from ..plugin_bundle.omh.degradation import degradation_chat_note
-from ..plugin_bundle.omh.hermes_session_commands import person_request_text
+from ..plugin_bundle.omh.hermes_session_commands import host_command_turn, person_request_text
 from ..plugin_bundle.omh.route_answerers import answerer_ladder
 from ..plugin_bundle.omh.route_question_mode import ROUTE_QUESTION_MODE_OFF, read_route_question_mode
 from ..routing.catalog_questions import is_skill_catalog_question
 from ..routing.action_copy import next_action_label
-from ..routing.chat import route_chat_message
-from ..routing.policy import host_owned_command_turn
+from ..routing.chat import DIRECT_ANSWER_REASON_CODES, route_chat_message
 from ..routing.reference_regions import executable_routing_text
 
 # `contract` never imports this module, so the edge is one-way and cycle-free.
@@ -67,7 +66,7 @@ def build_chat_route_hint_payload(
     # around them; the catalog picker below reads the same text.
     hint_message = (
         ""
-        if host_owned_command_turn(message)
+        if host_command_turn(message)
         else person_request_text(message, messaging=source in MESSAGING_CHAT_SOURCES)
     )
     route_hint = awareness_route_hint(hint_message, max_hints=max_hints)
@@ -221,7 +220,21 @@ def _response_for_hint(
     route_decision: dict[str, object],
 ) -> dict[str, object]:
     checkpoint_body = _checkpoint_body_text(generic_tool_checkpoint)
-    if primary_hint:
+    if route_decision.get("action") == "fallback" and route_decision.get("reason_code") in DIRECT_ANSWER_REASON_CODES:
+        # The router answers this turn in chat: a host turn, a thank-you, a
+        # plain question, or a loop on a timer. The card says so whatever the
+        # hint rail named, and offers nothing to open or clarify; the hint
+        # itself stays in `route_hint` for a reader. The tool checkpoint is
+        # left out too: it asks to name a workflow first.
+        workflow = ""
+        next_action = "answer_directly"
+        next_action_label_text = next_action_label(next_action)
+        headline = "[omh] no workflow needed."
+        body = "This message needs no OMH workflow; Hermes can answer it directly in chat."
+        checkpoint_body = ""
+        actions: list[dict[str, object]] = []
+        render_kind = "direct_answer_route_hint"
+    elif primary_hint:
         workflow = str(primary_hint.get("workflow") or "")
         next_action = str(primary_hint.get("next_action") or "")
         next_action_label_text = str(primary_hint.get("next_action_label") or next_action_label(next_action)).strip()
@@ -361,7 +374,7 @@ def _response_for_hint(
             # since a route hint is itself a messenger-rendered reply.
             "chunking": _messenger_chunking_hint(source),
             "checkpoint_text": checkpoint_body,
-            "primary_action": actions[0],
+            "primary_action": actions[0] if actions else None,
             "secondary_actions": actions[1:],
         },
         "state": {
