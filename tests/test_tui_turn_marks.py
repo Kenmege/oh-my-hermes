@@ -490,6 +490,41 @@ class CommandPlacementTests(unittest.TestCase):
         self.assertEqual(lines_text(app.transcript.live_lines(140, THEME))[-2:],
                          ["› /usage", "  ⎿ ⚠ Hermes has not answered slash.exec in 120 s; the OMH TUI stopped waiting for it."])
 
+    def usage_out_past_the_turn(self) -> tuple[object, object, int]:
+        """`/usage` typed over a running tool, the turn ended with it still out, and the next prompt streaming."""
+        app, client = self.mid_tool("/usage")
+        usage = len(client.calls)
+        app._on_event(ev("tool.complete", tool_id="t1", name="terminal", result={"output": "1 passed"}))
+        app._on_event(ev("message.complete", text="done", status="complete"))
+        type_text(app, "next prompt")
+        app._on_input(Key(ENTER))
+        app._on_event(ev("message.start"))
+        app._on_event(ev("message.delta", text="Second reply "))
+        return app, client, usage
+
+    def test_a_command_still_out_at_the_turns_end_is_written_above_that_turns_done_line(self) -> None:
+        app, client, usage = self.usage_out_past_the_turn()
+        kinds = [type(block).__name__ for block in app.transcript.blocks]
+        self.assertEqual(kinds[:4], ["ToolGroup", "AssistantBlock", "CommandBlock", "TurnSummaryBlock"])
+        self.assertEqual(app.transcript.blocks[2].command, "/usage")  # dated in the turn it was typed in
+        app._on_response(Response(usage, {"output": "Session cost: $0.01"}, None))
+        app._on_event(ev("message.complete", text="Second reply done.", status="complete"))
+        replies = [block.text for block in app.transcript.blocks if isinstance(block, AssistantBlock)]
+        self.assertEqual(replies, ["done", "Second reply done."])  # the late output did not split the reply
+        echoes = [(block.command, block.parts) for block in app.transcript.blocks if isinstance(block, CommandBlock)]
+        self.assertEqual(echoes, [("/usage", []), ("/usage", [("Session cost: $0.01", "info")])])
+        kinds = [type(block).__name__ for block in app.transcript.blocks]
+        self.assertEqual(kinds[-3:], ["AssistantBlock", "CommandBlock", "TurnSummaryBlock"])  # under a repeat echo
+
+    def test_a_refusal_that_comes_after_the_turns_end_goes_under_a_repeat_echo_and_splits_no_reply(self) -> None:
+        app, client, usage = self.usage_out_past_the_turn()
+        app._on_response(Response(usage, None, {"code": 5000, "message": "usage is unavailable"}))
+        app._on_event(ev("message.delta", text="goes on."))
+        replies = [block.text for block in app.transcript.blocks if isinstance(block, AssistantBlock)]
+        self.assertEqual(replies, ["done", "Second reply goes on."])
+        held = lines_text(app.transcript.live_lines(100, THEME))
+        self.assertEqual(held[-2:], ["› /usage", "  ⎿ ✗ Usage is unavailable."])
+
     def test_output_for_an_echo_already_closed_waits_under_a_running_call(self) -> None:
         app, client = make_app()
         type_text(app, "/usage")

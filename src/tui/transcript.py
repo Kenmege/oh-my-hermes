@@ -810,13 +810,16 @@ class Transcript:
         self._version += 1
 
     def add_notice(self, text: str, level: str = NOTICE_INFO) -> None:
-        """A notice; while `command`'s echo is open, it is that command's output instead."""
+        """A notice; while `command` is set, that command's output instead: under its echo while the echo is open,
+        else under a repeat of the echo, held like any aside (as `add_output` with `command`)."""
         command = self._open_command()
         if command is not None:
             command.parts.append((text, level))
             self._version += 1
-            return
-        self._append(NoticeBlock(text, level))
+        elif self.command is not None:
+            self.add_aside(CommandBlock(self.command.command, [(text, level)], done=True))
+        else:
+            self._append(NoticeBlock(text, level))
 
     def add_command(self, command: str) -> CommandBlock:
         """Echo a command the person ran and make it `command`: what it prints lands under it until `close_command`.
@@ -847,8 +850,16 @@ class Transcript:
             self._append(NoticeBlock(text, level))
 
     def add_turn_summary(self, seconds: float, output_tokens: int | None) -> None:
-        """Close the turn that just ended with its done line; its tool calls are counted from the turn's blocks."""
+        """Close the turn that just ended with its done line; its tool calls are counted from the turn's blocks.
+
+        A command typed during the turn whose echo is still held for Hermes'
+        answer is written above the done line with what has arrived, and
+        closed: what it prints later goes under a repeat of its echo.
+        """
         tools = sum(len(block.tools) for block in self.blocks[self._turn_start :] if isinstance(block, ToolGroup))
+        for block in self._held:
+            if isinstance(block, CommandBlock):
+                block.done = True
         self._append(TurnSummaryBlock(max(seconds, 0.0), tools, output_tokens))
 
     def close_command(self, block: CommandBlock | None = None) -> None:

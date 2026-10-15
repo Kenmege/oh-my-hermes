@@ -654,8 +654,10 @@ A slash command you run is echoed in the transcript as `› /name arg` (but
 `/steer`, whose own row is its echo), and what it prints stays there, under it after `⎿`, in the terminal's scrollback
 (each command's output under its own echo, also when you send a second command before the first answers).
 Typed during a turn, the echo and its output wait under what is running and are written after it, as a
-steer is, so a command never cuts off a running tool call or splits a reply:
-a long output shows its first 12 rows and a count of the rest
+steer is, so a command never cuts off a running tool call or splits a reply; one Hermes has not finished
+answering when the turn ends is written above that turn's done line with what it printed so far, and
+what it prints later goes under a repeat of its echo. In the transcript, a long output shows its
+first 12 rows and a count of the rest
 (`… +K rows · /history shows all`, rows at that width), and `/history` shows all of it. Nothing a
 command prints opens a pager; a pager opens only when you ask for one
 (`/history`, `/keys`, `/logs`, an agent's log), and output that arrives while
