@@ -84,6 +84,19 @@ class ReasonCodeContractTest(unittest.TestCase):
         # Each code is exercised by at least one corpus case.
         self.assertEqual(seen - {""}, set(_PROSE_BY_CODE))
 
+    def test_a_learning_card_that_replaces_a_direct_answer_drops_its_code(self) -> None:
+        # The scorer first reads this as a plain question; the learning
+        # signal then turns it into a dispatch with its own reason, and the
+        # direct-answer code must go with the reason it named.
+        route = chat.public_chat_route_payload("next time just answer: what is a closure in python?", source="discord")
+        self.assertEqual(route["action"], "dispatch")
+        self.assertNotIn("reason_code", route)
+        self.assertNotIn("reason_code", route["route_decision"])
+        self.assertNotEqual(
+            route["route_explanation"]["claim_boundary"],
+            "No OMH workflow, picker, handoff, execution, or file inspection has started.",
+        )
+
     def test_a_route_with_no_code_carries_no_key(self) -> None:
         route = route_chat_message("make an image explaining the cron feature", source="discord")
         self.assertEqual(route["action"], "dispatch")
