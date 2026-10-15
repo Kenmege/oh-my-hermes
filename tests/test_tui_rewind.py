@@ -17,6 +17,7 @@ from _tui_lines import line_text, lines_text
 from test_tui_gateway_contract import recorded_rows
 from test_tui_modes import SID, answer, make_app, notices, type_text
 from omh.tui.app import DOUBLE_ESCAPE_SECONDS, App
+from omh.tui.gateway import Response
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, Key
 from omh.tui.rewind_picker import CLOSE, PICK, RewindPicker, rewind_rows
 from omh.tui.theme import DEFAULT_THEME
@@ -244,6 +245,69 @@ class RewindTests(unittest.TestCase):
         said = " ".join(notices(app))
         self.assertIn("state.db locked", said)
         self.assertNotIn("as Hermes still has it", said)
+
+    def queued_behind_a_refused_rewind(self) -> tuple[App, object]:
+        """A rewind sent, a prompt queued behind it while it was out, and Hermes' refusal of the rewind."""
+        app, client = self.picked()
+        app._set_composer("an edited prompt")
+        app._on_input(Key(ENTER))
+        submit = len(client.calls)
+        app.busy_mode = "queue"
+        type_text(app, "a queued prompt")
+        app._on_input(Key(ENTER))
+        app._on_response(Response(submit, None, {"code": 4018, "message": "rewind target not found"}))
+        return app, client
+
+    def test_a_prompt_queued_behind_a_refused_rewind_goes_after_the_redraw_and_stays_on_the_screen(self) -> None:
+        app, client = self.queued_behind_a_refused_rewind()
+        self.assertEqual(client.calls[-1], ("session.history", {"session_id": SID}))  # nothing sent before the redraw
+        answer(app, client, HISTORY)
+        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": "a queued prompt", "queued": True}))
+        self.assertEqual(self.users(app), [TODO_PROMPT, SECOND_PROMPT, "a queued prompt"])  # its echo on the redrawn screen
+
+    def test_a_prompt_queued_behind_a_refused_rewind_goes_once_the_history_read_fails_or_goes_unanswered(self) -> None:
+        for outcome in ("refused", "unanswered"):
+            with self.subTest(outcome=outcome):
+                clock = Clock()
+                app, client = make_app(clock=clock)
+                app._rewind("")
+                answer(app, client, HISTORY)
+                app._on_input(Key(ENTER))
+                app._set_composer("an edited prompt")
+                app._on_input(Key(ENTER))
+                submit = len(client.calls)
+                app.busy_mode = "queue"
+                type_text(app, "a queued prompt")
+                app._on_input(Key(ENTER))
+                app._on_response(Response(submit, None, {"code": 4018, "message": "rewind target not found"}))
+                if outcome == "refused":
+                    answer(app, client, error={"code": 5000, "message": "state.db locked"})
+                    said = "state.db locked"
+                else:
+                    clock.now += 3600
+                    app._expire_calls()
+                    said = "no answer in 120 s"
+                self.assertIn(f"Hermes did not send the session's history ({said})", " ".join(notices(app)))
+                self.assertEqual(client.calls[-1],
+                                 ("prompt.submit", {"session_id": SID, "text": "a queued prompt", "queued": True}))
+                self.assertEqual(self.users(app)[-1], "a queued prompt")
+
+    def test_a_rewind_refused_after_the_session_was_left_leaves_the_new_session_on_the_screen(self) -> None:
+        for leave in ("new", "switch"):
+            with self.subTest(leave=leave):
+                app, client = self.picked()
+                app._set_composer("an edited prompt")
+                app._on_input(Key(ENTER))
+                submit = len(client.calls)
+                if leave == "new":
+                    app._on_new_session({"session_id": "live-2", "stored_session_id": "stored-2"})
+                else:
+                    app._on_session_resumed("stored-2", {"session_id": "live-2", "stored_session_id": "stored-2"})
+                screen = app.transcript
+                app._on_response(Response(submit, None, {"code": 4018, "message": "rewind target not found"}))
+                self.assertIs(app.transcript, screen)  # not the old session's screen from before the send
+                self.assertFalse([text for text in notices(app) if "did not rewind" in text])
+                self.assertNotIn(("session.history", {"session_id": SID}), client.calls[submit:])
 
     def test_a_rewind_sent_once_a_turn_started_gives_the_text_back_and_cuts_nothing(self) -> None:
         app, client = self.picked()

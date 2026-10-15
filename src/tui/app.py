@@ -2062,39 +2062,51 @@ class App(ModesMixin, AgentViewMixin):
         """Hermes kept its history: the turn never starts, and the screen goes back to `kept`, as it was before the send.
 
         Then it is redrawn from the history Hermes sends; if that read fails,
-        or until it is answered, the screen from before the send stays, and
-        the notices say which.
+        or is not answered, the screen from before the send stays, and the
+        notices say which. A prompt queued behind the rewind goes only once
+        that is settled, so the redraw does not wipe its echo.
         """
         if sid != self.sid:
             self._on_submit_error(error)
             return True
         reason = (as_text(error.get("message")) or "refused").strip().rstrip(".")
-        self.transcript = kept  # first: a prompt the queue sends next lands on this screen
+        self.transcript = kept
         self._full_redraw()
         self.transcript.add_notice(REWIND_KEPT_NOTICE.format(reason=reason), NOTICE_WARN)
-        self._on_submit_error(error)
+        self.turn_pending = False  # no turn starts; the queue waits for the history read
         self._request(
             "session.history",
             {"session_id": sid},
             lambda result: self._redraw_from_history(sid, result, REWIND_REFUSED_NOTICE.format(reason=reason)),
             lambda history_error: self._history_unread(sid, history_error),
+            lambda: self._history_unread(sid, {"message": f"no answer in {CALL_ANSWER_SECONDS:g} s"}),
         )
         return True
 
     def _redraw_from_history(self, sid: str, result: Mapping[str, Any], notice: str) -> None:
-        """The screen redrawn from the history Hermes sent, under `notice`; one without messages changes nothing."""
+        """The screen redrawn from the history Hermes sent, under `notice` (one without messages changes nothing);
+        then the next queued line goes, unless a turn started meanwhile."""
         messages = result.get("messages")
-        if sid != self.sid or not isinstance(messages, list):
+        if sid != self.sid:
             return
-        self._restart_transcript([message for message in messages if isinstance(message, dict)])
-        self._full_redraw()
-        self.transcript.add_notice(notice, NOTICE_WARN)
+        if isinstance(messages, list):
+            self._restart_transcript([message for message in messages if isinstance(message, dict)])
+            self._full_redraw()
+            self.transcript.add_notice(notice, NOTICE_WARN)
+        self._drain_unless_busy()
 
     def _history_unread(self, sid: str, error: Mapping[str, Any]) -> bool:
+        """No history to redraw from (`error` says why): the screen stays, says so, and the next queued line goes."""
         if sid == self.sid:
             reason = (as_text(error.get("message")) or "refused").strip().rstrip(".")
             self.transcript.add_notice(REWIND_UNREAD_NOTICE.format(reason=reason), NOTICE_WARN)
+            self._drain_unless_busy()
         return True
+
+    def _drain_unless_busy(self) -> None:
+        """Send the next queued line now, unless a turn runs: then it goes when that turn ends, as any queued line."""
+        if not self._busy():
+            self._drain_queue()
 
     def _interrupt(self) -> None:
         if self.sid:
