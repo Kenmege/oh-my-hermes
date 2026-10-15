@@ -94,7 +94,7 @@ from ..installer import (
     uninstall_skill_pack,
 )
 from ..local_store import atomic_write_text
-from ..install.installer import DEFAULT_SKILL_PROFILE, PRUNE_SKIP_REASONS, SKILL_PROFILES
+from ..install.installer import DEFAULT_SKILL_PROFILE, LEDGER_COPY_PARTIAL_KEY, PRUNE_SKIP_REASONS, SKILL_PROFILES
 from ..manifest import read_manifest
 from .update_change_note import record_update_change_note, update_change_note_lines
 from ..menubar_app import is_managed_menubar_install, setup_menubar_app, uninstall_menubar_app
@@ -4983,10 +4983,7 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
     if state_path and state_key:
         print(f"  {tr(language, 'state_log', path=state_path, entry=state_key)}")
     unreadable = payload.get("unreadable_ledgers")
-    # A loss list is built from the ledgers that could be read. When one could
-    # not be, it is named beside the list, which is otherwise read as complete.
-    loss_list_partial = isinstance(unreadable, list) and bool(unreadable)
-    ledger = "; ".join(map(str, unreadable)) if loss_list_partial else "-"
+    ledger = "; ".join(map(str, unreadable)) if isinstance(unreadable, list) and unreadable else "-"
     hermes_edited = payload.get("hermes_edited_skills")
     for item in hermes_edited if isinstance(hermes_edited, list) else []:
         if not isinstance(item, dict):
@@ -5010,9 +5007,6 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
         discarded = item.get("discarded") if isinstance(item.get("discarded"), list) else []
         if discarded:
             line = tr(language, "hermes_edit_discarded_line", name=item.get("name", ""), files=", ".join(map(str, discarded)))
-            print(_color(f"  {line}", "1;33", use_color))
-        if disposition == "replaced" and loss_list_partial:
-            line = tr(language, "loss_list_ledger_unread_line", name=item.get("name", ""), ledger=ledger)
             print(_color(f"  {line}", "1;33", use_color))
     restored = payload.get("restored_skills")
     for item in restored if isinstance(restored, list) else []:
@@ -5068,16 +5062,26 @@ def _print_install_summary(payload: dict[str, object], *, command: str, language
             key = "retired_skill_force_removed_line" if copies else "retired_skill_force_removed_unrecoverable_line"
         line = tr(
             language, key, name=item.get("name", ""), path=item.get("path", ""),
-            files=", ".join(str(copy) for copy in copies),
+            files=", ".join(str(copy) for copy in copies), ledger=ledger,
         )
         print(_color(f"  {line}", "1;33", use_color))
         discarded = item.get("discarded") if isinstance(item.get("discarded"), list) else []
         if discarded:
             line = tr(language, "retired_skill_discarded_line", name=item.get("name", ""), files=", ".join(map(str, discarded)))
             print(_color(f"  {line}", "1;33", use_color))
-        if item.get("reason") != "ledger_unreadable" and loss_list_partial:
-            line = tr(language, "loss_list_ledger_unread_line", name=item.get("name", ""), ledger=ledger)
-            print(_color(f"  {line}", "1;33", use_color))
+    # A loss list built while a ledger could not be read is not complete. Said
+    # once, after every loss list, so the unread names are printed once.
+    partial = [
+        str(item.get("name", ""))
+        for item in [
+            *(hermes_edited if isinstance(hermes_edited, list) else []),
+            *(force_pruned if isinstance(force_pruned, list) else []),
+        ]
+        if isinstance(item, dict) and item.get(LEDGER_COPY_PARTIAL_KEY)
+    ]
+    if partial:
+        line = tr(language, "loss_list_ledger_unread_line", names=", ".join(partial), ledger=ledger)
+        print(_color(f"  {line}", "1;33", use_color))
     profile_state = payload.get("skill_profile_state")
     if isinstance(profile_state, dict) and profile_state.get("retained_exception"):
         retained = profile_state.get("full_only_installed_skills", [])

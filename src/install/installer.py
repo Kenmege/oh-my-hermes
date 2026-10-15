@@ -166,6 +166,9 @@ HERMES_EDIT_EVIDENCE_KEYS = ("actor", "ts", "action", "ledger")
 # under, once, after which the rewritten manifest carries marks.
 RENDER_MARK_KEY = "rendered_sha256"
 RENDER_MARKS_FLAG = "render_marks"
+# On a `--force` entry whose loss list (`ledger_copy`, `discarded`) was built
+# while some ledger could not be read: the list counts only what was read.
+LEDGER_COPY_PARTIAL_KEY = "ledger_copy_partial"
 # Every reason a pruner leaves a candidate directory in place. Each has its own
 # summary line; the install result carries the reason itself.
 PRUNE_SKIP_REASONS = (
@@ -687,6 +690,8 @@ def install_skill_pack(
         hermes_edited, force_targets = _force_replacements(
             hermes_edited, paths, install_names, ledger_writes, rendered, stored_writes
         )
+    if unreadable_ledgers:
+        _mark_partial_loss_lists(hermes_edited)
     kept_names = {str(item["name"]) for item in kept.values()}
     templates = [template for template in templates if template.name not in kept_names]
     reference_templates = [template for template in reference_templates if template.skill_name not in kept_names]
@@ -767,6 +772,8 @@ def install_skill_pack(
     removed_directories = orphans_removed + flat_layout["removed"]
     prune_skipped = prune_skipped + flat_layout["skipped"]
     force_pruned = force_pruned + flat_layout["forced"]
+    if unreadable_ledgers:
+        _mark_partial_loss_lists(force_pruned)
     _remove_empty_category_directories(paths.skills_dir)
     records = skill_records(paths.skills_dir, source)
     manifest_data = new_manifest(source, paths.skills_dir, records)
@@ -821,6 +828,13 @@ def install_skill_pack(
         # In the result only: the error text would move the manifest bytes.
         result["unreadable_ledgers"] = unreadable_ledgers
     return result
+
+
+def _mark_partial_loss_lists(items: list[dict]) -> None:
+    """Mark each entry carrying a loss list: a ledger could not be read, so the list counts only what was."""
+    for item in items:
+        if "ledger_copy" in item:
+            item[LEDGER_COPY_PARTIAL_KEY] = True
 
 
 def _standing_prune_skips(

@@ -116,7 +116,8 @@ def read_ledger_writes(
     read, the unread list also names everything that may hold one: a line
     under `within` that is not a row, a last line with no line end (an append
     may be in progress, so it is named whatever it says), and a profile
-    directory, or entry in it, that could not be read.
+    directory, or entry in it, that could not be read. Each ledger is named
+    once, however many of its lines are torn: the list is printed to a person.
 
     With `every_write`, the same read also extends that list with every write
     any row records, wherever it sits, oldest first: a line outside `within`
@@ -156,9 +157,8 @@ def read_ledger_writes(
         if tail:
             lines.append(tail.removesuffix("\r"))
         open_line = len(lines) if fail_closed and tail else 0
+        not_rows: list[int] = []
         for number, line in enumerate(lines, start=1):
-            if number == open_line and line.strip():
-                unread.append(f"{ledger}: line {number} is unterminated, so an append may be in progress")
             if needles is not None and not any(needle in line for needle in needles):
                 if every_write is not None:
                     stored.extend(_row_writes(line, str(ledger)) or [])
@@ -166,11 +166,22 @@ def read_ledger_writes(
             row_writes = _row_writes(line, str(ledger))
             if row_writes is None:
                 if fail_closed and number != open_line:
-                    unread.append(f"{ledger}: line {number} is not a ledger row")
+                    not_rows.append(number)
                 continue
             writes.extend(row_writes)
             if every_write is not None:
                 stored.extend(row_writes)
+        problems = []
+        if not_rows:
+            problems.append(
+                f"line {not_rows[0]} is not a ledger row"
+                if len(not_rows) == 1
+                else f"{len(not_rows)} lines are not ledger rows (the first is line {not_rows[0]})"
+            )
+        if open_line and lines[open_line - 1].strip():
+            problems.append(f"line {open_line} is unterminated, so an append may be in progress")
+        if problems:
+            unread.append(f"{ledger}: " + ", and ".join(problems))
     if bases is not None:
         writes = [write for write in writes if any(_within(os.path.normpath(write.path), base) for base in bases)]
     # ISO-8601 UTC stamps from one writer sort as text. Stable, so rows of one
