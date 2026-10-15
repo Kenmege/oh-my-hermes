@@ -4,6 +4,29 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **`omh_gather_evidence` bounds the paths a probe's arguments name.** The
+  allowlist matched a command prefix and left the rest free, so
+  `python3 -m compileall /any/path` compiled files anywhere and printed their
+  paths and the source line of any syntax error (#2137, reported by
+  @simongonzalezdc). A compileall argument, the value of an omh option that
+  opens a path, and a `git diff` path argument must now be relative, free of
+  `..`, and resolve inside `workdir` after symlinks; a path refusal names the
+  rule, never the path or where a symlink leads. compileall also needs at
+  least one such path, because with none it compiles every directory on
+  `sys.path`; it refuses `-i` (paths read from a file or stdin), `-b`
+  (bytecode written beside the sources, past the private pycache) and
+  `-d`/`-s`/`-p`; and it runs with `-e .`, so a symlink below a compiled
+  directory that leads out is skipped, and with `PYTHONSAFEPATH`, so a
+  `compileall.py` in `workdir` no longer runs in place of the stdlib module
+  (Python 3.11 and later; an older `python3` ignores it).
+  `git diff` refuses `-O` (an order file read from anywhere), and its path
+  bound stops the switch to `--no-index` that two paths with one outside the
+  repository caused, which printed both files; a `:/` pathspec or
+  `<rev>:<path>` still reaches the whole repository, as a bare `git diff`
+  already does. `omh doctor` refuses `--profile-isolation`, and
+  `omh release evidence-bundle` refuses `--write` and a `--verify` PATH.
+  Evidence probes and `omh_team` checks now run with no stdin.
+
 - **The plugin's route hint reaches the router in Hermes chat, so your own
   trigger packs hint there too.** Hermes imports the plugin bundle as
   `hermes_plugins.omh`, one package deep, and there the bundle's
