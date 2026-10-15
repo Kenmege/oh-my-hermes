@@ -28,6 +28,7 @@ from omh.tui.transcript import (
     NOTICE_ERROR,
     NOTICE_OK,
     NOTICE_WARN,
+    OUTPUT_FAILED,
     STEER_QUEUED,
     TOOL_DENIED,
     TOOL_ERROR,
@@ -107,7 +108,7 @@ class OutcomeBandTests(unittest.TestCase):
         failed = ToolGroup([ToolRow("t1", "terminal", "pytest -q", TOOL_ERROR, duration_s=1.2, output=("1 failed",))], done=True)
         denied = ToolGroup([ToolRow("t2", "terminal", "rm -rf ./build", TOOL_DENIED, duration_s=0.1, output=(self.DENIAL,))],
                            done=True)
-        command = CommandBlock("!false", [("exit 1", NOTICE_ERROR)], done=True)
+        command = CommandBlock("!false", [("partial output", OUTPUT_FAILED), ("exit 1", NOTICE_ERROR)], done=True)
         summarized = ToolGroup([ToolRow("t3", "read_file", "/nope.txt", TOOL_ERROR, duration_s=0.1,
                                         summary="read_file could not open the path", output=("File not found",))], done=True)
         return [

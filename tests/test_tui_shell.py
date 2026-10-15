@@ -16,14 +16,15 @@ import unittest
 from _tui_lines import line_text
 from test_tui_gateway_contract import recorded_rows
 from test_tui_modes import SID, answer, drawn, make_app, notices, type_text
+from omh.skin_pack import SKIN_THEMES
 from omh.tui import gateway_contract as contract
 from omh.tui.app import App
 from omh.tui.frame import MODE_SHELL, MODE_RULE_GLYPHS, rule_line
 from omh.tui.gateway import Event, Response
 from omh.tui.keys import ENTER, UP, Key, Paste
 from omh.tui.modes import SHELL_LABEL
-from omh.tui.theme import DEFAULT_THEME
-from omh.tui.transcript import NOTICE_ERROR, NOTICE_INFO, NOTICE_WARN, CommandBlock
+from omh.tui.theme import DEFAULT_THEME, build_theme
+from omh.tui.transcript import NOTICE_ERROR, NOTICE_INFO, NOTICE_WARN, OUTPUT_FAILED, CommandBlock, block_rows
 
 
 def recorded(segment: str) -> tuple[dict, dict]:
@@ -65,12 +66,18 @@ class ShellModeTests(unittest.TestCase):
         self.assertEqual((block.parts, block.done), ([("hello", NOTICE_INFO), ("oops", NOTICE_INFO)], True))
         self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
 
-    def test_a_non_zero_exit_is_said_after_what_it_printed(self) -> None:
+    def test_a_non_zero_exit_is_said_after_what_it_printed_and_both_are_on_the_red_band(self) -> None:
         params, frame = recorded("shell_exit")
         app, client = make_app()
         send(app, "!" + params["command"])
         reply(app, client, frame)
-        self.assertEqual(app.transcript.blocks[-1].parts, [("partial", NOTICE_INFO), ("exit 3", NOTICE_ERROR)])
+        self.assertEqual(app.transcript.blocks[-1].parts, [("partial", OUTPUT_FAILED), ("exit 3", NOTICE_ERROR)])
+        theme = build_theme(SKIN_THEMES[0], "#FFFFFF")
+        rows = block_rows(app.transcript.blocks[-1], 80, theme)
+        self.assertEqual([line_text(row) for row in rows], ["› " + "!" + params["command"], "  ⎿ partial", "    ✗ exit 3"])
+        for row in rows[1:]:  # what it printed and its exit line, one red region as a failed tool's output
+            self.assertEqual({span.style.bg for span in row}, {theme.error_band.bg})
+        self.assertEqual({span.style.bg for span in rows[0]}, {None})  # the echo is no outcome
 
     def test_hermes_refusing_a_dangerous_command_is_said_in_its_words(self) -> None:
         params, frame = recorded("shell_blocked")

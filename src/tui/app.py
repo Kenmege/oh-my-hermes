@@ -183,8 +183,10 @@ from .theme import (
 )
 from .transcript import (
     NOTICE_ERROR,
+    NOTICE_INFO,
     NOTICE_OK,
     NOTICE_WARN,
+    OUTPUT_FAILED,
     STEER_QUEUED,
     STEER_REFUSED,
     AssistantBlock,
@@ -2330,12 +2332,15 @@ class App(ModesMixin, AgentViewMixin):
         self._as_command(echo, run)
 
     def _on_shell_result(self, echo: str, result: Mapping[str, Any], drain_after: bool) -> None:
-        """What it printed (stdout, then stderr), then its exit code when it failed or printed nothing."""
+        """What it printed (stdout, then stderr), then its exit code when it failed or printed nothing.
+
+        A failure's printed lines are on the red band with its exit line, as a failed tool's output is.
+        """
         printed = [text for text in (as_text(result.get("stdout")), as_text(result.get("stderr"))) if text.strip()]
-        for text in printed:
-            self.transcript.add_output(text.rstrip("\n"), command=echo)
         code = result.get("code")
         code = code if isinstance(code, int) and not isinstance(code, bool) else None
+        for text in printed:
+            self.transcript.add_output(text.rstrip("\n"), OUTPUT_FAILED if code != 0 else NOTICE_INFO, command=echo)
         if code != 0:
             self.transcript.add_output(f"exit {code if code is not None else '?'}", NOTICE_ERROR, command=echo)
         elif not printed:

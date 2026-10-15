@@ -85,6 +85,9 @@ NOTICE_INFO = "info"
 NOTICE_OK = "ok"  # something the person allowed went ahead
 NOTICE_WARN = "warn"
 NOTICE_ERROR = "error"
+# What a command that failed printed: on the red band in the error colour, as a failed tool's output lines are,
+# with no mark of its own (the command's `✗` line under it has the one mark).
+OUTPUT_FAILED = "failed"
 
 INTERRUPTED_NOTICE = "Interrupted."
 FAILED_NOTICE = "The turn ended with an error."
@@ -510,7 +513,7 @@ def _banded(rows: list[Line], band: Style) -> list[Line]:
 def _outcome_band(level: str, theme: Theme) -> Style | None:
     """The band behind a row of `level`: green for what the person allowed, red for an error; None for the rest,
     or when the theme paints no band (no background was reported)."""
-    band = {NOTICE_OK: theme.ok_band, NOTICE_ERROR: theme.error_band}.get(level)
+    band = {NOTICE_OK: theme.ok_band, NOTICE_ERROR: theme.error_band, OUTPUT_FAILED: theme.error_band}.get(level)
     return band if band is not None and band.bg is not None else None
 
 
@@ -549,7 +552,7 @@ def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool)
     for text, level in block.parts:
         band = _outcome_band(level, theme)
         roles = on_band(theme, band) if band is not None else theme
-        style = {NOTICE_WARN: roles.warn, NOTICE_ERROR: roles.error}.get(level, roles.text)
+        style = {NOTICE_WARN: roles.warn, NOTICE_ERROR: roles.error, OUTPUT_FAILED: roles.error}.get(level, roles.text)
         lead = rest if output else (Span(OUTPUT_INDENT), Span(OUTPUT_MARK, roles.dim))
         part = _text_rows(_OUTPUT_GLYPHS.get(level, "") + text, style, lead, rest, width)
         output.extend(_banded(part, band) if band is not None else part)

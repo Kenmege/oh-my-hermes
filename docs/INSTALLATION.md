@@ -490,7 +490,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
     the call it was about: allowed (`✓ allowed once · <command>`) on a light
     green band, denied (`✗ denied · <command>`) on a light red one. A failed
     or denied tool row with the lines under it, an error notice, and a
-    command's error line are on the light red band too. A denial shows one
+    command's error line (for a failed `!` command, with what it printed
+    above it) are on the light red band too. A denial shows one
     mark, the red `✗`. Warnings stay amber, with no band. The bands follow
     the theme and the background: light tints on a light terminal, dark
     ones on a dark terminal, with words on them at 4.5:1 and marks at 3:1
@@ -516,7 +517,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   `shell.exec` (Hermes' own limit of 30 s, its refusal of dangerous commands,
   and its redaction of what the command printed) and shows `› !command`
   with what it printed (its stdout, then its stderr, in the same colour) and
-  its exit code when that is not 0 (`exit 0` when it printed nothing), or
+  its exit code when that is not 0 (`exit 0` when it printed nothing; a
+  failure's lines are red on the red band with that exit line), or
   Hermes' reason for refusing it. Neither the command nor its output goes to the
   model. During a turn it waits in the queue and runs when the turn ends; a
   prompt queued behind it waits for its output. Only a line you sent with
