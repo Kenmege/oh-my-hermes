@@ -58,6 +58,18 @@ class ReadTests(unittest.TestCase):
         self.path.mkdir()
         self.assertEqual(load_history(self.path), [])
 
+    @unittest.skipUnless(POSIX and hasattr(os, "mkfifo"), "FIFOs are POSIX's")
+    def test_a_fifo_in_its_place_is_no_history_and_never_blocks(self) -> None:
+        os.mkfifo(self.path)
+        self.assertEqual(load_history(self.path), [])  # a plain open would wait for a writer forever
+
+    @unittest.skipUnless(POSIX and hasattr(os, "O_NOFOLLOW"), "O_NOFOLLOW is POSIX's")
+    def test_a_symlink_in_its_place_is_not_read_as_it_is_not_appended_to(self) -> None:
+        target = self.home / "elsewhere"
+        target.write_text(INK_FILE, encoding="utf-8")
+        self.path.symlink_to(target)
+        self.assertEqual(load_history(self.path), [])
+
     def test_only_the_newest_entries_are_kept(self) -> None:
         self.path.write_text("".join(f"\n# t\n+prompt {number}\n" for number in range(30)), encoding="utf-8")
         self.assertEqual(load_history(self.path, limit=3), ["prompt 27", "prompt 28", "prompt 29"])

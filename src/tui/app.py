@@ -1904,7 +1904,7 @@ class App(ModesMixin, AgentViewMixin):
             return True
         self.escape_armed = None
         if kind == ESCAPE_CLEAR:
-            self.composer.record(self.composer.text, sent=False)
+            self.composer.record(self.composer.expanded(), sent=False)  # a chip's text, not its label
             self._set_composer("")
         else:
             self._rewind("")
@@ -1931,12 +1931,13 @@ class App(ModesMixin, AgentViewMixin):
     def _open_rewind_picker(self, sid: str, result: dict[str, Any]) -> None:
         if sid != self.sid:
             return
-        rows = rewind_rows(result)
+        raw = result.get("messages")
+        messages = [message for message in raw if isinstance(message, dict)] if isinstance(raw, list) else []
+        rows = rewind_rows({"messages": messages})  # indexed over the very list a cut slices
         if not rows:
             self.transcript.add_notice(REWIND_NONE_NOTICE)
             return
-        messages = result.get("messages")
-        self.rewind_messages = [message for message in messages if isinstance(message, dict)] if isinstance(messages, list) else []
+        self.rewind_messages = messages
         self.rewind_picker = RewindPicker(rows)
         self._settle_list()
 

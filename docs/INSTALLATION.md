@@ -703,7 +703,7 @@ disk, and prompt text in one place only: each line you send from the composer
 is appended to Hermes' own input history, `$HERMES_HOME/.hermes_history`, in
 the format `hermes --tui` reads and writes, so Up and Ctrl+R reach your earlier
 prompts from either terminal. It only appends to that file (creating it mode
-0600), reads at most its last 1 MiB, and never writes an answer to a question
+0600), reads at most its last 1 MiB, and only when it is a regular file (not a symlink or a FIFO), and never writes an answer to a question
 Hermes asked or a masked value there. Everything else it writes
 is metadata: the launcher's active-session file, which holds the session id,
 what OMH's own HUD reader and model-chain picker write under the OMH home

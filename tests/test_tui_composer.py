@@ -389,6 +389,14 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(self.composer.history, ["first", "second\nline", "first"])
         self.assertIsNone(self.composer.history_index)
 
+    def test_history_keeps_an_entry_as_the_file_does_trimmed_and_once(self) -> None:
+        # Hermes' history file keeps the trimmed text (`history.append_entry`); this session's history matches it.
+        recorded: list[str] = []
+        composer = Composer(on_record=recorded.append)
+        composer.record("  fix the test\n")
+        composer.record("fix the test")
+        self.assertEqual((composer.history, recorded), (["fix the test"], ["fix the test"]))
+
     def test_empty_history_leaves_the_text_alone(self) -> None:
         composer = at("abc", 1)
         press(composer, Key(UP), Key(DOWN))

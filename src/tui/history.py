@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+import stat
 
 from .composer import HISTORY_CAP
 from .keys import BACKSPACE, CHAR, ENTER, ESCAPE, Key, Paste
@@ -81,15 +82,32 @@ def parse_entries(text: str) -> list[str]:
 
 
 def load_history(path: Path, limit: int = HISTORY_CAP, read_bytes: int = HISTORY_READ_BYTES) -> list[str]:
-    """The newest `limit` entries of the file at `path`, oldest first, read from at most its last `read_bytes`."""
+    """The newest `limit` entries of the file at `path`, oldest first, read from at most its last `read_bytes`.
+
+    Only a regular file is read: a symlink in its place is not followed (as the
+    append does not follow one), and a FIFO is opened without waiting for a
+    writer and then refused, so starting the TUI never blocks on it.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
     try:
-        with path.open("rb") as handle:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return []
+    try:
+        regular = stat.S_ISREG(os.fstat(descriptor).st_mode)
+    except OSError:
+        regular = False
+    if not regular:
+        os.close(descriptor)
+        return []
+    with os.fdopen(descriptor, "rb") as handle:  # closes the descriptor whatever happens below
+        try:
             size = handle.seek(0, os.SEEK_END)
             start = max(size - read_bytes, 0)
             handle.seek(start)
             data = handle.read(read_bytes)
-    except OSError:
-        return []
+        except OSError:
+            return []
     text = data.decode("utf-8", "replace")
     if start:
         header = text.find("\n" + HEADER_LINE)

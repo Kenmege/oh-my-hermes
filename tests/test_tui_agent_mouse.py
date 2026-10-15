@@ -447,6 +447,17 @@ class ListClickTests(unittest.TestCase):
                 self.assertEqual(under_the_frame(app)[-1], AGENT_LIST_HINT)
                 self.assertEqual(client.calls, [])
 
+    def test_an_x_asked_of_one_agent_never_confirms_on_another_reached_by_a_click(self) -> None:
+        # A click moves the highlight without a key, so the first agent's question is still armed; one x on the
+        # agent clicked must only ask about that one.
+        app, client = self.open()
+        app._on_input(Key(CHAR, "x"))  # asks about the first agent
+        click(app, 5, row_of(app, "read the diff for risks"))  # opens the second agent's log
+        app._on_input(Key(ESCAPE))  # back in the list, on the second agent
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual(client.calls, [])
+        self.assertEqual(app.interrupt_armed, SECOND)
+
     def test_a_click_on_main_leaves_the_list(self) -> None:
         app, client = self.open()
         click(app, 5, row_of(app, "  ● main"))

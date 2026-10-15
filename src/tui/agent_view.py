@@ -131,11 +131,13 @@ class AgentViewMixin:
         Down on an empty composer gives the list the keys, on the first
         agent, while there is one to list and no completion menu is open.
         Then Up and Down move, Enter opens the highlighted agent's log (on
-        main it only leaves) and Esc or Ctrl+C leaves. Anything else leaves
-        too and is then read as it would have been, so typing types. The
-        exception is a sequence the decoder has no name for, which does
-        nothing: with mouse reports on, a terminal that answers in the legacy
-        encoding sends one for every click.
+        main it only leaves), Esc or Ctrl+C leaves, and on an agent `x` asks
+        to interrupt it (a second `x` does) and `s` makes the next line sent
+        its steer (`_agent_action`), so a word typed with the list open that
+        starts with `s` steers. Anything else leaves too and is then read as
+        it would have been, so typing types. The exception is a sequence the
+        decoder has no name for, which does nothing: with mouse reports on, a
+        terminal that answers in the legacy encoding sends one for every click.
         """
         self._settle_list()
         name = event.name if isinstance(event, Key) else ""  # a paste is no key of the list's

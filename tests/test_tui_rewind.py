@@ -118,6 +118,27 @@ class DoubleEscapeTests(unittest.TestCase):
         esc(app)
         self.assertIn("esc again to rewind", mode_row(app, 80))
 
+    def test_the_cut_counts_the_same_messages_the_picker_was_made_from(self) -> None:
+        app, client = make_app()
+        app._rewind("")
+        messages = ["not a message", {"role": "user", "text": "first", "row_id": 1}, {"role": "assistant", "text": "one"},
+                    {"role": "user", "text": "second", "row_id": 2}, {"role": "assistant", "text": "two"}]
+        answer(app, client, {"messages": messages})
+        app._on_input(Key(ENTER))  # the newest prompt, "second"
+        self.assertEqual(app.rewind.before, tuple(messages[1:3]))  # type: ignore[union-attr]  # not "second" itself
+
+    def test_esc_twice_on_a_paste_chip_keeps_its_text_in_the_history(self) -> None:
+        from omh.tui.keys import Paste
+
+        clock = Clock()
+        app, _client = make_app(clock=clock)
+        pasted = "line one\nline two\nline three\nline four"
+        app._on_input(Paste(pasted))
+        esc(app)
+        esc(app)
+        self.assertEqual(app.composer.text, "")
+        self.assertEqual(app.composer.history[-1], pasted)  # recalled and sent, it is the text, not the label
+
     def test_typing_after_one_esc_takes_back_what_the_second_would_do(self) -> None:
         clock = Clock()
         app, _client = make_app(clock=clock)
