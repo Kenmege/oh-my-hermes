@@ -421,12 +421,14 @@ def _consolidation() -> tuple[dict[str, object], str]:
     Like `omh memory dream` without `--evaluate`, this is a status query, not
     a scheduler trigger. Keep a recorded due brief visible even when its
     reasons are suppressed for the next evaluation. No brief means unknown,
-    not a fresh evaluation that found nothing due.
+    not a fresh evaluation that found nothing due. Both are the calling
+    profile's: another profile on the same store keeps its own.
     """
     omh_home = _home("OMH_HOME", "~/.omh")
     try:
-        payload = dict(read_latest_consolidation(omh_home) or {})
-        payload["state"] = read_dreaming_state(omh_home)
+        hermes_home = _home("HERMES_HOME", "~/.hermes")
+        payload = dict(read_latest_consolidation(omh_home, hermes_home) or {})
+        payload["state"] = read_dreaming_state(omh_home, hermes_home)
         payload["evaluated"] = False
         return payload, "bundle_memory"
     except Exception as exc:

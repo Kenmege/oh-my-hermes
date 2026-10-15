@@ -311,7 +311,26 @@ def omh_home_setting(config_text: str) -> tuple[bool, str | None]:
     return False, None
 
 
-def _scan_block_setting(lines: list[str], key_path: tuple[str, ...]) -> tuple[bool, str | None]:
+def plugin_setting_text(config_text: str, name: str) -> str | None:
+    """The scalar a config text names at `plugins.entries.omh.settings.<name>`, as written; None when unset.
+
+    The same block scan as `omh_home_setting`, with the legacy `config`
+    subtree as the fallback Hermes' `get_config` reads. For a setting that is
+    not a path, the leaf comes back as its text, quotes removed, rather than
+    refused when a YAML loader would read it as a boolean: `off` written bare
+    is a YAML false, and only the setting's own reader knows what that means.
+    A blank or null leaf reads as unset. Raises `RuntimeBindingError` on a
+    shape the scan cannot follow, as `omh_home_setting` does.
+    """
+    lines = _LINE_BREAK.split(config_text)
+    for section in ("settings", "config"):
+        found, value = _scan_block_setting(lines, ("plugins", "entries", "omh", section, name), leaf=_leaf_text)
+        if found:
+            return value
+    return None
+
+
+def _scan_block_setting(lines: list[str], key_path: tuple[str, ...], *, leaf=None) -> tuple[bool, str | None]:
     """Follow one nested key through block-style YAML by indentation.
 
     Returns ``(True, value)`` when every key on the path is a block mapping
@@ -323,8 +342,8 @@ def _scan_block_setting(lines: list[str], key_path: tuple[str, ...]) -> tuple[bo
     lines -- with the last duplicate winning as a YAML loader resolves it.
     Refused rather than read past: an inline value that does mention the
     setting, an alias or merge key where the setting could be inherited from
-    an anchor, a tab-indented line, and a leaf a loader would not hand back
-    as one string.
+    an anchor, a tab-indented line, and -- through the default ``leaf``,
+    `_leaf_string` -- a leaf a loader would not hand back as one string.
     """
     start, stop, parent_indent = 0, len(lines), -1
     for depth, key in enumerate(key_path):
@@ -362,8 +381,8 @@ def _scan_block_setting(lines: list[str], key_path: tuple[str, ...]) -> tuple[bo
             return False, None
         quoted, value = _yaml_scalar(lines[found_at].partition(":")[2])
         if depth == len(key_path) - 1:
-            return True, _leaf_string(quoted, value)
-        if quoted or value.startswith("*") or "omh_home" in value:
+            return True, (leaf or _leaf_string)(quoted, value)
+        if quoted or value.startswith("*") or key_path[-1] in value:
             raise RuntimeBindingError(_INLINE_SHAPE_MESSAGE)
         if value:
             return False, None
@@ -414,6 +433,12 @@ def _leaf_string(quoted: bool, value: str) -> str | None:
         or len(value.splitlines()) != 1
     ):
         raise RuntimeBindingError("OMH profile setting is not a path string")
+    return value
+
+
+def _leaf_text(quoted: bool, value: str) -> str | None:
+    if not quoted and (not value or value.lower() in {"~", "null"}):
+        return None
     return value
 
 

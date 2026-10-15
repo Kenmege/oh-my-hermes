@@ -52,8 +52,8 @@ class ConcurrentStateTests(unittest.TestCase):
     def test_concurrent_sessions_lose_no_turn_increment(self) -> None:
         # Given one OMH home and several providers on it, one per session.
         with TemporaryDirectory() as tmp:
-            home = Path(tmp) / ".omh"
-            sessions = [OmhMemoryProvider(home) for _ in range(THREADS)]
+            home, hermes = Path(tmp) / ".omh", Path(tmp) / ".hermes"
+            sessions = [OmhMemoryProvider(home, hermes_home=hermes) for _ in range(THREADS)]
             barrier = threading.Barrier(THREADS)
 
             def turns(live: OmhMemoryProvider) -> None:
@@ -71,33 +71,33 @@ class ConcurrentStateTests(unittest.TestCase):
             # Then every increment is on disk and nothing was swallowed.
             failures = [failure for live in sessions for failure in live._write_failures]
             self.assertEqual(failures, [])
-            self.assertEqual(read_dreaming_state(home)["turns_since_consolidation"], THREADS * INCREMENTS)
-            self.assertEqual(_leftover_temporaries(home / "memory"), [])
+            self.assertEqual(read_dreaming_state(home, hermes)["turns_since_consolidation"], THREADS * INCREMENTS)
+            self.assertEqual(_leftover_temporaries(dreaming_state_path(home, hermes).parent), [])
 
     def test_a_mutate_that_raises_leaves_the_previous_counters_whole(self) -> None:
         with TemporaryDirectory() as tmp:
-            home = Path(tmp) / ".omh"
-            write_dreaming_state(home, record_turn(read_dreaming_state(home)))
-            before = dreaming_state_path(home).read_bytes()
+            home, hermes = Path(tmp) / ".omh", Path(tmp) / ".hermes"
+            write_dreaming_state(home, hermes, record_turn(read_dreaming_state(home, hermes)))
+            before = dreaming_state_path(home, hermes).read_bytes()
 
             def broken(state: dict[str, object]) -> dict[str, object]:
                 raise RuntimeError("mutation failed half-way")
 
             with self.assertRaises(RuntimeError):
-                update_dreaming_state(home, broken)
-            self.assertEqual(dreaming_state_path(home).read_bytes(), before)
-            self.assertEqual(_leftover_temporaries(home / "memory"), [])
+                update_dreaming_state(home, hermes, broken)
+            self.assertEqual(dreaming_state_path(home, hermes).read_bytes(), before)
+            self.assertEqual(_leftover_temporaries(dreaming_state_path(home, hermes).parent), [])
 
     def test_a_replace_that_fails_leaves_the_previous_file_and_no_temporary(self) -> None:
         with TemporaryDirectory() as tmp:
-            home = Path(tmp) / ".omh"
-            write_dreaming_state(home, record_turn(read_dreaming_state(home)))
-            before = dreaming_state_path(home).read_bytes()
+            home, hermes = Path(tmp) / ".omh", Path(tmp) / ".hermes"
+            write_dreaming_state(home, hermes, record_turn(read_dreaming_state(home, hermes)))
+            before = dreaming_state_path(home, hermes).read_bytes()
             with patch.object(memory_state_files.os, "replace", side_effect=PermissionError("denied")):
                 with self.assertRaises(PermissionError):
-                    update_dreaming_state(home, record_turn)
-            self.assertEqual(dreaming_state_path(home).read_bytes(), before)
-            self.assertEqual(_leftover_temporaries(home / "memory"), [])
+                    update_dreaming_state(home, hermes, record_turn)
+            self.assertEqual(dreaming_state_path(home, hermes).read_bytes(), before)
+            self.assertEqual(_leftover_temporaries(dreaming_state_path(home, hermes).parent), [])
 
     def test_state_is_written_with_lf_only(self) -> None:
         # Windows text mode would write CRLF; the journals are line-split.
@@ -196,13 +196,13 @@ class SwallowedWriteFailureTests(unittest.TestCase):
 
     def test_a_lock_held_past_its_deadline_is_counted_not_raised(self) -> None:
         with TemporaryDirectory() as tmp:
-            home = Path(tmp) / ".omh"
-            live = OmhMemoryProvider(home)
+            home, hermes = Path(tmp) / ".omh", Path(tmp) / ".hermes"
+            live = OmhMemoryProvider(home, hermes_home=hermes)
             with patch.object(memory_state_files, "STATE_LOCK_TIMEOUT_SECONDS", 0.05):
-                with memory_state_files.state_file_lock(dreaming_state_path(home)):
+                with memory_state_files.state_file_lock(dreaming_state_path(home, hermes)):
                     live._mutate_state(record_turn)
             self.assertEqual(live._write_failures, [{"op": "dreaming_state", "path": "dreaming.json", "error": "TimeoutError"}])
-            self.assertEqual(read_dreaming_state(home)["turns_since_consolidation"], 0)
+            self.assertEqual(read_dreaming_state(home, hermes)["turns_since_consolidation"], 0)
 
     def test_the_failure_list_is_bounded_and_the_count_is_not(self) -> None:
         with TemporaryDirectory() as tmp:

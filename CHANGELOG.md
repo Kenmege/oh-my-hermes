@@ -30,6 +30,67 @@ All notable changes will be documented here.
   --wait`'s documented codes and bounds, and the deadline `ulw-maestro` names,
   are now pinned by parity tests against the command's constants.
 
+- **A profile is served only its own consolidation brief, and
+  `plugins.entries.omh.settings.dreaming_mode` turns the brief off for that
+  profile (#2087).** Profiles that bind one OMH store, such as every profile of
+  a gateway running `gateway.multiplex_profiles: true` against `~/.omh`, shared
+  one `memory/dreaming.json` and one `memory/consolidation.json`. A nearly full
+  `MEMORY.md` in one profile raised a brief that every other profile was then
+  served on every turn, and all profiles' turns moved one interval counter. The
+  counters and the brief now live under
+  `memory/profiles/<sha256 of the Hermes home>/` (the slot the group-activity
+  status already keys by). The pack, the chat notice, `omh_memory`, `omh memory
+  dream` and `omh doctor` read the brief of the Hermes home they are bound to.
+  Measured with two profiles on one store, profile A over its headroom floor,
+  20 interleaved turns each. Before, B's pack carried a brief on 20 of 20
+  turns, 14 of them with A's `headroom_below_floor` reason. The shared interval
+  fired 6 times for B and once for A, and A raised a brief led by its headroom
+  reason 6 times, because each brief B raised replaced the `last_reasons` that
+  suppression compares against. After, B's pack carries A's reason on 0 turns,
+  each profile's interval fires 4 times in its own 20 turns, and A's
+  headroom-led brief is raised once. `dreaming_mode: off` in
+  a profile's own `config.yaml` stops that profile's brief from being raised,
+  served or reported, including one written before; bare `off` and `false`
+  both mean `off`. Unset keeps `reminder`, the default. Any other value, or a
+  config OMH cannot read, also keeps `reminder` but is reported as
+  `mode_setting_unrecognized`, in `omh memory dream`'s `mode_setting` and as
+  `omh doctor` advice. On the first attended session start after the upgrade, a
+  single-profile host moves its old home-wide files into its profile directory
+  and keeps a pending brief. Two cases leave them unread: the profile already
+  has its own files (`omh memory dream --evaluate` raised a brief first), or
+  the profile is routed, which every profile of a multiplexed process is, even
+  a single profile under `gateway.multiplex_profiles: true`. `omh memory
+  retire --apply` retires an expiring-only brief in every profile's directory. Thanks
+  to @kanzaka110 for the report and @sanjkrsna for pointing at the
+  per-profile key.
+
+- **`omh install --force` reads Hermes' curator ledger once, and names the
+  ledger it could not read when it reports what a removal lost.** Under
+  `--force` the install read and parsed the whole ledger again for a replaced
+  Hermes edit, again for a skill it cleared, and again for every retired
+  directory it removed, beside a comment saying it read the ledger once. The
+  read it already made now also keeps every write the ledger records when a
+  local change may be overwritten, and each of those reports takes that list.
+  On a synthetic 190.8 MB ledger (16,000 rows in the shape Hermes wrote before
+  0.21.4, 20 files each, 30% of them under the OMH pack), a `--force` install
+  that replaced two skills and removed three retired directories went from 6
+  ledger reads in 8.1 s to 1 read in 2.9 s with the same result; a `--force`
+  with nothing to lose went from 2.9 s to 2.7 s, and a plain install from
+  2.3 s to 2.0 s. With no row under the pack, that `--force` with nothing to
+  lose is slower, 0.19 s to 0.54 s, because it now parses every row where it
+  used to skip them all, while the one that replaced and removed went from
+  5.4 s to 0.54 s. When a ledger could not be read, each replaced edit or
+  `--force` removal that lists what Hermes still holds a copy of carries
+  `ledger_copy_partial: true`, and one summary line after those lists names
+  what could not be read and says they count only what could be; a `--force`
+  removal OMH could not judge for that reason now names it too, and a
+  `--dry-run` result carries `unreadable_ledgers`. A ledger with more than one
+  torn line is named once, with a count, instead of once per line. The ledger
+  reader no longer drops every write when given a generator of directories,
+  resolves those directories once per read instead of once per write, and
+  builds a row's `after` list once instead of once per file the row listed
+  before; `omh doctor` judges Hermes edits once instead of twice.
+
 - **A checked team no longer checks a part while its helper's work sits
   unmerged in the worktree Hermes gave it, and the board fan-in asks Hermes
   only for transitions it lands.** With Hermes' `delegation.worktree_isolation`

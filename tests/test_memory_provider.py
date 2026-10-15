@@ -60,7 +60,9 @@ from omh.plugin_bundle.omh.memory_dreaming import (
     DEFAULT_TURN_INTERVAL,
     build_consolidation_handoff,
     clear_after_consolidation,
+    consolidation_path,
     consolidation_reasons,
+    dreaming_state_path,
     empty_dreaming_state,
     read_dreaming_state,
     read_latest_consolidation,
@@ -210,10 +212,11 @@ class RenderTests(unittest.TestCase):
 class DreamingScheduleTests(unittest.TestCase):
     def test_counters_round_trip_and_survive_a_corrupt_file(self) -> None:
         with TemporaryDirectory() as tmp:
-            write_dreaming_state(tmp, record_turn(empty_dreaming_state()))
-            self.assertEqual(read_dreaming_state(tmp)["turns_since_consolidation"], 1)
-            (Path(tmp) / "memory" / "dreaming.json").write_text("{", encoding="utf-8")
-            self.assertEqual(read_dreaming_state(tmp), empty_dreaming_state())
+            hermes = Path(tmp) / "hermes"
+            write_dreaming_state(tmp, hermes, record_turn(empty_dreaming_state()))
+            self.assertEqual(read_dreaming_state(tmp, hermes)["turns_since_consolidation"], 1)
+            dreaming_state_path(tmp, hermes).write_text("{", encoding="utf-8")
+            self.assertEqual(read_dreaming_state(tmp, hermes), empty_dreaming_state())
 
     def test_the_turn_interval_is_the_baseline_trigger(self) -> None:
         state = empty_dreaming_state()
@@ -585,7 +588,7 @@ class ProviderLifecycleTests(unittest.TestCase):
             provider = self._provider(root, agent_context="cron")
             provider.on_turn_start(1, "hello")
             provider.on_memory_write("add", "memory", "text")
-            self.assertEqual(read_dreaming_state(root / ".omh"), empty_dreaming_state())
+            self.assertEqual(read_dreaming_state(root / ".omh", root / ".hermes"), empty_dreaming_state())
 
     def test_compaction_hands_back_system_blocks_and_consolidates_at_once(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -597,14 +600,14 @@ class ProviderLifecycleTests(unittest.TestCase):
             self.assertIn("must survive compaction", preserved)
             # The flag is cleared because the brief was written here rather than
             # deferred; waiting would put it after the material it describes.
-            self.assertFalse(read_dreaming_state(root / ".omh")["compaction_pending"])
-            self.assertTrue((root / ".omh" / "memory" / "consolidation.json").exists())
+            self.assertFalse(read_dreaming_state(root / ".omh", root / ".hermes")["compaction_pending"])
+            self.assertTrue(consolidation_path(root / ".omh", root / ".hermes").exists())
 
     def test_consolidation_writes_a_brief_only_when_it_is_due(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             provider = self._provider(root)
-            handoff_path = root / ".omh" / "memory" / "consolidation.json"
+            handoff_path = consolidation_path(root / ".omh", root / ".hermes")
 
             self.assertFalse(provider.consolidation_due()["due"])
             self.assertFalse(handoff_path.exists())
@@ -614,7 +617,7 @@ class ProviderLifecycleTests(unittest.TestCase):
             self.assertTrue(handoff_path.exists())
             # The interval fired on the turn itself and reset the counters, so
             # asking again straight after finds nothing further due.
-            self.assertEqual(read_dreaming_state(root / ".omh")["turns_since_consolidation"], 0)
+            self.assertEqual(read_dreaming_state(root / ".omh", root / ".hermes")["turns_since_consolidation"], 0)
             self.assertFalse(provider.consolidation_due()["due"])
 
     def test_the_brief_never_claims_consolidation_happened(self) -> None:
@@ -632,7 +635,7 @@ class ProviderLifecycleTests(unittest.TestCase):
             # The pressure is picked up by the evaluation `initialize` already
             # runs, so the brief exists before anything else asks. Asking again
             # finds the same standing condition suppressed rather than restated.
-            brief = json.loads((root / ".omh" / "memory" / "consolidation.json").read_text(encoding="utf-8"))
+            brief = json.loads(consolidation_path(root / ".omh", root / ".hermes").read_text(encoding="utf-8"))
             self.assertTrue(any(str(r).startswith("headroom_below_floor") for r in brief["reasons"]))
             self.assertEqual(brief["eviction_plan"]["cap"], 2200)
 
@@ -756,7 +759,7 @@ class LossPreventionTests(unittest.TestCase):
 
             triggers = [brief["trigger"] for brief in self._briefs(root)]
             self.assertEqual(triggers, ["compaction", "shutdown"])
-            latest = json.loads((root / ".omh" / "memory" / "consolidation.json").read_text(encoding="utf-8"))
+            latest = json.loads(consolidation_path(root / ".omh", root / ".hermes").read_text(encoding="utf-8"))
             self.assertEqual(latest["trigger"], "shutdown")
 
     def test_a_fired_trigger_does_not_immediately_refire(self) -> None:
@@ -800,7 +803,7 @@ class CompactionCaptureTests(unittest.TestCase):
         return provider
 
     def _latest(self, root: Path) -> dict | None:
-        return read_latest_consolidation(root / ".omh")
+        return read_latest_consolidation(root / ".omh", root / ".hermes")
 
     def test_pre_compress_hands_back_the_system_blocks_and_no_request(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -887,7 +890,7 @@ class CompactionCaptureTests(unittest.TestCase):
             _write_hermes_memory(root / ".hermes", "x" * 2100)
             shared = self._provider(root, platform="discord", session_id="discord-1")
             self.assertIsNone(self._latest(root), "a gateway start raises nothing")
-            before = read_dreaming_state(root / ".omh")
+            before = read_dreaming_state(root / ".omh", root / ".hermes")
             for turn in range(1, DEFAULT_TURN_INTERVAL + 2):
                 shared.on_turn_start(turn, "hello")
             self.assertEqual(shared.on_pre_compress([{"role": "user"}] * 40), "")
@@ -895,7 +898,7 @@ class CompactionCaptureTests(unittest.TestCase):
             shared.on_session_end([])
             shared.shutdown()
             self.assertIsNone(self._latest(root))
-            self.assertEqual(read_dreaming_state(root / ".omh"), before)
+            self.assertEqual(read_dreaming_state(root / ".omh", root / ".hermes"), before)
             # Nor does it close the operator's digest window.
             self.assertFalse((root / ".omh" / "memory" / "session_close.json").exists())
             console = self._provider(root, platform="tui", session_id="tui-1")
@@ -947,16 +950,16 @@ class MemoryToolActionTests(unittest.TestCase):
             root = Path(tmp).resolve()
             home = root / ".omh"
             _write_hermes_memory(root / ".hermes", "x" * 2100)
-            write_dreaming_state(home, record_compaction(record_turn(empty_dreaming_state())))
-            state_path = home / "memory" / "dreaming.json"
+            write_dreaming_state(home, root / ".hermes", record_compaction(record_turn(empty_dreaming_state())))
+            state_path = dreaming_state_path(home, root / ".hermes")
             before = state_path.read_bytes()
             for _ in range(2):
                 payload = self._call(root, action="consolidation")
                 self.assertEqual(state_path.read_bytes(), before)
                 self.assertFalse(payload["evaluated"])
                 self.assertNotIn("due", payload)
-                self.assertEqual(payload["state"], read_dreaming_state(home))
-                self.assertFalse((home / "memory" / "consolidation.json").exists())
+                self.assertEqual(payload["state"], read_dreaming_state(home, root / ".hermes"))
+                self.assertFalse(consolidation_path(home, root / ".hermes").exists())
                 self.assertFalse((home / "memory" / "consolidation.jsonl").exists())
             brief = OmhMemoryProvider(home, hermes_home=root / ".hermes").consolidation_due()
             self.assertTrue(brief["due"])
@@ -1177,8 +1180,8 @@ class MemoryCliTests(unittest.TestCase):
             self.assertEqual(status, 0, stderr)
             self.assertFalse(payload["evaluated"])
             self.assertNotIn("due", payload)
-            self.assertFalse((root / ".omh" / "memory" / "consolidation.json").exists())
-            self.assertFalse((root / ".omh" / "memory" / "dreaming.json").exists())
+            self.assertFalse(consolidation_path(root / ".omh", root / ".hermes").exists())
+            self.assertFalse(dreaming_state_path(root / ".omh", root / ".hermes").exists())
 
     def test_the_status_question_does_not_consume_the_next_brief(self) -> None:
         # Asking "is consolidation due" must not answer "no" to the next asker
@@ -1207,7 +1210,7 @@ class MemoryCliTests(unittest.TestCase):
             # reading of a session start that was really a CLI question.
             self.assertEqual(payload["trigger"], "manual")
             self.assertTrue(payload["due"])
-            self.assertTrue((root / ".omh" / "memory" / "consolidation.json").is_file())
+            self.assertTrue(consolidation_path(root / ".omh", root / ".hermes").is_file())
 
             # Asking twice does not write twice, which is the whole point.
             before = (root / ".omh" / "memory" / "consolidation.jsonl").read_text(encoding="utf-8")
@@ -1221,9 +1224,9 @@ class MemoryCliTests(unittest.TestCase):
             root = Path(tmp)
             _write_hermes_memory(root / ".hermes", "x" * 2100)
             omh_home = root / ".omh"
-            write_dreaming_state(omh_home, record_compaction(record_turn(empty_dreaming_state())))
+            write_dreaming_state(omh_home, root / ".hermes", record_compaction(record_turn(empty_dreaming_state())))
             run_cli(self._base(root) + ["memory", "dream"])
-            state = read_dreaming_state(omh_home)
+            state = read_dreaming_state(omh_home, root / ".hermes")
             self.assertTrue(state["compaction_pending"])
             self.assertEqual(state["turns_since_consolidation"], 1)
 
@@ -1468,7 +1471,7 @@ class DoctorSurfacesTheBriefTests(unittest.TestCase):
             _write_hermes_memory(root / ".hermes", *(entry(i) for i in range(len(_TOPICS))))
             provider = OmhMemoryProvider(root / ".omh")
             provider.initialize("s", platform="cli", hermes_home=str(root / ".hermes"), agent_context="primary")
-            brief = json.loads((root / ".omh" / "memory" / "consolidation.json").read_text(encoding="utf-8"))
+            brief = json.loads(consolidation_path(root / ".omh", root / ".hermes").read_text(encoding="utf-8"))
             self.assertTrue(brief["demotion_rows"], brief["reasons"])
             self.assertEqual(brief["eviction_plan"]["reclaimable_chars"], 0)
             check = self._checks(root)["memory_consolidation"]
@@ -1502,7 +1505,7 @@ class DoctorSurfacesTheBriefTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._fire_a_brief(root)
-            path = root / ".omh" / "memory" / "consolidation.json"
+            path = consolidation_path(root / ".omh", root / ".hermes")
             brief = json.loads(path.read_text(encoding="utf-8"))
             brief["reasons"] = [*brief["reasons"], "turn_interval_reached:20/20"]
             path.write_text(json.dumps(brief), encoding="utf-8")
@@ -1519,7 +1522,7 @@ class DoctorSurfacesTheBriefTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._fire_a_brief(root)
-            path = root / ".omh" / "memory" / "consolidation.json"
+            path = consolidation_path(root / ".omh", root / ".hermes")
             brief = json.loads(path.read_text(encoding="utf-8"))
             brief["eviction_plan"]["reclaimable_chars"] = 412
             brief["eviction_plan"]["duplicate_clusters"] = [
@@ -1537,7 +1540,7 @@ class DoctorSurfacesTheBriefTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._fire_a_brief(root)
-            path = root / ".omh" / "memory" / "consolidation.json"
+            path = consolidation_path(root / ".omh", root / ".hermes")
             brief = json.loads(path.read_text(encoding="utf-8"))
             brief.pop("eviction_plan")
             path.write_text(json.dumps(brief), encoding="utf-8")
@@ -1553,7 +1556,7 @@ class DoctorSurfacesTheBriefTests(unittest.TestCase):
     def test_an_unreadable_brief_reads_as_nothing_pending(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            path = root / ".omh" / "memory" / "consolidation.json"
+            path = consolidation_path(root / ".omh", root / ".hermes")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("{not json", encoding="utf-8")
             self.assertEqual(self._checks(root)["memory_consolidation"]["severity"], "ok")
@@ -1568,10 +1571,10 @@ class DoctorSurfacesTheBriefTests(unittest.TestCase):
 
     def test_the_reader_is_defensive_about_the_schema(self) -> None:
         with TemporaryDirectory() as tmp:
-            path = Path(tmp) / "memory" / "consolidation.json"
+            path = consolidation_path(tmp, Path(tmp) / "hermes")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps({"schema_version": "something_else/v1"}), encoding="utf-8")
-            self.assertIsNone(read_latest_consolidation(tmp))
+            self.assertIsNone(read_latest_consolidation(tmp, Path(tmp) / "hermes"))
 
 
 class ChatNoticeOnEveryMessengerTests(unittest.TestCase):
@@ -1725,7 +1728,7 @@ class ChatNoticeOnEveryMessengerTests(unittest.TestCase):
                 from omh.paths import resolve_paths
 
                 root = Path(tmp)
-                broken = root / ".omh" / "memory" / "consolidation.json"
+                broken = consolidation_path(root / ".omh", root / ".hermes")
                 broken.parent.mkdir(parents=True, exist_ok=True)
                 broken.write_text(case if isinstance(case, str) else json.dumps(case), encoding="utf-8")
                 payload = self._payload(resolve_paths(root / ".omh", root / ".hermes"), "slack")
@@ -1746,7 +1749,7 @@ class ChatNoticeOnEveryMessengerTests(unittest.TestCase):
             payload = self._payload(paths, "slack")
             self.assertNotIn("memory_consolidation_notice", payload)
             self.assertNotIn(self.NOTICE_KO, str(payload["chat_response"]["body"]))
-            brief = json.loads((root / ".omh" / "memory" / "consolidation.json").read_text(encoding="utf-8"))
+            brief = json.loads(consolidation_path(root / ".omh", root / ".hermes").read_text(encoding="utf-8"))
             self.assertFalse(brief["due"])
             self.assertEqual(brief["superseded_by_trigger"], "memory_write")
 
@@ -1844,7 +1847,7 @@ class RetirementSignalTests(unittest.TestCase):
         return provider
 
     def _due(self, root: Path) -> bool:
-        brief = read_latest_consolidation(root / ".omh")
+        brief = read_latest_consolidation(root / ".omh", root / ".hermes")
         return bool(brief and brief["due"])
 
     def test_an_unrelated_add_write_never_retires_a_brief(self) -> None:
@@ -1863,7 +1866,7 @@ class RetirementSignalTests(unittest.TestCase):
                     provider = self._interval_brief(root)
                     provider.on_memory_write(action, "memory", "merged entries")
                     self.assertFalse(self._due(root))
-                    brief = read_latest_consolidation(root / ".omh")
+                    brief = read_latest_consolidation(root / ".omh", root / ".hermes")
                     self.assertEqual(brief["superseded_by_trigger"], "memory_write")
 
     def test_a_consolidating_write_does_not_retire_while_pressure_remains(self) -> None:
@@ -1894,14 +1897,14 @@ class RetirementSignalTests(unittest.TestCase):
             for turn in range(1, 4):
                 provider.on_turn_start(turn, "hi")
             journal = root / ".omh" / "memory" / "consolidation.jsonl"
-            turns_before = read_dreaming_state(root / ".omh")["turns_since_consolidation"]
+            turns_before = read_dreaming_state(root / ".omh", root / ".hermes")["turns_since_consolidation"]
             records_before = len(journal.read_text(encoding="utf-8").splitlines())
 
             for index in range(5):
                 (memories / "MEMORY.md").write_text("x" * (2100 + index), encoding="utf-8")
                 provider.on_memory_write("add", "memory", f"fact {index}")
 
-            self.assertEqual(read_dreaming_state(root / ".omh")["turns_since_consolidation"], turns_before)
+            self.assertEqual(read_dreaming_state(root / ".omh", root / ".hermes")["turns_since_consolidation"], turns_before)
             self.assertEqual(len(journal.read_text(encoding="utf-8").splitlines()), records_before)
 
     def test_a_not_due_inspection_carries_no_raised_at(self) -> None:
@@ -1944,7 +1947,7 @@ class ConsolidationResetsTheClockTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._consolidating_session(root)
-            state = read_dreaming_state(root / ".omh")
+            state = read_dreaming_state(root / ".omh", root / ".hermes")
             self.assertEqual(state["turns_since_consolidation"], 0)
             self.assertFalse(state["compaction_pending"])
 
@@ -1954,9 +1957,9 @@ class ConsolidationResetsTheClockTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             provider = self._consolidating_session(root)
-            self.assertFalse(read_latest_consolidation(root / ".omh")["due"])
+            self.assertFalse(read_latest_consolidation(root / ".omh", root / ".hermes")["due"])
             provider.on_session_end([])
-            self.assertFalse(read_latest_consolidation(root / ".omh")["due"])
+            self.assertFalse(read_latest_consolidation(root / ".omh", root / ".hermes")["due"])
 
     def test_a_session_that_did_not_consolidate_still_raises_at_exit(self) -> None:
         # Loss prevention is the reason the session-ending bar exists; a plain
@@ -1970,7 +1973,7 @@ class ConsolidationResetsTheClockTests(unittest.TestCase):
             provider.on_turn_start(1, "hi")
             provider.on_memory_write("add", "memory", "a new fact")
             provider.on_session_end([])
-            brief = read_latest_consolidation(root / ".omh")
+            brief = read_latest_consolidation(root / ".omh", root / ".hermes")
             self.assertTrue(brief["due"])
             self.assertIn("session_ending_with_unconsolidated_turns:1", brief["reasons"])
 
@@ -1981,9 +1984,9 @@ class ConsolidationResetsTheClockTests(unittest.TestCase):
             provider = self._consolidating_session(root)
             for turn in range(2, DEFAULT_TURN_INTERVAL + 1):
                 provider.on_turn_start(turn, "hi")
-            self.assertFalse(read_latest_consolidation(root / ".omh")["due"])
+            self.assertFalse(read_latest_consolidation(root / ".omh", root / ".hermes")["due"])
             provider.on_turn_start(DEFAULT_TURN_INTERVAL + 1, "hi")
-            self.assertTrue(read_latest_consolidation(root / ".omh")["due"])
+            self.assertTrue(read_latest_consolidation(root / ".omh", root / ".hermes")["due"])
 
 
 class NoticeLocaleCoverageTests(unittest.TestCase):
@@ -2156,7 +2159,7 @@ class RecordExpiryWiringTests(unittest.TestCase):
 
     def _briefs(self, root: Path) -> tuple[dict, int]:
         home = root / ".omh" / "memory"
-        latest = json.loads((home / "consolidation.json").read_text(encoding="utf-8"))
+        latest = json.loads(consolidation_path(root / ".omh", root / ".hermes").read_text(encoding="utf-8"))
         lines = (home / "consolidation.jsonl").read_text(encoding="utf-8").splitlines()
         return latest, len([line for line in lines if line.strip()])
 
@@ -2180,7 +2183,7 @@ class RecordExpiryWiringTests(unittest.TestCase):
             latest, _count = self._briefs(root)
             self.assertTrue(latest["due"])
             provider.on_memory_write("replace", "memory", "merged entries", {"write_origin": "memory_tool"})
-            self.assertFalse(read_latest_consolidation(root / ".omh")["due"])
+            self.assertFalse(read_latest_consolidation(root / ".omh", root / ".hermes")["due"])
 
     def test_expired_transition_refreshes_brief_without_new_notification(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -2201,12 +2204,12 @@ class RecordExpiryWiringTests(unittest.TestCase):
     def test_pre_change_brief_normalizes_record_expiry_to_zeros(self) -> None:
         with TemporaryDirectory() as tmp:
             home = Path(tmp) / ".omh"
-            (home / "memory").mkdir(parents=True)
-            (home / "memory" / "consolidation.json").write_text(
+            consolidation_path(home, Path(tmp) / ".hermes").parent.mkdir(parents=True)
+            consolidation_path(home, Path(tmp) / ".hermes").write_text(
                 json.dumps({"schema_version": "omh_memory_consolidation_handoff/v1", "due": True, "reasons": ["turn_interval_reached:5/5"]}),
                 encoding="utf-8",
             )
-            brief = read_latest_consolidation(home)
+            brief = read_latest_consolidation(home, Path(tmp) / ".hermes")
             self.assertEqual(brief["record_expiry"], {"expired": 0, "expiring_soon": 0})
 
     def test_expiry_scan_runs_once_per_evaluation_and_not_in_standing(self) -> None:
@@ -2229,8 +2232,8 @@ class ReasonAwareOperatorSurfaceTests(unittest.TestCase):
     """Chat notice and doctor must name the remedy that actually fits the brief."""
 
     def _write_brief(self, root: Path, *, record_expiry: dict | None) -> None:
-        home = root / ".omh" / "memory"
-        home.mkdir(parents=True, exist_ok=True)
+        path = consolidation_path(root / ".omh", root / ".hermes")
+        path.parent.mkdir(parents=True, exist_ok=True)
         brief: dict = {
             "schema_version": "omh_memory_consolidation_handoff/v1",
             "due": True,
@@ -2240,7 +2243,7 @@ class ReasonAwareOperatorSurfaceTests(unittest.TestCase):
         }
         if record_expiry is not None:
             brief["record_expiry"] = record_expiry
-        (home / "consolidation.json").write_text(json.dumps(brief), encoding="utf-8")
+        path.write_text(json.dumps(brief), encoding="utf-8")
 
     def test_chat_next_action_forks_on_expired_records_in_both_fields(self) -> None:
         from omh.paths import resolve_paths
@@ -2409,11 +2412,11 @@ class BundleReplayAdmissionTests(unittest.TestCase):
                 root = Path(tmp).resolve()
                 state = empty_dreaming_state()
                 state["last_reasons"] = [expected_reason]
-                write_dreaming_state(root / ".omh", state)
+                write_dreaming_state(root / ".omh", root / ".hermes", state)
                 path = write_memory_block(root / ".omh", block)
                 before = path.read_bytes()
 
-                handoff = OmhMemoryProvider(root / ".omh").consolidation_due(now=now)
+                handoff = OmhMemoryProvider(root / ".omh", hermes_home=root / ".hermes").consolidation_due(now=now)
 
                 self.assertEqual(handoff["reasons"], [expected_reason])
                 self.assertEqual(path.read_bytes(), before)
@@ -2887,7 +2890,7 @@ class DreamingReachesTheTurnTests(unittest.TestCase):
             provider = self._provider(root)
             provider.on_turn_start(1, "hi")
             provider.on_session_end()  # a single unconsolidated turn is enough at a session end
-            self.assertTrue((root / ".omh" / "memory" / "consolidation.json").exists())
+            self.assertTrue(consolidation_path(root / ".omh", root / ".hermes").exists())
             provider.queue_prefetch("")
             pack = provider.prefetch("next turn")
             self.assertIn("<memory_consolidation", pack)
@@ -2949,7 +2952,7 @@ class DreamingReachesTheTurnTests(unittest.TestCase):
             provider = self._provider(root, status_callback=broken)
             provider.on_turn_start(1, "hi")
             provider.on_session_end()  # a failing host channel never fails the hook
-            self.assertTrue((root / ".omh" / "memory" / "consolidation.json").exists())
+            self.assertTrue(consolidation_path(root / ".omh", root / ".hermes").exists())
 
     def test_the_status_line_names_the_trigger_and_the_first_reason(self) -> None:
         self.assertEqual(

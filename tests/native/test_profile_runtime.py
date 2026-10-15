@@ -71,6 +71,11 @@ def load(home, order):
         return provider, manager
 
 
+def dreaming_written(store):
+    # Dreaming counters are kept per Hermes profile under the store (#2087).
+    return any(store.glob('memory/profiles/*/dreaming.json'))
+
+
 def snapshot(store):
     return {str(path.relative_to(store)): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in store.rglob("*") if path.is_file()}
@@ -125,8 +130,8 @@ def test_public_provider_tools_and_hooks(fixture, monkeypatch, order, mode):
     observed = exercise(public, provider, manager)
     assert snapshot(private_store) == before
     observed.update({'case': mode, 'order': order,
-        'private_dreaming_written': (private_store / 'memory/dreaming.json').exists(),
-        'public_dreaming_written': (public_store / 'memory/dreaming.json').exists(),
+        'private_dreaming_written': dreaming_written(private_store),
+        'public_dreaming_written': dreaming_written(public_store),
         'private_files': sorted(str(p.relative_to(private_store)) for p in private_store.rglob('*') if p.is_file()),
         'public_files': sorted(str(p.relative_to(public_store)) for p in public_store.rglob('*') if p.is_file())})
     record(observed)
@@ -264,8 +269,8 @@ def test_real_host_turn_order(fixture, monkeypatch):
         actual_pack = _memory_turn_start_and_prefetch(agent, 'Explain this synthetic project isolation question')
         row = {'case': 'real-host-turn-order', 'initialized_pack_marker': MARKER in initialized_pack,
                'native_turn_pack_marker': MARKER in actual_pack, 'native_turn_pack_empty': not actual_pack,
-               'private_dreaming_written': (private_store / 'memory/dreaming.json').exists(),
-               'public_dreaming_written': (public_store / 'memory/dreaming.json').exists()}
+               'private_dreaming_written': dreaming_written(private_store),
+               'public_dreaming_written': dreaming_written(public_store)}
         record(row)
         assert not row['native_turn_pack_marker']
         assert not row['private_dreaming_written'] and row['public_dreaming_written']
@@ -370,9 +375,9 @@ def test_model_home_injection_and_bound_background_provider(fixture, monkeypatch
         work.run(provider.on_turn_start, 1, 'A synthetic queued turn')
         with pytest.raises(ValueError, match='another profile'):
             provider.initialize('different-session', hermes_home=root)
-    assert not (private_store / 'memory/dreaming.json').exists()
+    assert not dreaming_written(private_store)
     assert not (private_store / 'runtime/tool-bursts.json').exists()
-    assert (public_store / 'memory/dreaming.json').exists()
+    assert dreaming_written(public_store)
     assert (public_store / 'runtime/tool-bursts.json').exists()
 
 
@@ -404,8 +409,8 @@ def test_positive_recall_after_real_turn_and_native_queue(fixture):
         assert MARKER not in positive
         assert memory.describe_recall()
         memory.shutdown_all()
-    assert not (private_store / 'memory/dreaming.json').exists()
-    assert (public_store / 'memory/dreaming.json').exists()
+    assert not dreaming_written(private_store)
+    assert dreaming_written(public_store)
 
 
 @pytest.mark.parametrize('identity_source', ['explicit', 'remote', 'missing', 'absent-cwd'])

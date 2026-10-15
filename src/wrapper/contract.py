@@ -9105,7 +9105,7 @@ def _with_memory_consolidation_notice(
     rendered in the card's own language -- the body copy was already localized,
     and an English suffix on a Korean card reads as a glitch.
     """
-    brief = read_latest_consolidation(paths.omh_home)
+    brief = read_latest_consolidation(paths.omh_home, paths.hermes_home)
     if not brief or not brief.get("due"):
         return payload
     reasons = list(brief.get("reasons", []))

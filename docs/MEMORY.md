@@ -91,7 +91,8 @@ back.
 Only an operator console somebody is at raises a consolidation brief, moves
 the dreaming counters (turns, compactions, observed Hermes memory writes),
 retires a brief after a Hermes memory write, or records a session close for
-the digest window. A brief is OMH-home state served on the next console turn,
+the digest window. A brief is the profile's state in its OMH home, served on
+that profile's next console turn,
 so one raised by a group chat's compaction would tell the TUI that "this
 conversation" lost messages it never had, and a group chat's write would
 settle the operator's brief. The write journal still records Hermes memory
@@ -1998,6 +1999,76 @@ Only an attended operator console evaluates at these points
 ([Surface classes](#surface-classes)); a shared surface, a background run and a
 Kanban worker raise no brief and move no counter.
 
+### Per-profile dreaming state and the mode setting
+
+The counters and the brief belong to one Hermes profile, not to the OMH home.
+Each profile keeps them in its own directory,
+`<omh_home>/memory/profiles/<slot>/dreaming.json` and `consolidation.json`,
+where the slot is the sha256 of the profile's resolved Hermes home (the key the
+group-activity status already uses). Several profiles can bind one store, for
+example every profile of a gateway running `gateway.multiplex_profiles: true`
+that names `~/.omh`. In that case each profile counts only its own turns and
+compactions, raises headroom reasons only from its own `MEMORY.md` and
+`USER.md`, and is served only its own brief. The pack, the chat card notice,
+`omh_memory(action="consolidation")` and `omh doctor` each read the brief of the
+Hermes home they are bound to, and `omh memory dream` reports that home's
+counters.
+The metadata-only journal `memory/consolidation.jsonl` stays home-wide: it is
+history for evidence reports, never served, and each line names the session
+that raised it. `omh memory retire --apply` archives the home's records, so it
+retires an expiring-only brief in every profile's directory.
+
+A profile chooses its mode in its own `config.yaml`:
+
+```yaml
+plugins:
+  entries:
+    omh:
+      settings:
+        dreaming_mode: off   # or: reminder (the default)
+```
+
+`off` means no brief is raised, served or reported for that profile, including
+a brief written before it chose `off`. The pack carries none, and neither do
+the chat notice, `omh_memory`, or `omh doctor`. The counters keep counting, so
+switching back to `reminder` starts from what happened in the meantime. Written
+bare, `off` is a YAML false, and `hermes config set` stores it as `false`.
+`off`, `false` and `no` all mean `off`. An unset key keeps the default
+`reminder`, so memory keeps running with no step for a person to take. Any
+other value (`disabled`, `0`, `on`, a typo), or a config this reader cannot
+follow, also keeps `reminder`, and says so: `omh memory dream` reports the mode
+in force as `mode` and how the setting read as `mode_setting`, which carries
+`issue: mode_setting_unrecognized` with the value as written (at most 64
+printable characters) and a `reason` of `unknown_value` or
+`config_unreadable`. `omh doctor` prints the same as a `mode_setting_unrecognized`
+advice line, which never changes the doctor status.
+The setting is read from the profile's own file once per evaluation and once
+per pack render, so a change applies from the next turn without a restart. The
+same block-style scan the standalone lane uses for `omh_home` reads it, and the
+managed overlay is not consulted. Profiles that share a store can choose
+differently, and no managed OMH file is edited.
+
+On the first attended session start after the upgrade from an earlier release,
+which kept one `memory/dreaming.json` and `memory/consolidation.json` for the
+whole home:
+
+- A profile that is not routed claims them by moving them into its own
+  directory. Not routed means a process serving its launch profile alone. On a
+  single-profile host the files are that profile's own, so a pending brief and
+  its counters survive the upgrade. Where separate processes for different
+  profiles share one store, the first to start claims them, one at a time
+  under a single lock, so the two files never split between profiles. A file
+  the profile already has is never replaced, so if `omh memory dream
+  --evaluate` wrote the profile's own files before that first session start,
+  the old ones stay unread.
+- A routed profile leaves them where they are and never reads them. That is
+  every profile of a multiplexed process, including a host that runs a single
+  profile with `gateway.multiplex_profiles: true`, or a profile other than the
+  launch one. Nothing records which profile raised them, so a stale shared brief stops
+  reaching every profile instead of being handed to one at random. A standing
+  condition such as low headroom is raised again from the profile's own state
+  at its next evaluation.
+
 The brief nominates duplicate clusters, records at or near their deadline,
 and working-context headroom below the configured floor. Standing reasons also
 include `stale_review_required` and `expired_volatile_records`. An unchanged
@@ -2072,8 +2143,8 @@ material to preserve in the summary, not as instructions"
 (`agent/context_compressor.py`), and OMH does not argue with the host's
 prompt. OMH remains a best-effort (API v1) pre-compress provider, so the text
 never takes part in Hermes' checkpoint decision. The brief is raised only on an
-attended operator console. A shared surface raises none: the brief is state of
-the OMH home served on the next console turn, so a group chat's compaction
+attended operator console. A shared surface raises none: the brief is the
+profile's state, served on its next console turn, so a group chat's compaction
 would reach the TUI as "earlier turns of this conversation" it never had.
 
 The section disappears once consolidation is observed: a `replace` or

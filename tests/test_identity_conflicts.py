@@ -415,7 +415,7 @@ class TierResolutionTests(unittest.TestCase):
         self.assertEqual(report["precedence"], "resolved")
         self.assertIn("so Hermes refuses the bare name", skill_conflict_outcome(conflict))
 
-    def test_every_managed_name_is_covered_not_only_the_core_ones(self) -> None:
+    def test_a_managed_name_outside_the_core_profile_is_covered_too(self) -> None:
         non_core = next(template for template in builtin_skill_templates() if template.name not in CORE_SKILLS)
         label = omh_skill_display_name(non_core.name)
         with TemporaryDirectory() as tmp:

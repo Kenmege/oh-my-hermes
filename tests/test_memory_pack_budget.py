@@ -142,7 +142,7 @@ class WorstCasePackTests(unittest.TestCase):
         return {
             "system": render_memory_blocks([block for block in blocks if block.tier == "system"], budget_chars=DEFAULT_SYSTEM_RENDER_BUDGET_CHARS, evaluations=evaluations),
             "index": render_block_index([block for block in blocks if block.tier == "reference"], evaluations=evaluations),
-            "brief": render_consolidation_brief(read_latest_consolidation(self.store), hermes_home=self.hermes),
+            "brief": render_consolidation_brief(read_latest_consolidation(self.store, self.hermes), hermes_home=self.hermes),
         }
 
     def test_the_fixture_overflows_the_spill_cap_at_the_old_section_caps(self) -> None:
@@ -251,7 +251,7 @@ class WorstCasePackTests(unittest.TestCase):
         full = self.live.render_pack()
         records = re.search(r"<memory_records>.*?</memory_records>", full, re.DOTALL).group(0)
         digest = DIGEST.search(full).group(0)
-        brief_floor = render_consolidation_brief(read_latest_consolidation(self.store), hermes_home=self.hermes, max_demote_rows=0)
+        brief_floor = render_consolidation_brief(read_latest_consolidation(self.store, self.hermes), hermes_home=self.hermes, max_demote_rows=0)
         # Room for records, the digest and a row-less brief, but not the reminder too.
         with patch.object(memory_provider, "PACK_BUDGET_CHARS", len("\n".join((records, digest, brief_floor)))):
             reminder_only = self.live.render_pack()
