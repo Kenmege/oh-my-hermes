@@ -4405,14 +4405,19 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "codebase-uml",
     ),
-    # The same boundaries said in Korean. Korean skips the weak-evidence check
-    # that turns an English guard-only match into a question, so each of these
-    # dispatched on one ambiguous word or a guard alone: a bare 토큰 or 비용
-    # (an auth token, the cost of a call) opened the ops card, and "LLM 위키"
-    # opened the wiki blueprint or, once that withdrew, the greenfield
-    # interview. The two diagram cases hold the Korean diagram fix to the
-    # English boundary: data visualization and a cloud diagram with no code to
-    # read are not a codebase picture.
+    # The same boundaries said in Korean, where the weak-evidence check that
+    # turns an English guard-only match into a question does not apply. On
+    # main every ops case dispatched the card: a bare 토큰 or 비용 trigger, or
+    # the guard reading 알려줘 as a status request, took an auth token, the
+    # cost of a call, or code that touches token usage for a usage report. The
+    # Korean usage phrases that replace the triggers read whole words and stand
+    # down on a request for code or for less usage. "LLM 위키", spaced or not,
+    # dispatched the wiki blueprint or asked with it leading, and where the
+    # blueprint did not claim it the greenfield interview dispatched on
+    # "만들어줘" ("이 문서들 LLM 위키로 만들어줘"); both now stand down on an LLM
+    # wiki. The diagram cases hold the Korean diagram fix to the
+    # English boundary: data visualization, and a cloud diagram with no code
+    # to read, bare or with a particle, are not a codebase picture.
     RoutingPrecisionCase(
         "korean-auth-token-storage-is-not-ops-observability",
         "Changing how an auth token is stored is not a token-usage report",
@@ -4438,6 +4443,54 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "ops-observability-card",
     ),
     RoutingPrecisionCase(
+        "korean-token-consumer-code-is-not-ops-observability",
+        "Writing a token consumer is code, not a usage report",
+        "토큰 소비자 코드 짜줘",
+        "answer_clarification",
+        "",
+        "ops-observability-card",
+    ),
+    RoutingPrecisionCase(
+        "korean-token-usage-limit-feature-is-not-ops-observability",
+        "Implementing a token-usage limit is code, not a usage report",
+        "토큰 사용량 제한 기능 구현해줘",
+        "answer_clarification",
+        "",
+        "ops-observability-card",
+    ),
+    RoutingPrecisionCase(
+        "korean-token-usage-limit-middleware-is-not-ops-observability",
+        "Writing middleware that limits token usage is code, not a usage report",
+        "토큰 사용량 제한하는 미들웨어 짜줘",
+        "answer_clarification",
+        "",
+        "ops-observability-card",
+    ),
+    RoutingPrecisionCase(
+        "korean-fewer-tokens-prompt-is-not-ops-observability",
+        "Rewriting a prompt to burn fewer tokens asks for less usage, not a report of it",
+        "토큰 소모 줄이는 프롬프트로 바꿔줘",
+        "answer_clarification",
+        "",
+        "ops-observability-card",
+    ),
+    RoutingPrecisionCase(
+        "korean-kafka-token-consumption-logic-is-not-ops-observability",
+        "Implementing Kafka token-consumption logic is code, not a usage report",
+        "카프카 토큰 소비 로직 구현해줘",
+        "answer_clarification",
+        "",
+        "ops-observability-card",
+    ),
+    RoutingPrecisionCase(
+        "korean-kafka-token-consumer-group-is-not-ops-observability",
+        "A token consumer group is not token consumption: 소비자 is a longer word than 소비",
+        "카프카 토큰 소비자 그룹 늘려줘",
+        "answer_clarification",
+        "",
+        "ops-observability-card",
+    ),
+    RoutingPrecisionCase(
         "korean-sales-data-visualization-is-not-codebase-uml",
         "Visualizing sales data is not a codebase diagram",
         "매출 데이터 시각화해줘",
@@ -4454,6 +4507,14 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "codebase-uml",
     ),
     RoutingPrecisionCase(
+        "korean-cloud-architecture-diagram-with-particle-is-not-codebase-uml",
+        "A Korean cloud word with a particle attached still marks a diagram with no code to read",
+        "클라우드의 아키텍처 다이어그램 그려줘",
+        "answer_clarification",
+        "",
+        "codebase-uml",
+    ),
+    RoutingPrecisionCase(
         "korean-llm-wiki-build-is-not-wiki-blueprint",
         "Building an LLM wiki, said in Korean, is the bundled llm-wiki skill's job",
         "LLM 위키 만들어줘",
@@ -4465,6 +4526,14 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "korean-notes-into-llm-wiki-is-not-wiki-blueprint",
         "Organizing notes into an LLM wiki, said in Korean, is the bundled llm-wiki skill's job",
         "내 노트를 LLM 위키로 정리해줘",
+        "answer_clarification",
+        "",
+        "wiki",
+    ),
+    RoutingPrecisionCase(
+        "korean-unspaced-llm-wiki-build-is-not-wiki-blueprint",
+        "An LLM wiki written without a space is still the bundled llm-wiki skill's job",
+        "LLM위키 만들어줘",
         "answer_clarification",
         "",
         "wiki",
@@ -8442,8 +8511,9 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_ops_observability_card",
         "ops_observability",
     ),
-    # Token usage said in Korean, which a bare 토큰 trigger carried before it
-    # was dropped for dispatching auth-token requests.
+    # Token and cost usage said in Korean, which the bare 토큰 and 비용
+    # triggers carried before they were dropped for dispatching auth-token and
+    # function-cost requests.
     RoutingInterventionCase(
         "korean-token-usage-monitoring",
         "Korean token-usage monitoring opens ops observability",
@@ -8466,6 +8536,24 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "korean-token-burn-rate",
         "A Korean complaint about token burn opens ops observability",
         "토큰 소모가 너무 빨라",
+        "dispatch",
+        "ops-observability-card",
+        "prepare_ops_observability_card",
+        "ops_observability",
+    ),
+    RoutingInterventionCase(
+        "korean-token-usage-trend",
+        "A Korean request for the token-usage trend opens ops observability",
+        "토큰 사용 추이 알려줘",
+        "dispatch",
+        "ops-observability-card",
+        "prepare_ops_observability_card",
+        "ops_observability",
+    ),
+    RoutingInterventionCase(
+        "korean-api-cost-monitoring",
+        "Korean API-cost monitoring opens ops observability",
+        "API 비용 모니터링해줘",
         "dispatch",
         "ops-observability-card",
         "prepare_ops_observability_card",
@@ -13501,6 +13589,15 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "korean-class-diagram-of-cloud-sdk-module-reaches-codebase-uml",
         "A Korean code word beside a Korean cloud word is still a codebase diagram",
         "클라우드 SDK 모듈 클래스 다이어그램 그려줘",
+        "dispatch",
+        "codebase-uml",
+        "prepare_codebase_uml",
+        "codebase_uml",
+    ),
+    RoutingInterventionCase(
+        "korean-codebase-diagram-beside-cloud-word-with-particle-reaches-codebase-uml",
+        "A Korean code word read as a prefix keeps a diagram beside a cloud word with a particle",
+        "클라우드의 코드베이스 다이어그램 그려줘",
         "dispatch",
         "codebase-uml",
         "prepare_codebase_uml",

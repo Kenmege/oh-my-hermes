@@ -10,37 +10,49 @@ All notable changes will be documented here.
   diagram request reached it: "코드베이스 다이어그램 그려줘" asked about
   codebase-onboarding while the in-session hint named codebase-uml. Both words
   are folded before they are compared and read as prefixes, because Korean
-  attaches the particle ("다이어그램이"). The English boundaries hold in Korean
-  too: 클라우드, 인프라, 쿠버네티스 and 서브넷 mark an infrastructure diagram
-  that is the bundled `architecture-diagram` skill's job unless a Korean or
-  English code word is also there, and "시각화해줘" alone no longer credits the
-  skill, so "매출 데이터 시각화해줘" does not name it. "LLM 위키" now names the
-  pattern Hermes' bundled `llm-wiki` skill builds, as "llm wiki" did: the wiki
-  blueprint withdraws, and so does the greenfield interview, which Korean,
-  exempt from the weak-evidence check, used to dispatch on that guard alone.
-  English llm-wiki requests still clarify; their leading candidate moves from
-  deep-interview to the next scored skill. ops-observability-card loses its
-  bare "비용" and "토큰" triggers, which dispatched it for "토큰 저장 방식
-  바꿔줘" and "이 API 호출 비용 줄이는 코드 짜줘". The card's guard keeps them
-  as telemetry words, as it keeps "token" and "cost", but no longer reads
-  "알려줘" as a status request, a word its English list never had. Token usage
-  is carried by "토큰 사용량", "토큰 소모" and "토큰 소비". Its Korean trigger
-  count drops from 9 to 7. Measured with `build_chat_interaction_payload`
-  (`source="discord"`), `awareness_route_hint` and the skill candidate line
-  at main and at this head, over both corpora (unchanged except three English
-  llm-wiki clarifies whose leading candidate moved), the triage probes and
-  134 Korean probes of our own: Korean diagram requests that dispatch
-  codebase-uml go from 1 to 5 of 25, plus 4 that now ask with it leading,
-  and none of 20 negatives moved; of 21 LLM-wiki requests, which went to wiki
-  (18) or dispatched the interview (3), 20 now ask and one dispatches
-  materials-package on "PDF"; ops-observability-card dispatches 0 of 24
-  everyday-sense negatives (20 before) and 21 of 24 usage requests (24
-  before; "에이전트 비용 추적해줘", "오늘 LLM 비용 얼마 나왔어?" and "토큰 사용 추이
-  알려줘" now ask). A held-out set of 48, written after the fixes were
-  chosen, moved the same way: codebase-uml dispatches 0 -> 4 of 8, wiki
-  reaches 7 -> 0 of 7 LLM-wiki requests, and ops-observability-card
-  dispatches 9 -> 0 of 10 negatives and keeps 8 of 8 usage requests. Adds 7
-  negative controls and 8 interventions.
+  attaches the particle ("다이어그램이"). On the router the English boundaries
+  hold in Korean too: 클라우드, 인프라, 쿠버네티스 and 서브넷, bare or with a
+  particle ("클라우드의"), mark an infrastructure diagram that is the bundled
+  `architecture-diagram` skill's job unless a Korean or English code word is
+  also there. Because the check now runs, "시각화해줘" joins the skill's
+  Korean whole-phrase-only tokens: the trigger "코드베이스 시각화해줘" made it a
+  scored token of its own, which would have named the skill for "매출 데이터
+  시각화해줘". "LLM 위키" and "LLM위키" now name the pattern Hermes' bundled
+  `llm-wiki` skill builds, as "llm wiki" did: the wiki blueprint withdraws,
+  and so does the greenfield interview, which Korean, exempt from the
+  weak-evidence check, dispatched on that guard alone. English llm-wiki
+  requests still clarify; their leading candidate moves from deep-interview
+  to the next scored skill. ops-observability-card loses its bare "비용" and
+  "토큰" triggers, which dispatched it for "토큰 저장 방식 바꿔줘" and "이 API 호출
+  비용 줄이는 코드 짜줘"; its Korean trigger count drops from 9 to 7. The
+  card's guard keeps them as telemetry words, as it keeps "token" and "cost",
+  but no longer reads "알려줘" as a status request, a word its English list
+  never had. Korean token and cost usage is read from "토큰 사용량", "토큰 사용
+  추이", "토큰 소모(량)", "토큰 소비(량)" and "비용 모니터링", each as a whole word
+  ("토큰 소비" is not "토큰 소비자") and standing down on a request for code or
+  for less usage ("토큰 사용량 제한 기능 구현해줘", "토큰 소모 줄이는 프롬프트로
+  바꿔줘"). Five usage requests that dispatched the card now ask: "에이전트 비용
+  추적해줘", "오늘 LLM 비용 얼마 나왔어?", "이번 달 API 비용 얼마야", "이번 달 비용
+  얼마 나왔어" and "토큰 얼마나 썼어?". The last four ask what was spent, which
+  the card's Do-Not-Use sends to Hermes' /usage and /insights, and English
+  "how much did the API cost this month" asks too. Measured with
+  `build_chat_interaction_payload` (`source="discord"`), `awareness_route_hint`
+  and the skill candidate line at main and at this head, over both corpora
+  (unchanged except three English llm-wiki clarifies whose leading candidate
+  moved), the triage probes, 134 Korean probes of our own and the review's
+  examples: Korean diagram requests that dispatch codebase-uml go from 1 to 5 of
+  25, plus 4 that now ask with it leading, and no Korean diagram negative
+  moves toward it; of 21 LLM-wiki requests, which went to wiki (18) or
+  dispatched the interview (3), 20 now ask and one dispatches
+  materials-package on "PDF"; ops-observability-card dispatches none of 24
+  everyday-sense negatives (20 before), none of the five code requests the
+  review found, a token consumer group or a consumer price (all seven
+  dispatched it before), and 22 of 24 usage requests (24 before). A
+  held-out set of 48, written after the first fixes were chosen, moved the
+  same way: codebase-uml dispatches 0 -> 4 of 8, wiki reaches 7 -> 0 of 7
+  LLM-wiki requests, and ops-observability-card dispatches 9 -> 0 of 10
+  negatives and keeps 8 of 8 usage requests. Adds 15 negative controls and
+  11 interventions.
 
 - **A host turn or a thank-you gets a direct-answer card.** `omh chat
   route-hint` and the example shims showed the generic no-hint card, with "Open

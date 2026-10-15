@@ -3255,12 +3255,6 @@ _OPS_OBSERVABILITY_PHRASES = (
     "답변 지연시간",
     "토큰을 너무 많이",
     "토큰 너무 많이",
-    # Token usage said in Korean. `ko.json` no longer gives this card a bare
-    # 토큰 or 비용 trigger -- an auth token and the cost of a function call
-    # dispatched it -- so the usage reading is carried by these phrases.
-    "토큰 사용량",
-    "토큰 소모",
-    "토큰 소비",
     "too many tokens",
     "using too many tokens",
     "cost too high",
@@ -7433,6 +7427,58 @@ def _adversarial_qa_guard_applies(normalized_query: str, query_tokens: set[str])
     return qa_context and adversarial
 
 
+# Token and cost usage said in Korean. `ko.json` gives this card no bare 토큰 or
+# 비용 trigger -- they dispatched it for an auth token's storage and for the cost
+# of a function call -- so these phrases carry the usage reading. Unlike the
+# phrases above, each is read as a whole word ("토큰 소비" is not "토큰 소비자")
+# and stands down when the message asks for code or for less usage rather than
+# a look at it ("토큰 사용량 제한 기능 구현해줘", "토큰 소모 줄이는 프롬프트로
+# 바꿔줘"). English asks on those: its guard needs a status or runtime word they
+# do not carry.
+_OPS_OBSERVABILITY_KOREAN_USAGE_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in ("토큰 사용량", "토큰 사용 추이", "토큰 소모", "토큰 소모량", "토큰 소비", "토큰 소비량", "비용 모니터링")
+)
+# Read as the start of a token, so the particle or ending may follow
+# ("구현해줘", "코드를", "줄이는", "줄여줘").
+_OPS_OBSERVABILITY_KOREAN_STAND_DOWN_PREFIXES = tuple(
+    normalized_phrase(word)
+    for word in ("구현", "코드", "로직", "미들웨어", "함수", "기능", "짜줘", "줄이", "줄여", "절감", "최적화")
+)
+# What may follow a Korean word without making it a longer one: a noun
+# particle that ends there ("소비가", not "소비가격"), or 하/해 making it a verb
+# ("모니터링해줘", "소비하는").
+_KOREAN_WORD_PARTICLES = tuple(normalized_phrase(particle) for particle in KOREAN_NOUN_PARTICLES)
+_KOREAN_VERBALIZERS = tuple(normalized_phrase(verbalizer) for verbalizer in ("하", "해"))
+
+
+def _is_hangul(character: str) -> bool:
+    # Folded text carries conjoining jamo; composed syllables are checked too.
+    return "\u1100" <= character <= "\u11ff" or "\uac00" <= character <= "\ud7a3"
+
+
+def _korean_word_ends_at(normalized_query: str, end: int) -> bool:
+    rest = normalized_query[end:]
+    if not rest or not _is_hangul(rest[0]) or rest.startswith(_KOREAN_VERBALIZERS):
+        return True
+    for particle in _KOREAN_WORD_PARTICLES:
+        if rest.startswith(particle):
+            after = rest[len(particle):]
+            if not after or not _is_hangul(after[0]):
+                return True
+    return False
+
+
+def _korean_usage_request(normalized_query: str, query_tokens: set[str]) -> bool:
+    said = False
+    for phrase in _OPS_OBSERVABILITY_KOREAN_USAGE_PHRASES:
+        start = normalized_query.find(phrase)
+        while start != -1 and not said:
+            said = _korean_word_ends_at(normalized_query, start + len(phrase))
+            start = normalized_query.find(phrase, start + 1)
+    return said and not any(token.startswith(_OPS_OBSERVABILITY_KOREAN_STAND_DOWN_PREFIXES) for token in query_tokens)
+
+
 def _ops_observability_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     if _public_plugin_connector_readiness_requested(normalized_query):
         return False
@@ -7443,6 +7489,8 @@ def _ops_observability_guard_applies(normalized_query: str, query_tokens: set[st
     if ops_observability_external_blocked(normalized_query):
         return False
     if _contains_phrase(normalized_query, _OPS_OBSERVABILITY_PHRASES):
+        return True
+    if _korean_usage_request(normalized_query, query_tokens):
         return True
     telemetry = bool(_OPS_OBSERVABILITY_TOKENS & query_tokens)
     runtime_context = operator_context
