@@ -7,6 +7,7 @@ import os
 import re
 from collections import Counter
 from pathlib import Path
+from ..plugin_bundle.omh.memory_dreaming import profile_states_dir
 from ..plugin_bundle.omh.memory_governance import canonical_memory_scope
 from ..system.paths import OmhPaths
 
@@ -50,7 +51,8 @@ def build_inventory(paths: OmhPaths) -> dict[str, object]:
     _append_journal(rows, paths.memory_dir / "archive" / "retirements.jsonl", "archive_retirements_journal")
     _append_journal(rows, paths.memory_dir / "write_journal.jsonl", "provider_write_journal")
     _append_journal(rows, paths.memory_dir / "consolidation.jsonl", "provider_consolidation_journal")
-    for path, problem in _json_files(paths.memory_dir, direct=True):
+    # Each profile's latest brief, and a home-wide one an earlier release left.
+    for path, problem in [*_json_files(profile_states_dir(paths.omh_home)), *_json_files(paths.memory_dir, direct=True)]:
         if path.name == "consolidation.json":
             _append_json(rows, "provider_consolidation_journal", "journal", path, problem)
     for path, problem in _json_files(paths.memory_operations_dir):

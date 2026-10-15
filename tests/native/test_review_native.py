@@ -306,7 +306,7 @@ def test_bound_provider_work_under_foreign_scope(fixture):
         text = provider.prefetch(session_id='review-bound')
     assert 'SYNTHETIC_PUBLIC_BOUND_RECALL' in text
     assert baseline.snapshot(private_store) == before
-    assert (public_store / 'memory/dreaming.json').exists()
+    assert baseline.dreaming_written(public_store)
     observed(case='bound-provider-foreign-scope', positive_recall=True, foreign_store_unchanged=True)
 
 

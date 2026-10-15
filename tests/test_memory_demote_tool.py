@@ -33,7 +33,7 @@ load_local_package()
 from omh.paths import resolve_paths
 from omh.plugin_bundle.omh.hermes_memory import HERMES_MEMORY_DELIMITER, HermesMemoryFile
 from omh.plugin_bundle.omh.memory_admission import capture_project_memory_candidate
-from omh.plugin_bundle.omh.memory_dreaming import read_latest_consolidation
+from omh.plugin_bundle.omh.memory_dreaming import consolidation_path, read_latest_consolidation
 from omh.plugin_bundle.omh.memory_provider import CONSOLIDATION_RENDER_BUDGET_CHARS
 from omh.plugin_bundle.omh.tools.memory_tool import omh_memory_handler
 from omh.profiles.setup import write_setup_profile
@@ -353,7 +353,7 @@ class DemotionBriefTests(_Home):
         self.assertNotIn("<covered", pack)
         self.assertIn('omh_memory(action="demote"', pack)
         self.assertNotIn("removed directly", pack)
-        brief = read_latest_consolidation(self.store)
+        brief = read_latest_consolidation(self.store, self.hermes)
         rows = brief["demotion_rows"]
         self.assertEqual([row["kind"] for row in rows], ["demote"] * 3)
         for row in rows:
@@ -363,8 +363,9 @@ class DemotionBriefTests(_Home):
         section = pack[pack.index("<memory_consolidation") :]
         self.assertLessEqual(len(section), CONSOLIDATION_RENDER_BUDGET_CHARS)
         # Entry text never reaches disk: neither the 0644 brief nor the journal.
-        for name in ("consolidation.json", "consolidation.jsonl"):
-            on_disk = (self.store / "memory" / name).read_text(encoding="utf-8")
+        for path in (consolidation_path(self.store, self.hermes), self.store / "memory" / "consolidation.jsonl"):
+            name = path.name
+            on_disk = path.read_text(encoding="utf-8")
             for text in self.ENTRIES:
                 self.assertNotIn(text[:30], on_disk, name)
                 self.assertNotIn(text[-30:], on_disk, name)
@@ -373,7 +374,7 @@ class DemotionBriefTests(_Home):
 
     def test_a_section_whose_rows_all_vanished_falls_back_to_the_trim_instruction(self) -> None:
         live = provider(self.root, cwd=self.root)
-        rows = read_latest_consolidation(self.store)["demotion_rows"]
+        rows = read_latest_consolidation(self.store, self.hermes)["demotion_rows"]
         gone = {item for item in self.ENTRIES if any(sha(item).startswith(row["sha12"]) for row in rows)}
         write_memory(self.hermes, "MEMORY.md", *(item for item in self.ENTRIES if item not in gone))
         pack = hermes_turn(live, 1, "hello")
@@ -386,13 +387,13 @@ class DemotionBriefTests(_Home):
         largest = max(self.ENTRIES, key=len)
         write_memory(self.hermes, "USER.md", largest)
         provider(self.root, cwd=self.root)
-        rows = read_latest_consolidation(self.store)["demotion_rows"]
+        rows = read_latest_consolidation(self.store, self.hermes)["demotion_rows"]
         self.assertEqual(len(rows), 3)
         self.assertNotIn(sha(largest)[:12], [row["sha12"] for row in rows])
 
     def test_a_row_whose_entry_is_gone_is_dropped_at_render(self) -> None:
         live = provider(self.root, cwd=self.root)
-        rows = read_latest_consolidation(self.store)["demotion_rows"]
+        rows = read_latest_consolidation(self.store, self.hermes)["demotion_rows"]
         gone = next(item for item in self.ENTRIES if sha(item).startswith(rows[0]["sha12"]))
         write_memory(self.hermes, "MEMORY.md", *(item for item in self.ENTRIES if item != gone))
         pack = hermes_turn(live, 1, "hello")
@@ -403,7 +404,7 @@ class DemotionBriefTests(_Home):
         write_memory(self.hermes, "MEMORY.md", self.ENTRIES[0])
         live = provider(self.root, cwd=self.root)
         live.on_pre_compress([{"role": "user", "content": "x"}])
-        brief = read_latest_consolidation(self.store)
+        brief = read_latest_consolidation(self.store, self.hermes)
         self.assertTrue(brief["due"])
         self.assertFalse(any(reason.startswith("headroom_below_floor") for reason in brief["reasons"]))
         self.assertEqual(brief["demotion_rows"], [])
@@ -415,7 +416,7 @@ class DemotionBriefTests(_Home):
         overlong = tuple(("Entry %d keeps a long running note about the garden tomato beds at dawn. " % i) * 4 for i in range(7))
         write_memory(self.hermes, "MEMORY.md", *(item.strip() for item in overlong))
         provider(self.root, cwd=self.root)
-        brief = read_latest_consolidation(self.store)
+        brief = read_latest_consolidation(self.store, self.hermes)
         self.assertTrue(any(reason.startswith("headroom_below_floor") for reason in brief["reasons"]), brief["reasons"])
         self.assertEqual(brief["demotion_rows"], [])
         self.assertTrue(any("trim or merge" in item for item in brief["requested_of_executor"]))
@@ -424,14 +425,14 @@ class DemotionBriefTests(_Home):
     def test_a_row_fault_costs_the_rows_not_the_brief(self) -> None:
         with patch("omh.plugin_bundle.omh.memory_provider.read_project_memory_candidates", side_effect=KeyError("x")):
             live = provider(self.root, cwd=self.root)
-        brief = read_latest_consolidation(self.store)
+        brief = read_latest_consolidation(self.store, self.hermes)
         self.assertTrue(brief["due"])
         self.assertEqual(brief["demotion_rows"], [])
         self.assertIn({"op": "demotion_rows", "path": "memories", "error": "KeyError"}, live._write_failures)
 
     def test_a_remove_after_demotion_retires_the_brief_once_headroom_recovers(self) -> None:
         live = provider(self.root, cwd=self.root)
-        rows = read_latest_consolidation(self.store)["demotion_rows"]
+        rows = read_latest_consolidation(self.store, self.hermes)["demotion_rows"]
         remaining = list(self.ENTRIES)
         for row in rows:
             result = self.demote(row["sha12"])
@@ -445,7 +446,7 @@ class DemotionBriefTests(_Home):
             journal = (self.store / "memory" / "write_journal.jsonl").read_text(encoding="utf-8").splitlines()
             self.assertIs(json.loads(journal[-1])["removed_entry_demoted"], True)
         self.assertEqual(len(remaining), len(self.ENTRIES) - 3)
-        self.assertFalse(read_latest_consolidation(self.store)["due"])
+        self.assertFalse(read_latest_consolidation(self.store, self.hermes)["due"])
         self.assertNotIn("<memory_consolidation", hermes_turn(live, 1, "hello"))
 
     def test_removing_an_entry_omh_does_not_hold_is_journalled_as_such(self) -> None:
@@ -475,7 +476,7 @@ class UserFileHeadroomTests(_Home):
         write_memory(self.hermes, "MEMORY.md", entry(0))
         entries = self.fill_user()
         provider(self.root, cwd=self.root)
-        brief = read_latest_consolidation(self.store)
+        brief = read_latest_consolidation(self.store, self.hermes)
         self.assertTrue(brief["due"])
         self.assertEqual([r for r in brief["reasons"] if r.startswith("headroom_below_floor")], [brief["reasons"][0]])
         self.assertRegex(brief["reasons"][0], r"^headroom_below_floor:USER\.md:\d+<=187$")
@@ -492,7 +493,7 @@ class UserFileHeadroomTests(_Home):
         user[0] += " Extra note."
         write_memory(self.hermes, "USER.md", *user)
         provider(self.root, cwd=self.root)
-        brief = read_latest_consolidation(self.store)
+        brief = read_latest_consolidation(self.store, self.hermes)
         headroom = [reason for reason in brief["reasons"] if reason.startswith("headroom_below_floor")]
         self.assertEqual(len(headroom), 2, brief["reasons"])
         rows = brief["demotion_rows"]
@@ -507,7 +508,7 @@ class UserFileHeadroomTests(_Home):
         write_memory(self.hermes, "MEMORY.md", shared, *(entry(i) for i in range(1, len(_TOPICS))))
         write_memory(self.hermes, "USER.md", shared, *(user_entry(i) for i in range(1, 6)))
         provider(self.root, cwd=self.root)
-        brief = read_latest_consolidation(self.store)
+        brief = read_latest_consolidation(self.store, self.hermes)
         self.assertEqual(len([r for r in brief["reasons"] if r.startswith("headroom_below_floor")]), 2, brief["reasons"])
         rows = brief["demotion_rows"]
         self.assertTrue(rows)
@@ -517,7 +518,7 @@ class UserFileHeadroomTests(_Home):
     def test_the_floor_is_proportional_per_file_and_unchanged_for_default_memory_md(self) -> None:
         write_memory(self.hermes, "MEMORY.md", *(entry(i) for i in range(len(_TOPICS))))
         provider(self.root, cwd=self.root)
-        reasons = read_latest_consolidation(self.store)["reasons"]
+        reasons = read_latest_consolidation(self.store, self.hermes)["reasons"]
         self.assertRegex(reasons[0], r"^headroom_below_floor:\d+<=300$")
 
     def test_user_md_at_1341_of_1375_still_fires_with_its_proportional_floor(self) -> None:
@@ -526,13 +527,13 @@ class UserFileHeadroomTests(_Home):
         write_memory(self.hermes, "USER.md", *entries)
         self.assertEqual(len(HERMES_MEMORY_DELIMITER.join(entries)), 1341)
         provider(self.root, cwd=self.root)
-        self.assertIn("headroom_below_floor:USER.md:34<=187", read_latest_consolidation(self.store)["reasons"])
+        self.assertIn("headroom_below_floor:USER.md:34<=187", read_latest_consolidation(self.store, self.hermes)["reasons"])
 
     def test_a_small_cap_with_a_nearly_empty_file_raises_no_permanent_reason(self) -> None:
         (self.hermes / "config.yaml").write_text("memory:\n  user_char_limit: 250\n", encoding="utf-8")
         write_memory(self.hermes, "USER.md", "short")
         live = provider(self.root, cwd=self.root)
-        brief = read_latest_consolidation(self.store)
+        brief = read_latest_consolidation(self.store, self.hermes)
         self.assertFalse(brief is not None and brief["due"], brief)
         self.assertEqual(live._standing_reasons(), [])
 
@@ -543,7 +544,7 @@ class UserFileHeadroomTests(_Home):
         self.assertIn("keep entries about who the user is", pack)
         write_memory(self.hermes, "USER.md", user_entry(0))
         write_memory(self.hermes, "MEMORY.md", *(entry(i) for i in range(len(_TOPICS))))
-        self.store.joinpath("memory", "consolidation.json").unlink()
+        consolidation_path(self.store, self.hermes).unlink()
         pack = hermes_turn(provider(self.root, cwd=self.root), 1, "hello")
         self.assertIn("<demote", pack)
         self.assertNotIn("keep entries about who the user is", pack)
@@ -557,7 +558,7 @@ class UserFileHeadroomTests(_Home):
         headroom = 1375 - len(HERMES_MEMORY_DELIMITER.join(entries))
         self.assertTrue(187 < headroom <= 300, headroom)
         pack = hermes_turn(provider(self.root, cwd=self.root), 1, "hello")
-        brief = read_latest_consolidation(self.store)
+        brief = read_latest_consolidation(self.store, self.hermes)
         self.assertTrue(brief["demotion_rows"])
         self.assertEqual({row["file"] for row in brief["demotion_rows"]}, {"MEMORY.md"})
         self.assertFalse(any("USER.md:" in reason for reason in brief["reasons"]))
@@ -567,7 +568,7 @@ class UserFileHeadroomTests(_Home):
         write_memory(self.hermes, "MEMORY.md", entry(0))
         user = self.fill_user()
         live = provider(self.root, cwd=self.root)
-        offered = {row["sha12"] for row in read_latest_consolidation(self.store)["demotion_rows"] if row["file"] == "USER.md"}
+        offered = {row["sha12"] for row in read_latest_consolidation(self.store, self.hermes)["demotion_rows"] if row["file"] == "USER.md"}
         self.assertTrue(offered)
         write_memory(self.hermes, "USER.md", *(item for item in user if sha(item)[:12] not in offered))
         pack = hermes_turn(live, 1, "hello")
@@ -594,7 +595,7 @@ class UserFileHeadroomTests(_Home):
         write_memory(self.hermes, "MEMORY.md", entry(0))
         self.fill_user()
         provider(self.root, cwd=self.root)
-        files = {item["label"]: item for item in read_latest_consolidation(self.store)["hermes_files"]}
+        files = {item["label"]: item for item in read_latest_consolidation(self.store, self.hermes)["hermes_files"]}
         self.assertEqual(files["MEMORY.md"]["floor"], 300)
         self.assertEqual(files["USER.md"]["floor"], 187)
 
@@ -605,12 +606,12 @@ class UserFileHeadroomTests(_Home):
         live = provider(self.root, cwd=self.root)
         write_memory(self.hermes, "MEMORY.md", memory[0])
         live.on_memory_write("remove", "memory", "", {"previous_content": memory[1]})
-        brief = read_latest_consolidation(self.store)
+        brief = read_latest_consolidation(self.store, self.hermes)
         self.assertTrue(brief["due"])
         self.assertEqual(live._standing_reasons()[0][: len(self.FLOOR_REASON)], self.FLOOR_REASON)
         write_memory(self.hermes, "USER.md", user[0])
         live.on_memory_write("remove", "user", "", {"previous_content": user[1]})
-        self.assertFalse(read_latest_consolidation(self.store)["due"])
+        self.assertFalse(read_latest_consolidation(self.store, self.hermes)["due"])
 
     def test_an_unchanged_user_md_condition_is_not_re_raised_every_turn(self) -> None:
         write_memory(self.hermes, "MEMORY.md", entry(0))
@@ -628,7 +629,7 @@ class UserFileHeadroomTests(_Home):
         write_memory(self.hermes, "USER.md", user_entry(0))
         live = provider(self.root, cwd=self.root)
         live.on_pre_compress([{"role": "user", "content": "x"}])
-        brief = read_latest_consolidation(self.store)
+        brief = read_latest_consolidation(self.store, self.hermes)
         self.assertFalse(any(reason.startswith("headroom_below_floor") for reason in brief["reasons"]))
         self.assertEqual(brief["demotion_rows"], [])
 

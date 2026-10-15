@@ -36,7 +36,7 @@ from _local_package import load_local_package
 load_local_package()
 from omh.paths import resolve_paths  # noqa: E402
 from omh.plugin_bundle.omh.memory_blocks import approve_memory_block, build_memory_block, write_memory_block  # noqa: E402
-from omh.plugin_bundle.omh.memory_dreaming import read_latest_consolidation  # noqa: E402
+from omh.plugin_bundle.omh.memory_dreaming import consolidation_path, dreaming_state_path, read_latest_consolidation  # noqa: E402
 from omh.commands.coding import _delegate_memory_surface  # noqa: E402
 from omh.plugin_bundle.omh import memory_provider  # noqa: E402
 from omh.plugin_bundle.omh.memory_provider import OmhMemoryProvider  # noqa: E402
@@ -226,12 +226,14 @@ class KanbanWorkerTests(_Homes):
         self.open_record = _open_record(
             paths, "kanban question: which board owns the release cards", days_open=34, scope_kind="user-global", scope_ref="default"
         )["record_id"]
-        self.assertTrue(read_latest_consolidation(self.home)["due"])
+        self.assertTrue(read_latest_consolidation(self.home, self.hermes)["due"])
 
     def worker_state(self) -> dict[str, bytes | None]:
         memory = self.home / "memory"
-        names = ("dreaming.json", "consolidation.json", "consolidation.jsonl", "session_close.json", "open_reminders.json")
-        return {name: (memory / name).read_bytes() if (memory / name).is_file() else None for name in names}
+        files = {name: memory / name for name in ("consolidation.jsonl", "session_close.json", "open_reminders.json")}
+        files["dreaming.json"] = dreaming_state_path(self.home, self.hermes)
+        files["consolidation.json"] = consolidation_path(self.home, self.hermes)
+        return {name: path.read_bytes() if path.is_file() else None for name, path in files.items()}
 
     def test_a_worker_in_its_scratch_workspace_reads_records_and_asks_nothing(self) -> None:
         for label, environment in self.WORKER_ENVIRONMENTS:
