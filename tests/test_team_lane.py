@@ -976,6 +976,13 @@ class HelperWorkReadsRealWorktrees(TeamHarness):
         (worktree / "build.log").unlink()
         self.assertEqual(self.probe(self.workdir, BRANCH_A), "merged")
 
+    def test_a_renamed_branch_with_its_worktree_kept_is_found_by_the_path(self) -> None:
+        """P4: Hermes' branch is gone, but the worktree at Hermes' path still holds the unmerged commit."""
+        self.commit_in(self.isolate(SUBAGENT_A), "v2\n")
+        _git(self.workdir, "branch", "-m", BRANCH_A, "renamed-by-helper")
+        self.assertEqual(_git(self.workdir, "branch", "--list", BRANCH_A), "")
+        self.assertEqual(self.probe(self.workdir, BRANCH_A), "commits_not_merged")
+
     def test_a_worktree_moved_away_from_hermes_path_is_found_by_its_branch(self) -> None:
         moved = self.workdir.parent / "moved-helper"
         _git(self.workdir, "worktree", "move", str(self.isolate(SUBAGENT_A)), str(moved))
