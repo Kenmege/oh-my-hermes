@@ -10,34 +10,84 @@ import unittest
 
 
 
-def _unshipped_portable_labels() -> frozenset[str]:
-    """Labels the Hermes projection ships and the portable projection does not.
+# The distribution's own name, which is also the router's canonical name.
+_DISTRIBUTION_NAME = "oh-my-hermes"
+_REFERENCE_VERBS = r"(?:(?:route|routes|routed|routing|hand|hands|handed|send|sends|sent|go|goes)\b[^.;\n`]{0,60}?\bto|use|uses|load|loads)"
 
-    Both sets come from the producers, so a skill that starts or stops
-    shipping on either side moves this set without anyone editing a list.
+
+def _unshipped_portable_skills() -> dict[str, str]:
+    """Canonical name -> label for each skill the Hermes projection ships and the portable one does not.
+
+    Both sides come from the producers, so a skill that starts or stops
+    shipping on either side moves this map without anyone editing a list.
     """
     from omh.skills.catalog import omh_skill_display_name
     from omh.skills.render import agent_skill_templates, builtin_skill_templates
 
-    hermes = {omh_skill_display_name(template.name) for template in builtin_skill_templates()}
     portable = {template.name for template in agent_skill_templates()}
-    return frozenset(hermes - portable)
+    return {
+        template.name: omh_skill_display_name(template.name)
+        for template in builtin_skill_templates()
+        if omh_skill_display_name(template.name) not in portable
+    }
 
 
-def _unshipped_label_mentions(files, unshipped: frozenset[str]) -> list[str]:
-    """Every `<path>:<line>: <label>` where a file names a label in `unshipped`.
+def _skill_references(text: str, skills: dict[str, str]) -> list[tuple[int, str, str]]:
+    """Each `(line, canonical name, matched text)` where `text` names one of `skills` as a skill.
 
-    A label is a whole hyphenated word, so `omh-skill` does not match inside
-    `omh-skill-health`.
+    A label (`omh-doctor`) and a backticked canonical name (`` `doctor` ``)
+    always name the skill, and so does a bare hyphenated canonical name
+    (`research-department`), which no sentence uses as an ordinary word. A
+    one-word canonical name and the distribution name count only right after a
+    route, hand, send, use, or load verb, so "a doctor", "the always-loaded
+    skill body" and "pip install oh-my-hermes" never match.
     """
-    alternatives = "|".join(re.escape(label) for label in sorted(unshipped, key=len, reverse=True))
-    pattern = re.compile(rf"(?<![\w-])({alternatives})(?![\w-])")
+    def alternatives(names):
+        return "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True)) or r"(?!)"
+
+    by_label = {label: name for name, label in skills.items()}
+    hyphenated = [name for name in skills if "-" in name and name != _DISTRIBUTION_NAME]
+    words = [name for name in skills if name not in hyphenated]
+    patterns = (
+        (re.compile(rf"(?<![\w-])({alternatives(by_label)})(?![\w-])"), by_label),
+        (re.compile(rf"`({alternatives(skills)})`"), None),
+        (re.compile(rf"(?<![\w/.`-])({alternatives(hyphenated)})(?![\w-])"), None),
+        (re.compile(rf"\b{_REFERENCE_VERBS}\s+({alternatives(words)})(?![\w-])"), None),
+    )
+    found = []
+    for number, line in enumerate(text.splitlines(), 1):
+        for pattern, names in patterns:
+            for match in pattern.finditer(line):
+                name = match.group(1)
+                found.append((number, names[name] if names else name, match.group(0)))
+    return found
+
+
+def _unshipped_skill_mentions(files, unshipped: dict[str, str]) -> list[str]:
+    """Every `<path>:<line>: <matched text>` where a file names a skill in `unshipped`."""
     return [
-        f"{path}:{number}: {match.group(1)}"
+        f"{path}:{number}: {matched}"
         for path, content in files
-        for number, line in enumerate(content.splitlines(), 1)
-        for match in pattern.finditer(line)
+        for number, _name, matched in _skill_references(content, unshipped)
     ]
+
+
+# Each `portable_overrides` section that leaves out a skill only the Hermes
+# projection ships, and those skills by canonical name: the record of why the
+# override exists, which its shadow digest does not keep. The rewrite test
+# fails naming the override once one of them ships portably.
+_OVERRIDES_AROUND_UNSHIPPED_SKILLS = {
+    "ulw-loop::do_not_use_when": ("automation-blueprint",),
+    "ulw-work::quality_bar": ("maestro",),
+    "ulw-qa::quality_bar": ("todo-checklist",),
+    "omh-source-finder::use_when": ("research-department",),
+    "omh-research-brief::description": ("research-department",),
+    "omh-model-finetuning::why_this_exists": ("model-optimization", "workflow-learning"),
+    "omh-spend-gate::why_this_exists": ("browser-operator",),
+    "omh-memory-new::description": ("memory-sync",),
+    "omh-external-connector-readiness::description": ("executor-runtime-readiness",),
+    "omh-toolbelt-readiness::description": ("executor-runtime-readiness",),
+}
 
 
 def _shadow_problems(definitions) -> list[str]:
@@ -132,17 +182,19 @@ class AgentSkillsProjectionTests(unittest.TestCase):
     def test_portable_files_name_no_skill_the_portable_projection_does_not_ship(self):
         """A portable host is never told to load a skill it does not have.
 
-        A Do Not Use When line that hands its request only to such skills is
-        dropped by `_target_definition`; any other sentence naming one is
-        rewritten through `portable_overrides`. This reads every body and
-        reference the projection ships, so a sentence that reaches it by any
-        other field or by a reference fails here by path and line.
+        A Do Not Use When line that hands its request only to such skills keeps
+        the request and loses the pointer in `_target_definition`; any other
+        sentence naming one is rewritten through a `PortableLine`,
+        `portable_overrides`, or `PORTABLE_REFERENCE_REWRITES`. This reads
+        every body and reference the projection ships, by label and by
+        canonical name (see `_skill_references`), and names each by path and
+        line.
         """
         from omh.skills.render import agent_skill_reference_templates, agent_skill_templates
 
-        self.maxDiff = None  # every offending path and line, not the first one
-        unshipped = _unshipped_portable_labels()
-        self.assertIn("omh-browser", unshipped, "the gate below would read nothing it is known to need")
+        self.maxDiff = None
+        unshipped = _unshipped_portable_skills()
+        self.assertTrue(unshipped, "every Hermes skill ships portably; the gate below would read nothing")
         files = [
             *((f"{template.name}/SKILL.md", template.content) for template in agent_skill_templates()),
             *(
@@ -151,40 +203,138 @@ class AgentSkillsProjectionTests(unittest.TestCase):
             ),
         ]
         self.assertEqual(
-            _unshipped_label_mentions(files, unshipped),
+            _unshipped_skill_mentions(files, unshipped),
             [],
-            "a portable body or reference names a skill only the Hermes projection ships: drop the Do Not Use "
-            "When line or rewrite the sentence through portable_overrides",
+            "a portable body or reference names a skill only the Hermes projection ships: rewrite the line "
+            "through a PortableLine, portable_overrides, or PORTABLE_REFERENCE_REWRITES",
         )
 
-    def test_the_label_gate_names_a_planted_label_and_the_projection_drops_a_pure_pointer(self):
-        # The gate's precision is part of the contract: a Hermes-only label in
-        # a field no rule filters, and in a Do Not Use When line that also
-        # names a shipped sibling, is named by line; a line that hands its
-        # request only to a Hermes-only sibling never reaches the body.
+    def test_the_gate_names_planted_references_and_a_pure_pointer_keeps_its_request(self):
+        # The gate's precision is part of the contract. Every planted
+        # reference form is named once by line, an ordinary use of a word that
+        # is also a skill name is not, and a Do Not Use When line that hands its
+        # request only to an unshipped skill keeps the request.
+        from dataclasses import replace
+
+        from omh.skills.catalog import installable_skill_definitions, omh_skill_display_name
+        from omh.skills.render import agent_skill_template
+
+        unshipped = _unshipped_portable_skills()
+        self.assertTrue(unshipped)
+        portable = [
+            d for d in installable_skill_definitions()
+            if omh_skill_display_name(d.name) not in unshipped.values()
+        ]
+        host = next(d for d in portable if not {"do_not_use_when", "final_checklist"} & set(d.portable_overrides))
+        shipped_sibling = next(d.name for d in portable if d.name != host.name)
+        hyphenated = sorted(name for name in unshipped if "-" in name and name != _DISTRIBUTION_NAME)[0]
+        words = sorted(name for name in unshipped if "-" not in name)
+        planted = [
+            f"Check the page with `{unshipped[hyphenated]}` first.",
+            f"Record it as `{hyphenated}` input.",
+            f"Hand the result to {hyphenated} afterwards.",
+        ]
+        ordinary = [f"A {hyphenated.replace('-', ' ')} note is prose."]
+        if words:
+            planted.append(f"If it is about setup, route to {words[0]}.")
+            ordinary += [f"A {words[0]} visit is no request.", f"The always-loaded {words[0]} body is prose."]
+        if _DISTRIBUTION_NAME in unshipped:
+            ordinary.append(f"Install with pip install {_DISTRIBUTION_NAME}.")
+        content = agent_skill_template(replace(
+            host,
+            final_checklist=(*host.final_checklist, *planted, *ordinary),
+            do_not_use_when=(
+                *host.do_not_use_when,
+                f"The ask is a planted chore; use `{hyphenated}`.",
+                f"The ask is a mixed chore; use `{hyphenated}` or `{shipped_sibling}`.",
+            ),
+        )).content
+        mentions = _unshipped_skill_mentions([("planted/SKILL.md", content)], unshipped)
+        self.assertEqual(len(mentions), len(planted) + 1, mentions)
+        self.assertIn("- The ask is a planted chore.\n", content)
+        self.assertNotIn("planted chore; use", content)
+        self.assertIn(
+            f"- The ask is a mixed chore; use `{unshipped[hyphenated]}` or `{omh_skill_display_name(shipped_sibling)}`.\n",
+            content,
+        )
+        for line in ordinary:
+            self.assertIn(f"- {line}\n", content)
+        self.assertEqual(_skill_references("omh-skill-health omh-skill-scout", {"skill": "omh-skill"}), [])
+
+    def test_a_portable_rewrite_is_reread_once_a_skill_it_leaves_out_ships(self):
+        """A rewrite exists because a skill is missing from the portable projection.
+
+        A `PortableLine` or `PORTABLE_REFERENCE_REWRITES` pair exists for that
+        reason alone, so every skill its Hermes text names and its portable
+        text does not must still be missing. A `portable_overrides` section can
+        exist for other reasons too, so the skills it was written around are
+        recorded in `_OVERRIDES_AROUND_UNSHIPPED_SKILLS`. Either way, a skill
+        that starts shipping portably fails here, naming each rewrite to re-read.
+        """
+        from dataclasses import fields
+
+        from omh.skills.catalog import installable_skill_definitions, omh_skill_display_name
+        from omh.skills.catalog_portable import PORTABLE_REFERENCE_REWRITES, portable_skill_names
+        from omh.skills.catalog_types import PortableLine
+
+        definitions = installable_skill_definitions()
+        every_skill = {d.name: omh_skill_display_name(d.name) for d in definitions}
+        shipped = set(portable_skill_names())
+        unshipped = {name for name, label in every_skill.items() if label not in shipped}
+
+        def left_out(hermes: str, portable: str) -> set[str]:
+            return (
+                {name for _, name, _ in _skill_references(hermes, every_skill)}
+                - {name for _, name, _ in _skill_references(portable, every_skill)}
+            )
+
+        problems = []
+        rewrites = [(path, hermes, portable) for path, pairs in PORTABLE_REFERENCE_REWRITES.items() for hermes, portable in pairs]
+        overrides = {}
+        for definition in definitions:
+            label = every_skill[definition.name]
+            if label not in shipped:
+                continue
+            for field in fields(definition):
+                value = getattr(definition, field.name)
+                if isinstance(value, tuple):
+                    rewrites += [(f"{label}::{field.name}", str(line), line.portable) for line in value if isinstance(line, PortableLine)]
+            for section, lines in definition.portable_overrides.items():
+                hermes = getattr(definition, section)
+                overrides[f"{label}::{section}"] = left_out("\n".join(hermes) if isinstance(hermes, tuple) else hermes, "\n".join(lines))
+        self.assertTrue(any("::" in where for where, _, _ in rewrites), "no PortableLine in the catalog; half of this check is vacuous")
+        for where, hermes, portable in rewrites:
+            problems += [
+                f"{where} leaves out `{every_skill[name]}`, which the portable projection ships; re-read the rewrite"
+                for name in sorted(left_out(hermes, portable) - unshipped)
+            ]
+        for where in sorted(overrides.keys() | _OVERRIDES_AROUND_UNSHIPPED_SKILLS.keys()):
+            recorded = set(_OVERRIDES_AROUND_UNSHIPPED_SKILLS.get(where, ()))
+            problems += [
+                f"{where} was written around `{every_skill.get(name, name)}`, which the portable projection now ships; re-read the override"
+                for name in sorted(recorded - unshipped)
+            ]
+            actual = overrides.get(where, set()) & unshipped
+            if actual != recorded & unshipped:
+                problems.append(f"{where} leaves out {sorted(actual)}; record exactly those in _OVERRIDES_AROUND_UNSHIPPED_SKILLS")
+        self.assertEqual(problems, [])
+
+    def test_a_portable_rewrite_that_no_longer_applies_fails_the_render(self):
         from dataclasses import replace
 
         from omh.skills.catalog import installable_skill_definitions
-        from omh.skills.render import agent_skill_template
+        from omh.skills.catalog_portable import PORTABLE_REFERENCE_PATHS, PORTABLE_REFERENCE_REWRITES
+        from omh.skills.catalog_types import PortableLine
+        from omh.skills.render import SkillReferenceTemplate, agent_skill_template, portable_reference_templates
 
+        self.assertTrue(PORTABLE_REFERENCE_REWRITES)
+        self.assertLessEqual(set(PORTABLE_REFERENCE_REWRITES), PORTABLE_REFERENCE_PATHS)
+        skill, _, relative = next(iter(PORTABLE_REFERENCE_REWRITES)).partition("/")
+        with self.assertRaisesRegex(ValueError, "no longer occurs exactly once"):
+            portable_reference_templates([SkillReferenceTemplate(skill, relative, "moved text\n")])
         definition = next(d for d in installable_skill_definitions() if d.name == "spend-gate")
-        self.assertNotIn("do_not_use_when", definition.portable_overrides)
-        self.assertNotIn("final_checklist", definition.portable_overrides)
-        pointer = "The ask is a page chore; use `browser-operator`."
-        mixed = "The ask is a page chore or a report sort; use `browser-operator` or `feedback-triage`."
-        planted = replace(
-            definition,
-            final_checklist=(*definition.final_checklist, "The page was checked with `omh-browser` first."),
-            do_not_use_when=(*definition.do_not_use_when, pointer, mixed),
-        )
-        content = agent_skill_template(planted).content
-        mentions = _unshipped_label_mentions([("omh-spend-gate/SKILL.md", content)], _unshipped_portable_labels())
-        self.assertEqual(len(mentions), 2, mentions)
-        self.assertEqual({mention.rsplit(": ", 1)[1] for mention in mentions}, {"omh-browser"})
-        self.assertIn("- The ask is a page chore or a report sort; use `omh-browser` or `omh-feedback-triage`.\n", content)
-        self.assertIn("- The page was checked with `omh-browser` first.\n", content)
-        self.assertNotIn("The ask is a page chore;", content)
-        self.assertEqual(_unshipped_label_mentions([("x", "omh-skill-health omh-skill-scout")], frozenset({"omh-skill"})), [])
+        with self.assertRaisesRegex(ValueError, "PortableLine is honoured in list fields"):
+            agent_skill_template(replace(definition, why_this_exists=PortableLine("a", "b")))
 
     def test_hermes_projection_byte_stable(self):
         """The only gate that sees a skill BODY change, so it has to name the body.

@@ -16,7 +16,7 @@ import unittest
 
 from omh.skills.catalog import builtin_definitions, installable_skill_definitions, omh_skill_display_name
 from omh.skills.catalog_portable import portable_skill_names
-from omh.skills.catalog_types import HERMES_BUNDLED_SKILL_NAMES, HermesSkillLine
+from omh.skills.catalog_types import HERMES_BUNDLED_SKILL_NAMES, HermesSkillLine, PortableLine
 from omh.skills.packaging import builtin_skill_reference_templates
 from omh.skills.render import (
     agent_skill_template,
@@ -166,43 +166,49 @@ class LoadableSiblingNameTests(unittest.TestCase):
     def test_portable_bodies_use_labels_and_drop_bundled_hermes_lines(self) -> None:
         portable = frozenset(portable_skill_names())
         unshipped = frozenset(skill for skill in self.installed if omh_skill_display_name(skill) not in portable)
+        unshipped_labels = frozenset(omh_skill_display_name(skill) for skill in unshipped)
 
         def hands_off_to_unshipped_only(line: str) -> bool:
             named = set(_BACKTICKED.findall(line)) & self.installed
             return bool(named) and named <= unshipped
 
-        checked = dropped = 0
+        checked = stripped = 0
         for name, definition in self.definitions.items():
             if omh_skill_display_name(name) not in portable:
                 continue
             content = agent_skill_template(definition).content
             rendered = _do_not_use_section(content)
             # A whole-section portable override replaces the lines; otherwise
-            # the portable body keeps every line but the Hermes-only ones: a
-            # bundled-skill line, and a line whose every sibling ships only on
-            # Hermes.
+            # the portable body keeps every line but a bundled-skill one, with
+            # a `PortableLine` in its portable wording.
             own = list(
                 definition.portable_overrides.get("do_not_use_when")
                 or [
-                    line for line in definition.do_not_use_when
-                    if not isinstance(line, HermesSkillLine) and not hands_off_to_unshipped_only(line)
+                    line.portable if isinstance(line, PortableLine) else line
+                    for line in definition.do_not_use_when
+                    if not isinstance(line, HermesSkillLine)
                 ]
             )
             self.assertEqual(len(rendered), len(own), name)
             if "do_not_use_when" not in definition.portable_overrides:
-                # A bespoke Hermes body (`omh-docs`) writes its own boundary
-                # prose, so only a catalog-rendered one is held to the line.
+                # A line handing its request only to a Hermes-only sibling keeps
+                # the request and loses the pointer. A bespoke Hermes body
+                # (`omh-docs`) writes its own boundary prose, so only a
+                # catalog-rendered one is held to the whole line.
                 hermes_boundary = self._hermes_boundary(name)
-                for line in filter(hands_off_to_unshipped_only, definition.do_not_use_when):
-                    dropped += 1
+                for line in filter(hands_off_to_unshipped_only, own):
+                    stripped += 1
+                    request, _, pointer = line.rpartition("; ")
                     if hermes_boundary:
                         self.assertIn(loadable_skill_mentions(line), hermes_boundary, name)
-                    self.assertNotIn(loadable_skill_mentions(line), content, name)
+                    self.assertIn(f"{request}.", rendered, name)
+                    self.assertNotIn(loadable_skill_mentions(pointer), content, name)
             for token in (token for line in rendered for token in _BACKTICKED.findall(line)):
                 self.assertFalse(
                     token in self.installed and omh_skill_display_name(token) != token,
                     f"{name} names `{token}` canonically in its portable body",
                 )
+                self.assertNotIn(token, unshipped_labels, f"{name} hands a request to a Hermes-only sibling in its portable body")
             for line in definition.do_not_use_when:
                 if isinstance(line, HermesSkillLine):
                     checked += 1
@@ -212,7 +218,7 @@ class LoadableSiblingNameTests(unittest.TestCase):
                         self.assertNotIn(f"`{skill}`", "\n".join(rendered), name)
             self.assertIsNone(_related_line(content), f"{name}: related_skills is Hermes-only")
         self.assertGreater(checked, 0, "no portable owner carries a bundled line; the check above would be vacuous")
-        self.assertGreater(dropped, 0, "no portable owner hands a line to a Hermes-only sibling; the check above would be vacuous")
+        self.assertGreater(stripped, 0, "no portable owner hands a line to a Hermes-only sibling; the check above would be vacuous")
 
     def test_related_skills_frontmatter_is_derived_from_the_boundary_lines(self) -> None:
         emitted = 0

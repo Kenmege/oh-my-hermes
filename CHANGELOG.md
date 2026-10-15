@@ -4,21 +4,24 @@ All notable changes will be documented here.
 
 ## Unreleased
 
-- **A portable host is no longer told to load a skill only Hermes ships.**
-  The Agent Skills projection now drops a Do Not Use When line when every
-  sibling it names ships only in the Hermes projection, the way it already
-  dropped a line that names a skill Hermes bundles. The rule reads the
-  shipping set, so a line comes back once one of its siblings ships in the
-  portable projection. Four sentences said more than the
-  pointer, so they are rewritten for that projection only. `ulw-context`
-  keeps its memory boundary and names only `omh-memory-new`. `omh-rules-distill`
-  keeps its landing rule without the pointer to `omh-workflow-learning`.
-  `omh-spend-gate`'s reason no longer names `omh-browser`. `omh-memory-new`'s
-  portable description no longer names `omh-memory-sync`; the portable
-  frontmatter now reads the description through the same projection, so an
-  override reaches it. A new gate reads the labels each projection ships and
-  fails when a portable body or reference names one the portable projection
-  does not ship. Hermes bodies, references and their digests do not change.
+- **A portable host is no longer told to load a skill only Hermes ships.** On
+  main the Agent Skills bodies and references named 17 such skills 63 times:
+  by label (`omh-research-department`), by backticked or hyphenated canonical
+  name, or by a one-word name right after "route to" or "routed to". None of
+  these remain. A Do Not Use When line that hands its request only to such
+  skills now keeps the request and loses the pointer, so the skill still says
+  what it is not for. The rule reads the shipping set, so the pointer comes
+  back once one of its siblings ships portably. Every other sentence is
+  rewritten for that projection only: a list line through the new
+  `PortableLine`, which keeps its portable wording beside the Hermes text; a
+  description or other single-text field through `portable_overrides` (the
+  portable frontmatter now reads a description override); and the wiki
+  blueprint reference through `PORTABLE_REFERENCE_REWRITES`. A gate reads
+  which skills each projection ships and fails, by path and line, when a
+  portable body or reference names one the portable projection does not ship.
+  A second test fails when a skill that a rewrite leaves out starts shipping
+  portably, so the rewrite is re-read. Hermes bodies, references and their
+  digests do not change.
 
 - **A host turn or a thank-you gets a direct-answer card.** `omh chat
   route-hint` and the example shims showed the generic no-hint card, with "Open

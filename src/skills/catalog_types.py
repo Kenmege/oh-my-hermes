@@ -957,6 +957,32 @@ class HermesSkillLine(str):
         return (str(self), self.skills)
 
 
+class PortableLine(str):
+    """A list-field line that the Agent Skills projection renders as `portable`.
+
+    It is the plain line everywhere it is read or rendered, so Hermes bytes do
+    not depend on it. `_target_definition` in `render.py` puts `portable` in
+    its place on the portable target. It exists for a line that names a skill
+    only the Hermes projection ships and also says more than that pointer:
+    `portable` keeps the rest of the sentence. Like `HermesReferenceLine`, it
+    stands in for a whole-section `portable_overrides` copy kept only to change
+    one line, and both texts sit side by side, so neither is edited out of
+    sight of the other. A scalar field uses `portable_overrides` instead.
+    """
+
+    portable: str
+
+    def __new__(cls, text: str, portable: str) -> PortableLine:
+        if not portable.strip() or portable == text:
+            raise ValueError("PortableLine needs a portable text that differs from the Hermes line")
+        line = super().__new__(cls, text)
+        line.portable = portable
+        return line
+
+    def __getnewargs__(self) -> tuple[str, str]:
+        return (str(self), self.portable)
+
+
 @dataclass(frozen=True)
 class SkillExample:
     prompt: str

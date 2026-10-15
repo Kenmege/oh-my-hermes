@@ -85,6 +85,7 @@ from .catalog_types import (
     OMH_MANAGED_SKILL_CLAUSE,
     ExpertQuestion,
     HermesReferenceLine,
+    PortableLine,
     ProcedureCheck,
     ProcedureStep,
     SkillDefinition,
@@ -834,7 +835,10 @@ _DEFINITIONS = [
             "The request is broad ambiguity with no project-language conflict; use `deep-interview`.",
             "The unresolved decision is empirical and a cheap isolated experiment can answer it; use `decision-prototype` and keep the frontier for the rest.",
             "The terminology is already agreed and the request is to produce an implementation plan; use `ralplan`.",
-            "The user wants to capture or curate general retained memory rather than repository terminology; use `memory-new` or `memory-sync`.",
+            PortableLine(
+                "The user wants to capture or curate general retained memory rather than repository terminology; use `memory-new` or `memory-sync`.",
+                "The user wants to capture or curate general retained memory rather than repository terminology; use `memory-new`.",
+            ),
             "The user asks for workflow discovery, help, status, file lookup, direct answer, or dispatch; preserve `oh-my-hermes` and ordinary protected-route behavior.",
         ),
         good_example=SkillExample(
@@ -879,20 +883,10 @@ _DEFINITIONS = [
             "why_this_exists": (
                 "`context` exists to reduce repository terminology drift without creating a second machine store or a vocabulary router: the host can answer lookups, facilitate dependency-aware alignment, and project approved results into existing review and handoff boundaries.",
             ),
-            # `memory-sync` and the `oh-my-hermes` router ship only on Hermes:
-            # the memory line keeps its shipped sibling, the router line goes.
-            "do_not_use_when": (
-                "A safe one-term definition or source lookup can be answered directly; use the read-only lookup mode and do not enter the full context interview.",
-                "The request is broad ambiguity with no project-language conflict; use `deep-interview`.",
-                "The unresolved decision is empirical and a cheap isolated experiment can answer it; use `decision-prototype` and keep the frontier for the rest.",
-                "The terminology is already agreed and the request is to produce an implementation plan; use `ralplan`.",
-                "The user wants to capture or curate general retained memory rather than repository terminology; use `memory-new`.",
-            ),
         },
         portable_override_shadows={
             "artifact_expectations": "dc56fbd317ef90eb197d2c2dc13a2b61256bd7ca6a7803a0eb97145ff53eb8ea",
             "why_this_exists": "b23be8117064150f5887e70b61b08eb0f812e9eff3b2f01a3d71a1fe969333b1",
-            "do_not_use_when": "3b17f84789c419a6c8752097a76abc36d1bb155ac2d7aae7d4d1f500e282253e",
         },
     ),
     SkillDefinition(
@@ -2074,6 +2068,15 @@ _DEFINITIONS = [
         ),
         category="research",
         phase="source-acquisition",
+        # `research-department` ships only on Hermes.
+        portable_overrides={
+            "use_when": (
+                "Use when the requested output is a typed source candidate inventory and acquisition status across papers, web links, datasets, GitHub repositories, public presentations, docs/specs, or unknown source material before choosing paper-learning, research, research-brief, materials-package, or an ultrawork delivery cycle.",
+            ),
+        },
+        portable_override_shadows={
+            "use_when": "f974f0ceb3b312836952af1a27050ae88e0a5eb489d4ba8166c0ad0f6b3e4b38",
+        },
         hermes_role="retained-cognition",
         delegation_boundary="retained-catalog-intent",
         handoff_policy=(
@@ -2097,8 +2100,14 @@ _DEFINITIONS = [
         artifact_expectations=("source_finder_plan/v1 under .omh/source-finder when a wrapper or CLI records it",),
         safety_rules=(
             "Do not claim web search, download, repository clone, file extraction, file hash verification, license verification, or source correctness from a prepared candidate.",
-            "Do not redefine research-department's source_inbox/v1; source-finder owns source_candidate_set/v1 and source_acquisition_status/v1 only.",
-            "Route current citations and source-backed synthesis to `research`, supplied-paper explanation to `paper-learning`, recurring monitoring to `research-department`, file export to `materials-package`, and image cards to `img-summary`.",
+            PortableLine(
+                "Do not redefine research-department's source_inbox/v1; source-finder owns source_candidate_set/v1 and source_acquisition_status/v1 only.",
+                "Do not define a source inbox; source-finder owns source_candidate_set/v1 and source_acquisition_status/v1 only.",
+            ),
+            PortableLine(
+                "Route current citations and source-backed synthesis to `research`, supplied-paper explanation to `paper-learning`, recurring monitoring to `research-department`, file export to `materials-package`, and image cards to `img-summary`.",
+                "Route current citations and source-backed synthesis to `research`, supplied-paper explanation to `paper-learning`, file export to `materials-package`, and image cards to `img-summary`.",
+            ),
         ),
         quality_tier="source-acquisition-gated",
         quality_bar=(
@@ -2175,6 +2184,15 @@ _DEFINITIONS = [
         "Use when Hermes should scope a business question, gather or summarize source-backed evidence, and preserve evidence/inference boundaries before strategy or handoff.",
         category="research",
         phase="business-brief",
+        # `research-department` ships only on Hermes.
+        portable_overrides={
+            "description": (
+                "Business question on market, competitors, pricing: business research brief - turns a market, competitor, pricing, or customer question into a structured evidence-vs-inference brief; for raw link gathering use ulw-research.",
+            ),
+        },
+        portable_override_shadows={
+            "description": "c6099e9cb9ce65a7119a2a37b1375bc59a0d11ff1a90ccfddabc8e8c26de1b4f",
+        },
         hermes_role="retained-cognition",
         delegation_boundary="retained-catalog-intent",
         handoff_policy="Keep business research in Hermes; prepare a selected executor/runtime handoff only after a later accepted plan requires code changes.",
@@ -2398,7 +2416,10 @@ _DEFINITIONS = [
             "Preserve the coverage policy `" + PAPER_LEARNING_COVERAGE_POLICY + "` through a section-by-section ledger.",
             "Explain by chunks when the source is long; keep each chunk linked to coverage_ledger status.",
             "Set source_state from how the paper was acquired, not from the request. An entry that Hermes' bundled `arxiv` skill returned (search or id lookup) is `metadata_only` until paper text is read. Text that the bundled `pdf` skill's `pdf_read.py <file> --text` run returned is `file_text_extraction_observed` for the pages that came back with text, and a page that came back empty is listed as missing. Without those skills, the state is whatever the supplied text supports.",
-            "For a paper past one read budget, when the `long-document-reading` skill is available, take the chunks from its page ranges - its page-count probe and page-anchored extraction - instead of a second chunking scheme, and map each covered range onto the coverage ledger's sections; without it, plan numbered page ranges before reading.",
+            PortableLine(
+                "For a paper past one read budget, when the `long-document-reading` skill is available, take the chunks from its page ranges - its page-count probe and page-anchored extraction - instead of a second chunking scheme, and map each covered range onto the coverage ledger's sections; without it, plan numbered page ranges before reading.",
+                "For a paper past one read budget, plan numbered page ranges before reading, and map each covered range onto the coverage ledger's sections.",
+            ),
             "List missing sections and not-observed claims before presenting the explanation as complete.",
         ),
         why_this_exists=(
@@ -5696,7 +5717,10 @@ _DEFINITIONS = [
             f"Record every field the `{OBSERVED_CHECK_RESULTS_TOKEN}` artifact expectation below names, "
             f"for each observed result ({observed_check_results_failing_only_note()}); "
             "a field left out is a gap in the record, not a shorter record.",
-            "For native `omh_todo` checkpoints, load the todo-checklist closing recipe; `record` then `recall` this verification declaration. Stored declarations are not proof.",
+            PortableLine(
+                "For native `omh_todo` checkpoints, load the todo-checklist closing recipe; `record` then `recall` this verification declaration. Stored declarations are not proof.",
+                "For native `omh_todo` checkpoints, `record` then `recall` this verification declaration. Stored declarations are not proof.",
+            ),
             "When the change answers to a written spec, plan, or issue, load `references/requirement-coverage-map.md` and map requirement to task to evidence under stable ids before claiming coverage.",
             f"Give each failing check an `origin`: {FAILURE_ORIGIN_PROOF_RULE}. {FAILURE_ORIGIN_PRECEDENCE}. {FAILURE_ORIGIN_PROOF_NAMING}.",
             f"Return PASS only when required checks pass and stale or missing evidence is resolved; PASS never stands beside a failing required check, whatever its origin. A required check that fails `{_PRE_EXISTING}` is HOLD worded as not charged to the change, naming the merge-base run that proves it, and only when the failing run's scope still covered the change: a failure that stopped the check before it exercised the change, such as a collection or import error, leaves that check as missing evidence. `{_UNKNOWN_ORIGIN}` is HOLD with the merge-base run named as the missing evidence.",
@@ -5863,7 +5887,10 @@ _DEFINITIONS = [
             "Do not silently mutate skills, prompts, AGENTS.md, docs, memory, or catalog data from a distillation result.",
             "Do not promote one-off preferences, weak anecdotes, or stale traces into global rules.",
             "Keep observed sources, inferred principles, candidate wording, review state, and implementation patches separate.",
-            f"On Hermes, when the destination is the user's own Hermes skills, an approved candidate lands through `skill_manage`: report it landed only from a result that succeeded without `staged: true`, with the matching skill audit ledger entry as its record while the ledger is on, and report a staged write as waiting in `/skills pending` for the person's own `/skills approve <id>` under their `skills.write_approval` setting. OMH-managed skills are generated from OMH's catalog and are never the destination; a lesson about one goes to `omh-workflow-learning`. {OMH_MANAGED_SKILL_CLAUSE}",
+            PortableLine(
+                f"On Hermes, when the destination is the user's own Hermes skills, an approved candidate lands through `skill_manage`: report it landed only from a result that succeeded without `staged: true`, with the matching skill audit ledger entry as its record while the ledger is on, and report a staged write as waiting in `/skills pending` for the person's own `/skills approve <id>` under their `skills.write_approval` setting. OMH-managed skills are generated from OMH's catalog and are never the destination; a lesson about one goes to `omh-workflow-learning`. {OMH_MANAGED_SKILL_CLAUSE}",
+                f"On Hermes, when the destination is the user's own Hermes skills, an approved candidate lands through `skill_manage`: report it landed only from a result that succeeded without `staged: true`, with the matching skill audit ledger entry as its record while the ledger is on, and report a staged write as waiting in `/skills pending` for the person's own `/skills approve <id>` under their `skills.write_approval` setting. OMH-managed skills are generated from OMH's catalog and are never the destination. {OMH_MANAGED_SKILL_CLAUSE}",
+            ),
         ),
         quality_tier="rules-distillation-gated",
         quality_bar=(
@@ -5900,19 +5927,6 @@ _DEFINITIONS = [
             "guidelines from what keeps going wrong",
             "best practices from agent traces",
         ),
-        # `workflow-learning` ships only on Hermes, so the portable rule keeps
-        # every clause but the pointer to it.
-        portable_overrides={
-            "safety_rules": (
-                "Do not silently mutate skills, prompts, AGENTS.md, docs, memory, or catalog data from a distillation result.",
-                "Do not promote one-off preferences, weak anecdotes, or stale traces into global rules.",
-                "Keep observed sources, inferred principles, candidate wording, review state, and implementation patches separate.",
-                f"On Hermes, when the destination is the user's own Hermes skills, an approved candidate lands through `skill_manage`: report it landed only from a result that succeeded without `staged: true`, with the matching skill audit ledger entry as its record while the ledger is on, and report a staged write as waiting in `/skills pending` for the person's own `/skills approve <id>` under their `skills.write_approval` setting. OMH-managed skills are generated from OMH's catalog and are never the destination. {OMH_MANAGED_SKILL_CLAUSE}",
-            ),
-        },
-        portable_override_shadows={
-            "safety_rules": "846d65a779c77afbd5953070cca064db7b5bd222bfe7a68fefed2fa1560cdc43",
-        },
     ),
     SkillDefinition(
         "codebase-onboarding",
@@ -6092,7 +6106,10 @@ _DEFINITIONS = [
             "Follow-up implementation, review, CI, and merge state are routed to their owning workflows instead of inferred from codegraph context.",
         ),
         recovery_notes=(
-            "If the codegraph command is unavailable, route to doctor or toolbelt-readiness before claiming freshness.",
+            PortableLine(
+                "If the codegraph command is unavailable, route to doctor or toolbelt-readiness before claiming freshness.",
+                "If the codegraph command is unavailable, route to toolbelt-readiness before claiming freshness.",
+            ),
             "If no task focus is supplied, prepare build/summary guidance and ask for focus only when a handoff pack would otherwise be misleading.",
             "If the index is stale or missing, report the stale/missing state and next safe command rather than treating prior summaries as current.",
         ),
@@ -6894,7 +6911,10 @@ _DEFINITIONS = [
             "Name release scope, target environment, health signals, rollback criteria, and evidence owner.",
             "Show pre-deploy, deploy decision, monitor, rollback, and post-deploy as distinct stages.",
             "Mark health and rollback status unknown until observed evidence arrives.",
-            "On Hermes, a watchlist that must keep running after this turn is prepared as a native blueprint through `automation-blueprint` (a cron job whose `monitor` source, a health URL or a script whose output carries no timestamps, is the user's source, never one OMH writes), activated by the user or Hermes and never by OMH.",
+            PortableLine(
+                "On Hermes, a watchlist that must keep running after this turn is prepared as a native blueprint through `automation-blueprint` (a cron job whose `monitor` source, a health URL or a script whose output carries no timestamps, is the user's source, never one OMH writes), activated by the user or Hermes and never by OMH.",
+                "A watchlist that must keep running after this turn is prepared for a scheduler the user runs, with the user's own source (a health URL or a script whose output carries no timestamps, never one OMH writes), and is activated by the user, never by OMH.",
+            ),
             "On Hermes, the first monitor tick runs against a baseline with nothing to diff, so it is not a detected change; a silent tick says only that nothing was delivered (a no_change run, or an agent run that answered `[SILENT]`) and never that the release is healthy; a source that failed is an error, not a change; and what the job finds enters the post-deploy status only from its recorded runs (`hermes cron runs <job_id>`) and its open `hermes cron incidents`.",
         ),
         do_not_use_when=(
@@ -7366,7 +7386,10 @@ _DEFINITIONS = [
                 "references/native-review-contract.md",
             ),
             "When the reviewed work ran in a Hermes session, cite `session_file_activity/v1` (`omh quality-evidence file-activity --hermes-session <id> --json`) to scope which workspace files its read_file, write_file, and patch calls touched, with the outcome Hermes recorded; it is file lineage, never file-content, diff, test, review, CI, or merge evidence.",
-            "For native `omh_todo` checkpoints, load the todo-checklist closing recipe; `record` then `recall` this review declaration. Stored declarations are not proof.",
+            PortableLine(
+                "For native `omh_todo` checkpoints, load the todo-checklist closing recipe; `record` then `recall` this review declaration. Stored declarations are not proof.",
+                "For native `omh_todo` checkpoints, `record` then `recall` this review declaration. Stored declarations are not proof.",
+            ),
         ),
         why_this_exists="`code-review` exists to make review bug-first and evidence-grounded: findings must cite concrete files, diffs, commands, or artifacts before any summary or fix proposal.",
         do_not_use_when=(
@@ -10937,6 +10960,15 @@ _DEFINITIONS.append(
         ),
         category="planning",
         phase="model-finetuning",
+        # `model-optimization` and `workflow-learning` ship only on Hermes.
+        portable_overrides={
+            "why_this_exists": (
+                "`model-finetuning` exists because producing a model had no owner: `inference-serving` serves one that exists and `llm-app-dev` builds on top of one, while an SFT or DPO question had no baseline comparison and no way to answer that training is not needed.",
+            ),
+        },
+        portable_override_shadows={
+            "why_this_exists": "3a65d6c0b9a3bcc413655c00c0a002fd675e1dcc256dafb5f79fa7cdbe5429fb",
+        },
         hermes_role="retained-cognition",
         delegation_boundary="retained-catalog-intent",
         handoff_policy=(
@@ -11682,7 +11714,9 @@ _DEFINITIONS.append(
         # Outside Hermes there is no `hermes chat -q`, no `pending_approval`
         # status, and no OMH browser adapter or `omh-browser` skill, so the
         # portable body states the same rules without them; the native tools
-        # it keeps carry the presence rule.
+        # it keeps carry the presence rule. If `omh-browser` ships portably,
+        # `_OVERRIDES_AROUND_UNSHIPPED_SKILLS` in
+        # `tests/test_agent_skills_projection.py` fails until this is re-read.
         portable_overrides={
             "why_this_exists": (
                 "`spend-gate` exists because money movement had at most one native guard, on one rail: where Hermes' saved-card "

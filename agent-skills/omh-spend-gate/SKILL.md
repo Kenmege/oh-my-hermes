@@ -26,6 +26,7 @@ This is an OMH `spend-gate` workflow skill, projected for Agent Skills hosts (Cl
 
 ## Do Not Use When
 
+- The page task moves no money -- open a URL, log in, fill a form, capture blockers.
 - Users report a payment failure in the product and the ask is to sort those reports; use `omh-feedback-triage`.
 - The ask is budget vs actual, a budget variance, or the month-end close; use `omh-finance-analysis`.
 - The ask is a provider profile's posture or whether its secrets are present, with nothing bought; use `omh-provider-profile-posture`.

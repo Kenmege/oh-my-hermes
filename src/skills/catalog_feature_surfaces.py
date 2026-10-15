@@ -19,6 +19,7 @@ from .catalog_types import (
     OMH_MANAGED_SKILL_CLAUSE,
     HermesReferenceLine,
     HermesSkillLine,
+    PortableLine,
     _GENERAL_RECOVERY_NOTES,
     _feature_surface_skill,
 )
@@ -832,7 +833,10 @@ _FEATURE_SURFACE_SKILLS = (
         ),
         recovery_notes=(
             f"If the connector, credentials, or permission is missing: on Hermes, when {native_tool_presence_clause('manage_connections', code=True)}, use it for the app the user named (`status`, then `connect`) and take each app's answer as given: `connected` proceeds, `skipped` means continue without that app or ask in chat, never calling it again on your own or reaching the app another way, and `not_connected` stays a named gap. Otherwise route to toolbelt-readiness before preparing action success claims.",
-            "If the request is only chat thread delivery policy for Discord, Slack, or Telegram, route to gateway-intent-card instead.",
+            PortableLine(
+                "If the request is only chat thread delivery policy for Discord, Slack, or Telegram, route to gateway-intent-card instead.",
+                "If the request is only chat thread delivery policy for Discord, Slack, or Telegram, it is outside this skill.",
+            ),
             "If the external app action would create, send, invite, mutate, or delete provider state, require an explicit confirmation gate in chat before the call. Hermes asks the person before such a call only in some configurations (a write-capable tool on an MCP server set to `trust: untrusted`, or a plugin hook that escalates the call), so a host prompt that does appear is recorded as additional evidence and never replaces the chat confirmation.",
         ),
         situations=(
@@ -1038,6 +1042,15 @@ _FEATURE_SURFACE_SKILLS = (
         category="connector",
         phase="connector-readiness",
         next_action="prepare_external_connector_readiness",
+        # `executor-runtime-readiness` ships only on Hermes.
+        portable_overrides={
+            "description": (
+                "Evaluating a plugin, connector, or API for adoption: external connector readiness - assess whether a named plugin, connector, API, data provider, or multimodal route is safe, affordable, fresh, and observable; use toolbelt-readiness for missing capability inventory.",
+            ),
+        },
+        portable_override_shadows={
+            "description": "751662656f553783f9b6a83f6eea7925e16ec42447f33350dab8054b041d1e7a",
+        },
         boundary="An external connector readiness card is not connector installation, credential validation, provider access, API invocation, multimodal capture, live-data retrieval, external mutation, cost authorization, or successful trial evidence unless observed connector-trial evidence records it.",
         good_prompt="external-connector-readiness compare weather plugin and wxtrain candidates with cost, freshness, multimodal evidence, and fallback routes before adoption.",
         bad_prompt="external-connector-readiness silently enable a paid connector and claim weather, SQL, and screenshot results without observed provider evidence.",
@@ -1082,7 +1095,10 @@ _FEATURE_SURFACE_SKILLS = (
             "If the candidate list is unknown, route to skill-scout or source-finder before readiness scoring.",
             "If credentials, cost authority, or connector installation is missing, keep readiness blocked and route setup to toolbelt-readiness.",
             "If a specific provider action is already selected, route read-only live data to live-info-operator or write/mutation tasks to connector-operator.",
-            "If a memory-provider lifecycle field is unknown, ask the operator to declare it or supply an observed trial receipt; hand the result to memory-sync as not_omh_reviewed context rather than importing it into OMH review.",
+            PortableLine(
+                "If a memory-provider lifecycle field is unknown, ask the operator to declare it or supply an observed trial receipt; hand the result to memory-sync as not_omh_reviewed context rather than importing it into OMH review.",
+                "If a memory-provider lifecycle field is unknown, ask the operator to declare it or supply an observed trial receipt; keep the result as not_omh_reviewed context rather than importing it into OMH review.",
+            ),
             "If a realtime voice connector has no supplied realtime_voice_trial_receipt/v1, route the setup and the trial run to the host, connector, or operator that owns the microphone, call, or room, then consume only the returned receipt.",
         ),
         extra_safety_rules=(
@@ -1580,6 +1596,15 @@ _FEATURE_SURFACE_SKILLS = (
         category="tools",
         phase="readiness-check",
         next_action="prepare_toolbelt_readiness",
+        # `executor-runtime-readiness` ships only on Hermes.
+        portable_overrides={
+            "description": (
+                "Which tools and credentials a workflow needs: inventory which MCP servers, CLIs, APIs, credentials, and connectors a workflow needs; use external-connector-readiness to assess one named integration.",
+            ),
+        },
+        portable_override_shadows={
+            "description": "f66547a196acbfd1e96a5e3a6c6b6ccb2d280ab44df8b4ed8aee01c5bc603bf3",
+        },
         boundary="A toolbelt readiness card is not MCP server installation, credential validation, API access, connector invocation, or successful workflow execution evidence.",
         good_prompt="toolbelt-readiness what MCP or CLI tools do I need for weekly Linear and GitHub triage?",
         bad_prompt="toolbelt-readiness claim Gmail access works without an observed credential check.",
@@ -1904,9 +1929,15 @@ _FEATURE_SURFACE_SKILLS = (
             "Recovery action is contained, reversible, and does not claim implementation, verification, CI, merge, or future-loop fixes.",
         ),
         recovery_notes=(
-            "If the request is install/setup health, route to doctor.",
+            PortableLine(
+                "If the request is install/setup health, route to doctor.",
+                "If the request is install/setup health, it is outside this skill.",
+            ),
             "If the request is a manager status or throughput review, route to agent-ops-review.",
-            "If the request is a durable self-improvement record after diagnosis, route to workflow-learning.",
+            PortableLine(
+                "If the request is a durable self-improvement record after diagnosis, route to workflow-learning.",
+                "If the request is a durable self-improvement record after diagnosis, it is outside this skill.",
+            ),
         ),
         extra_quality_bar=(
             "Hold at least two competing failure hypotheses at once, each with observed evidence for and against; a diagnosis that never named a rival hypothesis is a guess.",
@@ -2048,11 +2079,17 @@ _FEATURE_SURFACE_SKILLS = (
             "Each instinct is atomic: one trigger, one action, one scope, confidence, evidence refs, and review state.",
             "Project-specific conventions, global practices, project/global promotion candidates, imports, and exports are separated.",
             "No hooks, memory writes, skill edits, global promotion, import/export, or behavior-change claims are made without observed approval and implementation evidence.",
-            "A promoted instinct leaves as a store route, `memory_candidate` for `memory-new` or `skill_update_candidate` for `workflow-learning`, never as a parallel store of its own.",
+            PortableLine(
+                "A promoted instinct leaves as a store route, `memory_candidate` for `memory-new` or `skill_update_candidate` for `workflow-learning`, never as a parallel store of its own.",
+                "A promoted instinct leaves as a store route, `memory_candidate` for `memory-new` or a `skill_update_candidate`, never as a parallel store of its own.",
+            ),
             f"On Hermes, the skill audit ledger ({_CURATOR_LEDGER_FILE}) is observed evidence of what the agent or its background review already wrote; an instinct that matches a ledger entry no store route accounts for is reported as `unreviewed_native_write` (OMH holds no record of that write, which is not to say nobody reviewed it), never counted as repeated evidence for the instinct.",
         ),
         recovery_notes=(
-            "If the request is a single missed route or run trace, route to workflow-learning first.",
+            PortableLine(
+                "If the request is a single missed route or run trace, route to workflow-learning first.",
+                "If the request is a single missed route or run trace, it is outside this skill.",
+            ),
             "If the request is to mutate durable rules, prompts, skills, or AGENTS guidance, route to rules-distill or implementation after review approval.",
             "If evidence comes from a stuck run, use agent-debug before converting lessons into instincts.",
         ),
@@ -2129,9 +2166,15 @@ _FEATURE_SURFACE_SKILLS = (
             "On Hermes, fill the external candidates from `hermes skills search <query>` and `hermes skills inspect <identifier>`, whose hub requests are Hermes' own, not OMH's. Keep the trust each shows (`official` for an official-source row, otherwise `builtin`, `trusted`, or `community`, highest first) beside the candidate as its source's standing, never as a review of its content, and record a scan verdict (`safe`, `caution`, or `dangerous`) only from install or `hermes skills audit` output that was seen, so a candidate nobody installed has none.",
         ),
         recovery_notes=(
-            "If the request is about setup or installed skill repair, route to doctor.",
+            PortableLine(
+                "If the request is about setup or installed skill repair, route to doctor.",
+                "If the request is about setup or installed skill repair, it is outside this skill.",
+            ),
             "If the request is a portfolio health dashboard, route to skill-health.",
-            "If the request is an approved skill mutation or creation task, route to skill or implementation after the scout decision.",
+            PortableLine(
+                "If the request is an approved skill mutation or creation task, route to skill or implementation after the scout decision.",
+                "If the request is an approved skill mutation or creation task, route to implementation after the scout decision.",
+            ),
         ),
         why_this_exists=(
             "`skill-scout` exists because writing a skill that already exists, or adopting a public one on its "
@@ -2184,15 +2227,24 @@ _FEATURE_SURFACE_SKILLS = (
         ),
         final_checklist=(
             "Dashboard scope, source surfaces, stale/duplicate criteria, and stop condition are explicit.",
-            "Install/setup health is routed to doctor; catalog operations are routed to skill; failure retrospectives are routed to workflow-learning.",
+            PortableLine(
+                "Install/setup health is routed to doctor; catalog operations are routed to skill; failure retrospectives are routed to workflow-learning.",
+                "Install/setup health, catalog operations, and failure retrospectives stay out of the health card.",
+            ),
             "No skill, prompt, doc, memory, or model behavior is claimed changed until a reviewed implementation records evidence.",
             "Never present use, view, or load counts, `.usage.json` included, as a health, prune, archive, or retire signal: a rarely used skill is not an unhealthy one, and no health card recommends removing, archiving, or pruning a skill for being used little.",
             f"On Hermes, read the skill audit ledger read-only (that skill's entries in {_CURATOR_LEDGER_FILE}, or `hermes curator ledger --skill <name> --limit <n>`, {_CURATOR_LEDGER_LIMIT}): an entry against an OMH-managed skill means Hermes changed that managed copy outside OMH, so it may no longer match its generated body; report it as drift with the entry's `action` and `actor` (`agent`, `user`, or `curator`, which covers Hermes' curator and its background review). {OMH_MANAGED_SKILL_CLAUSE} {_CURATOR_LEDGER_EMPTY}",
             "On Hermes, record an authoring finding only from the `lint_warnings` a `skill_manage` write returned, which are advisory and never proof a skill works; only some writes return them (an `edit` never does), so a write without them is not a clean lint. Record an available update for a hub-installed skill only from `hermes skills check` output that was seen; that hub request is Hermes' own, not OMH's.",
         ),
         recovery_notes=(
-            "If the request is about OMH setup, install, stale package paths, or command availability, route to doctor.",
-            "If the request is a missed-route or self-improvement trace, route to workflow-learning before adding health actions.",
+            PortableLine(
+                "If the request is about OMH setup, install, stale package paths, or command availability, route to doctor.",
+                "If the request is about OMH setup, install, stale package paths, or command availability, it is outside this skill.",
+            ),
+            PortableLine(
+                "If the request is a missed-route or self-improvement trace, route to workflow-learning before adding health actions.",
+                "If the request is a missed-route or self-improvement trace, it is outside this skill.",
+            ),
         ),
         why_this_exists=(
             "`skill-health` exists because a skill portfolio drifts in ways no single run shows -- a managed skill "
