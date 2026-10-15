@@ -14,11 +14,15 @@ All notable changes will be documented here.
   heartbeat stopped is counted with the stuck units. A Hermes database that is
   missing, unreadable, refused or read only in part prints a line saying so
   instead of an empty list. To tell those cases apart, both readers now report
-  a `read_status`, which the HUD payload does not carry. The fanout rows render
-  as before. The run-efficiency route reason now says the report reads the
-  supplied timings and context budget plus Hermes' recorded usage for a named
-  session, with provider, billing and cron not observed; it still described
-  the supplied-metadata report from before #2114.
+  a `read_status`, which the HUD payload does not carry. A reader that reaches
+  its selection bound now says so (`selection_capped`), and the board then
+  shows its counts as lower bounds ("at least 96 running") instead of as
+  totals. A kanban lane that never started reports no elapsed time instead
+  of 0; the HUD still draws it as before. The fanout rows render as before.
+  The run-efficiency route reason now says the report reads the supplied
+  timings and context budget plus Hermes' recorded usage for a named session,
+  with provider, billing and cron not observed; it still described the
+  supplied-metadata report from before #2114.
 
 - **`omh chat route-hint` names no workflow on a turn Hermes wrote for its own
   session command.** On such a turn (a `/plan` frame, a `/loop` wakeup, a

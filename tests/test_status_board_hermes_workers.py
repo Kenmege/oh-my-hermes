@@ -6,8 +6,8 @@ build a throwaway Hermes home holding a `state.db` and a `kanban.db` in the
 shapes Hermes writes, and pin what the board adds: each worker row carries its
 source and state, rows keep the board's running-first order, a Hermes database
 that is missing, unreadable, refused or read in part is named as such instead
-of rendering as "nothing running", and every database the board opens is opened
-read-only.
+of rendering as "nothing running", a reader limit turns the counts into lower
+bounds, and every database the board opens is opened as a `mode=ro` URI.
 """
 
 from __future__ import annotations
@@ -245,7 +245,9 @@ class BothSourcesPresentTests(_HermesHomeCase):
         self.assertTrue(bullets[0].startswith("- childrun — "), bullets[0])
         self.assertIn("hermes-delegate (gpt-5.6-sol high) — running — 2m — tools unknown — 1,200 tokens — Fix the parser", bullets[0])
 
-    def test_the_fanout_rows_render_exactly_as_before(self) -> None:
+    def test_hermes_rows_leave_the_unit_table_unchanged(self) -> None:
+        # Compared with the same board over a home with no Hermes databases,
+        # not with origin/main; the before/after against main is in the PR.
         marker = {
             "owner": "claude", "owner_host": "local", "model": "fable-5", "reasoning_effort": "high",
             "run_ref": "run-research", "worktree": "/w/research", "started_at": "2026-08-03T11:25:00Z",
@@ -264,12 +266,17 @@ class BothSourcesPresentTests(_HermesHomeCase):
         payload = self.board(limit=2)
         self.assertEqual(len(payload["hermes_workers"]["rows"]), 2)
         self.assertEqual(payload["hermes_workers"]["worker_count"], 6)
-        self.assertIn(
-            "Showing 2 of 6 Hermes workers; 4 not shown because of the display limit.",
-            render_status_board_text(payload),
-        )
+        line = "Showing 2 of 6 Hermes workers; 4 not shown because of the display limit."
+        self.assertIn(line, render_status_board_text(payload))
+        self.assertIn(line, status_board_messenger_body(payload, render_profile="limited_markdown"))
+        # Nothing was capped, so nothing reads as a lower bound.
+        self.assertFalse(payload["hermes_workers"]["counts_are_lower_bounds"])
+        self.assertNotIn("at least", render_status_board_text(payload))
 
-    def test_every_database_the_board_opens_is_opened_read_only(self) -> None:
+    def test_every_connect_is_a_mode_ro_uri_and_these_fixtures_stay_unchanged(self) -> None:
+        # The fixtures are rollback-journal databases. A WAL database's reader
+        # writes read-marks to its `-shm` sidecar even under `mode=ro`; that
+        # case is not covered here.
         opened: list[tuple[object, dict]] = []
         real_connect = sqlite3.connect
 
@@ -333,7 +340,7 @@ class UnreadableSourceTests(_HermesHomeCase):
             connection.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY, title TEXT, status TEXT)")
         self.assertEqual(self.sources(self.board())["hermes_kanban_board"]["read_status"], "unreadable")
 
-    def test_a_state_db_that_answers_only_the_child_query_is_read_in_part(self) -> None:
+    def test_a_state_db_without_async_delegations_is_read_in_part(self) -> None:
         build_state_db(self.hermes, with_async_delegations=False)
         payload = self.board()
         self.assertEqual(self.sources(payload)["hermes_delegate_children"]["read_status"], "partial")
@@ -368,6 +375,115 @@ class UnreadableSourceTests(_HermesHomeCase):
             "Hermes kanban board (default): not available — its path is a symbolic link",
             render_status_board_text(payload),
         )
+
+
+def build_many(hermes: Path, *, children: int, lanes: int) -> None:
+    """`children` running delegate children and `lanes` running kanban lanes."""
+    hermes.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(hermes / "state.db")) as connection, connection:
+        connection.executescript(STATE_DDL)
+        _insert(connection, "sessions", {"id": PARENT_ID, "model": "gpt-5.6-sol", "model_config": "", "started_at": NOW - 4000})
+        for index in range(children):
+            for table, row in _child(f"20260803_1158{index:02d}_c{index:07d}", started=NOW - 120 - index,
+                                     last_seen=NOW - 30, goal=f"child {index}"):
+                _insert(connection, table, row)
+    with closing(sqlite3.connect(hermes / "kanban.db")) as connection, connection:
+        connection.executescript(KANBAN_DDL)
+        for index in range(lanes):
+            _insert(connection, "tasks", _task(f"t_{index:08x}", "running", NOW, started_at=NOW - 300,
+                                              worker_pid=1000 + index, last_heartbeat_at=NOW - 5))
+
+
+class ReaderLimitTests(_HermesHomeCase):
+    def test_more_workers_than_the_readers_select_read_as_lower_bounds(self) -> None:
+        build_many(self.hermes, children=40, lanes=100)
+        payload = self.board()
+        block = payload["hermes_workers"]
+        self.assertEqual(
+            {source: (record["selection_capped"], record["worker_count"]) for source, record in self.sources(payload).items()},
+            {"hermes_delegate_children": (True, 32), "hermes_kanban_board": (True, 64)},
+        )
+        self.assertTrue(block["counts_are_lower_bounds"])
+        text = render_status_board_text(payload)
+        self.assertEqual(
+            text.splitlines()[0].split(" — ")[0],
+            "Coding status board (at least 96 running of at least 96 observed)",
+        )
+        self.assertIn(
+            "Showing 20 of at least 96 Hermes workers; at least 76 not shown because of the display limit.", text
+        )
+        for name in ("Hermes delegate children", "Hermes kanban board (default)"):
+            self.assertIn(f"{name}: read up to a reader limit; more may exist, so these counts are lower bounds.", text)
+        body = status_board_messenger_body(payload, render_profile="limited_markdown")
+        self.assertIn("at least 96 running of at least 96 observed", body)
+
+    def test_a_selection_exactly_at_the_bound_is_not_capped(self) -> None:
+        build_many(self.hermes, children=32, lanes=64)
+        payload = self.board()
+        self.assertEqual(
+            {source: (record["selection_capped"], record["worker_count"]) for source, record in self.sources(payload).items()},
+            {"hermes_delegate_children": (False, 32), "hermes_kanban_board": (False, 64)},
+        )
+        self.assertNotIn("at least", render_status_board_text(payload))
+
+    def test_the_hud_reads_the_same_selection_as_before(self) -> None:
+        # The readers fetch one row past their bound and drop it, so what the
+        # HUD projects from a capped board is the bounded selection it always
+        # read: 64 lanes counted, 32 children listed.
+        build_many(self.hermes, children=40, lanes=100)
+        lanes = kanban_board_reader.read_kanban_lanes(self.hermes, now=NOW, limit=8)
+        self.assertEqual((lanes["running"], len(lanes["rows"]), lanes["hidden"]), (64, 8, 56))
+        children = hermes_delegation.read_hermes_native_subagents(
+            self.hermes, now=NOW, limit=40, omh_home=self.root / "omh"
+        )
+        self.assertEqual((children["running"], len(children["rows"])), (32, 32))
+
+    def test_hidden_rows_a_reader_reports_are_counted_and_make_the_counts_floors(self) -> None:
+        lanes = kanban_board_reader.read_kanban_lanes(self.hermes, now=NOW)
+        reported = {**lanes, "rows": [], "hidden": 5, "read_status": "read", "scope": "global"}
+        with mock.patch.object(status_board, "read_kanban_lanes", return_value=reported):
+            payload = self.board()
+        self.assertEqual(self.sources(payload)["hermes_kanban_board"]["worker_count"], 5)
+        self.assertEqual(payload["hermes_workers"]["worker_count"], 5)
+        self.assertTrue(payload["hermes_workers"]["counts_are_lower_bounds"])
+        self.assertIn("of at least 5 observed", render_status_board_text(payload))
+
+
+class NeverStartedLaneTests(_HermesHomeCase):
+    def test_a_lane_that_never_started_has_unknown_elapsed_not_zero(self) -> None:
+        # Hermes creates tasks already `blocked`, and one can finish without a
+        # recorded start; neither has an elapsed time to show.
+        self.hermes.mkdir(parents=True)
+        with closing(sqlite3.connect(self.hermes / "kanban.db")) as connection, connection:
+            connection.executescript(KANBAN_DDL)
+            _insert(connection, "tasks", _task("t_b10c0001", "blocked", NOW))
+            _insert(connection, "tasks", _task("t_d0e00001", "done", NOW, completed_at=NOW - 60))
+        lanes = kanban_board_reader.read_kanban_lanes(self.hermes, now=NOW)
+        self.assertEqual(
+            {row["task_id"]: row["elapsed_seconds"] for row in lanes["rows"]},
+            {"b10c0001": None, "d0e00001": None},
+        )
+        payload = self.board()
+        workers = {worker["worker_id"]: worker for worker in payload["hermes_workers"]["rows"]}
+        self.assertEqual(
+            {identity: (worker["state"], worker["elapsed_text"]) for identity, worker in workers.items()},
+            {"b10c0001": ("blocked", "unknown"), "d0e00001": ("done", "unknown")},
+        )
+        self.assertNotIn(" 0s ", render_status_board_text(payload))
+
+    def test_a_requeued_lane_shows_no_elapsed_from_its_earlier_run(self) -> None:
+        # The reader freezes a settled lane's elapsed at its last heartbeat, so
+        # a lane the dispatcher requeued after a failed run carries that run's
+        # figure; no worker runs it now, and the HUD leaves the cell blank.
+        self.hermes.mkdir(parents=True)
+        with closing(sqlite3.connect(self.hermes / "kanban.db")) as connection, connection:
+            connection.executescript(KANBAN_DDL)
+            _insert(connection, "tasks", _task("t_5e9e0001", "ready", NOW, started_at=NOW - 900,
+                                              last_heartbeat_at=NOW - 600, last_failure_error="worker crashed"))
+        lanes = kanban_board_reader.read_kanban_lanes(self.hermes, now=NOW)
+        self.assertEqual([(row["state"], row["elapsed_seconds"]) for row in lanes["rows"]], [("queued", 300.0)])
+        worker = self.board()["hermes_workers"]["rows"][0]
+        self.assertEqual((worker["state"], worker["elapsed_text"]), ("queued", "unknown"))
 
 
 class ReaderReadStatusTests(unittest.TestCase):

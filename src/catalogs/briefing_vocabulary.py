@@ -204,6 +204,25 @@ STATUS_BOARD_COPY: Final[Mapping[str, Mapping[str, str]]] = {
         "fr": "Affichage de {shown} sur {total} travaux Hermes ; {dropped} non affichés en raison de la limite d'affichage.",
         "de": "{shown} von {total} Hermes-Workern angezeigt; {dropped} wegen des Anzeigelimits nicht gezeigt.",
     },
+    # A count a Hermes reader limit may have cut, wherever the board shows one.
+    "at_least": {
+        "en": "at least {count}",
+        "ko": "최소 {count}",
+        "ja": "少なくとも {count}",
+        "zh": "至少 {count}",
+        "es": "al menos {count}",
+        "fr": "au moins {count}",
+        "de": "mindestens {count}",
+    },
+    "hermes_lower_bound": {
+        "en": "{source}: read up to a reader limit; more may exist, so these counts are lower bounds.",
+        "ko": "{source}: 읽기 한도까지만 읽었습니다. 더 있을 수 있으므로 이 수치는 최솟값입니다.",
+        "ja": "{source}: 読み取り上限まで読みました。さらにある可能性があるため、この件数は下限です。",
+        "zh": "{source}: 只读到读取上限，可能还有更多，因此这些计数是下限。",
+        "es": "{source}: se leyó hasta un límite de lectura; puede haber más, así que estos recuentos son mínimos.",
+        "fr": "{source} : lu jusqu'à une limite de lecture ; il peut y en avoir davantage, ces décomptes sont donc des minimums.",
+        "de": "{source}: bis zu einem Leselimit gelesen; es kann mehr geben, daher sind diese Zahlen Untergrenzen.",
+    },
 }
 
 

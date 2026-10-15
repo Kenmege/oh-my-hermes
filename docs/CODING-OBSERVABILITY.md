@@ -59,6 +59,15 @@ hermes-kanban    dddd0004  ⬜ unknown                 reported done           1
   queries (`partial`), or the board path was refused as a symbolic link or an
   invalid board name and not opened (`refused`). The line names the file, never its local path.
 - `--limit` caps each table on its own and states what it left out.
+- Each reader selects a bounded number of rows (the newest delegate children,
+  and the board's open lanes, running first). A reader that reached its bound
+  sets `selection_capped`, and then every Hermes count on the board reads as a
+  lower bound (`at least 96 running of at least 96 observed`). A line also
+  names the source that was read only up to its limit.
+- A lane that never started (Hermes creates some tasks already `blocked`) has
+  no elapsed time: the reader reports `None` and the board prints `unknown`,
+  never `0s`. A queued lane's elapsed is `unknown` too, as the HUD leaves it
+  blank.
 
 Both renderers take a `locale`: `render_status_board_text(payload, locale=...)`
 for the aligned board and `status_board_messenger_body(payload, locale=...)`

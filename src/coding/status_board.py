@@ -120,7 +120,9 @@ SOURCE_ORDER: Final[tuple[str, ...]] = (
 # The row cap both Hermes readers are called with. It is at or above each
 # reader's own selection bound, so the board counts every row a reader selected
 # and applies its own `limit` afterwards; rows a reader still reports as hidden
-# are added to `worker_count` rather than dropped.
+# are added to `worker_count` rather than dropped. The selection itself is
+# bounded: a reader that reached its bound says so (`selection_capped`), and
+# the board then renders its counts as lower bounds rather than as totals.
 _HERMES_READ_LIMIT: Final[int] = 64
 # The SOURCE cell, and the Hermes file each reader opens (named in the "not
 # available" line by file name only, never by its local path).
@@ -660,11 +662,18 @@ def _hermes_workers(paths: OmhPaths, observed_at: str, *, limit: int) -> dict[st
     for source, read in ((SOURCE_HERMES_DELEGATES, native), (SOURCE_HERMES_KANBAN, kanban)):
         read_rows = [row for row in read.get("rows", []) if isinstance(row, Mapping)]
         rows.extend(_hermes_worker_row(row, source=source) for row in read_rows)
+        hidden = int(read.get("hidden", 0) or 0)
+        capped = read.get("selection_capped") is True
         record: dict[str, Any] = {
             "source": source,
             "read_status": str(read.get("read_status", "") or ""),
             "scope": str(read.get("scope", "") or ""),
-            "worker_count": len(read_rows) + int(read.get("hidden", 0) or 0),
+            "worker_count": len(read_rows) + hidden,
+            "selection_capped": capped,
+            # A capped selection may have left workers unread, and hidden rows
+            # are counted without their states: either way the counts below
+            # are floors, not totals.
+            "counts_are_lower_bounds": capped or hidden > 0,
         }
         if source == SOURCE_HERMES_KANBAN:
             record["board"] = str(read.get("board", "") or "")
@@ -677,6 +686,7 @@ def _hermes_workers(paths: OmhPaths, observed_at: str, *, limit: int) -> dict[st
         # A lane Hermes still calls running after its heartbeat stopped. The
         # headline names it beside the stuck units instead of as running.
         "stale_count": sum(1 for row in rows if row["state"] == "stale"),
+        "counts_are_lower_bounds": any(record["counts_are_lower_bounds"] for record in sources),
         "rows": rows[:limit],
         "sources": sources,
     }
@@ -688,9 +698,9 @@ def _hermes_worker_row(row: Mapping[str, Any], *, source: str) -> dict[str, Any]
     effort = str(row.get("effort", "") or "")
     state = str(row.get("state", "") or "")
     elapsed = row.get("elapsed_seconds")
-    # A queued lane has no worker running, and the board reader reports a task
-    # that never started as 0.0; the HUD leaves that cell blank, and a `0s`
-    # here would read as an observed zero, so it is `unknown`.
+    # A lane that never started arrives as None and renders `unknown`. A queued
+    # lane is `unknown` even when it ran before: no worker is running, the
+    # figure would be an earlier run's, and the HUD leaves that cell blank.
     elapsed_seconds = (
         int(elapsed)
         if state != "queued" and isinstance(elapsed, (int, float)) and not isinstance(elapsed, bool)
@@ -995,38 +1005,56 @@ def _hermes_bullet_line(worker: Mapping[str, Any]) -> str:
     return f"{line} — {summary}" if summary else line
 
 
+def _hermes_lower_bound(payload: Mapping[str, Any]) -> bool:
+    return _payload_hermes(payload).get("counts_are_lower_bounds") is True
+
+
+def _count_text(count: int, *, lower_bound: bool, locale: str) -> str:
+    """`96`, or `at least 96` when a reader limit may have left workers uncounted."""
+    return status_board_copy("at_least", locale=locale).format(count=count) if lower_bound else str(count)
+
+
 def _hermes_truncation_line(payload: Mapping[str, Any], *, locale: str) -> str:
     total = int(_payload_hermes(payload).get("worker_count", 0) or 0)
     shown = len(_payload_hermes_rows(payload))
     dropped = total - shown
     if dropped <= 0:
         return ""
-    return status_board_copy("hermes_truncation", locale=locale).format(shown=shown, total=total, dropped=dropped)
+    floor = _hermes_lower_bound(payload)
+    return status_board_copy("hermes_truncation", locale=locale).format(
+        shown=shown,
+        total=_count_text(total, lower_bound=floor, locale=locale),
+        dropped=_count_text(dropped, lower_bound=floor, locale=locale),
+    )
+
+
+def _hermes_source_name(record: Mapping[str, Any], *, locale: str) -> str:
+    if str(record.get("source", "") or "") == SOURCE_HERMES_KANBAN:
+        return status_board_copy("hermes_kanban_source", locale=locale).format(
+            board=str(record.get("board", "") or UNKNOWN)
+        )
+    return status_board_copy("hermes_delegate_source", locale=locale)
 
 
 def _hermes_read_lines(payload: Mapping[str, Any], *, locale: str) -> list[str]:
-    """One line per Hermes source the board could not read in full."""
+    """One line per Hermes source the board could not read in full or counted only in part."""
     sources = _payload_hermes(payload).get("sources", [])
     lines: list[str] = []
     for record in sources if isinstance(sources, list) else []:
         if not isinstance(record, Mapping):
             continue
+        name = _hermes_source_name(record, locale=locale)
         status = str(record.get("read_status", "") or "")
-        if status == _HERMES_READ_OK:
-            continue
-        source = str(record.get("source", "") or "")
-        if source == SOURCE_HERMES_KANBAN:
-            name = status_board_copy("hermes_kanban_source", locale=locale).format(
-                board=str(record.get("board", "") or UNKNOWN)
+        if status != _HERMES_READ_OK:
+            key = _HERMES_READ_COPY.get(status, "hermes_unreadable")
+            source = str(record.get("source", "") or "")
+            lines.append(
+                status_board_copy(key, locale=locale).format(
+                    source=name, file=_HERMES_SOURCE_FILES.get(source, UNKNOWN)
+                )
             )
-        else:
-            name = status_board_copy("hermes_delegate_source", locale=locale)
-        key = _HERMES_READ_COPY.get(status, "hermes_unreadable")
-        lines.append(
-            status_board_copy(key, locale=locale).format(
-                source=name, file=_HERMES_SOURCE_FILES.get(source, UNKNOWN)
-            )
-        )
+        if record.get("counts_are_lower_bounds") is True:
+            lines.append(status_board_copy("hermes_lower_bound", locale=locale).format(source=name))
     return lines
 
 
@@ -1045,10 +1073,22 @@ def _header_line(payload: dict[str, Any], *, locale: str) -> str:
     moving += int(hermes.get("running_count", 0) or 0)
     stuck += int(hermes.get("stale_count", 0) or 0)
     total += int(hermes.get("worker_count", 0) or 0)
+    # A Hermes reader that hit a limit leaves every Hermes-derived count a
+    # floor; the headline says so instead of presenting a partial count as all.
+    floor = _hermes_lower_bound(payload)
     observed_at = str(payload.get("observed_at", "") or UNKNOWN)
-    stuck_text = status_board_copy("header_stuck_suffix", locale=locale).format(stuck=stuck) if stuck else ""
+    stuck_text = (
+        status_board_copy("header_stuck_suffix", locale=locale).format(
+            stuck=_count_text(stuck, lower_bound=floor, locale=locale)
+        )
+        if stuck
+        else ""
+    )
     return status_board_copy("header", locale=locale).format(
-        moving=moving, stuck=stuck_text, total=total, observed_at=observed_at
+        moving=_count_text(moving, lower_bound=floor, locale=locale),
+        stuck=stuck_text,
+        total=_count_text(total, lower_bound=floor, locale=locale),
+        observed_at=observed_at,
     )
 
 

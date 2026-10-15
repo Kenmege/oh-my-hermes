@@ -1653,6 +1653,8 @@ COMPLETED_LINGER_SECONDS = 15 * 60
 _SESSION_WINDOW_SECONDS = 6 * 3600
 _ACTION_LIMIT = 140
 _ROW_LIMIT = 8
+# How many delegate children one state.db read selects, newest first.
+_CHILD_SELECT_LIMIT = 32
 
 
 def _text(value: Any, limit: int = 80) -> str:
@@ -2145,6 +2147,9 @@ def _query_state_db(state_db: Path, *, now: float, session_ref: str | None = Non
         # `unreadable` (the child query never answered), `partial` (children
         # were read and a later query failed), else `read`.
         "read_status": "read",
+        # True when the child query reached `_CHILD_SELECT_LIMIT`: more
+        # children may exist than were read, so a count over them is a floor.
+        "selection_capped": False,
     }
     if not state_db.is_file():
         result["read_status"] = "absent"
@@ -2181,10 +2186,14 @@ def _query_state_db(state_db: Path, *, now: float, session_ref: str | None = Non
         cursor = connection.execute(
             f"SELECT id, model, model_config, started_at, {ended_at_column} FROM sessions "
             "WHERE model_config LIKE '%_delegate_from%' AND started_at >= ?"
-            + owner_filter + " ORDER BY started_at DESC LIMIT 32",
+            + owner_filter + f" ORDER BY started_at DESC LIMIT {_CHILD_SELECT_LIMIT + 1}",
             parameters,
         )
+        # One row past the bound says the bound cut the selection; it is
+        # dropped, so the children read are the same `_CHILD_SELECT_LIMIT`.
         rows = cursor.fetchall()
+        result["selection_capped"] = len(rows) > _CHILD_SELECT_LIMIT
+        rows = rows[:_CHILD_SELECT_LIMIT]
         parents_needed: set[str] = set()
         children: list[dict[str, Any]] = []
         for session_id, model, model_config, started_at, ended_at in rows:
@@ -2341,6 +2350,7 @@ def read_hermes_native_subagents(
     state = _query_state_db(home / "state.db", now=current, session_ref=session_ref)
     payload["scope"] = state["scope"]
     payload["read_status"] = state["read_status"]
+    payload["selection_capped"] = state["selection_capped"]
     children = state.get("children", [])
     if not children:
         return payload

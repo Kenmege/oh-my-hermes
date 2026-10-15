@@ -251,7 +251,9 @@ def _query_tasks(db: Path, *, now: float) -> list[dict[str, Any]] | None:
 
     ``None`` when the board could not be read at all (no connection, a
     ``tasks`` table without the columns above, a failed query), so a caller
-    can tell that apart from a board with no lanes.
+    can tell that apart from a board with no lanes. The SELECT fetches one row
+    past ``_SELECT_LIMIT`` so the caller can tell a full selection from one the
+    bound cut; the caller drops that row.
     """
     try:
         connection = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=0.25)
@@ -284,7 +286,7 @@ def _query_tasks(db: Path, *, now: float) -> list[dict[str, Any]] | None:
             f"OR (t.status IN ({finished_marks}) AND t.completed_at >= ?) "
             "ORDER BY CASE WHEN t.status = 'running' THEN 0 ELSE 1 END, t.created_at ASC "
             "LIMIT ?",
-            (*OPEN_STATUSES, *FINISHED_STATUSES, now - COMPLETED_LINGER_SECONDS, _SELECT_LIMIT),
+            (*OPEN_STATUSES, *FINISHED_STATUSES, now - COMPLETED_LINGER_SECONDS, _SELECT_LIMIT + 1),
         )
         rows = cursor.fetchall()
     except sqlite3.Error:
@@ -600,7 +602,9 @@ def _lane_row(
         frozen_at = heartbeat
     else:
         frozen_at = started
-    elapsed = max(0.0, frozen_at - started) if started is not None and frozen_at is not None else 0.0
+    # A lane that never started (Hermes creates tasks already `blocked`, and a
+    # `ready` one waits for a claim) has no elapsed time: None, never a zero.
+    elapsed = max(0.0, frozen_at - started) if started is not None and frozen_at is not None else None
     observed = max(value for value in (created, started, heartbeat, completed) if value is not None)
     model = _text(task["model_override"])
     row = {
@@ -688,6 +692,8 @@ def read_kanban_lanes(
     can say a read failed instead of rendering it as an empty board:
     ``refused`` (``kanban_db_path`` would not name a path), ``absent`` (no
     file), ``unreadable`` (``_query_tasks`` returned ``None``), else ``read``.
+    ``selection_capped`` is True when the board held more matching tasks than
+    ``_SELECT_LIMIT``: the counts and rows then cover the first ones only.
     """
     current = float(now) if now is not None else time.time()
     board_name = board.strip() or current_board(hermes_home)
@@ -703,6 +709,7 @@ def read_kanban_lanes(
         "dispatcher_presence": "unknown",
         "board": board_name,
         "read_status": "read",
+        "selection_capped": False,
     }
     db = kanban_db_path(hermes_home, board_name)
     if db is None:
@@ -715,6 +722,8 @@ def read_kanban_lanes(
     if tasks is None:
         payload["read_status"] = "unreadable"
         return payload
+    payload["selection_capped"] = len(tasks) > _SELECT_LIMIT
+    tasks = tasks[:_SELECT_LIMIT]
     if not tasks:
         return payload
     owners = set(session_ids or ())
