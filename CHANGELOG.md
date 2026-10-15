@@ -65,6 +65,27 @@ All notable changes will be documented here.
   other skill's message, and the misleading `_WHOLE_WORD_ROUTE_HINT_RULES`
   replaced by the hint's phrase readers.
 
+- **Every skill says one thing about spends, retired siblings, review
+  retries and the one plan checklist.** A `loop` step that would move money
+  goes through `spend-gate` first while the loop carries on, in that skill's
+  own terms: an agent run on a schedule never spends, and a no-agent script
+  that pays is a spend set up now. `ultraperf` stops sending a declared metric, baseline
+  and benchmark to `performance-goal`, a skill #1691 folded into `ultraperf`
+  itself; a declared goal starts from its baseline there, as its recovery note
+  already said. `decision-prototype`'s compact body now carries the line that
+  hands a multi-question feasibility probe to Hermes' bundled `spike`, which
+  only its on-demand full contract held. `code-review`'s two references agree
+  on a failed review return: when the host checked the return against the
+  schema, the same reviewer is not asked again, because Hermes' completion
+  message carries no retry count to wait for. The route hint's `plan_todo`
+  line and the context tool hint name all three plans only `omh_todo` holds (a
+  planning run, an accepted plan or a code-story template), so a code-story
+  run is no longer pointed at `todo_list`, whose write would be held. The
+  grounded-citations ledger and verify rule, the blocked-page recovery note,
+  the curator-ledger reading rules, `report-package`'s `powerpoint` rungs, the
+  native-tool presence clause and the shared-rail pointer are each one string
+  their skills compose, where they had been retyped.
+
 - **Memory recall no longer fills a pack with records that share only the
   project's name.** A query term that more than half of the records the pack
   could serve hold, when there are at least five of them, never makes a record

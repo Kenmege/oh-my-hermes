@@ -746,7 +746,14 @@ PLUGIN_TOOL_SCHEMA_CHAR_LIMIT = 64651
 # read as the report; no router word is added. Its use_when drops what
 # repeated the description and says "if" for "whether"; the row does not
 # carry use_when. Re-derived from the producer.
-FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 502002
+# 502002 -> 501990: `ultraperf` (-12) drops its Do-Not-Use line handing a
+# declared metric to `performance-goal`, which #1691 retired into
+# `ultraperf` itself, so the one `do_not_use_when` entry its row carries is
+# now the `code-review` line. `loop`'s new spend-gate safety rule, the shared
+# grounded-citations, curator-ledger, and document-producer rules, and the
+# presence clauses sit past the rows' bounds or render byte-identical and
+# move nothing here. Re-derived from the producer.
+FULL_CAPABILITY_SKILL_SECTION_CHAR_LIMIT = 501990
 FULL_CAPABILITY_SKILL_ITEM_CHAR_LIMIT = 9000
 # 100000 -> 102070: the same three domain workflows each add one standalone
 # capability row, again measured on the merged tree; warranted growth for three

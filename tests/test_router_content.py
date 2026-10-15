@@ -5068,7 +5068,9 @@ class UltraperfCatalogContractTests(unittest.TestCase):
         self.assertEqual(row.reasoning_demand, "heavy")
         self.assertEqual(row.quality_tier, "measurement-gated")
         joined = " ".join(row.do_not_use_when)
-        self.assertIn("performance-goal", joined)
+        # `performance-goal` retired into this skill (#1691), so a declared
+        # metric starts from its baseline here rather than being handed away.
+        self.assertNotIn("performance-goal", joined)
         self.assertIn("code-review", joined)
         self.assertIn("agent-evaluation", joined)
         self.assertIn(

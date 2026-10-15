@@ -32,6 +32,13 @@ _UNATTENDED_GATE = (
     "externally visible action is not run: it is handed to a person's turn and its confirmation is recorded as missing."
 )
 
+# Hermes' skill audit ledger as `instinct-ledger`, `skill-health`, and
+# `workflow-learning` read it: where it lives, what its CLI lists by default,
+# and what an empty one means. One copy of each, so the three cannot drift.
+_CURATOR_LEDGER_FILE = "`skills/.curator_ledger.jsonl` under the active profile's Hermes home"
+_CURATOR_LEDGER_LIMIT = "which lists only the 20 newest entries by default"
+_CURATOR_LEDGER_EMPTY = "An empty ledger is unknown, not clean, because `skills.ledger: false` turns it off."
+
 _FEATURE_SURFACE_SKILLS = (
     _feature_surface_skill(
         "github-event-ops",
@@ -2037,7 +2044,7 @@ _FEATURE_SURFACE_SKILLS = (
             "Project-specific conventions, global practices, project/global promotion candidates, imports, and exports are separated.",
             "No hooks, memory writes, skill edits, global promotion, import/export, or behavior-change claims are made without observed approval and implementation evidence.",
             "A promoted instinct leaves as a store route, `memory_candidate` for `memory-new` or `skill_update_candidate` for `workflow-learning`, never as a parallel store of its own.",
-            "On Hermes, the skill audit ledger (`skills/.curator_ledger.jsonl` under the active profile's Hermes home) is observed evidence of what the agent or its background review already wrote; an instinct that matches a ledger entry no store route accounts for is reported as `unreviewed_native_write` (OMH holds no record of that write, which is not to say nobody reviewed it), never counted as repeated evidence for the instinct.",
+            f"On Hermes, the skill audit ledger ({_CURATOR_LEDGER_FILE}) is observed evidence of what the agent or its background review already wrote; an instinct that matches a ledger entry no store route accounts for is reported as `unreviewed_native_write` (OMH holds no record of that write, which is not to say nobody reviewed it), never counted as repeated evidence for the instinct.",
         ),
         recovery_notes=(
             "If the request is a single missed route or run trace, route to workflow-learning first.",
@@ -2175,7 +2182,7 @@ _FEATURE_SURFACE_SKILLS = (
             "Install/setup health is routed to doctor; catalog operations are routed to skill; failure retrospectives are routed to workflow-learning.",
             "No skill, prompt, doc, memory, or model behavior is claimed changed until a reviewed implementation records evidence.",
             "Never present use, view, or load counts, `.usage.json` included, as a health, prune, archive, or retire signal: a rarely used skill is not an unhealthy one, and no health card recommends removing, archiving, or pruning a skill for being used little.",
-            f"On Hermes, read the skill audit ledger read-only (that skill's entries in `skills/.curator_ledger.jsonl` under the active profile's Hermes home, or `hermes curator ledger --skill <name> --limit <n>`, which lists only the 20 newest by default): an entry against an OMH-managed skill means Hermes changed that managed copy outside OMH, so it may no longer match its generated body; report it as drift with the entry's `action` and `actor` (`agent`, `user`, or `curator`, which covers Hermes' curator and its background review). {OMH_MANAGED_SKILL_CLAUSE} An empty ledger is unknown, not clean, because `skills.ledger: false` turns it off.",
+            f"On Hermes, read the skill audit ledger read-only (that skill's entries in {_CURATOR_LEDGER_FILE}, or `hermes curator ledger --skill <name> --limit <n>`, {_CURATOR_LEDGER_LIMIT}): an entry against an OMH-managed skill means Hermes changed that managed copy outside OMH, so it may no longer match its generated body; report it as drift with the entry's `action` and `actor` (`agent`, `user`, or `curator`, which covers Hermes' curator and its background review). {OMH_MANAGED_SKILL_CLAUSE} {_CURATOR_LEDGER_EMPTY}",
             "On Hermes, record an authoring finding only from the `lint_warnings` a `skill_manage` write returned, which are advisory and never proof a skill works; only some writes return them (an `edit` never does), so a write without them is not a clean lint. Record an available update for a hub-installed skill only from `hermes skills check` output that was seen; that hub request is Hermes' own, not OMH's.",
         ),
         recovery_notes=(
@@ -2256,7 +2263,7 @@ _FEATURE_SURFACE_SKILLS = (
             "Native write policy `required` stops promotion as unsupported and `not_required` is not an approval; drift unlinks only the managed SKILL.md and keeps generations and receipts, and an incomplete promotion resumes only via explicit `retry --receipt-id`.",
         ),
         final_checklist=(
-            "Read Hermes' skill audit ledger read-only (`skills/.curator_ledger.jsonl` under the active profile's Hermes home, or `hermes curator ledger --limit <n>`, which lists only the 20 newest entries by default) and report each entry whose `actor` is `agent` or `curator` (Hermes' curator or its background review) that no store-route record (`omh learning store-routes`) or approved `skill_update_candidate` accounts for as `unreviewed_native_write`, which means OMH holds no record of that write, not that nobody reviewed it. An empty ledger is unknown, not clean, because `skills.ledger: false` turns it off.",
+            f"Read Hermes' skill audit ledger read-only ({_CURATOR_LEDGER_FILE}, or `hermes curator ledger --limit <n>`, {_CURATOR_LEDGER_LIMIT}) and report each entry whose `actor` is `agent` or `curator` (Hermes' curator or its background review) that no store-route record (`omh learning store-routes`) or approved `skill_update_candidate` accounts for as `unreviewed_native_write`, which means OMH holds no record of that write, not that nobody reviewed it. {_CURATOR_LEDGER_EMPTY}",
             "Mark an approved `skill_update_candidate` landed only from a `skill_manage` result for that skill that succeeded without `staged: true`, or from a ledger entry that is dated after the approval, has `actor` `agent` or `user` and `action` `create`, `edit`, `patch`, or `write_file`, and lists the approved target file in its `after` manifest. An entry by `curator`, or one that deletes, archives, rolls back, or purges, never marks it landed, and a staged result waits in `/skills pending` for the person and has not landed.",
             "The ledger records skill writes only: a memory write by Hermes' background review is visible only when Hermes staged it under `pending/memory/` with `origin: background_review`, and is `not_observed` otherwise.",
             "Point the user to `/journey` in the Hermes CLI for Hermes' own view of what it learned; reading the ledger or the journey changes nothing, and undoing an entry (`hermes curator rollback <id>`) is the person's own step, never OMH's.",

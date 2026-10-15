@@ -353,6 +353,20 @@ class SpendGateSiblingTextTests(unittest.TestCase):
         self.assertIn(line, _definition("loop").do_not_use_when)
         self.assertIn(line.replace("`automation-blueprint`", "`omh-automation-blueprint`"), self._hermes()["loop"])
 
+    def test_a_loop_step_that_pays_goes_through_the_gate_and_the_loop_carries_on(self) -> None:
+        # A safety rule, not a Do-Not-Use line: only the paying step is the
+        # gate's, so nothing here may read as declining the loop itself.
+        loop = _definition("loop")
+        rule = next(text for text in loop.safety_rules if "`omh-spend-gate`" in text)
+        self.assertIn("goes through `omh-spend-gate` before it runs, and the loop carries on around it", rule)
+        self.assertIn("An agent run on a schedule never spends", rule)
+        self.assertIn("A no-agent script that pays is a spend set up now", rule)
+        self.assertFalse([text for text in loop.do_not_use_when if "spend-gate" in text])
+        portable = {template.name: template.content for template in agent_skill_templates()}["ulw-loop"]
+        for target, body in (("hermes", self._hermes()["loop"]), ("portable", portable)):
+            with self.subTest(target=target):
+                self.assertIn(f"- {rule}\n", body)
+
     def test_prose_names_siblings_by_the_label_skill_view_loads(self) -> None:
         loadable = {
             "hermes": {omh_skill_display_name(template.name) for template in builtin_skill_templates()},

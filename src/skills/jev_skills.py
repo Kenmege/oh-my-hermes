@@ -21,7 +21,6 @@ from .catalog_types import SkillDefinition, SkillExample, skill_view_call
 
 JEV_REQUIRED_TOOL = "omh_jev_ask"
 JEV_RAIL_REFERENCE = "omh-routing/references/jev-rail.md"
-_SHARED_RAIL_REFERENCE = "omh-routing/references/skill-common-rail.md"
 JEV_PRESET_REFERENCE_PATH = "references/preset.md"
 
 _JEV_HANDOFF = (
@@ -435,6 +434,9 @@ _COMPACT_CONTRACTS = {
 
 def jev_skill_body(definition: SkillDefinition, name: str) -> str:
     """The always-loaded body of one Jev skill."""
+    # Imported here: `render` imports the catalog, which imports this module.
+    from .render import SHARED_RAIL_SKILL_VIEW
+
     title = "Jev " + name.removeprefix("jev-").replace("-", " ").title()
     steps = "\n".join(f"{index}. {step}" for index, step in enumerate(_PROCEDURES[name], start=1))
     preset = JEV_PRESET_BY_SKILL.get(name)
@@ -444,7 +446,7 @@ def jev_skill_body(definition: SkillDefinition, name: str) -> str:
 
 {_COMPACT_CONTRACTS[name]}
 
-Read `{skill_view_call(JEV_RAIL_REFERENCE)}` before the first ask: consent, what leaves the machine, limits, and non-answer statuses. Prepared OMH routing is not execution or approval. Shared product, routing, compatibility, and evidence rules: `{skill_view_call(_SHARED_RAIL_REFERENCE)}`.
+Read `{skill_view_call(JEV_RAIL_REFERENCE)}` before the first ask: consent, what leaves the machine, limits, and non-answer statuses. Prepared OMH routing is not execution or approval. Shared product, routing, compatibility, and evidence rules: `{SHARED_RAIL_SKILL_VIEW}`.
 
 Contract: `references/full-contract.md`.{preset_line}
 

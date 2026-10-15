@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 
+from omh.plugin_bundle.omh.native_tools import native_tool_presence_clause
 from omh.skills import catalog as skill_catalog
 from omh.wrapper.contract import build_chat_interaction_payload
 
@@ -167,7 +168,7 @@ class ContextFrontierClarifyTests(unittest.TestCase):
 
     def test_the_round_goes_through_clarify_choices_when_present(self) -> None:
         protocol = self._protocol()
-        self.assertIn("When Hermes' `clarify` tool is present (in your tool list or tool search)", protocol)
+        self.assertIn(f"When {native_tool_presence_clause('clarify', code=True)}, the round header", protocol)
         # The tool keeps only the first four choices, and the question's own text
         # is the one field every Hermes version echoes back, so the identifier lives there.
         self.assertIn("one `questions` entry per decision whose question text opens with its identifier", protocol)

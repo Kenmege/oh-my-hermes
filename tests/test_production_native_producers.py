@@ -22,10 +22,10 @@ each one is evidence beside OMH's own gate, never the verdict. These pin:
 
 from __future__ import annotations
 
-import re
 import unittest
 
 from _local_package import load_local_package
+from _skill_sentences import sentences
 
 load_local_package()
 from omh.plugin_bundle.omh.native_tools import native_tool_presence_clause
@@ -90,10 +90,13 @@ NATIVE_CLAUSES = {
     "report-package": (
         "On Hermes, that tool can be the bundled `powerpoint` skill, and a deck it builds counts as generated from "
         "its read-back (`pptx_read.py --outline`).",
-        "On Hermes, a render check taken from `pptx_render.py` counts only from a result reading `\"rendered\": true` "
-        "whose images, rendered into a fresh directory, match `slide_count` and were each inspected; "
-        "`\"rendered\": false` exits 0 yet leaves that check not observed, and a render observed another way still "
-        "counts.",
+        # The shared document rule and the `powerpoint` half of the rungs rule,
+        # composed from the same strings `materials-package` states.
+        DOCUMENT_QA_RULE,
+        "On Hermes, `powerpoint` gives `slide_count` (`pptx_read.py --outline`) and `render_screenshot` "
+        "(`pptx_render.py` into a fresh directory, its image count matching `slide_count`, since it lists every "
+        "image already in that directory). Images that exist are not a render pass until each one has been "
+        "inspected.",
     ),
     "img-summary": (
         "On Hermes, report image_generation_capability/v1 as `connected` when "
@@ -210,11 +213,6 @@ HERMES_BROWSER_TOOLS = ("browser_console", "browser_vision", "browser_cdp", "scr
 # session was given, never on a version.
 PRESENCE_GATED_TOOLS = ("image_generate", "browser_vision", "browser_cdp")
 
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
-
-
-def _sentences(content: str) -> list[str]:
-    return [sentence for line in content.splitlines() for sentence in _SENTENCE_END.split(line)]
 
 
 def _hermes() -> dict[str, str]:
@@ -281,7 +279,7 @@ class ProducerClauseTests(unittest.TestCase):
         mentions = [
             (label, sentence)
             for label, content in _production_bodies()
-            for sentence in _sentences(content)
+            for sentence in sentences(content)
             if '"rendered": false' in sentence or '"recalculated": false' in sentence
         ]
         self.assertTrue(mentions, "no production body names a false producer result; the check would be vacuous")
@@ -310,7 +308,7 @@ class PresenceRuleTests(unittest.TestCase):
             naming = [
                 (label, sentence)
                 for label, content in bodies
-                for sentence in _sentences(content)
+                for sentence in sentences(content)
                 if f"`{tool}`" in sentence
             ]
             self.assertTrue(naming, f"no body names `{tool}`; the check below would be vacuous")

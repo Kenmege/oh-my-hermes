@@ -608,7 +608,7 @@ function PlanItem({ item, live, unchanged }) {
 }
 
 // A plan whose steps Hermes' own `todo_list` holds (`native_todo`, the
-// reader's `source`; `NATIVE_TODO_SOURCE` in native_tools.py). Hermes Desktop
+// reader's `source`; `NATIVE_TODO_SOURCE` in native_todo.py). Hermes Desktop
 // already draws that list in the composer's status stack -- a live Todos
 // group while the turn runs, and on origin/main a "previous todos" disclosure
 // after it (apps/desktop/src/app/chat/composer/status-stack/index.tsx, at
