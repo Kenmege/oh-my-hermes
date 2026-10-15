@@ -694,7 +694,8 @@ Before its first frame it asks the terminal for its background colour (OSC 11,
 waiting at most 0.1 s; a terminal that does not answer can still say light or
 dark through `COLORFGBG`) and measures the theme against it: your prompts and
 the replies are in the terminal's own text colour, every other colour a word is
-drawn in reaches 4.5:1 contrast on that background and every rule or mark 3:1,
+drawn in reaches 4.5:1 contrast on that background and every rule or mark 3:1
+(on the status line, which keeps the theme's own bar colour, against that bar),
 and on a light background the diff bands are light tints. With no answer the
 background is taken as dark. `/theme light` and `/theme dark` measure against a
 light or a dark background whatever the terminal said, `/theme auto` follows

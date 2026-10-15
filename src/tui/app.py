@@ -170,7 +170,7 @@ from .slash import (
 from .style import CSI, Line, Span, Style
 from .subagents import Hit, Roster
 from .terminal import Terminal, background_from_colorfgbg, terminal_name, terminal_supported
-from .theme import DEFAULT_THEME, LIGHT_STAND_IN, Theme, build_theme, is_light, logo_lines, theme_named
+from .theme import DEFAULT_THEME, LIGHT_STAND_IN, Theme, build_theme, is_light, logo_lines, on_status_bar, theme_named
 from .transcript import (
     NOTICE_ERROR,
     NOTICE_OK,
@@ -3231,9 +3231,10 @@ class App(ModesMixin, AgentViewMixin):
         cols, rows = self.size
         if under_composer(rows, cols)[1]:
             return ()
+        roles = on_status_bar(self.theme)  # measured against the bar they are drawn on
         shown = (
-            (MODE_ACCEPT, self.theme.mode_accept, self.approvals_off),
-            (MODE_PLAN, self.theme.mode_plan, self.plan_mode),
+            (MODE_ACCEPT, roles.mode_accept, self.approvals_off),
+            (MODE_PLAN, roles.mode_plan, self.plan_mode),
         )
         return tuple((MODE_CHIPS[mode], replace(colour, bg=bar.bg, bold=True)) for mode, colour, on in shown if on)
 
@@ -3249,7 +3250,7 @@ class App(ModesMixin, AgentViewMixin):
         return line
 
     def _compose_status_line(self, cols: int) -> Line:
-        """OMH's segments, then model, context and state, on the status bar's background.
+        """OMH's segments, then model, context and state, on the status bar's background, in roles measured against it.
 
         The context turns warn from `CONTEXT_WARN_PERCENT` full and bad from
         `CONTEXT_BAD_PERCENT`. A terminal too short for the mode row carries
@@ -3261,7 +3262,8 @@ class App(ModesMixin, AgentViewMixin):
         bar = self.theme.status
         payload = self.hud.payload if self.hud is not None else None
         head: Line = tuple(
-            Span(span.text, replace(span.style, bg=bar.bg)) for span in status_segments(payload, self.theme)
+            Span(span.text, replace(span.style, bg=bar.bg))
+            for span in status_segments(payload, on_status_bar(self.theme))
         )
         model, context, state = (self.model, bar), (self.context, self._context_style()), (self._state_text(), bar)
         chips = self._mode_chips()

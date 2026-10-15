@@ -23,11 +23,17 @@ already clears the background keeps its colour. On a light background the
 diff bands are tints of the palette's word colours over the background, so
 the default foreground stays readable on them. `dim` is for decoration
 glyphs; words go on `muted` or `hint`.
+
+The status line keeps the palette's own status-bar background whatever the
+terminal's, so its words are measured against that bar instead: the
+`status*` roles here, and `on_status_bar(theme)` for the roles the status
+line borrows (OMH's chips, the mode).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 from ..skin_pack import (
     SkinTheme,
@@ -171,6 +177,11 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
     def mark(key: str) -> str:
         return _lifted(c[key], ink, surface, EDGE_CONTRAST)
 
+    status_ink = BLACK if is_light(status_bg) else c["banner_text"]
+
+    def on_bar(key: str, minimum: float = TEXT_CONTRAST) -> Style:
+        return Style(fg=_lifted(c[key], status_ink, status_bg, minimum), bg=status_bg)
+
     if light:
         diff_add = Style(bg=_mix(c["diff_added_word"], surface, LIGHT_BAND_SHARE))
         diff_add_word = Style(bg=_mix(c["diff_added_word"], surface, LIGHT_WORD_BAND_SHARE), bold=True)
@@ -207,11 +218,11 @@ def build_theme(skin: SkinTheme, background: str | None = None) -> Theme:
         syntax_string=Style(fg=read("syntax_string")),
         syntax_number=Style(fg=read("syntax_number")),
         syntax_comment=Style(fg=read("syntax_comment"), italic=True),
-        status=Style(fg=c["status_bar_text"], bg=status_bg),
-        status_dim=Style(fg=c["status_bar_dim"], bg=status_bg),
-        status_good=Style(fg=c["status_bar_good"], bg=status_bg),
-        status_warn=Style(fg=c["status_bar_warn"], bg=status_bg),
-        status_bad=Style(fg=c["status_bar_critical"], bg=status_bg),
+        status=on_bar("status_bar_text"),
+        status_dim=on_bar("status_bar_dim", EDGE_CONTRAST),  # the separators between the status line's fields
+        status_good=on_bar("status_bar_good"),
+        status_warn=on_bar("status_bar_warn"),
+        status_bad=on_bar("status_bar_critical"),
         menu=Style(fg=c["banner_text"], bg=c["completion_menu_bg"]),
         menu_current=Style(fg=c["banner_text"], bg=c["completion_menu_current_bg"], bold=True),
         hint=Style(fg=read("banner_dim")),
@@ -240,6 +251,13 @@ def logo_lines(skin: SkinTheme, background: str | None = None) -> list[Line]:
         fg = _lifted(colour if hex_to_rgb(colour) else c["banner_title"], ink, surface, EDGE_CONTRAST)
         lines.append((Span(shown, Style(fg=fg, bold=bold)),))
     return lines
+
+
+@lru_cache(maxsize=16)
+def on_status_bar(theme: Theme) -> Theme:
+    """`theme`'s roles measured against its own status-bar background, for what the status line draws in them."""
+    skin = theme_for_name(theme.name) or default_theme()
+    return build_theme(skin, theme.status.bg)
 
 
 def theme_named(value: str, background: str | None = None) -> Theme:

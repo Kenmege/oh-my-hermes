@@ -9,7 +9,7 @@ All notable changes will be documented here.
   frame (OSC 11, at most 0.1 s, with `COLORFGBG` as the fallback) and measures
   its theme against it, so prompts and replies are the terminal's own text
   colour, every coloured word reaches 4.5:1 and every rule or mark 3:1 on that
-  background, words that sat on the 3:1 decoration colour moved to colours that
+  background (the status line's against its own bar), words that sat on the 3:1 decoration colour moved to colours that
   read, and a light background gets light diff bands (on white the body text
   measured 1.08 to 1.13:1 before); `/theme auto|light|dark` picks the background
   for the open session. A slash command is echoed as `› /name arg` and what it

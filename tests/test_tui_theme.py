@@ -129,6 +129,38 @@ class ThemeTests(unittest.TestCase):
         self.assertEqual(DEFAULT_THEME.name, "sky")
 
 
+class StatusBarContrastTests(unittest.TestCase):
+    """Words on the status line are measured against the status bar they sit on, not the terminal's background."""
+
+    def line(self, background: str | None, skin: object, stage: str, yolo: bool, rows: int) -> list:
+        from test_tui_modes import make_app
+        from test_tui_panels import hud_payload
+        from omh.tui.panels import HudSnapshot
+
+        theme = build_theme(skin, background)  # type: ignore[arg-type]
+        app, _client = make_app(theme=theme, rows=rows, cols=200)
+        payload = hud_payload()
+        payload["repeat"] = {"status": "observed", "consecutive": 4, "period": 2, "intercepted": 1, "stage": stage}
+        payload["activity"].update(live=True, post_tool_call_observed=True, open_call_count=2, oldest_open_elapsed_seconds=12)
+        payload["yolo"] = {"status": "observed", "enabled": yolo}
+        app.hud = HudSnapshot(app.stored_id, payload, 0.0)
+        app.approvals_off = app.plan_mode = True  # the mode chips, on a terminal too short for the mode row
+        app.model, app.context, app.context_percent = "some/model", "ctx 96k/100k 96%", 96.0
+        return [(span, theme.status.bg) for span in app._compose_status_line(200)]
+
+    def test_every_coloured_word_on_the_status_line_reaches_4_5_against_the_bar(self) -> None:
+        for skin in SKIN_THEMES:
+            for background in (None, *LIGHT_BACKGROUNDS, *DARK_BACKGROUNDS):
+                for stage, yolo, rows in (("watching", False, 24), ("blocking", True, 6), ("approval", True, 6)):
+                    for span, bar in self.line(background, skin, stage, yolo, rows):
+                        if not span.text.strip() or span.style.fg is None:
+                            continue
+                        minimum = 4.5 if any(char.isalnum() for char in span.text) else 3.0
+                        with self.subTest(theme=skin.short_name, background=background, stage=stage, text=span.text):
+                            self.assertEqual(span.style.bg, bar)
+                            self.assertGreaterEqual(contrast(span.style.fg, bar), minimum)
+
+
 class DimCarriesNoWordsTests(unittest.TestCase):
     """`dim` reaches only the 3:1 a glyph needs, so no span the TUI draws in it may hold words."""
 
