@@ -104,6 +104,49 @@ class EscMeaningTests(unittest.TestCase):
         self.assertEqual(client.calls[-1][0], "session.interrupt")
 
 
+class NarrowSayTests(unittest.TestCase):
+    """What the next key does keeps its point on a narrow mode row: a shorter form, never a cut-off long one."""
+
+    def rewind_row(self, cols: int, agents: bool) -> str:
+        from test_tui_agent_strip import STARTS, relay
+        from omh.tui.app import Rewind
+
+        app, _client = agent_app(busy=False, frames=[], cols=cols)
+        if agents:
+            relay(app, STARTS)  # the strip from the turn before stays on the row
+        app.rewind = Rewind(row_id=7, ordinal=2, before=())
+        return line_text(app._mode_row_line(cols))
+
+    def steer_row(self, cols: int) -> str:
+        from test_tui_agent_strip import STARTS, relay
+        from omh.tui.keys import CHAR, DOWN, Key
+
+        app, _client = agent_app(busy=True, frames=[], cols=cols)
+        relay(app, STARTS)
+        app._on_input(Key(DOWN))
+        app._on_input(Key(CHAR, "s"))
+        return line_text(app._mode_row_line(cols))
+
+    def test_a_rewind_keeps_what_it_replaces_and_how_to_cancel_at_every_width(self) -> None:
+        for cols in (100, 60, 40):
+            for agents in (False, True):
+                with self.subTest(cols=cols, agents=agents):
+                    row = self.rewind_row(cols, agents)
+                    self.assertIn("replaces", row)
+                    self.assertTrue(any(said in row for said in ("#2 and everything after it", "#2 and later", "#2+")), row)
+                    self.assertIn("esc", row)
+                    self.assertFalse(row.rstrip().endswith("…"), row)
+        self.assertIn("replaces prompt #2 and everything after it · esc cancels", self.rewind_row(100, False))
+
+    def test_an_agent_steer_keeps_esc_cancels_at_every_width_with_the_strip_shown(self) -> None:
+        for cols in (100, 60, 40):
+            with self.subTest(cols=cols):
+                row = self.steer_row(cols)
+                self.assertIn("esc cancels", row)
+                self.assertIn("steer", row)
+                self.assertFalse(row.rstrip().endswith("…"), row)
+
+
 class StripMarkTests(unittest.TestCase):
     def test_the_strips_last_mark_says_what_down_opens(self) -> None:
         self.assertEqual(OPEN_MARK, "↓ agents")

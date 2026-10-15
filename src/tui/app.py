@@ -139,7 +139,7 @@ from .launch import request_fallback
 from .agent_view import STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
 from .layout import slot_cap, under_composer
 from .markdown import clean_text
-from .modes import NO_SESSION_NOTICE, ModesMixin, mode_row_line
+from .modes import NO_SESSION_NOTICE, STRIP_SEPARATOR, ModesMixin, mode_row_line
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows
@@ -216,7 +216,14 @@ DOUBLE_ESCAPE_SECONDS = 0.8
 ESCAPE_CLEAR = "clear"
 ESCAPE_REWIND = "rewind"
 ESCAPE_AGAIN = "esc again to {}"
-REWIND_SAY = "⏪ rewind: sending replaces prompt #{ordinal} and everything after it · esc cancels"
+# What the mode row says while a picked rewind waits to be sent, longest first: a narrow row takes the first that fits,
+# so what sending it replaces and how to cancel it survive.
+REWIND_SAY = (
+    "⏪ rewind: sending replaces prompt #{ordinal} and everything after it · esc cancels",
+    "⏪ sending replaces #{ordinal} and everything after it · esc cancels",
+    "⏪ replaces #{ordinal} and later · esc cancels",
+    "⏪ replaces #{ordinal}+ · esc",
+)
 REWIND_BUSY_NOTICE = "Rewind works between turns: let this one end, or interrupt it with Esc."
 # A composer line that starts with this is the person's own shell command (`shell.exec`), never a prompt.
 SHELL_PREFIX = "!"
@@ -3111,18 +3118,25 @@ class App(ModesMixin, AgentViewMixin):
         )
 
     def _mode_row_line(self, cols: int, strip: Line | None = None) -> Line:
-        """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's second press)."""
-        say, say_style = "", None
+        """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's second press).
+
+        A picked steer or rewind keeps room for its shortest form: the strip collapses (`● 2 agents ↓`) before
+        what sending does and how to cancel it would be cut.
+        """
+        say: str | tuple[str, ...] = ""
+        say_style = None
         armed = self.escape_armed
         steered = self.roster.agents.get(self.agent_steer or "")
         if self.slot is not None:
             say = self.slot.keys
         elif steered is not None:
-            say, say_style = STEER_SAY.format(name=steered.name), self.theme.accent
+            say, say_style = tuple(form.format(name=steered.name) for form in STEER_SAY), self.theme.accent
         elif self.rewind is not None:
-            say, say_style = REWIND_SAY.format(ordinal=self.rewind.ordinal), self.theme.warn
+            say, say_style = tuple(form.format(ordinal=self.rewind.ordinal) for form in REWIND_SAY), self.theme.warn
         elif armed is not None and self.clock() - armed[1] <= DOUBLE_ESCAPE_SECONDS:
             say = ESCAPE_AGAIN.format(armed[0])
+        if isinstance(say, tuple):
+            strip = self._agent_strip(cols - cell_width(STRIP_SEPARATOR + say[-1]))[0]
         return mode_row_line(
             mode=self._display_mode(),
             busy=self._busy(),

@@ -117,7 +117,7 @@ def mode_row_line(
     width: int,
     theme: Theme,
     strip: Line = (),
-    say: str = "",
+    say: str | tuple[str, ...] = "",
     say_style: Style | None = None,
     esc_interrupts: bool = True,
 ) -> Line:
@@ -126,14 +126,23 @@ def mode_row_line(
     `strip` is the roster's strip while it holds an agent, drawn from cell
     `strip_column(mode, theme)` on. `say`, when given, is what the next key
     will do (a rewind waiting to be sent, Esc's second press) and stands in
-    for the hint, in `say_style`. During a turn the hint offers Esc for the
+    for the hint, in `say_style`; given as forms, longest first, the first
+    that fits whole is said, so a narrow row keeps the point rather than the
+    start of the long one. During a turn the hint offers Esc for the
     interrupt only while `esc_interrupts` says Esc does that now. The label always survives, and the strip
     after it: the hint is cut from its end first, and the effort on the right
     goes only when even the label and the strip beside it do not fit.
     """
-    label = mode_label(mode, theme)
-    if say:
-        hint = say if not label else STRIP_SEPARATOR + say
+    mode_part = mode_label(mode, theme)
+    label = (*mode_part, Span(STRIP_SEPARATOR, theme.hint), *strip) if strip and mode_part else strip or mode_part
+    right: Line = (Span(f"effort {effort}", theme.muted),) if effort else ()
+    room = width - line_width(label) - (line_width(right) + MODE_ROW_GAP if right else 0)
+    if room < 0:
+        right, room = (), width - line_width(label)
+    forms = (say,) if isinstance(say, str) else say
+    if any(forms):
+        said = [form if not label else STRIP_SEPARATOR + form for form in forms]
+        hint = next((text for text in said if cell_width(text) <= room), said[-1])
     elif mode == MODE_SHELL:
         hint = SHELL_HINT
     elif mode == MODE_ACCEPT:
@@ -146,12 +155,7 @@ def mode_row_line(
     else:
         hint = IDLE_KEYS_HINT
     if strip:
-        label = (*label, Span(STRIP_SEPARATOR, theme.hint), *strip) if label else strip
         hint = hint if hint.startswith(STRIP_SEPARATOR) else STRIP_SEPARATOR + hint.strip()
-    right: Line = (Span(f"effort {effort}", theme.muted),) if effort else ()
-    room = width - line_width(label) - (line_width(right) + MODE_ROW_GAP if right else 0)
-    if room < 0:
-        right, room = (), width - line_width(label)
     left = truncate_line(label, width) + truncate_line((Span(hint, say_style or theme.hint),), max(room, 0))
     if not right:
         return left

@@ -42,7 +42,13 @@ from .width import truncate_line
 AGENT_LIST_ROWS = 7  # main and six agents; a longer roster scrolls
 AGENT_LIST_HINT = "↑↓ select · ⏎ log · x interrupt · s steer · esc back"
 INTERRUPT_CONFIRM = "x again interrupts {name} · any other key cancels"
-STEER_SAY = "↪ steering {name}: enter sends it to that agent · esc cancels"
+# What the mode row says while `s` has picked an agent, longest first: a narrow row takes the first that fits.
+STEER_SAY = (
+    "↪ steering {name}: enter sends it to that agent · esc cancels",
+    "↪ steering {name} · enter sends · esc cancels",
+    "↪ steering {name} · esc cancels",
+    "↪ steer · esc cancels",
+)
 AGENT_FINISHED_NOTICE = "{name} has finished; there is nothing to {action}."
 AGENT_INTERRUPTED_NOTICE = "Interrupted {name}."
 AGENT_ALREADY_DONE_NOTICE = "{name} had already finished."
