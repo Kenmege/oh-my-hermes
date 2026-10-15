@@ -412,8 +412,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   chip, `[Pasted text #1 +60 lines]` (or `· 1,204 chars` for one long line):
   the caret steps over it, Backspace, Delete and the line and word kills take
   it whole, and sending puts its text back where it stood. The transcript
-  shows the chip, and the input history keeps the whole text; the chip's text
-  is held in memory only. A paste whose end marker never arrives ends after 0.5 s
+  shows the chip. The chip's text is held in memory until you send it; once
+  sent, the input history keeps the whole text, in this session and in
+  Hermes' input history file (`$HERMES_HOME/.hermes_history`). A line that
+  starts with `!` or `/` is a shell line or a command only when the composer
+  shows it so: a chip whose text starts that way is sent as a prompt. A paste whose end marker never arrives ends after 0.5 s
   without input, as what arrived so far, and the keys after it are keys
   again, Ctrl+C included. Until that end marker arrives late, or for a second
   after the paste ended, a line break in what follows adds a line instead of
