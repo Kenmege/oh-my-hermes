@@ -174,7 +174,11 @@ PR without the chat history.
   gateway's stdio JSON-RPC. It relays only what the person types; on its
   own it reads Hermes' settings and command catalog as a session opens
   and, at a fresh start, `session.list` to name the last session under
-  the banner, and sends only what this bullet names below. It never
+  the banner, and, beyond opening and closing sessions
+  (`client.capabilities`, `session.create`, `session.resume`,
+  `session.close`), sends only what this bullet names below, plus
+  `session.history` again when Hermes refuses a rewind and, when no turn
+  runs, a steer Hermes refused as an ordinary prompt. It never
   answers an approval, clarify, sudo, or secret request on its own: Esc or
   Ctrl+C declines, an approval decline is an explicit deny, allowing a
   command takes the arrows and then Enter, and a request the gateway
