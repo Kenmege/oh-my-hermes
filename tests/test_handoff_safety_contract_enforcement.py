@@ -1245,6 +1245,25 @@ GIT_ARGV_ALLOWLIST: dict[tuple[str, tuple[str, ...]], str] = {
         "read-only local object lookup, writes no index, names no remote, and cannot invoke a "
         "configured fsmonitor hook."
     ),
+    ("src/plugin_bundle/omh/tools/team_tool.py", ("core.fsmonitor=false", "for-each-ref")): (
+        "`git -c core.fsmonitor=false --no-optional-locks for-each-ref --format=... refs/heads/<branch>` in "
+        "`omh_team`'s `team_reconcile`, run in the session's own workspace through the minimal-environment "
+        "`run_verification_command` runner: reads the last commit of one helper branch Hermes' worktree "
+        "isolation names (`hermes-subagent/subagent-<id>`), so a check never runs before that work is merged. "
+        "Read-only local ref lookup, names no remote, writes nothing"
+    ),
+    ("src/plugin_bundle/omh/tools/team_tool.py", ("core.fsmonitor=false", "worktree", "list")): (
+        "`git -c core.fsmonitor=false --no-optional-locks worktree list --porcelain` beside the read above, to "
+        "find the helper's worktree by the path Hermes gave it (`.worktrees/subagent-<id>`) or by that branch, "
+        "and the commit its HEAD is on, so a helper that left the branch and its uncommitted changes are still "
+        "read; read-only listing, names no remote, writes nothing"
+    ),
+    ("src/plugin_bundle/omh/tools/team_tool.py", ("core.fsmonitor=false", "merge-base")): (
+        "`git -c core.fsmonitor=false --no-optional-locks merge-base --is-ancestor <commit> HEAD` right after "
+        "the reads above, in the same workspace, once for the helper branch's last commit and once for its "
+        "worktree's HEAD: whether that commit is already in the history of the HEAD a team check would run on. A read-only local ancestry query, not the forbidden "
+        "`merge` verb; names no remote, writes nothing, and OMH never merges the branch itself"
+    ),
     ("src/coding/fanout_artifact_sharing.py", ("check-ignore",)): (
         "`git check-ignore -q --` against the parent checkout, then again inside the fresh unit "
         "worktree after a symlink is created, to decide whether an allowlisted artifact directory "

@@ -1,14 +1,15 @@
 """Host lifecycle facts for `omh_team`: a helper started, a helper came back.
 
-`omh_team` must not check a part while any of its helpers is still editing
-the shared workspace. Whether a helper is out is a fact only the host has, so
-it comes from the host's own `subagent_start` / `subagent_stop` callbacks,
-never from the model saying so:
+`omh_team` must not check a part while any of its helpers is still editing.
+Whether a helper is out is a fact only the host has, so it comes from the
+host's own `subagent_start` / `subagent_stop` callbacks, never from the model
+saying so:
 
 * `subagent_start` carries the child's goal. A team entry's goal begins with
   the attempt key OMH reserved (`[omh-team:<team>/<unit>/attempt-<n>]`), and
   only an attempt the team record already holds, still undispatched, binds to
-  the child's session id.
+  the child's session id. The child's subagent id is kept beside it: with
+  Hermes' worktree isolation on, it names the branch the helper's work is on.
 * `subagent_stop` carries that child session id; the attempt it bound is
   marked returned, which is what lets `team_reconcile` check it.
 
@@ -37,7 +38,7 @@ def observe_team_dispatch(kwargs: dict[str, object]) -> bool:
         if not parent:
             return False
         return team.observe_dispatch(home, parent, child_session_id=kwargs.get("child_session_id"),
-                                     goal=goal, now=time.time())
+                                     goal=goal, now=time.time(), subagent_id=kwargs.get("child_subagent_id"))
     except (ImportError, OSError, ValueError, RuntimeError):
         return False
 

@@ -466,10 +466,12 @@ def run_verification_command(tokens: list[str], *, workdir: Path, timeout: int) 
     The runner only: no allowlist, no metacharacter check, no pass/fail
     verdict. The two callers approve a command differently -- this tool by the
     allowlist below, `omh_team` by the person's plan approval plus its own
-    command policy (`omh.workflows.team.validate_team_command`) -- and each
-    needs to tell a command that ran and exited non-zero apart from one that
-    never ran, which a bare `passed: False` cannot. So the outcome is
-    ``exited`` (with ``exit_code``), ``not_found`` or ``timeout``.
+    command policy (`omh.workflows.team.validate_team_command`), and for its
+    own fixed read-only git reads of a helper's branch by the literal argv in
+    `tools/team_tool.py` -- and each needs to tell a command that ran and
+    exited non-zero apart from one that never ran, which a bare
+    `passed: False` cannot. So the outcome is ``exited`` (with
+    ``exit_code``), ``not_found`` or ``timeout``.
 
     ``shell=False``, no stdin, the minimal child environment, and a private
     pycache are the same for both callers. A `-m compileall` run also gets
