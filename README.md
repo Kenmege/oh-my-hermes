@@ -334,7 +334,9 @@ slash command's output in the transcript, runs a `!` line in Hermes' shell
 (never sent to the model), shares your input history with `hermes --tui`
 (Ctrl+R searches it), rewinds to an earlier prompt (Esc Esc or `/rewind`),
 lets you interrupt (`x`) or steer (`s`) one subagent from the agent list,
-and marks outcomes on green and red bands. Bare `hermes` keeps opening Hermes' own terminal:
+and marks outcomes on green and red bands (the light colours and the bands
+need a terminal that reports its background, or `/theme light|dark`). Bare
+`hermes` keeps opening Hermes' own terminal:
 
 ```sh
 omh
