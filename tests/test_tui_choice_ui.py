@@ -253,6 +253,32 @@ class HiddenComposerTests(unittest.TestCase):
         self.assertIsNone(app.pager)
         self.assertTrue(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]  # before any repaint
 
+    def test_text_that_arrives_while_a_text_question_is_open_goes_to_the_draft_not_the_answer(self) -> None:
+        # A drop's answer, an image's remainder or a command's prefill is the person's draft, never an answer to Hermes.
+        from omh.tui.slash import parse_slash
+
+        shot = {"attached": True, "path": "/h/images/shot.png", "name": "shot.png", "width": 4, "height": 3,
+                "remainder": "what is this?"}
+        arrivals = {
+            "drop": (lambda app: app._on_drop(app.sid, "/Users/me/notes.txt", {"matched": False}), "/Users/me/notes.txt"),
+            "drop refused": (lambda app: app._on_drop_refused("/Users/me/notes.txt"), "/Users/me/notes.txt"),
+            "image remainder": (lambda app: app._on_image_attached(app.sid, shot), "what is this?"),
+            "prefill": (lambda app: app._on_dispatch(parse_slash("/draft x"), {"type": "prefill", "message": "drafted"}, 0),
+                        None),
+        }
+        for request in (SUDO, ServerRequest("srq-4", "clarify", {"questions": [{"qid": "q", "question": "Why?"}]})):
+            for name, (arrive, appended) in arrivals.items():
+                with self.subTest(method=request.method, arrival=name):
+                    app, client = make_app(busy=True)
+                    type_text(app, "my draft")
+                    app._on_server_request(request)
+                    arrive(app)
+                    self.assertEqual(app.composer.text, "")  # the answer field holds nothing it did not type
+                    armed(app)
+                    press(app, Key(ESCAPE))
+                    self.assertEqual(app.composer.text, "drafted" if appended is None else "my draft" + appended)
+                    self.assertNotIn("notes.txt", str(client.answers))
+
     def test_a_text_only_question_keeps_the_composer_as_its_answer_field(self) -> None:
         for request in (SUDO, ServerRequest("srq-4", "clarify", {"questions": [{"qid": "q", "question": "Why?"}]})):
             with self.subTest(method=request.method):

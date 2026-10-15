@@ -2519,11 +2519,19 @@ class App(ModesMixin, AgentViewMixin):
         self._give_back(text)
         self.transcript.add_notice(notice, NOTICE_WARN)
 
+    def _draft(self) -> Composer:
+        """The person's draft: the composer, or the one set aside while a question has a composer of its own.
+
+        Text that arrives on its own (a steer given back, a drop's answer, an
+        image's remainder, a command's prefill) goes here, never into an
+        answer to Hermes.
+        """
+        return self.slot_draft if self.slot_draft is not None else self.composer
+
     def _give_back(self, text: str) -> None:
-        """A steer's text back to the person, never into an answer to Hermes: on a line of its own after the draft,
-        the one set aside while a question has a composer of its own. Its paste chips stay, and so does its caret
-        while the draft is not drawn."""
-        draft = self.slot_draft if self.slot_draft is not None else self.composer
+        """A steer's text back to the person, never into an answer to Hermes: on a line of its own after the draft
+        (`_draft`). Its paste chips stay, and so does its caret while the draft is not drawn."""
+        draft = self._draft()
         caret, end = draft.caret, len(draft.text)
         draft.replace(end, end, f"\n{text}" if draft.text else text)
         if draft is self.slot_draft or self._composer_hidden():
@@ -2622,7 +2630,8 @@ class App(ModesMixin, AgentViewMixin):
                 self.transcript.add_notice(f"/{invocation.name}: empty message", NOTICE_WARN)
         elif kind == "prefill":
             if message:
-                self._set_composer(message)
+                draft = self._draft()
+                draft.replace(0, len(draft.text), message)
         else:
             other = as_text(result.get("output")) or as_text(result.get("display"))
             if other:
@@ -2883,7 +2892,7 @@ class App(ModesMixin, AgentViewMixin):
         self._take_attachment(sid, attachment)
         remainder = as_text(result.get("remainder")).strip()
         if remainder:  # `/image shot.png what is this?` keeps the question for the person to send
-            self.composer.handle(Paste(remainder))
+            self._draft().handle(Paste(remainder))
 
     def _on_clipboard_pasted(self, sid: str, result: dict[str, Any]) -> None:
         attachment = attachment_from(result) if result.get("attached") is True else None
@@ -2900,7 +2909,7 @@ class App(ModesMixin, AgentViewMixin):
     def _on_drop(self, sid: str, text: str, result: dict[str, Any]) -> None:
         """An image drop is already queued (a chip, nothing typed); a file drop types its reference; else the paste.
 
-        Text goes to the composer whichever session is live: it is the
+        Text goes to the draft (`_draft`) whichever session is live: it is the
         person's paste, sent nowhere yet. An image Hermes queued for a session
         since left is a notice (`_take_attachment`).
         """
@@ -2911,10 +2920,10 @@ class App(ModesMixin, AgentViewMixin):
             return
         if result.get("matched") is True and as_text(result.get("text")):
             text = as_text(result.get("text"))
-        self.composer.handle(Paste(text))
+        self._draft().handle(Paste(text))
 
     def _on_drop_refused(self, text: str) -> bool:
-        self.composer.handle(Paste(text))
+        self._draft().handle(Paste(text))
         return True
 
     def _redraw(self, arg: str) -> None:
