@@ -72,7 +72,7 @@ jobs:
           --quarantine tools/test_sharding/quarantine.json
           --out shard-plan/plan-windows.json
       - name: Upload shard plan
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shard-plan
           path: |
@@ -131,7 +131,7 @@ jobs:
           --out results/result-linux-${{ matrix.python-version }}-${{ matrix.shard }}-attempt-${{ github.run_attempt }}.json
       - name: Upload shard result
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shard-result-linux-${{ matrix.python-version }}-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
           path: results/result-linux-${{ matrix.python-version }}-${{ matrix.shard }}-attempt-${{ github.run_attempt }}.json
@@ -152,7 +152,7 @@ jobs:
           --out results/result-quarantine-linux-${{ matrix.python-version }}-attempt-${{ github.run_attempt }}.json
       - name: Upload quarantine result
         if: ${{ always() && matrix.shard == 1 }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shard-result-quarantine-linux-${{ matrix.python-version }}-attempt-${{ github.run_attempt }}
           path: results/result-quarantine-linux-${{ matrix.python-version }}-attempt-${{ github.run_attempt }}.json
@@ -291,7 +291,7 @@ jobs:
           --out results/result-windows-3.12-${{ matrix.shard }}-attempt-${{ github.run_attempt }}.json
       - name: Upload shard result
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shard-result-windows-3.12-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
           path: results/result-windows-3.12-${{ matrix.shard }}-attempt-${{ github.run_attempt }}.json
@@ -308,7 +308,7 @@ jobs:
           --out results/result-quarantine-windows-3.12-attempt-${{ github.run_attempt }}.json
       - name: Upload quarantine result
         if: ${{ always() && matrix.shard == 3 }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shard-result-quarantine-windows-3.12-attempt-${{ github.run_attempt }}
           path: results/result-quarantine-windows-3.12-attempt-${{ github.run_attempt }}.json
