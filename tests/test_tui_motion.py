@@ -124,7 +124,7 @@ class PulseTests(unittest.TestCase):
         (row,) = transcript.live_lines(80, THEME)
         self.assertEqual(mark(row).style, THEME.accent)
 
-    def test_scrollback_never_holds_a_frame_of_the_pulse(self) -> None:
+    def test_calls_that_pulsed_reach_scrollback_with_their_settled_marks(self) -> None:
         clock = Clock()
         app, _client = make_app(clock=clock, rows=12)
         app._send_prompt("go")
@@ -142,6 +142,23 @@ class PulseTests(unittest.TestCase):
         self.assertTrue(any(line.startswith("  ✓ terminal") for line in history), history)
         self.assertTrue(any(line.startswith("  ✗ read_file") for line in history), history)
         self.assertFalse([line for line in history if line.startswith("  ⏺ ")], history)
+
+    def test_a_take_in_the_middle_of_a_pulse_writes_no_frame_of_it(self) -> None:
+        # A boundary while the call's mark is in its dim half: the group leaves the live region right then.
+        clock = Clock()
+        app, _client = make_app(clock=clock, rows=12)
+        app._send_prompt("go")
+        app._on_event(ev("message.start"))
+        app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="sleep 9"))
+        clock.now += PULSE_SECONDS * 1.5  # the dim half
+        app._render()
+        (live,) = [row for row in app.transcript.live_lines(80, THEME, now=clock.now) if "terminal" in line_text(row)]
+        self.assertEqual(mark(live).style, THEME.dim)  # mid-pulse on screen
+        app._on_event(ev("message.delta", text="Still going."))  # the group is taken now
+        app._render()
+        history = app.terminal.screen.history()  # type: ignore[attr-defined]  # scrollback and the screen
+        rows = [line for line in history if "terminal" in line and "sleep 9" in line]
+        self.assertEqual([row.split()[0] for row in rows], ["▪"], history)  # the settled mark, not a frame of ⏺
 
 
 class SweepTests(unittest.TestCase):

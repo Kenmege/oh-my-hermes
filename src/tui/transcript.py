@@ -111,7 +111,8 @@ STEER_REFUSED_MARK = "⧗ "
 COMMAND_MARK = "› "  # a command the person ran, echoed in the hint colour above what it printed
 OUTPUT_MARK = "⎿ "
 OUTPUT_INDENT = "  "
-# The rows a command's output shows under its echo; past them one row counts the rest, which /history shows.
+# The rows a command's output shows under its echo; past them one row counts the rest (rows at that width, so the
+# count changes with it), which /history shows.
 OUTPUT_PREVIEW_ROWS = 12
 OUTPUT_MORE = "… +{count} {noun} · /history shows all"
 COLLAPSED_MARK = "▸"
@@ -554,7 +555,7 @@ def _command_rows(block: CommandBlock, width: int, theme: Theme, expanded: bool)
         output.extend(_banded(part, band) if band is not None else part)
     if not expanded and not block.whole and len(output) > OUTPUT_PREVIEW_ROWS:
         hidden = len(output) - OUTPUT_PREVIEW_ROWS
-        more = OUTPUT_MORE.format(count=hidden, noun="line" if hidden == 1 else "lines")
+        more = OUTPUT_MORE.format(count=hidden, noun="row" if hidden == 1 else "rows")  # rows at this width
         output = [*output[:OUTPUT_PREVIEW_ROWS], truncate_line((*rest, Span(more, theme.muted)), width)]
     return rows + output
 

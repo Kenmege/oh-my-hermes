@@ -643,7 +643,7 @@ A slash command you run is echoed in the transcript as `› /name arg` (but
 Typed during a turn, the echo and its output wait under what is running and are written after it, as a
 steer is, so a command never cuts off a running tool call or splits a reply:
 a long output shows its first 12 rows and a count of the rest
-(`… +K lines · /history shows all`), and `/history` shows all of it. Nothing a
+(`… +K rows · /history shows all`, rows at that width), and `/history` shows all of it. Nothing a
 command prints opens a pager; a pager opens only when you ask for one
 (`/history`, `/keys`, `/logs`, an agent's log), and output that arrives while
 one is open is in the transcript when you leave it.

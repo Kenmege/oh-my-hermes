@@ -51,7 +51,7 @@ class CommandEchoTests(unittest.TestCase):
         screen = drawn(app)
         self.assertIn(f"    context row {OUTPUT_PREVIEW_ROWS - 1}", screen)
         self.assertNotIn(f"    context row {OUTPUT_PREVIEW_ROWS}", screen)
-        self.assertIn(f"    … +{40 - OUTPUT_PREVIEW_ROWS} lines · /history shows all", screen)
+        self.assertIn(f"    … +{40 - OUTPUT_PREVIEW_ROWS} rows · /history shows all", screen)
 
     def test_a_command_dispatch_owns_answers_under_the_same_echo_and_closes_it_only_then(self) -> None:
         app, client = make_app()

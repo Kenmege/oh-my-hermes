@@ -26,6 +26,7 @@ from omh.tui.transcript import (
     ThinkingBlock,
     ToolRow,
     Transcript,
+    block_rows,
     tool_result_status,
 )
 from omh.tui.width import is_control, line_width
@@ -1057,8 +1058,18 @@ class CommandOutputTests(LoopTestCase):
         self.assertEqual(len(flushed), 1 + OUTPUT_PREVIEW_ROWS + 1)
         self.assertEqual(flushed[1], "  ⎿ row 0")
         self.assertEqual(flushed[OUTPUT_PREVIEW_ROWS], f"    row {OUTPUT_PREVIEW_ROWS - 1}")
-        self.assertEqual(flushed[-1], f"    … +{30 - OUTPUT_PREVIEW_ROWS} lines · /history shows all")
+        self.assertEqual(flushed[-1], f"    … +{30 - OUTPUT_PREVIEW_ROWS} rows · /history shows all")
         self.assertEqual(self.history()[-1], "    row 29")
+
+    def test_the_count_names_rows_since_it_counts_them_at_this_width(self) -> None:
+        # The same output wraps to more rows on a narrower terminal; the word says what is counted.
+        self.transcript.add_command("/context")
+        self.transcript.add_output("\n".join(f"row {number} " + "x" * 30 for number in range(20)))
+        self.transcript.close_command()
+        (block,) = self.transcript.blocks
+        for width in (100, 40):
+            rows = lines_text(block_rows(block, width, THEME))
+            self.assertRegex(rows[-1], r"… \+\d+ rows · /history shows all")
 
     def test_whole_output_is_never_cut(self) -> None:
         self.transcript.add_command("/help")
