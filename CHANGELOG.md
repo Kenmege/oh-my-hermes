@@ -17,7 +17,8 @@ All notable changes will be documented here.
   (bytecode written beside the sources, past the private pycache) and
   `-d`/`-s`/`-p`; and it runs with `-e .`, so a symlink below a compiled
   directory that leads out is skipped, and with `PYTHONSAFEPATH`, so a
-  `compileall.py` in `workdir` no longer runs in place of the stdlib module.
+  `compileall.py` in `workdir` no longer runs in place of the stdlib module
+  (Python 3.11 and later; an older `python3` ignores it).
   `git diff` refuses `-O` (an order file read from anywhere), and its path
   bound stops the switch to `--no-index` that two paths with one outside the
   repository caused, which printed both files; a `:/` pathspec or
