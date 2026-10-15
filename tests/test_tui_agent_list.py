@@ -18,7 +18,7 @@ from _tui_gateway_replay import Scenario, recorded_answer, spans
 from _tui_lines import lines_text
 from test_tui_agent_strip import STARTS, agent_app, agent_event, relay
 from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, Step, startup_answers, status_index
-from test_tui_modes import SID, RecordingClient, answer, composer_index, drawn, make_app, notices, queue, type_text
+from test_tui_modes import SID, RecordingClient, answer, composer_index, drawn, make_app, notices, queue, steers, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND
 from omh.tui import gateway_contract as contract
 from omh.tui.agent_view import (
@@ -37,6 +37,7 @@ from omh.tui.session_picker import SessionPicker, SessionRow
 from omh.tui.style import Span
 from omh.tui.subagents import MAIN_ID
 from omh.tui.theme import DEFAULT_THEME
+from omh.tui.transcript import TOOL_OK, TOOL_RUNNING, AssistantBlock, ToolGroup
 
 CTRL_C = Key(CHAR, "c", ctrl=True)
 TAIL_CALL = ("subagent.tail", {"session_id": SID, "subagent_id": FIRST})
@@ -667,7 +668,7 @@ class AgentActionTests(unittest.TestCase):
             [("subagent.steer", {"session_id": SID, "subagent_id": FIRST, "text": "skip the tests folder"})],
         )
         answer(app, client, {"status": "queued", "subagent_id": FIRST, "text": "skip the tests folder"})
-        self.assertEqual(notices(app)[-1], "↪ steer queued for find usages of: skip the tests folder")
+        self.assertEqual(steers(app)[-1], "↪ steer queued by Hermes · find usages of: skip the tests folder")
         self.assertIsNone(app.agent_steer)
 
     def test_a_steer_hermes_rejects_comes_back_to_the_composer(self) -> None:
@@ -678,7 +679,8 @@ class AgentActionTests(unittest.TestCase):
         type_text(app, "use the other file")
         app._on_input(Key(ENTER))
         answer(app, client, result)  # Hermes 6c61c3e27d: rejected
-        self.assertIn("did not take the steer for find usages of", notices(app)[-1])
+        self.assertIn("Hermes did not take the steer", steers(app)[-1])
+        self.assertTrue(steers(app)[-1].endswith("· find usages of: use the other file"), steers(app))
         self.assertEqual(app.composer.text, "use the other file")
         self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
 
@@ -703,6 +705,86 @@ class AgentActionTests(unittest.TestCase):
         self.assertNotEqual(contract.call_problem("subagent.interrupt", {"session_id": SID}), "")
         self.assertNotEqual(contract.call_problem("subagent.steer", {"session_id": SID, "subagent_id": FIRST, "text": " "}), "")
         self.assertEqual(contract.call_problem("subagent.steer", recorded_parity("subagent_steer")[0]), "")
+
+
+class AgentRowsDuringATurnTests(unittest.TestCase):
+    """What the agent list's `s` and `x` write waits under the running `delegate_task` call, as a steer does.
+
+    Subagents only exist while the parent's call runs, so every one of these
+    rows arrives over a live block: written at once, it closed that call
+    (`▪`, cut off) or split a streaming reply.
+    """
+
+    def delegating(self) -> tuple[App, RecordingClient]:
+        app, client = agent_app(busy=True, frames=[])
+        app._on_event(Event("message.start", SID, {}))
+        app._on_event(Event("tool.start", SID, {"tool_id": "t1", "name": "delegate_task", "context": "two subagents"}))
+        relay(app, STARTS)
+        app._on_input(Key(DOWN))  # the list, on the first agent
+        return app, client
+
+    def finish(self, app: App) -> list[tuple[str, str]]:
+        app._on_event(Event("tool.complete", SID, {"tool_id": "t1", "name": "delegate_task", "result": {"output": "done"}}))
+        app._on_event(Event("message.complete", SID, {"text": "Both agents finished.", "status": "complete"}))
+        return [(tool.name, tool.status) for block in app.transcript.blocks if isinstance(block, ToolGroup)
+                for tool in block.tools]
+
+    def assert_running(self, app: App) -> None:
+        group = app.transcript.blocks[-1]
+        self.assertIsInstance(group, ToolGroup)
+        self.assertEqual(group.tools[0].status, TOOL_RUNNING)
+
+    def test_a_steer_leaves_the_delegate_call_running_and_lands_after_it(self) -> None:
+        app, client = self.delegating()
+        app._on_input(Key(CHAR, "s"))
+        type_text(app, "skip the tests folder")
+        app._on_input(Key(ENTER))
+        self.assertEqual(lines_text(app.transcript.live_lines(100, DEFAULT_THEME))[-1],
+                         "↪ steer · find usages of: skip the tests folder")  # the main steer's format, while it waits
+        answer(app, client, {"status": "queued", "subagent_id": FIRST, "text": "skip the tests folder"})
+        self.assert_running(app)
+        self.assertEqual(self.finish(app), [("delegate_task", TOOL_OK)])
+        kinds = [type(block).__name__ for block in app.transcript.blocks]
+        self.assertEqual(kinds[:3], ["ToolGroup", "SteerBlock", "AssistantBlock"])
+        self.assertEqual(steers(app), ["↪ steer queued by Hermes · find usages of: skip the tests folder"])
+
+    def test_an_interrupt_and_its_refusal_leave_the_delegate_call_running(self) -> None:
+        for reply, said in (
+            ({"result": {"found": True, "subagent_id": FIRST}}, "Interrupted find usages of."),
+            ({"error": {"code": 4009, "message": "agent not ready"}}, "Hermes did not interrupt find usages of: agent not ready."),
+        ):
+            with self.subTest(said=said):
+                app, client = self.delegating()
+                app._on_input(Key(CHAR, "x"))
+                app._on_input(Key(CHAR, "x"))
+                answer(app, client, reply.get("result"), reply.get("error"))
+                self.assert_running(app)
+                self.assertEqual(self.finish(app), [("delegate_task", TOOL_OK)])
+                self.assertEqual(notices(app)[0], said)
+
+    def test_a_refused_steer_leaves_the_delegate_call_running(self) -> None:
+        app, client = self.delegating()
+        app._on_input(Key(CHAR, "s"))
+        type_text(app, "use the other file")
+        app._on_input(Key(ENTER))
+        answer(app, client, {"status": "rejected"})
+        self.assert_running(app)
+        self.assertEqual(app.composer.text, "use the other file")
+
+    def test_a_steer_during_a_streaming_reply_does_not_split_it(self) -> None:
+        app, client = agent_app(busy=True, frames=[])
+        app._on_event(Event("message.start", SID, {}))
+        relay(app, STARTS)
+        app._on_event(Event("message.delta", SID, {"text": "First half, "}))
+        app._on_input(Key(DOWN))
+        app._on_input(Key(CHAR, "s"))
+        type_text(app, "shorter")
+        app._on_input(Key(ENTER))
+        answer(app, client, {"status": "queued", "subagent_id": FIRST, "text": "shorter"})
+        app._on_event(Event("message.delta", SID, {"text": "second half."}))
+        app._on_event(Event("message.complete", SID, {"text": "First half, second half.", "status": "complete"}))
+        replies = [block.text for block in app.transcript.blocks if isinstance(block, AssistantBlock)]
+        self.assertEqual(replies, ["First half, second half."])
 
 
 class TailPollTests(unittest.TestCase):

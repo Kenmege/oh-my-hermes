@@ -137,11 +137,15 @@ class UserBlock:
 
 @dataclass
 class SteerBlock:
-    """A steer the person sent (`text`) and what came of it (`state`; for STEER_REFUSED, `outcome` says what)."""
+    """A steer the person sent (`text`) and what came of it (`state`; for STEER_REFUSED, `outcome` says what).
+
+    `agent` names the subagent it was for; "" is the main turn.
+    """
 
     text: str
     state: str = STEER_SENT
     outcome: str = ""
+    agent: str = ""
     done: bool = True
 
 
@@ -461,8 +465,13 @@ def _awaits_answer(block: Block) -> bool:
 
 
 def _steer_rows(block: SteerBlock, width: int, theme: Theme) -> list[Line]:
-    """`↪ steer · <text>` while it waits for Hermes, `↪ steer queued by Hermes · <text>` once taken, or the refusal."""
+    """`↪ steer · <text>` while it waits for Hermes, `↪ steer queued by Hermes · <text>` once taken, or the refusal.
+
+    A subagent's steer names it before the text: `<agent>: <text>`.
+    """
     text = _first_line(block.text)
+    if block.agent:
+        text = f"{block.agent}: {text}"
     if block.state == STEER_REFUSED:
         return [truncate_line((Span(f"{STEER_REFUSED_MARK}{block.outcome} · {text}", theme.warn),), width)]
     words = "steer queued by Hermes · " if block.state == STEER_QUEUED else "steer · "
@@ -718,7 +727,7 @@ class Transcript:
     def add_user(self, text: str, from_queue: bool = False) -> None:
         self._append(UserBlock(text, from_queue=from_queue))
 
-    def add_steer(self, text: str) -> SteerBlock:
+    def add_steer(self, text: str, agent: str = "") -> SteerBlock:
         """A steer the person just sent, held until Hermes answers and the transcript reaches a block boundary.
 
         A steer never closes a live block (closing a tool group would mark its
@@ -726,9 +735,10 @@ class Transcript:
         under the live blocks and written into the transcript at the next
         boundary after Hermes answered, which for a steer Hermes reads after
         its next tool call is where it reads it. Change its `state` with
-        `steer_answered`.
+        `steer_answered`. `agent` names the subagent a steer from the agent
+        list is for.
         """
-        block = SteerBlock(text)
+        block = SteerBlock(text, agent=agent)
         self._held.append(block)
         self._write_held()
         self._version += 1
@@ -747,7 +757,7 @@ class Transcript:
             self.blocks.insert(len(self.blocks) - 1, block)
             self._version += 1
         else:
-            self._add_aside(block)
+            self.add_aside(block)
 
     def steer_answered(self, block: SteerBlock, state: str, outcome: str = "") -> None:
         block.state, block.outcome = state, outcome
@@ -772,7 +782,7 @@ class Transcript:
         closes what is running.
         """
         block = CommandBlock(command)
-        self._add_aside(block)
+        self.add_aside(block)
         self.command = block
         return block
 
@@ -787,7 +797,7 @@ class Transcript:
             open_command.whole = open_command.whole or whole
             self._version += 1
         elif command:
-            self._add_aside(CommandBlock(command, [(text, level)], whole, done=True))
+            self.add_aside(CommandBlock(command, [(text, level)], whole, done=True))
         else:
             self._append(NoticeBlock(text, level))
 
@@ -844,9 +854,10 @@ class Transcript:
             return block
         return None
 
-    def _add_aside(self, block: Block) -> None:
-        """A block about what is live: held under the live blocks until the next boundary, as a steer is; appended
-        when nothing is live, so it never closes a running tool group or splits a streaming reply."""
+    def add_aside(self, block: Block) -> None:
+        """A block about what is live (a command's echo, a row the agent list writes): held under the live blocks
+        until the next boundary, as a steer is; appended when nothing is live, so it never closes a running tool
+        group or splits a streaming reply."""
         last = self.blocks[-1] if self.blocks else None
         if last is not None and not last.done:
             self._held.append(block)

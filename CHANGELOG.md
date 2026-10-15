@@ -75,8 +75,10 @@ All notable changes will be documented here.
   and a steer shows as `↪ steer · <text>` under what is running until Hermes
   answers; its row then lands at the next block boundary. A steer answered
   while a tool ran used to close the tool group and mark the running call
-  `▪` cut off, and one answered mid-reply split the reply in two; `/steer` is
-  no longer echoed as a command either, since that echo did the same. Each turn's
+  `▪` cut off, and one answered mid-reply split the reply in two. A command
+  typed during a turn (its echo and output) and the agent list's steer and
+  interrupt rows wait under what runs the same way, and two commands out at
+  once each print under their own echo. Each turn's
   done line sits on a thin rule to the edge, and the answer you gave an
   approval is written above the call it was about, `✓ allowed once ·
   <command>` in green or `✗ denied · <command>` in red.

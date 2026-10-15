@@ -372,7 +372,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
   interrupts it (`subagent.interrupt`); `s` makes the next line you send that
   agent's steer (`subagent.steer`), which Hermes hands it at its next tool
   call, with the mode row saying so until you send it or press Esc. A steer
-  Hermes does not take comes back to the composer.
+  Hermes does not take comes back to the composer. Its row reads as the main
+  steer's does, naming the agent before the text (`↪ steer · <agent>:
+  <text>`, then `↪ steer queued by Hermes · …`), and it and what `x` reports
+  wait under the running call and are written at the next block boundary,
+  so neither cuts that call off nor splits a reply.
 - The OMH TUI asks the terminal for click reports only while the agent list
   is open, so during a turn the wheel scrolls and a drag selects as in any
   shell, and the strip is reached with Down; nothing on the strip is

@@ -35,7 +35,7 @@ from .layout import Budget, under_composer
 from .modes import strip_column
 from .style import Line, Span
 from .subagents import FINISHED_STATUSES, MAIN_ID, RUNNING, Hit
-from .transcript import NOTICE_WARN, as_text
+from .transcript import NOTICE_WARN, STEER_QUEUED, STEER_REFUSED, NoticeBlock, SteerBlock, as_text
 from .width import truncate_line
 
 # The list Down opens, and one agent's log in the pager.
@@ -47,11 +47,9 @@ AGENT_FINISHED_NOTICE = "{name} has finished; there is nothing to {action}."
 AGENT_INTERRUPTED_NOTICE = "Interrupted {name}."
 AGENT_ALREADY_DONE_NOTICE = "{name} had already finished."
 AGENT_INTERRUPT_REFUSED_NOTICE = "Hermes did not interrupt {name}: {reason}."
-AGENT_STEERED_NOTICE = "↪ steer queued for {name}: {text}"
-AGENT_STEER_REFUSED_NOTICE = (
-    "Hermes did not take the steer for {name} (it may have finished, or have no tool call left); "
-    "the text is back in the composer."
-)
+# A refused agent steer's row says what became of its text (`transcript.SteerBlock`'s outcome). Hermes refuses one
+# for an agent that has finished or has no tool call left to take it at.
+AGENT_STEER_REFUSED = "back in the composer — Hermes did not take the steer"
 AGENT_LOG_KEYS = "←/→ agents"
 TAIL_POLL_SECONDS = 2.0
 # Hermes answers `available: false` while an agent's log is not there yet, as it starts. Five answers in a row
@@ -165,7 +163,7 @@ class AgentViewMixin:
             return
         if agent.status in FINISHED_STATUSES:
             verb = "interrupt" if action == "x" else "steer"
-            self.transcript.add_notice(AGENT_FINISHED_NOTICE.format(name=agent.name, action=verb))
+            self.transcript.add_aside(NoticeBlock(AGENT_FINISHED_NOTICE.format(name=agent.name, action=verb)))
         elif action == "s":
             self.agent_steer = subagent_id
             self.list_selected = None  # the composer has the keys for the text
@@ -180,16 +178,16 @@ class AgentViewMixin:
         self._request(
             "subagent.interrupt",
             {"session_id": self.sid, "subagent_id": subagent_id},
-            lambda result: self.transcript.add_notice(
+            lambda result: self.transcript.add_aside(NoticeBlock(
                 (AGENT_INTERRUPTED_NOTICE if result.get("found") is True else AGENT_ALREADY_DONE_NOTICE).format(name=name)
-            ),
+            )),
             lambda error: self._agent_refused(
                 AGENT_INTERRUPT_REFUSED_NOTICE.format(name=name, reason=(as_text(error.get("message")) or "refused").rstrip("."))
             ),
         )
 
     def _agent_refused(self, notice: str) -> bool:
-        self.transcript.add_notice(notice, NOTICE_WARN)
+        self.transcript.add_aside(NoticeBlock(notice, NOTICE_WARN))
         return True
 
     def _steer_agent(self, text: str) -> None:
@@ -198,23 +196,23 @@ class AgentViewMixin:
         agent = self.roster.agents.get(subagent_id or "")
         if agent is None or agent.status in FINISHED_STATUSES or not self.sid:
             name = agent.name if agent is not None else "That agent"
-            self.transcript.add_notice(AGENT_FINISHED_NOTICE.format(name=name, action="steer"), NOTICE_WARN)
+            self.transcript.add_aside(NoticeBlock(AGENT_FINISHED_NOTICE.format(name=name, action="steer"), NOTICE_WARN))
             self._set_composer(text)
             return
-        name = agent.name
+        block = self.transcript.add_steer(text, agent=agent.name)  # held under what runs, as the main steer is
         self._request(
             "subagent.steer",
             {"session_id": self.sid, "subagent_id": agent.subagent_id, "text": text},
-            lambda result: self._on_agent_steered(name, text, result),
-            lambda error: self._on_agent_steered(name, text, {}),
+            lambda result: self._on_agent_steered(block, result),
+            lambda error: self._on_agent_steered(block, {}),
         )
 
-    def _on_agent_steered(self, name: str, text: str, result: Mapping[str, Any]) -> bool:
+    def _on_agent_steered(self, block: SteerBlock, result: Mapping[str, Any]) -> bool:
         if as_text(result.get("status")) == contract.STEER_QUEUED:
-            self.transcript.add_notice(AGENT_STEERED_NOTICE.format(name=name, text=text.strip().split("\n", 1)[0]))
+            self.transcript.steer_answered(block, STEER_QUEUED)
         else:
-            self.transcript.add_notice(AGENT_STEER_REFUSED_NOTICE.format(name=name), NOTICE_WARN)
-            self._set_composer("\n".join(part for part in (self.composer.text, text) if part))
+            self.transcript.steer_answered(block, STEER_REFUSED, AGENT_STEER_REFUSED)
+            self._set_composer("\n".join(part for part in (self.composer.text, block.text) if part))
         return True
 
     def _on_mouse(self, event: Mouse) -> None:
