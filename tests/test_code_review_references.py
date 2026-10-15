@@ -295,15 +295,27 @@ class ReviewFindingsSchemaTests(unittest.TestCase):
         """One corrected return in all, counting the one the host asked for.
 
         Hermes asks a reviewer once more by itself when a return fails the
-        schema, and says so with a retry count. A dispatcher that then asks
-        again makes a third ask the contract never allows. The page ships to
-        every host, so the condition is stated in host-neutral words.
+        schema, but only a result returned in the same turn says so
+        (`schema_retries`); the completion message an interactive session gets
+        prints no retry count. So the rule keys on whether the host checked
+        the return, never on a count the result may not carry, and it reads
+        the same as `native-review-contract.md`'s. The page ships to every
+        host, so the condition is stated in host-neutral words.
         """
+        content = _flat(self._dispatch())
         self.assertIn(
-            "Ask once for a corrected return, naming what failed, unless the host already made that ask "
-            "(a retry count on the result says so)",
-            _flat(self._dispatch()),
+            "When the host checked the return against this schema, it may already have made that ask without the "
+            "result saying so, so do not ask the same reviewer again, whether or not the result shows a retry count.",
+            content,
         )
+        self.assertIn("When nothing checked it before you, make the ask yourself.", content)
+        self.assertNotIn("retry count on the result says so", content)
+        native = next(
+            template.content
+            for template in code_review_reference_templates()
+            if template.relative_path == NATIVE_REVIEW_CONTRACT_REFERENCE_PATH
+        )
+        self.assertIn("Do not ask the same reviewer again", _flat(native))
 
     def test_pasted_material_is_marked_as_review_material_not_as_steps(self) -> None:
         content = _flat(self._dispatch())

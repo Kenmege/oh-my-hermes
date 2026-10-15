@@ -25,6 +25,7 @@ import unittest
 from unittest import mock
 
 from _local_package import load_local_package
+from _skill_sentences import sentences
 
 load_local_package()
 from omh.plugin_bundle.omh.hermes_memory import HERMES_MEMORY_FILES
@@ -176,7 +177,6 @@ NATIVE_LOOP_CLAUSES = {
     "rules-distill": (DISTILL_LANDING, DISTILL_CURATOR_REPORT),
 }
 
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
 _NEGATION = r"(?:never|not|no|nothing|without)"
 _NEGATED = re.compile(rf"\b{_NEGATION}\b", re.IGNORECASE)
 _CODE_SPAN = re.compile(r"`[^`]*`")
@@ -211,10 +211,6 @@ _STAGED_NEGATED = re.compile(rf"\b{_NEGATION}\s+(?:\w+\s+){{0,2}}`staged: true`"
 # A person's approval step beside an OMH capture.
 _CAPTURE = re.compile(r"\bcaptur(?:e|es|ed|ing)\b", re.IGNORECASE)
 _PERSON_APPROVAL = re.compile(r"/memory approve|/memory pending|omh memory approve|omh memory review")
-
-
-def _sentences(content: str) -> list[str]:
-    return [sentence for line in content.splitlines() for sentence in _SENTENCE_END.split(line)]
 
 
 def _segments(text: str, boundary: re.Pattern[str]) -> list[str]:
@@ -355,7 +351,7 @@ class OwnerDirectiveTests(unittest.TestCase):
         clauses = [
             (projection, name, clause)
             for projection, name, content in _bodies()
-            for sentence in _sentences(content)
+            for sentence in sentences(content)
             if "write_approval" in sentence
             for clause in _segments(sentence, _CLAUSE_END)
             if "write_approval" in clause and _SETS_GATE.search(clause)
@@ -367,7 +363,7 @@ class OwnerDirectiveTests(unittest.TestCase):
 
     def test_no_body_holds_a_capture_for_a_person(self) -> None:
         for projection, name, content in _bodies():
-            for sentence in _sentences(content):
+            for sentence in sentences(content):
                 if _capture_held_for_a_person(sentence):
                     with self.subTest(body=f"{projection}:{name}", sentence=sentence[:80]):
                         self.fail(f"holds an OMH capture for a person's approval: {sentence}")
@@ -383,7 +379,7 @@ class OwnerDirectiveTests(unittest.TestCase):
         mentions = [
             (projection, name, sentence)
             for projection, name, content in _bodies()
-            for sentence in _sentences(content)
+            for sentence in sentences(content)
             if _USAGE_COUNT.search(sentence) and _REMOVAL.search(sentence)
         ]
         self.assertTrue(mentions, "no body ties a count to removal; the check below would be vacuous")
@@ -395,7 +391,7 @@ class OwnerDirectiveTests(unittest.TestCase):
         mentions = [
             (projection, name, sentence)
             for projection, name, content in _bodies()
-            for sentence in _sentences(content)
+            for sentence in sentences(content)
             if _STAGED in sentence
         ]
         self.assertTrue(mentions, "no body names a staged result; the check below would be vacuous")

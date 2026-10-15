@@ -135,14 +135,33 @@ class LoadableSiblingNameTests(unittest.TestCase):
         self.assertGreater(translated, 0, "no sibling was translated; the check above would be vacuous")
 
     def test_a_retired_sibling_keeps_its_canonical_name(self) -> None:
-        # No label loads a skill that is not installed, so the line keeps what
-        # the catalog wrote rather than inventing a directory name.
+        # No label loads a skill that is not installed, so a line naming one
+        # keeps what the catalog wrote rather than inventing a directory name.
         retired = frozenset(definition.name for definition in builtin_definitions()) - self.installed
-        line = "use `performance-goal`."
         self.assertIn("performance-goal", retired)
-        definition = self.definitions["ultraperf"]
-        self.assertTrue(any(line in source for source in definition.do_not_use_when))
-        self.assertTrue(any(line in rendered for rendered in self._hermes_boundary("ultraperf")))
+        self.assertEqual(loadable_skill_mentions("use `performance-goal`."), "use `performance-goal`.")
+
+    def test_no_installed_body_hands_a_request_to_a_retired_sibling(self) -> None:
+        # A retired skill is not installed, so `skill_view` cannot load it: a
+        # Do-Not-Use line or an example that sends a request there is a dead
+        # end (`ultraperf` pointed at `performance-goal` after #1691 folded it
+        # into `ultraperf` itself).
+        retired = frozenset(definition.name for definition in builtin_definitions()) - self.installed
+        stale = sorted(
+            (name, token)
+            for name, definition in self.definitions.items()
+            for text in (
+                *definition.do_not_use_when,
+                *(
+                    f"{example.expected} {example.why}"
+                    for example in (definition.good_example, definition.bad_example)
+                    if example is not None
+                ),
+            )
+            for token in _BACKTICKED.findall(text)
+            if token in retired
+        )
+        self.assertEqual(stale, [], "a body hands a request to a skill that is no longer installed")
 
     def test_portable_bodies_use_labels_and_drop_bundled_hermes_lines(self) -> None:
         portable = frozenset(portable_skill_names())
@@ -222,6 +241,22 @@ class BundledHermesDeferralTests(unittest.TestCase):
         self.assertEqual(actual, EXPECTED_BUNDLED_DEFERRALS)
         for owner, skills in actual.items():
             self.assertEqual(len(skills), len(set(skills)), owner)
+
+    def test_a_compact_body_carries_its_bundled_boundary(self) -> None:
+        # A progressive-disclosure body keeps its Do-Not-Use lines in the full
+        # contract, which loads only on demand, while Hermes loads the bundled
+        # skill beside the body; the line saying which request is the bundled
+        # skill's is read in the body or not at all.
+        hermes = {template.name: template.content for template in builtin_skill_templates()}
+        checked = 0
+        for definition in installable_skill_definitions():
+            if not definition.progressive_disclosure:
+                continue
+            for line in definition.do_not_use_when:
+                if isinstance(line, HermesSkillLine):
+                    checked += 1
+                    self.assertIn(f"**Do Not Use When:** {line}", hermes[definition.name], definition.name)
+        self.assertGreater(checked, 0, "no compact body hands a request to a bundled skill; the check is vacuous")
 
     def test_bundled_names_never_collide_with_a_catalog_name_or_label(self) -> None:
         names = {definition.name for definition in builtin_definitions()}

@@ -13,7 +13,7 @@ from ..host_observation import (
     observe_plugin_tool_call,
 )
 from ..dispatch_outcomes import _parse_timestamp
-from ..native_tools import NATIVE_CANCELLED_REASON, NATIVE_TODO_TOOL, native_tool_presence_clause
+from ..native_tools import NATIVE_CANCELLED_REASON, NATIVE_TODO_TOOL, OMH_TODO_HELD_PLANS, native_tool_presence_clause
 from ..orchestration_say import todo_say, with_say
 from ..runtime_reader import default_omh_home, read_omh_todo
 from ..todo_evidence import observed_calls
@@ -86,7 +86,7 @@ OMH_TODO_SCHEMA = {
     "description": (
         "Declare, advance, clear, or read this session's metadata-only plan todo list, which the OMH HUD "
         "renders above the prompt; other sessions neither see nor overwrite it. "
-        "Keep steps in ONE tool, never both: a planning run, an accepted plan or a code-story template keeps them here "
+        f"Keep steps in ONE tool, never both: {OMH_TODO_HELD_PLANS} keeps them here "
         "(to leave one for unrelated work, clear it first; a deferred_reason only pauses it); "
         f"otherwise, when {native_tool_presence_clause(NATIVE_TODO_TOOL)}, keep them in {NATIVE_TODO_TOOL} "
         "(OMH mirrors each write into this plan) and call this tool only for checkpoint/record/recall, "

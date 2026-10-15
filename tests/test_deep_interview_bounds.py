@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 import unittest
 
+from omh.plugin_bundle.omh.native_tools import native_tool_presence_clause
 from omh.skills.catalog import (
     DEEP_INTERVIEW_CLARITY_DIMENSIONS,
     DEEP_INTERVIEW_MAX_ROUNDS,
@@ -144,7 +145,9 @@ class DeepInterviewProtocolTest(unittest.TestCase):
         # duplicate the picker's own row. Presence is the tool list or the tool_search catalog,
         # never a Hermes version.
         unwrapped = _unwrapped_body()
-        self.assertIn("**With Hermes' `clarify` tool** (in your tool list or tool search)", unwrapped)
+        self.assertIn(
+            f"**With Hermes' `clarify` tool**, when {native_tool_presence_clause('clarify', code=True)}:", unwrapped
+        )
         self.assertIn("the sentence as `question`, the candidates as `choices`.", unwrapped)
         self.assertIn("Add no free-input row of your own", unwrapped)
         self.assertIn("keep the candidates out of the question sentence", unwrapped)

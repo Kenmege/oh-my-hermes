@@ -1,11 +1,12 @@
 """Gate for the deference graph the catalog already writes down in prose.
 
-`SkillDefinition.do_not_use_when` is where a skill declines a request, and 128
-of the catalog's 329 statements decline it *to a named sibling* - "use
-`ultraprocess`", "belongs to `oh-my-hermes`". Those names are written in
-backticks, which makes the field a machine-readable deference graph: 138
-(owner, sibling) pairs asserting who owns a request when the two skills
-compete.
+`SkillDefinition.do_not_use_when` is where a skill declines a request, and
+many of its statements decline it *to a named sibling* - "use `ultrawork`",
+"belongs to `oh-my-hermes`". Those names are written in backticks, which makes
+the field a machine-readable deference graph: (owner, sibling) pairs asserting
+who owns a request when the two skills compete. Its size is pinned in
+`EXPECTED_DEFERENCE_CASES`, `EXPECTED_DEFERENCE_PAIRS`, and
+`EXPECTED_DEFERRING_OWNERS`; the first command below re-derives all three.
 
 Almost nothing reads that graph. `src/routing/recommend.py` derives its scoring
 surface from `name`, `description`, `use_when` and `triggers`;
@@ -26,11 +27,11 @@ quoted.
 WHAT A PASS IS AND IS NOT WORTH. The query is the owner's own authored prose, so
 the owner carries a large home-field vocabulary advantage - and the statement
 also contains the sibling's literal name, which hands the sibling an advantage
-back. Measured on the live catalog, that name is doing most of the work: with
-the sibling's name blanked out of the query, inversions rise from 4 to 19 and
-the sibling holds rank 0 in 64 cases rather than 105. Read the two halves
-differently. The 124 passes are weak - they largely restate that the router
-surfaces a skill named verbatim in the query. The 4 inversions are strong: an
+back. Measured on the catalog when this gate landed, that name was doing most
+of the work: with the sibling's name blanked out of the query, inversions rose
+several-fold and the sibling lost rank 0 in many cases. Read the two halves
+differently. The passes are weak - they largely restate that the router
+surfaces a skill named verbatim in the query. The inversions are strong: an
 owner that outranks a sibling *whose name is in the query* is the hardest
 version of the failure to produce, and an inversion introduced later would have
 to clear the same bar to show up here.
@@ -39,17 +40,17 @@ to clear the same bar to show up here.
 anchored by (owner, siblings) - never by line number or by rank, which drift on
 unrelated edits. A new inversion cannot land unclassified, a recorded one that
 stops inverting fails too, and `EXPECTED_INVERSION_COUNT` makes growing the list
-a deliberate edit rather than a quiet one. Fixing the recorded four means
+a deliberate edit rather than a quiet one. Fixing the recorded ones means
 changing scoring weights, which is a routing-behaviour change carrying its own
 overroute-guard obligations; it is deferred, not owned by an issue yet, and the
 ratchet is what keeps that debt visible.
 
 Re-derive the three shape counts:
 
-    uv run python -c "import re; from omh.skills.catalog import builtin_definitions as b; \
-n={d.name for d in b()}; p=re.compile(r'\\`([a-z0-9][a-z0-9-]*)\\`'); \
+    uv run python -c "import re; from omh.skills.catalog import builtin_definitions as b, routable_skill_names as r; \
+n=set(r()); p=re.compile(r'\\`([a-z0-9][a-z0-9-]*)\\`'); \
 c=[(d.name,tuple(sorted({x for x in p.findall(s) if x in n and x!=d.name}))) \
-for d in b() for s in d.do_not_use_when]; c=[x for x in c if x[1]]; \
+for d in b() if d.name in n for s in d.do_not_use_when]; c=[x for x in c if x[1]]; \
 print(len(c), len({(o,s) for o,ss in c for s in ss}), len({o for o,_ in c}))"
 
 Inspect one case with the same field width the test scores against:
@@ -297,8 +298,13 @@ NON_SKILL_BACKTICKS = frozenset(
 # `spend-gate`, and `loop`'s unattended-schedule statement points at
 # `automation-blueprint` instead of naming Hermes' cron tool. Three cases,
 # three pairs, no new owner.
-EXPECTED_DEFERENCE_CASES = 384
-EXPECTED_DEFERENCE_PAIRS = 399
+# `loop` gains a statement handing a loop step that would move money to
+# `spend-gate`, the same hand-off `automation-blueprint` makes for a recurring
+# job. `ultraperf`'s statement pointing at the retired `performance-goal`
+# (#1691) is gone, but it named no routable skill and was never a case. One
+# case, one pair, no new owner.
+EXPECTED_DEFERENCE_CASES = 385
+EXPECTED_DEFERENCE_PAIRS = 400
 EXPECTED_DEFERRING_OWNERS = 112
 
 # The ratchet. Recording a new inversion must be a visible edit to this number,
@@ -361,8 +367,9 @@ _SPEND_GATE_BY_DESIGN = (
 DELIBERATELY_UNREACHABLE: dict[tuple[str, str], str] = {
     ("automation-blueprint", "spend-gate"): _SPEND_GATE_BY_DESIGN,
     ("browser-operator", "spend-gate"): _SPEND_GATE_BY_DESIGN,
+    ("loop", "spend-gate"): _SPEND_GATE_BY_DESIGN,
 }
-EXPECTED_DELIBERATELY_UNREACHABLE_COUNT = 2
+EXPECTED_DELIBERATELY_UNREACHABLE_COUNT = 3
 
 
 def _deference_cases() -> list[tuple[str, tuple[str, ...], str]]:

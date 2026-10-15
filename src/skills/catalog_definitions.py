@@ -25,7 +25,12 @@ from ..paper_learning import (
 )
 from ..plugin_bundle.omh.domain_signals import SPECIALIST_DOMAIN_TRIGGERS
 from ..plugin_bundle.omh.data_share_cues import DATA_SHARE_REVIEW_PHRASES
-from ..plugin_bundle.omh.native_tools import NATIVE_CRON_TOOL, NATIVE_TODO_TOOL, native_tool_presence_clause
+from ..plugin_bundle.omh.native_tools import (
+    NATIVE_CRON_TOOL,
+    NATIVE_TODO_TOOL,
+    OMH_TODO_HELD_PLANS,
+    native_tool_presence_clause,
+)
 from ..plugin_bundle.omh.spend_signals import SPEND_GATE_PHRASES
 from ..routing.materials_cues import (
     OFFICE_FILE_MATERIAL_CATALOG_TRIGGERS,
@@ -61,6 +66,8 @@ from .catalog_types import (
     ADVERSARIAL_CONSENSUS_PERSPECTIVES,
     ADVERSARIAL_CONSENSUS_ROUNDS,
     DEEP_INTERVIEW_MAX_ROUNDS,
+    DOCUMENT_PRODUCER_IMAGES_INSPECTED,
+    DOCUMENT_PRODUCER_POWERPOINT_RUNGS,
     DOCUMENT_PRODUCER_QA_RULE,
     DOCUMENT_PRODUCER_RUNGS_RULE,
     ENGINE_CLOSING_BRIEF_RULE,
@@ -153,6 +160,47 @@ FAILURE_ORIGIN_PRECEDENCE = (
 # says which one it rests on and a reader does not take an inference for a run.
 FAILURE_ORIGIN_PROOF_NAMING = (
     "Name the proof beside the origin: a merge-base run is an observation, a diff-line reading is an inference"
+)
+
+# Hermes' bundled `grounded-citations` skill (`scripts/sources.py`), as
+# `research`, `web-research`, and `research-brief` use it. One copy of each
+# rule the three share; what each records around them stays its own.
+_GROUNDED_CITATIONS_REGISTER_RULE = (
+    "When Hermes' bundled `grounded-citations` skill is available, load it and register each source in its ledger "
+    "when it is retrieved (`scripts/sources.py add`)"
+)
+_GROUNDED_CITATIONS_LEDGER_FILE_RULE = (
+    "Keep the run's ledger in a file of its own, passed as `--ledger <path>` before the subcommand on every call: "
+    "the default ledger is shared by the whole profile, and another run's reset rebinds its ids."
+)
+_GROUNDED_CITATIONS_VERIFY_RULE = (
+    "the exit status of `sources.py verify <draft>` is the observed check - `0` is a pass and any other status is "
+    "not - and `verify --evidence` also fails a draft whose cited source carries no verbatim quote. An exit `0` "
+    "whose `info: stats:` line reads `0 distinct source(s) cited` checked nothing and is reported as `not_observed`"
+)
+
+# A blocked source, as `research` and `web-research` recover it. Hermes bundles
+# `blocked-page-recovery` and no other host does, so the portable bodies say
+# the host's capability instead (#1527); each skill appends its own gap rule.
+_BLOCKED_PAGE_RECOVERY = (
+    "If a source fails with HTTP 403, HTTP 429, a paywall, or a WAF or bot wall, load Hermes' `blocked-page-recovery` "
+    "skill once for that source when it is available and never retry the same URL in a loop; cite an archive or "
+    "cached copy it returns as a dated historical capture, never as the live page."
+)
+_BLOCKED_PAGE_RECOVERY_PORTABLE = (
+    "If a source fails with HTTP 403, HTTP 429, a paywall, or a WAF or bot wall, use the host's blocked-page recovery "
+    "capability once for that source when it offers one and never retry the same URL in a loop; cite an archive or "
+    "cached copy it returns as a dated historical capture, never as the live page."
+)
+
+# `loop`'s hand-off of a step that moves money, in spend-gate's own terms (the
+# line `automation-blueprint` writes for a recurring job). Host-neutral, so the
+# Hermes boundary and the portable override state the same sentence.
+_LOOP_SPEND_BOUNDARY = (
+    "A loop step would move money -- a purchase, a renewal, a top-up, or a transfer; use `spend-gate`, because a "
+    "cycle nobody can answer, such as a queued tick or a delegated subagent, never spends and only prepares the card "
+    "for the person's next interactive turn, and a no-agent script that pays is a spend set up now: its card, typed "
+    "yes, and cap come before the script exists."
 )
 
 
@@ -479,6 +527,7 @@ _DEFINITIONS = [
             "The permission profile does not allow repeated research, handoff, queue, or feedback cycles.",
             "The request is a check repeated on a timer inside this session, such as polling CI, a deploy, or a queue every few minutes until it changes; that is Hermes' native `/loop` (an interval plus `--until` or `--times`), which only the user can start, so name the command instead of opening a goal loop.",
             "The work must run unattended on a schedule that outlives this session, such as hourly or nightly; use `automation-blueprint`, which settles overlap, missed runs, retries, and failure pauses before a Hermes cron job is created.",
+            _LOOP_SPEND_BOUNDARY,
             "The request is one objective with a stated done condition that needs no interviewer, planner, researcher, or reviewer cycles; native `/goal` keeps the session on it (`/goal draft` writes its completion contract), and this skill keeps the long-horizon loop engineering.",
         ),
         good_example=SkillExample(
@@ -601,7 +650,8 @@ _DEFINITIONS = [
             ),
             # The Hermes section adds three lines naming Hermes' own `/loop`,
             # `automation-blueprint` for its cron, and `/goal`; another host has
-            # none of them under those names.
+            # none of them under those names. The spend line is host-neutral
+            # and `spend-gate` ships to every host, so both sections carry it.
             "do_not_use_when": (
                 "The user asks for one bounded delivery cycle; use `ultrawork`'s delivery-boundary capability instead.",
                 "Scope and milestones are already known and only durable checkpoint/resume tracking is needed; use `ultrawork`'s durable-checkpoint capability.",
@@ -609,10 +659,11 @@ _DEFINITIONS = [
                 "The goal is too vague to name an observable problem, next artifact, verification signal, or stop condition.",
                 "The goal depends mainly on external waiting, adoption, revenue, or community response without observable local next actions.",
                 "The permission profile does not allow repeated research, handoff, queue, or feedback cycles.",
+                _LOOP_SPEND_BOUNDARY,
             ),
         },
         portable_override_shadows={
-            "do_not_use_when": "e62a657bc560a98ec06add69e143b2d65ce7a3c488d953d60cfacd1e1104645e",
+            "do_not_use_when": "30193c8f6ce9a3ceedc955722cb1432902f33e00080a72f8e86487dea0d3da51",
             "quality_bar": "177832d2c680eaa5c2393fa0e9da9741c498409272a2643e5589387e36623041",
             "expected_outputs": "780eec788fe069700b05a39880a50a3813715f50fcd6401cb6fe486f1750616d",
             "artifact_expectations": "a0b60b9744a8ba2ea968e39cb84e90f2bc7125aaa4f40cee0996c658eeddc7ff",
@@ -1655,7 +1706,7 @@ _DEFINITIONS = [
             "Revise the search plan when new evidence exposes a gap or contradiction instead of stopping at the first pass.",
             "Gate contested claims: require at least two independent source domains, one counter-search for disconfirming evidence, and a primary source, or move the claim to the unresolved annex.",
             "Separate direct evidence, citation links, retrieval dates, inference, confidence, and residual uncertainty.",
-            "When Hermes' bundled `grounded-citations` skill is available, load it and register every source in its ledger when it is retrieved (`scripts/sources.py add`). Use one ledger file for the run, passed as `--ledger <path>` before the subcommand on every call, never the profile-wide default that another run can reset; the parent resets that file once before the first wave and no lane resets it, so an id names the same source in every lane's findings. A delegated lane gets terminal, file, and web tools by default and cannot load the skill, so its brief carries the script's absolute path and the ledger path. When a human briefing is written, report the exit status of `sources.py verify <draft>` as the observed citation check - `0` is a pass and any other status is not, and `--evidence` also fails a draft whose cited source carries no verbatim quote - or report `not_observed` when no run happened or when the `info: stats:` line of an exit `0` reads `0 distinct source(s) cited`, which means the run checked nothing. It is a citation check, not fact verification, and it never stands in for the contested-claim gate. Without the skill, keep each source's URL and retrieval date in the research notes and report the citation check as `not_observed`.",
+            f"{_GROUNDED_CITATIONS_REGISTER_RULE}. {_GROUNDED_CITATIONS_LEDGER_FILE_RULE} Only the parent's reset under First Steps touches that file, so an id names the same source in every lane's findings; a delegated lane gets terminal, file, and web tools by default but cannot load the skill, so it works from the two paths its brief carries. When a human briefing is written, report the citation check from a run, or as `not_observed`: {_GROUNDED_CITATIONS_VERIFY_RULE}. It is a citation check, not fact verification, and it never stands in for the contested-claim gate. Without the skill, keep each source's URL and retrieval date in the research notes and report the citation check as `not_observed`.",
             "Name retrieval gaps when Hermes or the wrapper cannot access the web.",
             "For AI or usability research, separate target-user/task assumptions, measured or reported usability dimensions, and generalizability limits from the evidence.",
             "Decompose the question into orthogonal research axes and disambiguate named entities before any deep reading.",
@@ -1702,7 +1753,7 @@ _DEFINITIONS = [
         final_checklist=_CATEGORY_FINAL_CHECKLISTS["research"]
         + ("When a human briefing was written, the citation check is reported from an observed ledger verify run that cited at least one source, or as `not_observed`; it never stands in for the contested-claim gate.",),
         recovery_notes=(
-            "If a source fails with HTTP 403, HTTP 429, a paywall, or a WAF or bot wall, load Hermes' `blocked-page-recovery` skill once for that source when it is available and never retry the same URL in a loop; cite an archive or cached copy it returns as a dated historical capture, never as the live page. If the skill is unavailable, recovery fails, the retrieval budget is spent, or the source needs a login or payment, name the retrieval gap with that reason. Record each blocked source as one `research_source_recovery/v1`.",
+            f"{_BLOCKED_PAGE_RECOVERY} If the skill is unavailable, recovery fails, the retrieval budget is spent, or the source needs a login or payment, name the retrieval gap with that reason. Record each blocked source as one `research_source_recovery/v1`.",
             "If web or repository access is unavailable, name the retrieval gap and use only observed local context instead of inventing findings.",
             "If no archive access exists or the capture provider's paid authority is exhausted, record a temporal retrieval gap with no network action and keep the as-of claim in the annex; never substitute the current page for it.",
             "If the evidence stays thin or contested, lower the stated confidence and keep the unresolved claims in the annex rather than flattening them.",
@@ -1723,7 +1774,7 @@ _DEFINITIONS = [
                 "`research` exists to make the host a careful research engine: it routes research demands to source-backed evidence gathering - from live web citations to studied reference implementations - verifies contested claims, and distills decision-grounding output so planning starts from evidence instead of guesses.",
             ),
             "recovery_notes": (
-                "If a source fails with HTTP 403, HTTP 429, a paywall, or a WAF or bot wall, use the host's blocked-page recovery capability once for that source when it offers one and never retry the same URL in a loop; cite an archive or cached copy it returns as a dated historical capture, never as the live page. If no such capability exists, recovery fails, the retrieval budget is spent, or the source needs a login or payment, name the retrieval gap with that reason. Record each blocked source as one `research_source_recovery/v1`.",
+                f"{_BLOCKED_PAGE_RECOVERY_PORTABLE} If no such capability exists, recovery fails, the retrieval budget is spent, or the source needs a login or payment, name the retrieval gap with that reason. Record each blocked source as one `research_source_recovery/v1`.",
                 "If web or repository access is unavailable, name the retrieval gap and use only observed local context instead of inventing findings.",
                 "If no archive access exists or the capture provider's paid authority is exhausted, record a temporal retrieval gap with no network action and keep the as-of claim in the annex; never substitute the current page for it.",
                 "If the evidence stays thin or contested, lower the stated confidence and keep the unresolved claims in the annex rather than flattening them.",
@@ -1817,8 +1868,8 @@ _DEFINITIONS = [
             "Cite the source behind each claim and mark it official, practitioner, or unattributed.",
             "Cross-check a contested claim against a second independent domain, or state that it stays unverified.",
             "Keep historical-capture evidence and live-page evidence as two typed surfaces for a point-in-time or then-versus-now question; capture time, publication time, and retrieval time are independent clocks and none substitutes for another.",
-            "When Hermes' bundled `grounded-citations` skill is available, load it and register each source in its ledger when it is retrieved (`scripts/sources.py add`), before any prose is written; cite a source only by the id the ledger gave it, written `[n]`. Keep the run's ledger in a file of its own, passed as `--ledger <path>` before the subcommand on every call: the default ledger is shared by the whole profile, and another run's reset rebinds its ids. Mark background that rests on model knowledge `[unverified]` instead of citing it: the marker is for background the answer does not rest on and never carries the answer, and a contested claim with a single source keeps its citation and is stated as uncorroborated. The ledger id sits beside the source class and the retrieval date and replaces neither. Without the skill, list each source when it is retrieved and cite it at the claim it supports.",
-            "When that ledger is in use, report the citation check from a run, or as `not_observed`: the exit status of `sources.py verify <draft>` is the observed check - `0` is a pass and any other status is not - and `verify --evidence` also fails a draft whose cited source carries no verbatim quote. An exit `0` whose `info: stats:` line reads `0 distinct source(s) cited` checked nothing and is reported as `not_observed`, and so is an answer given only in chat: `verify` reads a draft file and exits `2` without one, so write the answer to a file first when the check matters. The run compares cited ids and the Sources block with the ledger; it does not test whether a claim is true, so a passing citation check is never reported as fact verification. Without the ledger the citation check is `not_observed`.",
+            f"{_GROUNDED_CITATIONS_REGISTER_RULE}, before any prose is written; cite a source only by the id the ledger gave it, written `[n]`. {_GROUNDED_CITATIONS_LEDGER_FILE_RULE} Mark background that rests on model knowledge `[unverified]` instead of citing it: the marker is for background the answer does not rest on and never carries the answer, and a contested claim with a single source keeps its citation and is stated as uncorroborated. The ledger id sits beside the source class and the retrieval date and replaces neither. Without the skill, list each source when it is retrieved and cite it at the claim it supports.",
+            f"When that ledger is in use, report the citation check from a run, or as `not_observed`: {_GROUNDED_CITATIONS_VERIFY_RULE}, and so is an answer given only in chat: `verify` reads a draft file and exits `2` without one, so write the answer to a file first when the check matters. The run compares cited ids and the Sources block with the ledger; it does not test whether a claim is true, so a passing citation check is never reported as fact verification. Without the ledger the citation check is `not_observed`.",
             "Stop at the answer: one retrieval round settles a lookup, and an expanding lead list means the request belongs to `research`.",
             "Report what retrieval did not yield rather than closing the gap from recall.",
         ),
@@ -1856,7 +1907,7 @@ _DEFINITIONS = [
         final_checklist=_CATEGORY_FINAL_CHECKLISTS["research"]
         + ("The citation check is reported from an observed ledger verify run that cited at least one source, or as `not_observed`; it is never reported as fact verification.",),
         recovery_notes=(
-            "If a source fails with HTTP 403, HTTP 429, a paywall, or a WAF or bot wall, load Hermes' `blocked-page-recovery` skill once for that source when it is available and never retry the same URL in a loop; cite an archive or cached copy it returns as a dated historical capture, never as the live page. If the skill is unavailable, recovery fails, or the source needs a login or payment, name the retrieval gap with that reason.",
+            f"{_BLOCKED_PAGE_RECOVERY} If the skill is unavailable, recovery fails, or the source needs a login or payment, name the retrieval gap with that reason.",
             "If the web is unreachable, name the retrieval gap and stop rather than substituting recalled facts.",
             "If no archive access exists or the capture provider's paid authority is exhausted, record a temporal retrieval gap with no network action and keep the as-of claim in the annex; never substitute the current page for it.",
             "If sources conflict, present both with their retrieval dates and say which one is primary.",
@@ -1875,7 +1926,7 @@ _DEFINITIONS = [
         # `research` does (#1527).
         portable_overrides={
             "recovery_notes": (
-                "If a source fails with HTTP 403, HTTP 429, a paywall, or a WAF or bot wall, use the host's blocked-page recovery capability once for that source when it offers one and never retry the same URL in a loop; cite an archive or cached copy it returns as a dated historical capture, never as the live page. If no such capability exists, recovery fails, or the source needs a login or payment, name the retrieval gap with that reason.",
+                f"{_BLOCKED_PAGE_RECOVERY_PORTABLE} If no such capability exists, recovery fails, or the source needs a login or payment, name the retrieval gap with that reason.",
                 "If the web is unreachable, name the retrieval gap and stop rather than substituting recalled facts.",
                 "If no archive access exists or the capture provider's paid authority is exhausted, record a temporal retrieval gap with no network action and keep the as-of claim in the annex; never substitute the current page for it.",
                 "If sources conflict, present both with their retrieval dates and say which one is primary.",
@@ -2133,7 +2184,7 @@ _DEFINITIONS = [
             "Record each material claim as a compact evidence row: claim, source, source class (upstream official, practitioner heuristic, or unattributed), source date, confidence, and unresolved conflict.",
             "Keep claims that lack corroboration in an explicit unresolved list instead of asserting or silently dropping them.",
             "Separate observed sources, source quality, source diversity, inferred trends, and unresolved uncertainty.",
-            "When Hermes' bundled `grounded-citations` skill is available, load it, register each source in its ledger when it is retrieved (`scripts/sources.py add`), and carry two more fields on every evidence row: the ledger id written as `[n]` - a bare number in a cell is not a citation to `verify`, so that row would go unchecked - and the verbatim quote attached with `sources.py quote <id> --text <quote> --from <page text file>`, which rejects wording that file does not contain. Keep the run's ledger in a file of its own, passed as `--ledger <path>` before the subcommand on every call; the default ledger is shared by the whole profile. A row whose quote could not be attached says so, and a claim that rests on model knowledge is marked `[unverified]` and listed as unresolved, never entered as evidence. Report the exit status of `sources.py verify <draft> --evidence`, which fails a draft whose cited source carries no verbatim quote, as the observed citation check - `0` is a pass and any other status is not - or `not_observed` when no run happened or when the `info: stats:` line of an exit `0` reads `0 distinct source(s) cited`, which means the run checked nothing; it is a citation check, not fact verification. Without the skill, keep the source and its quoted wording in the row and report the citation check as `not_observed`.",
+            f"{_GROUNDED_CITATIONS_REGISTER_RULE}, and carry two more fields on every evidence row: the ledger id written as `[n]` - a bare number in a cell is not a citation to `verify`, so that row would go unchecked - and the verbatim quote attached with `sources.py quote <id> --text <quote> --from <page text file>`, which rejects wording that file does not contain. {_GROUNDED_CITATIONS_LEDGER_FILE_RULE} A row whose quote could not be attached says so, and a claim that rests on model knowledge is marked `[unverified]` and listed as unresolved, never entered as evidence. Run `sources.py verify <draft> --evidence`, since every evidence row carries its quote, and report the citation check from that run, or as `not_observed`: {_GROUNDED_CITATIONS_VERIFY_RULE}; it is a citation check, not fact verification. Without the skill, keep the source and its quoted wording in the row and report the citation check as `not_observed`.",
             "Use the brief to feed strategy or meeting work without calling it execution evidence.",
         ),
         do_not_use_when=(
@@ -2219,7 +2270,7 @@ _DEFINITIONS = [
             # (`_bounded_list(definition.quality_bar, 4)`), and this detail
             # belongs in the body, not in every capability payload.
             "Inside the Scout lane, when the watch area is a set of named companies and Hermes' bundled `competitor-news-monitor` skill is available, run the watch through that skill; when the user names no knowledge store and the bundled `llm-wiki` skill is available, offer it as the store.",
-            "A schedule stays a prepared job description in the plan and OMH creates no job. In a Hermes session the job is created with the `cronjob_manage` tool, and it counts as created only from that tool's observed result or a cron listing.",
+            f"A schedule stays a prepared job description in the plan and OMH creates no job. In a Hermes session the job is created with the `{NATIVE_CRON_TOOL}` tool, and it counts as created only from that tool's observed result or a cron listing.",
             # The four recurring-watch rules below are reconstructed from
             # Hermes' bundled `competitor-news-monitor` skill (MIT); see the
             # row in docs/SKILL-SOURCES.md. They hold for any recurring watch
@@ -3555,7 +3606,10 @@ _DEFINITIONS = [
             "Keep report packaging independent from reliability review unless explicitly requested.",
             "Export only Markdown/JSON outlines unless a separate presentation tool produces a binary deck.",
             "On Hermes, that tool can be the bundled `powerpoint` skill, and a deck it builds counts as generated from its read-back (`pptx_read.py --outline`).",
-            "On Hermes, a render check taken from `pptx_render.py` counts only from a result reading `\"rendered\": true` whose images, rendered into a fresh directory, match `slide_count` and were each inspected; `\"rendered\": false` exits 0 yet leaves that check not observed, and a render observed another way still counts.",
+            # The shared document rules, the `powerpoint` half only: a deck is
+            # this skill's one binary.
+            DOCUMENT_PRODUCER_QA_RULE,
+            f"On Hermes, {DOCUMENT_PRODUCER_POWERPOINT_RUNGS}. {DOCUMENT_PRODUCER_IMAGES_INSPECTED}.",
         ),
         why_this_exists="`report-package` exists to make reporting a first-class operations surface: Hermes can produce clean report and slide outlines while keeping approvals, delivery, and binary deck export as separate evidence.",
         do_not_use_when=(
@@ -7286,7 +7340,7 @@ _DEFINITIONS = [
             "Judge maintainability findings against the named baseline in `omh-code-review/references/smell-baseline.md`: a baseline smell is a judgement call to argue from evidence, never an automatic finding, and the reviewed repository's own standards override the baseline wherever they conflict.",
             "Close with two lists beside the verdict: what was checked and found clean, and what could not be assessed with the reason. An absent finding is evidence only when the closing says the surface was actually checked.",
             HermesReferenceLine(
-                "Hermes handles two parts of a review itself; load `omh-code-review/references/native-review-contract.md` for both. When `delegate_task` is in your tool list or tool_search finds it, pass the findings schema as the reviewer task's `output_schema`. The host validates the return, but its `schema_valid` record reaches you only when the call returns its results in the same turn; a result that arrives later as a completion message carries none, so check that summary against the schema yourself and never read `completed` as validated. A return that fails the contract is `not_observed`, never a pass. Inside a kanban review worker, `no_ship` becomes the request-changes transition that `sdlc-review` makes.",
+                f"Hermes handles two parts of a review itself; load `omh-code-review/references/native-review-contract.md` for both. When {native_tool_presence_clause('delegate_task', code=True)}, pass the findings schema as the reviewer task's `output_schema`. The host validates the return, but its `schema_valid` record reaches you only when the call returns its results in the same turn; a result that arrives later as a completion message carries none, so check that summary against the schema yourself and never read `completed` as validated. A return that fails the contract is `not_observed`, never a pass. Inside a kanban review worker, `no_ship` becomes the request-changes transition that `sdlc-review` makes.",
                 "references/native-review-contract.md",
             ),
             "When the reviewed work ran in a Hermes session, cite `session_file_activity/v1` (`omh quality-evidence file-activity --hermes-session <id> --json`) to scope which workspace files its read_file, write_file, and patch calls touched, with the outcome Hermes recorded; it is file lineage, never file-content, diff, test, review, CI, or merge evidence.",
@@ -7997,7 +8051,6 @@ _DEFINITIONS = [
             "executor-owned changes, and a regression budget, so an optimization loop cannot end in unverified claims."
         ),
         do_not_use_when=(
-            "Metric, baseline, budget, and benchmark command are already declared for one measurable goal; use `performance-goal`.",
             "The ask is to judge code quality, structure, or correctness rather than measured cost; use `code-review`.",
             "The ask is to score model or agent output quality on a task suite; use `agent-evaluation`.",
             "The request is a settings-only change, one bounded edit that is explicitly low-risk and has a direct owner and verification path, or one already-identified slow query or hotspot fix; handle it directly instead of opening a performance loop.",
@@ -8012,7 +8065,7 @@ _DEFINITIONS = [
         ),
         bad_example=SkillExample(
             prompt="$ultraperf make the recommender p95 under 200ms; baseline 340ms, benchmark is 'make bench'",
-            expected="Route to `performance-goal`, which owns a declared metric/baseline/budget/benchmark goal.",
+            expected="Skip the discovery audit: record 340ms as the baseline and `make bench` as the evaluator command, then fix and re-measure against the 200ms target.",
             why="A single declared measurable goal does not need a discovery loop.",
         ),
         final_checklist=(
@@ -8595,7 +8648,7 @@ _DEFINITIONS = [
         phase="observability",
         hermes_role="retained-operator",
         handoff_policy=(
-            "Keep the steps in ONE tool, never both: a planning run, an accepted plan or a code-story template keeps them in `omh_todo`; "
+            f"Keep the steps in ONE tool, never both: {OMH_TODO_HELD_PLANS} keeps them in `omh_todo`; "
             f"otherwise `{NATIVE_TODO_TOOL}` holds them when {native_tool_presence_clause(NATIVE_TODO_TOOL, code=True)}, "
             "and OMH mirrors each write into this plan todo, else `omh_todo`. `omh_todo` alone holds `plan_stage`, "
             "checkpoint/record/recall, `blocked_reason` and `deferred_reason`. A checklist item is a plan declaration "

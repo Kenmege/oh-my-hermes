@@ -25,6 +25,7 @@ import re
 import unittest
 
 from _local_package import load_local_package
+from _skill_sentences import sentences
 
 load_local_package()
 from omh.plugin_bundle.omh.native_tools import native_tool_presence_clause
@@ -183,11 +184,6 @@ CONFIRMATIONS_IN_BOTH_PROJECTIONS = {
     "connector-operator": (CONNECTOR_CONFIRMATION,),
 }
 
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
-
-
-def _sentences(content: str) -> list[str]:
-    return [sentence for line in content.splitlines() for sentence in _SENTENCE_END.split(line)]
 
 
 def _bodies() -> list[tuple[str, str, str]]:
@@ -261,7 +257,7 @@ class NativeGateClauseTests(unittest.TestCase):
         mentions = [
             (projection, name, sentence)
             for projection, name, content in _bodies()
-            for sentence in _sentences(content)
+            for sentence in sentences(content)
             if "smart approval" in sentence
         ]
         self.assertTrue(mentions, "no body names smart approval; the check below would be vacuous")
@@ -276,7 +272,7 @@ class NativeGateClauseTests(unittest.TestCase):
                 continue
             with self.subTest(body=f"{projection}:{name}"):
                 self.assertNotIn("a second time", content)
-            for sentence in _sentences(content):
+            for sentence in sentences(content):
                 if _HOST_ANSWER.search(sentence) and _TRADE.search(sentence) and not _NEGATED.search(sentence):
                     with self.subTest(body=f"{projection}:{name}", sentence=sentence[:80]):
                         self.fail(f"trades the chat confirmation for a host answer: {sentence}")
@@ -330,7 +326,7 @@ class HeldCommandTests(unittest.TestCase):
         held = [
             (f"{projection}:{name}", sentence)
             for projection, name, content in _bodies()
-            for sentence in _sentences(content)
+            for sentence in sentences(content)
             if "pending_approval" in sentence
         ]
         self.assertTrue(held, "no body names `pending_approval`; the check below would be vacuous")
@@ -376,7 +372,7 @@ class PresenceRuleTests(unittest.TestCase):
             naming = [
                 (f"{projection}:{name}", sentence)
                 for projection, name, content in bodies
-                for sentence in _sentences(content)
+                for sentence in sentences(content)
                 if f"`{tool}`" in sentence
             ]
             self.assertTrue(naming, f"no body names `{tool}`; the check below would be vacuous")
