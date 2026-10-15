@@ -34,7 +34,7 @@ from ..plugin_bundle.omh.memory_governance import (
     stable_artifact_identity,
 )
 
-FIXTURE_CORPUS_VERSION = "omh-memory-retrieval-fixtures/v4"
+FIXTURE_CORPUS_VERSION = "omh-memory-retrieval-fixtures/v5"
 FIXTURE_PROJECT_IDENTITY = "repo:" + hashlib.sha256(b"example.invalid/memory-fixture").hexdigest()[:32]
 # The corpus clock. Absolute, declared once, never derived from the host.
 FIXTURE_CLOCK = datetime(2031, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
@@ -252,6 +252,18 @@ _BACKGROUND: tuple[dict[str, object], ...] = (
     _record("mem_bg6", "The user prefers concise replies without emoji", approved_at=_AGING, tags=("style",)),
 )
 _BACKGROUND_IDS = tuple(str(spec["record_id"]) for spec in _BACKGROUND)
+
+# A store where most records name the team: newer than the one record about
+# backups, so on the words alone they would fill the pack ahead of it.
+_TEAM_FLOOD: tuple[dict[str, object], ...] = (
+    _record("mem_tf1", "The team meets on mondays", approved_at=_YOUNG, tags=("misc",)),
+    _record("mem_tf2", "The team uses squash merges", approved_at=_YOUNG, tags=("misc",)),
+    _record("mem_tf3", "Team lunch is on fridays", approved_at=_YOUNG, tags=("misc",)),
+    _record("mem_tf4", "The team owns the billing service", approved_at=_YOUNGER, tags=("misc",)),
+    _record("mem_tf5", "Team docs live in the wiki", approved_at=_YOUNGER, tags=("misc",)),
+    _record("mem_tf6", "The team prefers short replies", approved_at=_YOUNGER, tags=("misc",)),
+)
+_TEAM_FLOOD_IDS = tuple(str(spec["record_id"]) for spec in _TEAM_FLOOD)
 
 # The long onboarding record two length cases share: it mentions many topics
 # once each, the way a checklist captured in one sentence does.
@@ -1086,6 +1098,92 @@ RETRIEVAL_CASES: tuple[dict[str, object], ...] = (
         query="CAN logger",
         included_order=("mem_wl3",),
         excluded_reasons=(("mem_wl1", "no_query_overlap"), ("mem_wl2", "no_query_overlap"), ("mem_wl4", "no_query_overlap"),),
+    ),
+    _case(
+        "store_common_term_never_matches_alone",
+        "A word most records hold never makes a record match by itself: the backup record leads alone, though "
+        "only stemming matches it, and the team records are named common_terms_only instead of filling the pack.",
+        records=(*_TEAM_FLOOD, _record("mem_tf_backup", "Backups rotate weekly", approved_at=_AGING, tags=("ops",))),
+        query="team backup",
+        included_order=("mem_tf_backup",),
+        excluded_reasons=tuple((record_id, "common_terms_only") for record_id in _TEAM_FLOOD_IDS),
+    ),
+    _case(
+        "store_common_term_stemmed_only_query_falls_back",
+        "When no servable record shares an unstemmed query word ('teams' against 'team'), the common word's hits are "
+        "stemmed-only too, so the query falls back: the backup record is served and the team records stay out.",
+        records=(*_TEAM_FLOOD, _record("mem_tf_backup", "Backups rotate weekly", approved_at=_AGING, tags=("ops",))),
+        query="teams backup",
+        included_order=("mem_tf_backup",),
+        excluded_reasons=tuple((record_id, "common_terms_only") for record_id in _TEAM_FLOOD_IDS),
+    ),
+    _case(
+        "subject_history_never_makes_its_own_word_common",
+        "A subject's replaced values are not servable, so they never count toward a common word: the current "
+        "value still answers a query worded like every value of it.",
+        records=(
+            *(
+                _record(f"mem_sh{index}", f"Deploys go from branch v{index}", approved_at=_AGING, tags=("ops",), subject="deploy-branch")
+                for index in range(4)
+            ),
+            _record("mem_sh_current", "Deploys go from the release branch", approved_at=_YOUNGER, tags=("ops",), subject="deploy-branch"),
+            _record("mem_sh_ci", "CI runs on Python 3.12", approved_at=_YOUNG, tags=("ci",)),
+            _record("mem_sh_region", "Staging lives in region eu", approved_at=_YOUNG, tags=("infra",)),
+            _record("mem_sh_owner", "Sungmin owns billing", approved_at=_YOUNG, tags=("owner",)),
+        ),
+        query="which branch do deploys use now",
+        included_order=("mem_sh_current",),
+        excluded_reasons=(
+            *((f"mem_sh{index}", "superseded_by_subject") for index in range(4)),
+            ("mem_sh_ci", "no_query_overlap"),
+            ("mem_sh_region", "no_query_overlap"),
+            ("mem_sh_owner", "no_query_overlap"),
+        ),
+    ),
+    _case(
+        "duplicate_copies_count_once_toward_a_common_word",
+        "Copies of one record take one pack slot, so they count once toward a common word and cannot hold back "
+        "the one other record about the same thing.",
+        records=(
+            _record("mem_dc_rotate", "Rotate the backup encryption key monthly", approved_at=_AGING, tags=("ops",)),
+            _record("mem_dc_ci", "CI runs on Python 3.12", approved_at=_YOUNG, tags=("ci",)),
+            _record("mem_dc_owner", "Sungmin owns billing", approved_at=_YOUNG, tags=("owner",)),
+            _record("mem_dc_docs", "Docs live in the wiki", approved_at=_YOUNG, tags=("docs",)),
+            *(
+                _record(f"mem_dc_copy{index}", "Backup questions go to the external portal", approved_at=_YOUNGER, tags=("backup",))
+                for index in range(4)
+            ),
+        ),
+        query="backup restore steps",
+        included_order=("mem_dc_copy0", "mem_dc_rotate"),
+        excluded_reasons=(
+            ("mem_dc_ci", "no_query_overlap"),
+            ("mem_dc_owner", "no_query_overlap"),
+            ("mem_dc_docs", "no_query_overlap"),
+            *((f"mem_dc_copy{index}", "duplicate_record") for index in range(1, 4)),
+        ),
+    ),
+    _case(
+        "project_name_alone_never_fills_the_pack",
+        "A task no record answers, naming the project most records mention, serves only the record tagged with "
+        "the project name; the others met the query on that name alone.",
+        records=(
+            _record("mem_pn_currency", "Tally's default currency is KRW and USD stays supported", approved_at=_AGING, tags=("currency", "tally")),
+            _record("mem_pn_port", "Tally serve listens on port 8765 by default", approved_at=_YOUNG, tags=("serve",)),
+            _record("mem_pn_export", "Monthly tally exports are uploaded to the finance bucket", approved_at=_YOUNG, tags=("export",)),
+            _record("mem_pn_report", "Tally reports bucket expenses by Seoul calendar month", approved_at=_YOUNG, tags=("report",)),
+            _record("mem_pn_ci", "CI runs the test suite on Python 3.11 and 3.12", approved_at=_YOUNG, tags=("ci",)),
+            _record("mem_pn_owner", "Sungmin owns the reports module", approved_at=_YOUNG, tags=("owner",)),
+        ),
+        query="`tally list --limit 0` prints the whole ledger instead of nothing. Fix it.",
+        included_order=("mem_pn_currency",),
+        excluded_reasons=(
+            ("mem_pn_port", "common_terms_only"),
+            ("mem_pn_export", "common_terms_only"),
+            ("mem_pn_report", "common_terms_only"),
+            ("mem_pn_ci", "no_query_overlap"),
+            ("mem_pn_owner", "no_query_overlap"),
+        ),
     ),
 )
 

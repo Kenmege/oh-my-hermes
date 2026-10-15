@@ -4,6 +4,27 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Memory recall no longer fills a pack with records that share only the
+  project's name.** A query term that more than half of the records the pack
+  could serve hold, when there are at least five of them, never makes a record
+  match on its own. A subject's replaced values, stale records shown only for
+  inspection, and extra copies of one summary are not counted. The term still
+  orders records of equal coverage, a record that carries it as a tag still
+  matches on it, a subject's current value that shares it still takes an older
+  value's match on another word, and a query whose every term is common keeps
+  them all. A record that met the query only on such a term is excluded as
+  `common_terms_only`, and that overlap no longer triggers the active-tier
+  fallback; a query that overlaps nothing, or overlaps only through stemming,
+  still falls back. It is not idf, and a rare term gains nothing. Measured
+  against `origin/main` at 03741a6a8 by replaying the 2026-10-14 memory A/B
+  store (21 records, 11 tasks) through the prefetch selector: the two control
+  tasks, which no record answers, served 12 records before and 4 after; each
+  of the nine memory tasks kept its record in the pack, and one more of them
+  now leads with it. On blind rounds 3 to 6 and their tie-flip twins (176
+  cases, the lead-record rule), 0 wins, 176 ties, 0 losses; one round-5 case
+  and its twin now hold back a second topic record that shared only the common
+  word. Those rounds were seen while choosing the rule.
+
 - **What a Hermes background-review or `/btw` fork still does to OMH on the
   0.21.1 plugin floor is written down, and the floor stays at 0.21.1 (a #2112
   follow-up).** On Hermes 0.21.1 such a fork's turn end still calls OMH's

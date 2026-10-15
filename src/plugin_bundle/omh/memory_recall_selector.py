@@ -40,6 +40,8 @@ from .memory_recall_support import (
     _RECALL_BM25_K1,
     _RECALL_BM25_RECORD_TYPE_WEIGHT,
     _RECALL_BM25_TAG_WEIGHT,
+    _RECALL_COMMON_TERM_MIN_CANDIDATES,
+    _RECALL_COMMON_TERM_SHARE_PCT,
     _RECALL_RRF_K,
     _RECALL_RRF_WEIGHTS,
     _RECALL_SCORE_SCALE,
@@ -191,6 +193,12 @@ def effective_recall_configuration() -> dict[str, object]:
             "query_closed_lists": "function_words_fillers_ko_runs_prefixes_ja_zh_cuts/v3",
             "listed_terms": "order_within_one_coverage_only/v1",
             "listed_word_kept_when": "no_content_term_past_two_latin_chars_or_all_caps_or_capitalized_mid_sentence/v2",
+            "store_common_terms": {
+                "rule": "never_match_alone_unless_tagged_all_common_kept/v1",
+                "population": "live_distinct_candidates/v1",
+                "min_candidates": _RECALL_COMMON_TERM_MIN_CANDIDATES,
+                "share_pct_exceeded": _RECALL_COMMON_TERM_SHARE_PCT,
+            },
         },
         "temporal_recency_weight": 2.0,
         "age_tier_bounds_days": list(_AGE_TIER_BOUNDS_DAYS),
@@ -205,7 +213,7 @@ def effective_recall_configuration() -> dict[str, object]:
         "cadence_defaults": dict(sorted(_MEMORY_CADENCE_DEFAULTS.items())),
         # Behaviour switches with no tunable constant: naming them here is
         # what makes a report built before either existed refuse comparison.
-        "query_fallback": "active_tier/v1",
+        "query_fallback": "active_tier_unless_unstemmed_common_terms_only/v2",
         "duplicate_collapse": "normalized_exact_match/v1",
         "subject_collapse": "newest_non_retired_per_scope_subject/v2",
         "subject_score_transfer": "kept_record_shares_a_query_term/v1",
@@ -546,8 +554,6 @@ def select_memory_recall(
             continue
         steps.append(("candidate", len(candidates)))
         candidates.append((record, evaluation, staleness, attention_tier, False))
-    relevance = _memory_relevance([candidate[0] for candidate in candidates], query)
-    scores, unstemmed, coverage = list(relevance.scores), relevance.unstemmed, list(relevance.coverage)
     holders = _current_subject_holders(subject_pool)
     replaced_by: dict[int, str] = {}
     group_members: dict[tuple[str, str, str], list[int]] = {}
@@ -559,24 +565,37 @@ def select_memory_recall(
         holder = holders.get(group, "")
         if holder and holder != str(candidate[0].get("record_id", "")):
             replaced_by[index] = holder
+    # Which query terms are store-common is counted only over the records this
+    # pack could serve: a subject's old values and inspection-only records are
+    # scored, but they never make a word common.
+    live = [not candidate[4] and index not in replaced_by for index, candidate in enumerate(candidates)]
+    relevance = _memory_relevance([candidate[0] for candidate in candidates], query, live)
+    scores, unstemmed, coverage = list(relevance.scores), relevance.unstemmed, list(relevance.coverage)
+    common_only = list(relevance.common_only)
+    common_terms_only_excluded = False
     # The current value of a subject takes the best (coverage, score) in its
     # group, but only when it shares a query term itself: a query that names
     # the old wording still finds the new value of the same thing, while a
     # record that matches nothing is never pulled in on another record's words
     # (two facts given one slug by mistake must not serve the unrelated one).
+    # A store-common word counts as shared: a current value that met the query
+    # only on one (`common_only`) takes an older value's match on another
+    # word, and is then a match, not `common_terms_only`.
     for members in group_members.values():
         best = max((coverage[index], scores[index]) for index in members)
         for index in members:
-            if index not in replaced_by and scores[index] > 0:
+            if index not in replaced_by and (scores[index] > 0 or common_only[index]) and best[1] > 0:
                 coverage[index], scores[index] = best
+                common_only[index] = False
     # A stemmed-only match counts as overlap only when some live candidate also
     # shares an unstemmed query token. Otherwise the query met the store only
     # through a suffix rule (stats -> stat -> "State is kept in Redux"), and it
     # falls back to the active tier exactly as a query matching nothing does;
-    # the stemmed matches keep their scores, so they lead that pack.
-    unstemmed_somewhere = any(
-        unstemmed[index] for index, candidate in enumerate(candidates) if not candidate[4] and index not in replaced_by
-    )
+    # the stemmed matches keep their scores, so they lead that pack. A record
+    # that met the query only on store-common words (`common_only`, score 0)
+    # keeps its unstemmed flag, so one that writes such a word as the query
+    # does counts here.
+    unstemmed_somewhere = any(unstemmed[index] for index in range(len(candidates)) if live[index])
 
     def overlaps(index: int) -> bool:
         return scores[index] > 0 and (unstemmed[index] or unstemmed_somewhere)
@@ -604,6 +623,12 @@ def select_memory_recall(
         # A pinned anchor is always in context: it skips only the
         # no_query_overlap cut, never an eligibility check above.
         if query and not overlaps(value) and str(record.get("record_id", "")) not in pins:
+            if common_only[value]:
+                # It met the query only on words most candidates hold
+                # (`_store_common_terms`): named apart, and never readmitted.
+                excluded.append(_recall_exclusion(record, evaluation, staleness=staleness, reason="common_terms_only"))
+                common_terms_only_excluded = True
+                continue
             exclusion = _recall_exclusion(record, evaluation, staleness=staleness, reason="no_query_overlap")
             excluded.append(exclusion)
             if attention_tier == "active":
@@ -616,12 +641,23 @@ def select_memory_recall(
     # overlap -- the active tier is served as an unqueried pack would serve
     # it, and the pack says so. Reference stays keyword-gated and archive
     # stays explicit, and any overlap at all (a partial match) means the
-    # query did its job, so nothing is re-admitted then. A query with no
-    # indexable tokens never reaches here: it already scores every record 1.
-    # A record that met the query only through stemming is readmitted with its
-    # score, so it leads the fallback pack; every other one scores 1.
+    # query did its job, so nothing is re-admitted then. Overlap only on
+    # store-common words (`common_terms_only`) is not a match, and it does not
+    # fall back either: the query did meet the store, and the fallback would
+    # serve the records that do not even share the common word. That holds
+    # only when some live record shares an unstemmed query token; without one
+    # the common-word hits are stemmed-only too, the query met the store only
+    # through a suffix rule, and it falls back as above (the common-only
+    # records still stay out). With nothing included, `common_overlap` equals
+    # `unstemmed_somewhere`: a live record that shares an unstemmed query token
+    # and was not included can only be common-only; the first conjunct names
+    # that reason. A query with no indexable tokens never reaches here: it
+    # already scores every record 1. A record that met the query only through
+    # stemming is readmitted with its score, so it leads the fallback pack;
+    # every other one scores 1.
     query_fallback: dict[str, object] | None = None
-    if query and not included and no_overlap_active:
+    common_overlap = common_terms_only_excluded and unstemmed_somewhere
+    if query and not included and no_overlap_active and not common_overlap:
         readmitted = {id(entry) for entry, *_ in no_overlap_active}
         excluded = [entry for entry in excluded if id(entry) not in readmitted]
         included = [

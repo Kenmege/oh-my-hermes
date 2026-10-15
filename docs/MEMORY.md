@@ -1260,8 +1260,49 @@ therefore serves every active record with "State is kept in a Redux store"
 first, rather than serving it alone. When some record does share an unstemmed
 word, stemmed matches count normally: "new hire onboarding" still serves the
 release-news record after "New hires ...", and the recall suite pins that
-cost. A relevance score of 0 means no content term matched and any match
-scores at least 1.
+cost. A relevance score of 0 means no content term matched, or only
+store-common ones did (below), and any other match scores at least 1.
+
+A query term that most of the records the pack could serve hold is
+store-common, and it never makes a record match on its own. Those records are
+the selection's eligible candidates minus the values a subject's current
+record replaced (below) and the stale records `--include-stale` surfaces only
+for inspection, with records whose summaries are equal after normalization
+counted once, since the pack keeps one of them; a subject's history or copies
+of one record never make their own words common. A term is common when more
+than half of those records hold it in their summary or tags, counted in the
+same index terms the ranker matches on (stemmed words and CJK bigrams), and
+only when there are at least five of them. Exactly half is not common, and
+below five the rule is off. In a store about one project, the project's name
+is in most records, and a task that named the project matched every one of
+them on that word alone, so the tie-breaks decided which of them filled the
+pack. A common term is scored like a listed word: it makes no match and adds
+no coverage, but it still orders records of equal coverage. Two exceptions
+keep it:
+
+- A record that carries the term as a tag still matches on it, because a tag
+  is the captor's label for the topic.
+- When every content term of the query is common, nothing is demoted: a store
+  whose records all say "release" still answers "release" with them.
+
+The second exception reads the closed lists, so it depends on the query's
+other words. In a store where most records name the project 탈리, "탈리 알려줘"
+keeps them, because 알려줘 is a listed request word and 탈리 is the only
+content term; "탈리에 대해" serves none of them, because 대해 is not listed,
+so 탈리 is common beside it. A question whose other words are not on the
+closed lists therefore gets none of the records it meets only on the
+project's name; a record that carries the name as a tag still matches.
+
+A record whose only matches are common terms is excluded as
+`common_terms_only`, unless it is a subject's current value and an older
+value matched another query word (below). It keeps its unstemmed flag for the
+stemmed-only rule above, so in a store where most records name the team, "team
+backup" still reaches "Backups rotate weekly" through stemming: the team
+records share the query's unstemmed word even though they cannot match on it.
+This is not idf. No term gains weight for being rare; a majority term only
+loses the power to match by itself. Like `no_query_overlap`,
+`common_terms_only` is a relevance cut and not an eligibility one, so the
+`omh reminder:` line still asks about an open record held back that way.
 
 A record can declare a `subject` (see The model-driven loop). Two records in
 one scope that declare the same subject are two values of one thing. The
@@ -1277,31 +1318,40 @@ or restored. Each other eligible record is excluded as
 `exclusion_reason_counts` is never cut).
 
 The current record takes the best coverage and relevance score in its group
-only when it shares a query term itself. A query worded like the old value still finds a
-current value that shares some of its words. A current value that matches
-nothing is never pulled in on another record's words, because two different
-facts given one slug by mistake must not serve the unrelated one. The collapse
-reads two structured fields and never the summaries. A record with no subject
-never joins a group, different scopes never merge, and a pin does not hold an
-older value in place.
+only when it shares a query term itself, a store-common one included. A query
+worded like the old value still finds a current value that shares some of its
+words, and that current value is then a match, not `common_terms_only`. A
+current value that matches nothing is never pulled in on another record's
+words, because two different facts given one slug by mistake must not serve
+the unrelated one. The collapse reads two structured fields and never the
+summaries. A record with no subject never joins a group, different scopes
+never merge, and a pin does not hold an older value in place.
 
 A query that matches nothing does not empty the pack. When a query has
-indexable tokens and no eligible record overlaps it and no pin applies, every
-`active`-tier record that was held out only as `no_query_overlap` is served the
-way an unqueried pack serves it — relevance ties, recency and usage decide the
-order, and the normal budget cut applies — and the pack carries
+indexable tokens and no eligible record overlaps it, not even on a
+store-common term, and no pin applies, every `active`-tier record that was held
+out as `no_query_overlap` is served the way an unqueried pack serves it —
+relevance ties, recency and usage decide the order, and the normal budget cut
+applies — and the pack carries
 `query_fallback: {"mode": "active_tier", "reason": "no_query_overlap",
 "readmitted_count": N}` (the key is absent when the fallback did not fire; the
 prefetch receipt records it as `selection.query_fallback`, null otherwise).
 Reference records stay keyword-gated and archived records stay explicit, so
-they remain `no_query_overlap` / `archived_tier` exclusions. Any overlap at all
-means the query did its job: a partial match never falls back. Two eligible
-records whose summaries are equal after NFC, lowercasing and whitespace
-collapse — the same normalization capture uses for `duplicate_of` — take one
-slot: the pinned one, else the newest `approved_at`, else the smaller record
-id stays, and the other is excluded as `duplicate_record` with `duplicate_of`
-naming the record kept. The collapse runs after eligibility and before
-ranking, so a duplicate never spends budget.
+they remain `no_query_overlap` / `archived_tier` exclusions. A partial match
+never falls back. Overlap only on store-common terms is not a match, and it
+does not fall back either: the records that met the query that way stay
+`common_terms_only`, the rest stay `no_query_overlap`, and none is readmitted.
+The query did meet the store, and the fallback would serve the records that do
+not even share the common word. That needs some record the pack could serve to
+share an unstemmed query token: when none does ("teams backup" against records
+that say "team"), the common-word hits are stemmed-only as well, and the query
+falls back under the stemmed-only rule, with the common-only records still held
+back. Two eligible records whose summaries are equal after NFC, lowercasing
+and whitespace collapse — the same normalization capture uses for
+`duplicate_of` — take one slot: the pinned one, else the newest
+`approved_at`, else the smaller record id stays, and the other is excluded as
+`duplicate_record` with `duplicate_of` naming the record kept. The collapse
+runs after eligibility and before ranking, so a duplicate never spends budget.
 
 Two per-record counters exist, and only one of them is a ranking input:
 
@@ -1824,9 +1874,10 @@ per record; "still open" resets that clock. Never more than one line per
 pack — the rest queue by age, oldest `open_since` first — and only for
 records the pack itself was willing to deliver: inside its scope allowlist
 and admitted by its eligibility evaluation (delivered, or held back only for
-no query overlap or the budget cut). A superseded, archived, or otherwise
-refused record is never asked about, because two of the three answers would
-refuse it; the reminder is eligibility-bound, not query-bound. Principal-bound
+no query overlap, overlap only on store-common terms, or the budget cut). A
+superseded, archived, or otherwise refused record is never asked about,
+because two of the three answers would refuse it; the reminder is
+eligibility-bound, not query-bound. Principal-bound
 (`project_memory_record/v3`) records are asked about on the same terms: the
 pack's own principal and audience rules decide whether they are eligible, and
 the reminder never reads them more loosely than the pack does. Only an
