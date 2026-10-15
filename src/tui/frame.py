@@ -44,6 +44,12 @@ An empty composer shows `placeholder` after the prompt glyph in the hint
 colour while the app asks for it (no slot open). It is drawn, never typed:
 the caret stays right after the glyph and the composer's text stays empty.
 
+While the person picks from a list (`composer` is None) the frame draws no
+composer at all: no rules, no input rows, no caret (`Frame.cursor` is None, and
+`LiveRegion` hides the cursor). The slot stands in its place, right above the
+mode row, with the rows `layout.choice_cap` gives it. The rows under the
+composer are the same either way, so the composer comes back on its row.
+
 The attachment row (the images queued for the next message) is the composer's
 first row while there is one: it counts against the composer's cap, so the
 input rows keep their place and only the block's top moves.
@@ -81,7 +87,7 @@ MODE_RULE_GLYPHS = {MODE_NORMAL: RULE_GLYPH, MODE_ACCEPT: "━", MODE_PLAN: "┄
 @dataclass(frozen=True)
 class Frame:
     lines: tuple[Line, ...]
-    cursor: tuple[int, int]  # (row, col) of the composer caret within the region
+    cursor: tuple[int, int] | None  # (row, col) of the composer caret within the region; None with no composer
     height: int
     pad: int
     budget: Budget
@@ -91,7 +97,7 @@ def build_frame(
     *,
     cols: int,
     rows: int,
-    composer: Composer,
+    composer: Composer | None,
     status: Line,
     previous_height: int,
     sticky: Line | None = None,
@@ -114,15 +120,21 @@ def build_frame(
     agent list is focused, is called with the rows the list may take
     (`layout.agent_list_room`, its hint row included) and returns the list's
     rows, which take the mode row's place; it is not called where there is no
-    mode row.
+    mode row. `composer` None draws no composer (nor the attachment row or the
+    agent list) and no caret: the slot takes its place.
     """
     cap = composer_cap(rows)
-    chips = [attachments] if attachments is not None and cap >= 2 else []
-    input_lines, (caret_line, caret_col) = composer.render(cols, cap - len(chips), prompt, theme.prompt, theme.accent)
-    if placeholder and not composer.text and input_lines:
-        input_lines[0] = truncate_line((*input_lines[0], Span(placeholder, theme.hint)), cols)
-    composer_lines = chips + input_lines
-    caret_line += len(chips)
+    composer_lines: list[Line] = []
+    caret_line = caret_col = 0
+    if composer is not None:
+        chips = [attachments] if attachments is not None and cap >= 2 else []
+        input_lines, (caret_line, caret_col) = composer.render(cols, cap - len(chips), prompt, theme.prompt, theme.accent)
+        if placeholder and not composer.text and input_lines:
+            input_lines[0] = truncate_line((*input_lines[0], Span(placeholder, theme.hint)), cols)
+        composer_lines = chips + input_lines
+        caret_line += len(chips)
+    else:
+        agent_list = None
     min_height = previous_height if previous_height > 0 else max_height(rows)
     room = 0
     if agent_list is not None:
@@ -145,6 +157,7 @@ def build_frame(
         composer_rows=len(composer_lines),
         min_height=min_height,
         agent_list_rows=len(listed),
+        composer_hidden=composer is None,
     )
     rule = rule_line(cols, theme, mode)
     lines = compose(
@@ -161,7 +174,7 @@ def build_frame(
     )
     return Frame(
         lines=tuple(lines),
-        cursor=(caret_row(budget, caret_line), caret_col),
+        cursor=None if composer is None else (caret_row(budget, caret_line), caret_col),
         height=budget.total,
         pad=budget.pad,
         budget=budget,

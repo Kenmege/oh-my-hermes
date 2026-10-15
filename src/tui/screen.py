@@ -13,7 +13,9 @@ up from the bottom exactly as printed output would; shrinking erases the
 freed rows. Only rows whose bytes changed since the last frame are repainted,
 which keeps a selection on a static row alive. After every frame the hardware
 cursor is parked where the caller asked (the composer caret), so an IME
-pre-edit appears in place.
+pre-edit appears in place. A frame with no caret (the composer is not drawn)
+leaves the cursor hidden, parked on the region's last row; the next frame with
+a caret shows it again.
 
 Every row is clipped to `width` cells (a wide glyph that would straddle the
 edge is dropped whole) and has its control characters and bidi controls
@@ -133,7 +135,8 @@ class LiveRegion:
         self._parked: tuple[int, int] | None = (0, 0)
         self._width: int | None = None
         self._lines: tuple[Line, ...] = ()
-        self._cursor = (0, 0)
+        self._cursor: tuple[int, int] | None = (0, 0)
+        self._hidden = False  # the last frame left the hardware cursor hidden (it had no caret)
         self._pad = 0  # how many of the top rows are padding `flush_above` may write into
         # What `last_row` stands on: whether the first frame starts on the screen's top row, that
         # frame's height (0 until it is drawn), and the rows the last row was pushed down since
@@ -151,6 +154,11 @@ class LiveRegion:
     def pad(self) -> int:
         """How many of the region's top rows are padding."""
         return self._pad
+
+    @property
+    def caret_hidden(self) -> bool:
+        """Whether the last frame had no caret, so the hardware cursor is hidden."""
+        return self._hidden
 
     def last_row(self, screen_rows: int) -> int | None:
         """The 0-based screen row the region's last row is on, or None where that is not certain.
@@ -178,11 +186,12 @@ class LiveRegion:
         ops.append(CARRIAGE_RETURN)
         self._row = row
 
-    def _compose(self, lines: Sequence[Line], cursor: tuple[int, int], width: int, ops: list[str]) -> str:
+    def _compose(self, lines: Sequence[Line], cursor: tuple[int, int] | None, width: int, ops: list[str]) -> str:
         """The frame's bytes, appended to `ops` already queued; "" when nothing changed.
 
         A row whose line and width are the ones the last frame painted keeps
-        that frame's bytes instead of being painted again.
+        that frame's bytes instead of being painted again. `cursor` None hides
+        the hardware cursor and parks it at the start of the last row.
         """
         width = max(width, 1)
         repaint_all = width != self._width
@@ -208,27 +217,29 @@ class LiveRegion:
         if any(self._rows[len(rows) :]):
             self._move_to(len(rows), ops)
             ops.append(ERASE_BELOW)
-        target = (
-            min(max(cursor[0], 0), max(len(rows), 1) - 1),
-            min(max(cursor[1], 0), width - 1),
-        )
+        hidden = cursor is None
+        last = max(len(rows), 1) - 1
+        target = (last, 0) if cursor is None else (min(max(cursor[0], 0), last), min(max(cursor[1], 0), width - 1))
         painted = bool(ops)
+        toggled = hidden != self._hidden  # the caret alone appearing or going is a change to write
         self._rows = rows
         self._width = width
         self._lines = tuple(lines)
         self._cursor = cursor
-        if not painted and target == self._parked:
+        self._hidden = hidden
+        if not painted and target == self._parked and not toggled:
             return ""
         park: list[str] = []
         self._move_to(target[0], park)
         park.append(cursor_forward(target[1]))
         self._parked = target
         if not painted:
-            return "".join(park)
-        return "".join([SYNC_BEGIN, HIDE_CURSOR, AUTOWRAP_OFF, *ops, AUTOWRAP_ON, *park, SHOW_CURSOR, SYNC_END])
+            return "".join(park) + ((HIDE_CURSOR if hidden else SHOW_CURSOR) if toggled else "")
+        shown = [] if hidden else [SHOW_CURSOR]
+        return "".join([SYNC_BEGIN, HIDE_CURSOR, AUTOWRAP_OFF, *ops, AUTOWRAP_ON, *park, *shown, SYNC_END])
 
-    def render(self, lines: Sequence[Line], cursor: tuple[int, int], width: int, pad: int = 0) -> None:
-        """Show `lines` as the region and park the cursor at `cursor` = (row, col) within it.
+    def render(self, lines: Sequence[Line], cursor: tuple[int, int] | None, width: int, pad: int = 0) -> None:
+        """Show `lines` as the region and park the cursor at `cursor` = (row, col) within it; None hides it.
 
         The first `pad` lines are padding (blank rows) that `flush_above` may write into.
         """
@@ -268,7 +279,8 @@ class LiveRegion:
                 self._shift_last_row(len(lines) - consumed if len(self._lines) > consumed else -1)
         self._pad -= consumed
         self._lines = self._lines[consumed:]
-        self._cursor = (self._cursor[0] - consumed, self._cursor[1])
+        if self._cursor is not None:
+            self._cursor = (self._cursor[0] - consumed, self._cursor[1])
         self._write(self._compose(self._lines, self._cursor, width, ops))
 
     def clear(self) -> None:

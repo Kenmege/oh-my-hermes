@@ -49,7 +49,7 @@ class Harness:
         self.screen.feed(text)
 
     def render(
-        self, lines: list[Line], cursor: tuple[int, int] = (0, 0), width: int | None = None, pad: int = 0
+        self, lines: list[Line], cursor: tuple[int, int] | None = (0, 0), width: int | None = None, pad: int = 0
     ) -> None:
         self.region.render(lines, cursor, self.cols if width is None else width, pad=pad)
 
@@ -153,6 +153,43 @@ class RepaintTests(unittest.TestCase):
         self.harness.region.clear()
         finals = {final for text in self.harness.writes for _, final in _CSI.findall(text)}
         self.assertLessEqual(finals, {"A", "B", "C", "K", "J", "m", "h", "l"})
+
+
+class HiddenCaretTests(unittest.TestCase):
+    """A frame with no caret (`cursor=None`: the composer is hidden) leaves the hardware cursor hidden."""
+
+    def setUp(self) -> None:
+        self.harness = Harness(rows=10, history=9)
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=(2, 1))
+
+    def test_a_frame_with_no_caret_leaves_the_cursor_hidden(self) -> None:
+        from omh.tui.screen import SHOW_CURSOR
+
+        self.harness.render(plain("alpha", "BETA", "gamma"), cursor=None)
+        self.assertFalse(self.harness.screen.cursor_visible)
+        self.assertNotIn(SHOW_CURSOR, self.harness.writes[-1])
+        self.assertTrue(self.harness.region.caret_hidden)
+        self.assertEqual(self.harness.screen.lines()[-3:], ["alpha", "BETA", "gamma"])
+
+    def test_hiding_or_showing_the_caret_alone_is_written_and_an_unchanged_frame_is_not(self) -> None:
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=None)  # only the caret changed
+        self.assertFalse(self.harness.screen.cursor_visible)
+        before = len(self.harness.writes)
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=None)
+        self.assertEqual(len(self.harness.writes), before)
+        self.harness.render(plain("alpha", "beta", "gamma"), cursor=(2, 1))
+        self.assertTrue(self.harness.screen.cursor_visible)
+        self.assertEqual(self.harness.screen.cursor, (9, 1))
+        self.assertFalse(self.harness.region.caret_hidden)
+
+    def test_a_flush_keeps_the_caret_hidden_and_the_next_caret_shows_it(self) -> None:
+        self.harness.render(plain("", "alpha", "beta"), cursor=None, pad=1)
+        self.harness.flush(plain("done one", "done two"))
+        self.assertFalse(self.harness.screen.cursor_visible)
+        self.assertEqual(self.harness.screen.lines()[-3:], ["done two", "alpha", "beta"])
+        self.harness.render(plain("alpha", "beta"), cursor=(1, 2))
+        self.assertTrue(self.harness.screen.cursor_visible)
+        self.assertEqual(self.harness.screen.cursor, (9, 2))
 
 
 class PaintReuseTests(unittest.TestCase):
