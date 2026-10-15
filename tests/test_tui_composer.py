@@ -536,6 +536,49 @@ class PasteChipTests(unittest.TestCase):
         self.assertEqual([span.text for span in styled], ["[Pasted text #1 +60 lines]"])
 
 
+class SubmittedChipsTests(unittest.TestCase):
+    """A submit reports its chips (label and text), and `restore` puts a submitted text back with them as chips."""
+
+    PASTE = "line one\nline two\nline three\nline four\n"
+
+    def submitted(self) -> ComposerAction:
+        composer = Composer()
+        composer.handle(Paste(self.PASTE))
+        for char in " and more":
+            composer.handle(Key(CHAR, char))
+        return composer.handle(Key(ENTER))
+
+    def test_a_submit_reports_the_chips_in_what_it_showed(self) -> None:
+        action = self.submitted()
+        self.assertEqual(action.chips, (("[Pasted text #1 +4 lines]", self.PASTE),))
+        self.assertEqual(action.shown, "[Pasted text #1 +4 lines] and more")
+        plain = Composer()
+        for char in "no chips":
+            plain.handle(Key(CHAR, char))
+        self.assertEqual(plain.handle(Key(ENTER)).chips, ())
+
+    def test_restore_puts_the_chips_back_and_the_rest_as_text(self) -> None:
+        action = self.submitted()
+        composer = Composer()
+        composer.restore(action.shown, action.chips)
+        self.assertEqual(composer.text, action.shown)
+        self.assertEqual(composer.expanded(), action.text)
+        composer.handle(Key(BACKSPACE))  # a character of the words, not the chip
+        self.assertEqual(composer.text, "[Pasted text #1 +4 lines] and mor")
+        for _ in range(len(" and mor")):
+            composer.handle(Key(BACKSPACE))
+        composer.handle(Key(BACKSPACE))  # now the chip, whole
+        self.assertEqual((composer.text, composer.pastes), ("", {}))
+
+    def test_a_paste_after_a_restore_never_reuses_a_restored_label(self) -> None:
+        action = self.submitted()
+        composer = Composer()
+        composer.restore(action.shown, action.chips)
+        composer.handle(Paste("a\nb\nc\nd\ne\n"))
+        self.assertEqual(len(composer.pastes), 2)
+        self.assertEqual(composer.expanded(), action.text + "a\nb\nc\nd\ne\n")
+
+
 class PasteChipAppTests(unittest.TestCase):
     def test_the_prompt_goes_whole_and_the_transcript_shows_the_chip(self) -> None:
         from test_tui_modes import SID, make_app

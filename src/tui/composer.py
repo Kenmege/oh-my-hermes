@@ -116,6 +116,7 @@ class ComposerAction:
     kind: str
     text: str = ""  # the submitted text, for SUBMIT only, every paste chip expanded
     shown: str = ""  # the submitted text as the composer showed it, when chips made it differ from `text`
+    chips: tuple[tuple[str, str], ...] = ()  # each chip in `shown`, its label and its text (`Composer.restore`)
 
 
 NOTHING = ComposerAction(NONE)
@@ -349,18 +350,23 @@ class Composer:
         return "".join(parts)
 
     def _insert_paste(self, text: str) -> None:
-        """A paste: a long one (and not masked) as a chip, anything else as typed."""
+        """A paste: a long one (and not masked) as a chip, anything else as typed.
+
+        A chip's number is one no label in the text has, chips `restore` put back included.
+        """
         cleaned = _clean(text, self.masked)
         lines = len(cleaned.rstrip(NEWLINE).split(NEWLINE))
         if self.masked or not (lines > PASTE_CHIP_LINES or len(cleaned) > PASTE_CHIP_CHARS):
             self._insert(text)
             return
-        self._paste_count += 1
-        label = (
-            PASTE_CHIP.format(number=self._paste_count, lines=lines)
-            if lines > 1
-            else PASTE_CHIP_ONE_LINE.format(number=self._paste_count, chars=len(cleaned))
-        )
+        label = ""
+        while not label or label in self.text:
+            self._paste_count += 1
+            label = (
+                PASTE_CHIP.format(number=self._paste_count, lines=lines)
+                if lines > 1
+                else PASTE_CHIP_ONE_LINE.format(number=self._paste_count, chars=len(cleaned))
+            )
         self.pastes[label] = cleaned
         self._replace(self.caret, self.caret, label)
 
@@ -372,6 +378,11 @@ class Composer:
     def replace(self, start: int, end: int, text: str) -> None:
         """Put `text` (cleaned as a paste is) in place of `self.text[start:end]`; the caret lands after it."""
         self._replace(start, end, _clean(text, self.masked))
+
+    def restore(self, shown: str, chips: Sequence[tuple[str, str]]) -> None:
+        """Put back, at the caret, a text a submit showed as `shown`: its `chips` (label, text) are chips again."""
+        self.pastes.update(chips)
+        self._replace(self.caret, self.caret, _clean(shown, self.masked))
 
     def _units(self) -> tuple[list[str], list[int], int]:
         """Clusters, their boundaries, and the caret's cluster index."""
@@ -491,9 +502,10 @@ class Composer:
     def _submit(self) -> ComposerAction:
         shown = self.text
         text = self.expanded()
+        chips = tuple((label, pasted) for label, pasted in self.pastes.items() if label in shown)
         self.record(text)
         self._clear()
-        return ComposerAction(SUBMIT, text, shown if shown != text else "")
+        return ComposerAction(SUBMIT, text, shown if shown != text else "", chips)
 
     # -- rows and history -----------------------------------------------------
 

@@ -21,7 +21,7 @@ from omh.tui import gateway_contract as contract
 from omh.tui.app import App
 from omh.tui.frame import MODE_SHELL, MODE_RULE_GLYPHS, rule_line
 from omh.tui.gateway import Event, Response
-from omh.tui.keys import ENTER, UP, Key, Paste
+from omh.tui.keys import BACKSPACE, ENTER, UP, Key, Paste
 from omh.tui.modes import SHELL_LABEL
 from omh.tui.theme import DEFAULT_THEME, build_theme
 from omh.tui.transcript import NOTICE_ERROR, NOTICE_INFO, NOTICE_WARN, OUTPUT_FAILED, CommandBlock, block_rows
@@ -209,6 +209,26 @@ class RecalledPromptTests(unittest.TestCase):
         app._on_event(Event("message.complete", SID, {"text": "done"}))
         self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": self.BANG_PASTE + "\nand this",
                                                            "queued": True})])
+
+    def test_words_typed_after_a_bang_chip_come_back_as_words_beside_the_chip(self) -> None:
+        # The chip comes back holding the paste alone; the words after it are text again, to edit.
+        app, client = make_app(busy=True)
+        app._on_input(Paste(self.BANG_PASTE))
+        type_text(app, " and also this")
+        shown = app.composer.text
+        app._on_input(Key(ENTER))
+        app._on_input(Key(UP))
+        self.assertEqual(app.composer.text, shown)
+        self.assertEqual(list(app.composer.pastes.values()), [self.BANG_PASTE])
+        self.assertEqual(app._display_mode(), "normal")
+        for _ in " this":
+            app._on_input(Key(BACKSPACE))  # the words are text: Backspace takes characters, never the chip
+        self.assertEqual(app.composer.text, shown[: -len(" this")])
+        self.assertEqual(len(app.composer.pastes), 1)
+        app._on_input(Key(ENTER))
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        sent = self.BANG_PASTE + " and also"
+        self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": sent, "queued": True})])
 
     def test_a_refused_steer_whose_text_starts_with_a_bang_comes_back_as_its_text(self) -> None:
         # Documented in `_recall_queue`: the composer decides again, so this text shows as a `!` line.

@@ -489,6 +489,7 @@ class QueuedLine(NamedTuple):
     shown: str = ""  # "" shows `text`
     typed: str = ""  # "" puts `text` back
     shell: bool = False
+    chips: tuple[tuple[str, str], ...] = ()  # the paste chips in `shown` (label, text), for Up to put back as chips
 
 
 @dataclass(frozen=True)
@@ -1855,9 +1856,9 @@ class App(ModesMixin, AgentViewMixin):
                 if answer is not None:
                     self._answer(answer)
             elif steer:
-                self._steer_or_submit(action.text, action.shown)
+                self._steer_or_submit(action.text, action.shown, action.chips)
             else:
-                self._submit(action.text, action.shown)
+                self._submit(action.text, action.shown, action.chips)
         elif action.kind == INTERRUPT:
             self._interrupt_or_exit()
         elif action.kind == EXIT:
@@ -2201,8 +2202,10 @@ class App(ModesMixin, AgentViewMixin):
 
     # ── prompts ──
 
-    def _submit(self, text: str, shown: str = "") -> None:
+    def _submit(self, text: str, shown: str = "", chips: tuple[tuple[str, str], ...] = ()) -> None:
         """Send what the composer submitted; `shown` is its compact form (paste chips), which the transcript shows.
+
+        `chips` are the chips in `shown` (label, text): a prompt queued behind the turn keeps them for Up.
 
         Whether the line is a `!` shell line or a slash command is read from
         what the composer showed, never from a chip's text: a paste that
@@ -2227,9 +2230,9 @@ class App(ModesMixin, AgentViewMixin):
         elif self.rewind is not None:
             self._send_rewind(text, shown)
         else:
-            self._send_typed(text, shown=shown)
+            self._send_typed(text, shown=shown, chips=chips)
 
-    def _send_typed(self, text: str, hold: bool = False, shown: str = "") -> None:
+    def _send_typed(self, text: str, hold: bool = False, shown: str = "", chips: tuple[tuple[str, str], ...] = ()) -> None:
         """A prompt the person typed and sent: in plan mode as `/plan <text>`, the way a typed `/plan` goes.
 
         `hold` keeps it behind a running turn whatever the busy mode (`_send_prompt`).
@@ -2237,9 +2240,11 @@ class App(ModesMixin, AgentViewMixin):
         if self.plan_mode:
             self._run_slash(replace(plan_invocation(text), held=hold))
         else:
-            self._send_prompt(text, shown=shown, hold=hold)
+            self._send_prompt(text, shown=shown, hold=hold, chips=chips)
 
-    def _send_prompt(self, text: str, shown: str = "", typed: str = "", hold: bool = False) -> None:
+    def _send_prompt(
+        self, text: str, shown: str = "", typed: str = "", hold: bool = False, chips: tuple[tuple[str, str], ...] = ()
+    ) -> None:
         """Send `text`, or queue it behind the running turn; `typed` is what Up puts back in the composer.
 
         `hold` queues it behind a running turn whatever the busy mode.
@@ -2248,7 +2253,7 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
         if self._busy() and (hold or self.busy_mode == BUSY_QUEUE):
-            self.queued.append(QueuedLine(text, shown, typed))
+            self.queued.append(QueuedLine(text, shown, typed, chips=chips))
             return
         self._submit_prompt(text, shown)
 
@@ -2375,8 +2380,10 @@ class App(ModesMixin, AgentViewMixin):
         still runs joins the queue at its end.
         The composer decides again what the text it gets back shows, as for
         anything typed. So a prompt that comes back first and was a paste chip
-        whose text starts with `!` comes back as one chip holding that text,
-        and the composer shows a prompt, as it did when it was sent; any other
+        whose text starts with `!` comes back as it was shown, its chips chips
+        again (`Composer.restore`) and the words typed beside them text (one
+        chip holding its text where the queue kept no chips), and the
+        composer shows a prompt, as it did when it was sent; any other
         prompt whose text starts with `!` (a refused steer's) shows as a `!`
         line, and Enter then runs it as one.
         With nothing queued Up is the composer's: it walks the input history.
@@ -2388,7 +2395,11 @@ class App(ModesMixin, AgentViewMixin):
             taken.append(self.queued.popleft())
         first = taken[0]
         if not first.shell and not first.typed and first.shown and first.text.startswith(SHELL_PREFIX):
-            self.composer.handle(Paste(first.text))  # a chip again, never a `!` line the composer would run
+            # Its chips again, never a `!` line the composer would run; without them, one chip holding its text.
+            if first.chips:
+                self.composer.restore(first.shown, first.chips)
+            else:
+                self.composer.handle(Paste(first.text))
             for line in taken[1:]:
                 self.composer.replace(self.composer.caret, self.composer.caret, "\n" + (line.typed or line.text))
         else:
@@ -2397,7 +2408,7 @@ class App(ModesMixin, AgentViewMixin):
 
     # ── steering ──
 
-    def _steer_or_submit(self, text: str, shown: str = "") -> None:
+    def _steer_or_submit(self, text: str, shown: str = "", chips: tuple[tuple[str, str], ...] = ()) -> None:
         """Ctrl+Enter: steer the running turn with the typed text. Idle, or on a slash command or a `!` line, it is Enter.
 
         As for Enter, what the line is comes from what the composer showed (`shown`, paste chips unexpanded).
@@ -2406,7 +2417,7 @@ class App(ModesMixin, AgentViewMixin):
         if self._busy() and seen.strip() and parse_slash(seen) is None and not seen.startswith(SHELL_PREFIX):
             self._steer(text)
         else:
-            self._submit(text, shown)
+            self._submit(text, shown, chips)
 
     def _steer_command(self, arg: str) -> None:
         """`/steer <text>`: what Ctrl+Enter does, on any terminal. Idle, the text goes as a prompt."""
