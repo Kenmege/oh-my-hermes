@@ -1,12 +1,13 @@
 """While the person picks from a list, the OMH TUI draws no composer, as Claude Code does.
 
-An approval and a clarify question with choices are answered by picking: the
-composer's two rules, its rows and the caret are gone, and the list stands
-where the composer was, right above the mode row. The draft (its text, caret
-and paste chips) is not touched while it is hidden, no key types into it, and
-it comes back as it was the moment the question closes; a request waiting
-behind the first one opens before any frame shows the composer again. A
-question answered with text (a sudo password, a secret, a clarify question
+An approval and a clarify question with choices are answered by picking, and
+the session, rewind and model pickers are lists too: the composer's two rules,
+its rows and the caret are gone, and the list stands where the composer was,
+right above the mode row (a picker's filter is its last row). The draft (its
+text, caret and paste chips) is not touched while it is hidden, no key types
+into it, and it comes back as it was the moment the list closes; a request
+waiting behind the first one opens before any frame shows the composer again.
+A question answered with text (a sudo password, a secret, a clarify question
 without choices) keeps the composer as its answer field. These cases drive an
 `App` whose gateway client only records, read the VT screen it painted, and
 check the frames a terminal would show at every step.
@@ -191,6 +192,21 @@ class HiddenComposerTests(unittest.TestCase):
                 sent = app.composer.expanded()
                 self.assertIn(LONG_PASTE, sent)  # the chip still expands to its text
 
+    def test_the_caret_stays_hidden_across_a_view_on_the_alternate_screen(self) -> None:
+        app, _client = make_app()
+        app.transcript.add_notice("something to view")
+        app._open_session_picker(SESSIONS)
+        drawn(app)
+        press(app, Key(CHAR, "o", ctrl=True))  # the details view, over the picker
+        self.assertIsNotNone(app.pager)
+        press(app, Key(CHAR, "q"))
+        self.assertIsNone(app.pager)
+        drawn(app)
+        self.assertFalse(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
+        press(app, Key(ESCAPE))
+        drawn(app)
+        self.assertTrue(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
+
     def test_a_question_arriving_over_a_view_closes_it_and_hides_the_caret(self) -> None:
         app, _client = make_app(busy=True)
         app.transcript.add_notice("something to view")
@@ -285,6 +301,56 @@ class ClarifyFieldTests(unittest.TestCase):
         self.assertEqual(client.answers, [])
         self.assertTrue(app.slot.picking)  # type: ignore[union-attr]
         self.assertEqual(app.composer.text, "")
+
+
+SESSIONS = {"sessions": [
+    {"id": "s1", "title": "Release notes", "message_count": 3, "started_at": 0},
+    {"id": "s2", "title": "Refactor the router", "message_count": 9, "started_at": 0},
+]}
+HISTORY = {"messages": [
+    {"role": "user", "row_id": 1, "text": "first prompt"},
+    {"role": "assistant", "text": "a reply"},
+    {"role": "user", "row_id": 3, "text": "second prompt"},
+]}
+MODELS = {"model": "m1", "provider": "p", "providers": [{"slug": "p", "name": "Provider", "models": ["m1", "m2"]}]}
+
+
+class PickerTests(unittest.TestCase):
+    """The session, rewind and model pickers filter as you type: the filter row stands where the composer was."""
+
+    def openers(self) -> list[tuple[str, object]]:
+        return [
+            ("sessions", lambda app: app._open_session_picker(SESSIONS)),
+            ("rewind", lambda app: app._open_rewind_picker(app.sid, HISTORY)),
+            ("model", lambda app: app._open_model_picker(app.sid, MODELS)),
+        ]
+
+    def test_a_picker_hides_the_composer_and_its_filter_row_takes_the_composers_place(self) -> None:
+        for name, opener in self.openers():
+            with self.subTest(picker=name):
+                app, _client = make_app()
+                draft = a_draft(app)
+                opener(app)  # type: ignore[operator]
+                screen = drawn(app)
+                self.assertEqual(rule_rows(screen), [], screen)
+                self.assertFalse(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
+                status = status_row(screen)
+                self.assertEqual(screen[status - 2], " › type to filter")  # right above the mode row
+                type_text(app, "s")
+                self.assertEqual(drawn(app)[status - 2], " › s")
+                self.assertEqual(held(app), draft)  # the filter is the picker's, not the draft's
+                press(app, Key(ESCAPE))
+                self.assertTrue(composer_drawn(app, drawn(app)))
+                self.assertEqual(held(app), draft)
+
+    def test_the_history_search_and_the_completion_menu_keep_the_composer(self) -> None:
+        app, _client = make_app()
+        app.composer.history = ["an older prompt"]
+        press(app, Key(CHAR, "r", ctrl=True))
+        self.assertTrue(composer_drawn(app, drawn(app)))
+        press(app, Key(ESCAPE))
+        type_text(app, "/")
+        self.assertTrue(composer_drawn(app, drawn(app)))
 
 
 class ResizeAndShortTerminalTests(unittest.TestCase):

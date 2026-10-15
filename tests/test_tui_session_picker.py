@@ -80,8 +80,9 @@ class LinesTests(unittest.TestCase):
     def test_a_header_then_one_row_per_session_with_the_current_one_marked(self) -> None:
         lines = picker().lines(60, DEFAULT_THEME, 8, NOW)
         self.assertTrue(line_text(lines[0]).startswith(" Sessions (3)"))
-        self.assertEqual(len(lines), 4)
-        current, other, old = (line_text(line) for line in lines[1:])
+        self.assertEqual(len(lines), 5)
+        self.assertEqual(line_text(lines[-1]), " › type to filter")  # the filter, where the composer was
+        current, other, old = (line_text(line) for line in lines[1:4])
         self.assertTrue(current.startswith(" ● Reply with ok"))
         self.assertTrue(current.rstrip().endswith("just now · 14 messages"))
         self.assertTrue(other.startswith("   Refactor the router"))
@@ -93,15 +94,29 @@ class LinesTests(unittest.TestCase):
 
     def test_rows_scroll_to_keep_the_highlighted_one_and_the_page_follows_the_room(self) -> None:
         chooser = picker(index=2)
-        lines = chooser.lines(60, DEFAULT_THEME, 3, NOW)
-        self.assertEqual(len(lines), 3)
-        self.assertIn("Release notes", line_text(lines[-1]))
+        lines = chooser.lines(60, DEFAULT_THEME, 4, NOW)
+        self.assertEqual(len(lines), 4)
+        self.assertIn("Release notes", line_text(lines[-2]))
         self.assertEqual(chooser.page, 2)
 
     def test_a_filter_that_matches_nothing_says_so(self) -> None:
         lines = picker(query="zzz").lines(60, DEFAULT_THEME, 5, NOW)
         self.assertIn("Sessions (0/3)", line_text(lines[0]))
         self.assertIn("no session matches", line_text(lines[1]))
+        self.assertEqual(line_text(lines[-1]), " › zzz")
+
+    def test_the_filter_row_is_last_at_every_budget_and_says_what_typing_filters_by(self) -> None:
+        chooser = picker(query="re")
+        for max_rows in range(2, 9):
+            with self.subTest(max_rows=max_rows):
+                lines = chooser.lines(60, DEFAULT_THEME, max_rows, NOW)
+                self.assertLessEqual(len(lines), max_rows)
+                self.assertEqual(line_text(lines[-1]), " › re")
+                self.assertNotIn("filter", line_text(lines[0]))
+        self.assertEqual(len(chooser.lines(60, DEFAULT_THEME, 1, NOW)), 1)
+        filtered = picker()
+        filtered.handle_key(Key(CHAR, "R"))
+        self.assertEqual(line_text(filtered.lines(60, DEFAULT_THEME, 6, NOW)[-1]), " › R")
 
 
 if __name__ == "__main__":

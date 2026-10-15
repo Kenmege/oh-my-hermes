@@ -3,9 +3,11 @@
 `session.history` answers with the session's durable display transcript, each
 row with the `row_id` a rewind names. The picker lists the person's prompts
 (user rows with a row id and some text), newest first, numbered by their
-place in the session, and returns the one picked. It holds no IO: the app
-asks for the history, feeds keys in, and acts on what comes back (the prompt
-comes back into the composer; sending it truncates before that row).
+place in the session, and returns the one picked. Its last row is the filter
+(`session_picker.filter_line`), where the composer is drawn while no picker is
+open. It holds no IO: the app asks for the history, feeds keys in, and acts on
+what comes back (the prompt comes back into the composer; sending it
+truncates before that row).
 
 Keys: Up/Down move one row, PageUp/PageDown one page; printable text filters
 (ignoring case) and Backspace takes a filter character back; Enter picks the
@@ -18,14 +20,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
-from .session_picker import age_text
+from .session_picker import age_text, filter_line
 from .style import Line, Span
 from .theme import Theme
 from .width import cell_width, truncate, truncate_line
 
 PICK = "pick"
 CLOSE = "close"
-HINT = "↑↓ move · type to filter · enter edits it · esc closes"
+HINT = "↑↓ move · enter edits it · esc closes"
 TITLE = " Rewind to a prompt ({count})"
 
 
@@ -105,27 +107,24 @@ class RewindPicker:
         self.index = 0
 
     def lines(self, width: int, theme: Theme, max_rows: int, now: float) -> list[Line]:
-        """A header row, then the filtered prompts scrolled so the highlighted one shows."""
+        """A header row, the filtered prompts scrolled so the highlighted one shows, then the filter row."""
         if max_rows <= 0:
             return []
         shown = self.visible()
-        header = (
-            Span(TITLE.format(count=len(self.rows)), theme.heading),
-            Span(f"  filter: {self.query}" if self.query else ""),
-            Span(f"  {HINT}", theme.hint),
-        )
+        header = (Span(TITLE.format(count=len(self.rows)), theme.heading), Span(f"  {HINT}", theme.hint))
         lines: list[Line] = [truncate_line(header, width)]
-        body = max_rows - 1
-        self.page = max(body, 1)
-        if body <= 0:
+        if max_rows == 1:
             return lines
+        body = max_rows - 2
+        self.page = max(body, 1)
         if not shown:
-            return [*lines, (Span(" no prompt matches the filter", theme.muted),)]
-        self.index = min(self.index, len(shown) - 1)
-        start = min(max(self.index - body + 1, 0), max(len(shown) - body, 0))
-        for number in range(start, min(start + body, len(shown))):
-            lines.append(self._row(shown[number], number == self.index, width, theme, now))
-        return lines
+            lines.append((Span(" no prompt matches the filter", theme.muted),))
+        else:
+            self.index = min(self.index, len(shown) - 1)
+            start = min(max(self.index - body + 1, 0), max(len(shown) - body, 0))
+            for number in range(start, min(start + body, len(shown))):
+                lines.append(self._row(shown[number], number == self.index, width, theme, now))
+        return [*lines[: max_rows - 1], filter_line(self.query, width, theme)]
 
     def _row(self, row: RewindRow, highlighted: bool, width: int, theme: Theme, now: float) -> Line:
         style = theme.menu_current if highlighted else theme.menu

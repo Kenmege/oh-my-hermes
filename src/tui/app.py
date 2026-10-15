@@ -2991,7 +2991,7 @@ class App(ModesMixin, AgentViewMixin):
                 width=self.size[0],
             )
         finally:
-            self.terminal.write(ALT_SCREEN_OFF + SHOW_CURSOR)
+            self.terminal.write(ALT_SCREEN_OFF + self._caret_visibility())
         self.size = self.terminal.size()
         if self.size != before:
             self._full_redraw()
@@ -3024,6 +3024,10 @@ class App(ModesMixin, AgentViewMixin):
 
         return read_key
 
+    def _caret_visibility(self) -> str:
+        """The cursor as the live region's last frame left it, for the main screen coming back from the alternate one."""
+        return HIDE_CURSOR if self.region.caret_hidden else SHOW_CURSOR
+
     # ── pager ──
 
     def _open_pager(self, title: str, lines: list[Line]) -> None:
@@ -3045,7 +3049,7 @@ class App(ModesMixin, AgentViewMixin):
     def _leave_pager(self) -> None:
         self.pager = None
         self.log_agent = ""
-        self.terminal.write(ALT_SCREEN_OFF + SHOW_CURSOR)
+        self.terminal.write(ALT_SCREEN_OFF + self._caret_visibility())
         if self.resized_while_paging:
             self.resized_while_paging = False
             self._full_redraw()
@@ -3194,8 +3198,15 @@ class App(ModesMixin, AgentViewMixin):
         )
 
     def _composer_hidden(self) -> bool:
-        """Whether the frame draws no composer: a question answered by picking (`PromptSlot.picking`) is open."""
-        return self.slot is not None and self.slot.picking
+        """Whether the frame draws no composer: the person picks from a list, so nothing is typed into it.
+
+        A question answered by picking (`PromptSlot.picking`) and the session,
+        rewind and model pickers, whose filter is a row of their own. The
+        history search, the completion menus and the agent list keep it.
+        """
+        if self.slot is not None:
+            return self.slot.picking
+        return self.picker is not None or self.rewind_picker is not None or self.model_picker is not None
 
     def _mode_row_line(self, cols: int, strip: Line | None = None) -> Line:
         """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's second press).

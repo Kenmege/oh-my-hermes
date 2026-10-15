@@ -3,8 +3,10 @@
 `session.list` answers with the person's stored sessions, most recent first.
 The picker shows each as one row (its title, or the first prompt when it has
 no title, its age and its message count), marks the session this TUI is in,
-and returns the id the person picked. It holds no IO: the app sends the list
-call, feeds keys in, and runs the switch with the id it gets back.
+and returns the id the person picked. Its last row is the filter
+(`filter_line`), drawn where the composer is, which the app hides while a
+picker is open. It holds no IO: the app sends the list call, feeds keys in,
+and runs the switch with the id it gets back.
 
 Keys: Up/Down move one row, PageUp/PageDown one page; printable text filters
 (by title, first prompt or id, ignoring case) and Backspace takes a filter
@@ -24,7 +26,9 @@ from .width import cell_width, truncate, truncate_line
 PICK = "pick"
 CLOSE = "close"
 CURRENT_MARK = "●"
-HINT = "↑↓ move · type to filter · enter switches · esc closes"
+HINT = "↑↓ move · enter switches · esc closes"
+FILTER_PROMPT = " › "
+FILTER_PLACEHOLDER = "type to filter"
 
 
 @dataclass(frozen=True)
@@ -85,6 +89,12 @@ def age_text(started_at: float, now: float) -> str:
     return "just now"
 
 
+def filter_line(query: str, width: int, theme: Theme) -> Line:
+    """A picker's last row: what typing filters it by, or how to start, after the composer's prompt glyph."""
+    typed = Span(query, theme.text) if query else Span(FILTER_PLACEHOLDER, theme.hint)
+    return truncate_line((Span(FILTER_PROMPT, theme.prompt), typed), width)
+
+
 def _messages(count: int) -> str:
     return f"{count} message{'' if count == 1 else 's'}"
 
@@ -128,25 +138,24 @@ class SessionPicker:
         self.index = 0
 
     def lines(self, width: int, theme: Theme, max_rows: int, now: float) -> list[Line]:
-        """A header row, then the filtered rows scrolled so the highlighted one shows."""
+        """A header row, the filtered rows scrolled so the highlighted one shows, then the filter row."""
         if max_rows <= 0:
             return []
         shown = self.visible()
         title = f" Sessions ({len(shown)}/{len(self.rows)})" if self.query else f" Sessions ({len(self.rows)})"
-        header = (Span(title, theme.heading), Span(f"  filter: {self.query}" if self.query else "", theme.text),
-                  Span(f"  {HINT}", theme.hint))
-        lines: list[Line] = [truncate_line(header, width)]
-        body = max_rows - 1
-        self.page = max(body, 1)
-        if body <= 0:
+        lines: list[Line] = [truncate_line((Span(title, theme.heading), Span(f"  {HINT}", theme.hint)), width)]
+        if max_rows == 1:
             return lines
+        body = max_rows - 2
+        self.page = max(body, 1)
         if not shown:
-            return [*lines, (Span(" no session matches the filter", theme.muted),)]
-        self.index = min(self.index, len(shown) - 1)
-        start = min(max(self.index - body + 1, 0), max(len(shown) - body, 0))
-        for number in range(start, min(start + body, len(shown))):
-            lines.append(self._row(shown[number], number == self.index, width, theme, now))
-        return lines
+            lines.append((Span(" no session matches the filter", theme.muted),))
+        else:
+            self.index = min(self.index, len(shown) - 1)
+            start = min(max(self.index - body + 1, 0), max(len(shown) - body, 0))
+            for number in range(start, min(start + body, len(shown))):
+                lines.append(self._row(shown[number], number == self.index, width, theme, now))
+        return [*lines[: max_rows - 1], filter_line(self.query, width, theme)]
 
     def _row(self, row: SessionRow, highlighted: bool, width: int, theme: Theme, now: float) -> Line:
         style = theme.menu_current if highlighted else theme.menu

@@ -3,7 +3,9 @@
 `model.options {session_id}` answers with the providers Hermes can reach,
 each with the models it lists, and the session's current model and provider.
 The picker shows one row per provider and model, the current one marked and
-highlighted, and returns the one picked. It holds no IO: the app sends the
+highlighted, and returns the one picked; its last row is the filter
+(`session_picker.filter_line`), where the composer is drawn while no picker is
+open. It holds no IO: the app sends the
 pick as Hermes' own `/model <name> --provider <slug> --session` through
 `slash.exec`, so the switch is Hermes' (refused while a turn runs) and lasts
 for this session only. A name or slug that is not one plain word
@@ -25,13 +27,14 @@ import unicodedata
 
 from .escapes import strip_escapes
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
+from .session_picker import filter_line
 from .style import Line, Span
 from .theme import Theme
 from .width import cell_width, truncate, truncate_line
 
 PICK = "pick"
 CLOSE = "close"
-HINT = "↑↓ move · type to filter · enter switches this session · esc closes"
+HINT = "↑↓ move · enter switches this session · esc closes"
 TITLE = " Model ({count})"
 CURRENT_MARK = "●"
 
@@ -130,28 +133,28 @@ class ModelPicker:
         self.index = 0
 
     def lines(self, width: int, theme: Theme, max_rows: int) -> list[Line]:
-        """A header row naming the current model, then the filtered rows scrolled so the highlighted one shows."""
+        """A header row naming the current model, the filtered rows scrolled so the highlighted one shows, the filter row."""
         if max_rows <= 0:
             return []
         shown = self.visible()
         header = (
             Span(TITLE.format(count=len(self.rows)), theme.heading),
             Span(f"  now {self.current}" if self.current else "", theme.text),
-            Span(f"  filter: {self.query}" if self.query else ""),
             Span(f"  {HINT}", theme.hint),
         )
         lines: list[Line] = [truncate_line(header, width)]
-        body = max_rows - 1
-        self.page = max(body, 1)
-        if body <= 0:
+        if max_rows == 1:
             return lines
+        body = max_rows - 2
+        self.page = max(body, 1)
         if not shown:
-            return [*lines, (Span(" no model matches the filter; /model <name> --provider <slug> names any", theme.muted),)]
-        self.index = min(self.index, len(shown) - 1)
-        start = min(max(self.index - body + 1, 0), max(len(shown) - body, 0))
-        for number in range(start, min(start + body, len(shown))):
-            lines.append(self._row(shown[number], number == self.index, width, theme))
-        return lines
+            lines.append((Span(" no model matches the filter; /model <name> --provider <slug> names any", theme.muted),))
+        else:
+            self.index = min(self.index, len(shown) - 1)
+            start = min(max(self.index - body + 1, 0), max(len(shown) - body, 0))
+            for number in range(start, min(start + body, len(shown))):
+                lines.append(self._row(shown[number], number == self.index, width, theme))
+        return [*lines[: max_rows - 1], filter_line(self.query, width, theme)]
 
     def _row(self, row: ModelRow, highlighted: bool, width: int, theme: Theme) -> Line:
         style = theme.menu_current if highlighted else theme.menu
