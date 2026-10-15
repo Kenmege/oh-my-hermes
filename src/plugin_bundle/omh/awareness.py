@@ -22,7 +22,7 @@ from .hermes_session_commands import (
     person_request_text,
 )
 from .installed_skills import skill_not_installed
-from .native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
+from .native_tools import NATIVE_TODO_TOOL, OMH_TODO_HELD_PLANS, native_tool_presence_clause
 from .spend_signals import SPEND_GATE_PHRASES, spend_request_phrases
 from .reference_regions import executable_routing_text
 from .degradation import (
@@ -6825,14 +6825,15 @@ _PLAN_TODO_WORKFLOWS = frozenset(
     }
 )
 
-# ONE tool holds the steps, never both (`native_todo`). A planning run and an
-# accepted plan keep them in omh_todo because only omh_todo carries the
-# `plan_stage` the edit gate and `omh_team` read; otherwise Hermes' native
-# todo_list holds them wherever it is present, and OMH mirrors each write into
-# the plan record this rule's checklist is.
+# ONE tool holds the steps, never both (`native_todo`). A planning run, an
+# accepted plan and a code-story template keep them in omh_todo because only
+# omh_todo carries the `plan_stage` the edit gate and `omh_team` read and the
+# template's phases; a native write over one of them is held. Otherwise
+# Hermes' native todo_list holds them wherever it is present, and OMH mirrors
+# each write into the plan record this rule's checklist is.
 PLAN_TODO_DECLARATION_RULE = (
     "Declare this run's checklist before the first step in ONE tool, never both: "
-    "omh_todo for a planning run or an accepted plan (they carry plan_stage), else "
+    f"omh_todo for {OMH_TODO_HELD_PLANS}, else "
     f"{NATIVE_TODO_TOOL} when {native_tool_presence_clause(NATIVE_TODO_TOOL)} "
     "(OMH mirrors it), else omh_todo. Keep exactly one item active as steps land. "
     "Todo items are declarations, never execution evidence."
@@ -7264,7 +7265,7 @@ def awareness_primer_payload() -> dict[str, object]:
             "Use omh_probe when the user asks whether OMH is installed, what is missing, or what the next setup/runtime evidence step should be.",
             "Use omh_status or omh_hud for metadata-only runtime state.",
             (
-                "Keep one plan checklist, never two: omh_todo for a planning run or an accepted plan, "
+                f"Keep one plan checklist, never two: omh_todo for {OMH_TODO_HELD_PLANS}, "
                 f"else {NATIVE_TODO_TOOL} when "
                 f"{native_tool_presence_clause(NATIVE_TODO_TOOL)} (OMH mirrors it into the HUD plan), "
                 "else omh_todo; omh_todo also holds plan_stage, checkpoint/record/recall, blocked_reason "

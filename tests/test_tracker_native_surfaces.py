@@ -22,6 +22,7 @@ import re
 import unittest
 
 from _local_package import load_local_package
+from _skill_sentences import sentences
 
 load_local_package()
 from omh.plugin_bundle.omh.native_tools import native_tool_presence_clause
@@ -137,12 +138,7 @@ CLAUSES = {
     ),
 }
 
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
 _NEGATED = re.compile(r"\b(?:never|not|no)\b", re.IGNORECASE)
-
-
-def _sentences(content: str) -> list[str]:
-    return [sentence for line in content.splitlines() for sentence in _SENTENCE_END.split(line)]
 
 
 def _projections(name: str) -> dict[str, str]:
@@ -198,7 +194,7 @@ class HermesUsageSurfaceTests(unittest.TestCase):
             for projection, content in _projections(name).items():
                 clauses = [
                     clause
-                    for sentence in _sentences(content)
+                    for sentence in sentences(content)
                     for clause in re.split(r"[,;]", sentence)
                     if surface.search(clause)
                 ]
@@ -242,7 +238,7 @@ class HostActionTests(unittest.TestCase):
         # A preview the modern TUI does not parse compresses for real, so the
         # flag is never offered without the surfaces that honour it.
         for projection, content in _projections("context-budget-review").items():
-            naming = [sentence for sentence in _sentences(content) if "--preview" in sentence]
+            naming = [sentence for sentence in sentences(content) if "--preview" in sentence]
             self.assertTrue(naming, "no sentence names --preview; the check below would be vacuous")
             for sentence in naming:
                 with self.subTest(projection=projection, sentence=sentence[:80]):
@@ -259,7 +255,7 @@ class HostActionTests(unittest.TestCase):
         for projection, content in _projections("cancel").items():
             naming = [
                 sentence
-                for sentence in _sentences(content)
+                for sentence in sentences(content)
                 if not sentence.startswith("- Prompt:") and ending.search(sentence) and process.search(sentence)
             ]
             self.assertTrue(naming, "no sentence names ending a process; the check below would be vacuous")
@@ -272,7 +268,7 @@ class HostActionTests(unittest.TestCase):
             # The shared definition says which skills are OMH's; it edits nothing.
             naming = [
                 sentence
-                for sentence in _sentences(content)
+                for sentence in sentences(content)
                 if "OMH-managed" in sentence and sentence != OMH_MANAGED_SKILL_CLAUSE
             ]
             self.assertTrue(naming, "no sentence names an OMH-managed skill; the check below would be vacuous")

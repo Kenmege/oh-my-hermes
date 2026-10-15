@@ -73,11 +73,11 @@ class ResearchCitationLedgerTests(unittest.TestCase):
                 "Without the ledger the citation check is `not_observed`.",
             ),
             "research-brief": (
-                "as the observed citation check - `0` is a pass and any other status is not - or `not_observed` when no run happened",
+                "and report the citation check from that run, or as `not_observed`:",
                 "report the citation check as `not_observed`.",
             ),
             "research": (
-                "or report `not_observed` when no run happened",
+                "When a human briefing is written, report the citation check from a run, or as `not_observed`:",
                 "report the citation check as `not_observed`.",
             ),
         }
@@ -91,15 +91,15 @@ class ResearchCitationLedgerTests(unittest.TestCase):
                     self.assertIn(clause, body)
 
     def test_an_exit_zero_that_cited_no_source_is_not_observed(self) -> None:
-        """`verify` exits 0 on a draft with no `[n]` in it, having checked nothing."""
-        self.assertIn(
-            f"An exit `0` whose `info: stats:` line reads {EMPTY_CHECK_FIELD} checked nothing and is reported as `not_observed`",
-            self.hermes["web-research"],
-        )
-        for name in ("research-brief", "research"):
+        """`verify` exits 0 on a draft with no `[n]` in it, having checked nothing.
+
+        One sentence in all three bodies: the verify rule is one shared string.
+        """
+        for name in CITATION_SKILLS:
             with self.subTest(skill=name):
                 self.assertIn(
-                    f"when the `info: stats:` line of an exit `0` reads {EMPTY_CHECK_FIELD}, which means the run checked nothing",
+                    f"An exit `0` whose `info: stats:` line reads {EMPTY_CHECK_FIELD} checked nothing and is reported "
+                    "as `not_observed`",
                     self.hermes[name],
                 )
 
@@ -148,15 +148,22 @@ class ResearchCitationLedgerTests(unittest.TestCase):
 
     def test_research_keeps_every_lane_on_one_run_ledger(self) -> None:
         body = self.hermes["research"]
+        for name in CITATION_SKILLS:
+            with self.subTest(skill=name):
+                self.assertIn(
+                    "Keep the run's ledger in a file of its own, passed as `--ledger <path>` before the subcommand on "
+                    "every call: the default ledger is shared by the whole profile, and another run's reset rebinds "
+                    "its ids.",
+                    self.hermes[name],
+                )
         self.assertIn(
-            "Use one ledger file for the run, passed as `--ledger <path>` before the subcommand on every call, "
-            "never the profile-wide default that another run can reset",
+            "Only the parent's reset under First Steps touches that file, so an id names the same source in every "
+            "lane's findings",
             body,
         )
-        self.assertIn("the parent resets that file once before the first wave and no lane resets it", body)
         self.assertIn(
-            "A delegated lane gets terminal, file, and web tools by default and cannot load the skill, "
-            "so its brief carries the script's absolute path and the ledger path.",
+            "a delegated lane gets terminal, file, and web tools by default but cannot load the skill, so it works "
+            "from the two paths its brief carries.",
             body,
         )
 

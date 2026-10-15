@@ -103,7 +103,14 @@ ROLE_CONTEXT_CHAR_LIMIT = 2600
 # beside the plan line (1180). It is under `all_surfaces`, which still sets
 # the maximum, and the fallback maximum is unchanged with it. Re-derived from
 # the producer.
-PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5781
+# 5781 -> 5780: the `plan_todo` line names all three plans only omh_todo can
+# hold -- a planning run, an accepted plan or a code-story template
+# (`OMH_TODO_HELD_PLANS`, the set a native write is held for) -- so a
+# checklist workflow such as `ultraqa` running a code-story template is no
+# longer pointed at todo_list, whose write would then be held. Its "(they
+# carry plan_stage)" reason is dropped to pay for the third plan (-1 on the
+# routed request). Re-derived from the producer.
+PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5780
 # The same scenario set on the fallback: a session the awareness section did
 # not render for (a restart resume, a legacy id-rotating compaction, a refused
 # section, an older host) still gets the primer in the fenced context, so its
@@ -126,7 +133,9 @@ PRE_LLM_CALL_CONTEXT_CHAR_LIMIT = 5781
 # there. Re-derived from the producer.
 # 7098 -> 7217: the same `plan_todo` wording (+119). Re-derived from the
 # producer.
-PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 7217
+# 7217 -> 7216: the same `plan_todo` change (-1). Re-derived from the
+# producer.
+PRE_LLM_CALL_CONTEXT_FALLBACK_CHAR_LIMIT = 7216
 
 SLOT_LIMITS: dict[str, int] = {
     "primer": AWARENESS_PRIMER_CONTEXT_CHAR_LIMIT,

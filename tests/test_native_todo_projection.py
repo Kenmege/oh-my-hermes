@@ -52,6 +52,7 @@ from omh.plugin_bundle.omh.native_todo import (
 )
 from omh.plugin_bundle.omh.native_tools import (
     NATIVE_TODO_TOOL,
+    OMH_TODO_HELD_PLANS,
     native_tool_presence_clause,
 )
 from omh.plugin_bundle.omh.plan_stage_gate import plan_stage_edit_directive
@@ -903,8 +904,32 @@ class PresenceRuleTest(unittest.TestCase):
         from omh.plugin_bundle.omh.awareness import awareness_primer_payload
 
         hint = next(line for line in awareness_primer_payload()["tool_hints"] if "plan checklist" in line)
-        self.assertIn("omh_todo for a planning run or an accepted plan", hint)
+        self.assertIn("omh_todo for a planning run, an accepted plan or a code-story template", hint)
         self.assertIn(native_tool_presence_clause(NATIVE_TODO_TOOL), hint)
+
+    def test_the_four_surfaces_that_list_omh_todos_plans_name_the_same_three(self):
+        # The plans `_held_by_omh_todo` holds a native write for -- a plan
+        # stage or a template -- are the ones these four surfaces send to
+        # omh_todo. The route hint and the context tool hint once named only
+        # the first two, so a code-story run (`ultraqa`) was pointed at
+        # todo_list and its write was then held. Other one-checklist lines list
+        # no such plans: `ultrawork`'s opening step names only the accepted
+        # plan it executes, the plan nudge fires when no plan exists, and the
+        # board references only say which one tool holds the rows.
+        from omh.plugin_bundle.omh.awareness import awareness_primer_payload
+        from omh.skills.catalog import builtin_definitions
+
+        hint = next(line for line in awareness_primer_payload()["tool_hints"] if "plan checklist" in line)
+        policy = next(d.handoff_policy for d in builtin_definitions() if d.name == "todo-checklist")
+        self.assertEqual(OMH_TODO_HELD_PLANS, "a planning run, an accepted plan or a code-story template")
+        for name, text in (
+            ("route hint plan_todo", PLAN_TODO_DECLARATION_RULE),
+            ("context tool hint", hint),
+            ("omh_todo description", OMH_TODO_SCHEMA["description"]),
+            ("todo-checklist handoff policy", policy),
+        ):
+            with self.subTest(surface=name):
+                self.assertIn(OMH_TODO_HELD_PLANS, text)
 
     def test_the_clause_states_another_tool_in_the_same_sentence_shape(self):
         # The shape a later surface (clarify, cronjob_manage, ...) states the
