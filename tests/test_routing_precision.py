@@ -21,7 +21,7 @@ class RoutingPrecisionTests(unittest.TestCase):
         # and `expected=` in src/maintenance/drift.py. Every other count
         # assertion compares against this producer instead of a literal.
         # omh-docs contributes four measured negatives and five measured interventions.
-        self.assertEqual(payload["summary"]["case_count"], 748)
+        self.assertEqual(payload["summary"]["case_count"], 750)
         self.assertEqual(payload["summary"]["passing_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_case_count"], payload["summary"]["case_count"])
         self.assertEqual(payload["summary"]["negative_passing_count"], payload["summary"]["case_count"])
@@ -32,12 +32,15 @@ class RoutingPrecisionTests(unittest.TestCase):
         # review adds a /blueprint seed host turn and two loops on a timer
         # that spend nothing, each answered directly (+3), and its follow-up a
         # version question about another tool, answered directly (+1).
-        self.assertEqual(payload["summary"]["direct_answer_count"], 209)
+        # Reading only the person's words on a gateway turn adds a concept
+        # question behind a Discord trigger note and a thank-you under a
+        # reply quoting a skill request, each answered directly (+2).
+        self.assertEqual(payload["summary"]["direct_answer_count"], 211)
         self.assertEqual(payload["summary"]["file_lookup_count"], 9)
         self.assertEqual(payload["summary"]["overroute_count"], 0)
         self.assertEqual(payload["summary"]["catalog_picker_count"], 0)
         self.assertEqual(payload["summary"]["generic_ack_count"], 0)
-        self.assertEqual(payload["summary"]["intervention_case_count"], 787)
+        self.assertEqual(payload["summary"]["intervention_case_count"], 791)
         self.assertEqual(
             payload["summary"]["intervention_passing_count"], payload["summary"]["intervention_case_count"]
         )

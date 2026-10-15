@@ -24,7 +24,14 @@ from ..system.display_width import display_width, pad_to_width
 from ..evidence import status_label
 from .message_gate import build_message_gate, fence_marker_for, message_gate_body
 from .continuity import build_continuity_briefing
-from ..ingress import CHAT_SOURCES, compact_source_metadata, extract_event_attachments, extract_message_text, extract_source_metadata
+from ..ingress import (
+    CHAT_SOURCES,
+    MESSAGING_CHAT_SOURCES,
+    compact_source_metadata,
+    extract_event_attachments,
+    extract_message_text,
+    extract_source_metadata,
+)
 from ..system.platform_envelope import build_platform_envelope, platform_thread_key_scope
 from ..system.tracker_content import normalize_tracker_content
 from ..routing.catalog_questions import is_skill_catalog_question as _is_skill_catalog_question
@@ -75,6 +82,7 @@ from ..operator_productivity import build_agent_operator_productivity_card
 from ..system.paths import OmhPaths, resolve_paths
 from ..plugin_bundle.omh.awareness import workflow_context_card_for_workflow, workflow_context_cards
 from ..plugin_bundle.omh.degradation import degradation_chat_note
+from ..plugin_bundle.omh.hermes_session_commands import person_request_text
 from ..plugin_bundle.omh.memory_dreaming import read_latest_consolidation
 from ..probe import probe_capabilities
 from ..quickstart import build_quickstart_card
@@ -4853,7 +4861,10 @@ def build_chat_interaction_payload(
     # cached branch above never reaches this: it requires `paths is None`, and
     # without an OMH home there is no brief to read.
     if paths is not None:
-        payload = _with_memory_consolidation_notice(payload, paths, message)
+        # Its sentence takes the language of the person's own words.
+        payload = _with_memory_consolidation_notice(
+            payload, paths, person_request_text(message, messaging=source in MESSAGING_CHAT_SOURCES)
+        )
     if routing_observation is not None:
         payload = enhance_chat_interaction_with_routing_observation(payload, routing_observation)
     return payload
@@ -5500,7 +5511,19 @@ def _build_chat_interaction_payload_uncached(
     design_direction_iteration_context: Mapping[str, object] | None = None,
     hermes_session_id: str = "",
 ) -> dict[str, object]:
-    message = extract_message_text(event_or_message)
+    turn_text = extract_message_text(event_or_message)
+    # The wrapper's own decisions below (mode, catalog picker, intro, status,
+    # command preview, the executor named in the message, the loop card) read
+    # the person's own words: a messaging gateway's trigger note, reply
+    # pointer, backfill and sender prefix are Hermes' material, and a reply's
+    # quoted text is context, not the request. The turn's own text goes where
+    # the turn is identified or handed on: the router (which decides on the
+    # person's words itself and renders its routing prompt and question digest
+    # from the turn), the message hash, length and thread key, the coding
+    # handoff, and the plan's statement. The handoff is built from the whole
+    # turn, as before, so its safety preflight judges exactly what it carries;
+    # the plan is decided on the words.
+    message = person_request_text(turn_text, messaging=source in MESSAGING_CHAT_SOURCES)
     metadata = _source_metadata(event_or_message, source_metadata)
     # Files the platform attached to the message are declared media inputs
     # (name and media type only, never bytes); the coding handoff below has
@@ -5509,7 +5532,7 @@ def _build_chat_interaction_payload_uncached(
         input_representations_from_attachments(extract_event_attachments(event_or_message))
     )
     route_payload = public_chat_route_payload(
-        message,
+        turn_text,
         source=source,
         limit=limit,
         min_confidence=min_confidence,
@@ -5531,7 +5554,7 @@ def _build_chat_interaction_payload_uncached(
         source_metadata=metadata,
         paths=paths,
     )
-    base = _base_interaction(message, source=source, source_metadata=metadata, mode=resolved_mode, include_message=include_message)
+    base = _base_interaction(turn_text, source=source, source_metadata=metadata, mode=resolved_mode, include_message=include_message)
     if platform_envelope is not None:
         # One seam: every downstream card and the session store read
         # base["thread_key"], so the platform-identity key is installed here,
@@ -5628,7 +5651,7 @@ def _build_chat_interaction_payload_uncached(
 
     if resolved_mode == "delegate":
         delegation = build_coding_delegation_payload(
-            message,
+            turn_text,
             source=source,
             limit=limit,
             include_message=include_message,
@@ -5637,7 +5660,7 @@ def _build_chat_interaction_payload_uncached(
             main_agent_model=main_agent_model,
             memory_recall_pack=memory_recall_pack_for_handoff(
                 paths,
-                message,
+                turn_text,
                 executor_target=resolved_executor_target,
                 surface_class=memory_surface_for_source(source),
                 hermes_session_id=hermes_session_id,
@@ -5708,6 +5731,7 @@ def _build_chat_interaction_payload_uncached(
                 _attach_coding_owner_handoff(
                     base,
                     message,
+                    turn_text=turn_text,
                     source=source,
                     limit=limit,
                     include_message=include_message,
@@ -5736,6 +5760,11 @@ def _build_chat_interaction_payload_uncached(
         source_metadata=metadata,
         executor_target=resolved_executor_target,
     )
+    # Planned on the person's words; its statement is the whole turn, because
+    # the plan artifact is what a coding owner receives once it is accepted.
+    plan_statement = _nested(plan, "plan")
+    if plan_statement.get("task_statement"):
+        plan_statement["task_statement"] = turn_text
     if _plan_has_coding_delegate(plan):
         coding_delegate = _nested(_nested(plan, "wrapper_contract"), "coding_delegate")
         coding_delegate["executor_resolution"] = executor_resolution
@@ -5818,6 +5847,7 @@ def _attach_coding_owner_handoff(
     base: dict[str, object],
     message: str,
     *,
+    turn_text: str,
     source: str,
     limit: int,
     include_message: bool,
@@ -5830,8 +5860,10 @@ def _attach_coding_owner_handoff(
     input_representation: object = "text_only",
     hermes_session_id: str = "",
 ) -> dict[str, object]:
+    # `message` is the person's words, which the decisions here read; the
+    # handoff carries the whole turn (`turn_text`) as on any other path.
     delegation = build_coding_delegation_payload(
-        message,
+        turn_text,
         source=source,
         limit=limit,
         include_message=include_message,
@@ -5851,7 +5883,7 @@ def _attach_coding_owner_handoff(
         preserve_preferred_workflow=resolved_executor_target == "hermes",
         memory_recall_pack=memory_recall_pack_for_handoff(
             paths,
-            message,
+            turn_text,
             executor_target=resolved_executor_target,
             surface_class=memory_surface_for_source(source),
             hermes_session_id=hermes_session_id,

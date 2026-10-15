@@ -1641,6 +1641,17 @@ class ChatNoticeOnEveryMessengerTests(unittest.TestCase):
             self.assertIn(self.NOTICE_EN, english)
             self.assertNotIn(self.NOTICE_KO, english)
 
+    def test_the_notice_speaks_the_persons_language_under_a_quoted_reply(self) -> None:
+        # A reply quoting someone's Korean message is still the person's
+        # English request. The card is English, and so is the notice: it takes
+        # its language from the person's own words, not from the quote.
+        reply = '[Replying to: "\uc774 \ub808\ud3ec\uc5d0 \uae30\ub2a5 \ud558\ub098 \ucd94\uac00\ud574\uc918"]\n\n'
+        with TemporaryDirectory() as tmp:
+            _, paths = self._due_paths(Path(tmp))
+            body = str(self._payload(paths, "discord", reply + "I want to add a feature safely")["chat_response"]["body"])
+            self.assertIn(self.NOTICE_EN, body)
+            self.assertNotIn(self.NOTICE_KO, body)
+
     def test_the_routed_card_is_not_displaced(self) -> None:
         # Additive means additive: same kind, same headline, one extra sentence.
         with TemporaryDirectory() as tmp:

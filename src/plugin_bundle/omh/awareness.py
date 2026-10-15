@@ -17,7 +17,9 @@ from .executor_cues import (
 from .hermes_session_commands import (
     LOOP_TIMERS_ANSWERED_DIRECTLY,
     NATIVE_LOOP_CADENCE_HINT_KEY,
+    host_command_turn,
     loop_timer_verdict,
+    person_request_text,
 )
 from .installed_skills import skill_not_installed
 from .native_tools import NATIVE_TODO_TOOL, native_tool_presence_clause
@@ -6051,8 +6053,18 @@ def _spend_awareness_marked(text: str) -> bool:
 
 
 def awareness_route_hint(message: str, *, max_hints: int = 2) -> dict[str, object]:
-    """Return bounded message-specific workflow hints without exposing raw text."""
-    return _copy_awareness_route_hint_payload(_awareness_route_hint_cached(message, max(max_hints, 0)))
+    """Return bounded message-specific workflow hints without exposing raw text.
+
+    The hint reads the person's own words (`person_request_text`), never the
+    host blocks or backfill a gateway puts around them, and reads no request
+    at all on a turn Hermes wrote from a session-command template. Every
+    caller gets both, so none has to remember either. A sender prefix is
+    removed only by a caller that knows the turn came through a messaging
+    gateway (the `pre_llm_call` hook, the router, the wrapper); here a
+    leading bracket stays the person's.
+    """
+    request = "" if host_command_turn(message) else person_request_text(message)
+    return _copy_awareness_route_hint_payload(_awareness_route_hint_cached(request, max(max_hints, 0)))
 
 
 def _copy_awareness_route_hint_payload(payload: dict[str, object]) -> dict[str, object]:

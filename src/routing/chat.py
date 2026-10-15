@@ -8,7 +8,7 @@ import unicodedata
 from typing import Any, Mapping
 
 from ..goal_loop import explicit_loop_invocation_signal
-from ..ingress import CHAT_SOURCES, extract_message_text
+from ..ingress import CHAT_SOURCES, MESSAGING_CHAT_SOURCES, extract_message_text
 from ..system.tracker_content import normalize_tracker_content
 from ..loopability import assess_loopability
 from .catalog_questions import (
@@ -45,6 +45,7 @@ from ..plugin_bundle.omh.hermes_session_commands import (
     LOOP_TIMER_NATIVE,
     LOOP_TIMERS_ANSWERED_DIRECTLY,
     loop_timer_verdict,
+    person_request_text,
     typed_loop_sets_goal,
 )
 from ..plugin_bundle.omh.route_question_mode import ROUTE_QUESTION_MODE_OFF, route_question_mode_fields
@@ -1681,6 +1682,24 @@ def _route_has_strong_blocked_owner(
     return False
 
 
+# The fixed text every routing prompt puts before the message it was built
+# from (`_routing_prompt_template`).
+_ROUTING_PROMPT_MESSAGE_LEAD = "\n\nUser message:\n"
+
+
+def _render_routing_prompt_from_turn(route: dict[str, object], request: str, turn: str) -> None:
+    """Put the whole turn where the routing prompt was rendered with the person's words.
+
+    Only a prompt in the template's own shape is touched: one that ends with
+    the template's lead and `request`. A prompt built without the message
+    stays as it is.
+    """
+    prompt = route.get("routing_prompt")
+    if request == turn or not isinstance(prompt, str) or not prompt.endswith(_ROUTING_PROMPT_MESSAGE_LEAD + request):
+        return
+    route["routing_prompt"] = prompt[: len(prompt) - len(request)] + turn
+
+
 def _enriched_route(
     message: str,
     source: str,
@@ -1699,17 +1718,27 @@ def _enriched_route(
     `candidate_handoff`, or skill governance. The candidate-handoff feature was
     invisible on the one surface it was built for, found when a mocked Slack QA
     pass compared the tool payload against a direct router call.
+
+    Both decide on the person's own words (`person_request_text`): the
+    trigger note, reply pointer, backfill and, from a messaging source, the
+    sender prefix a gateway puts around them are Hermes' material, not the
+    request. The raw turn is what they render: the routing prompt a bridge
+    forwards to Hermes carries it whole, so the quote, an attachment's path
+    and the backfill reach Hermes as context, and the route question's digest
+    below is built from it.
     """
+    request = person_request_text(message, messaging=source in MESSAGING_CHAT_SOURCES)
     route = _contextual_design_direction_iteration_route(
-        message,
+        request,
         source=source,
         min_confidence=min_confidence,
         context=active_design_direction_iteration,
-    ) or _clone_jsonish(_route_chat_message_cached(message, source, limit, min_confidence))
+    ) or _clone_jsonish(_route_chat_message_cached(request, source, limit, min_confidence))
+    _render_routing_prompt_from_turn(route, request, message)
     # Attach the input script here rather than at each ChatRouteDecision site so
     # every route -- fast path, catalog path, and full scoring -- reports it.
-    route["input_language"] = routing_input_language(message)
-    matching_message = executable_routing_text(message)
+    route["input_language"] = routing_input_language(request)
+    matching_message = executable_routing_text(request)
     relevance = classify_clarification_relevance(matching_message)
     if (
         route.get("action") == "dispatch"
@@ -1835,7 +1864,9 @@ def route_question_decline_reason(route: Mapping[str, object], message: str) -> 
     question = route.get("route_question")
     if not isinstance(question, Mapping):
         return ""
-    executable = executable_routing_text(message)
+    executable = executable_routing_text(
+        person_request_text(message, messaging=str(route.get("source") or "") in MESSAGING_CHAT_SOURCES)
+    )
     lowered = executable.strip().lower()
     if lowered and _is_plain_conversational_turn(_strip_direct_answer_soft_prefix(lowered)):
         return DECLINE_ACKNOWLEDGEMENT

@@ -1,6 +1,6 @@
 """Hermes' own session commands, where OMH would otherwise route over them.
 
-Two questions, each answered once, here, for the plugin's per-turn hook and
+Three questions, each answered once, here, for the plugin's per-turn hook and
 for `omh.routing` alike. Standalone, because the bundle may not import `omh`.
 
 `host_command_turn` -- did Hermes write this turn? Hermes' session commands
@@ -44,12 +44,27 @@ line is the person's own recurring instruction, so a person who types under a
 pasted heartbeat frame cannot be told from the host there. On a messaging
 gateway Hermes may put its own material before the frame
 (`gateway/run_inbound.py`, modelled in `jev_consent`): a Discord trigger note
-or a reply pointer, each closed by `]` and a blank line, channel-history
-backfill ending in `[New message]`, and a `[<name>] ` sender prefix in a
-shared session. Those are removed first. A host block that never closes --
-including a reply pointer whose quoted text itself holds `]` and a blank line,
-which is cut there -- leaves the turn a person's, which routes as it did
-before this module existed.
+or a reply pointer, each closed by `]` and a blank line (`v2026.9.7` writes
+the reply pointer outermost, hermes-agent 6c61c3e27d the trigger note), an
+attachment note closed the same way, channel-history backfill ending in
+`[New message]`, and a `[<name>] ` sender prefix in a shared session. Those
+are removed first; a reply pointer ends at the `"]` and blank line after its
+quoted text, and an image description at the `~]` closing its closer-look
+note, not at a `]` inside either. A host block that never closes --
+including a quote or a description that itself holds its block's close,
+which is cut there -- and QQ's `[Quoted message]:` block, which has no close
+at all, leave the turn a person's, which routes as it did before this module
+existed.
+
+`person_request_text` -- what did the person write? The same removal, read
+for routing decisions: the hook's route hint and candidate line, the chat
+router and the wrapper's own decisions read a turn's request through it, so
+the gateway material above never picks a workflow. A reply's quoted text is
+context, not the request, here as for the frame; what OMH forwards or hands
+off still carries the whole turn. The sender prefix is removed only on a
+turn from a messaging gateway, the one place Hermes writes it. The cuts
+above are the ways it fails: what follows the cut is read as the person's,
+as all of it was before.
 
 `loop_timer_verdict` -- is this request a loop on a timer? "loop every 5
 minutes and check CI", `/loop 5m ...`, "every 10 minutes loop over the inbox"
@@ -103,7 +118,8 @@ from functools import lru_cache
 import re
 import unicodedata
 
-from .jev_consent import _BACKFILL_SEPARATOR, _HOST_BLOCK_END, _HOST_BLOCK_OPENERS, _SENDER_PREFIX
+from .jev_consent import BACKFILL_SEPARATOR, HOST_BLOCK_END, HOST_BLOCK_OPENERS, SENDER_PREFIX
+from .reference_regions import executable_routing_text
 
 
 @dataclass(frozen=True)
@@ -159,6 +175,34 @@ LOOP_TIMERS_ANSWERED_DIRECTLY = frozenset({LOOP_TIMER_NATIVE, LOOP_TIMER_CONSTRU
 # Set on the route hint payload when the verdict is one of those two, so the
 # candidate line, which ranks the catalog on its own, leaves the goal loop off.
 NATIVE_LOOP_CADENCE_HINT_KEY = "native_loop_cadence"
+
+# -- the gateway's material --------------------------------------------------
+# Where a host block's own close is known it is read first, so a `]` and a
+# blank line inside the block do not end it: a reply pointer closes after the
+# text it quotes (`[Replying to: "<text>"]`), and the image description Hermes
+# writes closes after its closer-look note (`... image_url: <path> ~]`). On the
+# routing lexer's projection, which the loop verdict reads, a quote and its
+# marks are masked; there the first `]` and blank line is the close. A quote or
+# a description that itself holds its block's close is cut there.
+_BLOCK_CLOSES = (
+    ("[Replying to", '"]\n\n'),
+    ("[The user sent an image~", "~]\n\n"),
+)
+# QQ's `[Quoted message]:` block runs into the person's text with no close of
+# its own (`jev_consent` counts it unsplittable too), so no cut finds where the
+# person's words start: the turn is left whole, as it read before this module.
+_UNSPLITTABLE_BLOCK = "[Quoted message]"
+# Hermes writes `[<display name>] ` before the person's text in a shared session
+# on a messaging gateway and nowhere else (`_prefix_inbound_sender_context`:
+# `is_shared_multi_user_session` and a user name). The name is one line with its
+# whitespace collapsed (`neutralize_untrusted_inline_text`) and may itself hold
+# `] `, so the prefix runs to the last `] ` before any `[` on the first line.
+_DISPLAY_NAME_PREFIX = re.compile(r"\[([^\[\n]*)\] ")
+# A leading bracket that opens with a command sigil or an OMH skill label
+# (`[/plan] ...`, `[$loop] ...`, `[ulw-loop] ...`, `[omh-role:reviewer] ...`)
+# is the person invoking something, not a display name.
+_INVOCATION_BRACKET = re.compile(r"\[\s*(?:/|\$|\./|(?:omh|ulw)[- ])", re.IGNORECASE)
+_OMH_BRACKET_WORDS = frozenset({"omh", "ulw"})
 
 # -- the cadence -------------------------------------------------------------
 _TIMER_UNITS = frozenset(
@@ -322,8 +366,6 @@ _FOLDED_FRAMES = tuple(
     HostFrame(_fold(frame.opening), _fold(frame.next_line), frame.open_ended, _fold(frame.holds))
     for frame in HOST_COMMAND_TURN_FRAMES
 )
-_FOLDED_HOST_BLOCK_OPENERS = tuple(_fold(opener) for opener in _HOST_BLOCK_OPENERS)
-_FOLDED_BACKFILL_SEPARATOR = _fold(_BACKFILL_SEPARATOR)
 
 
 def _opens_with_frame(text: str) -> bool:
@@ -343,33 +385,90 @@ def _opens_with_frame(text: str) -> bool:
 
 
 def _after_gateway_material(text: str) -> str:
-    """The folded text after the backfill and host blocks a gateway prepends; a block
-    that never closes is left in place."""
-    if _FOLDED_BACKFILL_SEPARATOR in text:
-        text = text.rsplit(_FOLDED_BACKFILL_SEPARATOR, 1)[1]
+    """`text` after the backfill and host blocks a gateway prepends; a block that
+    never closes, or that cannot be split, is left in place."""
+    if BACKFILL_SEPARATOR in text:
+        text = text.rsplit(BACKFILL_SEPARATOR, 1)[1]
     text = text.lstrip()
-    while text.startswith(_FOLDED_HOST_BLOCK_OPENERS):
-        end = text.find(_HOST_BLOCK_END)
+    while text.startswith(HOST_BLOCK_OPENERS) and not text.startswith(_UNSPLITTABLE_BLOCK):
+        end, block_end = -1, HOST_BLOCK_END
+        for opener, close in _BLOCK_CLOSES:
+            if text.startswith(opener):
+                end, block_end = text.find(close), close
+        if end == -1:
+            end, block_end = text.find(HOST_BLOCK_END), HOST_BLOCK_END
         if end == -1:
             break
-        text = text[end + len(_HOST_BLOCK_END):].lstrip()
+        text = text[end + len(block_end):].lstrip()
     return text
 
 
-def _host_command_turn(folded: str) -> bool:
-    text = _after_gateway_material(folded)
+@lru_cache(maxsize=1)
+def _catalog_skill_words() -> frozenset[str]:
+    return frozenset(name.casefold() for name in _skill_shortlist.catalog_skill_names() or ()) | _OMH_BRACKET_WORDS
+
+
+def _display_name_prefix_end(text: str) -> int:
+    """Where the person's words start after a shared session's sender prefix, or 0.
+
+    A bracket the router reads as the person's own stays: a relay header the
+    routing lexer masks (`[REPORT] ...`), an invocation (`_INVOCATION_BRACKET`),
+    and a bracket that holds only a catalog skill's name or label, `omh` or `ulw`
+    (`[deep-interview] ...`, `[omh] status`). So does a prefix whose next word
+    opens a bracket too: the two cannot be told apart, so the turn is read as
+    it was before, by readers that take one leading bracket for a sender.
+    """
+    prefix = _DISPLAY_NAME_PREFIX.match(text)
+    if (
+        not prefix
+        or text[prefix.end():].lstrip().startswith("[")
+        or _INVOCATION_BRACKET.match(text)
+        or _fold(prefix.group(1)).strip() in _catalog_skill_words()
+        or not executable_routing_text(prefix.group()).strip()
+    ):
+        return 0
+    return prefix.end()
+
+
+def person_request_text(message: str, *, messaging: bool = False) -> str:
+    """The words the person wrote in this turn, which is all OMH routes on.
+
+    The gateway material in the module docstring is removed: the backfill
+    before `[New message]`, and each host block closed by `]` and a blank line
+    (the Discord trigger note, a reply pointer and the text it quotes, an
+    attachment note). A reply's quoted text is context for the request, not
+    part of it. `messaging` says the turn came through a messaging gateway,
+    the only place Hermes writes a shared session's `[<display name>] `
+    sender prefix; there that prefix goes too, unless the bracket is the
+    person's own (`_display_name_prefix_end`). Anywhere else a leading
+    bracket is the person's. A block that never closes or cannot be split
+    stays with everything after it, and so does a host command turn's frame,
+    which is what `host_command_turn` reads.
+
+    Only what decides a route reads this. What OMH hands on -- a forwarded
+    routing prompt, a coding handoff, a plan -- carries the whole turn, so the
+    quote, an attachment's path and the backfill still reach it as context.
+    """
+    text = _after_gateway_material(message)
+    if messaging and not text.startswith(HOST_BLOCK_OPENERS) and not _opens_with_frame(_fold(text)):
+        text = text[_display_name_prefix_end(text):]
+    return text
+
+
+def _host_command_turn(text: str) -> bool:
+    text = _after_gateway_material(text)
     # A host block still open here never closed; what follows it is inside it.
-    if text.startswith(_FOLDED_HOST_BLOCK_OPENERS):
+    if text.startswith(HOST_BLOCK_OPENERS):
         return False
-    if _opens_with_frame(text):
+    if _opens_with_frame(_fold(text)):
         return True
-    sender = _SENDER_PREFIX.match(text)
-    return bool(sender) and _opens_with_frame(text[sender.end():])
+    sender = SENDER_PREFIX.match(text)
+    return bool(sender) and _opens_with_frame(_fold(text[sender.end():]))
 
 
 def host_command_turn(message: object) -> bool:
     """Whether Hermes opened this turn from one of its own session-command templates."""
-    return isinstance(message, str) and _host_command_turn(_fold(message))
+    return isinstance(message, str) and _host_command_turn(message)
 
 
 def _interval_term(term: str) -> bool:
@@ -512,16 +611,17 @@ def _carries_goal(folded: str) -> bool:
 @lru_cache(maxsize=1024)
 def _loop_timer_reading(text: str) -> tuple[str, bool, str]:
     """The verdict on `text`, whether a typed `/loop` overrode a goal-loop verdict to reach it, and the loop's prompt."""
-    folded = _fold(text).strip()
+    text = text.strip()
     # A turn Hermes wrote is no request at all, whatever its template says.
-    if _host_command_turn(folded):
+    if _host_command_turn(text):
         return LOOP_TIMER_NONE, False, ""
     # Only the person's current message is read: not the backfill, and not a
     # host block that never closed, which still holds whatever follows it.
-    message = _after_gateway_material(folded)
-    if message.startswith(_FOLDED_HOST_BLOCK_OPENERS):
+    message = _after_gateway_material(text)
+    if message.startswith(HOST_BLOCK_OPENERS):
         return LOOP_TIMER_NONE, False, ""
-    sender = _SENDER_PREFIX.match(message)
+    message = _fold(message)
+    sender = SENDER_PREFIX.match(message)
     lead = _after_courtesy(message[sender.end():] if sender else message)
     # OMH's names stand where the loop word would: "/ulw-loop every 5m ..." has
     # the same shape as "/loop every 5m ...", and is OMH's.
@@ -575,3 +675,10 @@ def native_loop_prompt(text: str) -> str:
     """
     verdict, _typed_goal, prompt = _loop_timer_reading(text)
     return prompt if verdict == LOOP_TIMER_NATIVE else ""
+
+
+# Bound at the end, after this module's own definitions: `skill_shortlist`
+# imports this module, and a sibling is read through a module-scope name
+# because Hermes may evict the bundle's modules from `sys.modules` while its
+# hooks stay callable (#1979).
+from . import skill_shortlist as _skill_shortlist  # noqa: E402

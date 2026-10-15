@@ -6,6 +6,7 @@ from typing import Any
 
 from ..awareness import awareness_primer_payload, awareness_route_hint
 from ..degradation import safe_error_type as _safe_error_type
+from ..hermes_session_commands import person_request_text
 from ..host_observation import OBSERVATION_SCHEMA, attach_public_observation, observe_plugin_tool_call
 
 OMH_RECOMMEND_SCHEMA = {
@@ -70,7 +71,8 @@ _FALLBACK_RECOMMENDATIONS = (
 
 def omh_recommend_handler(args: dict, **kwargs) -> str:
     observation = observe_plugin_tool_call("omh_recommend", args, kwargs)
-    message = str(args.get("message") or "").strip()
+    # The ranking reads the person's words, as the route summary beside it does.
+    message = person_request_text(str(args.get("message") or "")).strip()
     limit = _bounded_limit(args.get("limit"), default=5)
     if not message:
         payload = {

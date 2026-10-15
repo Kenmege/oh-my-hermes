@@ -4,6 +4,11 @@ from typing import Any
 
 
 CHAT_SOURCES = ("generic", "discord", "slack", "telegram", "hermes", "github")
+# The sources that are a messaging gateway's own channel. Only there does
+# Hermes put a shared session's `[<display name>] ` before the person's text
+# (`gateway/run_inbound.py`, `_prefix_inbound_sender_context`); `hermes` names
+# no platform, so it is not one of them.
+MESSAGING_CHAT_SOURCES = frozenset({"discord", "slack", "telegram"})
 SOURCE_METADATA_KEYS = (
     "source_event_id",
     "project_ref",

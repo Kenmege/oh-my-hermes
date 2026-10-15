@@ -234,15 +234,17 @@ ATTENDED_PLATFORMS: Final = LOCAL_ATTENDED_PLATFORMS | MESSAGING_ATTENDED_PLATFO
 KANBAN_TASK_ENV: Final = "HERMES_KANBAN_TASK"
 SINGLE_QUERY_ENV: Final = "HERMES_SINGLE_QUERY_SESSION"
 
-# Host blocks closed by `]` and a blank line before the person's text.
-_HOST_BLOCK_OPENERS: Final = (
+# Host blocks closed by `]` and a blank line before the person's text. These
+# blocks, the backfill separator and the sender prefix are public because
+# `hermes_session_commands.person_request_text` reads the same assembly.
+HOST_BLOCK_OPENERS: Final = (
     "[Replying to",
     "[The user sent",
     "[Triggering message id:",
     "[If you need a closer look",
     "[Quoted message]",
 )
-_HOST_BLOCK_END: Final = "]\n\n"
+HOST_BLOCK_END: Final = "]\n\n"
 # Notes Hermes writes for an attachment; the pending slot merges any sender's
 # caption into such an event (`merge_pending_message_event`).
 # `[Image attached at: <path>]` / `[Image attached: <url>]` is the hint
@@ -258,7 +260,7 @@ _TEXT_PART_TYPES: Final = frozenset({"text", "input_text"})
 # merge it may be another sender's clip, so it marks a media turn. DOTALL, so
 # a transcript that spans lines or quotes its own words still matches.
 _TRANSCRIPT_PARAGRAPH: Final = re.compile(r'\A\s*".*"(?:\n\n|\s*\Z)', re.DOTALL)
-_BACKFILL_SEPARATOR: Final = "\n\n[New message]\n"
+BACKFILL_SEPARATOR: Final = "\n\n[New message]\n"
 # Inlined material with no closing boundary: the generic note that says a
 # file's content follows, every adapter's `[Content of <name>]:` header, and
 # QQ's `[Quoted message]:` block, whose quoted text runs into the person's.
@@ -271,7 +273,7 @@ _UNSPLITTABLE_MARKERS: Final = (
 # message when it expands `@file:`/`@url:`/`@folder:`/git references.
 _EXPANSION_HEADERS: Final = ("--- Context Warnings ---", "--- Attached Context ---")
 # `[<display name>] ` at the start of the person's text in a shared session.
-_SENDER_PREFIX: Final = re.compile(r"\[[^\]\n]*\] ")
+SENDER_PREFIX: Final = re.compile(r"\[[^\]\n]*\] ")
 
 
 def _flatten(message: object) -> tuple[str, bool]:
@@ -339,27 +341,27 @@ def _person_segment(message: object, *, messaging: bool) -> tuple[str, bool]:
             # expansion, and backfill precedes the person's text, so a header
             # next to any of them may be a line inside quoted or backfilled
             # material rather than the host's own: fail closed.
-            if "[New message]" in text or any(opener in text for opener in _HOST_BLOCK_OPENERS):
+            if "[New message]" in text or any(opener in text for opener in HOST_BLOCK_OPENERS):
                 return "", False
             text = "\n".join(lines[:index])
             break
-    if _BACKFILL_SEPARATOR in text:
-        text = text.rsplit(_BACKFILL_SEPARATOR, 1)[1]
+    if BACKFILL_SEPARATOR in text:
+        text = text.rsplit(BACKFILL_SEPARATOR, 1)[1]
         # A separator spelled inside a quoted block is not the host's: cut
         # after any block end that follows it.
-        cut = text.rfind(_HOST_BLOCK_END)
+        cut = text.rfind(HOST_BLOCK_END)
         if cut != -1:
-            text = text[cut + len(_HOST_BLOCK_END):]
-    elif any(opener in text for opener in _HOST_BLOCK_OPENERS):
-        cut = text.rfind(_HOST_BLOCK_END)
+            text = text[cut + len(HOST_BLOCK_END):]
+    elif any(opener in text for opener in HOST_BLOCK_OPENERS):
+        cut = text.rfind(HOST_BLOCK_END)
         if cut == -1:
             return "", False
-        text = text[cut + len(_HOST_BLOCK_END):]
-    if any(opener in text for opener in (*_HOST_BLOCK_OPENERS, "[New message]")):
+        text = text[cut + len(HOST_BLOCK_END):]
+    if any(opener in text for opener in (*HOST_BLOCK_OPENERS, "[New message]")):
         return "", False
     prefixed = False
     if messaging:
-        match = _SENDER_PREFIX.match(text)
+        match = SENDER_PREFIX.match(text)
         if match:
             text = text[match.end():]
             prefixed = True

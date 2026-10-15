@@ -4,6 +4,43 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **On a gateway turn OMH routes on the person's own words.** With Hermes'
+  Discord tools loaded, every Discord message reaches OMH behind
+  ``[Triggering message id: `…` — use as `message_id` for reply/react/pin via
+  the discord tools.]``; a reply adds a pointer that quotes the message replied
+  to, a channel can add backfilled history before `[New message]`, and a shared
+  session puts `[<name>] ` before the text. The in-session route hint, the
+  candidate line, the chat router and the wrapper read all of it as the
+  request. On `origin/main` 42ad99ec7 the trigger note alone changed the hint on
+  102 of 787 intervention cases and 41 of 748 negative controls, and the route
+  on 159 and 404 of them: "please pay with my card for the summary report" went
+  to `gateway-intent-card` instead of the pre-spend card, and "what is a web
+  crawler" dispatched `web-research`. One helper, `person_request_text`, now
+  removes that material before any route is decided; a reply's quoted text is
+  context, not the request. What OMH hands on still carries the whole turn: the
+  routing prompt a bridge forwards to Hermes, the coding handoff and the plan
+  keep the quote, an attachment's path and the backfill. The sender prefix is
+  removed only on a turn from a messaging gateway (the platform in the hook,
+  the `discord`, `slack` or `telegram` source in the router and the wrapper),
+  since Hermes writes it nowhere else, and even there a bracket that names a
+  skill, `omh` or `ulw`, an invocation, a relay header, or a second bracket
+  stays: `[omh] status`, `[deep-interview] …` and `[ulw] fix the flaky tests`
+  route as before on every surface. A role marker is read from the person's own
+  text. A reply pointer ends at the `"]` after its quote and an image
+  description at the `~]` after its closer-look note, so a `]` and a blank line
+  inside either no longer cut them; QQ's `[Quoted message]:` block, which has
+  no close, leaves the turn whole. The context brief and the plugin tools'
+  standalone fallbacks now skip a turn Hermes wrote from a session-command
+  template, as the hook and the wrapper already did. Measured over both corpora:
+  behind a trigger note, a reply pointer in either Hermes order, or a reply
+  quoting a skill request, nothing differs from the bare request on the hint,
+  the route or the wrapper's next action; behind a sender prefix on a
+  messaging turn, only a request that itself opens with a bracket differs, and
+  it reads as it did before. Routed bare, no route moved; the hint moved to
+  none on the 8 Hermes host frames in the corpora, and two loop requests behind
+  a sender prefix now start the cycle, as the same request without the prefix
+  does.
+
 - **A refused or Hermes-recovered fanout unit ends in a true state.** A unit
   refused after a capacity-reuse reservation (no provable write fence, or the
   reused worktree's preflight), or one whose dispatch raised before its spawn,

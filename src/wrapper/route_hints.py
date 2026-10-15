@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from ..ingress import CHAT_SOURCES
+from ..ingress import CHAT_SOURCES, MESSAGING_CHAT_SOURCES
 from ..plugin_bundle.omh.awareness import (
     awareness_generic_tool_checkpoint_payload,
     awareness_route_hint,
     awareness_route_hint_context_from_payload,
 )
 from ..plugin_bundle.omh.degradation import degradation_chat_note
+from ..plugin_bundle.omh.hermes_session_commands import person_request_text
 from ..plugin_bundle.omh.route_answerers import answerer_ladder
 from ..plugin_bundle.omh.route_question_mode import ROUTE_QUESTION_MODE_OFF, read_route_question_mode
 from ..routing.catalog_questions import is_skill_catalog_question
@@ -62,7 +63,13 @@ def build_chat_route_hint_payload(
     # host's instruction for itself, and the router answers it directly; a
     # hint read from its text would name a workflow beside that fallback. The
     # hint reads no request on such a turn, as the `pre_llm_call` hook's does.
-    hint_message = "" if host_owned_command_turn(message) else message
+    # On a person's turn it reads their own words, never the gateway material
+    # around them; the catalog picker below reads the same text.
+    hint_message = (
+        ""
+        if host_owned_command_turn(message)
+        else person_request_text(message, messaging=source in MESSAGING_CHAT_SOURCES)
+    )
     route_hint = awareness_route_hint(hint_message, max_hints=max_hints)
     route_hint = _route_hint_with_catalog_picker(route_hint, hint_message)
     route = route_chat_message(message, source=source, limit=max_hints)

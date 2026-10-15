@@ -4235,11 +4235,31 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
     RoutingPrecisionCase(
         "hermes-plan-turn-behind-a-reply-pointer-is-host-owned",
         "A /plan turn behind a reply pointer is not routed",
-        "[Replying to bob: \"can you plan it\"]\n\n[/plan \u2014 plan mode]\n\nFor this turn, you are in PLAN MODE "
+        "[Replying to: \"can you plan it\"]\n\n[/plan \u2014 plan mode]\n\nFor this turn, you are in PLAN MODE "
         "\u2014 planning only.\n\nTask to plan:\nadd a dark mode toggle\n",
         "answer_directly",
         "direct_answer",
         "ultrawork",
+    ),
+    # On a person's turn the same material is not the request either: the
+    # router reads only the person's own words. Before, a Discord trigger note
+    # made a concept question dispatch web-research, and a reply quoting a
+    # skill name turned a thank-you into the catalog picker. A reply's quoted
+    # text is context, never the request.
+    RoutingPrecisionCase(
+        "concept-question-behind-a-discord-note-stays-direct",
+        "A concept question behind a Discord trigger note stays a direct answer",
+        "[Triggering message id: `1234` \u2014 use as `message_id` for reply/react/pin via the discord tools.]\n\n"
+        "what is a web crawler",
+        "answer_directly",
+        "direct_answer",
+    ),
+    RoutingPrecisionCase(
+        "thanks-under-a-reply-quoting-a-skill-stays-direct",
+        "A thank-you under a reply that quotes a skill request stays a direct answer",
+        "[Replying to: \"use omh-apple-design to review our iOS checkout\"]\n\nthanks, got it",
+        "answer_directly",
+        "direct_answer",
     ),
     RoutingPrecisionCase(
         "native-loop-compound-interval-is-not-the-goal-loop",
@@ -13080,13 +13100,17 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "choose_permission_profile",
         "loop",
     ),
+    # Behind a sender prefix (and below, a reply pointer as well) the loop card
+    # now reads what the bare request reads and starts the cycle. It used to
+    # read the prefix as the request's first word, so the invocation that
+    # opens the message went unseen and the card asked something else.
     RoutingInterventionCase(
         "dollar-loop-behind-a-sender-prefix-keeps-loop",
         "OMH's $loop form behind a shared session's sender prefix stays the goal loop",
         "[alice] $loop every hour check CI",
         "dispatch",
         "loop",
-        "prepare_scheduled_ops_blueprint",
+        "start_loop_cycle",
         "loop",
     ),
     # One verdict now decides every timed loop for the router and the hint.
@@ -13100,7 +13124,7 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "[Replying to: \"is CI green?\"]\n\n[alice] omh loop every 30 minutes check CI",
         "dispatch",
         "loop",
-        "ask_goal_boundary",
+        "start_loop_cycle",
         "loop",
     ),
     RoutingInterventionCase(
@@ -13837,6 +13861,49 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
     RoutingInterventionCase(
         "card-payment-for-a-report-reaches-spend-gate",
         "Paying with the person's card for a report reaches the pre-spend card, not an image card",
+        "please pay with my card for the summary report",
+        "dispatch",
+        "spend-gate",
+        "prepare_pre_spend_card",
+        "pre_spend_card",
+    ),
+    # The same spend behind a Discord trigger note: the router reads the
+    # person's words, not the note, which used to send it to
+    # gateway-intent-card.
+    # A leading bracket is a sender prefix only on a messaging gateway, and
+    # even there one that names a skill, `omh` or `ulw` is the person's own.
+    # Removed as a display name, each of these lost its route.
+    RoutingInterventionCase(
+        "omh-in-brackets-keeps-the-status-card",
+        "OMH named in brackets keeps the status card",
+        "[omh] what is the status",
+        "dispatch",
+        "oh-my-hermes",
+        "show_status",
+        "status",
+    ),
+    RoutingInterventionCase(
+        "skill-name-in-brackets-keeps-its-skill",
+        "A skill named in brackets keeps its skill",
+        "[deep-interview] I have a new product idea",
+        "dispatch",
+        "deep-interview",
+        "answer_clarification",
+        "clarification",
+    ),
+    RoutingInterventionCase(
+        "ulw-in-brackets-keeps-the-debugging-route",
+        "ulw in brackets keeps the debugging route",
+        "[ulw] fix the flaky tests",
+        "dispatch",
+        "app-debugging",
+        "prepare_root_cause_investigation",
+        "root_cause_investigation",
+    ),
+    RoutingInterventionCase(
+        "card-payment-behind-a-discord-note-reaches-spend-gate",
+        "Paying with the person's card behind a Discord trigger note still reaches the pre-spend card",
+        "[Triggering message id: `1234` \u2014 use as `message_id` for reply/react/pin via the discord tools.]\n\n"
         "please pay with my card for the summary report",
         "dispatch",
         "spend-gate",
