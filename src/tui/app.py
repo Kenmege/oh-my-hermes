@@ -1135,6 +1135,7 @@ class App(ModesMixin, AgentViewMixin):
         self.model = as_text(info.get("model")) if isinstance(info, dict) else ""
         self.context = ""  # the next session.usage says how full this session is
         self.context_percent = None
+        self.usage_output = self.turn_output_base = None  # the token counter is the session's own
         cwd = as_text(info.get("cwd")) if isinstance(info, dict) else ""
         self.transcript.cwd = cwd or str(self._create_params().get("cwd", ""))
         self.turn_pending = bool(result.get("running"))
@@ -1606,11 +1607,18 @@ class App(ModesMixin, AgentViewMixin):
         self._adopt_stored(as_text(payload.get("stored_session_id")))
 
     def _take_usage(self, usage: object) -> None:
-        """A usage block with context figures replaces the shown ones; one without leaves them. Its `output` counts tokens."""
+        """A usage block with context figures replaces the shown ones; one without leaves them. Its `output` counts tokens.
+
+        A turn that began before any counter was known (a fresh session's
+        first: Hermes sends its first usage block after `prompt.submit`) counts
+        from the first one it brings.
+        """
         if context_text(usage):
             self.context, self.context_percent = context_text(usage), context_percent(usage)
         output = usage.get("output") if isinstance(usage, dict) else None
         if isinstance(output, int) and not isinstance(output, bool):
+            if self.turn_output_base is None and self._busy():
+                self.turn_output_base = output
             self.usage_output = output
 
     def _turn_tokens(self) -> int | None:

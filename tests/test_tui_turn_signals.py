@@ -16,7 +16,7 @@ from __future__ import annotations
 import unittest
 
 from _tui_lines import line_text
-from test_tui_gateway_contract import recorded_events
+from test_tui_gateway_contract import recorded_events, recorded_rows
 from test_tui_modes import SID, drawn, make_app
 from omh.tui import gateway_contract as contract
 from omh.tui.app import BELL, TITLE_POP, TITLE_PUSH, TURN_ALERT_SECONDS, App
@@ -65,6 +65,32 @@ class WorkingRowTests(unittest.TestCase):
         self.assertIn("(12s · esc to interrupt)", row)  # nothing written yet
         app._on_event(Event("session.usage", SID, usage(1700)))
         self.assertIn("(12s · ↓1.2k tokens · esc to interrupt)", line_text(app._tail(80)[-1]))
+
+
+    def test_the_first_turn_of_a_fresh_session_counts_its_tokens_in_hermes_recorded_order(self) -> None:
+        # Hermes 6c61c3e27d (parity.jsonl todo_turn): the session's first usage block, `session.info` with output 0,
+        # comes after prompt.submit, so there is no counter yet when the turn begins.
+        app, _client = make_app(clock=Clock())
+        app._send_prompt("record a plan")
+        rows = [row["frame"]["params"] for row in recorded_rows("parity", "todo_turn")
+                if row["dir"] == "in" and row["frame"].get("method") == "event"]
+        working = []
+        for params in rows:
+            app._on_event(Event(params["type"], SID, params.get("payload", {})))
+            if params["type"] == "session.usage":
+                working.append(line_text(app._tail(80)[-1]))
+        self.assertIn("↓63 tokens", working[0])
+        summary = [block for block in app.transcript.blocks if isinstance(block, TurnSummaryBlock)]
+        self.assertEqual([block.output_tokens for block in summary], [238])
+
+    def test_a_new_session_counts_from_its_own_counter_not_the_last_sessions(self) -> None:
+        app, _client = make_app(clock=Clock())
+        app._on_event(Event("session.info", SID, usage(5000)))  # the session being left had written 5000
+        app._adopt_session({"session_id": "live-2", "stored_session_id": "stored-2", "info": {}})
+        app._send_prompt("go")
+        for out in (0, 63):
+            app._on_event(Event("session.usage", "live-2", usage(out)))
+        self.assertIn("↓63 tokens", line_text(app._tail(80)[-1]))
 
 
 class DoneLineTests(unittest.TestCase):
