@@ -1132,6 +1132,22 @@ class GatewayMaterialIsNotTheRequestTest(unittest.TestCase):
                     route = payload["route"]
                     self.assertEqual((route["action"], route["selected_skill"], payload["next_action"]), expected)
 
+    def test_a_display_name_is_read_only_from_a_messaging_source(self):
+        # "[code review] " is a display name's shape: from Discord it is one,
+        # and the turn is the question after it; from a non-gateway source the
+        # person wrote it, and the router, the wrapper and its hint read it.
+        message, words = "[code review] what is a web crawler", "what is a web crawler"
+        bare_route = route_chat_message(words, source="discord")
+        bare_hint = build_chat_route_hint_payload(words, source="discord")["route_hint"]
+        discord = route_chat_message(message, source="discord")
+        self.assertEqual((discord["action"], discord["reason"]), (bare_route["action"], bare_route["reason"]))
+        self.assertEqual(build_chat_route_hint_payload(message, source="discord")["route_hint"], bare_hint)
+        self.assertEqual(build_chat_interaction_payload(message, source="discord")["next_action"], "answer_directly")
+        generic = route_chat_message(message, source="generic")
+        self.assertEqual((generic["action"], generic["selected_skill"]), ("dispatch", "code-review"))
+        self.assertNotEqual(build_chat_route_hint_payload(message, source="generic")["route_hint"], bare_hint)
+        self.assertNotEqual(build_chat_interaction_payload(message, source="generic")["next_action"], "answer_directly")
+
     def test_the_recommend_tool_ranks_the_bare_request(self):
         def ranked(message: str) -> tuple[object, object]:
             payload = json.loads(recommend_tool.omh_recommend_handler({"message": message}))
@@ -1186,13 +1202,14 @@ class WhatOmhHandsOnCarriesTheTurnTest(unittest.TestCase):
                     self.assertTrue(route["routing_prompt"].endswith("User message:\n" + prefix + words))
 
     def test_the_coding_handoff_carries_the_whole_turn(self):
+        # `delegate` builds the handoff directly; `auto` reaches it through the
+        # route's coding owner.
         words = "fix this crash in the repo with codex"
-        bare = build_chat_interaction_payload(words, source="discord", mode="delegate", include_message=True)
-        for name, prefix in _CONTEXT_PREFIXES.items():
-            with self.subTest(context=name):
-                payload = build_chat_interaction_payload(
-                    prefix + words, source="discord", mode="delegate", include_message=True
-                )
+        for mode, name in ((mode, name) for mode in ("delegate", "auto") for name in _CONTEXT_PREFIXES):
+            prefix = _CONTEXT_PREFIXES[name]
+            bare = build_chat_interaction_payload(words, source="discord", mode=mode, include_message=True)
+            with self.subTest(mode=mode, context=name):
+                payload = build_chat_interaction_payload(prefix + words, source="discord", mode=mode, include_message=True)
                 self.assertEqual(payload["route"]["selected_skill"], bare["route"]["selected_skill"])
                 delegation = payload["delegation"]
                 self.assertEqual(delegation["message"], prefix + words)
