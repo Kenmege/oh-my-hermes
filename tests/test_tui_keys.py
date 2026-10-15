@@ -158,13 +158,20 @@ class EscapeSequenceTests(unittest.TestCase):
         for reply in (b"\x1b]11;rgb:ffff/ffff/ffff\x07", b"\x1b]11;rgb:1e1e/1e1e/1e1e\x1b\\"):
             with self.subTest(reply=reply):
                 self.assertEqual(decode(reply + b"ab"), [Key("unknown"), char("a"), char("b")])
-                whole = decode(reply)
-                # Split after its ESC it is Esc and keys (`EscapeWaitTests`); split after `ESC ]` it is Alt+] and
-                # keys, since only a digit after the `]` in what has arrived opens an OSC string.
-                for cut in range(3, len(reply)):
-                    decoder = KeyDecoder()
-                    events = decoder.feed(reply[:cut]) + decoder.feed(reply[cut:]) + decoder.flush()
-                    self.assertEqual(events, whole, f"split at byte {cut}")
+                # Split right after its ESC or its `ESC ]` too: the bytes held wait for the digit that opens it.
+                self.assertEqual(decode_split_everywhere(self, reply), [Key("unknown")])
+
+    def test_an_answer_split_after_its_bracket_with_its_rest_before_the_silence_types_nothing(self) -> None:
+        reply = b"\x1b]11;rgb:1e1e/1e1e/1e1e\x07"
+        for cut in (1, 2):  # after the ESC, after the `]`
+            with self.subTest(cut=cut):
+                now = [0.0]
+                decoder = KeyDecoder(lambda: now[0])
+                events = decoder.feed(reply[:cut])
+                now[0] += 0.005  # the rest 5 ms later, inside the loop's silence window
+                events += decoder.feed(reply[cut:])
+                now[0] += 1.0
+                self.assertEqual(events + decoder.flush(), [Key("unknown")])
 
     def test_alt_bracket_in_the_legacy_encoding_types_a_bracket_and_never_swallows_the_next_keys(self) -> None:
         # Alt+] with metaSendsEscape is `ESC ]`; no digit follows it, so it is no OSC string.
@@ -177,7 +184,14 @@ class EscapeSequenceTests(unittest.TestCase):
         events += decoder.feed(b"i") + decoder.flush()
         self.assertEqual(events, [char("]", alt=True), char("h"), char("i")])
         self.assertEqual(decode(b"\x1b]h"), [char("]", alt=True), char("h")])
-        self.assertEqual(decode(b"\x1b]"), [char("]", alt=True)])
+        self.assertEqual(decode(b"\x1b]"), [char("]", alt=True)])  # at the silence
+
+    def test_alt_bracket_at_the_end_of_a_read_waits_for_the_next_byte(self) -> None:
+        decoder = KeyDecoder()
+        self.assertEqual(decoder.feed(b"\x1b]"), [])  # an answer's OSC number may be the next byte
+        self.assertEqual(decoder.feed(b"x"), [char("]", alt=True), char("x")])
+        decoder = KeyDecoder()
+        self.assertEqual(decoder.feed(b"\x1b]") + decoder.feed(b"11;rgb:0/0/0\x07"), [Key("unknown")])
 
     def test_an_osc_string_that_never_ends_is_dropped_whole(self) -> None:
         self.assertEqual(decode(b"\x1b]11;rgb:ff"), [Key("unknown")])
@@ -925,7 +939,8 @@ class EscapeWaitTests(unittest.TestCase):
 
     def test_a_capital_o_typed_after_a_waiting_escape_is_esc_then_the_o(self) -> None:
         # A read that is a lone `O`, or `O` and a byte no SS3 key ends with, is typed: Esc, then its characters.
-        for rest in (b"O", b"Ok", b"n"):
+        # So is a lone `]`, or `]` and anything but the digit an answer's OSC string goes on with.
+        for rest in (b"O", b"Ok", b"n", b"]", b"]x"):
             with self.subTest(rest=rest):
                 paused = PausedInput(reporting=True)
                 paused.feed(b"\x1b")
