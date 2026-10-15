@@ -616,7 +616,22 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # adds three that dispatched the gate while "gate" anchored a cap
             # or wallet phrase anywhere in the message: an airport gate, a red
             # CI gate and a gate number (3).
-            expected=756,
+            # Sending Korean diagram, LLM-wiki and token/cost requests to the
+            # right skill adds twenty-one. Seventeen dispatched before:
+            # changing how an auth token is stored, code that lowers an API
+            # call's cost, asking how a token is stored, a token consumer, a
+            # token-usage limit feature and its middleware, a prompt that burns
+            # fewer tokens, Kafka token-consumption logic, a Kafka token
+            # consumer group and its consumer count, token usage parsed, a
+            # token-usage test written, a field that shows token usage added,
+            # token-usage monitoring turned off, and a request not to show token
+            # usage, each on ops-observability-card (15); and an LLM wiki built,
+            # spaced and unspaced, on wiki (2).
+            # Notes organized into an LLM wiki asked with wiki leading (1).
+            # Three hold the Korean diagram fix to the English boundary: sales
+            # data visualized, and a cloud architecture diagram bare and with a
+            # particle, none of which names codebase-uml (3).
+            expected=777,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -858,7 +873,27 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # gate run by name on the person's spending limit, which the cap's
             # everyday sense withdrew before the named gate was exempted from
             # it (1).
-            expected=797,
+            # Sending Korean diagram, LLM-wiki and token/cost requests to the
+            # right skill adds eleven. Five reach codebase-uml, which no
+            # Korean diagram request reached before: a codebase diagram, the
+            # codebase visualized, a class diagram with a particle attached, a
+            # class diagram of a cloud SDK module, and a codebase diagram
+            # beside "클라우드의", where a Korean code word keeps the diagram
+            # beside a Korean cloud word (5). One reaches ops-observability-card,
+            # which main sent to live-info-operator: a weekly token-usage report
+            # named as the last word (1). Twenty-three keep their base dispatch:
+            # a team wiki on wiki (1); token usage monitored, token consumption
+            # asked about, token burn complained of, the token-usage trend
+            # asked for, API cost monitored, token usage per feature and per
+            # function, this week's token usage as a bare noun phrase, cost
+            # monitoring with 해줘 said apart, and one sentence for each report
+            # predicate (check, compare, track, how much, how is it, a polite
+            # show-me), a spaced ending before "!", 해 줘 as two words, and 보여
+            # 주세요, 알려 줘 and 확인해 주세요 with the auxiliary written apart, on
+            # ops-observability-card, which the dropped bare 토큰 and 비용
+            # triggers carried before (20); and a token-usage API built and a
+            # token-usage bug fixed, which stay on ultrawork (2).
+            expected=826,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

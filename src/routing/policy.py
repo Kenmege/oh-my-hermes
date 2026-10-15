@@ -6762,6 +6762,12 @@ def _greenfield_build_guard_applies(
     # phrased: "make a copy of this file" is not a greenfield product request.
     if _contains_phrase(normalized_query, _GREENFIELD_EXISTING_REFERENT_PHRASES):
         return False
+    # An LLM wiki is a surface Hermes ships: its bundled `llm-wiki` skill builds
+    # one, so the request names what it wants and the turn asks instead of
+    # opening an interview (English already asked; Korean, which the weak-
+    # evidence check exempts, dispatched the interview on this guard alone).
+    if llm_wiki_request(normalized_query):
+        return False
     return not bool(_GREENFIELD_OTHER_LANE_TOKENS & query_tokens)
 
 
@@ -7421,6 +7427,106 @@ def _adversarial_qa_guard_applies(normalized_query: str, query_tokens: set[str])
     return qa_context and adversarial
 
 
+# Token and cost usage said in Korean. `ko.json` gives this card no bare 토큰 or
+# 비용 trigger -- they dispatched it for an auth token's storage and for the cost
+# of a function call -- so these phrases carry the usage reading. Unlike the
+# phrases above, each is read as a whole word ("토큰 소비" is not "토큰 소비자"),
+# and only in a sentence shaped like a look at the usage
+# (`_KOREAN_USAGE_REPORT_PREDICATES`), as the English token arm needs a status
+# or runtime word.
+_OPS_OBSERVABILITY_KOREAN_USAGE_PHRASES = tuple(
+    normalized_phrase(phrase)
+    for phrase in ("토큰 사용량", "토큰 사용 추이", "토큰 소모", "토큰 소모량", "토큰 소비", "토큰 소비량", "비용 모니터링")
+)
+# The final predicates a usage phrase counts under, each read as the start of
+# the sentence's final predicate ("보여주세요", "확인해줘"):
+#   보여, 알려 -- show me, tell me: ask for the figures;
+#   확인, 비교, 모니터링, 추적 -- check, compare, monitor, track: ask to look
+#     at them;
+#   얼마, 어때 -- how much, how is it: ask about the amount;
+#   리포트 -- the report itself, said as the last word;
+#   많, 빨라 -- is a lot, is fast: say how large the usage is, the Korean shape
+#     of "too many tokens".
+# 요약 (summarize) is not listed: the token arm below already reads it as a
+# status word, beside the 토큰 or 비용 every usage phrase carries. Every other
+# final predicate leaves the phrase uncounted: work (만들어줘, 추가해줘, 고쳐줘,
+# 파싱해줘, 구현해줘, 짜줘, 줄여줘, 정리해줘, which also means "clean up") and any
+# other question shape (어떻게 돼?, 궁금해) alike. Only the final predicate is
+# read: "기능별" and "함수별" earlier in the sentence modify the usage asked about.
+_KOREAN_USAGE_REPORT_PREDICATES = tuple(
+    normalized_phrase(stem)
+    for stem in ("보여", "알려", "확인", "비교", "모니터링", "추적", "얼마", "어때", "리포트", "많", "빨라")
+)
+# Last words that only finish the word before them, matched whole: 해 said
+# apart from its noun ("모니터링 해줘", "추적 해 줘") and 나왔/나와 after an amount
+# ("얼마 나왔어", "많이 나와"). A longer word that merely starts the same way is a
+# predicate of its own: 해제해줘 (turn off), 해결, 하지마 (don't).
+_KOREAN_PREDICATE_TAILS = frozenset(
+    normalized_phrase(tail)
+    for tail in (
+        "해", "해요", "해줘", "해줘요", "해주세요", "해줄래", "해줄래요", "해봐", "해봐요", "하세요",
+        "나왔어", "나왔어요", "나왔나", "나왔니", "나와", "나와요",
+    )
+)
+# The auxiliary 주다 written apart from its verb, the standard spelling ("보여
+# 주세요", "알려 줘", "확인해 주세요", "추적 해 줘"): the word before it is the
+# predicate, whatever it is, and the report check reads that word.
+_KOREAN_SPLIT_REQUEST_ENDINGS = frozenset(
+    normalized_phrase(ending) for ending in ("줘", "줘요", "주세요", "줄래", "줄래요")
+)
+_KOREAN_SENTENCE_END_PUNCTUATION = " ?!.~…"
+# What may follow a Korean word without making it a longer one: a noun
+# particle that ends there ("소비가", not "소비가격"), or 하/해 making it a verb
+# ("모니터링해줘", "소비하는").
+_KOREAN_WORD_PARTICLES = tuple(normalized_phrase(particle) for particle in KOREAN_NOUN_PARTICLES)
+_KOREAN_VERBALIZERS = tuple(normalized_phrase(verbalizer) for verbalizer in ("하", "해"))
+
+
+def _is_hangul(character: str) -> bool:
+    # Folded text carries conjoining jamo; composed syllables are checked too.
+    return "\u1100" <= character <= "\u11ff" or "\uac00" <= character <= "\ud7a3"
+
+
+def _korean_word_ends_at(normalized_query: str, end: int) -> bool:
+    rest = normalized_query[end:]
+    if not rest or not _is_hangul(rest[0]) or rest.startswith(_KOREAN_VERBALIZERS):
+        return True
+    for particle in _KOREAN_WORD_PARTICLES:
+        if rest.startswith(particle):
+            after = rest[len(particle):]
+            if not after or not _is_hangul(after[0]):
+                return True
+    return False
+
+
+def _korean_final_predicate(words: list[str]) -> str:
+    if len(words) > 1 and words[-1] in _KOREAN_SPLIT_REQUEST_ENDINGS:
+        words = words[:-1]
+    if len(words) > 1 and words[-1] in _KOREAN_PREDICATE_TAILS:
+        return words[-2]
+    return words[-1] if words else ""
+
+
+def _korean_usage_request(normalized_query: str) -> bool:
+    """A Korean usage phrase in a sentence that asks to see the usage.
+
+    The phrase counts when the sentence's final predicate is a report form
+    (`_KOREAN_USAGE_REPORT_PREDICATES`), or when the sentence ends on the
+    phrase itself ("이번 주 토큰 사용량", "토큰 사용량은?"), a noun-phrase question.
+    """
+    text = normalized_query.rstrip(_KOREAN_SENTENCE_END_PUNCTUATION)
+    last_word_start = text.rfind(" ") + 1
+    asks_to_see = _korean_final_predicate(text.split()).startswith(_KOREAN_USAGE_REPORT_PREDICATES)
+    for phrase in _OPS_OBSERVABILITY_KOREAN_USAGE_PHRASES:
+        start = text.find(phrase)
+        while start != -1:
+            end = start + len(phrase)
+            if _korean_word_ends_at(text, end) and (asks_to_see or end > last_word_start):
+                return True
+            start = text.find(phrase, start + 1)
+    return False
+
+
 def _ops_observability_guard_applies(normalized_query: str, query_tokens: set[str]) -> bool:
     if _public_plugin_connector_readiness_requested(normalized_query):
         return False
@@ -7432,11 +7538,16 @@ def _ops_observability_guard_applies(normalized_query: str, query_tokens: set[st
         return False
     if _contains_phrase(normalized_query, _OPS_OBSERVABILITY_PHRASES):
         return True
+    if _korean_usage_request(normalized_query):
+        return True
     telemetry = bool(_OPS_OBSERVABILITY_TOKENS & query_tokens)
     runtime_context = operator_context
+    # No "알려줘" here: it is Korean's ordinary "tell me", which the English list
+    # does not carry either, and with it any 토큰 or 비용 question ("토큰 저장
+    # 방식 알려줘", "이 알고리즘 시간 비용 알려줘") read as a usage report.
     status_intent = _contains_phrase(
         normalized_query,
-        ("status", "show", "report", "summary", "보여줘", "알려줘", "상태", "요약"),
+        ("status", "show", "report", "summary", "보여줘", "상태", "요약"),
     )
     if ops_observability_generic_metrics_blocked(normalized_query, query_tokens):
         return False
@@ -8087,7 +8198,7 @@ def llm_wiki_request(normalized_query: str) -> bool:
     base the agent maintains itself; "knowledge base" and "ingest" in such a
     message are its words, not a research department's or a wiki blueprint's.
     """
-    return _contains_phrase(normalized_query, ("llm wiki", "llm-wiki"))
+    return _contains_phrase(normalized_query, ("llm wiki", "llm-wiki", "llm 위키", "llm위키"))
 
 
 def _wiki_capture_destination_request(normalized_query: str, query_tokens: set[str]) -> bool:
