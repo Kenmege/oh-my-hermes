@@ -170,7 +170,7 @@ class ModelCommandTests(unittest.TestCase):
             client.calls[-1],
             ("slash.exec", {"command": "model claude-opus-5-5 --provider anthropic --session", "session_id": SID}),
         )
-        self.assertEqual(commands(app)[-1], "/model claude-opus-5-5 --provider anthropic --session")
+        self.assertEqual(commands(app), ["/model claude-opus-5-5 --provider anthropic --session"])  # one echo, the pick's
 
     def test_esc_closes_the_picker_and_switches_nothing(self) -> None:
         app, client = self.opened()
@@ -179,6 +179,7 @@ class ModelCommandTests(unittest.TestCase):
         self.assertIsNone(app.model_picker)
         self.assertEqual(len(client.calls), calls)
         self.assertEqual(app.composer.text, "")
+        self.assertEqual(commands(app), [])  # no `› /model` left standing empty
 
     def test_model_with_a_name_goes_to_hermes_as_typed(self) -> None:
         app, client = make_app()

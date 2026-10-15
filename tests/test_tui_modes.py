@@ -214,7 +214,7 @@ class SteerTests(unittest.TestCase):
         answer(app, client, error={"code": 4010, "message": "agent does not support steer"})
         self.assertEqual([text for text, *_ in app.queued], ["keep this"])
         (warning,) = steers(app)
-        self.assertEqual(warning, "⧗ queued — Hermes refused the steer (4010: agent does not support steer) · keep this")
+        self.assertEqual(warning, "⧗ queued — Hermes refused the steer (agent does not support steer) · keep this")
 
     def test_a_steer_hermes_does_not_take_never_interrupts_the_turn_whatever_the_busy_mode(self) -> None:
         # Under `interrupt` (Hermes' default) or `steer`, a prompt.submit mid-turn redirects the turn.
@@ -245,7 +245,7 @@ class SteerTests(unittest.TestCase):
                 app.turn_pending = False
                 answer(app, client, error={"code": 4010, "message": "agent does not support steer"})
                 self.assertEqual(client.named("prompt.submit"), [{"session_id": SID, "text": "too late"}])
-                self.assertIn("sent as a prompt — Hermes refused the steer (4010", steers(app)[0])
+                self.assertIn("sent as a prompt — Hermes refused the steer (agent", steers(app)[0])
 
     def test_in_plan_mode_the_refused_steer_waits_as_the_plan_prompt(self) -> None:
         app, client = make_app(busy=True)

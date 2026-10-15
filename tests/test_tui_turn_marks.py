@@ -264,7 +264,7 @@ class SteerPlacementTests(unittest.TestCase):
         answer(app, client, error={"code": 4010, "message": "agent does not support steer"})
         (block,) = [block for block in app.transcript.blocks if isinstance(block, SteerBlock)]
         (row,) = block_rows(block, 100, THEME)
-        self.assertEqual(line_text(row), "⧗ queued — Hermes refused the steer (4010: agent does not support steer) · keep this")
+        self.assertEqual(line_text(row), "⧗ queued — Hermes refused the steer (agent does not support steer) · keep this")
         self.assertEqual({span.style for span in row}, {THEME.warn})
         self.assertEqual([text for text, *_ in app.queued], ["keep this"])
 
@@ -313,7 +313,7 @@ class UnansweredSteerTests(unittest.TestCase):
 class CommandPlacementTests(unittest.TestCase):
     """A command typed while a tool runs is held under it, as a steer is, and never cuts the running call off."""
 
-    COMMANDS = ("/details", "/effort high", "/keys", "/todos", "/model", "/queue")
+    COMMANDS = ("/details", "/effort high", "/keys", "/todos", "/model", "/queue", "/steer")  # bare /model, /steer: no echo
 
     def mid_tool(self, command: str) -> tuple[object, object]:
         app, client = make_app(busy=True)
@@ -404,6 +404,10 @@ class TurnRuleTests(unittest.TestCase):
         self.assertEqual(line_width(row), 50)
         self.assertEqual(set(text.split("  ", 1)[1]), {"─"})
         self.assertEqual(row[-1].style, THEME.rule)
+
+    def test_a_turn_without_tools_says_nothing_of_tools(self) -> None:
+        (row,) = block_rows(TurnSummaryBlock(2, 0, 40), 30, THEME)
+        self.assertEqual(line_text(row).split("  ")[0], "✻ 2s · ↓40")
 
     def test_a_narrow_terminal_keeps_the_facts_and_drops_the_rule(self) -> None:
         (row,) = block_rows(TurnSummaryBlock(34, 3, 1200), 24, THEME)

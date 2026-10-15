@@ -52,6 +52,9 @@ class SlashCommand:
     # Whether the transcript echoes it as `› /name arg`. A command whose own row says what it did (the steer, or
     # the prompt it sends) is not echoed: the echo would say it twice.
     echo: bool = True
+    # Whether it is echoed when typed bare: bare /model opens a picker, and what is picked is echoed as the command
+    # it runs, so an echo of the bare name would stand empty above it (or alone, once the picker is closed).
+    echo_bare: bool = True
 
 
 COMMANDS: tuple[SlashCommand, ...] = (
@@ -66,7 +69,8 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("history", LOCAL, "Page through this session's transcript"),
     SlashCommand("rewind", LOCAL, "Go back to an earlier prompt, edit it, and send it again (also Esc Esc)"),
     SlashCommand("todos", LOCAL, "Show this session's whole plan"),
-    SlashCommand("model", LOCAL, "Switch this session's model (a picker, or /model <name> [--provider <slug>])"),
+    SlashCommand("model", LOCAL, "Switch this session's model (a picker, or /model <name> [--provider <slug>])",
+                 echo_bare=False),
     SlashCommand("export", LOCAL, "Hermes' profile archive (config, skills, theme), not this transcript"),
     SlashCommand("details", LOCAL, "Show or hide thinking and tool details", ("detail",)),
     SlashCommand("queue", LOCAL, "Show messages waiting for the current turn", ("q",)),
@@ -83,7 +87,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
                  ("reload_skills",)),
     # Claude Code's names for Hermes' commands.
     SlashCommand("cost", RENAMED, "Token usage and rate limits (Hermes' /usage)", target="usage"),
-    SlashCommand("permissions", RENAMED, "Show or set the approval mode (Hermes' /approvals)", target="approvals"),
+    SlashCommand("permissions", RENAMED, "Show or set the persistent approval mode (Hermes' /approvals)", target="approvals"),
     # Surfaces that only Hermes' own terminal has.
     SlashCommand("update", HERMES, "Update Hermes"),
     SlashCommand("voice", HERMES, "Voice mode"),

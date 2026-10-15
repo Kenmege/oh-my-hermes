@@ -31,7 +31,7 @@ from .width import cell_width, truncate, truncate_line
 
 PICK = "pick"
 CLOSE = "close"
-HINT = "↑↓ move · type to filter · Enter switches this session · Esc closes"
+HINT = "↑↓ move · type to filter · enter switches this session · esc closes"
 TITLE = " Model ({count})"
 CURRENT_MARK = "●"
 

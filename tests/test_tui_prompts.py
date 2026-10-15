@@ -106,7 +106,7 @@ class ApprovalTests(unittest.TestCase):
     def test_the_choice_row_names_arrows_and_enter_and_no_letter_shortcut(self) -> None:
         row = line_text(slot("approval", APPROVAL).lines(80, DEFAULT_THEME, max_rows=4)[-1])
         self.assertIn("allow once", row)
-        self.assertIn("←→ then Enter · d or Esc denies", row)
+        self.assertIn("←→ then enter · d or esc denies", row)
         self.assertNotIn("o:", row)
         self.assertNotIn("s:", row)
 
@@ -236,7 +236,7 @@ class ClarifyTests(unittest.TestCase):
 
     def test_the_hint_says_esc_cancels_because_it_cancels_every_question(self) -> None:
         text = "\n".join(line_text(row) for row in slot("clarify", CLARIFY).lines(80, DEFAULT_THEME, 6))
-        self.assertIn("Esc cancels", text)
+        self.assertIn("esc cancels", text)
         self.assertNotIn("skips", text)
 
     def test_a_clarify_with_no_question_is_declined_at_once_with_a_notice(self) -> None:

@@ -526,8 +526,10 @@ TURN_RULE = "─"
 
 
 def _summary_rows(block: TurnSummaryBlock, width: int, theme: Theme) -> list[Line]:
-    """`✻ 34s · 3 tools · ↓1.2k  ────`: the turn's facts on the thin rule that closes it."""
-    facts = [elapsed_text(block.seconds), f"{block.tools} tool{'' if block.tools == 1 else 's'}"]
+    """`✻ 34s · 3 tools · ↓1.2k  ────`: the turn's facts on the thin rule that closes it (no tool count for none)."""
+    facts = [elapsed_text(block.seconds)]
+    if block.tools:
+        facts.append(f"{block.tools} tool{'' if block.tools == 1 else 's'}")
     if block.output_tokens:
         facts.append(f"↓{compact_count(block.output_tokens)}")
     done: Line = (Span(TURN_DONE_MARK, theme.dim), Span(" · ".join(facts), theme.muted))

@@ -24,7 +24,7 @@ from .width import cell_width, truncate, truncate_line
 PICK = "pick"
 CLOSE = "close"
 CURRENT_MARK = "●"
-HINT = "↑↓ move · type to filter · Enter switches · Esc closes"
+HINT = "↑↓ move · type to filter · enter switches · esc closes"
 
 
 @dataclass(frozen=True)

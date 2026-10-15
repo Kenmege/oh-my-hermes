@@ -323,8 +323,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   full, bad from 95 %) and what the session is doing. The banner above the
   session is one row: the brand, the version, the session it resumed and the
   working directory. A fresh session says under it where the last one is
-  (`↺ last session: <title> · /resume <id> reopens it`) until you send
-  something. On a terminal at least as wide as the OH-MY-HERMES block logo
+  (`last session: <title> · /resume <id> reopens it`), unless you have
+  already sent something by the time Hermes lists its sessions; the line
+  stays in scrollback like any notice. On a terminal at least as wide as the OH-MY-HERMES block logo
   (100 columns) and 24 rows tall, the start shows the logo above the banner,
   each row in the theme's gradient made to read on the terminal's
   background; `/new` and a switched session do not repeat it, and a full

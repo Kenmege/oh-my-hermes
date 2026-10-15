@@ -25,7 +25,7 @@ from .width import cell_width, truncate, truncate_line
 
 PICK = "pick"
 CLOSE = "close"
-HINT = "↑↓ move · type to filter · Enter edits it · Esc closes"
+HINT = "↑↓ move · type to filter · enter edits it · esc closes"
 TITLE = " Rewind to a prompt ({count})"
 
 

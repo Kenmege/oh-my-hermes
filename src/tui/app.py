@@ -268,7 +268,7 @@ BANNER_BRAND = "⚚ OH-MY-HERMES"
 LOGO_MIN_ROWS = 24
 # A fresh session says where the last one is (`session.list`), while nothing has been sent yet.
 LAST_SESSION_LIMIT = 3
-LAST_SESSION_NOTICE = "↺ last session: {label} · /resume {id} reopens it"
+LAST_SESSION_NOTICE = "last session: {label} · /resume {id} reopens it"
 PLACEHOLDER = "Ask Hermes anything"
 BARE_HERMES_NOTE = "Bare `hermes` opens Hermes' own terminal."
 
@@ -1772,6 +1772,7 @@ class App(ModesMixin, AgentViewMixin):
         action = self.composer.handle(event)
         if self.composer.text != before:
             self.menu_index = 0
+            self.escape_armed = None  # an edit takes back what a second Esc would have done
         self._on_composer(action, event, steer=isinstance(event, Key) and event.name == ENTER and event.ctrl)
 
     def _remember(self, text: str) -> None:
@@ -1969,7 +1970,8 @@ class App(ModesMixin, AgentViewMixin):
         if arg:
             self._route_slash(SlashInvocation("model", arg, None), 0)
         elif self._busy():
-            self.transcript.add_notice(MODEL_BUSY_NOTICE, NOTICE_WARN)
+            # Bare /model has no echo to say this under, so it waits under what runs rather than close it.
+            self.transcript.add_aside(NoticeBlock(MODEL_BUSY_NOTICE, NOTICE_WARN))
         elif not self.sid:
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
         else:
@@ -2351,7 +2353,7 @@ class App(ModesMixin, AgentViewMixin):
     def _steer_command(self, arg: str) -> None:
         """`/steer <text>`: what Ctrl+Enter does, on any terminal. Idle, the text goes as a prompt."""
         if not arg:
-            self.transcript.add_notice(STEER_USAGE, NOTICE_WARN)
+            self.transcript.add_aside(NoticeBlock(STEER_USAGE, NOTICE_WARN))  # no echo: it must not close what runs
         elif self._busy():
             self._steer(arg)
         else:
@@ -2385,7 +2387,7 @@ class App(ModesMixin, AgentViewMixin):
         if sid != self.sid:
             self._steer_back(block.text)
             return True
-        self._steer_refused(block, f"{error.get('code')}: {as_text(error.get('message')) or 'refused'}")
+        self._steer_refused(block, as_text(error.get("message")) or "refused")  # Hermes' words, not its code
         return True
 
     def _on_steer_unanswered(self, sid: str, block: SteerBlock) -> None:
@@ -2429,7 +2431,9 @@ class App(ModesMixin, AgentViewMixin):
         command plan mode wrote around a prompt is no command the person ran,
         and an alias's target runs under the alias's echo.
         """
-        if depth or invocation.for_plan_mode or (invocation.command is not None and not invocation.command.echo):
+        command = invocation.command
+        echoed = command is None or (command.echo and (bool(invocation.arg) or command.echo_bare))
+        if depth or invocation.for_plan_mode or not echoed:
             self._route_slash(invocation, depth)
             return
         self._as_command(echo or f"/{invocation.text}", lambda: self._route_slash(invocation, depth))

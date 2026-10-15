@@ -251,7 +251,7 @@ class PromptSlot:
 
     def _approval_choice_row(self, width: int, theme: Theme) -> Line:
         """The choices on one row, deny first; shorter labels when the long ones would not all fit."""
-        keys = "  ←→ then Enter · d or Esc denies"
+        keys = "  ←→ then enter · d or esc denies"
         short = "  ←→ ⏎ · d denies"
         ladder = (("long", keys), ("short", keys), ("short", short), ("narrow", short), ("narrow", "  d denies"), ("narrow", ""))
         for form, hint in ladder:
@@ -279,8 +279,8 @@ class PromptSlot:
         for index, choice in enumerate(self._current_choices()):
             style = theme.menu_current if index == self.selected else theme.text
             rows.append((Span(f"  {index + 1}. ", theme.muted), Span(choice, style)))
-        hint = "type an answer and press Enter" if not self._current_choices() else "number or Enter picks; or type an answer"
-        rows.append((Span(f"  {hint} · Esc cancels", theme.hint),))
+        hint = "type an answer and press enter" if not self._current_choices() else "number or enter picks; or type an answer"
+        rows.append((Span(f"  {hint} · esc cancels", theme.hint),))
         return rows
 
     def _value_lines(self, width: int, theme: Theme) -> list[Line]:
@@ -293,7 +293,7 @@ class PromptSlot:
         rows: list[Line] = [(Span("🔑 " if self.masked else "? ", theme.accent), Span(label, theme.text))]
         if prompt:
             rows.extend(wrap_line((Span("  " + str(prompt), theme.muted),), width))
-        rows.append((Span("  type it in the composer and press Enter · Esc declines", theme.hint),))
+        rows.append((Span("  type it in the composer and press enter · esc declines", theme.hint),))
         return rows
 
 

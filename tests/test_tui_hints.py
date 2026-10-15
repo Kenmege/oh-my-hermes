@@ -202,7 +202,7 @@ class BannerTests(unittest.TestCase):
             {"id": "earlier", "title": "fix the flaky test", "message_count": 12, "started_at": 0},
         ])
         notice = [block.text for block in app.transcript.blocks if isinstance(block, NoticeBlock)]
-        self.assertEqual(notice, ["↺ last session: fix the flaky test · /resume earlier reopens it"])
+        self.assertEqual(notice, ["last session: fix the flaky test · /resume earlier reopens it"])  # the notice mark only
 
     def test_a_hermes_that_does_not_know_session_list_costs_the_notice_not_the_session(self) -> None:
         app, client = make_app()

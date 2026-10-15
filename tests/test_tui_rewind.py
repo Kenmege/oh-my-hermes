@@ -80,7 +80,7 @@ class PickerTests(unittest.TestCase):
     def test_the_slot_names_what_picking_does(self) -> None:
         rows = lines_text(RewindPicker(rewind_rows(HISTORY)).lines(100, DEFAULT_THEME, 6, 1792006300.0))
         self.assertIn("Rewind", rows[0])
-        self.assertIn("Enter edits it", rows[0])
+        self.assertIn("enter edits it", rows[0])
         self.assertTrue(rows[1].startswith(" #2 Reply with exactly the word: two"), rows)
 
 
@@ -117,6 +117,15 @@ class DoubleEscapeTests(unittest.TestCase):
         app._set_composer("")
         esc(app)
         self.assertIn("esc again to rewind", mode_row(app, 80))
+
+    def test_typing_after_one_esc_takes_back_what_the_second_would_do(self) -> None:
+        clock = Clock()
+        app, _client = make_app(clock=clock)
+        esc(app)
+        self.assertIn("esc again to rewind", mode_row(app, 100))
+        app._on_input(Key(CHAR, "a"))
+        self.assertNotIn("esc again", mode_row(app, 100))  # at once, not 0.8 s later
+        self.assertIsNone(app.escape_armed)
 
     def test_esc_twice_on_an_empty_idle_composer_lists_the_prompts_to_rewind_to(self) -> None:
         clock = Clock()
