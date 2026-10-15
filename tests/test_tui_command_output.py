@@ -106,7 +106,19 @@ class CommandEchoTests(unittest.TestCase):
                 under = {part: block.command for block in app.transcript.blocks if isinstance(block, CommandBlock)
                          for part, _level in block.parts}
                 self.assertEqual(under, {said[1]: "/usage", said[2]: "/skills list"})
-                self.assertTrue(all(block.done for block in app.transcript.blocks if isinstance(block, CommandBlock)))
+                echoes = [block for block in app.transcript.blocks if isinstance(block, CommandBlock)]
+                self.assertEqual([block.command for block in echoes], ["/usage", "/skills list"])  # no repeated echo
+                self.assertTrue(all(block.done for block in echoes))
+
+    def test_output_answered_after_a_switch_repeats_the_echo_in_the_session_now_live(self) -> None:
+        app, client = make_app()
+        send(app, "/usage")
+        send(app, "/new")
+        answer(app, client, {"session_id": "live-2", "stored_session_id": "stored-2", "info": {}})
+        app._on_response(Response(1, {"output": "Session cost: $0.01"}, None))
+        echoes = [block for block in app.transcript.blocks if isinstance(block, CommandBlock)]
+        self.assertEqual([(block.command, block.parts) for block in echoes][-1:],
+                         [("/usage", [("Session cost: $0.01", NOTICE_INFO)])])  # not lost in the old session's echo
 
     def test_a_notice_from_outside_a_command_is_not_its_output(self) -> None:
         app, _client = make_app()

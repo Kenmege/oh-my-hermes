@@ -50,7 +50,7 @@ class SlashCommand:
     aliases: tuple[str, ...] = ()
     target: str = ""  # RENAMED: the Hermes command it runs
     # Whether the transcript echoes it as `› /name arg`. A command whose own row says what it did (the steer, or
-    # the prompt it sends) is not echoed: during a turn the echo would close the running tool group or reply.
+    # the prompt it sends) is not echoed: the echo would say it twice.
     echo: bool = True
 
 

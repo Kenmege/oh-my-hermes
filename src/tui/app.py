@@ -2776,7 +2776,7 @@ class App(ModesMixin, AgentViewMixin):
             self.pager.handle_key(Key(END), self.size[1])
 
     def _details(self, arg: str) -> None:
-        # No notice: a new block would close the live one, the only block the toggle changes.
+        # No notice: its echo is held under a live block (`Transcript.add_command`), the only block the toggle changes.
         self.transcript.toggle_details()
 
     def _show_queue(self, arg: str) -> None:

@@ -163,6 +163,60 @@ class SteerPlacementTests(unittest.TestCase):
         self.assertEqual([text for text, *_ in app.queued], ["keep this"])
 
 
+class CommandPlacementTests(unittest.TestCase):
+    """A command typed while a tool runs is held under it, as a steer is, and never cuts the running call off."""
+
+    COMMANDS = ("/details", "/effort high", "/keys", "/todos", "/model", "/queue")
+
+    def mid_tool(self, command: str) -> tuple[object, object]:
+        app, client = make_app(busy=True)
+        app._on_event(ev("message.start"))
+        app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="pytest -q"))
+        type_text(app, command)
+        app._on_input(Key(ENTER))
+        if app.pager is not None:  # /keys: the key list, left with q
+            app._on_input(Key(CHAR, "q"))
+        return app, client
+
+    def test_every_command_mid_tool_leaves_one_call_and_the_done_line_counts_it_once(self) -> None:
+        for command in self.COMMANDS:
+            with self.subTest(command=command):
+                app, _client = self.mid_tool(command)
+                group = app.transcript.blocks[-1]
+                self.assertIsInstance(group, ToolGroup)
+                self.assertFalse(group.done)  # still the live block
+                app._on_event(ev("tool.complete", tool_id="t1", name="terminal", result={"output": "1 passed"}))
+                app._on_event(ev("message.complete", text="done", status="complete"))
+                calls = [(tool.name, tool.status) for block in app.transcript.blocks
+                         if isinstance(block, ToolGroup) for tool in block.tools]
+                self.assertEqual(calls, [("terminal", TOOL_OK)])
+                summaries = [block.tools for block in app.transcript.blocks if isinstance(block, TurnSummaryBlock)]
+                self.assertEqual(summaries, [1])
+
+    def test_details_mid_turn_reaches_the_running_call(self) -> None:
+        app, _client = self.mid_tool("/details")
+        self.assertTrue(app.transcript.details_expanded)
+        self.assertIs(type(app.transcript.blocks[-1]), ToolGroup)
+        self.assertFalse(app.transcript.blocks[-1].done)
+
+    def test_the_echo_and_its_output_wait_under_the_call_then_land_after_its_group(self) -> None:
+        app, _client = self.mid_tool("/queue")
+        live = lines_text(app.transcript.live_lines(80, THEME))
+        self.assertEqual(live[-2:], ["› /queue", "  ⎿ Nothing is queued."])  # under what runs, its output under it
+        app._on_event(ev("tool.complete", tool_id="t1", name="terminal", result={"output": "1 passed"}))
+        app._on_event(ev("message.delta", text="All green."))
+        kinds = [type(block).__name__ for block in app.transcript.blocks]
+        self.assertEqual(kinds, ["ToolGroup", "CommandBlock", "AssistantBlock"])
+        self.assertEqual(app.transcript.blocks[1].parts, [("Nothing is queued.", "info")])
+
+    def test_between_turns_a_command_is_written_at_once(self) -> None:
+        app, _client = make_app()
+        type_text(app, "/queue")
+        app._on_input(Key(ENTER))
+        (block,) = app.transcript.blocks
+        self.assertEqual((block.command, block.done), ("/queue", True))
+
+
 class Clock:
     def __init__(self) -> None:
         self.now = 100.0

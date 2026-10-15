@@ -26,9 +26,12 @@ match, so a reply reads as one block beside the `› ` of the prompt above it.
 A slash command the person runs is a block of its own: `› /name arg` in the
 hint colour, then what it printed under `⎿`, each part in its level's colour
 and, for a warning or an error, its glyph. Its echo stays live while the
-command may still print (`close_command` ends that); a notice that arrives
-meanwhile is the command's output. A long output shows its first
-`OUTPUT_PREVIEW_ROWS` rows and a count of the rest, which `/history` shows.
+command may still print (`close_command` ends that); what it says meanwhile
+is its output (`command` names the command speaking). Typed while a block
+is live (a running tool, a streaming reply), the echo is held under that
+block, as a steer is, and written at the next boundary once the command is
+over. A long output shows its first `OUTPUT_PREVIEW_ROWS` rows and a count
+of the rest, which `/history` shows.
 
 Flush policy: a user or notice block flushes at once; assistant text flushes
 per completed source line (a trailing blank line waits for the text after it,
@@ -451,6 +454,9 @@ def _user_rows(block: UserBlock, width: int, theme: Theme) -> list[Line]:
 
 
 def _awaits_answer(block: Block) -> bool:
+    """A held block that is not finished yet: a steer Hermes has not answered, a command still printing."""
+    if isinstance(block, CommandBlock):
+        return not block.done
     return isinstance(block, SteerBlock) and block.state == STEER_SENT
 
 
@@ -676,7 +682,8 @@ class Transcript:
         self._taken_any = False  # whether any line has been taken (a spacer goes above the next block)
         self._left_out = 0  # blocks `retake_tail` left out: the next take opens with LEFT_OUT_NOTICE
         self.dropped = 0  # blocks BLOCK_CAP dropped from the front
-        # Blocks about a live one (a steer, an answer to Hermes), waiting for a block boundary (`add_steer`).
+        # Blocks about a live one (a steer, an answer to Hermes, a command's echo), waiting for a block boundary
+        # (`add_steer`, `add_command`).
         self._held: list[Block] = []
         # The command whose output is being written: a notice or an output lands under its echo while it is open.
         # `add_command` sets it; the app points it at the command whose handler or call answer is running.
@@ -738,12 +745,9 @@ class Transcript:
         last = self.blocks[-1] if self.blocks else None
         if isinstance(last, ToolGroup) and not last.done and len(self.blocks) - 1 >= self._cursor:
             self.blocks.insert(len(self.blocks) - 1, block)
-        elif last is not None and not last.done:
-            self._held.append(block)
+            self._version += 1
         else:
-            self._append(block)
-            return
-        self._version += 1
+            self._add_aside(block)
 
     def steer_answered(self, block: SteerBlock, state: str, outcome: str = "") -> None:
         block.state, block.outcome = state, outcome
@@ -760,9 +764,15 @@ class Transcript:
         self._append(NoticeBlock(text, level))
 
     def add_command(self, command: str) -> CommandBlock:
-        """Echo a command the person ran and make it `command`: what it prints lands under it until `close_command`."""
+        """Echo a command the person ran and make it `command`: what it prints lands under it until `close_command`.
+
+        Over a live block (a running tool, a streaming reply) the echo is held
+        under it, as a steer is, and written into the transcript at the next
+        boundary once the command is over: a command typed during a turn never
+        closes what is running.
+        """
         block = CommandBlock(command)
-        self._append(block)
+        self._add_aside(block)
         self.command = block
         return block
 
@@ -777,7 +787,7 @@ class Transcript:
             open_command.whole = open_command.whole or whole
             self._version += 1
         elif command:
-            self._append(CommandBlock(command, [(text, level)], whole, done=True))
+            self._add_aside(CommandBlock(command, [(text, level)], whole, done=True))
         else:
             self._append(NoticeBlock(text, level))
 
@@ -791,7 +801,7 @@ class Transcript:
         command = block if block is not None else self._open_command()
         if command is not None and not command.done:
             command.done = True
-            self._write_held()  # a steer sent with /steer goes under its echo
+            self._write_held()  # a steer sent with /steer goes under its echo; a held echo goes at a boundary
             self._version += 1
 
     def add_assistant(self, text: str) -> None:
@@ -834,6 +844,16 @@ class Transcript:
             return block
         return None
 
+    def _add_aside(self, block: Block) -> None:
+        """A block about what is live: held under the live blocks until the next boundary, as a steer is; appended
+        when nothing is live, so it never closes a running tool group or splits a streaming reply."""
+        last = self.blocks[-1] if self.blocks else None
+        if last is not None and not last.done:
+            self._held.append(block)
+            self._version += 1
+        else:
+            self._append(block)
+
     def _close_live(self) -> None:
         last = self.blocks[-1] if self.blocks else None
         if last is None or last.done:
@@ -854,7 +874,8 @@ class Transcript:
         self._drop_past_cap()
 
     def _write_held(self) -> None:
-        """The held steers Hermes has answered, into the transcript, when its last block is no longer live."""
+        """The held blocks that wait for nothing more (an answered steer, a finished command), into the transcript,
+        when its last block is no longer live."""
         if self.blocks and not self.blocks[-1].done:
             return
         answered = [block for block in self._held if not _awaits_answer(block)]
