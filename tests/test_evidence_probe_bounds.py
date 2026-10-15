@@ -203,6 +203,10 @@ class EvidenceProbeBoundsTests(unittest.TestCase):
             (f"python -m compileall -e {outside} .", "compileall path not allowed: absolute or home-relative"),
             ("python -m compileall -e../elsewhere .", "compileall path not allowed: '..' component"),
             ("python -m compileall -e '' .", "compileall path not allowed: empty"),
+            # After `--` every token is a path to argparse, even one that looks
+            # like an option.
+            (f"python -m compileall . -- -x {outside}", "compileall path not allowed: absolute or home-relative"),
+            (f"python -m compileall . -- -e {outside}", "compileall path not allowed: absolute or home-relative"),
         ):
             self.assert_refused(command, reason)
 
@@ -257,6 +261,27 @@ class EvidenceProbeBoundsTests(unittest.TestCase):
             argv = self.assert_admitted(command)
             tokens = shlex.split(command)
             self.assertEqual(argv, [*tokens[:3], "-e", ".", *tokens[3:]])
+            self.assertEqual(self.child.call_args.kwargs["env"]["PYTHONSAFEPATH"], "1")
+            self.assertIs(self.child.call_args.kwargs["stdin"], subprocess.DEVNULL)
+
+    def test_unittest_keeps_the_working_directory_importable_and_reads_no_stdin(self) -> None:
+        self.assertTrue(self.gather(["python -m unittest -v"])["all_pass"])
+        self.assertNotIn("PYTHONSAFEPATH", self.child.call_args.kwargs["env"])
+        self.assertIs(self.child.call_args.kwargs["stdin"], subprocess.DEVNULL)
+
+    def test_a_compileall_module_in_workdir_does_not_run(self) -> None:
+        python3 = shutil.which("python3")
+        if python3 is None:
+            self.skipTest("python3 unavailable")
+        version = _REAL_RUN([python3, "-c", "import sys; print(sys.version_info >= (3, 11))"],
+                            capture_output=True, text=True, check=False)
+        if version.stdout.strip() != "True":
+            self.skipTest("PYTHONSAFEPATH needs python3 >= 3.11")
+        (self.host_cwd / "compileall.py").write_text('print("SHADOW compileall ran")\n', encoding="utf-8")
+        with patch.object(evidence_tool.subprocess, "run", _REAL_RUN):
+            result = self.gather(["python3 -m compileall -q ."])
+        self.assertTrue(result["all_pass"], result["results"][0]["output_tail"])
+        self.assertNotIn("SHADOW", result["results"][0]["output_tail"])
 
     def test_a_symlinked_file_below_a_compiled_directory_is_skipped(self) -> None:
         if shutil.which("python3") is None:
@@ -275,10 +300,10 @@ class EvidenceProbeBoundsTests(unittest.TestCase):
         self.assertNotIn("leaked", result["results"][0]["output_tail"])
 
     def test_compileall_corpus_suffixes_the_guard_admits_parse_inside_workdir(self) -> None:
-        """Every suffix of up to three corpus tokens that the guard admits is read
-        by this interpreter's compileall parser as paths inside workdir, with
-        the `-e .` the tool adds; and the grammar decides every option that
-        parser defines."""
+        """Every suffix of up to three corpus tokens, and of four from a small
+        `--` corpus, that the guard admits is read by this interpreter's
+        compileall parser as paths inside workdir, with the `-e .` the tool
+        adds; and the grammar decides every option that parser defines."""
         self.escape_link(required=False)
         parser = _compileall_parser()
         grammar = evidence_tool._COMPILEALL_GRAMMAR
@@ -287,9 +312,14 @@ class EvidenceProbeBoundsTests(unittest.TestCase):
         alphabet = ("-e", "-e=../x", "-fe../x", "-qe=..", "../x", "/abs", "-i", "-", "--", "-q", "-x", "-b",
                     "-r", "2", "src", ".", "-fq", "-fqe", "escape", "-e.", "--inv", "--invalidation-mode",
                     "timestamp", "-fi-", "-1", "- /../x", "-x -i", "-d", "-p", "-ri", "-xi", "")
+        corpora = (
+            (alphabet, (1, 2, 3)),
+            # A path, `--`, then an option-looking token and a path: four tokens.
+            ((".", "--", "-x", "-e", "/abs"), (4,)),
+        )
         admitted = 0
-        for size in (1, 2, 3):
-            for suffix in map(list, itertools.product(alphabet, repeat=size)):
+        for tokens, sizes in corpora:
+            for suffix in (list(item) for size in sizes for item in itertools.product(tokens, repeat=size)):
                 if evidence_tool._suffix_rejection(["python", "-m", "compileall"], suffix, self.host_cwd):
                     continue
                 admitted += 1
@@ -317,6 +347,8 @@ class EvidenceProbeBoundsTests(unittest.TestCase):
                 ("git diff ../elsewhere/a ../elsewhere/b", "git diff path not allowed: '..' component"),
                 ("git diff HEAD -- ../elsewhere", "git diff path not allowed: '..' component"),
                 ("git diff -- ~/a b", "git diff path not allowed: absolute or home-relative"),
+                # After `--` a token that starts with `-` is a path, not an option.
+                ("git diff --check -- -a/../../elsewhere", "git diff path not allowed: '..' component"),
                 (f"git diff -O{outside}/order", "git diff option not allowed: -O (reads an order file)"),
                 ("git diff -pO order.txt", "git diff option not allowed: -O"),
                 ("git diff --stat -O order.txt HEAD", "git diff option not allowed: -O"),

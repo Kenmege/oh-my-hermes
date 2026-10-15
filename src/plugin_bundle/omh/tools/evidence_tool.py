@@ -69,6 +69,8 @@ _UNITTEST_VALUE_FLAGS = frozenset({"-k"})
 # read paths outside the repository. Every other argument that is not an option
 # must name a path inside workdir: with two paths and one of them outside the
 # repository, git switches to `--no-index` on its own and prints both files.
+# That bounds filesystem paths only; a `:/` pathspec or `<rev>:<path>` still
+# reaches the whole repository, which may extend above project_root.
 _GIT_DIFF_REFUSED = ("--output", "--ext-diff", "--textconv", "--no-index")
 
 
@@ -469,16 +471,22 @@ def run_verification_command(tokens: list[str], *, workdir: Path, timeout: int) 
     never ran, which a bare `passed: False` cannot. So the outcome is
     ``exited`` (with ``exit_code``), ``not_found`` or ``timeout``.
 
-    ``shell=False``, the minimal child environment, and a private pycache are
-    the same for both callers.
+    ``shell=False``, no stdin, the minimal child environment, and a private
+    pycache are the same for both callers. A `-m compileall` run also gets
+    ``PYTHONSAFEPATH`` (honoured from Python 3.11), so a ``compileall.py`` in
+    workdir cannot stand in for the stdlib module; `-m unittest` keeps the
+    working directory on ``sys.path`` because it imports test modules by name.
     """
     try:
         with tempfile.TemporaryDirectory(prefix="omh-evidence-pycache-") as pycache_dir:
             env = _minimal_child_environment(pycache_dir)
+            if _has_pair(tokens, "-m", "compileall"):
+                env["PYTHONSAFEPATH"] = "1"
             proc = subprocess.run(
                 tokens,
                 cwd=str(workdir),
                 shell=False,
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
