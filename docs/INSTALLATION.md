@@ -311,7 +311,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
   last 3,000 rows again under one row such as `⋯ 412 earlier messages ·
   /history shows all`; `/history` pages through the whole session. The OMH
   TUI holds a session's last 2,000 messages (a prompt, a reply, its
-  thinking, a group of tool calls and a notice are one each); older ones are
+  thinking, a group of tool calls, a notice, a command with its output, a
+  steer and a turn's done line are one each); older ones are
   left to the terminal's scrollback until a full redraw clears it, and from
   then on that row says how many `/history` still shows.
 - The bottom region holds, from the top: the prompt you just sent (while the
@@ -456,8 +457,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   on you; on exit the title you had comes back where the terminal keeps a
   title stack.
 - Motion and colour follow one rule set, so scrollback reads at a glance:
-  - What Hermes said opens with `⏺` in the text colour; what it did (a group
-    of tool calls, or a lone call's row) in the tool colour.
+  - What Hermes said opens with `⏺` in the text colour; what it did opens a
+    group of tool calls with `⏺` in the tool colour, and a lone call's row
+    with its state mark (below) in that state's colour and its name in the
+    tool colour.
   - A tool call's mark says its state by glyph as well as colour: `⏺`
     running, pulsing between the accent and dim every 0.5 s from its own
     start (parallel calls pulse on their own), `✓` done in green, `✗` failed
@@ -507,8 +510,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   `! shell (not sent to the model)`. Sending it runs it through Hermes'
   `shell.exec` (Hermes' own limit of 30 s, its refusal of dangerous commands,
   and its redaction of what the command printed) and shows `› !command`
-  with what it printed and its exit code when that is not 0, or Hermes'
-  reason for refusing it. Neither the command nor its output goes to the
+  with what it printed (its stdout, then its stderr, in the same colour) and
+  its exit code when that is not 0 (`exit 0` when it printed nothing), or
+  Hermes' reason for refusing it. Neither the command nor its output goes to the
   model. During a turn it waits in the queue and runs when the turn ends; a
   prompt queued behind it waits for its output. Only a line you sent with
   `!` waits as a shell line: a steer Hermes refused, or a message a command
@@ -557,7 +561,7 @@ Esc closes it):
 | ← / → | Move by a character; with Ctrl or Alt, by a word (Alt+B and Alt+F too) |
 | Home / End, Ctrl+A / Ctrl+E | Go to the start or the end of the line |
 | Backspace / Delete | Delete a character, or a paste chip whole; Backspace on an empty composer removes the last attached image |
-| Ctrl+W, Alt+Backspace | Deletes the word before the caret |
+| Ctrl+W, Alt+Backspace, Ctrl+Backspace | Deletes the word before the caret (Ctrl+Backspace where the terminal reports it apart from Backspace) |
 | Ctrl+U / Ctrl+K | Delete to the start or the end of the line |
 | Esc | Closes the `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run); cancels a rewind you picked |
 | Esc Esc | With text, clears it and keeps it in this session's history; on an empty composer between turns, lists your prompts to rewind to (`/rewind` does too) |

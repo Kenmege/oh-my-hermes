@@ -39,7 +39,7 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Home / End, Ctrl+A / Ctrl+E", "Go to the start or the end of the line"),
     ("Backspace / Delete", "Delete a character, or a paste chip whole; Backspace on an empty composer removes "
                            "the last attached image"),
-    ("Ctrl+W, Alt+Backspace", "Deletes the word before the caret"),
+    ("Ctrl+W, Alt+Backspace, Ctrl+Backspace", "Deletes the word before the caret (Ctrl+Backspace where the terminal reports it apart from Backspace)"),
     ("Ctrl+U / Ctrl+K", "Delete to the start or the end of the line"),
     ("Esc", "Closes the @ menu; on an empty composer, interrupts a running turn "
             "(the activity row shows how long it has run); cancels a rewind you picked"),
