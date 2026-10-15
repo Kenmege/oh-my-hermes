@@ -38,6 +38,7 @@ from omh.tui.terminal import (
     RESTORE_SEQUENCE,
     Terminal,
     background_from_colorfgbg,
+    colorfgbg_names_dark,
     keyboard_protocol_request,
     split_background_replies,
     terminal_blocker,
@@ -218,6 +219,15 @@ class BackgroundReplyTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIsNone(background_from_colorfgbg({"COLORFGBG": value}))
         self.assertIsNone(background_from_colorfgbg({}))
+
+    def test_colorfgbg_names_a_dark_background_for_its_dark_colours(self) -> None:
+        for value in ("15;0", "7;0", "15;default;0", "7;8", "0;4"):
+            with self.subTest(value=value):
+                self.assertTrue(colorfgbg_names_dark({"COLORFGBG": value}))
+        for value in ("0;15", "0;default;7", "15;default", "15", "", "garbage", "0;99", "15;9"):
+            with self.subTest(value=value):
+                self.assertFalse(colorfgbg_names_dark({"COLORFGBG": value}))
+        self.assertFalse(colorfgbg_names_dark({}))
 
 
 class MouseReportingSequenceTests(unittest.TestCase):

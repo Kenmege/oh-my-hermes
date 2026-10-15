@@ -493,8 +493,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
     mark, the red `✗`. Warnings stay amber, with no band. The bands follow
     the theme and the background: light tints on a light terminal, dark
     ones on a dark terminal, with words on them at 4.5:1 and marks at 3:1
-    against the band; with no background reported (and none named with
-    `/theme light` or `/theme dark`) no band is painted. Only
+    against the band; with no background reported (by the terminal or its
+    `COLORFGBG`) and none named with `/theme light` or `/theme dark`, no band
+    is painted. Only
     settled rows carry bands, never one that moves, and every state still
     reads apart without colour, by its glyph or its words. Diff lines keep
     their own bands.
@@ -725,13 +726,14 @@ The OMH TUI opens with the theme `omh theme use` saved under the OMH home
 (see [TUI Themes](#tui-themes)); `/theme <name>` switches the open session only.
 Before its first frame it asks the terminal for its background colour (OSC 11,
 waiting at most 0.1 s; a terminal that does not answer can still say light or
-dark through `COLORFGBG`) and measures the theme against it: your prompts and
-the replies are in the terminal's own text colour, every other colour a word is
-drawn in reaches 4.5:1 contrast on that background and every rule or mark 3:1
-(on the status line, which keeps the theme's own bar colour, against that bar),
-and on a light background the diff bands are light tints. With no answer the
-background is taken as dark, and nothing that would depend on knowing it is
-painted: your prompt gets no band, and a diff band names its own text colour
+dark through `COLORFGBG`: a light background by its colour, a dark one, colour
+0 to 6 or 8, as the dark stand-in `/theme dark` uses) and measures the theme
+against it: your prompts and the replies are in the terminal's own text colour,
+every other colour a word is drawn in reaches 4.5:1 contrast on that background
+and every rule or mark 3:1 (on the status line, which keeps the theme's own bar
+colour, against that bar), and on a light background the diff bands are light
+tints. With no answer and no `COLORFGBG` that names one, the background is
+taken as dark, and nothing that would depend on knowing it is painted: your prompt gets no band, and a diff band names its own text colour
 rather than leave your terminal's on it. `/theme light` and `/theme dark` measure against a
 light or a dark background whatever the terminal said, `/theme auto` follows
 the terminal again, and each, like `/theme <name>`, redraws the screen in the

@@ -169,7 +169,7 @@ from .slash import (
 )
 from .style import CSI, Line, Span, Style
 from .subagents import Hit, Roster
-from .terminal import Terminal, background_from_colorfgbg, terminal_name, terminal_supported
+from .terminal import Terminal, background_from_colorfgbg, colorfgbg_names_dark, terminal_name, terminal_supported
 from .theme import (
     DEFAULT_THEME,
     LIGHT_STAND_IN,
@@ -1002,6 +1002,7 @@ class App(ModesMixin, AgentViewMixin):
         self.wake: int | None = None  # the gateway client's wake descriptor, which `run` selects on with the input
         self.input_at = 0.0  # when input last arrived, on `clock`
         self.background: str | None = None  # the terminal's background as it reported it; None when it did not
+        self.background_named_dark = False  # no colour reported, but `COLORFGBG` named the background dark
         self.usage_output: int | None = None  # the session's `output` counter, as the last usage block said
         self.turn_output_base: int | None = None  # that counter as the running turn began
         self.session_title = ""  # Hermes' auto-title for the session (`session.title`)
@@ -1187,22 +1188,26 @@ class App(ModesMixin, AgentViewMixin):
 
     # ── loop ──
 
-    def adopt_background(self, background: str | None) -> None:
-        """The background the terminal reported (None when it did not): the theme is measured against it from now on."""
-        self.background = background
+    def adopt_background(self, answered: str | None, environ: Mapping[str, str] | None = None) -> None:
+        """The background the terminal answered, else what `COLORFGBG` in `environ` names: the theme is measured
+        against it from now on (`_surface`). None of either is no background reported."""
+        named = environ or {}
+        self.background = answered or background_from_colorfgbg(named)
+        self.background_named_dark = self.background is None and colorfgbg_names_dark(named)
         self.theme = build_theme(self._skin(), self._surface())
 
     def _skin(self) -> SkinTheme:
         return theme_for_name(self.theme.name) or default_theme()
 
     def _surface(self) -> str | None:
-        """What the theme is measured against: the reported background, or a light or dark one `/theme` forced."""
+        """What the theme is measured against: the reported background, a dark one `COLORFGBG` named, or a light or
+        dark one `/theme` forced."""
         reported = self.background
         if self.background_mode == BACKGROUND_LIGHT:
             return reported if reported and is_light(reported) else LIGHT_STAND_IN
-        if self.background_mode == BACKGROUND_DARK:
-            # The palette's status-bar background stands in for a dark one the person named: named, it is no guess,
-            # so the bands that need a known background are painted (None would read as nothing reported).
+        if self.background_mode == BACKGROUND_DARK or self.background_named_dark:
+            # The palette's status-bar background stands in for a dark one the person or `COLORFGBG` named: named, it
+            # is no guess, so the bands that need a known background are painted (None would read as nothing reported).
             return reported if reported and not is_light(reported) else surface_for(self._skin(), None)
         return reported
 
@@ -2920,6 +2925,8 @@ class App(ModesMixin, AgentViewMixin):
         """How the theme's background was chosen, for `/theme`'s notices."""
         if self.background_mode != BACKGROUND_AUTO:
             return f"on a {self.background_mode} background for this session; /theme auto follows the terminal again"
+        if self.background_named_dark:
+            return "follows the terminal's background (a dark one, as COLORFGBG names it)"
         if self.background is None:
             return "follows the terminal's background (none reported, so a dark one is assumed)"
         tone = "light" if is_light(self.background) else "dark"
@@ -3437,7 +3444,7 @@ def _run(
         return request_fallback(environ)
     with terminal:
         background, typed = terminal.query_background()
-        app.adopt_background(background or background_from_colorfgbg(environ))
+        app.adopt_background(background, environ)
         code = app.run(typed)
     if app.farewell:
         _say(stderr, app.farewell)

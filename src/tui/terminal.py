@@ -32,7 +32,9 @@ request behind it that every terminal answers, in order, so that answer ends
 the wait whether or not the background was answered, and
 `BACKGROUND_QUERY_SECONDS` bounds it when nothing comes. Keys typed while it
 waits are handed back to the caller. A terminal that does not answer OSC 11
-can still say light or dark through `COLORFGBG` (`background_from_colorfgbg`).
+can still say light or dark through `COLORFGBG`: a light background as its
+colour (`background_from_colorfgbg`), a dark one only as dark
+(`colorfgbg_names_dark`), for which the caller stands in a dark colour.
 
 `read` waits on the input and, when the caller names one, a wake descriptor
 (the gateway client's), and a resize signal ends its wait too, so the loop can
@@ -107,8 +109,10 @@ BACKGROUND_QUERY_SECONDS = 0.1
 # `ESC ] 11 ; rgb:R/G/B` ended by BEL or ST, each channel one to four hex digits (xterm's `XParseColor` forms).
 _BACKGROUND_REPLY = re.compile(rb"\x1b\]11;rgb:([0-9A-Fa-f]{1,4})/([0-9A-Fa-f]{1,4})/([0-9A-Fa-f]{1,4})(?:\x07|\x1b\\)")
 _DEVICE_ATTRIBUTES_REPLY = re.compile(rb"\x1b\[\?[0-9;]*c")
-# `COLORFGBG`'s background field names a colour of the basic sixteen; only these two are light ones (xterm's values).
+# `COLORFGBG`'s background field names a colour of the basic sixteen: 7 and 15 are the light ones (xterm's values),
+# 0 to 6 and 8 the dark ones.
 COLORFGBG_LIGHT = {"7": "#E5E5E5", "15": "#FFFFFF"}
+COLORFGBG_DARK = frozenset({"0", "1", "2", "3", "4", "5", "6", "8"})
 
 # Indices into the list termios.tcgetattr returns.
 _IFLAG = 0
@@ -203,10 +207,20 @@ def split_background_replies(data: bytes) -> tuple[str | None, bytes, bool]:
     return colour, data, answered is not None
 
 
+def _colorfgbg_background(environ: Mapping[str, str]) -> str:
+    """`COLORFGBG`'s background field (`fg;bg` or `fg;default;bg`); "" when it is not set in either form."""
+    fields = environ.get("COLORFGBG", "").split(";")
+    return fields[-1] if len(fields) > 1 else ""
+
+
 def background_from_colorfgbg(environ: Mapping[str, str]) -> str | None:
     """A light background `COLORFGBG` names (`fg;bg` or `fg;default;bg`), as its colour; None for anything else."""
-    fields = environ.get("COLORFGBG", "").split(";")
-    return COLORFGBG_LIGHT.get(fields[-1]) if len(fields) > 1 else None
+    return COLORFGBG_LIGHT.get(_colorfgbg_background(environ))
+
+
+def colorfgbg_names_dark(environ: Mapping[str, str]) -> bool:
+    """Whether `COLORFGBG` names a dark background (`fg;bg` or `fg;default;bg`, bg one of 0 to 6 and 8)."""
+    return _colorfgbg_background(environ) in COLORFGBG_DARK
 
 
 def raw_attributes(saved: list) -> list:

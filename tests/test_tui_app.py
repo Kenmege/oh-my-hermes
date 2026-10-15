@@ -1635,6 +1635,20 @@ class LocalCommandTests(AppTestCase):
                 prompt = theme_named("sky", expected).prompt.fg
                 self.assertEqual(seen[-1], hex_to_rgb(prompt))
 
+    def test_a_dark_colorfgbg_counts_as_a_reported_dark_background(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), env={"COLORFGBG": "15;0"}
+        )
+        terminal = run.terminal  # answers no OSC 11
+        terminal.script(
+            self.submit(run, "/theme"),
+            Step(b"\x04", when=terminal.shows("picks the background it is measured"), label="the summary"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        said = " ".join(terminal.history().split())  # the notice wraps at the terminal's width
+        self.assertIn("follows the terminal's background (a dark one, as COLORFGBG names it)", said)
+
     def test_keys_typed_while_the_background_query_waited_reach_the_composer(self) -> None:
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
         run.terminal.typed_during_query = b"hi"

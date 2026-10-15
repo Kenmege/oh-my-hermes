@@ -161,6 +161,28 @@ class OutcomeBandTests(unittest.TestCase):
                 app._on_input(Key(ENTER))
                 self.assertIsNone(app.theme.error_band.bg)  # back to following a terminal that reports nothing
 
+    def test_a_dark_background_colorfgbg_names_is_banded_as_theme_dark_bands_it(self) -> None:
+        dark, _client = make_app()
+        dark.adopt_background(None)
+        type_text(dark, "/theme dark")
+        dark._on_input(Key(ENTER))
+        for value, expected in (("15;0", dark.theme), ("7;0", dark.theme), ("15;default;0", dark.theme),
+                                ("0;15", build_theme(SKIN_THEMES[0], "#FFFFFF"))):
+            with self.subTest(colorfgbg=value):
+                app, _client = make_app()
+                app.adopt_background(None, {"COLORFGBG": value})  # the terminal did not answer OSC 11
+                for role in ("user_band", "ok_band", "error_band"):
+                    self.assertIsNotNone(getattr(app.theme, role).bg, role)
+                    self.assertEqual(getattr(app.theme, role), getattr(expected, role), role)
+        for environ in ({}, {"COLORFGBG": "garbage"}, {"COLORFGBG": "15;99"}):
+            with self.subTest(environ=environ):  # nothing reported: no band
+                app, _client = make_app()
+                app.adopt_background(None, environ)
+                self.assertEqual([app.theme.user_band.bg, app.theme.ok_band.bg, app.theme.error_band.bg], [None] * 3)
+        app, _client = make_app()
+        app.adopt_background("#FFFFFF", {"COLORFGBG": "15;0"})  # an answer outranks the variable
+        self.assertTrue(is_light(app.theme.error_band.bg))
+
     def test_with_no_background_reported_nothing_is_banded(self) -> None:
         for skin in SKIN_THEMES:
             theme = build_theme(skin, None)
