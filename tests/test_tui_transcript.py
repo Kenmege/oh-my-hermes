@@ -783,6 +783,19 @@ class ToolDraftTests(LoopTestCase):
             self.live(), ["⏺ Tool calls (2)  parallel ×2", "  ⏺ todo_list  planning 1 task(s)", "  ⏺ read_file  a.py"]
         )
 
+    def test_two_bridge_drafts_become_their_calls_in_the_order_they_started(self) -> None:
+        # Each start claims the first unclaimed bridge draft, so the rows keep the order the calls began in.
+        self.step(ev("message.start"))
+        self.step(ev("tool.generating", name="tool_call"))
+        self.step(ev("tool.generating", name="tool_call"))
+        self.step(ev("tool.start", tool_id="a", name="todo_list", context="planning 1 task(s)"))
+        self.assertEqual(self.live(), ["⏺ Tool calls (2)", "  ⏺ todo_list  planning 1 task(s)", "  ◌ tool_call"])
+        self.step(ev("tool.start", tool_id="b", name="web_search", context="hermes agent"))
+        self.assertEqual(
+            self.live(),
+            ["⏺ Tool calls (2)  parallel ×2", "  ⏺ todo_list  planning 1 task(s)", "  ⏺ web_search  hermes agent"],
+        )
+
     def test_a_streamed_attempt_hermes_discards_leaves_no_row_and_no_count(self) -> None:
         self.step(ev("message.start"))
         self.step(ev("tool.generating", name="write_file"))  # the attempt Hermes discards
