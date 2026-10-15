@@ -34,7 +34,8 @@ from .width import cell_width, truncate, truncate_line
 
 PICK = "pick"
 CLOSE = "close"
-HINT = "↑↓ move · enter switches this session · esc closes"
+# Its keys, longest first: on the mode row while it is open, in its header where there is no mode row.
+KEYS = ("↑↓ move · enter switches this session · esc closes", "↑↓ enter switches · esc closes", "esc closes")
 TITLE = " Model ({count})"
 CURRENT_MARK = "●"
 
@@ -132,15 +133,16 @@ class ModelPicker:
         self.query = query
         self.index = 0
 
-    def lines(self, width: int, theme: Theme, max_rows: int) -> list[Line]:
-        """A header row naming the current model, the filtered rows scrolled so the highlighted one shows, the filter row."""
+    def lines(self, width: int, theme: Theme, max_rows: int, keys: bool = True) -> list[Line]:
+        """A header row naming the current model (its keys after it when `keys`), the filtered rows scrolled so the
+        highlighted one shows, the filter row."""
         if max_rows <= 0:
             return []
         shown = self.visible()
         header = (
             Span(TITLE.format(count=len(self.rows)), theme.heading),
             Span(f"  now {self.current}" if self.current else "", theme.text),
-            Span(f"  {HINT}", theme.hint),
+            Span(f"  {KEYS[0]}" if keys else "", theme.hint),
         )
         lines: list[Line] = [truncate_line(header, width)]
         if max_rows == 1:

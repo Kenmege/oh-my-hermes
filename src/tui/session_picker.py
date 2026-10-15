@@ -26,7 +26,8 @@ from .width import cell_width, truncate, truncate_line
 PICK = "pick"
 CLOSE = "close"
 CURRENT_MARK = "●"
-HINT = "↑↓ move · enter switches · esc closes"
+# Its keys, longest first: on the mode row while it is open, in its header where there is no mode row.
+KEYS = ("↑↓ move · enter switches · esc closes", "↑↓ enter switches · esc closes", "esc closes")
 FILTER_PROMPT = " › "
 FILTER_PLACEHOLDER = "type to filter"
 
@@ -137,13 +138,15 @@ class SessionPicker:
         self.query = query
         self.index = 0
 
-    def lines(self, width: int, theme: Theme, max_rows: int, now: float) -> list[Line]:
-        """A header row, the filtered rows scrolled so the highlighted one shows, then the filter row."""
+    def lines(self, width: int, theme: Theme, max_rows: int, now: float, keys: bool = True) -> list[Line]:
+        """A header row (its keys after the title when `keys`), the filtered rows scrolled so the highlighted one
+        shows, then the filter row."""
         if max_rows <= 0:
             return []
         shown = self.visible()
         title = f" Sessions ({len(shown)}/{len(self.rows)})" if self.query else f" Sessions ({len(self.rows)})"
-        lines: list[Line] = [truncate_line((Span(title, theme.heading), Span(f"  {HINT}", theme.hint)), width)]
+        header = (Span(title, theme.heading), Span(f"  {KEYS[0]}" if keys else "", theme.hint))
+        lines: list[Line] = [truncate_line(header, width)]
         if max_rows == 1:
             return lines
         body = max_rows - 2

@@ -27,7 +27,8 @@ from .width import cell_width, truncate, truncate_line
 
 PICK = "pick"
 CLOSE = "close"
-HINT = "↑↓ move · enter edits it · esc closes"
+# Its keys, longest first: on the mode row while it is open, in its header where there is no mode row.
+KEYS = ("↑↓ move · enter edits it · esc closes", "↑↓ enter edits it · esc closes", "esc closes")
 TITLE = " Rewind to a prompt ({count})"
 
 
@@ -106,12 +107,13 @@ class RewindPicker:
         self.query = query
         self.index = 0
 
-    def lines(self, width: int, theme: Theme, max_rows: int, now: float) -> list[Line]:
-        """A header row, the filtered prompts scrolled so the highlighted one shows, then the filter row."""
+    def lines(self, width: int, theme: Theme, max_rows: int, now: float, keys: bool = True) -> list[Line]:
+        """A header row (its keys after the title when `keys`), the filtered prompts scrolled so the highlighted one
+        shows, then the filter row."""
         if max_rows <= 0:
             return []
         shown = self.visible()
-        header = (Span(TITLE.format(count=len(self.rows)), theme.heading), Span(f"  {HINT}", theme.hint))
+        header = (Span(TITLE.format(count=len(self.rows)), theme.heading), Span(f"  {KEYS[0]}" if keys else "", theme.hint))
         lines: list[Line] = [truncate_line(header, width)]
         if max_rows == 1:
             return lines

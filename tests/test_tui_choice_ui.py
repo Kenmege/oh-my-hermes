@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import unittest
 
+from _tui_lines import line_text
 from test_tui_modes import RecordingClient, make_app, type_text
 from omh.tui.app import App
 from omh.tui.gateway import ServerRequest
@@ -342,6 +343,30 @@ class PickerTests(unittest.TestCase):
                 press(app, Key(ESCAPE))
                 self.assertTrue(composer_drawn(app, drawn(app)))
                 self.assertEqual(held(app), draft)
+
+    def test_the_mode_row_says_the_pickers_keys_not_the_composers(self) -> None:
+        # The composer's hints (`? shortcuts`, `⇧⇥ mode`) do nothing while a picker has the keys.
+        keys = {"sessions": "↑↓ move · enter switches · esc closes", "rewind": "↑↓ move · enter edits it · esc closes",
+                "model": "↑↓ move · enter switches this session · esc closes"}
+        for name, opener in self.openers():
+            with self.subTest(picker=name):
+                app, _client = make_app()
+                opener(app)  # type: ignore[operator]
+                screen = drawn(app)
+                mode_row = screen[status_row(screen) - 1]
+                self.assertIn(keys[name], mode_row)
+                self.assertNotIn("shortcuts", mode_row)
+                self.assertEqual([row for row in screen if "esc closes" in row], [mode_row])  # not in the header too
+                narrow = line_text(app._mode_row_line(40))
+                self.assertTrue(narrow.rstrip().endswith("esc closes"), narrow)
+                press(app, Key(ESCAPE))
+                self.assertIn("shortcuts", drawn(app)[status_row(drawn(app)) - 1])
+
+    def test_below_ten_rows_a_pickers_keys_stay_in_its_header(self) -> None:
+        app, _client = make_app(rows=9)
+        app._open_session_picker(SESSIONS)
+        screen = drawn(app)
+        self.assertTrue(any(row.startswith(" Sessions (2)") and "esc closes" in row for row in screen), screen)
 
     def test_the_history_search_and_the_completion_menu_keep_the_composer(self) -> None:
         app, _client = make_app()

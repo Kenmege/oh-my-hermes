@@ -142,12 +142,15 @@ from .layout import choice_cap, slot_cap, under_composer
 from .markdown import clean_text
 from .modes import MODE_ROW_GAP, NO_SESSION_NOTICE, STRIP_SEPARATOR, ModesMixin, mode_row_line
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
+from .model_picker import KEYS as MODEL_PICKER_KEYS
 from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, plan_text, status_segments
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
 from .screen import CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
+from .session_picker import KEYS as SESSION_PICKER_KEYS
 from .session_picker import PICK, SessionPicker, session_rows
+from .rewind_picker import KEYS as REWIND_PICKER_KEYS
 from .rewind_picker import PICK as REWIND_PICK
 from .rewind_picker import RewindPicker, rewind_rows
 from .shortcuts import shortcut_lines
@@ -3246,8 +3249,11 @@ class App(ModesMixin, AgentViewMixin):
         say_style = None
         armed = self.escape_armed
         steered = self.roster.agents.get(self.agent_steer or "")
+        picker_keys = self._picker_keys()
         if self.slot is not None:
             say = self.slot.keys
+        elif picker_keys:
+            say = picker_keys
         elif steered is not None:
             say, say_style = tuple(form.format(name=steered.name) for form in STEER_SAY), self.theme.accent
         elif self.rewind is not None:
@@ -3270,6 +3276,14 @@ class App(ModesMixin, AgentViewMixin):
             say_style=say_style,
             esc_interrupts=self._esc_interrupts(),
         )
+
+    def _picker_keys(self) -> tuple[str, ...]:
+        """The open picker's keys, said on the mode row in place of the composer's; () with no picker open."""
+        if self.picker is not None:
+            return SESSION_PICKER_KEYS
+        if self.rewind_picker is not None:
+            return REWIND_PICKER_KEYS
+        return MODEL_PICKER_KEYS if self.model_picker is not None else ()
 
     def _esc_interrupts(self) -> bool:
         """Whether Esc interrupts the running turn now: nothing else takes it (`_escape`, and what has the keys).
@@ -3340,14 +3354,15 @@ class App(ModesMixin, AgentViewMixin):
         if self.slot is not None:
             # Where the terminal has no mode row, the question's keys take a row of the slot's own.
             return self.slot.lines(cols, self.theme, cap, keys_row=not under_composer(rows, cols)[1])
+        keys = not under_composer(rows, cols)[1]  # a picker's keys go in its header where no mode row says them
         if self.picker is not None:
-            return self.picker.lines(cols, self.theme, cap, self.wall_clock())
+            return self.picker.lines(cols, self.theme, cap, self.wall_clock(), keys=keys)
         if self.search is not None:
             return self.search.lines(cols, self.theme, cap)
         if self.rewind_picker is not None:
-            return self.rewind_picker.lines(cols, self.theme, cap, self.wall_clock())
+            return self.rewind_picker.lines(cols, self.theme, cap, self.wall_clock(), keys=keys)
         if self.model_picker is not None:
-            return self.model_picker.lines(cols, self.theme, cap)
+            return self.model_picker.lines(cols, self.theme, cap, keys=keys)
         # Nothing has the keys: the queued prompts take the slot's last rows, right above the composer's
         # top rule, Hermes' notification the row above them, and the menu or the panel gets the rows left. A
         # question or the picker hides them, since Up then does not edit the queue.
