@@ -631,8 +631,15 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # deleted from an overseas department's list, masking instead of
             # sending, and cleaned test data uploaded to staging (4); a payment
             # and an order processed (2); and two loops that send a price alert
-            # and a rules document (2).
-            expected=776,
+            # and a rules document (2). Its second review adds sixteen: an
+            # amount or a card that pays for nothing -- a sponsor list, a
+            # price, card details, a card report, a card-game tournament, and
+            # two loops that subscribe to an alert and reprice a price list
+            # (7); an honorific and a "없이" negation (2); 로 on a word that
+            # starts with a recipient -- per vendor, per client, a foreign key,
+            # a vendor-name sort (4); and exports to a spreadsheet, a CSV and a
+            # backup folder (3).
+            expected=792,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

@@ -439,6 +439,9 @@ class DataShareReviewKoreanTests(unittest.TestCase):
             # Asked as a question that is itself a request.
             "개인정보 마스킹해서 벤더한테 보내줄래?",
             "계약서에서 개인정보 지우고 거래처에 보내줘",
+            # A protective verb's noun before "후", and the honorific send.
+            "상담 기록 개인정보 마스킹 후 외부 업체에 전달해줘",
+            "고객 명단 비식별화해서 외부 연구기관에 보내드려 줘",
         ):
             with self.subTest(message=message):
                 route = _route(message)
@@ -453,6 +456,11 @@ class DataShareReviewKoreanTests(unittest.TestCase):
                 self.assertTrue(data_share_request_admitted(message))
                 self.assertIn(SKILL, self._named(message))
                 self.assertTrue(self._hinted(message))
+        # A recipient's 로 before a verb that sends is a destination; a team
+        # named after an outside word is outside.
+        for message in ("개인정보 지우고 외부로 보내줘", "고객 정보 가려서 외부 연구팀에 공유해줘"):
+            with self.subTest(message=message):
+                self.assertTrue(data_share_request_admitted(message))
         # A source, a kind, or a word inside another is not a destination.
         for message in (
             "업체 목록에서 전화번호 삭제해줘",
@@ -460,6 +468,14 @@ class DataShareReviewKoreanTests(unittest.TestCase):
             "외부 로그에서 개인정보 마스킹해줘",
             "해외부서 명단에서 개인정보 삭제해줘",
             "연구자 명단에서 전화번호 지워줘",
+            # 로 before anything but a verb that sends names a means or a basis,
+            # and a word that starts with a recipient is not one.
+            "업체별로 고객 정보 마스킹해줘",
+            "거래처별로 전화번호 삭제해줘",
+            "외부키로 연결된 고객 정보 삭제해줘",
+            "외부키에 연결된 고객 정보 삭제해줘",
+            "벤더로 분류된 고객 정보 마스킹해줘",
+            "업체명으로 정렬해서 고객 정보 마스킹해줘",
         ):
             with self.subTest(message=message):
                 self.assertFalse(data_share_request_admitted(message))
@@ -492,6 +508,7 @@ class DataShareReviewKoreanTests(unittest.TestCase):
             "개인정보 처리방침 검토해서 법무팀에 보내줘",
             "개인정보 마스킹 설정 켜줘",
             "개인정보 마스킹해서 법무팀에 보내줘",
+            "개인정보 마스킹해서 법률 검토용으로 외부 업체에 보내줘",
             "개인정보 마스킹해서 PR 올려줘",
             # The request ends on another job.
             "개인정보 지우고 벤더 목록 정리해줘",
@@ -501,6 +518,13 @@ class DataShareReviewKoreanTests(unittest.TestCase):
             "개인정보 마스킹해줘",
             "테스트 데이터에서 고객 정보 지우고 스테이징에 올려줘",
             "개인정보 지우고 팀원들한테 공유해줘",
+            "고객 정보 마스킹해서 개발팀에 보내줘",
+            "개인정보 지우고 QA팀한테 넘겨줘",
+            "고객 정보 마스킹해서 테스트 서버에 올려줘",
+            # Exported to a file or a folder: nothing leaves.
+            "개인정보 지운 다음 엑셀로 내보내줘",
+            "고객 정보 마스킹해서 CSV로 내보내줘",
+            "고객 정보 지우고 백업 폴더로 내보내줘",
             # A field name alone is no phrase of the skill.
             "이름 지우고 공유해줘",
             # Already anonymized, or a question.

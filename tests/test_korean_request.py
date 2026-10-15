@@ -101,6 +101,8 @@ class KoreanRequestTests(unittest.TestCase):
             ("결제 말고 100만원 견적만 보내줘", "100만원 견적만 보내줘", "보내"),
             ("벤더한테 보내지 말고 개인정보만 마스킹해줘", "개인정보만 마스킹해줘", "마스킹"),
             ("결제하지 않고 장바구니에 담아줘", "장바구니에 담아줘", "담아"),
+            ("내 카드로 결제하지 마시고 회의실만 예약해 주세요", "회의실만 예약해 주세요", "예약"),
+            ("내 카드로 결제 없이 회의실 예약만 해줘", "회의실 예약만 해줘", "예약"),
         ):
             with self.subTest(message=message):
                 request = korean_request(message)
@@ -127,6 +129,10 @@ class KoreanRequestTests(unittest.TestCase):
         request = korean_request("외부에 업로드하기 전에 개인정보 지워줘")
         assert request is not None
         self.assertEqual((request.predicate, request.before), ("지워", ("업로드",)))
+        # A verb's noun before "후", "뒤" or "다음" joins the next clause too.
+        request = korean_request("상담 기록 개인정보 마스킹 후 외부 업체에 전달해줘")
+        assert request is not None
+        self.assertEqual((request.predicate, request.joined), ("전달", (("마스킹", 3),)))
 
     def test_the_router_fold_reads_as_the_hint_fold(self) -> None:
         # The router folds Hangul into jamo (NFKD); the hint keeps it composed.

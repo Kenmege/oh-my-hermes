@@ -12,29 +12,33 @@ All notable changes will be documented here.
   bundle reader (`korean_request`) reads the request clause's last predicate,
   and only when a request ending closes it ("-해줘", "-해 주세요", "-해줄래?",
   "부탁해"), the way "please" marks an English one. It skips a greeting or an
-  address before the request ("안녕하세요.", "헤르메스,"), and reads neither a
-  label's text ("버튼 라벨: ..."), quoted text, nor a negated clause ("카드로
-  결제하지 말고 견적만 보내줘" asks for the quote). spend-gate admits it when
-  that predicate spends (결제, 송금, 이체, 구매, 주문, 예매, "사줘", ..., but not
-  "결제 처리해줘"), books, tops up, subscribes, renews or donates with the
-  person's money in its own clause, or sends money as its object ("엄마한테
-  10만원 보내줘", not "결제 금액 10,000원 영수증 이메일로 보내줘");
-  data-share-review when it protects personal data (익명화, 가명 처리, 비식별화,
-  or masking, deleting or covering personal data) and the data leaves: a
-  recipient named as where it goes ("벤더한테", "외부에", not "업체 목록에서"),
-  or a verb that sends it with no destination inside the team. Each gate
+  address before the request ("안녕하세요.", "헤르메스,"), removes a label's
+  text ("버튼 라벨: ...") and quoted text, and drops what comes before a
+  negation it knows (말고, 않고, 마시고, 마세요, 마요, 없이): "카드로 결제하지
+  말고 견적만 보내줘" asks for the quote. spend-gate admits it when that
+  predicate spends (결제, 송금, 이체, 구매, 주문, 예매, "사줘", ..., but not "결제
+  처리해줘"); books, tops up, subscribes, renews or donates something one pays
+  for with a price, money, the person's wallet or account, or a card as the
+  means in its own clause ("카드로 호텔 예약해줘", not "가격 5000원으로
+  갱신해줘" or "제 카드 정보 갱신해 주세요"); or sends money as its object
+  ("엄마한테 10만원 보내줘", not "결제 금액 10,000원 영수증 이메일로 보내줘").
+  data-share-review admits it when it protects personal data (익명화, 가명 처리,
+  비식별화, or masking, deleting or covering personal data) and the data
+  leaves: a recipient named as where it goes ("벤더한테", "외부에"; not
+  "업체 목록에서" or "업체별로"), or a verb that sends it to no team, file or
+  folder of the person's own ("스테이징에", "개발팀에", "엑셀로"). Each gate
   scores only its own phrases, which an admitted request always says, with
   no boost: one phrase scores below the dispatch line, so the router asks, as
   it does for "please send money", and a second one (the person's card, a
   recipient) dispatches the gate unless another skill outscores it. The
   Korean phrases live in the bundle beside the English ones, since the rules
   read them, and "예약" and "보내" are declared as shared with
-  automation-blueprint. Measured on five sets of everyday-sense Korean
-  negatives (90, 80 and 42 of my own sets, and a reviewer's 82 and 34), no
-  sentence names either gate on either surface. Recall is partial: on a set
-  written blind by a separate author and first measured at an earlier
+  automation-blueprint. Measured on seven sets of everyday-sense Korean
+  negatives (90, 80 and 42 of my own sets, and a reviewer's 82, 34, 75 and
+  27), no sentence names either gate on either surface. Recall is partial: on
+  a set written blind by a separate author and first measured at an earlier
   version of the rule, the router offers 23 of 40 spend requests and 19 of 40
-  data-share requests (the hint 24 and 22). Every set has since been read
+  data-share requests (the hint 24 and 21). Every set has since been read
   while the rule was revised, so none is held out for this version.
 
 - **The OMH TUI catches up with Claude Code and oh-my-pi.** It reads on a light

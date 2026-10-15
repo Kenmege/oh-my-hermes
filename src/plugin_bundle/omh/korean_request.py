@@ -26,9 +26,12 @@ What the request is, and what it is not:
   ("버튼 라벨: 내 카드로 결제해줘" asks for nothing).
 - Quoted text is not the request: "이 문장 영어로 번역해줘 \"내 카드로
   결제해줘\"" asks for a translation.
-- A clause negated before it is not the request: in "카드로 결제하지 말고 견적만
-  보내줘" the request is "견적만 보내줘" (send only the quote). Its words are
-  dropped (`NEGATIONS`), so no gate reads its verb or its phrases.
+- What comes before a negation the reader knows (`NEGATIONS`: 말고, 않고,
+  마시고, 마세요, 마요, 없이) is not the request: in "카드로 결제하지 말고
+  견적만 보내줘" the request is "견적만 보내줘" (send only the quote), and in
+  "내 카드로 결제 없이 회의실 예약만 해줘" it is "회의실 예약만 해줘". Those
+  words are dropped, so no gate reads their verb or their phrases. A negation
+  not in the list is read as part of the request.
 
 A predicate is the verb's noun for a 하다 verb ("결제" from "결제해줘", "결제 좀
 해줘", "결제 진행해 주세요", "결제 부탁해"), with a particle such as 을/를/까지
@@ -88,10 +91,13 @@ OPENERS = frozenset(
     {"안녕", "안녕하세요", "안녕하십니까", "하이", "헬로", "헤이", "저기", "저기요", "여보세요", "부탁", "하나만",
      "헤르메스", "헤르메스야", "헤르메스님", "hermes", "omh"}
 )
-# What negates the clause before it: "결제하지 말고", "결제 말고", "결제하지 않고".
-NEGATIONS = frozenset({"말고", "말고요", "말고서", "않고"})
+# What negates the clause before it: "결제하지 말고", "결제 말고", "결제하지 않고",
+# the honorific "결제하지 마시고", "결제하지 마세요 ...", and "결제 없이" (without
+# paying).
+NEGATIONS = frozenset({"말고", "말고요", "말고서", "않고", "마시고", "마시구요", "마세요", "마요", "없이"})
 # How a 하다 verb's clause joins the next one: "마스킹해서", "삭제하고",
-# "처리한 다음에"; and how a clause says what comes after it: "보내기 전에".
+# "처리한 다음에", "마스킹 후"; and how a clause says what comes after it:
+# "보내기 전에".
 _JOINING_ENDINGS = ("하고서", "하고", "해서")
 _AFTER_WORDS = frozenset({"다음", "다음에", "뒤", "뒤에", "후", "후에"})
 _BEFORE_WORDS = frozenset({"전", "전에"})
@@ -226,6 +232,12 @@ def _joined_clauses(words: list[str], end: int) -> tuple[tuple[tuple[str, int], 
         ending = next((ending for ending in _JOINING_ENDINGS if word.endswith(ending)), "")
         if not ending and word.endswith("한") and following in _AFTER_WORDS:
             ending = "한"
+        if not ending and following in _AFTER_WORDS:
+            # A verb's noun before "후", "뒤" or "다음": "마스킹 후", "비식별 처리 후".
+            noun, noun_index, _lights = _noun_at(words, index)
+            if noun:
+                joined.append((noun, noun_index))
+            continue
         if ending:
             noun, noun_index, _lights = _hada_noun(words, index, word[: -len(ending)])
             if noun:

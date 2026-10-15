@@ -42,9 +42,10 @@ A Korean request puts its verb last, so its half of the rule
   it ("개인정보 지우고", "고객 정보 마스킹해서"), as the last predicate or in a
   clause joined to it; "사진 배경 마스킹해서 보내줘" removes a background;
 - it leaves: a recipient outside the team named as where it goes ("벤더한테",
-  "외부에", "협력업체에"; not "업체 목록에서" or "외부 로그"), or a verb that
-  sends it (a predicate, a "-기 전에" clause, "보낼 파일") with no destination
-  inside the team ("스테이징에", "팀원들한테");
+  "외부에", "협력업체에"; not "업체 목록에서", "외부 로그" or "업체별로"), or a
+  verb that sends it (a predicate, a "-기 전에" clause, "보낼 파일") to no
+  team, file or folder of the person's own ("스테이징에", "개발팀에",
+  "엑셀로");
 - no word names a legal question, a Hermes setting, a storage-wide scan, or
   something other than data (코드, 함수, 기능, 버그, ...): "개인정보 마스킹
   기능 만들어서 벤더한테 보내줘" ships a feature;
@@ -111,7 +112,7 @@ DATA_SHARE_KOREAN_REMOVAL_BEFORE_AFTER = frozenset({"지운", "가린", "뺀"})
 # publish, submit, send, hand over, post, export; with their joined,
 # "-기 전에" and future ("보낼 파일", "공유할 거니까") forms.
 DATA_SHARE_KOREAN_OUTBOUND_VERBS = frozenset(
-    {"공유", "전달", "업로드", "제공", "반출", "첨부", "공개", "제출", "보내", "넘겨", "올려", "내보내", "넘기", "올리"}
+    {"공유", "전달", "업로드", "제공", "반출", "첨부", "공개", "제출", "보내", "보내드려", "넘겨", "올려", "내보내", "넘기", "올리"}
 )
 DATA_SHARE_KOREAN_OUTBOUND_JOINED = frozenset({"보내고", "보내서", "넘기고", "넘겨서", "올리고", "올려서", "내보내고", "내보내서"})
 DATA_SHARE_KOREAN_OUTBOUND_FUTURE = frozenset({"보낼", "넘길", "올릴", "내보낼"})
@@ -136,10 +137,18 @@ DATA_SHARE_KOREAN_RECIPIENTS = (
     "연구기관",
 )
 _DESTINATION_PARTICLES = ("에게", "한테", "께", "쪽에", "측에", "쪽으로", "으로", "에", "로")
-# Destinations inside the team. A verb that sends counts as the data leaving
-# unless one of these is where it goes and no outside recipient is named:
-# "테스트 데이터에서 고객 정보 지우고 스테이징에 올려줘" moves it to staging.
-DATA_SHARE_KOREAN_INTERNAL_DESTINATIONS = ("팀", "사내", "내부", "스테이징", "staging", "개발서버", "로컬")
+_MEANS_PARTICLES = frozenset({"쪽으로", "으로", "로"})
+# Destinations inside the team, and a file or folder the data is exported to.
+# A verb that sends counts as the data leaving unless one of these is where it
+# goes and no outside recipient is named: "테스트 데이터에서 고객 정보 지우고
+# 스테이징에 올려줘" moves it to staging, and "개인정보 지운 다음 엑셀로
+# 내보내줘" writes a spreadsheet. A team ("개발팀에", "QA팀한테") is inside
+# unless an outside word comes just before it ("외부 연구팀에", "벤더 지원팀에").
+DATA_SHARE_KOREAN_INTERNAL_DESTINATIONS = (
+    "팀", "사내", "내부", "스테이징", "staging", "개발서버", "테스트", "로컬",
+    "엑셀", "csv", "pdf", "json", "xlsx", "txt", "텍스트", "파일", "폴더", "백업",
+)
+_KOREAN_OUTSIDE_MARKERS = ("외부", "대학", "타사", "고객사")
 # Words that name another job, as a word's start: a legal question, a Hermes
 # setting, a storage-wide scan, or something other than data. Hermes named
 # alone is no withdrawal: "헤르메스," before a request is its address
@@ -154,7 +163,6 @@ DATA_SHARE_KOREAN_WITHDRAWAL_STEMS = (
     # not data
     "코드", "함수", "스크립트", "기능", "로직", "정규식", "모듈", "버그", "이슈", "라벨", "슬라이드", "티켓",
 )
-_AFTER_WORDS = frozenset({"다음", "다음에", "뒤", "뒤에", "후", "후에"})
 # The skill's Korean phrases: the personal data, the protective verbs, and the
 # recipients. An admitted Korean request always says one of them, so the
 # router scores every request this rule admits. They live here, beside the
@@ -371,31 +379,46 @@ def _korean_sends(word: str) -> bool:
 def _korean_recipient(words: tuple[str, ...]) -> bool:
     """Whether a recipient outside the team is said as where the data goes.
 
-    With a destination particle, the recipient starting or ending the word
-    ("벤더한테", "외부로", "협력업체에", "외부감사인에게"), or bare right before
-    a word that sends ("외부 공유해줘", "외부 공유용으로"). Not as a source
-    ("업체 목록에서"), a kind ("외부 로그"), or inside another word
-    ("해외부서").
+    The word is the recipient, the recipient with 측 or 쪽, or a compound it
+    ends ("협력업체"), with a destination particle: "벤더한테", "외부에",
+    "협력업체에", "제3자에게". 로/으로 names a destination only right before a
+    verb that sends ("외부로 보내줘"); before anything else it names a means or
+    a basis ("업체별로", "업체명으로", "외부키로"). A recipient without a
+    particle counts only right before a word that sends ("외부 공유해줘",
+    "외부 공유용으로"). Not a source ("업체 목록에서"), a kind ("외부 로그"),
+    or text inside another word ("해외부서").
     """
     for index, word in enumerate(words):
+        following = words[index + 1] if index + 1 < len(words) else ""
+        sends_next = following.startswith(tuple(DATA_SHARE_KOREAN_OUTBOUND_VERBS))
         particle = next((particle for particle in _DESTINATION_PARTICLES if word.endswith(particle)), "")
         stem = word[: -len(particle)] if particle else word
-        names_one = stem.startswith(DATA_SHARE_KOREAN_RECIPIENTS) or stem.endswith(DATA_SHARE_KOREAN_RECIPIENTS)
-        if names_one and particle:
+        names_one = (
+            stem in DATA_SHARE_KOREAN_RECIPIENTS
+            or stem.endswith(DATA_SHARE_KOREAN_RECIPIENTS)
+            or any(stem in (recipient + "측", recipient + "쪽") for recipient in DATA_SHARE_KOREAN_RECIPIENTS)
+        )
+        if names_one and particle and (particle not in _MEANS_PARTICLES or sends_next):
             return True
-        following = words[index + 1] if index + 1 < len(words) else ""
-        if word in DATA_SHARE_KOREAN_RECIPIENTS and following.startswith(tuple(DATA_SHARE_KOREAN_OUTBOUND_VERBS)):
+        if word in DATA_SHARE_KOREAN_RECIPIENTS and sends_next:
             return True
     return False
 
 
 def _korean_internal_destination(words: tuple[str, ...]) -> bool:
-    """Whether a destination inside the team is named ("팀에", "팀원들한테", "스테이징에", "사내 위키에")."""
+    """Whether a destination inside the team, or a file or folder, is named ("팀에", "스테이징에", "엑셀로", "백업 폴더로")."""
     for index, word in enumerate(words):
         particle = next((particle for particle in _DESTINATION_PARTICLES if word.endswith(particle)), "")
-        if word.startswith(DATA_SHARE_KOREAN_INTERNAL_DESTINATIONS) and (
-            particle or (index + 1 < len(words) and words[index + 1].endswith(_DESTINATION_PARTICLES))
-        ):
+        if not (particle or (index + 1 < len(words) and words[index + 1].endswith(_DESTINATION_PARTICLES))):
+            continue
+        stem = word[: -len(particle)] if particle else word
+        if stem.startswith(DATA_SHARE_KOREAN_INTERNAL_DESTINATIONS):
+            return True
+        outside_before = any(
+            earlier.startswith((*DATA_SHARE_KOREAN_RECIPIENTS, *_KOREAN_OUTSIDE_MARKERS))
+            for earlier in words[max(0, index - 2) : index]
+        )
+        if stem.endswith("팀") and not outside_before:
             return True
     return False
 
@@ -420,10 +443,7 @@ def _korean_admitted(text: str, latin_tokens: set[str]) -> bool:
     final = request.predicate
     clauses = [(final, request.predicate_index), *request.joined]
     for index, word in enumerate(words[: request.predicate_index]):
-        following = words[index + 1] if index + 1 < len(words) else ""
         if word in DATA_SHARE_KOREAN_REMOVAL_JOINED or word in DATA_SHARE_KOREAN_OUTBOUND_JOINED:
-            clauses.append((word, index))
-        elif word in DATA_SHARE_KOREAN_REMOVAL_BEFORE_AFTER and following in _AFTER_WORDS:
             clauses.append((word, index))
     protective = any(_korean_protective(form, index, words) for form, index in clauses)
     recipient = _korean_recipient(words)

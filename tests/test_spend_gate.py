@@ -1160,6 +1160,19 @@ class SpendGateKoreanTests(unittest.TestCase):
                 self.assertIn("보내", spend_request_phrases(message, SPEND_GATE_PHRASES))
                 self.assertIn(SKILL, self._named(message))
 
+    def test_a_booking_paid_with_the_persons_money_is_admitted(self) -> None:
+        # A price, a card as the means, or money, for something one pays for.
+        for message in (
+            "20만원으로 호텔 예약해줘",
+            "제 카드로 도메인 갱신해 주세요",
+            "이 펀딩 프로젝트에 5만원 후원해줘",
+            "교통카드 3만원 충전해줘",
+            "9,900원짜리 프리미엄 플랜 구독해줘",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(spend_request_phrases(message, SPEND_GATE_PHRASES))
+                self.assertIn(SKILL, _hinted_workflows(message))
+
     def test_the_everyday_sense_of_the_same_words_names_no_gate(self) -> None:
         for message in (
             # A payment system designed, a payment bug fixed, a card game
@@ -1217,6 +1230,21 @@ class SpendGateKoreanTests(unittest.TestCase):
             "결제 처리해줘",
             "주문 처리해줘",
             "예매 처리 완료해줘",
+            # An amount or a card that pays for nothing: a list, a price, an
+            # alert, card details, a card report, a card game.
+            "5달러 이상 후원자 명단 갱신해줘",
+            "가격 5000원으로 갱신해줘",
+            "100원 단위로 가격표 갱신해줘",
+            "1만원 이하 상품 알림 구독해줘",
+            "제 카드 정보 갱신해 주세요",
+            "내 카드 실적 리포트 구독해줘",
+            "제휴카드 혜택 알림 구독해줘",
+            "내 카드 목록 갱신해줘",
+            "우리 카드 게임 대회 예약해줘",
+            "회의실 카드키 갱신해줘",
+            # An honorific or a "없이" negation is not the request.
+            "내 카드로 결제하지 마시고 회의실만 예약해 주세요",
+            "내 카드로 결제 없이 회의실 예약만 해줘",
         ):
             with self.subTest(message=message):
                 self.assertNotIn(SKILL, self._named(message))
@@ -1270,6 +1298,8 @@ class SpendGateKoreanTests(unittest.TestCase):
             "/loop 1h 3만원 이하면 알림 보내줘",
             "/loop 30m 3원칙 문서 보내줘",
             "/loop 1h 결제 실패 건수 카드로 정리해서 보내줘",
+            "/loop 1h 1만원 이하 상품 알림 구독해줘",
+            "/loop 1h 가격표 1000원 단위로 갱신해줘",
         ):
             with self.subTest(message=message):
                 route = _route(message)
