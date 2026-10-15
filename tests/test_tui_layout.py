@@ -252,6 +252,23 @@ class HiddenComposerBudgetTests(unittest.TestCase):
         self.assertEqual(got, budget(sticky=1, tail=9, slot=11, mode=1, status=1))
 
 
+class SlotCaretTests(unittest.TestCase):
+    """With no composer, `slot_caret` (a row and a column within the slot) is the frame's caret: a picker's filter."""
+
+    def test_the_caret_lands_on_its_slot_row_and_none_when_that_row_is_cut(self) -> None:
+        slot = plain("header", "row 1", "row 2", " › re")
+        frame = build_frame(cols=80, rows=24, composer=None, status=plain("status")[0], previous_height=0, slot=slot,
+                            slot_caret=(3, 5))
+        row, col = frame.cursor  # type: ignore[misc]
+        self.assertEqual(lines_text([frame.lines[row]]), [" › re"])
+        self.assertEqual(col, 5)
+        cut = build_frame(cols=80, rows=24, composer=None, status=plain("status")[0], previous_height=0,
+                          slot=slot + plain(*[f"more {n}" for n in range(20)]), slot_caret=(23, 5))
+        self.assertIsNone(cut.cursor)  # its row is past the slot's cap
+        self.assertIsNone(build_frame(cols=80, rows=24, composer=None, status=plain("status")[0], previous_height=0,
+                                      slot=slot).cursor)
+
+
 class AgentListBudgetTests(unittest.TestCase):
     def test_the_list_takes_the_mode_rows_place_and_its_own_height(self) -> None:
         plain_row = allocate(24, 80, sticky=False, tail_rows=0, slot_rows=0, composer_rows=1, min_height=23)

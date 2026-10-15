@@ -45,10 +45,12 @@ colour while the app asks for it (no slot open). It is drawn, never typed:
 the caret stays right after the glyph and the composer's text stays empty.
 
 While the person picks from a list (`composer` is None) the frame draws no
-composer at all: no rules, no input rows, no caret (`Frame.cursor` is None, and
-`LiveRegion` hides the cursor). The slot stands in its place, right above the
-mode row, with the rows `layout.choice_cap` gives it. The rows under the
-composer are the same either way, so the composer comes back on its row.
+composer at all: no rules, no input rows, and no caret (`Frame.cursor` is None,
+and `LiveRegion` hides the cursor) unless `slot_caret` puts one in the slot (a
+picker's filter row, where its typing goes). The slot stands in the
+composer's place, right above the mode row, with the rows `layout.choice_cap`
+gives it. The rows under the composer are the same either way, so the
+composer comes back on its row.
 
 The attachment row (the images queued for the next message) is the composer's
 first row while there is one: it counts against the composer's cap, so the
@@ -110,6 +112,7 @@ def build_frame(
     mode_row: Line = (),
     placeholder: str = "",
     agent_list: Callable[[int], Sequence[Line]] | None = None,
+    slot_caret: tuple[int, int] | None = None,
 ) -> Frame:
     """The region for one repaint; `previous_height` is `LiveRegion.height` right now.
 
@@ -121,7 +124,8 @@ def build_frame(
     (`layout.agent_list_room`, its hint row included) and returns the list's
     rows, which take the mode row's place; it is not called where there is no
     mode row. `composer` None draws no composer (nor the attachment row or the
-    agent list) and no caret: the slot takes its place.
+    agent list): the slot takes its place, and the caret is `slot_caret`, a
+    (row, col) within `slot`, or none where that is None or its row is cut.
     """
     cap = composer_cap(rows)
     composer_lines: list[Line] = []
@@ -172,9 +176,15 @@ def build_frame(
         status=status,
         agent_list=listed,
     )
+    if composer is not None:
+        cursor: tuple[int, int] | None = (caret_row(budget, caret_line), caret_col)
+    elif slot_caret is not None and 0 <= slot_caret[0] < budget.slot:
+        cursor = (budget.pad + budget.sticky + budget.tail + slot_caret[0], slot_caret[1])
+    else:
+        cursor = None
     return Frame(
         lines=tuple(lines),
-        cursor=None if composer is None else (caret_row(budget, caret_line), caret_col),
+        cursor=cursor,
         height=budget.total,
         pad=budget.pad,
         budget=budget,

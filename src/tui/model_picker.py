@@ -27,7 +27,7 @@ import unicodedata
 
 from .escapes import strip_escapes
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
-from .session_picker import filter_line
+from .session_picker import picker_frame
 from .style import Line, Span
 from .theme import Theme
 from .width import cell_width, truncate, truncate_line
@@ -99,6 +99,7 @@ class ModelPicker:
     query: str = ""
     index: int = -1  # -1 picks the current row, else the first
     page: int = 1  # rows the last render showed; PageUp/PageDown move by this many
+    caret: tuple[int, int] | None = None  # the last render's caret, at the end of its filter row
 
     def __post_init__(self) -> None:
         if self.index < 0:
@@ -136,27 +137,19 @@ class ModelPicker:
     def lines(self, width: int, theme: Theme, max_rows: int, keys: bool = True) -> list[Line]:
         """A header row naming the current model (its keys after it when `keys`), the filtered rows scrolled so the
         highlighted one shows, the filter row."""
-        if max_rows <= 0:
-            return []
         shown = self.visible()
-        header = (
+        self.index = min(self.index, max(len(shown) - 1, 0))
+        head = (
             Span(TITLE.format(count=len(self.rows)), theme.heading),
             Span(f"  now {self.current}" if self.current else "", theme.text),
-            Span(f"  {KEYS[0]}" if keys else "", theme.hint),
         )
-        lines: list[Line] = [truncate_line(header, width)]
-        if max_rows == 1:
-            return lines
-        body = max_rows - 2
-        self.page = max(body, 1)
-        if not shown:
-            lines.append((Span(" no model matches the filter; /model <name> --provider <slug> names any", theme.muted),))
-        else:
-            self.index = min(self.index, len(shown) - 1)
-            start = min(max(self.index - body + 1, 0), max(len(shown) - body, 0))
-            for number in range(start, min(start + body, len(shown))):
-                lines.append(self._row(shown[number], number == self.index, width, theme))
-        return [*lines[: max_rows - 1], filter_line(self.query, width, theme)]
+        frame = picker_frame(
+            head, KEYS if keys else (), len(shown), self.index,
+            lambda number: self._row(shown[number], number == self.index, width, theme),
+            " no model matches the filter; /model <name> --provider <slug> names any", self.query, width, theme, max_rows,
+        )
+        self.page, self.caret = frame.page, frame.caret
+        return frame.lines
 
     def _row(self, row: ModelRow, highlighted: bool, width: int, theme: Theme) -> Line:
         style = theme.menu_current if highlighted else theme.menu

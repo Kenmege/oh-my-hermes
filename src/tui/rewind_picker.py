@@ -20,7 +20,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
-from .session_picker import age_text, filter_line
+from .session_picker import age_text, picker_frame
 from .style import Line, Span
 from .theme import Theme
 from .width import cell_width, truncate, truncate_line
@@ -79,6 +79,7 @@ class RewindPicker:
     query: str = ""
     index: int = 0
     page: int = 1  # rows the last render showed; PageUp/PageDown move by this many
+    caret: tuple[int, int] | None = None  # the last render's caret, at the end of its filter row
 
     def visible(self) -> list[RewindRow]:
         needle = self.query.casefold()
@@ -109,24 +110,16 @@ class RewindPicker:
 
     def lines(self, width: int, theme: Theme, max_rows: int, now: float, keys: bool = True) -> list[Line]:
         """A header row (its keys after the title when `keys`), the filtered prompts scrolled so the highlighted one
-        shows, then the filter row."""
-        if max_rows <= 0:
-            return []
+        shows, then the filter row (`session_picker.picker_frame`)."""
         shown = self.visible()
-        header = (Span(TITLE.format(count=len(self.rows)), theme.heading), Span(f"  {KEYS[0]}" if keys else "", theme.hint))
-        lines: list[Line] = [truncate_line(header, width)]
-        if max_rows == 1:
-            return lines
-        body = max_rows - 2
-        self.page = max(body, 1)
-        if not shown:
-            lines.append((Span(" no prompt matches the filter", theme.muted),))
-        else:
-            self.index = min(self.index, len(shown) - 1)
-            start = min(max(self.index - body + 1, 0), max(len(shown) - body, 0))
-            for number in range(start, min(start + body, len(shown))):
-                lines.append(self._row(shown[number], number == self.index, width, theme, now))
-        return [*lines[: max_rows - 1], filter_line(self.query, width, theme)]
+        self.index = min(self.index, max(len(shown) - 1, 0))
+        frame = picker_frame(
+            (Span(TITLE.format(count=len(self.rows)), theme.heading),), KEYS if keys else (), len(shown), self.index,
+            lambda number: self._row(shown[number], number == self.index, width, theme, now),
+            " no prompt matches the filter", self.query, width, theme, max_rows,
+        )
+        self.page, self.caret = frame.page, frame.caret
+        return frame.lines
 
     def _row(self, row: RewindRow, highlighted: bool, width: int, theme: Theme, now: float) -> Line:
         style = theme.menu_current if highlighted else theme.menu

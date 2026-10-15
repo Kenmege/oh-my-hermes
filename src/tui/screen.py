@@ -13,8 +13,8 @@ up from the bottom exactly as printed output would; shrinking erases the
 freed rows. Only rows whose bytes changed since the last frame are repainted,
 which keeps a selection on a static row alive. After every frame the hardware
 cursor is parked where the caller asked (the composer caret), so an IME
-pre-edit appears in place. A frame with no caret (the composer is not drawn)
-leaves the cursor hidden, parked on the region's last row; the next frame with
+pre-edit appears in place. A frame with no caret (a question answered by
+picking: neither the composer nor a picker's filter is drawn) leaves the cursor hidden, parked on the region's last row; the next frame with
 a caret shows it again.
 
 Every row is clipped to `width` cells (a wide glyph that would straddle the

@@ -3211,6 +3211,7 @@ class App(ModesMixin, AgentViewMixin):
             previous_height=previous,
             tail=self._tail(cols),
             slot=self._slot_lines(cols, rows),
+            slot_caret=self._slot_caret(),  # read after `_slot_lines` drew the picker it comes from
             theme=self.theme,
             attachments=attachment_line(self.attachments, cols, self.theme)
             if self.attachments and self.slot is None
@@ -3294,6 +3295,16 @@ class App(ModesMixin, AgentViewMixin):
             say_style=say_style,
             esc_interrupts=self._esc_interrupts(),
         )
+
+    def _slot_caret(self) -> tuple[int, int] | None:
+        """The open picker's caret, at the end of its filter row (its last render's); None with no picker open.
+
+        A question answered by picking has none: no key types anywhere there.
+        """
+        if self.slot is not None:
+            return None
+        picker = self.picker or self.rewind_picker or self.model_picker
+        return picker.caret if picker is not None else None
 
     def _picker_keys(self) -> tuple[str, ...]:
         """The open picker's keys, said on the mode row in place of the composer's; () with no picker open."""

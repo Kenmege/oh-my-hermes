@@ -323,8 +323,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   mode row, and a status line with the model, context use (warn from 80 %
   full, bad from 95 %) and what the session is doing. While you pick from a
   list (a question answered by picking, or the `/sessions`, `/rewind` or bare
-  `/model` picker) the composer, its rules and its caret are not drawn and
-  the list stands in their place, right above the mode row. The banner above the
+  `/model` picker) the composer and its rules are not drawn and the list
+  stands in their place, right above the mode row. A question shows no caret;
+  a picker shows it at the end of its filter row, where what you type (an
+  input method's composition too) appears. The banner above the
   session is one row: the brand, the version, the session it resumed and the
   working directory. A fresh session says under it where the last one is
   (`last session: <title> · /resume <id> reopens it`), unless you have
@@ -571,7 +573,8 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - `/sessions` (also `/resume`, `/switch`, `/session`) lists your stored
   sessions in the slot, newest first, with the current one marked; type to
   filter (what you type shows on the list's last row, where the composer
-  was), Up/Down or PageUp/PageDown to move, Enter to switch, Esc to close.
+  was, with the caret), Up/Down or PageUp/PageDown to move, Enter to switch,
+  Esc to close.
   `/sessions <id or exact title>` switches directly. The screen is redrawn as
   the session you picked, with its earlier turns; the one you left closes only
   after the new one opened, so a session that cannot be opened (for example

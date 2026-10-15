@@ -1,9 +1,10 @@
 """While the person picks from a list, the OMH TUI draws no composer, as Claude Code does.
 
 An approval and a clarify question with choices are answered by picking, and
-the session, rewind and model pickers are lists too: the composer's two rules,
-its rows and the caret are gone, and the list stands where the composer was,
-right above the mode row (a picker's filter is its last row). The draft (its
+the session, rewind and model pickers are lists too: the composer's two rules
+and its rows are gone, and the list stands where the composer was, right above
+the mode row. A question shows no caret; a picker shows it at the end of its
+filter row, its last, where its typing goes. The draft (its
 text, caret and paste chips) is not touched while it is hidden, no key types
 into it, and it comes back as it was the moment the list closes; a request
 waiting behind the first one opens before any frame shows the composer again.
@@ -193,20 +194,19 @@ class HiddenComposerTests(unittest.TestCase):
                 sent = app.composer.expanded()
                 self.assertIn(LONG_PASTE, sent)  # the chip still expands to its text
 
-    def test_the_caret_stays_hidden_across_a_view_on_the_alternate_screen(self) -> None:
+    def test_the_caret_comes_back_on_the_pickers_filter_row_after_a_view(self) -> None:
         app, _client = make_app()
         app.transcript.add_notice("something to view")
         app._open_session_picker(SESSIONS)
-        drawn(app)
+        screen = drawn(app)
+        filter_row = status_row(screen) - 2
         press(app, Key(CHAR, "o", ctrl=True))  # the details view, over the picker
         self.assertIsNotNone(app.pager)
         press(app, Key(CHAR, "q"))
         self.assertIsNone(app.pager)
-        drawn(app)
-        self.assertFalse(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
-        press(app, Key(ESCAPE))
-        drawn(app)
         self.assertTrue(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
+        drawn(app)
+        self.assertEqual(app.terminal.screen.cursor, (filter_row, 3))  # type: ignore[attr-defined]
 
     def test_a_question_arriving_over_a_view_closes_it_and_hides_the_caret(self) -> None:
         app, _client = make_app(busy=True)
@@ -390,9 +390,9 @@ class PickerTests(unittest.TestCase):
                 opener(app)  # type: ignore[operator]
                 screen = drawn(app)
                 self.assertEqual(rule_rows(screen), [], screen)
-                self.assertFalse(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
                 status = status_row(screen)
                 self.assertEqual(screen[status - 2], " › type to filter")  # right above the mode row
+                self.assertEqual(app.terminal.screen.cursor, (status - 2, 3))  # type: ignore[attr-defined]  # the caret on it
                 type_text(app, "s")
                 self.assertEqual(drawn(app)[status - 2], " › s")
                 self.assertEqual(held(app), draft)  # the filter is the picker's, not the draft's
@@ -418,11 +418,43 @@ class PickerTests(unittest.TestCase):
                 press(app, Key(ESCAPE))
                 self.assertIn("shortcuts", drawn(app)[status_row(drawn(app)) - 1])
 
+    def test_the_caret_shows_at_the_end_of_the_filter_row_where_typing_goes(self) -> None:
+        # An IME pre-edit (Hangul, kana) is drawn at the cursor: it must be where the filter's text is typed.
+        for name, opener in self.openers():
+            with self.subTest(picker=name):
+                app, _client = make_app()
+                type_text(app, "a draft")
+                opener(app)  # type: ignore[operator]
+                screen = drawn(app)
+                row = status_row(screen) - 2
+                self.assertEqual(screen[row], " › type to filter")
+                self.assertTrue(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
+                self.assertEqual(app.terminal.screen.cursor, (row, 3))  # type: ignore[attr-defined]
+                type_text(app, "s")
+                drawn(app)
+                self.assertEqual(app.terminal.screen.cursor, (row, 4))  # type: ignore[attr-defined]
+                press(app, Key(ESCAPE))
+                screen = drawn(app)
+                self.assertEqual(app.terminal.screen.cursor[0], next(i for i, line in enumerate(screen) if line.startswith("› a draft")))  # type: ignore[attr-defined]
+
+    def test_a_tiny_terminal_still_shows_the_pickers_highlighted_row(self) -> None:
+        for rows in (5, 4, 3):
+            with self.subTest(rows=rows):
+                app, _client = make_app(rows=rows, cols=40)
+                app._open_session_picker(SESSIONS)
+                screen = drawn(app)
+                self.assertTrue(any(line.startswith(" ● Release notes") or line.startswith("   Release notes")
+                                    for line in screen), screen)
+
     def test_below_ten_rows_a_pickers_keys_stay_in_its_header(self) -> None:
         app, _client = make_app(rows=9)
         app._open_session_picker(SESSIONS)
         screen = drawn(app)
         self.assertTrue(any(row.startswith(" Sessions (2)") and "esc closes" in row for row in screen), screen)
+        narrow, _client = make_app(rows=9, cols=40)  # the header's keys take their short form, never a cut-off long one
+        narrow._open_session_picker(SESSIONS)
+        header = next(row for row in drawn(narrow) if row.startswith(" Sessions (2)"))
+        self.assertTrue(header.rstrip().endswith("esc closes"), header)
 
     def test_the_history_search_and_the_completion_menu_keep_the_composer(self) -> None:
         app, _client = make_app()

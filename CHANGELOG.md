@@ -102,8 +102,9 @@ All notable changes will be documented here.
   and a tab with no room takes a row of its own.
   While you pick from a list, the composer is hidden, as in Claude Code: an
   approval, a clarify question with choices, and the `/sessions`, `/rewind`
-  and bare `/model` pickers stand where the composer was, with no rules and
-  no caret, and the draft comes back as you left it when the list closes (a
+  and bare `/model` pickers stand where the composer was, with no rules (a
+  picker keeps the caret at the end of its filter row, where its typing
+  goes), and the draft comes back as you left it when the list closes (a
   question waiting behind the first opens before the composer is drawn
   again). An approval lists deny, allow once and allow this session one per
   row, deny highlighted (`❯`); Up and Down move as Left and Right do, stop at
