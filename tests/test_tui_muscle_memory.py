@@ -119,10 +119,17 @@ class ModelPickerTests(unittest.TestCase):
                 {"slug": "p", "name": "P", "models": ["m", "x --global", "-v", "a\x1b[31mb", "", 3, "ok/model"]},
                 {"slug": "--global", "name": "Bad", "models": ["m"]},
                 {"slug": "q", "name": "Q\x1b]0;t\x07", "models": "not a list"},
+                # Hermes' /model reads a leading U+2012-U+2015 dash before a flag word as `--` (model_switch.py).
+                {"slug": "p", "name": "P", "models": [DASH + "global" for DASH in "\u2012\u2013\u2014\u2015\u2010"]},
+                {"slug": "\u2014session", "name": "Bad", "models": ["m"]},
+                {"slug": "p", "name": "P", "models": ["model\u2014v2"]},  # a dash inside a word stays one word
             ],
         }
         rows = model_rows(result)
-        self.assertEqual([(row.model, row.provider, row.current) for row in rows], [("m", "p", True), ("ok/model", "p", False)])
+        self.assertEqual(
+            [(row.model, row.provider, row.current) for row in rows],
+            [("m", "p", True), ("ok/model", "p", False), ("model\u2014v2", "p", False)],
+        )
 
     def test_the_current_model_is_marked_and_highlighted_typing_filters_and_esc_closes(self) -> None:
         result = {**OPTIONS, "model": "gpt-5.4-mini", "provider": "copilot"}

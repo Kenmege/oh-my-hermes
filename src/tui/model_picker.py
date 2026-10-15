@@ -7,8 +7,10 @@ highlighted, and returns the one picked. It holds no IO: the app sends the
 pick as Hermes' own `/model <name> --provider <slug> --session` through
 `slash.exec`, so the switch is Hermes' (refused while a turn runs) and lasts
 for this session only. A name or slug that is not one plain word
-(whitespace, a leading `-`, a control character) is left out, so a pick can
-never add a flag such as `--global` to that command.
+(whitespace, a leading dash of any kind, a control character) is left out,
+so a pick can never add a flag such as `--global` to that command: Hermes
+splits the arguments on whitespace and reads a token that starts with `--`,
+or with one of the dashes U+2012 to U+2015 before a flag word, as a flag.
 
 Keys: Up/Down move one row, PageUp/PageDown one page; printable text filters
 (model or provider, ignoring case) and Backspace takes a filter character
@@ -19,6 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import unicodedata
 
 from .escapes import strip_escapes
 from .keys import BACKSPACE, CHAR, DOWN, ENTER, ESCAPE, PAGE_DOWN, PAGE_UP, UP, Key, Paste
@@ -53,8 +56,11 @@ class ModelAction:
 
 
 def _word(value: object) -> str:
-    """`value` when it is one plain word a command line carries as one argument; "" otherwise."""
-    if not isinstance(value, str) or not value or value.startswith("-"):
+    """`value` when it is one plain word a command line carries as one argument; "" otherwise.
+
+    It may not start with a dash of any kind (Unicode category Pd, `-` and the en and em dashes among them).
+    """
+    if not isinstance(value, str) or not value or unicodedata.category(value[0]) == "Pd":
         return ""
     return value if all(char.isprintable() and not char.isspace() for char in value) else ""
 
