@@ -1258,7 +1258,11 @@ def check_dreaming_mode_setting(hermes_home: str | Path | None = None) -> Advice
     observed = (
         f"dreaming_mode is {setting['raw']!r}, which is not off or reminder; {setting['mode']} is in force"
         if setting.get("reason") == "unknown_value"
-        else f"config.yaml could not be read by OMH's block-style scan; {setting['mode']} is in force"
+        else (
+            "config.yaml could not be read by OMH's block-style scan (a tab indent, an inline section, "
+            "or a `<<:` merge key a dreaming_mode could be inherited through), so a setting could be "
+            f"neither read nor ruled out; {setting['mode']} is in force"
+        )
     )
     return AdviceEntry(MODE_SETTING_UNRECOGNIZED, "advice", remediation, evidence_boundary, observed)
 

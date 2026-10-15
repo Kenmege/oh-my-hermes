@@ -303,6 +303,8 @@ class DreamingModeSettingTests(_SharedStore):
         cases = (
             ("disabled", dreaming_mode_config("disabled"), "advice", "'disabled', which is not off or reminder"),
             ("tab-indented", "plugins:\n\tentries:\n\t\tomh:\n", "advice", "could not be read"),
+            # A merge key could carry the setting from an anchor this scan cannot follow.
+            ("merge key", "plugins:\n  entries:\n    omh:\n      <<: *base\n", "advice", "neither read nor ruled out"),
             ("off", dreaming_mode_config("off"), "ok", "dreaming_mode: off; off is in force"),
             ("unset", "memory:\n  provider: omh\n", "ok", "unset; reminder is in force"),
         )

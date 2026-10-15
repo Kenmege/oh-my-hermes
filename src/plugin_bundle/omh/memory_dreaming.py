@@ -187,9 +187,9 @@ def adopt_legacy_dreaming_files(omh_home: str | Path, hermes_home: str | Path) -
     names moved. Raises ``OSError``.
 
     One lock on the old location covers the whole claim. Locking each target
-    alone let two profiles claim at once: in 300 two-thread runs, 254 losers
+    alone let two profiles claim at once: in a two-thread probe most losers
     raised ``FileNotFoundError`` on a file the winner had already moved, and
-    13 runs split the counters and the brief between the two profiles.
+    some runs split the counters and the brief between the two profiles.
     """
     memory_dir = Path(omh_home).expanduser() / "memory"
     legacy_files = [memory_dir / name for name in LEGACY_STATE_FILENAMES]
