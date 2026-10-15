@@ -688,10 +688,14 @@ class SettledTailTests(unittest.TestCase):
                 self.assertIn(1, synced)
 
     def test_a_resize_redraw_mid_turn_never_shows_the_prompt_and_its_echo_together(self) -> None:
-        # The redraw takes the session again from its top: only the rows from the prompt on are the prompt's.
-        for rows, cols, earlier in ((40, 100, 0), (40, 100, 60), (24, 80, 0), (24, 80, 60)):
-            with self.subTest(rows=rows, cols=cols, earlier=earlier):
+        # The redraw takes the session again from its top: only the rows from the prompt on are the prompt's,
+        # and the banner it prints again ahead of them is not.
+        cases = ((40, 100, 0, False), (40, 100, 60, False), (24, 80, 0, False), (24, 80, 60, False), (24, 80, 0, True))
+        for rows, cols, earlier, banner in cases:
+            with self.subTest(rows=rows, cols=cols, earlier=earlier, banner=banner):
                 app, now = self.app_with_plan(rows, cols, earlier)
+                if banner:
+                    app.banner_record = {"cwd": "~/project", "resumed": ""}
                 app._submit_prompt("run the tools")
                 app._render()
                 app._on_event(ev("message.start"))
