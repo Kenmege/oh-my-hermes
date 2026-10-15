@@ -42,6 +42,7 @@ from .catalog_types import (
     LLM_APP_DEV_EVAL_DELIVERABLES,
     LLM_APP_DEV_PUBLIC_BOARD_ACTIONS,
     LLM_APP_DEV_RAILS,
+    PortableLine,
     skill_view_call,
 )
 from .llm_app_references import (
@@ -314,6 +315,14 @@ def _installable_skill_names() -> frozenset[str]:
     return frozenset(definition.name for definition in installable_skill_definitions())
 
 
+@lru_cache(maxsize=1)
+def _portable_skill_labels() -> frozenset[str]:
+    """The labels the Agent Skills projection ships."""
+    from .catalog_portable import portable_skill_names
+
+    return frozenset(portable_skill_names())
+
+
 def loadable_skill_mentions(line: str) -> str:
     """Rewrite each backticked installed catalog name in `line` to its display label.
 
@@ -478,7 +487,10 @@ def _frontmatter(
         from .catalog_portable import PORTABILITY_REQUIRES_OMH_CLI, skill_portability
 
         if definition:
-            description = agent_frontmatter_description(definition)
+            # Of the portable rules only a `description` override reaches the
+            # description, so the projection is built here only for one.
+            portable = _target_definition(definition, target) if "description" in definition.portable_overrides else definition
+            description = agent_frontmatter_description(portable)
         if not 1 <= len(description) <= 1024:
             raise ValueError(f"{name}: Agent Skills description must be 1-1024 characters")
         if skill_portability(name) == PORTABILITY_REQUIRES_OMH_CLI:
@@ -2712,6 +2724,40 @@ def _target_definition(
         lines = getattr(definition, honoured)
         if any(isinstance(line, line_type) for line in lines):
             definition = replace(definition, **{honoured: tuple(line for line in lines if not isinstance(line, line_type))})
+    # A line that names a skill only the Hermes projection ships and says more
+    # than the pointer carries its portable wording beside it (`PortableLine`).
+    swapped = {}
+    for field in fields(definition):
+        value = getattr(definition, field.name)
+        if isinstance(value, PortableLine):
+            raise ValueError(f"{definition.name}: PortableLine is honoured in list fields; rewrite {field.name} through portable_overrides")
+        if isinstance(value, tuple) and any(isinstance(item, PortableLine) for item in value):
+            swapped[field.name] = tuple(item.portable if isinstance(item, PortableLine) else item for item in value)
+    if swapped:
+        definition = replace(definition, **swapped)
+    # A Do Not Use When line reads "<request>; use `<sibling>`". When every
+    # sibling it names is one this projection does not ship, the pointer
+    # sends the host to a skill it cannot load, so only the request is kept:
+    # the skill still says what it is not for. The rule reads the shipping
+    # set, so the pointer returns once a sibling ships here. A line of any
+    # other shape, or one that also names a shipped sibling, is left as it is,
+    # and the gate in `tests/test_agent_skills_projection.py` fails on it until
+    # a `PortableLine` or `portable_overrides` rewrites it.
+    shipped = _portable_skill_labels()
+    installed = _installable_skill_names()
+
+    def _without_unshipped_pointer(line: str) -> str:
+        named = {name for name in _BACKTICKED_SKILL_NAME.findall(line) if name in installed}
+        if not named or any(omh_skill_display_name(name) in shipped for name in named):
+            return line
+        request, separator, _pointer = line.rpartition("; ")
+        if not separator or installed.intersection(_BACKTICKED_SKILL_NAME.findall(request)):
+            return line
+        return f"{request}."
+
+    boundaries = tuple(_without_unshipped_pointer(line) for line in definition.do_not_use_when)
+    if boundaries != definition.do_not_use_when:
+        definition = replace(definition, do_not_use_when=boundaries)
     overrides = definition.portable_overrides
     return replace(definition, **{
         field: "\n".join(lines) if isinstance(getattr(definition, field), str) else lines
@@ -2924,15 +2970,33 @@ def portable_reference_templates(
     The per-skill unit of `agent_skill_reference_templates`: a caller holding
     one skill's references gets that skill's slice of the projection.
     """
-    from .catalog_portable import PORTABLE_REFERENCE_PATHS, portable_skill_names
+    from .catalog_portable import PORTABLE_REFERENCE_PATHS, PORTABLE_REFERENCE_REWRITES
 
-    names = frozenset(portable_skill_names())
+    names = _portable_skill_labels()
     return [
-        SkillReferenceTemplate(omh_skill_display_name(template.skill_name), template.relative_path, template.content)
+        SkillReferenceTemplate(
+            omh_skill_display_name(template.skill_name),
+            template.relative_path,
+            _portable_reference_content(template, PORTABLE_REFERENCE_REWRITES),
+        )
         for template in templates
         if omh_skill_display_name(template.skill_name) in names
         and f"{template.skill_name}/{template.relative_path}" in PORTABLE_REFERENCE_PATHS
     ]
+
+
+def _portable_reference_content(
+    template: SkillReferenceTemplate, rewrites: dict[str, tuple[tuple[str, str], ...]],
+) -> str:
+    content = template.content
+    for hermes, portable in rewrites.get(f"{template.skill_name}/{template.relative_path}", ()):
+        if content.count(hermes) != 1:
+            raise ValueError(
+                f"{template.skill_name}/{template.relative_path}: a PORTABLE_REFERENCE_REWRITES text no longer "
+                f"occurs exactly once; re-read the reference and its portable wording: {hermes!r}"
+            )
+        content = content.replace(hermes, portable)
+    return content
 
 
 def workflow_skill(name: str) -> SkillTemplate:

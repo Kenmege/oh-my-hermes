@@ -167,14 +167,22 @@ NATIVE_CLAUSES = {
 # The portable projection is what a non-Hermes host loads. `ultraqa` and
 # `visual-qa` carry a reviewed portable quality bar, so their browser rules are
 # stated there without Hermes tool names, and a viewport blocker there never
-# outlaws a capture another tool supplied. Every other clause above is shared
-# by both projections.
+# outlaws a capture another tool supplied. `deploy-and-monitor`'s watchlist
+# clause names a skill only Hermes ships, so it has a portable wording too.
+# Every other clause above is shared by both projections.
 PORTABLE_ONLY_CLAUSES = {
     "ultraqa": (
         "On a web app, run hostile scenarios against the target the user named (local or staging unless stated); a "
         "scenario that would submit, buy, send, or delete on a live surface waits for the user's approval.",
         "Read the browser console after every navigation and interaction, and keep a failing scenario's screenshot "
         "and console errors as its observed evidence.",
+    ),
+    # The Hermes watchlist clause names `automation-blueprint`, which only the
+    # Hermes projection ships, so the portable body says it without the skill.
+    "deploy-and-monitor": (
+        "A watchlist that must keep running after this turn is prepared for a scheduler the user runs, with the "
+        "user's own source (a health URL or a script whose output carries no timestamps, never one OMH writes), and "
+        "is activated by the user, never by OMH.",
     ),
     "visual-qa": (
         "Bind each capture to its screenshot path, URL, the viewport width the page reported, and the target "
@@ -189,6 +197,9 @@ PORTABLE_ONLY_CLAUSES = {
 }
 # Skills whose NATIVE_CLAUSES are stated in the Hermes body only.
 HERMES_ONLY_CLAUSES = {"ultraqa", "visual-qa"}
+# Single NATIVE_CLAUSES stated in the Hermes body only, each with a portable
+# wording in PORTABLE_ONLY_CLAUSES.
+HERMES_ONLY_CLAUSE_TEXTS = frozenset({NATIVE_CLAUSES["deploy-and-monitor"][0]})
 
 # Hermes-only names. In a portable body a line naming one must say it holds
 # on Hermes; the two browser skills carry none of the browser tool names.
@@ -238,7 +249,7 @@ class ProducerClauseTests(unittest.TestCase):
             for clause in clauses:
                 with self.subTest(skill=name, projection="hermes", clause=clause[:60]):
                     self.assertIn(clause, hermes[name])
-                if name in HERMES_ONLY_CLAUSES:
+                if name in HERMES_ONLY_CLAUSES or clause in HERMES_ONLY_CLAUSE_TEXTS:
                     continue
                 with self.subTest(skill=name, projection="portable", clause=clause[:60]):
                     self.assertIn(clause, portable[omh_skill_display_name(name)])
