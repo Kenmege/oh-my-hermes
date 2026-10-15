@@ -22,6 +22,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from _fanout_interrupt_flag import InterruptFlagIsolatedTestCase
 from omh.coding.fanout import build_fanout_contract
 from omh.coding.fanout_artifacts import fanout_dispatch_summary_path, write_fanout_contract
 from omh.coding import fanout_dispatch as fanout_dispatch_module
@@ -80,18 +81,7 @@ def _ready(paths, profile, **kwargs):
     return {"status": "ready", "profile": profile}
 
 
-class SignalSafeRunnerTests(unittest.TestCase):
-    def setUp(self) -> None:
-        # The interrupt flag is process-global (one dispatch per process is
-        # the supported shape); direct runner tests must not inherit a
-        # sibling test's interrupt — and must not bequeath their own:
-        # `terminate_live_unit_groups` below sets it, and a later test's
-        # direct spawn would be terminated on register-then-check (#1482).
-        from omh.coding.fanout_dispatch import _INTERRUPT_FLAG
-
-        _INTERRUPT_FLAG.clear()
-        self.addCleanup(_INTERRUPT_FLAG.clear)
-
+class SignalSafeRunnerTests(InterruptFlagIsolatedTestCase):
     @posix_only
     def test_unit_runs_as_its_own_group_leader(self) -> None:
         seen: dict[str, int] = {}
@@ -268,14 +258,7 @@ class SignalSafeRunnerTests(unittest.TestCase):
             os.killpg(seen["pid"], 0)
 
 
-class InterruptedDispatchTests(unittest.TestCase):
-    def setUp(self) -> None:
-        # Same process-global flag; the interrupted dispatches below set it.
-        from omh.coding.fanout_dispatch import _INTERRUPT_FLAG
-
-        _INTERRUPT_FLAG.clear()
-        self.addCleanup(_INTERRUPT_FLAG.clear)
-
+class InterruptedDispatchTests(InterruptFlagIsolatedTestCase):
     def _fixture(self, tmp: str):
         root = Path(tmp)
         paths = _paths(tmp)
@@ -346,17 +329,7 @@ class InterruptedDispatchTests(unittest.TestCase):
             self.assertTrue(stored and stored.get("interrupted"))
 
 
-class AsyncSignalTests(unittest.TestCase):
-    def setUp(self) -> None:
-        # The SIGTERM below sets the process-global interrupt flag and leaves
-        # it for the next dispatch entry; a sibling spawning through
-        # signal_safe_unit_runner directly would be SIGTERMed on
-        # register-then-check (#1482).
-        from omh.coding.fanout_dispatch import _INTERRUPT_FLAG
-
-        _INTERRUPT_FLAG.clear()
-        self.addCleanup(_INTERRUPT_FLAG.clear)
-
+class AsyncSignalTests(InterruptFlagIsolatedTestCase):
     @posix_only
     def test_sigterm_mid_flight_kills_groups_and_blocks_new_spawns(self) -> None:
         # A REAL signal, delivered while workers are mid-flight — the shape
