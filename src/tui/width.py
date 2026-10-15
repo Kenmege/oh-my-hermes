@@ -21,6 +21,7 @@ glyph in 1 cell) gets a line of its own because there is no smaller unit.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from functools import lru_cache
 import unicodedata
 
 from .style import Line, Span, Style
@@ -36,6 +37,10 @@ _SPACING_MARK = "Mc"
 _WIDE = frozenset({"W", "F"})
 # Hangul medial vowels and final consonants: zero width after a leading consonant.
 _HANGUL_TRAILING_JAMO = ((0x1160, 0x11FF), (0xD7B0, 0xD7FF))
+# Every frame measures the same short non-ASCII strings again (the rules, the mode row, the status line, a
+# spinner glyph), so their clusters and cluster widths are kept; longer text is measured afresh.
+_KEPT_TEXT_CHARS = 256
+_KEPT_ENTRIES = 4096
 _EMOJI_MODIFIERS = (0x1F3FB, 0x1F3FF)
 _REGIONAL_INDICATORS = (0x1F1E6, 0x1F1FF)
 
@@ -109,10 +114,17 @@ def _segment(text: str) -> list[str]:
     return result
 
 
+@lru_cache(maxsize=_KEPT_ENTRIES)
+def _kept_clusters(text: str) -> tuple[str, ...]:
+    return tuple(_segment(unicodedata.normalize("NFC", text)))
+
+
 def clusters(text: str) -> list[str]:
-    """The NFC text split into the units a cursor steps over and a cut may fall between."""
+    """The NFC text split into the units a cursor steps over and a cut may fall between (a new list each call)."""
     if text.isascii():  # already NFC, and no ASCII character joins another
         return list(text)
+    if len(text) <= _KEPT_TEXT_CHARS:
+        return list(_kept_clusters(text))
     return _segment(unicodedata.normalize("NFC", text))
 
 
@@ -125,6 +137,11 @@ def cluster_width(cluster: str) -> int:
     """Cells one cluster from `clusters()` occupies."""
     if cluster.isascii():
         return _ascii_width(cluster)
+    return _wide_cluster_width(cluster)
+
+
+@lru_cache(maxsize=_KEPT_ENTRIES)
+def _wide_cluster_width(cluster: str) -> int:
     if VS16 in cluster:
         return 2
     if ZWJ in cluster and sum(1 for ch in cluster if not _is_zero_width(ch)) > 1:

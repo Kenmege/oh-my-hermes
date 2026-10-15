@@ -38,7 +38,9 @@ DRIFT_ERROR_CODES = frozenset({PARAM_REJECTED, METHOD_NOT_FOUND})
 # made during a session it ends the session (`App._on_response`). An older Hermes (0250c8bcae: SkillsReloadParams
 # takes no field) rejects `skills.reload {session_id}` with 4000, which must not cost the person their session.
 # `config.get` is answered after the first frame and only sets the busy mode, which has a default (queue).
-OPTIONAL_METHODS = frozenset({"commands.catalog", "config.get", "skills.reload"})
+# `session.list` is asked unprompted at the start of a fresh session, only to name the last one, and
+# `model.options` only fills `/model`'s picker, while `/model <name>` still switches.
+OPTIONAL_METHODS = frozenset({"commands.catalog", "config.get", "model.options", "session.list", "skills.reload"})
 
 # Methods the TUI calls, with the only keys it ever sends. Sending a key outside
 # this map is a bug: a Hermes that does not know it rejects the whole call.
@@ -59,15 +61,30 @@ CLIENT_METHODS: dict[str, frozenset[str]] = {
     # See CONFIG_SET_VALUES: `scope` is deliberately not declared.
     "config.set": frozenset({"key", "value", "session_id"}),
     "session.list": frozenset({"limit"}),
+    # Bare `/model`: the providers and models Hermes offers this session, for the picker. The pick goes back as
+    # Hermes' own `/model <name> --provider <slug> --session` through `slash.exec`.
+    "model.options": frozenset({"session_id"}),
     # Read-only: the last 16 KB of one child's live transcript, for the agent log view. See `call_problem`.
     "subagent.tail": frozenset({"session_id", "subagent_id"}),
-    "prompt.submit": frozenset({"session_id", "text", "queued"}),
+    # The two actions on one subagent, each on the person's keypress in the agent list (AGENTS.md): `x` once a
+    # second `x` confirms, and `s` with text the person then types and sends. Hermes answers `found` (false when
+    # the child had already finished) and, for a steer, `status` (STEER_QUEUED or STEER_REJECTED).
+    "subagent.interrupt": frozenset({"session_id", "subagent_id"}),
+    "subagent.steer": frozenset({"session_id", "subagent_id", "text"}),
+    # A rewind (Esc Esc, /rewind) adds both truncation keys; see `call_problem`. Hermes refuses a truncation
+    # without `confirm_truncate` (4029) and an ordinal one on a durable session (4004).
+    "prompt.submit": frozenset({"session_id", "text", "queued", "truncate_before_row_id", "confirm_truncate"}),
+    # The durable display transcript with row ids: what the rewind picker lists and redraws from.
+    "session.history": frozenset({"session_id"}),
     # Attachments: the gateway resolves and queues the file; the TUI sends a path, never bytes.
     "image.attach": frozenset({"session_id", "path"}),
     "image.detach": frozenset({"session_id", "path"}),
     "clipboard.paste": frozenset({"session_id"}),
     "input.detect_drop": frozenset({"session_id", "text"}),
     "slash.exec": frozenset({"command", "session_id"}),
+    # The person's own `!command` (AGENTS.md: nothing else goes this way). Hermes runs it with a 30 s limit,
+    # refuses dangerous and hardline commands (4005), keeps it out of the model's context, and redacts the output.
+    "shell.exec": frozenset({"command"}),
     "command.dispatch": frozenset({"name", "arg", "session_id"}),
 }
 
@@ -109,7 +126,10 @@ SUBAGENT_EVENTS = (
 
 # The event types the TUI handles. `App._on_event` takes APP_EVENTS itself, `Transcript` folds TRANSCRIPT_EVENTS
 # and the roster SUBAGENT_EVENTS; `test_tui_gateway_contract` holds each of the three to these names.
-APP_EVENTS = ("request.cancel", "approval.cancelled", "session.info", "session.usage", "connection.request", "error")
+APP_EVENTS = (
+    "request.cancel", "approval.cancelled", "session.info", "session.usage", "connection.request", "error",
+    "notification.show", "notification.clear", "session.title", "todo.updated",
+)
 TRANSCRIPT_EVENTS = (
     "message.start", "message.delta", "message.interim", "message.complete", "thinking.delta", "reasoning.delta",
     "reasoning.available", "tool.generating", "tool.start", "tool.complete", "status.update",
@@ -122,19 +142,44 @@ UNREAD_EVENTS = frozenset({
     "browser.controller.cancel", "browser.controller.command", "browser.progress", "btw.complete",
     "connection.update", "cron.changed", "display.install.done", "display.install.log", "display.lease",
     "display.status", "free_tier.challenge", "gateway.ready", "layout.apply", "message.reaction",
-    "moa.aggregating", "moa.phase", "moa.progress", "moa.reference", "notice", "notification.clear",
-    "notification.show", "pairing.changed", "pane.reveal", "pet.changed", "pet.generate.progress",
+    "moa.aggregating", "moa.phase", "moa.progress", "moa.reference", "notice",
+    "pairing.changed", "pane.reveal", "pet.changed", "pet.generate.progress",
     "pet.hatch.progress", "platforms.changed", "preview.close", "preview.open", "preview.restart.complete",
     "preview.restart.progress", "projects.changed", "reaction", "review.summary", "session.control.update",
-    "session.reclaimed", "session.resume_progress", "session.title", "sessions.changed", "setup.ready",
-    "skin.changed", "terminal.close", "tip.show", "todo.updated", "tool.output_risk", "voice.interrupted",
+    "session.reclaimed", "session.resume_progress", "sessions.changed", "setup.ready",
+    "skin.changed", "terminal.close", "tip.show", "tool.output_risk", "voice.interrupted",
     "voice.partial", "voice.status", "voice.transcript", "wake.detected",
 })
+
+# `tool.generating` (`contracts/events.py` ToolGeneratingPayload: "The model is emitting a tool call's arguments")
+# carries a name and no id, sent as soon as the stream names a call, and two kinds of them name no call that runs
+# under that name. A streamed attempt whose arguments Hermes cannot repair is discarded and retried after its
+# `tool.generating` (`agent/turn_truncation.py::_retry_truncated_tool_call`), and nothing follows for it. A deferred
+# tool is called through the `tool_call` bridge (`tools/tool_search_catalog.py` TOOL_CALL_NAME): the stream names the
+# bridge, the executor unwraps it (`agent/tool_executor.py::_unwrap_tool_search_call`), and `tool.start` and
+# `tool.complete` name the tool it reached, under the bridge call's own id.
+TOOL_CALL_BRIDGE = "tool_call"
 
 # `session.info` (and a create or resume answer's `info`), `contracts/common.py` `SessionLiveInfo`:
 # `yolo` (bool) is this session's approvals off, `reasoning_effort` (str, "" when unset) its effort.
 SESSION_INFO_YOLO = "yolo"
 SESSION_INFO_REASONING_EFFORT = "reasoning_effort"
+
+# `notification.show` (`contracts/events.py` NotificationShowPayload, built by `agent_callbacks._agent_notice_update`
+# and the slow agent-build notice in `server._await_agent_ready`): `text` carries its own glyph, `level` is one of
+# NOTIFICATION_LEVELS, `kind` sticky, ttl or agent, `ttl_ms` is honoured for kind ttl, and a later show or a
+# `notification.clear` naming the same `key` replaces or withdraws it.
+NOTIFICATION_TEXT = "text"
+NOTIFICATION_LEVEL = "level"
+NOTIFICATION_KIND = "kind"
+NOTIFICATION_TTL_MS = "ttl_ms"
+NOTIFICATION_KEY = "key"
+NOTIFICATION_LEVELS = frozenset({"info", "warn", "error", "success"})
+NOTIFICATION_TTL_KIND = "ttl"
+
+# `session.title` (`contracts/events.py` SessionTitlePayload): auto-titling renamed the session; `title` is the new
+# name (the payload's `session_id` is the stored key, and the envelope's is the live session, as for every event).
+SESSION_TITLE = "title"
 
 # `subagent.tail`'s result (`contracts/profiles_vault_complete_foreign_subagents.py` `SubagentTailResult`):
 # `available` is false while the child has no live transcript; `text` is its last 16 KB, `truncated` says
@@ -220,18 +265,30 @@ def undeclared_params(method: str, params: dict[str, object]) -> list[str]:
 def call_problem(method: str, params: dict[str, object]) -> str:
     """Why the TUI must not send this call; "" when it may.
 
-    An undeclared key; a `config.set` that Hermes would apply beyond one
-    session (a key or a value outside `CONFIG_SET_VALUES`, or no session id);
-    or a `subagent.tail` that does not name both a session and a subagent.
+    An undeclared key; a `prompt.submit` that truncates without both an int
+    `truncate_before_row_id` and `confirm_truncate: true` (a rewind names the
+    row the person picked and says so); a `config.set` that Hermes would apply
+    beyond one session (a key or a value outside `CONFIG_SET_VALUES`, or no session id);
+    or a `subagent.tail`, `subagent.interrupt` or `subagent.steer` that does
+    not name both a session and a subagent (a steer, its text too).
     Hermes answers a tail without a subagent id as a rejected parameter
     (4000), which the client reads as drift and ends the session over.
     """
     undeclared = undeclared_params(method, params)
     if undeclared:
         return f"{method} does not declare {', '.join(undeclared)} in the gateway contract"
-    if method == "subagent.tail":
-        missing = [key for key in ("session_id", "subagent_id") if not (isinstance(params.get(key), str) and params[key])]
-        return f"subagent.tail needs {' and '.join(missing)}: Hermes rejects the call without" if missing else ""
+    if method == "prompt.submit" and ("truncate_before_row_id" in params or "confirm_truncate" in params):
+        row_id = params.get("truncate_before_row_id")
+        if not isinstance(row_id, int) or isinstance(row_id, bool) or params.get("confirm_truncate") is not True:
+            return "prompt.submit truncates only with an int truncate_before_row_id and confirm_truncate true"
+        return ""
+    if method == "shell.exec":
+        command = params.get("command")
+        return "" if isinstance(command, str) and command.strip() else "shell.exec needs the command the person typed"
+    if method in ("subagent.tail", "subagent.interrupt", "subagent.steer"):
+        needed = ("session_id", "subagent_id", "text") if method == "subagent.steer" else ("session_id", "subagent_id")
+        missing = [key for key in needed if not (isinstance(params.get(key), str) and params[key].strip())]
+        return f"{method} needs {' and '.join(missing)}: Hermes rejects the call without" if missing else ""
     if method != "config.set":
         return ""
     key, value, session_id = params.get("key"), params.get("value"), params.get("session_id")

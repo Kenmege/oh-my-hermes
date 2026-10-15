@@ -4,6 +4,119 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **The OMH TUI catches up with Claude Code and oh-my-pi.** It reads on a light
+  terminal: it asks the terminal for its background colour before the first
+  frame (OSC 11, at most 0.1 s, with `COLORFGBG` as the fallback) and measures
+  its theme against it, so prompts and replies are the terminal's own text
+  colour, every coloured word reaches 4.5:1 and every rule or mark 3:1 on that
+  background (the status line's against its own bar), words that sat on the 3:1 decoration colour moved to colours that
+  read, and a light background gets light diff bands (on white the body text
+  measured 1.08 to 1.13:1 before); `/theme auto|light|dark` picks the background
+  for the open session. A slash command is echoed as `› /name arg` and what it
+  prints stays in the transcript under it, a long output as its first 12 rows
+  and a count of the rest for `/history`; nothing a command prints opens the
+  pager any more, so typed-ahead keys are no longer swallowed and the output is
+  still in scrollback afterwards. Hermes' own notices (`notification.show`:
+  the agent still starting, credit warnings) show on one row above the
+  composer, replaced by the next, withdrawn by key, or gone after their time,
+  where they were dropped before; and a refused call reads as words (`/undo` on
+  an empty session: `No user messages to undo.` instead of
+  `command.dispatch failed (4018): no user messages to undo`). Agents show in
+  one place: the HUD panel's `[Agents]` block steps aside while the strip and
+  the list hold agents (the panel said "2 running" minutes after both had
+  finished), agents whose goals start alike are numbered on the strip, and the
+  status line says `idle · 2 agents running` while agents outlive the turn.
+  Mouse reports are on only while the agent list is open, so during a turn the
+  wheel scrolls and a drag selects; the strip is reached with Down. Up and the
+  new Ctrl+R search reach earlier sessions' prompts: the TUI reads Hermes' own
+  input history (`$HERMES_HOME/.hermes_history`, the file `hermes --tui`
+  keeps) and appends each line you send to it in that file's format, opened
+  append-only and without following a symlink, created mode 0600. Esc twice
+  clears a draft into the session's history, or, on an empty composer between
+  turns (and `/rewind`), lists your prompts: the one you take comes back to
+  edit, and sending it truncates the session before it (`prompt.submit` with
+  `truncate_before_row_id` and `confirm_truncate`) and redraws from the cut.
+  A line that starts with `!` runs in Hermes' shell (`shell.exec`, 30 s at
+  most, dangerous commands refused) and shows `› !cmd` with its output and
+  exit code; it never reaches the model, and during a turn it waits in the
+  queue. A paste of more than 3 lines or 800 characters is one atomic chip,
+  `[Pasted text #1 +60 lines]`, sent whole and shown compact in the
+  transcript. The working row counts the turn's tokens, each turn ends with
+  `✻ 34s · 3 tools · ↓1.2k`, a turn of 10 s or more ends with the terminal's
+  notification (OSC 9, OSC 777 or the bell; `OMH_TUI_BELL=0` silences it), and
+  the terminal title names the session and its state. A tool row shows the
+  first three lines of what the tool printed (a failed one its error's first
+  line, or the last three lines when only its exit code says it failed), and Ctrl+O opens the whole transcript with every detail. In the agent
+  list, `x` twice interrupts the highlighted agent and `s` steers it with the
+  next line you send. The plan panel follows Hermes' `todo.updated` at once
+  instead of waiting 2 to 8 s for the HUD's next poll. Every repaint is one
+  synchronized update (DECSET 2026). While Hermes asks something, the mode row
+  names that question's keys, and neither row offers Esc for an interrupt
+  while anything else takes Esc (a question, a picker, the search, the agent
+  list, a picked steer or rewind, a draft); the strip ends with `↓ agents`; a narrow approval keeps a key hint
+  and a wrapped command its indent; the banner is one row (the model is on the
+  status line, the keys on the mode row) and a fresh session names the last one
+  with its `/resume` command. Claude Code's names work: `/cost` and
+  `/permissions` run Hermes' `/usage` and `/approvals`, `/todos` prints the
+  whole plan, bare `/model` opens a picker of the models Hermes offers and
+  switches this session to the one picked (it printed the current model
+  before), and `/export` first says that Hermes exports a profile archive, not
+  the transcript. Alt+Backspace (and Ctrl+Backspace) deletes the word before
+  the caret, and Alt+B and Alt+F move by a word under the kitty keyboard
+  protocol too, where they did nothing. A start on a terminal of 100 columns
+  and 24 rows or more shows the OH-MY-HERMES block logo above the banner, from
+  the shipped skin and in its gradient, lifted to read on a light background.
+  Motion follows one rule set: a reply opens with `⏺` in the text colour and
+  a tool group in the tool colour; a running tool's `⏺` pulses (each call on
+  its own clock) and settles to `✓` or `✗` before it reaches scrollback; a
+  highlight sweeps across the working row's verb; `OMH_TUI_REDUCED_MOTION=1`
+  or `NO_COLOR` holds everything still and repaints once a second. Your
+  prompt sits on a tinted band to the right edge (an erase in that background,
+  so a copy picks up no spaces), a prompt the queue sent says `⧗ from queue`,
+  and a steer shows as `↪ steer · <text>` under what is running until Hermes
+  answers; its row then lands at the next block boundary. A steer answered
+  while a tool ran used to close the tool group and mark the running call
+  `▪` cut off, and one answered mid-reply split the reply in two. A command
+  typed during a turn (its echo and output) and the agent list's steer and
+  interrupt rows wait under what runs the same way, and two commands out at
+  once each print under their own echo. Each turn's
+  done line sits on a thin rule to the edge, and the answer you gave an
+  approval is written above the call it was about, `✓ allowed once ·
+  <command>` on a light green band or `✗ denied · <command>` on a light red
+  one; failed and denied tool rows with their lines and error notices sit on
+  the red band too, a denial shows the one red `✗` (no amber `⊘`), and with
+  no background reported nothing is banded. A turn's last lines and its done
+  line sit right above the panel on a full screen, where blank rows used to
+  stay under them, more the taller the last tool group was (23 for 12 calls
+  at 40x100; origin/main had the same gap).
+  A call Hermes only drafted (`tool.generating`) and never started, such as a
+  streamed attempt it discards and retries, leaves no row and is not counted
+  in the done line, where it settled as `▪ tool_call`; a deferred tool's
+  `tool_call` draft becomes the call it reached. The plan header's `parallel
+  shot ×N` badge, and the desktop pane's chip, show only a count of 2 or
+  more, so calls run one after another no longer read `parallel shot ×1`.
+  The composer wraps between words instead of splitting a word at the edge,
+  as the echo of the sent prompt does, with one difference: a space stays on
+  the row it ends, so a word with no room left for the space typed after it
+  moves to the next row (the echo keeps the word there and drops the space),
+  and a tab with no room takes a row of its own.
+  While you pick from a list, the composer is hidden, as in Claude Code: an
+  approval, a clarify question with choices, and the `/sessions`, `/rewind`
+  and bare `/model` pickers stand where the composer was, with no rules (a
+  picker keeps the caret at the end of its filter row, where its typing
+  goes), and the draft comes back as you left it when the list closes (a
+  question waiting behind the first opens before the composer is drawn
+  again). An approval lists deny, allow once and allow this session one per
+  row, deny highlighted (`❯`); Up and Down move as Left and Right do, stop at
+  either end so Up then Enter still denies, and no number picks one. A
+  clarify question numbers its choices and ends with `Other (type your
+  answer)`, Hermes' wording; that row, or any character that picks nothing,
+  opens the composer as the answer field, and Up or Down goes back to the
+  list. A picker's filter is its last row. A clarify or sudo answer used to be
+  typed into the composer in place of the draft, which came back as plain
+  text with its caret at the end: a paste chip in it no longer expanded, so
+  sending it sent the chip's label instead of the pasted text.
+
 - **A portable host is no longer told to load a skill only Hermes ships.** On
   main the Agent Skills bodies and references named 17 such skills 63 times:
   by label (`omh-research-department`), by backticked or hyphenated canonical

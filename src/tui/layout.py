@@ -44,6 +44,13 @@ The budget is a pure function of the terminal size and the content sizes:
   region keeps its height and its last row. The moment focus leaves, the mode
   row is one row again and those rows go back where they came from, so the
   composer is back on the row it left.
+- With the composer hidden (`composer_hidden`: the person picks from a list,
+  so nothing is typed) the region draws no top rule, no input rows and no
+  bottom rule, and the slot stands right above the mode row (above the status
+  line where there is none), taking up to `choice_cap` rows: its own cap and
+  the rows a one-row composer frame takes at that size. The mode row and the
+  status line keep their rows, so once the composer is drawn again it is on
+  the row it was on before, the region's height held by pad rows as always.
 """
 
 from __future__ import annotations
@@ -125,6 +132,19 @@ def slot_cap(rows: int, cols: int) -> int:
     return 0 if is_tiny(rows, cols) else rows // 3
 
 
+def choice_cap(rows: int, cols: int) -> int:
+    """The most rows a slot may take while the composer is hidden: `slot_cap` and a one-row composer frame's rows.
+
+    The frame is its top rule, its one input row and its bottom rule where the
+    terminal draws one; below `MIN_ROWS` rows or `MIN_COLS` columns it is the
+    input row alone.
+    """
+    frame = min(1, composer_cap(rows))
+    if not is_tiny(rows, cols):
+        frame += 1 + under_composer(rows, cols)[0]
+    return slot_cap(rows, cols) + frame
+
+
 def agent_list_cap(rows: int, cols: int) -> int:
     """The most rows the focused agent list may take, its hint row included; 0 where there is no mode row.
 
@@ -168,13 +188,16 @@ def allocate(
     composer_rows: int,
     min_height: int,
     agent_list_rows: int = 0,
+    composer_hidden: bool = False,
 ) -> Budget:
     """Rows for each part of the region (see the module docstring for the rules)."""
     room = max_height(rows)
     composer = min(max(composer_rows, 1), composer_cap(rows))
     status = min(1, room - composer)
     bottom_rule, mode = under_composer(rows, cols)
-    if agent_list_rows > 0 and mode:
+    if composer_hidden:
+        composer = bottom_rule = 0  # their rows, and the top rule's, go to the slot (`choice_cap`)
+    elif agent_list_rows > 0 and mode:
         # The list never grows the region: it is held to the height the frame has without it, so the
         # rows it adds come out of the pad, then out of the tail, the sticky prompt and the slot below.
         without = allocate(
@@ -184,11 +207,15 @@ def allocate(
         mode = min(agent_list_rows, _list_room(without, rows, cols))
     left = room - composer - status - bottom_rule - mode
     rule = slot = sticky_rows = tail = 0
-    if not is_tiny(rows, cols):
-        rule = min(1, left)
-        left -= rule
-        slot = min(max(slot_rows, 0), slot_cap(rows, cols), left)
+    if composer_hidden:
+        slot = min(max(slot_rows, 0), choice_cap(rows, cols), left)
         left -= slot
+    if not is_tiny(rows, cols):
+        if not composer_hidden:
+            rule = min(1, left)
+            left -= rule
+            slot = min(max(slot_rows, 0), slot_cap(rows, cols), left)
+            left -= slot
         sticky_rows = 1 if sticky and left > 0 else 0
         left -= sticky_rows
         tail = min(max(tail_rows, 0), left)

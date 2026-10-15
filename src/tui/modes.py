@@ -31,9 +31,9 @@ import json
 from typing import Any
 
 from . import gateway_contract as contract
-from .frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
+from .frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN, MODE_SHELL
 from .keys import CHAR, TAB, Key, Paste
-from .style import Line, Span
+from .style import Line, Span, Style
 from .theme import Theme
 from .transcript import NOTICE_ERROR, NOTICE_WARN, as_text
 from .width import cell_width, line_width, truncate_line
@@ -52,6 +52,12 @@ ACCEPT_LABEL = "⏵⏵ accept all on"
 ACCEPT_HINT = " · approvals off for this session (⇧⇥ to cycle)"
 PLAN_LABEL = "⏸ plan mode on"
 PLAN_HINT = " (⇧⇥ to cycle)"
+SHELL_LABEL = "! shell (not sent to the model)"
+# Each label's shorter forms, for a row where what the next key does would not fit beside the full words.
+ACCEPT_LABELS = (ACCEPT_LABEL, "⏵⏵ accept", "⏵⏵")
+PLAN_LABELS = (PLAN_LABEL, "⏸ plan", "⏸")
+SHELL_LABELS = (SHELL_LABEL, "! shell", "!")
+SHELL_HINT = " · enter runs it in Hermes' shell, 30 s at most"
 MODE_ROW_GAP = 3
 STRIP_SEPARATOR = " · "  # between the mode's label, the agent strip and the hint on the mode row
 
@@ -88,12 +94,17 @@ EFFORT_CYCLE = ("low", "medium", "high", "xhigh", "max")
 EFFORT_REFUSED_NOTICE = "Hermes did not set the reasoning effort to {} ({}); it stays as shown."
 
 
-def mode_label(mode: str, theme: Theme) -> Line:
-    """The mode's own words on the mode row: accept and plan have them, both when both are on, normal has none."""
-    accept: Line = (Span(ACCEPT_LABEL, replace(theme.mode_accept, bold=True)),)
-    plan: Line = (Span(PLAN_LABEL, replace(theme.mode_plan, bold=True)),)
+def mode_label(mode: str, theme: Theme, form: int = 0) -> Line:
+    """The mode's own words on the mode row: accept and plan have them, both when both are on, normal has none.
+
+    `form` picks a shorter form (`ACCEPT_LABELS`, `PLAN_LABELS`, `SHELL_LABELS`): 1 the short words, 2 the glyph.
+    """
+    accept: Line = (Span(ACCEPT_LABELS[form], replace(theme.mode_accept, bold=True)),)
+    plan: Line = (Span(PLAN_LABELS[form], replace(theme.mode_plan, bold=True)),)
     if mode == MODE_ACCEPT_PLAN:
         return (*accept, Span(STRIP_SEPARATOR, theme.hint), *plan)
+    if mode == MODE_SHELL:
+        return (Span(SHELL_LABELS[form], replace(theme.accent, bold=True)),)
     return {MODE_ACCEPT: accept, MODE_PLAN: plan}.get(mode, ())
 
 
@@ -113,32 +124,58 @@ def mode_row_line(
     width: int,
     theme: Theme,
     strip: Line = (),
+    say: str | tuple[str, ...] = "",
+    say_style: Style | None = None,
+    esc_interrupts: bool = True,
 ) -> Line:
     """The row under the composer frame: the mode's label (accept, plan), the agent strip, the keys that matter now, the effort.
 
     `strip` is the roster's strip while it holds an agent, drawn from cell
-    `strip_column(mode, theme)` on. The label always survives, and the strip
+    `strip_column(mode, theme)` on. `say`, when given, is what the next key
+    will do (a rewind waiting to be sent, Esc's second press) and stands in
+    for the hint, in `say_style`; given as forms, longest first, the first
+    that fits whole is said, so a narrow row keeps the point rather than the
+    start of the long one. When none fits beside the effort the effort goes,
+    and when none fits beside the label's words the label takes its short
+    words, then its glyph alone, before the last form is cut. During a turn
+    the hint offers Esc for the interrupt only while `esc_interrupts` says Esc
+    does that now. The label always survives, in some form, and the strip
     after it: the hint is cut from its end first, and the effort on the right
     goes only when even the label and the strip beside it do not fit.
     """
-    label = mode_label(mode, theme)
-    if mode == MODE_ACCEPT:
+    forms = (say,) if isinstance(say, str) else say
+    for form in range(len(ACCEPT_LABELS)):
+        mode_part = mode_label(mode, theme, form)
+        label = (*mode_part, Span(STRIP_SEPARATOR, theme.hint), *strip) if strip and mode_part else strip or mode_part
+        right: Line = (Span(f"effort {effort}", theme.muted),) if effort else ()
+        room = width - line_width(label) - (line_width(right) + MODE_ROW_GAP if right else 0)
+        if room < 0:
+            right, room = (), width - line_width(label)
+        if not any(forms):
+            break
+        said = [text if not label else STRIP_SEPARATOR + text for text in forms]
+        fits = [text for text in said if cell_width(text) <= room]
+        if not fits and right:  # what the next key does outranks the effort
+            right, room = (), width - line_width(label)
+            fits = [text for text in said if cell_width(text) <= room]
+        if fits or not mode_part:
+            break  # and it outranks the label's words, which shorten while nothing fits
+    if any(forms):
+        hint = fits[0] if fits else said[-1]
+    elif mode == MODE_SHELL:
+        hint = SHELL_HINT
+    elif mode == MODE_ACCEPT:
         hint = ACCEPT_HINT
     elif mode in (MODE_PLAN, MODE_ACCEPT_PLAN):
         hint = PLAN_HINT
     elif busy:
-        keys = [INTERRUPT_KEY_HINT, STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
+        keys = [*([INTERRUPT_KEY_HINT] if esc_interrupts else []), STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
         hint = " · ".join(keys + ([QUEUED_KEY_HINT] if queued else []))
     else:
         hint = IDLE_KEYS_HINT
     if strip:
-        label = (*label, Span(STRIP_SEPARATOR, theme.hint), *strip) if label else strip
         hint = hint if hint.startswith(STRIP_SEPARATOR) else STRIP_SEPARATOR + hint.strip()
-    right: Line = (Span(f"effort {effort}", theme.muted),) if effort else ()
-    room = width - line_width(label) - (line_width(right) + MODE_ROW_GAP if right else 0)
-    if room < 0:
-        right, room = (), width - line_width(label)
-    left = truncate_line(label, width) + truncate_line((Span(hint, theme.hint),), max(room, 0))
+    left = truncate_line(label, width) + truncate_line((Span(hint, say_style or theme.hint),), max(room, 0))
     if not right:
         return left
     return (*left, Span(" " * (width - line_width(left) - line_width(right))), *right)

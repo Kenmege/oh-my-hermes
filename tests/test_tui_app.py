@@ -47,12 +47,12 @@ from _tui_gateway_replay import (
 from _tui_lines import line_text
 from _vt_screen import VTScreen
 from omh.tui import terminal as terminal_module
-from omh.skin_pack import hex_to_rgb, theme_for_name, write_theme_choice
+from omh.skin_pack import default_theme, hex_to_rgb, theme_for_name, write_theme_choice
 from omh.tui.app import (
-    BANNER_HINT,
     EXIT_HINT,
     SLOT_ARM_SECONDS,
     App,
+    banner_logo,
     initial_theme,
     main,
     mode_row_line,
@@ -77,9 +77,12 @@ RULE_MARK = "────"
 # Between the composer and the status line on these 24-row terminals: the bottom rule and the mode row.
 UNDER_COMPOSER = 2
 # Only the session call is awaited. The catalog is read after the session, naming it, so project-local skills
-# are listed for its workspace.
-STARTUP_METHODS = ["client.capabilities", "session.create", "config.get", "commands.catalog"]
+# are listed for its workspace; a fresh session then asks for the stored sessions, to name the last one.
+STARTUP_METHODS = ["client.capabilities", "session.create", "config.get", "commands.catalog", "session.list"]
 NO_TERMIOS = terminal_module.termios is None
+# The block logo a start shows above the banner on these 24-row terminals from 100 columns: six rows and a blank.
+LOGO = [line_text(row) for row in banner_logo(default_theme(), None, 100, 24)]
+LOGO_ROWS = len(LOGO)
 TURN_CANCELLED = "Turn cancelled before the agent was ready"
 
 
@@ -87,6 +90,8 @@ def startup_answers() -> tuple[tuple[str, dict], ...]:
     return (
         ("config.get", {"result": {"config": {}}}),
         ("commands.catalog", recorded_answer("session", "commands_catalog")),
+        # The last-session lookup a fresh session makes: the recording lists only the session itself.
+        ("session.list", recorded_answer("session", "session_list")),
     )
 
 
@@ -125,6 +130,9 @@ class ScriptedTerminal:
         self.exited_at = 0.0
         self.mouse_reporting = False
         self.mouse_calls: list[bool] = []  # every `set_mouse` that changed the state, in order
+        self.background: str | None = None  # what the background query answers
+        self.typed_during_query = b""  # input the query read while it waited
+        self.background_queries = 0
         self._resized = False
         self._quiet = False
 
@@ -143,6 +151,10 @@ class ScriptedTerminal:
 
     def size(self) -> tuple[int, int]:
         return (self.screen.cols, self.screen.rows)
+
+    def query_background(self) -> tuple[str | None, bytes]:
+        self.background_queries += 1
+        return self.background, self.typed_during_query
 
     def resized(self) -> bool:
         resized, self._resized = self._resized, False
@@ -196,10 +208,19 @@ class ScriptedTerminal:
         return "\n".join(self.screen.history())
 
     def idle(self) -> bool:
-        return self.status_row().rstrip().endswith("idle")
+        """The status line says idle, with or without subagents still running (`idle · 2 agents running`)."""
+        return re.search(r"idle( · \d+ agents? running)?$", self.status_row().rstrip()) is not None
 
     def shows(self, needle: str) -> Callable[[], bool]:
         return lambda: needle in "\n".join(self.screen.lines())
+
+    def prompt_foreground(self) -> tuple[int, ...]:
+        """The colour of the composer's `›`, read off the screen: the last row that starts with one."""
+        rows = self.screen.lines()
+        row = next(index for index in range(len(rows) - 1, -1, -1) if rows[index].startswith("› "))
+        attrs = self.screen.attrs_at(row, 0)
+        start = attrs.index(38)
+        return tuple(attrs[start + 2 : start + 5])
 
     def status_background(self) -> tuple[int, ...]:
         row = next(index for index, line in enumerate(self.screen.lines()) if STATUS_MARK in line)
@@ -227,6 +248,9 @@ class FakePoller:
 
     def take(self) -> None:
         return None
+
+    def refresh(self) -> None:
+        self.refreshes = getattr(self, "refreshes", 0) + 1
 
 
 @dataclass
@@ -263,6 +287,8 @@ class AppTestCase(unittest.TestCase):
             **replay_env(root),
             "HERMES_TUI_ACTIVE_SESSION_FILE": str(root / "active-session.json"),
             "HERMES_TUI_CWD": "/fixture/project",
+            # The input history file goes here, never into the person's own ~/.hermes.
+            "HERMES_HOME": str(root),
             "TERM": "xterm-256color",
             FALLBACK_SENTINEL_ENV: str(root / "fallback"),
             **(env or {}),
@@ -358,7 +384,11 @@ class StartupRefusalTests(AppTestCase):
     def test_drift_on_the_busy_mode_call_is_a_notice_and_the_session_goes_on(self) -> None:
         # config.get is answered after the first frame, and the busy mode has a default: its drift costs nothing.
         drift = recorded_answer("session", "drift_reply")
-        answers = (("config.get", drift), ("commands.catalog", recorded_answer("session", "commands_catalog")))
+        answers = (
+            ("config.get", drift),
+            ("commands.catalog", recorded_answer("session", "commands_catalog")),
+            ("session.list", recorded_answer("session", "session_list")),
+        )
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=answers))
         run.terminal.script(
             Step(b"\x04", when=lambda: "did not send its settings" in run.terminal.history() and run.terminal.idle(),
@@ -744,10 +774,12 @@ class SessionTests(AppTestCase):
                 drawn = [line for line in screen if line]
                 self.assertEqual(sum(STATUS_MARK in line for line in screen), 1, screen)
                 self.assertEqual(sum(RULE_MARK in line for line in screen), 2, screen)
-                # The redrawn session (banner + hint) and the region (rule, composer, rule, mode row, status),
-                # nothing else.
-                self.assertEqual(len(drawn), 7, screen)
-                self.assertTrue(drawn[0].startswith("⚚ OH-MY-HERMES"), screen)
+                # The redrawn session (the banner, and at 100 columns the logo above it, since the whole session
+                # fits the redraw) and the region (rule, composer, rule, mode row, status), nothing else.
+                logo = LOGO[:-1] if cols >= 100 else []
+                self.assertEqual(drawn[: len(logo)], logo, screen)
+                self.assertEqual(len(drawn), 6 + len(logo), screen)
+                self.assertTrue(drawn[len(logo)].startswith("⚚ OH-MY-HERMES"), screen)
                 self.assertTrue(all(len(line) <= cols for line in screen))
 
 
@@ -1253,23 +1285,20 @@ class StickyPromptTests(unittest.TestCase):
     """The sent prompt is echoed above the composer only once it has scrolled off the screen."""
 
     def app(self, flushed: int, busy: bool = True) -> App:
-        from types import SimpleNamespace
-
         app = App(ScriptedTerminal(rows=20, cols=60), None, {}, poller=FakePoller())  # type: ignore[arg-type]
         app.sticky = "what changed in the build?"
         app.turn_pending = busy
-        app.region = SimpleNamespace(height=8)  # type: ignore[assignment]  # 12 transcript rows above it
         app.flushed_since_prompt = flushed
         return app
 
     def test_no_echo_while_the_prompt_is_still_on_screen(self) -> None:
-        self.assertFalse(self.app(flushed=12)._sticky_needed(20))
+        self.assertFalse(self.app(flushed=12)._sticky_needed(12))  # 12 transcript rows above the region
 
     def test_the_echo_appears_once_the_prompt_has_scrolled_off(self) -> None:
-        self.assertTrue(self.app(flushed=13)._sticky_needed(20))
+        self.assertTrue(self.app(flushed=13)._sticky_needed(12))
 
     def test_no_echo_when_no_turn_is_running(self) -> None:
-        self.assertFalse(self.app(flushed=99, busy=False)._sticky_needed(20))
+        self.assertFalse(self.app(flushed=99, busy=False)._sticky_needed(12))
 
 class ModelChainPickerTests(unittest.TestCase):
     def test_tui_keys_map_to_picker_tokens_and_ctrl_c_ctrl_d_esc_cancel(self) -> None:
@@ -1309,6 +1338,7 @@ def busy_mode_answers(mode: str) -> tuple[tuple[str, dict], ...]:
     return (
         ("config.get", {"result": {"config": {"display": {"busy_input_mode": mode}}}}),
         ("commands.catalog", recorded_answer("session", "commands_catalog")),
+        ("session.list", recorded_answer("session", "session_list")),
     )
 
 
@@ -1354,9 +1384,11 @@ class OpeningTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         history = run.terminal.screen.history()
-        self.assertEqual(
-            history[:2], [f"⚚ OH-MY-HERMES v{__version__} · deepseek/deepseek-v4.1-flash-ultrafast · ~/project", BANNER_HINT]
-        )
+        # At 100 columns the block logo comes first. The banner is one row: the model is the status line's and the
+        # keys the mode row's.
+        self.assertEqual(history[:LOGO_ROWS], LOGO)
+        self.assertEqual(history[LOGO_ROWS], f"⚚ OH-MY-HERMES v{__version__} · ~/project")
+        self.assertEqual([row for row in history[LOGO_ROWS + 1 :] if row], [])
 
     def test_the_banner_is_on_screen_at_the_first_frame_not_pushed_into_scrollback(self) -> None:
         # The first frame fills the screen with pad rows; the banner must land in them.
@@ -1369,8 +1401,9 @@ class OpeningTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         screen = run.terminal.captures["first"]
-        self.assertTrue(screen[0].startswith("⚚ OH-MY-HERMES"), screen[:3])
-        self.assertEqual(screen[1], BANNER_HINT)
+        self.assertEqual(screen[:LOGO_ROWS], LOGO)
+        self.assertTrue(screen[LOGO_ROWS].startswith("⚚ OH-MY-HERMES"), screen[: LOGO_ROWS + 2])
+        self.assertEqual(screen[LOGO_ROWS + 1], "")
         self.assertEqual(run.terminal.screen.scrollback, [])
 
     def test_the_banner_stays_one_row_and_keeps_the_end_of_a_long_path(self) -> None:
@@ -1379,17 +1412,15 @@ class OpeningTests(AppTestCase):
         cwd = "/private/tmp/claude-501/a-very-long-scratch-directory-name/session/scratchpad/m9/project"
         for width in (40, 60, 80, 110, 200):
             with self.subTest(width=width):
-                header, hint, _blank = banner_lines(model="deepseek/deepseek-v4.1-flash-ultrafast", cwd=cwd,
-                                                    resumed="", theme=DEFAULT_THEME, width=width)
+                header, _blank = banner_lines(cwd=cwd, resumed="", theme=DEFAULT_THEME, width=width)
                 text = line_text(header)
                 self.assertLessEqual(line_width(header), width)
-                self.assertLessEqual(line_width(hint), width)
                 if "…" in text and "m9/project" not in text and width >= 110:
                     self.fail(f"the path lost its end at width {width}: {text}")
-        wide = line_text(banner_lines(model="m", cwd=cwd, resumed="", theme=DEFAULT_THEME, width=110)[0])
+        wide = line_text(banner_lines(cwd=cwd, resumed="", theme=DEFAULT_THEME, width=110)[0])
         self.assertTrue(wide.endswith("m9/project"), wide)
-        narrow = line_text(banner_lines(model="a-long-model-name-that-fills-the-row", cwd=cwd,
-                                        resumed="", theme=DEFAULT_THEME, width=60)[0])
+        narrow = line_text(banner_lines(cwd=cwd, resumed="a-long-session-id-that-fills-the-row-and-more", theme=DEFAULT_THEME,
+                                        width=60)[0])
         self.assertNotIn("/private", narrow)
 
     def test_the_recorded_default_skin_paints_sky_and_an_omh_skin_paints_its_theme(self) -> None:
@@ -1437,9 +1468,11 @@ class OpeningTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         history = run.terminal.screen.history()
-        self.assertTrue(history[0].startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {STORED_ID}"))
+        self.assertEqual(history[:LOGO_ROWS], LOGO)  # a resumed launch is a start too
+        self.assertTrue(history[LOGO_ROWS].startswith(f"⚚ OH-MY-HERMES v{__version__} · resumed {STORED_ID}"))
+        self.assertEqual(run.calls("session.list"), [])  # a resumed session needs no pointer to the last one
         self.assertEqual(
-            history[3:13],
+            history[LOGO_ROWS + 2 : LOGO_ROWS + 12],
             [
                 "› What is in this repo?",
                 "",
@@ -1555,7 +1588,8 @@ class LocalCommandTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         reply = turn_rows("session", 44)["params"]["payload"]["text"].strip()
-        self.assertEqual(run.terminal.screen.osc, ["52;c;" + base64.b64encode(reply.encode("utf-8")).decode("ascii")])
+        copied = [body for body in run.terminal.screen.osc if body.startswith("52;")]  # the titles are OSC 2
+        self.assertEqual(copied, ["52;c;" + base64.b64encode(reply.encode("utf-8")).decode("ascii")])
         self.assertNotIn("52;c;", run.terminal.history())
 
     def test_logs_pages_the_gateway_stderr_and_q_leaves(self) -> None:
@@ -1575,6 +1609,78 @@ class LocalCommandTests(AppTestCase):
         self.assertIn("gateway stderr (memory only)", pager)
         self.assertEqual(run.calls("slash.exec"), [])
 
+    def test_the_theme_is_measured_against_the_background_the_terminal_reports(self) -> None:
+        for background, env, expected in (
+            ("#FFFFFF", {}, "#FFFFFF"),
+            (None, {"COLORFGBG": "0;15"}, "#FFFFFF"),
+            (None, {}, None),
+            ("#1E1E1E", {"COLORFGBG": "0;15"}, "#1E1E1E"),  # an answer outranks the variable
+        ):
+            with self.subTest(background=background, env=env):
+                run = self.prepare(
+                    Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), env=env
+                )
+                run.terminal.background = background
+                seen: list[str | None] = []
+                run.terminal.script(
+                    Step(b"\x04", when=lambda run=run, seen=seen: run.terminal.idle() and not seen.append(
+                        run.terminal.prompt_foreground()), label="the first frame")
+                )
+                self.run_main(run)
+                self.assert_clean_run(run)
+                self.assertEqual(run.terminal.background_queries, 1)
+                prompt = theme_named("sky", expected).prompt.fg
+                self.assertEqual(seen[-1], hex_to_rgb(prompt))
+
+    def test_a_dark_colorfgbg_counts_as_a_reported_dark_background(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), env={"COLORFGBG": "15;0"}
+        )
+        terminal = run.terminal  # answers no OSC 11
+        terminal.script(
+            self.submit(run, "/theme"),
+            Step(b"\x04", when=terminal.shows("picks the background it is measured"), label="the summary"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        said = " ".join(terminal.history().split())  # the notice wraps at the terminal's width
+        self.assertIn("follows the terminal's background (a dark one, as COLORFGBG names it)", said)
+
+    def test_keys_typed_while_the_background_query_waited_reach_the_composer(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        run.terminal.typed_during_query = b"hi"
+        run.terminal.script(Step(b"\x15\x04", when=run.terminal.shows("› hi"), label="the early keys"))
+        self.run_main(run)
+        self.assert_clean_run(run)
+
+    def test_theme_light_dark_and_auto_choose_the_background_the_roles_are_measured_against(self) -> None:
+        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
+        terminal = run.terminal
+        seen: dict[str, tuple[int, ...]] = {}
+
+        def note(name: str, needle: str) -> Callable[[], bool]:
+            def ready() -> bool:
+                if terminal.idle() and needle in terminal.history():
+                    seen[name] = terminal.prompt_foreground()
+                    return True
+                return False
+            return ready
+
+        terminal.script(
+            self.submit(run, "/theme light"),
+            Step(b"/theme amber\r", when=note("light", "on a light background"), label="light"),
+            Step(b"/theme dark\r", when=note("amber", "Theme amber"), label="amber"),
+            Step(b"/theme auto\r", when=note("dark", "on a dark background"), label="dark"),
+            Step(b"/theme\r", when=note("auto", "follows the terminal"), label="auto"),
+            Step(b"\x04", when=terminal.shows("picks the background it is measured"), label="the summary"),
+        )
+        self.run_main(run)
+        self.assert_clean_run(run)
+        self.assertEqual(seen["light"], hex_to_rgb(theme_named("sky", "#FFFFFF").prompt.fg))
+        self.assertEqual(seen["amber"], hex_to_rgb(theme_named("amber", "#FFFFFF").prompt.fg))  # the mode stays
+        self.assertEqual(seen["dark"], hex_to_rgb(theme_named("amber").prompt.fg))
+        self.assertEqual(seen["auto"], hex_to_rgb(theme_named("amber").prompt.fg))  # nothing reported: dark stand-in
+
     def test_theme_switches_for_a_known_name_and_names_the_choices_for_an_unknown_one(self) -> None:
         run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
         terminal = run.terminal
@@ -1592,7 +1698,7 @@ class LocalCommandTests(AppTestCase):
         self.assertIn("Theme crimson applies to this session", history)
         self.assertIn("No theme named nope. Available: sky, amber, crimson, mono.", history)
 
-    def test_help_lists_local_commands_the_hermes_catalog_by_category_and_keys_in_the_pager(self) -> None:
+    def test_help_lists_local_commands_the_hermes_catalog_by_category_and_keys_in_the_transcript(self) -> None:
         run = self.prepare(
             Scenario("session", spans("session", "startup", "create"), answers=startup_answers()), rows=40, cols=200
         )
@@ -1601,17 +1707,19 @@ class LocalCommandTests(AppTestCase):
             # The first frame comes before Hermes' catalog does: /help waits until the menu offers Hermes' /undo.
             Step(b"/und", when=terminal.idle, label="idle"),
             Step(b"\x15/help\r", when=terminal.shows("/undo"), label="Hermes' catalog in the menu"),
-            Step(b"q", when=lambda: terminal.screen.alternate, capture="pager", label="the help pager"),
-            Step(b"\x04", when=lambda: not terminal.screen.alternate and terminal.idle(), label="back"),
+            Step(b"\x04", when=lambda: "opens Hermes' own terminal." in terminal.history() and terminal.idle(),
+                 label="the help output"),
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        pager = "\n".join(terminal.captures["pager"])
+        self.assertFalse(terminal.screen.alternate)  # no pager: the output is the transcript's
+        pager = terminal.history()
         self.assertIn("/omh-model     Pick OMH model chains", pager)
         self.assertIn("/reload-skills Re-scan Hermes' skills", pager)
         # The recorded catalog's categories, without what the TUI runs itself, routes to Hermes' terminal or drops:
-        # Session (/new /clear /redraw), Exit (/quit) and TUI (/density /logs /mouse) are left with nothing.
-        self.assertIn("  Configuration: /export /import /config", pager)
+        # Session (/new /clear /redraw), Exit (/quit) and TUI (/density /logs /mouse) are left with nothing, and
+        # /export is the TUI's (it says what Hermes exports before it runs).
+        self.assertIn("  Configuration: /import /config", pager)
         self.assertIn("  Tools & Skills: /tools /toolsets /skills", pager)
         self.assertNotIn("Session:", pager)
         self.assertNotIn("skill commands available", pager)  # the recording lists none
@@ -1620,7 +1728,7 @@ class LocalCommandTests(AppTestCase):
         self.assertIn("/yolo included", pager)
         # The banner no longer says it, so /help is where the way back to Hermes' own terminal stays.
         self.assertIn("Bare `hermes` opens Hermes' own terminal.", pager)
-        self.assertIn("/help: 26 lines, shown in the pager.", terminal.history())
+        self.assertIn("› /help\n  ⎿ OMH TUI commands:", terminal.history())
         self.assertEqual([frame["method"] for frame in run.frames], STARTUP_METHODS)
 
     def test_reload_skills_rescans_in_the_gateway_and_the_new_skill_completes(self) -> None:
@@ -1672,9 +1780,10 @@ class LocalCommandTests(AppTestCase):
         self.run_main(run)
         self.assert_clean_run(run)
         history = terminal.screen.history()
-        listed = history.index("· Queued (sent one at a time as each turn ends):")
-        self.assertEqual(history[listed + 1], "  1. second prompt")
-        self.assertIn("› second prompt", history[listed:])
+        listed = history.index("  ⎿ Queued (sent one at a time as each turn ends):")
+        self.assertEqual(history[listed - 1], "› /queue")
+        self.assertEqual(history[listed + 1], "    1. second prompt")
+        self.assertIn("› second prompt  ⧗ from queue", history[listed:])  # the queue sent it once the turn ended
         self.assertLess(history.index("› first prompt"), listed)
 
     def test_steer_and_interrupt_modes_send_input_during_a_turn_at_once(self) -> None:
@@ -1785,7 +1894,7 @@ class AttachmentTests(AppTestCase):
         self.assertEqual(chip[composer - 1], "📎 shot.png 1280×720  Backspace removes")
         self.assertIn(RULE_MARK, chip[composer - 2])
         self.assertEqual(len(run.calls("prompt.submit")), 1)
-        self.assertNotIn("shot.png", "\n".join(terminal.captures["after"]))
+        self.assertNotIn("📎 shot.png", "\n".join(terminal.captures["after"]))  # the echo above still names it
 
     def test_paste_reports_an_empty_clipboard_and_ctrl_v_attaches_its_image(self) -> None:
         answers = (
@@ -1851,7 +1960,7 @@ class AttachmentTests(AppTestCase):
         terminal.script(
             self.submit(run, "/image ./shot.png"),
             Step(b"\x7f", when=terminal.shows("shot.png 1280×720"), label="the chip"),
-            Step(b"\x04", when=lambda: not terminal.shows("shot.png")() and terminal.idle(), capture="gone",
+            Step(b"\x04", when=lambda: not terminal.shows("📎 shot.png")() and terminal.idle(), capture="gone",
                  label="the chip gone"),
         )
         self.run_main(run)
@@ -1892,8 +2001,8 @@ class SessionSwitchTests(AppTestCase):
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        (listing,) = run.calls("session.list")
-        self.assertEqual(listing["params"], {"limit": 50})
+        startup, listing = run.calls("session.list")  # the fresh session's last-session lookup, then /sessions
+        self.assertEqual((startup["params"], listing["params"]), ({"limit": 3}, {"limit": 50}))
         picker = "\n".join(terminal.captures["picker"])
         self.assertIn("● Reply with ok", picker)
         self.assertIn("2 messages", picker)
@@ -1926,7 +2035,8 @@ class SessionSwitchTests(AppTestCase):
         )
         self.run_main(run)
         self.assert_clean_run(run)
-        self.assertEqual(run.calls("session.list"), [])
+        # Only the fresh session's last-session lookup: an id needs no listing.
+        self.assertEqual([call["params"] for call in run.calls("session.list")], [{"limit": 3}])
         (resume,) = run.calls("session.resume")
         self.assertEqual(resume["params"], {"session_id": OTHER_STORED_ID, "cols": 80})
         self.assertEqual(run.calls("session.close")[0]["params"], {"session_id": LIVE_ID})
@@ -2057,23 +2167,23 @@ class KeyTests(AppTestCase):
         app._on_path_items(app.path_seq, "@sr", items)
         self.assertEqual(app.path_items, [])
 
-    def test_ctrl_o_toggles_details(self) -> None:
-        run = self.prepare(Scenario("session", spans("session", "startup", "create"), answers=startup_answers()))
-        terminal = run.terminal
-        client = self.make_client(run)(gateway_spawn(run.environ))
-        client.start(ready_timeout=10.0)
-        app = App(terminal, client, run.environ, poller=run.poller)
-        app.startup()
-        seen: list[bool] = []
-        terminal.script(
-            Step(b"\x0f", when=terminal.idle, label="idle"),
-            Step(b"\x0f", when=lambda: app.transcript.details_expanded and not seen.append(True), label="expanded"),
-            Step(b"\x04", when=lambda: not app.transcript.details_expanded, label="collapsed"),
+    def test_ctrl_o_opens_the_details_view_and_q_leaves_it(self) -> None:
+        run = self.prepare(
+            Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers())
         )
-        with terminal:
-            run.code = app.run()
+        terminal = run.terminal
+        terminal.script(
+            self.submit(run, "Reply with exactly the word: ok"),
+            Step(b"\x0f", when=lambda: "later." in terminal.history() and terminal.idle(), label="the reply"),
+            Step(b"q", when=lambda: terminal.screen.alternate, capture="details", label="the details view"),
+            Step(b"\x04", when=lambda: not terminal.screen.alternate and terminal.idle(), label="back"),
+        )
+        self.run_main(run)
         self.assert_clean_run(run)
-        self.assertEqual(seen, [True])
+        details = "\n".join(terminal.captures["details"])
+        self.assertIn("› Reply with exactly the word: ok", details)
+        self.assertIn("⏺ ok", details)
+        self.assertIn("history · ", details)
 
     def test_ctrl_l_redraws_the_session_from_memory(self) -> None:
         run = self.prepare(

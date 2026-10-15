@@ -13,7 +13,7 @@ import unicodedata
 import unittest
 from unittest.mock import patch
 
-from _tui_lines import lines_text
+from _tui_lines import line_text, lines_text
 from omh.tui.composer import (
     CANCEL,
     COMPLETE,
@@ -46,6 +46,7 @@ from omh.tui.keys import (
     Paste,
 )
 from omh.tui.style import Style
+from omh.tui.width import line_width
 
 HANGUL = "한글"
 HANGUL_NFD = unicodedata.normalize("NFD", HANGUL)
@@ -115,11 +116,20 @@ class InsertTests(unittest.TestCase):
             composer.handle(key)
         self.assertEqual(composer.text, "/quit")
 
+    def test_reported_alt_b_and_f_move_by_a_word_as_the_legacy_bytes_do(self) -> None:
+        for data, arrow in ((b"\x1b[98;3u", LEFT), (b"\x1b[102;3u", RIGHT)):
+            with self.subTest(data=data):
+                composer, by_arrow = at("one two three", 5), at("one two three", 5)
+                by_arrow.handle(Key(arrow, alt=True))
+                (key,) = KeyDecoder().feed(data)
+                self.assertTrue(key.protocol)
+                composer.handle(key)
+                self.assertEqual((composer.text, composer.caret), ("one two three", by_arrow.caret))
+
     def test_reported_alt_chords_and_unbound_ctrl_keys_change_nothing(self) -> None:
         # A kitty or modifyOtherKeys report says Alt was held: no Esc can hide in it, so it types nothing.
         composer = at("abc", 1)
-        reported = [Key(CHAR, char, alt=True, protocol=True) for char in "xbf"]
-        for key in (*reported, ctrl("q"), Key(INSERT), Key(PAGE_UP), Key(UNKNOWN)):
+        for key in (Key(CHAR, "x", alt=True, protocol=True), ctrl("q"), Key(INSERT), Key(PAGE_UP), Key(UNKNOWN)):
             with self.subTest(key=key):
                 self.assertEqual(composer.handle(key), ComposerAction(NONE))
                 self.assertEqual((composer.text, composer.caret), ("abc", 1))
@@ -250,6 +260,19 @@ class DeleteTests(unittest.TestCase):
         press(composer, ctrl("w"), ctrl("w"))
         self.assertEqual((composer.text, composer.caret), ("", 0))
 
+    def test_alt_or_ctrl_backspace_deletes_the_word_before_the_caret_as_ctrl_w_does(self) -> None:
+        # Legacy Alt+Backspace (`ESC DEL`), and the kitty reports of Alt+Backspace and Ctrl+Backspace.
+        for data in (b"\x1b\x7f", b"\x1b[127;3u", b"\x1b[127;5u"):
+            with self.subTest(data=data):
+                composer = at("say 안녕 하세요  ", len("say 안녕 하세요  "))
+                for key in KeyDecoder().feed(data):
+                    composer.handle(key)
+                self.assertEqual((composer.text, composer.caret), ("say 안녕 ", len("say 안녕 ")))
+        composer = Composer()
+        composer.handle(Paste("\n".join(f"line {number}" for number in range(10))))
+        press(composer, Key(BACKSPACE, alt=True))
+        self.assertEqual((composer.text, composer.pastes), ("", {}))  # a chip goes whole
+
     def test_ctrl_u_and_ctrl_k_kill_to_the_line_edges(self) -> None:
         composer = at("one\ntwo three\nfour", len("one\ntwo "))
         press(composer, ctrl("k"))
@@ -367,6 +390,14 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(self.composer.history, ["first", "second\nline", "first"])
         self.assertIsNone(self.composer.history_index)
 
+    def test_history_keeps_an_entry_as_the_file_does_trimmed_and_once(self) -> None:
+        # Hermes' history file keeps the trimmed text (`history.append_entry`); this session's history matches it.
+        recorded: list[str] = []
+        composer = Composer(on_record=recorded.append)
+        composer.record("  fix the test\n")
+        composer.record("fix the test")
+        self.assertEqual((composer.history, recorded), (["fix the test"], ["fix the test"]))
+
     def test_empty_history_leaves_the_text_alone(self) -> None:
         composer = at("abc", 1)
         press(composer, Key(UP), Key(DOWN))
@@ -416,6 +447,151 @@ class PasteTests(unittest.TestCase):
         lines, caret = composer.render(40, 3)
         self.assertEqual(lines_text(lines), ["›     x"])
         self.assertEqual(caret, (0, 7))
+
+
+class PasteChipTests(unittest.TestCase):
+    """A long paste is one atomic chip in the composer and its whole text when sent (kept in memory only)."""
+
+    SIXTY = "\n".join(f"line {number}" for number in range(60))
+
+    def test_a_paste_of_more_than_three_lines_or_800_characters_is_a_chip(self) -> None:
+        composer = Composer()
+        composer.handle(Paste(self.SIXTY))
+        self.assertEqual(composer.text, "[Pasted text #1 +60 lines]")
+        long_line = Composer()
+        long_line.handle(Paste("x" * 801))
+        self.assertEqual(long_line.text, "[Pasted text #1 · 801 chars]")
+        for text in ("one\ntwo\nthree", "one\ntwo\nthree\n", "x" * 800):
+            with self.subTest(text=text[:20]):
+                small = Composer()
+                small.handle(Paste(text))
+                self.assertEqual(small.text, text)  # short enough to keep as typed
+
+    def test_sending_expands_the_chip_where_it_stands_and_reports_the_compact_text(self) -> None:
+        composer = Composer()
+        typed(composer, "see ")
+        composer.handle(Paste(self.SIXTY))
+        typed(composer, " please")
+        action = press(composer, Key(ENTER))
+        self.assertEqual(action.text, f"see {self.SIXTY} please")
+        self.assertEqual(action.shown, "see [Pasted text #1 +60 lines] please")
+        self.assertEqual(composer.history[-1], f"see {self.SIXTY} please")  # Up gives back what was sent
+        self.assertEqual(composer.pastes, {})
+
+    def test_backspace_and_delete_take_the_chip_whole(self) -> None:
+        composer = Composer()
+        typed(composer, "a ")
+        composer.handle(Paste(self.SIXTY))
+        typed(composer, " b")
+        press(composer, Key(LEFT), Key(LEFT))
+        press(composer, Key(BACKSPACE))
+        self.assertEqual((composer.text, composer.pastes), ("a  b", {}))
+        composer = Composer()
+        composer.handle(Paste(self.SIXTY))
+        press(composer, Key(HOME), Key(DELETE))
+        self.assertEqual(composer.text, "")
+
+    def test_the_caret_steps_over_a_chip_and_never_lands_inside_it(self) -> None:
+        composer = Composer()
+        typed(composer, "a")
+        composer.handle(Paste(self.SIXTY))
+        typed(composer, "b")
+        chip = "[Pasted text #1 +60 lines]"
+        press(composer, Key(LEFT))
+        self.assertEqual(composer.caret, 1 + len(chip))
+        press(composer, Key(LEFT))
+        self.assertEqual(composer.caret, 1)
+        press(composer, Key(RIGHT))
+        self.assertEqual(composer.caret, 1 + len(chip))
+
+    def test_word_and_line_kills_take_a_chip_they_reach_whole(self) -> None:
+        for kill in (ctrl("w"), ctrl("u")):
+            with self.subTest(kill=kill):
+                composer = Composer()
+                composer.handle(Paste(self.SIXTY))
+                press(composer, kill)
+                self.assertEqual((composer.text, composer.pastes), ("", {}))
+
+    def test_chips_are_numbered_and_the_numbers_start_again_with_an_empty_composer(self) -> None:
+        composer = Composer()
+        composer.handle(Paste(self.SIXTY))
+        composer.handle(Paste(self.SIXTY + "\nmore"))
+        self.assertEqual(composer.text, "[Pasted text #1 +60 lines][Pasted text #2 +61 lines]")
+        press(composer, Key(ENTER))
+        composer.handle(Paste(self.SIXTY))
+        self.assertEqual(composer.text, "[Pasted text #1 +60 lines]")
+
+    def test_a_masked_answer_takes_a_paste_as_typed(self) -> None:
+        composer = Composer(masked=True)
+        composer.handle(Paste("x" * 900))
+        self.assertEqual(composer.text, "x" * 900)
+
+    def test_the_chip_is_drawn_in_the_chip_style(self) -> None:
+        composer = Composer()
+        typed(composer, "a ")
+        composer.handle(Paste(self.SIXTY))
+        chip = Style(fg="#00FF00")
+        lines, _caret = composer.render(80, 3, chip_style=chip)
+        styled = [span for span in lines[0] if span.style == chip]
+        self.assertEqual([span.text for span in styled], ["[Pasted text #1 +60 lines]"])
+
+
+class SubmittedChipsTests(unittest.TestCase):
+    """A submit reports its chips (label and text), and `restore` puts a submitted text back with them as chips."""
+
+    PASTE = "line one\nline two\nline three\nline four\n"
+
+    def submitted(self) -> ComposerAction:
+        composer = Composer()
+        composer.handle(Paste(self.PASTE))
+        for char in " and more":
+            composer.handle(Key(CHAR, char))
+        return composer.handle(Key(ENTER))
+
+    def test_a_submit_reports_the_chips_in_what_it_showed(self) -> None:
+        action = self.submitted()
+        self.assertEqual(action.chips, (("[Pasted text #1 +4 lines]", self.PASTE),))
+        self.assertEqual(action.shown, "[Pasted text #1 +4 lines] and more")
+        plain = Composer()
+        for char in "no chips":
+            plain.handle(Key(CHAR, char))
+        self.assertEqual(plain.handle(Key(ENTER)).chips, ())
+
+    def test_restore_puts_the_chips_back_and_the_rest_as_text(self) -> None:
+        action = self.submitted()
+        composer = Composer()
+        composer.restore(action.shown, action.chips)
+        self.assertEqual(composer.text, action.shown)
+        self.assertEqual(composer.expanded(), action.text)
+        composer.handle(Key(BACKSPACE))  # a character of the words, not the chip
+        self.assertEqual(composer.text, "[Pasted text #1 +4 lines] and mor")
+        for _ in range(len(" and mor")):
+            composer.handle(Key(BACKSPACE))
+        composer.handle(Key(BACKSPACE))  # now the chip, whole
+        self.assertEqual((composer.text, composer.pastes), ("", {}))
+
+    def test_a_paste_after_a_restore_never_reuses_a_restored_label(self) -> None:
+        action = self.submitted()
+        composer = Composer()
+        composer.restore(action.shown, action.chips)
+        composer.handle(Paste("a\nb\nc\nd\n"))  # four lines, as the restored chip: the same label but for its number
+        self.assertEqual(composer.text, action.shown + "[Pasted text #2 +4 lines]")
+        self.assertEqual(len(composer.pastes), 2)
+        self.assertEqual(composer.expanded(), action.text + "a\nb\nc\nd\n")
+
+
+class PasteChipAppTests(unittest.TestCase):
+    def test_the_prompt_goes_whole_and_the_transcript_shows_the_chip(self) -> None:
+        from test_tui_modes import SID, make_app
+        from omh.tui.transcript import UserBlock
+
+        app, client = make_app()
+        sixty = PasteChipTests.SIXTY
+        app._on_input(Paste(sixty))
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": sixty})])
+        (user,) = [block for block in app.transcript.blocks if isinstance(block, UserBlock)]
+        self.assertEqual(user.text, "[Pasted text #1 +60 lines]")
 
 
 class MaskedTests(unittest.TestCase):
@@ -477,8 +653,9 @@ class MeasureOnceTests(unittest.TestCase):
             for key in keys:
                 composer.handle(key)
                 composer.render(20, 5)
-        # The walk ends on the second line's first row, 5 cells in, the start of `two` (counted by hand).
-        self.assertEqual(composer.caret, len(f"{HANGUL} line one\nline "))
+        # Word-wrapped at 18 cells, the second line is `line two runs ` / `longer than the ` / `width`; the walk
+        # ends on its middle row, 5 cells in, before the `r` of `longer` (counted by hand).
+        self.assertEqual(composer.caret, len(f"{HANGUL} line one\nline two runs longe"))
 
     def test_a_new_text_a_new_mask_or_a_new_width_is_laid_out_again(self) -> None:
         composer = at("abcdef", 6)
@@ -528,8 +705,7 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(composer.render(40, 3)[1], (0, 6))
 
     def test_the_window_scrolls_to_keep_the_caret_visible(self) -> None:
-        composer = Composer()
-        composer.handle(Paste("1\n2\n3\n4\n5\n6"))
+        composer = at("1\n2\n3\n4\n5\n6", 11)  # six typed lines (a paste that long is a chip)
         lines, caret = composer.render(40, 3)
         self.assertEqual(lines_text(lines), ["  4", "  5", "  6"])
         self.assertEqual(caret, (2, 3))
@@ -545,13 +721,80 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(caret, (0, 3))
 
     def test_the_window_refills_when_rows_go_away(self) -> None:
-        composer = Composer()
-        composer.handle(Paste("1\n2\n3\n4\n5\n6"))
+        composer = at("1\n2\n3\n4\n5\n6", 11)
         composer.render(40, 3)
         press(composer, Key(BACKSPACE), Key(BACKSPACE))  # drop "\n6"
         lines, caret = composer.render(40, 3)
         self.assertEqual(lines_text(lines), ["  3", "  4", "  5"])
         self.assertEqual(caret, (2, 3))
+
+
+class WordWrapTests(unittest.TestCase):
+    """Rows break between words, as the transcript's echo of the sent prompt does, and every caret stays mapped."""
+
+    def rows(self, text: str, width: int, masked: bool = False) -> list[str]:
+        return lines_text(Composer(text=text, masked=masked).render(width, 20)[0])
+
+    def test_a_long_prompt_wraps_at_a_space_and_the_next_row_starts_with_the_word(self) -> None:
+        # The capture's prompt at 110 columns; cut by cells it read `a "Map the H` over `ermes-hosted HUD"`.
+        prompt = (
+            "Do these steps in order. 1) Call todo_list once with this nested plan and never touch it again: "
+            'a "Map the Hermes-hosted HUD" completed, with subtask "Inventory the layout complaints" completed'
+        )
+        self.assertEqual(
+            self.rows(prompt, 110),
+            [
+                '› Do these steps in order. 1) Call todo_list once with this nested plan and never touch it again: a "Map the ',
+                '  Hermes-hosted HUD" completed, with subtask "Inventory the layout complaints" completed',
+            ],
+        )
+        self.assertEqual(self.rows("the quick brown fox", 12), ["› the quick ", "  brown fox"])  # 10 cells a row
+
+    def test_spaces_at_the_break_end_the_row_and_a_tab_breaks_like_one(self) -> None:
+        # The spaces stay on the row (a run of them too), so the row after starts with the word, never a space.
+        self.assertEqual(self.rows("ab hello   world", 11), ["› ab ", "  hello   ", "  world"])  # 9 cells a row
+        self.assertEqual(self.rows("ab\tcdef", 10), ["› ab    ", "  cdef"])  # the tab is drawn as four spaces
+
+    def test_a_word_longer_than_a_row_still_breaks_at_the_cell(self) -> None:
+        self.assertEqual(self.rows("see abcdefghijk end", 10), ["› see ", "  abcdefgh", "  ijk end"])  # 8 cells
+        self.assertEqual(self.rows("日本語の文を書く", 8), ["› 日本語", "  の文を", "  書く"])  # no spaces at all
+
+    def test_a_word_reaching_the_last_cell_puts_the_space_after_it_on_the_next_row(self) -> None:
+        # A continuation row starts with a space only after a row of one word (or of only spaces) with no room left
+        # for that space: it cannot hang past the edge, where the caret before it would sit.
+        composer = at("abcdefgh end", 8)
+        lines, caret = composer.render(10, 5)  # 8 cells a row
+        self.assertEqual(lines_text(lines), ["› abcdefgh", "   end"])
+        self.assertEqual(caret, (1, 2))  # the caret before that space opens the row
+
+    def test_masked_input_and_a_no_break_space_wrap_by_the_cell(self) -> None:
+        # A word break under the mask would show where the secret's spaces are.
+        self.assertEqual(self.rows("ab cd ef", 6, masked=True), ["› ••••", "  ••••", "  "])
+        nbsp = chr(0xA0)
+        self.assertEqual(self.rows(f"ab cd{nbsp}ef", 8), ["› ab ", f"  cd{nbsp}ef"])  # `cd ef` moves as one word
+        self.assertEqual(self.rows(f"abcd{nbsp}efgh", 8), [f"› abcd{nbsp}e", "  fgh"])
+
+    def test_every_caret_position_has_its_own_cell_inside_a_row_no_wider_than_the_screen(self) -> None:
+        texts = [
+            "Do these steps in order. todo_list 한국어 문장을 日本語の文 🙂 a xxxxxxxxxxxxxxxxxxxxxxx",
+            "a  b   c    d\tend of   line\nnext  line  here",
+            "한국어 문장을 이렇게 길게 써도 단어 사이에서 줄이 바뀐다",
+            "abcde abcd語 tail",  # at 5 cells a row: a row that starts with a space, then a wide glyph
+            "x" * 30 + " y",
+        ]
+        for text in texts:
+            for width in (7, 10, 15, 22, 39):  # from 5 cells a row, a tab fits in one
+                with self.subTest(text=text[:20], width=width):
+                    composer = Composer(text=text)
+                    lines, _ = composer.render(width, 40)
+                    self.assertEqual("".join(line_text(line)[2:] for line in lines), text.replace("\n", "").replace("\t", "    "))
+                    self.assertTrue(all(line_width(line) <= width for line in lines), lines_text(lines))
+                    cells = []
+                    for caret in range(len(text) + 1):  # every index of these texts is a cluster boundary
+                        composer.caret = caret
+                        cells.append(composer.render(width, 40)[1])
+                    self.assertEqual(cells, sorted(set(cells)), "two positions on one cell, or out of order")
+                    self.assertTrue(all(col < width for _row, col in cells), cells)
 
 
 if __name__ == "__main__":

@@ -144,11 +144,13 @@ class HelpTests(unittest.TestCase):
         self.assertIn("2 skill commands available: type / and part of a skill's name to find one.", text)
         self.assertNotIn("omh-codebase-uml", text)
 
-    def test_long_output_goes_to_the_pager(self) -> None:
+    def test_long_output_stays_whole_in_the_transcript(self) -> None:
         app, _client = catalog_app(rows=24)
         app._help("")
-        self.assertIsNotNone(app.pager)
-        self.assertTrue(any("skill commands available" in line_text(line) for line in app.pager.lines))  # type: ignore[union-attr]
+        self.assertIsNone(app.pager)  # a pager opens only when asked for
+        (text,) = notices(app)
+        self.assertIn("skill commands available", text)
+        self.assertTrue(app.transcript.blocks[-1].whole)
 
 
 class MenuColumnTests(unittest.TestCase):

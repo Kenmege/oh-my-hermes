@@ -18,7 +18,7 @@ from _tui_gateway_replay import Scenario, recorded_answer, spans
 from _tui_lines import lines_text
 from test_tui_agent_strip import STARTS, agent_app, agent_event, relay
 from test_tui_app import LIVE_ID, NO_TERMIOS, AppTestCase, Step, startup_answers, status_index
-from test_tui_modes import SID, RecordingClient, answer, composer_index, drawn, make_app, notices, queue, type_text
+from test_tui_modes import SID, RecordingClient, answer, composer_index, drawn, make_app, notices, queue, steers, type_text
 from test_tui_subagents import FIRST, FRAMES, SECOND
 from omh.tui import gateway_contract as contract
 from omh.tui.agent_view import (
@@ -28,7 +28,7 @@ from omh.tui.agent_view import (
     TAIL_MISSES_BEFORE_STOP,
     TAIL_POLL_SECONDS,
 )
-from omh.tui.app import SLOT_ARM_SECONDS, VIEW_OPEN_NOTICE, App
+from omh.tui.app import SLOT_ARM_SECONDS, App
 from omh.tui.frame import MODE_NORMAL
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Paste
@@ -37,6 +37,7 @@ from omh.tui.session_picker import SessionPicker, SessionRow
 from omh.tui.style import Span
 from omh.tui.subagents import MAIN_ID
 from omh.tui.theme import DEFAULT_THEME
+from omh.tui.transcript import NOTICE_WARN, TOOL_OK, TOOL_RUNNING, AssistantBlock, ToolGroup
 
 CTRL_C = Key(CHAR, "c", ctrl=True)
 TAIL_CALL = ("subagent.tail", {"session_id": SID, "subagent_id": FIRST})
@@ -94,7 +95,7 @@ class ListFocusTests(unittest.TestCase):
         self.assertEqual(rows[0], "  ● main")
         self.assertTrue(rows[1].startswith("▸ ⠋ find usages of old_api in src/"), rows[1])
         self.assertTrue(rows[2].startswith("  ⠋ read the diff for risks"), rows[2])
-        self.assertEqual(rows[-1], "↑↓ select · ⏎ view log · esc back")
+        self.assertEqual(rows[-1], AGENT_LIST_HINT)
         self.assertEqual(client.calls, [])
 
     def test_with_no_agent_down_is_still_the_composers(self) -> None:
@@ -340,12 +341,16 @@ class ListLeaveTests(unittest.TestCase):
         self.assertEqual(client.answers, [])
         self.assertEqual((app.list_selected, app.pager), (None, None))
         self.assertIsNotNone(app.slot)
-        self.assertEqual(len(under_the_frame(app)), 1)  # the mode row is back under the composer
+        screen = drawn(app)
+        status = status_index(screen)
+        # The approval stands where the composer was, and the one row under it is the mode row, with its keys.
+        self.assertEqual(screen[status - 2], "▌   allow this session")
+        self.assertIn("esc denies", screen[status - 1])
         now[0] += SLOT_ARM_SECONDS
         for key in (Key(DOWN), Key(UP)):
-            app._on_input(key)  # the approval takes every key and these two pick nothing
+            app._on_input(key)  # the approval takes every key: these two move its highlight there and back
         self.assertEqual((app.list_selected, client.answers), (None, []))
-        app._on_input(Key(ENTER))  # a deliberate Enter on the untouched approval: the explicit deny
+        app._on_input(Key(ENTER))  # a deliberate Enter on deny: the explicit deny
         self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "deny"}})])
         self.assertIsNone(app.list_selected)  # and answering it does not bring the list back
         self.assertEqual(client.calls, [])
@@ -533,7 +538,11 @@ class AgentLogTests(unittest.TestCase):
 
 
 class OutputWhileAViewIsOpenTests(unittest.TestCase):
-    """A command's long output answered while a view has the alternate screen: the view stays, the output waits."""
+    """A command's long output answered while a view has the alternate screen: the view stays, the output waits.
+
+    A command's output never opens a pager, so it lands in the transcript,
+    under the command's echo, and shows there once the person leaves the view.
+    """
 
     LONG = "\n".join(f"usage row {number}" for number in range(40))
 
@@ -543,8 +552,7 @@ class OutputWhileAViewIsOpenTests(unittest.TestCase):
 
     def check_waited(self, app: App, view: list[str]) -> None:
         self.assertEqual(drawn(app), view)  # the view is still the one drawn
-        self.assertEqual(notices(app)[-2:], [VIEW_OPEN_NOTICE.format(name="usage", lines=40), self.LONG])
-        self.assertIn("arrived while a view was open", notices(app)[-2])
+        self.assertEqual(notices(app)[-1], self.LONG)
         self.assertEqual("".join(app.terminal.writes).count(ALT_SCREEN_ON), 1)  # type: ignore[attr-defined]
 
     def test_behind_an_agents_log(self) -> None:
@@ -561,7 +569,8 @@ class OutputWhileAViewIsOpenTests(unittest.TestCase):
         app._on_input(Key(ESCAPE))
         drawn(app)
         history = app.terminal.screen.history() + app.terminal.screen.lines()  # type: ignore[attr-defined]
-        self.assertIn("  usage row 39", history)  # in the transcript once the view is left
+        self.assertIn("  ⎿ usage row 0", history)  # in the transcript, under its echo, once the view is left
+        self.assertIn("    … +28 rows · /history shows all", history)
 
     def test_behind_the_key_list(self) -> None:
         app, client = agent_app()
@@ -572,13 +581,13 @@ class OutputWhileAViewIsOpenTests(unittest.TestCase):
         self.check_waited(app, view)
         self.assertIn(" keys · ", view[-1])
 
-    def test_behind_another_commands_output(self) -> None:
+    def test_behind_the_history_pager(self) -> None:
         app, client = agent_app()
-        self.sent(app, "/insights")
         self.sent(app, "/usage")
-        app._on_response(Response(1, {"output": "\n".join(f"insight {n}" for n in range(30))}, None))
+        app.transcript.add_notice("an earlier notice")
+        self.sent(app, "/history")
         view = drawn(app)
-        self.assertIn(" /insights · ", view[-1])
+        self.assertIn(" history · ", view[-1])
         answer(app, client, {"output": self.LONG})
         self.check_waited(app, view)
 
@@ -590,6 +599,286 @@ class OutputWhileAViewIsOpenTests(unittest.TestCase):
         self.assertEqual(screen[0], "an earlier turn")
         self.assertIn(" history · ", screen[-1])
         self.assertEqual("".join(app.terminal.writes).count(ALT_SCREEN_ON), 1)  # type: ignore[attr-defined]
+
+
+def recorded_parity(segment: str) -> tuple[dict, dict]:
+    """The recorded call's params and its answer's result, from tests/fixtures/tui_gateway/parity.jsonl."""
+    from test_tui_gateway_contract import recorded_rows
+
+    rows = recorded_rows("parity", segment)
+    call = next(row["frame"] for row in rows if row["dir"] == "out")
+    return call["params"], next(row["frame"] for row in rows if row["dir"] == "in")["result"]
+
+
+class AgentActionTests(unittest.TestCase):
+    """`x` interrupts the highlighted agent once a second `x` confirms; `s` steers it with text the person sends."""
+
+    def test_x_asks_once_and_a_second_x_interrupts_the_highlighted_agent(self) -> None:
+        app, client = focused()
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual(client.calls, [])
+        self.assertEqual(under_the_frame(app)[-1], "x again interrupts find usages of · any other key cancels")
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual(client.calls, [("subagent.interrupt", {"session_id": SID, "subagent_id": FIRST})])
+        answer(app, client, {"found": True, "subagent_id": FIRST})
+        self.assertEqual(notices(app)[-1], "Interrupted find usages of.")
+        self.assertEqual(app.list_selected, FIRST)  # the list stays open on it
+
+    def test_an_agent_that_had_already_finished_is_said_so(self) -> None:
+        params, result = recorded_parity("subagent_interrupt")
+        self.assertEqual(set(params), {"session_id", "subagent_id"})
+        app, client = focused()
+        app._on_input(Key(CHAR, "x"))
+        app._on_input(Key(CHAR, "x"))
+        answer(app, client, result)  # Hermes 6c61c3e27d: found false
+        self.assertEqual(notices(app)[-1], "find usages of had already finished.")
+
+    def test_any_other_key_cancels_the_question_and_does_what_it_does(self) -> None:
+        app, client = focused()
+        app._on_input(Key(CHAR, "x"))
+        app._on_input(Key(DOWN))
+        self.assertEqual(app.list_selected, SECOND)
+        app._on_input(Key(CHAR, "x"))
+        self.assertIn("x again interrupts read the diff", under_the_frame(app)[-1])
+        self.assertEqual(client.calls, [])
+        app, client = focused()
+        app._on_input(Key(CHAR, "x"))
+        app._on_input(Key(DOWN))
+        app._on_input(Key(UP))  # back on the first agent: its question ended with the Down
+        self.assertEqual(under_the_frame(app)[-1], AGENT_LIST_HINT)
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual(client.calls, [])  # a first x again, not the second
+
+    def test_on_main_or_a_finished_agent_x_sends_nothing(self) -> None:
+        app, client = focused()
+        app._on_input(Key(UP))  # main
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual((app.list_selected, app.composer.text), (None, "x"))  # typing leaves the list, as before
+        app, client = focused(frames=FRAMES)  # both finished
+        app._on_input(Key(CHAR, "x"))
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual(client.calls, [])
+        self.assertIn("has finished", notices(app)[-1])
+
+    def test_s_steers_the_highlighted_agent_with_the_text_sent_next(self) -> None:
+        app, client = focused()
+        app._on_input(Key(CHAR, "s"))
+        self.assertIsNone(app.list_selected)  # the composer has the keys for the text
+        self.assertIn("steering find usages of", " ".join(under_the_frame(app)))
+        type_text(app, "skip the tests folder")
+        app._on_input(Key(ENTER))
+        self.assertEqual(
+            client.calls,
+            [("subagent.steer", {"session_id": SID, "subagent_id": FIRST, "text": "skip the tests folder"})],
+        )
+        answer(app, client, {"status": "queued", "subagent_id": FIRST, "text": "skip the tests folder"})
+        self.assertEqual(steers(app)[-1], "↪ steer queued by Hermes · find usages of: skip the tests folder")
+        self.assertIsNone(app.agent_steer)
+
+    def test_a_steer_hermes_rejects_comes_back_to_the_composer(self) -> None:
+        params, result = recorded_parity("subagent_steer")
+        self.assertEqual(set(params), {"session_id", "subagent_id", "text"})
+        app, client = focused()
+        app._on_input(Key(CHAR, "s"))
+        type_text(app, "use the other file")
+        app._on_input(Key(ENTER))
+        answer(app, client, result)  # Hermes 6c61c3e27d: rejected
+        self.assertIn("Hermes did not take the steer", steers(app)[-1])
+        self.assertTrue(steers(app)[-1].endswith("· find usages of: use the other file"), steers(app))
+        self.assertEqual(app.composer.text, "use the other file")
+        self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
+
+    def test_a_steer_hermes_refuses_says_why_and_comes_back_to_the_composer(self) -> None:
+        app, client = focused()
+        app._on_input(Key(CHAR, "s"))
+        type_text(app, "use it")
+        app._on_input(Key(ENTER))
+        answer(app, client, error={"code": 4009, "message": "agent busy."})
+        self.assertEqual(
+            steers(app)[-1],
+            "⧗ back in the composer — Hermes did not take the steer (agent busy) · find usages of: use it",
+        )
+        self.assertEqual(app.composer.text, "use it")
+        self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
+
+    def test_a_steer_settled_after_its_session_was_left_comes_back_with_a_notice_naming_that_session(self) -> None:
+        # As the main steer's: the text comes back, never to the session now open, and a notice says whose it was.
+        answers = {
+            "taken": ({"status": "queued", "subagent_id": FIRST, "text": "use it"}, None),
+            "rejected": (recorded_parity("subagent_steer")[1], None),
+            "refused": (None, {"code": 4009, "message": "agent busy."}),
+            "unanswered": None,
+        }
+        for name, answered in answers.items():
+            for leave in ("new", "switch"):
+                with self.subTest(answer=name, leave=leave):
+                    now = [0.0]
+                    app, client = focused(clock=lambda: now[0])
+                    app.stored_id = "stored-1"
+                    app._on_input(Key(CHAR, "s"))
+                    type_text(app, "use it")
+                    app._on_input(Key(ENTER))
+                    steer = len(client.calls)
+                    if leave == "new":
+                        app._on_new_session({"session_id": "live-2", "stored_session_id": "stored-2"})
+                    else:
+                        app._on_session_resumed("stored-2", {"session_id": "live-2", "stored_session_id": "stored-2"})
+                    if answered is None:
+                        now[0] += 3600
+                        app._expire_calls()
+                    else:
+                        app._on_response(Response(steer, *answered))
+                    self.assertEqual(app.composer.text, "use it")
+                    self.assertEqual(
+                        [method for method, _params in client.calls[steer:]], ["session.close", "commands.catalog"]
+                    )
+                    said = [text for text in notices(app, NOTICE_WARN) if "stored-1" in text]
+                    self.assertEqual(len(said), 1, notices(app))
+                    self.assertIn("find usages of", said[0])
+                    self.assertIn("not sent to this one", said[0])
+
+    def test_an_agent_whose_id_is_blank_is_not_listed_so_no_steer_row_can_be_left_held(self) -> None:
+        app, client = make_app(busy=True, clock=lambda: 0.0)
+        app._on_event(Event("subagent.start", SID, {"subagent_id": " ", "goal": "read the diff", "depth": 1}))
+        self.assertEqual(app.roster.agents, {})
+        app._on_input(Key(DOWN))  # no list to open
+        self.assertIsNone(app.list_selected)
+        self.assertEqual(client.calls, [])
+
+    def test_esc_cancels_the_steer_keeps_the_text_as_a_draft_and_nothing_is_sent(self) -> None:
+        app, client = focused()
+        app._on_input(Key(CHAR, "s"))
+        type_text(app, "never mind")
+        app._on_input(Key(ESCAPE))
+        self.assertIsNone(app.agent_steer)
+        self.assertEqual(app.composer.text, "never mind")  # an ordinary draft now
+        self.assertEqual(client.calls, [])
+        app._on_input(Key(ESCAPE))  # as for any draft: the first Esc arms the clear
+        self.assertEqual((app.composer.text, app.escape_armed[0]), ("never mind", "clear"))  # type: ignore[index]
+        app._on_input(Key(ESCAPE))
+        self.assertEqual(app.composer.text, "")
+        self.assertEqual(client.calls, [])
+
+    def test_a_narrow_list_keeps_its_keys_and_the_way_back(self) -> None:
+        for cols, said in ((100, AGENT_LIST_HINT), (40, "⏎ log · x interrupt · s steer · esc back"),
+                           (34, "x interrupt · s steer · esc back")):
+            with self.subTest(cols=cols):
+                app, _client = focused(cols=cols)
+                self.assertEqual(under_the_frame(app)[-1].rstrip(), said)
+
+    def test_the_hint_names_both_keys(self) -> None:
+        app, _client = focused()
+        self.assertEqual(under_the_frame(app)[-1], AGENT_LIST_HINT)
+        self.assertIn("x interrupt", AGENT_LIST_HINT)
+        self.assertIn("s steer", AGENT_LIST_HINT)
+
+    def test_the_contract_declares_both_calls_with_a_session_and_an_agent(self) -> None:
+        self.assertEqual(contract.CLIENT_METHODS["subagent.interrupt"], {"session_id", "subagent_id"})
+        self.assertEqual(contract.CLIENT_METHODS["subagent.steer"], {"session_id", "subagent_id", "text"})
+        self.assertNotEqual(contract.call_problem("subagent.interrupt", {"session_id": SID}), "")
+        self.assertNotEqual(contract.call_problem("subagent.steer", {"session_id": SID, "subagent_id": FIRST, "text": " "}), "")
+        self.assertEqual(contract.call_problem("subagent.steer", recorded_parity("subagent_steer")[0]), "")
+
+
+class AgentRowsDuringATurnTests(unittest.TestCase):
+    """What the agent list's `s` and `x` write waits under the running `delegate_task` call, as a steer does.
+
+    Subagents only exist while the parent's call runs, so every one of these
+    rows arrives over a live block: written at once, it closed that call
+    (`▪`, cut off) or split a streaming reply.
+    """
+
+    def delegating(self, **options: object) -> tuple[App, RecordingClient]:
+        app, client = agent_app(busy=True, frames=[], **options)
+        app._on_event(Event("message.start", SID, {}))
+        app._on_event(Event("tool.start", SID, {"tool_id": "t1", "name": "delegate_task", "context": "two subagents"}))
+        relay(app, STARTS)
+        app._on_input(Key(DOWN))  # the list, on the first agent
+        return app, client
+
+    def finish(self, app: App) -> list[tuple[str, str]]:
+        app._on_event(Event("tool.complete", SID, {"tool_id": "t1", "name": "delegate_task", "result": {"output": "done"}}))
+        app._on_event(Event("message.complete", SID, {"text": "Both agents finished.", "status": "complete"}))
+        return [(tool.name, tool.status) for block in app.transcript.blocks if isinstance(block, ToolGroup)
+                for tool in block.tools]
+
+    def assert_running(self, app: App) -> None:
+        group = app.transcript.blocks[-1]
+        self.assertIsInstance(group, ToolGroup)
+        self.assertEqual(group.tools[0].status, TOOL_RUNNING)
+
+    def test_a_steer_leaves_the_delegate_call_running_and_lands_after_it(self) -> None:
+        app, client = self.delegating()
+        app._on_input(Key(CHAR, "s"))
+        type_text(app, "skip the tests folder")
+        app._on_input(Key(ENTER))
+        self.assertEqual(lines_text(app.transcript.live_lines(100, DEFAULT_THEME))[-1],
+                         "↪ steer · find usages of: skip the tests folder")  # the main steer's format, while it waits
+        answer(app, client, {"status": "queued", "subagent_id": FIRST, "text": "skip the tests folder"})
+        self.assert_running(app)
+        self.assertEqual(self.finish(app), [("delegate_task", TOOL_OK)])
+        kinds = [type(block).__name__ for block in app.transcript.blocks]
+        self.assertEqual(kinds[:3], ["ToolGroup", "SteerBlock", "AssistantBlock"])
+        self.assertEqual(steers(app), ["↪ steer queued by Hermes · find usages of: skip the tests folder"])
+
+    def test_an_interrupt_and_its_refusal_leave_the_delegate_call_running(self) -> None:
+        for reply, said in (
+            ({"result": {"found": True, "subagent_id": FIRST}}, "Interrupted find usages of."),
+            ({"error": {"code": 4009, "message": "agent not ready"}}, "Hermes did not interrupt find usages of: agent not ready."),
+        ):
+            with self.subTest(said=said):
+                app, client = self.delegating()
+                app._on_input(Key(CHAR, "x"))
+                app._on_input(Key(CHAR, "x"))
+                answer(app, client, reply.get("result"), reply.get("error"))
+                self.assert_running(app)
+                self.assertEqual(self.finish(app), [("delegate_task", TOOL_OK)])
+                self.assertEqual(notices(app)[0], said)
+
+    def test_an_interrupt_hermes_never_answers_says_so_and_leaves_the_delegate_call_running(self) -> None:
+        now = [0.0]
+        app, client = self.delegating(clock=lambda: now[0])
+        app._on_input(Key(CHAR, "x"))
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual(client.calls[-1][0], "subagent.interrupt")
+        now[0] += 3600  # far past any call's answer time
+        app._expire_calls()
+        self.assert_running(app)  # the notice waits under the call instead of cutting it off
+        self.assertEqual(self.finish(app), [("delegate_task", TOOL_OK)])
+        self.assertEqual(notices(app)[0], "Hermes has not answered subagent.interrupt in 120 s; the OMH TUI stopped waiting for it.")
+
+    def test_x_on_an_agent_that_finished_while_the_call_runs_leaves_the_call_running(self) -> None:
+        app, client = self.delegating()
+        relay(app, [frame for frame in FRAMES if frame[0] == "subagent.complete" and frame[1]["subagent_id"] == FIRST])
+        app._on_input(Key(CHAR, "x"))
+        self.assertEqual(client.calls, [])
+        self.assert_running(app)
+        self.assertEqual(self.finish(app), [("delegate_task", TOOL_OK)])
+        self.assertIn("has finished", notices(app)[0])
+
+    def test_a_refused_steer_leaves_the_delegate_call_running(self) -> None:
+        app, client = self.delegating()
+        app._on_input(Key(CHAR, "s"))
+        type_text(app, "use the other file")
+        app._on_input(Key(ENTER))
+        answer(app, client, {"status": "rejected"})
+        self.assert_running(app)
+        self.assertEqual(app.composer.text, "use the other file")
+
+    def test_a_steer_during_a_streaming_reply_does_not_split_it(self) -> None:
+        app, client = agent_app(busy=True, frames=[])
+        app._on_event(Event("message.start", SID, {}))
+        relay(app, STARTS)
+        app._on_event(Event("message.delta", SID, {"text": "First half, "}))
+        app._on_input(Key(DOWN))
+        app._on_input(Key(CHAR, "s"))
+        type_text(app, "shorter")
+        app._on_input(Key(ENTER))
+        answer(app, client, {"status": "queued", "subagent_id": FIRST, "text": "shorter"})
+        app._on_event(Event("message.delta", SID, {"text": "second half."}))
+        app._on_event(Event("message.complete", SID, {"text": "First half, second half.", "status": "complete"}))
+        replies = [block.text for block in app.transcript.blocks if isinstance(block, AssistantBlock)]
+        self.assertEqual(replies, ["First half, second half."])
 
 
 class TailPollTests(unittest.TestCase):
@@ -933,7 +1222,7 @@ class AgentReplayTests(AppTestCase):
         tail = {"subagent_id": FIRST, "available": True, "text": "TAIL: grepping src/\n", "truncated": False}
         run = self.prepare(delegating_scenario(("subagent.tail", {"result": tail})))
         terminal = run.terminal
-        listed = terminal.shows("↑↓ select · ⏎ view log · esc back")
+        listed = terminal.shows(AGENT_LIST_HINT)
         terminal.script(
             self.submit(run, INTERRUPTED_PROMPT),
             Step(b"\x1b[B", when=terminal.shows("● main  "), capture="strip", label="the strip"),
@@ -955,7 +1244,7 @@ class AgentReplayTests(AppTestCase):
         status = status_index(rows)
         self.assertEqual(rows[status - 4], "  ● main")
         self.assertTrue(rows[status - 3].startswith("▸ ") and "find usages of old_api" in rows[status - 3], rows)
-        self.assertEqual(rows[status - 1], "↑↓ select · ⏎ view log · esc back")
+        self.assertEqual(rows[status - 1], AGENT_LIST_HINT)
         self.assertEqual(composer_index(rows), composer_index(captures["strip"]) - 3)
         self.assertEqual(captures["log"][0], "find usages of old_api in src/ and list every call site")
         self.assertEqual(captures["second"][0], "read the diff for risks")
@@ -987,8 +1276,12 @@ class ContractTests(unittest.TestCase):
             with self.subTest(name):
                 self.assertNotEqual(contract.call_problem("subagent.tail", params), "")
 
-    def test_the_tui_declares_no_call_that_writes_to_a_subagent(self) -> None:
-        self.assertEqual([method for method in contract.CLIENT_METHODS if method.startswith("subagent.")], ["subagent.tail"])
+    def test_the_only_calls_that_act_on_a_subagent_are_the_two_the_boundary_names(self) -> None:
+        # AGENTS.md: `x` (interrupt, confirmed) and `s` (steer with typed text), each on a keypress in the list.
+        self.assertEqual(
+            sorted(method for method in contract.CLIENT_METHODS if method.startswith("subagent.")),
+            ["subagent.interrupt", "subagent.steer", "subagent.tail"],
+        )
 
 
 if __name__ == "__main__":

@@ -25,6 +25,17 @@ clicks and the wheel are reported, in SGR form; motion tracking is never
 asked for. Every exit turns it off again (`mouse_reporting` says whether it
 is on).
 
+`query_background` asks the terminal for its background colour once, before
+the first frame, so the theme can be measured against the background the
+person really has (`theme.build_theme`): OSC 11, with a device-attributes
+request behind it that every terminal answers, in order, so that answer ends
+the wait whether or not the background was answered, and
+`BACKGROUND_QUERY_SECONDS` bounds it when nothing comes. Keys typed while it
+waits are handed back to the caller. A terminal that does not answer OSC 11
+can still say light or dark through `COLORFGBG`: a light background as its
+colour (`background_from_colorfgbg`), a dark one only as dark
+(`colorfgbg_names_dark`), for which the caller stands in a dark colour.
+
 `read` waits on the input and, when the caller names one, a wake descriptor
 (the gateway client's), and a resize signal ends its wait too, so the loop can
 sleep until there is input, news from the gateway, or a new size.
@@ -38,9 +49,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 import errno
 import os
+import re
 import select
 import signal
 import sys
+import time
 from types import FrameType, TracebackType
 from typing import Protocol
 
@@ -87,6 +100,19 @@ KEYBOARD_OPT_OUT = "legacy"
 
 READ_CHUNK_BYTES = 4096
 FALLBACK_SIZE = (80, 24)
+
+# The startup background query: OSC 11 asks for the background colour, and the device-attributes request (DA1)
+# behind it is answered by every terminal, after the OSC 11 answer if there is one, so its answer ends the wait.
+BACKGROUND_QUERY = "\x1b]11;?\x07"
+DEVICE_ATTRIBUTES_QUERY = f"{CSI}c"
+BACKGROUND_QUERY_SECONDS = 0.1
+# `ESC ] 11 ; rgb:R/G/B` ended by BEL or ST, each channel one to four hex digits (xterm's `XParseColor` forms).
+_BACKGROUND_REPLY = re.compile(rb"\x1b\]11;rgb:([0-9A-Fa-f]{1,4})/([0-9A-Fa-f]{1,4})/([0-9A-Fa-f]{1,4})(?:\x07|\x1b\\)")
+_DEVICE_ATTRIBUTES_REPLY = re.compile(rb"\x1b\[\?[0-9;]*c")
+# `COLORFGBG`'s background field names a colour of the basic sixteen: 7 and 15 are the light ones (xterm's values),
+# 0 to 6 and 8 the dark ones.
+COLORFGBG_LIGHT = {"7": "#E5E5E5", "15": "#FFFFFF"}
+COLORFGBG_DARK = frozenset({"0", "1", "2", "3", "4", "5", "6", "8"})
 
 # Indices into the list termios.tcgetattr returns.
 _IFLAG = 0
@@ -157,6 +183,44 @@ def keyboard_protocol_request(environ: Mapping[str, str]) -> str:
     if name in MODIFY_OTHER_KEYS_ONLY_TERMINALS:
         return MODIFY_OTHER_KEYS_ON
     return KITTY_KEYBOARD_PUSH + MODIFY_OTHER_KEYS_ON
+
+
+def _channel_byte(digits: bytes) -> int:
+    """One channel of an `rgb:` answer scaled to 0..255, whatever its digit count."""
+    return round(int(digits, 16) * 255 / (16 ** len(digits) - 1))
+
+
+def split_background_replies(data: bytes) -> tuple[str | None, bytes, bool]:
+    """(`#RRGGBB` from an OSC 11 answer or None, `data` without the answers, whether the DA1 answer has arrived).
+
+    Whatever else `data` holds is keys typed while the query waited, kept in
+    the order they came.
+    """
+    colour = None
+    found = _BACKGROUND_REPLY.search(data)
+    if found is not None:
+        colour = "#" + "".join(f"{_channel_byte(group):02X}" for group in found.groups())
+        data = data[: found.start()] + data[found.end() :]
+    answered = _DEVICE_ATTRIBUTES_REPLY.search(data)
+    if answered is not None:
+        data = data[: answered.start()] + data[answered.end() :]
+    return colour, data, answered is not None
+
+
+def _colorfgbg_background(environ: Mapping[str, str]) -> str:
+    """`COLORFGBG`'s background field (`fg;bg` or `fg;default;bg`); "" when it is not set in either form."""
+    fields = environ.get("COLORFGBG", "").split(";")
+    return fields[-1] if len(fields) > 1 else ""
+
+
+def background_from_colorfgbg(environ: Mapping[str, str]) -> str | None:
+    """A light background `COLORFGBG` names (`fg;bg` or `fg;default;bg`), as its colour; None for anything else."""
+    return COLORFGBG_LIGHT.get(_colorfgbg_background(environ))
+
+
+def colorfgbg_names_dark(environ: Mapping[str, str]) -> bool:
+    """Whether `COLORFGBG` names a dark background (`fg;bg` or `fg;default;bg`, bg one of 0 to 6 and 8)."""
+    return _colorfgbg_background(environ) in COLORFGBG_DARK
 
 
 def raw_attributes(saved: list) -> list:
@@ -253,6 +317,33 @@ class Terminal:
             return
         self.write(MOUSE_REPORTING_ON if enabled else MOUSE_REPORTING_OFF)
         self.mouse_reporting = enabled
+
+    def query_background(self, timeout: float = BACKGROUND_QUERY_SECONDS) -> tuple[str | None, bytes]:
+        """The terminal's background colour (`#RRGGBB`, or None), and the input that arrived meanwhile.
+
+        Writes the background query and the attributes request behind it, then
+        reads until the attributes answer arrives or `timeout` passes. Only
+        inside the `with` block, where input is raw. An answer that comes after
+        the wait is no key either: the decoder drops an OSC string whole.
+        """
+        self.write(BACKGROUND_QUERY + DEVICE_ATTRIBUTES_QUERY)
+        deadline = time.monotonic() + timeout
+        data = b""
+        while (left := deadline - time.monotonic()) > 0:
+            ready, _, _ = select.select([self._input], [], [], left)
+            if not ready:
+                break
+            try:
+                chunk = os.read(self._input, READ_CHUNK_BYTES)
+            except OSError:
+                break  # a hung-up terminal: the loop's first read says so
+            if not chunk:
+                break
+            data += chunk
+            if split_background_replies(data)[2]:
+                break
+        colour, typed, _answered = split_background_replies(data)
+        return colour, typed
 
     def _on_winch(self, signum: int, frame: FrameType | None) -> None:
         self._resized = True

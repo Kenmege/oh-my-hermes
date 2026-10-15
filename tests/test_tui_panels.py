@@ -143,10 +143,10 @@ class PanelEmptyAndErrorTests(unittest.TestCase):
         foreign = dict(payload, privacy="raw")
         self.assertEqual(panel_lines(with_agents(foreign, [agent_row(0)]), 80, 10, THEME, 0.0), [])
 
-    def test_a_reader_failure_is_one_dim_notice(self) -> None:
+    def test_a_reader_failure_is_one_muted_notice(self) -> None:
         lines = panel_lines({"error": "OperationalError"}, 80, 5, THEME, 0.0)
         self.assertEqual(lines_text(lines), ["⚚ OMH HUD unavailable: OperationalError"])
-        self.assertEqual(lines[0][0].style, THEME.dim)
+        self.assertEqual(lines[0][0].style, THEME.muted)
         self.assertEqual(panel_lines({"error": "OperationalError"}, 80, 0, THEME, 0.0), [])
 
 
@@ -210,7 +210,31 @@ class PlanBlockTests(unittest.TestCase):
         lines = panel_lines(history, 120, 10, THEME, now)
         self.assertIn(" · parallel shot ×2 (5s ago)", line_text(lines[0]))
         badge = next(span for span in lines[0] if "parallel shot" in span.text)
-        self.assertEqual(badge.style, THEME.dim)
+        self.assertEqual(badge.style, THEME.muted)
+
+    def test_calls_that_never_overlapped_carry_no_parallel_shot_badge(self) -> None:
+        # The plugin groups calls started within 1.5 s and measures how many were open at once
+        # (`tool_bursts._latest_shot_from_entries`): a chain run one after another inside that window peaks at 1.
+        payload = hud_payload(phased_plan(3, phases=1, active=1))
+        now = datetime(2026, 10, 13, 0, 0, 3, tzinfo=timezone.utc).timestamp()
+
+        def header(open_count: int, peak_open_count: int) -> str:
+            shown = copy.deepcopy(payload)
+            shown["parallel_shot"] = {
+                "status": "observed",
+                "open_count": open_count,
+                "peak_open_count": peak_open_count,
+                "observed_at": "2026-10-13T00:00:00Z",
+            }
+            return lines_text(panel_lines(shown, 120, 10, THEME, now))[0]
+
+        for open_count, peak in ((0, 1), (1, 1), (0, 0), (1, 0)):
+            with self.subTest(open_count=open_count, peak_open_count=peak):
+                self.assertNotIn("parallel shot", header(open_count, peak))
+        self.assertIn(" · parallel shot ×2 (3s ago)", header(0, 2))
+        self.assertIn(" · parallel shot ×2 (3s ago)", header(1, 2))  # one call of a real overlap still running
+        self.assertIn(" · parallel shot ×2", header(2, 2))
+        self.assertNotIn("ago", header(2, 2))
 
     def test_an_active_item_moves_only_while_work_is_live(self) -> None:
         payload = hud_payload(phased_plan(3, phases=1, active=1))
@@ -489,6 +513,17 @@ class HudPollerTests(unittest.TestCase):
         payloads.append({"privacy": "metadata_only", "rows": [{"state": "done", "elapsed_seconds": 9}]})
         self.assertEqual(poller.poll_once(), HUD_POLL_MIN_SECONDS)
 
+    def test_a_refresh_wakes_the_thread_for_a_read_now_and_restarts_the_back_off(self) -> None:
+        payload = {"privacy": "metadata_only", "rows": []}
+        poller = self.poller(FakeReader(lambda session: copy.deepcopy(payload)))
+        poller.set_session("stored-1")
+        for _ in range(3):
+            poller.poll_once()  # backed off to eight seconds
+        poller._wake.clear()
+        poller.refresh()
+        self.assertTrue(poller._wake.is_set())  # the wait the thread is in ends now
+        self.assertEqual(poller.poll_once(), 4.0)  # the back-off starts over from two seconds
+
     def test_a_reader_failure_is_a_notice_and_backs_off(self) -> None:
         def respond(session: str) -> dict:
             raise sqlite3.OperationalError("database is locked")
@@ -632,3 +667,17 @@ class PunctuationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NativePlanDepthTests(unittest.TestCase):
+    """A `todo_list` plan's subtasks (Hermes' `parent`) keep their depth through the record into the panel."""
+
+    def test_the_recorded_plans_subtasks_are_drawn_under_their_parent(self) -> None:
+        from test_tui_gateway_contract import recorded_events
+        from omh.plugin_bundle.omh.native_todo import native_todo_items
+
+        (todos,) = [payload["todos"] for kind, payload in recorded_events("parity") if kind == "todo.updated"]
+        items = native_todo_items(todos)
+        self.assertEqual([item.get("depth", 0) for item in items], [0, 1, 1])
+        rows = lines_text(panel_lines(hud_payload(items), 80, 10, THEME, 0.0))
+        self.assertEqual(rows[1:4], ["[ ] Ship the change", "  [•] Write the tests", "  [ ] Write the code"])

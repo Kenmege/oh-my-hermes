@@ -76,3 +76,12 @@ class Span:
 
 
 Line = tuple[Span, ...]
+
+
+def fill(style: Style) -> Span:
+    """The span that ends a row whose rest takes `style`'s background, to the right edge (`screen.paint_line`)."""
+    return Span("", style)
+
+
+def is_fill(span: Span) -> bool:
+    return not span.text and span.style.bg is not None

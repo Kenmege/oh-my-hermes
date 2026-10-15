@@ -173,7 +173,7 @@ class RelayFixtureTests(unittest.TestCase):
 
     def test_replay_renders(self) -> None:
         roster = replayed()
-        self.assertEqual(line_text(roster.strip_line(80, THEME, 0)[0]), "● main  ○ find usages of  ✗ read the diff  ↓")
+        self.assertEqual(line_text(roster.strip_line(80, THEME, 0)[0]), "● main  ○ find usages of  ✗ read the diff  ↓ agents")
         rows, ids = roster.list_lines(60, THEME, SECOND, 0, 6, 500.0)
         self.assertEqual(
             lines_text(rows),
@@ -393,7 +393,8 @@ class MalformedPayloadTests(unittest.TestCase):
                 self.assertEqual(roster.agents, {})
 
     def test_a_frame_without_a_usable_id_changes_nothing(self) -> None:
-        for bad in (None, "", 7, ["sa-1"], {"id": "sa-1"}, True, "x" * 129):
+        # Blank after strip too: the gateway contract refuses such an id in a call (`call_problem`).
+        for bad in (None, "", " ", "\t\n", 7, ["sa-1"], {"id": "sa-1"}, True, "x" * 129):
             with self.subTest(bad=bad):
                 roster = Roster()
                 roster.apply("subagent.start", payload(bad), 1.0)  # type: ignore[arg-type]
@@ -401,6 +402,11 @@ class MalformedPayloadTests(unittest.TestCase):
         roster = Roster()
         roster.apply("subagent.start", {key: value for key, value in IDENTITY.items() if key != "subagent_id"}, 1.0)
         self.assertEqual(roster.agents, {})
+
+    def test_an_id_with_spaces_around_its_text_is_kept_as_it_came(self) -> None:
+        roster = Roster()
+        roster.apply("subagent.start", payload(" sa-1 "), 1.0)
+        self.assertEqual(list(roster.agents), [" sa-1 "])
 
     def test_the_longest_id_accepted_is_128_characters(self) -> None:
         roster = Roster()
@@ -639,7 +645,7 @@ class StripTests(unittest.TestCase):
             feed(roster, "complete", subagent_id=f"sa-{status}", status=status)
         line, hits = roster.strip_line(200, THEME, 2)
         self.assertEqual(
-            line_text(line), "● main  ⠹ explore  ○ review  ◌ wait  ✗ failed  ✗ error  ✗ timeout  ▪ interrupted  ↓"
+            line_text(line), "● main  ⠹ explore  ○ review  ◌ wait  ✗ failed  ✗ error  ✗ timeout  ▪ interrupted  ↓ agents"
         )
         self.assertEqual([hit.subagent_id for hit in hits][:3], [MAIN_ID, "sa-run", "sa-done"])
         self.assertEqual(style_of(line, "●"), THEME.accent)
@@ -660,7 +666,7 @@ class StripTests(unittest.TestCase):
         roster = started(FIRST)
         for frame, glyph in ((0, "⠋"), (4, "⠼"), (9, "⠏"), (10, "⠋"), (23, "⠸")):
             with self.subTest(frame=frame):
-                self.assertEqual(line_text(roster.strip_line(80, THEME, frame)[0]), f"● main  {glyph} find usages of  ↓")
+                self.assertEqual(line_text(roster.strip_line(80, THEME, frame)[0]), f"● main  {glyph} find usages of  ↓ agents")
 
     def test_hits_are_the_cells_each_entry_is_drawn_in(self) -> None:
         roster = Roster()
@@ -676,7 +682,7 @@ class StripTests(unittest.TestCase):
         feed(roster, "complete", subagent_id="sa-e", status="failed")
         line, hits = roster.strip_line(200, THEME, 0)
         text = line_text(line)
-        self.assertEqual(text, "● main  ⠋ explore  ⠋ 한글 검색  ⠋ 🚀 deploy the  ⠋ 가나다라마바사…  ✗ review  ↓")
+        self.assertEqual(text, "● main  ⠋ explore  ⠋ 한글 검색  ⠋ 🚀 deploy the  ⠋ 가나다라마바사…  ✗ review  ↓ agents")
         self.assertEqual(
             hits,
             (
@@ -693,15 +699,15 @@ class StripTests(unittest.TestCase):
         # Between two entries, and after the last, lies the gap: no hit claims it.
         for left, right in zip(hits, hits[1:], strict=False):
             self.assertEqual(cells(text, left.end, right.start), "  ")
-        self.assertEqual(cells(text, hits[-1].end, line_width(line)), "  ↓")
+        self.assertEqual(cells(text, hits[-1].end, line_width(line)), "  ↓ agents")
 
     def test_the_strip_collapses_the_moment_it_does_not_fit(self) -> None:
         roster = started("sa-a", "sa-b")
-        full = "● main  ⠋ find usages of  ⠋ find usages of  ↓"
-        self.assertEqual(line_width(roster.strip_line(200, THEME, 0)[0]), 45)
-        line, hits = roster.strip_line(45, THEME, 0)
+        full = "● main  ⠋ 1·find usages of  ⠋ 2·find usages of  ↓ agents"  # one goal twice: numbered
+        self.assertEqual(line_width(roster.strip_line(200, THEME, 0)[0]), 56)
+        line, hits = roster.strip_line(56, THEME, 0)
         self.assertEqual((line_text(line), len(hits)), (full, 3))
-        line, hits = roster.strip_line(44, THEME, 0)
+        line, hits = roster.strip_line(55, THEME, 0)
         self.assertEqual((line_text(line), hits), ("● 2 agents ↓", ()))
         self.assertEqual(style_of(line, "●"), THEME.accent)
         self.assertEqual(style_of(line, "2 agents"), THEME.hint)
@@ -837,7 +843,7 @@ class ListTests(unittest.TestCase):
         roster = Roster()
         feed(roster, "start", goal="")
         self.assertEqual(line_text(roster.list_lines(40, THEME, MAIN_ID, 0, 6, 0.0)[0][1])[:9], "  ⠋ agent")
-        self.assertEqual(line_text(roster.strip_line(40, THEME, 0)[0]), "● main  ⠋ agent  ↓")
+        self.assertEqual(line_text(roster.strip_line(40, THEME, 0)[0]), "● main  ⠋ agent  ↓ agents")
         self.assertEqual(lines_text(roster.log_lines(FIRST, 40, THEME, 0.0))[0], "agent")
 
 

@@ -3,16 +3,17 @@
 The owner's top complaint about the Hermes-hosted TUI is that the prompt
 "goes too far up": rows added around the input push the composer upward.
 This file is the regression proof that the OMH TUI's composer does not move.
-It runs the frame helper and the live region the way the app loop will (flush
-stable lines with `flush_above`, then build a frame from the region's current
-height and render it) through event sequences: a streaming tail that grows
-past the screen, stable lines flushed with and without pad rows, a panel slot
-that grows and shrinks, a server-request prompt slot, a completion menu, a
-composer that grows to its maximum and back, a multi-line paste, the end of a
-turn, the input mode switching between normal, accept and plan (each
-redraws both composer rules and the mode row), and the agent list taking the
-keys, growing past its cap and giving them back. After every step, and after
-every flush before the next frame, it reads the VT screen back and asserts:
+It runs the frame helper and the live region the way the app loop does
+(`App._render`: build a frame from the region's current height and render it,
+then flush the stable lines with `flush_above` into its pad rows) through
+event sequences: a streaming tail that grows past the screen, stable lines
+flushed with and without pad rows, a panel slot that grows and shrinks, a
+server-request prompt slot, a completion menu, a composer that grows to its
+maximum and back, a multi-line paste, the end of a turn, the input mode
+switching between normal, accept and plan (each redraws both composer rules
+and the mode row), and the agent list taking the keys, growing past its cap
+and giving them back. After every frame, and again after its flush, it reads
+the VT screen back and asserts:
 
 (a) the composer's first screen row changes only when the composer's own row
     count changes, and then by exactly that count, because the region's
@@ -35,7 +36,15 @@ every flush before the next frame, it reads the VT screen back and asserts:
     composer and the cap, and only where the mode row would be;
 (f) whenever the live region says which screen row it ends on
     (`LiveRegion.last_row`), that is the row the status line is on, and by
-    the end of every scenario it does say.
+    the end of every scenario it does say;
+(g) a flush of more lines than the frame has pad rows (one that scrolls the
+    screen) leaves the region with no pad rows, so no blank row stays between
+    the lines just printed and the region.
+
+A question answered by picking hides the composer (`composer=None`): those
+frames have no rule and no caret, the slot's rows stand right above the mode
+row (or the status line), and the frame after the question has the composer
+back on the row it left, with nothing of the question left on the screen.
 
 Sampling: heights 6, 7, 9, 10, 11, 12, 13, 16, 20, 24, 31, 40, 57, 80 (the
 heights where the mode row and the bottom rule drop out, the small heights
@@ -58,7 +67,7 @@ from omh.tui.app import mode_row_line
 from omh.tui.composer import PROMPT, SUBMIT, Composer
 from omh.tui.frame import MODE_ACCEPT, MODE_NORMAL, MODE_PLAN, build_frame, sticky_line
 from omh.tui.keys import BACKSPACE, CHAR, ENTER, ESCAPE, Key, Paste
-from omh.tui.layout import composer_cap, slot_cap
+from omh.tui.layout import choice_cap, composer_cap, slot_cap
 from omh.tui.screen import LiveRegion
 from omh.tui.style import Line, Span
 from omh.tui.theme import DEFAULT_THEME
@@ -136,19 +145,54 @@ class Session:
 
     # -- the app loop ---------------------------------------------------------
 
-    def paint(self, label: str, flush: Sequence[str] = ()) -> None:
+    def paint_hidden(self, label: str, flush: Sequence[str] = ()) -> None:
+        """A frame with the composer hidden: the slot stands in its place, and no caret is shown."""
         self.label = label
+        frame = build_frame(
+            cols=self.cols,
+            rows=self.rows,
+            composer=None,
+            status=self.status,
+            previous_height=self.region.height,
+            sticky=self.sticky,
+            tail=self.tail,
+            slot=self.slot,
+            mode=self.mode,
+            mode_row=self.mode_row(),
+        )
+        self.case.assertIsNone(frame.cursor)
+        self.region.render(frame.lines, frame.cursor, self.cols, pad=frame.pad)
+        self.check_hidden(frame.lines, frame.budget.slot)
         if flush:
-            pad = self.region.pad
-            consumed = min(len(flush), pad)
-            self.flush_pads.append((pad, len(flush)))
-            self.region.flush_above([plain(text) for text in flush], self.cols)
+            consumed = min(len(flush), self.region.pad)
+            self.region.flush_above([plain(line) for line in flush], self.cols)
             self.flushed.extend(flush)
-            self.label = f"{label} (after flush, before the frame)"
-            self.check(self.lines[consumed:], self.view, self.drawn_list)
-            self.label = label
-        self.modes_seen.add(self.mode)
-        mode_row = mode_row_line(
+            self.label = f"{label} (after its flush)"
+            self.check_hidden(frame.lines[consumed:], frame.budget.slot)
+
+    def check_hidden(self, expected: Sequence[Line], slot_rows: int) -> None:
+        t = self.case
+        where = f"{self.rows}x{self.cols} after {self.label!r}"
+        screen = self.screen.lines()
+        status_rows = [row for row, text in enumerate(screen) if text.startswith(STATUS_PREFIX)]
+        t.assertEqual(len(status_rows), 1, f"{where}: status line rows {status_rows}\n" + "\n".join(screen))
+        status_row = status_rows[0]
+        top = status_row - self.region.height + 1
+        t.assertEqual(self.region.height, len(expected), where)
+        t.assertGreaterEqual(top, 1 if self.pinned else 0, f"{where}: region taller than rows - 1")
+        t.assertEqual(screen[top : status_row + 1], [text_of(line) for line in expected], where)
+        if self.pinned:
+            t.assertEqual(status_row, self.rows - 1, f"{where}: status line left the screen's last row")
+        rules = {glyph * self.cols for glyph in RULE_GLYPHS.values()}
+        t.assertFalse([row for row in screen[top:status_row] if row in rules], f"{where}: a composer rule is drawn")
+        mode_rows = int(self.rows >= 10)
+        drawn = [text_of(line) for line in self.slot[:slot_rows]]
+        t.assertEqual(screen[status_row - mode_rows - slot_rows : status_row - mode_rows], drawn, f"{where}: the slot rows")
+        t.assertFalse(self.screen.cursor_visible, f"{where}: the caret is shown")
+        t.assertEqual(self.screen.scrollback + screen[:top], self.shell + self.flushed, where)
+
+    def mode_row(self) -> Line:
+        return mode_row_line(
             mode=self.mode,
             busy=self.sticky is not None,
             queued=0,
@@ -157,6 +201,11 @@ class Session:
             width=self.cols,
             theme=DEFAULT_THEME,
         )
+
+    def paint(self, label: str, flush: Sequence[str] = ()) -> None:
+        self.label = label
+        self.modes_seen.add(self.mode)
+        mode_row = self.mode_row()
         frame = build_frame(
             cols=self.cols,
             rows=self.rows,
@@ -179,6 +228,18 @@ class Session:
         text = self.composer.text
         if text and "\n" not in text and self.composer.caret == len(text) and cell_width(PROMPT + text) < self.cols:
             self.case.assertEqual(self.screen.cursor[1], cell_width(PROMPT + text), f"{label}: cursor column")
+        if flush:
+            pad = self.region.pad
+            consumed = min(len(flush), pad)
+            self.flush_pads.append((pad, len(flush)))
+            self.region.flush_above([plain(line) for line in flush], self.cols)
+            self.flushed.extend(flush)
+            self.lines = frame.lines[consumed:]
+            self.label = f"{label} (after its flush)"
+            self.check(self.lines, self.view, self.drawn_list)
+            if len(flush) > pad:  # (g) the flush scrolled the screen: no pad row is left under its lines
+                self.case.assertEqual(self.region.pad, 0, f"{self.rows}x{self.cols} after {self.label!r}: pad rows")
+            self.label = label
 
     def list_rows(self, composer_rows: int) -> int:
         """The spec, written out: the rows of the list a region this tall shows under its composer.
@@ -429,6 +490,40 @@ class ComposerStaysPutTests(unittest.TestCase):
         run_scenario(session)
         self.assertIsNone(session.known_rows[0])
         self.assertEqual(set(session.known_rows), {None, 23})
+
+    def test_a_question_answered_by_picking_hides_the_composer_and_gives_its_row_back(self) -> None:
+        for rows in HEIGHTS:
+            for cols in WIDTHS:
+                with self.subTest(rows=rows, cols=cols):
+                    session = Session(self, rows, cols, history=rows + 3)
+                    session.paint("first frame")
+                    session.keys("a draft", typed("a draft"))
+                    before, resting, draft = session.screen.lines(), session.last, session.composer.text
+                    cap = choice_cap(rows, cols)
+                    for size in (1, 4, cap, cap + 5):
+                        session.slot = [plain(f"option {n}") for n in range(size)]
+                        session.paint_hidden(f"a question of {size} rows")
+                    session.slot = []
+                    session.paint("the question closes")
+                    self.assertEqual(session.last, resting)  # the composer is back on its row
+                    self.assertEqual(session.composer.text, draft)
+                    self.assertTrue(session.screen.cursor_visible)
+                    # the first frame's pad rows held every row the question took: nothing scrolled, nothing is left
+                    self.assertEqual(session.screen.lines(), before)
+
+    def test_with_the_pad_used_up_a_question_scrolls_the_transcript_up_and_leaves_no_row_behind(self) -> None:
+        session = Session(self, 24, 80, history=27)
+        session.paint("first frame")
+        session.paint("the pad used up", flush=[f"history line {n}" for n in range(30)])
+        self.assertEqual(session.region.pad, 0)
+        resting = session.last
+        session.slot = [plain(f"option {n}") for n in range(choice_cap(24, 80))]
+        session.paint_hidden("a question opens")
+        session.paint_hidden("the answer is written above it", flush=["✓ allowed once · rm -rf build"])
+        session.slot = []
+        session.paint("the question closes")
+        self.assertEqual(session.last, resting)
+        self.assertFalse([row for row in session.screen.lines() if row.startswith("option ")])
 
     def test_below_ten_rows_the_agent_list_is_not_drawn_and_moves_nothing(self) -> None:
         for rows in (6, 7, 9):

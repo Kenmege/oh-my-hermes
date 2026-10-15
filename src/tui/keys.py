@@ -25,7 +25,15 @@ which is no key, or `PASTE_LATE_SECONDS` pass without a read of more than one
 key.
 
 Nothing here raises on input. A sequence it does not know becomes
-`Key("unknown")` and decoding continues with the next byte.
+`Key("unknown")` and decoding continues with the next byte. So does an OSC
+string (`ESC ]` up to BEL or ST) whose `ESC ]` has a digit after it: a
+terminal answering a query sends one (the startup background query's answer,
+when it comes after the TUI stopped waiting for it), and it types nothing. One
+that never ends is dropped whole at the next silence, or at `_MAX_OSC_LENGTH`
+bytes. `ESC ]` followed by anything else is Alt+], as the legacy encoding
+sends it, and the keys after it are keys. An `ESC ]` that ends a read waits
+for the next byte, as a lone ESC does: a digit opens an OSC string, anything
+else makes it Alt+], and so does the next silence.
 
 Terminals that `Terminal` asks for richer key reports send some keys as kitty
 CSI u (`ESC[99;5u`) or xterm modifyOtherKeys (`ESC[27;5;99~`). A key xterm's
@@ -99,6 +107,9 @@ UNKNOWN = "unknown"
 ESC_BYTE = 0x1B
 CSI_BYTE = ord("[")
 SS3_BYTE = ord("O")
+OSC_BYTE = ord("]")
+BEL_BYTE = 0x07
+STRING_TERMINATOR_BYTE = ord("\\")  # ESC and then this byte end an OSC string, as BEL does
 CARRIAGE_RETURN = 0x0D
 LINE_FEED = 0x0A
 HORIZONTAL_TAB = 0x09
@@ -119,6 +130,8 @@ PASTE_LATE_SECONDS = 1.0
 # A CSI longer than this without a final byte is garbage, not a slow key; the
 # bound keeps a hostile or broken stream from growing the held tail forever.
 _MAX_CSI_LENGTH = 32
+# The same bound for an OSC string; a background answer is about 30 bytes.
+_MAX_OSC_LENGTH = 512
 
 _CSI_LETTER_KEYS = {"A": UP, "B": DOWN, "C": RIGHT, "D": LEFT, "H": HOME, "F": END}
 _SS3_KEYS = _CSI_LETTER_KEYS
@@ -494,12 +507,37 @@ def _decode_ss3(data: bytes, start: int, final: bool) -> tuple[Key | None, int]:
     return (Key(name) if name else Key(UNKNOWN)), start + 3
 
 
+def _decode_osc(data: bytes, start: int, final: bool) -> tuple[Key | None, int]:
+    """An OSC string (`ESC ]` up to BEL or `ESC \\`) as one unknown key; `(None, start)` while it may still end.
+
+    An ESC inside it that does not start the terminator ends it there and
+    starts the next key, and one longer than `_MAX_OSC_LENGTH` is cut off.
+    """
+    index = start + 2  # past ESC ]
+    while index < len(data) and index - start < _MAX_OSC_LENGTH:
+        byte = data[index]
+        if byte == BEL_BYTE:
+            return Key(UNKNOWN), index + 1
+        if byte == ESC_BYTE:
+            if index + 1 == len(data):
+                break  # the terminator may be split after its ESC
+            return Key(UNKNOWN), index + 2 if data[index + 1] == STRING_TERMINATOR_BYTE else index
+        index += 1
+    if index - start >= _MAX_OSC_LENGTH:
+        return Key(UNKNOWN), index
+    return (Key(UNKNOWN), len(data)) if final else (None, start)
+
+
 def _decode_escape(data: bytes, start: int, final: bool) -> tuple[Key | Mouse | None, int]:
     if len(data) == start + 1:
         return (Key(ESCAPE), start + 1) if final else (None, start)
     second = data[start + 1]
     if second == CSI_BYTE:
         return _decode_csi(data, start, final)
+    if second == OSC_BYTE and len(data) == start + 2 and not final:
+        return None, start  # the next byte decides: an answer's OSC number, or anything else after Alt+]
+    if second == OSC_BYTE and data[start + 2 : start + 3].isdigit():  # an answer's OSC number, not Alt+]
+        return _decode_osc(data, start, final)
     if second == SS3_BYTE:
         return _decode_ss3(data, start, final)
     if second == ESC_BYTE:
@@ -545,13 +583,19 @@ def _report_length(data: bytes) -> int:
 
 
 def _continues_escape(data: bytes) -> bool:
-    """Whether a read after a lone ESC held from an earlier read goes on with its sequence: a CSI's `[`, or an SS3 key's `O` and final.
+    """Whether a read after a lone ESC held from an earlier read goes on with its sequence: a CSI's `[`, an SS3 key's
+    `O` and final, or an OSC string's `]` and the digit that opens it.
 
     A read that is a lone `O`, or `O` and a byte no SS3 key ends with, is a
     capital O typed after Esc. An SS3 key split again right after its `O` is
-    read that way too: Esc, then its letters.
+    read that way too: Esc, then its letters. So is a lone `]`, or `]` and
+    anything but a digit: Esc, then the bracket.
     """
-    return data.startswith(bytes((CSI_BYTE,))) or (len(data) > 1 and data[0] == SS3_BYTE and data[1] in _SS3_FINALS)
+    if data.startswith(bytes((CSI_BYTE,))):
+        return True
+    if len(data) > 1 and data[0] == SS3_BYTE:
+        return data[1] in _SS3_FINALS
+    return len(data) > 1 and data[0] == OSC_BYTE and data[1:2].isdigit()
 
 
 def _paste_text(raw: bytes) -> str:

@@ -91,6 +91,31 @@ class ClientMethodTests(unittest.TestCase):
             with self.subTest(name):
                 self.assertNotEqual(contract.call_problem("config.set", params), "")
 
+    def test_a_rewind_is_sendable_only_with_both_truncation_keys_as_hermes_requires(self) -> None:
+        # PromptSubmitParams in Hermes 6c61c3e27d's contracts/prompt_voice.py; the recorded refusal (4029) of the
+        # first call below and the recorded rewind of the second are in tests/fixtures/tui_gateway/parity.jsonl.
+        recorded = [
+            row["frame"]["params"]
+            for row in recorded_rows("parity", "unconfirmed_truncate", "rewind_turn")
+            if row["dir"] == "out" and row["frame"].get("method") == "prompt.submit"
+        ]
+        unconfirmed, confirmed = recorded
+        self.assertEqual(contract.call_problem("prompt.submit", confirmed), "")
+        self.assertIn("confirm_truncate", contract.call_problem("prompt.submit", unconfirmed))
+        base = {"session_id": "live-1", "text": "again"}
+        refused = {
+            "a confirmation alone": {**base, "confirm_truncate": True},
+            "a false confirmation": {**base, "truncate_before_row_id": 7, "confirm_truncate": False},
+            "a row id that is no int": {**base, "truncate_before_row_id": "7", "confirm_truncate": True},
+            "a row id that is a bool": {**base, "truncate_before_row_id": True, "confirm_truncate": True},
+            "the ordinal form": {**base, "truncate_before_user_ordinal": 1, "confirm_truncate": True},
+        }
+        for name, params in refused.items():
+            with self.subTest(name):
+                self.assertNotEqual(contract.call_problem("prompt.submit", params), "")
+        self.assertEqual(contract.call_problem("prompt.submit", base), "")
+        self.assertEqual(contract.CLIENT_METHODS["session.history"], {"session_id"})
+
     def test_a_reasoning_config_set_takes_effort_levels_only(self) -> None:
         # Under the same key Hermes reads these as display settings and writes them to config.yaml.
         effort = {"key": "reasoning", "session_id": "live-1"}
@@ -111,8 +136,9 @@ class ClientMethodTests(unittest.TestCase):
     def test_every_key_of_an_undeclared_method_is_undeclared(self) -> None:
         self.assertEqual(contract.undeclared_params("voice.toggle", {"on": True}), ["on"])
 
-    def test_only_the_catalog_the_settings_and_the_skill_rescan_are_optional(self) -> None:
-        self.assertEqual(contract.OPTIONAL_METHODS, {"commands.catalog", "config.get", "skills.reload"})
+    def test_only_the_calls_a_session_does_without_are_optional(self) -> None:
+        optional = {"commands.catalog", "config.get", "model.options", "session.list", "skills.reload"}
+        self.assertEqual(contract.OPTIONAL_METHODS, optional)
         self.assertLessEqual(contract.OPTIONAL_METHODS, set(contract.CLIENT_METHODS))
 
     def test_drift_errors_are_param_rejection_and_unknown_method_only(self) -> None:
@@ -137,6 +163,13 @@ def tui_modules() -> dict[str, ast.Module]:
         for path in sorted(TUI_DIR.glob("*.py"))
         if path.name not in NOT_GATEWAY_READERS
     }
+
+
+def recorded_rows(name: str, *segments: str) -> list[dict]:
+    """The rows of the named segments of a recorded fixture, in order."""
+    lines = (FIXTURES / f"{name}.jsonl").read_text(encoding="utf-8").splitlines()
+    header, rows = json.loads(lines[0])["fixture"], [json.loads(line) for line in lines[1:]]
+    return [row for segment in segments for row in rows[slice(*header["segments"][segment])]]
 
 
 def recorded_events(name: str) -> list[tuple[str, dict]]:
@@ -181,6 +214,23 @@ class InboundTests(unittest.TestCase):
             self.assertIsInstance(payload[contract.SESSION_INFO_YOLO], bool)
             self.assertIsInstance(payload[contract.SESSION_INFO_REASONING_EFFORT], str)
 
+    def test_notifications_are_the_apps_and_carry_the_declared_fields(self) -> None:
+        # NotificationShowPayload / NotificationClearPayload in Hermes 6c61c3e27d's contracts/events.py; the frames
+        # are derived from the source that builds them (tests/fixtures/tui_gateway/notifications.jsonl's header).
+        self.assertLessEqual({"notification.show", "notification.clear"}, set(contract.APP_EVENTS))
+        self.assertEqual(contract.NOTIFICATION_LEVELS, {"info", "warn", "error", "success"})
+        frames = recorded_events("notifications")
+        self.assertEqual({kind for kind, _payload in frames}, {"notification.show", "notification.clear"})
+        for kind, payload in frames:
+            with self.subTest(kind=kind, payload=payload):
+                self.assertIsInstance(payload[contract.NOTIFICATION_KEY], str)
+                if kind == "notification.show":
+                    self.assertIsInstance(payload[contract.NOTIFICATION_TEXT], str)
+                    self.assertIn(payload[contract.NOTIFICATION_LEVEL], contract.NOTIFICATION_LEVELS)
+                    ttl = payload[contract.NOTIFICATION_TTL_MS]
+                    self.assertTrue(ttl is None or isinstance(ttl, int))
+                    self.assertEqual(ttl is not None, payload[contract.NOTIFICATION_KIND] == contract.NOTIFICATION_TTL_KIND)
+
     def test_the_roster_folds_exactly_the_declared_subagent_events(self) -> None:
         from omh.tui.subagents import Roster
 
@@ -208,7 +258,11 @@ class InboundTests(unittest.TestCase):
         # 77: `len(tui_gateway.contracts.registry.EVENTS)` in Hermes 6c61c3e27d.
         self.assertEqual(contract.HANDLED_EVENTS & contract.UNREAD_EVENTS, frozenset())
         self.assertEqual(len(contract.HANDLED_EVENTS | contract.UNREAD_EVENTS), 77)
-        recorded = {kind for name in ("session", "approval", "subagent_relay") for kind, _payload in recorded_events(name)}
+        recorded = {
+            kind
+            for name in ("session", "approval", "subagent_relay", "notifications", "parity")
+            for kind, _payload in recorded_events(name)
+        }
         self.assertLessEqual(recorded, contract.HANDLED_EVENTS | contract.UNREAD_EVENTS)
 
     def test_the_tui_reads_these_shapes_through_the_contract_only(self) -> None:
