@@ -7439,25 +7439,40 @@ _OPS_OBSERVABILITY_KOREAN_USAGE_PHRASES = tuple(
     for phrase in ("토큰 사용량", "토큰 사용 추이", "토큰 소모", "토큰 소모량", "토큰 소비", "토큰 소비량", "비용 모니터링")
 )
 # The final predicates a usage phrase counts under, each read as the start of
-# the sentence's last word ("보여줘", "보여주세요"):
+# the sentence's final predicate ("보여주세요", "확인해줘"):
 #   보여, 알려 -- show me, tell me: ask for the figures;
-#   확인, 비교, 모니터링, 추적, 요약 -- check, compare, monitor, track,
-#     summarize: ask to look at them;
+#   확인, 비교, 모니터링, 추적 -- check, compare, monitor, track: ask to look
+#     at them;
 #   얼마, 어때 -- how much, how is it: ask about the amount;
 #   리포트 -- the report itself, said as the last word;
 #   많, 빨라 -- is a lot, is fast: say how large the usage is, the Korean shape
 #     of "too many tokens".
-# Every other last word asks for work -- 만들어줘, 추가해줘, 고쳐줘, 파싱해줘,
-# 구현해줘, 짜줘, 줄여줘, 정리해줘 (which also means "clean up") -- and the phrase
-# does not count. Only the last word is read: "기능별" and "함수별" earlier in
-# the sentence modify the usage being asked about.
+# 요약 (summarize) is not listed: the token arm below already reads it as a
+# status word, beside the 토큰 or 비용 every usage phrase carries. Every other
+# final predicate leaves the phrase uncounted: work (만들어줘, 추가해줘, 고쳐줘,
+# 파싱해줘, 구현해줘, 짜줘, 줄여줘, 정리해줘, which also means "clean up") and any
+# other question shape (어떻게 돼?, 궁금해) alike. Only the final predicate is
+# read: "기능별" and "함수별" earlier in the sentence modify the usage asked about.
 _KOREAN_USAGE_REPORT_PREDICATES = tuple(
     normalized_phrase(stem)
-    for stem in ("보여", "알려", "확인", "비교", "모니터링", "추적", "요약", "얼마", "어때", "리포트", "많", "빨라")
+    for stem in ("보여", "알려", "확인", "비교", "모니터링", "추적", "얼마", "어때", "리포트", "많", "빨라")
 )
-# A last word that only finishes the one before it: 해/하 said apart from its
-# noun ("모니터링 해줘") or 나왔/나와 after the amount ("얼마 나왔어", "많이 나와").
-_KOREAN_PREDICATE_TAILS = tuple(normalized_phrase(tail) for tail in ("해", "하", "나왔", "나와"))
+# Last words that only finish the word before them, matched whole: 해 said
+# apart from its noun ("모니터링 해줘", "추적 해 줘") and 나왔/나와 after an amount
+# ("얼마 나왔어", "많이 나와"). A longer word that merely starts the same way is a
+# predicate of its own: 해제해줘 (turn off), 해결, 하지마 (don't).
+_KOREAN_PREDICATE_TAILS = frozenset(
+    normalized_phrase(tail)
+    for tail in (
+        "해", "해요", "해줘", "해줘요", "해주세요", "해줄래", "해줄래요", "해봐", "해봐요", "하세요",
+        "나왔어", "나왔어요", "나왔나", "나왔니", "나와", "나와요",
+    )
+)
+# "해 줘" written as two words: 해 followed by one of these.
+_KOREAN_HAE = normalized_phrase("해")
+_KOREAN_SPLIT_REQUEST_ENDINGS = frozenset(
+    normalized_phrase(ending) for ending in ("줘", "줘요", "주세요", "줄래", "줄래요")
+)
 _KOREAN_SENTENCE_END_PUNCTUATION = " ?!.~…"
 # What may follow a Korean word without making it a longer one: a noun
 # particle that ends there ("소비가", not "소비가격"), or 하/해 making it a verb
@@ -7484,7 +7499,9 @@ def _korean_word_ends_at(normalized_query: str, end: int) -> bool:
 
 
 def _korean_final_predicate(words: list[str]) -> str:
-    if len(words) > 1 and words[-1].startswith(_KOREAN_PREDICATE_TAILS):
+    if len(words) > 2 and words[-2] == _KOREAN_HAE and words[-1] in _KOREAN_SPLIT_REQUEST_ENDINGS:
+        return words[-3]
+    if len(words) > 1 and words[-1] in _KOREAN_PREDICATE_TAILS:
         return words[-2]
     return words[-1] if words else ""
 

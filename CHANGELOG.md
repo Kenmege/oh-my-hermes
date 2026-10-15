@@ -31,20 +31,30 @@ All notable changes will be documented here.
   추이", "토큰 소모(량)", "토큰 소비(량)" and "비용 모니터링", each as a whole word
   ("토큰 소비" is not "토큰 소비자"), and only when the sentence's final
   predicate asks to see the usage -- show, tell, check, compare, monitor,
-  track, summarize, how much, how is it, a report, or "is a lot" / "is fast"
-  -- or the sentence ends on the phrase itself ("이번 주 토큰 사용량"). Any other
-  final predicate (만들어줘, 추가해줘, 고쳐줘, 파싱해줘, 작성해줘, 짜줘, 줄여줘)
-  leaves the phrase uncounted, so "토큰 사용량 API 만들어줘" and "토큰 사용량 버그
-  고쳐줘" stay on ultrawork, and a modifier earlier in the sentence ("기능별
-  토큰 사용량 알려줘") does not stop a usage question. The guard's English-shaped
-  token arm is unchanged: 토큰 or 비용 beside 보여줘, 상태 or 요약 still opens the
-  card, as on main ("토큰 사용량 제한 로직 보여줘"). Six usage requests that
-  dispatched the card now do not: "에이전트 비용 추적해줘", "오늘 LLM 비용 얼마
-  나왔어?", "이번 달 API 비용 얼마야", "이번 달 비용 얼마 나왔어" and "토큰 얼마나
-  썼어?" ask, and "토큰 사용량 리포트 만들어줘" dispatches the greenfield
-  interview. Four of the first five ask what was spent, which the card's
-  Do-Not-Use sends to Hermes' /usage and /insights, and English "how much
-  did the API cost this month" asks too. Measured with
+  track, how much, how is it, a report, or "is a lot" / "is fast" -- or the
+  sentence ends on the phrase itself ("이번 주 토큰 사용량"). The final predicate
+  is the last word, or the word before it when the last word is a spaced
+  ending matched whole ("모니터링 해줘", "추적 해 줘", "얼마 나왔어"), so 해제해줘
+  and 하지마 are predicates of their own. Every other final predicate leaves
+  the phrase uncounted: work (만들어줘, 추가해줘, 고쳐줘, 파싱해줘, 작성해줘, 짜줘,
+  줄여줘), so "토큰 사용량 API 만들어줘" and "토큰 사용량 버그 고쳐줘" stay on
+  ultrawork, and any other question shape too. A modifier earlier in the
+  sentence ("기능별 토큰 사용량 알려줘") does not stop a usage question. The
+  guard's English-shaped token arm is unchanged: 토큰 or 비용 beside 보여줘,
+  상태 or 요약 still opens the card, as on main ("토큰 사용량 제한 로직 보여줘",
+  "토큰 사용량 요약해줘"). So does a how-to or a check under a report predicate
+  ("토큰 사용량 파싱하는 방법 알려줘", "토큰 사용량 버그 확인해줘"), as on main,
+  where English asks or answers directly. Usage requests whose final
+  predicate is outside the report set no longer reach the card; this is a
+  class, not a list. Measured examples that dispatched it on main and now
+  ask: "토큰 사용량 어떻게 돼?", "토큰 사용량 얼마나 돼?", "토큰 사용량 궁금해", "토큰
+  사용량 확인 가능해?", "토큰 사용량 리포트 줘", "토큰 소모 심하네", "에이전트 비용
+  추적해줘", "오늘 LLM 비용 얼마 나왔어?", "이번 달 API 비용 얼마야", "이번 달 비용
+  얼마 나왔어" and "토큰 얼마나 썼어?"; "토큰 사용량 리포트 만들어줘" dispatches the
+  greenfield interview. English asks or answers directly on the same shapes
+  ("how is my token usage?", "how much did the API cost this month"), and
+  questions about what was spent belong to Hermes' /usage and /insights per
+  the card's Do-Not-Use. Measured with
   `build_chat_interaction_payload` (`source="discord"`), `awareness_route_hint`
   and the skill candidate line at main and at this head, over both corpora
   (unchanged except three English llm-wiki clarifies whose leading candidate
@@ -60,7 +70,7 @@ All notable changes will be documented here.
   48, written after the first fixes were chosen, moved the same way:
   codebase-uml dispatches 0 -> 4 of 8, wiki reaches 7 -> 0 of 7 LLM-wiki
   requests, and ops-observability-card dispatches 9 -> 0 of 10 negatives and
-  7 of 8 usage requests (8 before). Adds 19 negative controls and 17
+  7 of 8 usage requests (8 before). Adds 21 negative controls and 26
   interventions.
 
 - **A portable host is no longer told to load a skill only Hermes ships.** On
