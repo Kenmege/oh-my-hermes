@@ -5,7 +5,10 @@
 prompt typed in `hermes --tui` is in the OMH TUI's Up and Ctrl+R, and one
 typed here is in Hermes'. Its format is that file's: each entry is a
 `# <time>` line followed by one `+`-prefixed line per line of the entry, and
-any other line ends an entry.
+any other line ends an entry. Lines end in LF, as Ink writes them on every
+platform. A line's one trailing CR is dropped as it is read, so a CRLF file
+(edited by hand, or written on Windows before the append was binary) reads as
+its LF twin; Ink keeps that CR, but writes none itself.
 
 What the OMH TUI does with it, and nothing more:
 
@@ -16,7 +19,9 @@ What the OMH TUI does with it, and nothing more:
 - `append_entry` appends one entry with a single write to a descriptor opened
   `O_APPEND` (each write lands whole at the end, so it interleaves with
   Hermes' own appends entry by entry), `O_NOFOLLOW` (a symlink in the file's
-  place is refused, not followed) and, for a file it creates, mode 0600. It
+  place is refused, not followed), `O_BINARY` where the platform has it (on
+  Windows a text-mode descriptor would write each LF as CRLF) and, for a file
+  it creates, mode 0600. It
   never rewrites, truncates or creates the directory the file goes in. A
   failure costs the entry and nothing else: it returns False.
 
@@ -69,10 +74,11 @@ def history_path(environ: Mapping[str, str]) -> Path | None:
 
 
 def parse_entries(text: str) -> list[str]:
-    """The entries in `text`, oldest first: each run of `+` lines, without the `+`."""
+    """The entries in `text`, oldest first: each run of `+` lines, without the `+` or one trailing CR."""
     entries: list[str] = []
     current: list[str] = []
     for line in text.split("\n"):
+        line = line[:-1] if line.endswith("\r") else line
         if line.startswith(ENTRY_LINE):
             current.append(line[len(ENTRY_LINE) :])
         elif current:
@@ -125,7 +131,10 @@ def append_entry(path: Path, text: str) -> bool:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     record = f"\n{HEADER_LINE} {stamp}\n" + "".join(f"{ENTRY_LINE}{line}\n" for line in entry.split("\n"))
     data = record.encode("utf-8", "replace")
-    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    flags = (
+        os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_BINARY", 0)
+    )
     try:
         descriptor = os.open(path, flags, 0o600)
     except OSError:

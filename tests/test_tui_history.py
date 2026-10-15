@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import stat
 import unittest
+from unittest.mock import patch
 
 from _test_temp_root import make_test_tempdir
 from _tui_gateway_replay import Scenario, spans
@@ -32,8 +33,18 @@ from omh.tui.theme import DEFAULT_THEME
 from _tui_lines import lines_text
 
 POSIX = os.name == "posix"
-# What Hermes' Ink app appends for `ls -la` and then a two-line prompt (appendFileSync in lib/history.ts).
+# What Hermes' Ink app appends for `ls -la` and then a two-line prompt (appendFileSync in lib/history.ts). Ink writes
+# LF only, on every platform, so the fixtures write these bytes (`write_ink`), never text-mode lines that Windows
+# would turn into CRLF, and read the file's bytes back (`file_text`) so a CRLF on disk shows.
 INK_FILE = "\n# 2026-10-14 09:00:00.123\n+ls -la\n\n# 2026-10-14 09:01:00.456\n+first line\n+second line\n"
+
+
+def write_ink(path: Path, text: str = INK_FILE) -> None:
+    path.write_bytes(text.encode("utf-8"))
+
+
+def file_text(path: Path) -> str:
+    return path.read_bytes().decode("utf-8")
 
 
 class PathTests(unittest.TestCase):
@@ -66,22 +77,29 @@ class ReadTests(unittest.TestCase):
     @unittest.skipUnless(POSIX and hasattr(os, "O_NOFOLLOW"), "O_NOFOLLOW is POSIX's")
     def test_a_symlink_in_its_place_is_not_read_as_it_is_not_appended_to(self) -> None:
         target = self.home / "elsewhere"
-        target.write_text(INK_FILE, encoding="utf-8")
+        write_ink(target)
         self.path.symlink_to(target)
         self.assertEqual(load_history(self.path), [])
 
     def test_only_the_newest_entries_are_kept(self) -> None:
-        self.path.write_text("".join(f"\n# t\n+prompt {number}\n" for number in range(30)), encoding="utf-8")
+        write_ink(self.path, "".join(f"\n# t\n+prompt {number}\n" for number in range(30)))
         self.assertEqual(load_history(self.path, limit=3), ["prompt 27", "prompt 28", "prompt 29"])
 
     def test_a_large_file_is_read_from_its_last_bytes_and_a_cut_entry_is_dropped(self) -> None:
         big = "".join(f"\n# t\n+line a {number}\n+line b {number}\n" for number in range(40_000))
-        self.path.write_text(big, encoding="utf-8")
+        write_ink(self.path, big)
         self.assertGreater(len(big), HISTORY_READ_BYTES)
         entries = load_history(self.path, limit=100_000)
         self.assertEqual(entries[-1], "line a 39999\nline b 39999")
         self.assertTrue(all(entry.startswith("line a ") and "\nline b " in entry for entry in entries))
         self.assertLess(sum(len(entry) for entry in entries), HISTORY_READ_BYTES)
+
+    def test_a_crlf_file_reads_as_its_lf_twin(self) -> None:
+        # Hand-edited on Windows, or written by an OMH TUI before its appends were binary: each line's CR goes.
+        write_ink(self.path, INK_FILE.replace("\n", "\r\n"))
+        self.assertEqual(load_history(self.path), ["ls -la", "first line\nsecond line"])
+        self.assertEqual(parse_entries("+a\r\n+b\r"), ["a\nb"])
+        self.assertEqual(parse_entries("+a\r\r\n"), ["a\r"])  # one CR per line, the one a CRLF ending brings
 
 
 class AppendTests(unittest.TestCase):
@@ -90,9 +108,9 @@ class AppendTests(unittest.TestCase):
         self.path = self.home / HISTORY_FILE
 
     def test_an_entry_is_appended_in_inks_format_and_reads_back(self) -> None:
-        self.path.write_text(INK_FILE, encoding="utf-8")
+        write_ink(self.path)
         self.assertTrue(append_entry(self.path, "  fix the test\nthen run it  "))
-        text = self.path.read_text(encoding="utf-8")
+        text = file_text(self.path)  # the bytes: LF only, as Ink writes, on every platform
         self.assertTrue(text.startswith(INK_FILE))  # what was there is untouched
         added = text[len(INK_FILE):]
         self.assertRegex(added, r"^\n# \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}\n\+fix the test\n\+then run it\n$")
@@ -118,10 +136,27 @@ class AppendTests(unittest.TestCase):
     def test_appends_from_two_writers_interleave_as_whole_entries(self) -> None:
         # Hermes' own TUI appends with appendFileSync (O_APPEND) too: entries land whole, in the order written.
         append_entry(self.path, "from omh 1")
-        with self.path.open("a", encoding="utf-8") as other:
-            other.write("\n# 2026-10-14 09:00:00.000\n+from ink\n")
+        with self.path.open("ab") as other:
+            other.write(b"\n# 2026-10-14 09:00:00.000\n+from ink\n")
         append_entry(self.path, "from omh 2")
         self.assertEqual(load_history(self.path), ["from omh 1", "from ink", "from omh 2"])
+
+    def test_both_opens_ask_for_binary_where_the_platform_has_o_binary(self) -> None:
+        # Windows' text-mode descriptor turns each LF written into CRLF; only O_BINARY keeps the file as Ink's.
+        # POSIX has no O_BINARY, so a stand-in flag shows what Linux and macOS CI cannot see.
+        stand_in = 1 << 30
+        seen: list[int] = []
+        real_open = os.open
+
+        def recording(path: object, flags: int, *rest: int) -> int:
+            seen.append(flags)
+            return real_open(path, flags & ~stand_in, *rest)
+
+        with patch.object(os, "O_BINARY", stand_in, create=True), patch.object(os, "open", recording):
+            self.assertTrue(append_entry(self.path, "a prompt"))
+            self.assertEqual(load_history(self.path), ["a prompt"])
+        self.assertEqual(len(seen), 2)
+        self.assertTrue(all(flags & stand_in for flags in seen), [hex(flags) for flags in seen])
 
     def test_a_home_that_does_not_exist_is_not_created(self) -> None:
         missing = self.home / "no-such-home" / HISTORY_FILE
@@ -214,7 +249,7 @@ class AppHistoryTests(unittest.TestCase):
 
         self.home = Path(self.enterContext(make_test_tempdir("omh-tui-history-")))
         self.path = self.home / HISTORY_FILE
-        self.path.write_text(INK_FILE, encoding="utf-8")
+        write_ink(self.path)
         self.app, self.client = make_app(environ={"HERMES_HOME": str(self.home)})
 
     def send(self, text: str) -> None:
@@ -245,7 +280,7 @@ class AppHistoryTests(unittest.TestCase):
         self.app.slot_opened_at = -10.0
         self.send("hunter2")
         self.assertEqual(load_history(self.path), ["ls -la", "first line\nsecond line", "a new prompt", "/usage"])
-        self.assertNotIn("hunter2", self.path.read_text(encoding="utf-8"))
+        self.assertNotIn("hunter2", file_text(self.path))
 
     def test_a_draft_cleared_with_esc_esc_stays_out_of_the_file(self) -> None:
         from test_tui_modes import type_text
@@ -254,7 +289,7 @@ class AppHistoryTests(unittest.TestCase):
         self.app._on_input(Key(ESCAPE))
         self.app._on_input(Key(ESCAPE))
         self.assertEqual(self.app.composer.history[-1], "a draft never sent")  # Up still has it
-        self.assertEqual(self.path.read_text(encoding="utf-8"), INK_FILE)
+        self.assertEqual(file_text(self.path), INK_FILE)
 
     def test_ctrl_r_searches_and_enter_takes_the_match_into_the_composer(self) -> None:
         from test_tui_modes import type_text
@@ -299,7 +334,7 @@ class ReplayHistoryTests(AppTestCase):
         run = self.prepare(Scenario("session", spans("session", "startup", "create", "plain_turn"), answers=startup_answers()))
         prompt = "Reply with exactly the word: ok"
         history = Path(run.environ["HERMES_HOME"]) / HISTORY_FILE
-        history.write_text(INK_FILE, encoding="utf-8")
+        write_ink(history)
         run.terminal.script(
             self.submit(run, prompt),
             Step(b"\x04", when=lambda: "later." in run.terminal.history() and run.terminal.idle(), label="the reply"),
