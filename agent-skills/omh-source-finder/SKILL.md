@@ -25,7 +25,6 @@ This is an OMH `source-finder` workflow skill, projected for Agent Skills hosts 
 - The user needs a business decision brief with evidence-versus-inference treatment; use `omh-research-brief`.
 - The user asks for current citations, fact-finding, or source-backed synthesis; use `ulw-research`.
 - The user supplies a paper/PDF/arXiv/DOI/excerpt and wants explanation; use `omh-paper-learning`.
-- The user asks for recurring monitoring, source inbox, or Scout/Analyst/Briefer operations; use `omh-research-department`.
 - The user asks to export, convert, render, package, or attach a file; use `omh-materials-package` or `omh-deliverable-package`.
 - The user asks for an image card or visual summary; use `omh-image-cards`.
 

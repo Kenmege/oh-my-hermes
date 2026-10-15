@@ -4,9 +4,40 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 
+
+
+def _unshipped_portable_labels() -> frozenset[str]:
+    """Labels the Hermes projection ships and the portable projection does not.
+
+    Both sets come from the producers, so a skill that starts or stops
+    shipping on either side moves this set without anyone editing a list.
+    """
+    from omh.skills.catalog import omh_skill_display_name
+    from omh.skills.render import agent_skill_templates, builtin_skill_templates
+
+    hermes = {omh_skill_display_name(template.name) for template in builtin_skill_templates()}
+    portable = {template.name for template in agent_skill_templates()}
+    return frozenset(hermes - portable)
+
+
+def _unshipped_label_mentions(files, unshipped: frozenset[str]) -> list[str]:
+    """Every `<path>:<line>: <label>` where a file names a label in `unshipped`.
+
+    A label is a whole hyphenated word, so `omh-skill` does not match inside
+    `omh-skill-health`.
+    """
+    alternatives = "|".join(re.escape(label) for label in sorted(unshipped, key=len, reverse=True))
+    pattern = re.compile(rf"(?<![\w-])({alternatives})(?![\w-])")
+    return [
+        f"{path}:{number}: {match.group(1)}"
+        for path, content in files
+        for number, line in enumerate(content.splitlines(), 1)
+        for match in pattern.finditer(line)
+    ]
 
 
 def _shadow_problems(definitions) -> list[str]:
@@ -97,6 +128,63 @@ class AgentSkillsProjectionTests(unittest.TestCase):
         for name in ("ulw-maestro", "omh-routing", "omh-doctor", "unknown-future-skill"):
             self.assertNotIn(name, names)
             self.assertEqual(skill_portability(name), PORTABILITY_HERMES_ONLY)
+
+    def test_portable_files_name_no_skill_the_portable_projection_does_not_ship(self):
+        """A portable host is never told to load a skill it does not have.
+
+        A Do Not Use When line that hands its request only to such skills is
+        dropped by `_target_definition`; any other sentence naming one is
+        rewritten through `portable_overrides`. This reads every body and
+        reference the projection ships, so a sentence that reaches it by any
+        other field or by a reference fails here by path and line.
+        """
+        from omh.skills.render import agent_skill_reference_templates, agent_skill_templates
+
+        self.maxDiff = None  # every offending path and line, not the first one
+        unshipped = _unshipped_portable_labels()
+        self.assertIn("omh-browser", unshipped, "the gate below would read nothing it is known to need")
+        files = [
+            *((f"{template.name}/SKILL.md", template.content) for template in agent_skill_templates()),
+            *(
+                (f"{template.skill_name}/{template.relative_path}", template.content)
+                for template in agent_skill_reference_templates()
+            ),
+        ]
+        self.assertEqual(
+            _unshipped_label_mentions(files, unshipped),
+            [],
+            "a portable body or reference names a skill only the Hermes projection ships: drop the Do Not Use "
+            "When line or rewrite the sentence through portable_overrides",
+        )
+
+    def test_the_label_gate_names_a_planted_label_and_the_projection_drops_a_pure_pointer(self):
+        # The gate's precision is part of the contract: a Hermes-only label in
+        # a field no rule filters, and in a Do Not Use When line that also
+        # names a shipped sibling, is named by line; a line that hands its
+        # request only to a Hermes-only sibling never reaches the body.
+        from dataclasses import replace
+
+        from omh.skills.catalog import installable_skill_definitions
+        from omh.skills.render import agent_skill_template
+
+        definition = next(d for d in installable_skill_definitions() if d.name == "spend-gate")
+        self.assertNotIn("do_not_use_when", definition.portable_overrides)
+        self.assertNotIn("final_checklist", definition.portable_overrides)
+        pointer = "The ask is a page chore; use `browser-operator`."
+        mixed = "The ask is a page chore or a report sort; use `browser-operator` or `feedback-triage`."
+        planted = replace(
+            definition,
+            final_checklist=(*definition.final_checklist, "The page was checked with `omh-browser` first."),
+            do_not_use_when=(*definition.do_not_use_when, pointer, mixed),
+        )
+        content = agent_skill_template(planted).content
+        mentions = _unshipped_label_mentions([("omh-spend-gate/SKILL.md", content)], _unshipped_portable_labels())
+        self.assertEqual(len(mentions), 2, mentions)
+        self.assertEqual({mention.rsplit(": ", 1)[1] for mention in mentions}, {"omh-browser"})
+        self.assertIn("- The ask is a page chore or a report sort; use `omh-browser` or `omh-feedback-triage`.\n", content)
+        self.assertIn("- The page was checked with `omh-browser` first.\n", content)
+        self.assertNotIn("The ask is a page chore;", content)
+        self.assertEqual(_unshipped_label_mentions([("x", "omh-skill-health omh-skill-scout")], frozenset({"omh-skill"})), [])
 
     def test_hermes_projection_byte_stable(self):
         """The only gate that sees a skill BODY change, so it has to name the body.

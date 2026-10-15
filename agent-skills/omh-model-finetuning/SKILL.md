@@ -26,10 +26,8 @@ This is an OMH `model-finetuning` workflow skill, projected for Agent Skills hos
 
 ## Do Not Use When
 
-- The ask is onboarding a new model generation into OMH's routing, calibration, or pricing; use `omh-model-optimization`.
 - The ask is serving an existing model behind an endpoint or benchmarking that endpoint; use `omh-inference-serving`.
 - The ask is building an application on top of a hosted model -- RAG, structured output, prompt versions; use `omh-llm-app-dev`.
-- The ask is learning from an OMH run, a missed route, or a skill improvement candidate; use `omh-workflow-learning`.
 
 ## Examples
 

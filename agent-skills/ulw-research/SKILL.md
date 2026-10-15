@@ -31,7 +31,6 @@ This is an OMH `research` workflow skill, projected for Agent Skills hosts (Clau
 - The user needs coding execution, review, CI, or merge evidence rather than research synthesis.
 - The requested output is a typed candidate list or acquisition status without factual synthesis; use `omh-source-finder`.
 - The user needs a market, customer, or pricing decision brief with evidence-versus-inference treatment; use `omh-research-brief`.
-- The user asks for recurring monitoring, a source inbox, or Scout/Analyst/Briefer operations; use `omh-research-department`.
 - One cited retrieval round settles the question and no reference implementation needs reading; use `omh-web-research`.
 
 ## Examples

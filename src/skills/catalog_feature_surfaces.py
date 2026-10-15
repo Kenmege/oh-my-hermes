@@ -239,6 +239,10 @@ _FEATURE_SURFACE_SKILLS = (
             "do not keep this secret",
         ),
         portable_overrides={
+            # `omh-memory-sync` ships only on Hermes.
+            "description": (
+                "Project fact to remember across future sessions: capture one bounded durable project or product memory candidate through explicit remember, refuse, or defer review; for a past decision use decision-recall.",
+            ),
             "safety_rules": (
                 "An OMH project-memory candidate is prepared local context only, not an approved record or native host-memory mutation. External provider/vector and host context is not_omh_reviewed and can nominate a candidate only.",
                 "Do not claim connector, gateway, runtime, file generation, memory mutation, or host automation evidence from prepared guidance.",
@@ -247,6 +251,7 @@ _FEATURE_SURFACE_SKILLS = (
             ),
         },
         portable_override_shadows={
+            "description": "665cad64b43113a52b3f7a3bd5840245a1e83a67938ca67400409c6292f27924",
             "safety_rules": "1339e73ae4df4feb34e2bfe93e42f0e6945e8a83176c0602b6778b2842ffc354",
         },
     ),

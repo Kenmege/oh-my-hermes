@@ -879,10 +879,20 @@ _DEFINITIONS = [
             "why_this_exists": (
                 "`context` exists to reduce repository terminology drift without creating a second machine store or a vocabulary router: the host can answer lookups, facilitate dependency-aware alignment, and project approved results into existing review and handoff boundaries.",
             ),
+            # `memory-sync` and the `oh-my-hermes` router ship only on Hermes:
+            # the memory line keeps its shipped sibling, the router line goes.
+            "do_not_use_when": (
+                "A safe one-term definition or source lookup can be answered directly; use the read-only lookup mode and do not enter the full context interview.",
+                "The request is broad ambiguity with no project-language conflict; use `deep-interview`.",
+                "The unresolved decision is empirical and a cheap isolated experiment can answer it; use `decision-prototype` and keep the frontier for the rest.",
+                "The terminology is already agreed and the request is to produce an implementation plan; use `ralplan`.",
+                "The user wants to capture or curate general retained memory rather than repository terminology; use `memory-new`.",
+            ),
         },
         portable_override_shadows={
             "artifact_expectations": "dc56fbd317ef90eb197d2c2dc13a2b61256bd7ca6a7803a0eb97145ff53eb8ea",
             "why_this_exists": "b23be8117064150f5887e70b61b08eb0f812e9eff3b2f01a3d71a1fe969333b1",
+            "do_not_use_when": "3b17f84789c419a6c8752097a76abc36d1bb155ac2d7aae7d4d1f500e282253e",
         },
     ),
     SkillDefinition(
@@ -5890,6 +5900,19 @@ _DEFINITIONS = [
             "guidelines from what keeps going wrong",
             "best practices from agent traces",
         ),
+        # `workflow-learning` ships only on Hermes, so the portable rule keeps
+        # every clause but the pointer to it.
+        portable_overrides={
+            "safety_rules": (
+                "Do not silently mutate skills, prompts, AGENTS.md, docs, memory, or catalog data from a distillation result.",
+                "Do not promote one-off preferences, weak anecdotes, or stale traces into global rules.",
+                "Keep observed sources, inferred principles, candidate wording, review state, and implementation patches separate.",
+                f"On Hermes, when the destination is the user's own Hermes skills, an approved candidate lands through `skill_manage`: report it landed only from a result that succeeded without `staged: true`, with the matching skill audit ledger entry as its record while the ledger is on, and report a staged write as waiting in `/skills pending` for the person's own `/skills approve <id>` under their `skills.write_approval` setting. OMH-managed skills are generated from OMH's catalog and are never the destination. {OMH_MANAGED_SKILL_CLAUSE}",
+            ),
+        },
+        portable_override_shadows={
+            "safety_rules": "846d65a779c77afbd5953070cca064db7b5bd222bfe7a68fefed2fa1560cdc43",
+        },
     ),
     SkillDefinition(
         "codebase-onboarding",
@@ -11657,10 +11680,16 @@ _DEFINITIONS.append(
             "what will this order really cost with fees",
         ),
         # Outside Hermes there is no `hermes chat -q`, no `pending_approval`
-        # status, and no OMH browser adapter, so the portable body states the
-        # same rules without them; the native tools it keeps carry the presence
-        # rule.
+        # status, and no OMH browser adapter or `omh-browser` skill, so the
+        # portable body states the same rules without them; the native tools
+        # it keeps carry the presence rule.
         portable_overrides={
+            "why_this_exists": (
+                "`spend-gate` exists because money movement had at most one native guard, on one rail: where Hermes' saved-card "
+                "fill is present it asks before filling a card and refuses when nobody can confirm, while an HTTP 402 call, a "
+                "wallet transfer, a booking, or a paid data endpoint had no pre-spend check, no receipt rule, and no cap. "
+                "`omh-provider-profile-posture` claims no payment at all.",
+            ),
             "safety_rules": (
                 "Show the pre-spend card and get the person's typed confirmation before any money moves, whether or not Hermes shows an approval prompt of its own; a host prompt is additional evidence, never a replacement, and a prompt that did not appear is no confirmation.",
                 "Never spend from a run nobody can answer -- a scheduled job, a webhook, an API-server or single-query run, a background or kanban worker, or a delegated subagent; prepare the card and hand it to the person's next interactive turn.",
@@ -11683,6 +11712,7 @@ _DEFINITIONS.append(
             ),
         },
         portable_override_shadows={
+            "why_this_exists": "c8b03b72083abd5b3aafed300c94226fbc80c5745381d4eadbaf2c839738e87f",
             "safety_rules": "d129b5ae92892a6201935789e7e719a141b16fa74627c20b498151d016792a99",
             "quality_bar": "c71cfec761afcb8140cc8c8a2235e97b548be85abfe07ce6c7e7da2ccae0ef71",
         },

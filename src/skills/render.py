@@ -478,7 +478,7 @@ def _frontmatter(
         from .catalog_portable import PORTABILITY_REQUIRES_OMH_CLI, skill_portability
 
         if definition:
-            description = agent_frontmatter_description(definition)
+            description = agent_frontmatter_description(_target_definition(definition, target))
         if not 1 <= len(description) <= 1024:
             raise ValueError(f"{name}: Agent Skills description must be 1-1024 characters")
         if skill_portability(name) == PORTABILITY_REQUIRES_OMH_CLI:
@@ -2712,6 +2712,25 @@ def _target_definition(
         lines = getattr(definition, honoured)
         if any(isinstance(line, line_type) for line in lines):
             definition = replace(definition, **{honoured: tuple(line for line in lines if not isinstance(line, line_type))})
+    # A Do Not Use When line hands its request to the catalog siblings it
+    # names. When none of them ships in this projection, the line sends the
+    # host to a skill it cannot load, so it is dropped here the way a
+    # `HermesSkillLine` is. A line that also names a shipped sibling stays, as
+    # does an unshipped label in any other field; the label gate in
+    # `tests/test_agent_skills_projection.py` fails on those until a
+    # `portable_overrides` entry rewrites the section without it.
+    from .catalog_portable import portable_skill_names
+
+    shipped = frozenset(portable_skill_names())
+    installed = _installable_skill_names()
+
+    def _hands_off_to_unshipped_only(line: str) -> bool:
+        named = {name for name in _BACKTICKED_SKILL_NAME.findall(line) if name in installed}
+        return bool(named) and all(omh_skill_display_name(name) not in shipped for name in named)
+
+    kept = tuple(line for line in definition.do_not_use_when if not _hands_off_to_unshipped_only(line))
+    if len(kept) != len(definition.do_not_use_when):
+        definition = replace(definition, do_not_use_when=kept)
     overrides = definition.portable_overrides
     return replace(definition, **{
         field: "\n".join(lines) if isinstance(getattr(definition, field), str) else lines

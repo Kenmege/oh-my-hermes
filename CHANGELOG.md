@@ -4,6 +4,22 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **A portable host is no longer told to load a skill only Hermes ships.**
+  The Agent Skills projection now drops a Do Not Use When line when every
+  sibling it names ships only in the Hermes projection, the way it already
+  dropped a line that names a skill Hermes bundles. The rule reads the
+  shipping set, so a line comes back once one of its siblings ships in the
+  portable projection. Four sentences said more than the
+  pointer, so they are rewritten for that projection only. `ulw-context`
+  keeps its memory boundary and names only `omh-memory-new`. `omh-rules-distill`
+  keeps its landing rule without the pointer to `omh-workflow-learning`.
+  `omh-spend-gate`'s reason no longer names `omh-browser`. `omh-memory-new`'s
+  portable description no longer names `omh-memory-sync`; the portable
+  frontmatter now reads the description through the same projection, so an
+  override reaches it. A new gate reads the labels each projection ships and
+  fails when a portable body or reference names one the portable projection
+  does not ship. Hermes bodies, references and their digests do not change.
+
 - **spend-gate and data-share-review admit the same requests on the router
   and the in-session hint, whatever courtesy opener is used.** Four readers
   of a request's opening -- spend-gate's clause rule, data-share-review's
