@@ -20,10 +20,11 @@ All notable changes will be documented here.
   under `--run-verification`, runs the unit's declared checks on that commit.
   The dispatcher's commits and checks run inside the unit's write fence (the
   child does not), and the lane refuses before the child starts when no fence
-  can be proven or the unit's branch is not checked out. A new file is
-  committed only inside the unit's `file_scope`; one outside it (a `.env`, a
-  build artifact) is never committed and is named in the record, and the lane
-  refuses before the child when the failed attempt left one. The attempt's
+  can be proven or the unit's branch is not checked out. A new file -- a
+  tracked file moved to a new path included -- is committed only inside the
+  unit's `file_scope`; one outside it (a `.env`, a build artifact) is never
+  committed and is named in the record, and the lane refuses before the child
+  when the failed attempt left one. The attempt's
   `unit_state` is `verified` only when the child changed something, all of it
   was committed, and those checks ran on it and passed. `fanout status
   --wait`'s documented codes and bounds, and the deadline `ulw-maestro` names,

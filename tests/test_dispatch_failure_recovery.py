@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shlex
 import subprocess
@@ -1070,6 +1071,77 @@ class HermesRecoverySettlementTests(unittest.TestCase):
         self.assertEqual(child.calls, [])
         self.assertEqual(attempt["pre_existing_commit"]["left_uncommitted"], ["secret.env"])
         self.assertEqual(head, sha)
+
+    def _refused_move(self, target: str) -> None:
+        def move_and_edit(worktree: Path) -> None:
+            (worktree / target).parent.mkdir(parents=True, exist_ok=True)
+            _git(worktree, "mv", "seed.txt", target)
+            (worktree / target).write_text("OPENAI_API_KEY=fixture-not-a-key\n", encoding="utf-8")
+
+        child = _editing_child()
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            # Copies too: config cannot turn rename detection back on.
+            _git(repo, "config", "diff.renames", "copies")
+            attempt = self._attempt(paths, repo, sha, contract, child,
+                                    runner=_limit_after(move_and_edit), run_verification=True)
+            head, _ = self._branch(repo)
+
+        self.assertEqual(child.calls, [])
+        self.assertEqual(attempt["reason_code"], "untracked_leftovers")
+        self.assertEqual(attempt["pre_existing_commit"]["left_uncommitted"], [target])
+        self.assertEqual(head, sha)
+
+    def test_a_tracked_file_moved_out_of_the_scope_is_judged_as_a_new_file(self) -> None:
+        self._refused_move(".env")
+
+    def test_a_tracked_file_moved_into_an_out_of_scope_directory_is_judged_as_a_new_file(self) -> None:
+        self._refused_move("conf/prod.env")
+
+    def test_a_move_into_the_scope_records_both_of_its_paths(self) -> None:
+        def move_in(worktree: Path) -> None:
+            (worktree / "src" / "core").mkdir(parents=True, exist_ok=True)
+            _git(worktree, "mv", "seed.txt", "src/core/seed.txt")
+
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            _git(repo, "config", "diff.renames", "copies")
+            attempt = self._attempt(paths, repo, sha, contract, _editing_child(),
+                                    runner=_limit_after(move_in), run_verification=True)
+
+        self.assertEqual(attempt["pre_existing_commit"]["paths"], ["seed.txt", "src/core/seed.txt"])
+        self.assertEqual(attempt["pre_existing_commit"]["left_uncommitted"], [])
+
+    def test_a_name_that_is_not_utf8_is_committed_or_named_never_dropped(self) -> None:
+        in_scope, out_of_scope = b"src/core/caf\xe9.txt", b"bad\xff.env"
+
+        def child(**kwargs):
+            root = os.fsencode(kwargs["cwd"])
+            for name in (b"src/core/fix.txt", in_scope, out_of_scope):
+                target = os.path.join(root, name)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, "wb") as stream:
+                    stream.write(b"fixed\n")
+            return {"status": "completed", "exit_code": 0, "run_id": kwargs["run_id"]}
+
+        with TemporaryDirectory() as tmp:
+            try:
+                with open(os.path.join(os.fsencode(tmp), b"probe\xff"), "wb"):
+                    pass
+            except (OSError, UnicodeError):
+                self.skipTest("this filesystem refuses file names that are not UTF-8 (APFS does)")
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, child, run_verification=True)
+            tree = subprocess.run(["git", "ls-tree", "-r", "-z", "--name-only", "agent/core"], cwd=repo,
+                                  capture_output=True, check=True).stdout.split(b"\0")
+
+        self.assertIn(in_scope, tree)
+        self.assertNotIn(out_of_scope, tree)
+        self.assertEqual(attempt["recovery_commit"]["paths"], ["src/core/caf\ufffd.txt", "src/core/fix.txt"])
+        self.assertEqual(attempt["recovery_commit"]["left_uncommitted"], ["bad\ufffd.env"])
+        self.assertEqual(
+            (attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "out_of_scope_files")
+        )
 
     def test_a_child_that_writes_outside_the_scope_is_not_verified(self) -> None:
         with TemporaryDirectory() as tmp:

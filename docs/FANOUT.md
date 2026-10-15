@@ -1284,9 +1284,12 @@ funnel into the same engine.
     - **What gets committed.** Every change to a tracked file, and a new file
       only inside the unit's `file_scope`. A new file outside it -- untracked
       and not ignored, or in the index but never committed, the
-      intent-to-add entries the failed-unit probe writes included -- is never
-      committed, because it may be a secret or a build artifact. Each commit
-      record lists its `paths` and its `left_uncommitted` files, by name only.
+      intent-to-add entries the failed-unit probe writes and a tracked file
+      `git mv`'d to a new path included (rename and copy detection are off,
+      whatever `diff.renames` says) -- is never committed, because it may be
+      a secret or a build artifact. Each commit record lists its `paths` and
+      its `left_uncommitted` files, by name only; a name that is not UTF-8 is
+      committed or left out by its exact bytes and shown with U+FFFD.
       Such a file left by the failed attempt makes the lane refuse before the
       child (`untracked_leftovers`), changing nothing; one the child wrote
       stays out of the recovery commit and the attempt is not verified

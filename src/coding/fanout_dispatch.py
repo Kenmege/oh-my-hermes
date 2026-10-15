@@ -3418,20 +3418,28 @@ def _commit_recovery_edits(
     A worktree whose HEAD is not the unit branch fails at `branch` before
     anything is staged, so the commit cannot land on another branch.
     """
+    # Bytes in, decoded with `surrogateescape`: a file name that is not UTF-8
+    # then round-trips to the same bytes for `lexists` and `git add`, where
+    # `replace` would turn it into a name no file has.
     def git(argv: list[str]) -> tuple[int | None, str]:
         try:
-            completed = runner(argv, cwd=str(worktree), text=True, errors="replace", capture_output=True, timeout=60)
+            completed = runner(argv, cwd=str(worktree), capture_output=True, timeout=60)
             code = int(getattr(completed, "returncode", 1))
-            stdout = getattr(completed, "stdout", "") or ""
+            stdout = getattr(completed, "stdout", b"") or b""
         except (OSError, subprocess.SubprocessError, ValueError, TypeError):
             return None, ""
-        return code, stdout if isinstance(stdout, str) else stdout.decode("utf-8", "replace")
+        return code, stdout if isinstance(stdout, str) else stdout.decode("utf-8", "surrogateescape")
 
     def failed(step: str, code: int | None, reason: str) -> dict[str, Any]:
         return {"status": "failed", "step": step, "exit_code": code, "reason": reason}
 
     def names(output: str) -> list[str]:
         return sorted({name for name in output.split("\0") if name})
+
+    def shown(paths: Sequence[str]) -> list[str]:
+        # What a record carries: such a name's undecodable bytes read U+FFFD,
+        # so no record holds a lone surrogate.
+        return [path.encode("utf-8", "surrogateescape").decode("utf-8", "replace") for path in paths]
 
     code, head_ref = git(["git", "symbolic-ref", "-q", "HEAD"])
     if code != 0 or head_ref.strip() != f"refs/heads/{branch}":
@@ -3442,9 +3450,12 @@ def _commit_recovery_edits(
     # New in the index but not in HEAD, intent-to-add entries included: the
     # dispatcher's own probe of a failed unit marks every new file that way
     # (`git add -N -- .`), which hides it from `--others` and would let
-    # `add -u` below stage it.
+    # `add -u` below stage it. `--no-renames`, which also turns off copy
+    # detection and outranks `diff.renames`: a `git mv seed.txt .env` would
+    # otherwise list as a rename, never as an addition, and `add -u` would
+    # stage the new path's content.
     staged_code, staged_new = git(
-        ["git", "diff", "--cached", "--ita-visible-in-index", "--name-only", "--diff-filter=A", "-z"]
+        ["git", "diff", "--cached", "--no-renames", "--ita-visible-in-index", "--name-only", "--diff-filter=A", "-z"]
     )
     if staged_code != 0:
         return failed("status", staged_code, "git could not list the unit worktree's staged files")
@@ -3453,18 +3464,19 @@ def _commit_recovery_edits(
     inside = sorted({path for path in candidates if any(path == entry or path.startswith(entry + "/") for entry in scope)})
     outside = sorted(set(candidates) - set(inside))
     if refuse_out_of_scope and outside:
-        return {"status": "refused", "paths": [], "left_uncommitted": outside}
+        return {"status": "refused", "paths": [], "left_uncommitted": shown(outside)}
     code, _ = git(["git", "add", "-u"])
     if code != 0:
         return failed("add", code, "git could not stage the unit worktree's tracked changes")
-    # A file staged and then deleted is gone after the reset; literal
-    # pathspecs, so a name holding `*` or `:(` stages that one file.
+    # A file staged and then deleted is no longer on disk; literal pathspecs,
+    # so a name holding `*` or `:(` stages that one file.
     inside = [path for path in inside if os.path.lexists(worktree / path)]
     if inside:
         code, _ = git(["git", "--literal-pathspecs", "add", "--", *inside])
         if code != 0:
             return failed("add", code, "git could not stage the new files inside the unit's scope")
-    code, staged = git(["git", "diff", "--cached", "--name-only", "-z"])
+    # Both sides of a move are named, the same way the addition was found.
+    code, staged = git(["git", "diff", "--cached", "--no-renames", "--name-only", "-z"])
     if code != 0:
         return failed("status", code, "git could not list what was staged")
     committed = names(staged)
@@ -3472,15 +3484,15 @@ def _commit_recovery_edits(
         code, _ = git(["git", "commit", "-q", "-m", message])
         if code != 0:
             return {**failed("commit", code, "git commit did not complete in the unit worktree"),
-                    "left_uncommitted": outside}
+                    "left_uncommitted": shown(outside)}
     code, head = git(["git", "rev-parse", "HEAD"])
     if code != 0 or not re.fullmatch(r"[0-9a-f]{40}", head.strip()):
         return failed("head", code, "git could not read the unit branch's commit")
     return {
         "status": "committed" if committed else "nothing_to_commit",
         "head_sha": head.strip(),
-        "paths": committed,
-        "left_uncommitted": outside,
+        "paths": shown(committed),
+        "left_uncommitted": shown(outside),
     }
 
 
