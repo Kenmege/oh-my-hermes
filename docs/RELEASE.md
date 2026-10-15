@@ -127,7 +127,10 @@ record real-host admission evidence in
 Run the named tests and `omh release product-readiness --json`; do not count a
 skipped real-host fixture or local declaration conformance as runtime evidence.
 Keep the OMH-owned `requires_hermes` key; do not move it into the host-reserved
-`hermes:` namespace.
+`hermes:` namespace. The **Detached fork** entry in
+[`CONTEXT.md`](../CONTEXT.md) records a residual only the floor still has (a
+background-review or `/btw` fork's turn end on Hermes 0.21.1) and why the
+floor was not raised to close it.
 
 For existing installs, run `omh update` to regenerate managed bundle hashes
 rather than copying plugin files by hand. Check the required versus running
