@@ -92,6 +92,30 @@ class CommandEchoTests(unittest.TestCase):
         echoes = [entry for entry in app.transcript.blocks if isinstance(entry, CommandBlock)]
         self.assertEqual([entry.command for entry in echoes], ["/usage", "/usage"])
 
+    def test_two_commands_out_at_once_each_print_under_their_own_echo(self) -> None:
+        # Hermes' slash.exec runs a CLI worker and can take seconds, so a second command often goes before the first
+        # one answers; the answer finds its command through the call that asked, whichever order they come in.
+        for order in ((1, 2), (2, 1)):
+            with self.subTest(order=order):
+                app, client = make_app()
+                send(app, "/usage")
+                send(app, "/skills list")
+                said = {1: "USAGE: 12k tokens today", 2: "SKILLS: omh-plan, omh-review"}
+                for call in order:
+                    app._on_response(Response(call, {"output": said[call]}, None))
+                under = {part: block.command for block in app.transcript.blocks if isinstance(block, CommandBlock)
+                         for part, _level in block.parts}
+                self.assertEqual(under, {said[1]: "/usage", said[2]: "/skills list"})
+                self.assertTrue(all(block.done for block in app.transcript.blocks if isinstance(block, CommandBlock)))
+
+    def test_a_notice_from_outside_a_command_is_not_its_output(self) -> None:
+        app, _client = make_app()
+        send(app, "/usage")  # still waiting for Hermes
+        app._on_error_event("The gateway reported an error.")  # between turns: a notice of its own
+        echo = next(block for block in app.transcript.blocks if isinstance(block, CommandBlock))
+        self.assertEqual(echo.parts, [])
+        self.assertIsInstance(last(app), NoticeBlock)
+
     def test_a_prompt_typed_in_plan_mode_is_no_command_and_is_not_echoed(self) -> None:
         app, client = make_app()
         app.plan_mode = True

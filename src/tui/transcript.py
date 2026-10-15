@@ -678,6 +678,9 @@ class Transcript:
         self.dropped = 0  # blocks BLOCK_CAP dropped from the front
         # Blocks about a live one (a steer, an answer to Hermes), waiting for a block boundary (`add_steer`).
         self._held: list[Block] = []
+        # The command whose output is being written: a notice or an output lands under its echo while it is open.
+        # `add_command` sets it; the app points it at the command whose handler or call answer is running.
+        self.command: CommandBlock | None = None
         # Moves with every change to what `live_lines` draws; its last answer is kept with the version, width,
         # row limit and theme it was for, so a frame that changed nothing (a spinner tick) renders nothing.
         self._version = 0
@@ -748,24 +751,27 @@ class Transcript:
         self._version += 1
 
     def add_notice(self, text: str, level: str = NOTICE_INFO) -> None:
-        """A notice; while a command's echo is open (the last block), it is that command's output instead."""
-        command = self._live(CommandBlock)
+        """A notice; while `command`'s echo is open, it is that command's output instead."""
+        command = self._open_command()
         if command is not None:
             command.parts.append((text, level))
             self._version += 1
             return
         self._append(NoticeBlock(text, level))
 
-    def add_command(self, command: str) -> None:
-        """Echo a command the person ran; what it prints lands under it until `close_command`."""
-        self._append(CommandBlock(command))
+    def add_command(self, command: str) -> CommandBlock:
+        """Echo a command the person ran and make it `command`: what it prints lands under it until `close_command`."""
+        block = CommandBlock(command)
+        self._append(block)
+        self.command = block
+        return block
 
     def add_output(self, text: str, level: str = NOTICE_INFO, *, command: str = "", whole: bool = False) -> None:
         """A command's output: under its open echo, or, once that echo has closed, under a repeat of `command`.
 
         With no echo open and no `command` named, it is a notice.
         """
-        open_command = self._live(CommandBlock)
+        open_command = self._open_command()
         if open_command is not None:
             open_command.parts.append((text, level))
             open_command.whole = open_command.whole or whole
@@ -780,10 +786,10 @@ class Transcript:
         tools = sum(len(block.tools) for block in self.blocks[self._turn_start :] if isinstance(block, ToolGroup))
         self._append(TurnSummaryBlock(max(seconds, 0.0), tools, output_tokens))
 
-    def close_command(self) -> None:
-        """The open command is over: its echo and output leave the live region at the next take."""
-        command = self._live(CommandBlock)
-        if command is not None:
+    def close_command(self, block: CommandBlock | None = None) -> None:
+        """A command is over (`block`, or the open `command`): its echo and output leave the live region at the next take."""
+        command = block if block is not None else self._open_command()
+        if command is not None and not command.done:
             command.done = True
             self._write_held()  # a steer sent with /steer goes under its echo
             self._version += 1
@@ -817,6 +823,15 @@ class Transcript:
         last = self.blocks[-1] if self.blocks else None
         if isinstance(last, kind) and not last.done:
             return last
+        return None
+
+    def _open_command(self) -> CommandBlock | None:
+        """`command` while its echo is open and this transcript's; None otherwise."""
+        block = self.command
+        if block is None or block.done:
+            return None
+        if (self.blocks and self.blocks[-1] is block) or any(held is block for held in self._held):
+            return block
         return None
 
     def _close_live(self) -> None:

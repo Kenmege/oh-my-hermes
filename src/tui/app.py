@@ -68,7 +68,8 @@ from __future__ import annotations
 
 import base64
 from collections import deque
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 import errno
 import json
@@ -177,6 +178,7 @@ from .transcript import (
     STEER_QUEUED,
     STEER_REFUSED,
     AssistantBlock,
+    CommandBlock,
     NoticeBlock,
     SteerBlock,
     Transcript,
@@ -441,7 +443,9 @@ class _Pending:
     on_result: Callable[[dict[str, Any]], None]
     on_error: Callable[[dict[str, Any]], bool] | None = None
     expires_at: float = math.inf  # on the app's clock: `_expire_calls` forgets the call then
-    for_command: bool = False  # made while a command ran: the command's echo stays open until it is answered
+    # The command it was made for (its handler, or the answer to one of its calls, was running): what its answer
+    # says lands under that command's echo, which stays open until every call made for it is answered.
+    command: CommandBlock | None = None
 
 
 class QueuedLine(NamedTuple):
@@ -933,11 +937,10 @@ class App(ModesMixin, AgentViewMixin):
         self.turn_unknown_count = 0
         # Every undeclared type a notice has named, for the life of this TUI and its gateway, whatever the session.
         self.unknown_named: set[str] = set()
+        # While a slash command the person typed runs (its handler, or the answer to a call made for it), a call made
+        # is that command's (`Transcript.command` says which), and its echo stays open until every such call is
+        # answered (`_run_slash`).
         self.pending: dict[int, _Pending] = {}
-        # While a slash command the person typed runs (its handler, or the handler of a call it made), a call made
-        # is the command's, and its echo stays open until every such call is answered (`_run_slash`).
-        self.in_command = False
-        self.command_calls = 0
         self.menu_index = 0
         self.pager: Pager | None = None
         self.resized_while_paging = False
@@ -1376,9 +1379,7 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice(f"The OMH TUI did not send {method}: {error}.", NOTICE_ERROR)
             return
         expires_at = self.clock() + CALL_ANSWER_SECONDS_BY_METHOD.get(method, CALL_ANSWER_SECONDS)
-        self.pending[request_id] = _Pending(method, on_result, on_error, expires_at, self.in_command)
-        if self.in_command:
-            self.command_calls += 1
+        self.pending[request_id] = _Pending(method, on_result, on_error, expires_at, self.transcript.command)
 
     def _expire_calls(self) -> None:
         """Forget every call unanswered past its `expires_at`, here and in the client, saying so for most.
@@ -1393,15 +1394,25 @@ class App(ModesMixin, AgentViewMixin):
             self.client.forget(request_id)
             if call.method not in QUIET_EXPIRY_METHODS:
                 seconds = CALL_ANSWER_SECONDS_BY_METHOD.get(call.method, CALL_ANSWER_SECONDS)
-                self.transcript.add_notice(CALL_EXPIRED_NOTICE.format(method=call.method, seconds=seconds), NOTICE_WARN)
+                with self._for_command(call.command):  # under the echo of the command it was made for
+                    self.transcript.add_notice(CALL_EXPIRED_NOTICE.format(method=call.method, seconds=seconds), NOTICE_WARN)
             self._command_call_done(call)
 
+    @contextmanager
+    def _for_command(self, command: CommandBlock | None) -> Iterator[None]:
+        """While inside, what is said lands under `command`'s echo while it is open, and a call made is its call."""
+        transcript = self.transcript
+        outer, transcript.command = transcript.command, command
+        try:
+            yield
+        finally:
+            transcript.command = outer
+
     def _command_call_done(self, call: _Pending) -> None:
-        """A command's call is answered or forgotten: once none is left, the command's echo closes."""
-        if call.for_command:
-            self.command_calls = max(self.command_calls - 1, 0)
-            if not self.command_calls:
-                self.transcript.close_command()
+        """A command's call is answered or forgotten: once none made for it is left, the command's echo closes."""
+        command = call.command
+        if command is not None and not any(pending.command is command for pending in self.pending.values()):
+            self.transcript.close_command(command)
 
     def _respond(self, answer: Answer) -> None:
         try:
@@ -1434,11 +1445,10 @@ class App(ModesMixin, AgentViewMixin):
         pending = self.pending.pop(response.id, None)
         if pending is None:
             return
-        outer, self.in_command = self.in_command, pending.for_command  # a call made from here is the command's too
         try:
-            self._answer_call(pending, response)
+            with self._for_command(pending.command):  # a call made from here is the command's too
+                self._answer_call(pending, response)
         finally:
-            self.in_command = outer
             self._command_call_done(pending)
 
     def _answer_call(self, pending: _Pending, response: Response) -> None:
@@ -1455,7 +1465,7 @@ class App(ModesMixin, AgentViewMixin):
         if pending.on_error is not None and pending.on_error(error):
             return
         message = as_text(error.get("message")) or "refused"
-        if pending.for_command:
+        if pending.command is not None:
             self.transcript.add_notice(plain_sentence(message), NOTICE_ERROR)  # under the command's echo
             return
         phrase = CALL_FAILED_PHRASES.get(pending.method, f"complete {pending.method}")
@@ -2370,14 +2380,15 @@ class App(ModesMixin, AgentViewMixin):
 
     def _as_command(self, echo: str, run: Callable[[], None]) -> None:
         """Echo `echo` and run `run` as that command: its calls keep the echo open until they are answered."""
-        self.transcript.add_command(echo)
-        outer, self.in_command, self.command_calls = self.in_command, True, 0
+        transcript = self.transcript
+        outer = transcript.command
+        block = transcript.add_command(echo)
         try:
             run()
         finally:
-            self.in_command = outer
-        if not self.command_calls:
-            self.transcript.close_command()
+            transcript.command = outer
+        if not any(pending.command is block for pending in self.pending.values()):
+            transcript.close_command(block)
 
     def _route_slash(self, invocation: SlashInvocation, depth: int) -> None:
         command = invocation.command

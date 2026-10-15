@@ -610,7 +610,8 @@ turned into a steer.
 
 A slash command you run is echoed in the transcript as `› /name arg` (but
 `/steer`, whose own row is its echo, so a steer never closes the tool call
-it is meant for), and what it prints stays there, under it after `⎿`, in the terminal's scrollback:
+it is meant for), and what it prints stays there, under it after `⎿`, in the terminal's scrollback
+(each command's output under its own echo, also when you send a second command before the first answers):
 a long output shows its first 12 rows and a count of the rest
 (`… +K lines · /history shows all`), and `/history` shows all of it. Nothing a
 command prints opens a pager; a pager opens only when you ask for one
