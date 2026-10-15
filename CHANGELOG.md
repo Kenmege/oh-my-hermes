@@ -51,8 +51,9 @@ All notable changes will be documented here.
   next line you send. The plan panel follows Hermes' `todo.updated` at once
   instead of waiting 2 to 8 s for the HUD's next poll. Every repaint is one
   synchronized update (DECSET 2026). While Hermes asks something, the mode row
-  names that question's keys and the working row no longer offers Esc for an
-  interrupt; the strip ends with `↓ agents`; a narrow approval keeps a key hint
+  names that question's keys, and neither row offers Esc for an interrupt
+  while anything else takes Esc (a question, a picker, the search, the agent
+  list, a picked steer or rewind, a draft); the strip ends with `↓ agents`; a narrow approval keeps a key hint
   and a wrapped command its indent; the banner is one row (the model is on the
   status line, the keys on the mode row) and a fresh session names the last one
   with its `/resume` command. Claude Code's names work: `/cost` and

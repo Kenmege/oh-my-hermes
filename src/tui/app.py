@@ -3134,6 +3134,18 @@ class App(ModesMixin, AgentViewMixin):
             strip=self._agent_strip(cols)[0] if strip is None else strip,
             say=say,
             say_style=say_style,
+            esc_interrupts=self._esc_interrupts(),
+        )
+
+    def _esc_interrupts(self) -> bool:
+        """Whether Esc interrupts the running turn now: nothing else takes it (`_escape`, and what has the keys).
+
+        The rows offer Esc for the interrupt only then, so the screen gives Esc one meaning: a question, a
+        picker, the search, the agent list, a picked steer or rewind, the `@` menu and a draft each take it.
+        """
+        return (
+            self._busy() and self._composer_open() and self.list_selected is None and not self.path_items
+            and self.agent_steer is None and self.rewind is None and not self.composer.text
         )
 
     # ── subagents ──
@@ -3178,7 +3190,7 @@ class App(ModesMixin, AgentViewMixin):
             elapsed = elapsed_text(now - (self.busy_since or now))
             tokens = self._turn_tokens()
             written = f" · ↓{compact_count(tokens)} tokens" if tokens else ""
-            interrupt = f" · {INTERRUPT_HINT}" if self.slot is None else ""  # a question gives Esc its own meaning
+            interrupt = f" · {INTERRUPT_HINT}" if self._esc_interrupts() else ""  # else Esc means something else now
             doing = working_spans(text, frame, self.theme)
             row = (Span(spinner, self.theme.accent), Span(" "), *doing,
                    Span(f" ({elapsed}{written}{interrupt})", self.theme.muted))

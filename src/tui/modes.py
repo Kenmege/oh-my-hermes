@@ -119,13 +119,15 @@ def mode_row_line(
     strip: Line = (),
     say: str = "",
     say_style: Style | None = None,
+    esc_interrupts: bool = True,
 ) -> Line:
     """The row under the composer frame: the mode's label (accept, plan), the agent strip, the keys that matter now, the effort.
 
     `strip` is the roster's strip while it holds an agent, drawn from cell
     `strip_column(mode, theme)` on. `say`, when given, is what the next key
     will do (a rewind waiting to be sent, Esc's second press) and stands in
-    for the hint, in `say_style`. The label always survives, and the strip
+    for the hint, in `say_style`. During a turn the hint offers Esc for the
+    interrupt only while `esc_interrupts` says Esc does that now. The label always survives, and the strip
     after it: the hint is cut from its end first, and the effort on the right
     goes only when even the label and the strip beside it do not fit.
     """
@@ -139,7 +141,7 @@ def mode_row_line(
     elif mode in (MODE_PLAN, MODE_ACCEPT_PLAN):
         hint = PLAN_HINT
     elif busy:
-        keys = [INTERRUPT_KEY_HINT, STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
+        keys = [*([INTERRUPT_KEY_HINT] if esc_interrupts else []), STEER_KEY_HINT if keyboard_protocol else STEER_COMMAND_HINT]
         hint = " · ".join(keys + ([QUEUED_KEY_HINT] if queued else []))
     else:
         hint = IDLE_KEYS_HINT

@@ -328,11 +328,13 @@ class StripTests(unittest.TestCase):
         self.assertTrue(mode_row(app).startswith(STRIP), mode_row(app))
 
     def test_typing_never_changes_the_strip(self) -> None:
+        # The hint after it may change (a draft takes Esc from the interrupt); the strip does not.
         app, _client = agent_app()
-        before = mode_row(app)
+        strip = mode_row(app).partition(" · ")[0]
+        self.assertTrue(strip.endswith("↓ agents"), strip)
         for char in "what are they doing":
             app._on_input(Key(CHAR, char))
-        self.assertEqual(mode_row(app), before)
+        self.assertEqual(mode_row(app).partition(" · ")[0], strip)
 
 
 if __name__ == "__main__":

@@ -332,8 +332,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - The mode row names the input mode, or the keys that matter right now, and
   the reasoning effort when Hermes reports one. While Hermes asks something
   it names that question's keys (`←→ pick · enter confirms · d or esc
-  denies`) and the working row stops offering Esc for an interrupt, so Esc
-  means one thing on the screen. Both rules take the mode's
+  denies`). The working row and the mode row offer Esc for an interrupt only
+  while Esc would do that: not while a question, a picker, the history
+  search, the agent list, a picked steer or rewind, the `@` menu or a draft in
+  the composer takes Esc, so Esc means one thing on the screen. Both rules take the mode's
   glyph and colour, so the mode reads from the frame as well as the label.
   A short terminal drops the mode row first, then the lower rule; without the
   mode row the status line names the mode (`⏵⏵ accept`, `⏸ plan`) whenever it

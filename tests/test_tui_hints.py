@@ -53,6 +53,57 @@ class QuestionKeyTests(unittest.TestCase):
         self.assertIn("esc interrupt", mode_row(app))
 
 
+class EscMeaningTests(unittest.TestCase):
+    """Whatever has Esc during a turn, the screen offers Esc for one thing only: the interrupt only when Esc does it."""
+
+    def screen_says(self, app: App) -> str:
+        app._render()
+        return "\n".join(app.terminal.screen.lines())  # type: ignore[attr-defined]
+
+    def states(self) -> list[tuple[str, App, object]]:
+        from test_tui_agent_strip import STARTS, relay
+        from omh.tui.keys import CHAR, DOWN, Key
+
+        draft, client = make_app(busy=True, cols=100)
+        from test_tui_modes import type_text
+
+        type_text(draft, "a draft")  # Esc arms the clear
+        listed, listed_client = agent_app(busy=True, frames=[], cols=100)
+        relay(listed, STARTS)
+        listed._on_input(Key(DOWN))  # the agent list: Esc goes back
+        steering, steering_client = agent_app(busy=True, frames=[], cols=100)
+        relay(steering, STARTS)
+        steering._on_input(Key(DOWN))
+        steering._on_input(Key(CHAR, "s"))  # Esc cancels the steer
+        searching, searching_client = make_app(busy=True, cols=100)
+        searching.composer.history = ["an older prompt"]
+        searching._on_input(Key(CHAR, "r", ctrl=True))  # Esc cancels the search
+        return [("draft", draft, client), ("agent list", listed, listed_client),
+                ("agent steer", steering, steering_client), ("history search", searching, searching_client)]
+
+    def test_no_state_that_gives_esc_another_meaning_offers_it_for_the_interrupt(self) -> None:
+        from omh.tui.keys import ESCAPE, Key
+
+        for label, app, client in self.states():
+            with self.subTest(state=label):
+                said = self.screen_says(app)
+                self.assertNotIn("esc to interrupt", said)
+                self.assertNotIn("esc interrupt", said)
+                before = len(client.calls)  # type: ignore[attr-defined]
+                app._on_input(Key(ESCAPE))
+                self.assertNotIn("session.interrupt", [method for method, _ in client.calls[before:]])  # type: ignore[attr-defined]
+
+    def test_an_empty_composer_during_a_turn_offers_it_and_esc_does_it(self) -> None:
+        from omh.tui.keys import ESCAPE, Key
+
+        app, client = make_app(busy=True, cols=100)
+        said = self.screen_says(app)
+        self.assertIn("esc to interrupt", said)
+        self.assertIn("esc interrupt", said)
+        app._on_input(Key(ESCAPE))
+        self.assertEqual(client.calls[-1][0], "session.interrupt")
+
+
 class StripMarkTests(unittest.TestCase):
     def test_the_strips_last_mark_says_what_down_opens(self) -> None:
         self.assertEqual(OPEN_MARK, "↓ agents")
