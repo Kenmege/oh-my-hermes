@@ -34,7 +34,7 @@ from test_tui_app import (
 from omh.tui import app as app_module
 from omh.tui import gateway_contract as contract
 from omh.tui import modes as modes_module
-from omh.tui.app import ATTACH_LEFT_NOTICE, OSC52_COPY, SLOT_ARM_SECONDS, App, queue_lines
+from omh.tui.app import ATTACH_LEFT_NOTICE, OSC52_COPY, SLOT_ARM_SECONDS, App, QueuedLine, queue_lines
 from omh.tui.frame import MODE_ACCEPT, MODE_ACCEPT_PLAN, MODE_NORMAL, MODE_PLAN
 from omh.tui.gateway import Event, GatewayUnavailable, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, TAB, UP, Key, KeyDecoder, Paste
@@ -1634,7 +1634,7 @@ def composer_index(screen: list[str]) -> int:
 
 def queue(app: App, *prompts: str) -> None:
     for prompt in prompts:
-        app.queued.append((prompt, "", ""))
+        app.queued.append(QueuedLine(prompt))
 
 
 class QueueLinesTests(unittest.TestCase):
@@ -1815,14 +1815,14 @@ class QueueTests(unittest.TestCase):
     def test_recalled_prompts_go_as_one_text_and_only_a_first_line_command_runs(self) -> None:
         # What the recall docstring says Enter does with them: one submission, as for anything typed.
         app, client = make_app(busy=True)
-        app.queued.extend([("plain prompt", "", ""), ("a long skill prompt", "learn: the build", "/learn the build")])
+        app.queued.extend([QueuedLine("plain prompt"), QueuedLine("a long skill prompt", "learn: the build", "/learn the build")])
         app._on_input(Key(UP))
         app.turn_pending = False
         app._on_input(Key(ENTER))
         self.assertEqual(client.calls, [("prompt.submit", {"session_id": SID, "text": "plain prompt\n/learn the build"})])
 
         app, client = make_app(busy=True)
-        app.queued.extend([("a long skill prompt", "learn: the build", "/learn the build"), ("plain prompt", "", "")])
+        app.queued.extend([QueuedLine("a long skill prompt", "learn: the build", "/learn the build"), QueuedLine("plain prompt")])
         app._on_input(Key(UP))
         app.turn_pending = False
         app._on_input(Key(ENTER))
@@ -1844,8 +1844,8 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(
             list(app.queued),
             [
-                (PLAN_PROMPT, "/plan fix the flaky test", "fix the flaky test"),
-                ("a long skill prompt", "learn: the build", "/learn the build"),
+                QueuedLine(PLAN_PROMPT, "/plan fix the flaky test", "fix the flaky test"),
+                QueuedLine("a long skill prompt", "learn: the build", "/learn the build"),
             ],
         )
         rows = [line_text(line) for line in app._slot_lines(80, 24)]

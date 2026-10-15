@@ -33,7 +33,7 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
               "(earlier sessions' too, shared with hermes --tui), or move through an open completion menu"),
     ("Ctrl+R", "Searches the input history; Ctrl+R again finds an older match, Enter puts it in the composer, "
                "Esc leaves the composer as it was"),
-    ("↑", "On an empty composer with prompts queued, takes them all back into the composer to edit"),
+    ("↑", "On an empty composer with prompts queued, takes them back into the composer to edit; a queued shell line comes back on its own"),
     ("↓", "On an empty composer while the mode row shows subagents, opens the agent list under the composer"),
     ("← / →", "Move by a character; with Ctrl or Alt, by a word (Alt+B and Alt+F too)"),
     ("Home / End, Ctrl+A / Ctrl+E", "Go to the start or the end of the line"),

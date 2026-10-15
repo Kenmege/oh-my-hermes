@@ -37,7 +37,8 @@ is tracked from every `session.info` and written (id only, mode 0600) to
 memory unless Hermes' config explicitly asks for `interrupt` or `steer`.
 The queue is the TUI's own (the gateway has no call that withdraws a prompt):
 its prompts are listed above the composer's top rule, and Up on an empty
-composer takes all of them back into the composer.
+composer takes them back into the composer (a `!` line on its own, never
+joined to a prompt: `_recall_queue`).
 Ctrl+Enter and `/steer <text>` send what the person typed into the running
 turn (`session.steer`); the TUI steers nothing on its own. Text Hermes does
 not take as a steer joins the TUI's queue while the turn runs, whatever the
@@ -79,7 +80,7 @@ import sys
 import time
 from types import FrameType
 import unicodedata
-from typing import Any, Protocol, TextIO
+from typing import Any, NamedTuple, Protocol, TextIO
 
 from ..plugin_bundle.omh.hud_text import elapsed_text
 from ..commands.theme_picker import (
@@ -441,6 +442,19 @@ class _Pending:
     on_error: Callable[[dict[str, Any]], bool] | None = None
     expires_at: float = math.inf  # on the app's clock: `_expire_calls` forgets the call then
     for_command: bool = False  # made while a command ran: the command's echo stays open until it is answered
+
+
+class QueuedLine(NamedTuple):
+    """A line waiting for the running turn: what is sent, what the queue rows show, what Up puts back.
+
+    `shell` says it is a `!` line the person sent, which runs with `shell.exec`; only `_shell_line` sets it, so
+    a prompt whose text starts with `!` (a refused steer, a message Hermes composed) stays a prompt.
+    """
+
+    text: str
+    shown: str = ""  # "" shows `text`
+    typed: str = ""  # "" puts `text` back
+    shell: bool = False
 
 
 @dataclass(frozen=True)
@@ -909,8 +923,7 @@ class App(ModesMixin, AgentViewMixin):
         self.slot_arm_seconds = SLOT_ARM_SECONDS  # the open slot's arm delay, fixed as it opened
         self.slot_draft = ""
         self.waiting_requests: deque[ServerRequest] = deque()
-        # (text sent, text shown, text typed); "" shown or typed means the text sent.
-        self.queued: deque[tuple[str, str, str]] = deque()
+        self.queued: deque[QueuedLine] = deque()
         self.sticky = ""
         self.flushed_since_prompt = 0  # rows printed above the region since the last prompt was sent
         self.turn_pending = False  # a prompt went out and its turn has not started (or ended) yet
@@ -1358,6 +1371,9 @@ class App(ModesMixin, AgentViewMixin):
             request_id = self.client.request(method, params)
         except GatewayUnavailable as error:
             self._lose_gateway(str(error))
+            return
+        except ValueError as error:  # the gateway contract refused the call (`contract.call_problem`): nothing went out
+            self.transcript.add_notice(f"The OMH TUI did not send {method}: {error}.", NOTICE_ERROR)
             return
         expires_at = self.clock() + CALL_ANSWER_SECONDS_BY_METHOD.get(method, CALL_ANSWER_SECONDS)
         self.pending[request_id] = _Pending(method, on_result, on_error, expires_at, self.in_command)
@@ -2137,7 +2153,7 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice(NO_SESSION_NOTICE, NOTICE_WARN)
             return
         if self._busy() and (hold or self.busy_mode == BUSY_QUEUE):
-            self.queued.append((text, shown, typed))
+            self.queued.append(QueuedLine(text, shown, typed))
             return
         self._submit_prompt(text, shown)
 
@@ -2169,13 +2185,16 @@ class App(ModesMixin, AgentViewMixin):
         return False
 
     def _drain_queue(self) -> None:
-        """Send the next queued line: a prompt starts the next turn; a `!` line runs, and the one after waits for it."""
+        """Send the next queued line: a prompt starts the next turn; a `!` line runs, and the one after waits for it.
+
+        Which it is comes from the entry's `shell`, never from its text.
+        """
         if self.queued and self.sid:
-            text, shown, _typed = self.queued.popleft()
-            if text.startswith(SHELL_PREFIX):
-                self._run_shell(text[len(SHELL_PREFIX) :].strip(), drain_after=True, echo=shown)
+            line = self.queued.popleft()
+            if line.shell:
+                self._run_shell(line.text[len(SHELL_PREFIX) :].strip(), drain_after=True, echo=line.shown)
             else:
-                self._submit_prompt(text, shown, queued=True)
+                self._submit_prompt(line.text, line.shown, queued=True)
 
     # ── `!` shell lines ──
 
@@ -2189,7 +2208,7 @@ class App(ModesMixin, AgentViewMixin):
         if not command:
             self.transcript.add_notice(SHELL_USAGE, NOTICE_WARN)
         elif self._busy():
-            self.queued.append((text, echo, ""))
+            self.queued.append(QueuedLine(text, echo, shell=True))
         else:
             self._run_shell(command, echo=echo)
 
@@ -2235,7 +2254,7 @@ class App(ModesMixin, AgentViewMixin):
         return True
 
     def _recall_queue(self, event: Key | Paste) -> bool:
-        """Up on an empty composer takes every queued prompt back into it, one per line, and empties the queue.
+        """Up on an empty composer takes the queued prompts back into it, one per line, up to a queued `!` line.
 
         Each comes back as what was typed for it: a prompt a slash command
         built as that command line, a prompt plan mode wrapped as the text
@@ -2244,12 +2263,19 @@ class App(ModesMixin, AgentViewMixin):
         goes as that command, whose text is everything after the slash, later
         lines included; otherwise it goes as one prompt (in plan mode as
         `/plan <text>`), with a command on any later line as plain text in it.
+        A `!` line is never merged with another line, since sent as one text
+        the shell would run them all: when it is next in the queue it comes
+        back alone, and otherwise the prompts before it come back and it stays
+        queued, with everything after it. A line sent again while the turn
+        still runs joins the queue at its end.
         With nothing queued Up is the composer's: it walks the input history.
         """
         if not isinstance(event, Key) or event.name != UP or self.composer.text or not self.queued:
             return False
-        self._set_composer("\n".join(typed or text for text, _shown, typed in self.queued))
-        self.queued.clear()
+        taken = [self.queued.popleft()]
+        while self.queued and not taken[0].shell and not self.queued[0].shell:
+            taken.append(self.queued.popleft())
+        self._set_composer("\n".join(line.typed or line.text for line in taken))
         return True
 
     # ── steering ──
@@ -2747,7 +2773,7 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_notice("Nothing is queued.")
             return
         rows = ["Queued (sent one at a time as each turn ends):"]
-        rows += [f"{number}. {shown or text}" for number, (text, shown, _typed) in enumerate(self.queued, start=1)]
+        rows += [f"{number}. {line.shown or line.text}" for number, line in enumerate(self.queued, start=1)]
         self.transcript.add_notice("\n".join(rows))
 
     def _logs(self, arg: str) -> None:
@@ -3116,7 +3142,7 @@ class App(ModesMixin, AgentViewMixin):
         # Nothing has the keys: the queued prompts take the slot's last rows, right above the composer's
         # top rule, Hermes' notification the row above them, and the menu or the panel gets the rows left. A
         # question or the picker hides them, since Up then does not edit the queue.
-        queue = queue_lines([shown or text for text, shown, _typed in self.queued], cols, cap, self.theme)
+        queue = queue_lines([line.shown or line.text for line in self.queued], cols, cap, self.theme)
         notice = [self.notification.line(cols, self.theme)] if self.notification and cap > len(queue) else []
         return self._menu_or_panel_lines(cols, cap - len(queue) - len(notice)) + notice + queue
 
