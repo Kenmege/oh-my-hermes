@@ -334,7 +334,8 @@ slash command's output in the transcript, runs a `!` line in Hermes' shell
 (never sent to the model), shares your input history with `hermes --tui`
 (Ctrl+R searches it), rewinds to an earlier prompt (Esc Esc or `/rewind`),
 lets you interrupt (`x`) or steer (`s`) one subagent from the agent list,
-and marks outcomes on green and red bands (the light colours and the bands
+lists an approval's or a question's choices where the prompt was, and marks
+outcomes on green and red bands (the light colours and the bands
 need a terminal that reports its background, or `/theme light|dark`). Bare
 `hermes` keeps opening Hermes' own terminal:
 
@@ -349,8 +350,18 @@ omh
       <sub><b>An edit, its diff, and the plan above the prompt.</b></sub>
     </td>
     <td width="50%" align="center">
-      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete, with deny selected by default"><br>
-      <sub><b>Hermes asks; you decide. Deny is the default.</b></sub>
+      <img src="assets/omh-tui-approval.png" alt="The OMH TUI asking before a recursive delete: the choices sit where the prompt was, deny highlighted, under a denied command on a red band and an allowed one on a green band"><br>
+      <sub><b>Hermes asks; you pick. Deny is the default.</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="assets/omh-tui-clarify.png" alt="The OMH TUI at start, with its logo, while Hermes asks a question with numbered choices and a row to type your own answer"><br>
+      <sub><b>A question's choices replace the prompt; type to answer instead.</b></sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="assets/omh-tui-light.png" alt="The same approval on a light terminal, with light red and green bands"><br>
+      <sub><b>On a light terminal, light bands.</b></sub>
     </td>
   </tr>
 </table>
