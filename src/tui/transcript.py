@@ -40,7 +40,13 @@ so a reply that ends there leaves nothing to take back) and fully at
 flush boundary; thinking flushes as ONE collapsed row ("▸ thought for 4.2s");
 a tool group flushes when the next block arrives (message text, thinking) or
 at `message.complete`, as "⏺ Tool calls (N)" (plus "parallel ×K" when K tools
-ran at once) and one line per tool; a group of one call is that one line. An edit tool whose `tool.complete` carries
+ran at once) and one line per tool; a group of one call is that one line. A
+`tool.generating` row (`◌`) is a draft: a `tool.start` takes over the first
+unclaimed draft of its name, or else the first unclaimed draft of the
+`tool_call` bridge (`gateway_contract.TOOL_CALL_BRIDGE`), whose call starts
+under the name of the tool it reached. A draft no start took is dropped when
+its group closes, so it is never written or counted, and a group left with no
+calls shows nothing. An edit tool whose `tool.complete` carries
 an `inline_diff` shows that diff under its row (`diff_view.py`): the first
 `PREVIEW_LINES` diff lines and a count of the rest, which `/history` (and
 `history_lines` with details) shows in full. Lines rendered at one width stay as they were taken; a
@@ -69,6 +75,7 @@ from typing import Any
 from ..plugin_bundle.omh.hud_text import elapsed_text
 from .diff_view import DIFF_FILE, FILE_ARROW, DiffLine, diff_rows, parse_inline_diff
 from .gateway import Event
+from .gateway_contract import TOOL_CALL_BRIDGE
 from .markdown import MarkdownState, clean_text, render_lines, wrap_prefixed
 from .style import Line, Span, Style, fill
 from .theme import Theme, on_band
@@ -428,11 +435,11 @@ def _find_row(group: ToolGroup, tool_id: str) -> ToolRow | None:
 
 
 def _drafted_row(group: ToolGroup, name: str) -> ToolRow | None:
-    """The first `tool.generating` row for `name` that no `tool.start` has claimed yet."""
-    for row in group.tools:
-        if row.status == TOOL_GENERATING and not row.tool_id and row.name == name:
-            return row
-    return None
+    """The first `tool.generating` row for `name` that no `tool.start` has claimed yet, else the first unclaimed
+    draft of Hermes' `tool_call` bridge, whose call starts under the name of the tool it reached."""
+    drafts = [row for row in group.tools if row.status == TOOL_GENERATING and not row.tool_id]
+    named = next((row for row in drafts if row.name == name), None)
+    return named or next((row for row in drafts if row.name == TOOL_CALL_BRIDGE), None)
 
 
 # ── rendering ─────────────────────────────────────────────────────────────
@@ -668,7 +675,9 @@ def _output_rows(tool: ToolRow, width: int, theme: Theme, expanded: bool) -> lis
 
 
 def _tool_rows(group: ToolGroup, width: int, theme: Theme, expanded: bool, now: float | None = None) -> list[Line]:
-    header = [Span(TOOL_GROUP_MARK, theme.tool), Span(f"Tool calls ({len(group.tools)})", theme.label)]
+    if not group.tools:
+        return []  # every row it had was a draft no call took (`_close_live`)
+    header =[Span(TOOL_GROUP_MARK, theme.tool), Span(f"Tool calls ({len(group.tools)})", theme.label)]
     if group.parallel > 1:
         header.append(Span(f"{COLUMN_GAP}parallel ×{group.parallel}", theme.accent))
     # One call needs no header: its own row already says what ran.
@@ -932,8 +941,11 @@ class Transcript:
         if isinstance(last, ThinkingBlock):
             last.ended_at = self._clock()
         if isinstance(last, ToolGroup):
+            # A draft no `tool.start` took never became a call: Hermes discarded that streamed attempt, or the turn
+            # ended while the model was still writing it. Only a call that started can be cut off.
+            last.tools = [row for row in last.tools if row.status != TOOL_GENERATING]
             for row in last.tools:
-                if row.status in (TOOL_GENERATING, TOOL_RUNNING):
+                if row.status == TOOL_RUNNING:
                     row.status = TOOL_INTERRUPTED
 
     def _append(self, block: Block) -> None:

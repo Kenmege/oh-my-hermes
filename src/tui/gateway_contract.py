@@ -151,6 +151,15 @@ UNREAD_EVENTS = frozenset({
     "voice.partial", "voice.status", "voice.transcript", "wake.detected",
 })
 
+# `tool.generating` (`contracts/events.py` ToolGeneratingPayload: "The model is emitting a tool call's arguments")
+# carries a name and no id, sent as soon as the stream names a call, and two kinds of them name no call that runs
+# under that name. A streamed attempt whose arguments Hermes cannot repair is discarded and retried after its
+# `tool.generating` (`agent/turn_truncation.py::_retry_truncated_tool_call`), and nothing follows for it. A deferred
+# tool is called through the `tool_call` bridge (`tools/tool_search_catalog.py` TOOL_CALL_NAME): the stream names the
+# bridge, the executor unwraps it (`agent/tool_executor.py::_unwrap_tool_search_call`), and `tool.start` and
+# `tool.complete` name the tool it reached, under the bridge call's own id.
+TOOL_CALL_BRIDGE = "tool_call"
+
 # `session.info` (and a create or resume answer's `info`), `contracts/common.py` `SessionLiveInfo`:
 # `yolo` (bool) is this session's approvals off, `reasoning_effort` (str, "" when unset) its effort.
 SESSION_INFO_YOLO = "yolo"

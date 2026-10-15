@@ -744,6 +744,95 @@ class ReasoningAndToolTests(LoopTestCase):
         self.assertEqual(sum(isinstance(block, AssistantBlock) for block in self.transcript.blocks), 1)
 
 
+class ToolDraftTests(LoopTestCase):
+    """`tool.generating` (a name, no id) drafts a placeholder row; only `tool.start` and `tool.complete` make calls.
+
+    Measured against Hermes 6c61c3e27d: a streamed attempt Hermes discards
+    (`turn_truncation._retry_truncated_tool_call`, arguments it cannot repair)
+    has sent its `tool.generating` and nothing after it, and a deferred tool
+    reached through the `tool_call` bridge drafts as `tool_call` and starts
+    under the name of the tool it reached (`tool_executor._unwrap_tool_search_call`).
+    """
+
+    def end_turn(self, seconds: float, status: str = "complete") -> list[str]:
+        self.step(ev("message.complete", text="", status=status))
+        self.transcript.add_turn_summary(seconds, None)
+        self.step()
+        return lines_text(self.taken)
+
+    def test_a_bridge_draft_becomes_the_call_it_reached_in_its_place(self) -> None:
+        self.step(ev("message.start"))
+        self.step(ev("tool.generating", name="tool_call"))
+        self.assertEqual(self.live(), ["  ◌ tool_call"])
+        self.step(ev("tool.start", tool_id="call_1", name="todo_list", context="planning 3 task(s)"))
+        self.assertEqual(self.live(), ["  ⏺ todo_list  planning 3 task(s)"])
+        self.step(ev("tool.complete", tool_id="call_1", name="todo_list", result={"todos": []}, duration_s=0.0))
+        taken = self.end_turn(2.0)
+        self.assertEqual(taken[0], "  ✓ todo_list  planning 3 task(s)  0.0s")
+        self.assertNotIn("tool_call", "\n".join(taken))
+        self.assertTrue(taken[-1].startswith("✻ 2s · 1 tool "), taken[-1])
+
+    def test_a_draft_of_the_same_name_is_claimed_before_a_bridge_draft(self) -> None:
+        self.step(ev("message.start"))
+        self.step(ev("tool.generating", name="tool_call"))
+        self.step(ev("tool.generating", name="read_file"))
+        self.step(ev("tool.start", tool_id="a", name="read_file", context="a.py"))
+        self.assertEqual(self.live(), ["⏺ Tool calls (2)", "  ◌ tool_call", "  ⏺ read_file  a.py"])
+        self.step(ev("tool.start", tool_id="b", name="todo_list", context="planning 1 task(s)"))
+        self.assertEqual(
+            self.live(), ["⏺ Tool calls (2)  parallel ×2", "  ⏺ todo_list  planning 1 task(s)", "  ⏺ read_file  a.py"]
+        )
+
+    def test_a_streamed_attempt_hermes_discards_leaves_no_row_and_no_count(self) -> None:
+        self.step(ev("message.start"))
+        self.step(ev("tool.generating", name="write_file"))  # the attempt Hermes discards
+        self.step(ev("tool.generating", name="write_file"))  # the attempt it keeps
+        self.step(ev("tool.start", tool_id="w1", name="write_file", context="notes.md"))
+        self.step(ev("tool.complete", tool_id="w1", name="write_file", result={"bytes_written": 3}, duration_s=0.1))
+        taken = self.end_turn(4.0)
+        self.assertEqual(taken[0], "  ✓ write_file  notes.md  0.1s")
+        self.assertNotIn("◌", "\n".join(taken))
+        self.assertNotIn("▪", "\n".join(taken))
+        self.assertTrue(taken[-1].startswith("✻ 4s · 1 tool "), taken[-1])
+
+    def test_discarded_attempts_under_their_own_reasoning_leave_no_group_behind(self) -> None:
+        # The shape of the capture: each attempt sent its reasoning, then drafted the bridge and write_file.
+        self.step(ev("message.start"))
+        for attempt in range(4):
+            self.step(ev("reasoning.delta", text=f"plan it {attempt}"))
+            self.step(ev("tool.generating", name="tool_call"))
+            self.step(ev("tool.generating", name="write_file"))
+        self.step(ev("reasoning.delta", text="plan it"))
+        self.step(ev("tool.generating", name="tool_call"))
+        self.step(ev("tool.start", tool_id="call_9", name="todo_list", context="planning 3 task(s)"))
+        self.step(ev("tool.complete", tool_id="call_9", name="todo_list", result={"todos": []}, duration_s=0.0))
+        taken = self.end_turn(12.0)
+        text = "\n".join(taken)
+        for absent in ("▪", "◌", "write_file", "tool_call", "Tool calls"):
+            self.assertNotIn(absent, text)
+        self.assertEqual(text.count("  ✓ todo_list  planning 3 task(s)  0.0s"), 1)
+        self.assertTrue(taken[-1].startswith("✻ 12s · 1 tool "), taken[-1])
+
+    def test_a_draft_that_never_starts_leaves_no_row(self) -> None:
+        for status in ("complete", "interrupted"):
+            with self.subTest(status=status):
+                self.setUp()
+                self.step(ev("message.start"))
+                self.step(ev("tool.generating", name="terminal"))
+                self.assertEqual(self.live(), ["  ◌ terminal"])
+                taken = self.end_turn(1.0, status)
+                self.assertNotIn("terminal", "\n".join(taken))
+                self.assertEqual(taken[-1].split("  ")[0], "✻ 1s")  # no tools to count
+
+    def test_a_call_the_turn_cut_off_while_it_ran_still_reads_as_interrupted_and_counts(self) -> None:
+        self.step(ev("message.start"))
+        self.step(ev("tool.generating", name="terminal"))
+        self.step(ev("tool.start", tool_id="t1", name="terminal", context="sleep 60"))
+        taken = self.end_turn(3.0, "interrupted")
+        self.assertEqual(taken[0], "  ▪ terminal  sleep 60")
+        self.assertTrue(taken[-1].startswith("✻ 3s · 1 tool "), taken[-1])
+
+
 class TurnEndTests(LoopTestCase):
     def test_interrupted_turn_keeps_the_partial_reply_and_says_so(self) -> None:
         self.user("Write the numbers from 1 to 300, one per line, nothing else.")
