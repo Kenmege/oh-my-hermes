@@ -1,6 +1,6 @@
 """Hermes' own session commands, where OMH would otherwise route over them.
 
-Two questions, each answered once, here, for the plugin's per-turn hook and
+Three questions, each answered once, here, for the plugin's per-turn hook and
 for `omh.routing` alike. Standalone, because the bundle may not import `omh`.
 
 `host_command_turn` -- did Hermes write this turn? Hermes' session commands
@@ -44,12 +44,23 @@ line is the person's own recurring instruction, so a person who types under a
 pasted heartbeat frame cannot be told from the host there. On a messaging
 gateway Hermes may put its own material before the frame
 (`gateway/run_inbound.py`, modelled in `jev_consent`): a Discord trigger note
-or a reply pointer, each closed by `]` and a blank line, channel-history
-backfill ending in `[New message]`, and a `[<name>] ` sender prefix in a
-shared session. Those are removed first. A host block that never closes --
-including a reply pointer whose quoted text itself holds `]` and a blank line,
-which is cut there -- leaves the turn a person's, which routes as it did
-before this module existed.
+or a reply pointer, each closed by `]` and a blank line (`v2026.9.7` writes
+the reply pointer outermost, hermes-agent 6c61c3e27d the trigger note), an
+attachment note closed the same way, channel-history backfill ending in
+`[New message]`, and a `[<name>] ` sender prefix in a shared session. Those
+are removed first; a reply pointer ends at the `"]` and blank line after its
+quoted text, not at a `]` inside it. A host block that never closes --
+including a reply pointer whose quoted text itself holds `"]` and a blank
+line, which is cut there -- leaves the turn a person's, which routes as it
+did before this module existed.
+
+`person_request_text` -- what did the person write? The same removal, read
+for routing: the hook's route hint and candidate line, the chat router and
+the wrapper read a turn's request through it, so the gateway material above
+never picks a workflow. A reply's quoted text is context, not the request,
+here as for the frame. The cut reply pointer above is the one way it fails:
+the quoted text after the cut is read as the person's, as all of it was
+before.
 
 `loop_timer_verdict` -- is this request a loop on a timer? "loop every 5
 minutes and check CI", `/loop 5m ...`, "every 10 minutes loop over the inbox"
@@ -103,7 +114,8 @@ from functools import lru_cache
 import re
 import unicodedata
 
-from .jev_consent import _BACKFILL_SEPARATOR, _HOST_BLOCK_END, _HOST_BLOCK_OPENERS, _SENDER_PREFIX
+from .jev_consent import BACKFILL_SEPARATOR, HOST_BLOCK_END, HOST_BLOCK_OPENERS, SENDER_PREFIX
+from .reference_regions import executable_routing_text
 
 
 @dataclass(frozen=True)
@@ -159,6 +171,18 @@ LOOP_TIMERS_ANSWERED_DIRECTLY = frozenset({LOOP_TIMER_NATIVE, LOOP_TIMER_CONSTRU
 # Set on the route hint payload when the verdict is one of those two, so the
 # candidate line, which ranks the catalog on its own, leaves the goal loop off.
 NATIVE_LOOP_CADENCE_HINT_KEY = "native_loop_cadence"
+
+# -- the gateway's material --------------------------------------------------
+# A reply pointer closes after the text it quotes (`[Replying to: "<text>"]`
+# and a blank line), so a `]` and a blank line inside the quote do not end it.
+# On the routing lexer's projection, which the loop verdict reads, the quote
+# and its marks are masked; there the first `]` and blank line is the close.
+_REPLY_POINTER = "[Replying to"
+_REPLY_POINTER_END = '"]\n\n'
+# A leading bracket that opens with a command sigil or an OMH skill label
+# (`[/plan] ...`, `[$loop] ...`, `[ulw-loop] ...`) is the person invoking
+# something, not a display name, and the router reads it as such.
+_INVOCATION_BRACKET = re.compile(r"\[\s*(?:/|\$|\./|(?:omh|ulw)[- ])", re.IGNORECASE)
 
 # -- the cadence -------------------------------------------------------------
 _TIMER_UNITS = frozenset(
@@ -322,8 +346,6 @@ _FOLDED_FRAMES = tuple(
     HostFrame(_fold(frame.opening), _fold(frame.next_line), frame.open_ended, _fold(frame.holds))
     for frame in HOST_COMMAND_TURN_FRAMES
 )
-_FOLDED_HOST_BLOCK_OPENERS = tuple(_fold(opener) for opener in _HOST_BLOCK_OPENERS)
-_FOLDED_BACKFILL_SEPARATOR = _fold(_BACKFILL_SEPARATOR)
 
 
 def _opens_with_frame(text: str) -> bool:
@@ -343,33 +365,63 @@ def _opens_with_frame(text: str) -> bool:
 
 
 def _after_gateway_material(text: str) -> str:
-    """The folded text after the backfill and host blocks a gateway prepends; a block
-    that never closes is left in place."""
-    if _FOLDED_BACKFILL_SEPARATOR in text:
-        text = text.rsplit(_FOLDED_BACKFILL_SEPARATOR, 1)[1]
+    """`text` after the backfill and host blocks a gateway prepends; a block that
+    never closes is left in place."""
+    if BACKFILL_SEPARATOR in text:
+        text = text.rsplit(BACKFILL_SEPARATOR, 1)[1]
     text = text.lstrip()
-    while text.startswith(_FOLDED_HOST_BLOCK_OPENERS):
-        end = text.find(_HOST_BLOCK_END)
+    while text.startswith(HOST_BLOCK_OPENERS):
+        end, block_end = -1, HOST_BLOCK_END
+        if text.startswith(_REPLY_POINTER):
+            end, block_end = text.find(_REPLY_POINTER_END), _REPLY_POINTER_END
+        if end == -1:
+            end, block_end = text.find(HOST_BLOCK_END), HOST_BLOCK_END
         if end == -1:
             break
-        text = text[end + len(_HOST_BLOCK_END):].lstrip()
+        text = text[end + len(block_end):].lstrip()
     return text
 
 
-def _host_command_turn(folded: str) -> bool:
-    text = _after_gateway_material(folded)
+def person_request_text(message: str) -> str:
+    """The words the person wrote in this turn, which is all OMH routes on.
+
+    The gateway material in the module docstring is removed: the backfill
+    before `[New message]`, each host block closed by `]` and a blank line
+    (the Discord trigger note, a reply pointer and the text it quotes, an
+    attachment note), and the `[<name>] ` sender prefix. A reply's quoted
+    text is context for the request, not part of it. Every leading bracket
+    of the sender prefix's shape goes, not just the first, so the result of
+    one call is unchanged by a second; a person's own leading `[WIP] ` tag
+    goes with it. Two shapes of bracket stay, because the router reads them
+    as the person's: one the routing lexer masks as a relay header
+    (`[REPORT] ...`), which would otherwise read as the person's own line,
+    and one that opens with a command sigil or an OMH skill label
+    (`[ulw-loop] ...`). A host block that never closes stays with everything
+    after it, and so does a host command turn's frame, which is what
+    `host_command_turn` reads.
+    """
+    text = _after_gateway_material(message)
+    while not text.startswith(HOST_BLOCK_OPENERS) and not _opens_with_frame(_fold(text)):
+        sender = SENDER_PREFIX.match(text)
+        if (
+            not sender
+            or _INVOCATION_BRACKET.match(text)
+            or not executable_routing_text(sender.group()).strip()
+        ):
+            break
+        text = _after_gateway_material(text[sender.end():])
+    return text
+
+
+def _host_command_turn(text: str) -> bool:
+    text = person_request_text(text)
     # A host block still open here never closed; what follows it is inside it.
-    if text.startswith(_FOLDED_HOST_BLOCK_OPENERS):
-        return False
-    if _opens_with_frame(text):
-        return True
-    sender = _SENDER_PREFIX.match(text)
-    return bool(sender) and _opens_with_frame(text[sender.end():])
+    return not text.startswith(HOST_BLOCK_OPENERS) and _opens_with_frame(_fold(text))
 
 
 def host_command_turn(message: object) -> bool:
     """Whether Hermes opened this turn from one of its own session-command templates."""
-    return isinstance(message, str) and _host_command_turn(_fold(message))
+    return isinstance(message, str) and _host_command_turn(message)
 
 
 def _interval_term(term: str) -> bool:
@@ -512,17 +564,17 @@ def _carries_goal(folded: str) -> bool:
 @lru_cache(maxsize=1024)
 def _loop_timer_reading(text: str) -> tuple[str, bool, str]:
     """The verdict on `text`, whether a typed `/loop` overrode a goal-loop verdict to reach it, and the loop's prompt."""
-    folded = _fold(text).strip()
+    text = text.strip()
     # A turn Hermes wrote is no request at all, whatever its template says.
-    if _host_command_turn(folded):
+    if _host_command_turn(text):
         return LOOP_TIMER_NONE, False, ""
     # Only the person's current message is read: not the backfill, and not a
     # host block that never closed, which still holds whatever follows it.
-    message = _after_gateway_material(folded)
-    if message.startswith(_FOLDED_HOST_BLOCK_OPENERS):
+    person = person_request_text(text)
+    if person.startswith(HOST_BLOCK_OPENERS):
         return LOOP_TIMER_NONE, False, ""
-    sender = _SENDER_PREFIX.match(message)
-    lead = _after_courtesy(message[sender.end():] if sender else message)
+    message = _fold(_after_gateway_material(text))
+    lead = _after_courtesy(_fold(person))
     # OMH's names stand where the loop word would: "/ulw-loop every 5m ..." has
     # the same shape as "/loop every 5m ...", and is OMH's.
     plain = _OMH_LOOP_NAME.sub("loop", _OMH_LOOP_LEAD_SIGIL.sub("", lead, count=1))

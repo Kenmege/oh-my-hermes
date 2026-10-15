@@ -4,6 +4,31 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **On a gateway turn OMH routes on the person's own words.** With Hermes'
+  Discord tools loaded, every Discord message reaches OMH behind
+  ``[Triggering message id: `…` — use as `message_id` for reply/react/pin via
+  the discord tools.]``; a reply adds a pointer that quotes the message replied
+  to, a channel can add backfilled history before `[New message]`, and a shared
+  session puts `[<name>] ` before the text. The in-session route hint, the
+  candidate line, the chat router and the wrapper read all of it as the
+  request. On `origin/main` 42ad99ec7 the trigger note alone changed the hint on
+  102 of 787 intervention cases and 41 of 748 negative controls, and the route
+  on 159 and 404 of them: "please pay with my card for the summary report" went
+  to `gateway-intent-card` instead of the pre-spend card, and "what is a web
+  crawler" dispatched `web-research`. One helper, `person_request_text`, now
+  removes that material, and every hint and router surface reads through it. A
+  reply's quoted text is context, not the request. Measured over both corpora
+  behind eight gateway prefixes, both Hermes orders of the note and the reply
+  pointer included, nothing differs from the bare request on the hint, the
+  route or the wrapper's next action. Routed bare, no route moved. The hint
+  moved to none on the 8 Hermes host frames in the corpora: the context brief
+  and the plugin tools' standalone fallbacks now skip a host turn, as the hook
+  and the wrapper already did. Two loop requests behind a sender prefix now
+  start the cycle, as the same request without the prefix does. A reply
+  pointer now ends at the `"]` after its quote, so a quote that holds `]` and
+  a blank line no longer leaks its tail. A leading bracket the router reads as
+  the person's own (`[REPORT]`, `[ulw-loop]`, `[/plan]`) stays.
+
 - **`omh chat route-hint` names no workflow on a turn Hermes wrote for its own
   session command.** On such a turn (a `/plan` frame, a `/loop` wakeup, a
   `/goal` continuation, a heartbeat, a goal-mode kanban nudge, a `/blueprint`

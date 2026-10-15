@@ -31,7 +31,7 @@ from ..active_workflow_context import active_workflow_context, render_active_wor
 from ..approval_bypass import record_approval_bypass
 from ..awareness_delivery import claim_route_guidance_delivery, record_awareness_delivery
 from ..context_budget_plan import context_budget_continuation, render_context_budget
-from ..hermes_session_commands import host_command_turn
+from ..hermes_session_commands import host_command_turn, person_request_text
 from ..host_context import record_active_main_agent_model
 from ..host_observation import observe_plugin_hook_call
 from ..installed_skills import installed_skill_names
@@ -585,8 +585,15 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
     # give them no `display_kind`; their template's opening frame is the record
     # (`hermes_session_commands`). Each already holds the host's instruction for the
     # turn, which a route hint would only contradict.
+    #
+    # On a person's turn the request is their own words: a messaging gateway's
+    # trigger note, reply pointer, backfill and sender prefix are Hermes'
+    # material, and read as part of the request they changed the hint on a
+    # Discord turn (`person_request_text`).
     request_message = (
-        "" if host_synthesized_turn(turn_display_kind) or host_command_turn(user_message) else user_message
+        ""
+        if host_synthesized_turn(turn_display_kind) or host_command_turn(user_message)
+        else person_request_text(user_message)
     )
     # `omh_jev_ask` sends data off the machine only when THIS turn's own
     # request names Jev. A notice, a tracker event, a delegated child, a turn

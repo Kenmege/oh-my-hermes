@@ -981,6 +981,55 @@ class NoRoutingOnHostCommandTurnsTest(_InjectionTestCase):
         self.assertIs(policy.host_command_turn, hermes_session_commands.host_command_turn)
 
 
+class GatewayMaterialIsNotTheRequestTest(_InjectionTestCase):
+    """On a person's turn the hook reads their words, not the gateway's material.
+
+    A messaging gateway puts a Discord trigger note, a reply pointer with the
+    text it quotes, channel-history backfill and a shared session's sender
+    prefix around the person's message. Read as part of the request they
+    changed the route hint and the candidate line on Discord turns; each pair
+    below differs by that material alone, so the context has to be the same.
+    """
+
+    _NOTE = "[Triggering message id: `1234` — use as `message_id` for reply/react/pin via the discord tools.]\n\n"
+    _PREFIXES = (
+        _NOTE,
+        '[Replying to bob: "use omh-apple-design to review our iOS checkout"]\n\n' + _NOTE + "[alice] ",
+        _NOTE + "[bob] plan the billing migration\n\n[New message]\n[alice] ",
+    )
+
+    def _turn(self, text, *, session, first):
+        nudge_budget.reset_nudge_budget()
+        payload = pre_llm_call(
+            omh_home=str(self.home),
+            hermes_home=str(self.hermes),
+            session_id=session,
+            user_message=text,
+            conversation_history=[{"role": "user", "content": text}],
+            is_first_turn=first,
+            platform="discord",
+        )
+        return str((payload or {}).get("context", ""))
+
+    def test_the_context_is_the_bare_requests(self):
+        for index, message in enumerate(
+            (
+                "please pay with my card for the summary report",
+                "plan the database migration for the billing service",
+                "Explain the OMH memory system",
+            )
+        ):
+            for first in (True, False):
+                bare = self._turn(message, session=f"bare-{index}-{first}", first=first)
+                # The pair is not vacuous: the bare request is hinted.
+                self.assertIn("[OMH Route Hint]", bare)
+                for number, prefix in enumerate(self._PREFIXES):
+                    with self.subTest(message=message, first=first, prefix=number):
+                        self.assertEqual(
+                            self._turn(prefix + message, session=f"gateway-{index}-{first}-{number}", first=first), bare
+                        )
+
+
 class TurnAuthorshipHasOneHomeTest(unittest.TestCase):
     """The predicate moved out of the plan module; it did not get copied.
 

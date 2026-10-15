@@ -604,7 +604,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # version question about another tool ("what version of node
             # supports fetch"), which that audit's first parallel-tools wording
             # moved from a direct answer to a clarify naming parallel-tools (1).
-            expected=748,
+            # Reading only the person's words on a gateway turn adds two: a
+            # concept question behind a Discord trigger note, which the note
+            # sent to web-research, and a thank-you under a reply quoting a
+            # skill request, which the quote turned into the catalog picker (2).
+            expected=750,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -831,7 +835,10 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # typed by a person, which stays on automation-blueprint (1). Its
             # review adds a share card with the person's card collection, which
             # stays on img-summary: "with my card" before a noun pays nothing (1).
-            expected=787,
+            # Reading only the person's words on a gateway turn adds a card
+            # payment behind a Discord trigger note, which the note sent to
+            # gateway-intent-card instead of the pre-spend card (1).
+            expected=788,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

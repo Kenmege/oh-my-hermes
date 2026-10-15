@@ -45,6 +45,7 @@ from ..plugin_bundle.omh.hermes_session_commands import (
     LOOP_TIMER_NATIVE,
     LOOP_TIMERS_ANSWERED_DIRECTLY,
     loop_timer_verdict,
+    person_request_text,
     typed_loop_sets_goal,
 )
 from ..plugin_bundle.omh.route_question_mode import ROUTE_QUESTION_MODE_OFF, route_question_mode_fields
@@ -1699,17 +1700,23 @@ def _enriched_route(
     `candidate_handoff`, or skill governance. The candidate-handoff feature was
     invisible on the one surface it was built for, found when a mocked Slack QA
     pass compared the tool payload against a direct router call.
+
+    Both read the person's own words (`person_request_text`): the trigger
+    note, reply pointer, backfill and sender prefix a messaging gateway puts
+    around them are Hermes' material, not the request. Only the route
+    question's digest reads the raw message, below.
     """
+    request = person_request_text(message)
     route = _contextual_design_direction_iteration_route(
-        message,
+        request,
         source=source,
         min_confidence=min_confidence,
         context=active_design_direction_iteration,
-    ) or _clone_jsonish(_route_chat_message_cached(message, source, limit, min_confidence))
+    ) or _clone_jsonish(_route_chat_message_cached(request, source, limit, min_confidence))
     # Attach the input script here rather than at each ChatRouteDecision site so
     # every route -- fast path, catalog path, and full scoring -- reports it.
-    route["input_language"] = routing_input_language(message)
-    matching_message = executable_routing_text(message)
+    route["input_language"] = routing_input_language(request)
+    matching_message = executable_routing_text(request)
     relevance = classify_clarification_relevance(matching_message)
     if (
         route.get("action") == "dispatch"
@@ -1835,7 +1842,7 @@ def route_question_decline_reason(route: Mapping[str, object], message: str) -> 
     question = route.get("route_question")
     if not isinstance(question, Mapping):
         return ""
-    executable = executable_routing_text(message)
+    executable = executable_routing_text(person_request_text(message))
     lowered = executable.strip().lower()
     if lowered and _is_plain_conversational_turn(_strip_direct_answer_soft_prefix(lowered)):
         return DECLINE_ACKNOWLEDGEMENT

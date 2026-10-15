@@ -75,6 +75,7 @@ from ..operator_productivity import build_agent_operator_productivity_card
 from ..system.paths import OmhPaths, resolve_paths
 from ..plugin_bundle.omh.awareness import workflow_context_card_for_workflow, workflow_context_cards
 from ..plugin_bundle.omh.degradation import degradation_chat_note
+from ..plugin_bundle.omh.hermes_session_commands import person_request_text
 from ..plugin_bundle.omh.memory_dreaming import read_latest_consolidation
 from ..probe import probe_capabilities
 from ..quickstart import build_quickstart_card
@@ -4852,7 +4853,8 @@ def build_chat_interaction_payload(
     # cached branch above never reaches this: it requires `paths is None`, and
     # without an OMH home there is no brief to read.
     if paths is not None:
-        payload = _with_memory_consolidation_notice(payload, paths, message)
+        # Its sentence takes the language of the person's own words.
+        payload = _with_memory_consolidation_notice(payload, paths, person_request_text(message))
     if routing_observation is not None:
         payload = enhance_chat_interaction_with_routing_observation(payload, routing_observation)
     return payload
@@ -5499,7 +5501,14 @@ def _build_chat_interaction_payload_uncached(
     design_direction_iteration_context: Mapping[str, object] | None = None,
     hermes_session_id: str = "",
 ) -> dict[str, object]:
-    message = extract_message_text(event_or_message)
+    turn_text = extract_message_text(event_or_message)
+    # Everything below reads the person's own words: a messaging gateway's
+    # trigger note, reply pointer, backfill and sender prefix are Hermes'
+    # material, and a reply's quoted text is context, not the request. The
+    # turn's own text goes only where it identifies the turn: the router, whose
+    # route question digest has to match, and the message hash, length and
+    # thread key.
+    message = person_request_text(turn_text)
     metadata = _source_metadata(event_or_message, source_metadata)
     # Files the platform attached to the message are declared media inputs
     # (name and media type only, never bytes); the coding handoff below has
@@ -5508,7 +5517,7 @@ def _build_chat_interaction_payload_uncached(
         input_representations_from_attachments(extract_event_attachments(event_or_message))
     )
     route_payload = public_chat_route_payload(
-        message,
+        turn_text,
         source=source,
         limit=limit,
         min_confidence=min_confidence,
@@ -5530,7 +5539,7 @@ def _build_chat_interaction_payload_uncached(
         source_metadata=metadata,
         paths=paths,
     )
-    base = _base_interaction(message, source=source, source_metadata=metadata, mode=resolved_mode, include_message=include_message)
+    base = _base_interaction(turn_text, source=source, source_metadata=metadata, mode=resolved_mode, include_message=include_message)
     if platform_envelope is not None:
         # One seam: every downstream card and the session store read
         # base["thread_key"], so the platform-identity key is installed here,

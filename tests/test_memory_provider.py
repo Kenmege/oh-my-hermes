@@ -1638,6 +1638,16 @@ class ChatNoticeOnEveryMessengerTests(unittest.TestCase):
             self.assertIn(self.NOTICE_EN, english)
             self.assertNotIn(self.NOTICE_KO, english)
 
+    def test_the_notice_speaks_the_persons_language_behind_a_gateway_note(self) -> None:
+        # Hermes' Discord trigger note is English whatever the person wrote; the
+        # notice takes its language from the person's own words.
+        note = "[Triggering message id: `1234` \u2014 use as `message_id` for reply/react/pin via the discord tools.]\n\n"
+        with TemporaryDirectory() as tmp:
+            _, paths = self._due_paths(Path(tmp))
+            body = str(self._payload(paths, "discord", note + self.KO_MESSAGE)["chat_response"]["body"])
+            self.assertIn(self.NOTICE_KO, body)
+            self.assertNotIn(self.NOTICE_EN, body)
+
     def test_the_routed_card_is_not_displaced(self) -> None:
         # Additive means additive: same kind, same headline, one extra sentence.
         with TemporaryDirectory() as tmp:

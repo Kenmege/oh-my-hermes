@@ -12,6 +12,7 @@ must keep routing.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import unittest
@@ -21,6 +22,7 @@ from _local_package import load_local_package
 load_local_package()
 
 from omh.plugin_bundle.omh.awareness import awareness_route_hint
+from omh.plugin_bundle.omh.context_brief import build_context_brief
 from omh.plugin_bundle.omh.hermes_session_commands import (
     HOST_COMMAND_TURN_FRAMES,
     LOOP_CONSTRUCT_PHRASES,
@@ -33,15 +35,18 @@ from omh.plugin_bundle.omh.hermes_session_commands import (
     host_command_turn,
     loop_timer_verdict,
     native_loop_prompt,
+    person_request_text,
     typed_loop_sets_goal,
 )
 from omh.plugin_bundle.omh.skill_shortlist import skill_candidates_for_turn
+from omh.plugin_bundle.omh.tools import chat_tool, recommend_tool
 from omh.routing.chat import (
     HOST_COMMAND_TURN_REASON,
     LOOP_CONSTRUCT_REASON,
     NATIVE_LOOP_CADENCE_REASON,
     TYPED_LOOP_GOAL_REASON,
     route_chat_message,
+    route_question_decline_reason,
 )
 from omh.routing.policy import LOOP_GOAL_GUARD, active_routing_guard_rules
 from omh.routing.query import RoutingQuery
@@ -121,9 +126,12 @@ _GOAL_TURN = "".join(HOST_TURNS["goal continuation"])
 # closed by `]` and a blank line, channel-history backfill ending in
 # `[New message]`, and a shared session's `[<name>] ` sender prefix. v2026.9.7
 # assembles them reply pointer outermost, then the trigger note, then the
-# sender-prefixed text.
+# sender-prefixed text; hermes-agent 6c61c3e27d puts the trigger note
+# outermost. A reply pointer closes at the `"]` after its quoted text, so a
+# quote that holds `]` and a blank line of its own is still one block.
 _NOTE = "[Triggering message id: `1234` — use as `message_id` for reply/react/pin via the discord tools.]\n\n"
 _REPLY = '[Replying to: "is CI green?"]\n\n'
+_REPLY_HOLDING_A_BLOCK_END = '[Replying to bob: "is CI green? [x]\n\nno, the deploy is red"]\n\n'
 _BACKFILL = "[bob] hi\n[carol] ok\n\n[New message]\n"
 # Backfill is earlier messages, never the request: a loop on a timer or OMH's
 # own name there decides nothing about the person's current message.
@@ -142,6 +150,8 @@ GATEWAY_PREFIXES = {
     "loop backfill+sender": _LOOP_BACKFILL + _SENDER,
     "goal loop backfill+sender": _GOAL_LOOP_BACKFILL + _SENDER,
     "reply+note+sender": _REPLY + _NOTE + _SENDER,
+    "note+reply+sender": _NOTE + _REPLY + _SENDER,
+    "reply holding a block end+sender": _REPLY_HOLDING_A_BLOCK_END + _SENDER,
     "slack sender": "[alice | Slack user <@U123ABC>] ",
 }
 
@@ -520,10 +530,13 @@ class HostCommandTurnTest(unittest.TestCase):
         # inside the pointer as far as anyone can tell.
         self.assertFalse(host_command_turn("[Replying to x] " + _GOAL_TURN))
         self.assertFalse(host_command_turn("[Replying to x] " + _PLAN))
-        # A reply pointer whose quoted text itself holds `]` and a blank line is
-        # cut at that point, and the turn reads as a person's: the documented
-        # way this fails, which routes as it did before the gate existed.
-        self.assertFalse(host_command_turn('[Replying to: "x ]\n\nfoo"]\n\n' + _PLAN))
+        # A reply pointer ends at the `"]` after its quoted text, so a `]` and a
+        # blank line inside the quote do not end it.
+        self.assertTrue(host_command_turn('[Replying to: "x ]\n\nfoo"]\n\n' + _PLAN))
+        # One whose quoted text itself holds `"]` and a blank line is cut at
+        # that point, and the turn reads as a person's: the documented way this
+        # fails, which routes as it did before the gate existed.
+        self.assertFalse(host_command_turn('[Replying to: "x "]\n\nfoo"]\n\n' + _PLAN))
 
     def test_a_blueprint_seed_is_the_hosts_whatever_it_fills_in(self):
         # Titles with an apostrophe, a plugin's `<plugin>:<key>`, an empty
@@ -919,6 +932,152 @@ class HostTurnRouterTest(unittest.TestCase):
                 self.assertEqual(
                     payload["route_hint"]["selected_workflow"], awareness_route_hint(body)["selected_workflow"]
                 )
+
+    def test_every_other_hint_reader_reads_no_request_on_a_host_turn(self):
+        # The context brief, and the plugin tools' fallbacks when the package
+        # is absent, read the hint without asking who wrote the turn; a
+        # `/blueprint` seed came back hinted `automation-blueprint` there. The
+        # hint asks for them now.
+        for name, (opening, body) in HOST_TURNS.items():
+            for prefix_name in ("none", "note+sender"):
+                turn = GATEWAY_PREFIXES[prefix_name] + opening + body
+                with self.subTest(turn=name, prefix=prefix_name):
+                    self.assertEqual(awareness_route_hint(turn)["hints"], [])
+                    self.assertEqual(build_context_brief(turn)["route_hint"]["hints"], [])
+                    self.assertEqual(
+                        [row["skill"] for row in recommend_tool._fallback_recommendations(turn, 3)],
+                        [row["skill"] for row in recommend_tool._FALLBACK_RECOMMENDATIONS],
+                    )
+                    fallback = chat_tool._fallback_interaction({}, turn, error="package_backend_unavailable")
+                    self.assertEqual(fallback["route_hint"]["primary_workflow"], "")
+        # Their bodies alone are still hinted, so the frame is what withholds it.
+        for name in ("plan", "blueprint", "goal continuation", "heartbeat", "loop wakeup"):
+            body = HOST_TURNS[name][1]
+            with self.subTest(body=name):
+                self.assertNotEqual(build_context_brief(body)["route_hint"]["hints"], [])
+                self.assertNotEqual(chat_tool._fallback_interaction({}, body, error="x")["route_hint"]["primary_workflow"], "")
+
+
+# Requests whose route or hint the gateway's material changed on `42ad99ec7`,
+# measured with the trigger note, a sender prefix and a quoted reply in front.
+_GATEWAY_MOVED_REQUESTS = (
+    "please pay with my card for the summary report",
+    "what is a web crawler",
+    "plan the database migration for the billing service",
+    "Explain the OMH memory system",
+    "the anti-slop policy changes next week",
+    "$loop every hour check CI",
+    "thanks, got it",
+)
+# A reply whose quoted text reads as a skill request and a catalog question.
+_SKILL_REPLY = '[Replying to bob: "use omh-apple-design to review our iOS checkout; which OMH workflows are there?"]\n\n'
+
+
+class PersonRequestTextTest(unittest.TestCase):
+    """What the person wrote, with the gateway's material around it removed."""
+
+    def test_the_gateway_material_goes_in_either_host_order(self):
+        for prefix_name, prefix in {**GATEWAY_PREFIXES, "skill reply": _SKILL_REPLY}.items():
+            with self.subTest(prefix=prefix_name):
+                self.assertEqual(person_request_text(prefix + "fix the login bug"), "fix the login bug")
+
+    def test_a_reply_pointer_ends_after_its_quote(self):
+        self.assertEqual(person_request_text(_REPLY_HOLDING_A_BLOCK_END + "fix it"), "fix it")
+        # A quote that itself holds `"]` and a blank line is cut there, and
+        # the rest of it reads as the person's: the documented residual.
+        self.assertEqual(
+            person_request_text('[Replying to: "a "]\n\nb"]\n\nfix it'), 'b"]\n\nfix it'
+        )
+
+    def test_brackets_the_router_reads_as_the_persons_stay(self):
+        for message in (
+            "[REPORT] ralplan finished the rollout plan",
+            "[planner -> reviewer] the plan is ready",
+            "[ulw-loop] every 5 minutes check CI",
+            "[omh-docs] explain the hooks",
+            "[/plan] add a dark mode toggle",
+            "[$loop] every hour check CI",
+        ):
+            with self.subTest(message=message):
+                self.assertEqual(person_request_text(message), message)
+                self.assertEqual(person_request_text(_NOTE + _SENDER + message), message)
+        # Any other leading bracket is a display name's shape, and goes.
+        self.assertEqual(person_request_text("[alice] [WIP] fix the login bug"), "fix the login bug")
+
+    def test_a_block_that_never_closes_and_a_frame_stay(self):
+        self.assertEqual(person_request_text("[Replying to x] fix it"), "[Replying to x] fix it")
+        self.assertEqual(person_request_text(_NOTE + "[Replying to x] fix it"), "[Replying to x] fix it")
+        for name, (opening, body) in HOST_TURNS.items():
+            with self.subTest(turn=name):
+                self.assertEqual(person_request_text(_NOTE + _SENDER + opening + body), (opening + body).lstrip())
+
+    def test_a_second_call_changes_nothing(self):
+        for prefix_name, prefix in GATEWAY_PREFIXES.items():
+            for message in (*_GATEWAY_MOVED_REQUESTS, "[WIP] fix it", "[REPORT] done", "[Replying to x] fix it"):
+                with self.subTest(prefix=prefix_name, message=message):
+                    once = person_request_text(prefix + message)
+                    self.assertEqual(person_request_text(once), once)
+
+
+class GatewayMaterialIsNotTheRequestTest(unittest.TestCase):
+    """Every hint and router surface reads a gateway turn as its bare request."""
+
+    def test_the_hint_and_the_router_read_the_bare_request(self):
+        for message in _GATEWAY_MOVED_REQUESTS:
+            hint = awareness_route_hint(message)
+            route = route_chat_message(message, source="discord")
+            for prefix_name, prefix in {**GATEWAY_PREFIXES, "skill reply": _SKILL_REPLY}.items():
+                with self.subTest(message=message, prefix=prefix_name):
+                    self.assertEqual(awareness_route_hint(prefix + message), hint)
+                    prefixed = route_chat_message(prefix + message, source="discord")
+                    for key in ("action", "selected_skill", "candidate_skill", "reason", "confidence"):
+                        self.assertEqual(prefixed[key], route[key], key)
+                    self.assertEqual(
+                        route_question_decline_reason(prefixed, prefix + message),
+                        route_question_decline_reason(route, message),
+                    )
+
+    def test_the_wrapper_reads_the_bare_request(self):
+        for message in _GATEWAY_MOVED_REQUESTS:
+            interaction = build_chat_interaction_payload(message, source="discord")
+            hint_payload = build_chat_route_hint_payload(message, source="discord")
+            for prefix_name in ("note", "note+reply+sender", "reply+note+sender", "note+backfill+sender"):
+                prefix = GATEWAY_PREFIXES[prefix_name]
+                for name, text in ((prefix_name, prefix + message), ("skill reply", _SKILL_REPLY + message)):
+                    with self.subTest(message=message, prefix=name):
+                        prefixed = build_chat_interaction_payload(text, source="discord")
+                        self.assertEqual(
+                            (prefixed["route"]["action"], prefixed["route"]["selected_skill"], prefixed["next_action"]),
+                            (interaction["route"]["action"], interaction["route"]["selected_skill"], interaction["next_action"]),
+                        )
+                        prefixed_hint = build_chat_route_hint_payload(text, source="discord")
+                        self.assertEqual(prefixed_hint["route_hint"], hint_payload["route_hint"])
+                        self.assertEqual(prefixed_hint["route_decision"], hint_payload["route_decision"])
+
+    def test_the_recommend_tool_ranks_the_bare_request(self):
+        def ranked(message: str) -> tuple[object, object]:
+            payload = json.loads(recommend_tool.omh_recommend_handler({"message": message}))
+            return [row["skill"] for row in payload["recommendations"]], payload["route"]
+
+        for message in _GATEWAY_MOVED_REQUESTS[:3]:
+            with self.subTest(message=message):
+                self.assertEqual(ranked(_NOTE + _REPLY + _SENDER + message), ranked(message))
+
+    def test_the_turn_still_names_its_own_hash(self):
+        # The wrapper identifies the turn it was handed: the hash and length
+        # are the turn's. The route question asks the same thing about it, but
+        # its digest is built from the turn too (`message_digest`), so it
+        # joins to the hash this payload reports, not to the bare request's.
+        message = "the anti-slop policy changes next week"
+        turn = _NOTE + message
+        payload = build_chat_interaction_payload(turn, source="discord")
+        bare = build_chat_interaction_payload(message, source="discord")
+        self.assertEqual(payload["message_sha256"], hashlib.sha256(turn.encode("utf-8")).hexdigest())
+        self.assertEqual(payload["message_length"], len(turn))
+        self.assertEqual(payload["route"]["route_question"]["questions"], bare["route"]["route_question"]["questions"])
+        self.assertNotEqual(
+            payload["route"]["route_question"]["question_digest"], bare["route"]["route_question"]["question_digest"]
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover - module entry point
