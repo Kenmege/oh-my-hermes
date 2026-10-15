@@ -31,7 +31,7 @@ from ..active_workflow_context import active_workflow_context, render_active_wor
 from ..approval_bypass import record_approval_bypass
 from ..awareness_delivery import claim_route_guidance_delivery, record_awareness_delivery
 from ..context_budget_plan import context_budget_continuation, render_context_budget
-from ..hermes_session_commands import host_command_turn
+from ..hermes_session_commands import host_command_turn, person_request_text
 from ..host_context import record_active_main_agent_model
 from ..host_observation import observe_plugin_hook_call
 from ..installed_skills import installed_skill_names
@@ -43,6 +43,7 @@ from ..runtime_reader import read_omh_activity, read_omh_hud, read_omh_status, r
 from ..skill_shortlist import claim_candidate_line, skill_candidate_line, skill_candidates_for_turn
 from .session_attendance import note_session_platform
 from .nudge_budget import session_is_delegated
+from ..jev_consent import MESSAGING_ATTENDED_PLATFORMS
 from ..jev_consent import clear_turn as clear_jev_turn
 from ..jev_consent import note_turn as note_jev_turn
 from ..todo_reconciliation import (
@@ -585,8 +586,21 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
     # give them no `display_kind`; their template's opening frame is the record
     # (`hermes_session_commands`). Each already holds the host's instruction for the
     # turn, which a route hint would only contradict.
+    #
+    # On a person's turn the request is their own words: a messaging gateway's
+    # trigger note, reply pointer, backfill and sender prefix are Hermes'
+    # material, and read as part of the request they changed the hint on a
+    # Discord turn (`person_request_text`). Hermes writes the sender prefix
+    # only on a messaging platform, so only there is a leading bracket read as
+    # one.
+    person_text = person_request_text(
+        user_message,
+        messaging=str(kwargs.get("platform") or "").strip().casefold() in MESSAGING_ATTENDED_PLATFORMS,
+    )
     request_message = (
-        "" if host_synthesized_turn(turn_display_kind) or host_command_turn(user_message) else user_message
+        ""
+        if host_synthesized_turn(turn_display_kind) or host_command_turn(user_message)
+        else person_text
     )
     # `omh_jev_ask` sends data off the machine only when THIS turn's own
     # request names Jev. A notice, a tracker event, a delegated child, a turn
@@ -728,7 +742,10 @@ def pre_llm_call(**kwargs) -> dict[str, object] | None:
         if claim_candidate_line(session_id, candidates):
             context_parts.append(skill_candidate_line(candidates))
 
-    marker = extract_role_marker(user_message)
+    # The person's own text, so a marker inside a quoted reply or backfill is
+    # someone else's and sets nothing. A host turn keeps its frame here, as it
+    # kept the whole turn before.
+    marker = extract_role_marker(person_text)
     if marker:
         role_payload = role_context_payload(marker)
         if role_payload["status"] == "available":

@@ -107,10 +107,10 @@ from .todo_store import (
     PLAN_STAGE_ACCEPTED,
     PLAN_STAGE_AWAITING_ACCEPTANCE,
     TODO_PLAN_STAGES,
-    _paired_with_prior,
-    _remove_todo_file,
     build_todo_record,
+    paired_with_prior,
     read_todo_record,
+    remove_todo_file,
     strip_control_characters,
     todo_items_digest,
     todo_path,
@@ -274,7 +274,7 @@ def project_native_todo(
         if not items:
             # The session's own file and nothing else: `clear_todo` would also
             # take the operator's unstamped home-wide record with it.
-            return "cleared" if _remove_todo_file(home, todo_path(home, session_ref)) else "already_absent"
+            return "cleared" if remove_todo_file(home, todo_path(home, session_ref)) else "already_absent"
         bound, dropped = bind_declared_items(
             items, prior, session_ref, hermes_home=Path(hermes_home)
         )
@@ -348,7 +348,7 @@ def native_todo_items(todos: object, prior_items: object = ()) -> list[dict[str,
         if status == "cancelled":
             item["blocked_reason"] = NATIVE_CANCELLED_REASON
         items.append(item)
-    for item, prior in _paired_with_prior(items, prior_items)[0]:
+    for item, prior in paired_with_prior(items, prior_items)[0]:
         reason = prior.get("blocked_reason") if prior else None
         if not isinstance(reason, str) or not reason.strip() or reason == NATIVE_CANCELLED_REASON:
             continue

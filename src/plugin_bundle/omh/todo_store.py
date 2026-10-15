@@ -352,7 +352,7 @@ def bind_done_items(
     Every binding field the writer sent is dropped first -- a reference it
     can send is a reference it can copy from a result it was shown. Each item
     is then matched to the stored item with the same text (items sharing a
-    text pair in order, `_paired_with_prior`), and:
+    text pair in order, `paired_with_prior`), and:
 
     * an item done before and done now keeps exactly what it had, including
       nothing: an item done before evidence existed stays unbound and counts
@@ -372,7 +372,7 @@ def bind_done_items(
     """
     if not isinstance(items, list):
         return items
-    pairs, _ = _paired_with_prior(items, prior_items)
+    pairs, _ = paired_with_prior(items, prior_items)
     entries: list[tuple[Any, dict[str, Any] | None]] = [
         (
             {key: value for key, value in item.items() if key not in TODO_DONE_BINDING_KEYS}
@@ -418,7 +418,7 @@ def bind_done_items(
     return bound
 
 
-def _paired_with_prior(
+def paired_with_prior(
     items: list[Any], prior_items: object
 ) -> tuple[list[tuple[Any, dict[str, Any] | None]], list[dict[str, Any]]]:
     """Each item with the stored item it continues, and the stored items none continues.
@@ -449,7 +449,7 @@ def dropped_bindings(
     """
     kept = [entry for entry in prior_dropped if isinstance(entry, dict)] if isinstance(prior_dropped, list) else []
     if isinstance(items, list):
-        for prior in _paired_with_prior(items, prior_items)[1]:
+        for prior in paired_with_prior(items, prior_items)[1]:
             checked = valid_evidence(prior.get("evidence"))
             if checked is not None:
                 kept.append({**checked, "dropped_at": now})
@@ -1238,15 +1238,15 @@ def clear_todo(omh_home: Path, session_ref: object = "") -> bool:
     always answers for what the caller was looking at and nothing else.
     """
     reference = strip_control_characters(session_ref)[:MAX_TODO_SESSION_REF_CHARS]
-    removed = _remove_todo_file(omh_home, todo_path(omh_home, reference))
+    removed = remove_todo_file(omh_home, todo_path(omh_home, reference))
     if reference:
         legacy = todo_path(omh_home)
         if _stamped_session_ref(legacy) in {"", reference}:
-            removed = _remove_todo_file(omh_home, legacy) or removed
+            removed = remove_todo_file(omh_home, legacy) or removed
     return removed
 
 
-def _remove_todo_file(omh_home: Path, destination: Path) -> bool:
+def remove_todo_file(omh_home: Path, destination: Path) -> bool:
     _reject_symlink_ancestry(destination, root=omh_home)
     if not destination.is_file() or destination.is_symlink():
         return False
