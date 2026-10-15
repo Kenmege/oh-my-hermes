@@ -16,8 +16,10 @@ sentence's first words after filler and courtesy, read Unicode-aware, up to
 the first comma, colon, question mark, "and", "if", "when", "which", "about"
 and the like -- only when all of this holds, and "" otherwise:
 - The message is marked as a request outside the gate's own phrase: "please",
-  "can you", "could you", "would you", "will you", "go ahead (and)", "i need
-  you to", "i want you to" or "hermes" before the lead; "please" in the
+  "pls", "plz", "kindly", "can you", "could you", "would you", "will you", "go
+  ahead (and)", "i need you to", "i want you to" or "hermes" among the
+  courtesy openers before the lead (`request_lead.COURTESY_OPENERS`, which
+  the other readers of a request's opening strip too); "please" in the
   clause; or an amount or "for me" as the spend's object, outside the
   gate's phrases and before "at", "for", "from", "in", "on" or "to"
   ("transfer 40 dollars", "pay with my card $40 for the refill", "buy the
@@ -44,6 +46,13 @@ and the like -- only when all of this holds, and "" otherwise:
   "or", which makes a comparison); "for", "on", "at", "from", "to" or "in";
   "with" followed by the person's own card, wallet or account or by an
   amount; an amount; "please", "now", or "right away".
+- A cap or a wallet phrase said with no word of paying or buying anywhere in
+  the message is its everyday sense, not a spend ("can you check out the
+  spending cap for the city council budget" asks to look at a budget):
+  `SPEND_EVERYDAY_SENSE_PHRASES` and `SPEND_EVERYDAY_SENSE_ANCHORS`, the same
+  pair the router's `EVERYDAY_SENSE_PHRASES` entry for the gate reads. A
+  loop's prompt and naming the gate as a command are exempt, as they are
+  from the marker (`spend_gate_named_as_command`, which the router reads too).
 
 Everything else returns to the router's base behaviour: the router withdraws
 the skill (so no phrase or word of it counts) and the route hint and the
@@ -57,7 +66,8 @@ One phrase table, `SPEND_GATE_PHRASES`, is the skill's trigger list: the
 router (`omh.routing.recommend`) passes it to `spend_request_clause`, and the
 awareness route hint and its markers (`awareness.py`) pass it to
 `spend_request_phrases`, so a request one of them admits the others admit too.
-Stdlib only.
+The bundle may not import `omh.routing`, so the everyday-sense pair lives here
+and the router imports it. Stdlib only.
 """
 
 from __future__ import annotations
@@ -65,7 +75,9 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
+from .boundary_phrase import contains_boundary_phrase
 from .hermes_session_commands import native_loop_prompt
+from .request_lead import courtesy_opener_length
 
 # `spend-gate`'s trigger list, word for word (the catalog reads it from here).
 SPEND_GATE_PHRASES = (
@@ -127,38 +139,23 @@ _TOKEN = re.compile(rf"[{_CURRENCY_SYMBOLS}]\d[\d.,]*|\w+(?:'\w+)*|[,;:.!?]")
 # A request is marked as one, outside the gate's own phrase: one of these in the
 # words before the lead, "please" in the clause, or an amount or "for me" as
 # the spend's object (`_has_request_marker`). "Pay with my card in safari is
-# broken" has the phrase and none of these.
+# broken" has the phrase and none of these. Every one is a courtesy opener
+# (`request_lead.COURTESY_OPENERS`). The other openers -- a greeting ("hey",
+# "ok"), "so", "just", "now", "let's", "we need to", "can we", "omh" -- are
+# stripped before the lead but mark nothing: "so buy it for me" is unmarked.
 SPEND_REQUEST_MARKERS = (
     ("please",),
-    ("can", "you"),
-    ("could", "you"),
-    ("would", "you"),
-    ("will", "you"),
-    ("go", "ahead"),
-    ("i", "need", "you", "to"),
-    ("i", "want", "you", "to"),
-    ("hermes",),
-)
-# Stripped, repeatedly and longest first, from the start of the sentence.
-SPEND_LEAD_FILLER = (
-    ("i", "need", "you", "to"),
-    ("i", "want", "you", "to"),
-    ("go", "ahead", "and"),
-    ("go", "ahead"),
-    ("can", "you"),
-    ("could", "you"),
-    ("would", "you"),
-    ("will", "you"),
-    ("hey",),
-    ("hi",),
-    ("hermes",),
-    ("ok",),
-    ("okay",),
-    ("please",),
     ("pls",),
+    ("plz",),
     ("kindly",),
-    ("just",),
-    ("alright",),
+    ("can", "you"),
+    ("could", "you"),
+    ("would", "you"),
+    ("will", "you"),
+    ("go", "ahead"),
+    ("i", "need", "you", "to"),
+    ("i", "want", "you", "to"),
+    ("hermes",),
 )
 _FILLER_PUNCTUATION = frozenset({",", ";", ":", ".", "!", "?"})
 # Where the request clause ends. The gate's phrases count only before it, and
@@ -199,10 +196,10 @@ SPEND_LEADS = (
 # Leads whose object is often not money; they also need a money cue.
 SPEND_MONEY_CUED_LEADS = (("send",), ("transfer",))
 _MONEY_CUES = (
-    "money",
-    "my card",
-    "my credit card",
-    "my wallet",
+    ("money",),
+    ("my", "card"),
+    ("my", "credit", "card"),
+    ("my", "wallet"),
 )
 _CURRENCY_WORDS = frozenset(
     {"bucks", "cents", "dollar", "dollars", "eur", "euro", "euros", "gbp", "jpy", "krw", "pound", "pounds", "usd", "won", "yen"}
@@ -213,12 +210,12 @@ SPEND_RECONCILE_LEADS = (
     ("did", "the", "charge", "go", "through"),
 )
 _AGENT_PAID_CUES = (
-    "you clicked pay",
-    "you paid",
-    "you bought",
-    "you ordered",
-    "you booked",
-    "you charged",
+    ("you", "clicked", "pay"),
+    ("you", "paid"),
+    ("you", "bought"),
+    ("you", "ordered"),
+    ("you", "booked"),
+    ("you", "charged"),
 )
 # Naming the gate as a command is asking for it; its artifact's name is not
 # ("what is a pre-spend card" asks a question).
@@ -244,39 +241,63 @@ _OWN_MONEY_AFTER_WITH = (
     ("my", "account"),
 )
 
+# "congress raised the spending cap again", "the speed and spending limit
+# rules in this city" and "the photo fell out from my wallet" move no money
+# for the person; each phrase keeps the gate only beside a word of paying or
+# buying. Six verbs that open a spend the clause rule admits are anchors too:
+# "book", "donate", "renew", "subscribe", "tip" and "top" (up), so "please
+# renew the domain from my wallet" keeps its route. The other leads' verbs
+# are not: "can you check out the spending cap for the city council budget"
+# asks to look at a budget. Nor is the gate's own word "gate", which counted
+# anywhere in the message: "could you check out the spending limit at the
+# airport gate" dispatched the gate. Naming the gate as a command ("run spend
+# gate on my spending limit") is exempt from the check instead
+# (`spend_gate_named_as_command`). "agent" and "hermes" are not anchors: the
+# router's tokenizer drops both. The router reads this pair as the gate's
+# `EVERYDAY_SENSE_PHRASES` entry (`omh.routing.policy`).
+SPEND_EVERYDAY_SENSE_PHRASES = ("spend cap", "spending cap", "spend limit", "spending limit", "from my wallet")
+SPEND_EVERYDAY_SENSE_ANCHORS = frozenset(
+    {
+        "402", "api", "approve", "book", "bot", "buy", "buying", "buys", "card", "charge", "charged",
+        "checkout", "credits", "dollars", "donate", "endpoint", "euros", "funds", "money", "order",
+        "orders", "pay", "paying", "payment", "payments", "purchase", "purchases", "renew", "send",
+        "subscribe", "subscription", "tip", "top", "transfer", "usd",
+    }
+)
+# Every anchor is one run of letters and digits, so this finds each one the
+# router's tokens hold, around an apostrophe, a hyphen or an underscore alike.
+_LETTER_AND_DIGIT_RUN = re.compile(r"[^\W_]+")
+
 
 def _tokens(text: str) -> list[str]:
     return _TOKEN.findall(text.casefold())
 
 
-def _spoken(text: str, phrase: str) -> bool:
-    return re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", text) is not None
-
-
 def _without_filler(tokens: list[str]) -> list[str]:
+    """`tokens` after the courtesy openers and punctuation at their start."""
     rest = list(tokens)
-    stripped = True
-    while stripped and rest:
-        stripped = False
+    while rest:
         if rest[0] in _FILLER_PUNCTUATION:
             rest = rest[1:]
-            stripped = True
             continue
-        for filler in SPEND_LEAD_FILLER:
-            if tuple(rest[: len(filler)]) == filler:
-                rest = rest[len(filler):]
-                stripped = True
-                break
+        opener = courtesy_opener_length(rest)
+        if not opener:
+            break
+        rest = rest[opener:]
     return rest
 
 
 def _clause(tokens: list[str]) -> list[str]:
     clause: list[str] = []
-    for index, token in enumerate(tokens):
+    for token in tokens:
         if token in _CLAUSE_BOUNDARIES:
             break
         clause.append(token)
     return clause
+
+
+def _says(tokens: list[str], cues: Iterable[tuple[str, ...]]) -> bool:
+    return any(_phrase_ends(tokens, cue) for cue in cues)
 
 
 def _starts_with(tokens: list[str], words: tuple[str, ...]) -> bool:
@@ -291,23 +312,42 @@ def _is_amount(tokens: list[str]) -> bool:
     return tokens[0][0].isdigit() and len(tokens) > 1 and tokens[1] in _CURRENCY_WORDS
 
 
-def _names_money(text: str, tokens: list[str]) -> bool:
-    if any(_spoken(text, cue) for cue in _MONEY_CUES):
+def _names_money(tokens: list[str]) -> bool:
+    if _says(tokens, _MONEY_CUES):
         return True
     return any(_is_amount(tokens[index:]) for index in range(len(tokens)))
 
 
-def _spend_lead(tokens: list[str], folded: str) -> bool:
+def _spend_lead(tokens: list[str]) -> bool:
     for lead in (*SPEND_LEADS, *SPEND_MONEY_CUED_LEADS):
         if _starts_with(tokens, lead):
             if lead == ("pay",) and any(_starts_with(tokens[1:], idiom) for idiom in _PAY_IDIOMS):
                 return False
             if lead in SPEND_MONEY_CUED_LEADS:
-                return _names_money(folded, tokens)
+                return _names_money(tokens)
             return True
     if any(_starts_with(tokens, lead) for lead in SPEND_RECONCILE_LEADS):
-        return any(_spoken(folded, cue) for cue in _AGENT_PAID_CUES)
+        return _says(tokens, _AGENT_PAID_CUES)
     return any(_starts_with(tokens, lead) for lead in SPEND_GATE_NAME_LEADS)
+
+
+def _everyday_sense(folded: str) -> bool:
+    """A cap or wallet phrase with no word of paying anywhere in the message.
+
+    The router asks `everyday_sense_phrase_unanchored` the same question of
+    the same pair. It reads a phrase as said where its first word starts a
+    word even when its last runs on ("spending capacity"), and this reads it
+    only where it ends a word too (`contains_boundary_phrase`), so it can find
+    a phrase the router finds and never one the router does not: where the
+    two differ, this one admits. The router's other condition, a word of the
+    message's own beside the phrase, always holds by the time this is asked:
+    every lead it is asked about but "check out" holds an anchor, and "check"
+    is such a word. (A loop's prompt and the gate named as a command are not
+    asked about.)
+    """
+    if not contains_boundary_phrase(folded, SPEND_EVERYDAY_SENSE_PHRASES):
+        return False
+    return not set(_LETTER_AND_DIGIT_RUN.findall(folded)) & SPEND_EVERYDAY_SENSE_ANCHORS
 
 
 def _continuation_allowed(rest: list[str]) -> bool:
@@ -364,7 +404,7 @@ def _has_request_marker(prefix: list[str], clause: list[str], spans: list[tuple[
 
 def _request(text: str, phrases: Iterable[str]) -> tuple[str, list[str]]:
     phrases = tuple(phrases)
-    admitted = _admitted(text, phrases, marked=False)
+    admitted = _admitted(text, phrases, by_loop=False)
     if admitted[0]:
         return admitted
     # A loop's prompt is marked by the loop itself. That waiver also admits a
@@ -372,20 +412,24 @@ def _request(text: str, phrases: Iterable[str]) -> tuple[str, list[str]]:
     # returns 500, ping me when it is fixed"), which then reaches the gate:
     # a disclosed residual, accepted because the other direction would let a
     # loop that spends skip the gate, while this one moves no money. No list
-    # of status words is kept against it; earlier rounds rejected that.
+    # of status words is kept against it; earlier rounds rejected that. The
+    # everyday-sense check is waived on the same terms: "loop every hour and
+    # check out from my wallet when the price drops" may be a purchase. So is
+    # it for the gate named as a command, which asks for the gate whatever
+    # cap it names ("run spend gate on my spending limit").
     prompt = native_loop_prompt(text)
-    return _admitted(prompt, phrases, marked=True) if prompt else ("", [])
+    return _admitted(prompt, phrases, by_loop=True) if prompt else ("", [])
 
 
-def _admitted(text: str, phrases: Iterable[str], *, marked: bool) -> tuple[str, list[str]]:
+def _admitted(text: str, phrases: Iterable[str], *, by_loop: bool) -> tuple[str, list[str]]:
     folded = text.casefold().strip()
     every = _tokens(folded)
     tokens = _without_filler(every)
     prefix = every[: len(every) - len(tokens)]
     clause = _clause(tokens)
-    if not _spend_lead(tokens, folded):
+    if not _spend_lead(tokens):
         return "", []
-    marked = marked or any(_starts_with(tokens, lead) for lead in SPEND_GATE_NAME_LEADS)
+    marked = by_loop or any(_starts_with(tokens, lead) for lead in SPEND_GATE_NAME_LEADS)
     # Phrases are found in the clause; what follows each is read past the
     # clause's end, so "or" right after a phrase is still seen.
     found = [
@@ -398,7 +442,20 @@ def _admitted(text: str, phrases: Iterable[str], *, marked: bool) -> tuple[str, 
         return "", []
     if not marked and not _has_request_marker(prefix, clause, [(start, end) for _phrase, start, end in found]):
         return "", []
+    if not marked and _everyday_sense(folded):
+        return "", []
     return " ".join(clause), list(dict.fromkeys(phrase for phrase, _start, _end in found))
+
+
+def spend_gate_named_as_command(text: str) -> bool:
+    """Whether the sentence, after its courtesy openers, opens by naming the gate as a command.
+
+    "run spend gate on my spending limit" asks for the gate whatever cap it
+    names, so the router's everyday-sense check for the gate skips it, as the
+    clause rule here does.
+    """
+    tokens = _without_filler(_tokens(text.casefold().strip()))
+    return any(_starts_with(tokens, lead) for lead in SPEND_GATE_NAME_LEADS)
 
 
 def spend_phrase_continues_a_request(text: str, phrase: str) -> bool:

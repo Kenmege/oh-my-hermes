@@ -71,9 +71,10 @@ minutes and check CI", `/loop 5m ...`, "every 10 minutes loop over the inbox"
 or "5분마다 ... 루프 돌려줘" asks for a check repeated on a cadence, which is
 Hermes' native `/loop` inside the session (or a cron job when it must run
 unattended), not OMH's long-horizon goal loop. Only the opening of the
-person's current message is read -- after the gateway material above and a
-courtesy opener, never the backfill before `[New message]` -- and only these
-shapes are a loop on a timer:
+person's current message is read -- after the gateway material above and the
+courtesy openers every reader of a request's opening strips
+(`request_lead.COURTESY_OPENERS`), never the backfill before `[New message]`
+-- and only these shapes are a loop on a timer:
 
 - `loop` or `/loop` is the first word and its cadence follows (`loop 5m ...`,
   `/loop 5m ...`, `loop every 5 minutes ...`, `loop each hour ...`);
@@ -120,6 +121,7 @@ import unicodedata
 
 from .jev_consent import BACKFILL_SEPARATOR, HOST_BLOCK_END, HOST_BLOCK_OPENERS, SENDER_PREFIX
 from .reference_regions import executable_routing_text
+from .request_lead import after_courtesy
 
 
 @dataclass(frozen=True)
@@ -218,10 +220,6 @@ _KOREAN_CADENCE = r"(?:[1-9]\d*\s?(?:초|분|시간)\s?마다|매(?:초|분|시�
 _KOREAN_CADENCE_LEAD = re.compile(rf"{_KOREAN_CADENCE}(?=\s)")
 
 # -- the request's opening ---------------------------------------------------
-# Words a request may put before its command, each with optional punctuation.
-_COURTESY_LEAD = re.compile(
-    r"(?:(?:please|pls|plz|kindly|hey|hi|hello|ok|okay|hermes|(?:can|could|would|will) you)[,.!]?\s+)+"
-)
 # What may follow `loop` when it is the verb after a cadence ("every 5 minutes
 # loop over the inbox"). A noun does not ("every 10 minutes loop detection
 # kills my agent").
@@ -503,11 +501,6 @@ def _past_cadence(words: list[str], at: int) -> int:
     return 0
 
 
-def _after_courtesy(text: str) -> str:
-    courtesy = _COURTESY_LEAD.match(text)
-    return text[courtesy.end():] if courtesy else text
-
-
 def _first_sentence(text: str) -> str:
     return _SENTENCE_END.split(text, maxsplit=1)[0].strip()
 
@@ -622,7 +615,7 @@ def _loop_timer_reading(text: str) -> tuple[str, bool, str]:
         return LOOP_TIMER_NONE, False, ""
     message = _fold(message)
     sender = SENDER_PREFIX.match(message)
-    lead = _after_courtesy(message[sender.end():] if sender else message)
+    lead = after_courtesy(message[sender.end():] if sender else message)
     # OMH's names stand where the loop word would: "/ulw-loop every 5m ..." has
     # the same shape as "/loop every 5m ...", and is OMH's.
     plain = _OMH_LOOP_NAME.sub("loop", _OMH_LOOP_LEAD_SIGIL.sub("", lead, count=1))
