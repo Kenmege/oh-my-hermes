@@ -548,6 +548,64 @@ _Avoid_: attributing a unit by timing or by todo text, stamping a value that
 is not id-shaped, reading an absent stamp as "belongs to no one" rather than
 "not attributable"
 
+**Detached fork**:
+A turn Hermes runs on a copy of the live agent, built by
+`build_cache_parity_fork` (`agent/background_review.py`): the background
+memory and skill review after a turn, and the `/btw` side question during
+one. The fork keeps the parent's `session_id`, mints its own task id and turn
+id, and is marked `_persist_disabled`. It is the host's internal work, not
+the person's turn, but every hook it reaches is called with the parent's
+session id. Hermes 0.21.2 (tag `v2026.9.11`) and later skip
+`on_session_start`, `pre_llm_call`, `post_llm_call` and `on_session_end` for
+it. On every release its whitelisted tool calls still reach `pre_tool_call`
+and `post_tool_call` (a review fork's whitelist is the memory and skill
+tools, `read_file`, `search_files` and any tool
+`auxiliary.background_review.extra_tools` names), and its final text still
+reaches `transform_llm_output`, where OMH reads only the latch recorded under
+the turn id it is handed.
+
+The plugin floor, Hermes 0.21.1 (tag `v2026.9.7`), has none of those skips.
+OMH covers `pre_llm_call` itself: it returns nothing when a non-empty
+`parent_session_id` equals `session_id` (#2112). That check misses a `/btw`
+fork built while the parent's session id rotates mid-turn, because Hermes
+reads the two ids at different moments. `on_session_start` reaches only a
+fork routed to another model, and OMH's handler there restores only a route
+whose writer session is no longer live. `on_session_end` carries no
+`parent_session_id`, so OMH cannot tell a fork's turn end from the person's,
+and the fork runs the whole handler as a turn end of the parent's session.
+Calling OMH's hooks with the arguments a 0.21.1 fork sends (read from Hermes
+source) shows what the fork's turn end does:
+
+- The delegation-route restore is scoped to the task that wrote the route,
+  and the fork's task id is its own. A route written during a Hermes turn,
+  whose tool call the host hands that turn's `task_id`, stays in place
+  (`not_last_writer`). A route recorded with no task id is matched on the
+  session alone, so the fork's turn end puts the person's baseline back. A
+  `/btw` fork can end inside the person's turn, so that restore can land
+  before the dispatch the route was written for.
+- Where OMH runtime state exists, the fork rewrites the metadata-only
+  `runtime/plugin-session-end.json`. The file names no session, but
+  `omh_status` reports it as `plugin_session_end`, so its `observed_at` can
+  be the fork's turn end rather than the person's.
+- Before Hermes 0.21.4 (tag `v2026.9.21`) `transform_llm_output` is passed no
+  `turn_id`, and OMH's handler returns nothing for an unkeyed turn, whether
+  it is a fork's or the person's.
+
+What a person sees in the common case: their delegation route is untouched,
+and at most the `plugin_session_end` time in `omh_status` belongs to the
+fork. The route case needs a route recorded without a task id, which a tool
+call inside a Hermes turn never produces; whether another 0.21.1 dispatch
+path does was not checked. None of this was observed on a live 0.21.1 host,
+so its impact is unmeasured. Upgrading Hermes to 0.21.2 or later removes it.
+Raising `requires_hermes` to `">=0.21.2"` would remove it too, and was
+rejected: the bundle's `register()` refuses a host below the floor, so the
+plugin would stop loading on every 0.21.1 host over a residual with no
+observed effect, and `HERMES_COMPAT_MATRIX` (`src/install/plugin_compat.py`)
+holds real-host admission evidence for 0.21.1 only.
+_Avoid_: reading a hook call that carries the person's session id as the
+person's turn, adding a fork check to `on_session_end` (0.21.1 passes nothing
+to check), raising the floor to close this residual
+
 ### Fault domains
 
 **OMH install fault**:

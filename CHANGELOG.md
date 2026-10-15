@@ -4,6 +4,21 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **What a Hermes background-review or `/btw` fork still does to OMH on the
+  0.21.1 plugin floor is written down, and the floor stays at 0.21.1 (a #2112
+  follow-up).** On Hermes 0.21.1 such a fork's turn end still calls OMH's
+  `on_session_end` under the person's session id, with no `parent_session_id`
+  OMH could check; Hermes 0.21.2 stops calling it for a fork. `CONTEXT.md` now
+  defines the **Detached fork** and records what that turn end does, measured
+  by calling OMH's hooks with the arguments the fork sends as read from Hermes
+  source. A route written during a Hermes turn stays in place, because the
+  restore is scoped to the task that wrote it and the fork's task id is its
+  own. A route recorded without a task id is put back at the fork's turn end.
+  The metadata-only `plugin_session_end` checkpoint can carry the fork's time.
+  None of it was observed on a live 0.21.1 host. Raising `requires_hermes` to
+  `>=0.21.2` was rejected because it would drop every 0.21.1 install. Docs
+  only; no code changes.
+
 - **A profile is served only its own consolidation brief, and
   `plugins.entries.omh.settings.dreaming_mode` turns the brief off for that
   profile (#2087).** Profiles that bind one OMH store, such as every profile of
