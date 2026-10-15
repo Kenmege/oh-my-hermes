@@ -908,16 +908,21 @@ class HostTurnRouterTest(unittest.TestCase):
         # `omh chat route-hint` once hinted from the frame's text while its
         # route decision said fallback: the `/plan` frame came back hinted
         # `command-operator`, the `/blueprint` seed `automation-blueprint`.
+        # Then it showed the generic no-hint card, whose "Open omh" and
+        # "Clarify" buttons argued with a decision to answer directly.
         for name, (opening, body) in HOST_TURNS.items():
             for prefix_name, prefix in GATEWAY_PREFIXES.items():
                 with self.subTest(turn=name, prefix=prefix_name):
                     payload = build_chat_route_hint_payload(prefix + opening + body, source="discord")
                     response = payload["chat_response"]
                     self.assertEqual(payload["route_decision"]["action"], "fallback")
+                    self.assertEqual(payload["route_decision"]["reason_code"], "host_command_turn")
                     self.assertEqual(payload["route_hint"]["hints"], [])
                     self.assertEqual(payload["route_hint"]["selected_workflow"], "")
-                    self.assertEqual(response["kind"], "no_route_hint")
+                    self.assertEqual(response["kind"], "direct_answer_route_hint")
+                    self.assertEqual(response["actions"], [])
                     self.assertEqual(response["state"]["selected_workflow"], "")
+                    self.assertEqual(response["state"]["next_action"], "answer_directly")
 
     def test_the_same_bodies_without_their_frame_keep_their_wrapper_hint(self):
         # Measured on the bodies above: without the frame each of these is

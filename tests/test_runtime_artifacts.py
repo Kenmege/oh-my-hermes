@@ -611,6 +611,23 @@ class RuntimeArtifactTests(unittest.TestCase):
             legacy_routing["recommendations"][0].pop("reasoning_demand")
             self.assertEqual(validate_routing_record(legacy_routing), [])
 
+    def test_a_recorded_direct_answer_keeps_its_reason_code(self) -> None:
+        # `route_decision` carries the fallback's `reason_code`; the record's
+        # key whitelist has to admit it or the run stops validating.
+        with TemporaryDirectory() as tmp:
+            paths = resolve_paths(Path(tmp) / ".omh", Path(tmp) / ".hermes")
+            run = create_run(paths, {"skill": "oh-my-hermes", "harness": "coding-handling", "status": "started"})
+            message = "thanks!"
+
+            routing = write_routing_decision(
+                paths.runtime_runs_dir / run["run_id"],
+                routing_record_payload(route_chat_message(message, source="discord"), message),
+            )
+
+            self.assertEqual(routing["route_decision"]["reason_code"], "direct_answer")
+            self.assertEqual(validate_routing_record(routing), [])
+            self.assertTrue(validate_runtime(paths, run["run_id"])["ok"])
+
     def test_write_coding_delegation_sanitizes_full_payload(self) -> None:
         with TemporaryDirectory() as tmp:
             paths = resolve_paths(Path(tmp) / ".omh", Path(tmp) / ".hermes")

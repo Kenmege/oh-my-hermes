@@ -36,9 +36,9 @@ from ..system.platform_envelope import build_platform_envelope, platform_thread_
 from ..system.tracker_content import normalize_tracker_content
 from ..routing.catalog_questions import is_skill_catalog_question as _is_skill_catalog_question
 from ..routing.chat import (
-    LOOP_CONSTRUCT_REASON,
-    NATIVE_LOOP_CADENCE_REASON,
-    TYPED_LOOP_GOAL_REASON,
+    DIRECT_ANSWER_REASON_CODES,
+    LOOP_TIMER_ANSWER_REASON_CODES,
+    REASON_CODE_FILE_LOOKUP,
     public_chat_route_payload,
     route_explanation_payload,
     route_question_observation,
@@ -48,7 +48,7 @@ from ..routing.localization import normalized_phrase
 from ..routing.route_plan import public_workflow_identifier, with_public_skill_names
 from ..routing.route_question import apply_route_question_mode
 from ..plugin_bundle.omh.route_question_mode import read_route_question_mode
-from ..routing.policy import POINT_IN_TIME_WEB_GUARD, host_owned_command_turn
+from ..routing.policy import POINT_IN_TIME_WEB_GUARD
 from ..workflows.realtime_voice_trial_receipts import build_prepared_realtime_voice_chat_state
 from ..workflows.temporal_source_receipts import (
     TEMPORAL_EVIDENCE_SURFACES_SCHEMA_VERSION,
@@ -82,7 +82,7 @@ from ..operator_productivity import build_agent_operator_productivity_card
 from ..system.paths import OmhPaths, resolve_paths
 from ..plugin_bundle.omh.awareness import workflow_context_card_for_workflow, workflow_context_cards
 from ..plugin_bundle.omh.degradation import degradation_chat_note
-from ..plugin_bundle.omh.hermes_session_commands import person_request_text
+from ..plugin_bundle.omh.hermes_session_commands import host_command_turn, person_request_text
 from ..plugin_bundle.omh.memory_dreaming import read_latest_consolidation
 from ..probe import probe_capabilities
 from ..quickstart import build_quickstart_card
@@ -5599,8 +5599,11 @@ def _build_chat_interaction_payload_uncached(
     if goal_quality_coaching_card:
         base["goal_quality_coaching_card"] = goal_quality_coaching_card
 
-    loop_timer_answer = _is_loop_timer_answer(route_payload)
-    if _is_omh_intro_question(message) and not loop_timer_answer and resolved_mode in {"route", "plan", "clarify"}:
+    # A loop on a timer and a turn Hermes wrote for its own session command
+    # are answered as the route says; their text is never a question about
+    # OMH's intro, quickstart, or status, as it is never a catalog question.
+    answered_as_routed = _is_loop_timer_answer(route_payload) or host_command_turn(message)
+    if _is_omh_intro_question(message) and not answered_as_routed and resolved_mode in {"route", "plan", "clarify"}:
         base["mode"] = "route"
         base["route"] = _omh_intro_route_payload(route_payload)
         base["chat_response"] = build_chat_response_from_omh_context_brief(
@@ -5611,7 +5614,7 @@ def _build_chat_interaction_payload_uncached(
         base["next_action"] = str(_nested(base["chat_response"], "state").get("next_action", "show_context_brief"))
         return _finish_interaction(base, target_notice)
 
-    if _is_omh_quickstart_question(message) and not loop_timer_answer and resolved_mode in {"route", "plan", "clarify"}:
+    if _is_omh_quickstart_question(message) and not answered_as_routed and resolved_mode in {"route", "plan", "clarify"}:
         base["mode"] = "status"
         base["route"] = _omh_quickstart_route_payload(route_payload)
         base["chat_response"] = build_chat_response_from_omh_quickstart(
@@ -5625,7 +5628,7 @@ def _build_chat_interaction_payload_uncached(
     if (
         _is_omh_status_question(message)
         and str(route_payload.get("selected_skill", "")) == _ROUTER_SKILL
-        and not loop_timer_answer
+        and not answered_as_routed
         and resolved_mode in {"route", "plan", "clarify"}
     ):
         base["mode"] = "status"
@@ -7512,19 +7515,11 @@ def build_chat_response_from_route(
 
 
 def _is_file_lookup_fallback(decision: dict[str, object]) -> bool:
-    text = " ".join(
-        str(decision.get(key, "") or "")
-        for key in ("reason", "clarification", "routing_instruction")
-    ).lower()
-    return "file or text lookup" in text or "file/text lookup" in text
+    return str(decision.get("reason_code", "")) == REASON_CODE_FILE_LOOKUP
 
 
 def _is_direct_answer_fallback(decision: dict[str, object]) -> bool:
-    text = " ".join(
-        str(decision.get(key, "") or "")
-        for key in ("reason", "clarification", "routing_instruction")
-    ).lower()
-    return "answer directly" in text and "omh workflow" in text
+    return str(decision.get("reason_code", "")) in DIRECT_ANSWER_REASON_CODES
 
 
 def _route_task_card(decision: dict[str, object]) -> dict[str, object]:
@@ -9610,7 +9605,7 @@ def _is_loop_timer_answer(decision: dict[str, object]) -> bool:
     router skill here is not a question for the catalog picker or the intro,
     quickstart, or status card.
     """
-    return str(decision.get("reason", "")) in (NATIVE_LOOP_CADENCE_REASON, TYPED_LOOP_GOAL_REASON, LOOP_CONSTRUCT_REASON)
+    return str(decision.get("reason_code", "")) in LOOP_TIMER_ANSWER_REASON_CODES
 
 
 def _is_generic_skill_catalog_route(message: str, decision: dict[str, object]) -> bool:
@@ -9618,7 +9613,7 @@ def _is_generic_skill_catalog_route(message: str, decision: dict[str, object]) -
         return False
     # A turn Hermes wrote for its own session command is answered as the host
     # instructs; its template text is never a question about OMH's catalog.
-    if host_owned_command_turn(message) or _is_loop_timer_answer(decision):
+    if host_command_turn(message) or _is_loop_timer_answer(decision):
         return False
     if _contains_cue_phrase(message, ("omh-docs",)) and not _is_omh_docs_question(message):
         return False
@@ -9637,8 +9632,22 @@ def _route_recommendation_next_action(decision: dict[str, object]) -> str:
     return str(first.get("next_action", ""))
 
 
-def _catalog_question_route_payload(route_payload: dict[str, object]) -> dict[str, object]:
+def _route_without_reason_code(route_payload: dict[str, object]) -> dict[str, object]:
+    """A copy of the route for a builder that replaces its reason with its own.
+
+    The code named the reason being replaced, so it goes from the route and
+    from the compact `route_decision` beside it; a wrapper may read either.
+    """
     updated = dict(route_payload)
+    updated.pop("reason_code", None)
+    route_decision = updated.get("route_decision")
+    if isinstance(route_decision, dict) and "reason_code" in route_decision:
+        updated["route_decision"] = {key: value for key, value in route_decision.items() if key != "reason_code"}
+    return updated
+
+
+def _catalog_question_route_payload(route_payload: dict[str, object]) -> dict[str, object]:
+    updated = _route_without_reason_code(route_payload)
     harness = primary_harness_for_skill(_ROUTER_SKILL)
     updated.update(
         {
@@ -9673,7 +9682,7 @@ def _catalog_question_route_payload(route_payload: dict[str, object]) -> dict[st
 
 
 def _omh_status_route_payload(route_payload: dict[str, object]) -> dict[str, object]:
-    updated = dict(route_payload)
+    updated = _route_without_reason_code(route_payload)
     harness = primary_harness_for_skill(_ROUTER_SKILL)
     updated.update(
         {
@@ -9708,7 +9717,7 @@ def _omh_status_route_payload(route_payload: dict[str, object]) -> dict[str, obj
 
 
 def _omh_quickstart_route_payload(route_payload: dict[str, object]) -> dict[str, object]:
-    updated = dict(route_payload)
+    updated = _route_without_reason_code(route_payload)
     harness = primary_harness_for_skill(_ROUTER_SKILL)
     updated.update(
         {
@@ -9743,7 +9752,7 @@ def _omh_quickstart_route_payload(route_payload: dict[str, object]) -> dict[str,
 
 
 def _omh_intro_route_payload(route_payload: dict[str, object]) -> dict[str, object]:
-    updated = dict(route_payload)
+    updated = _route_without_reason_code(route_payload)
     harness = primary_harness_for_skill(_ROUTER_SKILL)
     updated.update(
         {

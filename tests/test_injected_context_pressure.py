@@ -975,10 +975,14 @@ class NoRoutingOnHostCommandTurnsTest(_InjectionTestCase):
     def test_the_hook_reads_the_bundle_predicate_the_router_reads(self):
         from omh.plugin_bundle.omh import hermes_session_commands
         from omh.plugin_bundle.omh.hooks import llm_hooks
-        from omh.routing import policy
+        from omh.routing import chat
+        from omh.wrapper import contract, route_hints
 
-        self.assertIs(llm_hooks.host_command_turn, hermes_session_commands.host_command_turn)
-        self.assertIs(policy.host_command_turn, hermes_session_commands.host_command_turn)
+        # One copy: the hook, the router and both wrapper payloads bind the
+        # bundle's predicate itself, not a wrapper around it.
+        for module in (llm_hooks, chat, contract, route_hints):
+            with self.subTest(module=module.__name__):
+                self.assertIs(module.host_command_turn, hermes_session_commands.host_command_turn)
 
 
 class GatewayMaterialIsNotTheRequestTest(_InjectionTestCase):
