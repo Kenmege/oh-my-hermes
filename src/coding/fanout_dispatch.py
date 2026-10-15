@@ -198,7 +198,13 @@ from .unit_progress import (
     empty_progress_evidence,
     stalled_for_seconds,
 )
-from .unit_prompt_assembly import AssembledPrompt, assemble_unit_prompt, recorded_model_route, unit_role as _unit_role
+from .unit_prompt_assembly import (
+    EDIT_ONLY_OMITTED_BLOCKS,
+    AssembledPrompt,
+    assemble_unit_prompt,
+    recorded_model_route,
+    unit_role as _unit_role,
+)
 from .workspace_preflight import (
     probe_workspace,
     workspace_preflight_reason,
@@ -2912,16 +2918,13 @@ def _run_failure_recovery(
             )
         elif decision["choice"] == CHOICE_HERMES:
             decision["attempt"] = _hermes_recovery_dispatch(
+                paths,
                 unit=units[unit_id],
-                goal_text=str(unit_dispatch_kwargs["goal_text"]),
                 repo_root=repo_root,
                 timeout=timeout,
                 routing=hermes_routing or {},
                 hermes_child=hermes_child,
-                launch_gate=unit_dispatch_kwargs['launch_gate'],
-                fanout_id=str(unit_dispatch_kwargs['fanout_id']),
-                invocation_id=str(unit_dispatch_kwargs['invocation_id']),
-                base_sha=str(unit_dispatch_kwargs['base_sha']),
+                unit_dispatch_kwargs=unit_dispatch_kwargs,
             )
         elif decision["choice"] == CHOICE_WAIT:
             # No re-dispatch: the mark on the unit is the whole action, and the
@@ -3121,21 +3124,28 @@ def _retarget_dispatch(
 
 
 def _hermes_recovery_dispatch(
+    paths: OmhPaths,
     *,
     unit: Mapping[str, Any],
-    goal_text: str,
     repo_root: Path,
     timeout: int,
     routing: Mapping[str, Any],
     hermes_child: Callable[..., Mapping[str, Any]] | None,
-    launch_gate: OwnerLaunchGate | None = None,
-    fanout_id: str = '', invocation_id: str = '', base_sha: str = '',
+    unit_dispatch_kwargs: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Re-run one failed unit through the Hermes subagent lane, in its worktree.
 
     The child runs in the unit's OWN worktree or not at all: pointing it at the
     dispatch repo root would let a recovery attempt edit the operator's main
     checkout, which no unit of a fanout is ever allowed to do.
+
+    The child has file tools and nothing else (`--toolsets file`), so it can
+    neither run a check nor commit. It gets the edit-only prompt, and when it
+    completes the dispatcher commits what it wrote on the unit branch, then
+    runs the unit's declared checks on that commit as it does for a dispatched
+    unit under `--run-verification`, both inside the unit's write fence (or
+    unfenced only under `--allow-unconfined`). The attempt's `unit_state` is
+    `verified` only when those checks ran and passed.
     """
     unit_id = str(unit.get("unit_id", ""))
     worktree = _worktree_path(repo_root, unit_id)
@@ -3148,17 +3158,91 @@ def _hermes_recovery_dispatch(
                 f"unit worktree {worktree} does not exist; the Hermes lane never runs against the "
                 "dispatch repo root"
             ),
+            "unit_state": UNIT_STATE_FAILED,
+            "unit_state_reason": "worktree_missing",
+        }
+    fanout_id = str(unit_dispatch_kwargs["fanout_id"])
+    goal_text = str(unit_dispatch_kwargs["goal_text"])
+    runner = unit_dispatch_kwargs["runner"]
+    run_verification = bool(unit_dispatch_kwargs["run_verification"])
+    environment_policy = unit_dispatch_kwargs["environment_policy"]
+    base_env = unit_dispatch_kwargs["base_env"]
+    verification_environment = fanout_child_environment(
+        os.environ if base_env is None else base_env,
+        depth=int(unit_dispatch_kwargs["dispatch_depth"]),
+        fanout_id=fanout_id,
+        unit_id=unit_id,
+        owner="hermes",
+        purpose="verification",
+        declaration=environment_policy,
+    )
+    # Both refusals below come before the child, as a dispatched unit's do
+    # before its spawn: the commit and checks that settle the attempt could
+    # not run afterwards, and edits nobody commits or checks are the state
+    # this lane exists to leave behind.
+    if run_verification and not verification_environment.ready:
+        return {
+            "unit_id": unit_id,
+            "owner": "hermes",
+            "status": "hermes_child_refused",
+            "reason_code": "environment_not_ready",
+            "reason": "required verification environment capabilities are missing or denied",
+            "verification_environment_policy": verification_environment.receipt,
+            "unit_state": UNIT_STATE_PERMISSION_BLOCKED,
+            "unit_state_reason": "environment_not_ready",
+        }
+    verification_argv: list[list[str]] = []
+    for command in declared_verification_commands(unit) if run_verification else ():
+        try:
+            _overrides, check_argv = verification_command_argv(command)
+        except FanoutContractError:
+            continue
+        verification_argv.append(check_argv)
+    # A program name for the fence to resolve, not an argv: the commit below
+    # spells its git subcommands as literals for the no-remote-mutation gate.
+    git_program = "git"
+    confinement = (
+        prepare_fanout_filesystem_confinement(
+            worktree, verification_environment.environment, ((git_program,), *verification_argv),
+            unit_branch=str(unit.get("branch_suggestion", f"agent/{unit_id}")),
+            repo_root=repo_root,
+            allow_unconfined=bool(unit_dispatch_kwargs["allow_unconfined"]),
+        )
+        if runner is signal_safe_unit_runner
+        else None
+    )
+    if (
+        confinement is not None
+        and confinement.receipt.get("enforced") is not True
+        and not confinement.unconfined_allowed
+    ):
+        reason_code = str(confinement.receipt.get("reason_code") or "sandbox_command_not_fenced")
+        return {
+            "unit_id": unit_id,
+            "owner": "hermes",
+            "status": "hermes_child_refused",
+            "reason_code": "filesystem_confinement_unavailable",
+            "reason": (
+                f"no filesystem write fence could be proven for this unit ({reason_code}), so the "
+                "dispatcher could not commit or check the recovery; pass --allow-unconfined to run it "
+                "with the operator's full write access"
+            ),
+            "filesystem_confinement": confinement.receipt,
+            "unit_state": UNIT_STATE_PERMISSION_BLOCKED,
+            "unit_state_reason": "filesystem_confinement_unavailable",
         }
     dispatcher = hermes_child if hermes_child is not None else dispatch_unit_via_hermes_child
     run_ref = str(unit.get("run_ref", unit_id))
-    binding = AdmissionBinding('hermes', fanout_id, unit_id, run_ref, 1, base_sha,
-                               str(worktree), invocation_id, str(uuid4()))
-    launch = (launch_gate or OwnerLaunchGate()).context(binding).launch
+    binding = AdmissionBinding('hermes', fanout_id, unit_id, run_ref, 1,
+                               str(unit_dispatch_kwargs['base_sha']), str(worktree),
+                               str(unit_dispatch_kwargs['invocation_id']), str(uuid4()))
+    launch = (unit_dispatch_kwargs['launch_gate'] or OwnerLaunchGate()).context(binding).launch
+    # The recovery variant: no sidecar contract and no discovery, because the
+    # Hermes child lane collects neither, and edit-only.
+    assembled = assemble_unit_prompt(unit, goal_text, route=recorded_model_route(unit), omit=EDIT_ONLY_OMITTED_BLOCKS)
     try:
         attempt = dispatcher(
-            # The recovery variant: no sidecar contract and no discovery,
-            # because the Hermes child lane collects neither.
-            prompt=build_unit_prompt(unit, goal_text),
+            prompt=assembled.text,
             routing=routing,
             parent_run_id=run_ref,
             run_id=f"{run_ref}-hermes-recovery",
@@ -3169,13 +3253,98 @@ def _hermes_recovery_dispatch(
     except CapacityBlocked as exc:
         attempt = {'status': 'not_started_capacity_blocked',
                    'capacity': capacity_fields(binding, exc.trip, status='not_started_capacity_blocked', process_started=False)}
-    return {
+    record = {
         "unit_id": unit_id,
         "owner": "hermes",
         "worktree_path": str(worktree),
         "consent": HERMES_LANE_CONSENT,
+        "unit_prompt": _unit_prompt_record(assembled),
+        # Where the dispatcher's own commit and checks below run, not the child.
+        "filesystem_confinement": confinement_receipt(confinement, worktree),
         **dict(attempt),
     }
+    if record.get("status") != "completed":
+        record.update(unit_state=UNIT_STATE_FAILED, unit_state_reason="process_not_completed")
+        return record
+    # Commit first: the commit is then exactly what the child left, and the
+    # checks run on a clean, committed revision -- the order a dispatched
+    # unit's executor and dispatcher already keep. Checks run before the
+    # commit would have their own output swept into it.
+    commit = _commit_recovery_edits(_fenced_dispatcher_runner(runner, confinement, worktree), worktree, unit_id)
+    record["recovery_commit"] = commit
+    if commit["status"] == "failed":
+        record.update(unit_state=UNIT_STATE_FAILED, unit_state_reason="commit_failed")
+        return record
+    verification: dict[str, Any] = {}
+    if run_verification:
+        # The checks' journal events go under the recovery's own run, the
+        # child's `run_id`: the journal admits a verification only after an
+        # observed executor result on the same run, and an observed result on
+        # the unit's own run would make every later dispatch skip the unit as
+        # already completed. `worker_ref` stays the unit's, since the child
+        # worked in the unit's own worktree and branch.
+        recovery_run_ref = f"{run_ref}-hermes-recovery"
+        _ensure_unit_run(paths, {"unit_id": unit_id, "run_ref": recovery_run_ref}, "hermes")
+        for event, summary in (
+            ("worker_dispatch", f"Hermes recovery of unit {unit_id}, after its {unit.get('owner', '')} dispatch failed"),
+            ("worker_result", f"Hermes recovery child completed; dispatcher committed {commit['head_sha']}"),
+        ):
+            append_journal_observation(paths, {
+                "target_type": "run", "target_id": recovery_run_ref, "run_id": recovery_run_ref,
+                "event": event, "status": "observed", "summary": summary, "evidence_refs": [],
+                "worker_ref": unit_id, "worktree_ref": str(worktree), "runtime_profile": "hermes",
+            })
+        verification = _run_unit_verification(
+            paths,
+            unit,
+            run_ref=recovery_run_ref,
+            unit_id=unit_id,
+            worktree=worktree,
+            owner="hermes",
+            runner=runner,
+            child_env=verification_environment.environment,
+            fanout_id=fanout_id,
+            wave_width=int(unit_dispatch_kwargs["verification_wave_width"]),
+            execution_gate=unit_dispatch_kwargs["verification_execution_gate"],
+            confinement=confinement,
+            environment_policy=environment_policy,
+            known_secrets=(goal_text, assembled.text, *tuple(
+                value for key, value in verification_environment.environment.items()
+                if any(marker in key.upper() for marker in ('TOKEN', 'SECRET', 'PASSWORD', 'API_KEY'))
+            )[:126]),
+        )
+    record.update(verification)
+    outcome = verification.get("verification_status")
+    if outcome == "passed":
+        record.update(unit_state=UNIT_STATE_VERIFIED, unit_state_reason="")
+    else:
+        record.update(
+            unit_state=UNIT_STATE_FAILED,
+            unit_state_reason="verification_failed" if outcome == "failed" else "verification_not_observed",
+        )
+    return record
+
+
+def _commit_recovery_edits(runner: Callable[..., Any], worktree: Path, unit_id: str) -> dict[str, Any]:
+    """Commit everything the recovery child left in the unit worktree; never raises.
+
+    `status` is `committed`, `nothing_to_commit`, or `failed` with a reason.
+    The first two carry `head_sha`, read only once the worktree is clean, so a
+    commit that left files behind is a failure rather than a partial success.
+    """
+    changes = _git_text(runner, worktree, ["git", "status", "--porcelain=v1", "--untracked-files=all"])
+    if changes is None:
+        return {"status": "failed", "reason": "git status could not read the unit worktree"}
+    if changes.strip():
+        if _git_text(runner, worktree, ["git", "add", "-A"]) is None:
+            return {"status": "failed", "reason": "git add could not stage the recovery edits"}
+        message = f"Hermes recovery of fanout unit {unit_id}"
+        if _git_text(runner, worktree, ["git", "commit", "-q", "-m", message]) is None:
+            return {"status": "failed", "reason": "git commit did not complete in the unit worktree"}
+    head = _observed_clean_producer_head(runner, worktree)
+    if head is None:
+        return {"status": "failed", "reason": "the unit worktree is not clean at a readable commit"}
+    return {"status": "committed" if changes.strip() else "nothing_to_commit", "head_sha": head}
 
 
 def _depth_refusal_summary(
