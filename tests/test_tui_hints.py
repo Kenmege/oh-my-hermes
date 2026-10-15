@@ -3,8 +3,8 @@
 While Hermes asks something, the mode row names that question's keys and
 the working row stops offering Esc for an interrupt, so the screen gives Esc
 one meaning. The strip's last mark says what Down opens (`↓ agents`). An
-approval keeps a short key hint at 60 and 40 columns, and a long command
-wraps under its own indent. The banner is one row (brand, version, resumed
+approval keeps a short key hint on the mode row at 60 and 40 columns, and a
+long command wraps under its own indent. The banner is one row (brand, version, resumed
 session, working directory; the model is on the status line and the keys on
 the mode row), and a fresh session is told where the last one is.
 """
@@ -35,8 +35,8 @@ def mode_row(app: App) -> str:
 class QuestionKeyTests(unittest.TestCase):
     def test_an_open_question_puts_its_keys_on_the_mode_row_and_esc_means_one_thing(self) -> None:
         cases = [
-            (APPROVAL, "←→ pick · enter confirms · d or esc denies"),
-            (CLARIFY, "1-9 or ↑↓ enter picks · or type an answer · esc cancels"),
+            (APPROVAL, "↑↓ pick · enter confirms · d or esc denies"),
+            (CLARIFY, "↑↓ or 1-9 · enter picks · type to answer · esc cancels"),
             (SECRET, "type it · enter sends · esc declines"),
         ]
         for request, keys in cases:
@@ -187,18 +187,22 @@ class NarrowApprovalTests(unittest.TestCase):
 
     def rows(self, width: int) -> list[str]:
         slot = open_request("srq", "approval", {"command": self.COMMAND, "description": "delete in root path"})
-        return lines_text(slot.lines(width, DEFAULT_THEME, 6))
+        return lines_text(slot.lines(width, DEFAULT_THEME, 8))
 
-    def test_the_choice_row_keeps_a_way_to_deny_at_sixty_and_forty_columns(self) -> None:
+    def test_the_mode_row_keeps_a_way_to_deny_at_sixty_and_forty_columns(self) -> None:
         for width in (60, 40):
             with self.subTest(width=width):
-                choices = self.rows(width)[-1]
-                self.assertIn("deny", choices)
-                self.assertIn("d denies", choices)
+                app, _client = make_app(busy=True, cols=width)
+                app.effort = "high"
+                app._on_server_request(ServerRequest("srq-1", "approval", {"command": self.COMMAND}))
+                row = line_text(app._mode_row_line(width))
+                self.assertIn("esc denies", row)
+                self.assertLessEqual(len(row), width)
+                self.assertIn("▌ ❯ deny", self.rows(width))
 
     def test_a_wrapped_command_keeps_its_indent(self) -> None:
         rows = self.rows(50)
-        command_rows = rows[1:-1]
+        command_rows = rows[1:-3]
         self.assertGreater(len(command_rows), 1)
         for row in command_rows:
             self.assertTrue(row.startswith("▌   "), rows)

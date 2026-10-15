@@ -138,14 +138,14 @@ from .keys import (
 )
 from .launch import request_fallback
 from .agent_view import STEER_SAY, TAIL_ANSWER_SECONDS, AgentViewMixin
-from .layout import slot_cap, under_composer
+from .layout import choice_cap, slot_cap, under_composer
 from .markdown import clean_text
 from .modes import MODE_ROW_GAP, NO_SESSION_NOTICE, STRIP_SEPARATOR, ModesMixin, mode_row_line
 from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows
 from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, plan_text, status_segments
-from .prompts import CHOICE_DIGITS, Answer, ImmediateAnswer, PromptSlot, open_request
+from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
 from .screen import CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
 from .session_picker import PICK, SessionPicker, session_rows
 from .rewind_picker import PICK as REWIND_PICK
@@ -787,22 +787,19 @@ def _matches(request_id: str, params: Mapping[str, Any], ids: set[str]) -> bool:
 def _slot_owns(slot: PromptSlot, event: Key | Paste, composer_text: str) -> bool:
     """Whether a key goes to the open slot rather than the composer.
 
-    An approval takes every key. A slot answered with text takes only what
-    the composer has no use for: Esc and the arrows always, Ctrl+C on empty
-    input (decline), and a digit on empty input when it can pick a clarify
-    choice. Everything else types the answer.
+    A slot answered by picking (an approval, a clarify question's list) takes
+    every key; the composer is hidden then. A slot answered with text takes
+    only what the composer has no use for: Esc and Up and Down always (Up and
+    Down take a clarify question's text field back to its list), and Ctrl+C
+    on empty input (decline). Everything else types the answer.
     """
-    if not slot.wants_text:
+    if slot.picking:
         return True
     if not isinstance(event, Key):
         return False
     if event.name in (ESCAPE, UP, DOWN):
         return True
-    if composer_text or event.name != CHAR:
-        return False
-    if event.ctrl:
-        return event.char == "c"
-    return slot.method == "clarify" and not event.alt and len(event.char) == 1 and event.char in CHOICE_DIGITS
+    return not composer_text and event.name == CHAR and event.ctrl and event.char == "c"
 
 
 def _menu_lines(entries: list[tuple[str, str]], index: int, width: int, max_rows: int, theme: Theme) -> list[Line]:
@@ -955,7 +952,9 @@ class App(ModesMixin, AgentViewMixin):
         self.slot: PromptSlot | None = None
         self.slot_opened_at = 0.0
         self.slot_arm_seconds = SLOT_ARM_SECONDS  # the open slot's arm delay, fixed as it opened
-        self.slot_draft = ""
+        # The person's draft, set aside whole (text, caret, paste chips) while a slot answered with text has a
+        # composer of its own; it is the composer again when that slot closes.
+        self.slot_draft: Composer | None = None
         self.waiting_requests: deque[ServerRequest] = deque()
         self.queued: deque[QueuedLine] = deque()
         self.sticky = ""
@@ -1704,10 +1703,8 @@ class App(ModesMixin, AgentViewMixin):
         if opened.method == "approval" and self.environ.get(BELL_ENV) != BELL_OFF:
             self.terminal.write(BELL)  # once per approval, as its slot opens; the wait is on the person
         if opened.wants_text:
-            self.slot_draft = self.composer.text
-            self._set_composer("")
-            self.composer.masked = opened.masked
-            self.composer.records_history = False  # an answer to Hermes is not a prompt to recall
+            # An answer to Hermes is typed into a composer of its own, which records no history.
+            self.slot_draft, self.composer = self.composer, Composer(masked=opened.masked, records_history=False)
 
     def _answer(self, answer: Answer) -> None:
         self._respond(answer)
@@ -1725,12 +1722,14 @@ class App(ModesMixin, AgentViewMixin):
             self.transcript.add_answer(f"{outcome} · {command}" if command else outcome, level)
 
     def _close_slot(self) -> None:
+        """The slot goes and the draft comes back as it was; a request that waited behind it opens at once.
+
+        Nothing draws a frame in between, so a waiting question that hides the
+        composer opens with it still hidden.
+        """
         slot, self.slot = self.slot, None
-        if slot is not None and slot.wants_text:
-            self.composer.masked = False
-            self.composer.records_history = True
-            self._set_composer(self.slot_draft)
-            self.slot_draft = ""
+        if slot is not None and self.slot_draft is not None:
+            self.composer, self.slot_draft = self.slot_draft, None
         while self.slot is None and self.waiting_requests:
             self._on_server_request(self.waiting_requests.popleft())
 
@@ -1770,7 +1769,9 @@ class App(ModesMixin, AgentViewMixin):
             if self._slot_arming(event):
                 return
             answer = self.slot.handle_key(event)
-            if answer is not None:
+            if isinstance(answer, TypeIt):
+                self.composer.handle(answer.key)  # the key that opened the clarify's text field is its first text
+            elif answer is not None:
                 self._answer(answer)
             return
         if self.slot is None and self.picker is not None:
@@ -2478,12 +2479,14 @@ class App(ModesMixin, AgentViewMixin):
         self.transcript.add_notice(notice, NOTICE_WARN)
 
     def _give_back(self, text: str) -> None:
-        """A steer's text back to the person, never into an answer to Hermes: after whatever the composer holds,
-        or, while a question has the composer, after the draft the composer gets back when the question closes."""
-        if self.slot is not None and self.slot.wants_text:
-            self.slot_draft = "\n".join(part for part in (self.slot_draft, text) if part)
-        else:
-            self._set_composer("\n".join(part for part in (self.composer.text, text) if part))
+        """A steer's text back to the person, never into an answer to Hermes: on a line of its own after the draft,
+        the one set aside while a question has a composer of its own. Its paste chips stay, and so does its caret
+        while the draft is not drawn."""
+        draft = self.slot_draft if self.slot_draft is not None else self.composer
+        caret, end = draft.caret, len(draft.text)
+        draft.replace(end, end, f"\n{text}" if draft.text else text)
+        if draft is self.slot_draft or self._composer_hidden():
+            draft.caret = caret  # a hidden draft comes back as the person left it, the text after its end
 
     # ── slash commands ──
 
@@ -3150,7 +3153,7 @@ class App(ModesMixin, AgentViewMixin):
             build_frame,
             cols=cols,
             rows=rows,
-            composer=self.composer,
+            composer=None if self._composer_hidden() else self.composer,
             status=self._status_line(cols),
             previous_height=previous,
             tail=self._tail(cols),
@@ -3189,6 +3192,10 @@ class App(ModesMixin, AgentViewMixin):
             self.slot is None and self.picker is None and self.search is None and self.rewind_picker is None
             and self.model_picker is None
         )
+
+    def _composer_hidden(self) -> bool:
+        """Whether the frame draws no composer: a question answered by picking (`PromptSlot.picking`) is open."""
+        return self.slot is not None and self.slot.picking
 
     def _mode_row_line(self, cols: int, strip: Line | None = None) -> Line:
         """The mode row, saying what the next key does when that is not the usual (a rewind, Esc's second press).
@@ -3288,11 +3295,13 @@ class App(ModesMixin, AgentViewMixin):
         return lines
 
     def _slot_lines(self, cols: int, rows: int) -> list[Line]:
-        cap = slot_cap(rows, cols)
+        """The slot's rows; with the composer hidden it has the composer frame's rows too (`layout.choice_cap`)."""
+        cap = choice_cap(rows, cols) if self._composer_hidden() else slot_cap(rows, cols)
         if cap <= 0:
             return []
         if self.slot is not None:
-            return self.slot.lines(cols, self.theme, cap)
+            # Where the terminal has no mode row, the question's keys take a row of the slot's own.
+            return self.slot.lines(cols, self.theme, cap, keys_row=not under_composer(rows, cols)[1])
         if self.picker is not None:
             return self.picker.lines(cols, self.theme, cap, self.wall_clock())
         if self.search is not None:

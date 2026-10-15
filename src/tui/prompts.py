@@ -7,10 +7,10 @@ or withdrawn by the gateway. Three rules shape this module:
 - Nothing is answered on the person's behalf. Every answer comes from a key
   they pressed or text they submitted; Esc or Ctrl+C sends the contract's
   decline frame (an explicit deny for approvals). Allowing a command takes
-  the arrows and then Enter: deny comes first and is selected, the narrowest
-  allow sits next to it, the selection does not wrap, Up and Down do nothing,
-  and a letter can only deny. The app ignores every key, and the composer's
-  Enter, for a moment after any slot opens. A request the gateway
+  the arrows and then Enter: deny is the first row and selected, the
+  narrowest allow sits under it, the selection does not wrap, no digit picks
+  a choice, and a letter can only deny. The app ignores every key, and the
+  composer's Enter, for a moment after any slot opens. A request the gateway
   withdraws itself (its own timeout, an interrupt) arrives as
   `request.cancel`, and the app closes the slot without answering.
 - Nothing is left unanswered. A request the TUI cannot show is answered at
@@ -19,10 +19,16 @@ or withdrawn by the gateway. Three rules shape this module:
 - Nothing typed into a masked prompt is kept: the slot holds no copy of the
   value after it builds the answer frame.
 
-Every slot row hangs off a `▌` bar, in the warn colour for an approval and
-the accent for anything else, so a question Hermes asked never reads as
-panel or transcript text. The command an approval would run is drawn in the
-code style; the choices are plain text, the selected one highlighted.
+A question answered by picking (`PromptSlot.picking`: an approval, or a
+clarify question with choices) lists its choices one per row, the highlighted
+one marked `❯`, and the app hides the composer while it is open. A clarify
+question's last row opens a text field for an answer of the person's own
+(Hermes' wording, "Other (type your answer)"); while that field is open the
+composer is the field. Every slot row hangs off a `▌` bar, in the warn colour
+for an approval and the accent for anything else, so a question Hermes asked
+never reads as panel or transcript text. The command an approval would run is
+drawn in the code style; the choices are plain text, the highlighted one also
+highlighted.
 """
 
 from __future__ import annotations
@@ -33,9 +39,9 @@ from typing import Any
 from . import gateway_contract as contract
 from .keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Paste
 from .markdown import wrap_prefixed
-from .style import Line, Span
+from .style import Line, Span, Style
 from .theme import Theme
-from .width import line_width, truncate_line, wrap_line
+from .width import cell_width, truncate_line, wrap_line
 
 # `always` writes a permanent allow rule into the person's Hermes config. The
 # OMH TUI offers the choices that end with this session; `always` stays a
@@ -43,19 +49,27 @@ from .width import line_width, truncate_line, wrap_line
 # deny first (and selected), then the narrowest allow, then the broadest.
 APPROVAL_CHOICES = ("deny", "once", "session")
 _APPROVAL_LABELS = {"once": "allow once", "session": "allow this session", "deny": "deny"}
-# The narrowest form: short words, never single letters, which would read as shortcuts.
-_APPROVAL_NARROW_LABELS = {"once": "once", "session": "sess", "deny": "deny"}
 # A letter can only deny. Allowing takes the arrows and Enter, so a key typed
 # for the composer as the slot opens can never run a command.
 _DENY_KEYS = frozenset("dn")
 # The keys that pick a clarify choice. `str.isdigit` also admits "²" or "٣", which `int` rejects.
 CHOICE_DIGITS = "123456789"
+# The last row of a clarify question's choices: it opens a text field (Hermes' Ink TUI, `prompt.clarify.other`).
+CLARIFY_OTHER = "Other (type your answer)"
 SLOT_BAR = "▌ "
-# Each question's keys, for the mode row while it is open: Esc then has one meaning on the screen.
-APPROVAL_KEYS = "←→ pick · enter confirms · d or esc denies"
-CLARIFY_CHOICE_KEYS = "1-9 or ↑↓ enter picks · or type an answer · esc cancels"
-CLARIFY_TEXT_KEYS = "type an answer · enter sends · esc cancels"
-VALUE_KEYS = "type it · enter sends · esc declines"
+CHOICE_MARK = "❯ "
+# Each question's keys, longest first, for the mode row while it is open: Esc then has one meaning on the screen.
+APPROVAL_KEYS = ("↑↓ pick · enter confirms · d or esc denies", "↑↓ enter · d or esc denies", "esc denies")
+CLARIFY_CHOICE_KEYS = (
+    "↑↓ or 1-9 · enter picks · type to answer · esc cancels", "↑↓ enter picks · esc cancels", "esc cancels"
+)
+CLARIFY_FIELD_KEYS = (
+    "type your answer · enter sends · ↑↓ back to the choices · esc cancels",
+    "enter sends · ↑↓ choices · esc cancels",
+    "esc cancels",
+)
+CLARIFY_TEXT_KEYS = ("type an answer · enter sends · esc cancels",)
+VALUE_KEYS = ("type it · enter sends · esc declines",)
 
 _DECLINE_NOTICES = {
     "vault.unlock_prompt": "Hermes asked to unlock a password vault. Vault prompts run in `hermes --tui`; declined.",
@@ -79,6 +93,13 @@ class ImmediateAnswer:
     notice: str
 
 
+@dataclass(frozen=True)
+class TypeIt:
+    """A key that opened a clarify question's text field: the app types it into the field (the composer)."""
+
+    key: Key | Paste
+
+
 def _decline(request_id: str, method: str) -> Answer:
     return Answer(request_id, dict(contract.server_request_treatment(method).decline))
 
@@ -93,6 +114,7 @@ class PromptSlot:
     selected: int = 0
     question_index: int = 0
     answers: dict[str, str | None] = field(default_factory=dict)
+    typing: bool = False  # a clarify question's text field is open: the composer is the field
 
     @property
     def masked(self) -> bool:
@@ -104,12 +126,27 @@ class PromptSlot:
         return self.method != "approval"
 
     @property
-    def keys(self) -> str:
-        """The keys this question takes, said on the mode row."""
+    def picking(self) -> bool:
+        """Whether the person answers by picking from the list now, so no composer is drawn.
+
+        An approval, and a clarify question with choices while its text field
+        is closed. A question answered with text (a sudo password, a secret, a
+        clarify question without choices, or one whose text field is open)
+        has the composer.
+        """
+        if self.method == "approval":
+            return True
+        return self.method == "clarify" and bool(self._current_choices()) and not self.typing
+
+    @property
+    def keys(self) -> tuple[str, ...]:
+        """The keys this question takes now, longest form first, said on the mode row."""
         if self.method == "approval":
             return APPROVAL_KEYS
         if self.method == "clarify":
-            return CLARIFY_CHOICE_KEYS if self._current_choices() else CLARIFY_TEXT_KEYS
+            if not self._current_choices():
+                return CLARIFY_TEXT_KEYS
+            return CLARIFY_FIELD_KEYS if self.typing else CLARIFY_CHOICE_KEYS
         return VALUE_KEYS
 
     def decline(self) -> Answer:
@@ -147,34 +184,47 @@ class PromptSlot:
         self.answers[question["qid"]] = value
         self.question_index += 1
         self.selected = 0
+        self.typing = False
         if self.question_index >= len(self._questions()):
             return Answer(self.request_id, {"result": {"answers": dict(self.answers)}})
         return None
 
+    def _pick(self, index: int) -> Answer | None:
+        """Choice `index` answers the question; the row after the choices opens the text field instead."""
+        choices = self._current_choices()
+        if index < len(choices):
+            return self._record_answer(choices[index])
+        self.selected, self.typing = len(choices), True
+        return None
+
     # -- input ------------------------------------------------------------------------------
 
-    def handle_key(self, key: Key | Paste) -> Answer | None:
-        """A key pressed while the slot is open; returns the answer frame once the person decided."""
-        if isinstance(key, Paste):
-            return None
-        if key.name == ESCAPE or (key.name == CHAR and key.ctrl and key.char == "c"):
+    def handle_key(self, key: Key | Paste) -> Answer | TypeIt | None:
+        """A key pressed while the slot is open: the answer frame once the person decided, or a key to type.
+
+        `TypeIt` hands back a key that opened a clarify question's text field,
+        for the app to type into it.
+        """
+        if isinstance(key, Key) and (key.name == ESCAPE or (key.name == CHAR and key.ctrl and key.char == "c")):
             return self.decline()
         if self.method == "approval":
-            return self._approval_key(key)
+            return self._approval_key(key) if isinstance(key, Key) else None
         if self.method == "clarify":
             return self._clarify_key(key)
         return None
 
     def _approval_key(self, key: Key) -> Answer | None:
-        """Left and Right move and stop at either end; Up and Down do nothing.
+        """Up and Down (Left and Right too) move and stop at either end; Enter answers the highlighted choice.
 
-        Up then Enter is the composer's recall-and-resend, so neither key may
-        carry the selection off the default deny.
+        Deny is the first row and selected as the slot opens, so Up then Enter,
+        the composer's recall-and-resend typed as the slot opened, still
+        denies: Up moves nothing off the first row. No digit picks a choice,
+        and the only letters that answer deny.
         """
         choices = self.approval_choices()
-        if key.name == LEFT:
+        if key.name in (UP, LEFT):
             self.selected = max(self.selected - 1, 0)
-        elif key.name == RIGHT:
+        elif key.name in (DOWN, RIGHT):
             self.selected = min(self.selected + 1, len(choices) - 1)
         elif key.name == ENTER:
             return Answer(self.request_id, {"result": {"choice": choices[self.selected]}})
@@ -182,106 +232,155 @@ class PromptSlot:
             return self.decline()
         return None
 
-    def _clarify_key(self, key: Key) -> Answer | None:
+    def _clarify_key(self, key: Key | Paste) -> Answer | TypeIt | None:
+        """The choices' keys, and the keys that open the text field.
+
+        In the list: Up and Down move over the choices and the text field's row
+        and stop at either end; Enter picks the highlighted row; a digit picks
+        that choice, or opens the field when it numbers the field's row. Any
+        other character, or a paste, opens the field and is its first text.
+        With the field open, Up and Down go back to the list, and what was
+        typed stays in the field.
+        """
         choices = self._current_choices()
         if not choices:
             return None
-        if key.name == UP:
-            self.selected = (self.selected - 1) % len(choices)
-        elif key.name == DOWN:
-            self.selected = (self.selected + 1) % len(choices)
-        elif key.name == CHAR and not key.ctrl and not key.alt and len(key.char) == 1 and key.char in CHOICE_DIGITS:
-            index = int(key.char) - 1
-            if 0 <= index < len(choices):
-                return self._record_answer(choices[index])
-        return None
+        if isinstance(key, Paste):
+            return None if self.typing else self._open_field(key)
+        if key.name in (UP, DOWN):
+            self.typing = False
+            step = -1 if key.name == UP else 1
+            self.selected = min(max(self.selected + step, 0), len(choices))
+            return None
+        if self.typing:
+            return None
+        if key.name == ENTER:
+            return self._pick(self.selected)
+        if key.name != CHAR or key.ctrl or key.alt:
+            return None
+        if len(key.char) == 1 and key.char in CHOICE_DIGITS and int(key.char) - 1 <= len(choices):
+            return self._pick(int(key.char) - 1)
+        return self._open_field(key)
+
+    def _open_field(self, key: Key | Paste) -> TypeIt:
+        self.selected, self.typing = len(self._current_choices()), True
+        return TypeIt(key)
 
     def submit_text(self, text: str) -> Answer | None:
-        """Composer text submitted while the slot is open. An empty clarify submit picks the highlighted choice."""
+        """Composer text submitted while the slot is open.
+
+        A clarify question with choices takes an empty submit as Enter on the
+        highlighted row while the list is shown, and as a way back to the list
+        while the text field is open.
+        """
         if self.method == "approval":
             return None
         if self.method == "clarify":
-            choices = self._current_choices()
-            if not text.strip() and choices:
-                return self._record_answer(choices[self.selected])
+            if self._current_choices() and not text.strip():
+                if self.typing:
+                    self.typing = False
+                    return None
+                return self._pick(self.selected)
             return self._record_answer(text.strip() or None)
         return Answer(self.request_id, {"result": {"value": text}})
 
     # -- rendering --------------------------------------------------------------------------
 
-    def lines(self, width: int, theme: Theme, max_rows: int) -> list[Line]:
+    def lines(self, width: int, theme: Theme, max_rows: int, keys_row: bool = False) -> list[Line]:
+        """The slot's rows, at most `max_rows`; `keys_row` adds the question's keys (where no mode row says them).
+
+        A list keeps the highlighted row whatever the budget: with one row it
+        is that row alone, with more the question's first row comes before it.
+        The keys row takes a row nothing else needs, except beside an
+        approval's command, where it keeps one once the command has a row.
+        """
         if max_rows <= 0:
             return []
         inner = max(width - len(SLOT_BAR), 1)
+        keys: list[Line] = []
+        if keys_row:
+            said = next((form for form in self.keys if cell_width(f"  {form}") <= inner), self.keys[-1])
+            keys = [(Span(f"  {said}", theme.hint),)]
         if self.method == "approval":
-            rows = self._approval_lines(inner, theme, max_rows)
+            rows = self._approval_lines(inner, theme, max_rows, keys)
         elif self.method == "clarify":
-            rows = self._clarify_lines(inner, theme)
+            rows = self._clarify_lines(inner, theme, max_rows, keys)
         else:
             rows = self._value_lines(inner, theme)
-        if len(rows) > max_rows:
-            # The header and the choices matter most; the body is what gets cut.
-            rows = rows[:1] + rows[len(rows) - (max_rows - 1):] if max_rows > 1 else rows[:1]
+            if len(rows) > max_rows:
+                # The header and the hint matter most; the body is what gets cut.
+                rows = rows[:1] + rows[len(rows) - (max_rows - 1):] if max_rows > 1 else rows[:1]
         bar = Span(SLOT_BAR, theme.warn if self.method == "approval" else theme.accent)
         return [truncate_line((bar, *truncate_line(row, inner)), width) for row in rows]
 
-    def _approval_lines(self, width: int, theme: Theme, max_rows: int) -> list[Line]:
-        """Header, the command's FIRST rows, `… +K more lines` when cut, then the choices.
+    def _choice_rows(self, labels: list[str], theme: Theme, mark_style: Style) -> list[Line]:
+        """One row per label, the highlighted one marked `❯` and highlighted."""
+        rows: list[Line] = []
+        for index, label in enumerate(labels):
+            current = index == self.selected
+            mark = Span(CHOICE_MARK if current else " " * len(CHOICE_MARK), mark_style)
+            rows.append((mark, Span(label, theme.menu_current if current else theme.text)))
+        return rows
+
+    def _fit(self, head: Line, body: list[Line], choices: list[Line], keys: list[Line], max_rows: int) -> list[Line]:
+        """`head`, `body`, `choices` and `keys` in that order within `max_rows`, keeping the highlighted choice.
+
+        With fewer rows than the head and the choices need, the choices scroll
+        so the highlighted one shows, under the head when there are two rows or
+        more. Otherwise the head and every choice are drawn, then as much of
+        `body` as fits, then `keys` if a row is still free.
+        """
+        if max_rows < len(choices) + 1:
+            room = max_rows - 1 if max_rows > 1 else max_rows
+            start = min(max(self.selected - room + 1, 0), len(choices) - room)
+            return ([head] if room < max_rows else []) + choices[start : start + room]
+        left = max_rows - len(choices) - 1
+        body = body[:left]
+        return [head, *body, *choices, *keys[: left - len(body)]]
+
+    def _approval_lines(self, width: int, theme: Theme, max_rows: int, keys: list[Line]) -> list[Line]:
+        """Header, the command's FIRST rows (`… +K more lines` when cut), then the choices one per row.
 
         The beginning of a command is what says what it does, so a long one is
-        cut from the end. The choice row is kept whatever the budget; with a
-        single spare row that row shows the command's head, not the marker.
+        cut from the end; with a single spare row that row shows the command's
+        head, not the marker.
         """
         description = str(self.params.get("description") or "dangerous command")
         command = str(self.params.get("command") or "")
         header: Line = (Span("⚠ Hermes asks to run ", theme.warn), Span(description, theme.warn))
-        choices = self._approval_choice_row(width, theme)
-        if max_rows <= 1:
-            return [choices]
+        labels = [_APPROVAL_LABELS[choice] for choice in self.approval_choices()]
+        choices = self._choice_rows(labels, theme, theme.warn)
         indent: Line = (Span("  ", theme.code),)  # every row of the command under one indent
         command_rows = wrap_prefixed((Span(command, theme.code),), indent, indent, width) if command else []
-        room = max_rows - 2
-        if len(command_rows) > room:
-            kept = room - 1 if room >= 2 else room
+        left = max_rows - len(choices) - 1
+        room = left - (len(keys) if left >= 2 else 0)  # the keys row keeps a row only beside a row of the command
+        if len(command_rows) > max(room, 0):
+            kept = room - 1 if room >= 2 else max(room, 0)
             hidden = len(command_rows) - kept
             command_rows = command_rows[:kept]
             if room >= 2:
                 command_rows.append((Span(f"  … +{hidden} more line{'s' if hidden != 1 else ''}", theme.muted),))
-        return [header, *command_rows, choices]
+        return self._fit(header, command_rows, choices, keys, max_rows)
 
-    def _approval_choice_row(self, width: int, theme: Theme) -> Line:
-        """The choices on one row, deny first; shorter labels when the long ones would not all fit."""
-        keys = "  ←→ then enter · d or esc denies"
-        short = "  ←→ ⏎ · d denies"
-        ladder = (("long", keys), ("short", keys), ("short", short), ("narrow", short), ("narrow", "  d denies"), ("narrow", ""))
-        for form, hint in ladder:
-            spans: list[Span] = [Span("  ", theme.text)]
-            for index, choice in enumerate(self.approval_choices()):
-                style = theme.menu_current if index == self.selected else theme.text
-                spans.append(Span(_approval_label(choice, form), style))
-                spans.append(Span(" ", theme.text))
-            if hint:
-                spans.append(Span(hint, theme.hint))
-            row = tuple(spans)
-            if line_width(row) <= width:
-                return row
-        return row
+    def _clarify_lines(self, width: int, theme: Theme, max_rows: int, keys: list[Line]) -> list[Line]:
+        """The question (its counter when there are several), then its choices and the text field's row.
 
-    def _clarify_lines(self, width: int, theme: Theme) -> list[Line]:
+        A question with no choices says how to answer under it instead.
+        """
         question = self._current_question()
         if question is None:
             return []
         total = len(self._questions())
         counter = f" ({self.question_index + 1}/{total})" if total > 1 else ""
-        rows: list[Line] = list(
+        head: list[Line] = list(
             wrap_line((Span("? ", theme.accent), Span(str(question.get("question", "")) + counter, theme.text)), width)
         )
-        for index, choice in enumerate(self._current_choices()):
-            style = theme.menu_current if index == self.selected else theme.text
-            rows.append((Span(f"  {index + 1}. ", theme.muted), Span(choice, style)))
-        hint = "type an answer and press enter" if not self._current_choices() else "number or enter picks; or type an answer"
-        rows.append((Span(f"  {hint} · esc cancels", theme.hint),))
-        return rows
+        choices = self._current_choices()
+        if not choices:
+            rows = [*head, (Span("  type an answer and press enter · esc cancels", theme.hint),)]
+            return rows[:1] + rows[len(rows) - (max_rows - 1):] if len(rows) > max_rows > 1 else rows[:max_rows]
+        labels = [f"{number}. {choice}" for number, choice in enumerate([*choices, CLARIFY_OTHER], start=1)]
+        return self._fit(head[0], head[1:], self._choice_rows(labels, theme, theme.accent), keys, max_rows)
 
     def _value_lines(self, width: int, theme: Theme) -> list[Line]:
         label = {
@@ -295,14 +394,6 @@ class PromptSlot:
             rows.extend(wrap_line((Span("  " + str(prompt), theme.muted),), width))
         rows.append((Span("  type it in the composer and press enter · esc declines", theme.hint),))
         return rows
-
-
-def _approval_label(choice: str, form: str) -> str:
-    if form == "long":
-        return f" {_APPROVAL_LABELS[choice]} "
-    if form == "short":
-        return f" {choice} "
-    return f" {_APPROVAL_NARROW_LABELS[choice]} "
 
 
 def open_request(request_id: str, method: str, params: dict[str, Any]) -> PromptSlot | ImmediateAnswer:

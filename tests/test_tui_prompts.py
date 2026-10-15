@@ -7,6 +7,7 @@ import unittest
 from _tui_lines import line_text, lines_text
 from omh.tui import prompts
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Paste
+from omh.tui.style import Span
 from omh.tui.theme import DEFAULT_THEME
 from omh.tui.width import line_width
 
@@ -54,37 +55,43 @@ class ApprovalTests(unittest.TestCase):
     def test_always_is_never_offered_and_deny_comes_first(self) -> None:
         self.assertEqual(slot("approval", APPROVAL).approval_choices(), ("deny", "once", "session"))
 
+    def test_an_approval_is_answered_by_picking(self) -> None:
+        approval = slot("approval", APPROVAL)
+        self.assertTrue(approval.picking)
+        self.assertFalse(approval.wants_text)
+
     def test_enter_on_an_untouched_approval_denies(self) -> None:
         answer = slot("approval", APPROVAL).handle_key(Key(ENTER))
         self.assertEqual(answer.frame, {"result": {"choice": "deny"}})
 
-    def test_one_arrow_from_deny_reaches_allow_once_never_the_session(self) -> None:
-        approval = slot("approval", APPROVAL)
-        approval.handle_key(Key(RIGHT))
-        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "once"}})
-
-    def test_the_selection_stops_at_either_end_instead_of_wrapping(self) -> None:
-        # Left from the default deny must not wrap round to the broadest allow.
-        approval = slot("approval", APPROVAL)
-        approval.handle_key(Key(LEFT))
-        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "deny"}})
-        approval = slot("approval", APPROVAL)
-        for _ in range(5):
-            approval.handle_key(Key(RIGHT))
-        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "session"}})
-
-    def test_up_and_down_do_not_move_an_approval(self) -> None:
-        # Up then Enter is the composer's recall-and-resend; on an approval it must still deny.
-        for key in (UP, DOWN):
-            with self.subTest(key=key, start="deny"):
+    def test_one_step_down_from_deny_reaches_allow_once_never_the_session(self) -> None:
+        for key in (DOWN, RIGHT):
+            with self.subTest(key=key):
                 approval = slot("approval", APPROVAL)
-                self.assertIsNone(approval.handle_key(Key(key)))
-                self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "deny"}})
-            with self.subTest(key=key, start="once"):
-                approval = slot("approval", APPROVAL)
-                approval.handle_key(Key(RIGHT))
                 approval.handle_key(Key(key))
                 self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "once"}})
+
+    def test_up_then_enter_typed_ahead_still_denies(self) -> None:
+        # Up then Enter is the composer's recall-and-resend. Deny is the first row, so Up
+        # moves nothing and the Enter answers deny, however many times Up was pressed.
+        for presses in (1, 2, 5):
+            for key in (UP, LEFT):
+                with self.subTest(key=key, presses=presses):
+                    approval = slot("approval", APPROVAL)
+                    for _ in range(presses):
+                        self.assertIsNone(approval.handle_key(Key(key)))
+                    self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "deny"}})
+
+    def test_the_selection_stops_at_either_end_instead_of_wrapping(self) -> None:
+        approval = slot("approval", APPROVAL)
+        for _ in range(5):
+            approval.handle_key(Key(DOWN))
+        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "session"}})
+        approval = slot("approval", APPROVAL)
+        approval.handle_key(Key(DOWN))
+        for _ in range(3):
+            approval.handle_key(Key(UP))
+        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "deny"}})
 
     def test_a_letter_can_only_deny(self) -> None:
         # A key typed for the composer must never allow a command: o, s, y and the rest do nothing.
@@ -95,111 +102,146 @@ class ApprovalTests(unittest.TestCase):
             with self.subTest(char=char):
                 self.assertEqual(slot("approval", APPROVAL).handle_key(Key(CHAR, char)).frame, {"result": {"choice": "deny"}})
 
-    def test_a_digit_picks_no_approval_choice(self) -> None:
+    def test_a_digit_picks_no_approval_choice_and_moves_nothing(self) -> None:
         # Digits pick clarify choices; on an approval they would be allow shortcuts, so they do nothing.
-        for char in "0123456789":
-            with self.subTest(char=char):
-                approval = slot("approval", APPROVAL)
-                self.assertIsNone(approval.handle_key(Key(CHAR, char)))
-                self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "deny"}})
+        for start in (0, 1):
+            for char in "0123456789":
+                with self.subTest(char=char, start=start):
+                    approval = slot("approval", APPROVAL)
+                    approval.selected = start
+                    self.assertIsNone(approval.handle_key(Key(CHAR, char)))
+                    self.assertEqual(approval.selected, start)
 
-    def test_the_choice_row_names_arrows_and_enter_and_no_letter_shortcut(self) -> None:
-        row = line_text(slot("approval", APPROVAL).lines(80, DEFAULT_THEME, max_rows=4)[-1])
-        self.assertIn("allow once", row)
-        self.assertIn("←→ then enter · d or esc denies", row)
-        self.assertNotIn("o:", row)
-        self.assertNotIn("s:", row)
+    def test_a_paste_answers_nothing(self) -> None:
+        approval = slot("approval", APPROVAL)
+        self.assertIsNone(approval.handle_key(Paste("y\n")))
+        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "deny"}})
 
     def test_escape_and_ctrl_c_send_an_explicit_deny(self) -> None:
         for key in (Key(ESCAPE), CTRL_C):
             with self.subTest(key=key):
-                self.assertEqual(slot("approval", APPROVAL).handle_key(key).frame, {"result": {"choice": "deny"}})
+                approval = slot("approval", APPROVAL)
+                approval.handle_key(Key(DOWN))
+                self.assertEqual(approval.handle_key(key).frame, {"result": {"choice": "deny"}})
 
     def test_a_session_choice_hermes_did_not_offer_is_not_shown(self) -> None:
         approval = slot("approval", {**APPROVAL, "choices": ["once", "deny"]})
         self.assertEqual(approval.approval_choices(), ("deny", "once"))
+        text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=6))
+        self.assertEqual([unbarred(row) for row in text[-2:]], ["❯ deny", "  allow once"])
 
     def test_submitted_text_does_not_answer_an_approval(self) -> None:
         approval = slot("approval", APPROVAL)
-        self.assertFalse(approval.wants_text)
         self.assertIsNone(approval.submit_text("yes"))
+
+    def test_the_choices_stand_one_per_row_deny_first_and_marked(self) -> None:
+        approval = slot("approval", {**APPROVAL, "command": "one\ntwo"})
+        text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=8))
+        self.assertIn("Hermes asks to run recursive delete", text[0])
+        self.assertEqual([unbarred(row) for row in text[1:]], ["  one", "  two", "❯ deny", "  allow once", "  allow this session"])
+        approval.handle_key(Key(DOWN))
+        text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=8))
+        self.assertEqual([unbarred(row) for row in text[3:]], ["  deny", "❯ allow once", "  allow this session"])
+
+    def test_no_number_and_no_key_hint_is_drawn_on_the_choices(self) -> None:
+        # Allowing takes the arrows and Enter: nothing on the rows reads as a shortcut. The keys are on the mode row.
+        text = lines_text(slot("approval", APPROVAL).lines(80, DEFAULT_THEME, max_rows=6))
+        for row in text[-3:]:
+            with self.subTest(row=row):
+                self.assertFalse(any(char.isdigit() for char in row), row)
+                self.assertNotIn("enter", row)
+
+    def test_the_keys_say_the_arrows_enter_and_deny(self) -> None:
+        keys = slot("approval", APPROVAL).keys
+        self.assertEqual(keys[0], "↑↓ pick · enter confirms · d or esc denies")
+        self.assertTrue(all("esc denies" in form for form in keys), keys)
+        self.assertEqual(keys, tuple(sorted(keys, key=len, reverse=True)))
+
+    def test_a_keys_row_is_added_only_when_asked_and_only_beside_the_command(self) -> None:
+        approval = slot("approval", {**APPROVAL, "command": "one\ntwo"})
+        self.assertFalse([row for row in lines_text(approval.lines(60, DEFAULT_THEME, 8)) if "esc denies" in row])
+        text = lines_text(approval.lines(60, DEFAULT_THEME, 8, keys_row=True))
+        self.assertEqual(unbarred(text[-1]), "  ↑↓ pick · enter confirms · d or esc denies")
+        self.assertEqual(unbarred(lines_text(approval.lines(24, DEFAULT_THEME, 8, keys_row=True))[-1]), "  esc denies")
+        tight = lines_text(approval.lines(60, DEFAULT_THEME, 5, keys_row=True))
+        self.assertEqual([unbarred(row) for row in tight[1:]], ["  one", "❯ deny", "  allow once", "  allow this session"])
 
     def test_lines_show_command_and_choices_within_budget(self) -> None:
         rows = slot("approval", APPROVAL).lines(60, DEFAULT_THEME, max_rows=6)
         text = lines_text(rows)
         self.assertIn("rm -rf ./omh-m0-probe-dir", "\n".join(text))
-        self.assertIn("deny", text[-1])
+        self.assertEqual(unbarred(text[-3]), "❯ deny")
         self.assertTrue(all(line_width(row) <= 60 for row in rows))
 
-    def test_a_tight_budget_keeps_header_and_choices(self) -> None:
-        rows = slot("approval", {**APPROVAL, "command": "x " * 200}).lines(40, DEFAULT_THEME, max_rows=2)
-        text = lines_text(rows)
-        self.assertEqual(len(rows), 2)
+    def test_a_tight_budget_keeps_the_header_and_the_highlighted_choice(self) -> None:
+        approval = slot("approval", {**APPROVAL, "command": "x " * 200})
+        text = lines_text(approval.lines(40, DEFAULT_THEME, max_rows=2))
         self.assertIn("Hermes asks", text[0])
-        self.assertIn("deny", text[1])
+        self.assertEqual(unbarred(text[1]), "❯ deny")
+        approval.handle_key(Key(DOWN))
+        approval.handle_key(Key(DOWN))
+        self.assertEqual([unbarred(row) for row in lines_text(approval.lines(40, DEFAULT_THEME, max_rows=3))[1:]],
+                         ["  allow once", "❯ allow this session"])
+        self.assertEqual(lines_text(approval.lines(40, DEFAULT_THEME, max_rows=1)), ["▌ ❯ allow this session"])
 
     def test_a_long_command_shows_its_head_then_how_much_was_cut(self) -> None:
         # The shape a live run cut wrong: a multi-line `python3 -c` script, tail shown, head lost.
         command = 'python3 -c "\ndef is_prime(n):\n    if n < 2:\n        return False\n' + "    pass\n" * 8 + '"'
         approval = slot("approval", {**APPROVAL, "command": command, "description": "script execution via -e/-c flag"})
-        rows = approval.lines(60, DEFAULT_THEME, max_rows=6)
+        rows = approval.lines(60, DEFAULT_THEME, max_rows=8)
         text = lines_text(rows)
         total = command.count("\n") + 1
-        self.assertEqual(len(rows), 6)
+        self.assertEqual(len(rows), 8)
         self.assertIn("script execution", text[0])
         self.assertEqual([unbarred(row) for row in text[1:4]], ['  python3 -c "', "  def is_prime(n):", "      if n < 2:"])
         self.assertEqual(unbarred(text[4]), f"  … +{total - 3} more lines")
         self.assertEqual(rows[4][1].style, DEFAULT_THEME.muted)
-        self.assertIn("deny", text[5])
+        self.assertEqual(unbarred(text[5]), "❯ deny")
 
     def test_one_spare_row_shows_the_commands_first_row(self) -> None:
         approval = slot("approval", {**APPROVAL, "command": "first line\nsecond line\nthird line"})
-        text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=3))
+        text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=5))
         self.assertEqual(unbarred(text[1]), "  first line")
-        self.assertIn("deny", text[2])
+        self.assertEqual(unbarred(text[2]), "❯ deny")
 
     def test_a_command_that_fits_is_shown_whole_with_no_marker(self) -> None:
         approval = slot("approval", {**APPROVAL, "command": "one\ntwo"})
-        text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=6))
+        text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=8))
         self.assertEqual([unbarred(row) for row in text[1:3]], ["  one", "  two"])
-        self.assertEqual(len(text), 4)
+        self.assertEqual(len(text), 6)
         self.assertFalse(any("more line" in row for row in text))
 
-    def test_deny_stays_visible_at_every_width(self) -> None:
-        approval = slot("approval", APPROVAL)
-        for width in range(18, 120):
-            with self.subTest(width=width):
-                row = approval.lines(width, DEFAULT_THEME, max_rows=4)[-1]
-                self.assertTrue(unbarred(line_text(row)).lstrip().startswith("deny"), line_text(row))
-                self.assertLessEqual(line_width(row), width)
-
-    def test_the_narrowest_choice_row_spells_short_words_not_letters(self) -> None:
-        # A lone `o` or `s` reads as a shortcut, and no letter allows anything.
-        approval = slot("approval", APPROVAL)
-        narrowest = unbarred(line_text(approval.lines(25, DEFAULT_THEME, max_rows=4)[-1]))
-        self.assertEqual(narrowest.split(), ["deny", "once", "sess"])
-        for width in range(18, 120):
-            with self.subTest(width=width):
-                # The labels only: the hint after them names `d`, which does deny.
-                row = unbarred(line_text(approval.lines(width, DEFAULT_THEME, max_rows=4)[-1]))
-                labels = row.split("←→")[0].split("  d denies")[0].split()
-                self.assertFalse([word for word in labels if len(word) == 1 and word.isalpha()], labels)
+    def test_the_highlighted_choice_stays_visible_at_every_width_and_budget(self) -> None:
+        for selected in range(3):
+            approval = slot("approval", APPROVAL)
+            approval.selected = selected
+            label = ("deny", "allow once", "allow this session")[selected]
+            for width in range(18, 120, 7):
+                for max_rows in range(1, 9):
+                    with self.subTest(selected=selected, width=width, max_rows=max_rows):
+                        rows = approval.lines(width, DEFAULT_THEME, max_rows=max_rows)
+                        self.assertLessEqual(len(rows), max_rows)
+                        self.assertTrue(all(line_width(row) <= width for row in rows))
+                        marked = [unbarred(line_text(row)) for row in rows if unbarred(line_text(row)).startswith("❯")]
+                        self.assertEqual(len(marked), 1, marked)
+                        self.assertTrue(label.startswith(marked[0][2:].rstrip("…")), marked)
 
     def test_every_row_hangs_off_a_warn_bar_and_the_command_reads_as_code(self) -> None:
         approval = slot("approval", {**APPROVAL, "command": "one\ntwo"})
-        rows = approval.lines(60, DEFAULT_THEME, max_rows=6)
+        rows = approval.lines(60, DEFAULT_THEME, max_rows=8)
         self.assertEqual(bar_styles(rows), {DEFAULT_THEME.warn})
         self.assertEqual([row[1].style for row in rows[1:3]], [DEFAULT_THEME.code, DEFAULT_THEME.code])
 
-    def test_choices_read_as_text_and_the_selected_one_is_highlighted(self) -> None:
+    def test_choices_read_as_text_and_the_highlighted_one_is_highlighted(self) -> None:
         approval = slot("approval", APPROVAL)
-        approval.handle_key(Key(RIGHT))
-        row = approval.lines(80, DEFAULT_THEME, max_rows=4)[-1]
-        styles = {span.text.strip(): span.style for span in row if span.text.strip() in ("deny", "allow once", "allow this session")}
+        approval.handle_key(Key(DOWN))
+        rows = approval.lines(80, DEFAULT_THEME, max_rows=6)[-3:]
+        styles = {span.text: span.style for row in rows for span in row[1:] if span.text.strip(" ❯")}
         self.assertEqual(
             styles,
             {"deny": DEFAULT_THEME.text, "allow once": DEFAULT_THEME.menu_current, "allow this session": DEFAULT_THEME.text},
         )
+        self.assertEqual(rows[1][0], Span("▌ ❯ ", DEFAULT_THEME.warn))  # the mark in the bar's colour, merged with it
 
 
 class SlotBarTests(unittest.TestCase):
@@ -217,27 +259,118 @@ class ClarifyTests(unittest.TestCase):
         answer = slot("clarify", CLARIFY).handle_key(Key(CHAR, "2"))
         self.assertEqual(answer.frame, {"result": {"answers": {"q0": "blue"}}})
 
-    def test_empty_submit_picks_the_highlighted_choice(self) -> None:
+    def test_a_question_with_choices_is_picked_and_one_without_is_typed(self) -> None:
+        self.assertTrue(slot("clarify", CLARIFY).picking)
+        self.assertFalse(slot("clarify", {"questions": [{"qid": "q", "question": "Why?"}]}).picking)
+
+    def test_the_choices_stand_one_per_row_numbered_with_the_text_field_last(self) -> None:
+        text = lines_text(slot("clarify", CLARIFY).lines(80, DEFAULT_THEME, 6))
+        self.assertEqual(
+            [unbarred(row) for row in text],
+            ["? Which color do you prefer?", "❯ 1. red (Recommended)", "  2. blue", "  3. Other (type your answer)"],
+        )
+
+    def test_arrows_move_and_stop_at_either_end_and_enter_picks_the_highlighted(self) -> None:
+        clarify = slot("clarify", CLARIFY)
+        clarify.handle_key(Key(UP))
+        self.assertEqual(clarify.selected, 0)
+        clarify.handle_key(Key(DOWN))
+        self.assertEqual(clarify.handle_key(Key(ENTER)).frame, {"result": {"answers": {"q0": "blue"}}})
+        clarify = slot("clarify", CLARIFY)
+        for _ in range(6):
+            clarify.handle_key(Key(DOWN))
+        self.assertEqual(clarify.selected, 2)  # the text field's row, and no further
+
+    def test_enter_or_the_number_on_the_text_fields_row_opens_the_field_with_nothing_typed(self) -> None:
+        for keys in ([Key(DOWN), Key(DOWN), Key(ENTER)], [Key(CHAR, "3")]):
+            with self.subTest(keys=keys):
+                clarify = slot("clarify", CLARIFY)
+                for key in keys:
+                    self.assertIsNone(clarify.handle_key(key))
+                self.assertTrue(clarify.typing)
+                self.assertFalse(clarify.picking)
+                self.assertEqual(clarify.selected, 2)
+                self.assertEqual(clarify.keys[0], "type your answer · enter sends · ↑↓ back to the choices · esc cancels")
+
+    def test_a_character_that_picks_nothing_opens_the_field_and_is_typed_there(self) -> None:
+        for key in (Key(CHAR, "g"), Key(CHAR, "0"), Key(CHAR, "4"), Key(CHAR, "²"), Key(CHAR, "한"), Paste("green")):
+            with self.subTest(key=key):
+                clarify = slot("clarify", CLARIFY)
+                self.assertEqual(clarify.handle_key(key), prompts.TypeIt(key))
+                self.assertTrue(clarify.typing)
+
+    def test_keys_that_type_nothing_do_not_open_the_field(self) -> None:
+        for key in (Key(LEFT), Key(RIGHT), Key(CHAR, "g", ctrl=True), Key(CHAR, "g", alt=True)):
+            with self.subTest(key=key):
+                clarify = slot("clarify", CLARIFY)
+                self.assertIsNone(clarify.handle_key(key))
+                self.assertTrue(clarify.picking)
+
+    def test_with_the_field_open_the_arrows_go_back_to_the_list(self) -> None:
+        clarify = slot("clarify", CLARIFY)
+        clarify.handle_key(Key(CHAR, "g"))
+        self.assertIsNone(clarify.handle_key(Key(UP)))
+        self.assertTrue(clarify.picking)
+        self.assertEqual(clarify.selected, 1)
+        clarify.handle_key(Key(CHAR, "3"))
+        self.assertIsNone(clarify.handle_key(Key(DOWN)))
+        self.assertEqual((clarify.picking, clarify.selected), (True, 2))
+
+    def test_with_the_field_open_a_digit_or_a_paste_is_the_fields(self) -> None:
+        clarify = slot("clarify", CLARIFY)
+        clarify.handle_key(Key(CHAR, "3"))
+        self.assertIsNone(clarify.handle_key(Key(CHAR, "1")))
+        self.assertIsNone(clarify.handle_key(Paste("blue")))
+        self.assertTrue(clarify.typing)
+        self.assertEqual(clarify.answers, {})
+
+    def test_typed_text_answers_freely(self) -> None:
+        clarify = slot("clarify", CLARIFY)
+        clarify.handle_key(Key(CHAR, "g"))
+        self.assertEqual(clarify.submit_text(" green ").frame, {"result": {"answers": {"q0": "green"}}})
+
+    def test_an_empty_answer_from_the_field_goes_back_to_the_list(self) -> None:
+        clarify = slot("clarify", CLARIFY)
+        clarify.handle_key(Key(CHAR, "3"))
+        self.assertIsNone(clarify.submit_text("  "))
+        self.assertTrue(clarify.picking)
+        self.assertEqual(clarify.answers, {})
+
+    def test_empty_submit_from_the_list_picks_the_highlighted_choice(self) -> None:
         clarify = slot("clarify", CLARIFY)
         clarify.handle_key(Key(DOWN))
         self.assertEqual(clarify.submit_text("").frame, {"result": {"answers": {"q0": "blue"}}})
 
-    def test_typed_text_answers_freely(self) -> None:
-        self.assertEqual(slot("clarify", CLARIFY).submit_text(" green ").frame, {"result": {"answers": {"q0": "green"}}})
-
     def test_multiple_questions_answer_once_at_the_end(self) -> None:
         params = {"questions": [{"qid": "a", "question": "A?"}, {"qid": "b", "question": "B?", "choices": ["x", "y"]}]}
         clarify = slot("clarify", params)
+        self.assertFalse(clarify.picking)
         self.assertIsNone(clarify.submit_text("first"))
+        self.assertTrue(clarify.picking)
         self.assertEqual(clarify.handle_key(Key(CHAR, "1")).frame, {"result": {"answers": {"a": "first", "b": "x"}}})
 
-    def test_escape_cancels_with_no_answers(self) -> None:
-        self.assertEqual(slot("clarify", CLARIFY).handle_key(Key(ESCAPE)).frame, {"result": {}})
+    def test_the_next_question_opens_on_its_list(self) -> None:
+        params = {"questions": [{"qid": "a", "question": "A?", "choices": ["p", "q"]}, {"qid": "b", "question": "B?", "choices": ["x", "y"]}]}
+        clarify = slot("clarify", params)
+        clarify.handle_key(Key(CHAR, "g"))
+        self.assertIsNone(clarify.submit_text("green"))
+        self.assertEqual((clarify.picking, clarify.selected), (True, 0))
+        self.assertIn("(2/2)", lines_text(clarify.lines(80, DEFAULT_THEME, 6))[0])
 
-    def test_the_hint_says_esc_cancels_because_it_cancels_every_question(self) -> None:
-        text = "\n".join(line_text(row) for row in slot("clarify", CLARIFY).lines(80, DEFAULT_THEME, 6))
-        self.assertIn("esc cancels", text)
-        self.assertNotIn("skips", text)
+    def test_escape_cancels_with_no_answers_from_the_list_and_from_the_field(self) -> None:
+        self.assertEqual(slot("clarify", CLARIFY).handle_key(Key(ESCAPE)).frame, {"result": {}})
+        clarify = slot("clarify", CLARIFY)
+        clarify.handle_key(Key(CHAR, "g"))
+        self.assertEqual(clarify.handle_key(Key(ESCAPE)).frame, {"result": {}})
+
+    def test_the_keys_say_esc_cancels_because_it_cancels_every_question(self) -> None:
+        clarify = slot("clarify", CLARIFY)
+        self.assertEqual(clarify.keys[0], "↑↓ or 1-9 · enter picks · type to answer · esc cancels")
+        clarify.handle_key(Key(CHAR, "g"))
+        for form in (*slot("clarify", CLARIFY).keys, *clarify.keys):
+            with self.subTest(form=form):
+                self.assertIn("esc cancels", form)
+                self.assertNotIn("skips", form)
 
     def test_a_clarify_with_no_question_is_declined_at_once_with_a_notice(self) -> None:
         for params in ({}, {"questions": []}, {"questions": [{"question": "no qid"}, "not a dict"]}):
@@ -248,13 +381,23 @@ class ClarifyTests(unittest.TestCase):
                 self.assertIn("clarify", opened.notice)
 
     def test_only_the_digits_one_to_nine_pick_a_choice(self) -> None:
-        for char in ("²", "٣", "0", "3", "١"):
+        for char in ("²", "٣", "0", "١"):
             with self.subTest(char=char):
-                self.assertIsNone(slot("clarify", CLARIFY).handle_key(Key(CHAR, char)))
+                self.assertNotIsInstance(slot("clarify", CLARIFY).handle_key(Key(CHAR, char)), prompts.Answer)
         self.assertEqual(slot("clarify", CLARIFY).handle_key(Key(CHAR, "1")).frame, {"result": {"answers": {"q0": "red (Recommended)"}}})
 
-    def test_paste_does_nothing_on_its_own(self) -> None:
-        self.assertIsNone(slot("clarify", CLARIFY).handle_key(Paste("blue")))
+    def test_a_list_too_long_for_its_rows_scrolls_to_keep_the_highlighted_one(self) -> None:
+        params = {"questions": [{"qid": "q", "question": "Pick one", "choices": [f"choice {n}" for n in range(1, 9)]}]}
+        clarify = slot("clarify", params)
+        for _ in range(6):
+            clarify.handle_key(Key(DOWN))
+        text = [unbarred(row) for row in lines_text(clarify.lines(60, DEFAULT_THEME, 4))]
+        self.assertEqual(text, ["? Pick one", "  5. choice 5", "  6. choice 6", "❯ 7. choice 7"])
+        self.assertEqual(lines_text(clarify.lines(60, DEFAULT_THEME, 1)), ["▌ ❯ 7. choice 7"])
+
+    def test_a_question_without_choices_keeps_its_typed_answer_hint(self) -> None:
+        text = lines_text(slot("clarify", {"questions": [{"qid": "q", "question": "Why?"}]}).lines(60, DEFAULT_THEME, 6))
+        self.assertEqual([unbarred(row) for row in text], ["? Why?", "  type an answer and press enter · esc cancels"])
 
 
 class ValuePromptTests(unittest.TestCase):

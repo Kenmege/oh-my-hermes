@@ -341,12 +341,16 @@ class ListLeaveTests(unittest.TestCase):
         self.assertEqual(client.answers, [])
         self.assertEqual((app.list_selected, app.pager), (None, None))
         self.assertIsNotNone(app.slot)
-        self.assertEqual(len(under_the_frame(app)), 1)  # the mode row is back under the composer
+        screen = drawn(app)
+        status = status_index(screen)
+        # The approval stands where the composer was, and the one row under it is the mode row, with its keys.
+        self.assertEqual(screen[status - 2], "▌   allow this session")
+        self.assertIn("esc denies", screen[status - 1])
         now[0] += SLOT_ARM_SECONDS
         for key in (Key(DOWN), Key(UP)):
-            app._on_input(key)  # the approval takes every key and these two pick nothing
+            app._on_input(key)  # the approval takes every key: these two move its highlight there and back
         self.assertEqual((app.list_selected, client.answers), (None, []))
-        app._on_input(Key(ENTER))  # a deliberate Enter on the untouched approval: the explicit deny
+        app._on_input(Key(ENTER))  # a deliberate Enter on deny: the explicit deny
         self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "deny"}})])
         self.assertIsNone(app.list_selected)  # and answering it does not bring the list back
         self.assertEqual(client.calls, [])
