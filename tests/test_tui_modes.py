@@ -354,6 +354,28 @@ class SteerTests(unittest.TestCase):
                     self.assertIn(app_module.STEER_LEFT_NOTICE, notices(app, NOTICE_WARN))
                     self.assertFalse(any("queued by Hermes" in text for text in notices(app)))
 
+    def test_a_steer_unanswered_after_its_session_was_left_comes_back_and_nothing_is_sent(self) -> None:
+        for leave in ("new", "switch"):
+            with self.subTest(leave=leave):
+                now = [100.0]
+                app, client = make_app(busy=True, clock=lambda: now[0])
+                type_text(app, "keep this")
+                app._on_input(CTRL_ENTER)
+                steer = len(client.calls)
+                if leave == "new":
+                    app._on_new_session({"session_id": "live-2", "stored_session_id": "stored-2"})
+                else:
+                    app._on_session_resumed("stored-2", {"session_id": "live-2", "stored_session_id": "stored-2"})
+                now[0] += 3600
+                app._expire_calls()
+                self.assertEqual(
+                    [method for method, _params in client.calls[steer:]], ["session.close", "commands.catalog"]
+                )
+                self.assertEqual(app.composer.text, "keep this")
+                self.assertFalse(app.queued)
+                said = app_module.STEER_LEFT_UNANSWERED_NOTICE.format(seconds=app_module.CALL_ANSWER_SECONDS)
+                self.assertIn(said, notices(app, NOTICE_WARN))  # said in the session now live
+
     def test_a_steer_that_comes_back_never_lands_in_an_answer_or_over_a_draft(self) -> None:
         now = [100.0]
         app, client = make_app(busy=True, clock=lambda: now[0])
@@ -428,6 +450,8 @@ class DocumentedSteerTests(unittest.TestCase):
         self.assertIn("joins the OMH TUI's own queue (`⧗`) and goes when the turn ends, whatever "
                       "`display.busy_input_mode` says, so it never interrupts the turn", installation)
         self.assertNotIn("`↪ steered:`", installation)
+        unanswered = app_module.STEER_UNANSWERED_OUTCOME.format(seconds=app_module.CALL_ANSWER_SECONDS)
+        self.assertIn(f"`⧗ {unanswered} · <text>`", installation)  # given back, never sent again
         self.assertIn("A steer Hermes does not take waits in the TUI's own queue for the running turn to end, whatever "
                       "the busy mode, so it never interrupts that turn.", self.prose("AGENTS.md"))
 

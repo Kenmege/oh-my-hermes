@@ -315,7 +315,8 @@ STEER_REFUSED_OUTCOME = "{fallback} — Hermes refused the steer ({reason})"
 STEER_FALLBACK_QUEUED = "queued"  # a turn still runs: the text waits in the TUI's queue for it to end
 STEER_FALLBACK_SENT = "sent as a prompt"
 STEER_REJECTED_REASON = "its turn had ended"  # Hermes' `rejected`: the agent was idle
-STEER_UNANSWERED_OUTCOME = "{fallback} — Hermes did not answer the steer in {seconds:g} s"
+# A steer with no answer is no refusal: Hermes may have taken it, so its text is never sent again but given back.
+STEER_UNANSWERED_OUTCOME = "back in the composer — Hermes did not answer the steer in {seconds:g} s"
 # What an approval's answer reads as in the transcript, and its colour: allowed in green, denied in red.
 APPROVAL_OUTCOMES = {
     "once": ("allowed once", NOTICE_OK),
@@ -325,6 +326,10 @@ APPROVAL_OUTCOMES = {
 STEER_USAGE = "Usage: /steer <text to add to the running turn>"
 STEER_LEFT_NOTICE = (
     "Hermes answered a steer after you left its session. "
+    "Its text is back in the composer and was not sent to this one."
+)
+STEER_LEFT_UNANSWERED_NOTICE = (
+    "Hermes did not answer a steer in {seconds:g} s, and you had left its session. "
     "Its text is back in the composer and was not sent to this one."
 )
 
@@ -2404,35 +2409,42 @@ class App(ModesMixin, AgentViewMixin):
         return True
 
     def _on_steer_unanswered(self, sid: str, block: SteerBlock) -> None:
-        """No answer within `CALL_ANSWER_SECONDS`: settled as a refusal, so the text is not lost and the row leaves."""
-        if sid != self.sid:
-            self._steer_back(block.text)
-        else:
-            self._steer_refused(block, "", STEER_UNANSWERED_OUTCOME)
+        """No answer within `CALL_ANSWER_SECONDS`: the text comes back to the person and the row leaves.
 
-    def _steer_refused(self, block: SteerBlock, reason: str, outcome: str = STEER_REFUSED_OUTCOME) -> None:
-        """The steer says what became of its text (`outcome`, with `reason`), which goes as the next prompt.
+        Hermes may have taken the steer, so its text is never sent or queued again.
+        """
+        if sid != self.sid:
+            self._steer_back(block.text, STEER_LEFT_UNANSWERED_NOTICE.format(seconds=CALL_ANSWER_SECONDS))
+        else:
+            self._steer_unanswered(block)
+
+    def _steer_unanswered(self, block: SteerBlock) -> None:
+        """A steer, the main turn's or an agent's, whose call expired: its row says so and its text is given back."""
+        self.transcript.steer_answered(block, STEER_REFUSED, STEER_UNANSWERED_OUTCOME.format(seconds=CALL_ANSWER_SECONDS))
+        self._give_back(block.text)
+
+    def _steer_refused(self, block: SteerBlock, reason: str) -> None:
+        """The steer says what became of its text (with Hermes' `reason`), which goes as the next prompt.
 
         While a turn runs it waits in the TUI's queue, whatever the busy mode;
         only an idle session gets it as a prompt at once.
         """
         fallback = STEER_FALLBACK_QUEUED if self._busy() else STEER_FALLBACK_SENT
-        said = outcome.format(fallback=fallback, reason=reason, seconds=CALL_ANSWER_SECONDS)
-        self.transcript.steer_answered(block, STEER_REFUSED, said)
+        self.transcript.steer_answered(block, STEER_REFUSED, STEER_REFUSED_OUTCOME.format(fallback=fallback, reason=reason))
         self._send_typed(block.text, hold=True)
 
-    def _steer_back(self, text: str) -> None:
-        """A steer answered after its session was left: the text returns to the person, never to the live session.
+    def _steer_back(self, text: str, notice: str = STEER_LEFT_NOTICE) -> None:
+        """A steer settled after its session was left: the text returns to the person, never to the live session."""
+        self._give_back(text)
+        self.transcript.add_notice(notice, NOTICE_WARN)
 
-        It goes after whatever the composer holds; while a question has the
-        composer, after the draft the composer gets back when it closes, so it
-        never becomes part of an answer to Hermes.
-        """
+    def _give_back(self, text: str) -> None:
+        """A steer's text back to the person, never into an answer to Hermes: after whatever the composer holds,
+        or, while a question has the composer, after the draft the composer gets back when the question closes."""
         if self.slot is not None and self.slot.wants_text:
             self.slot_draft = "\n".join(part for part in (self.slot_draft, text) if part)
         else:
             self._set_composer("\n".join(part for part in (self.composer.text, text) if part))
-        self.transcript.add_notice(STEER_LEFT_NOTICE, NOTICE_WARN)
 
     # ── slash commands ──
 

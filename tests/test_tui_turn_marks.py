@@ -286,44 +286,105 @@ class SteerPlacementTests(unittest.TestCase):
 
 
 class UnansweredSteerTests(unittest.TestCase):
-    """A steer Hermes never answers is settled when its call expires: as a refusal, so its text is not lost."""
+    """A steer Hermes never answers is settled when its call expires: its text comes back, and is never sent again.
 
-    def test_an_unanswered_steer_is_queued_and_its_row_leaves_the_live_region(self) -> None:
-        clock = Clock()
+    Hermes may have taken it (an answer lost is no refusal), so nothing goes
+    out for it, idle or not; the text returns to the composer, and to the
+    draft a question gives back, never into an answer to Hermes.
+    """
+
+    BACK = "⧗ back in the composer — Hermes did not answer the steer in 120 s · use the other file"
+
+    def steered(self, clock: Clock, busy_after: bool) -> tuple[object, object, int]:
         app, client = make_app(busy=True, clock=clock)
         app._on_event(ev("message.start"))
         type_text(app, "use the other file")
         app._on_input(CTRL_ENTER)
+        steer = len(client.calls)
+        if not busy_after:
+            app._on_event(ev("message.complete", text="done", status="complete"))
+        type_text(app, "an unrelated draft")  # the person moved on
         clock.now += 3600  # far past any call's answer time
         app._expire_calls()
-        self.assertEqual([line.text for line in app.queued], ["use the other file"])  # waits for the turn, as refused
+        return app, client, steer
+
+    def test_an_unanswered_steer_during_the_turn_comes_back_and_its_row_leaves_the_live_region(self) -> None:
+        app, client, steer = self.steered(Clock(), busy_after=True)
+        self.assertEqual(app.composer.text, "an unrelated draft\nuse the other file")
+        self.assertFalse(app.queued)  # not queued: Hermes may have taken it
         app._on_event(ev("message.complete", text="done", status="complete"))
         taken = lines_text(app.transcript.take_stable_lines(100, THEME))  # what reaches scrollback
         self.assertNotIn("steer", " ".join(lines_text(app.transcript.live_lines(100, THEME))))  # nothing held back
-        self.assertIn("⧗ queued — Hermes did not answer the steer in 120 s · use the other file", taken)
+        self.assertIn(self.BACK, taken)
+        self.assertEqual([method for method, _params in client.calls], ["session.steer"])  # nothing sent for it
+
+    def test_an_unanswered_steer_after_its_turn_ended_is_not_sent_as_a_prompt(self) -> None:
+        app, client, steer = self.steered(Clock(), busy_after=False)
+        self.assertEqual([method for method, _params in client.calls], ["session.steer"])
+        self.assertFalse(app._busy())
+        self.assertEqual(app.composer.text, "an unrelated draft\nuse the other file")
+        app._on_response(Response(steer, {"status": "queued"}, None))  # Hermes' late answer: it had taken it
+        self.assertIn(steer, client.forgotten)
+        self.assertEqual([method for method, _params in client.calls], ["session.steer"])
+        self.assertEqual(app.composer.text, "an unrelated draft\nuse the other file")  # given back once
         rows = [line_text(row) for block in app.transcript.blocks if isinstance(block, SteerBlock)
                 for row in block_rows(block, 100, THEME)]
-        self.assertEqual(rows, ["⧗ queued — Hermes did not answer the steer in 120 s · use the other file"])
-        self.assertEqual(client.calls[-1], ("prompt.submit", {"session_id": SID, "text": "use the other file", "queued": True}))
+        self.assertEqual(rows, [self.BACK])
 
-    def test_an_unanswered_agent_steer_gives_its_text_back(self) -> None:
+    def agent_steered(self, clock: Clock) -> tuple[object, object, int]:
         from test_tui_agent_strip import STARTS, agent_app, relay
         from omh.tui.keys import DOWN
 
-        clock = Clock()
-        app, _client = agent_app(busy=True, frames=[], clock=clock)
+        app, client = agent_app(busy=True, frames=[], clock=clock)
         app._on_event(ev("message.start"))
         relay(app, STARTS)
         app._on_input(Key(DOWN))
         app._on_input(Key(CHAR, "s"))
-        type_text(app, "skip the tests folder")
+        type_text(app, "skip tests")
         app._on_input(Key(ENTER))
+        return app, client, len(client.calls)
+
+    def test_an_unanswered_agent_steer_gives_its_text_back_and_says_hermes_did_not_answer(self) -> None:
+        clock = Clock()
+        app, client, _steer = self.agent_steered(clock)
         clock.now += 3600
         app._expire_calls()
-        self.assertEqual(app.composer.text, "skip the tests folder")
+        self.assertEqual(app.composer.text, "skip tests")
         app._on_event(ev("message.complete", text="done", status="complete"))
-        app.transcript.take_stable_lines(100, THEME)
+        taken = lines_text(app.transcript.take_stable_lines(100, THEME))
         self.assertNotIn("steer", " ".join(lines_text(app.transcript.live_lines(100, THEME))))
+        self.assertIn(
+            "⧗ back in the composer — Hermes did not answer the steer in 120 s · find usages of: skip tests", taken
+        )
+        self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
+
+    def test_an_agent_steer_given_back_while_a_masked_question_is_open_stays_out_of_the_answer(self) -> None:
+        clock = Clock()
+        app, client, _steer = self.agent_steered(clock)
+        app._on_server_request(ServerRequest("srq-1", "sudo", {"prompt": "[sudo] password"}))
+        type_text(app, "hunter")  # the answer, masked
+        clock.now += 3600
+        app._expire_calls()
+        self.assertEqual(app.composer.text, "hunter")
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.answers, [("srq-1", {"result": {"value": "hunter"}})])
+        self.assertEqual(app.composer.text, "skip tests")  # back once the question closed
+
+    def test_an_agent_steer_refused_while_a_clarify_question_is_open_stays_out_of_the_answer(self) -> None:
+        clock = Clock()
+        app, client, steer = self.agent_steered(clock)
+        app._on_server_request(ServerRequest("srq-1", "clarify", {"questions": [{"qid": "q0", "question": "Which branch?"}]}))
+        clock.now += SLOT_ARM_SECONDS
+        type_text(app, "main")
+        app._on_response(Response(steer, None, {"code": 4009, "message": "no tool call left."}))
+        self.assertEqual(app.composer.text, "main")
+        app._on_input(Key(ENTER))
+        self.assertEqual(client.answers, [("srq-1", {"result": {"answers": {"q0": "main"}}})])
+        self.assertEqual(app.composer.text, "skip tests")
+        held = [line for line in lines_text(app.transcript.live_lines(140, THEME)) if "steer" in line]
+        self.assertEqual(
+            held, ["⧗ back in the composer — Hermes did not take the steer (no tool call left) · find usages of: skip tests"]
+        )
 
 
 class CommandPlacementTests(unittest.TestCase):

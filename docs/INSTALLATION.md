@@ -376,7 +376,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   interrupts it (`subagent.interrupt`); `s` makes the next line you send that
   agent's steer (`subagent.steer`), which Hermes hands it at its next tool
   call, with the mode row saying so until you send it or press Esc. A steer
-  Hermes does not take comes back to the composer. Its row reads as the main
+  Hermes does not take comes back to the composer, and so does one Hermes
+  has not answered in 120 s, which is never sent again; its row says which,
+  with Hermes' reason when it gave one. Its row reads as the main
   steer's does, naming the agent before the text (`↪ steer · <agent>:
   <text>`, then `↪ steer queued by Hermes · …`), and it and what `x` reports
   wait under the running call and are written at the next block boundary,
@@ -634,9 +636,13 @@ steer), the text joins the OMH TUI's own queue (`⧗`) and goes when the turn
 ends, whatever `display.busy_input_mode` says, so it never interrupts the
 turn; if the turn had already ended, it goes as an ordinary prompt. Either
 way the steer's row says so in amber (`⧗ queued — Hermes refused the steer
-(<why>) · <text>`). A steer Hermes has not answered in 120 s is settled the
-same way (`⧗ queued — Hermes did not answer the steer in 120 s · <text>`),
-and an agent's steer comes back to the composer. If you
+(<why>) · <text>`). A steer Hermes has not answered in 120 s is never sent or
+queued again, since Hermes may have taken it: its text comes back to the
+composer, after what you are typing (while Hermes asks you something, after
+the draft you get back when the question closes, never into your answer),
+and its row says so (`⧗ back in the composer — Hermes did not answer the
+steer in 120 s · <text>`). An agent's steer comes back to the composer the
+same way. If you
 left the session (`/new`, a switch) before Hermes answered, the text comes
 back to the composer and is not sent to the session you are in. The OMH TUI
 steers only with text you typed and sent this way: a queued prompt is never

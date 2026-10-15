@@ -53,9 +53,10 @@ AGENT_FINISHED_NOTICE = "{name} has finished; there is nothing to {action}."
 AGENT_INTERRUPTED_NOTICE = "Interrupted {name}."
 AGENT_ALREADY_DONE_NOTICE = "{name} had already finished."
 AGENT_INTERRUPT_REFUSED_NOTICE = "Hermes did not interrupt {name}: {reason}."
-# A refused agent steer's row says what became of its text (`transcript.SteerBlock`'s outcome). Hermes refuses one
-# for an agent that has finished or has no tool call left to take it at.
+# A refused agent steer's row says what became of its text (`transcript.SteerBlock`'s outcome), with Hermes' reason
+# when it gave one. Hermes refuses one for an agent that has finished or has no tool call left to take it at.
 AGENT_STEER_REFUSED = "back in the composer — Hermes did not take the steer"
+AGENT_STEER_REFUSED_BECAUSE = AGENT_STEER_REFUSED + " ({reason})"
 AGENT_LOG_KEYS = "←/→ agents"
 TAIL_POLL_SECONDS = 2.0
 # Hermes answers `available: false` while an agent's log is not there yet, as it starts. Five answers in a row
@@ -212,16 +213,18 @@ class AgentViewMixin:
             "subagent.steer",
             {"session_id": self.sid, "subagent_id": agent.subagent_id, "text": text},
             lambda result: self._on_agent_steered(block, result),
-            lambda error: self._on_agent_steered(block, {}),
-            lambda: self._on_agent_steered(block, {}),  # no answer: its text comes back, as for a refusal
+            lambda error: self._on_agent_steered(block, {}, as_text(error.get("message")).strip().rstrip(".")),
+            lambda: self._steer_unanswered(block),  # its text comes back, and is never sent again
         )
 
-    def _on_agent_steered(self, block: SteerBlock, result: Mapping[str, Any]) -> bool:
+    def _on_agent_steered(self, block: SteerBlock, result: Mapping[str, Any], reason: str = "") -> bool:
+        """Hermes' answer to an agent steer: taken, or refused (with `reason` when Hermes gave one) and given back."""
         if as_text(result.get("status")) == contract.STEER_QUEUED:
             self.transcript.steer_answered(block, STEER_QUEUED)
         else:
-            self.transcript.steer_answered(block, STEER_REFUSED, AGENT_STEER_REFUSED)
-            self._set_composer("\n".join(part for part in (self.composer.text, block.text) if part))
+            said = AGENT_STEER_REFUSED_BECAUSE.format(reason=reason) if reason else AGENT_STEER_REFUSED
+            self.transcript.steer_answered(block, STEER_REFUSED, said)
+            self._give_back(block.text)
         return True
 
     def _on_mouse(self, event: Mouse) -> None:

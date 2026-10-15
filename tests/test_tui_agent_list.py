@@ -684,6 +684,19 @@ class AgentActionTests(unittest.TestCase):
         self.assertEqual(app.composer.text, "use the other file")
         self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
 
+    def test_a_steer_hermes_refuses_says_why_and_comes_back_to_the_composer(self) -> None:
+        app, client = focused()
+        app._on_input(Key(CHAR, "s"))
+        type_text(app, "use it")
+        app._on_input(Key(ENTER))
+        answer(app, client, error={"code": 4009, "message": "agent busy."})
+        self.assertEqual(
+            steers(app)[-1],
+            "⧗ back in the composer — Hermes did not take the steer (agent busy) · find usages of: use it",
+        )
+        self.assertEqual(app.composer.text, "use it")
+        self.assertNotIn("prompt.submit", [method for method, _params in client.calls])
+
     def test_esc_cancels_the_steer_and_nothing_is_sent(self) -> None:
         app, client = focused()
         app._on_input(Key(CHAR, "s"))
