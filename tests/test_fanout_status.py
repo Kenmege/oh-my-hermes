@@ -40,7 +40,7 @@ from omh.commands.coding import (  # noqa: E402
     FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE,
     _fanout_status_wait_exit_code,
 )
-from omh.coding.unit_execution_state import UNIT_STUCK_STATES  # noqa: E402
+from omh.coding.unit_execution_state import UNIT_EXECUTION_STATES, UNIT_STUCK_STATES  # noqa: E402
 from omh.core.errors import OmhError  # noqa: E402
 from omh.system.paths import OmhPaths  # noqa: E402
 
@@ -958,8 +958,33 @@ class FanoutStatusWaitExitCodeTests(unittest.TestCase):
         )
 
     def test_every_unit_verified_is_the_only_success(self) -> None:
-        units = [{"unit_id": "a", "unit_state": "verified"}, {"unit_id": "b", "unit_state": "verified"}]
-        self.assertEqual(self._graded(WAIT_OUTCOME_ALL_UNITS_TERMINAL, units), 0)
+        # Every outcome, every state beside a verified sibling, with and without
+        # a torn journal line, a failure kind, or a run-level stop: 0 only for
+        # a finished roster whose units all verified and nothing else is wrong.
+        outcomes = (WAIT_OUTCOME_STUCK_UNITS, WAIT_OUTCOME_ALL_UNITS_TERMINAL, WAIT_OUTCOME_TIMED_OUT)
+        damage = (None, "journal_errors", "failure_kind", "interrupted", "refused")
+        successes = []
+        for outcome in outcomes:
+            for state in UNIT_EXECUTION_STATES:
+                for flaw in damage:
+                    units: list[dict[str, object]] = [
+                        {"unit_id": "a", "unit_state": "verified"},
+                        {"unit_id": "b", "unit_state": state},
+                    ]
+                    roster: dict[str, object] = {
+                        "units": units,
+                        "stuck_units": ["b"] if state in UNIT_STUCK_STATES else [],
+                        "wait": {"outcome": outcome},
+                    }
+                    if flaw == "journal_errors":
+                        roster["journal_errors"] = ["events.jsonl:8: torn"]
+                    elif flaw == "failure_kind":
+                        units[0]["failure_kind"] = "crash"
+                    elif flaw is not None:
+                        roster[flaw] = True
+                    if _fanout_status_wait_exit_code(roster) == 0:
+                        successes.append((outcome, state, flaw))
+        self.assertEqual(successes, [(WAIT_OUTCOME_ALL_UNITS_TERMINAL, "verified", None)])
 
     def test_a_finished_unit_that_did_not_verify_is_a_failure(self) -> None:
         units = [{"unit_id": "a", "unit_state": "verified"}, {"unit_id": "b", "unit_state": "failed"}]
@@ -1017,20 +1042,36 @@ class FanoutStatusWaitExitCodeTests(unittest.TestCase):
     def test_the_documented_bounds_and_codes_are_the_commands_own(self) -> None:
         from omh.commands import coding as coding_commands
 
-        doc = Path(__file__).resolve().parents[1] / "docs" / "CODING-OBSERVABILITY.md"
-        text = " ".join(doc.read_text(encoding="utf-8").split())
-        for phrase in (
-            f"every `--interval` seconds (default {coding_commands.FANOUT_STATUS_WAIT_DEFAULT_INTERVAL_SECONDS}, "
-            f"at least {coding_commands.FANOUT_STATUS_WAIT_MIN_INTERVAL_SECONDS})",
-            f"it exits {FANOUT_STATUS_WAIT_JOURNAL_UNREADABLE_EXIT_CODE} instead of 0",
-            f"exits {FANOUT_STATUS_WAIT_CRASH_EXIT_CODE} with its traceback on stderr",
-            f"`stuck_units` names a unit (exit {FANOUT_STATUS_WAIT_STUCK_EXIT_CODE})",
-            f"`--timeout` (default {coding_commands.FANOUT_STATUS_WAIT_DEFAULT_TIMEOUT_SECONDS}, at most "
-            f"{coding_commands.FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS}) passes first "
-            f"(exit {FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE})",
+        docs = Path(__file__).resolve().parents[1] / "docs"
+        # The two codes the mapper spells as literals, graded rather than typed.
+        verified = self._graded(WAIT_OUTCOME_ALL_UNITS_TERMINAL, [{"unit_id": "a", "unit_state": "verified"}])
+        failed = self._graded(WAIT_OUTCOME_ALL_UNITS_TERMINAL, [{"unit_id": "a", "unit_state": "failed"}])
+        observability = " ".join((docs / "CODING-OBSERVABILITY.md").read_text(encoding="utf-8").split())
+        # The FANOUT.md synopsis wraps its comment over `#` lines; read it as one sentence.
+        synopsis = " ".join((docs / "FANOUT.md").read_text(encoding="utf-8").split()).replace(" # ", " ")
+        for doc, phrase in (
+            (observability,
+             f"every `--interval` seconds (default {coding_commands.FANOUT_STATUS_WAIT_DEFAULT_INTERVAL_SECONDS}, "
+             f"at least {coding_commands.FANOUT_STATUS_WAIT_MIN_INTERVAL_SECONDS})"),
+            (observability, f"it exits {FANOUT_STATUS_WAIT_JOURNAL_UNREADABLE_EXIT_CODE} instead of {verified}"),
+            (observability, f"exits {FANOUT_STATUS_WAIT_CRASH_EXIT_CODE} with its traceback on stderr"),
+            (observability, f"`stuck_units` names a unit (exit {FANOUT_STATUS_WAIT_STUCK_EXIT_CODE})"),
+            (observability, f"every unit is terminal (exit {verified} when each is `verified`, else {failed})"),
+            (observability,
+             f"`--timeout` (default {coding_commands.FANOUT_STATUS_WAIT_DEFAULT_TIMEOUT_SECONDS}, at most "
+             f"{coding_commands.FANOUT_STATUS_WAIT_MAX_TIMEOUT_SECONDS}) passes first "
+             f"(exit {FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE})"),
+            (synopsis,
+             f"--wait [--timeout {coding_commands.FANOUT_STATUS_WAIT_DEFAULT_TIMEOUT_SECONDS}] "
+             f"[--interval {coding_commands.FANOUT_STATUS_WAIT_DEFAULT_INTERVAL_SECONDS}]"),
+            (synopsis,
+             f"exits {FANOUT_STATUS_WAIT_STUCK_EXIT_CODE} on stuck_units, {verified} when every unit verified, "
+             f"{failed} when all are terminal and one is not, {FANOUT_STATUS_WAIT_JOURNAL_UNREADABLE_EXIT_CODE} "
+             f"when all verified but journal lines were unreadable, {FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE} when "
+             f"the timeout passes first, {FANOUT_STATUS_WAIT_CRASH_EXIT_CODE} on a crash"),
         ):
             with self.subTest(phrase=phrase):
-                self.assertIn(phrase, text)
+                self.assertIn(phrase, doc)
 
 
 class FanoutStatusWaitCliTests(unittest.TestCase):
@@ -1252,16 +1293,36 @@ class FanoutStatusWaitCliTests(unittest.TestCase):
                     self.assertNotIn("Traceback", stderr)
 
     def test_a_single_read_still_exits_zero_whatever_the_roster_says(self) -> None:
-        # Without --wait the command reports; it does not grade.
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            paths = self._seed(root)
-            self._summary(paths, {"core": "failed"})
+        # Without --wait the command reports; it does not grade. Between them
+        # the rosters below draw every code the watcher grades a roster with.
+        graded_codes = set()
+        for label, states, torn in (
+            ("verified", {"core": "verified", "docs": "verified", "flaky": "verified"}, False),
+            ("failed", {"core": "failed", "docs": "verified", "flaky": "verified"}, False),
+            ("stuck", {"core": "account_limit"}, False),
+            ("unfinished", {}, False),
+            ("verified over a torn line", {"core": "verified", "docs": "verified", "flaky": "verified"}, True),
+        ):
+            with self.subTest(roster=label), TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                paths = self._seed(root)
+                if states:
+                    self._summary(paths, states)
+                if torn:
+                    with paths.runtime_journal_events_path.open("a", encoding="utf-8") as stream:
+                        stream.write('{"event": "torn\n')
 
-            status, stdout, stderr = self._run(root, "--json")
+                with mock.patch.object(fanout_status_module, "time", _FakeClock()):
+                    graded, _stdout, _stderr = self._run(root, "--wait", "--timeout", "10", "--json")
+                graded_codes.add(graded)
+                status, stdout, stderr = self._run(root, "--json")
 
-            self.assertEqual(status, 0, stderr)
-            self.assertNotIn("wait", json.loads(stdout))
+                self.assertEqual(status, 0, stderr)
+                self.assertNotIn("wait", json.loads(stdout))
+        self.assertEqual(graded_codes, {
+            0, 1, FANOUT_STATUS_WAIT_STUCK_EXIT_CODE, FANOUT_STATUS_WAIT_TIMEOUT_EXIT_CODE,
+            FANOUT_STATUS_WAIT_JOURNAL_UNREADABLE_EXIT_CODE,
+        })
 
 
 if __name__ == "__main__":

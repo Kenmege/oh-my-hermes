@@ -267,7 +267,6 @@ def render_fanout_status_text(roster: Mapping[str, Any]) -> str:
 WAIT_OUTCOME_STUCK_UNITS = "stuck_units"
 WAIT_OUTCOME_ALL_UNITS_TERMINAL = "all_units_terminal"
 WAIT_OUTCOME_TIMED_OUT = "timed_out"
-WAIT_OUTCOMES = (WAIT_OUTCOME_STUCK_UNITS, WAIT_OUTCOME_ALL_UNITS_TERMINAL, WAIT_OUTCOME_TIMED_OUT)
 
 
 def wait_for_fanout_status(
