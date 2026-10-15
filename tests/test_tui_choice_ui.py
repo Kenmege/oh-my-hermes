@@ -401,6 +401,67 @@ class PickerTests(unittest.TestCase):
         self.assertTrue(composer_drawn(app, drawn(app)))
 
 
+BATCH = ServerRequest("srq-5", "clarify", {"questions": [
+    {"qid": "a", "question": "A?", "choices": ["x", "y"]},
+    {"qid": "b", "question": "B?"},
+    {"qid": "c", "question": "C?", "choices": ["p", "q"]},
+]})
+
+
+class ClarifyBatchTests(unittest.TestCase):
+    """In a batch, what was typed for one question never answers the next, and each question arms as a slot does."""
+
+    def test_text_typed_for_one_question_is_not_the_next_ones_answer(self) -> None:
+        app, client = make_app(busy=True)
+        draft = a_draft(app)
+        app._on_server_request(BATCH)
+        armed(app)
+        type_text(app, "abc")  # Q1's field
+        press(app, Key(UP), Key(UP), Key(ENTER))  # back to the list, and x picked
+        self.assertEqual(app.slot.question_index, 1)  # type: ignore[union-attr]
+        self.assertEqual(app.composer.text, "")  # Q2's field starts empty
+        self.assertNotIn("abc", "\n".join(drawn(app)))
+        armed(app)
+        type_text(app, "hello")
+        press(app, Key(ENTER))
+        self.assertEqual(app.composer.text, "")
+        armed(app)
+        press(app, Key(CHAR, "2"))
+        self.assertEqual(answered(client, "srq-5"), [{"result": {"answers": {"a": "x", "b": "hello", "c": "q"}}}])
+        self.assertEqual(held(app), draft)
+
+    def test_a_next_question_with_choices_opens_its_field_with_only_the_new_key(self) -> None:
+        params = {"questions": [{"qid": "a", "question": "A?", "choices": ["x", "y"]},
+                                {"qid": "b", "question": "B?", "choices": ["r", "s"]}]}
+        app, client = make_app(busy=True)
+        app._on_server_request(ServerRequest("srq-6", "clarify", params))
+        armed(app)
+        type_text(app, "abc")
+        press(app, Key(UP), Key(UP), Key(ENTER))
+        self.assertTrue(app.slot.picking)  # type: ignore[union-attr]
+        armed(app)
+        press(app, Key(CHAR, "z"))
+        self.assertEqual(app.composer.text, "z")
+        press(app, Key(ENTER))
+        self.assertEqual(answered(client, "srq-6"), [{"result": {"answers": {"a": "x", "b": "z"}}}])
+
+    def test_keys_in_the_first_moment_after_the_next_question_appears_answer_nothing(self) -> None:
+        # A double-tapped Enter: the first picks for Q1, the second must not answer Q2 unseen.
+        for second in (Key(ENTER), Key(CHAR, "1"), Key(ESCAPE)):
+            with self.subTest(second=second):
+                now = [100.0]
+                app, client = make_app(busy=True, clock=lambda: now[0])
+                app._on_server_request(ServerRequest("srq-7", "clarify", {"questions": [
+                    {"qid": "a", "question": "A?", "choices": ["x", "y"]},
+                    {"qid": "c", "question": "C?", "choices": ["p", "q"]}]}))
+                now[0] += 10.0
+                press(app, Key(ENTER), second)
+                self.assertEqual((app.slot.question_index, client.answers), (1, []))  # type: ignore[union-attr]
+                now[0] += 10.0
+                press(app, Key(ENTER))
+                self.assertEqual(answered(client, "srq-7"), [{"result": {"answers": {"a": "x", "c": "p"}}}])
+
+
 class ResizeAndShortTerminalTests(unittest.TestCase):
     def test_a_resize_while_a_question_is_open_redraws_it_without_the_composer(self) -> None:
         app, client = make_app(busy=True)

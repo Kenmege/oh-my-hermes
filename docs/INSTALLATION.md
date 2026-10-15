@@ -454,14 +454,17 @@ run and approval decision stays Hermes'; the screen is OMH's.
   Enter, picks one. Its last row, `Other (type your answer)`, opens the
   composer as the field for an answer of your own, and so does typing any
   character that picks nothing, which becomes the answer's first character;
-  Up or Down goes back to the list and keeps what you typed, and Enter on an
-  empty field does too. A sudo password, a secret and a clarify question
+  Up or Down goes back to the list and keeps what you typed for that
+  question, and Enter on an empty field does too; the next question's field
+  starts empty. A sudo password, a secret and a clarify question
   without choices are typed into the composer. A long command wraps under its
   own indent and shows its first lines; a terminal too short for every row
   keeps the highlighted choice. Below 10 rows, where there is no mode row,
   the question's keys take a row of its own when a row is left for them.
   Keys pressed in the first moment after any question appears are ignored,
-  Enter included, so typing that was meant for the composer cannot answer it.
+  Enter included, and so are those right after each next question of a
+  batch, so typing that was meant for the composer, or for the question
+  before, cannot answer it.
   Approving a command permanently stays a choice for `hermes --tui`. The
   terminal bell rings once as an approval opens, so a terminal in the
   background can flag it, and a turn that ran 10 s or more ends with the

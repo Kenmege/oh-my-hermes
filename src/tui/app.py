@@ -1772,11 +1772,14 @@ class App(ModesMixin, AgentViewMixin):
         if self.slot is not None and _slot_owns(self.slot, event, self.composer.text):
             if self._slot_arming(event):
                 return
+            question = self.slot.question_index
             answer = self.slot.handle_key(event)
             if isinstance(answer, TypeIt):
                 self.composer.handle(answer.key)  # the key that opened the clarify's text field is its first text
             elif answer is not None:
                 self._answer(answer)
+            else:
+                self._next_question(question)
             return
         if self.slot is None and self.picker is not None:
             self._picker_key(event)
@@ -1832,6 +1835,17 @@ class App(ModesMixin, AgentViewMixin):
         if action in (SEARCH_ACCEPT, SEARCH_CANCEL):
             self.search = None
 
+    def _next_question(self, question: int) -> None:
+        """After a key or a submit the open slot took, from its question number `question`: if it moved on.
+
+        The next question's text field starts empty (what was typed for the
+        last one is not its answer), and the question arms as a fresh slot
+        does, so a key or an Enter meant for the last one cannot answer it.
+        """
+        if self.slot is not None and self.slot.question_index != question:
+            self._set_composer("")
+            self.slot_opened_at = self.clock()
+
     def _slot_arming(self, event: Key | Paste) -> bool:
         """Whether `event` came too early to answer the open slot (`SLOT_ARM_SECONDS`).
 
@@ -1839,7 +1853,8 @@ class App(ModesMixin, AgentViewMixin):
         decided: an Esc waits up to `keys.REPORTING_ESCAPE_SECONDS` for a
         report's `[` after the question turned reports off, and an Esc pressed
         for the composer must not answer the question it then meets. A key
-        that arrived before the slot opened is early too. A key the decoder
+        that arrived before the slot opened, or before its current question
+        appeared (`_next_question`), is early too. A key the decoder
         did not make carries no arrival and is timed from now. A slot that
         opened while a report could still arrive waits
         `REPORTING_SLOT_ARM_SECONDS` instead.
@@ -1855,9 +1870,12 @@ class App(ModesMixin, AgentViewMixin):
             if self.slot is not None:
                 if self._slot_arming(event):
                     return  # an Enter meant for something else answers nothing, not the highlighted choice
+                question = self.slot.question_index
                 answer = self.slot.submit_text(action.text)
                 if answer is not None:
                     self._answer(answer)
+                else:
+                    self._next_question(question)
             elif steer:
                 self._steer_or_submit(action.text, action.shown, action.chips)
             else:
