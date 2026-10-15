@@ -650,9 +650,10 @@ record such a write, and so may a bot profile's ledger when
 a marked directory with nothing else against it is listed as
 `ledger_unreadable` and left in place, with what could not be read and its
 error named in the summary (and under `unreadable_ledgers` in the `--json`
-result, each ledger once, with a count of its torn lines); a ledger that does
-not exist records nothing. `--force` removes it on the same terms, and names
-what could not be read instead of what the ledger holds. A manifest
+result, each ledger once: more than one torn line is named by a count and the
+first line number, a single one by its line number); a ledger that does not
+exist records nothing. `--force` removes it on the same terms, and names what
+could not be read instead of what the ledger holds. A manifest
 written before marks existed is handled once more by the earlier rule, which
 does not know what OMH rendered or look for Hermes writes: an unchanged record
 at the top level or in a category directory, inside the skills directory, is

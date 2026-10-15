@@ -24,12 +24,12 @@ All notable changes will be documented here.
   `ledger_copy_partial: true`, and one summary line after those lists names
   what could not be read and says they count only what could be; a `--force`
   removal OMH could not judge for that reason now names it too, and a
-  `--dry-run` result carries `unreadable_ledgers`. A ledger with torn lines is
-  named once, with a count, instead of once per line. The ledger reader no
-  longer drops every write when given a generator of directories, resolves
-  those directories once per read instead of once per write, and builds a
-  row's `after` list once instead of once per file the row listed before;
-  `omh doctor` judges Hermes edits once instead of twice.
+  `--dry-run` result carries `unreadable_ledgers`. A ledger with more than one
+  torn line is named once, with a count, instead of once per line. The ledger
+  reader no longer drops every write when given a generator of directories,
+  resolves those directories once per read instead of once per write, and
+  builds a row's `after` list once instead of once per file the row listed
+  before; `omh doctor` judges Hermes edits once instead of twice.
 
 - **A checked team no longer checks a part while its helper's work sits
   unmerged in the worktree Hermes gave it, and the board fan-in asks Hermes
