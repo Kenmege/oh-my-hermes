@@ -5643,11 +5643,24 @@ _CODE_DIAGRAM_TOKENS = frozenset(
         "src", "folder", "folders", "directory", "directories",
         # Infrastructure defined in code is still code to read the structure from.
         "cdk", "terraform",
+        # The same targets in Korean, folded the way query tokens are (below).
+        *(normalized_phrase(word) for word in ("코드", "코드베이스", "레포", "저장소", "모듈", "패키지", "클래스", "폴더", "디렉터리")),
     }
 )
 _INFRASTRUCTURE_DIAGRAM_TOKENS = frozenset(
-    {"aws", "gcp", "azure", "cloud", "vpc", "subnet", "subnets", "infrastructure", "infra", "kubernetes", "k8s", "svg"}
+    {
+        "aws", "gcp", "azure", "cloud", "vpc", "subnet", "subnets", "infrastructure", "infra", "kubernetes", "k8s", "svg",
+        *(normalized_phrase(word) for word in ("클라우드", "인프라", "쿠버네티스", "서브넷")),
+    }
 )
+# Query tokens arrive NFKD-folded (`routing_tokens`), which decomposes a Hangul
+# syllable into its jamo, so a composed Korean literal is folded the same way
+# before it is compared. Written raw, "다이어그램" and "시각화" never equalled or
+# prefixed a query token, and no Korean diagram request reached this skill.
+# Both are prefixes: Korean attaches the particle or ending to the word
+# ("다이어그램으로", "시각화해줘"), so the bare word is rarely a token of its own.
+_KOREAN_DIAGRAM_PREFIX = normalized_phrase("다이어그램")
+_KOREAN_VISUALIZE_PREFIX = normalized_phrase("시각화")
 
 
 def _codebase_uml_offers_itself(normalized_query: str, query_tokens: set[str]) -> bool:
@@ -5662,12 +5675,12 @@ def _codebase_uml_offers_itself(normalized_query: str, query_tokens: set[str]) -
     """
     if {"uml", "plantuml"} & query_tokens:
         return True
-    if {"diagram", "diagrams", "다이어그램"} & query_tokens:
+    if {"diagram", "diagrams"} & query_tokens or any(token.startswith(_KOREAN_DIAGRAM_PREFIX) for token in query_tokens):
         # Hermes bundles `architecture-diagram`, which draws a system, cloud,
         # or infrastructure architecture the user describes. A diagram of
         # infrastructure with no code to read the structure from is its job.
         return not (_INFRASTRUCTURE_DIAGRAM_TOKENS & query_tokens and not _CODE_DIAGRAM_TOKENS & query_tokens)
-    if any(token.startswith("시각화") for token in query_tokens):
+    if any(token.startswith(_KOREAN_VISUALIZE_PREFIX) for token in query_tokens):
         return True
     code_target = bool({"architecture", "code", "codebase", "repo", "repository"} & query_tokens)
     if code_target and {"visualize", "visualise", "visualization", "visualisation"} & query_tokens:

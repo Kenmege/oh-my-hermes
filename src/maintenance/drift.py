@@ -616,7 +616,15 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # adds three that dispatched the gate while "gate" anchored a cap
             # or wallet phrase anywhere in the message: an airport gate, a red
             # CI gate and a gate number (3).
-            expected=756,
+            # Sending Korean diagram, LLM-wiki and token/cost requests to the
+            # right skill adds seven. Five dispatched before: changing how an
+            # auth token is stored, code that lowers an API call's cost, and
+            # asking how a token is stored, each on ops-observability-card (3);
+            # and an LLM wiki built and notes organized into one, each on wiki
+            # (2). Two hold the Korean diagram fix to the English boundary:
+            # sales data visualized and a cloud architecture diagram, neither
+            # of which names codebase-uml (2).
+            expected=763,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
@@ -858,7 +866,17 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # gate run by name on the person's spending limit, which the cap's
             # everyday sense withdrew before the named gate was exempted from
             # it (1).
-            expected=797,
+            # Sending Korean diagram, LLM-wiki and token/cost requests to the
+            # right skill adds eight. Four reach codebase-uml, which no Korean
+            # diagram request reached before: a codebase diagram, the codebase
+            # visualized, a class diagram with a particle attached, and a class
+            # diagram of a cloud SDK module, where a Korean code word keeps the
+            # diagram beside a Korean cloud word (4). Four keep their base
+            # dispatch: a team wiki on wiki (1), and token usage monitored,
+            # token consumption asked about and token burn complained of on
+            # ops-observability-card, which the dropped bare 토큰 trigger
+            # carried before (3).
+            expected=805,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),

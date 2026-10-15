@@ -4405,6 +4405,70 @@ ROUTING_PRECISION_CASES: tuple[RoutingPrecisionCase, ...] = (
         "",
         "codebase-uml",
     ),
+    # The same boundaries said in Korean. Korean skips the weak-evidence check
+    # that turns an English guard-only match into a question, so each of these
+    # dispatched on one ambiguous word or a guard alone: a bare 토큰 or 비용
+    # (an auth token, the cost of a call) opened the ops card, and "LLM 위키"
+    # opened the wiki blueprint or, once that withdrew, the greenfield
+    # interview. The two diagram cases hold the Korean diagram fix to the
+    # English boundary: data visualization and a cloud diagram with no code to
+    # read are not a codebase picture.
+    RoutingPrecisionCase(
+        "korean-auth-token-storage-is-not-ops-observability",
+        "Changing how an auth token is stored is not a token-usage report",
+        "토큰 저장 방식 바꿔줘",
+        "answer_clarification",
+        "",
+        "ops-observability-card",
+    ),
+    RoutingPrecisionCase(
+        "korean-api-call-cost-code-is-not-ops-observability",
+        "Writing code that lowers an API call's cost is not a cost report",
+        "이 API 호출 비용 줄이는 코드 짜줘",
+        "answer_clarification",
+        "",
+        "ops-observability-card",
+    ),
+    RoutingPrecisionCase(
+        "korean-auth-token-question-is-not-ops-observability",
+        "Asking how a token is stored is not a usage report",
+        "토큰 저장 방식 알려줘",
+        "answer_clarification",
+        "",
+        "ops-observability-card",
+    ),
+    RoutingPrecisionCase(
+        "korean-sales-data-visualization-is-not-codebase-uml",
+        "Visualizing sales data is not a codebase diagram",
+        "매출 데이터 시각화해줘",
+        "answer_clarification",
+        "",
+        "codebase-uml",
+    ),
+    RoutingPrecisionCase(
+        "korean-cloud-architecture-diagram-is-not-codebase-uml",
+        "A Korean cloud architecture diagram has no code to read the structure from",
+        "클라우드 아키텍처 다이어그램 그려줘",
+        "answer_clarification",
+        "",
+        "codebase-uml",
+    ),
+    RoutingPrecisionCase(
+        "korean-llm-wiki-build-is-not-wiki-blueprint",
+        "Building an LLM wiki, said in Korean, is the bundled llm-wiki skill's job",
+        "LLM 위키 만들어줘",
+        "answer_clarification",
+        "",
+        "wiki",
+    ),
+    RoutingPrecisionCase(
+        "korean-notes-into-llm-wiki-is-not-wiki-blueprint",
+        "Organizing notes into an LLM wiki, said in Korean, is the bundled llm-wiki skill's job",
+        "내 노트를 LLM 위키로 정리해줘",
+        "answer_clarification",
+        "",
+        "wiki",
+    ),
     RoutingPrecisionCase(
         "trello-card-review-is-not-an-image-card",
         "A Trello card is a work item, so reviewing it is not an image card",
@@ -8373,6 +8437,35 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "korean-cost-check",
         "Korean cost check opens ops observability",
         "비용이 많이 나오는지 확인해줘",
+        "dispatch",
+        "ops-observability-card",
+        "prepare_ops_observability_card",
+        "ops_observability",
+    ),
+    # Token usage said in Korean, which a bare 토큰 trigger carried before it
+    # was dropped for dispatching auth-token requests.
+    RoutingInterventionCase(
+        "korean-token-usage-monitoring",
+        "Korean token-usage monitoring opens ops observability",
+        "토큰 사용량 모니터링해줘",
+        "dispatch",
+        "ops-observability-card",
+        "prepare_ops_observability_card",
+        "ops_observability",
+    ),
+    RoutingInterventionCase(
+        "korean-token-consumption-question",
+        "A Korean question about token consumption opens ops observability",
+        "토큰 소비가 왜 이렇게 많아?",
+        "dispatch",
+        "ops-observability-card",
+        "prepare_ops_observability_card",
+        "ops_observability",
+    ),
+    RoutingInterventionCase(
+        "korean-token-burn-rate",
+        "A Korean complaint about token burn opens ops observability",
+        "토큰 소모가 너무 빨라",
         "dispatch",
         "ops-observability-card",
         "prepare_ops_observability_card",
@@ -13368,6 +13461,55 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "team-wiki-in-notion-still-dispatches-wiki",
         "A team wiki blueprint that names no LLM wiki still reaches wiki",
         "build a wiki for our team in notion",
+        "dispatch",
+        "wiki",
+        "prepare_wiki_blueprint",
+        "wiki_blueprint",
+    ),
+    # Korean diagram requests reach the diagram workflow once its Korean words
+    # are compared in the router's folded form, the attached particle included,
+    # and a Korean code word keeps a diagram that also names the cloud. A
+    # Korean wiki that names no LLM wiki still reaches wiki.
+    RoutingInterventionCase(
+        "korean-codebase-diagram-reaches-codebase-uml",
+        "A Korean codebase diagram request opens the diagram workflow",
+        "코드베이스 다이어그램 그려줘",
+        "dispatch",
+        "codebase-uml",
+        "prepare_codebase_uml",
+        "codebase_uml",
+    ),
+    RoutingInterventionCase(
+        "korean-codebase-visualize-reaches-codebase-uml",
+        "Asking in Korean to visualize the codebase opens the diagram workflow",
+        "코드베이스 시각화해줘",
+        "dispatch",
+        "codebase-uml",
+        "prepare_codebase_uml",
+        "codebase_uml",
+    ),
+    RoutingInterventionCase(
+        "korean-class-diagram-with-particle-reaches-codebase-uml",
+        "A Korean class diagram with a particle attached still opens the diagram workflow",
+        "이 코드의 클래스 다이어그램이 필요해",
+        "dispatch",
+        "codebase-uml",
+        "prepare_codebase_uml",
+        "codebase_uml",
+    ),
+    RoutingInterventionCase(
+        "korean-class-diagram-of-cloud-sdk-module-reaches-codebase-uml",
+        "A Korean code word beside a Korean cloud word is still a codebase diagram",
+        "클라우드 SDK 모듈 클래스 다이어그램 그려줘",
+        "dispatch",
+        "codebase-uml",
+        "prepare_codebase_uml",
+        "codebase_uml",
+    ),
+    RoutingInterventionCase(
+        "korean-team-wiki-still-dispatches-wiki",
+        "A Korean team wiki that names no LLM wiki still reaches wiki",
+        "팀 위키 만들어줘",
         "dispatch",
         "wiki",
         "prepare_wiki_blueprint",

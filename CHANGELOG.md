@@ -4,6 +4,44 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **Korean diagram, LLM-wiki and token/cost requests stop going to the wrong
+  skill.** codebase-uml's diagram check compared the composed words
+  "다이어그램" and "시각화" with the router's NFKD-folded tokens, so no Korean
+  diagram request reached it: "코드베이스 다이어그램 그려줘" asked about
+  codebase-onboarding while the in-session hint named codebase-uml. Both words
+  are folded before they are compared and read as prefixes, because Korean
+  attaches the particle ("다이어그램이"). The English boundaries hold in Korean
+  too: 클라우드, 인프라, 쿠버네티스 and 서브넷 mark an infrastructure diagram
+  that is the bundled `architecture-diagram` skill's job unless a Korean or
+  English code word is also there, and "시각화해줘" alone no longer credits the
+  skill, so "매출 데이터 시각화해줘" does not name it. "LLM 위키" now names the
+  pattern Hermes' bundled `llm-wiki` skill builds, as "llm wiki" did: the wiki
+  blueprint withdraws, and so does the greenfield interview, which Korean,
+  exempt from the weak-evidence check, used to dispatch on that guard alone.
+  English llm-wiki requests still clarify; their leading candidate moves from
+  deep-interview to the next scored skill. ops-observability-card loses its
+  bare "비용" and "토큰" triggers, which dispatched it for "토큰 저장 방식
+  바꿔줘" and "이 API 호출 비용 줄이는 코드 짜줘". The card's guard keeps them
+  as telemetry words, as it keeps "token" and "cost", but no longer reads
+  "알려줘" as a status request, a word its English list never had. Token usage
+  is carried by "토큰 사용량", "토큰 소모" and "토큰 소비". Its Korean trigger
+  count drops from 9 to 7. Measured with `build_chat_interaction_payload`
+  (`source="discord"`), `awareness_route_hint` and the skill candidate line
+  at main and at this head, over both corpora (unchanged except three English
+  llm-wiki clarifies whose leading candidate moved), the triage probes and
+  134 Korean probes of our own: Korean diagram requests that dispatch
+  codebase-uml go from 1 to 5 of 25, plus 4 that now ask with it leading,
+  and none of 20 negatives moved; of 21 LLM-wiki requests, which went to wiki
+  (18) or dispatched the interview (3), 20 now ask and one dispatches
+  materials-package on "PDF"; ops-observability-card dispatches 0 of 24
+  everyday-sense negatives (20 before) and 21 of 24 usage requests (24
+  before; "에이전트 비용 추적해줘", "오늘 LLM 비용 얼마 나왔어?" and "토큰 사용 추이
+  알려줘" now ask). A held-out set of 48, written after the fixes were
+  chosen, moved the same way: codebase-uml dispatches 0 -> 4 of 8, wiki
+  reaches 7 -> 0 of 7 LLM-wiki requests, and ops-observability-card
+  dispatches 9 -> 0 of 10 negatives and keeps 8 of 8 usage requests. Adds 7
+  negative controls and 8 interventions.
+
 - **A host turn or a thank-you gets a direct-answer card.** `omh chat
   route-hint` and the example shims showed the generic no-hint card, with "Open
   omh" and "Clarify" buttons, beside a route decision that said to answer

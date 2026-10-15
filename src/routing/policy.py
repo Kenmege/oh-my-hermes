@@ -3255,6 +3255,12 @@ _OPS_OBSERVABILITY_PHRASES = (
     "답변 지연시간",
     "토큰을 너무 많이",
     "토큰 너무 많이",
+    # Token usage said in Korean. `ko.json` no longer gives this card a bare
+    # 토큰 or 비용 trigger -- an auth token and the cost of a function call
+    # dispatched it -- so the usage reading is carried by these phrases.
+    "토큰 사용량",
+    "토큰 소모",
+    "토큰 소비",
     "too many tokens",
     "using too many tokens",
     "cost too high",
@@ -6762,6 +6768,12 @@ def _greenfield_build_guard_applies(
     # phrased: "make a copy of this file" is not a greenfield product request.
     if _contains_phrase(normalized_query, _GREENFIELD_EXISTING_REFERENT_PHRASES):
         return False
+    # An LLM wiki is a surface Hermes ships: its bundled `llm-wiki` skill builds
+    # one, so the request names what it wants and the turn asks instead of
+    # opening an interview (English already asked; Korean, which the weak-
+    # evidence check exempts, dispatched the interview on this guard alone).
+    if llm_wiki_request(normalized_query):
+        return False
     return not bool(_GREENFIELD_OTHER_LANE_TOKENS & query_tokens)
 
 
@@ -7434,9 +7446,12 @@ def _ops_observability_guard_applies(normalized_query: str, query_tokens: set[st
         return True
     telemetry = bool(_OPS_OBSERVABILITY_TOKENS & query_tokens)
     runtime_context = operator_context
+    # No "알려줘" here: it is Korean's ordinary "tell me", which the English list
+    # does not carry either, and with it any 토큰 or 비용 question ("토큰 저장
+    # 방식 알려줘", "이 알고리즘 시간 비용 알려줘") read as a usage report.
     status_intent = _contains_phrase(
         normalized_query,
-        ("status", "show", "report", "summary", "보여줘", "알려줘", "상태", "요약"),
+        ("status", "show", "report", "summary", "보여줘", "상태", "요약"),
     )
     if ops_observability_generic_metrics_blocked(normalized_query, query_tokens):
         return False
@@ -8087,7 +8102,7 @@ def llm_wiki_request(normalized_query: str) -> bool:
     base the agent maintains itself; "knowledge base" and "ingest" in such a
     message are its words, not a research department's or a wiki blueprint's.
     """
-    return _contains_phrase(normalized_query, ("llm wiki", "llm-wiki"))
+    return _contains_phrase(normalized_query, ("llm wiki", "llm-wiki", "llm 위키", "llm위키"))
 
 
 def _wiki_capture_destination_request(normalized_query: str, query_tokens: set[str]) -> bool:
