@@ -1280,16 +1280,32 @@ funnel into the same engine.
     what it wrote (`recovery_commit`) and then, under `--run-verification`,
     runs the unit's declared checks on that commit through the same
     verification a dispatched unit gets, journaled on the recovery's own run
-    (`<run-ref>-hermes-recovery`). Both commits are made only while the unit's
-    own branch is checked out, and the lane refuses before the child starts
-    when the failed attempt left another branch checked out. They carry the
-    git identity the operator's configuration gives that worktree and no
-    `Signed-off-by`; a missing identity, a refusing hook, or commit signing
-    that cannot work inside the fence fails the commit as `commit_failed`. The
-    attempt's `unit_state` is `verified` only when the child changed something
-    and those checks ran on it and passed; otherwise it is `failed` with
-    `unit_state_reason` `process_not_completed`, `no_changes`,
-    `commit_failed`, `verification_failed`, or `verification_not_observed`.
+    (`<run-ref>-hermes-recovery`).
+    - **What gets committed.** Every change to a tracked file, and a new file
+      only inside the unit's `file_scope`. A new file outside it -- untracked
+      and not ignored, or in the index but never committed, the
+      intent-to-add entries the failed-unit probe writes included -- is never
+      committed, because it may be a secret or a build artifact. Each commit
+      record lists its `paths` and its `left_uncommitted` files, by name only.
+      Such a file left by the failed attempt makes the lane refuse before the
+      child (`untracked_leftovers`), changing nothing; one the child wrote
+      stays out of the recovery commit and the attempt is not verified
+      (`out_of_scope_files`), because the checks would run on a worktree that
+      still holds it.
+    - **Branch and identity.** Both commits are made only while the unit's own
+      branch is checked out; another branch makes the lane refuse before the
+      child starts. They carry the git identity the operator's configuration
+      gives that worktree and no `Signed-off-by`, and the repository's hooks
+      run (no `--no-verify`, since a hook may be a secret scanner). A failed
+      commit records its `step` (`branch`, `status`, `add`, `commit`, or
+      `head`) and git's `exit_code`, never git's output, so a refusing hook
+      reads `commit` with its code.
+    - **State.** The attempt's `unit_state` is `verified` only when the child
+      changed something, all of it was committed, and those checks ran on it
+      and passed; otherwise it is `failed` with `unit_state_reason`
+      `process_not_completed`, `no_changes`, `untracked_leftovers`,
+      `out_of_scope_files`, `commit_failed`, `verification_failed`, or
+      `verification_not_observed`.
   - **Wait** marks the unit `awaiting_retry` in the run journal with its
     failure kind. The next `--resume-journal` run re-dispatches exactly those
     units under the `rerun_awaiting_retry` action; units whose success was

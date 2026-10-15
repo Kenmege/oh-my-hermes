@@ -812,15 +812,20 @@ _FAILING_CHECK = f"{_PY} -c 'import sys; sys.exit(3)'"
 _HERMES_ROUTING = {"model": "m", "provider": "p", "reasoning": "high"}
 
 
-def _editing_child(status: str = "completed", exit_code: int = 0):
-    """A Hermes child stub that edits the worktree it is given, as the file-tools child would."""
+def _editing_child(status: str = "completed", exit_code: int = 0, *, also: tuple[str, ...] = ()):
+    """A Hermes child stub that edits the worktree it is given, as the file-tools child would.
+
+    It writes `src/core/fix.txt`, inside the fixture unit's `src/core/` scope,
+    and each path in `also`.
+    """
     calls: list[dict] = []
 
     def child(**kwargs):
         calls.append(kwargs)
-        target = Path(kwargs["cwd"]) / "src" / "core" / "fix.txt"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("fixed\n", encoding="utf-8")
+        for name in ("src/core/fix.txt", *also):
+            target = Path(kwargs["cwd"]) / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("fixed\n", encoding="utf-8")
         return {"status": status, "exit_code": exit_code, "run_id": kwargs["run_id"]}
 
     child.calls = calls
@@ -853,9 +858,22 @@ def _limit_after(leftover):
 
 
 def _half_done(worktree: Path) -> None:
+    """Half the work: a tracked file edited outside the scope, a new file inside it."""
+    (worktree / "seed.txt").write_text("seed, edited by codex\n", encoding="utf-8")
     (worktree / "src" / "core").mkdir(parents=True, exist_ok=True)
     (worktree / "src" / "core" / "partial_from_codex.txt").write_text("half\n", encoding="utf-8")
-    (worktree / "scratch-notes.md").write_text("codex scratch\n", encoding="utf-8")
+
+
+def _secret_and_build_output(worktree: Path) -> None:
+    """New files outside the scope that `.gitignore` does not cover: a secret and a build artifact."""
+    (worktree / ".gitignore").write_text("build/\nnode_modules/\n", encoding="utf-8")
+    _git(worktree, "add", ".gitignore")
+    _git(worktree, "commit", "-q", "-m", "ignore build output")
+    (worktree / ".env").write_text("OPENAI_API_KEY=fixture-not-a-key\n", encoding="utf-8")
+    (worktree / "dist").mkdir()
+    (worktree / "dist" / "bundle.js").write_text("bundle\n", encoding="utf-8")
+    (worktree / "build").mkdir()
+    (worktree / "build" / "ignored.o").write_text("object\n", encoding="utf-8")
 
 
 class HermesRecoverySettlementTests(unittest.TestCase):
@@ -926,7 +944,9 @@ class HermesRecoverySettlementTests(unittest.TestCase):
             roster = project_fanout_status(paths, str(contract["fanout_id"]))
 
         self.assertEqual(attempt["status"], "completed")
-        self.assertEqual(attempt["recovery_commit"], {"status": "committed", "head_sha": head})
+        self.assertEqual(attempt["recovery_commit"], {
+            "status": "committed", "head_sha": head, "paths": ["src/core/fix.txt"], "left_uncommitted": [],
+        })
         self.assertEqual((parent, changed), (sha, ["src/core/fix.txt"]))
         # The check reads the file from HEAD, so it passes only on the commit.
         self.assertEqual(attempt["verification_status"], "passed")
@@ -946,7 +966,9 @@ class HermesRecoverySettlementTests(unittest.TestCase):
             head, _changed = self._branch(repo)
 
         self.assertEqual(attempt["status"], "completed")
-        self.assertEqual(attempt["recovery_commit"], {"status": "nothing_to_commit", "head_sha": sha})
+        self.assertEqual(attempt["recovery_commit"], {
+            "status": "nothing_to_commit", "head_sha": sha, "paths": [], "left_uncommitted": [],
+        })
         self.assertEqual(head, sha)
         self.assertNotIn("verification_status", attempt)
         self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "no_changes"))
@@ -960,11 +982,16 @@ class HermesRecoverySettlementTests(unittest.TestCase):
             left_head, left_changed = self._branch(repo, "agent/core^")
             base, _ = self._branch(repo, "agent/core^^")
 
-        self.assertEqual(attempt["pre_existing_commit"], {"status": "committed", "head_sha": left_head})
-        self.assertEqual(sorted(left_changed), ["scratch-notes.md", "src/core/partial_from_codex.txt"])
+        # A tracked file's edit is committed wherever it is; a new file only inside the scope.
+        self.assertEqual(attempt["pre_existing_commit"], {
+            "status": "committed", "head_sha": left_head,
+            "paths": ["seed.txt", "src/core/partial_from_codex.txt"], "left_uncommitted": [],
+        })
+        self.assertEqual(sorted(left_changed), ["seed.txt", "src/core/partial_from_codex.txt"])
         self.assertEqual(base, sha)
         # The recovery commit holds the child's edit and nothing the failed attempt wrote.
-        self.assertEqual(attempt["recovery_commit"], {"status": "committed", "head_sha": recovery_head})
+        self.assertEqual(attempt["recovery_commit"]["head_sha"], recovery_head)
+        self.assertEqual(attempt["recovery_commit"]["paths"], ["src/core/fix.txt"])
         self.assertEqual(recovery_changed, ["src/core/fix.txt"])
         self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("verified", ""))
 
@@ -975,8 +1002,11 @@ class HermesRecoverySettlementTests(unittest.TestCase):
                                     runner=_limit_after(_half_done), run_verification=True)
             head, _changed = self._branch(repo)
 
-        self.assertEqual(attempt["pre_existing_commit"], {"status": "committed", "head_sha": head})
-        self.assertEqual(attempt["recovery_commit"], {"status": "nothing_to_commit", "head_sha": head})
+        self.assertEqual((attempt["pre_existing_commit"]["status"], attempt["pre_existing_commit"]["head_sha"]),
+                         ("committed", head))
+        self.assertEqual(attempt["recovery_commit"], {
+            "status": "nothing_to_commit", "head_sha": head, "paths": [], "left_uncommitted": [],
+        })
         self.assertNotIn("verification_status", attempt)
         self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "no_changes"))
 
@@ -997,8 +1027,65 @@ class HermesRecoverySettlementTests(unittest.TestCase):
         self.assertEqual(attempt["status"], "hermes_child_refused")
         self.assertEqual(attempt["reason_code"], "worktree_not_committable")
         self.assertEqual(attempt["pre_existing_commit"]["status"], "failed")
+        self.assertEqual(attempt["pre_existing_commit"]["step"], "branch")
         self.assertEqual((unit_branch, elsewhere), (sha, sha))
         self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "commit_failed"))
+
+    def test_new_files_left_outside_the_scope_refuse_before_the_child_and_are_never_committed(self) -> None:
+        child = _editing_child()
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, child,
+                                    runner=_limit_after(_secret_and_build_output), run_verification=True)
+            tree = subprocess.run(["git", "ls-tree", "-r", "--name-only", "agent/core"], cwd=repo,
+                                  capture_output=True, text=True, check=True).stdout.split()
+            worktree = repo.parent / f"{repo.name}-fanout-core"
+            still_there = [name for name in (".env", "dist/bundle.js") if (worktree / name).exists()]
+
+        self.assertEqual(child.calls, [])
+        self.assertEqual(attempt["status"], "hermes_child_refused")
+        self.assertEqual(attempt["reason_code"], "untracked_leftovers")
+        # Named, never committed, never deleted, and the ignored build output is not listed.
+        self.assertEqual(attempt["pre_existing_commit"],
+                         {"status": "refused", "paths": [], "left_uncommitted": [".env", "dist/bundle.js"]})
+        self.assertEqual(sorted(tree), [".gitignore", "seed.txt"])
+        self.assertEqual(still_there, [".env", "dist/bundle.js"])
+        self.assertNotIn("fixture-not-a-key", json.dumps(attempt))
+        self.assertEqual(
+            (attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "untracked_leftovers")
+        )
+
+    def test_a_file_the_failed_attempt_staged_outside_the_scope_is_judged_like_a_new_one(self) -> None:
+        def staged_secret(worktree: Path) -> None:
+            (worktree / "secret.env").write_text("TOKEN=fixture\n", encoding="utf-8")
+            _git(worktree, "add", "secret.env")
+
+        child = _editing_child()
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, child,
+                                    runner=_limit_after(staged_secret), run_verification=True)
+            head, _ = self._branch(repo)
+
+        self.assertEqual(child.calls, [])
+        self.assertEqual(attempt["pre_existing_commit"]["left_uncommitted"], ["secret.env"])
+        self.assertEqual(head, sha)
+
+    def test_a_child_that_writes_outside_the_scope_is_not_verified(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths, repo, sha, contract = self._setup(tmp, [_CHECK_FIX_COMMITTED])
+            attempt = self._attempt(paths, repo, sha, contract, _editing_child(also=(".env",)),
+                                    run_verification=True)
+            head, changed = self._branch(repo)
+
+        self.assertEqual(attempt["recovery_commit"]["status"], "committed")
+        self.assertEqual(attempt["recovery_commit"]["paths"], ["src/core/fix.txt"])
+        self.assertEqual(attempt["recovery_commit"]["left_uncommitted"], [".env"])
+        self.assertEqual(changed, ["src/core/fix.txt"])
+        self.assertNotIn("verification_status", attempt)
+        self.assertEqual(
+            (attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "out_of_scope_files")
+        )
 
     def test_a_failing_check_leaves_the_recovery_failed_not_verified(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -1044,7 +1131,11 @@ class HermesRecoverySettlementTests(unittest.TestCase):
             attempt = self._attempt(paths, repo, sha, contract, _editing_child(), run_verification=True)
             head, _changed = self._branch(repo)
 
-        self.assertEqual(attempt["recovery_commit"]["status"], "failed")
+        # The step and git's code say a hook refused, not an identity or a stage; no git output.
+        self.assertEqual(attempt["recovery_commit"], {
+            "status": "failed", "step": "commit", "exit_code": 1,
+            "reason": "git commit did not complete in the unit worktree", "left_uncommitted": [],
+        })
         self.assertNotIn("verification_status", attempt)
         self.assertEqual(head, sha)
         self.assertEqual((attempt["unit_state"], attempt["unit_state_reason"]), ("failed", "commit_failed"))
@@ -1061,7 +1152,8 @@ class HermesRecoveryFenceTests(unittest.TestCase):
         return OmhPaths(omh_home=root / ".omh", hermes_home=root / ".hermes"), repo, sha
 
     def _recover(self, paths, repo, sha, child, *, allow_unconfined: bool):
-        unit = {**_UNITS[0], "run_ref": "fanout-0123456789ab-core", "branch_suggestion": "agent/core"}
+        unit = {**_UNITS[0], "run_ref": "fanout-0123456789ab-core", "branch_suggestion": "agent/core",
+                "boundary": {"file_scope": ["src/core/"]}}
         return _hermes_recovery_dispatch(
             paths, unit=unit, repo_root=repo, timeout=60, routing=_HERMES_ROUTING, hermes_child=child,
             unit_dispatch_kwargs={
@@ -1082,7 +1174,9 @@ class HermesRecoveryFenceTests(unittest.TestCase):
                                          text=True, check=True).stdout.strip()
 
         self.assertIs(attempt["filesystem_confinement"]["enforced"], not unfenced_host)
-        self.assertEqual(attempt["recovery_commit"], {"status": "committed", "head_sha": branch_head})
+        self.assertEqual(attempt["recovery_commit"], {
+            "status": "committed", "head_sha": branch_head, "paths": ["src/core/fix.txt"], "left_uncommitted": [],
+        })
         self.assertNotEqual(branch_head, sha)
 
     def test_no_provable_fence_refuses_before_the_child_starts(self) -> None:

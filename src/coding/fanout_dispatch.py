@@ -3146,9 +3146,10 @@ def _hermes_recovery_dispatch(
     unit under `--run-verification`, both inside the unit's write fence (or
     unfenced only under `--allow-unconfined`). Whatever the failed attempt left
     in the worktree is committed on its own before the child starts, so each
-    commit says where its changes came from. The attempt's `unit_state` is
-    `verified` only when the child changed something and those checks ran on
-    it and passed.
+    commit says where its changes came from, and a new file outside the
+    unit's `file_scope` is never committed (`_commit_recovery_edits`). The
+    attempt's `unit_state` is `verified` only when the child changed
+    something, all of it was committed, and those checks ran on it and passed.
     """
     unit_id = str(unit.get("unit_id", ""))
     worktree = _worktree_path(repo_root, unit_id)
@@ -3237,13 +3238,33 @@ def _hermes_recovery_dispatch(
     # Whatever the failed attempt left is committed on its own before the
     # child starts. The recovery commit then holds the child's edits and
     # nothing else, and a child that changed nothing is seen to have changed
-    # nothing rather than credited with the failed attempt's leftovers.
+    # nothing rather than credited with the failed attempt's leftovers. A new
+    # file outside the unit's declared scope is never committed: the lane
+    # refuses before the child and names it, since it may be a secret or a
+    # build artifact the failed attempt wrote.
     git_runner = _fenced_dispatcher_runner(runner, confinement, worktree)
     branch = str(unit.get("branch_suggestion", f"agent/{unit_id}"))
+    boundary = unit.get("boundary") if isinstance(unit.get("boundary"), Mapping) else {}
+    file_scope = tuple(str(path) for path in boundary.get("file_scope", []) or [] if str(path).strip())
     pre_existing = _commit_recovery_edits(
         git_runner, worktree, branch,
         f"Work left in fanout unit {unit_id} by its failed {unit.get('owner', '')} attempt",
+        file_scope, refuse_out_of_scope=True,
     )
+    if pre_existing["status"] == "refused":
+        return {
+            "unit_id": unit_id,
+            "owner": "hermes",
+            "status": "hermes_child_refused",
+            "reason_code": "untracked_leftovers",
+            "reason": (
+                "the failed attempt left new files outside the unit's file scope; they were not committed "
+                "and the Hermes child was not started, so inspect the paths named in pre_existing_commit"
+            ),
+            "pre_existing_commit": pre_existing,
+            "unit_state": UNIT_STATE_FAILED,
+            "unit_state_reason": "untracked_leftovers",
+        }
     if pre_existing["status"] == "failed":
         return {
             "unit_id": unit_id,
@@ -3294,15 +3315,24 @@ def _hermes_recovery_dispatch(
     if record.get("status") != "completed":
         record.update(unit_state=UNIT_STATE_FAILED, unit_state_reason="process_not_completed")
         return record
-    # Commit first: the worktree was clean when the child started, so the
-    # commit holds the child's edits, and the checks run on a clean, committed
-    # revision -- the order a dispatched unit's executor and dispatcher already
-    # keep. Checks run before the commit would have their own output swept
-    # into it.
-    commit = _commit_recovery_edits(git_runner, worktree, branch, f"Hermes recovery of fanout unit {unit_id}")
+    # Commit first: nothing but ignored files was uncommitted when the child
+    # started, so the commit holds the child's edits, and the checks run on a
+    # committed revision -- the order a dispatched unit's executor and
+    # dispatcher already keep. Checks run before the commit would have their
+    # own output swept into it.
+    commit = _commit_recovery_edits(
+        git_runner, worktree, branch, f"Hermes recovery of fanout unit {unit_id}", file_scope,
+    )
     record["recovery_commit"] = commit
     if commit["status"] == "failed":
         record.update(unit_state=UNIT_STATE_FAILED, unit_state_reason="commit_failed")
+        return record
+    if commit["left_uncommitted"]:
+        # The child wrote new files outside the unit's scope, and they stay
+        # out of the commit. The checks would run on a worktree that still
+        # holds them, so a pass could not speak for the commit: no checks,
+        # and the names are on the record for the operator.
+        record.update(unit_state=UNIT_STATE_FAILED, unit_state_reason="out_of_scope_files")
         return record
     if commit["status"] == "nothing_to_commit":
         # The child exited 0 and changed nothing (a model that declined exits
@@ -3360,31 +3390,98 @@ def _hermes_recovery_dispatch(
     return record
 
 
-def _commit_recovery_edits(runner: Callable[..., Any], worktree: Path, branch: str, message: str) -> dict[str, Any]:
-    """Commit everything in the unit worktree on the unit's own branch; never raises.
+def _commit_recovery_edits(
+    runner: Callable[..., Any],
+    worktree: Path,
+    branch: str,
+    message: str,
+    file_scope: Sequence[str],
+    *,
+    refuse_out_of_scope: bool = False,
+) -> dict[str, Any]:
+    """Commit the unit worktree's changes on the unit's own branch; never raises.
 
-    `status` is `committed`, `nothing_to_commit`, or `failed` with a reason.
-    The first two carry `head_sha`, read only once the worktree is clean, so a
-    commit that left files behind is a failure rather than a partial success.
-    A worktree whose HEAD is not the unit branch is refused before anything
-    is staged: a failed attempt that switched branches would otherwise have
-    the commit land on whatever branch it left checked out.
+    What is committed: every modification or deletion of a tracked file, and
+    each new file inside the unit's declared `file_scope`. A new file outside
+    it -- untracked and not ignored, or in the index but never committed,
+    intent-to-add included -- is named in `left_uncommitted`; with `refuse_out_of_scope` the call then changes
+    nothing and returns `status` `refused`. That mode is the checkpoint before
+    the child, the only point where the failed attempt's staged files can
+    exist, so a staged file is never committed past this rule. No scope means
+    no new file is committed.
+
+    `status` is `committed`, `nothing_to_commit`, `refused`, or `failed`.
+    `paths` names every committed path and `left_uncommitted` every new file
+    left out, by name only. A failure names its `step` (`branch`, `status`,
+    `add`, `commit`, or `head`) and git's `exit_code` (None when the command
+    could not run), never git's output: a hook's message can carry anything.
+    A worktree whose HEAD is not the unit branch fails at `branch` before
+    anything is staged, so the commit cannot land on another branch.
     """
-    head_ref = _git_text(runner, worktree, ["git", "symbolic-ref", "-q", "HEAD"])
-    if head_ref is None or head_ref.strip() != f"refs/heads/{branch}":
-        return {"status": "failed", "reason": f"the unit worktree does not have its branch {branch} checked out"}
-    changes = _git_text(runner, worktree, ["git", "status", "--porcelain=v1", "--untracked-files=all"])
-    if changes is None:
-        return {"status": "failed", "reason": "git status could not read the unit worktree"}
-    if changes.strip():
-        if _git_text(runner, worktree, ["git", "add", "-A"]) is None:
-            return {"status": "failed", "reason": "git add could not stage the worktree's changes"}
-        if _git_text(runner, worktree, ["git", "commit", "-q", "-m", message]) is None:
-            return {"status": "failed", "reason": "git commit did not complete in the unit worktree"}
-    head = _observed_clean_producer_head(runner, worktree)
-    if head is None:
-        return {"status": "failed", "reason": "the unit worktree is not clean at a readable commit"}
-    return {"status": "committed" if changes.strip() else "nothing_to_commit", "head_sha": head}
+    def git(argv: list[str]) -> tuple[int | None, str]:
+        try:
+            completed = runner(argv, cwd=str(worktree), text=True, errors="replace", capture_output=True, timeout=60)
+            code = int(getattr(completed, "returncode", 1))
+            stdout = getattr(completed, "stdout", "") or ""
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+            return None, ""
+        return code, stdout if isinstance(stdout, str) else stdout.decode("utf-8", "replace")
+
+    def failed(step: str, code: int | None, reason: str) -> dict[str, Any]:
+        return {"status": "failed", "step": step, "exit_code": code, "reason": reason}
+
+    def names(output: str) -> list[str]:
+        return sorted({name for name in output.split("\0") if name})
+
+    code, head_ref = git(["git", "symbolic-ref", "-q", "HEAD"])
+    if code != 0 or head_ref.strip() != f"refs/heads/{branch}":
+        return failed("branch", code, f"the unit worktree does not have its branch {branch} checked out")
+    code, untracked = git(["git", "ls-files", "--others", "--exclude-standard", "-z"])
+    if code != 0:
+        return failed("status", code, "git could not list the unit worktree's new files")
+    # New in the index but not in HEAD, intent-to-add entries included: the
+    # dispatcher's own probe of a failed unit marks every new file that way
+    # (`git add -N -- .`), which hides it from `--others` and would let
+    # `add -u` below stage it.
+    staged_code, staged_new = git(
+        ["git", "diff", "--cached", "--ita-visible-in-index", "--name-only", "--diff-filter=A", "-z"]
+    )
+    if staged_code != 0:
+        return failed("status", staged_code, "git could not list the unit worktree's staged files")
+    scope = [entry.strip().rstrip("/") for entry in file_scope if entry.strip().rstrip("/")]
+    candidates = names(untracked) + names(staged_new)
+    inside = sorted({path for path in candidates if any(path == entry or path.startswith(entry + "/") for entry in scope)})
+    outside = sorted(set(candidates) - set(inside))
+    if refuse_out_of_scope and outside:
+        return {"status": "refused", "paths": [], "left_uncommitted": outside}
+    code, _ = git(["git", "add", "-u"])
+    if code != 0:
+        return failed("add", code, "git could not stage the unit worktree's tracked changes")
+    # A file staged and then deleted is gone after the reset; literal
+    # pathspecs, so a name holding `*` or `:(` stages that one file.
+    inside = [path for path in inside if os.path.lexists(worktree / path)]
+    if inside:
+        code, _ = git(["git", "--literal-pathspecs", "add", "--", *inside])
+        if code != 0:
+            return failed("add", code, "git could not stage the new files inside the unit's scope")
+    code, staged = git(["git", "diff", "--cached", "--name-only", "-z"])
+    if code != 0:
+        return failed("status", code, "git could not list what was staged")
+    committed = names(staged)
+    if committed:
+        code, _ = git(["git", "commit", "-q", "-m", message])
+        if code != 0:
+            return {**failed("commit", code, "git commit did not complete in the unit worktree"),
+                    "left_uncommitted": outside}
+    code, head = git(["git", "rev-parse", "HEAD"])
+    if code != 0 or not re.fullmatch(r"[0-9a-f]{40}", head.strip()):
+        return failed("head", code, "git could not read the unit branch's commit")
+    return {
+        "status": "committed" if committed else "nothing_to_commit",
+        "head_sha": head.strip(),
+        "paths": committed,
+        "left_uncommitted": outside,
+    }
 
 
 def _depth_refusal_summary(
