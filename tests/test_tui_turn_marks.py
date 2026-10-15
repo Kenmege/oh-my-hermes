@@ -18,7 +18,7 @@ from test_tui_modes import CTRL_ENTER, SID, answer, drawn, make_app, type_text
 from test_tui_theme import DARK_BACKGROUNDS, LIGHT_BACKGROUNDS, contrast
 from omh.skin_pack import SKIN_THEMES, skin_colors
 from omh.tui.app import SLOT_ARM_SECONDS
-from omh.tui.gateway import Event, ServerRequest
+from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, ENTER, RIGHT, Key
 from omh.tui.screen import ERASE_TO_LINE_END, paint_line
 from omh.tui.style import SGR_RESET, Span, Style, fill
@@ -215,6 +215,30 @@ class CommandPlacementTests(unittest.TestCase):
         app._on_input(Key(ENTER))
         (block,) = app.transcript.blocks
         self.assertEqual((block.command, block.done), ("/queue", True))
+
+    def test_an_echo_still_waiting_for_hermes_stays_held_past_a_boundary_and_is_written_once(self) -> None:
+        app, client = self.mid_tool("/usage")
+        app._on_event(ev("tool.complete", tool_id="t1", name="terminal", result={"output": "1 passed"}))
+        app._on_event(ev("message.delta", text="Checking the cost."))  # a boundary while /usage is still out
+        self.assertNotIn("CommandBlock", [type(block).__name__ for block in app.transcript.blocks])
+        answer(app, client, {"output": "Session cost: $0.01"})
+        app._on_event(ev("message.complete", text="Checking the cost.", status="complete"))
+        echoes = [block for block in app.transcript.blocks if type(block).__name__ == "CommandBlock"]
+        self.assertEqual([(block.command, block.parts) for block in echoes], [("/usage", [("Session cost: $0.01", "info")])])
+
+    def test_output_for_an_echo_already_closed_waits_under_a_running_call(self) -> None:
+        app, client = make_app()
+        type_text(app, "/usage")
+        app._on_input(Key(ENTER))
+        type_text(app, "run the tests")
+        app._on_input(Key(ENTER))  # the prompt closes the echo; /usage is still out
+        app._on_event(ev("message.start"))
+        app._on_event(ev("tool.start", tool_id="t1", name="terminal", context="pytest -q"))
+        app._on_response(Response(1, {"output": "Session cost: $0.01"}, None))
+        group = app.transcript.blocks[-1]
+        self.assertIsInstance(group, ToolGroup)
+        self.assertEqual(group.tools[0].status, TOOL_RUNNING)  # the repeated echo did not cut the call off
+        self.assertEqual(lines_text(app.transcript.live_lines(80, THEME))[-2:], ["› /usage", "  ⎿ Session cost: $0.01"])
 
 
 class Clock:
