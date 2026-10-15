@@ -12,12 +12,19 @@ A decomposed (NFD) paste is composed when it is inserted. Control characters
 other than newline and tab are dropped on insert; a tab is kept and drawn as
 `TAB_CELLS` spaces.
 
-Wrapping is by cells, cluster by cluster (no word wrap), so every caret
-position maps to exactly one (row, col). A row filled to the last cell is
-followed by an empty row, so the caret after it never sits past the right
-edge. Continuation rows are indented by the prompt's width. When the input
-needs more than `max_rows` rows, the visible window scrolls just enough to
-keep the caret row inside it.
+Rows wrap between words, as the transcript's echo of the sent prompt does: a
+row that overflows ends before the last word that starts on it after a space
+(or tab), so the spaces end the row and the next row starts with that word; a
+word longer than a row breaks at the cell, cluster by cluster. Masked input
+wraps by the cell alone. The spaces stay in the text and on the row they end,
+so every caret position maps to exactly one (row, col). A continuation row
+starts with a space only after a row that holds one word, or only spaces, and
+has no room left for that space (a tab takes four cells): a space cannot hang
+past the edge, where the caret before it would sit. A row filled to the last
+cell is followed by an empty row, so the caret after it never sits past the
+right edge. Continuation rows are indented by the prompt's width. When the
+input needs more than `max_rows` rows, the visible window scrolls just enough
+to keep the caret row inside it.
 
 Keys: printable text inserts, with Alt too unless the chord came as a kitty or
 modifyOtherKeys report (the legacy bytes `ESC x` are also Esc then x arriving in
@@ -85,6 +92,9 @@ PROMPT = "› "
 MASK = "•"
 NEWLINE = "\n"
 TAB_CHAR = "\t"
+# What a row may end on: a space, as in the transcript's wrap (`width.wrap`), or a tab, drawn as spaces. A no-break
+# space is not one.
+WORD_BREAKS = frozenset({" ", TAB_CHAR})
 # The most entries history holds, the oldest leaving first: as many as Hermes' own TUI keeps (ui-tui `history.ts`).
 HISTORY_CAP = 1000
 # A paste longer than this many lines, or this many characters, becomes one chip.
@@ -176,8 +186,17 @@ def _clean(text: str, masked: bool) -> str:
     return "".join(kept)
 
 
-def _layout(widths: Sequence[int | None], avail: int) -> list[_Row]:
-    """Visual rows for clusters of these widths (`None` is a newline) at `avail` cells."""
+def _layout(widths: Sequence[int | None], avail: int, breaks: Sequence[bool]) -> list[_Row]:
+    """Visual rows for clusters of these widths (`None` is a newline) at `avail` cells.
+
+    `breaks[i]` says cluster i is a space or a tab a row may end on. A row
+    that overflows ends before the last word on it that follows one, so the
+    spaces end that row and the next starts with the word. With no such word
+    it ends at the cell: a word longer than a row breaks there, and a space
+    with no room left after a row of one word, or of only spaces, starts the
+    next row. After a word moves down, the cluster that overflowed is
+    measured again on the word's new row.
+    """
     rows: list[_Row] = []
     start = used = 0
     for index, width in enumerate(widths):
@@ -185,9 +204,11 @@ def _layout(widths: Sequence[int | None], avail: int) -> list[_Row]:
             rows.extend(_close_line(start, index, used, avail))
             start, used = index + 1, 0
             continue
-        if used and used + width > avail:
-            rows.append(_Row(start, index, hard=False))
-            start, used = index, 0
+        while used and used + width > avail:
+            words = range(index, start, -1) if breaks else ()
+            cut = next((at for at in words if breaks[at - 1] and not breaks[at]), index)
+            rows.append(_Row(start, cut, hard=False))
+            start, used = cut, sum(cells or 0 for cells in widths[cut:index])
         used += width
     rows.extend(_close_line(start, len(widths), used, avail))
     return rows
@@ -275,7 +296,8 @@ class Composer:
         shape = self._measured()
         laid = self._laid
         if laid is None or laid[0] is not shape or laid[1] != avail:
-            laid = self._laid = (shape, avail, _layout(shape.widths, avail))
+            breaks = [] if shape.masked else [unit in WORD_BREAKS for unit in shape.units]
+            laid = self._laid = (shape, avail, _layout(shape.widths, avail, breaks))
         return shape, laid[2]
 
     def _set(self, text: str, caret: int) -> None:

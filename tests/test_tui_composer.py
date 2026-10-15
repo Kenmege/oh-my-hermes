@@ -13,7 +13,7 @@ import unicodedata
 import unittest
 from unittest.mock import patch
 
-from _tui_lines import lines_text
+from _tui_lines import line_text, lines_text
 from omh.tui.composer import (
     CANCEL,
     COMPLETE,
@@ -46,6 +46,7 @@ from omh.tui.keys import (
     Paste,
 )
 from omh.tui.style import Style
+from omh.tui.width import line_width
 
 HANGUL = "한글"
 HANGUL_NFD = unicodedata.normalize("NFD", HANGUL)
@@ -608,8 +609,9 @@ class MeasureOnceTests(unittest.TestCase):
             for key in keys:
                 composer.handle(key)
                 composer.render(20, 5)
-        # The walk ends on the second line's first row, 5 cells in, the start of `two` (counted by hand).
-        self.assertEqual(composer.caret, len(f"{HANGUL} line one\nline "))
+        # Word-wrapped at 18 cells, the second line is `line two runs ` / `longer than the ` / `width`; the walk
+        # ends on its middle row, 5 cells in, before the `r` of `longer` (counted by hand).
+        self.assertEqual(composer.caret, len(f"{HANGUL} line one\nline two runs longe"))
 
     def test_a_new_text_a_new_mask_or_a_new_width_is_laid_out_again(self) -> None:
         composer = at("abcdef", 6)
@@ -681,6 +683,74 @@ class RenderTests(unittest.TestCase):
         lines, caret = composer.render(40, 3)
         self.assertEqual(lines_text(lines), ["  3", "  4", "  5"])
         self.assertEqual(caret, (2, 3))
+
+
+class WordWrapTests(unittest.TestCase):
+    """Rows break between words, as the transcript's echo of the sent prompt does, and every caret stays mapped."""
+
+    def rows(self, text: str, width: int, masked: bool = False) -> list[str]:
+        return lines_text(Composer(text=text, masked=masked).render(width, 20)[0])
+
+    def test_a_long_prompt_wraps_at_a_space_and_the_next_row_starts_with_the_word(self) -> None:
+        # The capture's prompt at 110 columns; cut by cells it read `a "Map the H` over `ermes-hosted HUD"`.
+        prompt = (
+            "Do these steps in order. 1) Call todo_list once with this nested plan and never touch it again: "
+            'a "Map the Hermes-hosted HUD" completed, with subtask "Inventory the layout complaints" completed'
+        )
+        self.assertEqual(
+            self.rows(prompt, 110),
+            [
+                '› Do these steps in order. 1) Call todo_list once with this nested plan and never touch it again: a "Map the ',
+                '  Hermes-hosted HUD" completed, with subtask "Inventory the layout complaints" completed',
+            ],
+        )
+        self.assertEqual(self.rows("the quick brown fox", 12), ["› the quick ", "  brown fox"])  # 10 cells a row
+
+    def test_spaces_at_the_break_end_the_row_and_a_tab_breaks_like_one(self) -> None:
+        # The spaces stay on the row (a run of them too), so the row after starts with the word, never a space.
+        self.assertEqual(self.rows("ab hello   world", 11), ["› ab ", "  hello   ", "  world"])  # 9 cells a row
+        self.assertEqual(self.rows("ab\tcdef", 10), ["› ab    ", "  cdef"])  # the tab is drawn as four spaces
+
+    def test_a_word_longer_than_a_row_still_breaks_at_the_cell(self) -> None:
+        self.assertEqual(self.rows("see abcdefghijk end", 10), ["› see ", "  abcdefgh", "  ijk end"])  # 8 cells
+        self.assertEqual(self.rows("日本語の文を書く", 8), ["› 日本語", "  の文を", "  書く"])  # no spaces at all
+
+    def test_a_word_reaching_the_last_cell_puts_the_space_after_it_on_the_next_row(self) -> None:
+        # A continuation row starts with a space only after a row of one word (or of only spaces) with no room left
+        # for that space: it cannot hang past the edge, where the caret before it would sit.
+        composer = at("abcdefgh end", 8)
+        lines, caret = composer.render(10, 5)  # 8 cells a row
+        self.assertEqual(lines_text(lines), ["› abcdefgh", "   end"])
+        self.assertEqual(caret, (1, 2))  # the caret before that space opens the row
+
+    def test_masked_input_and_a_no_break_space_wrap_by_the_cell(self) -> None:
+        # A word break under the mask would show where the secret's spaces are.
+        self.assertEqual(self.rows("ab cd ef", 6, masked=True), ["› ••••", "  ••••", "  "])
+        nbsp = chr(0xA0)
+        self.assertEqual(self.rows(f"ab cd{nbsp}ef", 8), ["› ab ", f"  cd{nbsp}ef"])  # `cd ef` moves as one word
+        self.assertEqual(self.rows(f"abcd{nbsp}efgh", 8), [f"› abcd{nbsp}e", "  fgh"])
+
+    def test_every_caret_position_has_its_own_cell_inside_a_row_no_wider_than_the_screen(self) -> None:
+        texts = [
+            "Do these steps in order. todo_list 한국어 문장을 日本語の文 🙂 a xxxxxxxxxxxxxxxxxxxxxxx",
+            "a  b   c    d\tend of   line\nnext  line  here",
+            "한국어 문장을 이렇게 길게 써도 단어 사이에서 줄이 바뀐다",
+            "abcde abcd語 tail",  # at 5 cells a row: a row that starts with a space, then a wide glyph
+            "x" * 30 + " y",
+        ]
+        for text in texts:
+            for width in (7, 10, 15, 22, 39):  # from 5 cells a row, a tab fits in one
+                with self.subTest(text=text[:20], width=width):
+                    composer = Composer(text=text)
+                    lines, _ = composer.render(width, 40)
+                    self.assertEqual("".join(line_text(line)[2:] for line in lines), text.replace("\n", "").replace("\t", "    "))
+                    self.assertTrue(all(line_width(line) <= width for line in lines), lines_text(lines))
+                    cells = []
+                    for caret in range(len(text) + 1):  # every index of these texts is a cluster boundary
+                        composer.caret = caret
+                        cells.append(composer.render(width, 40)[1])
+                    self.assertEqual(cells, sorted(set(cells)), "two positions on one cell, or out of order")
+                    self.assertTrue(all(col < width for _row, col in cells), cells)
 
 
 if __name__ == "__main__":
