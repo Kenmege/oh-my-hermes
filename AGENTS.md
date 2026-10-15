@@ -177,8 +177,12 @@ PR without the chat history.
   the banner, and, beyond opening and closing sessions
   (`client.capabilities`, `session.create`, `session.resume`,
   `session.close`), sends only what this bullet names below, plus
-  `session.history` again when Hermes refuses a rewind and, when no turn
-  runs, a steer Hermes refused as an ordinary prompt. It never
+  `session.history` again when Hermes refuses a rewind; when no turn runs,
+  a steer Hermes refused as an ordinary prompt; and, at once, the decline
+  frame for a request it cannot show (a vault unlock or save-login prompt,
+  a terminal, preview or window read, a preview action, a tour, a display
+  sudo install, a clarify with no question in it, or a method it does not
+  know). It never
   answers an approval, clarify, sudo, or secret request on its own: Esc or
   Ctrl+C declines, an approval decline is an explicit deny, allowing a
   command takes the arrows and then Enter, and a request the gateway
