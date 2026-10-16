@@ -1057,6 +1057,7 @@ class App(ModesMixin, AgentViewMixin):
         self.slot_draft: Composer | None = None
         # The person's draft, set aside while the composer takes what to tell Hermes after an approval's tell row.
         self.tell_draft: Composer | None = None
+        self.tell_turn_runs = False  # the turn whose approval the open tell field denied has not ended (`_tell`)
         self.waiting_requests: deque[ServerRequest] = deque()
         self.queued: deque[QueuedLine] = deque()
         self.queue_held = False  # the queue waits for the person after an interrupt (`_hold_queue`)
@@ -1998,6 +1999,7 @@ class App(ModesMixin, AgentViewMixin):
         """
         if self.tell_draft is not None:
             return
+        self.tell_turn_runs = self._busy()
         draft = self.composer
         self.tell_draft = draft
         self.composer = Composer(history=draft.history, on_record=draft.on_record)
@@ -2011,13 +2013,17 @@ class App(ModesMixin, AgentViewMixin):
         self.composer.record(typed, sent=False)
 
     def _tell(self, text: str, shown: str = "", chips: tuple[tuple[str, str], ...] = ()) -> None:
-        """What the person sent after the tell row: the draft comes back and the text goes into the running turn as
-        a steer, or as a prompt once the turn has ended, the way Ctrl+Enter sends it (`_steer_or_submit`). An empty
-        send leaves the composer waiting for the text."""
+        """What the person sent after the tell row: the draft comes back and the text goes into the turn whose
+        approval was denied as a steer, the way Ctrl+Enter sends it (`_steer_or_submit`). Once that turn has ended
+        it is an ordinary prompt, held behind any turn that started since (a queued prompt's) whatever the busy
+        mode, so it never steers another turn. An empty send leaves the composer waiting for the text."""
         if not text.strip():
             return
         self._leave_tell()
-        self._steer_or_submit(text, shown, chips)
+        if self.tell_turn_runs:
+            self._steer_or_submit(text, shown, chips)
+        else:
+            self._submit(text, shown, chips, hold=True)
 
     def _turn_wait(self) -> float:
         """Seconds questions have waited on the person in the running (or just ended) turn, the open wait included."""
@@ -2587,10 +2593,13 @@ class App(ModesMixin, AgentViewMixin):
 
     # ── prompts ──
 
-    def _submit(self, text: str, shown: str = "", chips: tuple[tuple[str, str], ...] = ()) -> None:
+    def _submit(
+        self, text: str, shown: str = "", chips: tuple[tuple[str, str], ...] = (), hold: bool = False
+    ) -> None:
         """Send what the composer submitted; `shown` is its compact form (paste chips), which the transcript shows.
 
-        `chips` are the chips in `shown` (label, text): a prompt queued behind the turn keeps them for Up.
+        `chips` are the chips in `shown` (label, text): a prompt queued behind the turn keeps them for Up. `hold`
+        keeps a prompt behind a running turn whatever the busy mode (`_send_prompt`).
 
         Whether the line is a `!` shell line or a slash command is read from
         what the composer showed, never from a chip's text: a paste that
@@ -2615,7 +2624,7 @@ class App(ModesMixin, AgentViewMixin):
         elif self.rewind is not None:
             self._send_rewind(text, shown)
         else:
-            self._send_typed(text, shown=shown, chips=chips)
+            self._send_typed(text, hold=hold, shown=shown, chips=chips)
 
     def _send_typed(self, text: str, hold: bool = False, shown: str = "", chips: tuple[tuple[str, str], ...] = ()) -> None:
         """A prompt the person typed and sent: in plan mode as `/plan <text>`, the way a typed `/plan` goes.
@@ -2681,6 +2690,7 @@ class App(ModesMixin, AgentViewMixin):
 
     def _turn_ended(self) -> None:
         """The turn is over: the next queued line goes, unless the person interrupted it (`_hold_queue`)."""
+        self.tell_turn_runs = False  # an open tell field now says what to do after this turn, not in it
         if self.interrupting:
             self.interrupting = False
             self._hold_queue(INTERRUPTED_WHY)
