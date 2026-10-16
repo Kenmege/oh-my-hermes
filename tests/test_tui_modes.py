@@ -1755,6 +1755,14 @@ class EffortTests(unittest.TestCase):
                         answer(app, client, effort_set("high"))
                     app._take_settings({"config": {"agent": {"reasoning_effort": "low"}}})
                     self.assertEqual(app.effort, "high")
+        # The other way round: a session adopted after the old one said its level starts from the config's, which the
+        # fresh config read then replaces.
+        app, _client = self.started_with({"agent": {"reasoning_effort": "high"}})
+        session_info(app, reasoning_effort="max")
+        app._adopt_session({"session_id": SID, "stored_session_id": "stored-1", "info": {"lazy": True}})
+        self.assertEqual(app.effort, "high")
+        app._take_settings({"config": {"agent": {"reasoning_effort": "low"}}})
+        self.assertEqual(app.effort, "low")
 
     def test_the_hint_names_the_sessions_effort_from_the_start_and_ctrl_t_steps_from_it(self) -> None:
         # Hermes 6c61c3e27d sends the session's effort in the session.info that follows the agent's build, before
