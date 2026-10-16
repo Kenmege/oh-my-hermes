@@ -1753,7 +1753,7 @@ class App(ModesMixin, AgentViewMixin):
         elif event.type == "review.summary":
             text = clean_text(as_text(payload.get(contract.REVIEW_SUMMARY_TEXT))).strip()
             if text:
-                self.transcript.add_notice(text)
+                self.transcript.add_aside(NoticeBlock(text))  # it can come during the next turn: it closes nothing
         elif event.type == "session.control.update":
             control = payload.get(contract.SESSION_CONTROL)
             goal = control.get(contract.CONTROL_GOAL) if isinstance(control, Mapping) else None

@@ -39,6 +39,22 @@ class ReviewSummaryTests(unittest.TestCase):
         self.assertIn(f"· {REVIEW}", drawn(app))
         self.assertEqual(client.calls, [])
 
+    def test_one_that_comes_during_a_turn_closes_nothing_that_runs(self) -> None:
+        # Hermes sends it from its background review after a turn, when the next turn (a queued prompt) may run.
+        app, client = make_app(busy=True)
+        app._on_event(Event("message.start", SID, {}))
+        app._on_event(Event("message.delta", SID, {"text": "Hello wor"}))
+        app._on_event(Event("tool.start", SID, {"tool_id": "t1", "name": "terminal", "context": "sleep 5"}))
+        app._on_event(Event("review.summary", SID, {"text": REVIEW}))
+        app._on_event(Event("tool.complete", SID, {"tool_id": "t1", "name": "terminal", "duration_s": 5}))
+        app._on_event(Event("message.delta", SID, {"text": "ld"}))
+        kinds = [type(block).__name__ for block in app.transcript.blocks]
+        self.assertEqual(kinds.count("ToolGroup"), 1)  # the running tool's group was not closed under it
+        self.assertNotIn("NoticeBlock", kinds[: kinds.index("ToolGroup") + 1])
+        app._on_event(Event("message.complete", SID, {"text": "Hello world"}))
+        self.assertIn(REVIEW, [block.text for block in app.transcript.blocks if isinstance(block, NoticeBlock)])
+        self.assertEqual(client.calls, [])
+
     def test_an_empty_summary_or_another_sessions_says_nothing(self) -> None:
         app, _client = make_app()
         app._on_event(Event("review.summary", SID, {"text": "  "}))
