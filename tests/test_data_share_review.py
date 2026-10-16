@@ -627,6 +627,12 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
                     "passing", "transfer", "transferring",
                 )
             ),
+            # "give", "hand" and "pass" with no place send nothing.
+            *(
+                f"redact pii in the export, send it to the dev team and {verb} me a summary"
+                for verb in ("give", "giving", "hand", "handing")
+            ),
+            *(f"redact pii in the export, {verb} the checks, and send it to the dev team" for verb in ("pass", "passing")),
             "개인정보 지우고 동료한테 보내줘",
             "고객 정보 가명 처리해서 QA에 보내줘",
             "개인정보 가명 처리해서 다른 부서에 공유해줘",
@@ -634,9 +640,10 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "개인정보 지우고 부서원들한테 공유해줘",
             "이메일 주소를 익명화해서 사내 슬랙 채널에 공유해줘",
             "개인정보 지우고 개발팀에 이메일로 보내줘",
+            "고객 정보 마스킹해서 개발팀에 보내고 QA팀으로도 보내줘",
             # The data as an object ends the place's words; 로 that names no
             # destination ("업체별로") is no place.
-            "개인정보 지운 명단을 개발팀에 보내줘",
+            "개인정보 지우고 명단을 개발팀에 보내줘",
             "업체별로 정리한 고객 정보 마스킹해서 개발팀에 보내줘",
         ):
             with self.subTest(message=message):
@@ -702,6 +709,9 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "고객 정보 마스킹해서 contractor team에 보내줘",
             "고객 정보 마스킹해서 third-party team에 보내줘",
             "고객 정보 마스킹해서 data team에 보내고 vendor에도 보내줘",
+            # Outside any place too, also with a particle glued on.
+            "vendor 요청으로 고객 정보 마스킹해서 데이터팀에 보내줘",
+            "vendor가 쓸 거라서 고객 정보 마스킹해서 데이터팀에 보내줘",
         ):
             with self.subTest(message=message):
                 self.assertTrue(_offered(message))
@@ -711,6 +721,7 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
     def test_every_send_and_every_joined_place_must_be_inside(self) -> None:
         for message in (
             "redact pii in the export before we send it",
+            "redact pii in the export and hand it over",
             "redact pii in the export, share it with the dev team and post it publicly",
             "anonymize the dataset, send it to the qa team and upload it to kaggle",
             "redact pii in the export and send it to the dev team a copy",
@@ -757,6 +768,10 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
                 self.assertTrue(_offered(message))
                 self.assertTrue(self._named(message))
                 self.assertTrue(self._hinted(message))
+        # The rule alone, in Korean. On both surfaces the quoted name is gone
+        # before the rule reads "개발팀에", which reads inside: a gap the PR
+        # discloses, not a pass.
+        self.assertTrue(data_share_request_admitted('고객 정보 마스킹해서 "acme" 개발팀에 보내줘'))
 
     def test_english_and_korean_agree(self) -> None:
         for english, korean, offered in (

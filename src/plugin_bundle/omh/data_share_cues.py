@@ -207,7 +207,7 @@ DATA_SHARE_INTERNAL_MODIFIERS = (
     "같은", "전체", "모든",
     "the", "a", "an", "both",
     "서버", "환경", "위키", "대시보드", "툴", "채널", "슬랙", "메신저",
-    "server", "servers", "environment", "wiki", "dashboard", "tool", "channel", "workspace", "slack",
+    "servers", "wiki", "dashboard", "tool", "channel", "workspace", "slack",
 )
 # Korean only: a file or folder the data is exported to ("개인정보 지운 다음
 # 엑셀로 내보내줘" writes a spreadsheet). English reads no file or folder as
@@ -368,7 +368,7 @@ _PLACE_JOINERS = frozenset({"and", "as", "in", "or", "please", "plus", "today", 
 # the data leaving.
 _SEND_ROUTE_WORDS = frozenset({"at", "by", "for", "from", "on", "through", "using", "via"})
 # The multi-word English anchors ("test server"): their words are allowed in a
-# place, but only the whole phrase is an anchor.
+# place ("the staging server"), but only the whole phrase is an anchor.
 _ENGLISH_PHRASE_ANCHORS = tuple(entry for entry in DATA_SHARE_INTERNAL_DESTINATIONS if " " in entry)
 _ENGLISH_ANCHOR_PARTS = frozenset(word for entry in _ENGLISH_PHRASE_ANCHORS for word in entry.split())
 _QUOTES = re.compile(r"[\"“”‘’`]|(?<!\w)'|'(?!\w)")
@@ -565,6 +565,9 @@ _KOREAN_MEANS_PARTICLES = _MEANS_PARTICLES | {"으로도", "로도"}
 # ("이메일로 보내줘").
 _KOREAN_TIMES = frozenset({"다음", "후", "뒤"})
 _KOREAN_CHANNELS = frozenset({"이메일", "메일", "슬랙", "메신저"})
+# English words in a Korean sentence, also where a particle is glued to them
+# ("vendor가").
+_LATIN_RUN = re.compile(r"[a-z][a-z-]*")
 # Where the words of a place stop, read back from it: a joined verb
 # ("지우고", "마스킹해서"), a step ("지운 다음"), or the data as an object
 # ("파일을"). Any other word before a place is read as part of it.
@@ -627,7 +630,7 @@ def _korean_place_inside(words: tuple[str, ...], index: int, stem: str) -> bool:
     return _proven_inside(kinds)
 
 
-def _korean_stays_inside(words: tuple[str, ...], latin_tokens: set[str], text: str) -> bool:
+def _korean_stays_inside(words: tuple[str, ...], text: str) -> bool:
     """Whether every place the data goes is proven inside the company ("개발팀에", "사내 위키에", "엑셀로").
 
     Fails safe: any place with another word ("외부 팀에", "은행 담당 부서에",
@@ -635,7 +638,7 @@ def _korean_stays_inside(words: tuple[str, ...], latin_tokens: set[str], text: s
     보내고 캐글에 올려줘") keeps the data leaving, and so does an English
     recipient anywhere ("vendor team에") or quoted text.
     """
-    if latin_tokens & DATA_SHARE_RECIPIENT_TOKENS or _QUOTES.search(text):
+    if set(_LATIN_RUN.findall(text)) & DATA_SHARE_RECIPIENT_TOKENS or _QUOTES.search(text):
         return False
     inside = False
     for index, word in enumerate(words):
@@ -684,7 +687,7 @@ def _korean_admitted(text: str, latin_tokens: set[str]) -> bool:
         or any(verb in DATA_SHARE_KOREAN_OUTBOUND_VERBS for verb in request.before)
         or any(_korean_sends(word) for word in words)
     )
-    outbound = recipient or (sends and not _korean_stays_inside(words, latin_tokens, text))
+    outbound = recipient or (sends and not _korean_stays_inside(words, text))
     said = recipient or _korean_says(words, DATA_SHARE_KOREAN_PERSONAL_DATA + _KOREAN_PROTECTIVE_PHRASES)
     asks_for_it = final in DATA_SHARE_KOREAN_OUTBOUND_VERBS or _korean_protective(final, request.predicate_index, words)
     return asks_for_it and protective and outbound and said
