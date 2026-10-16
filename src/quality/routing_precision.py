@@ -15244,6 +15244,36 @@ ROUTING_INTERVENTION_CASES: tuple[RoutingInterventionCase, ...] = (
         "prepare_data_share_review",
         "data_share_review",
     ),
+    # Review of #2158 at 79e8f5218: words before the first send, a first
+    # object of "give", and a quoted name masked out before the rule reads
+    # the place. All three dispatched on main and lost it at 79e8f5218.
+    RoutingInterventionCase(
+        "export-an-outside-party-sees-first-reaches-data-share-review",
+        "Redacting an export before a company sees it, then sending it to the dev team, reaches the data share review",
+        "redact the pii in the export before acme sees it, and send it to the dev team",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "export-copied-to-a-company-reaches-data-share-review",
+        "Redacting an export and giving a company a copy before sending it to the dev team reaches the data share review",
+        "redact the pii in the export, give acme a copy and send it to the dev team",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
+    RoutingInterventionCase(
+        "export-to-a-quoted-companys-data-team-reaches-data-share-review",
+        "Redacting an export before it goes to a data team named by a quoted company reaches the data share review",
+        "redact the pii in the export and send it to the \"acme\" data team",
+        "dispatch",
+        "data-share-review",
+        "prepare_data_share_review",
+        "data_share_review",
+    ),
     # A person typing a blueprint seed's first line, without the fixed line
     # Hermes writes after it, still routes to the blueprint skill.
     RoutingInterventionCase(

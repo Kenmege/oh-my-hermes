@@ -4,14 +4,18 @@ The owner decided (2026-10-16) that personal data sent to a team inside the
 same company stays internal: the review is for data leaving for an outside
 party (a vendor, provider, partner, contractor, third party, or an external
 service). The gate fails safe: a place is inside only when it is proven
-inside. Every word of it must be an inside anchor (a team, a colleague,
-another department, staging, QA, internal, ...: `DATA_SHARE_INTERNAL_DESTINATIONS`)
-or a word allowed beside one (our, my, the, another; an internal function
-such as data, dev, marketing, finance; a server or a wiki:
-`DATA_SHARE_INTERNAL_MODIFIERS`). Any other word -- a company, a client, a
-hospital, a regulator, a name -- keeps the place outside, so "the vendor's
-team", "the Acme team", "the data team at Acme" and "외부 연구팀에" keep the
-review. Both languages read these two tables.
+inside. Every word of it must come from four closed tables, read by both
+languages -- anchors (a colleague, staging, QA, internal, ...:
+`DATA_SHARE_INTERNAL_DESTINATIONS`), units that need an owner (a team, a
+department: `DATA_SHARE_INTERNAL_UNITS`), owners (our, my, another, an
+internal function such as data, dev, marketing, finance:
+`DATA_SHARE_INTERNAL_OWNERS`) and modifiers (the, a; a server or a wiki:
+`DATA_SHARE_INTERNAL_MODIFIERS`) -- and it must say an anchor or an owned
+unit. Any other word -- a company, a client, a hospital, a regulator, a name
+-- keeps the place outside, so "the vendor's team", "the Acme team", "the
+data team at Acme" and "외부 연구팀에" keep the review. A caller that masked
+quoted, code or link text out of the request says so (`shielded`); what the
+masked text named is unread, so no place is then proven inside.
 
 `data-share-review` takes nothing another skill holds: it has no boost and
 stands down no guard. This narrow gate decides only whether the skill may be
@@ -35,15 +39,19 @@ not personal data at all, so all of these must hold:
   records, extract, transcript excerpt, corpus, dump or spreadsheet, beside a
   recipient outside the company (a vendor, contractor, agency, researcher,
   the public, a provider, a training set), or beside a verb that sends it
-  unless every verb that sends it on -- send, share, upload, attach, post,
-  forward, email, cc, transfer, pass, give, hand -- names a place proven
-  inside the company ("send it to the dev team", "share it with a
-  colleague", "upload it to staging"; `_sends_stay_inside`). A send that
-  names no place is leaving, and so is one whose place holds any other word
-  ("the data team and Acme", "the data team at Acme", "a colleague who now
-  works at Acme"). A request with quotation marks has no inside place
-  here; both surfaces remove quoted text before they call this, and what is
-  left is read by the same rule;
+  unless all of these hold (`_sends_stay_inside`): only closed words stand
+  between the lead verb's object and the first send ("in the export before
+  we"; not "before acme sees it", "the export acme will get"); every verb
+  that sends it on -- send, share, upload, attach, post, forward, email, cc,
+  transfer -- names after its "to" or "with" a place proven inside ("send it
+  to the dev team", "share it with a colleague", "upload it to staging");
+  and "give", "hand" or "pass" with no "to" either goes to the person
+  ("give me a summary", "hand it back") or has a first object proven inside
+  ("give the dev team a copy"; not "give acme a copy", "give them a copy").
+  A send that names no place is leaving, and so is one whose place holds
+  any other word ("the data team and Acme", "the data team at Acme", "a
+  colleague who now works at Acme"). A request that is `shielded`, or that
+  still has quotation marks, has no inside place;
 - no word after the openers names a legal question, Hermes (a setting of it,
   or Hermes doing the job: "before hermes uploads it to the vendor"), or a
   storage-wide scan. "hermes," as the address before the request is an
@@ -68,10 +76,12 @@ A Korean request puts its verb last, so its half of the rule
   "업체별로"), or a verb that sends it (a predicate, a "-기 전에" clause,
   "보낼 파일") unless a place proven inside the company or a file or folder
   of the person's own is named ("스테이징에", "개발팀에", "동료한테",
-  "엑셀로") and every place right before a verb that sends is one
-  (`_korean_stays_inside`). Any other word in the place keeps it outside
-  ("외부 팀에", "은행 담당 부서에", "다른 회사 동료에게", "acme qa에"), as does
-  an English recipient anywhere in the sentence ("vendor team에");
+  "엑셀로") and every place the sentence names is one
+  (`_korean_stays_inside`). A place's words are read back to the clause's
+  edge, however many: any other word keeps it outside ("외부 팀에", "은행 담당
+  부서에", "은행 IT 보안 개발 팀에", "다른 회사 동료에게", "acme qa에"), as does
+  an English recipient anywhere in the sentence ("vendor team에") and a
+  `shielded` request;
 - no word names a legal question, a Hermes setting, a storage-wide scan, or
   something other than data (코드, 함수, 기능, 버그, ...): "개인정보 마스킹
   기능 만들어서 벤더한테 보내줘" ships a feature;
@@ -353,6 +363,26 @@ _ONWARD_SENDS = DATA_SHARE_SEND_TOKENS | {
     "transfer", "transferring",
 }
 _SENDS_ONLY_WITH_A_PLACE = frozenset({"give", "giving", "hand", "handing", "pass", "passing"})
+# "give", "hand" and "pass" with no "to" send nothing only to the person
+# ("give me a summary", "hand it back"); otherwise their first object is the
+# place ("give acme a copy", "hand the auditors the file") and the thing given
+# is not read as part of it.
+_FIRST_PERSON = frozenset({"me", "us", "myself", "ourselves"})
+_HANDED_THINGS = DATA_SHARE_CARRIER_TOKENS | {"access", "copies", "copy", "link", "links", "version"}
+# The only words that may stand between the lead verb's object and the first
+# send: where the data is, joining words, a pronoun, a determiner, the data
+# itself, and the names of personal-data fields, none of which can name a party
+# ("in the export before we", "from this csv before", "and phone numbers in
+# this dataset before"). Any other word keeps the review: "before acme sees
+# it", "so acme can use it", "the export acme will get", "for the bank's
+# auditors", and also "the customer export" or "the crash logs", the safe
+# direction.
+_BEFORE_SEND_WORDS = DATA_SHARE_OBJECT_ENDS | DATA_SHARE_CARRIER_TOKENS | {
+    "a", "after", "an", "data", "first", "i", "it", "my", "once", "our", "personal", "pii", "please", "that", "the",
+    "them", "then", "these", "this", "those", "we", "you",
+    "address", "addresses", "birth", "date", "dates", "email", "emails", "id", "ids", "ip", "ips", "name", "names",
+    "number", "numbers", "phone", "phones", "ssn", "ssns",
+}
 # A send's place follows one of these ("send it to the dev team", "share it
 # with a colleague") and runs to the next send or the sentence's end.
 _DESTINATION_PREPOSITIONS = frozenset({"into", "onto", "to", "with"})
@@ -441,28 +471,38 @@ def _sends_stay_inside(words: list[str]) -> bool:
     """Whether every verb that sends the data on names a place proven inside the company.
 
     The words after the lead verb's object are read; the object itself is the
-    data ("redact the email column"). Each send's place runs from its "to" or
-    "with" to the next send or the sentence's end, so a second place joined to
-    the first is read too ("the data team and acme", "the data team or the
-    auditor").
+    data ("redact the email column"). Up to the first send only closed words
+    may stand (`_BEFORE_SEND_WORDS`). Each send's place runs from its "to" or
+    "with" to the next send or the sentence's end, so a second place joined
+    to the first is read too ("the data team and acme", "the data team or the
+    auditor"). "give", "hand" and "pass" with no "to" take their first object
+    as the place, unless it is the person or the data comes back.
     """
     start = next((index for index, word in enumerate(words) if index and word in DATA_SHARE_OBJECT_ENDS), len(words))
     sends = [index for index in range(start, len(words)) if words[index] in _ONWARD_SENDS]
+    if sends and not set(words[start : sends[0]]) <= _BEFORE_SEND_WORDS:
+        return False
     inside = False
     for number, index in enumerate(sends):
         reach = words[index + 1 : sends[number + 1] if number + 1 < len(sends) else len(words)]
         preposition = next((position for position, word in enumerate(reach) if word in _DESTINATION_PREPOSITIONS), None)
-        if preposition is None:
-            if words[index] in _SENDS_ONLY_WITH_A_PLACE:
+        if preposition is None and words[index] in _SENDS_ONLY_WITH_A_PLACE:
+            if (reach[:1] and reach[0] in _FIRST_PERSON) or "back" in reach[:2]:
                 continue
+            place = [word for word in reach if word not in _HANDED_THINGS]
+        elif preposition is None:
             return False
-        if set(reach[:preposition]) & _SEND_ROUTE_WORDS or not _inside(reach[preposition + 1 :]):
+        elif set(reach[:preposition]) & _SEND_ROUTE_WORDS:
+            return False
+        else:
+            place = reach[preposition + 1 :]
+        if not _inside(place):
             return False
         inside = True
     return inside
 
 
-def _leaving(text: str, tokens: set[str], words: list[str]) -> bool:
+def _leaving(text: str, tokens: set[str], words: list[str], shielded: bool) -> bool:
     if not tokens & DATA_SHARE_CARRIER_TOKENS:
         return False
     if tokens & DATA_SHARE_RECIPIENT_TOKENS or contains_boundary_phrase(text, DATA_SHARE_RECIPIENT_PHRASES):
@@ -472,22 +512,28 @@ def _leaving(text: str, tokens: set[str], words: list[str]) -> bool:
         or contains_boundary_phrase(text, DATA_SHARE_HAND_PHRASES)
         or _gives_it_away(words)
     )
-    return sends and not (_sends_stay_inside(words) and not _QUOTES.search(text))
+    return sends and (shielded or bool(_QUOTES.search(text)) or not _sends_stay_inside(words))
 
 
-def data_share_request_admitted(text: str) -> bool:
-    """A request to redact, pseudonymize, anonymize or de-identify data leaving the team, in English or Korean."""
+def data_share_request_admitted(text: str, *, shielded: bool = False) -> bool:
+    """A request to redact, pseudonymize, anonymize or de-identify data leaving the company, in English or Korean.
+
+    `shielded`: the caller removed a quoted, code or link region from `text`
+    before passing it (`reference_regions`). What was there is unread, so no
+    place is then proven inside: 'send it to the "acme" data team' arrives as
+    "send it to the data team".
+    """
     request = after_courtesy(text.strip())
     words = _words(request)
     tokens = set(words) | {part for word in words for part in word.split("-") if part}
     if tokens & DATA_SHARE_WITHDRAWAL_TOKENS or contains_boundary_phrase(request, DATA_SHARE_WITHDRAWAL_PHRASES):
         return False
-    if _korean_admitted(request, tokens):
+    if _korean_admitted(request, tokens, shielded):
         return True
     # A question is not a request to clean a file.
     if text.rstrip().endswith("?"):
         return False
-    return _protective_lead(words) and _leaving(request, tokens, words)
+    return _protective_lead(words) and _leaving(request, tokens, words, shielded)
 
 
 def data_share_phrases_said(text: str, phrases: Iterable[str] = DATA_SHARE_REVIEW_PHRASES) -> list[str]:
@@ -620,9 +666,12 @@ def _korean_edge(word: str) -> bool:
 
 
 def _korean_place_inside(words: tuple[str, ...], index: int, stem: str) -> bool:
-    """Whether the place ending at `index` is proven inside: its stem and the words before it in its phrase are all inside words, one an anchor."""
+    """Whether the place ending at `index` is proven inside: its stem and every word before it back to an edge are inside words, one an anchor.
+
+    No window: "은행 IT 보안 개발 팀에" reads 은행 too.
+    """
     kinds = [_korean_place_word(stem)]
-    for earlier in reversed(words[max(0, index - 3) : index]):
+    for earlier in reversed(words[:index]):
         kind = _korean_place_word(earlier)
         if not kind and _korean_edge(earlier):
             break
@@ -630,7 +679,7 @@ def _korean_place_inside(words: tuple[str, ...], index: int, stem: str) -> bool:
     return _proven_inside(kinds)
 
 
-def _korean_stays_inside(words: tuple[str, ...], text: str) -> bool:
+def _korean_stays_inside(words: tuple[str, ...], text: str, shielded: bool) -> bool:
     """Whether every place the data goes is proven inside the company ("개발팀에", "사내 위키에", "엑셀로").
 
     Fails safe: any place with another word ("외부 팀에", "은행 담당 부서에",
@@ -638,7 +687,7 @@ def _korean_stays_inside(words: tuple[str, ...], text: str) -> bool:
     보내고 캐글에 올려줘") keeps the data leaving, and so does an English
     recipient anywhere ("vendor team에") or quoted text.
     """
-    if set(_LATIN_RUN.findall(text)) & DATA_SHARE_RECIPIENT_TOKENS or _QUOTES.search(text):
+    if shielded or set(_LATIN_RUN.findall(text)) & DATA_SHARE_RECIPIENT_TOKENS or _QUOTES.search(text):
         return False
     inside = False
     for index, word in enumerate(words):
@@ -658,7 +707,7 @@ def _korean_stays_inside(words: tuple[str, ...], text: str) -> bool:
     return inside
 
 
-def _korean_admitted(text: str, latin_tokens: set[str]) -> bool:
+def _korean_admitted(text: str, latin_tokens: set[str], shielded: bool) -> bool:
     """The Korean half: a request ending on protecting the data or sending it, with both said.
 
     One of the skill's Korean phrases must be said too, so the router scores
@@ -687,7 +736,7 @@ def _korean_admitted(text: str, latin_tokens: set[str]) -> bool:
         or any(verb in DATA_SHARE_KOREAN_OUTBOUND_VERBS for verb in request.before)
         or any(_korean_sends(word) for word in words)
     )
-    outbound = recipient or (sends and not _korean_stays_inside(words, text))
+    outbound = recipient or (sends and not _korean_stays_inside(words, text, shielded))
     said = recipient or _korean_says(words, DATA_SHARE_KOREAN_PERSONAL_DATA + _KOREAN_PROTECTIVE_PHRASES)
     asks_for_it = final in DATA_SHARE_KOREAN_OUTBOUND_VERBS or _korean_protective(final, request.predicate_index, words)
     return asks_for_it and protective and outbound and said

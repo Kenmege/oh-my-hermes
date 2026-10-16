@@ -79,9 +79,9 @@ class RoutingQuery:
         `_score_definition` drops such a skill before scoring; a reader that
         ranks the catalog another way asks here so it drops the same skill.
         """
-        from .recommend import _SKILL_OFFERS_ITSELF
+        from .recommend import _offers_itself_predicate
 
-        offers_itself = _SKILL_OFFERS_ITSELF.get(skill)
+        offers_itself = _offers_itself_predicate(skill, self.scrubbed)
         if offers_itself is None:
             return False
         return not offers_itself(self.normalized, set(self.tokens))

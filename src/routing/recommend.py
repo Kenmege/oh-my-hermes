@@ -4333,7 +4333,7 @@ def _score_definition(
     # eighth meant editing the function every skill is scored by. The rules
     # live in `_SKILL_OFFERS_ITSELF` at the foot of this module now: same
     # predicates, same evaluation order, one row per skill.
-    offers_itself = _SKILL_OFFERS_ITSELF.get(definition.name)
+    offers_itself = _offers_itself_predicate(definition.name, original_query)
     if (
         offers_itself is not None
         and (
@@ -5865,3 +5865,19 @@ _SKILL_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
     # (`SPENDING_LOOP_REASON` in `chat.py`), unmarked imperative or not.
     "spend-gate": lambda normalized_query, query_tokens: bool(_spend_gate_clause(normalized_query)),
 }
+# A skill whose admission reads where the data goes reads a stricter predicate
+# when quoted, code or link text was masked out of the message: masking keeps
+# positions, so the masked region is a run of spaces in the scrubbed text, and
+# what it named is unread ('send it to the "acme" data team' reaches the
+# predicate as "send it to the data team"). The hint reads the same run on its
+# own masked text (`awareness._rule_suppressed_by_context`). A run the person
+# typed reads the same way, which keeps the review: the safe direction.
+_SHIELDED_OFFERS_ITSELF: dict[str, Callable[[str, set[str]], bool]] = {
+    "data-share-review": lambda normalized_query, query_tokens: data_share_request_admitted(normalized_query, shielded=True),
+}
+
+
+def _offers_itself_predicate(skill: str, scrubbed_query: str) -> Callable[[str, set[str]], bool] | None:
+    """The offers-itself predicate for `skill`, the stricter one when a region was masked out of `scrubbed_query`."""
+    shielded = "  " in scrubbed_query
+    return (shielded and _SHIELDED_OFFERS_ITSELF.get(skill)) or _SKILL_OFFERS_ITSELF.get(skill)

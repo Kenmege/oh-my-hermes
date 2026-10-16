@@ -627,12 +627,17 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
                     "passing", "transfer", "transferring",
                 )
             ),
-            # "give", "hand" and "pass" with no place send nothing.
+            # "give", "hand" and "pass" send nothing to the person themself;
+            # with another first object, that object is the place.
             *(
                 f"redact pii in the export, send it to the dev team and {verb} me a summary"
-                for verb in ("give", "giving", "hand", "handing")
+                for verb in ("give", "giving", "hand", "handing", "pass", "passing")
             ),
-            *(f"redact pii in the export, {verb} the checks, and send it to the dev team" for verb in ("pass", "passing")),
+            "redact pii in the export, send it to the dev team and give us the summary",
+            "redact pii in the export, send it to the dev team and give it back",
+            "redact pii in the export and give the dev team a copy",
+            "redact pii in the export and hand the qa team the export",
+            "redact pii in the export and give the dev team access",
             "개인정보 지우고 동료한테 보내줘",
             "고객 정보 가명 처리해서 QA에 보내줘",
             "개인정보 가명 처리해서 다른 부서에 공유해줘",
@@ -696,6 +701,10 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "이메일 주소 지우고 acme 데이터팀에 보내줘",
             "개인정보 지우고 팀 전체에 공유해줘",
             "개인정보 지우고 고객지원팀에 보내줘",
+            # Every word back to the clause's edge is read, however many.
+            "고객 정보 마스킹해서 은행 보안 개발 팀에 보내줘",
+            "고객 정보 마스킹해서 은행 it 보안 개발 팀에 보내줘",
+            "고객 정보 마스킹해서 삼성 데이터 분석 플랫폼 운영 팀에 보내줘",
         ):
             with self.subTest(message=message):
                 self.assertTrue(_offered(message))
@@ -720,6 +729,30 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
 
     def test_every_send_and_every_joined_place_must_be_inside(self) -> None:
         for message in (
+            # Between the lead verb's object and the first send, only where the
+            # data is, a pronoun, a determiner and a joining word may stand.
+            "redact the pii in the export before acme sees it, and send it to the dev team",
+            "redact the pii in the export before the auditors review it and share it with the data team",
+            "redact the pii in the export so acme can use it, and send it to the dev team",
+            "redact the pii in the export acme will get, then send it to the dev team",
+            "redact the pii in the export, which acme receives weekly, and send it to the dev team",
+            "redact the pii in the export for the bank's auditors and send it to the dev team",
+            "redact the pii in the export acme asked for and send it to the dev team",
+            "redact the pii in the export before the regulator gets it, and send it to the security team",
+            "redact the pii in the export for acme and send it to the dev team first",
+            # "give", "hand" and "pass" with a first object: it is the place.
+            "redact pii in the export, send it to the dev team and give acme a copy",
+            "redact pii in the export, send it to the dev team and give acme access",
+            "redact pii in the export, send it to the dev team and give the auditors a copy",
+            "redact pii in the export, send it to the dev team and give acme the file",
+            "redact pii in the export, send it to the dev team and give them a copy",
+            "redact pii in the export, send it to the dev team and hand acme a copy",
+            "redact pii in the export, send it to the dev team and pass acme a copy",
+            "redact pii in the export, send it to the dev team and hand the auditors the file",
+            "redact pii in the export, give acme a copy and send it to the dev team",
+            "redact pii in the export we give acme and send it to the dev team",
+            # A first object that is no place keeps the review too.
+            "redact pii in the export, pass the checks, and send it to the dev team",
             "redact pii in the export before we send it",
             "redact pii in the export and hand it over",
             "redact pii in the export, share it with the dev team and post it publicly",
@@ -754,24 +787,31 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.assertTrue(_offered(message))
 
-    def test_quoted_text_never_proves_a_place_inside(self) -> None:
-        # The rule itself reads no place as inside in a request with
-        # quotation marks. Both surfaces remove quoted text before they call
-        # it; what is left here ("the team", "the team called", nothing) is
-        # not proven inside either.
+    def test_a_shielded_region_never_proves_a_place_inside(self) -> None:
+        # Both surfaces remove quoted, code and link text before they call the
+        # rule, and both tell it so (`shielded`): 'the "acme" data team'
+        # arrives as "the data team", and is still no place proven inside.
         for message in (
             'redact pii in the export and send it to the "partner" team',
             'redact pii in the export and send it to the team called "acme support"',
             'redact pii in the export and send it to "our team"',
+            'redact pii in the export and send it to the "acme" data team',
+            "redact pii in the export and send it to the 'acme' data team",
+            "redact pii in the export and send it to the \u201cacme\u201d data team",
+            "redact pii in the export and send it to the `acme` data team",
+            "redact pii in the export and send it to the \u2018acme\u2019 data team",
+            'redact pii in the export and send it to acme\'s "data" team',
+            "redact pii in the export and upload it to https://acme.example/upload and the dev team",
+            '고객 정보 마스킹해서 "삼성" 개발팀에 보내줘',
         ):
             with self.subTest(message=message):
-                self.assertTrue(_offered(message))
                 self.assertTrue(self._named(message))
                 self.assertTrue(self._hinted(message))
-        # The rule alone, in Korean. On both surfaces the quoted name is gone
-        # before the rule reads "개발팀에", which reads inside: a gap the PR
-        # discloses, not a pass.
+        # The rule alone reads no place as inside when it sees the quotes.
         self.assertTrue(data_share_request_admitted('고객 정보 마스킹해서 "acme" 개발팀에 보내줘'))
+        self.assertTrue(data_share_request_admitted("redact pii in the export and send it to the data team", shielded=True))
+        self.assertFalse(data_share_request_admitted("redact pii in the export and send it to the data team"))
+        self.assertTrue(data_share_request_admitted("고객 정보 마스킹해서 개발팀에 보내줘", shielded=True))
 
     def test_english_and_korean_agree(self) -> None:
         for english, korean, offered in (
@@ -804,6 +844,103 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
                     self.assertTrue(_offered(text))
                     self.assertTrue(data_share_request_admitted(text.casefold()))
                     self.assertTrue(self._hinted(text))
+
+    def test_every_table_of_the_place_reading_is_exactly_this(self) -> None:
+        # A literal snapshot: a word added to a table, or dropped from one,
+        # fails here before any sentence is read. Change a table only with
+        # the sentences that pin the change.
+        from omh.plugin_bundle.omh import data_share_cues
+
+        tables = {
+            "DATA_SHARE_INTERNAL_DESTINATIONS": {
+                "co-worker", "co-workers", "colleague", "colleagues", "coworker", "coworkers", "dev server",
+                "in-house", "internal", "qa", "staging", "teammate", "teammates", "test environment",
+                "test server", "개발서버", "내부", "동료", "로컬", "사내", "스테이징", "테스트",
+            },
+            "DATA_SHARE_INTERNAL_UNITS": {
+                "department", "departments", "team", "teams", "부서", "팀",
+            },
+            "DATA_SHARE_INTERNAL_OWNERS": {
+                "ai", "analytics", "another", "backend", "bi", "data", "design", "dev", "development",
+                "engineering", "finance", "frontend", "growth", "hr", "infra", "infrastructure", "it", "marketing",
+                "ml", "mobile", "my", "operations", "ops", "our", "platform", "product", "research", "sales",
+                "science", "security", "support", "test", "testing", "web", "개발", "기획", "내", "다른", "데이터", "디자인",
+                "마케팅", "백엔드", "보안", "분석", "사이언스", "엔지니어링", "연구", "영업", "우리", "운영", "인사", "인프라", "재무", "저희", "제",
+                "제품", "지원", "타", "품질", "프론트엔드", "플랫폼",
+            },
+            "DATA_SHARE_INTERNAL_MODIFIERS": {
+                "a", "an", "both", "channel", "dashboard", "servers", "slack", "the", "tool", "wiki", "workspace",
+                "같은", "대시보드", "메신저", "모든", "서버", "슬랙", "위키", "전체", "채널", "툴", "환경",
+            },
+            "_PLACE_JOINERS": {
+                "and", "as", "in", "or", "please", "plus", "today", "well",
+            },
+            "_BEFORE_SEND_WORDS": {
+                "a", "address", "addresses", "after", "an", "and", "before", "birth", "corpus", "csv", "csvs",
+                "data", "dataset", "datasets", "date", "dates", "dump", "dumps", "email", "emails", "excerpt",
+                "excerpts", "export", "exports", "extract", "extracts", "file", "files", "first", "for", "from",
+                "i", "id", "ids", "in", "ip", "ips", "it", "log", "logs", "my", "name", "names", "number",
+                "numbers", "of", "once", "our", "personal", "phone", "phones", "pii", "please", "records",
+                "spreadsheet", "spreadsheets", "ssn", "ssns", "that", "the", "them", "then", "these", "this",
+                "those", "we", "you",
+            },
+            "_HANDED_THINGS": {
+                "access", "copies", "copy", "corpus", "csv", "csvs", "dataset", "datasets", "dump", "dumps",
+                "excerpt", "excerpts", "export", "exports", "extract", "extracts", "file", "files", "link",
+                "links", "log", "logs", "records", "spreadsheet", "spreadsheets", "version",
+            },
+            "_FIRST_PERSON": {
+                "me", "myself", "ourselves", "us",
+            },
+            "_SEND_ROUTE_WORDS": {
+                "at", "by", "for", "from", "on", "through", "using", "via",
+            },
+            "_ONWARD_SENDS": {
+                "attach", "attaching", "cc", "email", "emailing", "forward", "forwarding", "give", "giving",
+                "hand", "handing", "pass", "passing", "post", "posting", "send", "sending", "share", "sharing",
+                "transfer", "transferring", "upload", "uploading",
+            },
+            "_SENDS_ONLY_WITH_A_PLACE": {
+                "give", "giving", "hand", "handing", "pass", "passing",
+            },
+            "_DESTINATION_PREPOSITIONS": {
+                "into", "onto", "to", "with",
+            },
+            "_KOREAN_EXPORT_DESTINATIONS": {
+                "csv", "json", "pdf", "txt", "xlsx", "백업", "엑셀", "텍스트", "파일", "폴더",
+            },
+            "_KOREAN_TIMES": {
+                "다음", "뒤", "후",
+            },
+            "_KOREAN_CHANNELS": {
+                "메신저", "메일", "슬랙", "이메일",
+            },
+            "_KOREAN_PLACE_EDGES": {
+                "다음", "다음에", "뒤", "뒤에", "후", "후에",
+            },
+            "_KOREAN_PLACE_PARTICLES": {
+                "께", "께도", "로", "로도", "에", "에게", "에게도", "에도", "으로", "으로도", "쪽에", "쪽으로", "측에", "한테", "한테도",
+            },
+        }
+        for name, expected in tables.items():
+            with self.subTest(table=name):
+                self.assertEqual(set(getattr(data_share_cues, name)), expected)
+
+    def test_outside_words_keep_the_review(self) -> None:
+        # Words that name an outside party, beside a unit that would otherwise
+        # be owned: none may ever prove a place inside.
+        for word in (
+            "bank", "auditors", "supplier", "consultant", "freelance", "outsourced", "outside", "investor", "reseller",
+            "law", "firm", "government", "insurer", "client", "partner", "customer", "regulator", "hospital",
+            "university", "acme", "external", "agency",
+        ):
+            with self.subTest(word=word):
+                self.assertTrue(_offered(f"redact pii in the export before we send it to the {word} data team"))
+                self.assertTrue(_offered(f"redact pii in the export before we send it to the {word} team"))
+        for word in ("은행", "병원", "협력", "타사", "삼성", "감사법인", "보험사", "고객사", "대학", "회사", "외부", "벤더"):
+            with self.subTest(word=word):
+                self.assertTrue(_offered(f"고객 정보 마스킹해서 {word} 데이터 팀에 보내줘"))
+                self.assertTrue(_offered(f"고객 정보 마스킹해서 {word} 팀에 보내줘"))
 
     def test_every_inside_word_is_pinned(self) -> None:
         # Each literal is the contract: removing a word from the tables makes

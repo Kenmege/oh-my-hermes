@@ -950,8 +950,11 @@ def count_metrics() -> tuple[CountMetric, ...]:
             # data team at another company's office, the data team and a
             # company, an auditor copied, a forward on to a company, and the
             # customer success team (11); and a Korean send to the QA team
-            # then to a public site (1).
-            expected=859,
+            # then to a public site (1). Its re-review adds three that keep
+            # the review: a company that sees the export before the send, a
+            # copy given to a company, and a company's data team named in
+            # quotes (3).
+            expected=862,
             # The one reviewed test pin. Every other test compares its payload
             # against build_routing_precision_demo() rather than a literal.
             sites=("tests/test_routing_precision.py",),
