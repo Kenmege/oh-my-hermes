@@ -24,6 +24,7 @@ from omh.tui.transcript import (
     AssistantBlock,
     CommandBlock,
     ThinkingBlock,
+    ToolGroup,
     ToolRow,
     Transcript,
     block_rows,
@@ -1122,6 +1123,31 @@ class InlineDiffTests(LoopTestCase):
         again = self.transcript.take_stable_lines(30, THEME)
         self.assertEqual(again, self.transcript.history_lines(30, THEME, details=False))
         self.assertTrue(all(line_width(row) == 30 for row in again[-2:]))
+
+
+
+class BridgeToolRowTests(unittest.TestCase):
+    """Hermes' tool bridge (`tool_call`, `tool_search`, `tool_describe`) previews a call as a label, `<what> · <detail>`."""
+
+    def row_text(self, name: str, context: str) -> str:
+        from _tui_lines import line_text
+
+        transcript = Transcript(lambda: 0.0)
+        transcript.apply(Event("message.start", "s", {}))
+        transcript.apply(Event("tool.start", "s", {"tool_id": "t1", "name": name, "context": context}))
+        transcript.apply(Event("tool.complete", "s", {"tool_id": "t1", "name": name, "result": {}}))
+        group = next(block for block in transcript.blocks if isinstance(block, ToolGroup))
+        return line_text(block_rows(group, 80, THEME)[0])
+
+    def test_its_label_never_reads_as_the_transcripts_own_tool_count(self) -> None:
+        # Review B NIT 11: `✓ tool_describe  Reading tool details · 1 tool` read as a count of tools.
+        row = self.row_text("tool_describe", "Reading tool details · 1 tool")
+        self.assertIn("Reading tool details: 1 tool", row)
+        self.assertNotIn("· 1 tool", row)
+        self.assertIn("GitHub: Create issue", self.row_text("tool_call", "GitHub · Create issue"))
+
+    def test_another_tools_context_is_shown_as_it_came(self) -> None:
+        self.assertIn("notes · draft.md", self.row_text("read_file", "notes · draft.md"))
 
 
 if __name__ == "__main__":

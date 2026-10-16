@@ -361,8 +361,16 @@ def _result_summary(payload: dict[str, Any]) -> str:
     return _first_line(as_text(result))
 
 
+# Hermes' tool bridge previews a call as a label, `<what> · <detail>` (6c61c3e27d `tools/tool_labels.py`), whose
+# separator is the one the transcript puts between its own fields (`✻ 30s · 1 tool`).
+BRIDGE_TOOLS = frozenset({"tool_call", "tool_search", "tool_describe"})
+LABEL_SEPARATOR = " · "
+
+
 def _args_summary(payload: dict[str, Any]) -> str:
     context = _first_line(as_text(payload.get("context")))
+    if context and as_text(payload.get("name")) in BRIDGE_TOOLS:
+        return context.replace(LABEL_SEPARATOR, ": ", 1)  # the transcript's own field separator: `· 1 tool` is a count
     if context:
         return context
     args = payload.get("args")
