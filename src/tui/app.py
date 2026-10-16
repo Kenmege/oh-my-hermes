@@ -626,7 +626,8 @@ def goal_line(goal: Mapping[str, Any] | None, width: int, theme: Theme) -> Line 
             wait = f"until {time.strftime('%H:%M', time.localtime(until_at))}"
         else:
             target = barrier.get(contract.BARRIER_TARGET)
-            wait = f"on {as_text(barrier.get(contract.BARRIER_TYPE))} {target if isinstance(target, str | int) else ''}"
+            target_words = words(str(target)) if isinstance(target, str | int) else ""
+            wait = f"on {words(barrier.get(contract.BARRIER_TYPE))} {target_words}"
         reason = words(barrier.get(contract.BARRIER_REASON))
         glyph, label, detail = "⏳", "goal parked", f"{wait}{f' · {reason}' if reason else ''} · {turns}"
     elif goal.get(contract.GOAL_STATUS) == contract.GOAL_PAUSED:

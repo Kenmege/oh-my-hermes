@@ -89,6 +89,17 @@ class GoalRowTests(unittest.TestCase):
         self.assertIsNone(goal_line(None, 120, THEME))
         self.assertEqual(line_text(goal_line(goal(), 30, THEME)), "⊙ goal · 3/20 turns · ship th…")  # type: ignore[arg-type]
 
+    def test_the_barriers_type_and_target_are_cleaned_like_every_other_field(self) -> None:
+        cases = {
+            "escapes and controls": ({"type": "ses\x1b[31msion", "target": "s-\x0742  "}, "on session s-42"),
+            "a number": ({"type": "turns", "target": 5}, "on turns 5"),
+        }
+        for name, (barrier, wait) in cases.items():
+            with self.subTest(case=name):
+                line = goal_line(goal(wait_barrier=barrier), 120, THEME)
+                assert line is not None
+                self.assertEqual(line_text(line), f"⏳ goal parked · {wait} · 3/20 turns · ship the parity round")
+
     def test_the_row_stands_above_the_composer_while_a_goal_stands_and_goes_with_it(self) -> None:
         app, client = make_app()
         app._on_event(control(goal()))
