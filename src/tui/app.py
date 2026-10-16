@@ -1990,7 +1990,14 @@ class App(ModesMixin, AgentViewMixin):
 
     def _open_tell(self) -> None:
         """After an approval's tell row sent the deny: the draft is set aside and the composer, labelled on the mode
-        row, takes what the person tells Hermes instead (`_tell`). It shares the draft's history."""
+        row, takes what the person tells Hermes instead (`_tell`). It shares the draft's history.
+
+        Picked while the field is already open (the turn went on and asked
+        again), it keeps that field and what is typed in it: the composer
+        there is the field, not the draft.
+        """
+        if self.tell_draft is not None:
+            return
         draft = self.composer
         self.tell_draft = draft
         self.composer = Composer(history=draft.history, on_record=draft.on_record)

@@ -491,6 +491,23 @@ class TellRowTests(unittest.TestCase):
         press(app, Key(ENTER))
         self.assertEqual(client.named("session.steer"), [{"session_id": SID, "text": "use ./tmp"}])
 
+    def test_a_second_tell_row_keeps_the_open_field_and_the_draft_behind_it(self) -> None:
+        # The tell row lets the turn go on, so the next approval can come while its field is open.
+        app, client = self.told()
+        type_text(app, "first tell")
+        app._on_server_request(ServerRequest("srq-2", "approval", dict(TELL_APPROVAL.params)))
+        armed(app)
+        press(app, *[Key(DOWN)] * 3, Key(ENTER))
+        self.assertEqual(client.answers[-1], ("srq-2", {"result": {"choice": "deny"}}))
+        self.assertEqual(app.composer.text, "first tell")  # the field stays open, what was typed in it kept
+        self.assertEqual(app.tell_draft.text, "my draft")  # type: ignore[union-attr]
+        self.assertIn(app_module.TELL_SAY[0], mode_row(app))
+        type_text(app, ", then this")
+        press(app, Key(ENTER))
+        self.assertEqual(client.named("session.steer"), [{"session_id": SID, "text": "first tell, then this"}])
+        self.assertIsNone(app.tell_draft)
+        self.assertEqual(app.composer.text, "my draft")
+
     def test_a_text_question_waiting_behind_the_approval_gets_its_own_field_and_gives_the_tell_field_back(self) -> None:
         app, client = make_app(busy=True)
         type_text(app, "my draft")

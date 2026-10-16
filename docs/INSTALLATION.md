@@ -508,7 +508,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   · esc cancels` on the mode row: what you send goes into the running turn
   as a steer, the way Ctrl+Enter sends one (a steer Hermes does not take
   waits in the queue, and one it never answers comes back to the composer
-  after 120 s), or as an ordinary prompt once the turn has ended. Esc there
+  after 120 s), or as an ordinary prompt once the turn has ended. The tell
+  row of a later approval, picked while that composer is open, keeps it open
+  with what you typed there. Esc there
   sends nothing more, since the deny already went: your draft comes back, and
   what you typed stays in this session's history. The
   highlight stops at either end, so Up then Enter still denies, no number
