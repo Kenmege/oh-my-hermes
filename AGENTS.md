@@ -195,9 +195,9 @@ PR without the chat history.
   Ctrl+C declines, an approval decline is an explicit deny and then
   interrupts the running turn (`session.interrupt`, only while a turn runs;
   every deny the person gives an approval does, `d`, `n` and Enter on deny
-  too), allowing a command takes the arrows and then Enter, and a request
-  the gateway withdraws (its own timeout, an interrupt) closes without an
-  answer.
+  too, except the tell row's below), allowing a command takes the arrows
+  and then Enter, and a request the gateway withdraws (its own timeout, an
+  interrupt) closes without an answer.
   Hermes' `always` choice is offered only when the request lists it and is
   sent, like any allow, only on the person's arrows and then Enter; saving
   it as a permanent allow (`command_allowlist`) is Hermes' doing, and like
@@ -293,7 +293,8 @@ PR without the chat history.
   `omh` named, which `omh` removes. The frontend opens no socket and makes no
   network call, strips the sidecar and attach URLs from the gateway's
   environment, and reaps the gateway when it exits, SIGTERM and SIGHUP
-  included. OMH itself still makes no
+  included. Ctrl+Z stops the process group, Hermes' gateway with it, as
+  Hermes' own CLI's Ctrl+Z does, and fg continues both. OMH itself still makes no
   LLM call; every model call, and every other network call the gateway makes,
   is Hermes'. This is a foreground terminal the person launched, not a
   background runtime, a transport bot, or a third process bridge.

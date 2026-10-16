@@ -142,7 +142,8 @@ OMH is not:
 - a replacement for Hermes' gateway, agent loop, or approval policy (the OMH
   TUI relays what the person types and answers no request on their behalf; a
   deny the person gives an approval also interrupts the running turn, as
-  Claude Code's Esc does)
+  Claude Code's Esc does, except the deny from the row that tells Hermes what
+  to do instead)
 
 ## Routing Language Policy
 

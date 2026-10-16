@@ -764,7 +764,7 @@ class DocumentedBoundaryTests(unittest.TestCase):
         self.assertIn(f'An approval\'s last row, "{tell}", sends the explicit deny at once, interrupts nothing,', agents)
         self.assertIn("an approval decline is an explicit deny and then interrupts the running turn (`session.interrupt`, "
                       "only while a turn runs; every deny the person gives an approval does, `d`, `n` and Enter on deny "
-                      "too)", agents)
+                      "too, except the tell row's below)", agents)
         self.assertIn("Hermes' `always` choice is offered only when the request lists it and is sent, like any allow, "
                       "only on the person's arrows and then Enter", agents)
         self.assertIn("A steer (Ctrl+Enter, `/steer`, or what the person sends from the composer the tell row opened) "
@@ -780,7 +780,15 @@ class DocumentedBoundaryTests(unittest.TestCase):
 
     def test_direction_says_a_deny_also_stops_the_turn(self) -> None:
         self.assertIn("answers no request on their behalf; a deny the person gives an approval also interrupts the "
-                      "running turn, as Claude Code's Esc does)", self.prose("docs/DIRECTION.md"))
+                      "running turn, as Claude Code's Esc does, except the deny from the row that tells Hermes what to "
+                      "do instead)", self.prose("docs/DIRECTION.md"))
+
+    def test_the_boundary_names_what_ctrl_z_does_to_the_gateway(self) -> None:
+        agents = self.prose("AGENTS.md")
+        self.assertIn("Ctrl+Z stops the process group, Hermes' gateway with it, as Hermes' own CLI's Ctrl+Z does, and fg "
+                      "continues both.", agents)
+        context = self.prose("CONTEXT.md")
+        self.assertIn("Ctrl+Z stops its process group, the gateway with it, as Hermes' own CLI's Ctrl+Z does.", context)
 
 
 class TinyTerminalQuestionTests(unittest.TestCase):

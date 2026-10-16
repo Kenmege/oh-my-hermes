@@ -360,7 +360,8 @@ import path the launcher provided and speaks its stdio JSON-RPC; when that
 child exits on its own with a failure, it spawns it again the same way and
 resumes the open session, at most 3 times in 60 s (an open question closes
 unanswered, a running turn is reported lost and never re-sent), and past that
-it exits as before. Layout, input, rendering and
+it exits as before; Ctrl+Z stops its process group, the gateway with it, as
+Hermes' own CLI's Ctrl+Z does. Layout, input, rendering and
 the OMH panels are OMH's; every model call, tool run and approval decision is
 the gateway's. Shift+Tab may turn on Hermes' per-session yolo, so Hermes stops
 asking for approvals in that one session (a `config.set` naming the session,
