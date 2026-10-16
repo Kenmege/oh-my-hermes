@@ -1377,7 +1377,7 @@ a "no" leaves the seeded defaults in effect — and
 `omh model-chains set <category> "model[:effort], ..."` is the scriptable
 write (agents included).
 
-![Bare omh model-chains: one row per category with its head model, effort bar and state; the cursor row shows the left/right and -/+ handles](../assets/model-chain-picker-cli.png)
+![Bare omh model-chains on a fresh OMH home: one row per category with its shipped head model, effort bar and state; the cursor row shows the left/right and -/+ handles, and the key row ends with esc cancel](../assets/model-chain-picker-cli.png)
 
 All of them edit the same document: `omh setup` seeds
 `~/.omh/routing/model-chains.json` (`mixture_chain_overrides/v1`) with an
