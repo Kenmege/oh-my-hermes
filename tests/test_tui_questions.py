@@ -325,16 +325,20 @@ class WaitingTimeTests(unittest.TestCase):
                 event("start", "later", context="b.py")
                 now[0] = 110.0
                 event("complete", "later", result="ok", **({"duration_s": 5.0} if hermes else {}))
+                event("start", "across", context="c.py")
                 now[0] = 121.0
                 armed(app)
                 press(app, Key(DOWN), Key(ENTER))
                 now[0] = 122.0
                 event("complete", "asker", result="ok", **({"duration_s": 22.0} if hermes else {}))
+                now[0] = 125.0
+                event("complete", "across", result="ok", **({"duration_s": 15.0} if hermes else {}))
                 rows = {tool.tool_id: tool.duration_s for block in app.transcript.blocks if isinstance(block, ToolGroup)
                         for tool in block.tools}
                 self.assertAlmostEqual(rows["asker"], 2.0)  # the wait it was blocked on is left out
                 self.assertAlmostEqual(rows["beside"], 5.0)  # finished while the question waited
                 self.assertAlmostEqual(rows["later"], 5.0)  # started while it waited
+                self.assertAlmostEqual(rows["across"], 15.0)  # started while it waited, finished after it ended
 
     def test_a_tool_that_ran_before_the_wait_keeps_its_whole_duration(self) -> None:
         app, _client, now = self.clocked()
