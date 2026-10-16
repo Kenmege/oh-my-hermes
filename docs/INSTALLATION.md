@@ -576,7 +576,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   something while the turn was stopping. Each turn ends with a line
   `✻ 34s · 3 tools · ↓1.2k` on a thin rule. While a question Hermes asked
   waits on you, the working row reads `? waiting on you (11s)` instead, its
-  one clock counting that wait, and a tool's time on its row leaves the wait
+  one clock counting that wait (the status bar's OMH count of running tool
+  calls, `• 1 tool · 9s`, drops its seconds meanwhile and leaves once the
+  turn ends), and a tool's time on its row leaves the wait
   out, so a command you took 20 s to allow shows the 2 s it ran (a call Hermes
   ran beside it, which the question did not hold up, keeps its whole time). The done
   line keeps the turn's whole time and names the wait beside it,

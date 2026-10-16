@@ -65,7 +65,9 @@ All notable changes will be documented here.
   `⠼ working… (16s · ↓262 tokens)`, beside the status line's `waiting on
   you`; a command you took 20 s to allow then read `✗ terminal  rm -rf
   ./tmp-a  21.8s`, as if it were slow. The working row now reads `? waiting
-  on you (11s)` with no spinner and one clock, that wait's; a tool's row
+  on you (11s)` with no spinner and one clock, that wait's (the status bar's
+  OMH tool count shows no seconds of its own meanwhile, and leaves with the
+  turn instead of lingering into idle); a tool's row
   leaves the wait out of its time; and the done line keeps the turn's wall
   clock with the wait beside it, `✻ 30s (27s waiting on you) · 1 tool`.
 - **The OMH TUI's transcript records how each question ended.** A clarify

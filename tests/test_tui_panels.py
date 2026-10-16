@@ -429,6 +429,14 @@ class StatusSegmentsTests(unittest.TestCase):
         chip = next(span for span in line if span.text.startswith("repeat"))
         self.assertEqual(chip.style.fg, THEME.warn.fg)
 
+    def test_the_in_flight_chip_drops_its_clock_while_a_question_waits_and_goes_when_no_turn_runs(self) -> None:
+        payload = hud_payload()
+        payload["repeat"] = {"status": "observed", "consecutive": 4, "period": 2, "intercepted": 1, "stage": "blocking"}
+        payload["activity"].update(live=True, post_tool_call_observed=True, open_call_count=2, oldest_open_elapsed_seconds=12)
+        self.assertEqual(line_text(status_segments(payload, THEME, question_waits=True)),
+                         "⚚ OMH · repeat x4 cycle-of-2 blocked • 2 tools")
+        self.assertEqual(line_text(status_segments(payload, THEME, turn_runs=False)), "⚚ OMH · repeat x4 cycle-of-2 blocked")
+
     def test_liveness_is_not_claimed_where_it_cannot_be_read(self) -> None:
         payload = hud_payload()
         payload["activity"].update(live=True, post_tool_call_observed=False, open_call_count=2)

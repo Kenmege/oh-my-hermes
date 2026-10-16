@@ -4051,7 +4051,9 @@ class App(ModesMixin, AgentViewMixin):
         payload = self.hud.payload if self.hud is not None else None
         head: Line = tuple(
             Span(span.text, replace(span.style, bg=bar.bg))
-            for span in status_segments(payload, on_status_bar(self.theme))
+            for span in status_segments(
+                payload, on_status_bar(self.theme), turn_runs=self._busy(), question_waits=self.slot is not None
+            )
         )
         model, context, state = (self.model, bar), (self.context, self._context_style()), (self._state_text(), bar)
         chips = self._mode_chips()

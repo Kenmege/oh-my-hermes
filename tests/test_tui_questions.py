@@ -277,6 +277,34 @@ class WaitingTimeTests(unittest.TestCase):
         # The deny also stops the turn: the row is the turn's own clock again, while Hermes stops it.
         self.assertTrue([row for row in drawn(app) if "interrupting… (22s" in row])
 
+    def test_the_status_bars_activity_chip_keeps_no_second_clock_and_goes_with_the_turn(self) -> None:
+        # The OMH HUD's in-flight chip counts the open call's own seconds; it lags the turn by a poll or more.
+        from test_tui_panels import hud_payload
+
+        from omh.tui.panels import HudSnapshot
+
+        def status() -> str:
+            return next(row for row in drawn(app) if row.startswith("⚚ OMH"))
+
+        app, _client, now = self.clocked()
+        app.stored_id = "stored"
+        payload = hud_payload()
+        payload["activity"].update(live=True, post_tool_call_observed=True, open_call_count=1, oldest_open_elapsed_seconds=9)
+        app.hud = HudSnapshot("stored", payload, now[0])
+        self.assertIn("• 1 tool · 9s", status())  # while the turn runs, the call's seconds
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+        now[0] = 114.0
+        screen = drawn(app)
+        self.assertIn("? waiting on you (14s)", screen)
+        self.assertIn("• 1 tool │", status())  # one clock: the wait's, on the working row
+        self.assertNotIn("9s", status())
+        armed(app)
+        press(app, Key(DOWN), Key(ENTER))
+        self.assertIn("• 1 tool · 9s", status())
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertNotIn("tool", status())  # the snapshot still says live; the turn is over
+        self.assertIn("idle", status())
+
     def test_back_to_back_questions_are_one_wait(self) -> None:
         app, _client, now = self.clocked()
         app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))

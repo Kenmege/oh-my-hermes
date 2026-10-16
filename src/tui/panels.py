@@ -414,7 +414,7 @@ def _repeat_chip(repeat: Mapping[str, Any]) -> tuple[str, str]:
     return f"repeat x{count}{f' cycle-of-{period}' if period > 1 else ''}{suffix}", stage
 
 
-def status_segments(payload: Any, theme: Theme) -> Line:
+def status_segments(payload: Any, theme: Theme, turn_runs: bool = True, question_waits: bool = False) -> Line:
     """The OMH part of the status line: `⚚ OMH`, then the session-wide chips.
 
     The version is the banner's; the status line keeps its cells for the
@@ -423,7 +423,10 @@ def status_segments(payload: Any, theme: Theme) -> Line:
     The chips are the widget header's facts about the whole session rather
     than its agents: a repeating call (muted while watched, warn once refused,
     error once escalated to a person) and the exact in-flight tool calls (only
-    where this install has seen `post_tool_call` fire). Order is priority: a
+    where this install has seen `post_tool_call` fire, and only while
+    `turn_runs`: the snapshot lags the turn's end by a poll or more). While
+    `question_waits` the calls are counted without the oldest one's seconds,
+    since the working row's clock is that wait's. Order is priority: a
     narrow status line cuts from the right. The widget's `yolo mode: on|off`
     chip is not drawn: the composer states the approval mode (accept all) as
     Hermes confirmed it for this session, and the HUD's reading of Hermes'
@@ -439,10 +442,10 @@ def status_segments(payload: Any, theme: Theme) -> Line:
         tone = theme.error if stage == "approval" else theme.warn if stage == "blocking" else theme.muted
         spans += [Span(" · ", theme.dim), Span(chip, replace(tone, bold=stage != "watching"))]
     activity = _mapping(data.get("activity"))
-    if activity.get("live") and activity.get("post_tool_call_observed"):
+    if turn_runs and activity.get("live") and activity.get("post_tool_call_observed"):
         count = _plural(_count(activity.get("open_call_count")), "tool")
         oldest = _elapsed(activity.get("oldest_open_elapsed_seconds")) or "0s"
-        spans += [Span(" • ", theme.dim), Span(f"{count} · {oldest}", theme.warn)]
+        spans += [Span(" • ", theme.dim), Span(count if question_waits else f"{count} · {oldest}", theme.warn)]
     return _line(*spans)
 
 
