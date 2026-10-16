@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import unittest
 
-from test_tui_modes import SID, answer, make_app, notices
+from test_tui_modes import answer, make_app, notices
 from test_tui_muscle_memory import commands, send
+from omh.tui.app import REWIND_BUSY_NOTICE
 from omh.tui.slash import COMMANDS, LOCAL
 from omh.tui.transcript import AssistantBlock
 
@@ -50,8 +51,14 @@ class EchoTests(unittest.TestCase):
         self.assertEqual(commands(app), ["/usage"])
 
     def test_what_a_quiet_command_says_during_a_turn_waits_under_what_runs(self) -> None:
-        # With no echo to hold it, a notice from /rewind, /logs or /sessions must not close the streaming reply.
-        for name in ("rewind", "logs", "sessions"):
+        # With no echo to hold it, a notice from /rewind, /logs or /sessions must not close the streaming reply;
+        # it is written once the turn's next boundary comes.
+        said = {
+            "rewind": REWIND_BUSY_NOTICE,
+            "logs": "The gateway has written nothing to stderr.",
+            "sessions": "Hermes has no stored sessions to switch to.",
+        }
+        for name, notice in said.items():
             with self.subTest(name=name):
                 app, client = make_app(busy=True)
                 client.stderr_tail = lambda: []  # type: ignore[attr-defined]
@@ -60,10 +67,10 @@ class EchoTests(unittest.TestCase):
                 if name == "sessions":
                     answer(app, client, {"sessions": []})
                 self.assertFalse(app.transcript.blocks[0].done)  # the live reply is still open
+                self.assertNotIn(notice, notices(app))
                 app.transcript.blocks[0].done = True
                 app.transcript.add_notice("the turn ended")
-                self.assertTrue(notices(app))
-        self.assertEqual(SID, "live-1")
+                self.assertIn(notice, notices(app))
 
 
 if __name__ == "__main__":
