@@ -894,6 +894,8 @@ class DataShareReviewInternalDestinationTests(unittest.TestCase):
             "redact the partner export and send it to the dev team",
             "redact the bank records and send them to the dev team",
             "redact the insurer file and send it to the dev team",
+            "redact the regulator records and send them to the dev team",
+            "redact the auditor extract and send it to the dev team",
             "redact the customer-facing export and send it to the dev team",
             # The place still decides: a customer, the customer team.
             "redact the customer export, then send it to the customer",
