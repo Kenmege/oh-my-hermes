@@ -878,7 +878,8 @@ TUI does; each attempt waits up to 15 s for the new gateway, the time Hermes'
 own TUI gives one before it reports a slow start. A question it had asked closes
 unanswered, a turn that was running is reported lost and is not sent again,
 a steer it had not answered comes back to the composer at once (never sent
-again), and what you queued comes back to the composer as after an interrupt. It
+again), the subagents on the strip stay there (those still running marked
+interrupted, `▪`), and what you queued comes back to the composer as after an interrupt. It
 does this at most three times in a minute, and a new gateway that exits
 before it resumed the session counts as one of them; after that, or when the
 new gateway refuses the resume or does not answer it, it leaves with the command that reopens

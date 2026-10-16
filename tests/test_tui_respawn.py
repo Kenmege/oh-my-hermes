@@ -16,6 +16,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from _tui_lines import line_text
 from test_tui_app import FakePoller, ScriptedTerminal, Step
 from test_tui_choice_ui import drawn
 from test_tui_modes import SID, RecordingClient, make_app, notices, type_text
@@ -272,6 +273,33 @@ class LostCallTests(unittest.TestCase):
                 said = " ".join(notices(app)[len(before):])
                 for method in ("slash.exec", "model.options"):  # only the new gateway's own calls are left to expire
                     self.assertNotIn(method, said)
+
+
+class AgentsAcrossARespawnTests(unittest.TestCase):
+    """The subagents the strip held stay on it across a respawn: they never move to the HUD's [Agents] block."""
+
+    def test_finished_agents_stay_on_the_strip_and_running_ones_are_marked_interrupted(self) -> None:
+        from test_tui_agent_strip import agent_event
+        from test_tui_panels import agent_row, hud_payload, with_agents
+        from test_tui_subagents import FIRST, SECOND
+
+        from omh.tui.panels import HudSnapshot
+        from omh.tui.subagents import COMPLETED, INTERRUPTED
+
+        app, old, _spawner, _now = crashing(busy=True)
+        agent_event(app, "start", FIRST, goal="Run the shell command one")
+        agent_event(app, "start", SECOND, goal="Run the shell command two")
+        agent_event(app, "complete", FIRST, goal="Run the shell command one", status="completed")
+        app.agent_steer = SECOND  # the person picked the running one to steer
+        app.hud = HudSnapshot(STORED, with_agents(hud_payload(), [agent_row(0), agent_row(1)]), 0.0)
+        crash(app, old)
+        self.assertEqual({agent.subagent_id: agent.status for agent in app.roster.agents.values()},
+                         {FIRST: COMPLETED, SECOND: INTERRUPTED})  # the gateway that ran it is gone
+        self.assertIsNone(app.agent_steer)
+        strip = line_text(app._agent_strip(120)[0])
+        self.assertIn("○ …one", strip)
+        self.assertIn("▪ …two", strip)
+        self.assertFalse([line for line in app._slot_lines(120, 30) if line_text(line).startswith("[Agents]")])
 
 
 class NoRespawnTests(unittest.TestCase):

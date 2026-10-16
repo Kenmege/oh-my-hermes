@@ -1664,7 +1664,7 @@ class App(ModesMixin, AgentViewMixin):
         if self._busy():
             self.transcript.fail_turn(TURN_LOST_NOTICE)
         self.turn_pending = self.interrupting = False
-        self._clear_roster()
+        self._lose_roster()  # they stay on the strip, so the HUD's [Agents] block does not take them up instead
         self.list_selected = None
         first_id = max(self.pending, default=0) + 1
         self._settle_lost_calls()

@@ -162,7 +162,10 @@ All notable changes will be documented here.
   before it resumed the session uses an attempt, as in Hermes' own TUI. An
   open question closes unanswered, a running turn is reported lost and not
   sent again, a steer the old gateway had not answered comes back to the
-  composer at once, and what you queued comes back as after an interrupt.
+  composer at once, the subagents on the strip stay there (those still
+  running marked interrupted) rather than reappearing as look-alike rows in
+  the HUD's `[Agents]` block, and what you queued comes back as after an
+  interrupt.
   AGENTS.md and CONTEXT.md now say the frontend spawns one child at a time
   and respawns it so.
 - **The OMH TUI's composer sits right under the output until the screen

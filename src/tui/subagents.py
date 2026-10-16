@@ -338,6 +338,12 @@ class Roster:
             self._frames += 1
             agent.seen = self._frames
 
+    def lose_unfinished(self, now: float) -> None:
+        """Mark every agent that has not finished interrupted at `now`: the gateway that ran it is gone (a respawn)."""
+        for agent in self.agents.values():
+            if agent.status not in FINISHED_STATUSES:
+                agent.status, agent.finished_at = INTERRUPTED, now
+
     def clear(self) -> None:
         """Drop every agent: the app calls this when a new turn starts and when it leaves a session."""
         self.agents.clear()

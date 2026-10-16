@@ -363,9 +363,19 @@ class AgentViewMixin:
     def _clear_roster(self) -> None:
         """Drop the agents and every piece of tail bookkeeping and pending action that names them."""
         self.roster.clear()
+        self._drop_agent_actions()
+
+    def _lose_roster(self) -> None:
+        """The gateway exited: the agents stay listed as they were, those not finished marked interrupted, and every
+        piece of tail bookkeeping and pending action that names them is dropped."""
+        self.roster.lose_unfinished(self.clock())
+        self._drop_agent_actions()
+
+    def _drop_agent_actions(self) -> None:
+        """Forget a pending `x`, a picked steer and the tail calls and timers: nothing may act on an agent now."""
         self.interrupt_armed = self.agent_steer = None
         self.tail_misses.clear()
-        self._forget_tail_calls()  # an answer still on its way is for an agent no longer listed
+        self._forget_tail_calls()  # an answer still on its way is for an agent the TUI no longer reads
         self.tail_asked_at, self.tail_open = None, False
 
     def _forget_tail_calls(self) -> None:
