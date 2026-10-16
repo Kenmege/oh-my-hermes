@@ -285,22 +285,24 @@ class GatewayClient:
         """Send a call and wait for its answer; every other inbound item stays queued for `poll`.
 
         `cancel` is asked as `start` asks it, and ends the wait with
-        `GatewayCancelled`; an answer that still comes is then dropped.
+        `GatewayCancelled` (or with what it raised); an answer that still
+        comes is then dropped.
         """
         request_id = self._send_call(method, params, self._awaited)
         deadline = self._clock() + timeout
         response: Response | None = None
         with self._inbox_ready:
-            while request_id not in self._answers and not self._exited:
-                remaining = deadline - self._clock()
-                if remaining <= 0:
-                    break
-                if cancel is not None and cancel():
-                    self._awaited.discard(request_id)
-                    raise GatewayCancelled(f"{method} was left waiting")
-                self._inbox_ready.wait(min(remaining, CANCEL_POLL_SECONDS) if cancel is not None else remaining)
-            response = self._answers.pop(request_id, None)
-            self._awaited.discard(request_id)
+            try:
+                while request_id not in self._answers and not self._exited:
+                    remaining = deadline - self._clock()
+                    if remaining <= 0:
+                        break
+                    if cancel is not None and cancel():
+                        raise GatewayCancelled(f"{method} was left waiting")
+                    self._inbox_ready.wait(min(remaining, CANCEL_POLL_SECONDS) if cancel is not None else remaining)
+                response = self._answers.pop(request_id, None)
+            finally:  # however the wait ends, a later answer to it is dropped (`_deliver`)
+                self._awaited.discard(request_id)
         if response is None and self._exited:
             raise self._unavailable(f"the gateway exited while {method} was waiting for an answer")
         if response is None:

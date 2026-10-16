@@ -430,6 +430,34 @@ class GatewayErrorTests(ReplayTestCase):
         self.assertEqual(client.poll(), [])
         self.assertEqual(client.close(grace=5.0), 0)
 
+    def test_a_cancel_ends_a_call_left_unanswered_and_a_later_call_still_times_out(self) -> None:
+        # A respawn's resume waits this way (`App._respawn_cancel`): a real child that reads each call and answers none.
+        from omh.tui.gateway import GatewayCancelled
+
+        (startup,) = spans("session", "startup")
+        (listing_start, _stop), = spans("session", "session_list")
+        unanswered = (listing_start, listing_start + 1)  # the recorded session.list call: read, never answered
+        client = self.started(Scenario("session", (startup, unanswered, unanswered, unanswered)))
+        asked = []
+        started = time.monotonic()
+        with self.assertRaises(GatewayCancelled):
+            client.call("session.list", {}, timeout=5.0, cancel=lambda: asked.append(1) or len(asked) >= 3)
+        self.assertLess(time.monotonic() - started, 2.0)  # three polls, not the 5 s
+        self.assertEqual(len(asked), 3)
+        self.assertEqual(client._awaited, set())  # its answer, should it come, is dropped
+
+        def broken() -> bool:
+            raise OSError("the terminal read failed")
+
+        with self.assertRaises(OSError):  # a cancel that fails ends the wait with its own error, nothing left behind
+            client.call("session.list", {}, timeout=5.0, cancel=broken)
+        self.assertEqual(client._awaited, set())
+        with self.assertRaises(GatewayTimeout):
+            client.call("session.list", {}, timeout=0.3)
+        self.assertEqual(client._awaited, set())
+        self.assertEqual(client.poll(), [])
+        self.assertEqual(client.close(grace=5.0), 0)
+
     def test_lines_that_are_not_gateway_frames_are_protocol_errors(self) -> None:
         not_frames = (
             "{truncated",
