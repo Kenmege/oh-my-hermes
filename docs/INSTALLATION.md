@@ -777,8 +777,12 @@ question Hermes asked is sent as typed in every mode.
 
 Ctrl+T steps this session's reasoning effort, and `/effort <level>` sets any
 level Hermes takes (`none`, `minimal` and `ultra` as well). The mode row shows
-the level once Hermes confirms it, as `ctrl+t effort (medium)`; a level Hermes
-refuses leaves the row as it was and says so.
+the level Hermes reports for the session as soon as the session is ready, as
+`ctrl+t effort (medium)`, and Ctrl+T steps on from it; where none is
+configured, so the provider's own default applies, it says
+`ctrl+t effort (default)` and the first Ctrl+T sets `low`. A level you set
+shows once Hermes confirms it; a level Hermes refuses leaves the row as it
+was and says so.
 
 A steer adds what you typed to the turn that is running, without interrupting
 it: Hermes reads it after its next tool call, or, while it is compressing the

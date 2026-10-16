@@ -107,6 +107,9 @@ LEFT_YOLO_NOTICE = (
 
 # Ctrl+T steps through these; `/effort` takes any level in `contract.REASONING_LEVELS`.
 EFFORT_CYCLE = ("low", "medium", "high", "xhigh", "max")
+# What the mode row says while Hermes reports no level for the session: none is configured, so each route sends its
+# own default or none at all (Hermes 6c61c3e27d `_session_info`: "" = provider default). No level Ctrl+T steps from.
+EFFORT_DEFAULT = "default"
 EFFORT_REFUSED_NOTICE = "Hermes did not set the reasoning effort to {} ({}); it stays as shown."
 
 
@@ -280,7 +283,7 @@ class ModesMixin:
         """
         effort = info.get(contract.SESSION_INFO_REASONING_EFFORT)
         if isinstance(effort, str):
-            self.effort = effort
+            self.effort = effort or EFFORT_DEFAULT
         yolo = info.get(contract.SESSION_INFO_YOLO)
         if not isinstance(yolo, bool):
             return
@@ -405,7 +408,8 @@ class ModesMixin:
     # ── reasoning effort ──
 
     def _effort_key(self, event: Key | Paste) -> bool:
-        """Ctrl+T steps the reasoning effort through `EFFORT_CYCLE`, from low when it is at none of them."""
+        """Ctrl+T steps the reasoning effort through `EFFORT_CYCLE` from the level shown, from low when it is at none
+        of them (the provider's default, `EFFORT_DEFAULT`, is no step of it)."""
         if not isinstance(event, Key) or event.name != CHAR or not event.ctrl or event.alt or event.char != "t":
             return False
         current = self.effort_asked or self.effort
@@ -422,7 +426,10 @@ class ModesMixin:
         elif level:
             self.transcript.add_notice(f"No reasoning effort named {arg}. Levels: {levels}.", NOTICE_WARN)
         else:
-            now = f"Reasoning effort {self.effort}." if self.effort else "Hermes reports no reasoning effort."
+            if self.effort == EFFORT_DEFAULT:
+                now = "Hermes sets no reasoning effort for this session, so the provider's default applies."
+            else:
+                now = f"Reasoning effort {self.effort}." if self.effort else "Hermes reports no reasoning effort."
             self.transcript.add_notice(f"{now} /effort <level> sets it for this session. Levels: {levels}.")
 
     def _set_effort(self, level: str) -> None:

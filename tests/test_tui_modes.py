@@ -1652,7 +1652,26 @@ class EffortTests(unittest.TestCase):
             session_info(app, **payload)
             self.assertEqual(app.effort, "none")
         session_info(app, reasoning_effort="")  # Hermes' word for the provider's default
-        self.assertEqual(app.effort, "")
+        self.assertEqual(app.effort, modes_module.EFFORT_DEFAULT)
+
+    def test_the_hint_names_the_sessions_effort_from_the_start_and_ctrl_t_steps_from_it(self) -> None:
+        # Hermes 6c61c3e27d sends the session's effort in the session.info that follows the agent's build, before
+        # any turn: a configured level, or "" where none is configured and the route's own default applies.
+        def hint(app: App) -> str:
+            return line_text(app._mode_row_line(100))
+
+        app, client = make_app()
+        self.assertIn("ctrl+t effort", hint(app))  # no word from Hermes yet (the lazy info carries none)
+        self.assertNotIn("ctrl+t effort (", hint(app))
+        session_info(app, reasoning_effort="high")
+        self.assertIn("ctrl+t effort (high)", hint(app))
+        app._on_input(CTRL_T)
+        self.assertEqual(client.calls[-1], effort_call("xhigh"))  # one step up from the level shown
+        app, client = make_app()
+        session_info(app, reasoning_effort="")
+        self.assertIn("ctrl+t effort (default)", hint(app))  # never a level Hermes did not name
+        app._on_input(CTRL_T)
+        self.assertEqual(client.calls[-1], effort_call("low"))  # the default is no step of the cycle
 
     def test_a_new_session_shows_its_own_effort(self) -> None:
         app, client = make_app()
@@ -1696,6 +1715,12 @@ class EffortTests(unittest.TestCase):
         self.assertEqual(client.calls, [])
         (notice,) = notices(app)
         self.assertIn("Reasoning effort high.", notice)
+        app, _client = make_app()
+        session_info(app, reasoning_effort="")
+        type_text(app, "/effort")
+        app._on_input(Key(ENTER))
+        (notice,) = notices(app)
+        self.assertIn("Hermes sets no reasoning effort for this session, so the provider's default applies.", notice)
 
 
 def drawn(app: App) -> list[str]:

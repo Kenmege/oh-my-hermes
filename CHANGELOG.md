@@ -211,7 +211,11 @@ All notable changes will be documented here.
   no approvals in this session (⇧⇥ plan/normal)`, in plan `⏸ plan mode on ·
   prompts go as /plan (⇧⇥ normal/accept all)`, with shorter forms of the same
   words on a narrow row. The effort is said once, as `ctrl+t effort (medium)`,
-  and the keys list uses the same words for Shift+Tab and Ctrl+T.
+  and the keys list uses the same words for Shift+Tab and Ctrl+T. It names the
+  level Hermes reports for the session from the start, and where Hermes has
+  none configured it says `ctrl+t effort (default)` (the provider's own
+  default applies) instead of no level at all; Ctrl+T steps from the level
+  shown.
 - **A first Ctrl+C between turns says `ctrl+c again to exit` on the mode row**
   for the 2 s a second press exits in, as Esc's first press does, instead of
   leaving a `Ctrl+C again to exit` notice in the scrollback every time.
