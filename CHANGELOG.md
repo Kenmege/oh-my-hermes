@@ -4,6 +4,13 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **An OMH TUI question says when others wait behind it.** A second request
+  that arrived while one was open queued with nothing on screen to say so;
+  the open question now ends its first words with `· 1 more question
+  waiting` (or the count). A request the TUI cannot show (a terminal read, a
+  vault prompt) that arrived behind an open question waited for it to close
+  before its decline was sent; it is declined at once, with its notice, as it
+  is when nothing is open.
 - **OMH TUI clarify choices wrap instead of being cut to one row.** At 80
   columns `❯ 1. Blue/green with a full traffic switch after smoke tests pass
   on the gree…` lost the `(Recommended)` tag Hermes puts at the end of the

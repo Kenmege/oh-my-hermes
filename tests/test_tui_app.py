@@ -1225,9 +1225,10 @@ class LeaveSessionDeclineTests(unittest.TestCase):
         client = SimpleNamespace(respond=lambda request_id, frame: sent.append((request_id, frame)))
         app = App(ScriptedTerminal(), client, {}, poller=FakePoller())  # type: ignore[arg-type]
         app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
-        app._on_server_request(ServerRequest("srq-2", "vault.unlock_prompt", {}))  # never shown
+        app._on_server_request(ServerRequest("srq-2", "vault.unlock_prompt", {}))  # never shown: declined as it came
+        self.assertEqual([request_id for request_id, _ in sent], ["srq-2"])
         app._on_server_request(ServerRequest("srq-3", "sudo", {"command": "apt install x"}))
-        self.assertEqual(app._decline_all_requests(), 3)
+        self.assertEqual(app._decline_all_requests(), 2)
         self.assertEqual(sorted(request_id for request_id, _ in sent), ["srq-1", "srq-2", "srq-3"])
         self.assertIn(("srq-1", {"result": {"choice": "deny"}}), sent)
         self.assertIsNone(app.slot)

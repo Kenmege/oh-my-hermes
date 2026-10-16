@@ -78,6 +78,8 @@ VALUE_KEYS = ("type it · enter sends · esc declines",)
 MORE_ROWS = ("  … +{count} more line{s} · ctrl+o shows all", "  … +{count} · ctrl+o", "  … ctrl+o")
 MORE_ANY_ROWS = ("  … ctrl+o shows all", "  … ctrl+o")
 MORE_FORMS = (" … ctrl+o shows all", " … ctrl+o")
+# After the open question's first words, while others wait behind it (`App.waiting_requests`).
+WAITING = " · {count} more question{s} waiting"
 
 _DECLINE_NOTICES = {
     "vault.unlock_prompt": "Hermes asked to unlock a password vault. Vault prompts run in `hermes --tui`; declined.",
@@ -294,12 +296,13 @@ class PromptSlot:
 
     # -- rendering --------------------------------------------------------------------------
 
-    def lines(self, width: int, theme: Theme, max_rows: int, keys_row: bool = False) -> list[Line]:
+    def lines(self, width: int, theme: Theme, max_rows: int, keys_row: bool = False, waiting: int = 0) -> list[Line]:
         """The slot's rows, at most `max_rows`; `keys_row` adds the question's keys (where no mode row says them).
 
         A list keeps the highlighted row whatever the budget (`_fit`). A
         question with no list keeps its first row and its last ones. Whatever
-        is cut, a marker says Ctrl+O shows the question whole.
+        is cut, a marker says Ctrl+O shows the question whole. `waiting`
+        questions queued behind this one are counted after its first words.
         """
         if max_rows <= 0:
             return []
@@ -308,19 +311,20 @@ class PromptSlot:
         if keys_row:
             said = next((form for form in self.keys if cell_width(f"  {form}") <= inner), self.keys[-1])
             keys = [(Span(f"  {said}", theme.hint),)]
+        queued: Line = (Span(WAITING.format(count=waiting, s="s" if waiting != 1 else ""), theme.muted),) if waiting else ()
         if self.method == "approval":
-            rows = self._approval_lines(inner, theme, max_rows, keys)
+            rows = self._approval_lines(inner, theme, max_rows, keys, queued)
         elif self.method == "clarify":
-            rows = self._clarify_lines(inner, theme, max_rows, keys)
+            rows = self._clarify_lines(inner, theme, max_rows, keys, queued)
         else:
             # The header and the hint matter most; the body is what gets cut.
-            rows = _keep_ends(self._value_lines(inner, theme), max_rows, inner, theme)
+            rows = _keep_ends(self._value_lines(inner, theme, queued), max_rows, inner, theme)
         bar = Span(SLOT_BAR, theme.warn if self.method == "approval" else theme.accent)
         return [truncate_line((bar, *truncate_line(row, inner)), width) for row in rows]
 
-    def whole_lines(self, width: int, theme: Theme) -> list[Line]:
+    def whole_lines(self, width: int, theme: Theme, waiting: int = 0) -> list[Line]:
         """Every row of the question, nothing cut: what Ctrl+O pages while it is open (the pager has its own keys)."""
-        return self.lines(width, theme, sys.maxsize)
+        return self.lines(width, theme, sys.maxsize, waiting=waiting)
 
     def _choice_rows(self, labels: list[tuple[str, str]], width: int, theme: Theme, mark_style: Style) -> list[list[Line]]:
         """Each `(lead, label)` as its rows: the label wrapped under its lead (a number), whole, so a tag at its end
@@ -394,7 +398,7 @@ class PromptSlot:
             above[-1] = _ends_with_more(above[-1], width, theme)
         return [*above, *shown, *keys_row]
 
-    def _approval_lines(self, width: int, theme: Theme, max_rows: int, keys: list[Line]) -> list[Line]:
+    def _approval_lines(self, width: int, theme: Theme, max_rows: int, keys: list[Line], queued: Line) -> list[Line]:
         """The header (wrapped), the command's rows from its first, then the choices (`_fit`).
 
         The beginning of a command is what says what it does, so a long one is
@@ -403,7 +407,8 @@ class PromptSlot:
         description = str(self.params.get("description") or "dangerous command")
         command = str(self.params.get("command") or "")
         header = wrap_prefixed(
-            (Span(f"Hermes asks to run {description}", theme.warn),), (Span("⚠ ", theme.warn),), (Span("  "),), width
+            (Span(f"Hermes asks to run {description}", theme.warn), *queued), (Span("⚠ ", theme.warn),), (Span("  "),),
+            width,
         )
         labels = [("", _APPROVAL_LABELS[choice]) for choice in self.approval_choices()]
         choices = self._choice_rows(labels, width, theme, theme.warn)
@@ -411,7 +416,7 @@ class PromptSlot:
         command_rows = wrap_prefixed((Span(command, theme.code),), indent, indent, width) if command else []
         return self._fit(header, command_rows, choices, keys, max_rows, width, theme)
 
-    def _clarify_lines(self, width: int, theme: Theme, max_rows: int, keys: list[Line]) -> list[Line]:
+    def _clarify_lines(self, width: int, theme: Theme, max_rows: int, keys: list[Line], queued: Line) -> list[Line]:
         """The question (its counter when there are several), then its choices and the text field's row.
 
         A question with no choices says how to answer under it instead.
@@ -422,7 +427,9 @@ class PromptSlot:
         total = len(self._questions())
         counter = f" ({self.question_index + 1}/{total})" if total > 1 else ""
         head: list[Line] = list(
-            wrap_line((Span("? ", theme.accent), Span(str(question.get("question", "")) + counter, theme.text)), width)
+            wrap_line(
+                (Span("? ", theme.accent), Span(str(question.get("question", "")) + counter, theme.text), *queued), width
+            )
         )
         choices = self._current_choices()
         if not choices:
@@ -431,7 +438,7 @@ class PromptSlot:
         labels = [(f"{number}. ", choice) for number, choice in enumerate([*choices, CLARIFY_OTHER], start=1)]
         return self._fit(head, [], self._choice_rows(labels, width, theme, theme.accent), keys, max_rows, width, theme)
 
-    def _value_lines(self, width: int, theme: Theme) -> list[Line]:
+    def _value_lines(self, width: int, theme: Theme, queued: Line) -> list[Line]:
         label = {
             "sudo": "Hermes needs your sudo password",
             "secret": f"Hermes needs {self.params.get('env_var') or 'a secret'}",
@@ -439,7 +446,8 @@ class PromptSlot:
         }.get(self.method, f"Hermes asks: {self.method}")
         prompt = self.params.get("prompt") or self.params.get("command") or self.params.get("hint") or ""
         rows = wrap_prefixed(
-            (Span(label, theme.text),), (Span("🔑 " if self.masked else "? ", theme.accent),), (Span("   "),), width
+            (Span(label, theme.text), *queued), (Span("🔑 " if self.masked else "? ", theme.accent),), (Span("   "),),
+            width,
         )
         if prompt:
             rows.extend(wrap_line((Span("  " + str(prompt), theme.muted),), width))

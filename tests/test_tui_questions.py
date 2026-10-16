@@ -90,6 +90,36 @@ class QuestionViewTests(unittest.TestCase):
         self.assertIsNone(app.question_view)
 
 
+class WaitingQuestionTests(unittest.TestCase):
+    def test_the_open_question_counts_the_questions_waiting_behind_it(self) -> None:
+        app, client = make_app(busy=True, rows=24, cols=100)
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x", "description": "recursive delete"}))
+        self.assertFalse([row for row in drawn(app) if "waiting" in row and row.startswith("▌")])
+        for request, _label in TEXT_QUESTIONS[:2]:
+            app._on_server_request(request)
+        self.assertIn("▌ ⚠ Hermes asks to run recursive delete · 2 more questions waiting", drawn(app))
+        armed(app)
+        press(app, Key(ESCAPE))
+        self.assertIn("▌ 🔑 Hermes needs your sudo password · 1 more question waiting", drawn(app))
+        press(app, CTRL_O)
+        self.assertIn("▌ 🔑 Hermes needs your sudo password · 1 more question waiting", paged(app))
+        press(app, Key(CHAR, "q"))
+        armed(app)
+        press(app, Key(ESCAPE))
+        self.assertIn("▌ 🔑 Hermes needs API_KEY", drawn(app))  # the last one: nothing behind it
+        self.assertEqual([request_id for request_id, _ in client.answers], ["srq-1", "srq-3"])
+
+    def test_a_request_the_tui_cannot_show_is_declined_at_once_even_behind_a_question(self) -> None:
+        app, client = make_app(busy=True)
+        app._on_server_request(LONG_APPROVAL)
+        app._on_server_request(ServerRequest("srq-9", "terminal.read", {}))
+        self.assertEqual([request_id for request_id, _ in client.answers], ["srq-9"])
+        self.assertEqual(client.answers[0][1]["error"]["code"], -32601)
+        self.assertFalse(app.waiting_requests)
+        self.assertIs(app.slot.request_id, "srq-1")  # type: ignore[union-attr]
+        self.assertFalse([row for row in drawn(app) if "waiting" in row and row.startswith("▌")])
+
+
 class DocumentedQuestionViewTests(unittest.TestCase):
     def test_installation_shows_the_markers_the_slot_draws(self) -> None:
         installation = " ".join((Path(__file__).resolve().parents[1] / "docs" / "INSTALLATION.md").read_text(
@@ -97,6 +127,7 @@ class DocumentedQuestionViewTests(unittest.TestCase):
         self.assertIn(f"`{prompts.MORE_ANY_ROWS[0].strip()}`", installation)
         self.assertIn(f"`{prompts.MORE_ROWS[0].strip().format(count=14, s='s')}`", installation)
         self.assertIn("Ctrl+O opens the whole question in the pager: it answers nothing", installation)
+        self.assertIn(f"(`{prompts.WAITING.strip().format(count=1, s='')}`)", installation)
 
 
 class TinyTerminalQuestionTests(unittest.TestCase):

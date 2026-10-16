@@ -449,7 +449,9 @@ run and approval decision stays Hermes'; the screen is OMH's.
   marked `❯`. Nothing you type while it is open goes
   into your draft, and the draft comes back as you left it (its text, caret
   and paste chips) when the question closes, or when the last of several
-  questions Hermes asked one after another does. An approval offers deny,
+  questions Hermes asked one after another does. While another question waits
+  behind the open one, the open one says so after its first words
+  (`· 1 more question waiting`). An approval offers deny,
   allow once and allow this session, one per row in that order, with deny
   highlighted; allowing takes the arrows (Down or Right) and then Enter. The
   highlight stops at either end, so Up then Enter still denies, no number

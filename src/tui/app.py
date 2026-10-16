@@ -1692,16 +1692,17 @@ class App(ModesMixin, AgentViewMixin):
     # ── server requests and the prompt slot ──
 
     def _on_server_request(self, request: ServerRequest) -> None:
-        if self.slot is not None:
-            self.waiting_requests.append(request)
-            return
-        if self.pager is not None:
-            self._leave_pager()
+        """Open `request` in the slot, or queue it behind the open one; one the TUI cannot show is declined at once."""
         opened = open_request(request.id, request.method, request.params)
         if isinstance(opened, ImmediateAnswer):
             self._respond(opened.answer)
             self.transcript.add_notice(opened.notice, NOTICE_WARN)
             return
+        if self.slot is not None:
+            self.waiting_requests.append(request)
+            return
+        if self.pager is not None:
+            self._leave_pager()
         self.slot = opened
         self.slot_opened_at = self.clock()
         self.slot_arm_seconds = REPORTING_SLOT_ARM_SECONDS if self._reports_may_arrive() else SLOT_ARM_SECONDS
@@ -1745,8 +1746,7 @@ class App(ModesMixin, AgentViewMixin):
     def _decline_all_requests(self) -> int:
         """Answer every open and waiting request with its decline frame (the session is going away); how many."""
         declined = 0
-        # The waiting ones first: closing the open slot would pull the next one in, and one the
-        # TUI cannot show would then be declined into the transcript being dropped, uncounted.
+        # The waiting ones first: closing the open slot would open the next one.
         while self.waiting_requests:
             request = self.waiting_requests.popleft()
             opened = open_request(request.id, request.method, request.params)
@@ -2962,7 +2962,8 @@ class App(ModesMixin, AgentViewMixin):
         """The open question in the pager, every row of it (a long command whole); q or Esc goes back to it as it
         was, with nothing answered, and the pager closes with the question (`_close_slot`)."""
         if self.slot is not None:
-            self._show_pager(Pager(QUESTION_VIEW_TITLE, self.slot.whole_lines(self.size[0], self.theme)))
+            lines = self.slot.whole_lines(self.size[0], self.theme, len(self.waiting_requests))
+            self._show_pager(Pager(QUESTION_VIEW_TITLE, lines))
             self.question_view = self.pager
 
     def _details(self, arg: str) -> None:
@@ -3407,7 +3408,8 @@ class App(ModesMixin, AgentViewMixin):
             return []
         if self.slot is not None:
             # Where the terminal has no mode row, the question's keys take a row of the slot's own.
-            return self.slot.lines(cols, self.theme, cap, keys_row=not under_composer(rows, cols)[1])
+            keys = not under_composer(rows, cols)[1]
+            return self.slot.lines(cols, self.theme, cap, keys_row=keys, waiting=len(self.waiting_requests))
         keys = not under_composer(rows, cols)[1]  # a picker's keys go in its header where no mode row says them
         if self.picker is not None:
             return self.picker.lines(cols, self.theme, cap, self.wall_clock(), keys=keys)

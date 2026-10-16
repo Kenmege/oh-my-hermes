@@ -319,6 +319,23 @@ class CutMarkerTests(unittest.TestCase):
         self.assertFalse([row for row in text if "ctrl+o" in row])
 
 
+class WaitingCountTests(unittest.TestCase):
+    def test_each_question_counts_what_waits_behind_it_after_its_first_words(self) -> None:
+        cases = (
+            ("approval", APPROVAL, "⚠ Hermes asks to run recursive delete"),
+            ("clarify", CLARIFY, "? Which color do you prefer?"),
+            ("sudo", {"command": "apt install x"}, "🔑 Hermes needs your sudo password"),
+        )
+        for method, params, head in cases:
+            with self.subTest(method=method):
+                question = slot(method, params)
+                self.assertEqual(unbarred(lines_text(question.lines(120, DEFAULT_THEME, 8))[0]), head)
+                self.assertEqual(unbarred(lines_text(question.lines(120, DEFAULT_THEME, 8, waiting=1))[0]),
+                                 f"{head} · 1 more question waiting")
+                self.assertEqual(unbarred(lines_text(question.lines(120, DEFAULT_THEME, 8, waiting=3))[0]),
+                                 f"{head} · 3 more questions waiting")
+
+
 class SlotBarTests(unittest.TestCase):
     def test_a_question_or_a_value_prompt_hangs_off_an_accent_bar(self) -> None:
         for method, params in (("clarify", CLARIFY), ("sudo", {"session_id": "s"}), ("secret", {"env_var": "API_KEY"})):
