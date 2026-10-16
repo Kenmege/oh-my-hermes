@@ -814,6 +814,14 @@ class OutcomeTests(unittest.TestCase):
                 rows = slot("clarify", CLARIFY).outcomes({"result": {"answers": {"q0": value}}})
                 self.assertEqual(rows, [(False, "skipped · Which color do you prefer?")])
 
+    def test_empty_items_of_a_multi_select_answer_are_left_out_as_hermes_leaves_them_out(self) -> None:
+        # clarify_tool._clean_answer keeps only items with text; with none left the answer reads as skipped.
+        question = slot("clarify", MULTI)
+        self.assertEqual(question.outcomes({"result": {"answers": {"q0": '["", "ham", " "]'}}}),
+                         [(True, "ham · Which toppings?")])
+        self.assertEqual(question.outcomes({"result": {"answers": {"q0": '["", " "]'}}}),
+                         [(False, "skipped · Which toppings?")])
+
     def test_a_question_the_answers_do_not_name_gets_no_row(self) -> None:
         self.assertEqual(slot("clarify", CLARIFY).outcomes({"result": {"answers": {}}}), [])
 

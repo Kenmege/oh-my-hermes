@@ -444,8 +444,12 @@ class PromptSlot:
                 rows.append((False, f"{OUTCOME_SKIPPED} · {asked}"))
                 continue
             multi = question.get("multi_select") is True and bool(_string_choices(question))  # as `_multi` reads it
-            picked = [_without_recommended(item) for item in json.loads(value)] if multi else [_without_recommended(value)]
-            rows.append((True, f"{', '.join(_one_line(item) for item in picked)} · {asked}"))
+            # A multi-select answer keeps the items with text, as Hermes keeps them (`clarify_tool._clean_answer`).
+            items = [item for item in json.loads(value) if str(item).strip()] if multi else [value]
+            if not items:
+                rows.append((False, f"{OUTCOME_SKIPPED} · {asked}"))
+                continue
+            rows.append((True, f"{', '.join(_one_line(_without_recommended(item)) for item in items)} · {asked}"))
         return rows
 
     def attention(self) -> str:
