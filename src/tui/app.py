@@ -383,7 +383,7 @@ STEER_LOST_NOTICE = (
 APPROVAL_OUTCOMES = {
     "once": ("allowed once", NOTICE_OK),
     "session": ("allowed for this session", NOTICE_OK),
-    "always": ("always allowed (Hermes saved it)", NOTICE_OK),
+    "always": ("always allow sent (Hermes saves it)", NOTICE_OK),  # the TUI sees the choice go, not the save
     "deny": ("denied", NOTICE_ERROR),
 }
 STEER_USAGE = "Usage: /steer <text to add to the running turn>"

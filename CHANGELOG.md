@@ -51,7 +51,7 @@ All notable changes will be documented here.
   recursive delete (Hermes saves it)`: Hermes saves that kind of command in
   its config (`command_allowlist`), so later ones run without asking. Like
   every allow it takes the arrows and Enter; the transcript records
-  `✓ always allowed (Hermes saved it) · <command>`.
+  `✓ always allow sent (Hermes saves it) · <command>`.
 - **Every OMH TUI question asks for your attention, not only an approval.**
   An approval rang the bell; a clarify question, a sudo password or a secret
   signalled nothing, and Hermes drops a clarify question nobody answers after

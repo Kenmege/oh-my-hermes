@@ -226,14 +226,15 @@ class QuestionOutcomeTests(unittest.TestCase):
                 self.assertEqual(client.answers, [])
                 self.assertEqual(outcome_rows(app), [(row, NOTICE_ERROR)])
 
-    def test_hermes_always_choice_is_sent_and_recorded_as_saved(self) -> None:
+    def test_hermes_always_choice_is_sent_and_recorded_as_sent_not_as_saved(self) -> None:
         app, client = opened(ServerRequest("srq-1", "approval", {
             "command": "rm -rf ./x", "description": "recursive delete", "choices": ["once", "session", "always", "deny"],
         }))
         self.assertIn("▌   always allow recursive delete (Hermes saves it)", drawn(app))
         press(app, Key(DOWN), Key(DOWN), Key(DOWN), Key(ENTER))
         self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "always"}})])
-        self.assertEqual(outcome_rows(app), [("always allowed (Hermes saved it) · rm -rf ./x", NOTICE_OK)])
+        # The TUI sent the choice; that Hermes saved it is not something it saw.
+        self.assertEqual(outcome_rows(app), [("always allow sent (Hermes saves it) · rm -rf ./x", NOTICE_OK)])
 
     def test_a_request_without_always_never_shows_or_sends_it(self) -> None:
         app, client = opened(ServerRequest("srq-1", "approval", {
