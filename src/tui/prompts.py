@@ -46,12 +46,23 @@ from .style import Line, Span, Style
 from .theme import Theme
 from .width import cell_width, line_width, truncate_line, wrap_line
 
-# `always` writes a permanent allow rule into the person's Hermes config. The
-# OMH TUI offers the choices that end with this session; `always` stays a
-# decision for Hermes' own terminal. The order is the distance from safe:
-# deny first (and selected), then the narrowest allow, then the broadest.
+# The order is the distance from safe: deny first (and selected), then the
+# narrowest allow, then the broadest. `always` is Hermes' permanent allow:
+# Hermes saves the command's pattern in its config (`command_allowlist`), so
+# later commands like it run without asking. It is offered only when Hermes
+# lists it (Hermes leaves it out where a permanent allow is refused, such as a
+# command its smart approval flagged), and it takes the arrows and Enter like
+# every allow. A request that lists no choices gets the ones that end with
+# this session.
+APPROVAL_ORDER = ("deny", "once", "session", "always")
 APPROVAL_CHOICES = ("deny", "once", "session")
-_APPROVAL_LABELS = {"once": "allow once", "session": "allow this session", "deny": "deny"}
+_APPROVAL_LABELS = {
+    "once": "allow once",
+    "session": "allow this session",
+    "always": "always allow {what} (Hermes saves it)",
+    "deny": "deny",
+}
+ALWAYS_WHAT = "commands like this"  # `always`'s label for a request with no description
 # A letter can only deny. Allowing takes the arrows and Enter, so a key typed
 # for the composer as the slot opens can never run a command.
 _DENY_KEYS = frozenset("dn")
@@ -188,7 +199,11 @@ class PromptSlot:
         offered = self.params.get("choices")
         if not isinstance(offered, list) or not offered:
             return APPROVAL_CHOICES
-        return tuple(choice for choice in APPROVAL_CHOICES if choice in offered or choice == "deny")
+        return tuple(choice for choice in APPROVAL_ORDER if choice in offered or choice == "deny")
+
+    def approval_label(self, choice: str) -> str:
+        """A choice's row: what it does, `always` naming what Hermes flagged (the description), which it saves."""
+        return _APPROVAL_LABELS[choice].format(what=_one_line(self.params.get("description")) or ALWAYS_WHAT)
 
     # -- clarify ----------------------------------------------------------------------------
 
@@ -520,7 +535,7 @@ class PromptSlot:
             (Span(f"Hermes asks to run {description}", theme.warn), *queued), (Span("⚠ ", theme.warn),), (Span("  "),),
             width,
         )
-        labels = [("", _APPROVAL_LABELS[choice]) for choice in self.approval_choices()]
+        labels = [("", self.approval_label(choice)) for choice in self.approval_choices()]
         choices = self._choice_rows(labels, width, theme, theme.warn)
         indent: Line = (Span("  ", theme.code),)  # every row of the command under one indent
         command_rows = wrap_prefixed((Span(command, theme.code),), indent, indent, width) if command else []

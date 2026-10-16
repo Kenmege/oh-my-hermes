@@ -61,8 +61,32 @@ def slot(method: str, params: dict) -> prompts.PromptSlot:
 
 
 class ApprovalTests(unittest.TestCase):
-    def test_always_is_never_offered_and_deny_comes_first(self) -> None:
-        self.assertEqual(slot("approval", APPROVAL).approval_choices(), ("deny", "once", "session"))
+    def test_hermes_always_is_offered_only_when_listed_below_the_session_and_deny_comes_first(self) -> None:
+        self.assertEqual(slot("approval", APPROVAL).approval_choices(), ("deny", "once", "session", "always"))
+        cases = (
+            (["once", "session", "deny"], ("deny", "once", "session")),  # allow_permanent false
+            (["once", "deny"], ("deny", "once")),  # smart-denied: one operation only
+            ([], ("deny", "once", "session")),  # no list: never the permanent allow
+        )
+        for offered, shown in cases:
+            with self.subTest(offered=offered):
+                self.assertEqual(slot("approval", {**APPROVAL, "choices": offered}).approval_choices(), shown)
+        self.assertEqual(slot("approval", {k: v for k, v in APPROVAL.items() if k != "choices"}).approval_choices(),
+                         ("deny", "once", "session"))
+
+    def test_always_says_what_it_allows_and_that_hermes_saves_it(self) -> None:
+        self.assertEqual(slot("approval", APPROVAL).approval_label("always"),
+                         "always allow recursive delete (Hermes saves it)")
+        self.assertEqual(slot("approval", {**APPROVAL, "description": ""}).approval_label("always"),
+                         "always allow commands like this (Hermes saves it)")
+
+    def test_always_is_reached_only_by_the_arrows_and_enter(self) -> None:
+        approval = slot("approval", APPROVAL)
+        for char in "aA4":
+            self.assertIsNone(approval.handle_key(Key(CHAR, char)))
+        for _ in range(3):
+            approval.handle_key(Key(DOWN))
+        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "always"}})
 
     def test_an_approval_is_answered_by_picking(self) -> None:
         approval = slot("approval", APPROVAL)
@@ -93,9 +117,9 @@ class ApprovalTests(unittest.TestCase):
 
     def test_the_selection_stops_at_either_end_instead_of_wrapping(self) -> None:
         approval = slot("approval", APPROVAL)
-        for _ in range(5):
+        for _ in range(9):
             approval.handle_key(Key(DOWN))
-        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "session"}})
+        self.assertEqual(approval.handle_key(Key(ENTER)).frame, {"result": {"choice": "always"}})
         approval = slot("approval", APPROVAL)
         approval.handle_key(Key(DOWN))
         for _ in range(3):
@@ -147,10 +171,10 @@ class ApprovalTests(unittest.TestCase):
         approval = slot("approval", {**APPROVAL, "command": "one\ntwo"})
         text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=8))
         self.assertIn("Hermes asks to run recursive delete", text[0])
-        self.assertEqual([unbarred(row) for row in text[1:]], ["  one", "  two", "❯ deny", "  allow once", "  allow this session"])
+        self.assertEqual([unbarred(row) for row in text[1:6]], ["  one", "  two", "❯ deny", "  allow once", "  allow this session"])
         approval.handle_key(Key(DOWN))
         text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=8))
-        self.assertEqual([unbarred(row) for row in text[3:]], ["  deny", "❯ allow once", "  allow this session"])
+        self.assertEqual([unbarred(row) for row in text[3:6]], ["  deny", "❯ allow once", "  allow this session"])
 
     def test_no_number_and_no_key_hint_is_drawn_on_the_choices(self) -> None:
         # Allowing takes the arrows and Enter: nothing on the rows reads as a shortcut. The keys are on the mode row.
@@ -181,7 +205,7 @@ class ApprovalTests(unittest.TestCase):
         rows = slot("approval", APPROVAL).lines(60, DEFAULT_THEME, max_rows=6)
         text = lines_text(rows)
         self.assertIn("rm -rf ./omh-m0-probe-dir", "\n".join(text))
-        self.assertEqual(unbarred(text[-3]), "❯ deny")
+        self.assertEqual(unbarred(text[2]), "❯ deny")
         self.assertTrue(all(line_width(row) <= 60 for row in rows))
 
     def test_a_tight_budget_keeps_the_header_and_the_highlighted_choice(self) -> None:
@@ -199,11 +223,12 @@ class ApprovalTests(unittest.TestCase):
     def test_a_long_command_shows_its_head_then_how_much_was_cut(self) -> None:
         # The shape a live run cut wrong: a multi-line `python3 -c` script, tail shown, head lost.
         command = 'python3 -c "\ndef is_prime(n):\n    if n < 2:\n        return False\n' + "    pass\n" * 8 + '"'
-        approval = slot("approval", {**APPROVAL, "command": command, "description": "script execution via -e/-c flag"})
-        rows = approval.lines(60, DEFAULT_THEME, max_rows=8)
+        approval = slot("approval", {**APPROVAL, "command": command, "description": "script execution via -e/-c flag",
+                                     "choices": ["once", "session", "deny"]})  # each choice one row at this width
+        rows = approval.lines(60, DEFAULT_THEME, max_rows=5 + len(approval.approval_choices()))
         text = lines_text(rows)
         total = command.count("\n") + 1
-        self.assertEqual(len(rows), 8)
+        self.assertEqual(len(rows), 5 + len(approval.approval_choices()))
         self.assertIn("script execution", text[0])
         self.assertEqual([unbarred(row) for row in text[1:4]], ['  python3 -c "', "  def is_prime(n):", "      if n < 2:"])
         self.assertEqual(unbarred(text[4]), f"  … +{total - 3} more lines · ctrl+o shows all")
@@ -220,7 +245,7 @@ class ApprovalTests(unittest.TestCase):
         approval = slot("approval", {**APPROVAL, "command": "one\ntwo"})
         text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=8))
         self.assertEqual([unbarred(row) for row in text[1:3]], ["  one", "  two"])
-        self.assertEqual(len(text), 6)
+        self.assertEqual(len(text), 3 + len(approval.approval_choices()))
         self.assertFalse(any("more line" in row for row in text))
 
     def test_the_highlighted_choice_stays_visible_at_every_width_and_budget(self) -> None:
@@ -248,7 +273,7 @@ class ApprovalTests(unittest.TestCase):
     def test_choices_read_as_text_and_the_highlighted_one_is_highlighted(self) -> None:
         approval = slot("approval", APPROVAL)
         approval.handle_key(Key(DOWN))
-        rows = approval.lines(80, DEFAULT_THEME, max_rows=6)[-3:]
+        rows = approval.lines(80, DEFAULT_THEME, max_rows=8)[2:5]  # under the header and the command's row
         styles = {span.text: span.style for row in rows for span in row[1:] if span.text.strip(" ❯")}
         self.assertEqual(
             styles,
@@ -293,7 +318,9 @@ class CutMarkerTests(unittest.TestCase):
 
     def test_the_marker_row_keeps_the_keys_name_on_a_narrow_slot(self) -> None:
         text = lines_text(slot("approval", {**APPROVAL, "command": LONG_COMMAND}).lines(24, DEFAULT_THEME, 10))
-        self.assertIn("  … +16 · ctrl+o", [unbarred(row) for row in text])
+        marker = [unbarred(row) for row in text if "ctrl+o" in row]
+        self.assertEqual(len(marker), 1, text)
+        self.assertRegex(marker[0], r"^  … \+\d+ · ctrl\+o$")
 
     def test_the_header_wraps_instead_of_being_cut(self) -> None:
         approval = slot("approval", {**APPROVAL, "description": "recursive delete of the whole build tree"})
@@ -316,7 +343,9 @@ class CutMarkerTests(unittest.TestCase):
         text = [unbarred(row) for row in lines_text(approval.whole_lines(60, DEFAULT_THEME))]
         self.assertEqual(text[0], "⚠ Hermes asks to run recursive delete")
         self.assertEqual(text[1:21], [f"  echo line {n}" for n in range(1, 21)])
-        self.assertEqual(text[21:], ["  deny", "❯ allow once", "  allow this session"])  # no keys: the pager has its own
+        labels = [approval.approval_label(choice) for choice in approval.approval_choices()]
+        self.assertEqual(text[21:], [("❯ " if index == 1 else "  ") + label for index, label in enumerate(labels)])
+        self.assertEqual(labels[:3], ["deny", "allow once", "allow this session"])  # no keys: the pager has its own
         self.assertFalse([row for row in text if "ctrl+o" in row])
 
 

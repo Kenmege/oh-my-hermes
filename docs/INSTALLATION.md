@@ -452,8 +452,13 @@ run and approval decision stays Hermes'; the screen is OMH's.
   questions Hermes asked one after another does. While another question waits
   behind the open one, the open one says so after its first words
   (`· 1 more question waiting`). An approval offers deny,
-  allow once and allow this session, one per row in that order, with deny
-  highlighted; allowing takes the arrows (Down or Right) and then Enter. The
+  allow once, allow this session and, when Hermes offers it, always allow,
+  one per row in that order, with deny highlighted; allowing takes the arrows
+  (Down or Right) and then Enter. Always allow is Hermes' own permanent
+  allow, labelled with what it allows (`always allow recursive delete (Hermes
+  saves it)`): Hermes saves that kind of command in its config
+  (`command_allowlist`), so later ones run without asking, and Hermes does
+  not offer it for a command its smart approval flagged. The
   highlight stops at either end, so Up then Enter still denies, no number
   picks a choice, `d` or `n` denies, and Enter on an untouched approval
   denies. A clarify question numbers its choices: a digit, or Up and Down then
@@ -481,8 +486,7 @@ run and approval decision stays Hermes'; the screen is OMH's.
   Enter included (nothing is typed into an answer, cleared or sent), and so
   are those right after each next question of a batch, so typing that was
   meant for the composer, or for the question before, cannot answer it.
-  Approving a command permanently stays a choice for `hermes --tui`. The
-  terminal bell rings once as any question opens (an approval, a clarify
+  The terminal bell rings once as any question opens (an approval, a clarify
   question, a sudo password, a secret), so a terminal in the background can
   flag it, and a terminal that shows notifications gets one too, saying what
   Hermes asks (Hermes drops a clarify question nobody answers after its
@@ -640,7 +644,7 @@ Esc closes it):
 | Ctrl+L | Redraws the screen |
 | Ctrl+C | Clears the composer, interrupts a running turn, or (twice when idle) exits |
 | Ctrl+D | On an empty composer, exits; with text, deletes the character ahead |
-| ↑ / ↓ or ← / → then Enter | On an approval, highlight allow once or allow this session and allow it; Enter alone denies |
+| ↑ / ↓ or ← / → then Enter | On an approval, highlight allow once, allow this session or (when Hermes offers it) always allow, and allow it; Enter alone denies |
 | `d`, `n` | On an approval, deny |
 | 1 to 9 | On a clarify question's list, pick that choice, or the last number opens the field for your own answer; ↑ / ↓ then Enter picks too, and any other character starts your own answer |
 | Space | On a clarify question that takes several choices, ticks or unticks the highlighted one; Enter sends the ticked ones, or the highlighted one when none is ticked, and a digit ticks its choice |

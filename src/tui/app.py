@@ -329,6 +329,7 @@ STEER_UNANSWERED_OUTCOME = "back in the composer — Hermes did not answer the s
 APPROVAL_OUTCOMES = {
     "once": ("allowed once", NOTICE_OK),
     "session": ("allowed for this session", NOTICE_OK),
+    "always": ("always allowed (Hermes saved it)", NOTICE_OK),
     "deny": ("denied", NOTICE_ERROR),
 }
 STEER_USAGE = "Usage: /steer <text to add to the running turn>"

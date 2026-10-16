@@ -4,6 +4,15 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **An OMH TUI approval offers Hermes' "always allow" when Hermes does.**
+  The OMH TUI left Hermes' `always` choice to `hermes --tui`. When Hermes
+  lists it (it leaves it out where a permanent allow is refused, such as a
+  command its smart approval flagged), the approval now has a fourth row
+  under allow this session, labelled with what it allows, `always allow
+  recursive delete (Hermes saves it)`: Hermes saves that kind of command in
+  its config (`command_allowlist`), so later ones run without asking. Like
+  every allow it takes the arrows and Enter; the transcript records
+  `✓ always allowed (Hermes saved it) · <command>`.
 - **Every OMH TUI question asks for your attention, not only an approval.**
   An approval rang the bell; a clarify question, a sudo password or a secret
   signalled nothing, and Hermes drops a clarify question nobody answers after

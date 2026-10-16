@@ -223,6 +223,23 @@ class QuestionOutcomeTests(unittest.TestCase):
                 self.assertEqual(client.answers, [])
                 self.assertEqual(outcome_rows(app), [(row, NOTICE_ERROR)])
 
+    def test_hermes_always_choice_is_sent_and_recorded_as_saved(self) -> None:
+        app, client = opened(ServerRequest("srq-1", "approval", {
+            "command": "rm -rf ./x", "description": "recursive delete", "choices": ["once", "session", "always", "deny"],
+        }))
+        self.assertIn("▌   always allow recursive delete (Hermes saves it)", drawn(app))
+        press(app, Key(DOWN), Key(DOWN), Key(DOWN), Key(ENTER))
+        self.assertEqual(client.answers, [("srq-1", {"result": {"choice": "always"}})])
+        self.assertEqual(outcome_rows(app), [("always allowed (Hermes saved it) · rm -rf ./x", NOTICE_OK)])
+
+    def test_a_request_without_always_never_shows_or_sends_it(self) -> None:
+        app, client = opened(ServerRequest("srq-1", "approval", {
+            "command": "rm -rf ./x", "description": "recursive delete", "choices": ["once", "deny"], "smart_denied": True,
+        }))
+        self.assertFalse([row for row in drawn(app) if "always" in row])
+        press(app, *[Key(DOWN)] * 6, Key(ENTER))
+        self.assertNotIn("always", repr(client.answers))
+
     def test_an_approvals_answer_is_still_recorded_once(self) -> None:
         app, _client = opened(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
         press(app, Key(ESCAPE))
@@ -383,6 +400,9 @@ class DocumentedQuestionViewTests(unittest.TestCase):
         for word in (prompts.OUTCOME_CANCELLED, prompts.OUTCOME_SKIPPED, *prompts.WITHDRAWN_WORDS.values()):
             self.assertIn(f"`✗ {word}", installation)
         self.assertIn("`✓ answered · sudo password`", installation)
+        always = prompts.open_request("srq-1", "approval", {"description": "recursive delete", "choices": ["always"]})
+        self.assertIn(f"(`{always.approval_label('always')}`)", installation)  # type: ignore[union-attr]
+        self.assertNotIn("Approving a command permanently stays a choice for `hermes --tui`", installation)
         self.assertIn(f"`{app_module.WAITING_GLYPH}{app_module.STATE_WAITING} (11s)`", installation)
         self.assertIn("`✻ 30s" + TURN_WAITED.format(elapsed="27s") + " · 1 tool`", installation)
         self.assertIn("`✗ declined · sudo password`", installation)
