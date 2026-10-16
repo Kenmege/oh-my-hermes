@@ -1636,9 +1636,11 @@ class App(ModesMixin, AgentViewMixin):
         and never sent again; the queue is held as after an interrupt
         (`_hold_queue`). At most `RESPAWN_LIMIT` respawns in
         `RESPAWN_WINDOW_SECONDS`, each saying so; a gateway that does not start
-        again uses one and the next is tried. Past the limit, without a stored
-        session, or when the new gateway does not resume it, the TUI leaves as
-        it would without recovery (`_lose_gateway`). Calls the old gateway had
+        again, or exits before it resumed the session, uses one and the next is
+        tried, as Hermes' own TUI keeps its recovery target (ui-tui
+        `gatewayRecovery.ts`). Past the limit, without a stored session, or
+        when the new gateway refuses the resume or does not answer it, the TUI
+        leaves as it would without recovery (`_lose_gateway`). Calls the old gateway had
         not answered are settled at once (`_settle_lost_calls`), and the new
         client's request ids start past theirs.
 
@@ -1680,7 +1682,11 @@ class App(ModesMixin, AgentViewMixin):
                 continue
             try:
                 result = self.client.call("session.resume", {"session_id": stored, "cols": self.size[0]})
-            except (GatewayCallError, GatewayTimeout, GatewayUnavailable) as error:
+            except GatewayUnavailable as error:  # it exited too: the next attempt resumes the same session
+                self.client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
+                reason = f"the new Hermes gateway exited before it resumed session {stored} ({error})"
+                continue
+            except (GatewayCallError, GatewayTimeout) as error:
                 self.client.close(grace=CLOSE_GRACE_SECONDS, terminate_grace=TERMINATE_GRACE_SECONDS)
                 self._lose_gateway(f"the new Hermes gateway did not resume session {stored} ({error})")
                 return

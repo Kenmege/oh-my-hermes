@@ -361,6 +361,28 @@ class CapTests(unittest.TestCase):
         self.assertEqual(refused.closed, 1)
         self.assertIn(f"did not resume session {STORED}", app.farewell)
 
+    def test_a_new_gateway_that_exits_while_it_resumes_uses_an_attempt_and_the_next_resumes(self) -> None:
+        # Hermes' own TUI keeps the session to recover across a gateway that dies before its resume lands (ui-tui
+        # `gatewayRecovery.ts` recoverSid) and tries it again within the same budget.
+        died = RespawnClient(resume=GatewayUnavailable("the gateway exited while session.resume was waiting for an answer"))
+        spawner = Spawner(died, RespawnClient())
+        app, old, _spawner, _now = crashing(spawner=spawner)
+        crash(app, old)
+        self.assertIsNone(app.exit_code)
+        self.assertEqual(died.closed, 1)
+        self.assertIs(app.client, spawner.made[1])
+        self.assertEqual(spawner.made[1].blocking, [("session.resume", {"session_id": STORED, "cols": 80})])
+        self.assertIn(f"exited before it resumed session {STORED}", notices(app)[1])
+
+    def test_none_resuming_ends_it_after_the_cap(self) -> None:
+        dying = [RespawnClient(resume=GatewayUnavailable("the gateway exited")) for _ in range(5)]
+        app, old, spawner, _now = crashing(spawner=Spawner(*dying))
+        crash(app, old)
+        self.assertEqual(app.exit_code, 1)
+        self.assertEqual(len(spawner.made), RESPAWN_LIMIT)
+        self.assertEqual([client.closed for client in spawner.made], [1] * RESPAWN_LIMIT)
+        self.assertIn(f"exited before it resumed session {STORED}", app.farewell)
+
     def test_with_no_stored_session_there_is_nothing_to_resume(self) -> None:
         app, old, spawner, _now = crashing()
         app.stored_id = ""
