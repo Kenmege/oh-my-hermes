@@ -1,4 +1,4 @@
-"""The OMH TUI's one child process: Hermes' `tui_gateway`, spoken to over stdio JSON-RPC.
+"""The OMH TUI's child process, one at a time: Hermes' `tui_gateway`, spoken to over stdio JSON-RPC.
 
 `gateway_spawn` turns the environment Hermes' launcher handed the frontend into
 the gateway's argv, working directory and environment. It never picks an
@@ -196,7 +196,10 @@ class GatewayClient:
         *,
         popen: Callable[..., Any] = subprocess.Popen,
         clock: Callable[[], float] = time.monotonic,
+        first_id: int = 1,
     ) -> None:
+        """`first_id` is the first request id this client sends: a client that replaces one whose calls are still
+        waiting starts past their ids, so no answer to it is ever read as an answer to them."""
         self._spawn = spawn
         self._popen = popen
         self._clock = clock
@@ -208,7 +211,7 @@ class GatewayClient:
         self._polled: set[int] = set()  # ids whose answer goes to `poll`
         self._answers: dict[int, Response] = {}
         self._exited = False
-        self._next_id = 1
+        self._next_id = first_id
         self._write_lock = threading.Lock()
         self._stderr_lock = threading.Lock()
         self._stderr: deque[str] = deque(maxlen=STDERR_TAIL_LINES)

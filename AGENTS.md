@@ -169,9 +169,16 @@ PR without the chat history.
   `hermes --tui` with `HERMES_TUI_DIR` pointing at OMH's packaged frontend, so
   Hermes' launcher still resolves the profile, resume target, working
   directory and session ownership, then starts OMH's frontend in place of its
-  own. That frontend spawns exactly one child, Hermes' `tui_gateway`, with the
-  interpreter and import path the launcher handed it, and speaks the
-  gateway's stdio JSON-RPC. It relays only what the person types; on its
+  own. That frontend spawns one child at a time, Hermes' `tui_gateway`, with
+  the interpreter, import path and environment the launcher handed it, and
+  speaks the gateway's stdio JSON-RPC. When that child exits on its own with
+  a failure (never after a normal exit, after the person quits, or for a
+  gateway another runtime owns), it spawns it again the same way and resumes
+  the session that was open (`session.resume`), at most 3 times in 60 s, as
+  Hermes' own TUI does: the open question and those waiting behind it close
+  unanswered, a turn that was running is reported lost and never sent again,
+  and past that limit it exits as it would without recovery, naming
+  `hermes --tui`. It relays only what the person types; on its
   own it reads Hermes' settings and command catalog as a session opens
   and, at a fresh start, `session.list` to name the last session under
   the banner, and, beyond opening and closing sessions
@@ -188,8 +195,9 @@ PR without the chat history.
   Ctrl+C declines, an approval decline is an explicit deny and then
   interrupts the running turn (`session.interrupt`, only while a turn runs;
   every deny the person gives an approval does, `d`, `n` and Enter on deny
-  too), allowing a command takes the arrows and then Enter, and a request the gateway
-  withdraws (its own timeout, an interrupt) closes without an answer.
+  too), allowing a command takes the arrows and then Enter, and a request
+  the gateway withdraws (its own timeout, an interrupt) closes without an
+  answer.
   Hermes' `always` choice is offered only when the request lists it and is
   sent, like any allow, only on the person's arrows and then Enter; saving
   it as a permanent allow (`command_allowlist`) is Hermes' doing, and like
@@ -200,8 +208,9 @@ PR without the chat history.
   sends nothing more.
   Leaving a session (`/new`, a switch) declines that session's open requests
   and says so in the new transcript. Shift+Tab is the one key that changes
-  what Hermes asks. It may turn on Hermes' per-session yolo, the switch
-  Shift+Tab sets in Hermes' own TUI, which stops Hermes from sending approval
+  what Hermes asks; the approval answers above change it only for the
+  commands they match. Shift+Tab may turn on Hermes' per-session yolo, the
+  switch it sets in Hermes' own TUI, which stops Hermes from sending approval
   requests for that session; the TUI still answers none, because Hermes then
   sends none. It does this only on the person's keypress, with a `config.set`
   that names the session and an explicit value and never a `scope`, so it

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import signal
 import string
 import unittest
 
@@ -60,6 +61,7 @@ def observed(app: App, client: RecordingClient) -> tuple[object, ...]:
         app.pager is not None,
         app.search is not None,
         len(terminal.writes),
+        terminal.suspended,
     )
 
 
@@ -83,18 +85,21 @@ class TableTests(unittest.TestCase):
 
     def test_the_ctrl_letters_named_are_the_ones_that_do_something(self) -> None:
         named = ctrl_letters_named()
-        self.assertEqual(named, set("acdejklrtouvw"))
+        self.assertEqual(named, set("acdejklrtouvwxyz"))
         for letter in string.ascii_lowercase:
             changed = False
-            for draft in ("", "one two"):
+            for draft, undone in (("", False), ("one two", False), ("one two", True)):  # Ctrl+Y redoes the undone draft
                 app, client = make_app()
                 type_text(app, draft)
                 app._on_input(Key(LEFT))
+                if undone:
+                    app._on_input(Key(CHAR, "_", ctrl=True))
                 before = observed(app, client)
                 app._on_input(Key(CHAR, letter, ctrl=True))
                 changed = changed or observed(app, client) != before
             with self.subTest(letter=letter):
-                self.assertEqual(changed, letter in named)
+                # Ctrl+Z suspends only where there is job control (no SIGTSTP on Windows).
+                self.assertEqual(changed, letter in named and (letter != "z" or hasattr(signal, "SIGTSTP")))
 
 
 class OverlayLinesTests(unittest.TestCase):

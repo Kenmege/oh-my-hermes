@@ -273,7 +273,8 @@ class WaitingTimeTests(unittest.TestCase):
         armed(app)
         press(app, Key(ESCAPE))
         now[0] = 112.0
-        self.assertTrue([row for row in drawn(app) if "working… (22s" in row])  # the turn's own clock again
+        # The deny also stops the turn: the row is the turn's own clock again, while Hermes stops it.
+        self.assertTrue([row for row in drawn(app) if "interrupting… (22s" in row])
 
     def test_back_to_back_questions_are_one_wait(self) -> None:
         app, _client, now = self.clocked()

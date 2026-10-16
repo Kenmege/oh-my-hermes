@@ -106,7 +106,8 @@ class TodosTests(unittest.TestCase):
 
 class ModelPickerTests(unittest.TestCase):
     def test_the_rows_are_every_providers_models_in_hermes_order(self) -> None:
-        rows = model_rows(OPTIONS)
+        listed = {**OPTIONS, "model": "gpt-5.4-mini", "provider": "copilot"}  # a current model a provider lists
+        rows = model_rows(listed)
         self.assertEqual(len(rows), sum(len(provider["models"]) for provider in OPTIONS["providers"]))
         self.assertEqual((rows[0].model, rows[0].provider, rows[0].provider_name), ("claude-fable-5.1", "anthropic", "Anthropic"))
         self.assertEqual(rows[2].arg, "claude-opus-5-5 --provider anthropic --session")

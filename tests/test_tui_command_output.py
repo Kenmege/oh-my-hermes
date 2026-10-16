@@ -140,8 +140,7 @@ class CommandEchoTests(unittest.TestCase):
         app.transcript.add_notice("an earlier notice")
         send(app, "/history")
         self.assertIsNotNone(app.pager)
-        self.assertEqual(last(app).command, "/history")
-        self.assertTrue(last(app).done)
+        self.assertEqual(last(app).text, "an earlier notice")  # a pager command prints nothing, so it has no echo
 
     def test_completion_still_fills_the_composer_without_running_anything(self) -> None:
         app, client = make_app()

@@ -568,6 +568,7 @@ class IgnoredReportTests(unittest.TestCase):
             now[0] += SLOT_ARM_SECONDS
 
         def keys_pager(app: App, now: list[float]) -> None:
+            app._on_input(Key(ESCAPE))  # the list takes every key, `?` too: leave it first
             app._on_input(Key(CHAR, "?"))
 
         def agent_log(app: App, now: list[float]) -> None:
@@ -1102,7 +1103,8 @@ class ExitDrainTests(unittest.TestCase):
 
         endings: dict[str, tuple[list[bytes | type[BaseException]], object, type[BaseException] | None]] = {
             "SIGTERM, as SystemExit in a read": ([SystemExit, self.REPORT, self.ANSWER], poll_nothing, SystemExit),
-            "Ctrl+D on an empty composer": ([b"\x04", self.REPORT, self.ANSWER], poll_nothing, None),
+            # Ctrl+C leaves the list, which takes every key, then Ctrl+D on the empty composer exits.
+            "Ctrl+C, then Ctrl+D on an empty composer": ([b"\x03\x04", self.REPORT, self.ANSWER], poll_nothing, None),
             "the gateway exiting": ([b"", self.REPORT, self.ANSWER], gateway_gone, None),
             "an exception out of a step": ([b"", self.REPORT, self.ANSWER], gateway_broke, RuntimeError),
             "the terminal hanging up": ([EOFError, EOFError], poll_nothing, None),

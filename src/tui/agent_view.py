@@ -3,8 +3,11 @@
 Subagents: every `subagent.*` event of the live session is folded into one
 `subagents.Roster`, which a new turn and a new session empty. While it holds
 an agent the mode row carries a strip of them, Down on an empty composer
-gives the keys to a list of them (the one thing that moves the composer: see
-`frame`), and Enter or a click opens one agent's log in the pager. The log is
+gives the keys to a list of them, a list the person picks from as from a
+picker: the composer is hidden while it is open, the list stands where the
+composer was, and the mode row says its keys. Every key goes to the list
+then; a key it does not bind does nothing. Enter or a click opens one
+agent's log in the pager. The log is
 read-only: `subagent.tail` is asked for the open agent while it runs, at most
 every `TAIL_POLL_SECONDS`, and no more once `TAIL_MISSES_BEFORE_STOP` answers
 in a row had no tail, until that agent sends a frame; nothing is ever sent to
@@ -30,20 +33,22 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from . import gateway_contract as contract
-from .keys import BUTTON_LEFT, CHAR, DOWN, ENTER, ESCAPE, UNKNOWN, UP, Key, Mouse, Paste
+from .keys import BUTTON_LEFT, CHAR, DOWN, ENTER, ESCAPE, LEFT, UP, Key, Mouse, Paste
 from .layout import Budget, under_composer
 from .modes import strip_column
-from .style import Line, Span
+from .style import Line, Style
 from .subagents import FINISHED_STATUSES, MAIN_ID, RUNNING, Hit
 from .transcript import NOTICE_WARN, STEER_QUEUED, STEER_REFUSED, NoticeBlock, SteerBlock, as_text
-from .width import cell_width, truncate_line
 
 # The list Down opens, and one agent's log in the pager.
 AGENT_LIST_ROWS = 7  # main and six agents; a longer roster scrolls
+# Its keys, on the mode row while it is open, longest first: each keeps the two action keys and the way back.
 AGENT_LIST_HINT = "↑↓ select · ⏎ log · x interrupt · s steer · esc back"
-# Shorter forms for a narrow row, longest first: each keeps the two action keys and the way back.
 AGENT_LIST_HINTS = (AGENT_LIST_HINT, "⏎ log · x interrupt · s steer · esc back", "x interrupt · s steer · esc back")
+# What the mode row says once `x` asked, longest first.
 INTERRUPT_CONFIRM = "x again interrupts {name} · any other key cancels"
+INTERRUPT_CONFIRMS = (INTERRUPT_CONFIRM, "x again interrupts {name}", "x again interrupts")
+LEAVE_KEYS = frozenset({"q"})  # with Esc, Left and Ctrl+C, the plain keys that leave the list
 # What the mode row says while `s` has picked an agent, longest first: a narrow row takes the first that fits.
 STEER_SAY = (
     "↪ steering {name}: enter sends it to that agent · esc cancels",
@@ -93,42 +98,43 @@ class AgentViewMixin:
         return line, tuple(Hit(hit.start + start, hit.end + start, hit.subagent_id) for hit in hits)
 
     def _agent_list(self, cols: int, room: int) -> tuple[list[Line], tuple[str, ...]]:
-        """The focused agent list for `room` rows, and the id of each agent row; nothing while it has no focus.
-
-        Its agent rows, scrolled to the highlight, then the hint row; where
-        `room` is a single row the frame keeps the first, the highlight's.
-        """
+        """The open agent list in `room` rows (at most `AGENT_LIST_ROWS`), scrolled to the highlight, and the id of
+        each row; nothing while it is closed."""
         if self.list_selected is None:
             return [], ()
-        shown = min(AGENT_LIST_ROWS, max(room - 1, 1))
-        lines, listed = self.roster.list_lines(
-            cols, self.theme, self.list_selected, self._spinner_frame(), shown, self.clock()
+        return self.roster.list_lines(
+            cols, self.theme, self.list_selected, self._spinner_frame(), min(AGENT_LIST_ROWS, room), self.clock()
         )
+
+    def _agent_list_say(self) -> tuple[tuple[str, ...], Style]:
+        """What the mode row says while the list is open: its keys, or, once `x` asked, the confirmation in warn."""
         armed = self.roster.agents.get(self.interrupt_armed or "") if self.interrupt_armed == self.list_selected else None
-        keys = next((form for form in AGENT_LIST_HINTS if cell_width(form) <= cols), AGENT_LIST_HINTS[-1])
-        hint = (
-            Span(INTERRUPT_CONFIRM.format(name=armed.name), self.theme.warn)
-            if armed is not None
-            else Span(keys, self.theme.hint)
-        )
-        return [*lines, truncate_line((hint,), cols)], listed
+        if armed is not None:
+            return tuple(form.format(name=armed.name) for form in INTERRUPT_CONFIRMS), self.theme.warn
+        return AGENT_LIST_HINTS, self.theme.hint
 
     def _take_clickable(self, budget: Budget, listed: Sequence[str]) -> None:
         """Note the agent list's rows a click opens in the frame just drawn, and ask for mouse reports only while it is open.
 
-        A list row is clickable from edge to edge; nothing else is, the strip
-        included. Reports stay off while the region's place on the screen is
-        not certain, since no click could be read then.
+        The list is the slot's rows, from its first, with the composer hidden,
+        so its first row is the slot's, mode and status rows above the
+        region's last. A list row is clickable from edge to edge; nothing else
+        is, the strip included. Reports stay off while the region's place on
+        the screen is not certain, since no click could be read then.
         """
         cols, rows = self.size
-        under = budget.status + budget.mode - 1  # rows above the status line of the mode block's first row
-        self.clickable = {under - index: (Hit(0, cols, row_id),) for index, row_id in enumerate(listed[: budget.mode])}
+        top = budget.slot + budget.mode + budget.status - 1  # rows above the region's last row of the slot's first row
+        self.clickable = {top - index: (Hit(0, cols, row_id),) for index, row_id in enumerate(listed[: budget.slot])}
         self._set_mouse(bool(self.clickable) and self.region.last_row(rows) is not None)
 
     def _list_available(self) -> bool:
-        """Whether the agent list can be shown: agents to list, the mode row it replaces, and nothing else holding the keys."""
+        """Whether the agent list can be shown: agents to list, a mode row to say its keys, and nothing else holding
+        the keys (a question, a picker, the history search)."""
         cols, rows = self.size
-        return bool(self.roster.agents and under_composer(rows, cols)[1]) and self.slot is None and self.picker is None
+        return (
+            bool(self.roster.agents and under_composer(rows, cols)[1]) and self.slot is None and self.picker is None
+            and self.rewind_picker is None and self.model_picker is None and self.search is None
+        )
 
     def _settle_list(self) -> None:
         """Take the keys back from a list that can no longer be shown; keep its highlight on a row it still has."""
@@ -140,18 +146,21 @@ class AgentViewMixin:
             self.list_selected = MAIN_ID
 
     def _agent_list_key(self, event: Key | Paste) -> bool:
-        """The agent list's keys; True when the list took the key.
+        """The agent list's keys; True when the list took the key, which it does with every key while it is open.
 
         Down on an empty composer gives the list the keys, on the first
         agent, while there is one to list and no completion menu is open.
-        Then Up and Down move, Enter opens the highlighted agent's log (on
-        main it only leaves), Esc or Ctrl+C leaves, and on an agent `x` asks
-        to interrupt it (a second `x` does) and `s` makes the next line sent
-        its steer (`_agent_action`), so a word typed with the list open that
-        starts with `s` steers. Anything else leaves too and is then read as
-        it would have been, so typing types. The exception is a sequence the
-        decoder has no name for, which does nothing: with mouse reports on, a
-        terminal that answers in the legacy encoding sends one for every click.
+        Then Up and Down move, stopping at either end; Enter opens the
+        highlighted agent's log (on main it only leaves); Esc, Left, `q` or
+        Ctrl+C leaves; and on an agent `x` asks to interrupt it (a second `x`
+        does) and `s` makes the next line sent its steer (`_agent_action`).
+        Any other key, a paste or a sequence the decoder has no name for
+        does nothing, so nothing typed with the list open reaches the
+        composer (with mouse reports on, a terminal that answers in the
+        legacy encoding sends such a sequence for every click). The one
+        exception is an Alt chord in the legacy encoding, whose bytes are also
+        Esc and a key arriving in one read: it leaves, as Esc does, and is then
+        read as it would have been, so the key after the Esc is typed.
         """
         self._settle_list()
         name = event.name if isinstance(event, Key) else ""  # a paste is no key of the list's
@@ -161,22 +170,21 @@ class AgentViewMixin:
             self.list_selected = next(iter(self.roster.agents))
             return True
         armed, self.interrupt_armed = self.interrupt_armed, None  # any key ends a question it did not answer
+        if isinstance(event, Key) and name == CHAR and event.alt and not event.protocol:
+            self.list_selected = None
+            return False
         action = event.char if isinstance(event, Key) and name == CHAR and not event.ctrl and not event.alt else ""
         if action in ("x", "s") and self.list_selected != MAIN_ID:
             self._agent_action(action, self.list_selected, armed)
-            return True
-        if name in (UP, DOWN):
+        elif name in (UP, DOWN):
             ids = self.roster.ids()
             row = ids.index(self.list_selected) + (-1 if name == UP else 1)
             self.list_selected = ids[min(max(row, 0), len(ids) - 1)]
-            return True
-        if name == ENTER and self.list_selected != MAIN_ID:
+        elif name == ENTER and self.list_selected != MAIN_ID:
             self._open_agent_log(self.list_selected)  # over the list: leaving the log comes back to it
-            return True
-        if name == UNKNOWN:
-            return True
-        self.list_selected = None
-        return name in (ENTER, ESCAPE) or event == Key(CHAR, "c", ctrl=True)
+        elif name in (ENTER, ESCAPE, LEFT) or action in LEAVE_KEYS or event == Key(CHAR, "c", ctrl=True):
+            self.list_selected = None
+        return True
 
     def _agent_action(self, action: str, subagent_id: str, armed: str | None) -> None:
         """`x` (once a second `x` confirms) interrupts the highlighted agent; `s` makes the next line sent its steer."""

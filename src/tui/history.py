@@ -30,7 +30,10 @@ person sent: never an answer to a question Hermes asked, never masked input.
 
 `HistorySearch` is the inline search Ctrl+R opens in the slot: newest match
 first, Ctrl+R again for older ones, Enter takes the match into the composer,
-Esc, Ctrl+C or Ctrl+G cancel, Backspace on an empty query cancels too.
+Esc, Ctrl+C or Ctrl+G cancel, Backspace on an empty query cancels too. Its
+query row is its last row, drawn where the composer is (the app hides the
+composer while it is open, as for a picker), and its caret is at the end of
+the query there, so an IME pre-edit shows where the text goes.
 """
 
 from __future__ import annotations
@@ -157,6 +160,7 @@ class HistorySearch:
     original: str
     query: str = ""
     skip: int = 0  # older matches Ctrl+R has stepped past
+    caret: tuple[int, int] | None = None  # the last render's caret, at the end of the query on its query row
 
     def matches(self) -> list[str]:
         """Every entry holding the query (any case), newest first."""
@@ -190,19 +194,24 @@ class HistorySearch:
         self.query = query
         self.skip = 0
 
-    def lines(self, width: int, theme: Theme, max_rows: int) -> list[Line]:
-        """The query and the keys, then the match's first line and where it is among the matches."""
+    def lines(self, width: int, theme: Theme, max_rows: int, keys: bool = True) -> list[Line]:
+        """The match's first line and where it is among the matches, then the query row: the query, and its keys
+        after it when `keys` (the app says them on the mode row where there is one). One row is the query row."""
+        self.caret = None
         if max_rows <= 0:
             return []
-        room = width - cell_width(SEARCH_LABEL + self.query + "  ")
-        keys = next((form for form in SEARCH_HINTS if cell_width(form) <= room), SEARCH_HINTS[-1])
-        head = truncate_line((Span(SEARCH_LABEL, theme.accent), Span(self.query), Span(f"  {keys}", theme.hint)), width)
-        if max_rows == 1:
-            return [head]
+        said = ""
+        if keys:
+            room = width - cell_width(SEARCH_LABEL + self.query + "  ")
+            said = "  " + next((form for form in SEARCH_HINTS if cell_width(form) <= room), SEARCH_HINTS[-1])
+        query = truncate_line((Span(SEARCH_LABEL, theme.accent), Span(self.query), Span(said, theme.hint)), width)
         found = self.matches()
         match = self.current()
         if match is None:
-            return [head, truncate_line((Span(f"  {SEARCH_NONE}", theme.muted),), width)]
-        first = match.split("\n", 1)[0]
-        count = f"  {min(self.skip, len(found) - 1) + 1}/{len(found)}"
-        return [head, truncate_line((Span("› ", theme.prompt), Span(first), Span(count, theme.muted)), width)]
+            shown = truncate_line((Span(f"  {SEARCH_NONE}", theme.muted),), width)
+        else:
+            count = f"  {min(self.skip, len(found) - 1) + 1}/{len(found)}"
+            shown = truncate_line((Span("› ", theme.prompt), Span(match.split("\n", 1)[0]), Span(count, theme.muted)), width)
+        rows = [query] if max_rows == 1 else [shown, query]
+        self.caret = (len(rows) - 1, min(cell_width(SEARCH_LABEL + self.query), max(width - 1, 0)))
+        return rows

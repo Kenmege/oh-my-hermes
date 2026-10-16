@@ -1,4 +1,4 @@
-"""The agent list Down opens under the composer, the log view Enter opens from it, and the tail it reads.
+"""The agent list Down opens in the composer's place, the log view Enter opens from it, and the tail it reads.
 
 The in-memory cases drive an `App` over the recording client from
 `test_tui_modes`, with Hermes 6c61c3e27d's recorded subagent frames
@@ -29,6 +29,7 @@ from omh.tui.agent_view import (
     TAIL_POLL_SECONDS,
 )
 from omh.tui.app import SLOT_ARM_SECONDS, App
+from omh.tui.layout import choice_cap
 from omh.tui.frame import MODE_NORMAL
 from omh.tui.gateway import Event, Response, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, TAB, UP, Key, KeyDecoder, Paste
@@ -46,10 +47,14 @@ NO_TAIL = {"subagent_id": FIRST, "available": False, "text": "", "truncated": Fa
 
 
 def under_the_frame(app: App) -> list[str]:
-    """The rows between the composer's bottom rule and the status line: the mode row, or the agent list."""
+    """The rows between the composer's bottom rule and the status line, the mode row; while the agent list is open,
+    the list's rows, which stand where the composer was, and the mode row under them."""
     screen = drawn(app)
+    status = status_index(screen)
+    if app.list_selected is not None:
+        return screen[status - 1 - len(app.listed) : status]
     rules = [index for index, line in enumerate(screen) if line.strip() and set(line.strip()) <= set("─━┄")]
-    return screen[rules[-1] + 1 : status_index(screen)]
+    return screen[rules[-1] + 1 : status]
 
 
 def focused(**options: object) -> tuple[App, RecordingClient]:
@@ -203,81 +208,50 @@ class ListFocusTests(unittest.TestCase):
         more_agents(app, 7)
         app._on_input(Key(DOWN))
         rows = under_the_frame(app)
-        self.assertEqual(len(rows), 4)  # three of the list and the hint
+        self.assertEqual(len(rows), choice_cap(10, 80) + 1)  # what a picker gets there, and the mode row
         self.assertEqual(rows[-1], AGENT_LIST_HINT)
         self.assertTrue(rows[1].startswith("▸ "), rows)
 
-    def test_the_composer_rises_by_the_lists_extra_rows_only_while_it_is_focused_and_comes_back(self) -> None:
+    def test_the_composer_is_hidden_while_the_list_is_open_and_comes_back_on_its_row(self) -> None:
         app, _client = agent_app()
+        type_text(app, "x")
+        app._set_composer("")  # an empty composer, drawn once
         before = drawn(app)
         resting, status = composer_index(before), status_index(before)
         app._on_input(Key(DOWN))
         during = drawn(app)
-        self.assertEqual(composer_index(during), resting - 3)  # main, two agents and the hint, where one row was
+        self.assertFalse([row for row in during if row.startswith("› ")], during)  # no composer
+        self.assertFalse([row for row in during if row.strip() and set(row.strip()) <= set("─━┄")], during)  # no rules
         self.assertEqual(status_index(during), status)
-        agent_event(app, "start", "sa-late", goal="a third task")
-        self.assertEqual(composer_index(drawn(app)), resting - 4)
+        self.assertEqual(during[status - 1], AGENT_LIST_HINT)  # the mode row says the list's keys
+        self.assertEqual(during[status - 1 - len(app.listed) : status - 1], under_the_frame(app)[:-1])
         app._on_input(Key(ESCAPE))
         after = drawn(app)
         self.assertEqual((composer_index(after), status_index(after)), (resting, status))
-        self.assertEqual(composer_index(drawn(app)), resting)  # and it stays there on the next repaint
+        self.assertEqual(after, before)
 
-    def test_after_ctrl_l_with_two_pad_rows_left_the_list_takes_them_and_the_composer_comes_back(self) -> None:
-        # The review's case: the redraw leaves the region's last row one above the screen's, and the list
-        # used to push it down, so the composer came back one row lower than it left.
+    def test_the_list_stands_where_the_composer_was(self) -> None:
         app, _client = agent_app()
-        app._on_input(Key(CHAR, "l", ctrl=True))
-        for number in range(8):
-            app.transcript.add_notice(f"notice {number}")
-            drawn(app)
         before = drawn(app)
-        self.assertEqual((app.region.pad, app.region.last_row(24), composer_index(before)), (2, 22, 19))
+        bottom_rule = status_index(before) - 2
         app._on_input(Key(DOWN))
         during = drawn(app)
-        self.assertEqual((app.region.last_row(24), status_index(during)), (22, 22))
-        self.assertEqual(under_the_frame(app), [text.rstrip() for text in lines_text(
-            app.roster.list_lines(80, DEFAULT_THEME, FIRST, 0, 3, 0.0)[0])] + [AGENT_LIST_HINT])
-        self.assertEqual(during[:12], before[:12])  # the transcript did not move
-        app._on_input(Key(ESCAPE))
-        self.assertEqual(drawn(app), before)
+        self.assertTrue(during[bottom_rule].startswith("  ⠋ read the diff"), during)  # the list's last row, on the rule's
+        self.assertEqual(during[: 24 - app.region.height], before[: 24 - app.region.height])  # nothing above it moved
 
-    def test_with_the_pad_used_up_the_list_scrolls_nothing_and_leaves_no_blank_rows(self) -> None:
-        app, _client = agent_app()
-        app.transcript.add_notice("\n".join(f"line {number}" for number in range(40)))
-        before = drawn(app)
-        self.assertEqual((app.region.pad, app.region.last_row(24)), (0, 23))
-        app._on_input(Key(DOWN))
-        during = drawn(app)
-        top = 24 - app.region.height
-        self.assertEqual(during[:top], before[:top])  # nothing above the region scrolled
-        rows = under_the_frame(app)
-        self.assertEqual(len(rows), 2)  # the mode row's and the busy row's: the selected agent and the hint
-        self.assertTrue(rows[0].startswith("▸ ⠋ find usages of"), rows)
-        app._on_input(Key(DOWN))
-        self.assertTrue(under_the_frame(app)[0].startswith("▸ ⠋ read the diff"))  # it scrolls to the highlight
-        app._on_input(Key(ESCAPE))
-        self.assertEqual(drawn(app), before)
-
-    def test_with_one_row_to_spare_the_list_is_the_highlighted_agent_alone(self) -> None:
-        app, _client = agent_app(busy=False)  # idle: nothing is drawn above the composer
-        app.transcript.add_notice("\n".join(f"line {number}" for number in range(40)))
-        before = drawn(app)
-        app._on_input(Key(DOWN))
-        rows = under_the_frame(app)
-        self.assertEqual(len(rows), 1)
-        self.assertTrue(rows[0].startswith("▸ ⠋ find usages of"), rows)
-        app._on_input(Key(DOWN))
-        self.assertTrue(under_the_frame(app)[0].startswith("▸ ⠋ read the diff"))
-        app._on_input(Key(UP))
-        app._on_input(Key(UP))
-        self.assertEqual(under_the_frame(app), ["▸ ● main"])
-        app._on_input(Key(ESCAPE))
-        self.assertEqual(drawn(app), before)
-
-    def test_the_caret_stays_on_the_composer_while_the_list_has_the_keys(self) -> None:
+    def test_no_caret_is_shown_while_the_list_has_the_keys(self) -> None:
         app, _client = focused()
-        screen = drawn(app)
-        self.assertEqual(app.terminal.screen.cursor[0], composer_index(screen))  # type: ignore[attr-defined]
+        drawn(app)
+        self.assertFalse(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
+        app._on_input(Key(ESCAPE))
+        drawn(app)
+        self.assertTrue(app.terminal.screen.cursor_visible)  # type: ignore[attr-defined]
+
+    def test_the_strip_leaves_the_mode_row_while_the_list_shows_the_agents(self) -> None:
+        app, _client = agent_app()
+        self.assertIn("main", under_the_frame(app)[0])  # the strip
+        app._on_input(Key(DOWN))
+        self.assertNotIn("agents ↓", under_the_frame(app)[-1])
 
 
 class ListLeaveTests(unittest.TestCase):
@@ -303,10 +277,19 @@ class ListLeaveTests(unittest.TestCase):
                 app._on_input(CTRL_C)
                 self.assertEqual((app.list_selected, client.calls, notices(app), app.exit_code), (None, [], [], None))
 
-    def test_a_typed_character_leaves_the_list_and_is_typed(self) -> None:
+    def test_a_typed_character_does_nothing_and_the_list_keeps_the_keys(self) -> None:
         app, client = focused()
-        type_text(app, "hi")
-        self.assertEqual((app.list_selected, app.composer.text, client.calls), (None, "hi", []))
+        before = under_the_frame(app)
+        type_text(app, "hi 12/?")
+        self.assertEqual((app.list_selected, app.composer.text, client.calls), (FIRST, "", []))
+        self.assertEqual(under_the_frame(app), before)
+
+    def test_left_and_q_leave_as_esc_does(self) -> None:
+        for key in (Key(LEFT), Key(CHAR, "q")):
+            with self.subTest(key=key):
+                app, client = focused()
+                app._on_input(key)
+                self.assertEqual((app.list_selected, app.composer.text, client.calls), (None, "", []))
 
     def test_esc_then_a_command_in_one_read_leaves_the_list_and_types_the_command(self) -> None:
         # The bytes are Alt+/ and then the rest: the chord leaves the list, then the composer types its `/`.
@@ -315,21 +298,19 @@ class ListLeaveTests(unittest.TestCase):
             app._on_input(event)
         self.assertEqual((app.list_selected, app.composer.text, client.calls), (None, "/quit", []))
 
-    def test_a_paste_leaves_the_list_and_is_pasted(self) -> None:
+    def test_a_paste_does_nothing(self) -> None:
         app, _client = focused()
         app._on_input(Paste("two\nlines"))
-        self.assertEqual((app.list_selected, app.composer.text), (None, "two\nlines"))
+        self.assertEqual((app.list_selected, app.composer.text), (FIRST, ""))
 
-    def test_any_other_key_leaves_and_does_what_it_always_did(self) -> None:
-        app, client = focused()
-        app._on_input(Key(TAB, shift=True))
-        self.assertIsNone(app.list_selected)
-        self.assertEqual(client.calls, [("config.set", {"key": "yolo", "session_id": SID, "value": "on"})])
-        app, _client = focused()
-        app._on_input(Key(CHAR, "?"))
-        self.assertIsNone(app.list_selected)
-        self.assertIsNotNone(app.pager)  # the key list
-        self.assertEqual(app.log_agent, "")
+    def test_any_other_key_does_nothing(self) -> None:
+        for key in (Key(TAB, shift=True), Key(CHAR, "?"), Key(CHAR, "t", ctrl=True), Key(CHAR, "r", ctrl=True), Key(TAB),
+                    Key(RIGHT), Key(CHAR, "d", ctrl=True)):
+            with self.subTest(key=key):
+                app, client = focused()
+                app._on_input(key)
+                self.assertEqual((app.list_selected, client.calls, app.pager, app.search), (FIRST, [], None, None))
+                self.assertIsNone(app.exit_code)
 
     def test_an_approval_arriving_closes_the_list_and_the_enter_aimed_at_it_answers_nothing(self) -> None:
         now = [100.0]
@@ -653,7 +634,7 @@ class AgentActionTests(unittest.TestCase):
         app, client = focused()
         app._on_input(Key(UP))  # main
         app._on_input(Key(CHAR, "x"))
-        self.assertEqual((app.list_selected, app.composer.text), (None, "x"))  # typing leaves the list, as before
+        self.assertEqual((app.list_selected, app.composer.text), (MAIN_ID, ""))  # nothing to act on: the key does nothing
         app, client = focused(frames=FRAMES)  # both finished
         app._on_input(Key(CHAR, "x"))
         app._on_input(Key(CHAR, "x"))
@@ -1245,7 +1226,8 @@ class AgentReplayTests(AppTestCase):
         self.assertEqual(rows[status - 4], "  ● main")
         self.assertTrue(rows[status - 3].startswith("▸ ") and "find usages of old_api" in rows[status - 3], rows)
         self.assertEqual(rows[status - 1], AGENT_LIST_HINT)
-        self.assertEqual(composer_index(rows), composer_index(captures["strip"]) - 3)
+        # The list stands where the composer was: no composer rule anywhere on the screen.
+        self.assertFalse([row for row in rows if row.strip() and set(row.strip()) <= set("─━┄")], rows)
         self.assertEqual(captures["log"][0], "find usages of old_api in src/ and list every call site")
         self.assertEqual(captures["second"][0], "read the diff for risks")
         self.assertTrue(captures["back"][status_index(captures["back"]) - 2].startswith("▸ "), captures["back"])
