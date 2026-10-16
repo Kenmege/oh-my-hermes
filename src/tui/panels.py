@@ -66,8 +66,8 @@ VOLATILE_KEYS = frozenset(
 )
 
 SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-# The host's shimmer clock ticks every 90 ms; spinner, plan pulse and the
-# active item's colour wave all read their frame from it.
+# The host's shimmer clock ticks every 90 ms; the spinner and the active
+# item's colour wave read their frame from it.
 FRAME_MILLISECONDS = 90
 SEPARATOR = " │ "
 ROW_SEPARATOR = "  ·  "
@@ -561,7 +561,7 @@ def _skipped_clause(counts: Mapping[str, Any]) -> str:
     return f" ({skipped} skipped)" if skipped > 0 else ""
 
 
-def _plan_header(plan: _Plan, now: float, theme: Theme, motion: bool = True) -> Line:
+def _plan_header(plan: _Plan, now: float, theme: Theme) -> Line:
     counts = plan.counts
     title = Span(f" {plan.title}", theme.muted) if plan.title else None
     badge = _shot_badge(plan.shot, now, theme)
@@ -577,8 +577,6 @@ def _plan_header(plan: _Plan, now: float, theme: Theme, motion: bool = True) -> 
             badge,
         )
     phases = _count(counts.get("phases"))
-    has_active = any(item.get("state") == "active" for item in plan.items)
-    pulse = f" {'.' * (1 + (_frame(now) // 3) % 3)}" if has_active and plan.live and motion else ""
     return _line(
         Span("[Plan]", theme.heading),
         title,
@@ -587,7 +585,6 @@ def _plan_header(plan: _Plan, now: float, theme: Theme, motion: bool = True) -> 
         Span(_skipped_clause(counts), theme.muted),
         Span(f" · {phases} phases", theme.muted) if phases > 1 else None,
         badge,
-        Span(pulse, theme.dim),
     )
 
 
@@ -633,6 +630,14 @@ def _fold(count: int, side: str, theme: Theme) -> Line:
     return _line(Span(f"... ({count} {side} task{'' if count == 1 else 's'})", theme.muted))
 
 
+def plan_state(payload: Any) -> str:
+    """`open` while the payload's plan has an item left, `done` once every item is, "" without a plan."""
+    plan = _plan_view(payload) if _valid(payload) else None
+    if plan is None:
+        return ""
+    return "done" if plan.status == "all_done" else "open"
+
+
 def plan_text(payload: Any) -> str:
     """The whole plan as text, for `/todos`: its header, then every item under its phase; "" without a plan."""
     plan = _plan_view(payload) if _valid(payload) else None
@@ -656,7 +661,7 @@ def plan_text(payload: Any) -> str:
 def _plan_lines(
     plan: _Plan, start: int, end: int, collapsed: bool, columns: int, now: float, theme: Theme, motion: bool = True
 ) -> list[Line]:
-    lines = [_plan_header(plan, now, theme, motion)]
+    lines = [_plan_header(plan, now, theme)]
     if plan.status == "all_done" or collapsed:
         return lines
     frame = _frame(now)
@@ -1098,17 +1103,20 @@ def panel_lines(
     *,
     received_at: float | None = None,
     show_agents: bool = True,
+    show_plan: bool = True,
     motion: bool = True,
 ) -> list[Line]:
     """The panel rows for one HUD payload: never more than `max_rows`, none wider than `width` cells.
 
-    `now` is wall-clock seconds; it drives the spinner, the plan pulse and
+    `now` is wall-clock seconds; it drives the spinner, the active item's
     colour wave, and the age of a finished parallel shot. `received_at` (the
     snapshot's) lets a running agent's elapsed figure tick between polls.
     Without `show_agents` the agents block (and its graph) is left out: the
     app passes that while its own roster shows the agents, so they are drawn
-    once, from one source. Without `motion` (reduced motion) the spinner
-    holds its first frame and the plan neither pulses nor waves.
+    once, from one source. Without `show_plan` the plan block is left out:
+    the app passes that for a finished plan it has retired. Without `motion`
+    (reduced motion) the spinner holds its first frame and the plan does not
+    wave.
     """
     if max_rows <= 0 or width <= 0 or not isinstance(payload, Mapping):
         return []
@@ -1117,7 +1125,7 @@ def panel_lines(
     if payload.get("privacy") != "metadata_only":
         return []
     columns = max(20, width)
-    plan = _plan_view(payload)
+    plan = _plan_view(payload) if show_plan else None
     agents = _agents_view(payload) if show_agents else None
     start, end = _initial_window(plan) if plan is not None and plan.status == "established" else (0, 0)
     layout = _Layout(

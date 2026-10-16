@@ -354,7 +354,11 @@ run and approval decision stays Hermes'; the screen is OMH's.
 - The plan in that panel changes the moment Hermes' todo tool changes it
   (Hermes' `todo.updated` has the HUD read again at once, instead of at its
   next poll two to eight seconds later), and a subtask keeps its place under
-  its parent.
+  its parent. Once every item is done it shows `✓ 3/3` until the turn ends,
+  then leaves the panel, its final list written to the transcript above the
+  turn's done line; a plan finished between turns leaves the same way, and
+  one already finished when the session opens is not drawn. A plan with an
+  item left stays. The active item's colour wave is the plan's only motion.
 - The region follows what is printed, as Claude Code's input box does: a
   fresh session shows the composer right under the banner, and after a turn
   it sits under the turn's last line with one blank row between, the spacer

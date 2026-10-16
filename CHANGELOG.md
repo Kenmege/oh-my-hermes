@@ -25,6 +25,13 @@ All notable changes will be documented here.
   command's output cut short end `… +N lines · ctrl+o shows all` (rows for a
   command), where they named `/history` or nothing: Ctrl+O opens the details
   view at its end.
+- **A finished plan leaves the OMH TUI's panel.** The plan stayed above the
+  composer into later, unrelated turns. Once every item is done it now shows
+  `✓ 3/3` until the turn ends and then goes, as Claude Code's list does, with
+  its final list written to the transcript above the done line; one already
+  finished when the session opens is not drawn, and a new plan is. The
+  `[Plan] │ 2/6 .` dot was the header's walking ellipsis, caught at one dot;
+  it is gone, and the active item's colour wave still shows work moving.
 
 - **Korean spend and data-share requests reach their gates.** "내 카드로
   결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보

@@ -571,6 +571,64 @@ class TurnRuleTests(unittest.TestCase):
         self.assertEqual(line_text(row), "✻ 34s · 3 tools · ↓1.2k")
 
 
+class FinishedPlanTests(unittest.TestCase):
+    """A plan whose every item is done leaves the panel once no turn runs, as Claude Code's list goes once done."""
+
+    OPEN = phased_plan(3, phases=1, active=2)
+    DONE = [dict(item, state="done") for item in phased_plan(3, phases=1, active=2)]
+
+    def setUp(self) -> None:
+        self.app, _client = make_app(rows=30, cols=100)
+        self.app.stored_id = "stored"
+
+    def take(self, items: list[dict]) -> None:
+        """A HUD read the poller hands over, as `_take_hud` takes it."""
+        snapshot = HudSnapshot("stored", hud_payload(items), 100.0)
+        self.app.poller.take = lambda: snapshot  # type: ignore[method-assign]
+        self.app._take_hud()
+
+    def headers(self) -> list[str]:
+        return [row for row in drawn(self.app) if row.startswith("[Plan]")]
+
+    def notices(self) -> list[str]:
+        return [block.text for block in self.app.transcript.blocks if isinstance(block, NoticeBlock)]
+
+    def turn(self, prompt: str) -> None:
+        self.app._submit_prompt(prompt)
+        self.app._on_event(ev("message.start"))
+
+    def test_the_turn_that_finishes_the_plan_ends_with_it_in_the_transcript_and_off_the_panel(self) -> None:
+        self.take(self.OPEN)
+        self.turn("finish the plan")
+        self.assertEqual(self.headers(), ["[Plan] Plan │ 2/3"])
+        self.take(self.DONE)
+        self.assertEqual(self.headers(), ["[Plan] Plan │ ✓ 3/3"])  # still the turn's: it shows done until the turn ends
+        self.app._on_event(ev("message.complete", text="Done.", status="complete"))
+        self.assertEqual(self.headers(), [])
+        self.assertEqual(self.notices(), ["\n".join(["[Plan] Plan · 3/3", "Phase 0", "  [✓] Task number 0",
+                                                     "  [✓] Task number 1", "  [✓] Task number 2"])])
+        kinds = [type(block).__name__ for block in self.app.transcript.blocks]
+        self.assertLess(kinds.index("NoticeBlock"), kinds.index("TurnSummaryBlock"))  # above the done line
+        self.turn("something unrelated")
+        self.take(self.DONE)  # the next poll still reads the finished plan
+        self.assertEqual(self.headers(), [])
+        self.assertEqual(len(self.notices()), 1)
+
+    def test_a_plan_already_finished_when_the_session_opens_is_not_drawn_and_says_nothing(self) -> None:
+        self.take(self.DONE)
+        self.assertEqual((self.headers(), self.notices()), ([], []))
+
+    def test_a_plan_with_an_item_left_stays_between_turns_and_a_new_plan_is_drawn_again(self) -> None:
+        self.take(self.OPEN)
+        self.turn("start it")
+        self.app._on_event(ev("message.complete", text="Later.", status="complete"))
+        self.assertEqual(self.headers(), ["[Plan] Plan │ 2/3"])
+        self.take(self.DONE)  # finished between turns, by a poll
+        self.assertEqual(self.headers(), [])
+        self.take(phased_plan(4, phases=1, active=0))
+        self.assertEqual(self.headers(), ["[Plan] Plan │ 0/4"])
+
+
 class SettledTailTests(unittest.TestCase):
     """The rows a settled tool group gives back are filled by its own lines, never left blank under the done line."""
 

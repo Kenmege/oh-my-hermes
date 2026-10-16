@@ -145,7 +145,7 @@ from .pager import ALT_SCREEN_OFF, ALT_SCREEN_ON, HistoryPager, Pager
 from .model_picker import KEYS as MODEL_PICKER_KEYS
 from .model_picker import PICK as MODEL_PICK
 from .model_picker import ModelPicker, model_rows
-from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, plan_text, status_segments
+from .panels import SPINNER_FRAMES, HudPoller, HudSnapshot, panel_lines, plan_state, plan_text, status_segments
 from .prompts import Answer, ImmediateAnswer, PromptSlot, TypeIt, open_request
 from .screen import CLEAR_SCREEN_AND_SCROLLBACK, CURSOR_HOME, HIDE_CURSOR, SHOW_CURSOR, LiveRegion
 from .session_picker import KEYS as SESSION_PICKER_KEYS
@@ -978,6 +978,8 @@ class App(ModesMixin, AgentViewMixin):
         self.pager: Pager | None = None
         self.resized_while_paging = False
         self.hud: HudSnapshot | None = None
+        self.retired_plan = ""  # the text of a finished plan the panel no longer draws (`_retire_finished_plan`)
+        self.plan_seen_open = False  # the panel has had a plan with an item left since the last one retired
         self.notification: Notification | None = None  # Hermes' out-of-band notice, shown above the composer
         self.exit_armed_at: float | None = None
         self.exit_code: int | None = None
@@ -1564,6 +1566,7 @@ class App(ModesMixin, AgentViewMixin):
             elif event.type == "message.complete":
                 self.turn_pending = False
                 self._take_usage(payload.get("usage"))
+                self._retire_finished_plan()  # above the done line: the turn that finished the plan ends here
                 seconds = self.clock() - self.busy_since
                 self.transcript.add_turn_summary(seconds, self._turn_tokens())
                 self._alert_turn_end(seconds)
@@ -2771,6 +2774,7 @@ class App(ModesMixin, AgentViewMixin):
         self.flushed_since_prompt = 0  # rows printed above the region from the last prompt's first row on
         self.attachments.clear()  # the gateway queued them for the session being left
         self.hud = None
+        self.retired_plan, self.plan_seen_open = "", False
         self._clear_roster()
         self._adopt_session(result, fallback_stored)
         return declined
@@ -3155,6 +3159,26 @@ class App(ModesMixin, AgentViewMixin):
         if snapshot is not None and snapshot.session_id == self.stored_id:
             self.hud = snapshot
             self.dirty = True
+            self._retire_finished_plan()
+
+    def _retire_finished_plan(self) -> None:
+        """Stop drawing a plan whose every item is done, once no turn runs, as Claude Code's list goes once done.
+
+        A plan the panel showed with an item left also leaves its final state
+        in the transcript; one that was already finished when the session
+        opened only goes. A plan with another text (a new one) is drawn again.
+        """
+        payload = self.hud.payload if self.hud is not None else None
+        state = plan_state(payload)
+        if state == "open":
+            self.plan_seen_open = True
+        elif state == "done" and not self._busy():
+            text = plan_text(payload)
+            if text != self.retired_plan:
+                self.retired_plan = text
+                if self.plan_seen_open:
+                    self.transcript.add_notice(text)
+                self.plan_seen_open = False
 
     def _panel_live(self) -> bool:
         payload = self.hud.payload if self.hud is not None else None
@@ -3412,6 +3436,7 @@ class App(ModesMixin, AgentViewMixin):
         return panel_lines(
             payload, cols, cap, self.theme, self.wall_clock(), received_at=self.hud.received_at,
             show_agents=not self.roster.agents,  # the strip and the list show them while the roster holds any
+            show_plan=not self.retired_plan or plan_text(payload) != self.retired_plan,
             motion=self.motion,
         )
 
