@@ -166,16 +166,19 @@ class DetailsViewTests(unittest.TestCase):
         self.assertNotIn("· notice 0", screen)
         self.assertEqual(client.calls, [])
 
-    def test_ctrl_o_leaves_an_open_question_on_screen(self) -> None:
+    def test_ctrl_o_over_an_open_question_pages_the_question_not_the_transcript(self) -> None:
         from omh.tui.gateway import ServerRequest
         from omh.tui.keys import CHAR
+        from omh.tui.pager import HistoryPager
 
-        app, _client = make_app()
+        app, client = make_app()
         app.transcript.add_notice("something to show")  # so a view would have rows to open on
         app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
         app._on_input(Key(CHAR, "o", ctrl=True))
-        self.assertIsNone(app.pager)
+        self.assertIs(app.pager, app.question_view)
+        self.assertNotIsInstance(app.pager, HistoryPager)
         self.assertIsNotNone(app.slot)
+        self.assertEqual(client.answers, [])
 
 
 class DocumentedOutputTests(unittest.TestCase):

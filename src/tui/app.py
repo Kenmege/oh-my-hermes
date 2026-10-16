@@ -252,6 +252,7 @@ REWIND_KEPT_NOTICE = "Hermes did not rewind: {reason}. The screen is back to how
 REWIND_UNREAD_NOTICE = "Hermes did not send the session's history ({reason}), so the screen stays as it was before you sent."
 MODEL_BUSY_NOTICE = "Hermes switches the model between turns: let this one end, or interrupt it with Esc."
 TODOS_NONE_NOTICE = "No plan in this session yet: Hermes' todo tool writes one."
+QUESTION_VIEW_TITLE = "the open question (q goes back to it)"  # Ctrl+O's pager while Hermes asks something
 # Claude Code's /export saves the conversation; Hermes' writes a profile archive. Said once, then it runs.
 EXPORT_NOTE = (
     "Hermes' /export writes a profile archive (config, skills, theme), not this transcript; /export again runs it. "
@@ -976,6 +977,7 @@ class App(ModesMixin, AgentViewMixin):
         self.pending: dict[int, _Pending] = {}
         self.menu_index = 0
         self.pager: Pager | None = None
+        self.question_view: Pager | None = None  # the pager Ctrl+O opened over the open question, while it is open
         self.resized_while_paging = False
         self.hud: HudSnapshot | None = None
         self.notification: Notification | None = None  # Hermes' out-of-band notice, shown above the composer
@@ -1732,6 +1734,9 @@ class App(ModesMixin, AgentViewMixin):
         composer opens with it still hidden.
         """
         slot, self.slot = self.slot, None
+        if self.pager is not None and self.pager is self.question_view:
+            self._leave_pager()  # it paged the question that just closed
+        self.question_view = None
         if slot is not None and self.slot_draft is not None:
             self.composer, self.slot_draft = self.slot_draft, None
         while self.slot is None and self.waiting_requests:
@@ -1888,13 +1893,16 @@ class App(ModesMixin, AgentViewMixin):
     def _display_key(self, event: Key | Paste) -> bool:
         """Ctrl+O (the details view) and Ctrl+L (redraw) work whatever has the keys; True when it was one.
 
-        Ctrl+O while Hermes asks something leaves the question on screen.
+        Ctrl+O while Hermes asks something pages that question whole instead
+        and answers nothing (`_question_view`).
         """
         if not isinstance(event, Key) or event.name != CHAR or not event.ctrl or event.alt:
             return False
         if event.char == "o":
             if self.slot is None:
                 self._details_view()
+            else:
+                self._question_view()
         elif event.char == "l":
             self._redraw("")
         else:
@@ -2950,6 +2958,13 @@ class App(ModesMixin, AgentViewMixin):
         if isinstance(self.pager, HistoryPager):
             self.pager.handle_key(Key(END), self.size[1])
 
+    def _question_view(self) -> None:
+        """The open question in the pager, every row of it (a long command whole); q or Esc goes back to it as it
+        was, with nothing answered, and the pager closes with the question (`_close_slot`)."""
+        if self.slot is not None:
+            self._show_pager(Pager(QUESTION_VIEW_TITLE, self.slot.whole_lines(self.size[0], self.theme)))
+            self.question_view = self.pager
+
     def _details(self, arg: str) -> None:
         # No notice: its echo is held under a live block (`Transcript.add_command`), the only block the toggle changes.
         self.transcript.toggle_details()
@@ -3218,6 +3233,7 @@ class App(ModesMixin, AgentViewMixin):
             previous_height=previous,
             tail=self._tail(cols),
             slot=self._slot_lines(cols, rows),
+            text_question=self.slot is not None and not self.slot.picking,
             slot_caret=self._slot_caret(),  # read after `_slot_lines` drew the picker it comes from
             theme=self.theme,
             attachments=attachment_line(self.attachments, cols, self.theme)
@@ -3385,6 +3401,8 @@ class App(ModesMixin, AgentViewMixin):
     def _slot_lines(self, cols: int, rows: int) -> list[Line]:
         """The slot's rows; with the composer hidden it has the composer frame's rows too (`layout.choice_cap`)."""
         cap = choice_cap(rows, cols) if self._composer_hidden() else slot_cap(rows, cols)
+        if self.slot is not None:
+            cap = max(cap, 1)  # on a tiny terminal a question answered with text keeps a row for its label (`allocate`)
         if cap <= 0:
             return []
         if self.slot is not None:

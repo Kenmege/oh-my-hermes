@@ -47,8 +47,8 @@ SHORTCUTS: tuple[tuple[str, str], ...] = (
     ("Esc Esc", "With text, clears it and keeps it in this session's history; on an empty composer between turns, "
                 "lists your prompts to rewind to (/rewind does too)"),
     ("Ctrl+V", "Attaches the clipboard image"),
-    ("Ctrl+O", "Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end; "
-               "q leaves it"),
+    ("Ctrl+O", "Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end, or, "
+               "while Hermes asks something, the whole question (it answers nothing); q leaves it"),
     ("Ctrl+L", "Redraws the screen"),
     ("Ctrl+C", "Clears the composer, interrupts a running turn, or (twice when idle) exits"),
     ("Ctrl+D", "On an empty composer, exits; with text, deletes the character ahead"),

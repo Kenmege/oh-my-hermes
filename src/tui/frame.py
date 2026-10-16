@@ -113,6 +113,7 @@ def build_frame(
     placeholder: str = "",
     agent_list: Callable[[int], Sequence[Line]] | None = None,
     slot_caret: tuple[int, int] | None = None,
+    text_question: bool = False,
 ) -> Frame:
     """The region for one repaint; `previous_height` is `LiveRegion.height` right now.
 
@@ -126,6 +127,8 @@ def build_frame(
     mode row. `composer` None draws no composer (nor the attachment row or the
     agent list): the slot takes its place, and the caret is `slot_caret`, a
     (row, col) within `slot`, or none where that is None or its row is cut.
+    `text_question` says the slot holds a question answered with text, whose
+    label keeps a row on a tiny terminal (`layout.allocate`).
     """
     cap = composer_cap(rows)
     composer_lines: list[Line] = []
@@ -162,6 +165,7 @@ def build_frame(
         min_height=min_height,
         agent_list_rows=len(listed),
         composer_hidden=composer is None,
+        text_question=text_question,
     )
     rule = rule_line(cols, theme, mode)
     lines = compose(

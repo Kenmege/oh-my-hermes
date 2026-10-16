@@ -30,7 +30,9 @@ The budget is a pure function of the terminal size and the content sizes:
 - Then the top rule, then the slot (at most `rows // 3`), then the sticky
   prompt (only when asked and a row is left), and the tail takes whatever
   remains, keeping its last rows.
-- Below `MIN_ROWS` rows or `MIN_COLS` columns only composer and status are drawn.
+- Below `MIN_ROWS` rows or `MIN_COLS` columns only composer and status are
+  drawn, and, while a question answered with text is open (`text_question`),
+  one slot row above them for its label when a row is left.
 - No-shrink: `min_height` is the region's current height. When content needs
   fewer rows, pad rows fill the top so the region keeps its height, and with
   it its bottom row. The rows under the composer depend only on the terminal
@@ -189,6 +191,7 @@ def allocate(
     min_height: int,
     agent_list_rows: int = 0,
     composer_hidden: bool = False,
+    text_question: bool = False,
 ) -> Budget:
     """Rows for each part of the region (see the module docstring for the rules)."""
     room = max_height(rows)
@@ -209,6 +212,9 @@ def allocate(
     rule = slot = sticky_rows = tail = 0
     if composer_hidden:
         slot = min(max(slot_rows, 0), choice_cap(rows, cols), left)
+        left -= slot
+    elif text_question and is_tiny(rows, cols):
+        slot = min(max(slot_rows, 0), 1, left)
         left -= slot
     if not is_tiny(rows, cols):
         if not composer_hidden:

@@ -4,6 +4,17 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **An OMH TUI question you cannot see whole says so, and Ctrl+O shows it.**
+  A long approval command showed its first 6 of 20 lines at 24 rows, and
+  Ctrl+O did nothing while the approval was open; below 10 rows a cut had no
+  marker, at 6 rows no command row was drawn at all, a narrow terminal cut the
+  approval's header, and under 6 rows or 20 columns a sudo, secret or typed
+  clarify question showed no label. Every cut now ends with `… ctrl+o shows
+  all` (`… +14 more lines · ctrl+o shows all` under a command's first lines),
+  from 6 rows a command's first row is drawn, the header and a value prompt's
+  label wrap, a tiny terminal keeps one row for a typed question's label, and
+  Ctrl+O while a question is open pages it whole: it answers nothing, and q
+  or Esc returns to the question with the same row highlighted.
 - **Korean spend and data-share requests reach their gates.** "내 카드로
   결제해줘", "이거 결제해줘" and "송금해줘" fell back with score 0, "고객 정보
   마스킹해서 벤더한테 보내줘" dispatched gateway-intent-card, and "개인정보 지우고

@@ -34,6 +34,7 @@ highlighted.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import sys
 from typing import Any
 
 from . import gateway_contract as contract
@@ -41,7 +42,7 @@ from .keys import CHAR, DOWN, ENTER, ESCAPE, LEFT, RIGHT, UP, Key, Paste
 from .markdown import wrap_prefixed
 from .style import Line, Span, Style
 from .theme import Theme
-from .width import cell_width, truncate_line, wrap_line
+from .width import cell_width, line_width, truncate_line, wrap_line
 
 # `always` writes a permanent allow rule into the person's Hermes config. The
 # OMH TUI offers the choices that end with this session; `always` stays a
@@ -70,6 +71,12 @@ CLARIFY_FIELD_KEYS = (
 )
 CLARIFY_TEXT_KEYS = ("type an answer · enter sends · esc cancels",)
 VALUE_KEYS = ("type it · enter sends · esc declines",)
+# A question the slot cannot show whole says that Ctrl+O shows it (`App._question_view`), longest form that fits
+# first: on a row of its own (counting the command's rows left out, when any are), or at the end of the last row
+# the cut leaves, in a form that leaves that row whole if one does.
+MORE_ROWS = ("  … +{count} more line{s} · ctrl+o shows all", "  … +{count} · ctrl+o", "  … ctrl+o")
+MORE_ANY_ROWS = ("  … ctrl+o shows all", "  … ctrl+o")
+MORE_FORMS = (" … ctrl+o shows all", " … ctrl+o")
 
 _DECLINE_NOTICES = {
     "vault.unlock_prompt": "Hermes asked to unlock a password vault. Vault prompts run in `hermes --tui`; declined.",
@@ -289,10 +296,9 @@ class PromptSlot:
     def lines(self, width: int, theme: Theme, max_rows: int, keys_row: bool = False) -> list[Line]:
         """The slot's rows, at most `max_rows`; `keys_row` adds the question's keys (where no mode row says them).
 
-        A list keeps the highlighted row whatever the budget: with one row it
-        is that row alone, with more the question's first row comes before it.
-        The keys row takes a row nothing else needs, except beside an
-        approval's command, where it keeps one once the command has a row.
+        A list keeps the highlighted row whatever the budget (`_fit`). A
+        question with no list keeps its first row and its last ones. Whatever
+        is cut, a marker says Ctrl+O shows the question whole.
         """
         if max_rows <= 0:
             return []
@@ -306,61 +312,99 @@ class PromptSlot:
         elif self.method == "clarify":
             rows = self._clarify_lines(inner, theme, max_rows, keys)
         else:
-            rows = self._value_lines(inner, theme)
-            if len(rows) > max_rows:
-                # The header and the hint matter most; the body is what gets cut.
-                rows = rows[:1] + rows[len(rows) - (max_rows - 1):] if max_rows > 1 else rows[:1]
+            # The header and the hint matter most; the body is what gets cut.
+            rows = _keep_ends(self._value_lines(inner, theme), max_rows, inner, theme)
         bar = Span(SLOT_BAR, theme.warn if self.method == "approval" else theme.accent)
         return [truncate_line((bar, *truncate_line(row, inner)), width) for row in rows]
 
-    def _choice_rows(self, labels: list[str], theme: Theme, mark_style: Style) -> list[Line]:
-        """One row per label, the highlighted one marked `❯` and highlighted."""
-        rows: list[Line] = []
+    def whole_lines(self, width: int, theme: Theme) -> list[Line]:
+        """Every row of the question, nothing cut: what Ctrl+O pages while it is open (the pager has its own keys)."""
+        return self.lines(width, theme, sys.maxsize)
+
+    def _choice_rows(self, labels: list[str], theme: Theme, mark_style: Style) -> list[list[Line]]:
+        """Each label as the list of its rows (one each), the highlighted one marked `❯` and highlighted."""
+        rows: list[list[Line]] = []
         for index, label in enumerate(labels):
             current = index == self.selected
             mark = Span(CHOICE_MARK if current else " " * len(CHOICE_MARK), mark_style)
-            rows.append((mark, Span(label, theme.menu_current if current else theme.text)))
+            rows.append([(mark, Span(label, theme.menu_current if current else theme.text))])
         return rows
 
-    def _fit(self, head: Line, body: list[Line], choices: list[Line], keys: list[Line], max_rows: int) -> list[Line]:
-        """`head`, `body`, `choices` and `keys` in that order within `max_rows`, keeping the highlighted choice.
+    def _window(self, choices: list[list[Line]], room: int) -> list[Line]:
+        """The rows of the choices that fit in `room`: the highlighted one, then whole choices before it, then after.
 
-        With fewer rows than the head and the choices need, the choices scroll
-        so the highlighted one shows, under the head when there are two rows or
-        more. Otherwise the head and every choice are drawn, then as much of
-        `body` as fits, then `keys` if a row is still free.
+        A highlighted choice taller than `room` alone shows its first rows.
         """
-        if max_rows < len(choices) + 1:
-            room = max_rows - 1 if max_rows > 1 else max_rows
-            start = min(max(self.selected - room + 1, 0), len(choices) - room)
-            return ([head] if room < max_rows else []) + choices[start : start + room]
-        left = max_rows - len(choices) - 1
-        body = body[:left]
-        return [head, *body, *choices, *keys[: left - len(body)]]
+        current = choices[self.selected]
+        if len(current) >= room:
+            return current[:room]
+        first = last = self.selected
+        used = len(current)
+        while first > 0 and used + len(choices[first - 1]) <= room:
+            first -= 1
+            used += len(choices[first])
+        while last + 1 < len(choices) and used + len(choices[last + 1]) <= room:
+            last += 1
+            used += len(choices[last])
+        return [row for choice in choices[first : last + 1] for row in choice]
+
+    def _fit(
+        self, head: list[Line], body: list[Line], choices: list[list[Line]], keys: list[Line], max_rows: int,
+        width: int, theme: Theme,
+    ) -> list[Line]:
+        """`head`, `body`, the `choices` (each one's rows) and `keys`, in that order, within `max_rows`.
+
+        Everything is drawn when it fits, the keys only on a row nothing else
+        needs. Otherwise the highlighted choice always shows; with two rows or
+        more the head's first row comes before it, and with three or more the
+        body's first row too. The other choices come next (`_window`), then
+        the rest of the head, a keys row while two rows are still left beside
+        a body, and as much of the body as fits. The cut is marked: on a row
+        of its own when one is left over (counting the body's rows left out),
+        else at the end of the last row above the choices, or of the
+        highlighted choice when it is the only row.
+        """
+        listed = sum(len(choice) for choice in choices)
+        if len(head) + len(body) + listed <= max_rows:
+            left = max_rows - len(head) - len(body) - listed
+            return [*head, *body, *(row for choice in choices for row in choice), *keys[:left]]
+        if max_rows == 1:
+            return [_ends_with_more(choices[self.selected][0], width, theme)]
+        reserved = 1 if body and max_rows >= 3 else 0  # the command's first row says what it does
+        shown = self._window(choices, max_rows - 1 - reserved)
+        spare = max_rows - 1 - len(shown)
+        rest = head[1 : 1 + max(spare - reserved, 0)]
+        spare -= len(rest)
+        keys_row = keys[:1] if body and spare >= 2 else []
+        spare -= len(keys_row)
+        kept = body[: spare - 1] if len(body) > spare >= 2 else body[:spare]
+        above = [head[0], *rest, *kept]
+        if spare > len(kept):
+            hidden = len(body) - len(kept)
+            forms = MORE_ANY_ROWS
+            if hidden:
+                forms = tuple(form.format(count=hidden, s="s" if hidden != 1 else "") for form in MORE_ROWS)
+            above.append((Span(next((form for form in forms if cell_width(form) <= width), forms[-1]), theme.muted),))
+        else:
+            above[-1] = _ends_with_more(above[-1], width, theme)
+        return [*above, *shown, *keys_row]
 
     def _approval_lines(self, width: int, theme: Theme, max_rows: int, keys: list[Line]) -> list[Line]:
-        """Header, the command's FIRST rows (`… +K more lines` when cut), then the choices one per row.
+        """The header (wrapped), the command's rows from its first, then the choices one per row (`_fit`).
 
         The beginning of a command is what says what it does, so a long one is
-        cut from the end; with a single spare row that row shows the command's
-        head, not the marker.
+        cut from the end.
         """
         description = str(self.params.get("description") or "dangerous command")
         command = str(self.params.get("command") or "")
-        header: Line = (Span("⚠ Hermes asks to run ", theme.warn), Span(description, theme.warn))
+        header = wrap_prefixed(
+            (Span(f"Hermes asks to run {description}", theme.warn),), (Span("⚠ ", theme.warn),), (Span("  "),), width
+        )
         labels = [_APPROVAL_LABELS[choice] for choice in self.approval_choices()]
         choices = self._choice_rows(labels, theme, theme.warn)
         indent: Line = (Span("  ", theme.code),)  # every row of the command under one indent
         command_rows = wrap_prefixed((Span(command, theme.code),), indent, indent, width) if command else []
-        left = max_rows - len(choices) - 1
-        room = left - (len(keys) if left >= 2 else 0)  # the keys row keeps a row only beside a row of the command
-        if len(command_rows) > max(room, 0):
-            kept = room - 1 if room >= 2 else max(room, 0)
-            hidden = len(command_rows) - kept
-            command_rows = command_rows[:kept]
-            if room >= 2:
-                command_rows.append((Span(f"  … +{hidden} more line{'s' if hidden != 1 else ''}", theme.muted),))
-        return self._fit(header, command_rows, choices, keys, max_rows)
+        return self._fit(header, command_rows, choices, keys, max_rows, width, theme)
 
     def _clarify_lines(self, width: int, theme: Theme, max_rows: int, keys: list[Line]) -> list[Line]:
         """The question (its counter when there are several), then its choices and the text field's row.
@@ -377,10 +421,10 @@ class PromptSlot:
         )
         choices = self._current_choices()
         if not choices:
-            rows = [*head, (Span("  type an answer and press enter · esc cancels", theme.hint),)]
-            return rows[:1] + rows[len(rows) - (max_rows - 1):] if len(rows) > max_rows > 1 else rows[:max_rows]
+            return _keep_ends([*head, (Span("  type an answer and press enter · esc cancels", theme.hint),)], max_rows,
+                              width, theme)
         labels = [f"{number}. {choice}" for number, choice in enumerate([*choices, CLARIFY_OTHER], start=1)]
-        return self._fit(head[0], head[1:], self._choice_rows(labels, theme, theme.accent), keys, max_rows)
+        return self._fit(head, [], self._choice_rows(labels, theme, theme.accent), keys, max_rows, width, theme)
 
     def _value_lines(self, width: int, theme: Theme) -> list[Line]:
         label = {
@@ -389,11 +433,28 @@ class PromptSlot:
             "vault.code": "Hermes needs a verification code",
         }.get(self.method, f"Hermes asks: {self.method}")
         prompt = self.params.get("prompt") or self.params.get("command") or self.params.get("hint") or ""
-        rows: list[Line] = [(Span("🔑 " if self.masked else "? ", theme.accent), Span(label, theme.text))]
+        rows = wrap_prefixed(
+            (Span(label, theme.text),), (Span("🔑 " if self.masked else "? ", theme.accent),), (Span("   "),), width
+        )
         if prompt:
             rows.extend(wrap_line((Span("  " + str(prompt), theme.muted),), width))
         rows.append((Span("  type it in the composer and press enter · esc declines", theme.hint),))
         return rows
+
+
+def _ends_with_more(row: Line, width: int, theme: Theme) -> Line:
+    """`row` with the cut marker at its end (`MORE_FORMS`), the row cut to make room when no form leaves it whole."""
+    fits = [form for form in MORE_FORMS if line_width(row) + cell_width(form) <= width]
+    form = fits[0] if fits else MORE_FORMS[-1]
+    kept = row if fits else truncate_line(row, max(width - cell_width(form), 0), ellipsis="")
+    return (*kept, Span(form, theme.muted))
+
+
+def _keep_ends(rows: list[Line], max_rows: int, width: int, theme: Theme) -> list[Line]:
+    """`rows` within `max_rows`: when they do not fit, the first row, marked as cut, and the last ones."""
+    if len(rows) <= max_rows:
+        return rows
+    return [_ends_with_more(rows[0], width, theme), *rows[len(rows) - (max_rows - 1) :]]
 
 
 def open_request(request_id: str, method: str, params: dict[str, Any]) -> PromptSlot | ImmediateAnswer:

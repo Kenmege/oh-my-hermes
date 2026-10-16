@@ -460,8 +460,15 @@ run and approval decision stays Hermes'; the screen is OMH's.
   question, and Enter on an empty field does too; the next question's field
   starts empty. A sudo password, a secret and a clarify question
   without choices are typed into the composer. A long command wraps under its
-  own indent and shows its first lines; a terminal too short for every row
-  keeps the highlighted choice. Below 10 rows, where there is no mode row,
+  own indent and shows its first lines, and the line that names it wraps too.
+  Whenever the slot cannot show the whole question (a long command, a long
+  list, a short terminal) it says so, `… ctrl+o shows all` (under a command's
+  first lines, `… +14 more lines · ctrl+o shows all`), and Ctrl+O opens the
+  whole question in the pager: it answers nothing, and q or Esc comes back to
+  the question as you left it. A terminal too short for every row keeps the
+  highlighted choice and, from 6 rows, a command's first row; one under 6 rows
+  or 20 columns still shows a typed question's label above the composer.
+  Below 10 rows, where there is no mode row,
   the question's keys take a row of its own when a row is left for them.
   Keys pressed in the first moment after any question appears are ignored,
   Enter included (nothing is typed into an answer, cleared or sent), and so
@@ -606,7 +613,7 @@ Esc closes it):
 | Esc | Closes the `@` menu; on an empty composer, interrupts a running turn (the activity row shows how long it has run); cancels a rewind you picked; cancels an agent steer you picked and keeps what you typed |
 | Esc Esc | With text, clears it and keeps it in this session's history; on an empty composer between turns, lists your prompts to rewind to (`/rewind` does too) |
 | Ctrl+V | Attaches the clipboard image |
-| Ctrl+O | Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end; q leaves it |
+| Ctrl+O | Opens the whole transcript with every detail (thinking, tool output, whole diffs) at its end, or, while Hermes asks something, the whole question (it answers nothing); q leaves it |
 | Ctrl+L | Redraws the screen |
 | Ctrl+C | Clears the composer, interrupts a running turn, or (twice when idle) exits |
 | Ctrl+D | On an empty composer, exits; with text, deletes the character ahead |

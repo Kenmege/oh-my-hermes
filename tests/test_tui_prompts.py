@@ -45,6 +45,14 @@ def unbarred(text: str) -> str:
     return text[len(prompts.SLOT_BAR) :]
 
 
+def without_marker(text: str) -> str:
+    """A slot row's text without the cut marker at its end, if it has one."""
+    for form in prompts.MORE_FORMS:
+        if text.endswith(form):
+            return text[: -len(form)]
+    return text
+
+
 def slot(method: str, params: dict) -> prompts.PromptSlot:
     opened = prompts.open_request("srq-1", method, params)
     assert isinstance(opened, prompts.PromptSlot)
@@ -164,7 +172,9 @@ class ApprovalTests(unittest.TestCase):
         self.assertEqual(unbarred(text[-1]), "  ↑↓ pick · enter confirms · d or esc denies")
         self.assertEqual(unbarred(lines_text(approval.lines(24, DEFAULT_THEME, 8, keys_row=True))[-1]), "  esc denies")
         tight = lines_text(approval.lines(60, DEFAULT_THEME, 5, keys_row=True))
-        self.assertEqual([unbarred(row) for row in tight[1:]], ["  one", "❯ deny", "  allow once", "  allow this session"])
+        self.assertEqual(
+            [unbarred(row) for row in tight[1:]], ["  one … ctrl+o shows all", "❯ deny", "  allow once", "  allow this session"]
+        )
 
     def test_lines_show_command_and_choices_within_budget(self) -> None:
         rows = slot("approval", APPROVAL).lines(60, DEFAULT_THEME, max_rows=6)
@@ -176,13 +186,14 @@ class ApprovalTests(unittest.TestCase):
     def test_a_tight_budget_keeps_the_header_and_the_highlighted_choice(self) -> None:
         approval = slot("approval", {**APPROVAL, "command": "x " * 200})
         text = lines_text(approval.lines(40, DEFAULT_THEME, max_rows=2))
-        self.assertIn("Hermes asks", text[0])
+        self.assertEqual(unbarred(text[0]), "⚠ Hermes asks to run recursiv … ctrl+o")
         self.assertEqual(unbarred(text[1]), "❯ deny")
         approval.handle_key(Key(DOWN))
         approval.handle_key(Key(DOWN))
+        # From three rows the command's first row stands between the header and the highlighted choice.
         self.assertEqual([unbarred(row) for row in lines_text(approval.lines(40, DEFAULT_THEME, max_rows=3))[1:]],
-                         ["  allow once", "❯ allow this session"])
-        self.assertEqual(lines_text(approval.lines(40, DEFAULT_THEME, max_rows=1)), ["▌ ❯ allow this session"])
+                         ["  x x x x x x x x x x x x x x … ctrl+o", "❯ allow this session"])
+        self.assertEqual(lines_text(approval.lines(40, DEFAULT_THEME, max_rows=1)), ["▌ ❯ allow this session … ctrl+o"])
 
     def test_a_long_command_shows_its_head_then_how_much_was_cut(self) -> None:
         # The shape a live run cut wrong: a multi-line `python3 -c` script, tail shown, head lost.
@@ -194,14 +205,14 @@ class ApprovalTests(unittest.TestCase):
         self.assertEqual(len(rows), 8)
         self.assertIn("script execution", text[0])
         self.assertEqual([unbarred(row) for row in text[1:4]], ['  python3 -c "', "  def is_prime(n):", "      if n < 2:"])
-        self.assertEqual(unbarred(text[4]), f"  … +{total - 3} more lines")
+        self.assertEqual(unbarred(text[4]), f"  … +{total - 3} more lines · ctrl+o shows all")
         self.assertEqual(rows[4][1].style, DEFAULT_THEME.muted)
         self.assertEqual(unbarred(text[5]), "❯ deny")
 
-    def test_one_spare_row_shows_the_commands_first_row(self) -> None:
+    def test_one_spare_row_shows_the_commands_first_row_and_the_marker_after_it(self) -> None:
         approval = slot("approval", {**APPROVAL, "command": "first line\nsecond line\nthird line"})
         text = lines_text(approval.lines(60, DEFAULT_THEME, max_rows=5))
-        self.assertEqual(unbarred(text[1]), "  first line")
+        self.assertEqual(unbarred(text[1]), "  first line … ctrl+o shows all")
         self.assertEqual(unbarred(text[2]), "❯ deny")
 
     def test_a_command_that_fits_is_shown_whole_with_no_marker(self) -> None:
@@ -224,7 +235,8 @@ class ApprovalTests(unittest.TestCase):
                         self.assertTrue(all(line_width(row) <= width for row in rows))
                         marked = [unbarred(line_text(row)) for row in rows if unbarred(line_text(row)).startswith("❯")]
                         self.assertEqual(len(marked), 1, marked)
-                        self.assertTrue(label.startswith(marked[0][2:].rstrip("…")), marked)
+                        shown = without_marker(marked[0])[2:].rstrip("…")
+                        self.assertTrue(shown and label.startswith(shown), marked)
 
     def test_every_row_hangs_off_a_warn_bar_and_the_command_reads_as_code(self) -> None:
         approval = slot("approval", {**APPROVAL, "command": "one\ntwo"})
@@ -242,6 +254,69 @@ class ApprovalTests(unittest.TestCase):
             {"deny": DEFAULT_THEME.text, "allow once": DEFAULT_THEME.menu_current, "allow this session": DEFAULT_THEME.text},
         )
         self.assertEqual(rows[1][0], Span("▌ ❯ ", DEFAULT_THEME.warn))  # the mark in the bar's colour, merged with it
+
+
+LONG_COMMAND = "\n".join(f"echo line {n}" for n in range(1, 21))
+# Each shape is cut somewhere at a small enough budget: a command, a header, a list, a question, a value prompt's text.
+CUT_SHAPES = (
+    ("approval", {**APPROVAL, "command": LONG_COMMAND}),
+    ("approval", {**APPROVAL, "description": "a description that runs on long enough to wrap " * 2}),
+    ("clarify", {"questions": [{"qid": "q", "question": "Pick one", "choices": [f"choice {n}" for n in range(1, 9)]}]}),
+    ("clarify", {"questions": [{"qid": "q", "question": "Why " * 40}]}),
+    ("sudo", {"command": "apt install " + "pkg " * 40}),
+    ("secret", {"env_var": "A_VERY_LONG_ENVIRONMENT_VARIABLE_NAME_FOR_THE_TOKEN"}),
+)
+
+
+class CutMarkerTests(unittest.TestCase):
+    def test_every_cut_names_ctrl_o_at_every_height_and_width_and_nothing_else_does(self) -> None:
+        for method, params in CUT_SHAPES:
+            question = slot(method, params)
+            for width in (19, 24, 30, 40, 60, 80, 120):
+                whole = question.whole_lines(width, DEFAULT_THEME)
+                for max_rows in range(1, len(whole) + 2):
+                    with self.subTest(method=method, width=width, max_rows=max_rows):
+                        rows = question.lines(width, DEFAULT_THEME, max_rows)
+                        text = lines_text(rows)
+                        self.assertLessEqual(len(rows), max_rows)
+                        self.assertTrue(all(line_width(row) <= width for row in rows))
+                        self.assertEqual(any("ctrl+o" in row for row in text), len(whole) > max_rows, text)
+
+    def test_a_six_row_terminal_shows_the_commands_first_row_with_the_marker(self) -> None:
+        # Four slot rows: the header, the command's head, and the choices scrolled to keep deny.
+        text = lines_text(slot("approval", {**APPROVAL, "command": LONG_COMMAND}).lines(80, DEFAULT_THEME, 4))
+        self.assertEqual(
+            [unbarred(row) for row in text],
+            ["⚠ Hermes asks to run recursive delete", "  echo line 1 … ctrl+o shows all", "❯ deny", "  allow once"],
+        )
+
+    def test_the_marker_row_keeps_the_keys_name_on_a_narrow_slot(self) -> None:
+        text = lines_text(slot("approval", {**APPROVAL, "command": LONG_COMMAND}).lines(24, DEFAULT_THEME, 10))
+        self.assertIn("  … +16 · ctrl+o", [unbarred(row) for row in text])
+
+    def test_the_header_wraps_instead_of_being_cut(self) -> None:
+        approval = slot("approval", {**APPROVAL, "description": "recursive delete of the whole build tree"})
+        text = [unbarred(row) for row in lines_text(approval.lines(30, DEFAULT_THEME, 12))]
+        header = text[: text.index("  rm -rf ./omh-m0-probe-dir")]
+        self.assertEqual(header, ["⚠ Hermes asks to run", "  recursive delete of the", "  whole build tree"])
+        self.assertFalse([row for row in text if row.endswith("…") or "ctrl+o" in row], text)
+
+    def test_a_value_prompts_label_wraps_too(self) -> None:
+        secret = slot("secret", {"env_var": "A_LONG_TOKEN_NAME_FOR_THE_API"})
+        text = [unbarred(row) for row in lines_text(secret.lines(30, DEFAULT_THEME, 6))]
+        label = text[:-1]  # the hint is the last row
+        self.assertEqual(label[0], "🔑 Hermes needs")
+        self.assertEqual("".join(row.strip() for row in label[1:]), "A_LONG_TOKEN_NAME_FOR_THE_API")
+        self.assertTrue(all(row.startswith("   ") for row in label[1:]), label)
+
+    def test_the_whole_question_has_every_row_and_no_marker(self) -> None:
+        approval = slot("approval", {**APPROVAL, "command": LONG_COMMAND})
+        approval.handle_key(Key(DOWN))
+        text = [unbarred(row) for row in lines_text(approval.whole_lines(60, DEFAULT_THEME))]
+        self.assertEqual(text[0], "⚠ Hermes asks to run recursive delete")
+        self.assertEqual(text[1:21], [f"  echo line {n}" for n in range(1, 21)])
+        self.assertEqual(text[21:], ["  deny", "❯ allow once", "  allow this session"])  # no keys: the pager has its own
+        self.assertFalse([row for row in text if "ctrl+o" in row])
 
 
 class SlotBarTests(unittest.TestCase):
@@ -392,8 +467,8 @@ class ClarifyTests(unittest.TestCase):
         for _ in range(6):
             clarify.handle_key(Key(DOWN))
         text = [unbarred(row) for row in lines_text(clarify.lines(60, DEFAULT_THEME, 4))]
-        self.assertEqual(text, ["? Pick one", "  5. choice 5", "  6. choice 6", "❯ 7. choice 7"])
-        self.assertEqual(lines_text(clarify.lines(60, DEFAULT_THEME, 1)), ["▌ ❯ 7. choice 7"])
+        self.assertEqual(text, ["? Pick one … ctrl+o shows all", "  5. choice 5", "  6. choice 6", "❯ 7. choice 7"])
+        self.assertEqual(lines_text(clarify.lines(60, DEFAULT_THEME, 1)), ["▌ ❯ 7. choice 7 … ctrl+o shows all"])
 
     def test_a_question_without_choices_keeps_its_typed_answer_hint(self) -> None:
         text = lines_text(slot("clarify", {"questions": [{"qid": "q", "question": "Why?"}]}).lines(60, DEFAULT_THEME, 6))
