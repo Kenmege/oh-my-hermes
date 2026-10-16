@@ -653,7 +653,10 @@ class DocumentedBoundaryTests(unittest.TestCase):
     def test_the_boundary_names_both_rows_and_the_third_steer_path(self) -> None:
         agents = self.prose("AGENTS.md")
         tell = prompts.open_request("srq-1", "approval", {}).approval_label(prompts.APPROVAL_TELL)  # type: ignore[union-attr]
-        self.assertIn(f'An approval\'s last row, "{tell}", sends the explicit deny at once', agents)
+        self.assertIn(f'An approval\'s last row, "{tell}", sends the explicit deny at once, interrupts nothing,', agents)
+        self.assertIn("an approval decline is an explicit deny and then interrupts the running turn (`session.interrupt`, "
+                      "only while a turn runs; every deny the person gives an approval does, `d`, `n` and Enter on deny "
+                      "too)", agents)
         self.assertIn("Hermes' `always` choice is offered only when the request lists it and is sent, like any allow, "
                       "only on the person's arrows and then Enter", agents)
         self.assertIn("A steer (Ctrl+Enter, `/steer`, or what the person sends from the composer the tell row opened) "
@@ -663,9 +666,13 @@ class DocumentedBoundaryTests(unittest.TestCase):
     def test_the_glossary_says_what_the_two_rows_send(self) -> None:
         context = self.prose("CONTEXT.md")
         entry = context[context.index("**OMH TUI**:") : context.index("**Hermes gateway protocol**:")]
-        self.assertIn("An approval's `always` row, there only when Hermes offers it, sends Hermes' own permanent allow, "
-                      "which Hermes saves; its last row denies and sends what the person then types into the running "
-                      "turn as a steer.", entry)
+        self.assertIn("Every deny the person gives an approval also interrupts the running turn, except its last row's, "
+                      "which denies and sends what the person then types into the running turn as a steer; its `always` "
+                      "row, there only when Hermes offers it, sends Hermes' own permanent allow, which Hermes saves.", entry)
+
+    def test_direction_says_a_deny_also_stops_the_turn(self) -> None:
+        self.assertIn("answers no request on their behalf; a deny the person gives an approval also interrupts the "
+                      "running turn, as Claude Code's Esc does)", self.prose("docs/DIRECTION.md"))
 
 
 class TinyTerminalQuestionTests(unittest.TestCase):

@@ -185,16 +185,19 @@ PR without the chat history.
   know). It never
   answers an approval, clarify, sudo, or secret request on its own, apart
   from declining at once a request it cannot show (listed above): Esc or
-  Ctrl+C declines, an approval decline is an explicit deny, allowing a
-  command takes the arrows and then Enter, and a request the gateway
+  Ctrl+C declines, an approval decline is an explicit deny and then
+  interrupts the running turn (`session.interrupt`, only while a turn runs;
+  every deny the person gives an approval does, `d`, `n` and Enter on deny
+  too), allowing a command takes the arrows and then Enter, and a request the gateway
   withdraws (its own timeout, an interrupt) closes without an answer.
   Hermes' `always` choice is offered only when the request lists it and is
   sent, like any allow, only on the person's arrows and then Enter; saving
   it as a permanent allow (`command_allowlist`) is Hermes' doing, and like
   allow this session for one session it stops Hermes asking about commands
   that match. An approval's last row, "no, and tell Hermes what to do
-  instead", sends the explicit deny at once and then opens the composer for
-  what the person tells Hermes instead; Esc there sends nothing more.
+  instead", sends the explicit deny at once, interrupts nothing, and then
+  opens the composer for what the person tells Hermes instead; Esc there
+  sends nothing more.
   Leaving a session (`/new`, a switch) declines that session's open requests
   and says so in the new transcript. Shift+Tab is the one key that changes
   what Hermes asks. It may turn on Hermes' per-session yolo, the switch
