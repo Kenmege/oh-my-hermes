@@ -4,6 +4,15 @@ All notable changes will be documented here.
 
 ## Unreleased
 
+- **OMH TUI clarify questions that take several choices are answered with
+  several.** Hermes' `multi_select` was never read: the question looked like
+  any other and went back as one label, and an answer typed as `1,3` reached
+  the model as one string. Such a question now says `(choose one or more)`
+  and boxes each choice; Space or the choice's digit ticks it, Enter sends
+  the ticked ones (the highlighted one alone when none is ticked), and an
+  answer of your own joins them. The answer is the JSON list Hermes' Ink TUI
+  sends (`["ham","cheese"]`, in the order ticked), in the same `answers`
+  frame as before; a single-select question is unchanged.
 - **An OMH TUI question says when others wait behind it.** A second request
   that arrived while one was open queued with nothing on screen to say so;
   the open question now ends its first words with `· 1 more question

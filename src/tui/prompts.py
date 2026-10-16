@@ -35,6 +35,7 @@ highlighted.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 import sys
 from typing import Any
 
@@ -58,6 +59,9 @@ _DENY_KEYS = frozenset("dn")
 CHOICE_DIGITS = "123456789"
 # The last row of a clarify question's choices: it opens a text field (Hermes' Ink TUI, `prompt.clarify.other`).
 CLARIFY_OTHER = "Other (type your answer)"
+# A multi-select question (`multi_select`): a box before each choice, and a note after the question.
+TICKED, UNTICKED = "[x] ", "[ ] "
+MULTI_NOTE = " (choose one or more)"
 SLOT_BAR = "▌ "
 CHOICE_MARK = "❯ "
 # Each question's keys, longest first, for the mode row while it is open: Esc then has one meaning on the screen.
@@ -68,6 +72,11 @@ CLARIFY_CHOICE_KEYS = (
 CLARIFY_FIELD_KEYS = (
     "type your answer · enter sends · ↑↓ back to the choices · esc cancels",
     "enter sends · ↑↓ choices · esc cancels",
+    "esc cancels",
+)
+CLARIFY_MULTI_KEYS = (
+    "↑↓ · space or 1-9 ticks · enter sends · type to answer · esc cancels",
+    "space ticks · enter sends · esc cancels",
     "esc cancels",
 )
 CLARIFY_TEXT_KEYS = ("type an answer · enter sends · esc cancels",)
@@ -125,6 +134,7 @@ class PromptSlot:
     question_index: int = 0
     answers: dict[str, str | None] = field(default_factory=dict)
     typing: bool = False  # a clarify question's text field is open: the composer is the field
+    ticked: list[str] = field(default_factory=list)  # a multi-select question's ticked choices, in the order ticked
 
     @property
     def masked(self) -> bool:
@@ -156,7 +166,9 @@ class PromptSlot:
         if self.method == "clarify":
             if not self._current_choices():
                 return CLARIFY_TEXT_KEYS
-            return CLARIFY_FIELD_KEYS if self.typing else CLARIFY_CHOICE_KEYS
+            if self.typing:
+                return CLARIFY_FIELD_KEYS
+            return CLARIFY_MULTI_KEYS if self._multi() else CLARIFY_CHOICE_KEYS
         return VALUE_KEYS
 
     def decline(self) -> Answer:
@@ -187,6 +199,11 @@ class PromptSlot:
         choices = question.get("choices") if question else None
         return [c for c in choices if isinstance(c, str)] if isinstance(choices, list) else []
 
+    def _multi(self) -> bool:
+        """Whether the current question takes several choices (Hermes' `multi_select`, on a question with choices)."""
+        question = self._current_question()
+        return bool(question and question.get("multi_select") is True and self._current_choices())
+
     def _record_answer(self, value: str | None) -> Answer | None:
         question = self._current_question()
         if question is None:
@@ -195,17 +212,32 @@ class PromptSlot:
         self.question_index += 1
         self.selected = 0
         self.typing = False
+        self.ticked = []
         if self.question_index >= len(self._questions()):
             return Answer(self.request_id, {"result": {"answers": dict(self.answers)}})
         return None
 
     def _pick(self, index: int) -> Answer | None:
-        """Choice `index` answers the question; the row after the choices opens the text field instead."""
+        """Choice `index` answers the question; the row after the choices opens the text field instead.
+
+        On a multi-select question the answer is the ticked choices, or choice
+        `index` alone when none is ticked (`_ticked_answer`).
+        """
         choices = self._current_choices()
         if index < len(choices):
+            if self._multi():
+                return self._record_answer(_ticked_answer(self.ticked or [choices[index]]))
             return self._record_answer(choices[index])
         self.selected, self.typing = len(choices), True
         return None
+
+    def _tick(self, index: int) -> None:
+        """Tick choice `index` of a multi-select question, or untick it."""
+        choice = self._current_choices()[index]
+        if choice in self.ticked:
+            self.ticked.remove(choice)
+        else:
+            self.ticked.append(choice)
 
     # -- input ------------------------------------------------------------------------------
 
@@ -249,8 +281,10 @@ class PromptSlot:
         and stop at either end; Enter picks the highlighted row; a digit picks
         that choice, or opens the field when it numbers the field's row. Any
         other character, or a paste, opens the field and is its first text.
-        With the field open, Up and Down go back to the list, and what was
-        typed stays in the field.
+        On a multi-select question Space ticks the highlighted choice (and
+        does nothing on the field's row), and a digit ticks its choice. With
+        the field open, Up and Down go back to the list, and what was typed
+        stays in the field.
         """
         choices = self._current_choices()
         if not choices:
@@ -268,7 +302,15 @@ class PromptSlot:
             return self._pick(self.selected)
         if key.name != CHAR or key.ctrl or key.alt:
             return None
+        multi = self._multi()
+        if multi and key.char == " ":
+            if self.selected < len(choices):
+                self._tick(self.selected)
+            return None
         if len(key.char) == 1 and key.char in CHOICE_DIGITS and int(key.char) - 1 <= len(choices):
+            if multi and int(key.char) - 1 < len(choices):
+                self._tick(int(key.char) - 1)
+                return None
             return self._pick(int(key.char) - 1)
         return self._open_field(key)
 
@@ -281,7 +323,8 @@ class PromptSlot:
 
         A clarify question with choices takes an empty submit as Enter on the
         highlighted row while the list is shown, and as a way back to the list
-        while the text field is open.
+        while the text field is open. On a multi-select question the typed
+        answer joins the ticked choices.
         """
         if self.method == "approval":
             return None
@@ -291,6 +334,8 @@ class PromptSlot:
                     self.typing = False
                     return None
                 return self._pick(self.selected)
+            if self._multi():
+                return self._record_answer(_ticked_answer([*self.ticked, text.strip()]))
             return self._record_answer(text.strip() or None)
         return Answer(self.request_id, {"result": {"value": text}})
 
@@ -426,9 +471,11 @@ class PromptSlot:
             return []
         total = len(self._questions())
         counter = f" ({self.question_index + 1}/{total})" if total > 1 else ""
+        note: Line = (Span(MULTI_NOTE, theme.muted),) if self._multi() else ()
         head: list[Line] = list(
             wrap_line(
-                (Span("? ", theme.accent), Span(str(question.get("question", "")) + counter, theme.text), *queued), width
+                (Span("? ", theme.accent), Span(str(question.get("question", "")) + counter, theme.text), *note, *queued),
+                width,
             )
         )
         choices = self._current_choices()
@@ -436,6 +483,9 @@ class PromptSlot:
             return _keep_ends([*head, (Span("  type an answer and press enter · esc cancels", theme.hint),)], max_rows,
                               width, theme)
         labels = [(f"{number}. ", choice) for number, choice in enumerate([*choices, CLARIFY_OTHER], start=1)]
+        if self._multi():
+            boxes = [TICKED if choice in self.ticked else UNTICKED for choice in choices] + [" " * len(UNTICKED)]
+            labels = [(box + lead, label) for box, (lead, label) in zip(boxes, labels)]
         return self._fit(head, [], self._choice_rows(labels, width, theme, theme.accent), keys, max_rows, width, theme)
 
     def _value_lines(self, width: int, theme: Theme, queued: Line) -> list[Line]:
@@ -453,6 +503,12 @@ class PromptSlot:
             rows.extend(wrap_line((Span("  " + str(prompt), theme.muted),), width))
         rows.append((Span("  type it in the composer and press enter · esc declines", theme.hint),))
         return rows
+
+
+def _ticked_answer(choices: list[str]) -> str:
+    """A multi-select answer as Hermes' Ink TUI sends it: a JSON list of the labels (`JSON.stringify`), "" for none."""
+    values = [choice for choice in choices if choice.strip()]
+    return json.dumps(values, ensure_ascii=False, separators=(",", ":")) if values else ""
 
 
 def _ends_with_more(row: Line, width: int, theme: Theme) -> Line:

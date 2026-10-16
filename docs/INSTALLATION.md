@@ -457,7 +457,10 @@ run and approval decision stays Hermes'; the screen is OMH's.
   highlight stops at either end, so Up then Enter still denies, no number
   picks a choice, `d` or `n` denies, and Enter on an untouched approval
   denies. A clarify question numbers its choices: a digit, or Up and Down then
-  Enter, picks one. Its last row, `Other (type your answer)`, opens the
+  Enter, picks one. One that takes several says `(choose one or more)` and
+  puts a box before each choice: Space or its digit ticks the choice (`[x]`)
+  or unticks it, Enter sends the ticked ones (the highlighted one alone when
+  none is ticked), and an answer of your own joins the ticked ones. Its last row, `Other (type your answer)`, opens the
   composer as the field for an answer of your own, and so does typing any
   character that picks nothing, which becomes the answer's first character;
   Up or Down goes back to the list and keeps what you typed for that
@@ -624,6 +627,7 @@ Esc closes it):
 | ↑ / ↓ or ← / → then Enter | On an approval, highlight allow once or allow this session and allow it; Enter alone denies |
 | `d`, `n` | On an approval, deny |
 | 1 to 9 | On a clarify question's list, pick that choice, or the last number opens the field for your own answer; ↑ / ↓ then Enter picks too, and any other character starts your own answer |
+| Space | On a clarify question that takes several choices, ticks or unticks the highlighted one; Enter sends the ticked ones, or the highlighted one when none is ticked, and a digit ticks its choice |
 | Esc, Ctrl+C | On a question Hermes asked, decline it (an approval is denied); Ctrl+C first clears an answer being typed |
 | ↑ / ↓, PageUp / PageDown, Enter, Esc | In the `/sessions` or `/rewind` list, move, take the highlighted row (switch to that session, or put that prompt in the composer to send again), or close it; typing filters the list |
 | ↑ / ↓, Enter, Esc | In the agent list, move, open the highlighted agent's log (on main, only leave), or go back; other typing leaves it too |

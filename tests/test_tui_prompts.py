@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 
 from _tui_lines import line_text, lines_text
@@ -542,6 +543,109 @@ class WrappedChoiceTests(unittest.TestCase):
         approval.selected = 2
         text = [unbarred(row) for row in lines_text(approval.lines(16, DEFAULT_THEME, 12))]
         self.assertEqual(text[-2:], ["❯ allow this", "  session"])
+
+
+# Hermes 6c61c3e27d's wire shape for a multi-select question (`server._clarify_block`).
+MULTI = {
+    "questions": [
+        {"qid": "q0", "question": "Which toppings?", "choices": ["cheese (Recommended)", "ham", "olives"], "multi_select": True},
+    ],
+}
+SPACE = Key(CHAR, " ")
+
+
+def hermes_reads(value: str) -> list[str]:
+    """What Hermes' `clarify_tool._clean_answer` makes of a multi-select answer string: a JSON list, else one answer."""
+    parsed = json.loads(value)
+    assert isinstance(parsed, list), value
+    return parsed
+
+
+class MultiSelectTests(unittest.TestCase):
+    def test_a_multi_select_question_says_so_and_boxes_each_choice(self) -> None:
+        text = [unbarred(row) for row in lines_text(slot("clarify", MULTI).lines(80, DEFAULT_THEME, 8))]
+        self.assertEqual(text, [
+            "? Which toppings? (choose one or more)",
+            "❯ [ ] 1. cheese (Recommended)",
+            "  [ ] 2. ham",
+            "  [ ] 3. olives",
+            "      4. Other (type your answer)",
+        ])
+        self.assertIn("space", slot("clarify", MULTI).keys[0])
+
+    def test_space_ticks_and_unticks_and_enter_sends_the_ticked_as_inks_json_list(self) -> None:
+        clarify = slot("clarify", MULTI)
+        clarify.handle_key(Key(DOWN))
+        self.assertIsNone(clarify.handle_key(SPACE))
+        clarify.handle_key(Key(UP))
+        self.assertIsNone(clarify.handle_key(SPACE))
+        self.assertEqual([unbarred(row) for row in lines_text(clarify.lines(80, DEFAULT_THEME, 8))][1:3],
+                         ["❯ [x] 1. cheese (Recommended)", "  [x] 2. ham"])
+        clarify.handle_key(Key(DOWN))
+        clarify.handle_key(Key(DOWN))
+        clarify.handle_key(SPACE)
+        clarify.handle_key(SPACE)  # olives on, then off again
+        answer = clarify.handle_key(Key(ENTER))
+        value = answer.frame["result"]["answers"]["q0"]
+        self.assertEqual(value, '["ham","cheese (Recommended)"]')  # in the order ticked, no spaces, as JSON.stringify
+        self.assertEqual(hermes_reads(value), ["ham", "cheese (Recommended)"])
+
+    def test_a_digit_ticks_its_choice(self) -> None:
+        clarify = slot("clarify", MULTI)
+        self.assertIsNone(clarify.handle_key(Key(CHAR, "3")))
+        self.assertIsNone(clarify.handle_key(Key(CHAR, "1")))
+        self.assertEqual(clarify.handle_key(Key(ENTER)).frame, {"result": {"answers": {"q0": '["olives","cheese (Recommended)"]'}}})
+
+    def test_enter_with_nothing_ticked_sends_the_highlighted_choice_alone(self) -> None:
+        clarify = slot("clarify", MULTI)
+        clarify.handle_key(Key(DOWN))
+        self.assertEqual(clarify.handle_key(Key(ENTER)).frame, {"result": {"answers": {"q0": '["ham"]'}}})
+        clarify = slot("clarify", MULTI)
+        self.assertEqual(clarify.submit_text("").frame, {"result": {"answers": {"q0": '["cheese (Recommended)"]'}}})
+
+    def test_the_typed_answer_joins_the_ticked_choices(self) -> None:
+        clarify = slot("clarify", MULTI)
+        clarify.handle_key(Key(CHAR, "2"))
+        for _ in range(3):
+            clarify.handle_key(Key(DOWN))
+        self.assertIsNone(clarify.handle_key(SPACE))  # the field's row has no box: Space does nothing there
+        self.assertFalse(clarify.typing)
+        self.assertIsNone(clarify.handle_key(Key(ENTER)))
+        self.assertTrue(clarify.typing)
+        value = clarify.submit_text(" pineapple ").frame["result"]["answers"]["q0"]
+        self.assertEqual(hermes_reads(value), ["ham", "pineapple"])
+
+    def test_a_letter_still_opens_the_field_and_its_answer_is_a_list(self) -> None:
+        clarify = slot("clarify", MULTI)
+        self.assertEqual(clarify.handle_key(Key(CHAR, "p")), prompts.TypeIt(Key(CHAR, "p")))
+        self.assertEqual(clarify.submit_text("pineapple").frame, {"result": {"answers": {"q0": '["pineapple"]'}}})
+
+    def test_labels_past_ascii_go_as_they_are_like_json_stringify(self) -> None:
+        clarify = slot("clarify", {"questions": [{**MULTI["questions"][0], "choices": ["치즈", "ham"]}]})
+        clarify.handle_key(SPACE)
+        self.assertEqual(clarify.handle_key(Key(ENTER)).frame, {"result": {"answers": {"q0": '["치즈"]'}}})
+
+    def test_the_ticks_belong_to_their_question(self) -> None:
+        second = {"qid": "q1", "question": "Which sauces?", "choices": ["red", "white"], "multi_select": True}
+        clarify = slot("clarify", {"questions": [MULTI["questions"][0], second]})
+        clarify.handle_key(SPACE)
+        self.assertIsNone(clarify.handle_key(Key(ENTER)))
+        self.assertEqual(clarify.ticked, [])
+        self.assertIn("❯ [ ] 1. red", [unbarred(row) for row in lines_text(clarify.lines(80, DEFAULT_THEME, 8))])
+        answer = clarify.handle_key(Key(CHAR, "2"))
+        self.assertIsNone(answer)
+        self.assertEqual(clarify.handle_key(Key(ENTER)).frame,
+                         {"result": {"answers": {"q0": '["cheese (Recommended)"]', "q1": '["white"]'}}})
+
+    def test_a_single_select_question_is_unchanged(self) -> None:
+        for params in (CLARIFY, {"questions": [{**MULTI["questions"][0], "multi_select": False}]}):
+            with self.subTest(params=params):
+                question = slot("clarify", params)
+                text = [unbarred(row) for row in lines_text(question.lines(80, DEFAULT_THEME, 8))]
+                self.assertFalse([row for row in text if "[ ]" in row or "one or more" in row], text)
+                self.assertEqual(question.handle_key(SPACE), prompts.TypeIt(SPACE))  # Space types, as any character
+                self.assertNotIn("space", slot("clarify", params).keys[0])
+        self.assertEqual(slot("clarify", CLARIFY).handle_key(Key(CHAR, "2")).frame, {"result": {"answers": {"q0": "blue"}}})
 
 
 class ValuePromptTests(unittest.TestCase):

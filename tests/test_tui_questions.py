@@ -14,10 +14,10 @@ from pathlib import Path
 import unittest
 
 from test_tui_choice_ui import armed, drawn, press
-from test_tui_modes import make_app
+from test_tui_modes import make_app, type_text
 from omh.tui import prompts
 from omh.tui.gateway import ServerRequest
-from omh.tui.keys import CHAR, DOWN, ESCAPE, Key
+from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, Key
 from omh.tui.layout import MIN_COLS, allocate
 from omh.tui.pager import ALT_SCREEN_OFF, HistoryPager
 
@@ -118,6 +118,21 @@ class WaitingQuestionTests(unittest.TestCase):
         self.assertFalse(app.waiting_requests)
         self.assertIs(app.slot.request_id, "srq-1")  # type: ignore[union-attr]
         self.assertFalse([row for row in drawn(app) if "waiting" in row and row.startswith("▌")])
+
+
+class MultiSelectAppTests(unittest.TestCase):
+    def test_space_on_a_multi_select_question_ticks_and_never_reaches_the_draft(self) -> None:
+        app, client = make_app(busy=True)
+        type_text(app, "my draft")
+        app._on_server_request(ServerRequest("srq-6", "clarify", {"questions": [
+            {"qid": "q0", "question": "Which toppings?", "choices": ["cheese", "ham"], "multi_select": True},
+        ]}))
+        armed(app)
+        press(app, Key(CHAR, " "), Key(DOWN), Key(CHAR, " "))
+        self.assertIn("▌ ❯ [x] 2. ham", drawn(app))
+        press(app, Key(ENTER))
+        self.assertEqual(client.answers, [("srq-6", {"result": {"answers": {"q0": '["cheese","ham"]'}}})])
+        self.assertEqual(app.composer.text, "my draft")
 
 
 class DocumentedQuestionViewTests(unittest.TestCase):
