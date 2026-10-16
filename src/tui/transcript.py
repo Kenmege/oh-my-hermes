@@ -196,6 +196,7 @@ class TurnSummaryBlock:
     tools: int
     output_tokens: int | None = None
     done: bool = True
+    waited: float = 0.0  # the part of `seconds` a question Hermes asked waited on the person
 
 
 @dataclass
@@ -214,6 +215,7 @@ class ToolRow:
     status: str = TOOL_GENERATING
     started_at: float | None = None
     duration_s: float | None = None
+    waited_at_start: float = 0.0  # the transcript's waited total (`Transcript.waited`) when the tool started
     summary: str = ""
     # An edit's `inline_diff` as Hermes sent it, UTF-8 encoded, parsed when drawn (`diff_lines`). Encoded, because
     # a str holding one character past Latin-1 (every Hermes diff has `┊` and `→`) takes two bytes for each of
@@ -360,12 +362,14 @@ def _args_summary(payload: dict[str, Any]) -> str:
     return ""
 
 
-def _duration(payload: dict[str, Any], row: ToolRow, now: float) -> float | None:
+def _duration(payload: dict[str, Any], row: ToolRow, now: float, waited: float = 0.0) -> float | None:
+    """How long the tool ran: Hermes' `duration_s`, else since its start, less the `waited` seconds a question
+    waited on the person meanwhile (both clocks count that wait)."""
     value = payload.get("duration_s")
     if isinstance(value, int | float) and not isinstance(value, bool) and value >= 0:
-        return float(value)
+        return max(0.0, float(value) - waited)
     if row.started_at is not None:
-        return max(0.0, now - row.started_at)
+        return max(0.0, now - row.started_at - waited)
     return None
 
 
@@ -534,11 +538,19 @@ def _notice_rows(block: NoticeBlock, width: int, theme: Theme) -> list[Line]:
 
 TURN_DONE_MARK = "✻ "
 TURN_RULE = "─"
+# After a turn's wall-clock time, the part of it a question waited on the person, when that is a second or more.
+TURN_WAITED = " ({elapsed} waiting on you)"
 
 
 def _summary_rows(block: TurnSummaryBlock, width: int, theme: Theme) -> list[Line]:
-    """`✻ 34s · 3 tools · ↓1.2k  ────`: the turn's facts on the thin rule that closes it (no tool count for none)."""
+    """`✻ 34s · 3 tools · ↓1.2k  ────`: the turn's facts on the thin rule that closes it (no tool count for none).
+
+    The time is the turn's wall clock, with the wait on the person beside it
+    (`✻ 30s (27s waiting on you)`) when that is a second or more.
+    """
     facts = [elapsed_text(block.seconds)]
+    if int(block.waited) >= 1:
+        facts[0] += TURN_WAITED.format(elapsed=elapsed_text(block.waited))
     if block.tools:
         facts.append(f"{block.tools} tool{'' if block.tools == 1 else 's'}")
     if block.output_tokens:
@@ -741,6 +753,8 @@ class Transcript:
         self.running = False
         self.details_expanded = False
         self._clock = clock
+        self._waited = 0.0  # seconds questions waited on the person, waits that ended (`set_waiting`)
+        self._waiting_since: float | None = None  # when the wait open now began
         self._turn_start = 0
         self._cursor = 0  # first block not fully taken
         self._cursor_lines = 0  # source lines of blocks[_cursor] already taken (assistant text)
@@ -864,8 +878,10 @@ class Transcript:
         else:
             self._append(NoticeBlock(text, level))
 
-    def add_turn_summary(self, seconds: float, output_tokens: int | None) -> None:
+    def add_turn_summary(self, seconds: float, output_tokens: int | None, waited: float = 0.0) -> None:
         """Close the turn that just ended with its done line; its tool calls are counted from the turn's blocks.
+
+        `waited` is the part of `seconds` questions waited on the person.
 
         A command typed during the turn whose echo is still held for Hermes'
         answer is written above the done line with what has arrived, and
@@ -875,7 +891,20 @@ class Transcript:
         for block in self._held:
             if isinstance(block, CommandBlock):
                 block.done = True
-        self._append(TurnSummaryBlock(max(seconds, 0.0), tools, output_tokens))
+        self._append(TurnSummaryBlock(max(seconds, 0.0), tools, output_tokens, waited=max(waited, 0.0)))
+
+    def set_waiting(self, waiting: bool) -> None:
+        """Whether a question Hermes asked waits on the person from now: a tool's duration leaves that time out."""
+        now = self._clock()
+        if waiting and self._waiting_since is None:
+            self._waiting_since = now
+        elif not waiting and self._waiting_since is not None:
+            self._waited += now - self._waiting_since
+            self._waiting_since = None
+
+    def waited(self, now: float) -> float:
+        """Seconds questions have waited on the person in this transcript up to `now`, the open wait included."""
+        return self._waited + (now - self._waiting_since if self._waiting_since is not None else 0.0)
 
     def close_command(self, block: CommandBlock | None = None) -> None:
         """A command is over (`block`, or the open `command`): its echo and output leave the live region at the next take."""
@@ -1094,6 +1123,7 @@ class Transcript:
         row.name = name
         row.status = TOOL_RUNNING
         row.started_at = self._clock()
+        row.waited_at_start = self.waited(row.started_at)
         row.args_summary = self._display_args(_args_summary(payload))
         running = sum(1 for tool in group.tools if tool.status == TOOL_RUNNING)
         group.parallel = max(group.parallel, running)
@@ -1107,7 +1137,9 @@ class Transcript:
             row = ToolRow(tool_id=tool_id, name=name, args_summary=self._display_args(_args_summary(payload)))
             group.tools.append(row)
         row.status = tool_result_status(payload.get("result"))
-        row.duration_s = _duration(payload, row, self._clock())
+        now = self._clock()
+        waited = self.waited(now) - row.waited_at_start if row.started_at is not None else 0.0
+        row.duration_s = _duration(payload, row, now, waited)
         row.summary = _result_summary(payload)
         row.output, row.output_more = _tool_output(payload.get("result"), row.status)
         row.inline_diff, row.diff_root = as_text(payload.get("inline_diff")).encode("utf-8", "surrogatepass"), self.cwd

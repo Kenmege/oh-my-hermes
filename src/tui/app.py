@@ -308,6 +308,7 @@ BUSY_MODES = frozenset({"queue", "steer", "interrupt"})
 STATE_IDLE = "idle"
 STATE_RUNNING = "running"
 STATE_WAITING = "waiting on you"
+WAITING_GLYPH = "? "  # in place of the spinner while a question waits on the person
 
 # The prompts waiting for the running turn, listed above the composer's top rule.
 QUEUE_GLYPH = "⧗ "
@@ -991,6 +992,8 @@ class App(ModesMixin, AgentViewMixin):
         self.redraw_at: float | None = None  # when a settled resize redraws everything
         self.anchor = True  # the next frame re-anchors the region (first frame, resize, redraw)
         self.busy_since = 0.0  # when the running turn (or the prompt still waiting for it) started
+        self.turn_waited = 0.0  # the part of that turn questions waited on the person, the waits that ended
+        self.waiting_since: float | None = None  # when the open question (or the first of those back to back) opened
         self.attachments: list[Attachment] = []  # images the gateway queued for the next prompt
         self.picker: SessionPicker | None = None
         self.path_word = ""  # the `@` token `complete.path` was last scheduled for
@@ -1174,6 +1177,7 @@ class App(ModesMixin, AgentViewMixin):
         self.turn_pending = bool(result.get("running"))
         self.turn_unknown = None  # the drift watch was for a turn of the session being left
         self.busy_since = self.clock()
+        self.turn_waited = 0.0
         # Accept belongs to the session being left; this one says its own, here or in its first session.info.
         # Plan is the TUI's flag and stays as it was.
         self.mode_request_open = False
@@ -1562,13 +1566,14 @@ class App(ModesMixin, AgentViewMixin):
             if event.type == "message.start":
                 if not self.turn_pending:  # a turn this TUI did not start (a resumed one, a server queue)
                     self.busy_since = self.clock()
+                    self.turn_waited = 0.0
                     self.turn_output_base = self.usage_output
                 self.turn_pending = False
             elif event.type == "message.complete":
                 self.turn_pending = False
                 self._take_usage(payload.get("usage"))
                 seconds = self.clock() - self.busy_since
-                self.transcript.add_turn_summary(seconds, self._turn_tokens())
+                self.transcript.add_turn_summary(seconds, self._turn_tokens(), self._turn_wait())
                 self._alert_turn_end(seconds)
                 self._drain_queue()
 
@@ -1704,6 +1709,9 @@ class App(ModesMixin, AgentViewMixin):
             self._leave_pager()
         self.slot = opened
         self.slot_opened_at = self.clock()
+        if self.waiting_since is None:
+            self.waiting_since = self.slot_opened_at
+            self.transcript.set_waiting(True)
         self.slot_arm_seconds = REPORTING_SLOT_ARM_SECONDS if self._reports_may_arrive() else SLOT_ARM_SECONDS
         self._settle_list()  # a question has the keys now: the agent list gives them up
         if opened.method == "approval" and self.environ.get(BELL_ENV) != BELL_OFF:
@@ -1749,6 +1757,14 @@ class App(ModesMixin, AgentViewMixin):
             self.composer, self.slot_draft = self.slot_draft, None
         while self.slot is None and self.waiting_requests:
             self._on_server_request(self.waiting_requests.popleft())
+        if self.slot is None and self.waiting_since is not None:  # nothing waits on the person any more
+            self.turn_waited += self.clock() - self.waiting_since
+            self.waiting_since = None
+            self.transcript.set_waiting(False)
+
+    def _turn_wait(self) -> float:
+        """Seconds questions have waited on the person in the running (or just ended) turn, the open wait included."""
+        return self.turn_waited + (self.clock() - self.waiting_since if self.waiting_since is not None else 0.0)
 
     def _decline_all_requests(self) -> int:
         """Answer every open and waiting request with its decline frame (the session is going away); how many."""
@@ -2307,6 +2323,7 @@ class App(ModesMixin, AgentViewMixin):
         self.turn_pending = True
         self.turn_unknown, self.turn_unknown_count = [], 0
         self.busy_since = self.clock()
+        self.turn_waited = 0.0
         self.turn_output_base = self.usage_output
         self.attachments.clear()  # the gateway sends its queued images with this turn
         params: dict[str, Any] = {"session_id": self.sid, "text": text}
@@ -3392,7 +3409,13 @@ class App(ModesMixin, AgentViewMixin):
         now = self.clock()
         # Never more than the screen; running tools' marks pulse unless motion is reduced.
         lines = self.transcript.live_lines(cols, self.theme, max_rows=self.size[1], now=now if self.motion else None)
-        if self._busy():
+        if self._busy() and self.waiting_since is not None:
+            # The turn waits on the person: no spinner, and one clock, the wait's.
+            waited = elapsed_text(now - self.waiting_since)
+            row = (Span(WAITING_GLYPH, self.theme.accent), Span(STATE_WAITING, self.theme.text),
+                   Span(f" ({waited})", self.theme.muted))
+            lines.append(truncate_line(row, cols))
+        elif self._busy():
             text = self.transcript.activity or self.transcript.status or "working…"
             frame = self._spinner_frame()
             spinner = SPINNER_FRAMES[frame % len(SPINNER_FRAMES)]

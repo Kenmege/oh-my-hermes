@@ -15,12 +15,13 @@ import unittest
 
 from test_tui_choice_ui import armed, drawn, press
 from test_tui_modes import make_app, type_text
+from omh.tui import app as app_module
 from omh.tui import prompts
-from omh.tui.gateway import ServerRequest
+from omh.tui.gateway import Event, ServerRequest
 from omh.tui.keys import CHAR, DOWN, ENTER, ESCAPE, Key
 from omh.tui.layout import MIN_COLS, allocate
 from omh.tui.pager import ALT_SCREEN_OFF, HistoryPager
-from omh.tui.transcript import NOTICE_ERROR, NOTICE_OK, NoticeBlock
+from omh.tui.transcript import NOTICE_ERROR, NOTICE_OK, TURN_WAITED, NoticeBlock, ToolGroup, TurnSummaryBlock
 
 LONG_COMMAND = "\n".join(f"echo line {n}" for n in range(1, 21))
 LONG_APPROVAL = ServerRequest(
@@ -227,6 +228,92 @@ class QuestionOutcomeTests(unittest.TestCase):
         self.assertEqual(outcome_rows(app), [("denied · rm -rf ./x", NOTICE_ERROR)])
 
 
+SID = "live-1"  # make_app's session
+
+
+class WaitingTimeTests(unittest.TestCase):
+    def clocked(self):
+        now = [100.0]
+        app, client = make_app(busy=True, clock=lambda: now[0])
+        app.busy_since = 90.0
+        return app, client, now
+
+    def tool(self, app, kind: str, **payload) -> None:
+        app._on_event(Event(f"tool.{kind}", SID, {"tool_id": "t1", "name": "terminal", **payload}))
+
+    def test_the_working_row_says_it_waits_on_you_with_one_clock(self) -> None:
+        app, _client, now = self.clocked()
+        self.assertTrue([row for row in drawn(app) if "working… (10s" in row])
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+        now[0] = 111.0
+        screen = drawn(app)
+        self.assertIn("? waiting on you (11s)", screen)  # the wait's clock, not the turn's 21s
+        self.assertFalse([row for row in screen if "working" in row or "21s" in row], screen)
+        armed(app)
+        press(app, Key(ESCAPE))
+        now[0] = 112.0
+        self.assertTrue([row for row in drawn(app) if "working… (22s" in row])  # the turn's own clock again
+
+    def test_back_to_back_questions_are_one_wait(self) -> None:
+        app, _client, now = self.clocked()
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+        app._on_server_request(TEXT_QUESTIONS[0][0])
+        now[0] = 104.0
+        armed(app)
+        press(app, Key(ESCAPE))  # the sudo prompt opens as the approval closes
+        now[0] = 107.0
+        self.assertIn("? waiting on you (7s)", drawn(app))
+        armed(app)
+        press(app, Key(ESCAPE))
+        self.assertEqual(app.turn_waited, 7.0)
+        self.assertIsNone(app.waiting_since)
+
+    def test_a_tools_duration_leaves_out_the_wait_on_you(self) -> None:
+        for duration in ({"duration_s": 22.0}, {}):  # Hermes' own figure, or the TUI's from the start
+            with self.subTest(duration=duration):
+                app, _client, now = self.clocked()
+                self.tool(app, "start", context="rm -rf ./x")
+                now[0] = 101.0
+                app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+                now[0] = 121.0
+                armed(app)
+                press(app, Key(DOWN), Key(ENTER))
+                now[0] = 122.0
+                self.tool(app, "complete", result="ok", **duration)
+                (row,) = [tool for block in app.transcript.blocks if isinstance(block, ToolGroup) for tool in block.tools]
+                self.assertAlmostEqual(row.duration_s, 2.0)
+
+    def test_a_tool_that_ran_before_the_wait_keeps_its_whole_duration(self) -> None:
+        app, _client, now = self.clocked()
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+        now[0] = 130.0
+        armed(app)
+        press(app, Key(ESCAPE))
+        self.tool(app, "start", context="ls")
+        now[0] = 133.0
+        self.tool(app, "complete", result="ok", duration_s=3.0)
+        (row,) = [tool for block in app.transcript.blocks if isinstance(block, ToolGroup) for tool in block.tools]
+        self.assertAlmostEqual(row.duration_s, 3.0)
+
+    def test_the_done_line_keeps_the_wall_clock_and_says_the_wait_beside_it(self) -> None:
+        app, _client, now = self.clocked()
+        app._on_server_request(ServerRequest("srq-1", "approval", {"command": "rm -rf ./x"}))
+        now[0] = 127.0
+        armed(app)
+        press(app, Key(ESCAPE))
+        now[0] = 120.0 + 10.0
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        (summary,) = [block for block in app.transcript.blocks if isinstance(block, TurnSummaryBlock)]
+        self.assertEqual((summary.seconds, summary.waited), (40.0, 27.0))
+        self.assertTrue([row for row in drawn(app) if row.startswith("✻ 40s (27s waiting on you)")])
+
+    def test_a_turn_without_a_question_says_no_wait(self) -> None:
+        app, _client, now = self.clocked()
+        now[0] = 130.0
+        app._on_event(Event("message.complete", SID, {"text": "done"}))
+        self.assertTrue([row for row in drawn(app) if row.startswith("✻ 40s ") and "waiting" not in row])
+
+
 class DocumentedQuestionViewTests(unittest.TestCase):
     def test_installation_shows_the_markers_the_slot_draws(self) -> None:
         installation = " ".join((Path(__file__).resolve().parents[1] / "docs" / "INSTALLATION.md").read_text(
@@ -238,6 +325,8 @@ class DocumentedQuestionViewTests(unittest.TestCase):
         for word in (prompts.OUTCOME_CANCELLED, prompts.OUTCOME_SKIPPED, *prompts.WITHDRAWN_WORDS.values()):
             self.assertIn(f"`✗ {word}", installation)
         self.assertIn("`✓ answered · sudo password`", installation)
+        self.assertIn(f"`{app_module.WAITING_GLYPH}{app_module.STATE_WAITING} (11s)`", installation)
+        self.assertIn("`✻ 30s" + TURN_WAITED.format(elapsed="27s") + " · 1 tool`", installation)
         self.assertIn("`✗ declined · sudo password`", installation)
         self.assertIn("`✗ " + prompts.WITHDRAWN.format(reason="<Hermes' reason>") + "`", installation)
 
